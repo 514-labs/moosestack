@@ -128,8 +128,7 @@ const pipeline = new IngestPipeline<MyDataModel>("MyDataPipeline", {
   ingest: true,    // POST API endpoint
   stream: true,    // Kafka topic
   table: {         // ClickHouse table
-    orderByFields: ["primaryKey", "someDate"],
-    engine: ClickHouseEngines.ReplacingMergeTree,
+    orderByFields: ["primaryKey", "someDate"]
   }
 });
 ```

@@ -7,7 +7,7 @@ to convert the user-defined resources (from `dmv2.py`) into a serializable
 JSON format expected by the Moose infrastructure management system.
 """
 from importlib import import_module
-from typing import Literal, Optional, List, Any
+from typing import Literal, Optional, List, Any, Dict
 from pydantic import BaseModel, ConfigDict, AliasGenerator, Field
 import json
 from .data_models import Column, _to_columns
@@ -53,6 +53,19 @@ class Consumer(BaseModel):
     """
     version: Optional[str] = None
 
+class EngineConfigDict(BaseModel):
+    """Engine configuration using discriminated union pattern for serialization."""
+    model_config = model_config
+    
+    engine: str
+    # S3Queue-specific fields (only present when engine is "S3Queue")
+    s3_path: Optional[str] = None
+    format: Optional[str] = None
+    aws_access_key_id: Optional[str] = None
+    aws_secret_access_key: Optional[str] = None
+    compression: Optional[str] = None
+    headers: Optional[Dict[str, str]] = None
+
 class TableConfig(BaseModel):
     """Internal representation of an OLAP table configuration for serialization.
 
@@ -60,20 +73,22 @@ class TableConfig(BaseModel):
         name: Name of the table.
         columns: List of columns with their types and attributes.
         order_by: List of columns used for the ORDER BY clause.
-        engine: The name of the ClickHouse engine used.
+        engine_config: Engine configuration with type-safe, engine-specific parameters.
         version: Optional version string of the table configuration.
         metadata: Optional metadata for the table.
         life_cycle: Lifecycle management setting for the table.
+        table_settings: Optional table-level settings that can be modified with ALTER TABLE MODIFY SETTING.
     """
     model_config = model_config
 
     name: str
     columns: List[Column]
     order_by: List[str]
-    engine: Optional[str]
+    engine_config: Optional[EngineConfigDict] = None
     version: Optional[str] = None
     metadata: Optional[dict] = None
     life_cycle: Optional[str] = None
+    table_settings: Optional[Dict[str, str]] = None
 
 class TopicConfig(BaseModel):
     """Internal representation of a stream/topic configuration for serialization.
@@ -249,6 +264,76 @@ def _map_sql_resource_ref(r: Any) -> InfrastructureSignatureJson:
         raise TypeError(f"Object {r} lacks a 'kind' attribute for dependency mapping.")
 
 
+def _convert_engine_to_config_dict(engine, table) -> EngineConfigDict:
+    """Convert engine enum or EngineConfig instance to new engine config format.
+    
+    Args:
+        engine: Either a ClickHouseEngines enum value or an EngineConfig instance
+        table: The OlapTable instance with configuration
+        
+    Returns:
+        EngineConfigDict with engine-specific configuration
+    """
+    from moose_lib import ClickHouseEngines
+    from moose_lib.blocks import (
+        EngineConfig, S3QueueEngine, MergeTreeEngine, 
+        ReplacingMergeTreeEngine, AggregatingMergeTreeEngine, 
+        SummingMergeTreeEngine
+    )
+    from moose_lib.commons import Logger
+    
+    # Check if engine is an EngineConfig instance (new API)
+    if isinstance(engine, EngineConfig):
+        if isinstance(engine, S3QueueEngine):
+            return EngineConfigDict(
+                engine="S3Queue",
+                s3_path=engine.s3_path,
+                format=engine.format,
+                aws_access_key_id=engine.aws_access_key_id,
+                aws_secret_access_key=engine.aws_secret_access_key,
+                compression=engine.compression,
+                headers=engine.headers
+            )
+        elif isinstance(engine, ReplacingMergeTreeEngine):
+            return EngineConfigDict(engine="ReplacingMergeTree")
+        elif isinstance(engine, AggregatingMergeTreeEngine):
+            return EngineConfigDict(engine="AggregatingMergeTree")
+        elif isinstance(engine, SummingMergeTreeEngine):
+            return EngineConfigDict(engine="SummingMergeTree")
+        elif isinstance(engine, MergeTreeEngine):
+            return EngineConfigDict(engine="MergeTree")
+        else:
+            # Fallback for any other EngineConfig subclass
+            return EngineConfigDict(engine=engine.__class__.__name__.replace("Engine", ""))
+    
+    # Handle legacy enum-based engine configuration
+    if isinstance(engine, ClickHouseEngines):
+        engine_name = engine.value
+    else:
+        engine_name = str(engine)
+    
+    # For S3Queue with legacy configuration, check for s3_queue_engine_config
+    if engine_name == "S3Queue" and hasattr(table.config, 's3_queue_engine_config'):
+        s3_config = table.config.s3_queue_engine_config
+        if s3_config:
+            logger = Logger(action="S3QueueConfig")
+            logger.highlight(
+                "Using deprecated s3_queue_engine_config. Please migrate to:\n"
+                "  engine=S3QueueEngine(s3_path='...', format='...', ...)"
+            )
+            return EngineConfigDict(
+                engine="S3Queue",
+                s3_path=s3_config.path,
+                format=s3_config.format,
+                aws_access_key_id=s3_config.aws_access_key_id,
+                aws_secret_access_key=s3_config.aws_secret_access_key,
+                compression=s3_config.compression,
+                headers=s3_config.headers
+            )
+    
+    # For all other engines, just return the engine name
+    return EngineConfigDict(engine=engine_name)
+
 def to_infra_map() -> dict:
     """Converts the registered `dmv2` resources into the serializable `InfrastructureMap` format.
 
@@ -268,15 +353,29 @@ def to_infra_map() -> dict:
     workflows = {}
 
     for name, table in get_tables().items():
-        engine = table.config.engine
+        # Convert engine configuration to new format
+        engine_config = None
+        if table.config.engine:
+            engine_config = _convert_engine_to_config_dict(table.config.engine, table)
+        
+        # Get table settings, applying defaults for S3Queue
+        table_settings = table.config.settings.copy() if table.config.settings else {}
+        
+        # Apply default settings for S3Queue if not already specified
+        if engine_config and engine_config.engine == "S3Queue":
+            # Set default mode to 'unordered' if not specified
+            if "mode" not in table_settings:
+                table_settings["mode"] = "unordered"
+        
         tables[name] = TableConfig(
             name=name,
             columns=_to_columns(table._t),
             order_by=table.config.order_by_fields,
-            engine=None if engine is None else engine.value,
+            engine_config=engine_config,
             version=table.config.version,
             metadata=getattr(table, "metadata", None),
             life_cycle=table.config.life_cycle.value if table.config.life_cycle else None,
+            table_settings=table_settings if table_settings else None,  # Map 'settings' to 'table_settings' for internal use
         )
 
     for name, stream in get_streams().items():
@@ -321,10 +420,10 @@ def to_infra_map() -> dict:
                 name=api.config.destination.name
             ),
             metadata=getattr(api, "metadata", None),
-            dead_letter_queue=api.config.dead_letter_queue.name,
             json_schema=api._t.model_json_schema(
                 ref_template='#/components/schemas/{model}'
             ),
+            dead_letter_queue=api.config.dead_letter_queue.name if api.config.dead_letter_queue else None
         )
 
     for name, api in get_apis().items():

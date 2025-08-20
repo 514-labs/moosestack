@@ -10,6 +10,7 @@
 //! - Type system conversion
 //! - Version tracking
 //! - Table naming conventions
+//! - Intelligent materialized view handling
 //!
 //! ## Dependencies
 //! - clickhouse: Client library for ClickHouse database
@@ -37,8 +38,13 @@ use itertools::Itertools;
 use log::{debug, info};
 use mapper::{std_column_to_clickhouse_column, std_table_to_clickhouse_table};
 use model::ClickHouseColumn;
-use queries::{basic_field_type_to_string, create_table_query, drop_table_query};
+use queries::ClickhouseEngine;
+use queries::{
+    alter_table_modify_settings_query, alter_table_reset_settings_query,
+    basic_field_type_to_string, create_table_query, drop_table_query,
+};
 use serde::{Deserialize, Serialize};
+use sql_parser::{extract_engine_from_create_table, extract_table_settings_from_create_table};
 use std::ops::Deref;
 
 use self::model::ClickHouseSystemTable;
@@ -61,6 +67,7 @@ pub mod inserter;
 pub mod mapper;
 pub mod model;
 pub mod queries;
+pub mod sql_parser;
 pub mod type_parser;
 
 pub use config::ClickHouseConfig;
@@ -136,6 +143,15 @@ pub enum SerializableOlapOperation {
         before_column_name: String,
         /// Name of the column after renaming
         after_column_name: String,
+    },
+    /// Modify table settings using ALTER TABLE MODIFY SETTING
+    ModifyTableSettings {
+        /// The table to modify settings for
+        table: String,
+        /// The settings before modification
+        before_settings: Option<std::collections::HashMap<String, String>>,
+        /// The settings after modification
+        after_settings: Option<std::collections::HashMap<String, String>>,
     },
     RawSql {
         /// The SQL statements to execute
@@ -260,6 +276,14 @@ pub async fn execute_atomic_operation(
                 client,
             )
             .await?;
+        }
+        SerializableOlapOperation::ModifyTableSettings {
+            table,
+            before_settings,
+            after_settings,
+        } => {
+            execute_modify_table_settings(db_name, table, before_settings, after_settings, client)
+                .await?;
         }
         SerializableOlapOperation::RawSql { sql, description } => {
             execute_raw_sql(sql, description, client).await?;
@@ -508,6 +532,73 @@ fn build_modify_column_comment_sql(
         "ALTER TABLE `{}`.`{}` MODIFY COLUMN `{}` COMMENT '{}'",
         db_name, table_name, column_name, escaped_comment
     ))
+}
+
+/// Execute a ModifyTableSettings operation
+async fn execute_modify_table_settings(
+    db_name: &str,
+    table_name: &str,
+    before_settings: &Option<std::collections::HashMap<String, String>>,
+    after_settings: &Option<std::collections::HashMap<String, String>>,
+    client: &ConfiguredDBClient,
+) -> Result<(), ClickhouseChangesError> {
+    use std::collections::HashMap;
+
+    let before = before_settings.clone().unwrap_or_default();
+    let after = after_settings.clone().unwrap_or_default();
+
+    // Determine which settings to modify (changed or added)
+    let mut settings_to_modify = HashMap::new();
+    for (key, value) in &after {
+        if before.get(key) != Some(value) {
+            settings_to_modify.insert(key.clone(), value.clone());
+        }
+    }
+
+    // Determine which settings to reset (removed)
+    let mut settings_to_reset = Vec::new();
+    for key in before.keys() {
+        if !after.contains_key(key) {
+            settings_to_reset.push(key.clone());
+        }
+    }
+
+    log::info!(
+        "Executing ModifyTableSettings for table: {} - modifying {} settings, resetting {} settings",
+        table_name,
+        settings_to_modify.len(),
+        settings_to_reset.len()
+    );
+
+    // Execute MODIFY SETTING if there are settings to modify
+    if !settings_to_modify.is_empty() {
+        let alter_settings_query =
+            alter_table_modify_settings_query(db_name, table_name, &settings_to_modify)?;
+        log::debug!("Modifying table settings: {}", alter_settings_query);
+
+        run_query(&alter_settings_query, client)
+            .await
+            .map_err(|e| ClickhouseChangesError::ClickhouseClient {
+                error: e,
+                resource: Some(table_name.to_string()),
+            })?;
+    }
+
+    // Execute RESET SETTING if there are settings to reset
+    if !settings_to_reset.is_empty() {
+        let reset_settings_query =
+            alter_table_reset_settings_query(db_name, table_name, &settings_to_reset)?;
+        log::debug!("Resetting table settings: {}", reset_settings_query);
+
+        run_query(&reset_settings_query, client)
+            .await
+            .map_err(|e| ClickhouseChangesError::ClickhouseClient {
+                error: e,
+                resource: Some(table_name.to_string()),
+            })?;
+    }
+
+    Ok(())
 }
 
 /// Execute a RenameTableColumn operation
@@ -965,13 +1056,13 @@ impl OlapOperations for ConfiguredDBClient {
         // First get basic table information
         let query = format!(
             r#"
-            SELECT 
+            SELECT
                 name,
                 engine,
                 create_table_query
-            FROM system.tables 
-            WHERE database = '{db_name}' 
-            AND engine != 'View' 
+            FROM system.tables
+            WHERE database = '{db_name}'
+            AND engine != 'View'
             AND engine != 'MaterializedView'
             AND NOT name LIKE '.%'
             ORDER BY name
@@ -1173,16 +1264,39 @@ impl OlapOperations for ConfiguredDBClient {
             };
 
             // Create the Table object using the original table_name
+            // Parse the engine from the CREATE TABLE query to get full engine configuration
+            // This is more reliable than using the system.tables engine column which
+            // only contains the engine name without parameters (e.g., "S3Queue" instead of
+            // "S3Queue('path', 'format', ...)")
+            let engine_parsed = if let Some(engine_def) =
+                extract_engine_from_create_table(&create_query)
+            {
+                // Try to parse the extracted engine definition
+                engine_def.as_str().try_into().ok()
+            } else {
+                // Fallback to the simple engine name from system.tables
+                debug!("Could not extract engine from CREATE TABLE query, falling back to system.tables engine column");
+                engine.as_str().try_into().ok()
+            };
+            let engine_params_hash = engine_parsed
+                .as_ref()
+                .map(|e: &ClickhouseEngine| e.non_alterable_params_hash());
+
+            // Extract table settings from CREATE TABLE query
+            let table_settings = extract_table_settings_from_create_table(&create_query);
+
             let table = Table {
                 name: table_name, // Keep the original table name with version
                 columns,
                 order_by: order_by_cols, // Use the extracted ORDER BY columns
-                engine: Some(engine),
+                engine: engine_parsed,
                 version,
                 source_primitive,
                 metadata: None,
                 // this does not matter as we refer to the lifecycle in infra map
                 life_cycle: LifeCycle::ExternallyManaged,
+                engine_params_hash,
+                table_settings,
             };
             debug!("Created table object: {:?}", table);
 

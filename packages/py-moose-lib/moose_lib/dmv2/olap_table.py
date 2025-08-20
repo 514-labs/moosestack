@@ -5,6 +5,7 @@ This module provides classes for defining and configuring OLAP tables,
 particularly for ClickHouse.
 """
 import json
+import warnings
 from clickhouse_connect import get_client
 from clickhouse_connect.driver.client import Client
 from clickhouse_connect.driver.exceptions import ClickHouseError
@@ -12,6 +13,8 @@ from dataclasses import dataclass
 from pydantic import BaseModel
 from typing import List, Optional, Any, Literal, Union, Tuple, TypeVar, Generic, Iterator
 from moose_lib import ClickHouseEngines
+from ..blocks import EngineConfig  # Add import for EngineConfig
+from ..commons import Logger  # Add import for Moose logging
 from ..config.runtime import RuntimeClickHouseConfig
 from ..utilities.sql import quote_identifier
 from .types import TypedMooseResource, T
@@ -93,21 +96,27 @@ class InsertResult(Generic[T]):
     failed_records: Optional[List[FailedRecord[T]]] = None
 
 class OlapConfig(BaseModel):
+    model_config = {"extra": "forbid"}  # Reject unknown fields for a clean API
+    
     """Configuration for OLAP tables (e.g., ClickHouse tables).
 
     Attributes:
         order_by_fields: List of column names to use for the ORDER BY clause.
                        Crucial for `ReplacingMergeTree` and performance.
-        engine: The ClickHouse table engine to use (e.g., MergeTree, ReplacingMergeTree).
+        engine: The ClickHouse table engine to use. Can be either a ClickHouseEngines enum value
+                (for backward compatibility) or an EngineConfig instance (recommended).
         version: Optional version string for tracking configuration changes.
         metadata: Optional metadata for the table.
         life_cycle: Determines how changes in code will propagate to the resources.
+        settings: Optional table-level settings that can be modified with ALTER TABLE MODIFY SETTING.
+                  These are alterable settings that can be changed without recreating the table.
     """
     order_by_fields: list[str] = []
-    engine: Optional[ClickHouseEngines] = None
+    engine: Optional[Union[ClickHouseEngines, EngineConfig]] = None
     version: Optional[str] = None
     metadata: Optional[dict] = None
     life_cycle: Optional[LifeCycle] = None
+    settings: Optional[dict[str, str]] = None
 
 class OlapTable(TypedMooseResource, Generic[T]):
     """Represents an OLAP table (e.g., a ClickHouse table) typed with a Pydantic model.
@@ -136,6 +145,38 @@ class OlapTable(TypedMooseResource, Generic[T]):
         self.config = config
         self.metadata = config.metadata
         _tables[name] = self
+        
+        # Check if using legacy enum-based engine configuration
+        if config.engine and isinstance(config.engine, ClickHouseEngines):
+            logger = Logger(action="OlapTable")
+            
+            # Special case for S3Queue - more detailed migration message
+            if config.engine == ClickHouseEngines.S3Queue:
+                logger.highlight(
+                    f"Table '{name}' uses legacy S3Queue configuration. "
+                    "Please migrate to the new API:\n"
+                    "  Old: engine=ClickHouseEngines.S3Queue\n"
+                    "  New: engine=S3QueueEngine(s3_path='...', format='...')\n"
+                    "See documentation for complete S3Queue configuration options."
+                )
+            else:
+                # Generic message for other engines
+                engine_name = config.engine.value
+                logger.highlight(
+                    f"Table '{name}' uses legacy engine configuration. "
+                    f"Consider migrating to the new API:\n"
+                    f"  Old: engine=ClickHouseEngines.{engine_name}\n"
+                    f"  New: from moose_lib.blocks import {engine_name}Engine; engine={engine_name}Engine()\n"
+                    "The new API provides better type safety and configuration options."
+                )
+            
+            # Also emit a Python warning for development environments
+            warnings.warn(
+                f"Table '{name}' uses deprecated ClickHouseEngines enum. "
+                f"Please migrate to engine configuration classes (e.g., {config.engine.value}Engine).",
+                DeprecationWarning,
+                stacklevel=2
+            )
 
     def _generate_table_name(self) -> str:
         """Generate the versioned table name following Moose's naming convention.

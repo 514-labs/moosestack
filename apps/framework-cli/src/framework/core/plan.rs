@@ -143,6 +143,14 @@ pub async fn reconcile_with_reality<T: OlapOperations>(
                         // if missing, we then refer to the old infra map
                         // but never `reality_table.life_cycle` which is reconstructed in list_tables
                         table.life_cycle = infra_map_table.life_cycle;
+
+                        // Keep the engine_params_hash from the infra map for ALL engines
+                        // because ClickHouse returns [HIDDEN] for any credentials in CREATE TABLE
+                        // statements, which produces a different hash than the actual credentials.
+                        // This applies to S3Queue, HDFS, MySQL, PostgreSQL, and any other engine
+                        // that might have authentication parameters.
+                        table.engine_params_hash = infra_map_table.engine_params_hash.clone();
+
                         reconciled_map.tables.insert(reality_table.id(), table);
                     }
                     _ => {
@@ -342,6 +350,8 @@ mod tests {
             },
             metadata: None,
             life_cycle: LifeCycle::FullyManaged,
+            engine_params_hash: None,
+            table_settings: None,
         }
     }
 

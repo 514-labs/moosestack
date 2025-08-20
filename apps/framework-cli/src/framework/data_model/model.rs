@@ -10,6 +10,7 @@ use crate::framework::core::infrastructure_map::{PrimitiveSignature, PrimitiveTy
 use crate::framework::core::partial_infrastructure_map::LifeCycle;
 use crate::framework::data_model::DuplicateModelError;
 use crate::framework::versions::{find_previous_version, parse_version, Version};
+use crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine;
 
 use super::config::DataModelConfig;
 
@@ -37,6 +38,13 @@ impl DataModel {
             self.primary_key_columns()
         };
 
+        let engine = self
+            .config
+            .storage
+            .deduplicate
+            .then_some(ClickhouseEngine::ReplacingMergeTree);
+        let engine_params_hash = engine.as_ref().map(|e| e.non_alterable_params_hash());
+
         Table {
             name: self
                 .config
@@ -46,11 +54,7 @@ impl DataModel {
                 .unwrap_or_else(|| format!("{}_{}", self.name, self.version.as_suffix())),
             columns: self.columns.clone(),
             order_by,
-            engine: self
-                .config
-                .storage
-                .deduplicate
-                .then(|| "ReplacingMergeTree".to_string()),
+            engine,
             version: Some(self.version.clone()),
             source_primitive: PrimitiveSignature {
                 name: self.name.clone(),
@@ -58,6 +62,8 @@ impl DataModel {
             },
             metadata: None,
             life_cycle: LifeCycle::FullyManaged,
+            engine_params_hash,
+            table_settings: None, // TODO: Parse table_settings from data model config
         }
     }
 

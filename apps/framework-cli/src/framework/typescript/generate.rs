@@ -263,10 +263,8 @@ pub fn tables_to_typescript(tables: &[Table], life_cycle: Option<LifeCycle>) -> 
         .unwrap();
         writeln!(output, "    table: {{").unwrap();
         writeln!(output, "        orderByFields: [{order_by_fields}],").unwrap();
-        if let Some(engine) = table.engine.as_deref() {
-            if let Ok(engine) = ClickhouseEngine::try_from(engine) {
-                writeln!(output, "        engine: ClickHouseEngines.{:?},", engine).unwrap();
-            }
+        if let Some(engine) = &table.engine {
+            writeln!(output, "        engine: ClickHouseEngines.{:?},", engine).unwrap();
         }
         if let Some(life_cycle) = life_cycle {
             writeln!(
@@ -292,6 +290,7 @@ mod tests {
     use crate::framework::core::infrastructure::table::{Column, ColumnType, EnumMember, Nested};
     use crate::framework::core::infrastructure_map::{PrimitiveSignature, PrimitiveTypes};
     use crate::framework::core::partial_infrastructure_map::LifeCycle;
+    use crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine;
 
     #[test]
     fn test_nested_types() {
@@ -370,7 +369,7 @@ mod tests {
                 },
             ],
             order_by: vec!["id".to_string()],
-            engine: Some("MergeTree".to_string()),
+            engine: Some(ClickhouseEngine::MergeTree),
             version: None,
             source_primitive: PrimitiveSignature {
                 name: "User".to_string(),
@@ -378,6 +377,8 @@ mod tests {
             },
             metadata: None,
             life_cycle: LifeCycle::FullyManaged,
+            engine_params_hash: None,
+            table_settings: None,
         }];
 
         let result = tables_to_typescript(&tables, None);
@@ -447,7 +448,7 @@ export const UserPipeline = new IngestPipeline<User>("User", {
                 },
             ],
             order_by: vec!["id".to_string()],
-            engine: Some("MergeTree".to_string()),
+            engine: Some(ClickhouseEngine::MergeTree),
             version: None,
             source_primitive: PrimitiveSignature {
                 name: "Task".to_string(),
@@ -455,6 +456,8 @@ export const UserPipeline = new IngestPipeline<User>("User", {
             },
             metadata: None,
             life_cycle: LifeCycle::FullyManaged,
+            engine_params_hash: None,
+            table_settings: None,
         }];
 
         let result = tables_to_typescript(&tables, None);
