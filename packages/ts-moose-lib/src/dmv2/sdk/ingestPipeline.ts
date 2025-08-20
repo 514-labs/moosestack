@@ -23,14 +23,14 @@ import { ClickHouseEngines } from "../../blocks/helpers";
  * const pipelineConfig: IngestPipelineConfig<UserData> = {
  *   table: true,
  *   stream: true,
- *   ingest: true
+ *   ingestAPI: true
  * };
  *
  * // Advanced pipeline with custom configurations
  * const advancedConfig: IngestPipelineConfig<UserData> = {
  *   table: { orderByFields: ['timestamp', 'userId'], engine: ClickHouseEngines.ReplacingMergeTree },
  *   stream: { parallelism: 4, retentionPeriod: 86400 },
- *   ingest: true,
+ *   ingestAPI: true,
  *   version: '1.2.0',
  *   metadata: { description: 'User data ingestion pipeline' }
  * };
@@ -72,7 +72,7 @@ export type IngestPipelineConfig<T> = {
    *
    * @default false
    */
-  ingest: boolean | Omit<IngestConfig<T>, "destination">;
+  ingestAPI: boolean | Omit<IngestConfig<T>, "destination">;
 
   /**
    * Configuration for the dead letter queue of the pipeline.
@@ -129,7 +129,7 @@ export type IngestPipelineConfig<T> = {
  * const userDataPipeline = new IngestPipeline('userData', {
  *   table: true,
  *   stream: true,
- *   ingest: true,
+ *   ingestAPI: true,
  *   version: '1.0.0',
  *   metadata: { description: 'Pipeline for user registration data' }
  * });
@@ -138,7 +138,7 @@ export type IngestPipelineConfig<T> = {
  * const analyticsStream = new IngestPipeline('analytics', {
  *   table: { orderByFields: ['timestamp'], engine: ClickHouseEngines.ReplacingMergeTree },
  *   stream: { parallelism: 8, retentionPeriod: 604800 },
- *   ingest: false
+ *   ingestAPI: false
  * });
  * ```
  */
@@ -160,7 +160,7 @@ export class IngestPipeline<T> extends TypedBase<T, IngestPipelineConfig<T>> {
   /**
    * The ingest API component of the pipeline, if configured.
    * Provides HTTP endpoints for data ingestion.
-   * Only present when `config.ingest` is not `false`.
+   * Only present when `config.ingestAPI` is not `false`.
    */
   ingestApi?: IngestApi<T>;
 
@@ -181,7 +181,7 @@ export class IngestPipeline<T> extends TypedBase<T, IngestPipelineConfig<T>> {
    * const pipeline = new IngestPipeline('events', {
    *   table: { orderByFields: ['timestamp'], engine: ClickHouseEngines.ReplacingMergeTree },
    *   stream: { parallelism: 2 },
-   *   ingest: true
+   *   ingestAPI: true
    * });
    * ```
    */
@@ -271,7 +271,7 @@ export class IngestPipeline<T> extends TypedBase<T, IngestPipelineConfig<T>> {
     }
 
     // Create ingest API if configured, requiring a stream as destination
-    if (config.ingest) {
+    if (config.ingestAPI) {
       if (!this.stream) {
         throw new Error("Ingest API needs a stream to write to.");
       }
@@ -279,7 +279,7 @@ export class IngestPipeline<T> extends TypedBase<T, IngestPipelineConfig<T>> {
       const ingestConfig = {
         destination: this.stream,
         deadLetterQueue: this.deadLetterQueue,
-        ...(typeof config.ingest === "object" ? config.ingest : {}),
+        ...(typeof config.ingestAPI === "object" ? config.ingestAPI : {}),
         ...(config.version && { version: config.version }),
         ...(config.path && { path: config.path }),
       };
