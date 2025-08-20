@@ -282,11 +282,7 @@ pub fn std_table_to_clickhouse_table(table: &Table) -> Result<ClickHouseTable, C
     let columns = std_columns_to_clickhouse_columns(&table.columns)?;
 
     let clickhouse_engine = match &table.engine {
-        Some(engine) => ClickhouseEngine::try_from(engine.as_str()).map_err(|e| {
-            ClickhouseError::InvalidParameters {
-                message: format!("engine: {e}"),
-            }
-        })?,
+        Some(engine) => engine.clone(),
         None => ClickhouseEngine::MergeTree,
     };
 

@@ -92,27 +92,102 @@ export interface ValidationResult<T> {
 }
 
 /**
- * Configuration options for an OLAP (Online Analytical Processing) table.
+ * Base configuration shared by all table engines
  * @template T The data type of the records stored in the table.
  */
-export type OlapConfig<T> = {
+type BaseOlapConfig<T> = {
   /**
    * Specifies the fields to use for ordering data within the ClickHouse table.
-   * This is crucial for optimizing query performance, especially for ReplacingMergeTree engines.
+   * This is crucial for optimizing query performance.
    */
   orderByFields?: (keyof T & string)[] | ["tuple()"];
   /**
-   * Specifies the ClickHouse table engine to use.
-   * Defaults to MergeTree if not specified.
-   * @see ClickHouseEngines for available options.
-   */
-  engine?: ClickHouseEngines;
-  /**
-   * An optional version string for this configuration. Can be used for tracking changes or managing deployments.
+   * An optional version string for this configuration.
    */
   version?: string;
   lifeCycle?: LifeCycle;
 };
+
+/**
+ * Configuration for MergeTree engine
+ * @template T The data type of the records stored in the table.
+ */
+export type MergeTreeConfig<T> = BaseOlapConfig<T> & {
+  engine: ClickHouseEngines.MergeTree;
+};
+
+/**
+ * Configuration for ReplacingMergeTree engine (deduplication)
+ * @template T The data type of the records stored in the table.
+ */
+export type ReplacingMergeTreeConfig<T> = BaseOlapConfig<T> & {
+  engine: ClickHouseEngines.ReplacingMergeTree;
+};
+
+/**
+ * Configuration for AggregatingMergeTree engine
+ * @template T The data type of the records stored in the table.
+ */
+export type AggregatingMergeTreeConfig<T> = BaseOlapConfig<T> & {
+  engine: ClickHouseEngines.AggregatingMergeTree;
+};
+
+/**
+ * Configuration for SummingMergeTree engine
+ * @template T The data type of the records stored in the table.
+ */
+export type SummingMergeTreeConfig<T> = BaseOlapConfig<T> & {
+  engine: ClickHouseEngines.SummingMergeTree;
+};
+
+/**
+ * Configuration for S3Queue engine with inline configuration
+ * @template T The data type of the records stored in the table.
+ */
+export type S3QueueConfig<T> = BaseOlapConfig<T> & {
+  engine: ClickHouseEngines.S3Queue;
+  /** S3 bucket path with wildcards (e.g., 's3://bucket/data/*.json') */
+  s3Path: string;
+  /** Data format (e.g., 'JSONEachRow', 'CSV', 'Parquet') */
+  format: string;
+  /** AWS access key ID (optional, omit for NOSIGN/public buckets) */
+  awsAccessKeyId?: string;
+  /** AWS secret access key */
+  awsSecretAccessKey?: string;
+  /** Compression type (e.g., 'gzip', 'zstd') */
+  compression?: string;
+  /** Custom HTTP headers */
+  headers?: { [key: string]: string };
+  /** S3Queue-specific settings */
+  s3Settings?: {
+    mode?: "ordered" | "unordered";
+    keeper_path?: string;
+    s3queue_loading_retries?: number;
+    s3queue_processing_threads_num?: number;
+    s3queue_polling_min_timeout_ms?: number;
+    s3queue_polling_max_timeout_ms?: number;
+    s3queue_polling_backoff_ms?: number;
+    s3queue_track_processed_files?: boolean;
+    s3queue_cleanup_interval_min_age?: number;
+    s3queue_cleanup_interval_max_age?: number;
+    s3queue_total_max_retries?: number;
+    s3queue_max_processed_files_before_commit?: number;
+    s3queue_max_processed_rows_before_commit?: number;
+    s3queue_max_processed_bytes_before_commit?: number;
+    [key: string]: any;
+  };
+};
+
+/**
+ * Union of all engine-specific configurations (new API)
+ * @template T The data type of the records stored in the table.
+ */
+export type OlapConfig<T> =
+  | MergeTreeConfig<T>
+  | ReplacingMergeTreeConfig<T>
+  | AggregatingMergeTreeConfig<T>
+  | SummingMergeTreeConfig<T>
+  | S3QueueConfig<T>;
 
 /**
  * Represents an OLAP (Online Analytical Processing) table, typically corresponding to a ClickHouse table.
@@ -156,7 +231,13 @@ export class OlapTable<T> extends TypedBase<T, OlapConfig<T>> {
     columns?: Column[],
     validators?: TypiaValidators<T>,
   ) {
-    super(name, config ?? {}, schema, columns, validators);
+    super(
+      name,
+      config ?? { engine: ClickHouseEngines.MergeTree },
+      schema,
+      columns,
+      validators,
+    );
     this.name = name;
 
     const tables = getMooseInternal().tables;
@@ -1021,5 +1102,103 @@ export class OlapTable<T> extends TypedBase<T, OlapConfig<T>> {
     }
     // Note: We don't close the client here since it's memoized for reuse
     // Use closeClient() method if you need to explicitly close the connection
+  }
+
+  // ==========================
+  // Factory Methods for Better API
+  // ==========================
+
+  /**
+   * Creates an OlapTable with S3Queue engine using the new API
+   * @param name The name of the table
+   * @param s3Path S3 bucket path with wildcards (e.g., 's3://bucket/data/*.json')
+   * @param format Data format (e.g., 'JSONEachRow', 'CSV', 'Parquet')
+   * @param options Additional S3Queue configuration options
+   * @returns A new OlapTable instance configured for S3Queue
+   *
+   * @example
+   * ```typescript
+   * const table = OlapTable.withS3Queue<MyData>(
+   *   'events',
+   *   's3://my-bucket/data/*.json',
+   *   'JSONEachRow',
+   *   {
+   *     awsAccessKeyId: 'key',
+   *     awsSecretAccessKey: 'secret',
+   *     orderByFields: ['timestamp']
+   *   }
+   * );
+   * ```
+   */
+  static withS3Queue<T>(
+    name: string,
+    s3Path: string,
+    format: string,
+    options?: Partial<Omit<S3QueueConfig<T>, "engine" | "s3Path" | "format">>,
+  ): OlapTable<T> {
+    return new OlapTable<T>(name, {
+      engine: ClickHouseEngines.S3Queue,
+      s3Path,
+      format,
+      ...options,
+    } as S3QueueConfig<T>);
+  }
+
+  /**
+   * Creates an OlapTable with ReplacingMergeTree engine for deduplication
+   * @param name The name of the table
+   * @param orderByFields Fields to use for ordering and deduplication
+   * @param options Additional configuration options
+   * @returns A new OlapTable instance configured for ReplacingMergeTree
+   *
+   * @example
+   * ```typescript
+   * const table = OlapTable.withReplacingMergeTree<User>(
+   *   'users',
+   *   ['id', 'timestamp'],
+   *   { version: '1.0.0' }
+   * );
+   * ```
+   */
+  static withReplacingMergeTree<T>(
+    name: string,
+    orderByFields: (keyof T & string)[],
+    options?: Partial<
+      Omit<ReplacingMergeTreeConfig<T>, "engine" | "orderByFields">
+    >,
+  ): OlapTable<T> {
+    return new OlapTable<T>(name, {
+      engine: ClickHouseEngines.ReplacingMergeTree,
+      orderByFields,
+      ...options,
+    } as ReplacingMergeTreeConfig<T>);
+  }
+
+  /**
+   * Creates an OlapTable with MergeTree engine (default)
+   * @param name The name of the table
+   * @param orderByFields Fields to use for ordering
+   * @param options Additional configuration options
+   * @returns A new OlapTable instance configured for MergeTree
+   *
+   * @example
+   * ```typescript
+   * const table = OlapTable.withMergeTree<Event>(
+   *   'events',
+   *   ['timestamp'],
+   *   { version: '1.0.0' }
+   * );
+   * ```
+   */
+  static withMergeTree<T>(
+    name: string,
+    orderByFields?: (keyof T & string)[],
+    options?: Partial<Omit<MergeTreeConfig<T>, "engine" | "orderByFields">>,
+  ): OlapTable<T> {
+    return new OlapTable<T>(name, {
+      engine: ClickHouseEngines.MergeTree,
+      orderByFields,
+      ...options,
+    } as MergeTreeConfig<T>);
   }
 }

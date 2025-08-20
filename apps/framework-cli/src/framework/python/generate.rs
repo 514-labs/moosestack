@@ -1,7 +1,6 @@
 use crate::framework::core::infrastructure::table::{
     ColumnType, DataEnum, EnumValue, FloatType, IntType, Nested, Table,
 };
-use crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine;
 use convert_case::{Case, Casing};
 use itertools::Itertools;
 use regex::Regex;
@@ -406,10 +405,8 @@ pub fn tables_to_python(tables: &[Table]) -> String {
         writeln!(output, "    stream=True,").unwrap();
         writeln!(output, "    table=OlapConfig(").unwrap();
         writeln!(output, "        order_by_fields=[{order_by_fields}],").unwrap();
-        if let Some(engine) = table.engine.as_deref() {
-            if let Ok(engine) = ClickhouseEngine::try_from(engine) {
-                writeln!(output, "        engine=ClickHouseEngines.{:?},", engine).unwrap();
-            }
+        if let Some(engine) = &table.engine {
+            writeln!(output, "        engine=ClickHouseEngines.{:?},", engine).unwrap();
         }
         writeln!(output, "    )").unwrap();
         writeln!(output, "))").unwrap();
@@ -425,6 +422,7 @@ mod tests {
     use crate::framework::core::infrastructure::table::{Column, ColumnType, Nested};
     use crate::framework::core::infrastructure_map::{PrimitiveSignature, PrimitiveTypes};
     use crate::framework::core::partial_infrastructure_map::LifeCycle;
+    use crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine;
 
     #[test]
     fn test_tables_to_python() {
@@ -463,7 +461,7 @@ mod tests {
                 },
             ],
             order_by: vec!["primary_key".to_string()],
-            engine: Some("MergeTree".to_string()),
+            engine: Some(ClickhouseEngine::MergeTree),
             version: None,
             source_primitive: PrimitiveSignature {
                 name: "Foo".to_string(),
@@ -547,7 +545,7 @@ foo_model = IngestPipeline[Foo]("Foo", IngestPipelineConfig(
                 },
             ],
             order_by: vec!["id".to_string()],
-            engine: Some("MergeTree".to_string()),
+            engine: Some(ClickhouseEngine::MergeTree),
             version: None,
             source_primitive: PrimitiveSignature {
                 name: "NestedArray".to_string(),
@@ -652,7 +650,7 @@ nested_array_model = IngestPipeline[NestedArray]("NestedArray", IngestPipelineCo
                 },
             ],
             order_by: vec!["id".to_string()],
-            engine: Some("MergeTree".to_string()),
+            engine: Some(ClickhouseEngine::MergeTree),
             version: None,
             source_primitive: PrimitiveSignature {
                 name: "User".to_string(),
@@ -728,7 +726,7 @@ user_model = IngestPipeline[User]("User", IngestPipelineConfig(
                 },
             ],
             order_by: vec!["id".to_string()],
-            engine: Some("MergeTree".to_string()),
+            engine: Some(ClickhouseEngine::MergeTree),
             version: None,
             source_primitive: PrimitiveSignature {
                 name: "Location".to_string(),

@@ -117,6 +117,80 @@ pub fn enums_are_equivalent(actual: &DataEnum, target: &DataEnum) -> bool {
     true
 }
 
+/// Checks if the engine structure has changed in a way that requires drop+create
+///
+/// For S3Queue engines, changes to s3_path or format require drop+create,
+/// while changes to settings only can use ALTER TABLE MODIFY SETTING.
+fn engine_structure_changed(
+    before_engine: &Option<ClickhouseEngine>,
+    after_engine: &Option<ClickhouseEngine>,
+) -> bool {
+    match (before_engine, after_engine) {
+        (None, None) => false,
+        (None, Some(_)) | (Some(_), None) => true, // Engine added or removed
+        (Some(before), Some(after)) => {
+            match (before, after) {
+                // Different engine types
+                (ClickhouseEngine::MergeTree, ClickhouseEngine::MergeTree) => false,
+                (ClickhouseEngine::ReplacingMergeTree, ClickhouseEngine::ReplacingMergeTree) => {
+                    false
+                }
+                (
+                    ClickhouseEngine::AggregatingMergeTree,
+                    ClickhouseEngine::AggregatingMergeTree,
+                ) => false,
+                (ClickhouseEngine::SummingMergeTree, ClickhouseEngine::SummingMergeTree) => false,
+
+                // S3Queue engine with same path and format - not a structure change
+                (
+                    ClickhouseEngine::S3Queue {
+                        s3_path: path1,
+                        format: format1,
+                        ..
+                    },
+                    ClickhouseEngine::S3Queue {
+                        s3_path: path2,
+                        format: format2,
+                        ..
+                    },
+                ) => path1 != path2 || format1 != format2,
+
+                // Different engine types - structure change
+                _ => true,
+            }
+        }
+    }
+}
+
+/// Checks if only S3Queue settings have changed (not path or format)
+///
+/// Returns true if both engines are S3Queue with same path/format but different settings.
+fn only_s3queue_settings_changed(
+    before_engine: &Option<ClickhouseEngine>,
+    after_engine: &Option<ClickhouseEngine>,
+) -> bool {
+    match (before_engine, after_engine) {
+        (
+            Some(ClickhouseEngine::S3Queue {
+                s3_path: path1,
+                format: format1,
+                settings: settings1,
+                ..
+            }),
+            Some(ClickhouseEngine::S3Queue {
+                s3_path: path2,
+                format: format2,
+                settings: settings2,
+                ..
+            }),
+        ) => {
+            // Same path and format, but different settings
+            path1 == path2 && format1 == format2 && settings1 != settings2
+        }
+        _ => false,
+    }
+}
+
 /// Checks if an enum needs metadata comment to be added.
 ///
 /// Returns true if the enum appears to be from a TypeScript string enum
@@ -175,16 +249,13 @@ impl TableDiffStrategy for ClickHouseTableDiffStrategy {
             ];
         }
 
-        let before_engine = before
-            .engine
-            .as_deref()
-            .and_then(|e| ClickhouseEngine::try_from(e).ok());
-        // do NOT compare the strings directly because of the possible prefix "Shared"
-        let engine_changed = match after.engine.as_deref() {
+        let before_engine = before.engine.as_ref();
+        // Compare the engines directly
+        let engine_changed = match after.engine.as_ref() {
             // after.engine is unset -> before engine should be same as default
-            None => before_engine.is_some_and(|e| e != ClickhouseEngine::MergeTree),
-            // force recreate only if after.engine can be parsed and before.engine is not the same
-            Some(e) => ClickhouseEngine::try_from(e).is_ok_and(|e| Some(e) != before_engine),
+            None => before_engine.is_some_and(|e| *e != ClickhouseEngine::MergeTree),
+            // force recreate only if engines are different
+            Some(e) => Some(e) != before_engine,
         };
         // Check if engine has changed
         if engine_changed {
@@ -196,6 +267,35 @@ impl TableDiffStrategy for ClickHouseTableDiffStrategy {
                 OlapChange::Table(TableChange::Removed(before.clone())),
                 OlapChange::Table(TableChange::Added(after.clone())),
             ];
+        }
+
+        // Check if engine structure has changed (engine type or S3Queue path/format)
+        if engine_structure_changed(&before.engine, &after.engine) {
+            log::debug!(
+                "ClickHouse: Engine structure changed for table '{}', requiring drop+create",
+                before.name
+            );
+            return vec![
+                OlapChange::Table(TableChange::Removed(before.clone())),
+                OlapChange::Table(TableChange::Added(after.clone())),
+            ];
+        }
+
+        // Check if only S3Queue settings have changed (can use ALTER TABLE MODIFY SETTING)
+        if only_s3queue_settings_changed(&before.engine, &after.engine) {
+            log::debug!(
+                "ClickHouse: Only S3Queue settings changed for table '{}', can use ALTER TABLE",
+                before.name
+            );
+            // Settings changes for S3Queue can be handled via ALTER TABLE MODIFY SETTING
+            // We'll still return the standard update change for now
+            return vec![OlapChange::Table(TableChange::Updated {
+                name: before.name.clone(),
+                column_changes,
+                order_by_change,
+                before: before.clone(),
+                after: after.clone(),
+            })];
         }
 
         // For other changes, ClickHouse can handle them via ALTER TABLE.
@@ -249,7 +349,7 @@ mod tests {
                 },
             ],
             order_by,
-            engine: deduplicate.then(|| "ReplacingMergeTree".to_string()),
+            engine: deduplicate.then(|| ClickhouseEngine::ReplacingMergeTree),
             version: Some(Version::from_string("1.0.0".to_string())),
             source_primitive: PrimitiveSignature {
                 name: "test".to_string(),

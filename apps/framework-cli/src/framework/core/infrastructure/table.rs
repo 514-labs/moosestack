@@ -1,6 +1,7 @@
 use crate::framework::core::infrastructure_map::PrimitiveSignature;
 use crate::framework::core::partial_infrastructure_map::LifeCycle;
 use crate::framework::versions::Version;
+use crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine;
 use crate::proto::infrastructure_map;
 use crate::proto::infrastructure_map::column_type::T;
 use crate::proto::infrastructure_map::Decimal as ProtoDecimal;
@@ -77,13 +78,17 @@ pub enum EnumValueMetadata {
     String(String),
 }
 
+/// TODO: This struct is supposed to be a database agnostic abstraction but it is clearly not.
+/// The inclusion of ClickHouse-specific engine types makes this leaky.
+/// This needs to be fixed in a subsequent PR to properly separate database-specific
+/// concerns from the core table abstraction.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Table {
     pub name: String,
     pub columns: Vec<Column>,
     pub order_by: Vec<String>,
     #[serde(default)]
-    pub engine: Option<String>,
+    pub engine: Option<ClickhouseEngine>,
     pub version: Option<Version>,
     pub source_primitive: PrimitiveSignature,
     pub metadata: Option<Metadata>,
@@ -123,7 +128,7 @@ impl Table {
             self.order_by.join(","),
             self.engine
                 .as_ref()
-                .map(|e| format!(" - engine: {}", e))
+                .map(|e| format!(" - engine: {}", Into::<String>::into(e.clone())))
                 .unwrap_or_default()
         )
     }
@@ -167,9 +172,9 @@ impl Table {
             deduplicate: self
                 .engine
                 .as_ref()
-                .is_some_and(|e| e.contains("ReplacingMergeTree")),
+                .is_some_and(|e| matches!(e, ClickhouseEngine::ReplacingMergeTree)),
             engine: MessageField::from_option(self.engine.as_ref().map(|engine| StringValue {
-                value: engine.to_string(),
+                value: engine.clone().into(),
                 special_fields: Default::default(),
             })),
             metadata: MessageField::from_option(self.metadata.as_ref().map(|m| {
@@ -197,8 +202,12 @@ impl Table {
             engine: proto
                 .engine
                 .into_option()
-                .map(|wrapper| wrapper.value)
-                .or_else(|| proto.deduplicate.then(|| "ReplacingMergeTree".to_string())),
+                .and_then(|wrapper| wrapper.value.as_str().try_into().ok())
+                .or_else(|| {
+                    proto
+                        .deduplicate
+                        .then_some(ClickhouseEngine::ReplacingMergeTree)
+                }),
             metadata: proto.metadata.into_option().map(|m| Metadata {
                 description: if m.description.is_empty() {
                     None

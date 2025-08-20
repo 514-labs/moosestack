@@ -891,6 +891,7 @@ mod tests {
         core::infrastructure_map::{PrimitiveSignature, PrimitiveTypes},
         versions::Version,
     };
+    use crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine;
 
     #[test]
     fn test_basic_operations() {
@@ -2327,7 +2328,7 @@ mod tests {
                 },
             ],
             order_by: vec!["id".to_string()],
-            engine: Some("MergeTree".to_string()),
+            engine: Some(ClickhouseEngine::MergeTree),
             version: None,
             source_primitive: PrimitiveSignature {
                 name: "test".to_string(),

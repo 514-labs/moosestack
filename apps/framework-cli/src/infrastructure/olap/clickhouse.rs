@@ -1177,7 +1177,7 @@ impl OlapOperations for ConfiguredDBClient {
                 name: table_name, // Keep the original table name with version
                 columns,
                 order_by: order_by_cols, // Use the extracted ORDER BY columns
-                engine: Some(engine),
+                engine: engine.as_str().try_into().ok(),
                 version,
                 source_primitive,
                 metadata: None,

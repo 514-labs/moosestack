@@ -426,7 +426,10 @@ impl PartialInfrastructureMap {
                         }),
                     columns: partial_table.columns.clone(),
                     order_by: partial_table.order_by.clone(),
-                    engine: partial_table.engine.clone(),
+                    engine: partial_table
+                        .engine
+                        .as_ref()
+                        .and_then(|e| e.as_str().try_into().ok()),
                     version,
                     source_primitive: PrimitiveSignature {
                         name: partial_table.name.clone(),
