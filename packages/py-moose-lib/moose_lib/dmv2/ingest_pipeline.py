@@ -4,8 +4,9 @@ Ingestion Pipeline definitions for Moose Data Model v2 (dmv2).
 This module provides classes for defining and configuring complete ingestion pipelines,
 which combine tables, streams, and ingestion APIs into a single cohesive unit.
 """
+import warnings
 from typing import Any, Optional, Generic, TypeVar
-from pydantic import BaseModel
+from pydantic import BaseModel, model_validator
 
 from .types import TypedMooseResource, T
 from .olap_table import OlapTable, OlapConfig
@@ -38,6 +39,28 @@ class IngestPipelineConfig(BaseModel):
     path: Optional[str] = None
     metadata: Optional[dict] = None
     life_cycle: Optional[LifeCycle] = None
+    
+    # Legacy support - will be removed in future version
+    ingest: Optional[bool | IngestConfig] = None
+    
+    @model_validator(mode='before')
+    @classmethod
+    def handle_legacy_ingest_param(cls, data):
+        """Handle backwards compatibility for the deprecated 'ingest' parameter."""
+        if isinstance(data, dict) and 'ingest' in data:
+            warnings.warn(
+                "The 'ingest' parameter is deprecated and will be removed in a future version. "
+                "Please use 'ingest_api' instead.",
+                DeprecationWarning,
+                stacklevel=3
+            )
+            # If ingest_api is not explicitly set, use the ingest value
+            if 'ingest_api' not in data:
+                data['ingest_api'] = data['ingest']
+            # Remove the legacy parameter
+            data = data.copy()
+            del data['ingest']
+        return data
 
 class IngestPipeline(TypedMooseResource, Generic[T]):
     """Creates and configures a linked Table, Stream, and Ingest API pipeline.

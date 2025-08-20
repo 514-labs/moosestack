@@ -75,6 +75,11 @@ export type IngestPipelineConfig<T> = {
   ingestAPI: boolean | Omit<IngestConfig<T>, "destination">;
 
   /**
+   * @deprecated Use `ingestAPI` instead. This parameter will be removed in a future version.
+   */
+  ingest?: boolean | Omit<IngestConfig<T>, "destination">;
+
+  /**
    * Configuration for the dead letter queue of the pipeline.
    * If `true`, a dead letter queue with default settings is created.
    * If a partial `StreamConfig` object (excluding `destination`) is provided, it specifies the dead letter queue's configuration.
@@ -213,6 +218,18 @@ export class IngestPipeline<T> extends TypedBase<T, IngestPipelineConfig<T>> {
   ) {
     super(name, config, schema, columns, validators);
 
+    // Handle backwards compatibility for deprecated 'ingest' parameter
+    if (config.ingest !== undefined) {
+      console.warn(
+        "⚠️  DEPRECATION WARNING: The 'ingest' parameter is deprecated and will be removed in a future version. " +
+          "Please use 'ingestAPI' instead.",
+      );
+      // If ingestAPI is not explicitly set, use the ingest value
+      if (config.ingestAPI === undefined || config.ingestAPI === false) {
+        (config as any).ingestAPI = config.ingest;
+      }
+    }
+
     // Create OLAP table if configured
     if (config.table) {
       const tableConfig: OlapConfig<T> =
@@ -271,7 +288,9 @@ export class IngestPipeline<T> extends TypedBase<T, IngestPipelineConfig<T>> {
     }
 
     // Create ingest API if configured, requiring a stream as destination
-    if (config.ingestAPI) {
+    const shouldCreateIngestAPI =
+      config.ingestAPI || (config.ingest && !config.ingestAPI);
+    if (shouldCreateIngestAPI) {
       if (!this.stream) {
         throw new Error("Ingest API needs a stream to write to.");
       }
@@ -279,7 +298,9 @@ export class IngestPipeline<T> extends TypedBase<T, IngestPipelineConfig<T>> {
       const ingestConfig = {
         destination: this.stream,
         deadLetterQueue: this.deadLetterQueue,
-        ...(typeof config.ingestAPI === "object" ? config.ingestAPI : {}),
+        ...(typeof (config.ingestAPI || config.ingest) === "object" ?
+          ((config.ingestAPI || config.ingest) as object)
+        : {}),
         ...(config.version && { version: config.version }),
         ...(config.path && { path: config.path }),
       };
