@@ -336,6 +336,7 @@ mod tests {
             order_by: vec!["id".to_string()],
             engine: None,
             version: Some(Version::from_string("1.0.0".to_string())),
+            replacing_merge_tree_dedup_by: None,
             source_primitive: PrimitiveSignature {
                 name: "test".to_string(),
                 primitive_type: PrimitiveTypes::DataModel,

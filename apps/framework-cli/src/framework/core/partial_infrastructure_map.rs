@@ -107,6 +107,7 @@ struct PartialTable {
     pub columns: Vec<Column>,
     pub order_by: Vec<String>,
     pub engine: Option<String>,
+    pub replacing_merge_tree_dedup_by: Option<String>,
     pub version: Option<String>,
     pub metadata: Option<Metadata>,
     pub life_cycle: Option<LifeCycle>,
@@ -428,6 +429,9 @@ impl PartialInfrastructureMap {
                     columns: partial_table.columns.clone(),
                     order_by: partial_table.order_by.clone(),
                     engine: partial_table.engine.clone(),
+                    replacing_merge_tree_dedup_by: partial_table
+                        .replacing_merge_tree_dedup_by
+                        .clone(),
                     version,
                     source_primitive: PrimitiveSignature {
                         name: partial_table.name.clone(),

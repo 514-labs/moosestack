@@ -51,6 +51,7 @@ impl DataModel {
                 .storage
                 .deduplicate
                 .then(|| "ReplacingMergeTree".to_string()),
+            replacing_merge_tree_dedup_by: None,
             version: Some(self.version.clone()),
             source_primitive: PrimitiveSignature {
                 name: self.name.clone(),

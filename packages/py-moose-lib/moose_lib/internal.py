@@ -11,6 +11,7 @@ from typing import Literal, Optional, List, Any
 from pydantic import BaseModel, ConfigDict, AliasGenerator, Field
 import json
 from .data_models import Column, _to_columns
+from moose_lib import ClickHouseEngines
 from moose_lib.dmv2 import (
     get_tables,
     get_streams,
@@ -61,6 +62,7 @@ class TableConfig(BaseModel):
         columns: List of columns with their types and attributes.
         order_by: List of columns used for the ORDER BY clause.
         engine: The name of the ClickHouse engine used.
+        replacing_merge_tree_dedup_by: The name of the column used for ReplacingMergeTree deduplication.
         version: Optional version string of the table configuration.
         metadata: Optional metadata for the table.
         life_cycle: Lifecycle management setting for the table.
@@ -71,6 +73,7 @@ class TableConfig(BaseModel):
     columns: List[Column]
     order_by: List[str]
     engine: Optional[str]
+    replacing_merge_tree_dedup_by: Optional[str] = None
     version: Optional[str] = None
     metadata: Optional[dict] = None
     life_cycle: Optional[str] = None
@@ -274,6 +277,11 @@ def to_infra_map() -> dict:
             columns=_to_columns(table._t),
             order_by=table.config.order_by_fields,
             engine=None if engine is None else engine.value,
+            replacing_merge_tree_dedup_by=(
+                table.config.dedup_by_field
+                if engine == ClickHouseEngines.ReplacingMergeTree
+                else None
+            ),
             version=table.config.version,
             metadata=getattr(table, "metadata", None),
             life_cycle=table.config.life_cycle.value if table.config.life_cycle else None,

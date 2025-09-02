@@ -94,6 +94,8 @@ message Table {
   google.protobuf.StringValue engine = 7;
   Metadata metadata = 8;
   LifeCycle life_cycle = 9;
+  // ReplacingMergeTree parameter: column used for deduplication (UInt*, Date, DateTime, DateTime64)
+  optional string replacing_merge_tree_dedup_by = 10;
 }
 
 message View {

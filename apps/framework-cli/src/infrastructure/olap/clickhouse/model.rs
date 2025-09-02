@@ -484,6 +484,7 @@ pub struct ClickHouseTable {
     pub columns: Vec<ClickHouseColumn>,
     pub order_by: Vec<String>,
     pub engine: ClickhouseEngine,
+    pub replacing_merge_tree_dedup_by: Option<String>,
 }
 
 impl ClickHouseTable {

@@ -2807,6 +2807,7 @@ mod tests {
             },
             metadata: None,
             life_cycle: LifeCycle::FullyManaged,
+            replacing_merge_tree_dedup_by: None,
         }
     }
 

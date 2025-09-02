@@ -84,6 +84,8 @@ pub struct Table {
     pub order_by: Vec<String>,
     #[serde(default)]
     pub engine: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub replacing_merge_tree_dedup_by: Option<String>,
     pub version: Option<Version>,
     pub source_primitive: PrimitiveSignature,
     pub metadata: Option<Metadata>,
@@ -172,6 +174,7 @@ impl Table {
                 value: engine.to_string(),
                 special_fields: Default::default(),
             })),
+            replacing_merge_tree_dedup_by: self.replacing_merge_tree_dedup_by.clone(),
             metadata: MessageField::from_option(self.metadata.as_ref().map(|m| {
                 infrastructure_map::Metadata {
                     description: m.description.clone().unwrap_or_default(),
@@ -192,6 +195,7 @@ impl Table {
             name: proto.name,
             columns: proto.columns.into_iter().map(Column::from_proto).collect(),
             order_by: proto.order_by,
+            replacing_merge_tree_dedup_by: proto.replacing_merge_tree_dedup_by,
             version: proto.version.map(Version::from_string),
             source_primitive: PrimitiveSignature::from_proto(proto.source_primitive.unwrap()),
             engine: proto

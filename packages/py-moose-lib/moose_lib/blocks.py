@@ -18,6 +18,7 @@ class TableCreateOptions:
     columns: Dict[str, str]
     engine: Optional[ClickHouseEngines] = ClickHouseEngines.MergeTree
     order_by: Optional[str] = None
+    dedup_by: Optional[str] = None
 
 @dataclass
 class AggregationCreateOptions:
@@ -94,13 +95,18 @@ def create_table(options: TableCreateOptions) -> str:
     column_definitions = ",\n".join([f"{name} {type}" for name, type in options.columns.items()])
     order_by_clause = f"ORDER BY {options.order_by}" if options.order_by else ""
     engine = options.engine.value
+    engine_expr = (
+        f"ReplacingMergeTree({options.dedup_by})"
+        if engine == ClickHouseEngines.ReplacingMergeTree.value and options.dedup_by
+        else f"{engine}()"
+    )
 
     return f"""
     CREATE TABLE IF NOT EXISTS {options.name} 
     (
       {column_definitions}
     )
-    ENGINE = {engine}()
+    ENGINE = {engine_expr}
     {order_by_clause}
     """.strip()
 

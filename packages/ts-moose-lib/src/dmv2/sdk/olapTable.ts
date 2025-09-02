@@ -12,6 +12,7 @@ import { createHash } from "node:crypto";
 import type { ConfigurationRegistry } from "../../config/runtime";
 import { LifeCycle } from "./lifeCycle";
 import { IdentifierBrandedString, quoteIdentifier } from "../../sqlHelpers";
+import type { ClickHouseInt } from "../../dataModels/types";
 
 /**
  * Represents a failed record during insertion with error details
@@ -111,8 +112,24 @@ export type OlapConfig<T> = {
    * An optional version string for this configuration. Can be used for tracking changes or managing deployments.
    */
   version?: string;
+  /**
+   * Optional ReplacingMergeTree version column. Keeps the row with the maximum value per ORDER BY group.
+   * If unset, ClickHouse uses most recently inserted.
+   */
+  dedupByField?: DedupEligibleKeys<T>;
   lifeCycle?: LifeCycle;
 };
+
+/**
+ * Keys of T that are eligible for ReplacingMergeTree deduplication.
+ */
+type DedupEligibleKeys<T> = {
+  [K in keyof T]-?: T[K] extends (
+    Date | ClickHouseInt<"uint8" | "uint16" | "uint32" | "uint64">
+  ) ?
+    K
+  : never;
+}[keyof T];
 
 /**
  * Represents an OLAP (Online Analytical Processing) table, typically corresponding to a ClickHouse table.

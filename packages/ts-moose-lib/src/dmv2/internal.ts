@@ -50,6 +50,8 @@ interface TableJson {
   orderBy: string[];
   /** The name of the ClickHouse engine (e.g., "MergeTree", "ReplacingMergeTree"). */
   engine?: string;
+  /** Optional: ReplacingMergeTree parameter field for deduplication. */
+  replacingMergeTreeDedupBy?: string;
   /** Optional version string for the table configuration. */
   version?: string;
   /** Optional metadata for the table (e.g., description). */
@@ -212,6 +214,10 @@ export const toInfraMap = (registry: typeof moose_internal) => {
       columns: table.columnArray,
       orderBy: table.config.orderByFields ?? [],
       engine: table.config.engine,
+      replacingMergeTreeDedupBy:
+        table.config.engine === ClickHouseEngines.ReplacingMergeTree ?
+          (table.config as any).dedupByField
+        : undefined,
       version: table.config.version,
       metadata,
       lifeCycle: table.config.lifeCycle,

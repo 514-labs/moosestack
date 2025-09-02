@@ -1178,6 +1178,7 @@ impl OlapOperations for ConfiguredDBClient {
                 columns,
                 order_by: order_by_cols, // Use the extracted ORDER BY columns
                 engine: Some(engine),
+                replacing_merge_tree_dedup_by: None,
                 version,
                 source_primitive,
                 metadata: None,

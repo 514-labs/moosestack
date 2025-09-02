@@ -296,6 +296,7 @@ pub fn std_table_to_clickhouse_table(table: &Table) -> Result<ClickHouseTable, C
         columns,
         order_by: table.order_by.clone(),
         engine: clickhouse_engine,
+        replacing_merge_tree_dedup_by: table.replacing_merge_tree_dedup_by.clone(),
     })
 }
 

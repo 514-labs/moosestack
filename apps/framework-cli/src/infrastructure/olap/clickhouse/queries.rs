@@ -142,17 +142,70 @@ pub fn create_table_query(
     reg.register_escape_fn(no_escape);
 
     let engine = match table.engine {
-        ClickhouseEngine::MergeTree => "MergeTree",
+        ClickhouseEngine::MergeTree => "MergeTree".to_string(),
         ClickhouseEngine::ReplacingMergeTree => {
             if table.order_by.is_empty() {
                 return Err(ClickhouseError::InvalidParameters {
                     message: "ReplacingMergeTree requires an order by clause".to_string(),
                 });
             }
-            "ReplacingMergeTree"
+
+            if let Some(ref col) = table.replacing_merge_tree_dedup_by {
+                // Validate column exists and type compatibility
+                let col_def = table.columns.iter().find(|c| &c.name == col).ok_or(
+                    ClickhouseError::InvalidParameters {
+                        message: format!(
+                            "ReplacingMergeTree dedup column '{}' not found in columns",
+                            col
+                        ),
+                    },
+                )?;
+
+                let mut is_valid = false;
+                use ClickHouseColumnType as T;
+                match &col_def.column_type {
+                    T::ClickhouseInt(ClickHouseInt::UInt8)
+                    | T::ClickhouseInt(ClickHouseInt::UInt16)
+                    | T::ClickhouseInt(ClickHouseInt::UInt32)
+                    | T::ClickhouseInt(ClickHouseInt::UInt64)
+                    | T::Date
+                    | T::Date32
+                    | T::DateTime
+                    | T::DateTime64 { .. } => {
+                        is_valid = true;
+                    }
+                    T::Nullable(inner) => match **inner {
+                        T::ClickhouseInt(ClickHouseInt::UInt8)
+                        | T::ClickhouseInt(ClickHouseInt::UInt16)
+                        | T::ClickhouseInt(ClickHouseInt::UInt32)
+                        | T::ClickhouseInt(ClickHouseInt::UInt64)
+                        | T::Date
+                        | T::Date32
+                        | T::DateTime
+                        | T::DateTime64 { .. } => {
+                            is_valid = true;
+                        }
+                        _ => {}
+                    },
+                    _ => {}
+                }
+
+                if !is_valid {
+                    return Err(ClickhouseError::InvalidParameters {
+                        message: format!(
+                            "ReplacingMergeTree dedup column '{}' must be one of UInt8/16/32/64, Date/Date32, DateTime, or DateTime64",
+                            col
+                        ),
+                    });
+                }
+
+                format!("ReplacingMergeTree({})", col)
+            } else {
+                "ReplacingMergeTree".to_string()
+            }
         }
-        ClickhouseEngine::AggregatingMergeTree => "AggregatingMergeTree",
-        ClickhouseEngine::SummingMergeTree => "SummingMergeTree",
+        ClickhouseEngine::AggregatingMergeTree => "AggregatingMergeTree".to_string(),
+        ClickhouseEngine::SummingMergeTree => "SummingMergeTree".to_string(),
     };
 
     let primary_key = table
@@ -469,6 +522,7 @@ mod tests {
             ],
             order_by: vec![],
             engine: ClickhouseEngine::MergeTree,
+            replacing_merge_tree_dedup_by: None,
         };
 
         let query = create_table_query("test_db", table).unwrap();
@@ -500,6 +554,7 @@ PRIMARY KEY (`id`)
             }],
             order_by: vec![],
             engine: ClickhouseEngine::MergeTree,
+            replacing_merge_tree_dedup_by: None,
         };
 
         let query = create_table_query("test_db", table).unwrap();
@@ -530,6 +585,7 @@ ENGINE = MergeTree
             }],
             order_by: vec![],
             engine: ClickhouseEngine::MergeTree,
+            replacing_merge_tree_dedup_by: None,
         };
 
         let query = create_table_query("test_db", table).unwrap();
@@ -559,6 +615,7 @@ ENGINE = MergeTree
             }],
             order_by: vec!["id".to_string()],
             engine: ClickhouseEngine::ReplacingMergeTree,
+            replacing_merge_tree_dedup_by: None,
         };
 
         let query = create_table_query("test_db", table).unwrap();
@@ -589,12 +646,93 @@ ORDER BY (`id`) "#;
             }],
             engine: ClickhouseEngine::ReplacingMergeTree,
             order_by: vec![],
+            replacing_merge_tree_dedup_by: None,
         };
 
         let result = create_table_query("test_db", table);
         assert!(matches!(
             result,
             Err(ClickhouseError::InvalidParameters { message }) if message == "ReplacingMergeTree requires an order by clause"
+        ));
+    }
+
+    #[test]
+    fn test_create_table_query_replacing_merge_tree_with_version_param_uint() {
+        let table = ClickHouseTable {
+            version: Some(Version::from_string("1".to_string())),
+            name: "test_table".to_string(),
+            columns: vec![
+                ClickHouseColumn {
+                    name: "id".to_string(),
+                    column_type: ClickHouseColumnType::ClickhouseInt(ClickHouseInt::Int32),
+                    required: true,
+                    primary_key: true,
+                    unique: false,
+                    default: None,
+                    comment: None,
+                },
+                ClickHouseColumn {
+                    name: "version".to_string(),
+                    column_type: ClickHouseColumnType::ClickhouseInt(ClickHouseInt::UInt64),
+                    required: true,
+                    primary_key: false,
+                    unique: false,
+                    default: None,
+                    comment: None,
+                },
+            ],
+            order_by: vec!["id".to_string()],
+            engine: ClickhouseEngine::ReplacingMergeTree,
+            replacing_merge_tree_dedup_by: Some("version".to_string()),
+        };
+
+        let query = create_table_query("test_db", table).unwrap();
+        let expected = r#"
+CREATE TABLE IF NOT EXISTS `test_db`.`test_table`
+(
+ `id` Int32 NOT NULL,
+ `version` UInt64 NOT NULL
+)
+ENGINE = ReplacingMergeTree(version)
+PRIMARY KEY (`id`)
+ORDER BY (`id`) "#;
+        assert_eq!(query.trim(), expected.trim());
+    }
+
+    #[test]
+    fn test_create_table_query_replacing_merge_tree_with_version_param_invalid_type() {
+        let table = ClickHouseTable {
+            version: Some(Version::from_string("1".to_string())),
+            name: "test_table".to_string(),
+            columns: vec![
+                ClickHouseColumn {
+                    name: "id".to_string(),
+                    column_type: ClickHouseColumnType::ClickhouseInt(ClickHouseInt::Int32),
+                    required: true,
+                    primary_key: true,
+                    unique: false,
+                    default: None,
+                    comment: None,
+                },
+                ClickHouseColumn {
+                    name: "version".to_string(),
+                    column_type: ClickHouseColumnType::String,
+                    required: true,
+                    primary_key: false,
+                    unique: false,
+                    default: None,
+                    comment: None,
+                },
+            ],
+            order_by: vec!["id".to_string()],
+            engine: ClickhouseEngine::ReplacingMergeTree,
+            replacing_merge_tree_dedup_by: Some("version".to_string()),
+        };
+
+        let result = create_table_query("test_db", table);
+        assert!(matches!(
+            result,
+            Err(ClickhouseError::InvalidParameters { message }) if message.contains("must be one of UInt8/16/32/64")
         ));
     }
 
@@ -665,6 +803,7 @@ ORDER BY (`id`) "#;
             ],
             engine: ClickhouseEngine::MergeTree,
             order_by: vec!["id".to_string()],
+            replacing_merge_tree_dedup_by: None,
         };
 
         let query = create_table_query("test_db", table).unwrap();
