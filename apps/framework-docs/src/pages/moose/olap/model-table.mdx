@@ -466,27 +466,38 @@ table = OlapTable[Record]("table", OlapTableConfig(
 </Python>
 
 #### Deduplication (`ReplacingMergeTree`)
-Use the `ReplacingMergeTree` engine to keep only the latest record for your designated sort key:
+Use the `ReplacingMergeTree` engine to keep only the latest record for your designated sort key. The default deduplication will keep the latest record & can be customized to use the maximum of a specific field.
 
 <TypeScript>
 ```ts filename="DeduplicatedTable.ts" copy
+import { Key, OlapTable, ClickHouseInt, ClickHouseEngines } from "@514labs/moose-lib";
+
+interface Record {
+  id: Key<string>;
+  version: number & ClickHouseInt<"uint64">;
+}
+
 const table = new OlapTable<Record>("table", {
   orderByFields: ["id"],
-  engine: ClickHouseEngines.ReplacingMergeTree
+  engine: ClickHouseEngines.ReplacingMergeTree,
+  dedupByField: "version" // optional, keep the max based on version field
 });
 ```
 </TypeScript> 
 
 <Python>
 ```py filename="DeduplicatedTable.py" copy
-from moose_lib import Key, OlapTable, OlapTableConfig
+from moose_lib import Key, OlapTable, OlapConfig, ClickHouseEngines
+from typing import Annotated
 
 class Record(BaseModel):
     id: Key[str]
+    version: Annotated[int, "uint64"]
 
-table = OlapTable[Record]("table", OlapTableConfig(
+table = OlapTable[Record]("table", OlapConfig(
   orderByFields=["id"],
-  engine=ClickHouseEngines.ReplacingMergeTree
+  engine=ClickHouseEngines.ReplacingMergeTree,
+  dedup_by_field="version" # optional, keep the max based on version field
 ))
 ```
 </Python>
