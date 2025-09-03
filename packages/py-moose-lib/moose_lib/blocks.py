@@ -64,11 +64,19 @@ class S3QueueEngine(EngineConfig):
     s3_settings: Optional[Dict[str, Any]] = field(default_factory=dict)
     
     def __post_init__(self):
-        """Validate required fields"""
+        """Validate required fields and set defaults"""
         if not self.s3_path:
             raise ValueError("S3Queue engine requires 's3_path'")
         if not self.format:
             raise ValueError("S3Queue engine requires 'format'")
+        
+        # Ensure s3_settings is initialized
+        if self.s3_settings is None:
+            self.s3_settings = {}
+        
+        # Ensure required 'mode' parameter is present (default to 'unordered')
+        if "mode" not in self.s3_settings:
+            self.s3_settings["mode"] = "unordered"
 
 # ==========================
 # New Table Configuration (Recommended API)
@@ -204,7 +212,9 @@ def migrate_legacy_config(legacy: TableCreateOptions) -> TableConfig:
         ClickHouseEngines.SummingMergeTree: SummingMergeTreeEngine(),
     }
     
-    engine = engine_map.get(legacy.engine, MergeTreeEngine())
+    engine = engine_map.get(legacy.engine) if legacy.engine else MergeTreeEngine()
+    if engine is None:
+        engine = MergeTreeEngine()
     
     return TableConfig(
         name=legacy.name,
@@ -216,8 +226,8 @@ def migrate_legacy_config(legacy: TableCreateOptions) -> TableConfig:
 def normalize_config(config: Union[TableConfig, TableCreateOptions]) -> TableConfig:
     """Normalize any configuration format to new API"""
     if is_new_config(config):
-        return config
-    return migrate_legacy_config(config)
+        return config  # type: ignore
+    return migrate_legacy_config(config)  # type: ignore
 
 @dataclass
 class AggregationCreateOptions:
@@ -293,7 +303,7 @@ def create_table(options: TableCreateOptions) -> str:
     """
     column_definitions = ",\n".join([f"{name} {type}" for name, type in options.columns.items()])
     order_by_clause = f"ORDER BY {options.order_by}" if options.order_by else ""
-    engine = options.engine.value
+    engine = options.engine.value if options.engine else "MergeTree"
 
     return f"""
     CREATE TABLE IF NOT EXISTS {options.name} 

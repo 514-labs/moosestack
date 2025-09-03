@@ -128,6 +128,9 @@ pub enum ClickhouseEngine {
     },
 }
 
+// The implementation is not symetric between TryFrom and Into so we
+// need to allow this clippy warning
+#[allow(clippy::from_over_into)]
 impl Into<String> for ClickhouseEngine {
     fn into(self) -> String {
         match self {

@@ -10,6 +10,7 @@
 //! - Type system conversion
 //! - Version tracking
 //! - Table naming conventions
+//! - Intelligent materialized view handling
 //!
 //! ## Dependencies
 //! - clickhouse: Client library for ClickHouse database
@@ -59,8 +60,10 @@ pub mod diff_strategy;
 pub mod errors;
 pub mod inserter;
 pub mod mapper;
+pub mod materialized_view_processor;
 pub mod model;
 pub mod queries;
+pub mod sql_parser;
 pub mod type_parser;
 
 pub use config::ClickHouseConfig;
@@ -965,13 +968,13 @@ impl OlapOperations for ConfiguredDBClient {
         // First get basic table information
         let query = format!(
             r#"
-            SELECT 
+            SELECT
                 name,
                 engine,
                 create_table_query
-            FROM system.tables 
-            WHERE database = '{db_name}' 
-            AND engine != 'View' 
+            FROM system.tables
+            WHERE database = '{db_name}'
+            AND engine != 'View'
             AND engine != 'MaterializedView'
             AND NOT name LIKE '.%'
             ORDER BY name

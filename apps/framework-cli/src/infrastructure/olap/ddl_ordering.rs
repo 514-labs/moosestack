@@ -4,6 +4,7 @@ use crate::framework::core::infrastructure::view::{View, ViewType};
 use crate::framework::core::infrastructure::DataLineage;
 use crate::framework::core::infrastructure::InfrastructureSignature;
 use crate::framework::core::infrastructure_map::{Change, ColumnChange, OlapChange, TableChange};
+use crate::infrastructure::olap::clickhouse::materialized_view_processor::MaterializedViewProcessor;
 use crate::infrastructure::olap::clickhouse::SerializableOlapOperation;
 use petgraph::algo::toposort;
 use petgraph::graph::{DiGraph, NodeIndex};
@@ -654,10 +655,19 @@ fn handle_view_update(before: &View, after: &View) -> OperationPlan {
 }
 
 /// Handles adding a SQL resource operation
-fn handle_sql_resource_add(resource: &SqlResource) -> OperationPlan {
-    let pulls_from = resource.pulls_data_from();
-    let pushes_to = resource.pushes_data_to();
-    let setup_op = run_setup_sql_operation(resource, pulls_from, pushes_to);
+/// Handle adding a SQL resource
+fn handle_sql_resource_add(
+    resource: &SqlResource,
+    tables: &HashMap<String, Table>,
+    database: Option<&str>,
+) -> OperationPlan {
+    // Process the resource through MaterializedViewProcessor
+    let processed =
+        MaterializedViewProcessor::process_new_resource_with_db(resource, tables, database);
+
+    let pulls_from = processed.resource.pulls_data_from();
+    let pushes_to = processed.resource.pushes_data_to();
+    let setup_op = run_setup_sql_operation(&processed.resource, pulls_from, pushes_to);
     OperationPlan::setup(vec![setup_op])
 }
 
@@ -670,14 +680,25 @@ fn handle_sql_resource_remove(resource: &SqlResource) -> OperationPlan {
 }
 
 /// Handles updating a SQL resource operation
-fn handle_sql_resource_update(before: &SqlResource, after: &SqlResource) -> OperationPlan {
+/// Handle updating a SQL resource
+fn handle_sql_resource_update(
+    before: &SqlResource,
+    after: &SqlResource,
+    tables: &HashMap<String, Table>,
+    database: Option<&str>,
+) -> OperationPlan {
     let before_pulls = before.pulls_data_from();
     let before_pushes = before.pushes_data_to();
     let teardown_op = run_teardown_sql_operation(before, before_pulls, before_pushes);
 
-    let after_pulls = after.pulls_data_from();
-    let after_pushes = after.pushes_data_to();
-    let setup_op = run_setup_sql_operation(after, after_pulls, after_pushes);
+    // Process the updated resource through MaterializedViewProcessor
+    let processed = MaterializedViewProcessor::process_updated_resource_with_db(
+        before, after, tables, database,
+    );
+
+    let after_pulls = processed.resource.pulls_data_from();
+    let after_pushes = processed.resource.pushes_data_to();
+    let setup_op = run_setup_sql_operation(&processed.resource, after_pulls, after_pushes);
 
     let mut plan = OperationPlan::new();
     plan.teardown_ops.push(teardown_op);
@@ -701,6 +722,33 @@ fn handle_sql_resource_update(before: &SqlResource, after: &SqlResource) -> Oper
 pub fn order_olap_changes(
     changes: &[OlapChange],
 ) -> Result<(Vec<AtomicOlapOperation>, Vec<AtomicOlapOperation>), PlanOrderingError> {
+    order_olap_changes_with_db(changes, None)
+}
+
+/// Orders OLAP changes with database context for proper SQL generation
+pub fn order_olap_changes_with_db(
+    changes: &[OlapChange],
+    database: Option<&str>,
+) -> Result<(Vec<AtomicOlapOperation>, Vec<AtomicOlapOperation>), PlanOrderingError> {
+    // First, collect all tables from the changes to provide context for SQL resource processing
+    let mut tables = HashMap::new();
+    for change in changes {
+        if let OlapChange::Table(table_change) = change {
+            match table_change {
+                TableChange::Added(table) => {
+                    tables.insert(table.name.clone(), table.clone());
+                }
+                TableChange::Updated { after, .. } => {
+                    tables.insert(after.name.clone(), after.clone());
+                }
+                TableChange::Removed(table) => {
+                    // Keep removed tables for context during teardown
+                    tables.insert(table.name.clone(), table.clone());
+                }
+            }
+        }
+    }
+
     // Process each change to get atomic operations
     let mut plan = OperationPlan::new();
 
@@ -721,13 +769,13 @@ pub fn order_olap_changes(
                 handle_view_update(before, after)
             }
             OlapChange::SqlResource(Change::Added(boxed_resource)) => {
-                handle_sql_resource_add(boxed_resource)
+                handle_sql_resource_add(boxed_resource, &tables, database)
             }
             OlapChange::SqlResource(Change::Removed(boxed_resource)) => {
                 handle_sql_resource_remove(boxed_resource)
             }
             OlapChange::SqlResource(Change::Updated { before, after }) => {
-                handle_sql_resource_update(before, after)
+                handle_sql_resource_update(before, after, &tables, database)
             }
         };
 
