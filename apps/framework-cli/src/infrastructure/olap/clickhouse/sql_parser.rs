@@ -79,41 +79,57 @@ pub enum SqlParseError {
 pub fn parse_create_materialized_view(
     sql: &str,
 ) -> Result<MaterializedViewStatement, SqlParseError> {
-    use regex::Regex;
+    let dialect = ClickHouseDialect {};
+    let ast = Parser::parse_sql(&dialect, sql)?;
 
-    // ClickHouse-specific CREATE MATERIALIZED VIEW syntax with TO clause
-    let re = Regex::new(
-        r"(?i)CREATE\s+MATERIALIZED\s+VIEW\s+(?:(IF\s+NOT\s+EXISTS)\s+)?(?:(?:`([^`]+)`|([a-zA-Z_][a-zA-Z0-9_]*))\.)?(?:`([^`]+)`|([a-zA-Z_][a-zA-Z0-9_]*))\s+TO\s+(?:(?:`([^`]+)`|([a-zA-Z_][a-zA-Z0-9_]*))\.)?(?:`([^`]+)`|([a-zA-Z_][a-zA-Z0-9_]*))\s+(?:(POPULATE)\s+)?AS\s+(.*)"
-    ).unwrap();
+    if ast.len() != 1 {
+        return Err(SqlParseError::NotMaterializedView);
+    }
 
-    if let Some(caps) = re.captures(sql) {
-        let if_not_exists = caps.get(1).is_some();
-
-        // Extract view name (database.view or just view)
-        let _view_database = caps.get(2).or(caps.get(3)).map(|m| m.as_str().to_string());
-        let view_name = caps.get(4).or(caps.get(5)).unwrap().as_str().to_string();
-
-        // Extract target table (database.table or just table)
-        let target_database = caps.get(6).or(caps.get(7)).map(|m| m.as_str().to_string());
-        let target_table = caps.get(8).or(caps.get(9)).unwrap().as_str().to_string();
-
-        let populate = caps.get(10).is_some();
-        let select_statement = caps.get(11).unwrap().as_str().to_string();
-
-        // Parse the SELECT statement to extract source tables
-        let source_tables = parse_select_source_tables(&select_statement)?;
-
-        Ok(MaterializedViewStatement {
-            view_name,
-            target_database,
-            target_table,
-            select_statement,
-            source_tables,
+    match &ast[0] {
+        Statement::CreateView {
+            name,
+            materialized,
             if_not_exists,
-            populate,
-        })
-    } else {
-        Err(SqlParseError::NotMaterializedView)
+            to,
+            query,
+            ..
+        } => {
+            if !materialized {
+                return Err(SqlParseError::NotMaterializedView);
+            }
+
+            // Extract view name
+            let view_name = extract_table_name_from_object_name(name);
+
+            // Extract target table from TO clause
+            let (target_database, target_table) = if let Some(to_table) = to {
+                let qualified_name = object_name_to_string(to_table);
+                split_qualified_name(&qualified_name)
+            } else {
+                return Err(SqlParseError::MissingField(
+                    "TO clause is required for ClickHouse materialized views".to_string(),
+                ));
+            };
+
+            // Check for POPULATE keyword by scanning the original SQL
+            // The sqlparser might not preserve this ClickHouse-specific keyword
+            let populate = sql.to_uppercase().contains("POPULATE");
+
+            let select_statement = format!("{}", query);
+            let source_tables = extract_source_tables_from_query(query)?;
+
+            Ok(MaterializedViewStatement {
+                view_name,
+                target_database,
+                target_table,
+                select_statement,
+                source_tables,
+                if_not_exists: *if_not_exists,
+                populate,
+            })
+        }
+        _ => Err(SqlParseError::NotMaterializedView),
     }
 }
 
@@ -160,14 +176,28 @@ pub fn is_insert_select(sql: &str) -> bool {
 }
 
 pub fn is_materialized_view(sql: &str) -> bool {
-    use regex::Regex;
-    let re = Regex::new(r"(?i)CREATE\s+MATERIALIZED\s+VIEW").unwrap();
-    re.is_match(sql)
+    let dialect = ClickHouseDialect {};
+    if let Ok(ast) = Parser::parse_sql(&dialect, sql) {
+        if ast.len() == 1 {
+            if let Statement::CreateView { materialized, .. } = &ast[0] {
+                return *materialized;
+            }
+        }
+    }
+    false
 }
 
 fn object_name_to_string(name: &ObjectName) -> String {
     // Use Display trait and strip backticks
     format!("{}", name).replace('`', "")
+}
+
+fn extract_table_name_from_object_name(name: &ObjectName) -> String {
+    // For a qualified name like `db.table`, we want just the table name
+    // Use the existing split_qualified_name function to extract the table part
+    let qualified_name = object_name_to_string(name);
+    let (_database, table_name) = split_qualified_name(&qualified_name);
+    table_name
 }
 
 fn split_qualified_name(name: &str) -> (Option<String>, String) {
@@ -177,26 +207,6 @@ fn split_qualified_name(name: &str) -> (Option<String>, String) {
         (Some(database), table)
     } else {
         (None, name.to_string())
-    }
-}
-
-fn parse_select_source_tables(select_sql: &str) -> Result<Vec<TableReference>, SqlParseError> {
-    // Use the generic SQL parser for the SELECT statement
-    let dialect = ClickHouseDialect {};
-    let ast = Parser::parse_sql(&dialect, select_sql)?;
-
-    if let Some(Statement::Query(query)) = ast.first() {
-        extract_source_tables_from_query(query)
-    } else {
-        // Try wrapping in a query if it's just a SELECT without being wrapped
-        let wrapped_sql = format!("({})", select_sql);
-        let ast = Parser::parse_sql(&dialect, &wrapped_sql)?;
-
-        if let Some(Statement::Query(query)) = ast.first() {
-            extract_source_tables_from_query(query)
-        } else {
-            Ok(Vec::new())
-        }
     }
 }
 
