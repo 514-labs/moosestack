@@ -266,7 +266,8 @@ networks:
       - temporal-network
     ports:
       - ${TEMPORAL_UI_PORT:-8080}:8080
+{{/if}}
 
 networks:
-  temporal-network: null
-{{/if}}
+  temporal-network:
+  clickhouse-network:
