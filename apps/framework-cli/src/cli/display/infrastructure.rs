@@ -238,7 +238,7 @@ fn format_table_display(
 
     // Engine section (if present)
     if let Some(ref engine) = table.engine {
-        details.push(format!("Engine: {}", engine));
+        details.push(format!("Engine: {}", Into::<String>::into(engine.clone())));
     }
 
     (title, details)

@@ -1,4 +1,5 @@
 use handlebars::{no_escape, Handlebars};
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
 use crate::framework::core::infrastructure::table::EnumValue;
@@ -102,17 +103,48 @@ CREATE TABLE IF NOT EXISTS `{{db_name}}`.`{{table_name}}`
 {{#each fields}} `{{field_name}}` {{{field_type}}} {{field_nullable}}{{#if field_default}} DEFAULT {{{field_default}}}{{/if}}{{#if field_comment}} COMMENT '{{{field_comment}}}'{{/if}}{{#unless @last}},{{/unless}}
 {{/each}}
 )
-ENGINE = {{engine}}
-{{#if primary_key_string}}PRIMARY KEY ({{primary_key_string}}){{/if}}
-{{#if order_by_string}}ORDER BY ({{order_by_string}}){{/if}}
-"#;
+ENGINE = {{engine}}{{#if primary_key_string}}
+PRIMARY KEY ({{primary_key_string}}){{/if}}{{#if order_by_string}}
+ORDER BY ({{order_by_string}}){{/if}}{{#if settings}}
+SETTINGS {{settings}}{{/if}}"#;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum ClickhouseEngine {
     MergeTree,
     ReplacingMergeTree,
     AggregatingMergeTree,
     SummingMergeTree,
+    S3Queue {
+        s3_path: String,
+        format: String,
+        // Optional S3 access credentials - can be NOSIGN for public buckets
+        aws_access_key_id: Option<String>,
+        aws_secret_access_key: Option<String>,
+        // Optional compression
+        compression: Option<String>,
+        // Optional headers
+        headers: Option<Box<std::collections::HashMap<String, String>>>,
+        settings: Box<std::collections::HashMap<String, String>>,
+    },
+}
+
+// The implementation is not symetric between TryFrom and Into so we
+// need to allow this clippy warning
+#[allow(clippy::from_over_into)]
+impl Into<String> for ClickhouseEngine {
+    fn into(self) -> String {
+        match self {
+            ClickhouseEngine::MergeTree => "MergeTree".to_string(),
+            ClickhouseEngine::ReplacingMergeTree => "ReplacingMergeTree".to_string(),
+            ClickhouseEngine::AggregatingMergeTree => "AggregatingMergeTree".to_string(),
+            ClickhouseEngine::SummingMergeTree => "SummingMergeTree".to_string(),
+            ClickhouseEngine::S3Queue {
+                s3_path, format, ..
+            } => {
+                format!("S3Queue('{}', '{}')", s3_path, format)
+            }
+        }
+    }
 }
 
 impl<'a> TryFrom<&'a str> for ClickhouseEngine {
@@ -129,6 +161,28 @@ impl<'a> TryFrom<&'a str> for ClickhouseEngine {
             "ReplacingMergeTree" => Ok(ClickhouseEngine::ReplacingMergeTree),
             "AggregatingMergeTree" => Ok(ClickhouseEngine::AggregatingMergeTree),
             "SummingMergeTree" => Ok(ClickhouseEngine::SummingMergeTree),
+            s if s.starts_with("S3Queue(") => {
+                // Parse S3Queue('path', 'format') format
+                // This is a simplified parser - in practice, this would be more robust
+                if let Some(content) = s.strip_prefix("S3Queue(").and_then(|s| s.strip_suffix(")"))
+                {
+                    let parts: Vec<&str> = content.split(", ").collect();
+                    if parts.len() >= 2 {
+                        let path = parts[0].trim_matches('\'');
+                        let format = parts[1].trim_matches('\'');
+                        return Ok(ClickhouseEngine::S3Queue {
+                            s3_path: path.to_string(),
+                            format: format.to_string(),
+                            aws_access_key_id: None,
+                            aws_secret_access_key: None,
+                            compression: None,
+                            headers: None,
+                            settings: Box::new(std::collections::HashMap::new()),
+                        });
+                    }
+                }
+                Err(value)
+            }
             _ => Err(value),
         }
     }
@@ -141,18 +195,62 @@ pub fn create_table_query(
     let mut reg = Handlebars::new();
     reg.register_escape_fn(no_escape);
 
-    let engine = match table.engine {
-        ClickhouseEngine::MergeTree => "MergeTree",
+    let (engine, settings) = match &table.engine {
+        ClickhouseEngine::MergeTree => ("MergeTree".to_string(), None),
         ClickhouseEngine::ReplacingMergeTree => {
             if table.order_by.is_empty() {
                 return Err(ClickhouseError::InvalidParameters {
                     message: "ReplacingMergeTree requires an order by clause".to_string(),
                 });
             }
-            "ReplacingMergeTree"
+            ("ReplacingMergeTree".to_string(), None)
         }
-        ClickhouseEngine::AggregatingMergeTree => "AggregatingMergeTree",
-        ClickhouseEngine::SummingMergeTree => "SummingMergeTree",
+        ClickhouseEngine::AggregatingMergeTree => ("AggregatingMergeTree".to_string(), None),
+        ClickhouseEngine::SummingMergeTree => ("SummingMergeTree".to_string(), None),
+        ClickhouseEngine::S3Queue {
+            s3_path,
+            format,
+            aws_access_key_id,
+            aws_secret_access_key,
+            compression,
+            headers: _headers, // TODO: Handle headers in future if needed
+            settings: engine_settings,
+        } => {
+            // Build the engine string based on available parameters
+            let mut engine_parts = vec![format!("'{}'", s3_path)];
+
+            // Handle credentials - either NOSIGN or actual credentials
+            if let (Some(key_id), Some(secret)) = (aws_access_key_id, aws_secret_access_key) {
+                engine_parts.push(format!("'{}'", key_id));
+                engine_parts.push(format!("'{}'", secret));
+            } else {
+                engine_parts.push("'NOSIGN'".to_string());
+            }
+
+            engine_parts.push(format!("'{}'", format));
+
+            // Add compression if specified
+            if let Some(comp) = compression {
+                engine_parts.push(format!("'{}'", comp));
+            }
+
+            let engine_str = format!("S3Queue({})", engine_parts.join(", "));
+            let settings_str = if !engine_settings.is_empty() {
+                let mut settings_pairs: Vec<(String, String)> = engine_settings
+                    .iter()
+                    .map(|(key, value)| (key.clone(), value.clone()))
+                    .collect();
+                settings_pairs.sort_by(|a, b| a.0.cmp(&b.0)); // Sort by key for deterministic order
+                let settings_strs: Vec<String> = settings_pairs
+                    .iter()
+                    .map(|(key, value)| format!("{} = '{}'", key, value))
+                    .collect();
+                Some(settings_strs.join(", "))
+            } else {
+                None
+            };
+            (engine_str, settings_str)
+        }
     };
 
     let primary_key = table
@@ -178,7 +276,8 @@ pub fn create_table_query(
         } else {
             None
         },
-        "engine": engine
+        "engine": engine,
+        "settings": settings
     });
 
     Ok(reg.render_template(CREATE_TABLE_TEMPLATE, &template_context)?)
@@ -678,6 +777,103 @@ CREATE TABLE IF NOT EXISTS `test_db`.`test_table`
 ENGINE = MergeTree
 PRIMARY KEY (`id`)
 ORDER BY (`id`) "#;
+        assert_eq!(query.trim(), expected.trim());
+    }
+
+    #[test]
+    fn test_create_table_query_s3queue() {
+        let mut settings = std::collections::HashMap::new();
+        settings.insert("mode".to_string(), "unordered".to_string());
+        settings.insert(
+            "keeper_path".to_string(),
+            "/clickhouse/s3queue/test_table".to_string(),
+        );
+        settings.insert("s3queue_loading_retries".to_string(), "3".to_string());
+
+        let table = ClickHouseTable {
+            version: Some(Version::from_string("1".to_string())),
+            name: "test_table".to_string(),
+            columns: vec![
+                ClickHouseColumn {
+                    name: "id".to_string(),
+                    column_type: ClickHouseColumnType::ClickhouseInt(ClickHouseInt::Int32),
+                    required: true,
+                    primary_key: true,
+                    unique: false,
+                    default: None,
+                    comment: None,
+                },
+                ClickHouseColumn {
+                    name: "data".to_string(),
+                    column_type: ClickHouseColumnType::String,
+                    required: true,
+                    primary_key: false,
+                    unique: false,
+                    default: None,
+                    comment: None,
+                },
+            ],
+            order_by: vec![],
+            engine: ClickhouseEngine::S3Queue {
+                s3_path: "s3://my-bucket/data/*.json".to_string(),
+                format: "JSONEachRow".to_string(),
+                aws_access_key_id: None,
+                aws_secret_access_key: None,
+                compression: None,
+                headers: None,
+                settings: Box::new(settings),
+            },
+        };
+
+        let query = create_table_query("test_db", table).unwrap();
+        let expected = r#"
+CREATE TABLE IF NOT EXISTS `test_db`.`test_table`
+(
+ `id` Int32 NOT NULL,
+ `data` String NOT NULL
+)
+ENGINE = S3Queue('s3://my-bucket/data/*.json', 'NOSIGN', 'JSONEachRow')
+PRIMARY KEY (`id`)
+SETTINGS keeper_path = '/clickhouse/s3queue/test_table', mode = 'unordered', s3queue_loading_retries = '3'"#;
+        assert_eq!(query.trim(), expected.trim());
+    }
+
+    #[test]
+    fn test_create_table_query_s3queue_without_settings() {
+        let settings = std::collections::HashMap::new();
+
+        let table = ClickHouseTable {
+            version: Some(Version::from_string("1".to_string())),
+            name: "test_table".to_string(),
+            columns: vec![ClickHouseColumn {
+                name: "id".to_string(),
+                column_type: ClickHouseColumnType::ClickhouseInt(ClickHouseInt::Int32),
+                required: true,
+                primary_key: true,
+                unique: false,
+                default: None,
+                comment: None,
+            }],
+            order_by: vec![],
+            engine: ClickhouseEngine::S3Queue {
+                s3_path: "s3://my-bucket/data/*.csv".to_string(),
+                format: "CSV".to_string(),
+                aws_access_key_id: None,
+                aws_secret_access_key: None,
+                compression: None,
+                headers: None,
+                settings: Box::new(settings),
+            },
+        };
+
+        let query = create_table_query("test_db", table).unwrap();
+        let expected = r#"
+CREATE TABLE IF NOT EXISTS `test_db`.`test_table`
+(
+ `id` Int32 NOT NULL
+)
+ENGINE = S3Queue('s3://my-bucket/data/*.csv', 'NOSIGN', 'CSV')
+PRIMARY KEY (`id`)"#;
         assert_eq!(query.trim(), expected.trim());
     }
 }

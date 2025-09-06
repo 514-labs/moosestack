@@ -46,8 +46,26 @@ Changes that require user action or may break existing usage.
 ## 2025-08-21
 
 <ReleaseHighlights>
-  - **Analytics API Standardization** - Standardized naming of classes and utilities for analytics APIs 
+  - **Analytics API Standardization** — Standardized naming of classes and utilities for analytics APIs
+  - **Complete S3Queue Engine Support** — Full implementation of ClickHouse S3Queue engine with comprehensive parameter support, modular architecture, and generic settings framework.
 </ReleaseHighlights>
+
+<Added>
+  - **S3Queue Engine Configuration** — Added complete support for all ClickHouse S3Queue engine parameters including authentication (`aws_access_key_id`, `aws_secret_access_key`), compression, custom headers, and NOSIGN for public buckets. [PR #2674](https://github.com/514-labs/moosestack/pull/2674) 
+  - **Generic Settings Framework** — Introduced a flexible settings system that allows any engine to use configuration settings, laying groundwork for future engine implementations.
+  - **Enhanced Documentation** — Added comprehensive documentation for OlapTable S3Queue configuration in both TypeScript and Python SDKs.
+</Added>
+
+<Changed>
+  - **Improved Architecture** — Moved ClickHouse-specific types from core infrastructure to ClickHouse module for better separation of concerns.
+  - **Settings Location** — Engine-specific settings are now properly encapsulated within their respective engine configurations (e.g., `s3QueueEngineConfig.settings` for S3Queue).
+  - **API Consistency** — Unified configuration APIs across TypeScript and Python SDKs for S3Queue engine.
+</Changed>
+
+<Fixed>
+  - **Compilation Issues** — Fixed struct patterns to handle new S3Queue parameter structure correctly.
+  - **Diff Strategy** — Enhanced diff strategy to properly handle S3Queue parameter changes.
+</Fixed>
 
 <BreakingChanges>
  - `ConsumptionApi` renamed to `Api`
@@ -57,8 +75,6 @@ Changes that require user action or may break existing usage.
  
     *[#2676](https://github.com/514-labs/moosestack/pull/2676) by [camelCasedAditya](https://github.com/camelCasedAditya)*
 </BreakingChanges>
-
----
 
 ## 2025-06-12
 

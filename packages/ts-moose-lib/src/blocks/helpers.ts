@@ -42,6 +42,7 @@ export enum ClickHouseEngines {
   CollapsingMergeTree = "CollapsingMergeTree",
   VersionedCollapsingMergeTree = "VersionedCollapsingMergeTree",
   GraphiteMergeTree = "GraphiteMergeTree",
+  S3Queue = "S3Queue",
 }
 
 /**
@@ -63,6 +64,12 @@ export function createMaterializedView(
 }
 
 /**
+ * @deprecated Population of tables is now handled automatically by the Rust infrastructure.
+ * This function is kept for backwards compatibility but will be ignored.
+ * The framework now intelligently determines when to populate based on:
+ * - Whether the materialized view is new or being replaced
+ * - Whether the source is an S3Queue table (which doesn't support SELECT)
+ *
  * Populates a table with data.
  */
 export function populateTable(options: PopulateTableOptions): string {
