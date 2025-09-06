@@ -1,4 +1,5 @@
 use handlebars::{no_escape, Handlebars};
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
 use crate::framework::core::infrastructure::table::EnumValue;
@@ -102,17 +103,31 @@ CREATE TABLE IF NOT EXISTS `{{db_name}}`.`{{table_name}}`
 {{#each fields}} `{{field_name}}` {{{field_type}}} {{field_nullable}}{{#if field_default}} DEFAULT {{{field_default}}}{{/if}}{{#if field_comment}} COMMENT '{{{field_comment}}}'{{/if}}{{#unless @last}},{{/unless}}
 {{/each}}
 )
-ENGINE = {{engine}}
-{{#if primary_key_string}}PRIMARY KEY ({{primary_key_string}}){{/if}}
-{{#if order_by_string}}ORDER BY ({{order_by_string}}){{/if}}
-"#;
+ENGINE = {{engine}}{{#if primary_key_string}}
+PRIMARY KEY ({{primary_key_string}}){{/if}}{{#if order_by_string}}
+ORDER BY ({{order_by_string}}){{/if}}{{#if settings}}
+SETTINGS {{settings}}{{/if}}"#;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum ClickhouseEngine {
     MergeTree,
     ReplacingMergeTree,
     AggregatingMergeTree,
     SummingMergeTree,
+}
+
+// The implementation is not symetric between TryFrom and Into so we
+// need to allow this clippy warning
+#[allow(clippy::from_over_into)]
+impl Into<String> for ClickhouseEngine {
+    fn into(self) -> String {
+        match self {
+            ClickhouseEngine::MergeTree => "MergeTree".to_string(),
+            ClickhouseEngine::ReplacingMergeTree => "ReplacingMergeTree".to_string(),
+            ClickhouseEngine::AggregatingMergeTree => "AggregatingMergeTree".to_string(),
+            ClickhouseEngine::SummingMergeTree => "SummingMergeTree".to_string(),
+        }
+    }
 }
 
 impl<'a> TryFrom<&'a str> for ClickhouseEngine {
@@ -141,18 +156,18 @@ pub fn create_table_query(
     let mut reg = Handlebars::new();
     reg.register_escape_fn(no_escape);
 
-    let engine = match table.engine {
-        ClickhouseEngine::MergeTree => "MergeTree",
+    let (engine, settings) = match &table.engine {
+        ClickhouseEngine::MergeTree => ("MergeTree".to_string(), None),
         ClickhouseEngine::ReplacingMergeTree => {
             if table.order_by.is_empty() {
                 return Err(ClickhouseError::InvalidParameters {
                     message: "ReplacingMergeTree requires an order by clause".to_string(),
                 });
             }
-            "ReplacingMergeTree"
+            ("ReplacingMergeTree".to_string(), None)
         }
-        ClickhouseEngine::AggregatingMergeTree => "AggregatingMergeTree",
-        ClickhouseEngine::SummingMergeTree => "SummingMergeTree",
+        ClickhouseEngine::AggregatingMergeTree => ("AggregatingMergeTree".to_string(), None),
+        ClickhouseEngine::SummingMergeTree => ("SummingMergeTree".to_string(), None),
     };
 
     let primary_key = table
@@ -178,7 +193,8 @@ pub fn create_table_query(
         } else {
             None
         },
-        "engine": engine
+        "engine": engine,
+        "settings": settings
     });
 
     Ok(reg.render_template(CREATE_TABLE_TEMPLATE, &template_context)?)
