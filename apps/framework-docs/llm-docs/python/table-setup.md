@@ -25,17 +25,40 @@ user_event_table = OlapTable(
 
 ## Table Configuration
 
-The `OlapTable` class accepts the following configuration:
+The `OlapTable` class supports both a modern engine-specific API and legacy configuration for backward compatibility.
+
+### Modern API (Recommended)
+
+```python
+from moose_lib import (
+    TableConfig, 
+    MergeTreeEngine, 
+    ReplacingMergeTreeEngine,
+    S3QueueEngine
+)
+
+# Modern configuration with engine-specific classes
+config = TableConfig(
+    name="MyTable",
+    columns={"id": "String", "value": "Int64"},
+    engine=MergeTreeEngine(),  # or ReplacingMergeTreeEngine(), S3QueueEngine(...), etc.
+    order_by="id"
+)
+```
+
+### Legacy API (Still Supported)
 
 ```python
 from typing import TypedDict, Optional, List
+from moose_lib import ClickHouseEngines, S3QueueEngineConfig
 
-class TableConfig(TypedDict):
+class TableCreateOptions(TypedDict):
     name: str            # Required: Name of the table
     order_by_fields: List[str]  # Required: Fields to order by
     partition_by: Optional[str] = None  # Optional: Partition expression
     ttl: Optional[int] = None   # Optional: Time-to-live in seconds
-    settings: Optional[dict] = None  # Optional: Table settings
+    engine: Optional[ClickHouseEngines] = None  # Optional: Table engine (default: MergeTree)
+    s3_queue_engine_config: Optional[S3QueueEngineConfig] = None  # Required when engine is S3Queue
 ```
 
 ## Table Operations
@@ -229,4 +252,138 @@ stats = await analytics_table.query({
     "group_by": ["action"],
     "order_by": ["count DESC"]
 })
-``` 
+```
+
+### S3Queue Engine Tables
+
+The S3Queue engine enables automatic processing of files from S3 buckets as they arrive.
+
+#### Modern API (Recommended)
+
+```python
+from moose_lib import TableConfig, S3QueueEngine, OlapTable, Key
+from pydantic import BaseModel
+
+class S3Event(BaseModel):
+    id: Key[str]
+    event_type: str
+    timestamp: str
+    data: dict
+
+# Option 1: Direct configuration with new API
+s3_events_config = TableConfig(
+    name="S3EventsTable",
+    columns={"id": "String", "event_type": "String", "timestamp": "DateTime", "data": "JSON"},
+    engine=S3QueueEngine(
+        s3_path="s3://my-bucket/events/*.json",
+        format="JSONEachRow",
+        # Optional authentication (omit for public buckets)
+        aws_access_key_id="AKIA...",
+        aws_secret_access_key="secret...",
+        # Optional compression
+        compression="gzip",
+        # Engine-specific settings
+        s3_settings={
+            "mode": "unordered",  # or "ordered" for sequential processing
+            "keeper_path": "/clickhouse/s3queue/s3_events",
+            "s3queue_loading_retries": 3,
+            "s3queue_processing_threads_num": 4,
+            # Additional settings as needed
+        }
+    ),
+    order_by="id, timestamp"
+)
+
+# Option 2: Using factory method (cleanest approach)
+s3_events_table = TableConfig.with_s3_queue(
+    name="S3EventsTable",
+    columns={"id": "String", "event_type": "String", "timestamp": "DateTime", "data": "JSON"},
+    s3_path="s3://my-bucket/events/*.json",
+    format="JSONEachRow",
+    order_by="id, timestamp",
+    aws_access_key_id="AKIA...",
+    aws_secret_access_key="secret...",
+    compression="gzip",
+    s3_settings={
+        "mode": "unordered",
+        "keeper_path": "/clickhouse/s3queue/s3_events"
+    }
+)
+
+# Public S3 bucket example (no credentials needed)
+public_s3_table = TableConfig.with_s3_queue(
+    name="PublicS3DataTable",
+    columns={"id": "String", "data": "String"},
+    s3_path="s3://public-bucket/data/*.csv",
+    format="CSV",
+    order_by="id",
+    # No AWS credentials for public buckets
+    s3_settings={
+        "mode": "ordered",
+        "keeper_path": "/clickhouse/s3queue/public_data"
+    }
+)
+```
+
+#### Legacy API (Still Supported)
+
+```python
+from moose_lib import OlapTable, ClickHouseEngines, S3QueueEngineConfig
+
+# Legacy configuration format (will show deprecation warning)
+s3_events_legacy = OlapTable(
+    name="S3EventsTable",
+    order_by_fields=["id", "timestamp"],
+    engine=ClickHouseEngines.S3Queue,
+    s3_queue_engine_config=S3QueueEngineConfig(
+        path="s3://my-bucket/events/*.json",
+        format="JSONEachRow",
+        aws_access_key_id="AKIA...",
+        aws_secret_access_key="secret...",
+        compression="gzip",
+        settings={
+            "mode": "unordered",
+            "keeper_path": "/clickhouse/s3queue/s3_events",
+            "s3queue_loading_retries": 3
+        }
+    )
+)
+```
+
+#### S3Queue Configuration Options
+
+```python
+from dataclasses import dataclass
+from typing import Optional, Dict, Any
+
+@dataclass
+class S3QueueEngineConfig:
+    path: str  # S3 path pattern (e.g., 's3://bucket/data/*.json')
+    format: str  # Data format (e.g., 'JSONEachRow', 'CSV', 'Parquet')
+    aws_access_key_id: Optional[str] = None  # AWS access key or 'NOSIGN' for public buckets
+    aws_secret_access_key: Optional[str] = None  # AWS secret key (paired with access key)
+    compression: Optional[str] = None  # Optional: 'gzip', 'brotli', 'xz', 'zstd', etc.
+    headers: Optional[Dict[str, str]] = None  # Optional: custom HTTP headers
+    settings: Optional[Dict[str, Any]] = None  # Engine-specific settings:
+    # - mode: 'ordered' | 'unordered' - Processing mode
+    # - keeper_path: str - ZooKeeper/Keeper path for coordination
+    # - s3queue_loading_retries: int - Number of retry attempts
+    # - s3queue_processing_threads_num: int - Number of processing threads
+    # - s3queue_polling_min_timeout_ms: int - Min polling timeout
+    # - s3queue_polling_max_timeout_ms: int - Max polling timeout
+    # - s3queue_polling_backoff_ms: int - Polling backoff
+    # - s3queue_track_processed_files: bool - Track processed files
+    # - s3queue_cleanup_interval_min_age: int - Cleanup interval min age
+    # - s3queue_cleanup_interval_max_age: int - Cleanup interval max age
+    # - s3queue_total_max_retries: int - Total max retries
+    # - s3queue_max_processed_files_before_commit: int - Max files before commit
+    # - s3queue_max_processed_rows_before_commit: int - Max rows before commit
+    # - s3queue_max_processed_bytes_before_commit: int - Max bytes before commit
+```
+
+#### Use Cases for S3Queue
+
+1. **Real-time log processing**: Automatically process log files as they're uploaded to S3
+2. **Data ingestion pipelines**: Continuously ingest data from S3 without manual intervention
+3. **Event streaming**: Process event streams stored in S3 buckets
+4. **ETL workflows**: Build automated ETL pipelines with S3 as the source 

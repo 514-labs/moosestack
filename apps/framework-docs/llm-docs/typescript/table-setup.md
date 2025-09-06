@@ -14,14 +14,27 @@ export const Example = new OlapTable("Example");
 
 ## Table Configuration Options
 
-The `OlapTable` class accepts the following configuration options:
+The `OlapTable` class supports both a modern discriminated union API and legacy configuration for backward compatibility.
+
+### Modern API (Recommended)
 
 ```typescript
-type OlapConfig<T> = {
-  orderByFields?: (keyof T & string)[];  // Fields to order by (must not be nullable)
-  engine?: ClickHouseEngines;            // ClickHouseEngines.ReplacingMergeTree deuplicates records
-};
+// Engine-specific configurations with type safety
+type OlapConfig<T> = 
+  | { engine: ClickHouseEngines.MergeTree; orderByFields?: (keyof T & string)[]; }
+  | { engine: ClickHouseEngines.ReplacingMergeTree; orderByFields?: (keyof T & string)[]; }
+  | { 
+      engine: ClickHouseEngines.S3Queue;
+      s3Path: string;        // S3 bucket path
+      format: string;        // Data format
+      awsAccessKeyId?: string;
+      awsSecretAccessKey?: string;
+      orderByFields?: (keyof T & string)[];
+      s3Settings?: { ... };  // S3Queue-specific settings
+    };
 ```
+
+
 
 ### Key Requirements
 
@@ -117,6 +130,127 @@ export const Versioned = new OlapTable("Versioned", {
   engine: ClickHouseEngines.ReplacingMergeTree,
   orderByFields: ["id", "version", "updatedAt"]  // Key field must be first
 });
+```
+
+### S3Queue Engine Tables
+
+The S3Queue engine allows you to automatically process files from S3 buckets as they arrive.
+
+#### Modern API (Recommended)
+
+```typescript
+import { OlapTable, ClickHouseEngines } from '@514labs/moose-lib';
+
+// Schema for S3 data
+interface S3EventSchema {
+  id: Key<string>;
+  event_type: string;
+  timestamp: Date;
+  data: any;
+}
+
+// Option 1: Direct configuration with new API
+export const S3Events = new OlapTable("S3Events", {
+  engine: ClickHouseEngines.S3Queue,
+  s3Path: "s3://my-bucket/events/*.json",
+  format: "JSONEachRow",
+  // Optional authentication (omit for public buckets)
+  awsAccessKeyId: "AKIA...",
+  awsSecretAccessKey: "secret...",
+  // Optional compression
+  compression: "gzip",
+  // Engine-specific settings
+  s3Settings: {
+    mode: "unordered",  // or "ordered" for sequential processing
+    keeper_path: "/clickhouse/s3queue/s3_events",
+    s3queue_loading_retries: 3,
+    s3queue_processing_threads_num: 4,
+    // Additional settings as needed
+  },
+  orderByFields: ["id", "timestamp"]
+});
+
+// Option 2: Using factory method (cleanest approach)
+export const S3EventsFactory = OlapTable.withS3Queue<S3EventSchema>(
+  "S3Events",
+  "s3://my-bucket/events/*.json",
+  "JSONEachRow",
+  {
+    awsAccessKeyId: "AKIA...",
+    awsSecretAccessKey: "secret...",
+    compression: "gzip",
+    s3Settings: {
+      mode: "unordered",
+      keeper_path: "/clickhouse/s3queue/s3_events"
+    },
+    orderByFields: ["id", "timestamp"]
+  }
+);
+
+// Public S3 bucket example (no credentials needed)
+export const PublicS3Data = OlapTable.withS3Queue<any>(
+  "PublicS3Data",
+  "s3://public-bucket/data/*.csv",
+  "CSV",
+  {
+    // No AWS credentials for public buckets
+    s3Settings: {
+      mode: "ordered",
+      keeper_path: "/clickhouse/s3queue/public_data"
+    }
+  }
+);
+```
+
+#### Legacy API (Still Supported)
+
+```typescript
+// Legacy configuration format (will show deprecation warning)
+export const S3EventsLegacy = new OlapTable("S3Events", {
+  engine: ClickHouseEngines.S3Queue,
+  s3QueueEngineConfig: {
+    path: "s3://my-bucket/events/*.json",
+    format: "JSONEachRow",
+    aws_access_key_id: "AKIA...",
+    aws_secret_access_key: "secret...",
+    compression: "gzip",
+    settings: {
+      mode: "unordered",
+      keeper_path: "/clickhouse/s3queue/s3_events",
+      s3queue_loading_retries: 3
+    }
+  }
+});
+```
+
+#### S3Queue Configuration Options
+
+```typescript
+interface S3QueueEngineConfig {
+  path: string;                    // S3 path pattern (e.g., 's3://bucket/data/*.json')
+  format: string;                  // Data format (e.g., 'JSONEachRow', 'CSV', 'Parquet')
+  aws_access_key_id?: string;      // AWS access key or 'NOSIGN' for public buckets
+  aws_secret_access_key?: string;  // AWS secret key (paired with access key)
+  compression?: string;            // Optional: 'gzip', 'brotli', 'xz', 'zstd', etc.
+  headers?: { [key: string]: string }; // Optional: custom HTTP headers
+  settings?: {
+    mode?: "ordered" | "unordered";           // Processing mode
+    keeper_path?: string;                      // ZooKeeper/Keeper path for coordination
+    s3queue_loading_retries?: number;         // Number of retry attempts
+    s3queue_processing_threads_num?: number;  // Number of processing threads
+    s3queue_polling_min_timeout_ms?: number;  // Min polling timeout
+    s3queue_polling_max_timeout_ms?: number;  // Max polling timeout
+    s3queue_polling_backoff_ms?: number;      // Polling backoff
+    s3queue_track_processed_files?: boolean;  // Track processed files
+    s3queue_cleanup_interval_min_age?: number; // Cleanup interval min age
+    s3queue_cleanup_interval_max_age?: number; // Cleanup interval max age
+    s3queue_total_max_retries?: number;       // Total max retries
+    s3queue_max_processed_files_before_commit?: number; // Max files before commit
+    s3queue_max_processed_rows_before_commit?: number;  // Max rows before commit
+    s3queue_max_processed_bytes_before_commit?: number; // Max bytes before commit
+    [key: string]: any;                       // Additional settings
+  };
+}
 ```
 
 ## Best Practices

@@ -47,6 +47,7 @@ use crate::{
         consumption::model::ConsumptionQueryParam, languages::SupportedLanguages,
         scripts::Workflow, versions::Version,
     },
+    infrastructure::olap::clickhouse::queries::ClickhouseEngine,
     utilities::constants,
 };
 
@@ -100,15 +101,51 @@ impl LifeCycle {
 ///
 /// This structure captures the essential properties needed to create a table in the infrastructure,
 /// including column definitions, ordering, and deduplication settings.
+/// Engine-specific configuration using discriminated union pattern.
+/// This provides type-safe deserialization of engine configurations from TypeScript.
+#[derive(Debug, Deserialize)]
+#[serde(tag = "engine", rename_all = "camelCase")]
+enum EngineConfig {
+    #[serde(rename = "MergeTree")]
+    MergeTree {},
+
+    #[serde(rename = "ReplacingMergeTree")]
+    ReplacingMergeTree {},
+
+    #[serde(rename = "AggregatingMergeTree")]
+    AggregatingMergeTree {},
+
+    #[serde(rename = "SummingMergeTree")]
+    SummingMergeTree {},
+
+    #[serde(rename = "S3Queue")]
+    S3Queue {
+        #[serde(alias = "s3Path")]
+        s3_path: String,
+        format: String,
+        #[serde(alias = "awsAccessKeyId")]
+        aws_access_key_id: Option<String>,
+        #[serde(alias = "awsSecretAccessKey")]
+        aws_secret_access_key: Option<String>,
+        compression: Option<String>,
+        headers: Option<std::collections::HashMap<String, String>>,
+        #[serde(alias = "s3Settings")]
+        s3_settings: Option<std::collections::HashMap<String, serde_json::Value>>,
+    },
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct PartialTable {
     pub name: String,
     pub columns: Vec<Column>,
+    #[serde(alias = "order_by")]
     pub order_by: Vec<String>,
-    pub engine: Option<String>,
+    #[serde(alias = "engine_config")]
+    pub engine_config: Option<EngineConfig>,
     pub version: Option<String>,
     pub metadata: Option<Metadata>,
+    #[serde(alias = "life_cycle")]
     pub life_cycle: Option<LifeCycle>,
 }
 
@@ -426,7 +463,7 @@ impl PartialInfrastructureMap {
                         }),
                     columns: partial_table.columns.clone(),
                     order_by: partial_table.order_by.clone(),
-                    engine: partial_table.engine.clone(),
+                    engine: self.parse_engine(partial_table),
                     version,
                     source_primitive: PrimitiveSignature {
                         name: partial_table.name.clone(),
@@ -438,6 +475,64 @@ impl PartialInfrastructureMap {
                 (table.id(), table)
             })
             .collect()
+    }
+
+    /// Parses the engine configuration from a partial table using the discriminated union approach.
+    /// This provides type-safe conversion from the serialized engine configuration to ClickhouseEngine.
+    fn parse_engine(&self, partial_table: &PartialTable) -> Option<ClickhouseEngine> {
+        match &partial_table.engine_config {
+            Some(EngineConfig::MergeTree {}) => Some(ClickhouseEngine::MergeTree),
+
+            Some(EngineConfig::ReplacingMergeTree {}) => Some(ClickhouseEngine::ReplacingMergeTree),
+
+            Some(EngineConfig::AggregatingMergeTree {}) => {
+                Some(ClickhouseEngine::AggregatingMergeTree)
+            }
+
+            Some(EngineConfig::SummingMergeTree {}) => Some(ClickhouseEngine::SummingMergeTree),
+
+            Some(EngineConfig::S3Queue {
+                s3_path,
+                format,
+                aws_access_key_id,
+                aws_secret_access_key,
+                compression,
+                headers,
+                s3_settings,
+            }) => {
+                // Convert s3_settings from serde_json::Value to HashMap<String, String>
+                let mut settings = std::collections::HashMap::new();
+                if let Some(s3_settings) = s3_settings {
+                    for (key, value) in s3_settings {
+                        // Convert JSON values to strings for ClickHouse settings
+                        let string_value = match value {
+                            serde_json::Value::String(s) => s.clone(),
+                            serde_json::Value::Number(n) => n.to_string(),
+                            serde_json::Value::Bool(b) => b.to_string(),
+                            _ => value.to_string(),
+                        };
+                        settings.insert(key.clone(), string_value);
+                    }
+                }
+
+                // Ensure required 'mode' parameter is present (default to 'unordered' if not specified)
+                if !settings.contains_key("mode") {
+                    settings.insert("mode".to_string(), "unordered".to_string());
+                }
+
+                Some(ClickhouseEngine::S3Queue {
+                    s3_path: s3_path.clone(),
+                    format: format.clone(),
+                    aws_access_key_id: aws_access_key_id.clone(),
+                    aws_secret_access_key: aws_secret_access_key.clone(),
+                    compression: compression.clone(),
+                    headers: headers.as_ref().map(|h| Box::new(h.clone())),
+                    settings: Box::new(settings),
+                })
+            }
+
+            None => None,
+        }
     }
 
     /// Converts partial topic definitions into complete [`Topic`] instances.

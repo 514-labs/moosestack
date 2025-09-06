@@ -1,7 +1,6 @@
 use crate::framework::core::infrastructure::table::{
     ColumnType, DataEnum, EnumValue, FloatType, Nested, Table,
 };
-use crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine;
 use convert_case::{Case, Casing};
 use itertools::Itertools;
 use std::collections::hash_map::Entry;
@@ -261,10 +260,8 @@ pub fn tables_to_typescript(tables: &[Table]) -> String {
         .unwrap();
         writeln!(output, "    table: {{").unwrap();
         writeln!(output, "        orderByFields: [{order_by_fields}],").unwrap();
-        if let Some(engine) = table.engine.as_deref() {
-            if let Ok(engine) = ClickhouseEngine::try_from(engine) {
-                writeln!(output, "        engine: ClickHouseEngines.{:?},", engine).unwrap();
-            }
+        if let Some(engine) = &table.engine {
+            writeln!(output, "        engine: ClickHouseEngines.{:?},", engine).unwrap();
         }
         writeln!(output, "    }}").unwrap();
         writeln!(output, "    stream: true,").unwrap();
@@ -282,6 +279,7 @@ mod tests {
     use crate::framework::core::infrastructure::table::{Column, ColumnType, EnumMember, Nested};
     use crate::framework::core::infrastructure_map::{PrimitiveSignature, PrimitiveTypes};
     use crate::framework::core::partial_infrastructure_map::LifeCycle;
+    use crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine;
 
     #[test]
     fn test_nested_types() {
@@ -360,7 +358,7 @@ mod tests {
                 },
             ],
             order_by: vec!["id".to_string()],
-            engine: Some("MergeTree".to_string()),
+            engine: Some(ClickhouseEngine::MergeTree),
             version: None,
             source_primitive: PrimitiveSignature {
                 name: "User".to_string(),
@@ -437,7 +435,7 @@ export const UserPipeline = new IngestPipeline<User>("User", {
                 },
             ],
             order_by: vec!["id".to_string()],
-            engine: Some("MergeTree".to_string()),
+            engine: Some(ClickhouseEngine::MergeTree),
             version: None,
             source_primitive: PrimitiveSignature {
                 name: "Task".to_string(),
