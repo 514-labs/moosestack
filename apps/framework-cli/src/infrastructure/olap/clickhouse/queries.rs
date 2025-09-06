@@ -113,6 +113,12 @@ pub enum ClickhouseEngine {
     ReplacingMergeTree,
     AggregatingMergeTree,
     SummingMergeTree,
+    CollapsingMergeTree(String), // sign column name
+    VersionedCollapsingMergeTree {
+        // sign + version columns
+        sign_column: String,
+        version_column: String,
+    },
 }
 
 impl<'a> TryFrom<&'a str> for ClickhouseEngine {
@@ -129,6 +135,11 @@ impl<'a> TryFrom<&'a str> for ClickhouseEngine {
             "ReplacingMergeTree" => Ok(ClickhouseEngine::ReplacingMergeTree),
             "AggregatingMergeTree" => Ok(ClickhouseEngine::AggregatingMergeTree),
             "SummingMergeTree" => Ok(ClickhouseEngine::SummingMergeTree),
+            "CollapsingMergeTree" => Ok(ClickhouseEngine::CollapsingMergeTree("sign".to_string())),
+            "VersionedCollapsingMergeTree" => Ok(ClickhouseEngine::VersionedCollapsingMergeTree {
+                sign_column: "sign".to_string(),
+                version_column: "version".to_string(),
+            }),
             _ => Err(value),
         }
     }
@@ -141,18 +152,40 @@ pub fn create_table_query(
     let mut reg = Handlebars::new();
     reg.register_escape_fn(no_escape);
 
-    let engine = match table.engine {
-        ClickhouseEngine::MergeTree => "MergeTree",
+    let engine = match &table.engine {
+        ClickhouseEngine::MergeTree => "MergeTree".to_string(),
         ClickhouseEngine::ReplacingMergeTree => {
             if table.order_by.is_empty() {
                 return Err(ClickhouseError::InvalidParameters {
                     message: "ReplacingMergeTree requires an order by clause".to_string(),
                 });
             }
-            "ReplacingMergeTree"
+            "ReplacingMergeTree".to_string()
         }
-        ClickhouseEngine::AggregatingMergeTree => "AggregatingMergeTree",
-        ClickhouseEngine::SummingMergeTree => "SummingMergeTree",
+        ClickhouseEngine::AggregatingMergeTree => "AggregatingMergeTree".to_string(),
+        ClickhouseEngine::SummingMergeTree => "SummingMergeTree".to_string(),
+        ClickhouseEngine::CollapsingMergeTree(sign_col) => {
+            if table.order_by.is_empty() {
+                return Err(ClickhouseError::InvalidParameters {
+                    message: "CollapsingMergeTree requires an order by clause".to_string(),
+                });
+            }
+            format!("CollapsingMergeTree({})", sign_col)
+        }
+        ClickhouseEngine::VersionedCollapsingMergeTree {
+            sign_column,
+            version_column,
+        } => {
+            if table.order_by.is_empty() {
+                return Err(ClickhouseError::InvalidParameters {
+                    message: "VersionedCollapsingMergeTree requires an order by clause".to_string(),
+                });
+            }
+            format!(
+                "VersionedCollapsingMergeTree({}, {})",
+                sign_column, version_column
+            )
+        }
     };
 
     let primary_key = table
@@ -679,5 +712,211 @@ ENGINE = MergeTree
 PRIMARY KEY (`id`)
 ORDER BY (`id`) "#;
         assert_eq!(query.trim(), expected.trim());
+    }
+
+    #[test]
+    fn test_create_table_query_collapsing_merge_tree() {
+        let table = ClickHouseTable {
+            version: Some(Version::from_string("1".to_string())),
+            name: "test_table".to_string(),
+            columns: vec![
+                ClickHouseColumn {
+                    name: "id".to_string(),
+                    column_type: ClickHouseColumnType::ClickhouseInt(ClickHouseInt::Int32),
+                    required: true,
+                    primary_key: true,
+                    unique: false,
+                    default: None,
+                    comment: None,
+                },
+                ClickHouseColumn {
+                    name: "name".to_string(),
+                    column_type: ClickHouseColumnType::String,
+                    required: false,
+                    primary_key: false,
+                    unique: false,
+                    default: None,
+                    comment: None,
+                },
+                ClickHouseColumn {
+                    name: "sign".to_string(),
+                    column_type: ClickHouseColumnType::ClickhouseInt(ClickHouseInt::Int8),
+                    required: true,
+                    primary_key: false,
+                    unique: false,
+                    default: None,
+                    comment: None,
+                },
+            ],
+            order_by: vec!["id".to_string()],
+            engine: ClickhouseEngine::CollapsingMergeTree("sign".to_string()),
+        };
+
+        let query = create_table_query("test_db", table).unwrap();
+        let expected = r#"
+CREATE TABLE IF NOT EXISTS `test_db`.`test_table`
+(
+ `id` Int32 NOT NULL,
+ `name` String NULL,
+ `sign` Int8 NOT NULL
+)
+ENGINE = CollapsingMergeTree(sign)
+PRIMARY KEY (`id`)
+ORDER BY (`id`) "#;
+        assert_eq!(query.trim(), expected.trim());
+    }
+
+    #[test]
+    fn test_create_table_query_collapsing_merge_tree_error() {
+        let table = ClickHouseTable {
+            version: Some(Version::from_string("1".to_string())),
+            name: "test_table".to_string(),
+            columns: vec![ClickHouseColumn {
+                name: "id".to_string(),
+                column_type: ClickHouseColumnType::ClickhouseInt(ClickHouseInt::Int32),
+                required: true,
+                primary_key: true,
+                unique: false,
+                default: None,
+                comment: None,
+            }],
+            engine: ClickhouseEngine::CollapsingMergeTree("sign".to_string()),
+            order_by: vec![],
+        };
+
+        let result = create_table_query("test_db", table);
+        assert!(matches!(
+            result,
+            Err(ClickhouseError::InvalidParameters { message }) if message == "CollapsingMergeTree requires an order by clause"
+        ));
+    }
+
+    #[test]
+    fn test_create_table_query_versioned_collapsing_merge_tree() {
+        let table = ClickHouseTable {
+            version: Some(Version::from_string("1".to_string())),
+            name: "test_table".to_string(),
+            columns: vec![
+                ClickHouseColumn {
+                    name: "id".to_string(),
+                    column_type: ClickHouseColumnType::ClickhouseInt(ClickHouseInt::Int32),
+                    required: true,
+                    primary_key: true,
+                    unique: false,
+                    default: None,
+                    comment: None,
+                },
+                ClickHouseColumn {
+                    name: "name".to_string(),
+                    column_type: ClickHouseColumnType::String,
+                    required: false,
+                    primary_key: false,
+                    unique: false,
+                    default: None,
+                    comment: None,
+                },
+                ClickHouseColumn {
+                    name: "sign".to_string(),
+                    column_type: ClickHouseColumnType::ClickhouseInt(ClickHouseInt::Int8),
+                    required: true,
+                    primary_key: false,
+                    unique: false,
+                    default: None,
+                    comment: None,
+                },
+                ClickHouseColumn {
+                    name: "version".to_string(),
+                    column_type: ClickHouseColumnType::ClickhouseInt(ClickHouseInt::UInt64),
+                    required: true,
+                    primary_key: false,
+                    unique: false,
+                    default: None,
+                    comment: None,
+                },
+            ],
+            order_by: vec!["id".to_string(), "version".to_string()],
+            engine: ClickhouseEngine::VersionedCollapsingMergeTree {
+                sign_column: "sign".to_string(),
+                version_column: "version".to_string(),
+            },
+        };
+
+        let query = create_table_query("test_db", table).unwrap();
+        let expected = r#"
+CREATE TABLE IF NOT EXISTS `test_db`.`test_table`
+(
+ `id` Int32 NOT NULL,
+ `name` String NULL,
+ `sign` Int8 NOT NULL,
+ `version` UInt64 NOT NULL
+)
+ENGINE = VersionedCollapsingMergeTree(sign, version)
+PRIMARY KEY (`id`)
+ORDER BY (`id`,`version`) "#;
+        assert_eq!(query.trim(), expected.trim());
+    }
+
+    #[test]
+    fn test_create_table_query_versioned_collapsing_merge_tree_error() {
+        let table = ClickHouseTable {
+            version: Some(Version::from_string("1".to_string())),
+            name: "test_table".to_string(),
+            columns: vec![ClickHouseColumn {
+                name: "id".to_string(),
+                column_type: ClickHouseColumnType::ClickhouseInt(ClickHouseInt::Int32),
+                required: true,
+                primary_key: true,
+                unique: false,
+                default: None,
+                comment: None,
+            }],
+            engine: ClickhouseEngine::VersionedCollapsingMergeTree {
+                sign_column: "sign".to_string(),
+                version_column: "version".to_string(),
+            },
+            order_by: vec![],
+        };
+
+        let result = create_table_query("test_db", table);
+        assert!(matches!(
+            result,
+            Err(ClickhouseError::InvalidParameters { message }) if message == "VersionedCollapsingMergeTree requires an order by clause"
+        ));
+    }
+
+    #[test]
+    fn test_engine_try_from_collapsing_merge_tree() {
+        let engine = ClickhouseEngine::try_from("CollapsingMergeTree").unwrap();
+        assert!(
+            matches!(engine, ClickhouseEngine::CollapsingMergeTree(sign_col) if sign_col == "sign")
+        );
+    }
+
+    #[test]
+    fn test_engine_try_from_versioned_collapsing_merge_tree() {
+        let engine = ClickhouseEngine::try_from("VersionedCollapsingMergeTree").unwrap();
+        assert!(matches!(
+            engine,
+            ClickhouseEngine::VersionedCollapsingMergeTree { sign_column, version_column }
+            if sign_column == "sign" && version_column == "version"
+        ));
+    }
+
+    #[test]
+    fn test_engine_try_from_shared_collapsing_merge_tree() {
+        let engine = ClickhouseEngine::try_from("SharedCollapsingMergeTree").unwrap();
+        assert!(
+            matches!(engine, ClickhouseEngine::CollapsingMergeTree(sign_col) if sign_col == "sign")
+        );
+    }
+
+    #[test]
+    fn test_engine_try_from_shared_versioned_collapsing_merge_tree() {
+        let engine = ClickhouseEngine::try_from("SharedVersionedCollapsingMergeTree").unwrap();
+        assert!(matches!(
+            engine,
+            ClickhouseEngine::VersionedCollapsingMergeTree { sign_column, version_column }
+            if sign_column == "sign" && version_column == "version"
+        ));
     }
 }
