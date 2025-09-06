@@ -6,6 +6,7 @@ volumes:
   clickhouse-0-data: null
   clickhouse-0-logs: null
   clickhouse-0-users: null
+  clickhouse-keeper-data: null
 {{/if}}
   redis-data: null
 {{#if scripts_feature}}
@@ -74,8 +75,72 @@ services:
 {{/if}}
 
 {{#if storage}}
+  clickhouse-keeper:
+    image: docker.io/clickhouse/clickhouse-keeper:${CLICKHOUSE_VERSION:-25.6}
+    volumes:
+      - clickhouse-keeper-data:/var/lib/clickhouse-keeper
+    environment:
+      - KEEPER_SERVER_ID=1
+    ports:
+      - "9181:9181"
+    deploy:
+      resources:
+        reservations:
+          cpus: '1.0'
+          memory: 2G
+    networks:
+      - clickhouse-network
+    healthcheck:
+      test: ["CMD-SHELL", "echo 'ruok' | nc clickhouse-keeper 9181 | grep -q 'imok'"]
+      interval: 10s
+      retries: 3
+      start_period: 10s
+      timeout: 5s
+    command: >
+      sh -c "
+             mkdir -p /etc/clickhouse-keeper &&
+       cat > /etc/clickhouse-keeper/keeper_config.xml << 'EOF'
+       <clickhouse>
+         <logger>
+           <level>information</level>
+           <log>/var/log/clickhouse-keeper/clickhouse-keeper.log</log>
+           <errorlog>/var/log/clickhouse-keeper/clickhouse-keeper.err.log</errorlog>
+           <size>1000M</size>
+           <count>10</count>
+         </logger>
+         <listen_host>0.0.0.0</listen_host>
+         <max_connections>4096</max_connections>
+         <keeper_server>
+           <tcp_port>9181</tcp_port>
+           <server_id>1</server_id>
+           <log_storage_path>/var/lib/clickhouse-keeper/coordination/log</log_storage_path>
+           <snapshot_storage_path>/var/lib/clickhouse-keeper/coordination/snapshots</snapshot_storage_path>
+           <coordination_settings>
+             <operation_timeout_ms>10000</operation_timeout_ms>
+             <min_session_timeout_ms>10000</min_session_timeout_ms>
+             <session_timeout_ms>30000</session_timeout_ms>
+             <raft_logs_level>information</raft_logs_level>
+           </coordination_settings>
+           <hostname_checks_enabled>false</hostname_checks_enabled>
+           <raft_configuration>
+             <server>
+               <id>1</id>
+               <hostname>clickhouse-keeper</hostname>
+               <port>9234</port>
+             </server>
+           </raft_configuration>
+           <four_letter_word_white_list>*</four_letter_word_white_list>
+         </keeper_server>
+       </clickhouse>
+      EOF
+      exec /entrypoint.sh
+      "
+
   clickhousedb:
     image: docker.io/clickhouse/clickhouse-server:${CLICKHOUSE_VERSION:-25.6}
+    depends_on:
+      clickhouse-keeper:
+        condition: service_healthy
     volumes:
 {{#if clickhouse_host_data_path}}
       - "{{clickhouse_host_data_path}}:/var/lib/clickhouse/"
@@ -89,6 +154,8 @@ services:
       - CLICKHOUSE_USER=${CLICKHOUSE_USER:-panda}
       - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD:-pandapass}
       - CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT=1
+    networks:
+      - clickhouse-network
     ports:
       - "${CLICKHOUSE_HOST_PORT:-18123}:8123"
       - "9000:9000"
@@ -107,6 +174,24 @@ services:
       nofile:
         soft: 20000
         hard: 40000
+    command: >
+      sh -c "
+      mkdir -p /etc/clickhouse-server/config.d &&
+      cat > /etc/clickhouse-server/config.d/keeper.xml << 'EOF'
+      <clickhouse>
+        <zookeeper>
+          <node>
+            <host>clickhouse-keeper</host>
+            <port>9181</port>
+          </node>
+        </zookeeper>
+        <distributed_ddl>
+          <path>/clickhouse/task_queue/ddl</path>
+        </distributed_ddl>
+      </clickhouse>
+      EOF
+      exec /entrypoint.sh
+      "
 {{/if}}
 
 {{#if scripts_feature}}
@@ -182,4 +267,5 @@ services:
 
 networks:
   temporal-network: null
+  clickhouse-network: null
 {{/if}}
