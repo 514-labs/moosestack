@@ -192,6 +192,8 @@ services:
       EOF
       exec /entrypoint.sh
       "
+networks:
+  clickhouse-network: null
 {{/if}}
 
 {{#if scripts_feature}}
@@ -267,5 +269,4 @@ services:
 
 networks:
   temporal-network: null
-  clickhouse-network: null
 {{/if}}
