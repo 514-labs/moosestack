@@ -22,6 +22,11 @@ export interface ApiConfig<T> {
    * An optional version string for this configuration.
    */
   version?: string;
+  /**
+   * An optional custom path for the API endpoint.
+   * If not specified, defaults to the API name.
+   */
+  path?: string;
   metadata?: { description?: string };
 }
 
@@ -72,12 +77,23 @@ export class Api<T, R = any> extends TypedBase<T, ApiConfig<T>> {
       components: { schemas: {} },
     };
     const apis = getMooseInternal().apis;
-    if (apis.has(`${name}${config?.version ? `:${config.version}` : ""}`)) {
+    const key = `${name}${config?.version ? `:${config.version}` : ""}`;
+    if (apis.has(key)) {
       throw new Error(
         `Consumption API with name ${name} and version ${config?.version} already exists`,
       );
     }
-    apis.set(`${name}${config?.version ? `:${config.version}` : ""}`, this);
+    apis.set(key, this);
+
+    // Also register by custom path if provided
+    if (config?.path) {
+      // Register with just the path
+      apis.set(config.path, this);
+      // If versioned, also register with path/version
+      if (config.version) {
+        apis.set(`${config.path}/${config.version}`, this);
+      }
+    }
   }
 
   /**
@@ -89,8 +105,9 @@ export class Api<T, R = any> extends TypedBase<T, ApiConfig<T>> {
   };
 
   async call(baseUrl: string, queryParams: T): Promise<R> {
-    // Construct the API endpoint URL
-    const url = new URL(`${baseUrl.replace(/\/$/, "")}/api/${this.name}`);
+    // Construct the API endpoint URL using custom path or default to name
+    const path = this.config?.path || this.name;
+    const url = new URL(`${baseUrl.replace(/\/$/, "")}/api/${path}`);
 
     const searchParams = url.searchParams;
 

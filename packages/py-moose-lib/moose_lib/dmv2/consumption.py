@@ -12,7 +12,7 @@ from pydantic import BaseModel
 from pydantic.json_schema import JsonSchemaValue
 
 from .types import BaseTypedResource, T, U
-from ._registry import _apis, _api_name_aliases
+from ._registry import _apis, _api_name_aliases, _api_path_map
 
 # Global base URL configuration
 _global_base_url: Optional[str] = None
@@ -48,9 +48,11 @@ class ApiConfig(BaseModel):
 
     Attributes:
         version: Optional version string.
+        path: Optional custom path for the API endpoint. If not specified, defaults to the API name.
         metadata: Optional metadata for the API.
     """
     version: Optional[str] = None
+    path: Optional[str] = None
     metadata: Optional[dict] = None
 
 
@@ -118,6 +120,14 @@ class Api(BaseTypedResource, Generic[U]):
         self.metadata = getattr(self.config, 'metadata', {}) or {}
         key = _generate_api_key(name, self.config.version)
         _apis[key] = self
+        
+        # Register by custom path if provided
+        if self.config.path:
+            # Register both with and without version for path-based lookup
+            _api_path_map[self.config.path] = self
+            if self.config.version:
+                path_with_version = f"{self.config.path}/{self.config.version}"
+                _api_path_map[path_with_version] = self
 
         # Maintain alias for base name:
         # - If explicit unversioned registered, alias -> that
@@ -205,8 +215,9 @@ class Api(BaseTypedResource, Generic[U]):
                 "MOOSE_BASE_URL environment variable, or pass base_url parameter."
             )
 
-        # Construct the API endpoint URL
-        url = f"{effective_base_url.rstrip('/')}/api/{self.name}"
+        # Construct the API endpoint URL using custom path or default to name
+        path = self.config.path if self.config.path else self.name
+        url = f"{effective_base_url.rstrip('/')}/api/{path}"
 
         # Convert Pydantic model to dictionary
         params_dict = params.model_dump()

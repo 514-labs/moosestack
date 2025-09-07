@@ -91,6 +91,14 @@ export type IngestPipelineConfig<T> = {
   version?: string;
 
   /**
+   * An optional custom path for the ingestion API endpoint.
+   * This will be used as the HTTP path for the ingest API if one is created.
+   *
+   * @example "pipelines/analytics", "data/events"
+   */
+  path?: string;
+
+  /**
    * Optional metadata for the pipeline.
    */
   metadata?: {
@@ -266,6 +274,7 @@ export class IngestPipeline<T> extends TypedBase<T, IngestPipelineConfig<T>> {
         deadLetterQueue: this.deadLetterQueue,
         ...(typeof config.ingest === "object" ? config.ingest : {}),
         ...(config.version && { version: config.version }),
+        ...(config.path && { path: config.path }),
       };
       this.ingestApi = new IngestApi(
         name,
