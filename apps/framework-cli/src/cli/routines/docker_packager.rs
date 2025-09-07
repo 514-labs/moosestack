@@ -183,9 +183,6 @@ HEALTHCHECK --interval=30s --timeout=3s \
 RUN groupadd --gid 1001 moose \
   && useradd --uid 1001 --gid moose --shell /bin/bash --create-home moose
 
-# all commands from here on will be run as the moose user
-USER moose:moose
-
 # Set the working directory inside the container
 WORKDIR /application
 
@@ -199,6 +196,12 @@ COPY --chown=moose:moose ./versions .moose/versions
 
 # Placeholder for the language specific install command
 INSTALL_COMMAND
+
+# Ensure application directory is owned by moose user
+RUN chown -R moose:moose /application
+
+# all commands from here on will be run as the moose user
+USER moose:moose
 
 # Checks that the project is valid
 RUN which moose
@@ -639,7 +642,7 @@ pub fn build_dockerfile(
     // so we set it to a recent version for the purpose of local dev testing.
     let mut cli_version = constants::CLI_VERSION;
     if cli_version == "0.0.1" {
-        cli_version = "0.3.810";
+        cli_version = "0.6.34";
     }
 
     // Check if this is a monorepo build
