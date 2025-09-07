@@ -87,26 +87,53 @@ export class Api<T, R = any> extends TypedBase<T, ApiConfig<T>> {
 
     // Also register by custom path if provided
     if (config?.path) {
-      // Check for collision with existing keys
-      if (apis.has(config.path)) {
-        const existing = apis.get(config.path)!;
-        throw new Error(
-          `Cannot register API "${name}" with custom path "${config.path}" - this path is already used by API "${existing.name}"`,
-        );
-      }
-      // Register with just the path
-      apis.set(config.path, this);
-
-      // If versioned, also register with path/version
       if (config.version) {
-        const versionedPath = `${config.path}/${config.version}`;
-        if (apis.has(versionedPath)) {
-          const existing = apis.get(versionedPath)!;
+        // Check if the path already ends with the version
+        const pathEndsWithVersion =
+          config.path.endsWith(`/${config.version}`) ||
+          config.path === config.version ||
+          (config.path.endsWith(config.version) &&
+            config.path.length > config.version.length &&
+            config.path[config.path.length - config.version.length - 1] ===
+              "/");
+
+        if (pathEndsWithVersion) {
+          // Path already contains version, register as-is
+          if (apis.has(config.path)) {
+            const existing = apis.get(config.path)!;
+            throw new Error(
+              `Cannot register API "${name}" with path "${config.path}" - this path is already used by API "${existing.name}"`,
+            );
+          }
+          apis.set(config.path, this);
+        } else {
+          // Path doesn't contain version, register with version appended
+          const versionedPath = `${config.path.replace(/\/$/, "")}/${config.version}`;
+
+          // Check for collision on versioned path
+          if (apis.has(versionedPath)) {
+            const existing = apis.get(versionedPath)!;
+            throw new Error(
+              `Cannot register API "${name}" with path "${versionedPath}" - this path is already used by API "${existing.name}"`,
+            );
+          }
+          apis.set(versionedPath, this);
+
+          // Also register the unversioned path if not already claimed
+          // (This is intentionally more permissive - first API gets the unversioned path)
+          if (!apis.has(config.path)) {
+            apis.set(config.path, this);
+          }
+        }
+      } else {
+        // Unversioned API, check for collision and register
+        if (apis.has(config.path)) {
+          const existing = apis.get(config.path)!;
           throw new Error(
-            `Cannot register API "${name}" with path "${versionedPath}" - this path is already used by API "${existing.name}"`,
+            `Cannot register API "${name}" with custom path "${config.path}" - this path is already used by API "${existing.name}"`,
           );
         }
-        apis.set(versionedPath, this);
+        apis.set(config.path, this);
       }
     }
   }
@@ -121,7 +148,34 @@ export class Api<T, R = any> extends TypedBase<T, ApiConfig<T>> {
 
   async call(baseUrl: string, queryParams: T): Promise<R> {
     // Construct the API endpoint URL using custom path or default to name
-    const path = this.config?.path || this.name;
+    let path: string;
+    if (this.config?.path) {
+      // Check if the custom path already contains the version
+      if (this.config.version) {
+        const pathEndsWithVersion =
+          this.config.path.endsWith(`/${this.config.version}`) ||
+          this.config.path === this.config.version ||
+          (this.config.path.endsWith(this.config.version) &&
+            this.config.path.length > this.config.version.length &&
+            this.config.path[
+              this.config.path.length - this.config.version.length - 1
+            ] === "/");
+
+        if (pathEndsWithVersion) {
+          path = this.config.path;
+        } else {
+          path = `${this.config.path.replace(/\/$/, "")}/${this.config.version}`;
+        }
+      } else {
+        path = this.config.path;
+      }
+    } else {
+      // Default to name with optional version
+      path =
+        this.config?.version ?
+          `${this.name}/${this.config.version}`
+        : this.name;
+    }
     const url = new URL(`${baseUrl.replace(/\/$/, "")}/api/${path}`);
 
     const searchParams = url.searchParams;
