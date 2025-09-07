@@ -862,6 +862,235 @@ fn map_json_value_to_clickhouse_value(
                 })
             }
         }
+        ColumnType::Point => {
+            // Expect [lon, lat] array
+            if let Some(arr) = value.as_array() {
+                if arr.len() == 2 {
+                    if let (Some(lon), Some(lat)) = (arr[0].as_f64(), arr[1].as_f64()) {
+                        // ClickHouse expects Point as a tuple (lon, lat)
+                        Ok(ClickHouseValue::new_tuple(vec![
+                            ClickHouseValue::new_float_64(lon),
+                            ClickHouseValue::new_float_64(lat),
+                        ]))
+                    } else {
+                        Err(MappingError::TypeMismatch {
+                            column_type: Box::new(column_type.clone()),
+                            value: value.clone(),
+                        })
+                    }
+                } else {
+                    Err(MappingError::TypeMismatch {
+                        column_type: Box::new(column_type.clone()),
+                        value: value.clone(),
+                    })
+                }
+            } else {
+                Err(MappingError::TypeMismatch {
+                    column_type: Box::new(column_type.clone()),
+                    value: value.clone(),
+                })
+            }
+        }
+        ColumnType::Ring | ColumnType::LineString => {
+            // Expect array of points
+            if let Some(arr) = value.as_array() {
+                let mut points = Vec::new();
+                for point_val in arr {
+                    if let Some(point_arr) = point_val.as_array() {
+                        if point_arr.len() == 2 {
+                            if let (Some(lon), Some(lat)) = (point_arr[0].as_f64(), point_arr[1].as_f64()) {
+                                points.push(ClickHouseValue::new_tuple(vec![
+                                    ClickHouseValue::new_float_64(lon),
+                                    ClickHouseValue::new_float_64(lat),
+                                ]));
+                            } else {
+                                return Err(MappingError::TypeMismatch {
+                                    column_type: Box::new(column_type.clone()),
+                                    value: value.clone(),
+                                });
+                            }
+                        } else {
+                            return Err(MappingError::TypeMismatch {
+                                column_type: Box::new(column_type.clone()),
+                                value: value.clone(),
+                            });
+                        }
+                    } else {
+                        return Err(MappingError::TypeMismatch {
+                            column_type: Box::new(column_type.clone()),
+                            value: value.clone(),
+                        });
+                    }
+                }
+                Ok(ClickHouseValue::new_array(points))
+            } else {
+                Err(MappingError::TypeMismatch {
+                    column_type: Box::new(column_type.clone()),
+                    value: value.clone(),
+                })
+            }
+        }
+        ColumnType::Polygon => {
+            // Expect array of rings
+            if let Some(arr) = value.as_array() {
+                let mut rings = Vec::new();
+                for ring_val in arr {
+                    if let Some(ring_arr) = ring_val.as_array() {
+                        let mut points = Vec::new();
+                        for point_val in ring_arr {
+                            if let Some(point_arr) = point_val.as_array() {
+                                if point_arr.len() == 2 {
+                                    if let (Some(lon), Some(lat)) = (point_arr[0].as_f64(), point_arr[1].as_f64()) {
+                                        points.push(ClickHouseValue::new_tuple(vec![
+                                            ClickHouseValue::new_float_64(lon),
+                                            ClickHouseValue::new_float_64(lat),
+                                        ]));
+                                    } else {
+                                        return Err(MappingError::TypeMismatch {
+                                            column_type: Box::new(column_type.clone()),
+                                            value: value.clone(),
+                                        });
+                                    }
+                                } else {
+                                    return Err(MappingError::TypeMismatch {
+                                        column_type: Box::new(column_type.clone()),
+                                        value: value.clone(),
+                                    });
+                                }
+                            } else {
+                                return Err(MappingError::TypeMismatch {
+                                    column_type: Box::new(column_type.clone()),
+                                    value: value.clone(),
+                                });
+                            }
+                        }
+                        rings.push(ClickHouseValue::new_array(points));
+                    } else {
+                        return Err(MappingError::TypeMismatch {
+                            column_type: Box::new(column_type.clone()),
+                            value: value.clone(),
+                        });
+                    }
+                }
+                Ok(ClickHouseValue::new_array(rings))
+            } else {
+                Err(MappingError::TypeMismatch {
+                    column_type: Box::new(column_type.clone()),
+                    value: value.clone(),
+                })
+            }
+        }
+        ColumnType::MultiLineString => {
+            // Expect array of linestrings
+            if let Some(arr) = value.as_array() {
+                let mut linestrings = Vec::new();
+                for ls_val in arr {
+                    if let Some(ls_arr) = ls_val.as_array() {
+                        let mut points = Vec::new();
+                        for point_val in ls_arr {
+                            if let Some(point_arr) = point_val.as_array() {
+                                if point_arr.len() == 2 {
+                                    if let (Some(lon), Some(lat)) = (point_arr[0].as_f64(), point_arr[1].as_f64()) {
+                                        points.push(ClickHouseValue::new_tuple(vec![
+                                            ClickHouseValue::new_float_64(lon),
+                                            ClickHouseValue::new_float_64(lat),
+                                        ]));
+                                    } else {
+                                        return Err(MappingError::TypeMismatch {
+                                            column_type: Box::new(column_type.clone()),
+                                            value: value.clone(),
+                                        });
+                                    }
+                                } else {
+                                    return Err(MappingError::TypeMismatch {
+                                        column_type: Box::new(column_type.clone()),
+                                        value: value.clone(),
+                                    });
+                                }
+                            } else {
+                                return Err(MappingError::TypeMismatch {
+                                    column_type: Box::new(column_type.clone()),
+                                    value: value.clone(),
+                                });
+                            }
+                        }
+                        linestrings.push(ClickHouseValue::new_array(points));
+                    } else {
+                        return Err(MappingError::TypeMismatch {
+                            column_type: Box::new(column_type.clone()),
+                            value: value.clone(),
+                        });
+                    }
+                }
+                Ok(ClickHouseValue::new_array(linestrings))
+            } else {
+                Err(MappingError::TypeMismatch {
+                    column_type: Box::new(column_type.clone()),
+                    value: value.clone(),
+                })
+            }
+        }
+        ColumnType::MultiPolygon => {
+            // Expect array of polygons
+            if let Some(arr) = value.as_array() {
+                let mut polygons = Vec::new();
+                for poly_val in arr {
+                    if let Some(poly_arr) = poly_val.as_array() {
+                        let mut rings = Vec::new();
+                        for ring_val in poly_arr {
+                            if let Some(ring_arr) = ring_val.as_array() {
+                                let mut points = Vec::new();
+                                for point_val in ring_arr {
+                                    if let Some(point_arr) = point_val.as_array() {
+                                        if point_arr.len() == 2 {
+                                            if let (Some(lon), Some(lat)) = (point_arr[0].as_f64(), point_arr[1].as_f64()) {
+                                                points.push(ClickHouseValue::new_tuple(vec![
+                                                    ClickHouseValue::new_float_64(lon),
+                                                    ClickHouseValue::new_float_64(lat),
+                                                ]));
+                                            } else {
+                                                return Err(MappingError::TypeMismatch {
+                                                    column_type: Box::new(column_type.clone()),
+                                                    value: value.clone(),
+                                                });
+                                            }
+                                        } else {
+                                            return Err(MappingError::TypeMismatch {
+                                                column_type: Box::new(column_type.clone()),
+                                                value: value.clone(),
+                                            });
+                                        }
+                                    } else {
+                                        return Err(MappingError::TypeMismatch {
+                                            column_type: Box::new(column_type.clone()),
+                                            value: value.clone(),
+                                        });
+                                    }
+                                }
+                                rings.push(ClickHouseValue::new_array(points));
+                            } else {
+                                return Err(MappingError::TypeMismatch {
+                                    column_type: Box::new(column_type.clone()),
+                                    value: value.clone(),
+                                });
+                            }
+                        }
+                        polygons.push(ClickHouseValue::new_array(rings));
+                    } else {
+                        return Err(MappingError::TypeMismatch {
+                            column_type: Box::new(column_type.clone()),
+                            value: value.clone(),
+                        });
+                    }
+                }
+                Ok(ClickHouseValue::new_array(polygons))
+            } else {
+                Err(MappingError::TypeMismatch {
+                    column_type: Box::new(column_type.clone()),
+                    value: value.clone(),
+                })
+            }
+        }
         ColumnType::Map {
             key_type,
             value_type,

@@ -273,6 +273,13 @@ fn name_node_to_base_column_type(
         "float" => Ok(ColumnType::Float(FloatType::Float64)),
         "bool" => Ok(ColumnType::Boolean),
         "datetime" => Ok(ColumnType::DateTime { precision: None }),
+        // Geo types (when imported from moose_lib)
+        "Point" => Ok(ColumnType::Point),
+        "Ring" => Ok(ColumnType::Ring),
+        "LineString" => Ok(ColumnType::LineString),
+        "MultiLineString" => Ok(ColumnType::MultiLineString),
+        "Polygon" => Ok(ColumnType::Polygon),
+        "MultiPolygon" => Ok(ColumnType::MultiPolygon),
         _ => Err(PythonParserError::UnsupportedDataTypeError {
             field_name: field_name.to_string(),
             type_name: name_node.id.to_string(),

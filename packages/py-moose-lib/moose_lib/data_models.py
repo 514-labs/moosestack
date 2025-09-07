@@ -7,13 +7,21 @@ from uuid import UUID
 from datetime import datetime, date
 
 from typing import Literal, Tuple, Union, Any, get_origin, get_args, TypeAliasType, Annotated, Type, _BaseGenericAlias, \
-    GenericAlias
+    GenericAlias, NewType, List
 from pydantic import BaseModel, Field, PlainSerializer, GetCoreSchemaHandler, ConfigDict
 from pydantic_core import CoreSchema, core_schema
 import ipaddress
 
 type Key[T: (str, int)] = T
 type JWT[T] = T
+
+# ClickHouse Geo Types (requires ClickHouse 25.6+ with experimental geo types enabled)
+Point = NewType("Point", Tuple[float, float])  # (longitude, latitude)
+Ring = NewType("Ring", List[Point])  # Closed polygon boundary (no holes)
+LineString = NewType("LineString", List[Point])  # Open polyline
+Polygon = NewType("Polygon", List[Ring])  # First ring is outer, others are holes
+MultiLineString = NewType("MultiLineString", List[LineString])
+MultiPolygon = NewType("MultiPolygon", List[Polygon])
 
 
 @dataclasses.dataclass  # a BaseModel in the annotations will confuse pydantic
@@ -156,7 +164,25 @@ def py_type_to_column_type(t: type, mds: list[Any]) -> Tuple[bool, list[Any], Da
 
     data_type: DataType
 
-    if t is str:
+    # Check for geo NewTypes first
+    if hasattr(t, '__supertype__'):  # NewType check
+        newtype_name = getattr(t, '__name__', '')
+        if newtype_name == 'Point':
+            data_type = "Point"
+        elif newtype_name == 'Ring':
+            data_type = "Ring"
+        elif newtype_name == 'LineString':
+            data_type = "LineString"
+        elif newtype_name == 'Polygon':
+            data_type = "Polygon"
+        elif newtype_name == 'MultiLineString':
+            data_type = "MultiLineString"
+        elif newtype_name == 'MultiPolygon':
+            data_type = "MultiPolygon"
+        else:
+            # Handle other NewTypes by recursing on the supertype
+            return py_type_to_column_type(t.__supertype__, mds)
+    elif t is str:
         data_type = "String"
     elif t is int:
         # Check for int size annotations
@@ -198,8 +224,69 @@ def py_type_to_column_type(t: type, mds: list[Any]) -> Tuple[bool, list[Any], Da
     elif t is ipaddress.IPv6Address:
         data_type = "IPv6"
     elif get_origin(t) is list:
-        inner_optional, _, inner_type = py_type_to_column_type(get_args(t)[0], [])
-        data_type = ArrayType(element_type=inner_type, element_nullable=inner_optional)
+        args = get_args(t)
+        if args:
+            inner_type_raw = args[0]
+            # Check for geo type structural patterns
+            if get_origin(inner_type_raw) is tuple:
+                tuple_args = get_args(inner_type_raw)
+                if len(tuple_args) == 2 and all(arg is float for arg in tuple_args):
+                    # List[Tuple[float, float]] -> LineString (default, use Ring NewType for ring)
+                    data_type = "LineString"
+                else:
+                    # Regular array
+                    inner_optional, _, inner_type = py_type_to_column_type(inner_type_raw, [])
+                    data_type = ArrayType(element_type=inner_type, element_nullable=inner_optional)
+            elif get_origin(inner_type_raw) is list:
+                # Check for nested list patterns
+                inner_args = get_args(inner_type_raw)
+                if inner_args:
+                    inner_inner_type = inner_args[0]
+                    if get_origin(inner_inner_type) is tuple:
+                        tuple_args = get_args(inner_inner_type)
+                        if len(tuple_args) == 2 and all(arg is float for arg in tuple_args):
+                            # List[List[Tuple[float, float]]] -> Polygon (default, use MultiLineString NewType if needed)
+                            data_type = "Polygon"
+                        else:
+                            # Regular nested array
+                            inner_optional, _, inner_type = py_type_to_column_type(inner_type_raw, [])
+                            data_type = ArrayType(element_type=inner_type, element_nullable=inner_optional)
+                    elif get_origin(inner_inner_type) is list:
+                        # Check for triple-nested list
+                        inner_inner_args = get_args(inner_inner_type)
+                        if inner_inner_args:
+                            triple_inner_type = inner_inner_args[0]
+                            if get_origin(triple_inner_type) is tuple:
+                                tuple_args = get_args(triple_inner_type)
+                                if len(tuple_args) == 2 and all(arg is float for arg in tuple_args):
+                                    # List[List[List[Tuple[float, float]]]] -> MultiPolygon
+                                    data_type = "MultiPolygon"
+                                else:
+                                    # Regular triple-nested array
+                                    inner_optional, _, inner_type = py_type_to_column_type(inner_type_raw, [])
+                                    data_type = ArrayType(element_type=inner_type, element_nullable=inner_optional)
+                            else:
+                                # Regular triple-nested array
+                                inner_optional, _, inner_type = py_type_to_column_type(inner_type_raw, [])
+                                data_type = ArrayType(element_type=inner_type, element_nullable=inner_optional)
+                        else:
+                            # Regular nested array
+                            inner_optional, _, inner_type = py_type_to_column_type(inner_type_raw, [])
+                            data_type = ArrayType(element_type=inner_type, element_nullable=inner_optional)
+                    else:
+                        # Regular nested array
+                        inner_optional, _, inner_type = py_type_to_column_type(inner_type_raw, [])
+                        data_type = ArrayType(element_type=inner_type, element_nullable=inner_optional)
+                else:
+                    # Regular nested array
+                    inner_optional, _, inner_type = py_type_to_column_type(inner_type_raw, [])
+                    data_type = ArrayType(element_type=inner_type, element_nullable=inner_optional)
+            else:
+                # Regular array
+                inner_optional, _, inner_type = py_type_to_column_type(inner_type_raw, [])
+                data_type = ArrayType(element_type=inner_type, element_nullable=inner_optional)
+        else:
+            raise ValueError("List type must have a type argument")
     elif get_origin(t) is dict:
         args = get_args(t)
         if len(args) == 2:
@@ -209,6 +296,15 @@ def py_type_to_column_type(t: type, mds: list[Any]) -> Tuple[bool, list[Any], Da
             data_type = MapType(key_type=key_type, value_type=value_type)
         else:
             raise ValueError(f"Dict type must have exactly 2 type arguments, got {len(args)}")
+    # Structural fallback for geo types (when users don't use NewTypes)
+    elif get_origin(t) is tuple:
+        args = get_args(t)
+        if len(args) == 2 and all(arg is float for arg in args):
+            # Tuple[float, float] -> Point
+            data_type = "Point"
+        else:
+            # Other tuples are not geo types
+            raise ValueError(f"Unsupported tuple type: {t}")
     elif t is UUID:
         data_type = "UUID"
     elif t is Any:

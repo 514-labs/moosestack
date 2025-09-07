@@ -88,6 +88,14 @@ pub async fn import_csv_file(
                             ColumnType::Nullable(_) => {
                                 bail!("Encountered twice-nested Nullable");
                             }
+                            ColumnType::Point
+                            | ColumnType::Ring
+                            | ColumnType::LineString
+                            | ColumnType::MultiLineString
+                            | ColumnType::Polygon
+                            | ColumnType::MultiPolygon => {
+                                bail!("CSV importing does not support geo types");
+                            }
                         }
                     }
                 };

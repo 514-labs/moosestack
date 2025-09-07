@@ -34,7 +34,8 @@ def foo_to_bar(foo: Foo):
         baz=foo.baz,
         utc_timestamp=datetime.fromtimestamp(foo.timestamp),
         has_text=foo.optional_text is not None,
-        text_length=len(foo.optional_text) if foo.optional_text else 0
+        text_length=len(foo.optional_text) if foo.optional_text else 0,
+        location=foo.location  # Pass through location data
     )
 
     # Store the result in cache
@@ -58,6 +59,7 @@ def print_foo_event(foo):
     print(f"  Primary Key: {foo.primary_key}")
     print(f"  Timestamp: {datetime.fromtimestamp(foo.timestamp)}")
     print(f"  Optional Text: {foo.optional_text or 'None'}")
+    print(f"  Location: {foo.location if foo.location else 'None'}")
     print("---")
 
 

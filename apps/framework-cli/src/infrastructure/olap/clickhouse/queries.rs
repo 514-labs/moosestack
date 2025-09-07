@@ -312,6 +312,12 @@ pub fn basic_field_type_to_string(
             basic_field_type_to_string(key_type)?,
             basic_field_type_to_string(value_type)?
         )),
+        ClickHouseColumnType::Point => Ok("Point".to_string()),
+        ClickHouseColumnType::Ring => Ok("Ring".to_string()),
+        ClickHouseColumnType::LineString => Ok("LineString".to_string()),
+        ClickHouseColumnType::MultiLineString => Ok("MultiLineString".to_string()),
+        ClickHouseColumnType::Polygon => Ok("Polygon".to_string()),
+        ClickHouseColumnType::MultiPolygon => Ok("MultiPolygon".to_string()),
     }
 }
 
@@ -480,6 +486,77 @@ CREATE TABLE IF NOT EXISTS `test_db`.`test_table`
 )
 ENGINE = MergeTree
 PRIMARY KEY (`id`)
+"#;
+        assert_eq!(query.trim(), expected.trim());
+    }
+
+    #[test]
+    fn test_geo_types_ddl_generation() {
+        // Test that geo types generate correct DDL
+        let geo_types = vec![
+            (ClickHouseColumnType::Point, "Point"),
+            (ClickHouseColumnType::Ring, "Ring"),
+            (ClickHouseColumnType::LineString, "LineString"),
+            (ClickHouseColumnType::MultiLineString, "MultiLineString"),
+            (ClickHouseColumnType::Polygon, "Polygon"),
+            (ClickHouseColumnType::MultiPolygon, "MultiPolygon"),
+        ];
+
+        for (col_type, expected_str) in geo_types {
+            let result = basic_field_type_to_string(&col_type).unwrap();
+            assert_eq!(result, expected_str);
+        }
+    }
+
+    #[test]
+    fn test_create_table_query_with_geo_column() {
+        let table = ClickHouseTable {
+            version: Some(Version::from_string("1".to_string())),
+            name: "places".to_string(),
+            columns: vec![
+                ClickHouseColumn {
+                    name: "id".to_string(),
+                    column_type: ClickHouseColumnType::String,
+                    required: true,
+                    primary_key: true,
+                    unique: false,
+                    default: None,
+                    comment: None,
+                },
+                ClickHouseColumn {
+                    name: "location".to_string(),
+                    column_type: ClickHouseColumnType::Point,
+                    required: false,
+                    primary_key: false,
+                    unique: false,
+                    default: None,
+                    comment: None,
+                },
+                ClickHouseColumn {
+                    name: "boundary".to_string(),
+                    column_type: ClickHouseColumnType::Polygon,
+                    required: false,
+                    primary_key: false,
+                    unique: false,
+                    default: None,
+                    comment: None,
+                },
+            ],
+            order_by: vec!["id".to_string()],
+            engine: ClickhouseEngine::MergeTree,
+        };
+
+        let query = create_table_query("test_db", table).unwrap();
+        let expected = r#"
+CREATE TABLE IF NOT EXISTS `test_db`.`places`
+(
+ `id` String NOT NULL,
+ `location` Point NULL,
+ `boundary` Polygon NULL
+)
+ENGINE = MergeTree
+PRIMARY KEY (`id`)
+ORDER BY (`id`)
 "#;
         assert_eq!(query.trim(), expected.trim());
     }

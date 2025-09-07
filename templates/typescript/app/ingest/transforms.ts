@@ -40,6 +40,7 @@ FooPipeline.stream!.addTransform(
       utcTimestamp: new Date(foo.timestamp * 1000), // Convert timestamp to Date
       hasText: foo.optionalText !== undefined,
       textLength: foo.optionalText?.length ?? 0,
+      location: foo.location, // Pass through location data
     };
 
     // Cache the result (1 hour retention)
@@ -58,6 +59,7 @@ const printFooEvent = (foo: Foo): void => {
   console.log(`  Primary Key: ${foo.primaryKey}`);
   console.log(`  Timestamp: ${new Date(foo.timestamp * 1000)}`);
   console.log(`  Optional Text: ${foo.optionalText ?? "None"}`);
+  console.log(`  Location: ${foo.location ? `[${foo.location[0]}, ${foo.location[1]}]` : "None"}`);
   console.log("---");
 };
 

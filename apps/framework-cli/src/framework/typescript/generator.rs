@@ -269,6 +269,13 @@ fn std_field_type_to_typescript_field_mapper(
                 type_name: "Map".to_string(),
             })
         }
+        // Geo types - return as String for now since InterfaceFieldType doesn't have custom types
+        ColumnType::Point
+        | ColumnType::Ring
+        | ColumnType::LineString
+        | ColumnType::MultiLineString
+        | ColumnType::Polygon
+        | ColumnType::MultiPolygon => Ok(InterfaceFieldType::String),
     }
 }
 
