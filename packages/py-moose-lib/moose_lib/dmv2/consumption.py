@@ -115,19 +115,67 @@ class Api(BaseTypedResource, Generic[U]):
         else:
             # Neither provided, use default config
             self.config = ApiConfig()
-            
+
         self.query_function = query_function
         self.metadata = getattr(self.config, 'metadata', {}) or {}
         key = _generate_api_key(name, self.config.version)
+
+        # Check for duplicate registration
+        if key in _apis:
+            raise ValueError(
+                f"Consumption API with name {name} and version {self.config.version} already exists"
+            )
         _apis[key] = self
-        
+
         # Register by custom path if provided
         if self.config.path:
-            # Register both with and without version for path-based lookup
-            _api_path_map[self.config.path] = self
-            if self.config.version:
-                path_with_version = f"{self.config.path}/{self.config.version}"
-                _api_path_map[path_with_version] = self
+            # For unversioned APIs or when path should be used as-is
+            if self.config.version is None:
+                # Check for collision
+                if self.config.path in _api_path_map:
+                    existing = _api_path_map[self.config.path]
+                    raise ValueError(
+                        f'Cannot register API "{name}" with custom path "{self.config.path}" - '
+                        f'this path is already used by API "{existing.name}"'
+                    )
+                # Only register unversioned path for unversioned APIs
+                _api_path_map[self.config.path] = self
+            else:
+                # For versioned APIs, check if version is already in the path
+                path_ends_with_version = (
+                    self.config.path.endswith(f"/{self.config.version}") or
+                    self.config.path == self.config.version or
+                    (self.config.path.endswith(self.config.version) and 
+                     len(self.config.path) > len(self.config.version) and
+                     self.config.path[-(len(self.config.version) + 1)] == '/')
+                )
+                
+                if path_ends_with_version:
+                    # Path already contains version, check for collision
+                    if self.config.path in _api_path_map:
+                        existing = _api_path_map[self.config.path]
+                        raise ValueError(
+                            f'Cannot register API "{name}" with path "{self.config.path}" - '
+                            f'this path is already used by API "{existing.name}"'
+                        )
+                    _api_path_map[self.config.path] = self
+                else:
+                    # Path doesn't contain version, register with version appended
+                    path_with_version = f"{self.config.path.rstrip('/')}/{self.config.version}"
+                    
+                    # Check for collision on versioned path
+                    if path_with_version in _api_path_map:
+                        existing = _api_path_map[path_with_version]
+                        raise ValueError(
+                            f'Cannot register API "{name}" with path "{path_with_version}" - '
+                            f'this path is already used by API "{existing.name}"'
+                        )
+                    _api_path_map[path_with_version] = self
+                    
+                    # Also register the unversioned path if not already claimed
+                    # (This is intentionally more permissive - first API gets the unversioned path)
+                    if self.config.path not in _api_path_map:
+                        _api_path_map[self.config.path] = self
 
         # Maintain alias for base name:
         # - If explicit unversioned registered, alias -> that
@@ -216,7 +264,25 @@ class Api(BaseTypedResource, Generic[U]):
             )
 
         # Construct the API endpoint URL using custom path or default to name
-        path = self.config.path if self.config.path else self.name
+        if self.config.path:
+            # Check if the custom path already contains the version
+            if self.config.version:
+                path_ends_with_version = (
+                    self.config.path.endswith(f"/{self.config.version}") or
+                    self.config.path == self.config.version or
+                    (self.config.path.endswith(self.config.version) and 
+                     len(self.config.path) > len(self.config.version) and
+                     self.config.path[-(len(self.config.version) + 1)] == '/')
+                )
+                if path_ends_with_version:
+                    path = self.config.path
+                else:
+                    path = f"{self.config.path.rstrip('/')}/{self.config.version}"
+            else:
+                path = self.config.path
+        else:
+            # Default to name with optional version
+            path = self.name if not self.config.version else f"{self.name}/{self.config.version}"
         url = f"{effective_base_url.rstrip('/')}/api/{path}"
 
         # Convert Pydantic model to dictionary

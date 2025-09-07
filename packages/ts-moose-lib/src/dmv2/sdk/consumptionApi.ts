@@ -87,11 +87,26 @@ export class Api<T, R = any> extends TypedBase<T, ApiConfig<T>> {
 
     // Also register by custom path if provided
     if (config?.path) {
+      // Check for collision with existing keys
+      if (apis.has(config.path)) {
+        const existing = apis.get(config.path)!;
+        throw new Error(
+          `Cannot register API "${name}" with custom path "${config.path}" - this path is already used by API "${existing.name}"`,
+        );
+      }
       // Register with just the path
       apis.set(config.path, this);
+
       // If versioned, also register with path/version
       if (config.version) {
-        apis.set(`${config.path}/${config.version}`, this);
+        const versionedPath = `${config.path}/${config.version}`;
+        if (apis.has(versionedPath)) {
+          const existing = apis.get(versionedPath)!;
+          throw new Error(
+            `Cannot register API "${name}" with path "${versionedPath}" - this path is already used by API "${existing.name}"`,
+          );
+        }
+        apis.set(versionedPath, this);
       }
     }
   }
