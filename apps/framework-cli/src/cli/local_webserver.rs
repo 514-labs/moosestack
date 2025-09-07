@@ -1575,6 +1575,139 @@ pub struct Webserver {
     management_port: u16,
 }
 
+/// Prints available routes in a clean table format
+async fn print_available_routes(
+    route_table: &'static RwLock<HashMap<PathBuf, RouteMeta>>,
+    consumption_apis: &'static RwLock<HashSet<String>>,
+    project: &Project,
+) {
+    let route_table_read = route_table.read().await;
+    let consumption_apis_read = consumption_apis.read().await;
+
+    // Collect routes by category
+    let mut static_routes = vec![
+        (
+            "GET",
+            "/admin/inframap".to_string(),
+            "Admin: Get infrastructure map".to_string(),
+        ),
+        (
+            "GET",
+            "/admin/reality-check".to_string(),
+            "Admin: Reality check - provides a diff when drift is detected between the running instance of moose and the db it is connected to".to_string(),
+        ),
+        (
+            "GET",
+            "/health".to_string(),
+            "Health check endpoint".to_string(),
+        ),
+        (
+            "GET",
+            "/ready".to_string(),
+            "Readiness check endpoint".to_string(),
+        ),
+        (
+            "GET",
+            "/workflows/list".to_string(),
+            "List workflows".to_string(),
+        ),
+    ];
+
+    // Collect ingestion routes
+    let mut ingest_routes = Vec::new();
+    for (path, meta) in route_table_read.iter() {
+        let path_str = path.to_str().unwrap_or("");
+        let method = "POST";
+        let endpoint = format!("/{}", path_str);
+        let description = format!(
+            "Ingest data to {} (v{})",
+            meta.data_model.name,
+            meta.version
+                .as_ref()
+                .map_or("latest".to_string(), |v| v.to_string())
+        );
+        ingest_routes.push((method, endpoint, description));
+    }
+
+    // Collect consumption/API routes
+    let mut consumption_routes = Vec::new();
+    for api_path in consumption_apis_read.iter() {
+        let method = "GET";
+        let endpoint = format!("/api/{}", api_path);
+        let description = "Consumption API endpoint".to_string();
+        consumption_routes.push((method, endpoint, description));
+    }
+
+    // Sort each section alphabetically by endpoint
+    static_routes.sort_by(|a, b| a.1.cmp(&b.1));
+    ingest_routes.sort_by(|a, b| a.1.cmp(&b.1));
+    consumption_routes.sort_by(|a, b| a.1.cmp(&b.1));
+
+    // Print the routes if any exist
+    if !static_routes.is_empty() || !ingest_routes.is_empty() || !consumption_routes.is_empty() {
+        let base_url = project.http_server_config.url();
+        println!("\n📍 Available Routes:");
+        println!("  Base URL: {}\n", base_url);
+
+        // Calculate column widths for alignment across all sections
+        let method_width = 6; // "METHOD" or "POST"/"GET"
+        let all_routes: Vec<_> = static_routes
+            .iter()
+            .chain(ingest_routes.iter())
+            .chain(consumption_routes.iter())
+            .collect();
+        let endpoint_width = all_routes
+            .iter()
+            .map(|(_, endpoint, _)| endpoint.len())
+            .max()
+            .unwrap_or(30)
+            .min(60);
+
+        // Helper function to print a section
+        let print_section = |title: &str, routes: &[(&str, String, String)]| {
+            if !routes.is_empty() {
+                println!("  {}", title);
+                println!(
+                    "  {:<method_width$}  {:<endpoint_width$}  DESCRIPTION",
+                    "METHOD",
+                    "ENDPOINT",
+                    method_width = method_width,
+                    endpoint_width = endpoint_width
+                );
+                println!(
+                    "  {:<method_width$}  {:<endpoint_width$}  -----------",
+                    "------",
+                    "--------",
+                    method_width = method_width,
+                    endpoint_width = endpoint_width
+                );
+
+                for (method, endpoint, description) in routes {
+                    let truncated_endpoint = if endpoint.len() > 60 {
+                        format!("{}...", &endpoint[..57])
+                    } else {
+                        endpoint.clone()
+                    };
+                    println!(
+                        "  {:<method_width$}  {:<endpoint_width$}  {}",
+                        method,
+                        truncated_endpoint,
+                        description,
+                        method_width = method_width,
+                        endpoint_width = endpoint_width
+                    );
+                }
+                println!(); // Empty line after section
+            }
+        };
+
+        // Print each section
+        print_section("Static Routes:", &static_routes);
+        print_section("Ingestion Routes:", &ingest_routes);
+        print_section("Consumption Routes:", &consumption_routes);
+    }
+}
+
 impl Webserver {
     pub fn new(host: String, port: u16, management_port: u16) -> Self {
         Self {
@@ -1748,6 +1881,9 @@ impl Webserver {
                 details: "Webserver.\n\n".to_string(),
             }
         );
+
+        // Print available routes in table format
+        print_available_routes(route_table, consumption_apis, &project).await;
 
         if !project.is_production {
             // Fire once-only startup script as soon as server starts
