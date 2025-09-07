@@ -547,12 +547,20 @@ impl PartialInfrastructureMap {
                         format!("ingest/{}", custom_path)
                     };
 
-                    // Append version if specified
+                    // Append version if specified and not already in the path
                     if let Some(version) = &partial_api.version {
-                        if !path_str.ends_with('/') {
-                            path_str.push('/');
+                        // Check if the path already ends with the version
+                        let path_ends_with_version = path_str.ends_with(&format!("/{}", version))
+                            || path_str.ends_with(version) && path_str.len() == version.len()
+                            || path_str.ends_with(version)
+                                && path_str.chars().rev().nth(version.len()) == Some('/');
+
+                        if !path_ends_with_version {
+                            if !path_str.ends_with('/') {
+                                path_str.push('/');
+                            }
+                            path_str.push_str(version);
                         }
-                        path_str.push_str(version);
                     }
 
                     PathBuf::from(path_str)
@@ -599,13 +607,21 @@ impl PartialInfrastructureMap {
                     output_schema: partial_api.response_schema.clone(),
                 },
                 path: if let Some(custom_path) = &partial_api.path {
-                    // Use custom path if provided, and append version if specified
+                    // Use custom path if provided, and append version if specified and not already in the path
                     let mut path_str = custom_path.clone();
                     if let Some(version) = &partial_api.version {
-                        if !path_str.ends_with('/') {
-                            path_str.push('/');
+                        // Check if the path already ends with the version
+                        let path_ends_with_version = path_str.ends_with(&format!("/{}", version))
+                            || path_str.ends_with(version) && path_str.len() == version.len()
+                            || path_str.ends_with(version)
+                                && path_str.chars().rev().nth(version.len()) == Some('/');
+
+                        if !path_ends_with_version {
+                            if !path_str.ends_with('/') {
+                                path_str.push('/');
+                            }
+                            path_str.push_str(version);
                         }
-                        path_str.push_str(version);
                     }
                     PathBuf::from(path_str)
                 } else {
