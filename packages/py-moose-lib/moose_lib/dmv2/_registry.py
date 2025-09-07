@@ -13,5 +13,7 @@ _ingest_apis: Dict[str, Any] = {}
 _apis: Dict[str, Any] = {}
 # Alias map for O(1) fallback of sole versioned APIs: base name -> handler
 _api_name_aliases: Dict[str, Any] = {}
+# Map from custom paths to API instances for path-based lookup
+_api_path_map: Dict[str, Any] = {}
 _sql_resources: Dict[str, Any] = {}
-_workflows: Dict[str, Any] = {} 
+_workflows: Dict[str, Any] = {}
