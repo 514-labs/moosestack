@@ -27,7 +27,7 @@ pub enum APIType {
         // our code does not depend on the stored field
         // TODO data model is a reference to the primitive map, that should not leak into the infrastructure map
         // that's a different level of abstraction
-        data_model: Option<DataModel>,
+        data_model: Option<Box<DataModel>>,
         dead_letter_queue: Option<String>,
         schema: serde_json::Map<String, Value>,
     },
@@ -66,7 +66,7 @@ impl ApiEndpoint {
             name: data_model.name.clone(),
             api_type: APIType::INGRESS {
                 target_topic_id: topic.id(),
-                data_model: Some(data_model.clone()),
+                data_model: Some(Box::new(data_model.clone())),
                 dead_letter_queue: None,
                 schema: serde_json::Map::default(),
             },

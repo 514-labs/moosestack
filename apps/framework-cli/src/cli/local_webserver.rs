@@ -1767,7 +1767,7 @@ impl Webserver {
                                 route_table.insert(
                                     api_endpoint.path.clone(),
                                     RouteMeta {
-                                        data_model: data_model.unwrap(),
+                                        data_model: *data_model.unwrap(),
                                         dead_letter_queue,
                                         kafka_topic_name: kafka_topic.name,
                                         version: api_endpoint.version,
@@ -1817,7 +1817,7 @@ impl Webserver {
                                 route_table.insert(
                                     after.path.clone(),
                                     RouteMeta {
-                                        data_model: data_model.as_ref().unwrap().clone(),
+                                        data_model: *data_model.as_ref().unwrap().clone(),
                                         dead_letter_queue: dead_letter_queue.clone(),
                                         kafka_topic_name: kafka_topic.name,
                                         version: after.version,

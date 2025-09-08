@@ -529,7 +529,7 @@ impl PartialInfrastructureMap {
                 name: partial_api.name.clone(),
                 api_type: APIType::INGRESS {
                     target_topic_id: target_topic.id(),
-                    data_model: Some(data_model),
+                    data_model: Some(Box::new(data_model)),
                     dead_letter_queue: partial_api.dead_letter_queue.clone(),
                     schema: partial_api.schema.clone(),
                 },
