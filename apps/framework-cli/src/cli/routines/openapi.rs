@@ -108,17 +108,6 @@ pub async fn openapi(
 fn generate_openapi_spec(project: &Arc<Project>, infra_map: &InfrastructureMap) -> OpenAPI {
     let mut paths = HashMap::new();
     let mut schemas = HashMap::new();
-    //
-    // for api_endpoint in infra_map.api_endpoints.values() {
-    //     if let APIType::INGRESS {
-    //         data_model: Some(data_model),
-    //         schema,
-    //         ..
-    //     } = &api_endpoint.api_type
-    //     {
-    //         schemas.insert(data_model.name.clone(), Value::Object(schema.clone()));
-    //     }
-    // }
 
     for api_endpoint in infra_map.api_endpoints.values() {
         match &api_endpoint.api_type {
