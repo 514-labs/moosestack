@@ -42,94 +42,54 @@ The input is parsed as JSON and passed to the workflow's starting task.
 
 ## API-Triggered Workflows
 
-Create APIs that trigger workflows programmatically using the `MooseClient`:
+Trigger workflows directly via an HTTP POST endpoint exposed by the webserver.
 
-<TypeScript>
-```typescript filename="app/apis/trigger_workflow.ts" copy
-import { Api } from "@514labs/moose-lib";
+### Endpoint
 
-interface WorkflowParams {
-  inputValue: string;
-  priority?: string;
-}
+- POST `/workflows/{workflowName}/trigger`
 
-interface WorkflowResponse {
-  workflowId: string;
-  status: string;
-}
+### Request
 
-const triggerApi = new Api<WorkflowParams, WorkflowResponse>(
-  "trigger-workflow",
-  async ({ inputValue, priority = "normal" }: WorkflowParams, { client }) => {
-    // Trigger the workflow with input parameters
-    const workflowExecution = await client.workflow.execute("data-processing", {
-        inputValue,
-        priority,
-        triggeredAt: new Date().toISOString()
-    }); 
+- Body: optional JSON payload passed to the workflow's starting task.
 
-    return {
-      workflowId: workflowExecution.id,
-      status: "started"
-    };
-  }
-);
-
-export default triggerApi;
-```
-</TypeScript>
-
-<Python>
-```python filename="app/apis/trigger_workflow.py" copy
-from moose_lib import MooseClient, Api
-from pydantic import BaseModel, Field
-from datetime import datetime
-
-class WorkflowParams(BaseModel):
-    input_value: str
-    priority: str = Field(default="normal")
-
-class WorkflowResponse(BaseModel):
-    workflow_id: str
-    status: str
-
-def run(params: WorkflowParams, client: MooseClient) -> WorkflowResponse:
-    # Trigger the workflow with input parameters
-    workflow_execution = client.workflows.execute(
-        workflow="data-processing",
-        params={
-            "input_value": params.input_value,
-            "priority": params.priority,
-            "triggered_at": datetime.now().isoformat()
-        }
-    )
-
-    return WorkflowResponse(
-        workflow_id=workflow_execution.id,
-        status="started"
-    )
-
-api = Api[WorkflowParams, WorkflowResponse]("trigger-workflow", run)
-```
-</Python>
-
-### Using the API
-
-Once deployed, you can trigger workflows via HTTP requests:
+Example:
 
 ```bash filename="Terminal" copy
-curl -X POST http://localhost:4000/api/trigger-workflow \
-  -H "Content-Type: application/json" \
+curl -X POST 'http://localhost:4000/workflows/data-processing/trigger' \
+  -H 'Content-Type: application/json' \
   -d '{
     "inputValue": "process-user-data",
     "priority": "high"
   }'
 ```
 
-Response:
-```json
+### Authentication
+
+- Local development: no auth required.
+- Production: requires `Authorization: Bearer <token>` matching `MOOSE_CONSUMPTION_API_KEY`.
+
+```bash filename="Terminal" copy
+curl -X POST 'https://your-host/workflows/data-processing/trigger' \
+  -H 'Authorization: Bearer <your_token>' \
+  -H 'Content-Type: application/json' \
+  -d '{"inputValue":"process-user-data"}'
+```
+
+### Response
+
+```json filename="Response"
 {
-  "workflowId": "workflow-12345",
-  "status": "started"
+  "workflowId": "data-processing",
+  "runId": "data-processing-<hash>",
+}
+```
+
+In local development, the response also includes a `dashboardUrl` to Temporal UI:
+
+```json filename="Response (dev)"
+{
+  "workflowId": "data-processing",
+  "runId": "data-processing-<hash>",
+  "dashboardUrl": "http://localhost:8080/namespaces/<ns>/workflows/data-processing/<runId>/history"
 }
 ```
