@@ -103,7 +103,9 @@ const handleAggregated = (
 
 /** Detect ClickHouse default annotation on a type and return raw sql */
 const handleDefault = (t: ts.Type, checker: TypeChecker): string | null => {
-  const defaultSymbol = t.getProperty("_clickhouse_default");
+  // Ensure we check the non-nullable part so optionals still surface defaults
+  const nonNull = t.getNonNullableType();
+  const defaultSymbol = nonNull.getProperty("_clickhouse_default");
   if (defaultSymbol === undefined) return null;
   const defaultType = checker.getNonNullableType(
     checker.getTypeOfSymbol(defaultSymbol),
@@ -499,13 +501,17 @@ export const toColumns = (t: ts.Type, checker: TypeChecker): Column[] => {
       isJwt,
     );
 
+    const columnDefault = defaultExpression ?? handleDefault(type, checker);
+    const required =
+      !nullable || (columnDefault !== null && columnDefault !== undefined);
+
     return {
       name: prop.name,
       data_type: dataType,
       primary_key: isKey,
-      required: !nullable,
+      required,
       unique: false,
-      default: defaultExpression ?? handleDefault(type, checker),
+      default: columnDefault,
       annotations,
     };
   });
