@@ -338,8 +338,7 @@ async fn get_consumption_api_res(
             .status(StatusCode::UNAUTHORIZED)
             .body(Full::new(Bytes::from(
                 "Unauthorized: Invalid or missing token",
-            )))
-            .unwrap());
+            )))?);
     }
 
     let full_path = req.uri().path();
