@@ -23,7 +23,7 @@ use super::display::{
 };
 use super::routines::auth::validate_auth_token;
 use super::routines::scripts::{
-    get_workflow_history, start_workflow_and_get_run_id, temporal_dashboard_url,
+    get_workflow_history, run_workflow_and_get_run_ids, temporal_dashboard_url,
     terminate_all_workflows,
 };
 use super::settings::Settings;
@@ -338,7 +338,8 @@ async fn get_consumption_api_res(
             .status(StatusCode::UNAUTHORIZED)
             .body(Full::new(Bytes::from(
                 "Unauthorized: Invalid or missing token",
-            )))?);
+            )))
+            .unwrap());
     }
 
     let full_path = req.uri().path();
@@ -514,11 +515,11 @@ async fn workflows_history_route(
     if is_prod {
         let auth_header = req.headers().get(hyper::header::AUTHORIZATION);
         if !check_authorization(auth_header, &MOOSE_CONSUMPTION_API_KEY, &None).await {
-            return Ok(Response::builder()
+            return Response::builder()
                 .status(StatusCode::UNAUTHORIZED)
                 .body(Full::new(Bytes::from(
                     "Unauthorized: Invalid or missing token",
-                )))?);
+                )));
         }
     }
 
@@ -568,11 +569,11 @@ async fn workflows_trigger_route(
     if is_prod {
         let auth_header = req.headers().get(hyper::header::AUTHORIZATION);
         if !check_authorization(auth_header, &MOOSE_CONSUMPTION_API_KEY, &None).await {
-            return Ok(Response::builder()
+            return Response::builder()
                 .status(StatusCode::UNAUTHORIZED)
                 .body(Full::new(Bytes::from(
                     "Unauthorized: Invalid or missing token",
-                )))?);
+                )));
         }
     }
 
@@ -601,16 +602,14 @@ async fn workflows_trigger_route(
         },
     };
 
-    match start_workflow_and_get_run_id(&project, &workflow_name, input_str).await {
-        Ok(run_id) => {
+    match run_workflow_and_get_run_ids(&project, &workflow_name, input_str).await {
+        Ok(info) => {
             let namespace = project.temporal_config.get_temporal_namespace();
-            let dashboard_url = temporal_dashboard_url(&namespace, &workflow_name, &run_id);
 
-            let mut payload = serde_json::json!({
-                "workflowId": workflow_name,
-                "runId": run_id,
-            });
+            let mut payload = serde_json::to_value(&info).unwrap();
             if !is_prod {
+                let dashboard_url =
+                    temporal_dashboard_url(&namespace, &info.workflow_id, &info.run_id);
                 payload["dashboardUrl"] = serde_json::Value::String(dashboard_url);
             }
 
