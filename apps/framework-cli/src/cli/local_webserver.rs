@@ -1285,9 +1285,13 @@ async fn router(
 
     let route_split = route.to_str().unwrap().split('/').collect::<Vec<&str>>();
     let res = match (configured_producer, req.method(), &route_split[..]) {
-        (Some(configured_producer), &hyper::Method::POST, ["ingest", _]) => {
-            if project.features.data_model_v2 {
-                // For v2, find the latest version if no version specified
+        // Handle ingestion routes with nested paths
+        (Some(configured_producer), &hyper::Method::POST, segments)
+            if segments.len() >= 2 && segments[0] == "ingest" =>
+        {
+            // For nested paths, we need to handle version resolution differently
+            if project.features.data_model_v2 && segments.len() == 2 {
+                // For v2 with simple path (e.g., /ingest/model_name), find the latest version
                 let route_table_read = route_table.read().await;
                 let base_path = route.to_str().unwrap();
                 let mut latest_version: Option<&Version> = None;
@@ -1332,8 +1336,8 @@ async fn router(
                         .await
                     }
                 }
-            } else {
-                // For v1, append current version as before
+            } else if !project.features.data_model_v2 && segments.len() == 2 {
+                // For v1 with simple path, append current version
                 ingest_route(
                     req,
                     route.join(&current_version),
@@ -1344,19 +1348,19 @@ async fn router(
                     project.http_server_config.max_request_body_size,
                 )
                 .await
+            } else {
+                // For nested paths or paths with explicit version, use as-is
+                ingest_route(
+                    req,
+                    route,
+                    configured_producer,
+                    route_table,
+                    is_prod,
+                    jwt_config,
+                    project.http_server_config.max_request_body_size,
+                )
+                .await
             }
-        }
-        (Some(configured_producer), &hyper::Method::POST, ["ingest", _, _]) => {
-            ingest_route(
-                req,
-                route,
-                configured_producer,
-                route_table,
-                is_prod,
-                jwt_config,
-                project.http_server_config.max_request_body_size,
-            )
-            .await
         }
         (_, &hyper::Method::POST, ["admin", "integrate-changes"]) => {
             admin_integrate_changes_route(

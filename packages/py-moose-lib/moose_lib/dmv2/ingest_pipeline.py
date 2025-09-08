@@ -24,7 +24,9 @@ class IngestPipelineConfig(BaseModel):
         table: Configuration for the OLAP table component.
         stream: Configuration for the stream component.
         ingest: Configuration for the ingest API component.
+        dead_letter_queue: Configuration for the dead letter queue.
         version: Optional version string applied to all created components.
+        path: Optional custom path for the ingestion API endpoint.
         metadata: Optional metadata for the ingestion pipeline.
         life_cycle: Determines how changes in code will propagate to the resources.
     """
@@ -33,6 +35,7 @@ class IngestPipelineConfig(BaseModel):
     ingest: bool | IngestConfig = True
     dead_letter_queue: bool | StreamConfig = True
     version: Optional[str] = None
+    path: Optional[str] = None
     metadata: Optional[dict] = None
     life_cycle: Optional[LifeCycle] = None
 
@@ -154,6 +157,8 @@ class IngestPipeline(TypedMooseResource, Generic[T]):
             ingest_config_dict["destination"] = self.stream
             if config.version:
                 ingest_config_dict["version"] = config.version
+            if config.path:
+                ingest_config_dict["path"] = config.path
             if self.dead_letter_queue:
                 ingest_config_dict["dead_letter_queue"] = self.dead_letter_queue
             ingest_config_dict["metadata"] = ingest_metadata

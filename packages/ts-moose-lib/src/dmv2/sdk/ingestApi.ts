@@ -18,6 +18,10 @@ export interface IngestConfig<T> {
    * An optional version string for this configuration.
    */
   version?: string;
+  /**
+   * An optional custom path for the ingestion endpoint.
+   */
+  path?: string;
   metadata?: { description?: string };
 }
 

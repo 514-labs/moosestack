@@ -17,9 +17,11 @@ class IngestConfig(BaseModel):
 
     Attributes:
         version: Optional version string.
+        path: Optional custom path for the ingestion endpoint.
         metadata: Optional metadata for the ingestion point.
     """
     version: Optional[str] = None
+    path: Optional[str] = None
     metadata: Optional[dict] = None
 
 @dataclasses.dataclass
@@ -28,12 +30,15 @@ class IngestConfigWithDestination[T: BaseModel]:
 
     Attributes:
         destination: The `Stream` where ingested data will be sent.
+        dead_letter_queue: Optional dead letter queue for failed messages.
         version: Optional version string.
+        path: Optional custom path for the ingestion endpoint.
         metadata: Optional metadata for the ingestion configuration.
     """
     destination: Stream[T]
     dead_letter_queue: Optional[DeadLetterQueue[T]] = None
     version: Optional[str] = None
+    path: Optional[str] = None
     metadata: Optional[dict] = None
 
 class IngestApi(TypedMooseResource, Generic[T]):
