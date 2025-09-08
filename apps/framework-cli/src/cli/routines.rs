@@ -166,6 +166,7 @@ pub mod ps;
 pub mod scripts;
 pub mod seed_data;
 pub mod templates;
+pub mod truncate_table;
 mod util;
 pub mod validate;
 

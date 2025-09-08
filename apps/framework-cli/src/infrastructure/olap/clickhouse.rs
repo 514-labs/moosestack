@@ -1211,7 +1211,7 @@ impl OlapOperations for ConfiguredDBClient {
 /// let order_by = extract_order_by_from_create_query(query);
 /// assert_eq!(order_by, vec!["id".to_string(), "timestamp".to_string()]);
 /// ```
-fn extract_order_by_from_create_query(create_query: &str) -> Vec<String> {
+pub fn extract_order_by_from_create_query(create_query: &str) -> Vec<String> {
     debug!("Extracting ORDER BY from query: {}", create_query);
 
     // Find the ORDER BY clause, being careful not to match PRIMARY KEY

@@ -955,6 +955,10 @@ pub async fn top_command_handler(
             let project = load_project()?;
             seed_data::handle_seed_command(seed_args, &project).await
         }
+        Commands::Truncate { tables, all, rows } => {
+            let project = load_project()?;
+            routines::truncate_table::truncate_tables(&project, tables.clone(), *all, *rows).await
+        }
     }
 }
 

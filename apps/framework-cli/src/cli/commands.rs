@@ -150,6 +150,20 @@ pub enum Commands {
     },
     /// Seed data into your project
     Seed(SeedCommands),
+    /// Truncate tables or delete the last N rows
+    Truncate {
+        /// List of table names to target (omit when using --all)
+        #[arg(value_name = "TABLE", num_args = 0.., value_delimiter = ',')]
+        tables: Vec<String>,
+
+        /// Apply the operation to all tables in the current database
+        #[arg(long, conflicts_with = "tables", default_value = "false")]
+        all: bool,
+
+        /// Number of most recent rows to delete per table. Omit to delete all rows.
+        #[arg(long)]
+        rows: Option<u64>,
+    },
 }
 
 #[derive(Debug, Args)]
@@ -287,12 +301,20 @@ pub struct SeedCommands {
 pub enum SeedSubcommands {
     /// Seed ClickHouse tables with data
     Clickhouse {
-        /// ClickHouse connection string (e.g. clickhouse://user:pass@host:port/db)
+        /// ClickHouse connection string (e.g. 'clickhouse://explorer@play.clickhouse.com:9440/default')
         #[arg(long, value_name = "CONNECTION_STRING")]
         connection_string: String,
         /// Limit the number of rows to copy per table (default: 1000)
-        #[arg(long, value_name = "LIMIT", default_value_t = 1000)]
+        #[arg(
+            long,
+            value_name = "LIMIT",
+            default_value_t = 1000,
+            conflicts_with = "all"
+        )]
         limit: usize,
+        /// Copy all rows (ignore limit). If set for a table, copies entire table.
+        #[arg(long, default_value = "false", conflicts_with = "limit")]
+        all: bool,
         /// Only seed a specific table (optional)
         #[arg(long, value_name = "TABLE_NAME")]
         table: Option<String>,

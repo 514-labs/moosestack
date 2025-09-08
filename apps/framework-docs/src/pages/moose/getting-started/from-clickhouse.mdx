@@ -271,20 +271,36 @@ Don't see this output? [Check out the troubleshooting section](#troubleshooting)
 </ToggleBlock>
 
 ### Seed Your Local Database
-You can seed your data into your local ClickHouse instance by running the following command:
+Seed your local ClickHouse from a remote ClickHouse instance. Seeding runs in safe batches with live progress and supports cancellation (Ctrl+C finishes the current batch).
 
-<Tabs items={["From your own ClickHouse", "From the ClickHouse Playground"]}>
+<Tabs items={["From your own ClickHouse", "From the ClickHouse Playground", "Using env var"]}>
 <Tabs.Tab>
 ```bash filename="Terminal" copy
-moose seed --connection-string <YOUR_CLICKHOUSE_CONNECTION_STRING> --limit 100
+moose seed clickhouse --connection-string <YOUR_CLICKHOUSE_CONNECTION_STRING> --limit 100000
 ```
 </Tabs.Tab>
 <Tabs.Tab>
 ```bash filename="Terminal" copy
-moose seed --connection-string https://explorer:@play.clickhouse.com:443/?database=default --limit 100
+moose seed clickhouse --connection-string https://explorer:@play.clickhouse.com:443/?database=default --limit 100000
+```
+</Tabs.Tab>
+<Tabs.Tab>
+```bash filename="Terminal" copy
+# You can omit --connection-string by setting an env var
+export MOOSE_SEED_CLICKHOUSE_URL='https://username:password@host:8443/?database=default'
+
+# copy a limited number of rows (batched under the hood)
+moose seed clickhouse --limit 100000
 ```
 </Tabs.Tab>
 </Tabs>
+
+<Callout type="info" title="Notes">
+- `--limit` and `--all` are mutually exclusive
+- `--all` can be used to copy the entire table(s), use with caution as it can be very slow and computationally intensive.
+- Large copies are automatically batched to avoid remote limits; you’ll see per-batch progress.
+- If you stop with Ctrl+C, the current batch finishes and the command exits gracefully.
+</Callout>
 
 <br />
 
