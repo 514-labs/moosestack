@@ -8,7 +8,7 @@ JSON format expected by the Moose infrastructure management system.
 """
 from importlib import import_module
 from typing import Literal, Optional, List, Any
-from pydantic import BaseModel, ConfigDict, AliasGenerator
+from pydantic import BaseModel, ConfigDict, AliasGenerator, Field
 import json
 from .data_models import Column, _to_columns
 from moose_lib.dmv2 import (
@@ -125,6 +125,7 @@ class IngestApiConfig(BaseModel):
     dead_letter_queue: Optional[str] = None
     version: Optional[str] = None
     metadata: Optional[dict] = None
+    json_schema: dict[str, Any] = Field(serialization_alias="schema")
 
 class InternalApiConfig(BaseModel):
     """Internal representation of a API configuration for serialization.
@@ -320,7 +321,10 @@ def to_infra_map() -> dict:
                 name=api.config.destination.name
             ),
             metadata=getattr(api, "metadata", None),
-            dead_letter_queue=api.config.dead_letter_queue.name
+            dead_letter_queue=api.config.dead_letter_queue.name,
+            json_schema=api._t.model_json_schema(
+                ref_template='#/components/schemas/{model}'
+            ),
         )
 
     for name, api in get_apis().items():

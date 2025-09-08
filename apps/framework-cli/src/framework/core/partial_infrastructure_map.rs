@@ -157,6 +157,7 @@ struct PartialIngestApi {
     pub metadata: Option<Metadata>,
     #[serde(default)]
     pub dead_letter_queue: Option<String>,
+    pub schema: serde_json::Map<String, serde_json::Value>,
 }
 
 /// Represents an egress API endpoint definition before conversion to a complete [`ApiEndpoint`].
@@ -530,6 +531,7 @@ impl PartialInfrastructureMap {
                     target_topic_id: target_topic.id(),
                     data_model: Some(data_model),
                     dead_letter_queue: partial_api.dead_letter_queue.clone(),
+                    schema: partial_api.schema.clone(),
                 },
                 path: PathBuf::from_iter(
                     [

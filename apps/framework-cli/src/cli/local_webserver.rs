@@ -1752,6 +1752,7 @@ impl Webserver {
                                 target_topic_id,
                                 dead_letter_queue,
                                 data_model,
+                                schema: _,
                             } => {
                                 // This is not namespaced
                                 let topic =
@@ -1801,6 +1802,7 @@ impl Webserver {
                                 target_topic_id,
                                 dead_letter_queue,
                                 data_model,
+                                schema: _,
                             } => {
                                 log::info!("Replacing route: {:?} with {:?}", before, after);
 

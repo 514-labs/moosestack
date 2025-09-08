@@ -29,6 +29,7 @@ pub enum APIType {
         // that's a different level of abstraction
         data_model: Option<DataModel>,
         dead_letter_queue: Option<String>,
+        schema: serde_json::Map<String, Value>,
     },
     EGRESS {
         query_params: Vec<ConsumptionQueryParam>,
@@ -67,6 +68,7 @@ impl ApiEndpoint {
                 target_topic_id: topic.id(),
                 data_model: Some(data_model.clone()),
                 dead_letter_queue: None,
+                schema: serde_json::Map::default(),
             },
             // This implementation is actually removing the functionality of nestedness of paths in
             // data model to change the ingest path. However, we are changing how this works with an
@@ -216,6 +218,7 @@ impl APIType {
                 target_topic_id,
                 data_model: _data_model,
                 dead_letter_queue,
+                schema: _,
             } => ProtoApiType::Ingress(IngressDetails {
                 target_topic: target_topic_id.clone(),
                 special_fields: Default::default(),
@@ -253,6 +256,7 @@ impl APIType {
                 target_topic_id: details.target_topic,
                 dead_letter_queue: details.dead_letter_queue,
                 data_model: None,
+                schema: serde_json::Map::default(),
             },
             ProtoApiType::Egress(details) => APIType::EGRESS {
                 query_params: details
