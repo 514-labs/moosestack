@@ -107,6 +107,23 @@ pub async fn run_workflow(
 ) -> Result<RoutineSuccess, RoutineFailure> {
     let namespace = project.temporal_config.get_temporal_namespace();
 
+    let run_id = start_workflow_and_get_run_id(project, name, input).await?;
+
+    let dashboard_url = temporal_dashboard_url(&namespace, &name, &run_id);
+
+    Ok(RoutineSuccess::success(Message {
+        action: "Workflow".to_string(),
+        details: format!(
+            "'{name}' started successfully.\nView it in the Temporal dashboard: {dashboard_url}\n",
+        ),
+    }))
+}
+
+pub async fn start_workflow_and_get_run_id(
+    project: &Project,
+    name: &str,
+    input: Option<String>,
+) -> Result<String, RoutineFailure> {
     let infra_map = InfrastructureMap::load_from_user_code(project)
         .await
         .map_err(|e| {
@@ -141,7 +158,6 @@ pub async fn run_workflow(
             )
         })?;
 
-    // Check if run_id is empty or invalid
     if run_id.is_empty() {
         return Err(RoutineFailure::error(Message {
             action: "Workflow".to_string(),
@@ -149,15 +165,14 @@ pub async fn run_workflow(
         }));
     }
 
-    let dashboard_url =
-        format!("http://localhost:8080/namespaces/{namespace}/workflows/{name}/{run_id}/history",);
+    Ok(run_id)
+}
 
-    Ok(RoutineSuccess::success(Message {
-        action: "Workflow".to_string(),
-        details: format!(
-            "'{name}' started successfully.\nView it in the Temporal dashboard: {dashboard_url}\n",
-        ),
-    }))
+pub fn temporal_dashboard_url(namespace: &str, workflow_id: &str, run_id: &str) -> String {
+    format!(
+        "http://localhost:8080/namespaces/{}/workflows/{}/{}/history",
+        namespace, workflow_id, run_id
+    )
 }
 
 pub async fn get_workflow_history(

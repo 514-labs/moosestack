@@ -22,7 +22,10 @@ use super::display::{
     with_spinner_completion, with_spinner_completion_async, Message, MessageType,
 };
 use super::routines::auth::validate_auth_token;
-use super::routines::scripts::{get_workflow_history, terminate_all_workflows};
+use super::routines::scripts::{
+    get_workflow_history, start_workflow_and_get_run_id, temporal_dashboard_url,
+    terminate_all_workflows,
+};
 use super::settings::Settings;
 use crate::infrastructure::redis::redis_client::RedisClient;
 use crate::infrastructure::stream::kafka::models::KafkaStreamConfig;
@@ -503,21 +506,20 @@ struct WorkflowQueryParams {
     limit: Option<u32>,
 }
 
-async fn workflows_list_route(
+async fn workflows_history_route(
     req: Request<hyper::body::Incoming>,
     is_prod: bool,
     project: Arc<Project>,
 ) -> Result<Response<Full<Bytes>>, hyper::http::Error> {
     if is_prod {
-        return Response::builder()
-            .status(StatusCode::FORBIDDEN)
-            .header("Content-Type", "application/json")
-            .body(Full::new(Bytes::from(
-                serde_json::to_string(&json!({
-                    "error": "Workflows list not available in production"
-                }))
-                .unwrap(),
-            )));
+        let auth_header = req.headers().get(hyper::header::AUTHORIZATION);
+        if !check_authorization(auth_header, &MOOSE_CONSUMPTION_API_KEY, &None).await {
+            return Ok(Response::builder()
+                .status(StatusCode::UNAUTHORIZED)
+                .body(Full::new(Bytes::from(
+                    "Unauthorized: Invalid or missing token",
+                )))?);
+        }
     }
 
     let query_params: WorkflowQueryParams = req
@@ -553,6 +555,84 @@ async fn workflows_list_route(
                     serde_json::to_string(&error_response).unwrap(),
                 )))
         }
+    }
+}
+
+async fn workflows_trigger_route(
+    req: Request<hyper::body::Incoming>,
+    is_prod: bool,
+    project: Arc<Project>,
+    workflow_name: String,
+    max_request_body_size: usize,
+) -> Result<Response<Full<Bytes>>, hyper::http::Error> {
+    if is_prod {
+        let auth_header = req.headers().get(hyper::header::AUTHORIZATION);
+        if !check_authorization(auth_header, &MOOSE_CONSUMPTION_API_KEY, &None).await {
+            return Ok(Response::builder()
+                .status(StatusCode::UNAUTHORIZED)
+                .body(Full::new(Bytes::from(
+                    "Unauthorized: Invalid or missing token",
+                )))?);
+        }
+    }
+
+    let mut reader = match to_reader(req, max_request_body_size).await {
+        Ok(r) => r,
+        Err(resp) => return Ok(resp),
+    };
+
+    let input_str = match serde_json::from_reader::<_, serde_json::Value>(&mut reader) {
+        Ok(v) => Some(serde_json::to_string(&v).unwrap()),
+        Err(e) => match e.classify() {
+            serde_json::error::Category::Eof => None,
+            _ => {
+                return Response::builder()
+                    .status(StatusCode::BAD_REQUEST)
+                    .header("Content-Type", "application/json")
+                    .header("Access-Control-Allow-Origin", "*")
+                    .body(Full::new(Bytes::from(
+                        serde_json::to_string(&serde_json::json!({
+                            "error": "Invalid JSON body",
+                            "details": e.to_string()
+                        }))
+                        .unwrap(),
+                    )));
+            }
+        },
+    };
+
+    match start_workflow_and_get_run_id(&project, &workflow_name, input_str).await {
+        Ok(run_id) => {
+            let namespace = project.temporal_config.get_temporal_namespace();
+            let dashboard_url = temporal_dashboard_url(&namespace, &workflow_name, &run_id);
+
+            let mut payload = serde_json::json!({
+                "workflowId": workflow_name,
+                "runId": run_id,
+            });
+            if !is_prod {
+                payload["dashboardUrl"] = serde_json::Value::String(dashboard_url);
+            }
+
+            Response::builder()
+                .status(StatusCode::OK)
+                .header("Content-Type", "application/json")
+                .header("Access-Control-Allow-Origin", "*")
+                .body(Full::new(Bytes::from(
+                    serde_json::to_string(&payload).unwrap(),
+                )))
+        }
+        Err(e) => Response::builder()
+            .status(StatusCode::BAD_REQUEST)
+            .header("Content-Type", "application/json")
+            .header("Access-Control-Allow-Origin", "*")
+            .body(Full::new(Bytes::from(
+                serde_json::to_string(&serde_json::json!({
+                    "error": "Failed to start workflow",
+                    "details": format!("{:?}", e)
+                }))
+                .unwrap(),
+            ))),
     }
 }
 
@@ -1425,8 +1505,18 @@ async fn router(
             )
             .await
         }
-        (_, &hyper::Method::GET, ["workflows", "list"]) => {
-            workflows_list_route(req, is_prod, project.clone()).await
+        (_, &hyper::Method::GET, ["workflows", "history"]) => {
+            workflows_history_route(req, is_prod, project.clone()).await
+        }
+        (_, &hyper::Method::POST, ["workflows", name, "trigger"]) => {
+            workflows_trigger_route(
+                req,
+                is_prod,
+                project.clone(),
+                name.to_string(),
+                project.http_server_config.max_request_body_size,
+            )
+            .await
         }
         (_, &hyper::Method::OPTIONS, _) => options_route(),
         _ => route_not_found_response(),
@@ -1612,9 +1702,14 @@ async fn print_available_routes(
         ),
         (
             "GET",
-            "/workflows/list".to_string(),
-            "List workflows".to_string(),
+            "/workflows/history".to_string(),
+            "Workflow history".to_string(),
         ),
+        (
+            "POST",
+            "/workflows/name/trigger".to_string(),
+            "Trigger a workflow".to_string(),
+        )
     ];
 
     // Collect ingestion routes
