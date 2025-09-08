@@ -12,6 +12,17 @@ import { Tabs } from "nextra/components";
 
 Inserting data into your database is a common task. MooseStack provides a few different ways to insert data into your database.
 
+<Callout type="info" title="Optional fields with ClickHouse defaults">
+If a table column is modeled as optional in your app type but has a ClickHouse default, Moose treats incoming records as optional at the API/stream boundary, but the ClickHouse table stores the column as required with a DEFAULT clause. If you omit the field in the payload, ClickHouse fills it with the default at insert time.
+
+<TypeScript>
+`field?: number & ClickHouseDefault<"18">` or `WithDefault<number, "18">`
+</TypeScript>
+<Python>
+`Annotated[int, clickhouse_default("18")]`
+</Python>
+</Callout>
+
 ## From a Stream (Streaming Ingest)
 When you need to stream data into your ClickHouse tables, you can set the `Stream.destination` as a reference to the `OlapTable` you want to insert into. This will automatically provision a synchronization process that batches and inserts data into the table.  
 
