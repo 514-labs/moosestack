@@ -406,6 +406,9 @@ pub fn tables_to_python(tables: &[Table]) -> String {
         writeln!(output, "    stream=True,").unwrap();
         writeln!(output, "    table=OlapConfig(").unwrap();
         writeln!(output, "        order_by_fields=[{order_by_fields}],").unwrap();
+        if table.columns.iter().any(|c| c.name.starts_with("_peerdb_")) {
+            writeln!(output, "        life_cycle=EXTERNALLY_MANAGED,").unwrap();
+        };
         if let Some(engine) = table.engine.as_deref() {
             if let Ok(engine) = ClickhouseEngine::try_from(engine) {
                 writeln!(output, "        engine=ClickHouseEngines.{:?},", engine).unwrap();
