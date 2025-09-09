@@ -117,7 +117,7 @@ import { DeadLetterQueue } from "@514labs/moose-lib";
 // Create dead letter queue
 const eventDLQ = new DeadLetterQueue<RawEvent>("EventDLQ");
 
-// Add transform with errors and DLQ configuration
+// Add transform with errors to trigger DLQ, and DLQ configuration
 rawEvents.stream!.addTransform(
   processedEvents.stream!,
   (event: RawEvent): ProcessedEvent => {
@@ -151,6 +151,7 @@ from moose_lib import DeadLetterQueue, TransformConfig
 # Create dead letter queue
 event_dlq = DeadLetterQueue[RawEvent](name="EventDLQ")
 
+# Define transformation function, including errors to trigger DLQ
 def process_event(event: RawEvent) -> ProcessedEvent:
     # This transform might fail for invalid data
     if not event.user_id or len(event.user_id) == 0:
@@ -183,7 +184,7 @@ Add a dead letter queue to your Consumer Function configuration, and any errors 
 
 <TypeScript>
 ```ts filename="consumer-with-dlq.ts" copy
-// Add consumer with DLQ configuration
+// Add consumer with errors to trigger DLQ, and DLQ configuration
 rawEvents.stream!.addConsumer(
   (event: RawEvent): void => {
     // This consumer might fail for certain events
@@ -205,6 +206,7 @@ rawEvents.stream!.addConsumer(
 ```py filename="consumer-with-dlq.py" copy
 from moose_lib import ConsumerConfig
 
+# Define consumer function with errors to trigger DLQ
 def process_event_consumer(event: RawEvent) -> None:
     # This consumer might fail for certain events
     if event.action == "forbidden_action":
