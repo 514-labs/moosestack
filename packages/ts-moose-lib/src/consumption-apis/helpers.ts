@@ -6,7 +6,8 @@ import {
 } from "@temporalio/client";
 import { StringValue } from "@temporalio/common";
 import { createHash, randomUUID } from "node:crypto";
-import * as path from "path";
+import { performance } from "perf_hooks";
+import prettyMs from "pretty-ms";
 import * as fs from "fs";
 import { getWorkflows } from "../dmv2/internal";
 import { JWTPayload } from "jose";
@@ -46,7 +47,35 @@ export class QueryClient {
   ): Promise<ResultSet<"JSONEachRow"> & { __query_result_t?: T[] }> {
     const [query, query_params] = toQuery(sql);
 
-    return this.client.query({
+    const formatValue = (v: any): string => {
+      if (Array.isArray(v)) return `[${v.map(formatValue).join(", ")}]`;
+      if (v === null || v === undefined) return "NULL";
+      switch (typeof v) {
+        case "string":
+          return `'${v.replace(/'/g, "''")}'`;
+        case "number":
+          return String(v);
+        case "boolean":
+          return v ? "true" : "false";
+        default:
+          try {
+            return JSON.stringify(v);
+          } catch {
+            return String(v);
+          }
+      }
+    };
+
+    const substitutedQuery = query.replace(/\{(p\d+):[^}]+\}/g, (m, pName) => {
+      const val = (query_params as any)[pName];
+      return val === undefined ? m : formatValue(val);
+    });
+
+    const printableQuery = substitutedQuery.replace(/\s+/g, " ").trim();
+    console.log(`[QueryClient] | Executing query: ${printableQuery}`);
+
+    const start = performance.now();
+    const result = await this.client.query({
       query,
       query_params,
       format: "JSONEachRow",
@@ -54,15 +83,10 @@ export class QueryClient {
       // Note: wait_end_of_query deliberately NOT set here as this is used for SELECT queries
       // where response buffering would harm streaming performance and concurrency
     });
+    const elapsedMs = performance.now() - start;
+    console.log(`[QueryClient] | Query completed: ${prettyMs(elapsedMs)}`);
+    return result;
   }
-}
-
-interface WorkflowConfig {
-  name: string;
-  schedule: string;
-  retries: number;
-  timeout: string;
-  tasks: string[];
 }
 
 export class WorkflowClient {

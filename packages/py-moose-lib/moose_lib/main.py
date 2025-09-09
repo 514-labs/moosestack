@@ -19,6 +19,8 @@ from string import Formatter
 from temporalio.client import Client as TemporalClient, TLSConfig
 from temporalio.common import RetryPolicy, WorkflowIDConflictPolicy, WorkflowIDReusePolicy
 from datetime import timedelta
+from time import perf_counter
+from humanfriendly import format_timespan
 from .config.runtime import RuntimeClickHouseConfig
 
 from moose_lib.commons import EnhancedJSONEncoder
@@ -203,7 +205,11 @@ class QueryClient:
         # wake it up, before we send the query.
         self.ch_client.ping()
 
+        print(f"[QueryClient] | Query: {' '.join(clickhouse_query.split())}")
+        start = perf_counter()
         val = self.ch_client.query(clickhouse_query, values)
+        ms = (perf_counter() - start) * 1000
+        print(f"[QueryClient] | Query completed: {format_timespan(ms)}")
 
         if row_type is None:
             return list(val.named_results())

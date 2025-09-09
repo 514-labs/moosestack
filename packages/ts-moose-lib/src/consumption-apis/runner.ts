@@ -169,6 +169,7 @@ const apiHandler = async (
           }
 
           modulesCache.set(pathName, userFuncModule);
+          console.log(`[QueryClient] | Executing API: ${apiName}`);
         } else {
           userFuncModule = require(pathName);
           modulesCache.set(pathName, userFuncModule);
@@ -176,6 +177,7 @@ const apiHandler = async (
       }
 
       const queryClient = new QueryClient(clickhouseClient, fileName);
+      console.log("API runner calling user's api handler");
       let result =
         isDmv2 ?
           await userFuncModule(paramsObject, {

@@ -1,3 +1,4 @@
+use crate::cli::display::message::{Message, MessageType};
 use crate::framework::consumption::model::ConsumptionQueryParam;
 use crate::framework::core::infrastructure::table::{ColumnType, FloatType, IntType};
 use crate::framework::typescript::export_collectors::ExportCollectorError;
@@ -101,7 +102,17 @@ pub fn run(
 
     tokio::spawn(async move {
         while let Ok(Some(line)) = stdout_reader.next_line().await {
-            info!("{}", line);
+            if let Some(stripped) = line.strip_prefix("[QueryClient] | ") {
+                show_message!(
+                    MessageType::Info,
+                    Message {
+                        action: "API".to_string(),
+                        details: stripped.to_string(),
+                    }
+                );
+            } else {
+                info!("{}", line);
+            }
         }
     });
 
