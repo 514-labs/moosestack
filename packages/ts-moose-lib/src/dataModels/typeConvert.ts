@@ -501,17 +501,13 @@ export const toColumns = (t: ts.Type, checker: TypeChecker): Column[] => {
       isJwt,
     );
 
-    const columnDefault = defaultExpression ?? handleDefault(type, checker);
-    const required =
-      !nullable || (columnDefault !== null && columnDefault !== undefined);
-
     return {
       name: prop.name,
       data_type: dataType,
       primary_key: isKey,
-      required,
+      required: !nullable,
       unique: false,
-      default: columnDefault,
+      default: defaultExpression ?? handleDefault(type, checker),
       annotations,
     };
   });
