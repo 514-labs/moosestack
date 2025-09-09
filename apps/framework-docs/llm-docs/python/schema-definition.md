@@ -25,7 +25,7 @@ When creating Python data models, you must follow these requirements exactly:
    - Use proper configuration objects, not dictionaries
    - Use IngestPipelineConfig for pipeline configuration
    - Use OlapConfig for table customization
-   - Set required flags (stream=True, ingest=True)
+   - Set required flags (stream=True, ingest_api=True)
    - Do not add undocumented fields to configurations
 
 Example of correct Python schema:
@@ -51,7 +51,7 @@ config = IngestPipelineConfig(
         engine=ClickHouseEngines.ReplacingMergeTree,
     ),
     stream=True,
-    ingest=True
+    ingest_api=True
 )
 
 pipeline = IngestPipeline[BrainData](
@@ -193,7 +193,7 @@ config = IngestPipelineConfig(
         engine=ClickHouseEngines.ReplacingMergeTree,
     ),
     stream=True,
-    ingest=True,
+    ingest_api=True,
     metadata={"description": "Brain data pipeline"}
 )
 
@@ -217,7 +217,7 @@ brain_data_pipeline = IngestPipeline[BrainData](
 
 1. **Pipeline Configuration**
    - Use `IngestPipelineConfig` object, not dictionaries
-   - Required flags: `ingest=True`, `stream=True`
+   - Required flags: `ingest_api=True`, `stream=True`
    - Table configuration must be either:
      - `True` for default settings
      - `OlapConfig` object for custom settings
@@ -233,7 +233,7 @@ brain_data_pipeline = IngestPipeline[BrainData](
            engine=ClickHouseEngines.ReplacingMergeTree,
        ),
        stream=True,
-       ingest=True
+       ingest_api=True
    )
    
    pipeline = IngestPipeline[MyModel](
@@ -258,7 +258,7 @@ brain_data_pipeline = IngestPipeline[BrainData](
            engine=ClickHouseEngines.ReplacingMergeTree,
        ),
        stream=True,
-       ingest=True,
+       ingest_api=True,
        metadata={"description": "My pipeline"}  # Invalid field
    )
    ```

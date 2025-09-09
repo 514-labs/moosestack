@@ -29,7 +29,7 @@ export const BooksPipeline = new IngestPipeline<BooksSchema>("books", {
     engine: ClickHouseEngines.ReplacingMergeTree,
   },
   stream: true,
-  ingest: {
+  ingestApi: {
     format: IngestionFormat.JSON,
   },
 });

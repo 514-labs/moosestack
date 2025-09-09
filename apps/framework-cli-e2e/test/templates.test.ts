@@ -511,20 +511,56 @@ describe("Moose Templates", () => {
       packageJson.dependencies["@514labs/moose-lib"] = `file:${MOOSE_LIB_PATH}`;
       fs.writeFileSync(packageJsonPath, JSON.stringify(packageJson, null, 2));
 
-      // Install dependencies
+      // Install dependencies with better error handling and retry
       console.log("Installing dependencies...");
-      await new Promise<void>((resolve, reject) => {
-        const npmInstall = spawn("npm", ["install"], {
-          stdio: "inherit",
-          cwd: TEST_PROJECT_DIR,
-        });
-        npmInstall.on("close", (code) => {
-          console.log(`npm install exited with code ${code}`);
-          code === 0 ? resolve() : (
-            reject(new Error(`npm install failed with code ${code}`))
-          );
-        });
-      });
+      const maxRetries = 2;
+      let lastError: Error | null = null;
+
+      for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        try {
+          await new Promise<void>((resolve, reject) => {
+            console.log(`npm install attempt ${attempt}/${maxRetries}...`);
+            // Use --legacy-peer-deps for better Node 20 compatibility
+            const npmInstall = spawn("npm", ["install", "--legacy-peer-deps"], {
+              stdio: ["inherit", "pipe", "pipe"], // Capture stdout and stderr
+              cwd: TEST_PROJECT_DIR,
+            });
+
+            let stdout = "";
+            let stderr = "";
+
+            npmInstall.stdout?.on("data", (data) => {
+              stdout += data.toString();
+              console.log(data.toString());
+            });
+
+            npmInstall.stderr?.on("data", (data) => {
+              stderr += data.toString();
+              console.error(data.toString());
+            });
+
+            npmInstall.on("close", (code) => {
+              console.log(`npm install exited with code ${code}`);
+              if (code === 0) {
+                resolve();
+              } else {
+                lastError = new Error(
+                  `npm install failed with code ${code}\nstderr: ${stderr}`,
+                );
+                reject(lastError);
+              }
+            });
+          });
+          break; // Success, exit retry loop
+        } catch (error) {
+          console.error(`npm install attempt ${attempt} failed:`, error);
+          if (attempt === maxRetries) {
+            throw lastError || error;
+          }
+          // Wait before retry
+          await setTimeoutAsync(2000);
+        }
+      }
 
       // Start dev server
       console.log("Starting dev server...");

@@ -29,14 +29,14 @@ class Bar(BaseModel):
 
 
 fooModel = IngestPipeline[Foo]("Foo", IngestPipelineConfig(
-    ingest=True,
+    ingest_api=True,
     stream=True,
     table=False,
     dead_letter_queue=True
 ))
 
 barModel = IngestPipeline[Bar]("Bar", IngestPipelineConfig(
-    ingest=False,
+    ingest_api=False,
     stream=True,
     table=True,
     dead_letter_queue=True

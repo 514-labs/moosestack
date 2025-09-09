@@ -167,7 +167,7 @@ Alternatively, use `IngestPipeline` instead of standalone `IngestApi`, `Stream` 
 import { IngestPipeline } from "@514labs/moose-lib";
 
 const eventsPipeline = new IngestPipeline<Event>("user_events", {
-   ingest: true,
+   ingestApi: true,
    stream: true,
    table: {
     orderByFields: ["id", "timestamp"],
@@ -182,7 +182,7 @@ const eventsPipeline = new IngestPipeline<Event>("user_events", {
 from moose_lib import IngestPipeline, IngestConfig
 
 ingest_pipeline = IngestPipeline[Event]("user_events", IngestConfig(
-    ingest=True,
+    ingest_api=True,
     stream=True,
     table=True,
 ))

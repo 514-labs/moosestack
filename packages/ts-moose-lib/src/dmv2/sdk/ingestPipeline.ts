@@ -22,14 +22,14 @@ import { LifeCycle } from "./lifeCycle";
  * const pipelineConfig: IngestPipelineConfig<UserData> = {
  *   table: true,
  *   stream: true,
- *   ingest: true
+ *   ingestApi: true
  * };
  *
  * // Advanced pipeline with custom configurations
  * const advancedConfig: IngestPipelineConfig<UserData> = {
  *   table: { orderByFields: ['timestamp', 'userId'], engine: ClickHouseEngines.ReplacingMergeTree },
  *   stream: { parallelism: 4, retentionPeriod: 86400 },
- *   ingest: true,
+ *   ingestApi: true,
  *   version: '1.2.0',
  *   metadata: { description: 'User data ingestion pipeline' }
  * };
@@ -71,7 +71,12 @@ export type IngestPipelineConfig<T> = {
    *
    * @default false
    */
-  ingest: boolean | Omit<IngestConfig<T>, "destination">;
+  ingestApi?: boolean | Omit<IngestConfig<T>, "destination">;
+
+  /**
+   * @deprecated Use `ingestApi` instead. This parameter will be removed in a future version.
+   */
+  ingest?: boolean | Omit<IngestConfig<T>, "destination">;
 
   /**
    * Configuration for the dead letter queue of the pipeline.
@@ -120,7 +125,7 @@ export type IngestPipelineConfig<T> = {
  * const userDataPipeline = new IngestPipeline('userData', {
  *   table: true,
  *   stream: true,
- *   ingest: true,
+ *   ingestApi: true,
  *   version: '1.0.0',
  *   metadata: { description: 'Pipeline for user registration data' }
  * });
@@ -129,7 +134,7 @@ export type IngestPipelineConfig<T> = {
  * const analyticsStream = new IngestPipeline('analytics', {
  *   table: { orderByFields: ['timestamp'], engine: ClickHouseEngines.ReplacingMergeTree },
  *   stream: { parallelism: 8, retentionPeriod: 604800 },
- *   ingest: false
+ *   ingestApi: false
  * });
  * ```
  */
@@ -151,7 +156,7 @@ export class IngestPipeline<T> extends TypedBase<T, IngestPipelineConfig<T>> {
   /**
    * The ingest API component of the pipeline, if configured.
    * Provides HTTP endpoints for data ingestion.
-   * Only present when `config.ingest` is not `false`.
+   * Only present when `config.ingestApi` is not `false`.
    */
   ingestApi?: IngestApi<T>;
 
@@ -172,7 +177,7 @@ export class IngestPipeline<T> extends TypedBase<T, IngestPipelineConfig<T>> {
    * const pipeline = new IngestPipeline('events', {
    *   table: { orderByFields: ['timestamp'], engine: ClickHouseEngines.ReplacingMergeTree },
    *   stream: { parallelism: 2 },
-   *   ingest: true
+   *   ingestApi: true
    * });
    * ```
    */
@@ -203,6 +208,19 @@ export class IngestPipeline<T> extends TypedBase<T, IngestPipelineConfig<T>> {
     validators?: TypiaValidators<T>,
   ) {
     super(name, config, schema, columns, validators);
+
+    // Handle backwards compatibility for deprecated 'ingest' parameter
+    if (config.ingest !== undefined) {
+      console.warn(
+        "⚠️  DEPRECATION WARNING: The 'ingest' parameter is deprecated and will be removed in a future version. " +
+          "Please use 'ingestApi' instead.",
+      );
+      // If ingestApi is not explicitly set, use the ingest value
+      if (config.ingestApi === undefined) {
+        // Create a new config object with the ingest value mapped to ingestApi
+        config = { ...config, ingestApi: config.ingest };
+      }
+    }
 
     // Create OLAP table if configured
     if (config.table) {
@@ -256,15 +274,24 @@ export class IngestPipeline<T> extends TypedBase<T, IngestPipelineConfig<T>> {
     }
 
     // Create ingest API if configured, requiring a stream as destination
-    if (config.ingest) {
+    const shouldCreateIngestApi =
+      config.ingestApi || (config.ingest && config.ingestApi === undefined);
+    if (shouldCreateIngestApi) {
       if (!this.stream) {
         throw new Error("Ingest API needs a stream to write to.");
       }
 
+      // Extract the ingest configuration object (either from ingestApi or deprecated ingest)
+      const ingestConfigValue = config.ingestApi || config.ingest;
+      const customIngestConfig =
+        typeof ingestConfigValue === "object" ?
+          (ingestConfigValue as object)
+        : {};
+
       const ingestConfig = {
         destination: this.stream,
         deadLetterQueue: this.deadLetterQueue,
-        ...(typeof config.ingest === "object" ? config.ingest : {}),
+        ...customIngestConfig,
         ...(config.version && { version: config.version }),
       };
       this.ingestApi = new IngestApi(

@@ -33,7 +33,7 @@ export const GoodreadsBooksPipeline = new IngestPipeline<GoodreadsBookSchema>(
       parallelism: 4,
       retentionPeriod: 86400, // 24 hours
     },
-    ingest: {
+    ingestApi: {
       format: IngestionFormat.JSON_ARRAY, // For batch ingestion
     },
   },

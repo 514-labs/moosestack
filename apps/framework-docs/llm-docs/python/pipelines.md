@@ -21,7 +21,7 @@ ExamplePipeline = IngestPipeline[ExampleSchema](
     {
         "table": True,      # Creates a basic table
         "stream": True,     # Creates a basic stream
-        "ingest": {
+        "ingest_api": {
             "format": "JSON_ARRAY"        # Specify ingestion format
         }
     }
@@ -51,7 +51,7 @@ class IngestConfig(BaseModel):
 class DataModelConfigV2(TypedDict):
     table: Union[bool, OlapConfig]        # Table configuration
     stream: Union[bool, StreamConfig]     # Stream configuration
-    ingest: Union[bool, IngestConfig]     # Ingest configuration
+    ingest_api: Union[bool, IngestConfig]     # Ingest configuration
 ```
 
 ## Pipeline Example
@@ -96,7 +96,7 @@ ComprehensivePipeline = IngestPipeline[ComprehensiveSchema](
         },
 
         # Ingest configuration with all options
-        "ingest": {
+        "ingest_api": {
             "format": "JSON_ARRAY"                 # Specify ingestion format
         }
     }
@@ -113,8 +113,8 @@ When you create an `IngestPipeline` instance:
    - Creates a `Stream` with the specified configuration
    - Automatically connects to the table if one exists
    - If `stream` is `True`, uses default configuration
-3. If `ingest` is configured:
+3. If `ingest_api` is configured:
    - Creates an `IngestApi` with the specified configuration
    - Automatically connects to the stream
-   - If `ingest` is `True`, uses default configuration
+   - If `ingest_api` is `True`, uses default configuration
 

@@ -72,12 +72,12 @@ export const AircraftTrackingDataPipeline =
   new IngestPipeline<AircraftTrackingData>("AircraftTrackingData", {
     table: false,
     stream: true,
-    ingest: true,
+    ingestApi: true,
   });
 
 export const AircraftTrackingProcessedPipeline =
   new IngestPipeline<AircraftTrackingProcessed>("AircraftTrackingProcessed", {
     table: true,
     stream: true,
-    ingest: false,
+    ingestApi: false,
   });

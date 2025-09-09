@@ -137,7 +137,7 @@ const acPipeline = new IngestPipeline<AircraftTrackingProcessed>(
     {
       table: true,
       stream: true,
-      ingest: false,
+      ingestApi: false,
       metadata: {
           description: "Pipeline for ingesting raw aircraft data" } // new description field!
       }

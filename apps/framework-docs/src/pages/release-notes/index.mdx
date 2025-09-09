@@ -124,13 +124,13 @@ const eventDLQ = new DeadLetterQueue<UserEvent>("EventDLQ");
 
 // Set up your data pipelines
 const rawEvents = new IngestPipeline<UserEvent>("raw_events", {
-  ingest: true,
+  ingestApi: true,
   stream: true,
   table: false
 });
 
 const processedEvents = new IngestPipeline<ProcessedEvent>("processed_events", {
-  ingest: false,
+  ingestApi: false,
   stream: true,
   table: true
 });
@@ -239,7 +239,7 @@ const acPipeline = new IngestPipeline<AircraftTrackingProcessed>(
     {
       table: true,
       stream: true,
-      ingest: false,
+      ingestApi: false,
       metadata: {
           description: "Pipeline for ingesting raw aircraft data" } // new description field!
       }

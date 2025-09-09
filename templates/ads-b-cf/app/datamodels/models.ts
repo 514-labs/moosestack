@@ -109,7 +109,7 @@ export const AircraftTrackingDataPipeline =
   new IngestPipeline<AircraftTrackingData>("AircraftTrackingData", {
     table: false,
     stream: true,
-    ingest: true,
+    ingestApi: true,
     deadLetterQueue: true,
     metadata: {
       description:
@@ -121,7 +121,7 @@ export const AircraftTrackingProcessedPipeline =
   new IngestPipeline<AircraftTrackingProcessed>("AircraftTrackingProcessed", {
     table: true,
     stream: true,
-    ingest: false,
+    ingestApi: false,
     deadLetterQueue: true,
     metadata: {
       description:
@@ -134,7 +134,7 @@ export const LADDAircraftDataPipeline = new IngestPipeline<LADDAircraftData>(
   {
     table: false,
     stream: true,
-    ingest: true,
+    ingestApi: true,
     deadLetterQueue: true,
     metadata: {
       description:

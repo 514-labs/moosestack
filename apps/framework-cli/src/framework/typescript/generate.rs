@@ -271,7 +271,7 @@ pub fn tables_to_typescript(tables: &[Table]) -> String {
         };
         writeln!(output, "    }}").unwrap();
         writeln!(output, "    stream: true,").unwrap();
-        writeln!(output, "    ingest: true,").unwrap();
+        writeln!(output, "    ingestApi: true,").unwrap();
         writeln!(output, "}});").unwrap();
         writeln!(output).unwrap();
     }
@@ -394,7 +394,7 @@ export const UserPipeline = new IngestPipeline<User>("User", {
         engine: ClickHouseEngines.MergeTree,
     }
     stream: true,
-    ingest: true,
+    ingestApi: true,
 });"#
         ));
     }
@@ -469,7 +469,7 @@ export const TaskPipeline = new IngestPipeline<Task>("Task", {
         engine: ClickHouseEngines.MergeTree,
     }
     stream: true,
-    ingest: true,
+    ingestApi: true,
 });"#
         ));
     }

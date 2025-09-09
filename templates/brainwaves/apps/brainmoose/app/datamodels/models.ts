@@ -24,7 +24,7 @@ export const UserActivityPipeline = new IngestPipeline<UserActivity>(
       engine: ClickHouseEngines.ReplacingMergeTree,
     },
     stream: true,
-    ingest: true, // POST /ingest/UserActivity
+    ingestApi: true, // POST /ingest/UserActivity
   },
 );
 
@@ -37,6 +37,6 @@ export const ParsedActivityPipeline = new IngestPipeline<ParsedActivity>(
       engine: ClickHouseEngines.ReplacingMergeTree,
     },
     stream: true,
-    ingest: false, // No direct ingest API; populated by streaming function
+    ingestApi: false, // No direct ingest API; populated by streaming function
   },
 );

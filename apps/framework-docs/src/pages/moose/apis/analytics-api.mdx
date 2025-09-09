@@ -75,7 +75,7 @@ interface SourceSchema {
 }
 
 export const SourcePipeline = new IngestPipeline<SourceSchema>("Source" {
-  ingest: false,
+  ingestApi: false,
   stream: true,
   table: true,
 })
@@ -134,7 +134,7 @@ class SourceSchema(BaseModel):
   value: float
 
 SourcePipeline = IngestPipeline<SourceSchema>("Source", IngestPipelineConfig(
-  ingest=False,
+  ingest_api=False,
   stream=True,
   table=True,
 ))
