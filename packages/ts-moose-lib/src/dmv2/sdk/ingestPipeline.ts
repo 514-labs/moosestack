@@ -51,7 +51,7 @@ export type IngestPipelineConfig<T> = {
    * Configuration for the stream component of the pipeline.
    *
    * - If `true`, a stream with default settings is created.
-   * - If a partial `StreamConfig` object (excluding `destination`) is provided, it specifies the stream's configuration.
+   * - Pass a config object to specify the stream's configuration.
    * - The stream's destination will automatically be set to the pipeline's table if one exists.
    * - If `false`, no stream is created.
    *
