@@ -106,42 +106,18 @@ user_event_dlq = DeadLetterQueue[UserEvent](name="UserEventDLQ")
 ```
 </Python>
 
-### Configuring Transforms with Dead Letter Queues
+### Configuring Transformations with Dead Letter Queues
+
+Add a dead letter queue to your Transformation Function configuration, and any errors thrown in the transformation will trigger the event to be routed to the dead letter queue.
 
 <TypeScript>
 ```ts filename="transform-with-dlq.ts" copy
-import { IngestPipeline, DeadLetterQueue } from "@514labs/moose-lib";
-
-interface RawEvent {
-  userId: string;
-  action: string;
-  timestamp: number;
-}
-
-interface ProcessedEvent {
-  userId: string;
-  action: string;
-  processedAt: Date;
-  isValid: boolean;
-}
-
-// Create pipelines
-const rawEvents = new IngestPipeline<RawEvent>("raw_events", {
-  ingest: true,
-  stream: true,
-  table: false
-});
-
-const processedEvents = new IngestPipeline<ProcessedEvent>("processed_events", {
-  ingest: false,
-  stream: true,
-  table: true
-});
+import { DeadLetterQueue } from "@514labs/moose-lib";
 
 // Create dead letter queue
 const eventDLQ = new DeadLetterQueue<RawEvent>("EventDLQ");
 
-// Add transform with DLQ configuration
+// Add transform with errors and DLQ configuration
 rawEvents.stream!.addTransform(
   processedEvents.stream!,
   (event: RawEvent): ProcessedEvent => {
@@ -170,33 +146,7 @@ rawEvents.stream!.addTransform(
 
 <Python>
 ```py filename="transform-with-dlq.py" copy
-from moose_lib import IngestPipeline, DeadLetterQueue, TransformConfig
-from pydantic import BaseModel
-from datetime import datetime
-
-class RawEvent(BaseModel):
-    user_id: str
-    action: str
-    timestamp: float
-
-class ProcessedEvent(BaseModel):
-    user_id: str
-    action: str
-    processed_at: datetime
-    is_valid: bool
-
-# Create pipelines
-raw_events = IngestPipeline[RawEvent]("raw_events", {
-    "ingest": True,
-    "stream": True,
-    "table": False
-})
-
-processed_events = IngestPipeline[ProcessedEvent]("processed_events", {
-    "ingest": False,
-    "stream": True,
-    "table": True
-})
+from moose_lib import DeadLetterQueue, TransformConfig
 
 # Create dead letter queue
 event_dlq = DeadLetterQueue[RawEvent](name="EventDLQ")
@@ -228,6 +178,8 @@ raw_events.get_stream().add_transform(
 </Python>
 
 ### Configuring Consumers with Dead Letter Queues
+
+Add a dead letter queue to your Consumer Function configuration, and any errors thrown in the function will trigger the event to be routed to the dead letter queue.
 
 <TypeScript>
 ```ts filename="consumer-with-dlq.ts" copy
@@ -268,6 +220,51 @@ raw_events.get_stream().add_consumer(
         dead_letter_queue=event_dlq  # Configure DLQ for this consumer
     )
 )
+```
+</Python>
+
+### Configuring Ingest APIs with Dead Letter Queues
+
+Add a dead letter queue to your Ingest API configuration, and any runtime data validation failures at the API will trigger the event to be routed to the dead letter queue.
+
+<TypeScript>
+```typescript filename="ValidationExample.ts" copy
+interface ExampleModel {
+  id: string;
+  userId: string;
+  timestamp: Date;
+  properties?: {
+    device?: string;
+    version?: number;
+  }
+}
+
+export const api = new IngestApi<ExampleModel>("your-api-route", {
+  destination: new Stream<ExampleModel>("your-stream-name"),
+  deadLetterQueue: new DeadLetterQueue<ExampleModel>("your-dlq-name")
+});
+```
+</TypeScript>
+
+<Python>
+```python filename="ValidationExample.py" copy
+from moose_lib import IngestPipeline, IngestPipelineConfig, IngestConfig
+from pydantic import BaseModel
+
+class Properties(BaseModel):
+    device: Optional[str]
+    version: Optional[int]
+
+class ExampleModel(BaseModel):
+    id: str
+    userId: str
+    timestamp: datetime
+    properties: Properties
+
+api = IngestApi[ExampleModel]("your-api-route", IngestConfig(
+    destination=Stream[ExampleModel]("your-stream-name"),
+    dead_letter_queue=DeadLetterQueue[ExampleModel]("your-dlq-name")
+))
 ```
 </Python>
 
