@@ -47,33 +47,7 @@ export class QueryClient {
   ): Promise<ResultSet<"JSONEachRow"> & { __query_result_t?: T[] }> {
     const [query, query_params] = toQuery(sql);
 
-    const formatValue = (v: any): string => {
-      if (Array.isArray(v)) return `[${v.map(formatValue).join(", ")}]`;
-      if (v === null || v === undefined) return "NULL";
-      switch (typeof v) {
-        case "string":
-          return `'${v.replace(/'/g, "''")}'`;
-        case "number":
-          return String(v);
-        case "boolean":
-          return v ? "true" : "false";
-        default:
-          try {
-            return JSON.stringify(v);
-          } catch {
-            return String(v);
-          }
-      }
-    };
-
-    const substitutedQuery = query.replace(/\{(p\d+):[^}]+\}/g, (m, pName) => {
-      const val = (query_params as any)[pName];
-      return val === undefined ? m : formatValue(val);
-    });
-
-    const printableQuery = substitutedQuery.replace(/\s+/g, " ").trim();
-    console.log(`[QueryClient] | Executing query: ${printableQuery}`);
-
+    this.printQuery(query, query_params);
     const start = performance.now();
     const result = await this.client.query({
       query,
@@ -86,6 +60,49 @@ export class QueryClient {
     const elapsedMs = performance.now() - start;
     console.log(`[QueryClient] | Query completed: ${prettyMs(elapsedMs)}`);
     return result;
+  }
+
+  private printQuery(query: string, query_params: { [pN: string]: any }) {
+    try {
+      const formatValue = (v: any): string => {
+        if (Array.isArray(v)) return `[${v.map(formatValue).join(", ")}]`;
+        if (v === null || v === undefined) return "NULL";
+        switch (typeof v) {
+          case "string":
+            return `'${v.replace(/'/g, "''")}'`;
+          case "number":
+            return String(v);
+          case "boolean":
+            return v ? "true" : "false";
+          default:
+            try {
+              return JSON.stringify(v);
+            } catch {
+              return String(v);
+            }
+        }
+      };
+
+      const substitutedQuery = query.replace(
+        /\{(p\d+):[^}]+\}/g,
+        (m, pName) => {
+          const val = (query_params as any)[pName];
+          return val === undefined ? m : formatValue(val);
+        },
+      );
+
+      console.log(
+        `[QueryClient] | Query: ${substitutedQuery.replace(/\s+/g, " ").trim()}`,
+      );
+    } catch (error) {
+      console.log(`Error substituting query params for logging: ${error}`);
+      console.log(
+        `[QueryClient] | Query: ${query.replace(/\s+/g, " ").trim()}`,
+      );
+      console.log(
+        `[QueryClient] | Query params: ${JSON.stringify(query_params)}`,
+      );
+    }
   }
 }
 
