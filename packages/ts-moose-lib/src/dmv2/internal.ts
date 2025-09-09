@@ -125,6 +125,8 @@ interface IngestApiJson {
   version?: string;
   /** Optional description for the API. */
   metadata?: { description?: string };
+  /** JSON schema */
+  schema: IJsonSchemaCollection.IV3_1;
 }
 
 /**
@@ -274,6 +276,7 @@ export const toInfraMap = (registry: typeof moose_internal) => {
       },
       deadLetterQueue: api.config.deadLetterQueue?.name,
       metadata,
+      schema: api.schema,
     };
   });
 
