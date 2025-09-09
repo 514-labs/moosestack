@@ -103,7 +103,9 @@ const handleAggregated = (
 
 /** Detect ClickHouse default annotation on a type and return raw sql */
 const handleDefault = (t: ts.Type, checker: TypeChecker): string | null => {
-  const defaultSymbol = t.getProperty("_clickhouse_default");
+  // Ensure we check the non-nullable part so optionals still surface defaults
+  const nonNull = t.getNonNullableType();
+  const defaultSymbol = nonNull.getProperty("_clickhouse_default");
   if (defaultSymbol === undefined) return null;
   const defaultType = checker.getNonNullableType(
     checker.getTypeOfSymbol(defaultSymbol),

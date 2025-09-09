@@ -286,7 +286,21 @@ The value passed into the `clickhouse_default` function can either be a string l
 
 </Python>
 
+<Callout type="info" title="ClickHouse defaults with optional fields">
+If a field is optional in your app model but you provide a ClickHouse default, Moose infers a non-nullable ClickHouse column with a DEFAULT clause.
 
+<TypeScript>
+  - Optional without default (e.g., `field?: number`) → ClickHouse Nullable type.
+  - Optional with default (e.g., `field?: number & ClickHouseDefault<"18">` or `WithDefault<number, "18">`) → non-nullable column with default `18`.
+
+</TypeScript>
+<Python>
+  - Optional without default → ClickHouse Nullable type.
+  - Optional with default (using `clickhouse_default("18")` in annotations) → non-nullable column with default `18`.
+</Python>
+
+This lets you keep optional fields at the application layer while avoiding Nullable columns in ClickHouse when a server-side default exists.
+</Callout>
 
 ### Primary Keys and Sorting
 
