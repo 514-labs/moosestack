@@ -70,6 +70,13 @@ pub enum ClickHouseColumnType {
     LowCardinality(Box<ClickHouseColumnType>),
     IpV4,
     IpV6,
+    // Geo types (ClickHouse 25.6+)
+    Point,
+    Ring,
+    LineString,
+    MultiLineString,
+    Polygon,
+    MultiPolygon,
 }
 
 impl fmt::Display for ClickHouseColumnType {
@@ -138,6 +145,13 @@ impl ClickHouseColumnType {
             "IPv6" => Self::IpV6,
             "DateTime" | "DateTime('UTC')" => Self::DateTime,
             "JSON" => Self::Json,
+            // Geo types
+            "Point" => Self::Point,
+            "Ring" => Self::Ring,
+            "LineString" => Self::LineString,
+            "MultiLineString" => Self::MultiLineString,
+            "Polygon" => Self::Polygon,
+            "MultiPolygon" => Self::MultiPolygon,
 
             // recursively parsing Nullable and Array
             t if t.starts_with("Nullable(") => {
@@ -511,6 +525,41 @@ impl ClickHouseTable {
 
 pub fn sanitize_column_name(name: String) -> String {
     name.replace([' ', '-'], "_")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_geo_types() {
+        // Test parsing geo type strings
+        let test_cases = vec![
+            ("Point", ClickHouseColumnType::Point),
+            ("Ring", ClickHouseColumnType::Ring),
+            ("LineString", ClickHouseColumnType::LineString),
+            ("MultiLineString", ClickHouseColumnType::MultiLineString),
+            ("Polygon", ClickHouseColumnType::Polygon),
+            ("MultiPolygon", ClickHouseColumnType::MultiPolygon),
+        ];
+
+        for (type_str, expected) in test_cases {
+            let parsed = ClickHouseColumnType::from_type_str(type_str);
+            assert!(parsed.is_some(), "Failed to parse {}", type_str);
+            assert_eq!(parsed.unwrap(), expected, "Mismatch for {}", type_str);
+        }
+    }
+
+    #[test]
+    fn test_geo_types_display() {
+        // Test Display implementation for geo types
+        assert_eq!(format!("{:?}", ClickHouseColumnType::Point), "Point");
+        assert_eq!(format!("{:?}", ClickHouseColumnType::Ring), "Ring");
+        assert_eq!(format!("{:?}", ClickHouseColumnType::LineString), "LineString");
+        assert_eq!(format!("{:?}", ClickHouseColumnType::MultiLineString), "MultiLineString");
+        assert_eq!(format!("{:?}", ClickHouseColumnType::Polygon), "Polygon");
+        assert_eq!(format!("{:?}", ClickHouseColumnType::MultiPolygon), "MultiPolygon");
+    }
 }
 
 /// Wraps a column name in backticks for safe use in ClickHouse SQL queries

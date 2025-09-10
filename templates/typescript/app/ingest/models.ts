@@ -3,6 +3,7 @@ import {
   Key,
   OlapTable,
   DeadLetterModel,
+  ClickHousePoint,
 } from "@514labs/moose-lib";
 
 /**
@@ -17,6 +18,7 @@ export interface Foo {
   primaryKey: Key<string>; // Unique ID
   timestamp: number; // Unix timestamp
   optionalText?: string; // Text to analyze
+  location?: ClickHousePoint; // Optional geo location [longitude, latitude]
 }
 
 /** Analyzed text metrics derived from Foo */
@@ -25,6 +27,7 @@ export interface Bar {
   utcTimestamp: Date; // From Foo.timestamp
   hasText: boolean; // From Foo.optionalText?
   textLength: number; // From Foo.optionalText.length
+  location?: ClickHousePoint; // From Foo.location
 }
 
 /** =======Pipeline Configuration========= */

@@ -624,17 +624,6 @@ pub mod tests {
         )
     }
 
-    fn remove_python_project() {
-        let project_files = vec![PROJECT_CONFIG_FILE];
-        let project = create_python_project();
-        for file in project_files {
-            let file_path = project.project_location.join(file);
-            if file_path.exists() {
-                std::fs::remove_file(file_path).unwrap();
-            }
-        }
-    }
-
     #[test]
     fn test_new_python_project() {
         let project = create_python_project();
@@ -645,17 +634,30 @@ pub mod tests {
 
     #[test]
     fn test_write_to_disk() {
-        let project = create_python_project();
+        // Use a temporary directory to avoid interfering with other tests
+        use tempfile::tempdir;
+        let temp_dir = tempdir().expect("Failed to create temp dir");
+        let project = Project::new(
+            temp_dir.path(),
+            "test_project".to_string(),
+            SupportedLanguages::Python,
+        );
         project.write_to_disk().unwrap();
 
         assert!(project.project_location.join(PROJECT_CONFIG_FILE).exists());
-
-        remove_python_project();
+        // Temp directory is automatically cleaned up when it goes out of scope
     }
 
     #[test]
     fn test_new_python_project_from_file() {
-        let project = create_python_project();
+        // Use a temporary directory to avoid interfering with other tests
+        use tempfile::tempdir;
+        let temp_dir = tempdir().expect("Failed to create temp dir");
+        let project = Project::new(
+            temp_dir.path(),
+            "test_project".to_string(),
+            SupportedLanguages::Python,
+        );
         project.write_to_disk().unwrap();
 
         assert_eq!(project.language, SupportedLanguages::Python);

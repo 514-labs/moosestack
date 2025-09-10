@@ -185,6 +185,12 @@ impl<'de, S: SerializeValue> Visitor<'de> for &mut ValueVisitor<'_, S> {
                     "a map with key type {key_type} and value type {value_type}"
                 )
             }
+            ColumnType::Point => formatter.write_str("a point value [lon, lat]"),
+            ColumnType::Ring => formatter.write_str("a ring (closed polygon boundary)"),
+            ColumnType::LineString => formatter.write_str("a linestring (array of points)"),
+            ColumnType::MultiLineString => formatter.write_str("a multi-linestring"),
+            ColumnType::Polygon => formatter.write_str("a polygon (array of rings)"),
+            ColumnType::MultiPolygon => formatter.write_str("a multi-polygon"),
         }?;
         write!(formatter, " at {}", self.get_path())
     }

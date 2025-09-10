@@ -82,6 +82,12 @@ fn map_column_type_to_python(
             let value_type_str = map_column_type_to_python(value_type, enums, nested, named_tuples);
             format!("dict[{key_type_str}, {value_type_str}]")
         }
+        ColumnType::Point => "Point".to_string(),
+        ColumnType::Ring => "Ring".to_string(),
+        ColumnType::LineString => "LineString".to_string(),
+        ColumnType::MultiLineString => "MultiLineString".to_string(),
+        ColumnType::Polygon => "Polygon".to_string(),
+        ColumnType::MultiPolygon => "MultiPolygon".to_string(),
     }
 }
 

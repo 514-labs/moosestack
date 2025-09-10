@@ -200,6 +200,16 @@ fn get_default_value_for_type(column_type: &ColumnType, lang: SupportedLanguages
                 SupportedLanguages::Python => format!("{{ {key_default}: {value_default} }}"),
             }
         }
+        (ColumnType::Point, SupportedLanguages::Typescript) => "[0, 0]".to_string(),
+        (ColumnType::Point, SupportedLanguages::Python) => "(0.0, 0.0)".to_string(),
+        (ColumnType::Ring | ColumnType::LineString, SupportedLanguages::Typescript) => "[[0, 0]]".to_string(),
+        (ColumnType::Ring | ColumnType::LineString, SupportedLanguages::Python) => "[(0.0, 0.0)]".to_string(),
+        (ColumnType::Polygon, SupportedLanguages::Typescript) => "[[[0, 0]]]".to_string(),
+        (ColumnType::Polygon, SupportedLanguages::Python) => "[[(0.0, 0.0)]]".to_string(),
+        (ColumnType::MultiLineString, SupportedLanguages::Typescript) => "[[[[0, 0]]]]".to_string(),
+        (ColumnType::MultiLineString, SupportedLanguages::Python) => "[[[(0.0, 0.0)]]]".to_string(),
+        (ColumnType::MultiPolygon, SupportedLanguages::Typescript) => "[[[[[0, 0]]]]]".to_string(),
+        (ColumnType::MultiPolygon, SupportedLanguages::Python) => "[[[[(0.0, 0.0)]]]]".to_string(),
     }
 }
 fn get_import_path(data_model: Either<&DataModel, &str>, project: &Project) -> String {

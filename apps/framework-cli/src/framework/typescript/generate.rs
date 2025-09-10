@@ -76,6 +76,12 @@ fn map_column_type_to_typescript(
             let value_type_str = map_column_type_to_typescript(value_type, enums, nested);
             format!("Record<{key_type_str}, {value_type_str}>")
         }
+        ColumnType::Point => "ClickHousePoint".to_string(),
+        ColumnType::Ring => "ClickHouseRing".to_string(),
+        ColumnType::LineString => "ClickHouseLineString".to_string(),
+        ColumnType::MultiLineString => "ClickHouseMultiLineString".to_string(),
+        ColumnType::Polygon => "ClickHousePolygon".to_string(),
+        ColumnType::MultiPolygon => "ClickHouseMultiPolygon".to_string(),
     }
 }
 

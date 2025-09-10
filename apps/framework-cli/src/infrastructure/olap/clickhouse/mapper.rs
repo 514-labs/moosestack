@@ -261,6 +261,12 @@ fn std_field_type_to_clickhouse_type_mapper(
                 Box::new(clickhouse_value_type),
             ))
         }
+        ColumnType::Point => Ok(ClickHouseColumnType::Point),
+        ColumnType::Ring => Ok(ClickHouseColumnType::Ring),
+        ColumnType::LineString => Ok(ClickHouseColumnType::LineString),
+        ColumnType::MultiLineString => Ok(ClickHouseColumnType::MultiLineString),
+        ColumnType::Polygon => Ok(ClickHouseColumnType::Polygon),
+        ColumnType::MultiPolygon => Ok(ClickHouseColumnType::MultiPolygon),
     }
 }
 

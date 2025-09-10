@@ -247,7 +247,13 @@ fn column_type_to_enum_mapping(t: &ClickHouseColumnType) -> Option<Vec<&str>> {
         | ClickHouseColumnType::Json
         | ClickHouseColumnType::Uuid
         | ClickHouseColumnType::AggregateFunction { .. }
-        | ClickHouseColumnType::Bytes => None,
+        | ClickHouseColumnType::Bytes
+        | ClickHouseColumnType::Point
+        | ClickHouseColumnType::Ring
+        | ClickHouseColumnType::LineString
+        | ClickHouseColumnType::MultiLineString
+        | ClickHouseColumnType::Polygon
+        | ClickHouseColumnType::MultiPolygon => None,
         ClickHouseColumnType::Array(t) => column_type_to_enum_mapping(t.as_ref()),
         ClickHouseColumnType::NamedTuple(_) | ClickHouseColumnType::Nested(_) => {
             // Not entire sure I understand what this method does... do we just ignore the nested type?
