@@ -235,17 +235,18 @@ export type S3QueueConfig<T> = Omit<BaseOlapConfig<T>, "settings"> & {
  */
 export type LegacyOlapConfig<T> = BaseOlapConfig<T>;
 
-/**
- * Union of all engine-specific configurations (new API)
- * @template T The data type of the records stored in the table.
- */
-export type OlapConfig<T> =
-  | LegacyOlapConfig<T>
+type EngineConfig<T> =
   | MergeTreeConfig<T>
   | ReplacingMergeTreeConfig<T>
   | AggregatingMergeTreeConfig<T>
   | SummingMergeTreeConfig<T>
   | S3QueueConfig<T>;
+
+/**
+ * Union of all engine-specific configurations (new API)
+ * @template T The data type of the records stored in the table.
+ */
+export type OlapConfig<T> = EngineConfig<T> | LegacyOlapConfig<T>;
 
 /**
  * Represents an OLAP (Online Analytical Processing) table, typically corresponding to a ClickHouse table.
