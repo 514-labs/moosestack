@@ -11,7 +11,7 @@ mod watcher;
 use super::metrics::Metrics;
 use crate::utilities::docker::DockerClient;
 use clap::Parser;
-use commands::{Commands, GenerateCommand, TemplateSubCommands, WorkflowCommands};
+use commands::{Commands, DbCommands, GenerateCommand, TemplateSubCommands, WorkflowCommands};
 use config::ConfigError;
 use display::with_spinner_completion;
 use log::{debug, info, warn};
@@ -54,7 +54,7 @@ use crate::utilities::constants::{
     PROJECT_NAME_ALLOW_PATTERN,
 };
 
-use crate::cli::routines::code_generation::db_to_dmv2;
+use crate::cli::routines::code_generation::{db_pull, db_to_dmv2};
 use crate::cli::routines::ls::ls_dmv2;
 use crate::cli::routines::templates::create_project_from_template;
 use crate::framework::core::migration_plan::MIGRATION_SCHEMA;
@@ -928,6 +928,31 @@ pub async fn top_command_handler(
 
                     result
                 }
+            }
+        }
+        Commands::Db(db_args) => {
+            info!("Running db command");
+
+            match &db_args.command {
+                Some(DbCommands::Pull { connection_string }) => {
+                    let dir_path = Path::new(".");
+
+                    db_pull(connection_string, dir_path).await.map_err(|e| {
+                        RoutineFailure::new(
+                            Message::new("DB Pull".to_string(), "failed".to_string()),
+                            e,
+                        )
+                    })?;
+
+                    Ok(RoutineSuccess::success(Message::new(
+                        "DB Pull".to_string(),
+                        "External models refreshed".to_string(),
+                    )))
+                }
+                None => Err(RoutineFailure::error(Message::new(
+                    "DB".to_string(),
+                    "No subcommand provided".to_string(),
+                ))),
             }
         }
         Commands::Refresh { url, token } => {

@@ -1,6 +1,7 @@
 use crate::cli::display::{Message, MessageType};
 use crate::cli::routines::RoutineFailure;
 use crate::framework::core::infrastructure::table::Table;
+use crate::framework::core::infrastructure_map::InfrastructureMap;
 use crate::framework::core::partial_infrastructure_map::LifeCycle;
 use crate::framework::languages::SupportedLanguages;
 use crate::framework::python::generate::tables_to_python;
@@ -22,7 +23,10 @@ fn should_be_externally_managed(table: &Table) -> bool {
     table.columns.iter().any(|c| c.name.starts_with("_peerdb_"))
 }
 
-pub async fn db_to_dmv2(remote_url: &str, dir_path: &Path) -> Result<(), RoutineFailure> {
+// Shared helpers
+async fn create_client_and_db(
+    remote_url: &str,
+) -> Result<(ConfiguredDBClient, String), RoutineFailure> {
     let mut url = Url::parse(remote_url).map_err(|e| {
         RoutineFailure::error(Message::new(
             "Invalid URL".to_string(),
@@ -43,13 +47,12 @@ pub async fn db_to_dmv2(remote_url: &str, dir_path: &Path) -> Result<(), Routine
         } else {
             (8123, "http")
         };
-        // cannot set_scheme from clickhouse to http(s)
         url = Url::parse(&remote_url.replacen("clickhouse", new_scheme, 1)).unwrap();
         url.set_port(Some(new_port)).unwrap();
 
         let path_segments = url.path().split('/').collect::<Vec<&str>>();
         if path_segments.len() == 2 && path_segments[0].is_empty() {
-            let database = path_segments[1].to_string(); // to_string to end the borrow
+            let database = path_segments[1].to_string();
             url.set_path("");
             url.query_pairs_mut().append_pair("database", &database);
         };
@@ -117,6 +120,77 @@ pub async fn db_to_dmv2(remote_url: &str, dir_path: &Path) -> Result<(), Routine
             })?,
         Some(db) => db,
     };
+
+    Ok((client, db))
+}
+
+fn write_external_models_file(
+    language: SupportedLanguages,
+    tables: &[Table],
+) -> Result<(), RoutineFailure> {
+    match language {
+        SupportedLanguages::Typescript => {
+            let table_definitions =
+                tables_to_typescript(tables, Some(LifeCycle::ExternallyManaged));
+            let header = "// AUTO-GENERATED FILE. DO NOT EDIT.\n// This file will be replaced when you run `moose db pull`.";
+            let mut file = std::fs::OpenOptions::new()
+                .create(true)
+                .write(true)
+                .truncate(true)
+                .open(format!("{APP_DIR}/{TYPESCRIPT_EXTERNAL_FILE}"))
+                .map_err(|e| {
+                    RoutineFailure::new(
+                        Message::new(
+                            "Failure".to_string(),
+                            format!("opening {TYPESCRIPT_EXTERNAL_FILE}"),
+                        ),
+                        e,
+                    )
+                })?;
+            writeln!(file, "{}\n\n{}", header, table_definitions).map_err(|e| {
+                RoutineFailure::new(
+                    Message::new(
+                        "Failure".to_string(),
+                        "writing externally managed table definitions".to_string(),
+                    ),
+                    e,
+                )
+            })?
+        }
+        SupportedLanguages::Python => {
+            let table_definitions = tables_to_python(tables, Some(LifeCycle::ExternallyManaged));
+            let header = "# AUTO-GENERATED FILE. DO NOT EDIT.\n# This file will be replaced when you run `moose db pull`.";
+            let mut file = std::fs::OpenOptions::new()
+                .create(true)
+                .write(true)
+                .truncate(true)
+                .open(format!("{APP_DIR}/{PYTHON_EXTERNAL_FILE}"))
+                .map_err(|e| {
+                    RoutineFailure::new(
+                        Message::new(
+                            "Failure".to_string(),
+                            format!("opening {PYTHON_EXTERNAL_FILE}"),
+                        ),
+                        e,
+                    )
+                })?;
+            writeln!(file, "{}\n\n{}", header, table_definitions).map_err(|e| {
+                RoutineFailure::new(
+                    Message::new(
+                        "Failure".to_string(),
+                        "writing externally managed table definitions".to_string(),
+                    ),
+                    e,
+                )
+            })?
+        }
+    }
+
+    Ok(())
+}
+
+pub async fn db_to_dmv2(remote_url: &str, dir_path: &Path) -> Result<(), RoutineFailure> {
+    let (client, db) = create_client_and_db(remote_url).await?;
     env::set_current_dir(dir_path).map_err(|e| {
         RoutineFailure::new(
             Message::new("Failure".to_string(), "changing directory".to_string()),
@@ -157,6 +231,7 @@ pub async fn db_to_dmv2(remote_url: &str, dir_path: &Path) -> Result<(), Routine
             if !externally_managed.is_empty() {
                 let table_definitions =
                     tables_to_typescript(&externally_managed, Some(LifeCycle::ExternallyManaged));
+                let header = "// AUTO-GENERATED FILE. DO NOT EDIT.\n// This file will be replaced when you run `moose db pull`.";
                 let mut file = std::fs::OpenOptions::new()
                     .create(true)
                     .write(true)
@@ -171,7 +246,7 @@ pub async fn db_to_dmv2(remote_url: &str, dir_path: &Path) -> Result<(), Routine
                             e,
                         )
                     })?;
-                writeln!(file, "{table_definitions}").map_err(|e| {
+                writeln!(file, "{}\n\n{}", header, table_definitions).map_err(|e| {
                     RoutineFailure::new(
                         Message::new(
                             "Failure".to_string(),
@@ -240,6 +315,7 @@ pub async fn db_to_dmv2(remote_url: &str, dir_path: &Path) -> Result<(), Routine
             if !externally_managed.is_empty() {
                 let table_definitions =
                     tables_to_python(&externally_managed, Some(LifeCycle::ExternallyManaged));
+                let header = "# AUTO-GENERATED FILE. DO NOT EDIT.\n# This file will be replaced when you run `moose db pull`.";
                 let mut file = std::fs::OpenOptions::new()
                     .create(true)
                     .write(true)
@@ -254,7 +330,7 @@ pub async fn db_to_dmv2(remote_url: &str, dir_path: &Path) -> Result<(), Routine
                             e,
                         )
                     })?;
-                writeln!(file, "{table_definitions}").map_err(|e| {
+                writeln!(file, "{}\n\n{}", header, table_definitions).map_err(|e| {
                     RoutineFailure::new(
                         Message::new(
                             "Failure".to_string(),
@@ -337,6 +413,92 @@ pub async fn db_to_dmv2(remote_url: &str, dir_path: &Path) -> Result<(), Routine
         Ok(None) => {
             // No changes to commit; proceed silently
         }
+        Err(e) => {
+            return Err(RoutineFailure::new(
+                Message::new(
+                    "Failure".to_string(),
+                    "creating code generation commit".to_string(),
+                ),
+                e,
+            ));
+        }
+    }
+
+    Ok(())
+}
+
+/// Pulls schema for ExternallyManaged tables and regenerates only external model files.
+/// Does not modify `main.py` or `index.ts`.
+pub async fn db_pull(remote_url: &str, dir_path: &Path) -> Result<(), RoutineFailure> {
+    let (client, db) = create_client_and_db(remote_url).await?;
+
+    env::set_current_dir(dir_path).map_err(|e| {
+        RoutineFailure::new(
+            Message::new("Failure".to_string(), "changing directory".to_string()),
+            e,
+        )
+    })?;
+
+    let project = crate::cli::load_project()?;
+
+    let infra_map = if project.features.data_model_v2 {
+        debug!("Loading InfrastructureMap from user code (DMV2)");
+        InfrastructureMap::load_from_user_code(&project)
+            .await
+            .map_err(|e| {
+                RoutineFailure::error(Message::new(
+                    "Failure".to_string(),
+                    format!("loading infra map: {e:?}"),
+                ))
+            })?
+    } else {
+        debug!("Loading InfrastructureMap from primitives");
+        let primitive_map = crate::framework::core::primitive_map::PrimitiveMap::load(&project)
+            .await
+            .map_err(|e| {
+                RoutineFailure::error(Message::new(
+                    "Failure".to_string(),
+                    format!("loading primitives: {e:?}"),
+                ))
+            })?;
+        crate::framework::core::infrastructure_map::InfrastructureMap::new(&project, primitive_map)
+    };
+
+    let externally_managed_names: std::collections::HashSet<String> = infra_map
+        .tables
+        .values()
+        .filter(|t| t.life_cycle == LifeCycle::ExternallyManaged)
+        .map(|t| t.name.clone())
+        .collect();
+
+    let (tables, _unsupported) = client.list_tables(&db, &project).await.map_err(|e| {
+        RoutineFailure::new(
+            Message::new("Failure".to_string(), "listing tables".to_string()),
+            e,
+        )
+    })?;
+
+    let externally_managed: Vec<_> = tables
+        .into_iter()
+        .filter(|t| externally_managed_names.contains(&t.name))
+        .collect();
+
+    write_external_models_file(project.language, &externally_managed)?;
+
+    match create_code_generation_commit(
+        ".".as_ref(),
+        "chore(cli): commit db pull external model refresh",
+    ) {
+        Ok(Some(oid)) => {
+            show_message!(
+                MessageType::Info,
+                Message {
+                    action: "Git".to_string(),
+                    details: format!("created commit {}", &oid.to_string()[..7]),
+                }
+            );
+        }
+        Ok(None) => {}
         Err(e) => {
             return Err(RoutineFailure::new(
                 Message::new(

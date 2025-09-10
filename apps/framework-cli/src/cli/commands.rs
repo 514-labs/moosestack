@@ -135,6 +135,8 @@ pub enum Commands {
     Workflow(WorkflowArgs),
     /// Manage templates
     Template(TemplateCommands),
+    /// Manage database schema import
+    Db(DbArgs),
     /// Integrate matching tables from a remote Moose instance into the local project
     Refresh {
         /// URL of the remote Moose instance (default: http://localhost:4000)
@@ -318,5 +320,22 @@ pub enum SeedSubcommands {
         /// Only seed a specific table (optional)
         #[arg(long, value_name = "TABLE_NAME")]
         table: Option<String>,
+    },
+}
+
+#[derive(Debug, Args)]
+#[command(arg_required_else_help = true)]
+pub struct DbArgs {
+    #[command(subcommand)]
+    pub command: Option<DbCommands>,
+}
+
+#[derive(Debug, Subcommand)]
+pub enum DbCommands {
+    /// Pull DB schema and refresh external models
+    Pull {
+        /// ClickHouse connection string (e.g. 'clickhouse://user:pass@host:port/database')
+        #[arg(long, value_name = "CONNECTION_STRING")]
+        connection_string: String,
     },
 }
