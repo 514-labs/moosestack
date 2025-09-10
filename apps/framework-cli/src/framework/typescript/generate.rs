@@ -266,6 +266,9 @@ pub fn tables_to_typescript(tables: &[Table]) -> String {
                 writeln!(output, "        engine: ClickHouseEngines.{:?},", engine).unwrap();
             }
         }
+        if table.columns.iter().any(|c| c.name.starts_with("_peerdb_")) {
+            writeln!(output, "        lifeCycle: LifeCycle.EXTERNALLY_MANAGED,").unwrap();
+        };
         writeln!(output, "    }}").unwrap();
         writeln!(output, "    stream: true,").unwrap();
         writeln!(output, "    ingest: true,").unwrap();
