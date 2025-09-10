@@ -131,22 +131,20 @@ Use the ClickHouse Playground tab to try it out!
 
 <TypeScript>
 ```bash filename="Initialize new project" copy
-# This command will:
-# 1. Connect to your ClickHouse database
-# 2. Scan all your tables and their schemas
-# 3. Generate TypeScript data models for each table
-# 4. Create a complete development environment
+# Option 1: Provide connection string directly
 moose init my-project --from-remote <YOUR_CLICKHOUSE_CONNECTION_STRING> --language typescript
+
+# Option 2: Run without connection string for interactive setup
+moose init my-project --from-remote --language typescript
 ```
 </TypeScript>
 <Python>
 ```bash filename="Initialize new project" copy
-# This command will:
-# 1. Connect to your ClickHouse database
-# 2. Scan all your tables and their schemas
-# 3. Generate Python data models for each table
-# 4. Create a complete development environment
+# Option 1: Provide connection string directly
 moose init my-project --from-remote <YOUR_CLICKHOUSE_CONNECTION_STRING> --language python
+
+# Option 2: Run without connection string for interactive setup
+moose init my-project --from-remote --language python
 ```
 </Python>
 
@@ -155,7 +153,17 @@ moose init my-project --from-remote <YOUR_CLICKHOUSE_CONNECTION_STRING> --langua
 https://username:password@host:port/?database=database_name
 ```
 
-<Callout type="info" title="What gets generated">
+<Callout type="info" title="Interactive Setup">
+If you don't provide a connection string, Moose will guide you through an interactive setup process where you'll be prompted to enter:
+- **Host and port** (e.g., `https://your-service-id.region.clickhouse.cloud:8443`)
+- **Username** (usually `default`)
+- **Password** (your ClickHouse password)
+- **Database name** (optional, defaults to `default`)
+
+This is perfect if you're not sure about your connection details or prefer a guided experience.
+</Callout>
+
+<Callout type="info" title="What gets generated" compact={true}>
 Moose will create a complete project structure with:
 - **Data models**: TypeScript/Python classes for every table in your ClickHouse
 - **Type definitions**: Full type safety for all your data
@@ -193,59 +201,6 @@ moose init my-project --from-remote https://explorer:@play.clickhouse.com:443/?d
 
 <br />
 
-## Connect to your remote ClickHouse
-
-This guide shows exactly where to find your host, port, username, and password, and how to construct a valid HTTPS connection string.
-
-### ClickHouse Cloud
-1. Log into your [ClickHouse Cloud console](https://clickhouse.cloud/)
-2. Open your service details page
-3. Click "Connect" in the sidebar
-<div className="flex justify-center p-10">
-<ZoomImg light="/ch-cloud-sidebar.png" dark="/ch-cloud-sidebar.png" alt="ClickHouse Cloud Connect Button" />
-</div>
-4. Select the `HTTPS` tab and copy the values shown
-   - **Host**: e.g. `your-service-id.region.clickhouse.cloud`
-   - **Port**: usually `8443`
-   - **Username**: usually `default`
-   - **Password**: the password you configured
-<div className="flex justify-center p-10">
-<ZoomImg light="/ch-cloud-creds.png" dark="/ch-cloud-creds.png" alt="ClickHouse Cloud HTTPS Connection Details" />
-</div>
-5. Build your connection string:
-
-```txt
-https://USERNAME:PASSWORD@HOST:PORT/?database=DATABASE_NAME
-```
-
-6. Example (with placeholders):
-
-```txt
-https://default:your_password@your-service-id.region.clickhouse.cloud:8443/?database=default
-```
-
-7. Optional: Test with curl
-
-```bash
-curl --user "USERNAME:PASSWORD" --data-binary "SELECT 1" https://HOST:PORT
-```
-
-### Self-hosted or Docker
-- Check your server config (usually `/etc/clickhouse-server/config.xml`)
-  - `<http_port>` default: `8123`
-  - `<https_port>` default: `8443`
-- Check users in `/etc/clickhouse-server/users.xml` or `users.d/`
-- For Docker, check environment variables in your compose/run config:
-  - `CLICKHOUSE_USER`, `CLICKHOUSE_PASSWORD`, `CLICKHOUSE_DB`
-
-Build the HTTPS connection string with your values:
-
-```txt
-https://USERNAME:PASSWORD@HOST:8443/?database=DB
-```
-
-If you only have HTTP enabled, enable HTTPS or use an HTTPS proxy; Moose init expects an HTTPS URL for remote introspection.
-
 <TypeScript>
 ```bash filename="Install dependencies" copy
 cd my-project
@@ -263,16 +218,6 @@ pip install -r requirements.txt
 </Python>
 
 You should see: `Successfully generated X models from ClickHouse tables`
-
-<Callout type="success" title="🎉 You're ready to build!">
-Your project is now set up with:
-- ✅ All your ClickHouse tables converted to code
-- ✅ Local development environment running
-- ✅ Type-safe data models ready to use
-- ✅ Hot-reload enabled for instant development
-
-**Next**: Start building APIs and applications on top of your data!
-</Callout>
 
 ### Explore Your Generated Models
 <Python>
@@ -314,12 +259,11 @@ moose dev
 ```
 
 **What happens when you run `moose dev`:**
-- 🏗️ Creates a local ClickHouse instance with your exact table schemas
-- 🔄 Enables hot-reload for instant development
-- 📊 Provides a local database for testing and development
+- 🏗️ Creates a local ClickHouse instance with your exact table schemas in your project code
+- 🔄 Hot-reloads migrations to your local infrastructure as you save code changes
 - 🚀 Starts a web server for building APIs
 
-<Callout type="info" title="Production Safety">
+<Callout type="info" title="Production Safety" compact={true}>
 Your production ClickHouse remains completely untouched. This is a separate, local development environment.
 </Callout>
 
@@ -480,6 +424,72 @@ Some advanced ClickHouse features may not be fully supported yet. Join the Moose
 - **Default value annotations** 
 
 <br />
+
+## Troubleshooting
+### Error: Failed to connect to ClickHouse
+
+This guide shows exactly where to find your host, port, username, and password, and how to construct a valid HTTPS connection string.
+
+<Tabs items={["ClickHouse Cloud", "Self-Hosted or Docker"]}>
+<Tabs.Tab>
+1. Log into your [ClickHouse Cloud console](https://clickhouse.cloud/)
+2. Open your service details page
+3. Click "Connect" in the sidebar
+<div className="flex justify-center p-10">
+<ZoomImg light="/ch-cloud-sidebar.png" dark="/ch-cloud-sidebar.png" alt="ClickHouse Cloud Connect Button" />
+</div>
+4. Select the `HTTPS` tab and copy the values shown
+   - **Host**: e.g. `your-service-id.region.clickhouse.cloud`
+   - **Port**: usually `8443`
+   - **Username**: usually `default`
+   - **Password**: the password you configured
+<div className="flex justify-center p-10">
+<ZoomImg light="/ch-cloud-creds.png" dark="/ch-cloud-creds.png" alt="ClickHouse Cloud HTTPS Connection Details" />
+</div>
+5. Build your connection string:
+
+```txt
+https://USERNAME:PASSWORD@HOST:PORT/?database=DATABASE_NAME
+```
+
+6. Example (with placeholders):
+
+```txt
+https://default:your_password@your-service-id.region.clickhouse.cloud:8443/?database=default
+```
+
+7. Optional: Test with curl
+
+```bash
+curl --user "USERNAME:PASSWORD" --data-binary "SELECT 1" https://HOST:PORT
+```
+</Tabs.Tab>
+<Tabs.Tab>
+### Self-hosted or Docker
+- Check your server config (usually `/etc/clickhouse-server/config.xml`)
+  - `<http_port>` default: `8123`
+  - `<https_port>` default: `8443`
+- Check users in `/etc/clickhouse-server/users.xml` or `users.d/`
+- For Docker, check environment variables in your compose/run config:
+  - `CLICKHOUSE_USER`, `CLICKHOUSE_PASSWORD`, `CLICKHOUSE_DB`
+
+Build the HTTPS connection string with your values:
+
+```txt
+https://USERNAME:PASSWORD@HOST:8443/?database=DB
+```
+
+If you only have HTTP enabled, enable HTTPS or use an HTTPS proxy; Moose init expects an HTTPS URL for remote introspection.
+</Tabs.Tab>
+</Tabs>
+
+### `moose dev` fails to start
+
+Double check Docker is running and you do not have any port conflicts.
+
+- ClickHouse local runs on port `18123`
+- Your local webserver runs on port `4000`
+- Your local management API runs on port `5001`
 
 ## What's Next?
 
