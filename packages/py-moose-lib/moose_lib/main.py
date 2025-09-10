@@ -184,6 +184,7 @@ class QueryClient:
     def execute(self, input, variables, row_type: Type[BaseModel] = None):
         params = {}
         values = {}
+        preview_params = {}
 
         for i, (_, variable_name, _, _) in enumerate(Formatter().parse(input)):
             if variable_name:
@@ -198,14 +199,17 @@ class QueryClient:
 
                 params[variable_name] = f'{{p{i}: {t}}}'
                 values[f'p{i}'] = value
+                preview_params[variable_name] = self._format_value_for_preview(value)
+
         clickhouse_query = input.format_map(params)
+        preview_query = input.format_map(preview_params)
 
         # We are not using the result of the ping
         # but this ensures that if the clickhouse cloud service is idle, we
         # wake it up, before we send the query.
         self.ch_client.ping()
 
-        print(f"[QueryClient] | Query: {' '.join(clickhouse_query.split())}")
+        print(f"[QueryClient] | Query: {' '.join(preview_query.split())}")
         start = perf_counter()
         val = self.ch_client.query(clickhouse_query, values)
         ms = (perf_counter() - start) * 1000
@@ -215,6 +219,39 @@ class QueryClient:
             return list(val.named_results())
         else:
             return list(row_type(**row) for row in val.named_results())
+
+    def _format_value_for_preview(self, value: Any) -> str:
+        """Format a Python value as a ClickHouse SQL literal for preview logging.
+
+        This does not affect execution; it's only for human-readable query logs.
+        """
+        # NULL handling
+        if value is None:
+            return 'NULL'
+
+        # Booleans (ClickHouse accepts true/false)
+        if isinstance(value, bool):
+            return 'true' if value else 'false'
+
+        # Numbers
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            return str(value)
+
+        # Strings
+        if isinstance(value, str):
+            # Escape backslashes and single quotes for ClickHouse single-quoted strings
+            escaped = value.replace('\\', '\\\\').replace("'", "\\'")
+            return f"'{escaped}'"
+
+        # Lists / tuples (format as [item1, item2, ...])
+        if isinstance(value, (list, tuple)):
+            formatted_items = ', '.join(self._format_value_for_preview(v) for v in value)
+            return f"[{formatted_items}]"
+
+        # Fallback: stringify and single-quote
+        fallback = str(value)
+        escaped_fallback = fallback.replace('\\', '\\\\').replace("'", "\\'")
+        return f"'{escaped_fallback}'"
 
     def close(self):
         """Close the ClickHouse client connection."""
