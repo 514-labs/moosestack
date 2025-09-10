@@ -1,0 +1,321 @@
+name: Claude Documentation Check (Alternative)
+
+# This is an alternative implementation that uses the Anthropic API directly
+# Use this if the anthropics/claude-code-action is not available
+
+on:
+  workflow_dispatch:
+    inputs:
+      test_mode:
+        description: 'Run in test mode (dry run without Claude API)'
+        required: false
+        type: boolean
+        default: false
+      pr_number:
+        description: 'PR number to test against (optional)'
+        required: false
+        type: string
+  
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - 'packages/ts-moose-lib/**'
+      - 'packages/py-moose-lib/**'
+      - 'apps/framework-cli/**'
+
+jobs:
+  detect-changes:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      should_run: ${{ steps.check-changes.outputs.should_run }}
+      changed_files: ${{ steps.check-changes.outputs.changed_files }}
+      ts_moose_changed: ${{ steps.check-changes.outputs.ts_moose_changed }}
+      py_moose_changed: ${{ steps.check-changes.outputs.py_moose_changed }}
+      cli_changed: ${{ steps.check-changes.outputs.cli_changed }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get changed files
+        id: check-changes
+        run: |
+          # Get the base ref
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            BASE_REF="${{ github.base_ref }}"
+          else
+            BASE_REF="main"
+          fi
+          
+          # Get the list of changed files
+          git diff --name-only origin/${BASE_REF}...HEAD > changed_files.txt || echo "No changes" > changed_files.txt
+          
+          echo "::group::📋 Changed Files"
+          cat changed_files.txt
+          echo "::endgroup::"
+          
+          # Check for changes in each component
+          TS_MOOSE_CHANGED=false
+          PY_MOOSE_CHANGED=false
+          CLI_CHANGED=false
+          
+          if grep -q "^packages/ts-moose-lib/" changed_files.txt; then
+            TS_MOOSE_CHANGED=true
+            echo "✅ TypeScript Moose Library changes detected"
+          fi
+          
+          if grep -q "^packages/py-moose-lib/" changed_files.txt; then
+            PY_MOOSE_CHANGED=true
+            echo "✅ Python Moose Library changes detected"
+          fi
+          
+          if grep -q "^apps/framework-cli/" changed_files.txt; then
+            CLI_CHANGED=true
+            echo "✅ Framework CLI changes detected"
+          fi
+          
+          # Check if any relevant files were changed
+          if [ "$TS_MOOSE_CHANGED" = true ] || [ "$PY_MOOSE_CHANGED" = true ] || [ "$CLI_CHANGED" = true ]; then
+            echo "should_run=true" >> $GITHUB_OUTPUT
+            echo "ts_moose_changed=$TS_MOOSE_CHANGED" >> $GITHUB_OUTPUT
+            echo "py_moose_changed=$PY_MOOSE_CHANGED" >> $GITHUB_OUTPUT
+            echo "cli_changed=$CLI_CHANGED" >> $GITHUB_OUTPUT
+            
+            # Output the list of changed files for the next job
+            CHANGED_FILES=$(cat changed_files.txt | head -20 | tr '\n' ' ')
+            echo "changed_files=$CHANGED_FILES" >> $GITHUB_OUTPUT
+            
+            echo "::notice title=📖 Documentation Check Required::Changes detected in framework components."
+          else
+            echo "should_run=false" >> $GITHUB_OUTPUT
+            echo "::notice title=⏭️ Skipping Documentation Check::No changes in framework components detected."
+          fi
+
+  documentation-analysis:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.should_run == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+    steps:
+      - name: Checkout PR branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install anthropic requests
+
+      - name: Get PR diff
+        id: get-diff
+        run: |
+          # Get the base ref
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            BASE_REF="${{ github.base_ref }}"
+          else
+            BASE_REF="main"
+          fi
+          
+          # Fetch base branch
+          git fetch origin ${BASE_REF}:${BASE_REF} || true
+          
+          # Get the detailed diff for analysis (limit to 5000 lines)
+          git diff ${BASE_REF}...HEAD | head -5000 > pr_diff.txt
+          
+          # Check if documentation files were updated
+          DOC_UPDATED=false
+          if git diff --name-only ${BASE_REF}...HEAD | grep -q "^apps/framework-docs/"; then
+            DOC_UPDATED=true
+            echo "📚 Documentation files were updated in this PR"
+          else
+            echo "⚠️ No documentation files were updated in this PR"
+          fi
+          
+          echo "doc_updated=$DOC_UPDATED" >> $GITHUB_OUTPUT
+
+      - name: Run Claude Analysis via API
+        if: github.event.inputs.test_mode != 'true' && secrets.ANTHROPIC_API_KEY != ''
+        id: claude-analysis
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          python3 << 'EOF'
+          import os
+          import json
+          import anthropic
+          
+          # Initialize Claude client
+          client = anthropic.Anthropic(api_key=os.environ['ANTHROPIC_API_KEY'])
+          
+          # Read the PR diff
+          with open('pr_diff.txt', 'r') as f:
+              pr_diff = f.read()
+          
+          # Prepare the context
+          context = f"""
+          PR Title: ${{ github.event.pull_request.title || 'Manual test run' }}
+          PR Description: ${{ github.event.pull_request.body || 'No description' }}
+          
+          Components Changed:
+          - TypeScript Moose Library: ${{ needs.detect-changes.outputs.ts_moose_changed }}
+          - Python Moose Library: ${{ needs.detect-changes.outputs.py_moose_changed }}
+          - Framework CLI: ${{ needs.detect-changes.outputs.cli_changed }}
+          
+          Documentation Updated: ${{ steps.get-diff.outputs.doc_updated }}
+          
+          Changed Files (first 20):
+          ${{ needs.detect-changes.outputs.changed_files }}
+          """
+          
+          # Create the prompt
+          prompt = f"""
+          You are reviewing a pull request for the Moose framework. Analyze the changes and determine if documentation updates are required.
+          
+          {context}
+          
+          Code Changes (diff):
+          ```diff
+          {pr_diff[:4000]}
+          ```
+          
+          Please analyze these changes and provide:
+          1. A summary of what changed
+          2. Whether documentation updates are needed
+          3. Specific documentation that should be updated (if applicable)
+          4. Any missing documentation that should be added
+          
+          Focus on:
+          - New features or APIs
+          - Breaking changes
+          - Changed behavior
+          - New configuration options
+          - Deprecated features
+          
+          Be specific about which documentation files need updates and what should be added.
+          """
+          
+          try:
+              # Call Claude API
+              response = client.messages.create(
+                  model="claude-3-5-sonnet-20241022",
+                  max_tokens=2048,
+                  temperature=0.2,
+                  messages=[
+                      {
+                          "role": "user",
+                          "content": prompt
+                      }
+                  ]
+              )
+              
+              # Extract the response
+              analysis = response.content[0].text
+              
+              # Save to file for the next step
+              with open('claude_analysis.txt', 'w') as f:
+                  f.write(analysis)
+              
+              print("✅ Claude analysis completed")
+              
+          except Exception as e:
+              print(f"❌ Error calling Claude API: {e}")
+              with open('claude_analysis.txt', 'w') as f:
+                  f.write("Error: Could not complete analysis. Please check API key and try again.")
+          EOF
+
+      - name: Run Test Mode Analysis
+        if: github.event.inputs.test_mode == 'true'
+        run: |
+          cat > claude_analysis.txt << 'EOF'
+          ## Test Mode Analysis
+          
+          This is a simulated analysis in test mode.
+          
+          ### Changes Detected:
+          - TypeScript Moose Library: ${{ needs.detect-changes.outputs.ts_moose_changed }}
+          - Python Moose Library: ${{ needs.detect-changes.outputs.py_moose_changed }}
+          - Framework CLI: ${{ needs.detect-changes.outputs.cli_changed }}
+          
+          ### Documentation Status:
+          Documentation updated: ${{ steps.get-diff.outputs.doc_updated }}
+          
+          ### Recommendations:
+          In production mode, Claude will provide detailed analysis of:
+          - Required documentation updates
+          - Missing documentation
+          - Specific files that need changes
+          - Example code that should be updated
+          
+          This test confirms the workflow is functioning correctly.
+          EOF
+          
+          echo "✅ Test mode analysis completed"
+
+      - name: Post Analysis as PR Comment
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const fs = require('fs');
+            
+            // Read the analysis
+            let analysis = '';
+            try {
+              analysis = fs.readFileSync('claude_analysis.txt', 'utf8');
+            } catch (e) {
+              analysis = 'Analysis could not be completed. Please check the workflow logs.';
+            }
+            
+            const isTestMode = '${{ github.event.inputs.test_mode }}' === 'true';
+            
+            // Create the comment
+            const header = isTestMode 
+              ? `## 🧪 Documentation Review (Test Mode)\n\n`
+              : `## 📖 Documentation Review by Claude\n\n`;
+            
+            const footer = isTestMode
+              ? `\n\n---\n*This is a TEST MODE review. In production, Claude AI will provide detailed analysis.*`
+              : `\n\n---\n*This automated review was generated by Claude AI to help ensure documentation stays up-to-date with code changes.*`;
+            
+            const fullComment = header + analysis + footer;
+            
+            // Post the comment
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: fullComment
+            });
+            
+            console.log('✅ Posted documentation review comment');
+
+      - name: Add Label if Documentation Needed
+        if: |
+          github.event_name == 'pull_request' && 
+          contains(steps.get-diff.outputs.doc_updated, 'false') &&
+          (needs.detect-changes.outputs.ts_moose_changed == 'true' ||
+           needs.detect-changes.outputs.py_moose_changed == 'true' ||
+           needs.detect-changes.outputs.cli_changed == 'true')
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            await github.rest.issues.addLabels({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              labels: ['documentation-needed']
+            });
+            
+            console.log('🏷️ Added documentation-needed label');
