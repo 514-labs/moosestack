@@ -278,7 +278,11 @@ pub async fn plan_changes(
     let clickhouse_strategy = ClickHouseTableDiffStrategy;
     let plan = InfraPlan {
         target_infra_map: target_infra_map.clone(),
-        changes: reconciled_map.diff_with_table_strategy(&target_infra_map, &clickhouse_strategy),
+        changes: reconciled_map.diff_with_table_strategy(
+            &target_infra_map,
+            &clickhouse_strategy,
+            project.is_production,
+        ),
     };
 
     // Validate that OLAP is enabled if OLAP changes are required

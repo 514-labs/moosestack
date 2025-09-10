@@ -195,7 +195,13 @@ impl<T: OlapOperations> InfraRealityChecker<T> {
                     mapped_tables.insert(name.clone(), mapped_table.clone());
 
                     // Flip the order of arguments to make infra_map the reference
-                    InfrastructureMap::diff_tables(&actual_tables, &mapped_tables, &mut changes);
+                    InfrastructureMap::diff_tables(
+                        &actual_tables,
+                        &mapped_tables,
+                        &mut changes,
+                        // respect_life_cycle is false to not hide the difference
+                        false,
+                    );
                     debug!(
                         "Found {} changes for table {}: {:?}",
                         changes.len(),
