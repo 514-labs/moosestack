@@ -363,6 +363,8 @@ impl ClickhouseEngine {
                 // Only add is_deleted if ver is present (validated elsewhere)
                 if ver.is_some() {
                     params.push(format!("'{}'", d));
+                } else {
+                    log::warn!("is_deleted requires ver to be specified, this was not caught by the validation");
                 }
             }
             if !params.is_empty() {
