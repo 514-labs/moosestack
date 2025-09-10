@@ -4,7 +4,9 @@
 //! specific limitations around schema changes. ClickHouse has restrictions on certain
 //! ALTER TABLE operations, particularly around ORDER BY and primary key changes.
 
-use crate::framework::core::infrastructure::table::{DataEnum, EnumValue, Table};
+use crate::framework::core::infrastructure::table::{
+    Column, ColumnType, DataEnum, EnumValue, Table,
+};
 use crate::framework::core::infrastructure_map::{
     ColumnChange, OlapChange, OrderByChange, TableChange, TableDiffStrategy,
 };
@@ -136,6 +138,25 @@ pub fn should_add_enum_metadata(actual_enum: &DataEnum) -> bool {
     }
 }
 
+fn is_special_not_nullable_column_type(t: &ColumnType) -> bool {
+    matches!(t, ColumnType::Array { .. } | ColumnType::Nested(_))
+}
+
+fn is_only_required_change_for_special_column_type(before: &Column, after: &Column) -> bool {
+    // Only ignore if both sides are arrays and all other fields are equal
+    if is_special_not_nullable_column_type(&before.data_type)
+        && is_special_not_nullable_column_type(&after.data_type)
+        && before.required != after.required
+    {
+        let mut after_cloned = after.clone();
+        after_cloned.required = before.required;
+
+        before == &after_cloned
+    } else {
+        false
+    }
+}
+
 impl TableDiffStrategy for ClickHouseTableDiffStrategy {
     /// This function is only called when there are actual changes to the table
     /// (column changes, ORDER BY changes, or deduplication changes).
@@ -197,6 +218,19 @@ impl TableDiffStrategy for ClickHouseTableDiffStrategy {
                 OlapChange::Table(TableChange::Added(after.clone())),
             ];
         }
+
+        // Filter out no-op changes for ClickHouse semantics:
+        // Arrays are always NOT NULL in ClickHouse, so a change to `required`
+        // on array columns does not reflect an actual DDL change.
+        let column_changes: Vec<ColumnChange> = column_changes
+            .into_iter()
+            .filter(|change| match change {
+                ColumnChange::Updated { before, after } => {
+                    !is_only_required_change_for_special_column_type(before, after)
+                }
+                _ => true,
+            })
+            .collect();
 
         // For other changes, ClickHouse can handle them via ALTER TABLE.
         // If there are no column changes, return an empty vector since
