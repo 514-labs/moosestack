@@ -2,7 +2,6 @@ use crate::framework::core::infrastructure::table::{
     ColumnType, DataEnum, EnumValue, FloatType, Nested, Table,
 };
 use crate::framework::core::partial_infrastructure_map::LifeCycle;
-use crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine;
 use convert_case::{Case, Casing};
 use itertools::Itertools;
 use serde_json::json;
