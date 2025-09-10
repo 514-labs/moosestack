@@ -483,7 +483,7 @@ mod tests {
             life_cycle: LifeCycle::FullyManaged,
         }];
 
-        let result = tables_to_python(&tables);
+        let result = tables_to_python(&tables, None);
 
         assert!(result.contains(
             r#"from pydantic import BaseModel, Field
@@ -567,7 +567,7 @@ foo_model = IngestPipeline[Foo]("Foo", IngestPipelineConfig(
             life_cycle: LifeCycle::FullyManaged,
         }];
 
-        let result = tables_to_python(&tables);
+        let result = tables_to_python(&tables, None);
         assert!(result.contains(
             r#"class NestedArray(BaseModel):
     id: Key[str]
@@ -672,7 +672,7 @@ nested_array_model = IngestPipeline[NestedArray]("NestedArray", IngestPipelineCo
             life_cycle: LifeCycle::FullyManaged,
         }];
 
-        let result = tables_to_python(&tables);
+        let result = tables_to_python(&tables, None);
         assert!(result.contains(
             r#"class Address(BaseModel):
     street: str
@@ -748,7 +748,7 @@ user_model = IngestPipeline[User]("User", IngestPipelineConfig(
             life_cycle: LifeCycle::FullyManaged,
         }];
 
-        let result = tables_to_python(&tables);
+        let result = tables_to_python(&tables, None);
         println!("{result}");
 
         // Check that TypedDict is not in the imports

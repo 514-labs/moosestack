@@ -123,10 +123,7 @@ pub fn create_code_generation_commit(
     message: &str,
 ) -> Result<Option<git2::Oid>, Error> {
     // Discover existing repository starting from dir_path
-    let repo = match Repository::discover(dir_path) {
-        Ok(repo) => repo,
-        Err(e) => return Err(e),
-    };
+    let repo = Repository::discover(dir_path)?;
 
     // Skip if there are no changes to commit (including untracked files)
     let mut status_opts = StatusOptions::new();

@@ -380,7 +380,7 @@ mod tests {
             life_cycle: LifeCycle::FullyManaged,
         }];
 
-        let result = tables_to_typescript(&tables);
+        let result = tables_to_typescript(&tables, None);
         println!("{result}");
         assert!(result.contains(
             r#"export interface Address {
@@ -457,7 +457,7 @@ export const UserPipeline = new IngestPipeline<User>("User", {
             life_cycle: LifeCycle::FullyManaged,
         }];
 
-        let result = tables_to_typescript(&tables);
+        let result = tables_to_typescript(&tables, None);
         println!("{result}");
         assert!(result.contains(
             r#"export enum Status {
