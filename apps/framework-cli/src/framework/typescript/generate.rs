@@ -276,7 +276,7 @@ pub fn tables_to_typescript(tables: &[Table], life_cycle: Option<LifeCycle>) -> 
             )
             .unwrap();
         };
-        writeln!(output, "    }}").unwrap();
+        writeln!(output, "    }},").unwrap();
         writeln!(output, "    stream: true,").unwrap();
         writeln!(output, "    ingest: true,").unwrap();
         writeln!(output, "}});").unwrap();
@@ -399,7 +399,7 @@ export const UserPipeline = new IngestPipeline<User>("User", {
     table: {
         orderByFields: ["id"],
         engine: ClickHouseEngines.MergeTree,
-    }
+    },
     stream: true,
     ingest: true,
 });"#
@@ -474,7 +474,7 @@ export const TaskPipeline = new IngestPipeline<Task>("Task", {
     table: {
         orderByFields: ["id"],
         engine: ClickHouseEngines.MergeTree,
-    }
+    },
     stream: true,
     ingest: true,
 });"#
