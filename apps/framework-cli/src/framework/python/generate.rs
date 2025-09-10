@@ -550,7 +550,7 @@ import datetime
 import ipaddress
 from uuid import UUID
 from enum import IntEnum, Enum
-from moose_lib import Key, IngestPipeline, IngestPipelineConfig, OlapConfig, clickhouse_datetime64, clickhouse_decimal, ClickhouseSize, StringToEnumMixin
+from moose_lib import Key, IngestPipeline, IngestPipelineConfig, OlapTable, OlapConfig, clickhouse_datetime64, clickhouse_decimal, ClickhouseSize, StringToEnumMixin
 from moose_lib import clickhouse_default, LifeCycle
 from moose_lib.blocks import MergeTreeEngine, ReplacingMergeTreeEngine, AggregatingMergeTreeEngine, SummingMergeTreeEngine, S3QueueEngine
 
@@ -559,13 +559,9 @@ class Foo(BaseModel):
     timestamp: float
     optional_text: Optional[str] = None
 
-foo_model = IngestPipeline[Foo]("Foo", IngestPipelineConfig(
-    ingest=True,
-    stream=True,
-    table=OlapConfig(
-        order_by_fields=["primary_key"],
-        engine=MergeTreeEngine(),
-    )
+foo_model = OlapTable[Foo]("Foo", OlapConfig(
+    order_by_fields=["primary_key"],
+    engine=MergeTreeEngine(),
 ))"#
         ));
     }
@@ -635,13 +631,9 @@ foo_model = IngestPipeline[Foo]("Foo", IngestPipelineConfig(
     numbers: list[Annotated[int, "int32"]]
     nested_numbers: list[list[Optional[Annotated[int, "int32"]]]]
 
-nested_array_model = IngestPipeline[NestedArray]("NestedArray", IngestPipelineConfig(
-    ingest=True,
-    stream=True,
-    table=OlapConfig(
-        order_by_fields=["id"],
-        engine=MergeTreeEngine(),
-    )
+nested_array_model = OlapTable[NestedArray]("NestedArray", OlapConfig(
+    order_by_fields=["id"],
+    engine=MergeTreeEngine(),
 ))"#
         ));
     }
@@ -747,13 +739,9 @@ class User(BaseModel):
     address: Address
     addresses: Optional[list[Address]] = None
 
-user_model = IngestPipeline[User]("User", IngestPipelineConfig(
-    ingest=True,
-    stream=True,
-    table=OlapConfig(
-        order_by_fields=["id"],
-        engine=MergeTreeEngine(),
-    )
+user_model = OlapTable[User]("User", OlapConfig(
+    order_by_fields=["id"],
+    engine=MergeTreeEngine(),
 ))"#
         ));
     }

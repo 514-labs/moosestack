@@ -447,13 +447,9 @@ export interface User {
     addresses: Address[] | undefined;
 }
 
-export const UserPipeline = new IngestPipeline<User>("User", {
-    table: {
-        orderByFields: ["id"],
-        engine: ClickHouseEngines.MergeTree,
-    },
-    stream: true,
-    ingest: true,
+export const UserTable = new OlapTable<User>("User", {
+    orderByFields: ["id"],
+    engine: ClickHouseEngines.MergeTree,
 });"#
         ));
     }
@@ -628,13 +624,9 @@ export interface Task {
     status: Status;
 }
 
-export const TaskPipeline = new IngestPipeline<Task>("Task", {
-    table: {
-        orderByFields: ["id"],
-        engine: ClickHouseEngines.MergeTree,
-    },
-    stream: true,
-    ingest: true,
+export const TaskTable = new OlapTable<Task>("Task", {
+    orderByFields: ["id"],
+    engine: ClickHouseEngines.MergeTree,
 });"#
         ));
     }
