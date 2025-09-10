@@ -1,8 +1,7 @@
 use handlebars::{no_escape, Handlebars};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use std::collections::hash_map::DefaultHasher;
-use std::hash::{Hash, Hasher};
+use sha2::{Digest, Sha256};
 
 use crate::framework::core::infrastructure::table::EnumValue;
 use crate::infrastructure::olap::clickhouse::model::{
@@ -420,20 +419,20 @@ impl ClickhouseEngine {
     /// Calculate a hash of non-alterable parameters for change detection
     /// This allows us to detect changes in constructor parameters without storing sensitive data
     pub fn non_alterable_params_hash(&self) -> String {
-        let mut hasher = DefaultHasher::new();
+        let mut hasher = Sha256::new();
 
         match self {
             ClickhouseEngine::MergeTree => {
-                "MergeTree".hash(&mut hasher);
+                hasher.update("MergeTree".as_bytes());
             }
             ClickhouseEngine::ReplacingMergeTree => {
-                "ReplacingMergeTree".hash(&mut hasher);
+                hasher.update("ReplacingMergeTree".as_bytes());
             }
             ClickhouseEngine::AggregatingMergeTree => {
-                "AggregatingMergeTree".hash(&mut hasher);
+                hasher.update("AggregatingMergeTree".as_bytes());
             }
             ClickhouseEngine::SummingMergeTree => {
-                "SummingMergeTree".hash(&mut hasher);
+                hasher.update("SummingMergeTree".as_bytes());
             }
             ClickhouseEngine::S3Queue {
                 s3_path,
@@ -444,19 +443,27 @@ impl ClickhouseEngine {
                 aws_secret_access_key,
                 ..
             } => {
-                "S3Queue".hash(&mut hasher);
-                s3_path.hash(&mut hasher);
-                format.hash(&mut hasher);
-                compression.hash(&mut hasher);
+                hasher.update("S3Queue".as_bytes());
+                hasher.update(s3_path.as_bytes());
+                hasher.update(format.as_bytes());
+
+                // Hash compression in a deterministic way
+                if let Some(comp) = compression {
+                    hasher.update(comp.as_bytes());
+                } else {
+                    hasher.update("null".as_bytes());
+                }
 
                 // Hash headers in a deterministic way
                 if let Some(headers_map) = headers {
                     let mut sorted_headers: Vec<_> = headers_map.iter().collect();
                     sorted_headers.sort_by_key(|(k, _)| *k);
                     for (key, value) in sorted_headers {
-                        key.hash(&mut hasher);
-                        value.hash(&mut hasher);
+                        hasher.update(key.as_bytes());
+                        hasher.update(value.as_bytes());
                     }
+                } else {
+                    hasher.update("null".as_bytes());
                 }
 
                 // Include credentials in the hash for change detection
@@ -465,14 +472,23 @@ impl ClickhouseEngine {
                 // which produces a different hash. The reconciliation logic handles this
                 // by keeping the hash from the infrastructure map instead of the DB
                 // for ALL engines (not just S3Queue).
-                aws_access_key_id.hash(&mut hasher);
-                aws_secret_access_key.hash(&mut hasher);
+                if let Some(key_id) = aws_access_key_id {
+                    hasher.update(key_id.as_bytes());
+                } else {
+                    hasher.update("null".as_bytes());
+                }
+
+                if let Some(secret) = aws_secret_access_key {
+                    hasher.update(secret.as_bytes());
+                } else {
+                    hasher.update("null".as_bytes());
+                }
 
                 // Note: settings are NOT included as they are alterable
             }
         }
 
-        format!("{:x}", hasher.finish())
+        format!("{:x}", hasher.finalize())
     }
 }
 
@@ -513,7 +529,7 @@ pub fn create_table_query(
                 engine_parts.push(format!("'{}'", secret));
             } else {
                 // Default to NOSIGN for public buckets or when credentials are not available
-                engine_parts.push("'NOSIGN'".to_string());
+                engine_parts.push("NOSIGN".to_string());
             }
 
             engine_parts.push(format!("'{}'", format));
@@ -1204,7 +1220,7 @@ CREATE TABLE IF NOT EXISTS `test_db`.`test_table`
  `id` Int32 NOT NULL,
  `data` String NOT NULL
 )
-ENGINE = S3Queue('s3://my-bucket/data/*.json', 'NOSIGN', 'JSONEachRow')
+ENGINE = S3Queue('s3://my-bucket/data/*.json', NOSIGN, 'JSONEachRow')
 PRIMARY KEY (`id`)
 SETTINGS keeper_path = '/clickhouse/s3queue/test_table', mode = 'unordered', s3queue_loading_retries = '3'"#;
         assert_eq!(query.trim(), expected.trim());
@@ -1671,8 +1687,45 @@ CREATE TABLE IF NOT EXISTS `test_db`.`test_table`
 (
  `id` Int32 NOT NULL
 )
-ENGINE = S3Queue('s3://my-bucket/data/*.csv', 'NOSIGN', 'CSV')
+ENGINE = S3Queue('s3://my-bucket/data/*.csv', NOSIGN, 'CSV')
 PRIMARY KEY (`id`)"#;
         assert_eq!(query.trim(), expected.trim());
+    }
+
+    #[test]
+    fn test_hash_consistency() {
+        // Test that the same engine produces the same hash multiple times
+        let engine1 = ClickhouseEngine::S3Queue {
+            s3_path: "s3://test-bucket/data/*.json".to_string(),
+            format: "JSONEachRow".to_string(),
+            compression: Some("gzip".to_string()),
+            headers: None,
+            aws_access_key_id: Some("test-key".to_string()),
+            aws_secret_access_key: Some("test-secret".to_string()),
+        };
+
+        let engine2 = ClickhouseEngine::S3Queue {
+            s3_path: "s3://test-bucket/data/*.json".to_string(),
+            format: "JSONEachRow".to_string(),
+            compression: Some("gzip".to_string()),
+            headers: None,
+            aws_access_key_id: Some("test-key".to_string()),
+            aws_secret_access_key: Some("test-secret".to_string()),
+        };
+
+        let hash1 = engine1.non_alterable_params_hash();
+        let hash2 = engine2.non_alterable_params_hash();
+
+        // Hashes should be identical for identical engines
+        assert_eq!(hash1, hash2);
+
+        // Hash should be a valid hex string (64 characters for SHA256)
+        assert_eq!(hash1.len(), 64);
+        assert!(hash1.chars().all(|c| c.is_ascii_hexdigit()));
+
+        // Test different engines produce different hashes
+        let merge_tree = ClickhouseEngine::MergeTree;
+        let merge_tree_hash = merge_tree.non_alterable_params_hash();
+        assert_ne!(hash1, merge_tree_hash);
     }
 }

@@ -1,8 +1,7 @@
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
-use std::collections::hash_map::DefaultHasher;
+use sha2::{Digest, Sha256};
 use std::collections::{HashMap, VecDeque};
-use std::hash::{Hash, Hasher};
 use std::path::PathBuf;
 
 use crate::framework::core::infrastructure::table::{Column, Table};
@@ -83,14 +82,50 @@ impl DataModel {
     /**
      * This hash is used to determine if the data model has changed.
      * It does not include the version in the hash and the abs_file_path is not included.
+     * Uses SHA256 for stable, deterministic hashing.
      */
     pub fn hash_without_version(&self) -> u64 {
-        let mut hasher = DefaultHasher::new();
-        self.name.hash(&mut hasher);
-        self.columns.hash(&mut hasher);
-        self.config.hash(&mut hasher);
+        let mut hasher = Sha256::new();
 
-        hasher.finish()
+        // Hash the name
+        hasher.update(self.name.as_bytes());
+
+        // Hash columns in a deterministic way
+        for column in &self.columns {
+            hasher.update(column.name.as_bytes());
+            hasher.update(format!("{:?}", column.data_type).as_bytes());
+            hasher.update(column.required.to_string().as_bytes());
+            hasher.update(column.unique.to_string().as_bytes());
+            hasher.update(column.primary_key.to_string().as_bytes());
+            if let Some(ref default) = column.default {
+                hasher.update(default.as_bytes());
+            } else {
+                hasher.update("None".as_bytes());
+            }
+            // Hash annotations in sorted order for determinism
+            let mut sorted_annotations: Vec<_> = column.annotations.iter().collect();
+            sorted_annotations.sort_by_key(|(k, _)| k.clone());
+            for (key, value) in sorted_annotations {
+                hasher.update(key.as_bytes());
+                hasher.update(format!("{:?}", value).as_bytes());
+            }
+        }
+
+        // Hash config
+        hasher.update(format!("{:?}", self.config).as_bytes());
+
+        // Convert first 8 bytes of SHA256 to u64 for backward compatibility
+        let hash_bytes = hasher.finalize();
+        u64::from_be_bytes([
+            hash_bytes[0],
+            hash_bytes[1],
+            hash_bytes[2],
+            hash_bytes[3],
+            hash_bytes[4],
+            hash_bytes[5],
+            hash_bytes[6],
+            hash_bytes[7],
+        ])
     }
 
     pub fn id(&self) -> String {
