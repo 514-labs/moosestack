@@ -327,10 +327,10 @@ pub async fn db_to_dmv2(remote_url: &str, dir_path: &Path) -> Result<(), Routine
     ) {
         Ok(Some(oid)) => {
             show_message!(
-                MessageType::Highlight,
+                MessageType::Info,
                 Message {
                     action: "Git".to_string(),
-                    details: format!("created commit {oid}"),
+                    details: format!("created commit {}", &oid.to_string()[..7]),
                 }
             );
         }
