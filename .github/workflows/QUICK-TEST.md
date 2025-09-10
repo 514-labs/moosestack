@@ -36,18 +36,14 @@ git push origin test-pr-claude
 
 2. **Open a PR** and the workflow will trigger automatically
 
-### Option 3: Use Alternative Workflow (Python-based) 🐍
+### Option 3: Fork Testing (Safest) 🔒
 
-If the Claude GitHub Action isn't available yet:
+Test in a fork to avoid any impact on main repository:
 
-1. **Use the alternative workflow:**
-```bash
-# Rename to use the alternative
-mv .github/workflows/claude-doc-check.yml .github/workflows/claude-doc-check.yml.bak
-mv .github/workflows/claude-doc-check-alternative.yml .github/workflows/claude-doc-check.yml
-```
-
-2. **This version uses Python to call Claude API directly**
+1. **Fork the repository on GitHub**
+2. **Add the workflow to your fork**
+3. **Create test PRs in your fork**
+4. **Test both test mode and real mode (with API key)**
 
 ## What Gets Tested?
 

@@ -4,12 +4,9 @@
 
 This guide explains how to test the Claude Documentation Check workflow before deploying it to production.
 
-## Available Workflows
+## Workflow Implementation
 
-We provide two workflow implementations:
-
-1. **`claude-doc-check.yml`** - Uses the official `anthropics/claude-code-action` (when available)
-2. **`claude-doc-check-alternative.yml`** - Uses Anthropic API directly via Python (fallback option)
+**`claude-doc-check.yml`** - Uses the official `anthropics/claude-code-action` from Anthropic
 
 ## Testing Strategy
 
@@ -99,12 +96,9 @@ If you want to test with the real Claude API:
    - Go to Settings → Secrets and variables → Actions
    - Add `ANTHROPIC_API_KEY` with your key
 
-2. **For the alternative workflow:**
-   - The Python-based implementation will work immediately
-
-3. **For the main workflow:**
-   - Install the [Claude GitHub App](https://github.com/apps/claude) (if available)
-   - Or use the alternative workflow if the app isn't available yet
+2. **Install the Claude GitHub App:**
+   - Go to the [Claude GitHub App](https://github.com/apps/claude)
+   - Install it for your repository
 
 ## Test Scenarios
 
@@ -162,7 +156,7 @@ git commit -m "feat: Add new feature with documentation"
 #### API Key Issues
 - Verify `ANTHROPIC_API_KEY` is set in repository secrets
 - Check the key has sufficient credits/permissions
-- Try the alternative workflow if the GitHub App isn't available
+- Ensure the Claude GitHub App is installed on your repository
 
 #### Comment Not Posting
 - Check workflow has `pull-requests: write` permission
