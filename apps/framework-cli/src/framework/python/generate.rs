@@ -268,7 +268,7 @@ pub fn tables_to_python(tables: &[Table], life_cycle: Option<LifeCycle>) -> Stri
     writeln!(output, "from enum import IntEnum, Enum").unwrap();
     writeln!(
         output,
-        "from moose_lib import Key, IngestPipeline, IngestPipelineConfig, OlapConfig, clickhouse_datetime64, clickhouse_decimal, ClickhouseSize, StringToEnumMixin"
+        "from moose_lib import Key, IngestPipeline, IngestPipelineConfig, OlapTable, OlapConfig, clickhouse_datetime64, clickhouse_decimal, ClickhouseSize, StringToEnumMixin"
     )
     .unwrap();
     writeln!(
@@ -402,20 +402,17 @@ pub fn tables_to_python(tables: &[Table], life_cycle: Option<LifeCycle>) -> Stri
 
         writeln!(
             output,
-            "{}_model = IngestPipeline[{}](\"{}\", IngestPipelineConfig(",
+            "{}_model = OlapTable[{}](\"{}\", OlapConfig(",
             table.name.to_case(Case::Snake),
             table.name,
             table.name
         )
         .unwrap();
-        writeln!(output, "    ingest=True,").unwrap();
-        writeln!(output, "    stream=True,").unwrap();
-        writeln!(output, "    table=OlapConfig(").unwrap();
-        writeln!(output, "        order_by_fields=[{order_by_fields}],").unwrap();
+        writeln!(output, "    order_by_fields=[{order_by_fields}],").unwrap();
         if let Some(life_cycle) = life_cycle {
             writeln!(
                 output,
-                "        life_cycle=LifeCycle.{},",
+                "    life_cycle=LifeCycle.{},",
                 json!(life_cycle).as_str().unwrap(), // reuse SCREAMING_SNAKE_CASE of serde
             )
             .unwrap();
@@ -431,46 +428,46 @@ pub fn tables_to_python(tables: &[Table], life_cycle: Option<LifeCycle>) -> Stri
                     aws_secret_access_key,
                 } => {
                     // Generate S3Queue configuration object
-                    writeln!(output, "        engine=S3QueueEngine(").unwrap();
-                    writeln!(output, "            s3_path={:?},", s3_path).unwrap();
-                    writeln!(output, "            format={:?},", format).unwrap();
+                    writeln!(output, "    engine=S3QueueEngine(").unwrap();
+                    writeln!(output, "        s3_path={:?},", s3_path).unwrap();
+                    writeln!(output, "        format={:?},", format).unwrap();
                     if let Some(compression) = compression {
-                        writeln!(output, "            compression={:?},", compression).unwrap();
+                        writeln!(output, "        compression={:?},", compression).unwrap();
                     }
                     if let Some(key_id) = aws_access_key_id {
-                        writeln!(output, "            aws_access_key_id={:?},", key_id).unwrap();
+                        writeln!(output, "        aws_access_key_id={:?},", key_id).unwrap();
                     }
                     if let Some(secret) = aws_secret_access_key {
-                        writeln!(output, "            aws_secret_access_key={:?},", secret).unwrap();
+                        writeln!(output, "        aws_secret_access_key={:?},", secret).unwrap();
                     }
                     if let Some(headers) = headers {
-                        write!(output, "            headers={{").unwrap();
+                        write!(output, "        headers={{").unwrap();
                         for (i, (key, value)) in headers.iter().enumerate() {
                             if i > 0 { write!(output, ",").unwrap(); }
                             write!(output, " {:?}: {:?}", key, value).unwrap();
                         }
                         writeln!(output, " }},").unwrap();
                     }
-                    writeln!(output, "        ),").unwrap();
+                    writeln!(output, "    ),").unwrap();
                 }
                 crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine::MergeTree => {
-                    writeln!(output, "        engine=MergeTreeEngine(),").unwrap();
+                    writeln!(output, "    engine=MergeTreeEngine(),").unwrap();
                 }
                 crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine::ReplacingMergeTree => {
-                    writeln!(output, "        engine=ReplacingMergeTreeEngine(),").unwrap();
+                    writeln!(output, "    engine=ReplacingMergeTreeEngine(),").unwrap();
                 }
                 crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine::AggregatingMergeTree => {
-                    writeln!(output, "        engine=AggregatingMergeTreeEngine(),").unwrap();
+                    writeln!(output, "    engine=AggregatingMergeTreeEngine(),").unwrap();
                 }
                 crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine::SummingMergeTree => {
-                    writeln!(output, "        engine=SummingMergeTreeEngine(),").unwrap();
+                    writeln!(output, "    engine=SummingMergeTreeEngine(),").unwrap();
                 }
             }
         }
         // Add table settings if present (includes mode for S3Queue)
         if let Some(settings) = &table.table_settings {
             if !settings.is_empty() {
-                write!(output, "        settings={{").unwrap();
+                write!(output, "    settings={{").unwrap();
                 for (i, (key, value)) in settings.iter().enumerate() {
                     if i > 0 {
                         write!(output, ", ").unwrap();
@@ -480,7 +477,6 @@ pub fn tables_to_python(tables: &[Table], life_cycle: Option<LifeCycle>) -> Stri
                 writeln!(output, "}},").unwrap();
             }
         }
-        writeln!(output, "    )").unwrap();
         writeln!(output, "))").unwrap();
         writeln!(output).unwrap();
     }
@@ -554,7 +550,7 @@ import datetime
 import ipaddress
 from uuid import UUID
 from enum import IntEnum, Enum
-from moose_lib import Key, IngestPipeline, IngestPipelineConfig, OlapConfig, clickhouse_datetime64, clickhouse_decimal, ClickhouseSize, StringToEnumMixin
+from moose_lib import Key, IngestPipeline, IngestPipelineConfig, OlapTable, OlapConfig, clickhouse_datetime64, clickhouse_decimal, ClickhouseSize, StringToEnumMixin
 from moose_lib import clickhouse_default, LifeCycle
 from moose_lib.blocks import MergeTreeEngine, ReplacingMergeTreeEngine, AggregatingMergeTreeEngine, SummingMergeTreeEngine, S3QueueEngine
 
@@ -563,13 +559,9 @@ class Foo(BaseModel):
     timestamp: float
     optional_text: Optional[str] = None
 
-foo_model = IngestPipeline[Foo]("Foo", IngestPipelineConfig(
-    ingest=True,
-    stream=True,
-    table=OlapConfig(
-        order_by_fields=["primary_key"],
-        engine=MergeTreeEngine(),
-    )
+foo_model = OlapTable[Foo]("Foo", OlapConfig(
+    order_by_fields=["primary_key"],
+    engine=MergeTreeEngine(),
 ))"#
         ));
     }
@@ -639,13 +631,9 @@ foo_model = IngestPipeline[Foo]("Foo", IngestPipelineConfig(
     numbers: list[Annotated[int, "int32"]]
     nested_numbers: list[list[Optional[Annotated[int, "int32"]]]]
 
-nested_array_model = IngestPipeline[NestedArray]("NestedArray", IngestPipelineConfig(
-    ingest=True,
-    stream=True,
-    table=OlapConfig(
-        order_by_fields=["id"],
-        engine=MergeTreeEngine(),
-    )
+nested_array_model = OlapTable[NestedArray]("NestedArray", OlapConfig(
+    order_by_fields=["id"],
+    engine=MergeTreeEngine(),
 ))"#
         ));
     }
@@ -751,13 +739,9 @@ class User(BaseModel):
     address: Address
     addresses: Optional[list[Address]] = None
 
-user_model = IngestPipeline[User]("User", IngestPipelineConfig(
-    ingest=True,
-    stream=True,
-    table=OlapConfig(
-        order_by_fields=["id"],
-        engine=MergeTreeEngine(),
-    )
+user_model = OlapTable[User]("User", OlapConfig(
+    order_by_fields=["id"],
+    engine=MergeTreeEngine(),
 ))"#
         ));
     }

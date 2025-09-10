@@ -134,7 +134,7 @@ pub fn tables_to_typescript(tables: &[Table], life_cycle: Option<LifeCycle>) -> 
     // Add imports
     writeln!(
         output,
-        "import {{ IngestPipeline, Key, ClickHouseInt, ClickHouseDecimal, ClickHousePrecision, ClickHouseByteSize, ClickHouseNamedTuple, ClickHouseEngines, ClickHouseDefault, WithDefault, LifeCycle }} from \"@514labs/moose-lib\";"
+        "import {{ IngestPipeline, OlapTable, Key, ClickHouseInt, ClickHouseDecimal, ClickHousePrecision, ClickHouseByteSize, ClickHouseNamedTuple, ClickHouseEngines, ClickHouseDefault, WithDefault, LifeCycle }} from \"@514labs/moose-lib\";"
     )
     .unwrap();
     writeln!(output, "import typia from \"typia\";").unwrap();
@@ -241,7 +241,7 @@ pub fn tables_to_typescript(tables: &[Table], life_cycle: Option<LifeCycle>) -> 
         writeln!(output).unwrap();
     }
 
-    // Generate pipeline configurations
+    // Generate table configurations
     for table in tables {
         let order_by_fields = if table.order_by.is_empty() {
             "\"tuple()\"".to_string()
@@ -254,14 +254,13 @@ pub fn tables_to_typescript(tables: &[Table], life_cycle: Option<LifeCycle>) -> 
         };
         writeln!(
             output,
-            "export const {}Pipeline = new IngestPipeline<{}>(\"{}\", {{",
+            "export const {}Table = new OlapTable<{}>(\"{}\", {{",
             table.name.to_case(Case::Pascal),
             table.name,
             table.name
         )
         .unwrap();
-        writeln!(output, "    table: {{").unwrap();
-        writeln!(output, "        orderByFields: [{order_by_fields}],").unwrap();
+        writeln!(output, "    orderByFields: [{order_by_fields}],").unwrap();
         if let Some(engine) = &table.engine {
             match engine {
                 crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine::S3Queue {
@@ -273,20 +272,20 @@ pub fn tables_to_typescript(tables: &[Table], life_cycle: Option<LifeCycle>) -> 
                     aws_secret_access_key,
                 } => {
                     // For S3Queue, properties are at the same level as orderByFields
-                    writeln!(output, "        engine: ClickHouseEngines.S3Queue,").unwrap();
-                    writeln!(output, "        s3Path: {:?},", s3_path).unwrap();
-                    writeln!(output, "        format: {:?},", format).unwrap();
+                    writeln!(output, "    engine: ClickHouseEngines.S3Queue,").unwrap();
+                    writeln!(output, "    s3Path: {:?},", s3_path).unwrap();
+                    writeln!(output, "    format: {:?},", format).unwrap();
                     if let Some(compression) = compression {
-                        writeln!(output, "        compression: {:?},", compression).unwrap();
+                        writeln!(output, "    compression: {:?},", compression).unwrap();
                     }
                     if let Some(key_id) = aws_access_key_id {
-                        writeln!(output, "        awsAccessKeyId: {:?},", key_id).unwrap();
+                        writeln!(output, "    awsAccessKeyId: {:?},", key_id).unwrap();
                     }
                     if let Some(secret) = aws_secret_access_key {
-                        writeln!(output, "        awsSecretAccessKey: {:?},", secret).unwrap();
+                        writeln!(output, "    awsSecretAccessKey: {:?},", secret).unwrap();
                     }
                     if let Some(headers) = headers {
-                        write!(output, "        headers: {{").unwrap();
+                        write!(output, "    headers: {{").unwrap();
                         for (i, (key, value)) in headers.iter().enumerate() {
                             if i > 0 { write!(output, ",").unwrap(); }
                             write!(output, " {:?}: {:?}", key, value).unwrap();
@@ -295,23 +294,23 @@ pub fn tables_to_typescript(tables: &[Table], life_cycle: Option<LifeCycle>) -> 
                     }
                 }
                 crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine::MergeTree => {
-                    writeln!(output, "        engine: ClickHouseEngines.MergeTree,").unwrap();
+                    writeln!(output, "    engine: ClickHouseEngines.MergeTree,").unwrap();
                 }
                 crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine::ReplacingMergeTree => {
-                    writeln!(output, "        engine: ClickHouseEngines.ReplacingMergeTree,").unwrap();
+                    writeln!(output, "    engine: ClickHouseEngines.ReplacingMergeTree,").unwrap();
                 }
                 crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine::AggregatingMergeTree => {
-                    writeln!(output, "        engine: ClickHouseEngines.AggregatingMergeTree,").unwrap();
+                    writeln!(output, "    engine: ClickHouseEngines.AggregatingMergeTree,").unwrap();
                 }
                 crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine::SummingMergeTree => {
-                    writeln!(output, "        engine: ClickHouseEngines.SummingMergeTree,").unwrap();
+                    writeln!(output, "    engine: ClickHouseEngines.SummingMergeTree,").unwrap();
                 }
             }
         }
         // Add table settings if present (works for all engines)
         if let Some(settings) = &table.table_settings {
             if !settings.is_empty() {
-                write!(output, "        settings: {{").unwrap();
+                write!(output, "    settings: {{").unwrap();
                 for (i, (key, value)) in settings.iter().enumerate() {
                     if i > 0 {
                         write!(output, ",").unwrap();
@@ -324,14 +323,11 @@ pub fn tables_to_typescript(tables: &[Table], life_cycle: Option<LifeCycle>) -> 
         if let Some(life_cycle) = life_cycle {
             writeln!(
                 output,
-                "        lifeCycle: LifeCycle.{},",
+                "    lifeCycle: LifeCycle.{},",
                 json!(life_cycle).as_str().unwrap() // reuse SCREAMING_SNAKE_CASE of serde
             )
             .unwrap();
         };
-        writeln!(output, "    }},").unwrap();
-        writeln!(output, "    stream: true,").unwrap();
-        writeln!(output, "    ingest: true,").unwrap();
         writeln!(output, "}});").unwrap();
         writeln!(output).unwrap();
     }
@@ -451,13 +447,9 @@ export interface User {
     addresses: Address[] | undefined;
 }
 
-export const UserPipeline = new IngestPipeline<User>("User", {
-    table: {
-        orderByFields: ["id"],
-        engine: ClickHouseEngines.MergeTree,
-    },
-    stream: true,
-    ingest: true,
+export const UserTable = new OlapTable<User>("User", {
+    orderByFields: ["id"],
+    engine: ClickHouseEngines.MergeTree,
 });"#
         ));
     }
@@ -632,13 +624,9 @@ export interface Task {
     status: Status;
 }
 
-export const TaskPipeline = new IngestPipeline<Task>("Task", {
-    table: {
-        orderByFields: ["id"],
-        engine: ClickHouseEngines.MergeTree,
-    },
-    stream: true,
-    ingest: true,
+export const TaskTable = new OlapTable<Task>("Task", {
+    orderByFields: ["id"],
+    engine: ClickHouseEngines.MergeTree,
 });"#
         ));
     }
