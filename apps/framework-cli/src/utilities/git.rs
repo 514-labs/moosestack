@@ -2,7 +2,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use crate::framework::languages::SupportedLanguages;
-use git2::{Error, Repository, RepositoryInitOptions, Signature};
+use git2::{Error, Repository, RepositoryInitOptions, Signature, StatusOptions};
 use serde::{Deserialize, Serialize};
 
 use crate::project::Project;
@@ -114,4 +114,46 @@ pub fn create_init_commit(project: Arc<Project>, dir_path: &Path) {
     // empty parent because it's the first commit
     repo.commit(Some("HEAD"), &author, &author, "Initial commit", &tree, &[])
         .expect("Failed to create initial commit");
+}
+
+/// Create a new commit with current workspace changes after code generation.
+/// Returns Ok(Some(oid)) when a commit was created, Ok(None) when there were no changes to commit.
+pub fn create_code_generation_commit(
+    dir_path: &Path,
+    message: &str,
+) -> Result<Option<git2::Oid>, Error> {
+    // Discover existing repository starting from dir_path
+    let repo = match Repository::discover(dir_path) {
+        Ok(repo) => repo,
+        Err(e) => return Err(e),
+    };
+
+    // Skip if there are no changes to commit (including untracked files)
+    let mut status_opts = StatusOptions::new();
+    status_opts
+        .include_untracked(true)
+        .recurse_untracked_dirs(true);
+    let statuses = repo.statuses(Some(&mut status_opts))?;
+    if statuses.is_empty() {
+        return Ok(None);
+    }
+
+    // Stage all changes respecting .gitignore
+    let mut index = repo.index()?;
+    index.add_all(["."], git2::IndexAddOption::DEFAULT, None)?;
+    index.write()?;
+
+    // Write tree
+    let tree_id = index.write_tree()?;
+    let tree = repo.find_tree(tree_id)?;
+
+    // Use HEAD as parent (should be the init commit in a fresh project)
+    let parent = repo.head()?.peel_to_commit()?;
+
+    // Author and committer
+    let author = Signature::now("Moose CLI", "noreply@fiveonefour.com")?;
+
+    // Create the commit
+    let oid = repo.commit(Some("HEAD"), &author, &author, message, &tree, &[&parent])?;
+    Ok(Some(oid))
 }
