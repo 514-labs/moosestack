@@ -190,27 +190,6 @@ pub enum GenerateCommand {
         #[arg(long, default_value = "false")]
         save: bool,
     },
-    /// Build a ClickHouse HTTPS connection string (prompts if args omitted)
-    ClickhouseUrl {
-        /// Username (optional; will prompt if omitted)
-        #[arg(long)]
-        user: Option<String>,
-
-        /// Password (optional; will prompt if omitted)
-        #[arg(long)]
-        password: Option<String>,
-
-        /// Optional database name to append as query param (will prompt if omitted and --export is used)
-        #[arg(long)]
-        database: Option<String>,
-
-        /// Output an export command instead of raw URL
-        #[arg(long, default_value = "false")]
-        export: bool,
-
-        /// Positional HTTPS URL to your ClickHouse service (e.g. https://host:8443). Will prompt if omitted.
-        url: Option<String>,
-    },
 }
 
 #[derive(Debug, Args)]

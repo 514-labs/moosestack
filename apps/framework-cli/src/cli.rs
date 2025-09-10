@@ -232,9 +232,9 @@ pub async fn top_command_handler(
                 create_project_from_template(&template, name, dir_path, *no_fail_already_exists)
                     .await?;
 
-            if let Some(remote_val) = from_remote {
+            let normalized_url = if let Some(remote_val) = from_remote {
                 // If empty or invalid, optionally prompt; otherwise validate and proceed
-                let normalized_url = if remote_val.as_deref().unwrap_or("").trim().is_empty() {
+                let url = if remote_val.as_deref().unwrap_or("").trim().is_empty() {
                     use std::io::{self, Write};
                     print!("Enter HTTPS host and port (e.g. https://your-service-id.region.clickhouse.cloud:8443)\n  ❓ Help: https://docs.fiveonefour.com/moose/getting-started/from-clickhouse#connect-to-your-remote-clickhouse\n  ☁️ ClickHouse Cloud Console: https://clickhouse.cloud/\n> ");
                     let _ = io::stdout().flush();
@@ -254,7 +254,7 @@ pub async fn top_command_handler(
                     io::stdin().read_line(&mut pass).unwrap_or(0);
                     let pass = pass.trim();
 
-                    print!("Enter database (optional): ");
+                    print!("Enter database name (optional): ");
                     let _ = io::stdout().flush();
                     let mut db = String::new();
                     io::stdin().read_line(&mut db).unwrap_or(0);
@@ -279,7 +279,8 @@ pub async fn top_command_handler(
                             return Err(RoutineFailure::error(Message::new(
                                 "Init from remote".to_string(),
                                 format!(
-                                    "Invalid ClickHouse URL. Tip: run `moose generate clickhouse-url` to build a correct URL.\nDetails: {}",
+                                    "Invalid ClickHouse URL. Use HTTPS protocol and correct port. Run `moose init {} --from-remote` without arguments for interactive setup.\nDetails: {}",
+                                    name,
                                     e
                                 ),
                             )));
@@ -287,14 +288,28 @@ pub async fn top_command_handler(
                     }
                 };
 
-                db_to_dmv2(&normalized_url, dir_path).await?;
-            }
+                db_to_dmv2(&url, dir_path).await?;
+                Some(url)
+            } else {
+                None
+            };
 
             wait_for_usage_capture(capture_handle).await;
 
+            let success_message = if let Some(connection_string) = normalized_url {
+                format!(
+                    "\n\n{post_install_message}\n\n🔗 Your ClickHouse connection string:\n{}\n\n📋 After setting up your development environment, open a new terminal and seed your local database:\n      moose seed clickhouse \"{}\" --limit 1000\n\n💡 Tip: Save the connection string as an environment variable for future use:\n   export MOOSE_SEED_CLICKHOUSE_URL=\"{}\"\n",
+                    connection_string,
+                    connection_string,
+                    connection_string
+                )
+            } else {
+                format!("\n\n{post_install_message}")
+            };
+
             Ok(RoutineSuccess::highlight(Message::new(
                 "Get Started".to_string(),
-                format!("\n\n{post_install_message}"),
+                success_message,
             )))
         }
         // This command is used to check the project for errors that are not related to runtime
@@ -651,70 +666,6 @@ pub async fn top_command_handler(
                 Ok(RoutineSuccess::success(Message::new(
                     "Migration".to_string(),
                     "generated".to_string(),
-                )))
-            }
-            Some(GenerateCommand::ClickhouseUrl {
-                user,
-                password,
-                database,
-                export,
-                url,
-            }) => {
-                // Normalize base URL (strip trailing slash)
-                let base = match url.as_deref() {
-                    Some(u) => u.trim_end_matches('/').to_string(),
-                    None => {
-                        use std::io::{self, Write};
-                        print!("Enter HTTPS host and port (e.g. https://your-service-id.region.clickhouse.cloud:8443)\n  ❓ Help: https://docs.fiveonefour.com/moose/getting-started/from-clickhouse#connect-to-your-remote-clickhouse\n  ☁️ ClickHouse Cloud Console: https://clickhouse.cloud/\n> ");
-                        let _ = io::stdout().flush();
-                        let mut input = String::new();
-                        io::stdin().read_line(&mut input).unwrap_or(0);
-                        input.trim().trim_end_matches('/').to_string()
-                    }
-                };
-
-                let username = match user.as_deref() {
-                    Some(u) => u.to_string(),
-                    None => {
-                        use std::io::{self, Write};
-                        print!("Enter username: ");
-                        let _ = io::stdout().flush();
-                        let mut input = String::new();
-                        io::stdin().read_line(&mut input).unwrap_or(0);
-                        input.trim().to_string()
-                    }
-                };
-
-                let password = match password.as_deref() {
-                    Some(p) => p.to_string(),
-                    None => {
-                        use std::io::{self, Write};
-                        print!("Enter password: ");
-                        let _ = io::stdout().flush();
-                        let mut input = String::new();
-                        io::stdin().read_line(&mut input).unwrap_or(0);
-                        input.trim().to_string()
-                    }
-                };
-                // Build https URL with credentials and optional database param
-                let mut out = format!(
-                    "https://{}:{}@{}",
-                    username,
-                    password,
-                    base.trim_start_matches("https://")
-                );
-                if let Some(db) = database.clone() {
-                    let sep = if out.contains('?') { '&' } else { '?' };
-                    out.push_str(&format!("{}database={}", sep, db));
-                }
-                let message = if *export {
-                    format!("export MOOSE_SEED_CLICKHOUSE_URL='{}'", out)
-                } else {
-                    out
-                };
-                Ok(RoutineSuccess::success(Message::new(
-                    "ClickHouse URL".to_string(),
-                    message,
                 )))
             }
             None => Err(RoutineFailure::error(Message {
