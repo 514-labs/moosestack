@@ -10,24 +10,9 @@ This guide explains how to test the Claude Documentation Check workflow before d
 
 ## Testing Strategy
 
-### 🧪 Phase 1: Local Validation
+### 🧪 Phase 1: Test Mode (No API Required)
 
-Run the test script to validate workflow syntax:
-
-```bash
-cd /workspace
-./.github/workflows/test-claude-workflow.sh
-```
-
-This script will:
-- Validate YAML syntax
-- Check workflow structure
-- Verify path patterns
-- Provide test scenarios
-
-### 🧪 Phase 2: Test Mode (No API Required)
-
-Both workflows support a **test mode** that simulates Claude's analysis without using the API.
+The workflow supports a **test mode** that simulates Claude's analysis without using the API.
 
 #### Option A: Manual Trigger (Recommended for Initial Testing)
 
@@ -71,7 +56,7 @@ Both workflows support a **test mode** that simulates Claude's analysis without 
    - The workflow should trigger automatically
    - Check the PR for the test mode comment
 
-### 🧪 Phase 3: Fork Testing (Safest Option)
+### 🧪 Phase 2: Fork Testing (Safest Option)
 
 Test in a fork to avoid any impact on the main repository:
 
@@ -88,7 +73,7 @@ Test in a fork to avoid any impact on the main repository:
    - Create test PRs in your fork
    - Test both test mode and real mode (if you have an API key)
 
-### 🧪 Phase 4: API Testing (Optional)
+### 🧪 Phase 3: API Testing (Optional)
 
 If you want to test with the real Claude API:
 
