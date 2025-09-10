@@ -1618,7 +1618,7 @@ impl InfrastructureMap {
         for (id, table) in target_tables {
             if !self_tables.contains_key(id) {
                 // Respect lifecycle: ExternallyManaged tables are never added automatically
-                if table.life_cycle == LifeCycle::ExternallyManaged {
+                if table.life_cycle == LifeCycle::ExternallyManaged && respect_life_cycle {
                     log::debug!(
                         "Table '{}' marked for addition but is externally managed - skipping addition",
                         table.name
