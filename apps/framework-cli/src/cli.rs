@@ -54,6 +54,7 @@ use crate::utilities::constants::{
     PROJECT_NAME_ALLOW_PATTERN,
 };
 
+use crate::cli::commands::DbArgs;
 use crate::cli::routines::code_generation::{db_pull, db_to_dmv2};
 use crate::cli::routines::ls::ls_dmv2;
 use crate::cli::routines::templates::create_project_from_template;
@@ -930,30 +931,28 @@ pub async fn top_command_handler(
                 }
             }
         }
-        Commands::Db(db_args) => {
-            info!("Running db command");
+        Commands::Db(DbArgs {
+            command: DbCommands::Pull { connection_string },
+        }) => {
+            info!("Running db pull command");
+            let project = load_project()?;
 
-            match &db_args.command {
-                Some(DbCommands::Pull { connection_string }) => {
-                    let dir_path = Path::new(".");
+            let capture_handle = crate::utilities::capture::capture_usage(
+                ActivityType::DbPullCommand,
+                Some(project.name()),
+                &settings,
+                machine_id.clone(),
+                HashMap::new(),
+            );
+            db_pull(connection_string, &project).await.map_err(|e| {
+                RoutineFailure::new(Message::new("DB Pull".to_string(), "failed".to_string()), e)
+            })?;
 
-                    db_pull(connection_string, dir_path).await.map_err(|e| {
-                        RoutineFailure::new(
-                            Message::new("DB Pull".to_string(), "failed".to_string()),
-                            e,
-                        )
-                    })?;
-
-                    Ok(RoutineSuccess::success(Message::new(
-                        "DB Pull".to_string(),
-                        "External models refreshed".to_string(),
-                    )))
-                }
-                None => Err(RoutineFailure::error(Message::new(
-                    "DB".to_string(),
-                    "No subcommand provided".to_string(),
-                ))),
-            }
+            wait_for_usage_capture(capture_handle).await;
+            Ok(RoutineSuccess::success(Message::new(
+                "DB Pull".to_string(),
+                "External models refreshed".to_string(),
+            )))
         }
         Commands::Refresh { url, token } => {
             info!("Running refresh command");

@@ -8,6 +8,7 @@ use crate::framework::python::generate::tables_to_python;
 use crate::framework::typescript::generate::tables_to_typescript;
 use crate::infrastructure::olap::clickhouse::ConfiguredDBClient;
 use crate::infrastructure::olap::OlapOperations;
+use crate::project::Project;
 use crate::utilities::constants::{
     APP_DIR, PYTHON_EXTERNAL_FILE, PYTHON_MAIN_FILE, TYPESCRIPT_EXTERNAL_FILE, TYPESCRIPT_MAIN_FILE,
 };
@@ -447,21 +448,12 @@ pub async fn db_to_dmv2(remote_url: &str, dir_path: &Path) -> Result<(), Routine
 
 /// Pulls schema for ExternallyManaged tables and regenerates only external model files.
 /// Does not modify `main.py` or `index.ts`.
-pub async fn db_pull(remote_url: &str, dir_path: &Path) -> Result<(), RoutineFailure> {
+pub async fn db_pull(remote_url: &str, project: &Project) -> Result<(), RoutineFailure> {
     let (client, db) = create_client_and_db(remote_url).await?;
-
-    env::set_current_dir(dir_path).map_err(|e| {
-        RoutineFailure::new(
-            Message::new("Failure".to_string(), "changing directory".to_string()),
-            e,
-        )
-    })?;
-
-    let project = crate::cli::load_project()?;
 
     let infra_map = if project.features.data_model_v2 {
         debug!("Loading InfrastructureMap from user code (DMV2)");
-        InfrastructureMap::load_from_user_code(&project)
+        InfrastructureMap::load_from_user_code(project)
             .await
             .map_err(|e| {
                 RoutineFailure::error(Message::new(
@@ -471,7 +463,7 @@ pub async fn db_pull(remote_url: &str, dir_path: &Path) -> Result<(), RoutineFai
             })?
     } else {
         debug!("Loading InfrastructureMap from primitives");
-        let primitive_map = crate::framework::core::primitive_map::PrimitiveMap::load(&project)
+        let primitive_map = crate::framework::core::primitive_map::PrimitiveMap::load(project)
             .await
             .map_err(|e| {
                 RoutineFailure::error(Message::new(
@@ -479,7 +471,7 @@ pub async fn db_pull(remote_url: &str, dir_path: &Path) -> Result<(), RoutineFai
                     format!("loading primitives: {e:?}"),
                 ))
             })?;
-        crate::framework::core::infrastructure_map::InfrastructureMap::new(&project, primitive_map)
+        crate::framework::core::infrastructure_map::InfrastructureMap::new(project, primitive_map)
     };
 
     let externally_managed_names: std::collections::HashSet<String> = infra_map
@@ -489,7 +481,7 @@ pub async fn db_pull(remote_url: &str, dir_path: &Path) -> Result<(), RoutineFai
         .map(|t| t.name.clone())
         .collect();
 
-    let (tables, _unsupported) = client.list_tables(&db, &project).await.map_err(|e| {
+    let (tables, _unsupported) = client.list_tables(&db, project).await.map_err(|e| {
         RoutineFailure::new(
             Message::new("Failure".to_string(), "listing tables".to_string()),
             e,

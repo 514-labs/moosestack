@@ -327,7 +327,7 @@ pub enum SeedSubcommands {
 #[command(arg_required_else_help = true)]
 pub struct DbArgs {
     #[command(subcommand)]
-    pub command: Option<DbCommands>,
+    pub command: DbCommands,
 }
 
 #[derive(Debug, Subcommand)]
