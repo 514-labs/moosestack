@@ -4,6 +4,7 @@
 //! specific limitations around schema changes. ClickHouse has restrictions on certain
 //! ALTER TABLE operations, particularly around ORDER BY and primary key changes.
 
+use crate::framework::core::infrastructure::sql_resource::SqlResource;
 use crate::framework::core::infrastructure::table::{
     Column, ColumnType, DataEnum, EnumValue, Table,
 };
@@ -11,6 +12,7 @@ use crate::framework::core::infrastructure_map::{
     ColumnChange, OlapChange, OrderByChange, TableChange, TableDiffStrategy,
 };
 use crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine;
+use std::collections::HashMap;
 
 /// ClickHouse-specific table diff strategy
 ///
@@ -157,6 +159,59 @@ fn is_only_required_change_for_special_column_type(before: &Column, after: &Colu
     }
 }
 
+impl ClickHouseTableDiffStrategy {
+    /// Check if a table uses the S3Queue engine
+    pub fn is_s3queue_table(table: &Table) -> bool {
+        matches!(&table.engine, Some(ClickhouseEngine::S3Queue { .. }))
+    }
+
+    /// Check if a SQL resource is a materialized view that needs population
+    /// This is ClickHouse-specific logic for handling materialized view initialization
+    pub fn check_materialized_view_population(
+        sql_resource: &SqlResource,
+        tables: &HashMap<String, Table>,
+        is_new: bool,
+        olap_changes: &mut Vec<OlapChange>,
+    ) {
+        use crate::infrastructure::olap::clickhouse::sql_parser::parse_create_materialized_view;
+
+        // Check if this is a CREATE MATERIALIZED VIEW statement
+        for sql in &sql_resource.setup {
+            if let Ok(mv_stmt) = parse_create_materialized_view(sql) {
+                // Check if any source is an S3Queue table
+                let has_s3queue_source = mv_stmt.source_tables.iter().any(|source| {
+                    tables
+                        .get(&source.qualified_name())
+                        .is_some_and(Self::is_s3queue_table)
+                });
+
+                // Only populate new MVs with non-S3Queue sources
+                if is_new && !has_s3queue_source {
+                    log::info!(
+                        "Adding population operation for new materialized view '{}'",
+                        sql_resource.name
+                    );
+
+                    olap_changes.push(OlapChange::PopulateMaterializedView {
+                        view_name: mv_stmt.view_name,
+                        target_table: mv_stmt.target_table,
+                        target_database: mv_stmt.target_database,
+                        select_statement: mv_stmt.select_statement,
+                        source_tables: mv_stmt
+                            .source_tables
+                            .into_iter()
+                            .map(|t| t.qualified_name())
+                            .collect(),
+                    });
+                }
+
+                // Only check the first MV statement
+                break;
+            }
+        }
+    }
+}
+
 impl TableDiffStrategy for ClickHouseTableDiffStrategy {
     /// This function is only called when there are actual changes to the table
     /// (column changes, ORDER BY changes, or deduplication changes).
@@ -196,18 +251,25 @@ impl TableDiffStrategy for ClickHouseTableDiffStrategy {
             ];
         }
 
-        let before_engine = before
-            .engine
-            .as_deref()
-            .and_then(|e| ClickhouseEngine::try_from(e).ok());
-        // do NOT compare the strings directly because of the possible prefix "Shared"
-        let engine_changed = match after.engine.as_deref() {
-            // after.engine is unset -> before engine should be same as default
-            None => before_engine.is_some_and(|e| e != ClickhouseEngine::MergeTree),
-            // force recreate only if after.engine can be parsed and before.engine is not the same
-            Some(e) => ClickhouseEngine::try_from(e).is_ok_and(|e| Some(e) != before_engine),
+        // First check if we can use hash comparison for engine changes
+        let engine_changed = if let (Some(before_hash), Some(after_hash)) =
+            (&before.engine_params_hash, &after.engine_params_hash)
+        {
+            // If both tables have hashes, compare them for change detection
+            // This includes credentials and other non-alterable parameters
+            before_hash != after_hash
+        } else {
+            // Fallback to direct engine comparison if hashes are not available
+            let before_engine = before.engine.as_ref();
+            match after.engine.as_ref() {
+                // after.engine is unset -> before engine should be same as default
+                None => before_engine.is_some_and(|e| *e != ClickhouseEngine::MergeTree),
+                // force recreate only if engines are different
+                Some(e) => Some(e) != before_engine,
+            }
         };
-        // Check if engine has changed
+
+        // Check if engine has changed (using hash comparison when available)
         if engine_changed {
             log::debug!(
                 "ClickHouse: engine changed for table '{}', requiring drop+create",
@@ -217,6 +279,73 @@ impl TableDiffStrategy for ClickHouseTableDiffStrategy {
                 OlapChange::Table(TableChange::Removed(before.clone())),
                 OlapChange::Table(TableChange::Added(after.clone())),
             ];
+        }
+
+        // Check if only table settings have changed
+        if before.table_settings != after.table_settings {
+            // List of readonly settings that cannot be modified after table creation
+            // Source: ClickHouse/src/Storages/MergeTree/MergeTreeSettings.cpp::isReadonlySetting
+            const READONLY_SETTINGS: &[&str] = &[
+                "index_granularity",
+                "index_granularity_bytes",
+                "enable_mixed_granularity_parts",
+                "add_minmax_index_for_numeric_columns",
+                "add_minmax_index_for_string_columns",
+                "table_disk",
+            ];
+
+            // Check if any readonly settings have changed
+            let empty_settings = HashMap::new();
+            let before_settings = before.table_settings.as_ref().unwrap_or(&empty_settings);
+            let after_settings = after.table_settings.as_ref().unwrap_or(&empty_settings);
+
+            for readonly_setting in READONLY_SETTINGS {
+                let before_value = before_settings.get(*readonly_setting);
+                let after_value = after_settings.get(*readonly_setting);
+
+                if before_value != after_value {
+                    log::debug!(
+                        "ClickHouse: Readonly setting '{}' changed for table '{}' (from {:?} to {:?}), requiring drop+create",
+                        readonly_setting,
+                        before.name,
+                        before_value,
+                        after_value
+                    );
+                    return vec![
+                        OlapChange::Table(TableChange::Removed(before.clone())),
+                        OlapChange::Table(TableChange::Added(after.clone())),
+                    ];
+                }
+            }
+
+            log::debug!(
+                "ClickHouse: Only modifiable table settings changed for table '{}', can use ALTER TABLE MODIFY SETTING",
+                before.name
+            );
+            // Return the explicit SettingsChanged variant for clarity
+            return vec![OlapChange::Table(TableChange::SettingsChanged {
+                name: before.name.clone(),
+                before_settings: before.table_settings.clone(),
+                after_settings: after.table_settings.clone(),
+                table: after.clone(),
+            })];
+        }
+
+        // Check if this is an S3Queue table with column changes
+        // S3Queue only supports MODIFY/RESET SETTING, not column operations
+        if !column_changes.is_empty() {
+            if let Some(engine) = &before.engine {
+                if matches!(engine, ClickhouseEngine::S3Queue { .. }) {
+                    log::debug!(
+                        "ClickHouse: S3Queue table '{}' has column changes, requiring drop+create (S3Queue doesn't support ALTER TABLE for columns)",
+                        before.name
+                    );
+                    return vec![
+                        OlapChange::Table(TableChange::Removed(before.clone())),
+                        OlapChange::Table(TableChange::Added(after.clone())),
+                    ];
+                }
+            }
         }
 
         // Filter out no-op changes for ClickHouse semantics:
@@ -256,6 +385,7 @@ mod tests {
     use crate::framework::core::infrastructure_map::{PrimitiveSignature, PrimitiveTypes};
     use crate::framework::core::partial_infrastructure_map::LifeCycle;
     use crate::framework::versions::Version;
+    use crate::infrastructure::olap::clickhouse::sql_parser::parse_create_materialized_view;
 
     fn create_test_table(name: &str, order_by: Vec<String>, deduplicate: bool) -> Table {
         Table {
@@ -283,7 +413,7 @@ mod tests {
                 },
             ],
             order_by,
-            engine: deduplicate.then(|| "ReplacingMergeTree".to_string()),
+            engine: deduplicate.then(|| ClickhouseEngine::ReplacingMergeTree),
             version: Some(Version::from_string("1.0.0".to_string())),
             source_primitive: PrimitiveSignature {
                 name: "test".to_string(),
@@ -291,6 +421,8 @@ mod tests {
             },
             metadata: None,
             life_cycle: LifeCycle::FullyManaged,
+            engine_params_hash: None,
+            table_settings: None,
         }
     }
 
@@ -730,5 +862,104 @@ mod tests {
 
         // This is the core fix - TypeScript enum should be equivalent to ClickHouse representation
         assert!(enums_are_equivalent(&clickhouse_enum, &typescript_enum));
+    }
+
+    #[test]
+    fn test_is_s3queue_table() {
+        use crate::framework::core::infrastructure_map::{PrimitiveSignature, PrimitiveTypes};
+        use crate::framework::core::partial_infrastructure_map::LifeCycle;
+        use std::collections::HashMap;
+
+        let mut table_settings = HashMap::new();
+        table_settings.insert("mode".to_string(), "unordered".to_string());
+
+        let s3_table = Table {
+            name: "test_s3".to_string(),
+            columns: vec![],
+            order_by: vec![],
+            engine: Some(ClickhouseEngine::S3Queue {
+                s3_path: "s3://bucket/path".to_string(),
+                format: "JSONEachRow".to_string(),
+                compression: None,
+                headers: None,
+                aws_access_key_id: None,
+                aws_secret_access_key: None,
+            }),
+            version: None,
+            source_primitive: PrimitiveSignature {
+                name: "test_s3".to_string(),
+                primitive_type: PrimitiveTypes::DataModel,
+            },
+            metadata: None,
+            life_cycle: LifeCycle::FullyManaged,
+            engine_params_hash: None,
+            table_settings: Some(table_settings),
+        };
+
+        assert!(ClickHouseTableDiffStrategy::is_s3queue_table(&s3_table));
+
+        let regular_table = create_test_table("regular", vec![], false);
+        assert!(!ClickHouseTableDiffStrategy::is_s3queue_table(
+            &regular_table
+        ));
+    }
+
+    #[test]
+    fn test_parse_materialized_view() {
+        let sql = "CREATE MATERIALIZED VIEW test_mv TO target_table AS SELECT * FROM source_table";
+        let result = parse_create_materialized_view(sql);
+
+        assert!(result.is_ok());
+        let mv_stmt = result.unwrap();
+        assert_eq!(mv_stmt.view_name, "test_mv");
+        assert_eq!(mv_stmt.target_table, "target_table");
+        assert_eq!(mv_stmt.target_database, None);
+        assert_eq!(mv_stmt.source_tables.len(), 1);
+        assert_eq!(mv_stmt.source_tables[0].table, "source_table");
+        assert!(mv_stmt.select_statement.contains("SELECT"));
+    }
+
+    #[test]
+    fn test_parse_materialized_view_with_backticks() {
+        let sql =
+            "CREATE MATERIALIZED VIEW `test_mv` TO `target_table` AS SELECT * FROM `source_table`";
+        let result = parse_create_materialized_view(sql);
+
+        assert!(result.is_ok());
+        let mv_stmt = result.unwrap();
+        assert_eq!(mv_stmt.view_name, "test_mv");
+        assert_eq!(mv_stmt.target_table, "target_table");
+        assert_eq!(mv_stmt.target_database, None);
+        assert_eq!(mv_stmt.source_tables.len(), 1);
+        assert_eq!(mv_stmt.source_tables[0].table, "source_table");
+    }
+
+    #[test]
+    fn test_parse_materialized_view_with_database() {
+        let sql =
+            "CREATE MATERIALIZED VIEW test_mv TO mydb.target_table AS SELECT * FROM source_table";
+        let result = parse_create_materialized_view(sql);
+
+        assert!(result.is_ok());
+        let mv_stmt = result.unwrap();
+        assert_eq!(mv_stmt.view_name, "test_mv");
+        assert_eq!(mv_stmt.target_table, "target_table");
+        assert_eq!(mv_stmt.target_database, Some("mydb".to_string()));
+        assert_eq!(mv_stmt.source_tables.len(), 1);
+        assert_eq!(mv_stmt.source_tables[0].table, "source_table");
+    }
+
+    #[test]
+    fn test_parse_materialized_view_with_database_backticks() {
+        let sql = "CREATE MATERIALIZED VIEW `test_mv` TO `mydb`.`target_table` AS SELECT * FROM `source_table`";
+        let result = parse_create_materialized_view(sql);
+
+        assert!(result.is_ok());
+        let mv_stmt = result.unwrap();
+        assert_eq!(mv_stmt.view_name, "test_mv");
+        assert_eq!(mv_stmt.target_table, "target_table");
+        assert_eq!(mv_stmt.target_database, Some("mydb".to_string()));
+        assert_eq!(mv_stmt.source_tables.len(), 1);
+        assert_eq!(mv_stmt.source_tables[0].table, "source_table");
     }
 }

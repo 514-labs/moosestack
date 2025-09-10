@@ -238,7 +238,7 @@ fn format_table_display(
 
     // Engine section (if present)
     if let Some(ref engine) = table.engine {
-        details.push(format!("Engine: {}", engine));
+        details.push(format!("Engine: {}", Into::<String>::into(engine.clone())));
     }
 
     (title, details)
@@ -510,6 +510,45 @@ pub fn show_olap_changes(olap_changes: &[OlapChange]) {
 
             infra_updated_detailed(&format!("Table: {name}"), &details);
         }
+        OlapChange::Table(TableChange::SettingsChanged {
+            name,
+            before_settings,
+            after_settings,
+            ..
+        }) => {
+            let mut details = Vec::new();
+
+            // Show settings that will be modified
+            if let Some(after) = after_settings {
+                let before = before_settings.clone().unwrap_or_default();
+                for (key, value) in after {
+                    if before.get(key) != Some(value) {
+                        if before.contains_key(key) {
+                            details.push(format!(
+                                "  ~ {}: {} -> {}",
+                                key,
+                                before.get(key).unwrap(),
+                                value
+                            ));
+                        } else {
+                            details.push(format!("  + {}: {}", key, value));
+                        }
+                    }
+                }
+            }
+
+            // Show settings that will be reset (removed)
+            if let Some(before) = before_settings {
+                let after = after_settings.clone().unwrap_or_default();
+                for key in before.keys() {
+                    if !after.contains_key(key) {
+                        details.push(format!("  - {}: (reset to default)", key));
+                    }
+                }
+            }
+
+            infra_updated_detailed(&format!("Table Settings: {name}"), &details);
+        }
         OlapChange::View(view_change) => {
             handle_standard_change!(view_change);
         }
@@ -521,6 +560,21 @@ pub fn show_olap_changes(olap_changes: &[OlapChange]) {
         }
         OlapChange::SqlResource(Change::Updated { before, after: _ }) => {
             infra_updated(&format!("SQL Resource: {}", before.name));
+        }
+        OlapChange::PopulateMaterializedView {
+            view_name,
+            target_table,
+            source_tables,
+            ..
+        } => {
+            let sources = source_tables.join(", ");
+            infra_added_detailed(
+                &format!("Populate Materialized View: {}", view_name),
+                &[
+                    format!("Target table: {}", target_table),
+                    format!("Source tables: {}", sources),
+                ],
+            );
         }
     });
 }

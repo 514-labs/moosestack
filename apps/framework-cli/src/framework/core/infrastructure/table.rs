@@ -1,6 +1,7 @@
 use crate::framework::core::infrastructure_map::PrimitiveSignature;
 use crate::framework::core::partial_infrastructure_map::LifeCycle;
 use crate::framework::versions::Version;
+use crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine;
 use crate::proto::infrastructure_map;
 use crate::proto::infrastructure_map::column_type::T;
 use crate::proto::infrastructure_map::Decimal as ProtoDecimal;
@@ -77,18 +78,30 @@ pub enum EnumValueMetadata {
     String(String),
 }
 
+/// TODO: This struct is supposed to be a database agnostic abstraction but it is clearly not.
+/// The inclusion of ClickHouse-specific engine types makes this leaky.
+/// This needs to be fixed in a subsequent PR to properly separate database-specific
+/// concerns from the core table abstraction.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Table {
     pub name: String,
     pub columns: Vec<Column>,
     pub order_by: Vec<String>,
     #[serde(default)]
-    pub engine: Option<String>,
+    pub engine: Option<ClickhouseEngine>,
     pub version: Option<Version>,
     pub source_primitive: PrimitiveSignature,
     pub metadata: Option<Metadata>,
     #[serde(default = "LifeCycle::default_for_deserialization")]
     pub life_cycle: LifeCycle,
+    /// Hash of engine's non-alterable parameters (including credentials)
+    /// Used for change detection without storing sensitive data
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub engine_params_hash: Option<String>,
+    /// Table-level settings that can be modified with ALTER TABLE MODIFY SETTING
+    /// These are separate from engine constructor parameters
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub table_settings: Option<std::collections::HashMap<String, String>>,
 }
 
 impl Table {
@@ -123,7 +136,7 @@ impl Table {
             self.order_by.join(","),
             self.engine
                 .as_ref()
-                .map(|e| format!(" - engine: {}", e))
+                .map(|e| format!(" - engine: {}", Into::<String>::into(e.clone())))
                 .unwrap_or_default()
         )
     }
@@ -167,11 +180,17 @@ impl Table {
             deduplicate: self
                 .engine
                 .as_ref()
-                .is_some_and(|e| e.contains("ReplacingMergeTree")),
+                .is_some_and(|e| matches!(e, ClickhouseEngine::ReplacingMergeTree)),
             engine: MessageField::from_option(self.engine.as_ref().map(|engine| StringValue {
-                value: engine.to_string(),
+                value: engine.clone().to_proto_string(),
                 special_fields: Default::default(),
             })),
+            // Store the hash for change detection (or calculate it if not present)
+            engine_params_hash: self
+                .engine_params_hash
+                .clone()
+                .or_else(|| self.engine.as_ref().map(|e| e.non_alterable_params_hash())),
+            table_settings: self.table_settings.clone().unwrap_or_default(),
             metadata: MessageField::from_option(self.metadata.as_ref().map(|m| {
                 infrastructure_map::Metadata {
                     description: m.description.clone().unwrap_or_default(),
@@ -188,17 +207,27 @@ impl Table {
     }
 
     pub fn from_proto(proto: ProtoTable) -> Self {
+        // First, reconstruct the basic engine from the string representation
+        // This gives us the engine type and non-alterable parameters (e.g., S3 path, format)
+        let engine = proto
+            .engine
+            .into_option()
+            .and_then(|wrapper| wrapper.value.as_str().try_into().ok())
+            .or_else(|| {
+                proto
+                    .deduplicate
+                    .then_some(ClickhouseEngine::ReplacingMergeTree)
+            });
+
+        // Engine settings are now handled via table_settings field
+
         Table {
             name: proto.name,
             columns: proto.columns.into_iter().map(Column::from_proto).collect(),
             order_by: proto.order_by,
             version: proto.version.map(Version::from_string),
             source_primitive: PrimitiveSignature::from_proto(proto.source_primitive.unwrap()),
-            engine: proto
-                .engine
-                .into_option()
-                .map(|wrapper| wrapper.value)
-                .or_else(|| proto.deduplicate.then(|| "ReplacingMergeTree".to_string())),
+            engine,
             metadata: proto.metadata.into_option().map(|m| Metadata {
                 description: if m.description.is_empty() {
                     None
@@ -210,6 +239,14 @@ impl Table {
                 ProtoLifeCycle::FULLY_MANAGED => LifeCycle::FullyManaged,
                 ProtoLifeCycle::DELETION_PROTECTED => LifeCycle::DeletionProtected,
                 ProtoLifeCycle::EXTERNALLY_MANAGED => LifeCycle::ExternallyManaged,
+            },
+            // Preserve the engine params hash for change detection
+            engine_params_hash: proto.engine_params_hash,
+            // Load table settings from proto
+            table_settings: if !proto.table_settings.is_empty() {
+                Some(proto.table_settings)
+            } else {
+                None
             },
         }
     }

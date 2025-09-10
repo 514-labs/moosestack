@@ -39,6 +39,45 @@ const moose_internal = {
 const defaultRetentionPeriod = 60 * 60 * 24 * 7;
 
 /**
+ * Engine-specific configuration types using discriminated union pattern
+ */
+interface MergeTreeEngineConfig {
+  engine: "MergeTree";
+}
+
+interface ReplacingMergeTreeEngineConfig {
+  engine: "ReplacingMergeTree";
+}
+
+interface AggregatingMergeTreeEngineConfig {
+  engine: "AggregatingMergeTree";
+}
+
+interface SummingMergeTreeEngineConfig {
+  engine: "SummingMergeTree";
+}
+
+interface S3QueueEngineConfig {
+  engine: "S3Queue";
+  s3Path: string;
+  format: string;
+  awsAccessKeyId?: string;
+  awsSecretAccessKey?: string;
+  compression?: string;
+  headers?: { [key: string]: string };
+}
+
+/**
+ * Union type for all supported engine configurations
+ */
+type EngineConfig =
+  | MergeTreeEngineConfig
+  | ReplacingMergeTreeEngineConfig
+  | AggregatingMergeTreeEngineConfig
+  | SummingMergeTreeEngineConfig
+  | S3QueueEngineConfig;
+
+/**
  * JSON representation of an OLAP table configuration.
  */
 interface TableJson {
@@ -48,14 +87,16 @@ interface TableJson {
   columns: Column[];
   /** List of column names used for the ORDER BY clause. */
   orderBy: string[];
-  /** The name of the ClickHouse engine (e.g., "MergeTree", "ReplacingMergeTree"). */
-  engine?: string;
+  /** Engine configuration with type-safe, engine-specific parameters */
+  engineConfig?: EngineConfig;
   /** Optional version string for the table configuration. */
   version?: string;
   /** Optional metadata for the table (e.g., description). */
   metadata?: { description?: string };
   /** Lifecycle management setting for the table. */
   lifeCycle?: string;
+  /** Optional table-level settings that can be modified with ALTER TABLE MODIFY SETTING. */
+  tableSettings?: { [key: string]: string };
 }
 /**
  * Represents a target destination for data flow, typically a stream.
@@ -207,14 +248,85 @@ export const toInfraMap = (registry: typeof moose_internal) => {
     if (!metadata && table.config && (table as any).pipelineParent) {
       metadata = (table as any).pipelineParent.metadata;
     }
+    // Create type-safe engine configuration
+    const engineConfig: EngineConfig | undefined = (() => {
+      // Handle legacy configuration by checking if engine property exists
+      const engine =
+        "engine" in table.config ?
+          table.config.engine
+        : ClickHouseEngines.MergeTree;
+      switch (engine) {
+        case ClickHouseEngines.MergeTree:
+          return { engine: "MergeTree" };
+
+        case ClickHouseEngines.ReplacingMergeTree:
+          return { engine: "ReplacingMergeTree" };
+
+        case ClickHouseEngines.AggregatingMergeTree:
+          return { engine: "AggregatingMergeTree" };
+
+        case ClickHouseEngines.SummingMergeTree:
+          return { engine: "SummingMergeTree" };
+
+        case ClickHouseEngines.S3Queue: {
+          const s3Config = table.config as any; // Cast to access S3Queue-specific properties
+
+          return {
+            engine: "S3Queue",
+            s3Path: s3Config.s3Path,
+            format: s3Config.format,
+            awsAccessKeyId: s3Config.awsAccessKeyId,
+            awsSecretAccessKey: s3Config.awsSecretAccessKey,
+            compression: s3Config.compression,
+            headers: s3Config.headers,
+          };
+        }
+
+        default:
+          return undefined;
+      }
+    })();
+
+    // Get table settings, applying defaults for S3Queue
+    let tableSettings: { [key: string]: string } | undefined = undefined;
+
+    if (table.config.settings) {
+      // Convert all settings to strings, filtering out undefined values
+      tableSettings = Object.entries(table.config.settings).reduce(
+        (acc, [key, value]) => {
+          if (value !== undefined) {
+            acc[key] = String(value);
+          }
+          return acc;
+        },
+        {} as { [key: string]: string },
+      );
+    }
+
+    // Apply default settings for S3Queue if not already specified
+    if (engineConfig?.engine === "S3Queue") {
+      if (!tableSettings) {
+        tableSettings = {};
+      }
+      // Set default mode to 'unordered' if not specified
+      if (!tableSettings.mode) {
+        tableSettings.mode = "unordered";
+      }
+    }
+
     tables[table.name] = {
       name: table.name,
       columns: table.columnArray,
       orderBy: table.config.orderByFields ?? [],
-      engine: table.config.engine,
+      engineConfig,
       version: table.config.version,
       metadata,
       lifeCycle: table.config.lifeCycle,
+      // Map 'settings' to 'tableSettings' for internal use
+      tableSettings:
+        tableSettings && Object.keys(tableSettings).length > 0 ?
+          tableSettings
+        : undefined,
     };
   });
 
@@ -407,13 +519,9 @@ const loadIndex = () => {
         "If you must use Node 20, you may try Node 20.19\n\n";
     }
 
-    let options: { cause: Error } | undefined = undefined;
-    if (error instanceof Error) {
-      options = { cause: error };
-    }
-
     const errorMsg = `${hint ?? ""}${details}`;
-    throw new Error(errorMsg, options);
+    const cause = error instanceof Error ? error : undefined;
+    throw new Error(errorMsg, { cause });
   }
 };
 

@@ -198,7 +198,25 @@ pub async fn db_to_dmv2(remote_url: &str, dir_path: &Path) -> Result<(), Routine
         )
     })?;
 
-    let project = crate::cli::load_project()?;
+    let mut project = crate::cli::load_project()?;
+
+    // Enable only Data Model v2 and OLAP; disable others
+    project.features.data_model_v2 = true;
+    project.features.olap = true;
+    project.features.streaming_engine = false;
+    project.features.workflows = false;
+    project.features.ddl_plan = false;
+
+    // Persist updated features to moose.config.toml
+    project.write_to_disk().map_err(|e| {
+        RoutineFailure::new(
+            Message::new(
+                "Failure".to_string(),
+                "writing updated project features".to_string(),
+            ),
+            e,
+        )
+    })?;
     let (tables, unsupported) = client.list_tables(&db, &project).await.map_err(|e| {
         RoutineFailure::new(
             Message::new("Failure".to_string(), "listing tables".to_string()),

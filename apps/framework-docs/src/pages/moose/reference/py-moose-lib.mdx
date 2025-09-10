@@ -57,9 +57,12 @@ class ApiResult:
 Configuration for OLAP tables.
 
 ```python
+from typing import Union
+from moose_lib.blocks import EngineConfig
+
 class OlapConfig(BaseModel):
     order_by_fields: list[str] = []  # Fields to order by
-    engine: Optional[ClickHouseEngines] = None  # Table engine
+    engine: Optional[EngineConfig] = None  # Table engine configuration
 ```
 
 ### `StreamConfig`
@@ -96,13 +99,16 @@ class IngestPipelineConfig(BaseModel):
 Creates a ClickHouse table with the schema of type T.
 
 ```python
+from moose_lib import OlapTable, OlapConfig
+from moose_lib.blocks import ReplacingMergeTreeEngine
+
 # Basic usage
 my_table = OlapTable[UserProfile]("user_profiles")
 
 # With configuration
 my_table = OlapTable[UserProfile]("user_profiles", OlapConfig(
     order_by_fields=["id", "timestamp"],
-    engine=ClickHouseEngines.ReplacingMergeTree,
+    engine=ReplacingMergeTreeEngine(),
 ))
 ```
 
@@ -155,6 +161,9 @@ my_api = Api[UserQuery, list[UserProfile]](
 Combines ingest API, stream, and table creation in a single component.
 
 ```python
+from moose_lib import IngestPipeline, IngestPipelineConfig, StreamConfig, OlapConfig
+from moose_lib.blocks import ReplacingMergeTreeEngine
+
 # Basic usage
 pipeline = IngestPipeline[UserEvent]("user_pipeline", IngestPipelineConfig(
     ingest=True,
@@ -168,7 +177,7 @@ pipeline = IngestPipeline[UserEvent]("user_pipeline", IngestPipelineConfig(
     stream=StreamConfig(parallelism=3),
     table=OlapConfig(
         order_by_fields=["id", "timestamp"],
-        engine=ClickHouseEngines.ReplacingMergeTree,
+        engine=ReplacingMergeTreeEngine(),
     )
 ))
 ```
@@ -188,18 +197,37 @@ view = MaterializedView[UserStatistics](MaterializedViewOptions(
 
 ## ClickHouse Utilities
 
-### `ClickHouseEngines`
-Enum for supported ClickHouse table engines.
+### Engine Configuration Classes
+Type-safe configuration classes for table engines:
 
 ```python
-class ClickHouseEngines(Enum):
-    MergeTree = "MergeTree"
-    ReplacingMergeTree = "ReplacingMergeTree"
-    SummingMergeTree = "SummingMergeTree"
-    AggregatingMergeTree = "AggregatingMergeTree"
-    CollapsingMergeTree = "CollapsingMergeTree"
-    VersionedCollapsingMergeTree = "VersionedCollapsingMergeTree"
-    GraphiteMergeTree = "GraphiteMergeTree"
+from moose_lib.blocks import (
+    MergeTreeEngine,
+    ReplacingMergeTreeEngine,
+    AggregatingMergeTreeEngine,
+    SummingMergeTreeEngine,
+    S3QueueEngine
+)
+
+# S3Queue configuration for streaming from S3
+s3_engine = S3QueueEngine(
+    s3_path="s3://bucket/data/*.json",
+    format="JSONEachRow",
+    aws_access_key_id="AKIA...",  # Optional
+    aws_secret_access_key="secret...",  # Optional
+    compression="gzip",  # Optional
+    headers={"X-Custom": "value"}  # Optional
+)
+
+# Use with OlapTable
+s3_table = OlapTable[MyData]("s3_events", OlapConfig(
+    engine=s3_engine,
+    settings={
+        "mode": "unordered",
+        "keeper_path": "/clickhouse/s3queue/events",
+        "loading_retries": "3"
+    }
+))
 ```
 
 ## Task Management

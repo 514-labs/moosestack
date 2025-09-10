@@ -6,6 +6,7 @@ export {
   Aggregated,
   OlapTable,
   OlapConfig,
+  S3QueueTableSettings,
   Stream,
   StreamConfig,
   DeadLetterModel,

@@ -2671,8 +2671,11 @@ async fn admin_plan_route(
     // Use ClickHouse-specific strategy for table diffing
     let clickhouse_strategy =
         crate::infrastructure::olap::clickhouse::diff_strategy::ClickHouseTableDiffStrategy;
-    let changes =
-        current_infra_map.diff_with_table_strategy(&plan_request.infra_map, &clickhouse_strategy);
+    let changes = current_infra_map.diff_with_table_strategy(
+        &plan_request.infra_map,
+        &clickhouse_strategy,
+        true,
+    );
 
     // Prepare the response
     let response = PlanResponse {
@@ -2807,6 +2810,8 @@ mod tests {
             },
             metadata: None,
             life_cycle: LifeCycle::FullyManaged,
+            engine_params_hash: None,
+            table_settings: None,
         }
     }
 
