@@ -1,10 +1,12 @@
 use crate::framework::core::infrastructure::table::{
     ColumnType, DataEnum, EnumValue, FloatType, IntType, Nested, Table,
 };
+use crate::framework::core::partial_infrastructure_map::LifeCycle;
 use crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine;
 use convert_case::{Case, Casing};
 use itertools::Itertools;
 use regex::Regex;
+use serde_json::json;
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::fmt::Write;
@@ -255,7 +257,7 @@ fn collect_types<'a>(
     }
 }
 
-pub fn tables_to_python(tables: &[Table]) -> String {
+pub fn tables_to_python(tables: &[Table], life_cycle: Option<LifeCycle>) -> String {
     let mut output = String::new();
 
     // Add imports
@@ -272,7 +274,7 @@ pub fn tables_to_python(tables: &[Table]) -> String {
     .unwrap();
     writeln!(
         output,
-        "from moose_lib import clickhouse_default, ClickHouseEngines"
+        "from moose_lib import clickhouse_default, ClickHouseEngines, LifeCycle"
     )
     .unwrap();
     writeln!(output).unwrap();
@@ -406,8 +408,13 @@ pub fn tables_to_python(tables: &[Table]) -> String {
         writeln!(output, "    stream=True,").unwrap();
         writeln!(output, "    table=OlapConfig(").unwrap();
         writeln!(output, "        order_by_fields=[{order_by_fields}],").unwrap();
-        if table.columns.iter().any(|c| c.name.starts_with("_peerdb_")) {
-            writeln!(output, "        life_cycle=EXTERNALLY_MANAGED,").unwrap();
+        if let Some(life_cycle) = life_cycle {
+            writeln!(
+                output,
+                "        life_cycle=LifeCycle.{},",
+                json!(life_cycle).as_str().unwrap(), // reuse SCREAMING_SNAKE_CASE of serde
+            )
+            .unwrap();
         };
         if let Some(engine) = table.engine.as_deref() {
             if let Ok(engine) = ClickhouseEngine::try_from(engine) {
@@ -476,7 +483,7 @@ mod tests {
             life_cycle: LifeCycle::FullyManaged,
         }];
 
-        let result = tables_to_python(&tables);
+        let result = tables_to_python(&tables, None);
 
         assert!(result.contains(
             r#"from pydantic import BaseModel, Field
@@ -486,7 +493,7 @@ import ipaddress
 from uuid import UUID
 from enum import IntEnum, Enum
 from moose_lib import Key, IngestPipeline, IngestPipelineConfig, OlapConfig, clickhouse_datetime64, clickhouse_decimal, ClickhouseSize, StringToEnumMixin
-from moose_lib import clickhouse_default, ClickHouseEngines
+from moose_lib import clickhouse_default, ClickHouseEngines, LifeCycle
 
 class Foo(BaseModel):
     primary_key: Key[str]
@@ -560,7 +567,7 @@ foo_model = IngestPipeline[Foo]("Foo", IngestPipelineConfig(
             life_cycle: LifeCycle::FullyManaged,
         }];
 
-        let result = tables_to_python(&tables);
+        let result = tables_to_python(&tables, None);
         assert!(result.contains(
             r#"class NestedArray(BaseModel):
     id: Key[str]
@@ -665,7 +672,7 @@ nested_array_model = IngestPipeline[NestedArray]("NestedArray", IngestPipelineCo
             life_cycle: LifeCycle::FullyManaged,
         }];
 
-        let result = tables_to_python(&tables);
+        let result = tables_to_python(&tables, None);
         assert!(result.contains(
             r#"class Address(BaseModel):
     street: str
@@ -741,7 +748,7 @@ user_model = IngestPipeline[User]("User", IngestPipelineConfig(
             life_cycle: LifeCycle::FullyManaged,
         }];
 
-        let result = tables_to_python(&tables);
+        let result = tables_to_python(&tables, None);
         println!("{result}");
 
         // Check that TypedDict is not in the imports

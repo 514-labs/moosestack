@@ -94,6 +94,8 @@ pub const UTILS_WRAPPER_PACKAGE_NAME: &str = "utils";
 
 pub const PYTHON_MAIN_FILE: &str = "main.py";
 pub const TYPESCRIPT_MAIN_FILE: &str = "index.ts";
+pub const PYTHON_EXTERNAL_FILE: &str = "external_models.py";
+pub const TYPESCRIPT_EXTERNAL_FILE: &str = "externalModels.ts";
 
 pub const WORKFLOW_TYPE: &str = "ScriptWorkflow";
 pub const PYTHON_TASK_QUEUE: &str = "python-script-queue";

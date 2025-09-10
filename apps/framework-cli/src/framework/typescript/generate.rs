@@ -1,9 +1,11 @@
 use crate::framework::core::infrastructure::table::{
     ColumnType, DataEnum, EnumValue, FloatType, Nested, Table,
 };
+use crate::framework::core::partial_infrastructure_map::LifeCycle;
 use crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine;
 use convert_case::{Case, Casing};
 use itertools::Itertools;
+use serde_json::json;
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::fmt::Write;
@@ -127,13 +129,13 @@ fn generate_interface(
     interface
 }
 
-pub fn tables_to_typescript(tables: &[Table]) -> String {
+pub fn tables_to_typescript(tables: &[Table], life_cycle: Option<LifeCycle>) -> String {
     let mut output = String::new();
 
     // Add imports
     writeln!(
         output,
-        "import {{ IngestPipeline, Key, ClickHouseInt, ClickHouseDecimal, ClickHousePrecision, ClickHouseByteSize, ClickHouseNamedTuple, ClickHouseEngines, ClickHouseDefault, WithDefault }} from \"@514labs/moose-lib\";"
+        "import {{ IngestPipeline, Key, ClickHouseInt, ClickHouseDecimal, ClickHousePrecision, ClickHouseByteSize, ClickHouseNamedTuple, ClickHouseEngines, ClickHouseDefault, WithDefault, LifeCycle }} from \"@514labs/moose-lib\";"
     )
     .unwrap();
     writeln!(output, "import typia from \"typia\";").unwrap();
@@ -266,8 +268,13 @@ pub fn tables_to_typescript(tables: &[Table]) -> String {
                 writeln!(output, "        engine: ClickHouseEngines.{:?},", engine).unwrap();
             }
         }
-        if table.columns.iter().any(|c| c.name.starts_with("_peerdb_")) {
-            writeln!(output, "        lifeCycle: LifeCycle.EXTERNALLY_MANAGED,").unwrap();
+        if let Some(life_cycle) = life_cycle {
+            writeln!(
+                output,
+                "        lifeCycle: LifeCycle.{},",
+                json!(life_cycle).as_str().unwrap() // reuse SCREAMING_SNAKE_CASE of serde
+            )
+            .unwrap();
         };
         writeln!(output, "    }}").unwrap();
         writeln!(output, "    stream: true,").unwrap();
@@ -373,7 +380,7 @@ mod tests {
             life_cycle: LifeCycle::FullyManaged,
         }];
 
-        let result = tables_to_typescript(&tables);
+        let result = tables_to_typescript(&tables, None);
         println!("{result}");
         assert!(result.contains(
             r#"export interface Address {
@@ -450,7 +457,7 @@ export const UserPipeline = new IngestPipeline<User>("User", {
             life_cycle: LifeCycle::FullyManaged,
         }];
 
-        let result = tables_to_typescript(&tables);
+        let result = tables_to_typescript(&tables, None);
         println!("{result}");
         assert!(result.contains(
             r#"export enum Status {

@@ -1,17 +1,26 @@
 use crate::cli::display::{Message, MessageType};
 use crate::cli::routines::RoutineFailure;
+use crate::framework::core::infrastructure::table::Table;
+use crate::framework::core::partial_infrastructure_map::LifeCycle;
 use crate::framework::languages::SupportedLanguages;
 use crate::framework::python::generate::tables_to_python;
 use crate::framework::typescript::generate::tables_to_typescript;
 use crate::infrastructure::olap::clickhouse::ConfiguredDBClient;
 use crate::infrastructure::olap::OlapOperations;
-use crate::utilities::constants::{APP_DIR, PYTHON_MAIN_FILE, TYPESCRIPT_MAIN_FILE};
+use crate::utilities::constants::{
+    APP_DIR, PYTHON_EXTERNAL_FILE, PYTHON_MAIN_FILE, TYPESCRIPT_EXTERNAL_FILE, TYPESCRIPT_MAIN_FILE,
+};
+use crate::utilities::git::create_code_generation_commit;
 use log::debug;
 use reqwest::Url;
 use std::borrow::Cow;
 use std::env;
 use std::io::Write;
 use std::path::Path;
+
+fn should_be_externally_managed(table: &Table) -> bool {
+    table.columns.iter().any(|c| c.name.starts_with("_peerdb_"))
+}
 
 pub async fn db_to_dmv2(remote_url: &str, dir_path: &Path) -> Result<(), RoutineFailure> {
     let mut url = Url::parse(remote_url).map_err(|e| {
@@ -140,47 +149,204 @@ pub async fn db_to_dmv2(remote_url: &str, dir_path: &Path) -> Result<(), Routine
         );
     }
 
+    let (externally_managed, managed): (Vec<_>, Vec<_>) =
+        tables.into_iter().partition(should_be_externally_managed);
+
     match project.language {
         SupportedLanguages::Typescript => {
-            let table_definitions = tables_to_typescript(&tables);
-            let mut file = std::fs::OpenOptions::new()
-                .append(true)
-                .open(format!("{APP_DIR}/{TYPESCRIPT_MAIN_FILE}"))
-                .map_err(|e| {
+            if !externally_managed.is_empty() {
+                let table_definitions =
+                    tables_to_typescript(&externally_managed, Some(LifeCycle::ExternallyManaged));
+                let mut file = std::fs::OpenOptions::new()
+                    .create(true)
+                    .write(true)
+                    .truncate(true)
+                    .open(format!("{APP_DIR}/{TYPESCRIPT_EXTERNAL_FILE}"))
+                    .map_err(|e| {
+                        RoutineFailure::new(
+                            Message::new(
+                                "Failure".to_string(),
+                                format!("opening {TYPESCRIPT_EXTERNAL_FILE}"),
+                            ),
+                            e,
+                        )
+                    })?;
+                writeln!(file, "{table_definitions}").map_err(|e| {
                     RoutineFailure::new(
                         Message::new(
                             "Failure".to_string(),
-                            format!("opening {TYPESCRIPT_MAIN_FILE}"),
+                            "writing externally managed table definitions".to_string(),
                         ),
                         e,
                     )
                 })?;
+                let main_path = format!("{APP_DIR}/{TYPESCRIPT_MAIN_FILE}");
+                let import_stmt = "import \"./externalModels\";";
+                let needs_import = match std::fs::read_to_string(&main_path) {
+                    Ok(contents) => !contents.contains(import_stmt),
+                    Err(_) => true,
+                };
+                if needs_import {
+                    let mut file = std::fs::OpenOptions::new()
+                        .append(true)
+                        .open(&main_path)
+                        .map_err(|e| {
+                            RoutineFailure::new(
+                                Message::new(
+                                    "Failure".to_string(),
+                                    format!("opening {TYPESCRIPT_MAIN_FILE}"),
+                                ),
+                                e,
+                            )
+                        })?;
+                    writeln!(file, "\n{import_stmt}").map_err(|e| {
+                        RoutineFailure::new(
+                            Message::new(
+                                "Failure".to_string(),
+                                "writing externalModels import".to_string(),
+                            ),
+                            e,
+                        )
+                    })?;
+                }
+            }
 
-            writeln!(file, "\n\n{table_definitions}")
-        }
-        SupportedLanguages::Python => {
-            let table_definitions = tables_to_python(&tables);
-            let mut file = std::fs::OpenOptions::new()
-                .append(true)
-                .open(format!("{APP_DIR}/{PYTHON_MAIN_FILE}"))
-                .map_err(|e| {
+            if !managed.is_empty() {
+                let table_definitions = tables_to_typescript(&managed, None);
+                let mut file = std::fs::OpenOptions::new()
+                    .append(true)
+                    .open(format!("{APP_DIR}/{TYPESCRIPT_MAIN_FILE}"))
+                    .map_err(|e| {
+                        RoutineFailure::new(
+                            Message::new(
+                                "Failure".to_string(),
+                                format!("opening {TYPESCRIPT_MAIN_FILE}"),
+                            ),
+                            e,
+                        )
+                    })?;
+                writeln!(file, "\n\n{table_definitions}").map_err(|e| {
                     RoutineFailure::new(
-                        Message::new("Failure".to_string(), format!("opening {PYTHON_MAIN_FILE}")),
+                        Message::new(
+                            "Failure".to_string(),
+                            "writing managed table definitions".to_string(),
+                        ),
                         e,
                     )
                 })?;
-
-            writeln!(file, "\n\n{table_definitions}")
+            }
+        }
+        SupportedLanguages::Python => {
+            if !externally_managed.is_empty() {
+                let table_definitions =
+                    tables_to_python(&externally_managed, Some(LifeCycle::ExternallyManaged));
+                let mut file = std::fs::OpenOptions::new()
+                    .create(true)
+                    .write(true)
+                    .truncate(true)
+                    .open(format!("{APP_DIR}/{PYTHON_EXTERNAL_FILE}"))
+                    .map_err(|e| {
+                        RoutineFailure::new(
+                            Message::new(
+                                "Failure".to_string(),
+                                format!("opening {PYTHON_EXTERNAL_FILE}"),
+                            ),
+                            e,
+                        )
+                    })?;
+                writeln!(file, "{table_definitions}").map_err(|e| {
+                    RoutineFailure::new(
+                        Message::new(
+                            "Failure".to_string(),
+                            "writing externally managed table definitions".to_string(),
+                        ),
+                        e,
+                    )
+                })?;
+                let main_path = format!("{APP_DIR}/{PYTHON_MAIN_FILE}");
+                let import_stmt = "from external_models import *";
+                let needs_import = match std::fs::read_to_string(&main_path) {
+                    Ok(contents) => !contents.contains(import_stmt),
+                    Err(_) => true,
+                };
+                if needs_import {
+                    let mut file = std::fs::OpenOptions::new()
+                        .append(true)
+                        .open(&main_path)
+                        .map_err(|e| {
+                            RoutineFailure::new(
+                                Message::new(
+                                    "Failure".to_string(),
+                                    format!("opening {PYTHON_MAIN_FILE}"),
+                                ),
+                                e,
+                            )
+                        })?;
+                    writeln!(file, "\n{import_stmt}").map_err(|e| {
+                        RoutineFailure::new(
+                            Message::new(
+                                "Failure".to_string(),
+                                "writing external_models import".to_string(),
+                            ),
+                            e,
+                        )
+                    })?;
+                }
+            }
+            if !managed.is_empty() {
+                let table_definitions = tables_to_python(&managed, None);
+                let mut file = std::fs::OpenOptions::new()
+                    .append(true)
+                    .open(format!("{APP_DIR}/{PYTHON_MAIN_FILE}"))
+                    .map_err(|e| {
+                        RoutineFailure::new(
+                            Message::new(
+                                "Failure".to_string(),
+                                format!("opening {PYTHON_MAIN_FILE}"),
+                            ),
+                            e,
+                        )
+                    })?;
+                writeln!(file, "\n\n{table_definitions}").map_err(|e| {
+                    RoutineFailure::new(
+                        Message::new(
+                            "Failure".to_string(),
+                            "writing managed table definitions".to_string(),
+                        ),
+                        e,
+                    )
+                })?;
+            }
+        }
+    };
+    // Create a git commit capturing generated code changes
+    match create_code_generation_commit(
+        // we have `cd`ed above
+        ".".as_ref(),
+        "chore(cli): commit code generation outputs",
+    ) {
+        Ok(Some(oid)) => {
+            show_message!(
+                MessageType::Info,
+                Message {
+                    action: "Git".to_string(),
+                    details: format!("created commit {}", &oid.to_string()[..7]),
+                }
+            );
+        }
+        Ok(None) => {
+            // No changes to commit; proceed silently
+        }
+        Err(e) => {
+            return Err(RoutineFailure::new(
+                Message::new(
+                    "Failure".to_string(),
+                    "creating code generation commit".to_string(),
+                ),
+                e,
+            ));
         }
     }
-    .map_err(|e| {
-        RoutineFailure::new(
-            Message::new(
-                "Failure".to_string(),
-                "writing table definitions".to_string(),
-            ),
-            e,
-        )
-    })?;
+
     Ok(())
 }
