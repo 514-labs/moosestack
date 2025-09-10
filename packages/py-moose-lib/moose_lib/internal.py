@@ -54,18 +54,45 @@ class Consumer(BaseModel):
     """
     version: Optional[str] = None
 
-class EngineConfigDict(BaseModel):
-    """Engine configuration using discriminated union pattern for serialization."""
+class BaseEngineConfigDict(BaseModel):
+    """Base engine configuration for all ClickHouse table engines."""
     model_config = model_config
-    
     engine: str
-    # S3Queue-specific fields (only present when engine is "S3Queue")
-    s3_path: Optional[str] = None
-    format: Optional[str] = None
+
+class MergeTreeConfigDict(BaseEngineConfigDict):
+    """Configuration for MergeTree engine."""
+    engine: Literal["MergeTree"] = "MergeTree"
+
+class ReplacingMergeTreeConfigDict(BaseEngineConfigDict):
+    """Configuration for ReplacingMergeTree engine."""
+    engine: Literal["ReplacingMergeTree"] = "ReplacingMergeTree"
+
+class AggregatingMergeTreeConfigDict(BaseEngineConfigDict):
+    """Configuration for AggregatingMergeTree engine."""
+    engine: Literal["AggregatingMergeTree"] = "AggregatingMergeTree"
+
+class SummingMergeTreeConfigDict(BaseEngineConfigDict):
+    """Configuration for SummingMergeTree engine."""
+    engine: Literal["SummingMergeTree"] = "SummingMergeTree"
+
+class S3QueueConfigDict(BaseEngineConfigDict):
+    """Configuration for S3Queue engine with all specific fields."""
+    engine: Literal["S3Queue"] = "S3Queue"
+    s3_path: str
+    format: str
     aws_access_key_id: Optional[str] = None
     aws_secret_access_key: Optional[str] = None
     compression: Optional[str] = None
     headers: Optional[Dict[str, str]] = None
+
+# Discriminated union of all engine configurations
+EngineConfigDict = Union[
+    MergeTreeConfigDict,
+    ReplacingMergeTreeConfigDict,
+    AggregatingMergeTreeConfigDict,
+    SummingMergeTreeConfigDict,
+    S3QueueConfigDict
+]
 
 class TableConfig(BaseModel):
     """Internal representation of an OLAP table configuration for serialization.
@@ -85,7 +112,7 @@ class TableConfig(BaseModel):
     name: str
     columns: List[Column]
     order_by: List[str]
-    engine_config: Optional[EngineConfigDict] = None
+    engine_config: Optional[EngineConfigDict] = Field(None, discriminator='engine')
     version: Optional[str] = None
     metadata: Optional[dict] = None
     life_cycle: Optional[str] = None
@@ -286,8 +313,7 @@ def _convert_engine_to_config_dict(engine: Union[ClickHouseEngines, EngineConfig
     # Check if engine is an EngineConfig instance (new API)
     if isinstance(engine, EngineConfig):
         if isinstance(engine, S3QueueEngine):
-            return EngineConfigDict(
-                engine="S3Queue",
+            return S3QueueConfigDict(
                 s3_path=engine.s3_path,
                 format=engine.format,
                 aws_access_key_id=engine.aws_access_key_id,
@@ -296,16 +322,16 @@ def _convert_engine_to_config_dict(engine: Union[ClickHouseEngines, EngineConfig
                 headers=engine.headers
             )
         elif isinstance(engine, ReplacingMergeTreeEngine):
-            return EngineConfigDict(engine="ReplacingMergeTree")
+            return ReplacingMergeTreeConfigDict()
         elif isinstance(engine, AggregatingMergeTreeEngine):
-            return EngineConfigDict(engine="AggregatingMergeTree")
+            return AggregatingMergeTreeConfigDict()
         elif isinstance(engine, SummingMergeTreeEngine):
-            return EngineConfigDict(engine="SummingMergeTree")
+            return SummingMergeTreeConfigDict()
         elif isinstance(engine, MergeTreeEngine):
-            return EngineConfigDict(engine="MergeTree")
+            return MergeTreeConfigDict()
         else:
-            # Fallback for any other EngineConfig subclass
-            return EngineConfigDict(engine=engine.__class__.__name__.replace("Engine", ""))
+            # Fallback for any other EngineConfig subclass - use base class
+            return BaseEngineConfigDict(engine=engine.__class__.__name__.replace("Engine", ""))
     
     # Handle legacy enum-based engine configuration
     if isinstance(engine, ClickHouseEngines):
@@ -322,8 +348,7 @@ def _convert_engine_to_config_dict(engine: Union[ClickHouseEngines, EngineConfig
                 "Using deprecated s3_queue_engine_config. Please migrate to:\n"
                 "  engine=S3QueueEngine(s3_path='...', format='...', ...)"
             )
-            return EngineConfigDict(
-                engine="S3Queue",
+            return S3QueueConfigDict(
                 s3_path=s3_config.path,
                 format=s3_config.format,
                 aws_access_key_id=s3_config.aws_access_key_id,
@@ -332,8 +357,20 @@ def _convert_engine_to_config_dict(engine: Union[ClickHouseEngines, EngineConfig
                 headers=s3_config.headers
             )
     
-    # For all other engines, just return the engine name
-    return EngineConfigDict(engine=engine_name)
+    # Map engine names to specific config classes
+    engine_map = {
+        "MergeTree": MergeTreeConfigDict,
+        "ReplacingMergeTree": ReplacingMergeTreeConfigDict,
+        "AggregatingMergeTree": AggregatingMergeTreeConfigDict,
+        "SummingMergeTree": SummingMergeTreeConfigDict,
+    }
+    
+    config_class = engine_map.get(engine_name)
+    if config_class:
+        return config_class()
+    
+    # Fallback for unknown engines
+    return BaseEngineConfigDict(engine=engine_name)
 
 def to_infra_map() -> dict:
     """Converts the registered `dmv2` resources into the serializable `InfrastructureMap` format.

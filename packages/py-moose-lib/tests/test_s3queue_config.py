@@ -7,7 +7,13 @@ import warnings
 
 from moose_lib import OlapTable, OlapConfig, ClickHouseEngines
 from moose_lib.blocks import S3QueueEngine, MergeTreeEngine, ReplacingMergeTreeEngine
-from moose_lib.internal import _convert_engine_to_config_dict, EngineConfigDict
+from moose_lib.internal import (
+    _convert_engine_to_config_dict, 
+    EngineConfigDict,
+    S3QueueConfigDict,
+    MergeTreeConfigDict,
+    ReplacingMergeTreeConfigDict
+)
 
 
 class SampleEvent(BaseModel):
