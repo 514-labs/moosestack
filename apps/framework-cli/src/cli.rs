@@ -59,6 +59,7 @@ use crate::cli::routines::code_generation::{db_pull, db_to_dmv2};
 use crate::cli::routines::ls::ls_dmv2;
 use crate::cli::routines::templates::create_project_from_template;
 use crate::framework::core::migration_plan::MIGRATION_SCHEMA;
+use crate::utilities::clickhouse_url::convert_http_to_clickhouse;
 use anyhow::Result;
 use std::time::Duration;
 use tokio::time::timeout;
@@ -174,19 +175,45 @@ pub async fn top_command_handler(
                 name, location, template, language
             );
 
+            // Determine template, prompting for language if needed (especially for --from-remote)
             let template = match template {
-                None => match language.as_ref().map(|l| l.to_lowercase()).as_deref() {
-                    None => panic!("Either template or language should be specified."), // clap command line parsing enforces either is present
-                    Some("typescript") => "typescript-empty".to_string(),
-                    Some("python") => "python-empty".to_string(),
-                    Some(lang) => {
-                        return Err(RoutineFailure::error(Message::new(
-                            "Unknown".to_string(),
-                            format!("language {lang}"),
-                        )))
+                Some(t) => t.to_lowercase(),
+                None => {
+                    let lang_lower = match language.as_ref().map(|l| l.to_lowercase()) {
+                        Some(l) => l,
+                        None => {
+                            // Interactive prompt for language selection
+                            use std::io::{self, Write};
+                            display::show_message_wrapper(
+                                MessageType::Info,
+                                Message::new(
+                                    "Init".to_string(),
+                                    "Select language: [1] TypeScript  [2] Python (default: 1)"
+                                        .to_string(),
+                                ),
+                            );
+                            print!("Enter choice (1/2): ");
+                            let _ = io::stdout().flush();
+                            let mut input = String::new();
+                            io::stdin().read_line(&mut input).unwrap_or(0);
+                            match input.trim() {
+                                "2" | "python" | "Python" => "python".to_string(),
+                                _ => "typescript".to_string(),
+                            }
+                        }
+                    };
+
+                    match lang_lower.as_str() {
+                        "typescript" => "typescript-empty".to_string(),
+                        "python" => "python-empty".to_string(),
+                        other => {
+                            return Err(RoutineFailure::error(Message::new(
+                                "Init".to_string(),
+                                format!("Unknown language '{other}'. Choose typescript or python."),
+                            )));
+                        }
                     }
-                },
-                Some(template) => template.to_lowercase(),
+                }
             };
 
             let dir_path = Path::new(location.as_deref().unwrap_or(name));
@@ -205,8 +232,62 @@ pub async fn top_command_handler(
                 create_project_from_template(&template, name, dir_path, *no_fail_already_exists)
                     .await?;
 
-            if let Some(remote_url) = from_remote {
-                db_to_dmv2(remote_url, dir_path).await?;
+            if let Some(remote_val) = from_remote {
+                // If empty or invalid, optionally prompt; otherwise validate and proceed
+                let normalized_url = if remote_val.as_deref().unwrap_or("").trim().is_empty() {
+                    use std::io::{self, Write};
+                    print!("Enter HTTPS host and port (e.g. https://your-service-id.region.clickhouse.cloud:8443)\n  ❓ Help: https://docs.fiveonefour.com/moose/getting-started/from-clickhouse#connect-to-your-remote-clickhouse\n  ☁️ ClickHouse Cloud Console: https://clickhouse.cloud/\n> ");
+                    let _ = io::stdout().flush();
+                    let mut base = String::new();
+                    io::stdin().read_line(&mut base).unwrap_or(0);
+                    let base = base.trim().trim_end_matches('/');
+
+                    print!("Enter username: ");
+                    let _ = io::stdout().flush();
+                    let mut user = String::new();
+                    io::stdin().read_line(&mut user).unwrap_or(0);
+                    let user = user.trim();
+
+                    print!("Enter password: ");
+                    let _ = io::stdout().flush();
+                    let mut pass = String::new();
+                    io::stdin().read_line(&mut pass).unwrap_or(0);
+                    let pass = pass.trim();
+
+                    print!("Enter database (optional): ");
+                    let _ = io::stdout().flush();
+                    let mut db = String::new();
+                    io::stdin().read_line(&mut db).unwrap_or(0);
+                    let db = db.trim();
+
+                    let mut out = format!(
+                        "https://{}:{}@{}",
+                        user,
+                        pass,
+                        base.trim_start_matches("https://")
+                    );
+                    if !db.is_empty() {
+                        let sep = if out.contains('?') { '&' } else { '?' };
+                        out.push_str(&format!("{}database={}", sep, db));
+                    }
+                    out
+                } else {
+                    let url_str = remote_val.as_deref().unwrap();
+                    match convert_http_to_clickhouse(url_str) {
+                        Ok(_) => url_str.to_string(),
+                        Err(e) => {
+                            return Err(RoutineFailure::error(Message::new(
+                                "Init from remote".to_string(),
+                                format!(
+                                    "Invalid ClickHouse URL. Tip: run `moose generate clickhouse-url` to build a correct URL.\nDetails: {}",
+                                    e
+                                ),
+                            )));
+                        }
+                    }
+                };
+
+                db_to_dmv2(&normalized_url, dir_path).await?;
             }
 
             wait_for_usage_capture(capture_handle).await;
@@ -570,6 +651,70 @@ pub async fn top_command_handler(
                 Ok(RoutineSuccess::success(Message::new(
                     "Migration".to_string(),
                     "generated".to_string(),
+                )))
+            }
+            Some(GenerateCommand::ClickhouseUrl {
+                user,
+                password,
+                database,
+                export,
+                url,
+            }) => {
+                // Normalize base URL (strip trailing slash)
+                let base = match url.as_deref() {
+                    Some(u) => u.trim_end_matches('/').to_string(),
+                    None => {
+                        use std::io::{self, Write};
+                        print!("Enter HTTPS host and port (e.g. https://your-service-id.region.clickhouse.cloud:8443)\n  ❓ Help: https://docs.fiveonefour.com/moose/getting-started/from-clickhouse#connect-to-your-remote-clickhouse\n  ☁️ ClickHouse Cloud Console: https://clickhouse.cloud/\n> ");
+                        let _ = io::stdout().flush();
+                        let mut input = String::new();
+                        io::stdin().read_line(&mut input).unwrap_or(0);
+                        input.trim().trim_end_matches('/').to_string()
+                    }
+                };
+
+                let username = match user.as_deref() {
+                    Some(u) => u.to_string(),
+                    None => {
+                        use std::io::{self, Write};
+                        print!("Enter username: ");
+                        let _ = io::stdout().flush();
+                        let mut input = String::new();
+                        io::stdin().read_line(&mut input).unwrap_or(0);
+                        input.trim().to_string()
+                    }
+                };
+
+                let password = match password.as_deref() {
+                    Some(p) => p.to_string(),
+                    None => {
+                        use std::io::{self, Write};
+                        print!("Enter password: ");
+                        let _ = io::stdout().flush();
+                        let mut input = String::new();
+                        io::stdin().read_line(&mut input).unwrap_or(0);
+                        input.trim().to_string()
+                    }
+                };
+                // Build https URL with credentials and optional database param
+                let mut out = format!(
+                    "https://{}:{}@{}",
+                    username,
+                    password,
+                    base.trim_start_matches("https://")
+                );
+                if let Some(db) = database.clone() {
+                    let sep = if out.contains('?') { '&' } else { '?' };
+                    out.push_str(&format!("{}database={}", sep, db));
+                }
+                let message = if *export {
+                    format!("export MOOSE_SEED_CLICKHOUSE_URL='{}'", out)
+                } else {
+                    out
+                };
+                Ok(RoutineSuccess::success(Message::new(
+                    "ClickHouse URL".to_string(),
+                    message,
                 )))
             }
             None => Err(RoutineFailure::error(Message {

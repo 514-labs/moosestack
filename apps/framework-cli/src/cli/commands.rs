@@ -32,17 +32,13 @@ pub enum Commands {
         #[arg(
             long,
             required_unless_present = "template",
-            value_name = "CONNECTION_STRING"
+            value_name = "CONNECTION_STRING",
+            num_args = 0..=1
         )]
-        from_remote: Option<String>,
+        from_remote: Option<Option<String>>,
 
         /// Programming language to use for the project
-        #[arg(
-            long,
-            requires = "from_remote",
-            required_unless_present = "template",
-            conflicts_with = "template"
-        )]
+        #[arg(long, conflicts_with = "template")]
         language: Option<String>,
     },
     /// Builds your moose project
@@ -193,6 +189,27 @@ pub enum GenerateCommand {
         /// Save the migration files in the migrations/ directory
         #[arg(long, default_value = "false")]
         save: bool,
+    },
+    /// Build a ClickHouse HTTPS connection string (prompts if args omitted)
+    ClickhouseUrl {
+        /// Username (optional; will prompt if omitted)
+        #[arg(long)]
+        user: Option<String>,
+
+        /// Password (optional; will prompt if omitted)
+        #[arg(long)]
+        password: Option<String>,
+
+        /// Optional database name to append as query param (will prompt if omitted and --export is used)
+        #[arg(long)]
+        database: Option<String>,
+
+        /// Output an export command instead of raw URL
+        #[arg(long, default_value = "false")]
+        export: bool,
+
+        /// Positional HTTPS URL to your ClickHouse service (e.g. https://host:8443). Will prompt if omitted.
+        url: Option<String>,
     },
 }
 
