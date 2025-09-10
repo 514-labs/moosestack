@@ -1271,6 +1271,6 @@ export class OlapTable<T> extends TypedBase<T, OlapConfig<T>> {
       engine: ClickHouseEngines.MergeTree,
       orderByFields,
       ...options,
-    } as MergeTreeConfig<T>);
+    } satisfies MergeTreeConfig<T>);
   }
 }

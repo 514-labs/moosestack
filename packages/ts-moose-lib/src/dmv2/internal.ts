@@ -519,17 +519,9 @@ const loadIndex = () => {
         "If you must use Node 20, you may try Node 20.19\n\n";
     }
 
-    let options: { cause: Error } | undefined = undefined;
-    if (error instanceof Error) {
-      options = { cause: error };
-    }
-
     const errorMsg = `${hint ?? ""}${details}`;
-    const newError = new Error(errorMsg);
-    if (options && options.cause) {
-      (newError as any).cause = options.cause;
-    }
-    throw newError;
+    const cause = error instanceof Error ? error : undefined;
+    throw new Error(errorMsg, { cause });
   }
 };
 
