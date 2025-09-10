@@ -96,7 +96,6 @@ class MaterializedView(SqlResource, BaseTypedResource, Generic[T]):
 
         setup = [
             f"CREATE MATERIALIZED VIEW IF NOT EXISTS {quote_identifier(options.materialized_view_name)} TO {quote_identifier(target_table.name)} AS {options.select_statement}",
-            f"INSERT INTO {quote_identifier(target_table.name)} {options.select_statement}"
         ]
         teardown = [f"DROP VIEW IF EXISTS {quote_identifier(options.materialized_view_name)}"]
 

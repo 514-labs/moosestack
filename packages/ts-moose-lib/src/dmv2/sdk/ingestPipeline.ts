@@ -10,6 +10,7 @@ import {
 import { OlapConfig, OlapTable } from "./olapTable";
 import { IngestApi, IngestConfig } from "./ingestApi";
 import { LifeCycle } from "./lifeCycle";
+import { ClickHouseEngines } from "../../blocks/helpers";
 
 /**
  * Configuration options for a complete ingestion pipeline, potentially including an Ingest API, a Stream, and an OLAP Table.
@@ -206,12 +207,17 @@ export class IngestPipeline<T> extends TypedBase<T, IngestPipelineConfig<T>> {
 
     // Create OLAP table if configured
     if (config.table) {
-      const tableConfig = {
-        ...(typeof config.table === "object" ?
-          config.table
-        : { lifeCycle: config.lifeCycle }),
-        ...(config.version && { version: config.version }),
-      };
+      const tableConfig: OlapConfig<T> =
+        typeof config.table === "object" ?
+          {
+            ...config.table,
+            ...(config.version && { version: config.version }),
+          }
+        : {
+            lifeCycle: config.lifeCycle,
+            engine: ClickHouseEngines.MergeTree,
+            ...(config.version && { version: config.version }),
+          };
       this.table = new OlapTable(
         name,
         tableConfig,

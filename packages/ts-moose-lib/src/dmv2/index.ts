@@ -21,7 +21,7 @@ export type Aggregated<
   _argTypes?: ArgTypes;
 };
 
-export { OlapTable, OlapConfig } from "./sdk/olapTable";
+export { OlapTable, OlapConfig, S3QueueTableSettings } from "./sdk/olapTable";
 export {
   Stream,
   StreamConfig,

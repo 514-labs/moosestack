@@ -16,7 +16,9 @@ const isTable = (
   value: RawValue | Column | OlapTable<any>,
 ): value is OlapTable<any> =>
   typeof value === "object" &&
-  Object.getPrototypeOf(value).constructor.name === "OlapTable";
+  value !== null &&
+  "kind" in value &&
+  value.kind === "OlapTable";
 
 export type IdentifierBrandedString = string & {
   readonly __identifier_brand?: unique symbol;

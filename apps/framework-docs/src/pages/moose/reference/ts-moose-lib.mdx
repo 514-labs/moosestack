@@ -45,14 +45,19 @@ interface ApiUtil {
 ### `OlapTable<T>`
 Creates a ClickHouse table with the schema of type T.
 ```ts
-// Basic usage
+// Basic usage with MergeTree (default)
 export const myTable = new OlapTable<UserProfile>("user_profiles");
 
-// With configuration
+// With sorting configuration
 export const myConfiguredTable = new OlapTable<UserProfile>("user_profiles", {
-  orderByFields: ["id", "timestamp"],
-  engine: ClickHouseEngines.ReplacingMergeTree,
+  orderByFields: ["id", "timestamp"]
 });
+
+// For deduplication, use the ReplacingMergeTree factory
+export const dedupTable = OlapTable.withReplacingMergeTree<UserProfile>(
+  "user_profiles",
+  { orderByFields: ["id", "timestamp"] }
+);
 ```
 
 ### `Stream<T>`
@@ -113,8 +118,7 @@ export const advancedPipeline = new IngestPipeline<UserEvent>("advanced_pipeline
   ingest: true,
   stream: { parallelism: 3 },
   table: { 
-    orderByFields: ["id", "timestamp"],
-    engine: ClickHouseEngines.ReplacingMergeTree,
+    orderByFields: ["id", "timestamp"]
   }
 });
 ```
@@ -159,18 +163,38 @@ class MooseClient {
 
 ## ClickHouse Utilities
 
-### `ClickHouseEngines`
-Enum for supported ClickHouse table engines.
+
+### `S3QueueTableSettings`
+Type-safe interface for S3Queue-specific table settings (ClickHouse 24.7+).
 ```ts
-enum ClickHouseEngines {
-  MergeTree = "MergeTree",
-  ReplacingMergeTree = "ReplacingMergeTree",
-  SummingMergeTree = "SummingMergeTree",
-  AggregatingMergeTree = "AggregatingMergeTree",
-  CollapsingMergeTree = "CollapsingMergeTree",
-  VersionedCollapsingMergeTree = "VersionedCollapsingMergeTree",
-  GraphiteMergeTree = "GraphiteMergeTree"
+interface S3QueueTableSettings {
+  mode?: "ordered" | "unordered";  // Processing mode
+  after_processing?: "keep" | "delete";  // File handling after processing
+  keeper_path?: string;  // ZooKeeper path for coordination
+  loading_retries?: string;  // Number of retry attempts
+  processing_threads_num?: string;  // Parallel processing threads
+  // ... and many more settings
 }
+```
+
+### S3Queue Configuration
+Configure S3Queue tables for streaming data from S3 buckets:
+```ts
+// Use the withS3Queue factory method
+export const s3Events = OlapTable.withS3Queue<S3Event>(
+  "s3_events",
+  "s3://bucket/data/*.json",
+  "JSONEachRow",
+  {
+    awsAccessKeyId: "AKIA...",
+    awsSecretAccessKey: "secret...",
+    compression: "gzip",
+    settings: {
+      mode: "unordered",
+      keeper_path: "/clickhouse/s3queue/events"
+    }
+  }
+);
 ```
 
 ## Task Management

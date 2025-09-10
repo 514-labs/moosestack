@@ -73,7 +73,7 @@ pub trait TableDiffStrategy {
     ///
     /// # Arguments
     /// * `before` - The table before changes
-    /// * `after` - The table after changes  
+    /// * `after` - The table after changes
     /// * `column_changes` - Detailed column-level changes
     /// * `order_by_change` - Changes to the ORDER BY clause
     ///
@@ -291,6 +291,17 @@ pub enum TableChange {
         /// Complete representation of the table after changes
         after: Table,
     },
+    /// Only table settings have been modified (can use ALTER TABLE MODIFY SETTING)
+    SettingsChanged {
+        /// Name of the table
+        name: String,
+        /// Table settings before the change
+        before_settings: Option<std::collections::HashMap<String, String>>,
+        /// Table settings after the change
+        after_settings: Option<std::collections::HashMap<String, String>>,
+        /// Complete table representation for context
+        table: Table,
+    },
 }
 
 /// Generic representation of a change to any infrastructure component
@@ -334,6 +345,19 @@ pub enum OlapChange {
     /// Change to a database view
     View(Change<View>),
     SqlResource(Change<SqlResource>),
+    /// Explicit operation to populate a materialized view with initial data
+    PopulateMaterializedView {
+        /// Name of the materialized view
+        view_name: String,
+        /// Target table that will receive the data
+        target_table: String,
+        /// Target database (if different from default)
+        target_database: Option<String>,
+        /// The SELECT statement to populate with
+        select_statement: String,
+        /// Source tables that data is pulled from
+        source_tables: Vec<String>,
+    },
 }
 
 /// Changes to streaming components
@@ -830,12 +854,13 @@ impl InfrastructureMap {
         // Views
         Self::diff_views(&self.views, &target_map.views, &mut changes.olap_changes);
 
-        // SQL Resources
+        // SQL Resources (needs tables context for MV population detection)
         log::info!("Analyzing changes in SQL Resources...");
         let olap_changes_len_before = changes.olap_changes.len();
         Self::diff_sql_resources(
             &self.sql_resources,
             &target_map.sql_resources,
+            &target_map.tables, // Pass target tables for MV analysis
             &mut changes.olap_changes,
         );
         let sql_resource_changes = changes.olap_changes.len() - olap_changes_len_before;
@@ -1393,10 +1418,12 @@ impl InfrastructureMap {
     /// # Arguments
     /// * `self_sql_resources` - HashMap of source SQL resources to compare from
     /// * `target_sql_resources` - HashMap of target SQL resources to compare against
+    /// * `target_tables` - Target tables for MV population analysis
     /// * `olap_changes` - Mutable vector to collect the identified changes
     pub fn diff_sql_resources(
         self_sql_resources: &HashMap<String, SqlResource>,
         target_sql_resources: &HashMap<String, SqlResource>,
+        target_tables: &HashMap<String, Table>,
         olap_changes: &mut Vec<OlapChange>,
     ) {
         log::info!(
@@ -1436,6 +1463,15 @@ impl InfrastructureMap {
                 olap_changes.push(OlapChange::SqlResource(Change::Added(Box::new(
                     sql_resource.clone(),
                 ))));
+
+                // Check if this is a materialized view that needs population (ClickHouse-specific)
+                use crate::infrastructure::olap::clickhouse::diff_strategy::ClickHouseTableDiffStrategy;
+                ClickHouseTableDiffStrategy::check_materialized_view_population(
+                    sql_resource,
+                    target_tables,
+                    true,
+                    olap_changes,
+                );
             }
         }
 
@@ -2328,6 +2364,8 @@ mod tests {
             },
             metadata: None,
             life_cycle: LifeCycle::FullyManaged,
+            engine_params_hash: None,
+            table_settings: None,
         };
 
         let after = Table {
@@ -2373,6 +2411,8 @@ mod tests {
             },
             metadata: None,
             life_cycle: LifeCycle::FullyManaged,
+            engine_params_hash: None,
+            table_settings: None,
         };
 
         let diff = compute_table_columns_diff(&before, &after);
@@ -2519,6 +2559,7 @@ mod diff_tests {
     use super::*;
     use crate::framework::core::infrastructure::table::{Column, ColumnType, FloatType, IntType};
     use crate::framework::versions::Version;
+    use crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine;
     use serde_json::Value as JsonValue;
 
     // Helper function to create a basic test table
@@ -2535,6 +2576,8 @@ mod diff_tests {
             },
             metadata: None,
             life_cycle: LifeCycle::FullyManaged,
+            engine_params_hash: None,
+            table_settings: None,
         }
     }
 
@@ -2791,8 +2834,8 @@ mod diff_tests {
         let mut before = create_test_table("test", "1.0");
         let mut after = create_test_table("test", "1.0");
 
-        before.engine = Some("MergeTree".to_string());
-        after.engine = Some("ReplacingMergeTree".to_string());
+        before.engine = Some(ClickhouseEngine::MergeTree);
+        after.engine = Some(ClickhouseEngine::ReplacingMergeTree);
 
         let mut changes = Vec::new();
         InfrastructureMap::diff_tables(
@@ -2808,8 +2851,11 @@ mod diff_tests {
                 after: a,
                 ..
             }) => {
-                assert_eq!(b.engine.as_deref(), Some("MergeTree"));
-                assert_eq!(a.engine.as_deref(), Some("ReplacingMergeTree"));
+                assert_eq!(b.engine.as_ref(), Some(&ClickhouseEngine::MergeTree));
+                assert_eq!(
+                    a.engine.as_ref(),
+                    Some(&ClickhouseEngine::ReplacingMergeTree)
+                );
             }
             _ => panic!("Expected Updated change with engine modification"),
         }
@@ -3282,9 +3328,11 @@ mod diff_sql_resources_tests {
         let target_resources = HashMap::new();
         let mut olap_changes = Vec::new();
 
+        let tables = HashMap::new(); // Empty tables for tests
         InfrastructureMap::diff_sql_resources(
             &self_resources,
             &target_resources,
+            &tables,
             &mut olap_changes,
         );
         assert!(olap_changes.is_empty());
@@ -3300,9 +3348,11 @@ mod diff_sql_resources_tests {
         target_resources.insert(resource1.name.clone(), resource1);
 
         let mut olap_changes = Vec::new();
+        let tables = HashMap::new(); // Empty tables for tests
         InfrastructureMap::diff_sql_resources(
             &self_resources,
             &target_resources,
+            &tables,
             &mut olap_changes,
         );
         assert!(olap_changes.is_empty());
@@ -3316,9 +3366,11 @@ mod diff_sql_resources_tests {
         target_resources.insert(resource1.name.clone(), resource1.clone());
 
         let mut olap_changes = Vec::new();
+        let tables = HashMap::new(); // Empty tables for tests
         InfrastructureMap::diff_sql_resources(
             &self_resources,
             &target_resources,
+            &tables,
             &mut olap_changes,
         );
 
@@ -3339,9 +3391,11 @@ mod diff_sql_resources_tests {
 
         let target_resources = HashMap::new();
         let mut olap_changes = Vec::new();
+        let tables = HashMap::new(); // Empty tables for tests
         InfrastructureMap::diff_sql_resources(
             &self_resources,
             &target_resources,
+            &tables,
             &mut olap_changes,
         );
 
@@ -3366,9 +3420,11 @@ mod diff_sql_resources_tests {
         target_resources.insert(after_resource.name.clone(), after_resource.clone());
 
         let mut olap_changes = Vec::new();
+        let tables = HashMap::new(); // Empty tables for tests
         InfrastructureMap::diff_sql_resources(
             &self_resources,
             &target_resources,
+            &tables,
             &mut olap_changes,
         );
 
@@ -3398,9 +3454,11 @@ mod diff_sql_resources_tests {
         target_resources.insert(after_resource.name.clone(), after_resource.clone());
 
         let mut olap_changes = Vec::new();
+        let tables = HashMap::new(); // Empty tables for tests
         InfrastructureMap::diff_sql_resources(
             &self_resources,
             &target_resources,
+            &tables,
             &mut olap_changes,
         );
 
@@ -3439,9 +3497,11 @@ mod diff_sql_resources_tests {
         target_resources.insert(res4_after.name.clone(), res4_after.clone());
 
         let mut olap_changes = Vec::new();
+        let tables = HashMap::new(); // Empty tables for tests
         InfrastructureMap::diff_sql_resources(
             &self_resources,
             &target_resources,
+            &tables,
             &mut olap_changes,
         );
 
