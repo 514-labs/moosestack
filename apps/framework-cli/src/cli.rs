@@ -64,6 +64,29 @@ use anyhow::Result;
 use std::time::Duration;
 use tokio::time::timeout;
 
+/// Generic prompt function that handles different types of user input
+fn prompt_user(prompt_text: &str) -> Result<String, RoutineFailure> {
+    use std::io::{self, Write};
+    print!("{}", prompt_text);
+    let _ = io::stdout().flush();
+    let mut input = String::new();
+    io::stdin().read_line(&mut input).map_err(|e| {
+        RoutineFailure::error(Message {
+            action: "Init".to_string(),
+            details: format!("Failed to prompt user: {e:?}"),
+        })
+    })?;
+    let trimmed = input.trim();
+
+    Ok(trimmed.to_string())
+
+    // if let Some(processor) = post_process {
+    //     processor(trimmed)
+    // } else {
+    //     trimmed.to_string()
+    // }
+}
+
 #[derive(Parser)]
 #[command(author, version, about, long_about = None, arg_required_else_help(true), next_display_order = None)]
 pub struct Cli {
@@ -178,42 +201,25 @@ pub async fn top_command_handler(
             // Determine template, prompting for language if needed (especially for --from-remote)
             let template = match template {
                 Some(t) => t.to_lowercase(),
-                None => {
-                    let lang_lower = match language.as_ref().map(|l| l.to_lowercase()) {
-                        Some(l) => l,
-                        None => {
-                            // Interactive prompt for language selection
-                            use std::io::{self, Write};
-                            display::show_message_wrapper(
-                                MessageType::Info,
-                                Message::new(
-                                    "Init".to_string(),
-                                    "Select language: [1] TypeScript  [2] Python (default: 1)"
-                                        .to_string(),
-                                ),
-                            );
-                            print!("Enter choice (1/2): ");
-                            let _ = io::stdout().flush();
-                            let mut input = String::new();
-                            io::stdin().read_line(&mut input).unwrap_or(0);
-                            match input.trim() {
-                                "2" | "python" | "Python" => "python".to_string(),
-                                _ => "typescript".to_string(),
-                            }
-                        }
-                    };
-
-                    match lang_lower.as_str() {
-                        "typescript" => "typescript-empty".to_string(),
-                        "python" => "python-empty".to_string(),
-                        other => {
-                            return Err(RoutineFailure::error(Message::new(
+                None => match language.as_ref().map(|l| l.to_lowercase()) {
+                    Some(l) => l,
+                    None => {
+                        display::show_message_wrapper(
+                            MessageType::Info,
+                            Message::new(
                                 "Init".to_string(),
-                                format!("Unknown language '{other}'. Choose typescript or python."),
-                            )));
+                                "Select language: [1] TypeScript  [2] Python (default: 1)"
+                                    .to_string(),
+                            ),
+                        );
+                        let input = prompt_user("Enter choice (1/2): ")?;
+
+                        match input.as_str() {
+                            "2" | "python" | "Python" => "python-empty".to_string(),
+                            _ => "typescript-empty".to_string(),
                         }
                     }
-                }
+                },
             };
 
             let dir_path = Path::new(location.as_deref().unwrap_or(name));
@@ -235,30 +241,13 @@ pub async fn top_command_handler(
             let normalized_url = if let Some(remote_val) = from_remote {
                 // If empty or invalid, optionally prompt; otherwise validate and proceed
                 let url = if remote_val.as_deref().unwrap_or("").trim().is_empty() {
-                    use std::io::{self, Write};
-                    print!("Enter HTTPS host and port (e.g. https://your-service-id.region.clickhouse.cloud:8443)\n  ❓ Help: https://docs.fiveonefour.com/moose/getting-started/from-clickhouse#connect-to-your-remote-clickhouse\n  ☁️ ClickHouse Cloud Console: https://clickhouse.cloud/\n> ");
-                    let _ = io::stdout().flush();
-                    let mut base = String::new();
-                    io::stdin().read_line(&mut base).unwrap_or(0);
-                    let base = base.trim().trim_end_matches('/');
-
-                    print!("Enter username: ");
-                    let _ = io::stdout().flush();
-                    let mut user = String::new();
-                    io::stdin().read_line(&mut user).unwrap_or(0);
-                    let user = user.trim();
-
-                    print!("Enter password: ");
-                    let _ = io::stdout().flush();
-                    let mut pass = String::new();
-                    io::stdin().read_line(&mut pass).unwrap_or(0);
-                    let pass = pass.trim();
-
-                    print!("Enter database name (optional): ");
-                    let _ = io::stdout().flush();
-                    let mut db = String::new();
-                    io::stdin().read_line(&mut db).unwrap_or(0);
-                    let db = db.trim();
+                    let base = prompt_user(
+                        "Enter HTTPS host and port (e.g. https://your-service-id.region.clickhouse.cloud:8443)\n  ❓ Help: https://docs.fiveonefour.com/moose/getting-started/from-clickhouse#troubleshooting\n  ☁️ ClickHouse Cloud Console: https://clickhouse.cloud/\n> "
+                    )?.trim_end_matches('/').to_string();
+                    let user = prompt_user("Enter username: ")?;
+                    let pass = prompt_user("Enter password: ")?;
+                    let db = prompt_user("Enter database name (default: default): ")?;
+                    let db = if db.is_empty() { "default" } else { &db };
 
                     let mut out = format!(
                         "https://{}:{}@{}",
@@ -266,10 +255,8 @@ pub async fn top_command_handler(
                         pass,
                         base.trim_start_matches("https://")
                     );
-                    if !db.is_empty() {
-                        let sep = if out.contains('?') { '&' } else { '?' };
-                        out.push_str(&format!("{}database={}", sep, db));
-                    }
+                    let sep = if out.contains('?') { '&' } else { '?' };
+                    out.push_str(&format!("{}database={}", sep, db));
                     out
                 } else {
                     let url_str = remote_val.as_deref().unwrap();
