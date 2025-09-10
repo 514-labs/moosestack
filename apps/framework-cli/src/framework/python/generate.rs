@@ -386,7 +386,7 @@ pub fn tables_to_python(tables: &[Table], life_cycle: Option<LifeCycle>) -> Stri
     // Generate pipeline configurations
     for table in tables {
         let order_by_fields = if table.order_by.is_empty() {
-            "\"tuple()\"".tßo_string()
+            "\"tuple()\"".to_string()
         } else {
             table
                 .order_by

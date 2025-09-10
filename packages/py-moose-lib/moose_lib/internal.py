@@ -7,10 +7,11 @@ to convert the user-defined resources (from `dmv2.py`) into a serializable
 JSON format expected by the Moose infrastructure management system.
 """
 from importlib import import_module
-from typing import Literal, Optional, List, Any, Dict
+from typing import Literal, Optional, List, Any, Dict, Union, TYPE_CHECKING
 from pydantic import BaseModel, ConfigDict, AliasGenerator, Field
 import json
 from .data_models import Column, _to_columns
+from .blocks import EngineConfig, ClickHouseEngines
 from moose_lib.dmv2 import (
     get_tables,
     get_streams,
@@ -264,7 +265,7 @@ def _map_sql_resource_ref(r: Any) -> InfrastructureSignatureJson:
         raise TypeError(f"Object {r} lacks a 'kind' attribute for dependency mapping.")
 
 
-def _convert_engine_to_config_dict(engine, table) -> EngineConfigDict:
+def _convert_engine_to_config_dict(engine: Union[ClickHouseEngines, EngineConfig], table: OlapTable) -> EngineConfigDict:
     """Convert engine enum or EngineConfig instance to new engine config format.
     
     Args:
