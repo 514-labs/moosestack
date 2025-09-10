@@ -41,8 +41,22 @@ jobs:
       - name: Get changed files
         id: check-changes
         run: |
-          # Get the list of changed files
-          git diff --name-only origin/${{ github.base_ref }}...HEAD > changed_files.txt
+          # Determine the base reference based on the event type
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            BASE_REF="${{ github.base_ref }}"
+            echo "Running on PR, base ref: $BASE_REF"
+            git diff --name-only origin/$BASE_REF...HEAD > changed_files.txt
+          elif [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            # For manual runs, compare against main branch
+            BASE_REF="main"
+            echo "Running manually, comparing against main branch"
+            git fetch origin main:main || true
+            git diff --name-only main...HEAD > changed_files.txt 2>/dev/null || echo "" > changed_files.txt
+          else
+            # For other events, skip the workflow
+            echo "Event type '${{ github.event_name }}' not supported, skipping"
+            echo "" > changed_files.txt
+          fi
           
           echo "::group::📋 Changed Files"
           cat changed_files.txt
@@ -82,6 +96,10 @@ jobs:
             echo "::notice title=📖 Documentation Check Required::Changes detected in framework components. Documentation check will run."
           else
             echo "should_run=false" >> $GITHUB_OUTPUT
+            echo "ts_moose_changed=false" >> $GITHUB_OUTPUT
+            echo "py_moose_changed=false" >> $GITHUB_OUTPUT
+            echo "cli_changed=false" >> $GITHUB_OUTPUT
+            echo "changed_files=" >> $GITHUB_OUTPUT
             echo "::notice title=⏭️ Skipping Documentation Check::No changes in framework components detected."
           fi
 
@@ -102,13 +120,24 @@ jobs:
 
       - name: Fetch base branch
         run: |
-          git fetch origin ${{ github.base_ref }}:${{ github.base_ref }}
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            git fetch origin ${{ github.base_ref }}:${{ github.base_ref }}
+          else
+            git fetch origin main:main || true
+          fi
 
       - name: Get PR diff
         id: get-diff
         run: |
+          # Determine base ref
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            BASE_REF="${{ github.base_ref }}"
+          else
+            BASE_REF="main"
+          fi
+          
           # Get the detailed diff for analysis
-          git diff ${{ github.base_ref }}...HEAD > pr_diff.txt
+          git diff $BASE_REF...HEAD > pr_diff.txt
           
           # Also get a summary of changes
           echo "## Summary of Changes" > pr_summary.txt
@@ -116,34 +145,41 @@ jobs:
           
           if [ "${{ needs.detect-changes.outputs.ts_moose_changed }}" = "true" ]; then
             echo "### TypeScript Moose Library Changes:" >> pr_summary.txt
-            git diff --stat ${{ github.base_ref }}...HEAD -- packages/ts-moose-lib/ >> pr_summary.txt
+            git diff --stat $BASE_REF...HEAD -- packages/ts-moose-lib/ >> pr_summary.txt
             echo "" >> pr_summary.txt
           fi
           
           if [ "${{ needs.detect-changes.outputs.py_moose_changed }}" = "true" ]; then
             echo "### Python Moose Library Changes:" >> pr_summary.txt
-            git diff --stat ${{ github.base_ref }}...HEAD -- packages/py-moose-lib/ >> pr_summary.txt
+            git diff --stat $BASE_REF...HEAD -- packages/py-moose-lib/ >> pr_summary.txt
             echo "" >> pr_summary.txt
           fi
           
           if [ "${{ needs.detect-changes.outputs.cli_changed }}" = "true" ]; then
             echo "### Framework CLI Changes:" >> pr_summary.txt
-            git diff --stat ${{ github.base_ref }}...HEAD -- apps/framework-cli/ >> pr_summary.txt
+            git diff --stat $BASE_REF...HEAD -- apps/framework-cli/ >> pr_summary.txt
             echo "" >> pr_summary.txt
           fi
 
       - name: Check documentation updates
         id: check-docs
         run: |
+          # Determine base ref
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            BASE_REF="${{ github.base_ref }}"
+          else
+            BASE_REF="main"
+          fi
+          
           # Check if documentation files were updated
           DOC_UPDATED=false
-          if git diff --name-only ${{ github.base_ref }}...HEAD | grep -q "^apps/framework-docs/"; then
+          if git diff --name-only $BASE_REF...HEAD | grep -q "^apps/framework-docs/"; then
             DOC_UPDATED=true
             echo "📚 Documentation files were updated in this PR"
             
             # Get list of updated documentation files
             echo "## Updated Documentation Files:" > doc_updates.txt
-            git diff --name-only ${{ github.base_ref }}...HEAD | grep "^apps/framework-docs/" >> doc_updates.txt
+            git diff --name-only $BASE_REF...HEAD | grep "^apps/framework-docs/" >> doc_updates.txt
           else
             echo "⚠️ No documentation files were updated in this PR"
             echo "## No Documentation Updates Found" > doc_updates.txt
