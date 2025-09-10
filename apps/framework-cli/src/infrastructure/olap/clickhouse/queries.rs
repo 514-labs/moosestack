@@ -361,7 +361,9 @@ impl ClickhouseEngine {
             }
             if let Some(d) = is_deleted {
                 // Only add is_deleted if ver is present (validated elsewhere)
-                params.push(format!("'{}'", d));
+                if ver.is_some() {
+                    params.push(format!("'{}'", d));
+                }
             }
             if !params.is_empty() {
                 format!("ReplacingMergeTree({})", params.join(", "))
@@ -1399,6 +1401,34 @@ ORDER BY (`id`) "#;
             result,
             Err(ClickhouseError::InvalidParameters { message }) if message == "is_deleted parameter requires ver to be specified"
         ));
+    }
+
+    #[test]
+    fn test_serialize_replacing_merge_tree_validation() {
+        // Test that serialize_replacing_merge_tree properly handles the case where
+        // is_deleted is Some but ver is None (should not include is_deleted in output)
+        let result = ClickhouseEngine::serialize_replacing_merge_tree(
+            &None,
+            &Some("is_deleted".to_string()),
+        );
+        assert_eq!(result, "ReplacingMergeTree");
+
+        // Test normal cases
+        assert_eq!(
+            ClickhouseEngine::serialize_replacing_merge_tree(&None, &None),
+            "ReplacingMergeTree"
+        );
+        assert_eq!(
+            ClickhouseEngine::serialize_replacing_merge_tree(&Some("version".to_string()), &None),
+            "ReplacingMergeTree('version')"
+        );
+        assert_eq!(
+            ClickhouseEngine::serialize_replacing_merge_tree(
+                &Some("version".to_string()),
+                &Some("is_deleted".to_string())
+            ),
+            "ReplacingMergeTree('version', 'is_deleted')"
+        );
     }
 
     #[test]
