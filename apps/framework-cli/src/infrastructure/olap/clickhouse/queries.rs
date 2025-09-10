@@ -185,8 +185,9 @@ impl<'a> TryFrom<&'a str> for ClickhouseEngine {
     }
 }
 
-/// Parse comma-separated quoted values from a string
-/// Handles escaped quotes within values
+/// Parse comma-separated values from a string
+/// Handles both quoted strings and unquoted keywords/values
+/// Preserves unquoted keywords like NOSIGN and null
 fn parse_quoted_csv(content: &str) -> Vec<String> {
     let mut parts = Vec::new();
     let mut current = String::new();
@@ -204,9 +205,19 @@ fn parse_quoted_csv(content: &str) -> Vec<String> {
         } else if ch == '\'' && in_quotes {
             in_quotes = false;
         } else if ch == ',' && !in_quotes {
-            let trimmed = current.trim().trim_matches('\'').to_string();
-            if !trimmed.is_empty() || current.contains("null") {
-                parts.push(trimmed);
+            // Trim the current value
+            let trimmed = current.trim();
+
+            // Check if this was a quoted value (starts and ends with quotes after trimming)
+            // If so, remove the quotes. Otherwise, keep as-is (for keywords like NOSIGN, null)
+            let final_value = if trimmed.starts_with('\'') && trimmed.ends_with('\'') {
+                trimmed.trim_matches('\'').to_string()
+            } else {
+                trimmed.to_string()
+            };
+
+            if !final_value.is_empty() {
+                parts.push(final_value);
             }
             current.clear();
         } else if ch != ' ' || in_quotes || !current.is_empty() {
@@ -217,7 +228,15 @@ fn parse_quoted_csv(content: &str) -> Vec<String> {
 
     // Don't forget the last part
     if !current.is_empty() {
-        parts.push(current.trim().trim_matches('\'').to_string());
+        let trimmed = current.trim();
+        let final_value = if trimmed.starts_with('\'') && trimmed.ends_with('\'') {
+            trimmed.trim_matches('\'').to_string()
+        } else {
+            trimmed.to_string()
+        };
+        if !final_value.is_empty() {
+            parts.push(final_value);
+        }
     }
 
     parts
