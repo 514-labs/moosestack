@@ -31,8 +31,18 @@ class MergeTreeEngine(EngineConfig):
 
 @dataclass  
 class ReplacingMergeTreeEngine(EngineConfig):
-    """Configuration for ReplacingMergeTree engine (with deduplication)"""
-    pass
+    """Configuration for ReplacingMergeTree engine (with deduplication)
+    
+    Args:
+        ver: Optional column name for version tracking
+        is_deleted: Optional column name for deletion marking (requires ver)
+    """
+    ver: Optional[str] = None
+    is_deleted: Optional[str] = None
+    
+    def __post_init__(self):
+        if self.is_deleted and not self.ver:
+            raise ValueError("is_deleted requires ver to be specified")
 
 @dataclass
 class AggregatingMergeTreeEngine(EngineConfig):
@@ -116,6 +126,30 @@ class TableConfig:
             name=name,
             columns=columns,
             engine=engine,
+            order_by=order_by
+        )
+    
+    @classmethod
+    def with_replacing_merge_tree(cls,
+                                  name: str,
+                                  columns: Dict[str, str],
+                                  order_by: Optional[str] = None,
+                                  ver: Optional[str] = None,
+                                  is_deleted: Optional[str] = None,
+                                  **kwargs) -> 'TableConfig':
+        """Create a table with ReplacingMergeTree engine
+        
+        Args:
+            name: Table name
+            columns: Column definitions
+            order_by: Order by clause
+            ver: Optional version column name
+            is_deleted: Optional is_deleted column name (requires ver)
+        """
+        return cls(
+            name=name,
+            columns=columns,
+            engine=ReplacingMergeTreeEngine(ver=ver, is_deleted=is_deleted),
             order_by=order_by
         )
 

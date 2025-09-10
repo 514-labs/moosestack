@@ -22,7 +22,13 @@ The `OlapTable` class supports both a modern discriminated union API and legacy 
 // Engine-specific configurations with type safety
 type OlapConfig<T> = 
   | { engine: ClickHouseEngines.MergeTree; orderByFields?: (keyof T & string)[]; settings?: { [key: string]: string }; }
-  | { engine: ClickHouseEngines.ReplacingMergeTree; orderByFields?: (keyof T & string)[]; settings?: { [key: string]: string }; }
+  | { 
+      engine: ClickHouseEngines.ReplacingMergeTree; 
+      orderByFields?: (keyof T & string)[]; 
+      ver?: keyof T & string;        // Optional: version column for keeping latest
+      isDeleted?: keyof T & string;   // Optional: soft delete marker (requires ver)
+      settings?: { [key: string]: string }; 
+    }
   | { 
       engine: ClickHouseEngines.S3Queue;
       s3Path: string;        // S3 bucket path
@@ -130,7 +136,9 @@ interface VersionedSchema {
 // Table that keeps only the latest version
 export const Versioned = new OlapTable("Versioned", {
   engine: ClickHouseEngines.ReplacingMergeTree,
-  orderByFields: ["id", "version", "updatedAt"]  // Key field must be first
+  orderByFields: ["id", "version", "updatedAt"],  // Key field must be first
+  ver: "updatedAt",  // Optional: keeps row with max updatedAt value
+  isDeleted: "deleted"  // Optional: soft delete when deleted=1 (requires ver)
 });
 ```
 

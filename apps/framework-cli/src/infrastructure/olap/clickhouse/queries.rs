@@ -135,7 +135,12 @@ SETTINGS {{settings}}{{/if}}"#;
 #[allow(clippy::large_enum_variant)] // S3Queue has many fields, but this is acceptable for our use case
 pub enum ClickhouseEngine {
     MergeTree,
-    ReplacingMergeTree,
+    ReplacingMergeTree {
+        // Optional version column for deduplication
+        ver: Option<String>,
+        // Optional is_deleted column for soft deletes (requires ver)
+        is_deleted: Option<String>,
+    },
     AggregatingMergeTree,
     SummingMergeTree,
     S3Queue {
@@ -157,7 +162,9 @@ impl Into<String> for ClickhouseEngine {
     fn into(self) -> String {
         match self {
             ClickhouseEngine::MergeTree => "MergeTree".to_string(),
-            ClickhouseEngine::ReplacingMergeTree => "ReplacingMergeTree".to_string(),
+            ClickhouseEngine::ReplacingMergeTree { ver, is_deleted } => {
+                Self::serialize_replacing_merge_tree(&ver, &is_deleted)
+            }
             ClickhouseEngine::AggregatingMergeTree => "AggregatingMergeTree".to_string(),
             ClickhouseEngine::SummingMergeTree => "SummingMergeTree".to_string(),
             ClickhouseEngine::S3Queue {
@@ -184,6 +191,42 @@ impl<'a> TryFrom<&'a str> for ClickhouseEngine {
     type Error = &'a str;
 
     fn try_from(value: &'a str) -> Result<Self, &'a str> {
+        // Handle SharedReplacingMergeTree and ReplicatedReplacingMergeTree specially
+        // These have format: SharedReplacingMergeTree(path, replica [, ver [, is_deleted]])
+        if value.starts_with("SharedReplacingMergeTree(")
+            || value.starts_with("ReplicatedReplacingMergeTree(")
+        {
+            let prefix = if value.starts_with("SharedReplacingMergeTree(") {
+                "SharedReplacingMergeTree("
+            } else {
+                "ReplicatedReplacingMergeTree("
+            };
+
+            if let Some(content) = value.strip_prefix(prefix).and_then(|s| s.strip_suffix(")")) {
+                // Parse all parameters
+                let params = parse_quoted_csv(content);
+
+                // SharedReplacingMergeTree/ReplicatedReplacingMergeTree have at least 2 params (path, replica)
+                // Optional 3rd param is ver, optional 4th is is_deleted
+                if params.len() >= 2 {
+                    let ver = if params.len() > 2 {
+                        Some(params[2].clone())
+                    } else {
+                        None
+                    };
+
+                    let is_deleted = if params.len() > 3 {
+                        Some(params[3].clone())
+                    } else {
+                        None
+                    };
+
+                    return Ok(ClickhouseEngine::ReplacingMergeTree { ver, is_deleted });
+                }
+            }
+            return Err(value);
+        }
+
         // "There is a SharedMergeTree analog for every specific MergeTree engine type"
         match value
             .strip_prefix("Shared")
@@ -191,7 +234,20 @@ impl<'a> TryFrom<&'a str> for ClickhouseEngine {
             .unwrap_or(value.strip_prefix("Replicated").unwrap_or(value))
         {
             "MergeTree" => Ok(ClickhouseEngine::MergeTree),
-            "ReplacingMergeTree" => Ok(ClickhouseEngine::ReplacingMergeTree),
+            "ReplacingMergeTree" => Ok(ClickhouseEngine::ReplacingMergeTree {
+                ver: None,
+                is_deleted: None,
+            }),
+            s if s.starts_with("ReplacingMergeTree(") => {
+                if let Some(content) = s
+                    .strip_prefix("ReplacingMergeTree(")
+                    .and_then(|s| s.strip_suffix(")"))
+                {
+                    Self::parse_replacing_merge_tree(content).map_err(|_| value)
+                } else {
+                    Err(value)
+                }
+            }
             "AggregatingMergeTree" => Ok(ClickhouseEngine::AggregatingMergeTree),
             "SummingMergeTree" => Ok(ClickhouseEngine::SummingMergeTree),
             s if s.starts_with("S3Queue(") => {
@@ -270,7 +326,7 @@ impl ClickhouseEngine {
         matches!(
             self,
             ClickhouseEngine::MergeTree
-                | ClickhouseEngine::ReplacingMergeTree
+                | ClickhouseEngine::ReplacingMergeTree { .. }
                 | ClickhouseEngine::AggregatingMergeTree
                 | ClickhouseEngine::SummingMergeTree
         )
@@ -280,7 +336,9 @@ impl ClickhouseEngine {
     pub fn to_proto_string(&self) -> String {
         match self {
             ClickhouseEngine::MergeTree => "MergeTree".to_string(),
-            ClickhouseEngine::ReplacingMergeTree => "ReplacingMergeTree".to_string(),
+            ClickhouseEngine::ReplacingMergeTree { ver, is_deleted } => {
+                Self::serialize_replacing_merge_tree(ver, is_deleted)
+            }
             ClickhouseEngine::AggregatingMergeTree => "AggregatingMergeTree".to_string(),
             ClickhouseEngine::SummingMergeTree => "SummingMergeTree".to_string(),
             ClickhouseEngine::S3Queue {
@@ -290,6 +348,28 @@ impl ClickhouseEngine {
                 headers,
                 ..
             } => Self::serialize_s3queue(s3_path, format, compression, headers),
+        }
+    }
+
+    /// Serialize ReplacingMergeTree engine to string format
+    /// Format: ReplacingMergeTree | ReplacingMergeTree('ver') | ReplacingMergeTree('ver', 'is_deleted')
+    fn serialize_replacing_merge_tree(ver: &Option<String>, is_deleted: &Option<String>) -> String {
+        if ver.is_some() || is_deleted.is_some() {
+            let mut params = vec![];
+            if let Some(v) = ver {
+                params.push(format!("'{}'", v));
+            }
+            if let Some(d) = is_deleted {
+                // Only add is_deleted if ver is present (validated elsewhere)
+                params.push(format!("'{}'", d));
+            }
+            if !params.is_empty() {
+                format!("ReplacingMergeTree({})", params.join(", "))
+            } else {
+                "ReplacingMergeTree".to_string()
+            }
+        } else {
+            "ReplacingMergeTree".to_string()
         }
     }
 
@@ -370,6 +450,26 @@ impl ClickhouseEngine {
 
         result.push(')');
         result
+    }
+
+    /// Parse ReplacingMergeTree engine from serialized string format
+    /// Expected format: ReplacingMergeTree('ver'[, 'is_deleted'])
+    fn parse_replacing_merge_tree(content: &str) -> Result<ClickhouseEngine, &str> {
+        let parts = parse_quoted_csv(content);
+
+        let ver = if !parts.is_empty() && parts[0] != "null" {
+            Some(parts[0].clone())
+        } else {
+            None
+        };
+
+        let is_deleted = if parts.len() > 1 && parts[1] != "null" {
+            Some(parts[1].clone())
+        } else {
+            None
+        };
+
+        Ok(ClickhouseEngine::ReplacingMergeTree { ver, is_deleted })
     }
 
     /// Parse S3Queue engine from serialized string format
@@ -466,8 +566,19 @@ impl ClickhouseEngine {
             ClickhouseEngine::MergeTree => {
                 hasher.update("MergeTree".as_bytes());
             }
-            ClickhouseEngine::ReplacingMergeTree => {
+            ClickhouseEngine::ReplacingMergeTree { ver, is_deleted } => {
                 hasher.update("ReplacingMergeTree".as_bytes());
+                // Include parameters in hash
+                if let Some(v) = ver {
+                    hasher.update(v.as_bytes());
+                } else {
+                    hasher.update("null".as_bytes());
+                }
+                if let Some(d) = is_deleted {
+                    hasher.update(d.as_bytes());
+                } else {
+                    hasher.update("null".as_bytes());
+                }
             }
             ClickhouseEngine::AggregatingMergeTree => {
                 hasher.update("AggregatingMergeTree".as_bytes());
@@ -542,13 +653,41 @@ pub fn create_table_query(
 
     let engine = match &table.engine {
         ClickhouseEngine::MergeTree => "MergeTree".to_string(),
-        ClickhouseEngine::ReplacingMergeTree => {
+        ClickhouseEngine::ReplacingMergeTree { ver, is_deleted } => {
             if table.order_by.is_empty() {
                 return Err(ClickhouseError::InvalidParameters {
                     message: "ReplacingMergeTree requires an order by clause".to_string(),
                 });
             }
-            "ReplacingMergeTree".to_string()
+
+            // Validate that is_deleted requires ver
+            if is_deleted.is_some() && ver.is_none() {
+                return Err(ClickhouseError::InvalidParameters {
+                    message: "is_deleted parameter requires ver to be specified".to_string(),
+                });
+            }
+
+            let mut engine_str = "ReplacingMergeTree".to_string();
+
+            // Add parameters if present
+            if ver.is_some() || is_deleted.is_some() {
+                let mut params = vec![];
+
+                if let Some(ver_col) = ver {
+                    // Wrap column name in backticks for safety
+                    params.push(format!("`{}`", ver_col));
+                }
+
+                if let Some(is_deleted_col) = is_deleted {
+                    params.push(format!("`{}`", is_deleted_col));
+                }
+
+                if !params.is_empty() {
+                    engine_str = format!("ReplacingMergeTree({})", params.join(", "));
+                }
+            }
+
+            engine_str
         }
         ClickhouseEngine::AggregatingMergeTree => "AggregatingMergeTree".to_string(),
         ClickhouseEngine::SummingMergeTree => "SummingMergeTree".to_string(),
@@ -1083,7 +1222,10 @@ ENGINE = MergeTree
                 comment: None,
             }],
             order_by: vec!["id".to_string()],
-            engine: ClickhouseEngine::ReplacingMergeTree,
+            engine: ClickhouseEngine::ReplacingMergeTree {
+                ver: None,
+                is_deleted: None,
+            },
             table_settings: None,
         };
 
@@ -1113,7 +1255,10 @@ ORDER BY (`id`) "#;
                 default: None,
                 comment: None,
             }],
-            engine: ClickhouseEngine::ReplacingMergeTree,
+            engine: ClickhouseEngine::ReplacingMergeTree {
+                ver: None,
+                is_deleted: None,
+            },
             order_by: vec![],
             table_settings: None,
         };
@@ -1123,6 +1268,178 @@ ORDER BY (`id`) "#;
             result,
             Err(ClickhouseError::InvalidParameters { message }) if message == "ReplacingMergeTree requires an order by clause"
         ));
+    }
+
+    #[test]
+    fn test_create_table_query_replacing_merge_tree_with_ver() {
+        let table = ClickHouseTable {
+            version: Some(Version::from_string("1".to_string())),
+            name: "test_table".to_string(),
+            columns: vec![
+                ClickHouseColumn {
+                    name: "id".to_string(),
+                    column_type: ClickHouseColumnType::ClickhouseInt(ClickHouseInt::Int32),
+                    required: true,
+                    primary_key: true,
+                    unique: false,
+                    default: None,
+                    comment: None,
+                },
+                ClickHouseColumn {
+                    name: "version".to_string(),
+                    column_type: ClickHouseColumnType::DateTime,
+                    required: true,
+                    primary_key: false,
+                    unique: false,
+                    default: None,
+                    comment: None,
+                },
+            ],
+            order_by: vec!["id".to_string()],
+            engine: ClickhouseEngine::ReplacingMergeTree {
+                ver: Some("version".to_string()),
+                is_deleted: None,
+            },
+            table_settings: None,
+        };
+
+        let query = create_table_query("test_db", table).unwrap();
+        let expected = r#"
+CREATE TABLE IF NOT EXISTS `test_db`.`test_table`
+(
+ `id` Int32 NOT NULL,
+ `version` DateTime('UTC') NOT NULL
+)
+ENGINE = ReplacingMergeTree(`version`)
+PRIMARY KEY (`id`)
+ORDER BY (`id`) "#;
+        assert_eq!(query.trim(), expected.trim());
+    }
+
+    #[test]
+    fn test_create_table_query_replacing_merge_tree_with_ver_and_is_deleted() {
+        let table = ClickHouseTable {
+            version: Some(Version::from_string("1".to_string())),
+            name: "test_table".to_string(),
+            columns: vec![
+                ClickHouseColumn {
+                    name: "id".to_string(),
+                    column_type: ClickHouseColumnType::ClickhouseInt(ClickHouseInt::Int32),
+                    required: true,
+                    primary_key: true,
+                    unique: false,
+                    default: None,
+                    comment: None,
+                },
+                ClickHouseColumn {
+                    name: "version".to_string(),
+                    column_type: ClickHouseColumnType::DateTime,
+                    required: true,
+                    primary_key: false,
+                    unique: false,
+                    default: None,
+                    comment: None,
+                },
+                ClickHouseColumn {
+                    name: "is_deleted".to_string(),
+                    column_type: ClickHouseColumnType::ClickhouseInt(ClickHouseInt::UInt8),
+                    required: true,
+                    primary_key: false,
+                    unique: false,
+                    default: None,
+                    comment: None,
+                },
+            ],
+            order_by: vec!["id".to_string()],
+            engine: ClickhouseEngine::ReplacingMergeTree {
+                ver: Some("version".to_string()),
+                is_deleted: Some("is_deleted".to_string()),
+            },
+            table_settings: None,
+        };
+
+        let query = create_table_query("test_db", table).unwrap();
+        let expected = r#"
+CREATE TABLE IF NOT EXISTS `test_db`.`test_table`
+(
+ `id` Int32 NOT NULL,
+ `version` DateTime('UTC') NOT NULL,
+ `is_deleted` UInt8 NOT NULL
+)
+ENGINE = ReplacingMergeTree(`version`, `is_deleted`)
+PRIMARY KEY (`id`)
+ORDER BY (`id`) "#;
+        assert_eq!(query.trim(), expected.trim());
+    }
+
+    #[test]
+    fn test_create_table_query_replacing_merge_tree_is_deleted_requires_ver() {
+        let table = ClickHouseTable {
+            version: Some(Version::from_string("1".to_string())),
+            name: "test_table".to_string(),
+            columns: vec![ClickHouseColumn {
+                name: "id".to_string(),
+                column_type: ClickHouseColumnType::ClickhouseInt(ClickHouseInt::Int32),
+                required: true,
+                primary_key: true,
+                unique: false,
+                default: None,
+                comment: None,
+            }],
+            order_by: vec!["id".to_string()],
+            engine: ClickhouseEngine::ReplacingMergeTree {
+                ver: None,
+                is_deleted: Some("is_deleted".to_string()),
+            },
+            table_settings: None,
+        };
+
+        let result = create_table_query("test_db", table);
+        assert!(matches!(
+            result,
+            Err(ClickhouseError::InvalidParameters { message }) if message == "is_deleted parameter requires ver to be specified"
+        ));
+    }
+
+    #[test]
+    fn test_replacing_merge_tree_round_trip() {
+        // Test round-trip conversion for ReplacingMergeTree with no parameters
+        let engine1 = ClickhouseEngine::ReplacingMergeTree {
+            ver: None,
+            is_deleted: None,
+        };
+        let str1: String = engine1.clone().into();
+        assert_eq!(str1, "ReplacingMergeTree");
+        let parsed1 = ClickhouseEngine::try_from(str1.as_str()).unwrap();
+        assert_eq!(parsed1, engine1);
+
+        // Test round-trip conversion for ReplacingMergeTree with ver
+        let engine2 = ClickhouseEngine::ReplacingMergeTree {
+            ver: Some("version".to_string()),
+            is_deleted: None,
+        };
+        let str2: String = engine2.clone().into();
+        assert_eq!(str2, "ReplacingMergeTree('version')");
+        let parsed2 = ClickhouseEngine::try_from(str2.as_str()).unwrap();
+        assert_eq!(parsed2, engine2);
+
+        // Test round-trip conversion for ReplacingMergeTree with ver and is_deleted
+        let engine3 = ClickhouseEngine::ReplacingMergeTree {
+            ver: Some("version".to_string()),
+            is_deleted: Some("is_deleted".to_string()),
+        };
+        let str3: String = engine3.clone().into();
+        assert_eq!(str3, "ReplacingMergeTree('version', 'is_deleted')");
+        let parsed3 = ClickhouseEngine::try_from(str3.as_str()).unwrap();
+        assert_eq!(parsed3, engine3);
+
+        // Also verify to_proto_string produces the same format
+        assert_eq!(engine1.to_proto_string(), "ReplacingMergeTree");
+        assert_eq!(engine2.to_proto_string(), "ReplacingMergeTree('version')");
+        assert_eq!(
+            engine3.to_proto_string(),
+            "ReplacingMergeTree('version', 'is_deleted')"
+        );
     }
 
     #[test]
@@ -1768,5 +2085,81 @@ PRIMARY KEY (`id`)"#;
         let merge_tree = ClickhouseEngine::MergeTree;
         let merge_tree_hash = merge_tree.non_alterable_params_hash();
         assert_ne!(hash1, merge_tree_hash);
+    }
+
+    #[test]
+    fn test_shared_replacing_merge_tree_parsing() {
+        // Test SharedReplacingMergeTree parsing with different parameter combinations
+        let test_cases = vec![
+            (
+                "SharedReplacingMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}')",
+                None,
+                None,
+            ),
+            (
+                "SharedReplacingMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}', _peerdb_version)",
+                Some("_peerdb_version"),
+                None,
+            ),
+            (
+                "SharedReplacingMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}', _peerdb_version, _peerdb_is_deleted)",
+                Some("_peerdb_version"),
+                Some("_peerdb_is_deleted"),
+            ),
+        ];
+
+        for (input, expected_ver, expected_is_deleted) in test_cases {
+            let engine: ClickhouseEngine = input.try_into().unwrap();
+            match engine {
+                ClickhouseEngine::ReplacingMergeTree { ver, is_deleted } => {
+                    assert_eq!(ver.as_deref(), expected_ver, "Failed for input: {}", input);
+                    assert_eq!(
+                        is_deleted.as_deref(),
+                        expected_is_deleted,
+                        "Failed for input: {}",
+                        input
+                    );
+                }
+                _ => panic!("Expected ReplacingMergeTree for input: {}", input),
+            }
+        }
+    }
+
+    #[test]
+    fn test_replicated_replacing_merge_tree_parsing() {
+        // Test ReplicatedReplacingMergeTree parsing
+        let test_cases = vec![
+            (
+                "ReplicatedReplacingMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}')",
+                None,
+                None,
+            ),
+            (
+                "ReplicatedReplacingMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}', version_col)",
+                Some("version_col"),
+                None,
+            ),
+            (
+                "ReplicatedReplacingMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}', version_col, is_deleted_col)",
+                Some("version_col"),
+                Some("is_deleted_col"),
+            ),
+        ];
+
+        for (input, expected_ver, expected_is_deleted) in test_cases {
+            let engine: ClickhouseEngine = input.try_into().unwrap();
+            match engine {
+                ClickhouseEngine::ReplacingMergeTree { ver, is_deleted } => {
+                    assert_eq!(ver.as_deref(), expected_ver, "Failed for input: {}", input);
+                    assert_eq!(
+                        is_deleted.as_deref(),
+                        expected_is_deleted,
+                        "Failed for input: {}",
+                        input
+                    );
+                }
+                _ => panic!("Expected ReplacingMergeTree for input: {}", input),
+            }
+        }
     }
 }

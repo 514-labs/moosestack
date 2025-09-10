@@ -453,8 +453,19 @@ pub fn tables_to_python(tables: &[Table], life_cycle: Option<LifeCycle>) -> Stri
                 crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine::MergeTree => {
                     writeln!(output, "    engine=MergeTreeEngine(),").unwrap();
                 }
-                crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine::ReplacingMergeTree => {
-                    writeln!(output, "    engine=ReplacingMergeTreeEngine(),").unwrap();
+                crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine::ReplacingMergeTree { ver, is_deleted } => {
+                    // Emit ReplacingMergeTreeEngine with parameters if present
+                    write!(output, "    engine=ReplacingMergeTreeEngine(").unwrap();
+                    if let Some(ver_col) = ver {
+                        write!(output, "ver=\"{}\"", ver_col).unwrap();
+                        if is_deleted.is_some() {
+                            write!(output, ", ").unwrap();
+                        }
+                    }
+                    if let Some(is_deleted_col) = is_deleted {
+                        write!(output, "is_deleted=\"{}\"", is_deleted_col).unwrap();
+                    }
+                    writeln!(output, "),").unwrap();
                 }
                 crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine::AggregatingMergeTree => {
                     writeln!(output, "    engine=AggregatingMergeTreeEngine(),").unwrap();
@@ -824,7 +835,10 @@ user_model = OlapTable[User]("User", OlapConfig(
                 comment: None,
             }],
             order_by: vec!["id".to_string()],
-            engine: Some(ClickhouseEngine::ReplacingMergeTree),
+            engine: Some(ClickhouseEngine::ReplacingMergeTree {
+                ver: None,
+                is_deleted: None,
+            }),
             version: None,
             source_primitive: PrimitiveSignature {
                 name: "UserData".to_string(),
@@ -852,6 +866,66 @@ user_model = OlapTable[User]("User", OlapConfig(
         assert!(result.contains("engine=ReplacingMergeTreeEngine(),"));
         assert!(result.contains("index_granularity"));
         assert!(result.contains("enable_mixed_granularity_parts"));
+    }
+
+    #[test]
+    fn test_replacing_merge_tree_with_parameters() {
+        let tables = vec![Table {
+            name: "UserData".to_string(),
+            columns: vec![
+                Column {
+                    name: "id".to_string(),
+                    data_type: ColumnType::String,
+                    required: true,
+                    unique: false,
+                    primary_key: true,
+                    default: None,
+                    annotations: vec![],
+                    comment: None,
+                },
+                Column {
+                    name: "version".to_string(),
+                    data_type: ColumnType::DateTime { precision: None },
+                    required: true,
+                    unique: false,
+                    primary_key: false,
+                    default: None,
+                    annotations: vec![],
+                    comment: None,
+                },
+                Column {
+                    name: "is_deleted".to_string(),
+                    data_type: ColumnType::Int(IntType::UInt8),
+                    required: true,
+                    unique: false,
+                    primary_key: false,
+                    default: None,
+                    annotations: vec![],
+                    comment: None,
+                },
+            ],
+            order_by: vec!["id".to_string()],
+            engine: Some(ClickhouseEngine::ReplacingMergeTree {
+                ver: Some("version".to_string()),
+                is_deleted: Some("is_deleted".to_string()),
+            }),
+            version: None,
+            source_primitive: PrimitiveSignature {
+                name: "UserData".to_string(),
+                primitive_type: PrimitiveTypes::DataModel,
+            },
+            metadata: None,
+            life_cycle: LifeCycle::FullyManaged,
+            engine_params_hash: None,
+            table_settings: None,
+        }];
+
+        let result = tables_to_python(&tables, None);
+
+        // Check that ver and is_deleted parameters are correctly generated
+        assert!(result.contains(
+            "engine=ReplacingMergeTreeEngine(ver=\"version\", is_deleted=\"is_deleted\"),"
+        ));
     }
 
     #[test]

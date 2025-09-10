@@ -48,13 +48,25 @@ class MyData(BaseModel):
 my_table = OlapTable[MyData](
     "MyTable",
     OlapConfig(
-        order_by_fields=["id"],  # Note: Not used with S3Queue engine
-        engine=MergeTreeEngine(),  # or ReplacingMergeTreeEngine(), etc.
+        order_by_fields=["id"],
+        engine=MergeTreeEngine(),
         # Optional: settings for alterable table settings
         settings={
             "index_granularity": "8192",
             # Other ClickHouse table settings as needed
         }
+    )
+)
+
+# ReplacingMergeTree with version control and soft deletes
+dedup_table = OlapTable[MyData](
+    "DedupTable",
+    OlapConfig(
+        order_by_fields=["id"],
+        engine=ReplacingMergeTreeEngine(
+            ver="timestamp",  # Optional: keeps row with max timestamp value
+            is_deleted="deleted"  # Optional: soft delete when deleted=1 (requires ver)
+        )
     )
 )
 ```

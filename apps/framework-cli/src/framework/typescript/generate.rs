@@ -296,8 +296,15 @@ pub fn tables_to_typescript(tables: &[Table], life_cycle: Option<LifeCycle>) -> 
                 crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine::MergeTree => {
                     writeln!(output, "    engine: ClickHouseEngines.MergeTree,").unwrap();
                 }
-                crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine::ReplacingMergeTree => {
+                crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine::ReplacingMergeTree { ver, is_deleted } => {
+                    // Emit ReplacingMergeTree engine configuration
                     writeln!(output, "    engine: ClickHouseEngines.ReplacingMergeTree,").unwrap();
+                    if let Some(ver_col) = ver {
+                        writeln!(output, "    ver: \"{}\",", ver_col).unwrap();
+                    }
+                    if let Some(is_deleted_col) = is_deleted {
+                        writeln!(output, "    isDeleted: \"{}\",", is_deleted_col).unwrap();
+                    }
                 }
                 crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine::AggregatingMergeTree => {
                     writeln!(output, "    engine: ClickHouseEngines.AggregatingMergeTree,").unwrap();
@@ -556,6 +563,67 @@ export const UserTable = new OlapTable<User>("User", {
         assert!(result.contains("engine: ClickHouseEngines.MergeTree,"));
         assert!(result.contains("index_granularity"));
         assert!(result.contains("merge_with_ttl_timeout"));
+    }
+
+    #[test]
+    fn test_replacing_merge_tree_with_parameters() {
+        use crate::framework::core::infrastructure::table::IntType;
+        let tables = vec![Table {
+            name: "UserData".to_string(),
+            columns: vec![
+                Column {
+                    name: "id".to_string(),
+                    data_type: ColumnType::String,
+                    required: true,
+                    unique: false,
+                    primary_key: true,
+                    default: None,
+                    annotations: vec![],
+                    comment: None,
+                },
+                Column {
+                    name: "version".to_string(),
+                    data_type: ColumnType::DateTime { precision: None },
+                    required: true,
+                    unique: false,
+                    primary_key: false,
+                    default: None,
+                    annotations: vec![],
+                    comment: None,
+                },
+                Column {
+                    name: "is_deleted".to_string(),
+                    data_type: ColumnType::Int(IntType::UInt8),
+                    required: true,
+                    unique: false,
+                    primary_key: false,
+                    default: None,
+                    annotations: vec![],
+                    comment: None,
+                },
+            ],
+            order_by: vec!["id".to_string()],
+            engine: Some(ClickhouseEngine::ReplacingMergeTree {
+                ver: Some("version".to_string()),
+                is_deleted: Some("is_deleted".to_string()),
+            }),
+            version: None,
+            source_primitive: PrimitiveSignature {
+                name: "UserData".to_string(),
+                primitive_type: PrimitiveTypes::DataModel,
+            },
+            metadata: None,
+            life_cycle: LifeCycle::FullyManaged,
+            engine_params_hash: None,
+            table_settings: None,
+        }];
+
+        let result = tables_to_typescript(&tables, None);
+
+        // Check that ver and isDeleted parameters are correctly generated
+        assert!(result.contains("engine: ClickHouseEngines.ReplacingMergeTree,"));
+        assert!(result.contains("ver: \"version\","));
+        assert!(result.contains("isDeleted: \"is_deleted\","));
     }
 
     #[test]

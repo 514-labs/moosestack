@@ -47,6 +47,8 @@ interface MergeTreeEngineConfig {
 
 interface ReplacingMergeTreeEngineConfig {
   engine: "ReplacingMergeTree";
+  ver?: string;
+  isDeleted?: string;
 }
 
 interface AggregatingMergeTreeEngineConfig {
@@ -260,7 +262,12 @@ export const toInfraMap = (registry: typeof moose_internal) => {
           return { engine: "MergeTree" };
 
         case ClickHouseEngines.ReplacingMergeTree:
-          return { engine: "ReplacingMergeTree" };
+          const replConfig = table.config as any; // Cast to access specific properties
+          return {
+            engine: "ReplacingMergeTree",
+            ver: replConfig.ver,
+            isDeleted: replConfig.isDeleted,
+          };
 
         case ClickHouseEngines.AggregatingMergeTree:
           return { engine: "AggregatingMergeTree" };

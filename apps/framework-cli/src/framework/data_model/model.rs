@@ -37,11 +37,14 @@ impl DataModel {
             self.primary_key_columns()
         };
 
-        let engine = self
-            .config
-            .storage
-            .deduplicate
-            .then_some(ClickhouseEngine::ReplacingMergeTree);
+        let engine =
+            self.config
+                .storage
+                .deduplicate
+                .then_some(ClickhouseEngine::ReplacingMergeTree {
+                    ver: None,
+                    is_deleted: None,
+                });
         let engine_params_hash = engine.as_ref().map(|e| e.non_alterable_params_hash());
 
         Table {
