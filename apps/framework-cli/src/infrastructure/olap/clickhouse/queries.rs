@@ -12,6 +12,28 @@ use crate::infrastructure::olap::clickhouse::model::{
 use super::errors::ClickhouseError;
 use super::model::ClickHouseColumn;
 
+/// Format a ClickHouse setting value with proper quoting.
+/// - Numeric values (integers, floats) are not quoted
+/// - Boolean values (true, false) are not quoted  
+/// - String values are quoted with single quotes
+/// - Already quoted values are preserved as-is
+fn format_clickhouse_setting_value(value: &str) -> String {
+    // If already quoted, use as-is
+    if value.starts_with('\'') && value.ends_with('\'') {
+        value.to_string()
+    } else if value.parse::<i64>().is_ok()
+        || value.parse::<f64>().is_ok()
+        || value == "true"
+        || value == "false"
+    {
+        // Numeric or boolean literal - no quotes
+        value.to_string()
+    } else {
+        // String value - needs quoting
+        format!("'{}'", value)
+    }
+}
+
 // Unclear if we need to add flatten_nested to the views setting as well
 static CREATE_ALIAS_TEMPLATE: &str = r#"
 CREATE VIEW IF NOT EXISTS `{{db_name}}`.`{{alias_name}}` AS SELECT * FROM `{{db_name}}`.`{{source_table_name}}`;
@@ -572,7 +594,7 @@ pub fn create_table_query(
             settings_pairs.sort_by(|a, b| a.0.cmp(&b.0)); // Sort by key for deterministic order
             let settings_strs: Vec<String> = settings_pairs
                 .iter()
-                .map(|(key, value)| format!("{} = '{}'", key, value))
+                .map(|(key, value)| format!("{} = {}", key, format_clickhouse_setting_value(value)))
                 .collect();
             Some(settings_strs.join(", "))
         } else {
@@ -653,7 +675,7 @@ pub fn alter_table_modify_settings_query(
     let mut reg = Handlebars::new();
     reg.register_escape_fn(no_escape);
 
-    // Format settings as key = 'value' pairs
+    // Format settings as key = value pairs with proper quoting
     let mut settings_pairs: Vec<(String, String)> = settings
         .iter()
         .map(|(key, value)| (key.clone(), value.clone()))
@@ -661,7 +683,7 @@ pub fn alter_table_modify_settings_query(
     settings_pairs.sort_by(|a, b| a.0.cmp(&b.0)); // Sort by key for deterministic order
     let settings_str = settings_pairs
         .iter()
-        .map(|(key, value)| format!("{} = '{}'", key, value))
+        .map(|(key, value)| format!("{} = {}", key, format_clickhouse_setting_value(value)))
         .collect::<Vec<String>>()
         .join(", ");
 
@@ -1241,7 +1263,7 @@ CREATE TABLE IF NOT EXISTS `test_db`.`test_table`
 )
 ENGINE = S3Queue('s3://my-bucket/data/*.json', NOSIGN, 'JSONEachRow')
 PRIMARY KEY (`id`)
-SETTINGS keeper_path = '/clickhouse/s3queue/test_table', mode = 'unordered', s3queue_loading_retries = '3'"#;
+SETTINGS keeper_path = '/clickhouse/s3queue/test_table', mode = 'unordered', s3queue_loading_retries = 3"#;
         assert_eq!(query.trim(), expected.trim());
     }
 

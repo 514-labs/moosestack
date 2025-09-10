@@ -273,7 +273,12 @@ pub fn tables_to_python(tables: &[Table], life_cycle: Option<LifeCycle>) -> Stri
     .unwrap();
     writeln!(
         output,
-        "from moose_lib import clickhouse_default, ClickHouseEngines, LifeCycle"
+        "from moose_lib import clickhouse_default, LifeCycle"
+    )
+    .unwrap();
+    writeln!(
+        output,
+        "from moose_lib.blocks import MergeTreeEngine, ReplacingMergeTreeEngine, AggregatingMergeTreeEngine, SummingMergeTreeEngine, S3QueueEngine"
     )
     .unwrap();
     writeln!(output).unwrap();
@@ -416,7 +421,64 @@ pub fn tables_to_python(tables: &[Table], life_cycle: Option<LifeCycle>) -> Stri
             .unwrap();
         };
         if let Some(engine) = &table.engine {
-            writeln!(output, "        engine=ClickHouseEngines.{:?},", engine).unwrap();
+            match engine {
+                crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine::S3Queue {
+                    s3_path,
+                    format,
+                    compression,
+                    headers,
+                    aws_access_key_id,
+                    aws_secret_access_key,
+                } => {
+                    // Generate S3Queue configuration object
+                    writeln!(output, "        engine=S3QueueEngine(").unwrap();
+                    writeln!(output, "            s3_path={:?},", s3_path).unwrap();
+                    writeln!(output, "            format={:?},", format).unwrap();
+                    if let Some(compression) = compression {
+                        writeln!(output, "            compression={:?},", compression).unwrap();
+                    }
+                    if let Some(key_id) = aws_access_key_id {
+                        writeln!(output, "            aws_access_key_id={:?},", key_id).unwrap();
+                    }
+                    if let Some(secret) = aws_secret_access_key {
+                        writeln!(output, "            aws_secret_access_key={:?},", secret).unwrap();
+                    }
+                    if let Some(headers) = headers {
+                        write!(output, "            headers={{").unwrap();
+                        for (i, (key, value)) in headers.iter().enumerate() {
+                            if i > 0 { write!(output, ",").unwrap(); }
+                            write!(output, " {:?}: {:?}", key, value).unwrap();
+                        }
+                        writeln!(output, " }},").unwrap();
+                    }
+                    writeln!(output, "        ),").unwrap();
+                }
+                crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine::MergeTree => {
+                    writeln!(output, "        engine=MergeTreeEngine(),").unwrap();
+                }
+                crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine::ReplacingMergeTree => {
+                    writeln!(output, "        engine=ReplacingMergeTreeEngine(),").unwrap();
+                }
+                crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine::AggregatingMergeTree => {
+                    writeln!(output, "        engine=AggregatingMergeTreeEngine(),").unwrap();
+                }
+                crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine::SummingMergeTree => {
+                    writeln!(output, "        engine=SummingMergeTreeEngine(),").unwrap();
+                }
+            }
+        }
+        // Add table settings if present (includes mode for S3Queue)
+        if let Some(settings) = &table.table_settings {
+            if !settings.is_empty() {
+                write!(output, "        settings={{").unwrap();
+                for (i, (key, value)) in settings.iter().enumerate() {
+                    if i > 0 {
+                        write!(output, ", ").unwrap();
+                    }
+                    write!(output, "{:?}: {:?}", key, value).unwrap();
+                }
+                writeln!(output, "}},").unwrap();
+            }
         }
         writeln!(output, "    )").unwrap();
         writeln!(output, "))").unwrap();
@@ -493,7 +555,8 @@ import ipaddress
 from uuid import UUID
 from enum import IntEnum, Enum
 from moose_lib import Key, IngestPipeline, IngestPipelineConfig, OlapConfig, clickhouse_datetime64, clickhouse_decimal, ClickhouseSize, StringToEnumMixin
-from moose_lib import clickhouse_default, ClickHouseEngines, LifeCycle
+from moose_lib import clickhouse_default, LifeCycle
+from moose_lib.blocks import MergeTreeEngine, ReplacingMergeTreeEngine, AggregatingMergeTreeEngine, SummingMergeTreeEngine, S3QueueEngine
 
 class Foo(BaseModel):
     primary_key: Key[str]
@@ -505,7 +568,7 @@ foo_model = IngestPipeline[Foo]("Foo", IngestPipelineConfig(
     stream=True,
     table=OlapConfig(
         order_by_fields=["primary_key"],
-        engine=ClickHouseEngines.MergeTree,
+        engine=MergeTreeEngine(),
     )
 ))"#
         ));
@@ -581,7 +644,7 @@ nested_array_model = IngestPipeline[NestedArray]("NestedArray", IngestPipelineCo
     stream=True,
     table=OlapConfig(
         order_by_fields=["id"],
-        engine=ClickHouseEngines.MergeTree,
+        engine=MergeTreeEngine(),
     )
 ))"#
         ));
@@ -693,10 +756,118 @@ user_model = IngestPipeline[User]("User", IngestPipelineConfig(
     stream=True,
     table=OlapConfig(
         order_by_fields=["id"],
-        engine=ClickHouseEngines.MergeTree,
+        engine=MergeTreeEngine(),
     )
 ))"#
         ));
+    }
+
+    #[test]
+    fn test_s3queue_engine() {
+        use crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine;
+
+        let tables = vec![Table {
+            name: "Events".to_string(),
+            columns: vec![
+                Column {
+                    name: "id".to_string(),
+                    data_type: ColumnType::String,
+                    required: true,
+                    unique: false,
+                    primary_key: true,
+                    default: None,
+                    annotations: vec![],
+                    comment: None,
+                },
+                Column {
+                    name: "data".to_string(),
+                    data_type: ColumnType::String,
+                    required: true,
+                    unique: false,
+                    primary_key: false,
+                    default: None,
+                    annotations: vec![],
+                    comment: None,
+                },
+            ],
+            order_by: vec!["id".to_string()],
+            engine: Some(ClickhouseEngine::S3Queue {
+                s3_path: "s3://bucket/path".to_string(),
+                format: "JSONEachRow".to_string(),
+                compression: Some("gzip".to_string()),
+                headers: None,
+                aws_access_key_id: None,
+                aws_secret_access_key: None,
+            }),
+            version: None,
+            source_primitive: PrimitiveSignature {
+                name: "Events".to_string(),
+                primitive_type: PrimitiveTypes::DataModel,
+            },
+            metadata: None,
+            life_cycle: LifeCycle::FullyManaged,
+            engine_params_hash: None,
+            table_settings: Some(
+                vec![("mode".to_string(), "unordered".to_string())]
+                    .into_iter()
+                    .collect(),
+            ),
+        }];
+
+        let result = tables_to_python(&tables, None);
+
+        // The generated code should have the new engine configuration format
+        assert!(result.contains("engine=S3QueueEngine("));
+        assert!(result.contains("s3_path=\"s3://bucket/path\""));
+        assert!(result.contains("format=\"JSONEachRow\""));
+        assert!(result.contains("compression=\"gzip\""));
+        assert!(result.contains("settings={\"mode\": \"unordered\"}"));
+        assert!(!result.contains("ClickHouseEngines.S3Queue"));
+    }
+
+    #[test]
+    fn test_table_settings_all_engines() {
+        let tables = vec![Table {
+            name: "UserData".to_string(),
+            columns: vec![Column {
+                name: "id".to_string(),
+                data_type: ColumnType::String,
+                required: true,
+                unique: false,
+                primary_key: true,
+                default: None,
+                annotations: vec![],
+                comment: None,
+            }],
+            order_by: vec!["id".to_string()],
+            engine: Some(ClickhouseEngine::ReplacingMergeTree),
+            version: None,
+            source_primitive: PrimitiveSignature {
+                name: "UserData".to_string(),
+                primitive_type: PrimitiveTypes::DataModel,
+            },
+            metadata: None,
+            life_cycle: LifeCycle::FullyManaged,
+            engine_params_hash: None,
+            table_settings: Some(
+                vec![
+                    ("index_granularity".to_string(), "4096".to_string()),
+                    (
+                        "enable_mixed_granularity_parts".to_string(),
+                        "1".to_string(),
+                    ),
+                ]
+                .into_iter()
+                .collect(),
+            ),
+        }];
+
+        let result = tables_to_python(&tables, None);
+
+        // Settings should work for all engines, not just S3Queue
+        assert!(result.contains("engine=ReplacingMergeTreeEngine(),"));
+        assert!(result.contains("index_granularity"));
+        assert!(result.contains("enable_mixed_granularity_parts"));
     }
 
     #[test]

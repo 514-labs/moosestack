@@ -107,9 +107,10 @@ export class MaterializedView<TargetTable> extends SqlResource {
           {
             orderByFields:
               options.targetTable?.orderByFields ?? options.orderByFields,
-            engine: (options.targetTable?.engine ??
+            engine:
+              options.targetTable?.engine ??
               options.engine ??
-              ClickHouseEngines.MergeTree) as ClickHouseEngines.MergeTree,
+              ClickHouseEngines.MergeTree,
           } as OlapConfig<TargetTable>,
           targetSchema,
           targetColumns,
