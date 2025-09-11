@@ -126,6 +126,27 @@ const PYTHON_IDENTIFIER_REGEX: &str = r"^[^\d\W]\w*$";
 pub static PYTHON_IDENTIFIER_PATTERN: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(PYTHON_IDENTIFIER_REGEX).unwrap());
 
+fn sanitize_name(name: &str, required: bool) -> (String, String) {
+    if name.starts_with('_') || name.contains(' ') {
+        (
+            name.strip_prefix("_")
+                .map(|n| format!("UNDERSCORE_PREFIXED_{n}"))
+                .unwrap_or(name.to_string())
+                .replace(' ', "_"),
+            if !required {
+                format!(" = Field(default=None, alias=\"{name}\")")
+            } else {
+                format!(" = Field(alias=\"{name}\")")
+            },
+        )
+    } else {
+        (
+            name.to_string(),
+            (if required { "" } else { " = None" }).to_string(),
+        )
+    }
+}
+
 // TODO: merge with table model generation logic
 fn generate_nested_model(
     nested: &Nested,
@@ -141,30 +162,13 @@ fn generate_nested_model(
         let type_str =
             map_column_type_to_python(&column.data_type, enums, nested_models, named_tuples);
 
-        let (type_str, default) = if !column.required {
-            (format!("Optional[{type_str}]"), " = None")
+        let type_str = if !column.required {
+            format!("Optional[{type_str}]")
         } else {
-            (type_str, "")
+            type_str
         };
 
-        let (mapped_name, mapped_default) =
-            if column.name.starts_with('_') || column.name.contains(' ') {
-                (
-                    column
-                        .name
-                        .strip_prefix("_")
-                        .map(|n| format!("UNDERSCORE_PREFIXED_{n}"))
-                        .unwrap_or(column.name.clone())
-                        .replace(' ', "_"),
-                    if default == " = None" {
-                        format!(" = Field(default=None, alias=\"{}\")", column.name)
-                    } else {
-                        format!(" = Field(alias=\"{}\")", column.name)
-                    },
-                )
-            } else {
-                (column.name.clone(), default.to_string())
-            };
+        let (mapped_name, mapped_default) = sanitize_name(&column.name, column.required);
 
         writeln!(model, "    {mapped_name}: {type_str}{mapped_default}").unwrap();
     }
@@ -357,10 +361,10 @@ pub fn tables_to_python(tables: &[Table], life_cycle: Option<LifeCycle>) -> Stri
             let type_str =
                 map_column_type_to_python(&column.data_type, &enums, &nested_models, &named_tuples);
 
-            let (mut type_str, default) = if !column.required {
-                (format!("Optional[{type_str}]"), " = None")
+            let mut type_str = if !column.required {
+                format!("Optional[{type_str}]")
             } else {
-                (type_str, "")
+                type_str
             };
 
             if let Some(ref default_expr) = column.default {
@@ -376,18 +380,7 @@ pub fn tables_to_python(tables: &[Table], life_cycle: Option<LifeCycle>) -> Stri
                 type_str
             };
 
-            let (mapped_name, mapped_default) = if column.name.starts_with('_') {
-                (
-                    format!("UNDERSCORE_PREFIXED{}", column.name),
-                    if default == " = None" {
-                        format!(" = Field(default=None, alias=\"{}\")", column.name)
-                    } else {
-                        format!(" = Field(alias=\"{}\")", column.name)
-                    },
-                )
-            } else {
-                (column.name.clone(), default.to_string())
-            };
+            let (mapped_name, mapped_default) = sanitize_name(&column.name, column.required);
 
             writeln!(output, "    {mapped_name}: {type_str}{mapped_default}").unwrap();
         }
