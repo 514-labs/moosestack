@@ -64,23 +64,8 @@ use anyhow::Result;
 use std::time::Duration;
 use tokio::time::timeout;
 
-/// Generic prompt function that handles different types of user input
-#[allow(dead_code)]
-fn prompt_user(prompt_text: &str) -> Result<String, RoutineFailure> {
-    prompt_user_with_hints(prompt_text, None, None)
-}
-
-/// Generic prompt function that handles different types of user input with optional default value
-#[allow(dead_code)]
-fn prompt_user_with_default(
-    prompt_text: &str,
-    default: Option<&str>,
-) -> Result<String, RoutineFailure> {
-    prompt_user_with_hints(prompt_text, default, None)
-}
-
 /// Generic prompt function with hints, default values, and better formatting
-fn prompt_user_with_hints(
+fn prompt_user(
     prompt_text: &str,
     default: Option<&str>,
     hint: Option<&str>,
@@ -251,9 +236,10 @@ pub async fn top_command_handler(
                                 "Setting up your new Moose project".to_string(),
                             ),
                         );
-                        let input = prompt_user_with_default(
+                        let input = prompt_user(
                             "Select language [1] TypeScript [2] Python",
                             Some("1"),
+                            None,
                         )?;
 
                         match input.as_str() {
@@ -287,14 +273,14 @@ pub async fn top_command_handler(
                 }
                 Some(None) => {
                     // --from-remote flag provided, but no URL given - use interactive prompts
-                    let base = prompt_user_with_hints(
+                    let base = prompt_user(
                         "Enter ClickHouse host URL and port",
                         None,
                         Some("Format: https://your-service-id.region.clickhouse.cloud:8443\n  🔗 Get your URL: https://clickhouse.cloud/\n  📖 Troubleshooting: https://docs.fiveonefour.com/moose/getting-started/from-clickhouse#troubleshooting")
                     )?.trim_end_matches('/').to_string();
-                    let user = prompt_user_with_default("Enter username", Some("default"))?;
-                    let pass = prompt_user("Enter password")?;
-                    let db = prompt_user_with_default("Enter database name", Some("default"))?;
+                    let user = prompt_user("Enter username", Some("default"), None)?;
+                    let pass = prompt_user("Enter password", None, None)?;
+                    let db = prompt_user("Enter database name", Some("default"), None)?;
 
                     let mut out = format!(
                         "https://{}:{}@{}",
