@@ -413,7 +413,7 @@ mod tests {
                 },
             ],
             order_by,
-            engine: deduplicate.then(|| ClickhouseEngine::ReplacingMergeTree {
+            engine: deduplicate.then_some(ClickhouseEngine::ReplacingMergeTree {
                 ver: None,
                 is_deleted: None,
             }),
