@@ -227,7 +227,14 @@ pub async fn top_command_handler(
             let template = match template {
                 Some(t) => t.to_lowercase(),
                 None => match language.as_ref().map(|l| l.to_lowercase()) {
-                    Some(l) => l,
+                    Some("typescript") => "typescript-empty".to_string(),
+                    Some("python") => "python-empty".to_string(),
+                    Some(lang) => {
+                        return Err(RoutineFailure::error(Message::new(
+                            "Unknown".to_string(),
+                            format!("language {lang}"),
+                        )))
+                    }
                     None => {
                         display::show_message_wrapper(
                             MessageType::Info,
@@ -240,10 +247,11 @@ pub async fn top_command_handler(
                             "Select language [1] TypeScript [2] Python",
                             Some("1"),
                             None,
-                        )?;
+                        )?
+                        .to_lowercase();
 
                         match input.as_str() {
-                            "2" | "python" | "Python" => "python-empty".to_string(),
+                            "2" | "Python" | "py" => "python-empty".to_string(),
                             _ => "typescript-empty".to_string(),
                         }
                     }
@@ -274,24 +282,38 @@ pub async fn top_command_handler(
                 Some(None) => {
                     // --from-remote flag provided, but no URL given - use interactive prompts
                     let base = prompt_user(
-                        "Enter ClickHouse host URL and port",
+                        "Enter ClickHouse host and port",
                         None,
                         Some("Format: https://your-service-id.region.clickhouse.cloud:8443\n  🔗 Get your URL: https://clickhouse.cloud/\n  📖 Troubleshooting: https://docs.fiveonefour.com/moose/getting-started/from-clickhouse#troubleshooting")
-                    )?.trim_end_matches('/').to_string();
+                    )?.trim_end_matches('/').trim_start_matches("https://").to_string();
                     let user = prompt_user("Enter username", Some("default"), None)?;
                     let pass = prompt_user("Enter password", None, None)?;
                     let db = prompt_user("Enter database name", Some("default"), None)?;
 
-                    let mut out = format!(
-                        "https://{}:{}@{}",
-                        user,
-                        pass,
-                        base.trim_start_matches("https://")
-                    );
-                    let sep = if out.contains('?') { '&' } else { '?' };
-                    out.push_str(&format!("{}database={}", sep, db));
-                    let url = out;
+                    let mut url = reqwest::Url::parse(&format!("https://{base}")).map_err(|e| {
+                        RoutineFailure::new(
+                            Message::new("Malformed".to_string(), format!("host and port: {base}")),
+                            e,
+                        )
+                    })?;
+                    url.set_username(&user).map_err(|()| {
+                        RoutineFailure::error(Message::new(
+                            "Malformed".to_string(),
+                            format!("URL: {url}"),
+                        ))
+                    })?;
 
+                    if !pass.is_empty() {
+                        url.set_password(Some(&pass)).map_err(|()| {
+                            RoutineFailure::error(Message::new(
+                                "Malformed".to_string(),
+                                format!("URL: {url}"),
+                            ))
+                        })?
+                    }
+
+                    url.query_pairs_mut().append_pair("database", &db);
+                    let url = url.to_string();
                     db_to_dmv2(&url, dir_path).await?;
                     Some(url)
                 }
