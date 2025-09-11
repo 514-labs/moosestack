@@ -184,6 +184,8 @@ export type MergeTreeConfig<T> = BaseOlapConfig<T> & {
  */
 export type ReplacingMergeTreeConfig<T> = BaseOlapConfig<T> & {
   engine: ClickHouseEngines.ReplacingMergeTree;
+  ver?: keyof T & string; // Optional version column
+  isDeleted?: keyof T & string; // Optional is_deleted column
 };
 
 /**

@@ -66,6 +66,8 @@ class MergeTreeConfigDict(BaseEngineConfigDict):
 class ReplacingMergeTreeConfigDict(BaseEngineConfigDict):
     """Configuration for ReplacingMergeTree engine."""
     engine: Literal["ReplacingMergeTree"] = "ReplacingMergeTree"
+    ver: Optional[str] = None
+    is_deleted: Optional[str] = None
 
 class AggregatingMergeTreeConfigDict(BaseEngineConfigDict):
     """Configuration for AggregatingMergeTree engine."""
@@ -322,7 +324,10 @@ def _convert_engine_to_config_dict(engine: Union[ClickHouseEngines, EngineConfig
                 headers=engine.headers
             )
         elif isinstance(engine, ReplacingMergeTreeEngine):
-            return ReplacingMergeTreeConfigDict()
+            return ReplacingMergeTreeConfigDict(
+                ver=engine.ver,
+                is_deleted=engine.is_deleted
+            )
         elif isinstance(engine, AggregatingMergeTreeEngine):
             return AggregatingMergeTreeConfigDict()
         elif isinstance(engine, SummingMergeTreeEngine):

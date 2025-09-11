@@ -2824,7 +2824,10 @@ mod diff_tests {
         let mut after = create_test_table("test", "1.0");
 
         before.engine = Some(ClickhouseEngine::MergeTree);
-        after.engine = Some(ClickhouseEngine::ReplacingMergeTree);
+        after.engine = Some(ClickhouseEngine::ReplacingMergeTree {
+            ver: None,
+            is_deleted: None,
+        });
 
         let mut changes = Vec::new();
         InfrastructureMap::diff_tables(
@@ -2842,10 +2845,10 @@ mod diff_tests {
                 ..
             }) => {
                 assert_eq!(b.engine.as_ref(), Some(&ClickhouseEngine::MergeTree));
-                assert_eq!(
+                assert!(matches!(
                     a.engine.as_ref(),
-                    Some(&ClickhouseEngine::ReplacingMergeTree)
-                );
+                    Some(ClickhouseEngine::ReplacingMergeTree { .. })
+                ));
             }
             _ => panic!("Expected Updated change with engine modification"),
         }

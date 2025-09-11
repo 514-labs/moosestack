@@ -56,7 +56,11 @@ export const myConfiguredTable = new OlapTable<UserProfile>("user_profiles", {
 // For deduplication, use the ReplacingMergeTree factory
 export const dedupTable = OlapTable.withReplacingMergeTree<UserProfile>(
   "user_profiles",
-  { orderByFields: ["id", "timestamp"] }
+  { 
+    orderByFields: ["id", "timestamp"],
+    ver: "updated_at",  // Optional: version column for keeping latest
+    isDeleted: "deleted"  // Optional: soft delete marker (requires ver)
+  }
 );
 ```
 
@@ -163,6 +167,31 @@ class MooseClient {
 
 ## ClickHouse Utilities
 
+### Table Engine Configurations
+
+#### `ClickHouseEngines` Enum
+Available table engines:
+```ts
+enum ClickHouseEngines {
+  MergeTree = "MergeTree",
+  ReplacingMergeTree = "ReplacingMergeTree",
+  AggregatingMergeTree = "AggregatingMergeTree",
+  SummingMergeTree = "SummingMergeTree",
+  S3Queue = "S3Queue"
+}
+```
+
+#### `ReplacingMergeTreeConfig<T>`
+Configuration for ReplacingMergeTree tables:
+```ts
+type ReplacingMergeTreeConfig<T> = {
+  engine: ClickHouseEngines.ReplacingMergeTree;
+  orderByFields?: (keyof T & string)[];
+  ver?: keyof T & string;  // Optional: version column for keeping latest
+  isDeleted?: keyof T & string;  // Optional: soft delete marker (requires ver)
+  settings?: { [key: string]: string };
+}
+```
 
 ### `S3QueueTableSettings`
 Type-safe interface for S3Queue-specific table settings (ClickHouse 24.7+).

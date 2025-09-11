@@ -520,7 +520,10 @@ mod tests {
         let mut infra_table = create_base_table("test_table");
 
         // Set different engine values
-        actual_table.engine = Some(ClickhouseEngine::ReplacingMergeTree);
+        actual_table.engine = Some(ClickhouseEngine::ReplacingMergeTree {
+            ver: None,
+            is_deleted: None,
+        });
         infra_table.engine = None;
 
         let mock_client = MockOlapClient {
@@ -558,10 +561,10 @@ mod tests {
         // Verify the change is from reality's perspective - we need to change engine to match infra map
         match &discrepancies.mismatched_tables[0] {
             OlapChange::Table(TableChange::Updated { before, after, .. }) => {
-                assert_eq!(
+                assert!(matches!(
                     before.engine.as_ref(),
-                    Some(&ClickhouseEngine::ReplacingMergeTree)
-                );
+                    Some(ClickhouseEngine::ReplacingMergeTree { .. })
+                ));
                 assert_eq!(after.engine.as_ref(), None);
             }
             _ => panic!("Expected TableChange::Updated variant"),

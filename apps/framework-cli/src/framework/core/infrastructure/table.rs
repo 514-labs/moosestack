@@ -180,7 +180,7 @@ impl Table {
             deduplicate: self
                 .engine
                 .as_ref()
-                .is_some_and(|e| matches!(e, ClickhouseEngine::ReplacingMergeTree)),
+                .is_some_and(|e| matches!(e, ClickhouseEngine::ReplacingMergeTree { .. })),
             engine: MessageField::from_option(self.engine.as_ref().map(|engine| StringValue {
                 value: engine.clone().to_proto_string(),
                 special_fields: Default::default(),
@@ -216,7 +216,10 @@ impl Table {
             .or_else(|| {
                 proto
                     .deduplicate
-                    .then_some(ClickhouseEngine::ReplacingMergeTree)
+                    .then_some(ClickhouseEngine::ReplacingMergeTree {
+                        ver: None,
+                        is_deleted: None,
+                    })
             });
 
         // Engine settings are now handled via table_settings field

@@ -90,7 +90,9 @@ export const exampleTable = new OlapTable<ExampleSchema>("example_table", {
 
 // For deduplication, use the ReplacingMergeTree factory
 export const dedupTable = OlapTable.withReplacingMergeTree<ExampleSchema>("example_table", {
-  orderByFields: ["id", "dateField"]
+  orderByFields: ["id", "dateField"],
+  ver: "updatedAt",  // Optional: version column (keeps highest value)
+  isDeleted: "deleted"  // Optional: soft delete flag (requires ver)
 });
 
 // Now you can:
@@ -463,7 +465,9 @@ const table = new OlapTable<Record>("table", {
 
 // Use factory methods for other engines
 const dedupTable = OlapTable.withReplacingMergeTree<Record>("table", {
-  orderByFields: ["id"]
+  orderByFields: ["id"],
+  ver: "version",  // Optional: keeps row with highest version
+  isDeleted: "deleted"  // Optional: soft delete when deleted=1
 });
 ```
 </TypeScript>
@@ -491,8 +495,22 @@ Use the `ReplacingMergeTree` engine to keep only the latest record for your desi
 
 <TypeScript>
 ```ts filename="DeduplicatedTable.ts" copy
+// Basic deduplication
 const table = OlapTable.withReplacingMergeTree<Record>("table", {
   orderByFields: ["id"]
+});
+
+// With version column (keeps record with highest version)
+const versionedTable = OlapTable.withReplacingMergeTree<Record>("table", {
+  orderByFields: ["id"],
+  ver: "updated_at"  // Column that determines which version to keep
+});
+
+// With soft deletes (requires ver parameter)
+const softDeleteTable = OlapTable.withReplacingMergeTree<Record>("table", {
+  orderByFields: ["id"],
+  ver: "updated_at",
+  isDeleted: "deleted"  // UInt8 column: 1 marks row for deletion
 });
 ```
 </TypeScript> 
@@ -504,16 +522,40 @@ from moose_lib.blocks import ReplacingMergeTreeEngine
 
 class Record(BaseModel):
     id: Key[str]
+    updated_at: str  # Version column
+    deleted: int = 0  # Soft delete marker (UInt8)
 
+# Basic deduplication
 table = OlapTable[Record]("table", OlapConfig(
   order_by_fields=["id"],
   engine=ReplacingMergeTreeEngine()
+))
+
+# With version column (keeps record with highest version)
+versioned_table = OlapTable[Record]("table", OlapConfig(
+  order_by_fields=["id"],
+  engine=ReplacingMergeTreeEngine(ver="updated_at")
+))
+
+# With soft deletes (requires ver parameter)
+soft_delete_table = OlapTable[Record]("table", OlapConfig(
+  order_by_fields=["id"],
+  engine=ReplacingMergeTreeEngine(
+    ver="updated_at",
+    is_deleted="deleted"  # UInt8 column: 1 marks row for deletion
+  )
 ))
 ```
 </Python>
 
 <Callout type="warning" title="Deduplication Caveats">
-ClickHouse's ReplacingMergeTree engine runs deduplication in the background AFTER data is inserted into the table. This means that duplicate records may not be removed immediately. For more details, see the [ClickHouse documentation](https://clickhouse.com/docs/en/engines/table-engines/mergetree-family/replacingmergetree).
+ClickHouse's ReplacingMergeTree engine runs deduplication in the background AFTER data is inserted into the table. This means that duplicate records may not be removed immediately. 
+
+**Version Column (`ver`)**: When specified, ClickHouse keeps the row with the maximum version value for each unique sort key.
+
+**Soft Deletes (`is_deleted`)**: When specified along with `ver`, rows where this column equals 1 are deleted during merges. This column must be UInt8 type.
+
+For more details, see the [ClickHouse documentation](https://clickhouse.com/docs/en/engines/table-engines/mergetree-family/replacingmergetree).
 </Callout>
 
 #### Streaming from S3 (`S3Queue`)

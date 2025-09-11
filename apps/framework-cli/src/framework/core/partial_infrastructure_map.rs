@@ -125,7 +125,12 @@ enum EngineConfig {
     MergeTree {},
 
     #[serde(rename = "ReplacingMergeTree")]
-    ReplacingMergeTree {},
+    ReplacingMergeTree {
+        #[serde(default)]
+        ver: Option<String>,
+        #[serde(alias = "isDeleted", default)]
+        is_deleted: Option<String>,
+    },
 
     #[serde(rename = "AggregatingMergeTree")]
     AggregatingMergeTree {},
@@ -534,7 +539,12 @@ impl PartialInfrastructureMap {
         match &partial_table.engine_config {
             Some(EngineConfig::MergeTree {}) => Some(ClickhouseEngine::MergeTree),
 
-            Some(EngineConfig::ReplacingMergeTree {}) => Some(ClickhouseEngine::ReplacingMergeTree),
+            Some(EngineConfig::ReplacingMergeTree { ver, is_deleted }) => {
+                Some(ClickhouseEngine::ReplacingMergeTree {
+                    ver: ver.clone(),
+                    is_deleted: is_deleted.clone(),
+                })
+            }
 
             Some(EngineConfig::AggregatingMergeTree {}) => {
                 Some(ClickhouseEngine::AggregatingMergeTree)

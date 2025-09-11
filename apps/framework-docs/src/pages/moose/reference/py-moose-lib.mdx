@@ -65,6 +65,29 @@ class OlapConfig(BaseModel):
     engine: Optional[EngineConfig] = None  # Table engine configuration
 ```
 
+### `EngineConfig` Classes
+Base class and implementations for table engine configurations.
+
+```python
+# Base class
+class EngineConfig:
+    pass
+
+# Available engine implementations
+class MergeTreeEngine(EngineConfig):
+    pass
+
+class ReplacingMergeTreeEngine(EngineConfig):
+    ver: Optional[str] = None  # Version column for keeping latest
+    is_deleted: Optional[str] = None  # Soft delete marker (requires ver)
+    
+class AggregatingMergeTreeEngine(EngineConfig):
+    pass
+    
+class SummingMergeTreeEngine(EngineConfig):
+    pass
+```
+
 ### `StreamConfig`
 Configuration for data streams.
 
@@ -207,6 +230,12 @@ from moose_lib.blocks import (
     AggregatingMergeTreeEngine,
     SummingMergeTreeEngine,
     S3QueueEngine
+)
+
+# ReplacingMergeTree with version control and soft deletes
+dedup_engine = ReplacingMergeTreeEngine(
+    ver="updated_at",  # Optional: version column for keeping latest
+    is_deleted="deleted"  # Optional: soft delete marker (requires ver)
 )
 
 # S3Queue configuration for streaming from S3
