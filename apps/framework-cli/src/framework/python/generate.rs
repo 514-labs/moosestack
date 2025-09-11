@@ -147,18 +147,23 @@ fn generate_nested_model(
             (type_str, "")
         };
 
-        let (mapped_name, mapped_default) = if column.name.starts_with('_') {
-            (
-                format!("UNDERSCORE_PREFIXED{}", column.name),
-                if default == " = None" {
-                    format!(" = Field(default=None, alias=\"{}\")", column.name)
-                } else {
-                    format!(" = Field(alias=\"{}\")", column.name)
-                },
-            )
-        } else {
-            (column.name.clone(), default.to_string())
-        };
+        let (mapped_name, mapped_default) =
+            if column.name.starts_with('_') || column.name.contains(' ') {
+                (
+                    column
+                        .name
+                        .strip_prefix("_")
+                        .unwrap_or(&column.name)
+                        .replace(' ', "_"),
+                    if default == " = None" {
+                        format!(" = Field(default=None, alias=\"{}\")", column.name)
+                    } else {
+                        format!(" = Field(alias=\"{}\")", column.name)
+                    },
+                )
+            } else {
+                (column.name.clone(), default.to_string())
+            };
 
         writeln!(model, "    {mapped_name}: {type_str}{mapped_default}").unwrap();
     }

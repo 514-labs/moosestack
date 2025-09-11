@@ -121,7 +121,12 @@ fn generate_interface(
         } else {
             type_str
         };
-        writeln!(interface, "    {}: {};", column.name, type_str).unwrap();
+        let name = if column.name.contains(' ') {
+            format!("'{name}'")
+        } else {
+            column.name.clone()
+        };
+        writeln!(interface, "    {name}: {type_str};").unwrap();
     }
     writeln!(interface, "}}").unwrap();
     writeln!(interface).unwrap();
