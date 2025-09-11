@@ -1292,11 +1292,7 @@ impl OlapOperations for ConfiguredDBClient {
                 order_by: order_by_cols, // Use the extracted ORDER BY columns
                 partition_by: {
                     let p = partition_key.trim();
-                    if p.is_empty() || p == "tuple()" {
-                        None
-                    } else {
-                        Some(p.to_string())
-                    }
+                    (!p.is_empty()).then(|| p.to_string())
                 },
                 engine: engine_parsed,
                 version,
