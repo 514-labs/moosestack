@@ -238,9 +238,13 @@ pub async fn top_command_handler(
                 create_project_from_template(&template, name, dir_path, *no_fail_already_exists)
                     .await?;
 
-            let normalized_url = if let Some(remote_val) = from_remote {
-                // If empty or invalid, optionally prompt; otherwise validate and proceed
-                let url = if remote_val.as_deref().unwrap_or("").trim().is_empty() {
+            let normalized_url = match from_remote {
+                None => {
+                    // No --from-remote flag provided
+                    None
+                }
+                Some(None) => {
+                    // --from-remote flag provided, but no URL given - use interactive prompts
                     let base = prompt_user(
                         "Enter HTTPS host and port (e.g. https://your-service-id.region.clickhouse.cloud:8443)\n  ❓ Help: https://docs.fiveonefour.com/moose/getting-started/from-clickhouse#troubleshooting\n  ☁️ ClickHouse Cloud Console: https://clickhouse.cloud/\n> "
                     )?.trim_end_matches('/').to_string();
@@ -257,11 +261,18 @@ pub async fn top_command_handler(
                     );
                     let sep = if out.contains('?') { '&' } else { '?' };
                     out.push_str(&format!("{}database={}", sep, db));
-                    out
-                } else {
-                    let url_str = remote_val.as_deref().unwrap();
+                    let url = out;
+
+                    db_to_dmv2(&url, dir_path).await?;
+                    Some(url)
+                }
+                Some(Some(url_str)) => {
+                    // --from-remote flag provided with URL - validate and use
                     match convert_http_to_clickhouse(url_str) {
-                        Ok(_) => url_str.to_string(),
+                        Ok(_) => {
+                            db_to_dmv2(url_str, dir_path).await?;
+                            Some(url_str.to_string())
+                        }
                         Err(e) => {
                             return Err(RoutineFailure::error(Message::new(
                                 "Init from remote".to_string(),
@@ -273,12 +284,7 @@ pub async fn top_command_handler(
                             )));
                         }
                     }
-                };
-
-                db_to_dmv2(&url, dir_path).await?;
-                Some(url)
-            } else {
-                None
+                }
             };
 
             wait_for_usage_capture(capture_handle).await;
