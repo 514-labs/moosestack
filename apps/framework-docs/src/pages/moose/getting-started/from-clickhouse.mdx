@@ -3,7 +3,7 @@ import { Callout, ToggleBlock, ZoomImg, Python, TypeScript, LanguageSwitcher, Mu
 import { CheckCircle, Clock, Laptop } from "lucide-react";
 import { PathConfig, Icons } from "@/components";
 
-# Use Moose with Existing ClickHouse
+# Use Moose with Your Existing ClickHouse
 
 <div className="flex flex-wrap md:flex-nowrap gap-4 my-4">
 <IconBadge Icon={Clock} label="5 min setup" variant="moose" />
@@ -13,20 +13,37 @@ import { PathConfig, Icons } from "@/components";
 
 <LanguageSwitcher />
 
+## What This Guide Does
 
-## Why Use Moose with Your Existing ClickHouse?
+This guide sets up a local ClickHouse development environment that mirrors your production database and enables code-first schema management:
 
-Moose augments your existing ClickHouse to build apps on top of your data and manage your table schemas in code.
+1. **Introspect** your remote ClickHouse tables and generate TypeScript/Python data models
+2. **Create** a local ClickHouse instance with your exact table schemas
+3. **Seed** your local database with production data (optional)
+4. **Build** APIs and pipelines on top of your ClickHouse data in code
+
+## How It Works
+
+**Local Development:**
+- Your production ClickHouse remains untouched
+- You get a local ClickHouse instance that copies your remote table schemas
+- All development happens locally with hot-reload
+
+**Production Deployment:**
+- When you deploy your code, it connects to your remote ClickHouse
+- Any new tables, materialized views, or schema changes you create in code are automatically migrated to your target database
+- Your existing data and tables remain intact
 
 <BulletPointsCard
-  title="Moose Adds to ClickHouse"
+  title="What You Get"
   bulletStyle="none"
   compact={true}
   bullets={[
-    { title: "Code-first schema management", description: "Manage ClickHouse schemas in code, with Git versioning" },
-    { title: "Hot-reload dev environment", description: "Iterate instantly without touching production" },
-    { title: "Build APIs and user-facing apps", description: "Surface your analytics to your users with type-safe APIs" },
-    { title: "Streaming & ETL without config", description: "Add streaming ingestion and custom workflows, no YAML" },
+    { title: "Schema management in code", description: "Define ClickHouse tables, materialized views, and schemas as TypeScript/Python code" },
+    { title: "Auto-generated models", description: "TypeScript/Python classes generated from your existing ClickHouse tables" },
+    { title: "Local development environment", description: "Local ClickHouse instance that mirrors your production schema" },
+    { title: "Type-safe APIs", description: "Build REST APIs with full type safety and autocomplete" },
+    { title: "Automatic migrations", description: "Schema changes are automatically applied to your target database on deployment" },
   ]}
 />
 
@@ -98,9 +115,12 @@ Install the Moose CLI globally to your system:
 ```bash filename="Terminal" copy
 bash -i <(curl -fsSL https://fiveonefour.com/install.sh) moose
 ```
-<br />
 
-## Step 2: Set Up Your Project
+<Callout type="info" title="What happens next">
+After installation, you'll use `moose init` to create a new project that automatically connects to your ClickHouse and generates all the code you need.
+</Callout>
+
+## Step 2: Create Your Project
 
 <Callout type="warning" title="Don't have ClickHouse?" icon={PathConfig.fromClickhouse.icon}>
 Use the ClickHouse Playground tab to try it out!
@@ -111,21 +131,45 @@ Use the ClickHouse Playground tab to try it out!
 
 <TypeScript>
 ```bash filename="Initialize new project" copy
-# Generate code models from your existing ClickHouse tables
+# Option 1: Provide connection string directly
 moose init my-project --from-remote <YOUR_CLICKHOUSE_CONNECTION_STRING> --language typescript
+
+# Option 2: Run without connection string for interactive setup
+moose init my-project --from-remote --language typescript
 ```
 </TypeScript>
 <Python>
 ```bash filename="Initialize new project" copy
-# Generate code models from your existing ClickHouse tables
+# Option 1: Provide connection string directly
 moose init my-project --from-remote <YOUR_CLICKHOUSE_CONNECTION_STRING> --language python
+
+# Option 2: Run without connection string for interactive setup
+moose init my-project --from-remote --language python
 ```
 </Python>
 
-`YOUR_CLICKHOUSE_CONNECTION_STRING` is your ClickHouse connection URL in this format:
+**Connection String Format:**
 ```
 https://username:password@host:port/?database=database_name
 ```
+
+<Callout type="info" title="Interactive Setup">
+If you don't provide a connection string, Moose will guide you through an interactive setup process where you'll be prompted to enter:
+- **Host and port** (e.g., `https://your-service-id.region.clickhouse.cloud:8443`)
+- **Username** (usually `default`)
+- **Password** (your ClickHouse password)
+- **Database name** (optional, defaults to `default`)
+
+This is perfect if you're not sure about your connection details or prefer a guided experience.
+</Callout>
+
+<Callout type="info" title="What gets generated" compact={true}>
+Moose will create a complete project structure with:
+- **Data models**: TypeScript/Python classes for every table in your ClickHouse
+- **Type definitions**: Full type safety for all your data
+- **Development environment**: Local ClickHouse instance that mirrors your production schema
+- **Build tools**: Everything configured and ready to go
+</Callout>
 <ToggleBlock className="mb-4" openText="Troubleshooting" closeText="Hide troubleshooting">
 - Make sure you are using the `HTTPS` connection string, not the `HTTP` connection string.
 - Make sure the port is correct. For `HTTPS` the default is `8443`
@@ -134,34 +178,7 @@ https://username:password@host:port/?database=database_name
 
 
 <ToggleBlock className="mb-4" openText="Need help finding your connection details?" closeText="Hide credential help">
-<Tabs items={["ClickHouse Cloud", "Docker"]}>
-<Tabs.Tab>
-1. Log into your [ClickHouse Cloud console](https://clickhouse.cloud/)
-2. Go to your service details page
-3. Find "Connect" button in the sidebar
-<div className="flex justify-center p-10">
-<ZoomImg light="/ch-cloud-sidebar.png" dark="/ch-cloud-sidebar.png" alt="ClickHouse Cloud Connect Button" />
-</div>
-4. Locate the details within the `HTTPS` selection:
-<div className="flex justify-center p-10">
-<ZoomImg light="/ch-cloud-creds.png" dark="/ch-cloud-creds.png" alt="ClickHouse Cloud HTTPS Connection Details" />
-</div>
-5. Copy the host, port (`usually 8443`), username (`usually default`), and password.
-
-
-</Tabs.Tab>
-<Tabs.Tab>
-- Check your ClickHouse config file (usually `/etc/clickhouse-server/config.xml`)
-- Look for `<http_port>` (default: 8123) and `<https_port>` (default: 8443)
-- Check users config in `/etc/clickhouse-server/users.xml` or users.d/ directory
-- Default user is often `default` with no password
-</Tabs.Tab>
-<Tabs.Tab>
-- Check your docker-compose.yml or docker run command for environment variables
-- Look for `CLICKHOUSE_USER`, `CLICKHOUSE_PASSWORD`, `CLICKHOUSE_DB`
-- Default is usually `http://default:@localhost:8123/?database=default`
-</Tabs.Tab>
-</Tabs>
+See the section: <a href="#connect-to-your-remote-clickhouse" className="text-blue-500 hover:underline">Connect to your remote ClickHouse</a>.
 </ToggleBlock>
 
 </Tabs.Tab>
@@ -235,13 +252,20 @@ Check what Moose created from your tables in the `app/index.ts` file:
 
 ## Step 3: Start Development
 
-Start your dev server to spin up a local ClickHouse instance with all your production tables automatically reproduced from your code definitions. 
+Start your development server. This spins up a local ClickHouse instance that perfectly mirrors your production schema:
 
 ```bash filename="Start your dev server" copy
 moose dev
 ```
 
-_Your production ClickHouse will remain untouched._
+**What happens when you run `moose dev`:**
+- 🏗️ Creates a local ClickHouse instance with your exact table schemas in your project code
+- 🔄 Hot-reloads migrations to your local infrastructure as you save code changes
+- 🚀 Starts a web server for building APIs
+
+<Callout type="info" title="Production Safety" compact={true}>
+Your production ClickHouse remains completely untouched. This is a separate, local development environment.
+</Callout>
 
 <ToggleBlock openText="Show expected output" closeText="Hide output">
 ```txt
@@ -270,8 +294,13 @@ _Your production ClickHouse will remain untouched._
 Don't see this output? [Check out the troubleshooting section](#troubleshooting)
 </ToggleBlock>
 
-### Seed Your Local Database
-Seed your local ClickHouse from a remote ClickHouse instance. Seeding runs in safe batches with live progress and supports cancellation (Ctrl+C finishes the current batch).
+### Seed Your Local Database (Optional)
+Copy real data from your production ClickHouse to your local development environment. This gives you realistic data to work with during development.
+
+**Why seed?** Your local database starts empty. Seeding copies real data so you can:
+- Test with realistic data volumes
+- Debug with actual production data patterns
+- Develop features that work with real data structures
 
 <Tabs items={["From your own ClickHouse", "From the ClickHouse Playground", "Using env var"]}>
 <Tabs.Tab>
@@ -304,8 +333,15 @@ moose seed clickhouse --limit 100000
 
 <br />
 
-## Step 4: Adopt Moose Gradually
-Now that you have your Tables defined in code, you get the same benefits as ORM data models in web apps - type safety and autocomplete when building APIs and Materialized Views on top of your analytical data.
+## Step 4: Build Your First API
+Now that you have your data models, let's build something useful! You can create APIs, materialized views, and applications with full type safety.
+
+<Callout type="info" title="What you can build">
+- **REST APIs** that expose your ClickHouse data to frontend applications
+- **Materialized Views** for faster queries and aggregations
+- **Streaming pipelines** for real-time data processing
+- **Full-stack applications** with your ClickHouse data as the backend
+</Callout>
 
 <Steps>
 ### Add APIs
@@ -382,16 +418,78 @@ Some advanced ClickHouse features may not be fully supported yet. Join the Moose
 
 **Currently Unsupported Types:**
 - **`Geo` types** (Point, Ring, Polygon, etc.)
-- **`Enum` types with empty string keys**
-
-**Partial Support:**
-- **`LowCardinality(T)`** - Maps to base type `T` (optimization annotations available)
 
 **What we're working on:**
 - **Selective table import** (currently imports all tables)
 - **Default value annotations** 
 
 <br />
+
+## Troubleshooting
+### Error: Failed to connect to ClickHouse
+
+This guide shows exactly where to find your host, port, username, and password, and how to construct a valid HTTPS connection string.
+
+<Tabs items={["ClickHouse Cloud", "Self-Hosted or Docker"]}>
+<Tabs.Tab>
+1. Log into your [ClickHouse Cloud console](https://clickhouse.cloud/)
+2. Open your service details page
+3. Click "Connect" in the sidebar
+<div className="flex justify-center p-10">
+<ZoomImg light="/ch-cloud-sidebar.png" dark="/ch-cloud-sidebar.png" alt="ClickHouse Cloud Connect Button" />
+</div>
+4. Select the `HTTPS` tab and copy the values shown
+   - **Host**: e.g. `your-service-id.region.clickhouse.cloud`
+   - **Port**: usually `8443`
+   - **Username**: usually `default`
+   - **Password**: the password you configured
+<div className="flex justify-center p-10">
+<ZoomImg light="/ch-cloud-creds.png" dark="/ch-cloud-creds.png" alt="ClickHouse Cloud HTTPS Connection Details" />
+</div>
+5. Build your connection string:
+
+```txt
+https://USERNAME:PASSWORD@HOST:PORT/?database=DATABASE_NAME
+```
+
+6. Example (with placeholders):
+
+```txt
+https://default:your_password@your-service-id.region.clickhouse.cloud:8443/?database=default
+```
+
+7. Optional: Test with curl
+
+```bash
+curl --user "USERNAME:PASSWORD" --data-binary "SELECT 1" https://HOST:PORT
+```
+</Tabs.Tab>
+<Tabs.Tab>
+### Self-hosted or Docker
+- Check your server config (usually `/etc/clickhouse-server/config.xml`)
+  - `<http_port>` default: `8123`
+  - `<https_port>` default: `8443`
+- Check users in `/etc/clickhouse-server/users.xml` or `users.d/`
+- For Docker, check environment variables in your compose/run config:
+  - `CLICKHOUSE_USER`, `CLICKHOUSE_PASSWORD`, `CLICKHOUSE_DB`
+
+Build the HTTPS connection string with your values:
+
+```txt
+https://USERNAME:PASSWORD@HOST:8443/?database=DB
+```
+
+If you only have HTTP enabled, enable HTTPS or use an HTTPS proxy; Moose init expects an HTTPS URL for remote introspection.
+</Tabs.Tab>
+</Tabs>
+
+### `moose dev` fails to start
+
+Double check Docker is running and you do not have any port conflicts.
+
+- ClickHouse local runs on port `18123`
+- Your local webserver runs on port `4000`
+- Your local management API runs on port `5001`
 
 ## What's Next?
 

@@ -32,17 +32,13 @@ pub enum Commands {
         #[arg(
             long,
             required_unless_present = "template",
-            value_name = "CONNECTION_STRING"
+            value_name = "CONNECTION_STRING",
+            num_args = 0..=1
         )]
-        from_remote: Option<String>,
+        from_remote: Option<Option<String>>,
 
         /// Programming language to use for the project
-        #[arg(
-            long,
-            requires = "from_remote",
-            required_unless_present = "template",
-            conflicts_with = "template"
-        )]
+        #[arg(long, conflicts_with = "template")]
         language: Option<String>,
     },
     /// Builds your moose project
