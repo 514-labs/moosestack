@@ -148,7 +148,7 @@ def handler_with_client(moose_client):
                         args = [moose_client, params]
                         if jwt_payload is not None:
                             args.append(jwt_payload)
-                        print(f"[QueryClient] | Executing API: {user_api.name}")
+                        print(f"[API] | Executing API: {user_api.name}")
                         response = user_api.query_function(*args)
                         # Convert Pydantic model to dict before JSON serialization
                         if isinstance(response, BaseModel):

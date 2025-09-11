@@ -102,7 +102,14 @@ pub fn run(
 
     tokio::spawn(async move {
         while let Ok(Some(line)) = stdout_reader.next_line().await {
-            if let Some(stripped) = line.strip_prefix("[QueryClient] | ") {
+            let stripped = if let Some(s) = line.strip_prefix("[QueryClient] | ") {
+                Some(s)
+            } else if let Some(s) = line.strip_prefix("[API] | ") {
+                Some(s)
+            } else {
+                None
+            };
+            if let Some(stripped) = stripped {
                 show_message!(
                     MessageType::Info,
                     Message {
