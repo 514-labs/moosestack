@@ -33,6 +33,7 @@ export {
   ClickHousePrecision,
   ClickHouseDecimal,
   ClickHouseByteSize,
+  ClickHouseFloat,
   ClickHouseInt,
   LowCardinality,
   ClickHouseNamedTuple,

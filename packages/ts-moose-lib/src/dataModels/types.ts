@@ -20,6 +20,10 @@ export type LowCardinality = {
   _LowCardinality?: true;
 };
 
+export type ClickHouseFloat<Value extends "float32" | "float64"> = tags.Type<
+  Value extends "float32" ? "float" : "double"
+>;
+
 export type ClickHouseInt<
   Value extends
     | "int8"
