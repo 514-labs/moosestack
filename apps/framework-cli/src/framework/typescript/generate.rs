@@ -100,6 +100,14 @@ fn generate_enum(data_enum: &DataEnum, name: &str) -> String {
     enum_def
 }
 
+fn quote_name_if_needed(column_name: &str) -> String {
+    if column_name.contains(' ') {
+        format!("'{column_name}'")
+    } else {
+        column_name.to_string()
+    }
+}
+
 fn generate_interface(
     nested: &Nested,
     name: &str,
@@ -121,7 +129,8 @@ fn generate_interface(
         } else {
             type_str
         };
-        writeln!(interface, "    {}: {};", column.name, type_str).unwrap();
+        let name = quote_name_if_needed(&column.name);
+        writeln!(interface, "    {name}: {type_str};").unwrap();
     }
     writeln!(interface, "}}").unwrap();
     writeln!(interface).unwrap();
@@ -235,7 +244,8 @@ pub fn tables_to_typescript(tables: &[Table], life_cycle: Option<LifeCycle>) -> 
             } else {
                 type_str
             };
-            writeln!(output, "    {}: {};", column.name, type_str).unwrap();
+            let name = quote_name_if_needed(&column.name);
+            writeln!(output, "    {name}: {type_str};").unwrap();
         }
         writeln!(output, "}}").unwrap();
         writeln!(output).unwrap();
