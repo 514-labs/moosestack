@@ -30,7 +30,7 @@ home = "0.5.5"
 clickhouse = { version = "0.11.5", features = ["uuid"] }
 clickhouse-rs = { version = "1.1.0-alpha.1", features = ["tls"] }
 handlebars = "5.1"
-rdkafka = { version = "0.36", features = ["ssl"] }
+rdkafka = { version = "0.38", features = ["ssl"] }
 convert_case = "0.6.0"
 log = "0.4"
 fern = { version = "0.7", features = ["date-based"] }
