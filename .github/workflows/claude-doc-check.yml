@@ -176,6 +176,36 @@ jobs:
           
           echo "doc_updated=$DOC_UPDATED" >> $GITHUB_OUTPUT
 
+      - name: Prepare File Contents for Claude
+        id: prepare-contents
+        run: |
+          # Read pr_summary.txt and store in output
+          if [ -f pr_summary.txt ]; then
+            echo "pr_summary<<EOF" >> $GITHUB_OUTPUT
+            cat pr_summary.txt >> $GITHUB_OUTPUT
+            echo "EOF" >> $GITHUB_OUTPUT
+          else
+            echo "pr_summary=No summary available" >> $GITHUB_OUTPUT
+          fi
+          
+          # Read doc_updates.txt and store in output
+          if [ -f doc_updates.txt ]; then
+            echo "doc_updates<<EOF" >> $GITHUB_OUTPUT
+            cat doc_updates.txt >> $GITHUB_OUTPUT
+            echo "EOF" >> $GITHUB_OUTPUT
+          else
+            echo "doc_updates=No documentation updates" >> $GITHUB_OUTPUT
+          fi
+          
+          # Read first 5000 lines of pr_diff.txt and store in output
+          if [ -f pr_diff.txt ]; then
+            echo "pr_diff<<EOF" >> $GITHUB_OUTPUT
+            head -n 5000 pr_diff.txt >> $GITHUB_OUTPUT
+            echo "EOF" >> $GITHUB_OUTPUT
+          else
+            echo "pr_diff=No diff available" >> $GITHUB_OUTPUT
+          fi
+
       - name: Run Claude Code Analysis
         uses: anthropics/claude-code-action@v1
         id: claude-analysis
@@ -238,16 +268,16 @@ jobs:
             Documentation files updated: ${{ steps.check-docs.outputs.doc_updated }}
             
             ## Summary of Changes
-            $(cat pr_summary.txt)
+            ${{ steps.prepare-contents.outputs.pr_summary }}
             
             ## Documentation Updates (if any)
-            $(cat doc_updates.txt)
+            ${{ steps.prepare-contents.outputs.doc_updates }}
             
             ## Detailed Code Changes
             Please analyze the following diff and determine if documentation updates are needed:
             
             ```diff
-            $(head -n 5000 pr_diff.txt)
+            ${{ steps.prepare-contents.outputs.pr_diff }}
             ```
             
             Based on these changes:
