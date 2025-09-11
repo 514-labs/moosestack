@@ -11,7 +11,7 @@ mod watcher;
 use super::metrics::Metrics;
 use crate::utilities::docker::DockerClient;
 use clap::Parser;
-use commands::{Commands, GenerateCommand, TemplateSubCommands, WorkflowCommands};
+use commands::{Commands, DbCommands, GenerateCommand, TemplateSubCommands, WorkflowCommands};
 use config::ConfigError;
 use display::with_spinner_completion;
 use log::{debug, info, warn};
@@ -54,7 +54,8 @@ use crate::utilities::constants::{
     PROJECT_NAME_ALLOW_PATTERN,
 };
 
-use crate::cli::routines::code_generation::db_to_dmv2;
+use crate::cli::commands::DbArgs;
+use crate::cli::routines::code_generation::{db_pull, db_to_dmv2};
 use crate::cli::routines::ls::ls_dmv2;
 use crate::cli::routines::templates::create_project_from_template;
 use crate::framework::core::migration_plan::MIGRATION_SCHEMA;
@@ -929,6 +930,38 @@ pub async fn top_command_handler(
                     result
                 }
             }
+        }
+        Commands::Db(DbArgs {
+            command:
+                DbCommands::Pull {
+                    connection_string,
+                    file_path,
+                },
+        }) => {
+            info!("Running db pull command");
+            let project = load_project()?;
+
+            let capture_handle = crate::utilities::capture::capture_usage(
+                ActivityType::DbPullCommand,
+                Some(project.name()),
+                &settings,
+                machine_id.clone(),
+                HashMap::new(),
+            );
+            db_pull(connection_string, &project, file_path.as_deref())
+                .await
+                .map_err(|e| {
+                    RoutineFailure::new(
+                        Message::new("DB Pull".to_string(), "failed".to_string()),
+                        e,
+                    )
+                })?;
+
+            wait_for_usage_capture(capture_handle).await;
+            Ok(RoutineSuccess::success(Message::new(
+                "DB Pull".to_string(),
+                "External models refreshed".to_string(),
+            )))
         }
         Commands::Refresh { url, token } => {
             info!("Running refresh command");

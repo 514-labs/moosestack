@@ -28,8 +28,12 @@ pub enum Commands {
         #[arg(long)]
         no_fail_already_exists: bool,
 
-        /// Initialize from a remote template repository
-        #[arg(long, required_unless_present = "template")]
+        /// Initialize from a remote database. E.g. https://play.clickhouse.com/?user=explorer
+        #[arg(
+            long,
+            required_unless_present = "template",
+            value_name = "CONNECTION_STRING"
+        )]
         from_remote: Option<String>,
 
         /// Programming language to use for the project
@@ -135,6 +139,8 @@ pub enum Commands {
     Workflow(WorkflowArgs),
     /// Manage templates
     Template(TemplateCommands),
+    /// Manage database schema import
+    Db(DbArgs),
     /// Integrate matching tables from a remote Moose instance into the local project
     Refresh {
         /// URL of the remote Moose instance (default: http://localhost:4000)
@@ -318,5 +324,25 @@ pub enum SeedSubcommands {
         /// Only seed a specific table (optional)
         #[arg(long, value_name = "TABLE_NAME")]
         table: Option<String>,
+    },
+}
+
+#[derive(Debug, Args)]
+#[command(arg_required_else_help = true)]
+pub struct DbArgs {
+    #[command(subcommand)]
+    pub command: DbCommands,
+}
+
+#[derive(Debug, Subcommand)]
+pub enum DbCommands {
+    /// Update DB schema for EXTERNALLY_MANAGED tables
+    Pull {
+        /// ClickHouse connection string (e.g. 'E.g. https://play.clickhouse.com/?user=explorer')
+        #[arg(long, value_name = "CONNECTION_STRING")]
+        connection_string: String,
+        /// File storing the EXTERNALLY_MANAGED table definitions, defaults to app/external_models.py or app/externalModels.ts
+        #[arg(long)]
+        file_path: Option<String>,
     },
 }
