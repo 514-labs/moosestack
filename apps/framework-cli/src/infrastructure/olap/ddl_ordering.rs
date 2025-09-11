@@ -1063,6 +1063,7 @@ mod tests {
             // Include minimal required fields
             columns: vec![],
             order_by: vec![],
+            partition_by: None,
             engine: None,
             version: None,
             source_primitive: PrimitiveSignature {
@@ -1131,6 +1132,7 @@ mod tests {
             name: "table_a".to_string(),
             columns: vec![],
             order_by: vec![],
+            partition_by: None,
             engine: None,
             version: None,
             source_primitive: PrimitiveSignature {
@@ -1148,6 +1150,7 @@ mod tests {
             name: "table_b".to_string(),
             columns: vec![],
             order_by: vec![],
+            partition_by: None,
             engine: None,
             version: None,
             source_primitive: PrimitiveSignature {
@@ -1236,6 +1239,7 @@ mod tests {
             name: "table_a".to_string(),
             columns: vec![],
             order_by: vec![],
+            partition_by: None,
             engine: None,
             version: None,
             source_primitive: PrimitiveSignature {
@@ -1253,6 +1257,7 @@ mod tests {
             name: "table_b".to_string(),
             columns: vec![],
             order_by: vec![],
+            partition_by: None,
             engine: None,
             version: None,
             source_primitive: PrimitiveSignature {
@@ -1361,6 +1366,7 @@ mod tests {
             name: "test_table".to_string(),
             columns: vec![],
             order_by: vec![],
+            partition_by: None,
             engine: None,
             version: None,
             source_primitive: PrimitiveSignature {
@@ -1511,6 +1517,7 @@ mod tests {
             name: "table_a".to_string(),
             columns: vec![],
             order_by: vec![],
+            partition_by: None,
             engine: None,
             version: None,
             source_primitive: PrimitiveSignature {
@@ -1527,6 +1534,7 @@ mod tests {
             name: "table_b".to_string(),
             columns: vec![],
             order_by: vec![],
+            partition_by: None,
             engine: None,
             version: None,
             source_primitive: PrimitiveSignature {
@@ -1543,6 +1551,7 @@ mod tests {
             name: "table_c".to_string(),
             columns: vec![],
             order_by: vec![],
+            partition_by: None,
             engine: None,
             version: None,
             source_primitive: PrimitiveSignature {
@@ -1627,6 +1636,7 @@ mod tests {
             name: "table_a".to_string(),
             columns: vec![],
             order_by: vec![],
+            partition_by: None,
             engine: None,
             version: None,
             source_primitive: PrimitiveSignature {
@@ -1643,6 +1653,7 @@ mod tests {
             name: "table_b".to_string(),
             columns: vec![],
             order_by: vec![],
+            partition_by: None,
             engine: None,
             version: None,
             source_primitive: PrimitiveSignature {
@@ -1659,6 +1670,7 @@ mod tests {
             name: "table_c".to_string(),
             columns: vec![],
             order_by: vec![],
+            partition_by: None,
             engine: None,
             version: None,
             source_primitive: PrimitiveSignature {
@@ -1675,6 +1687,7 @@ mod tests {
             name: "table_d".to_string(),
             columns: vec![],
             order_by: vec![],
+            partition_by: None,
             engine: None,
             version: None,
             source_primitive: PrimitiveSignature {
@@ -1691,6 +1704,7 @@ mod tests {
             name: "table_e".to_string(),
             columns: vec![],
             order_by: vec![],
+            partition_by: None,
             engine: None,
             version: None,
             source_primitive: PrimitiveSignature {
@@ -1838,6 +1852,7 @@ mod tests {
             name: "table_a".to_string(),
             columns: vec![],
             order_by: vec![],
+            partition_by: None,
             engine: None,
             version: None,
             source_primitive: PrimitiveSignature {
@@ -1855,6 +1870,7 @@ mod tests {
             name: "table_b".to_string(),
             columns: vec![],
             order_by: vec![],
+            partition_by: None,
             engine: None,
             version: None,
             source_primitive: PrimitiveSignature {
@@ -1970,6 +1986,7 @@ mod tests {
             name: "table_a".to_string(),
             columns: vec![],
             order_by: vec![],
+            partition_by: None,
             engine: None,
             version: None,
             source_primitive: PrimitiveSignature {
@@ -1987,6 +2004,7 @@ mod tests {
             name: "table_b".to_string(),
             columns: vec![],
             order_by: vec![],
+            partition_by: None,
             engine: None,
             version: None,
             source_primitive: PrimitiveSignature {
@@ -2107,6 +2125,7 @@ mod tests {
             name: "table_a".to_string(),
             columns: vec![],
             order_by: vec![],
+            partition_by: None,
             engine: None,
             version: None,
             source_primitive: PrimitiveSignature {
@@ -2123,6 +2142,7 @@ mod tests {
             name: "table_b".to_string(),
             columns: vec![],
             order_by: vec![],
+            partition_by: None,
             engine: None,
             version: None,
             source_primitive: PrimitiveSignature {
@@ -2322,6 +2342,7 @@ mod tests {
             name: "test_table".to_string(),
             columns: vec![],
             order_by: vec![],
+            partition_by: None,
             engine: None,
             version: None,
             source_primitive: PrimitiveSignature {
@@ -2421,6 +2442,7 @@ mod tests {
             name: "test_table".to_string(),
             columns: vec![],
             order_by: vec![],
+            partition_by: None,
             engine: None,
             version: None,
             source_primitive: PrimitiveSignature {
@@ -2531,6 +2553,7 @@ mod tests {
                 },
             ],
             order_by: vec!["id".to_string()],
+            partition_by: None,
             engine: Some(ClickhouseEngine::MergeTree),
             version: None,
             source_primitive: PrimitiveSignature {
@@ -2567,8 +2590,9 @@ mod tests {
                     comment: None,
                 },
             ],
-            order_by: vec!["id".to_string()], // Same ORDER BY
-            engine: None,
+            order_by: vec!["id".to_string()],
+            partition_by: None,
+            engine: Some(ClickhouseEngine::MergeTree),
             version: None,
             source_primitive: PrimitiveSignature {
                 name: "test".to_string(),

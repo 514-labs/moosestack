@@ -87,6 +87,8 @@ pub struct Table {
     pub name: String,
     pub columns: Vec<Column>,
     pub order_by: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub partition_by: Option<String>,
     #[serde(default)]
     pub engine: Option<ClickhouseEngine>,
     pub version: Option<Version>,
@@ -175,6 +177,7 @@ impl Table {
             name: self.name.clone(),
             columns: self.columns.iter().map(|c| c.to_proto()).collect(),
             order_by: self.order_by.clone(),
+            partition_by: self.partition_by.clone(),
             version: self.version.as_ref().map(|v| v.to_string()),
             source_primitive: MessageField::some(self.source_primitive.to_proto()),
             deduplicate: self
@@ -228,6 +231,7 @@ impl Table {
             name: proto.name,
             columns: proto.columns.into_iter().map(Column::from_proto).collect(),
             order_by: proto.order_by,
+            partition_by: proto.partition_by,
             version: proto.version.map(Version::from_string),
             source_primitive: PrimitiveSignature::from_proto(proto.source_primitive.unwrap()),
             engine,

@@ -56,6 +56,7 @@ impl DataModel {
                 .unwrap_or_else(|| format!("{}_{}", self.name, self.version.as_suffix())),
             columns: self.columns.clone(),
             order_by,
+            partition_by: None,
             engine,
             version: Some(self.version.clone()),
             source_primitive: PrimitiveSignature {

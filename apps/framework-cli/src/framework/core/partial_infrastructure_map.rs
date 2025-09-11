@@ -149,6 +149,8 @@ struct PartialTable {
     pub columns: Vec<Column>,
     #[serde(alias = "order_by")]
     pub order_by: Vec<String>,
+    #[serde(default)]
+    pub partition_by: Option<String>,
     #[serde(alias = "engine_config")]
     pub engine_config: Option<EngineConfig>,
     pub version: Option<String>,
@@ -513,6 +515,7 @@ impl PartialInfrastructureMap {
                         }),
                     columns: partial_table.columns.clone(),
                     order_by: partial_table.order_by.clone(),
+                    partition_by: partial_table.partition_by.clone(),
                     engine,
                     version,
                     source_primitive: PrimitiveSignature {

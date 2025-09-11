@@ -271,6 +271,9 @@ pub fn tables_to_typescript(tables: &[Table], life_cycle: Option<LifeCycle>) -> 
         )
         .unwrap();
         writeln!(output, "    orderByFields: [{order_by_fields}],").unwrap();
+        if let Some(partition_by) = &table.partition_by {
+            writeln!(output, "    partitionBy: {:?},", partition_by).unwrap();
+        }
         if let Some(engine) = &table.engine {
             match engine {
                 crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine::S3Queue {
@@ -437,6 +440,7 @@ mod tests {
                 },
             ],
             order_by: vec!["id".to_string()],
+            partition_by: None,
             engine: Some(ClickhouseEngine::MergeTree),
             version: None,
             source_primitive: PrimitiveSignature {
@@ -500,6 +504,7 @@ export const UserTable = new OlapTable<User>("User", {
                 },
             ],
             order_by: vec!["id".to_string()],
+            partition_by: None,
             engine: Some(ClickhouseEngine::S3Queue {
                 s3_path: "s3://bucket/path".to_string(),
                 format: "JSONEachRow".to_string(),
@@ -548,6 +553,7 @@ export const UserTable = new OlapTable<User>("User", {
                 comment: None,
             }],
             order_by: vec!["id".to_string()],
+            partition_by: None,
             engine: Some(ClickhouseEngine::MergeTree),
             version: None,
             source_primitive: PrimitiveSignature {
@@ -613,6 +619,7 @@ export const UserTable = new OlapTable<User>("User", {
                 },
             ],
             order_by: vec!["id".to_string()],
+            partition_by: None,
             engine: Some(ClickhouseEngine::ReplacingMergeTree {
                 ver: Some("version".to_string()),
                 is_deleted: Some("is_deleted".to_string()),
@@ -677,6 +684,7 @@ export const UserTable = new OlapTable<User>("User", {
                 },
             ],
             order_by: vec!["id".to_string()],
+            partition_by: None,
             engine: Some(ClickhouseEngine::MergeTree),
             version: None,
             source_primitive: PrimitiveSignature {

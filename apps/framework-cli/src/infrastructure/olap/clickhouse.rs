@@ -1059,7 +1059,8 @@ impl OlapOperations for ConfiguredDBClient {
             SELECT
                 name,
                 engine,
-                create_table_query
+                create_table_query,
+                partition_key
             FROM system.tables
             WHERE database = '{db_name}'
             AND engine != 'View'
@@ -1073,7 +1074,7 @@ impl OlapOperations for ConfiguredDBClient {
         let mut cursor = self
             .client
             .query(&query)
-            .fetch::<(String, String, String)>()
+            .fetch::<(String, String, String, String)>()
             .map_err(|e| {
                 debug!("Error fetching tables: {}", e);
                 OlapChangesError::DatabaseError(e.to_string())
@@ -1082,7 +1083,7 @@ impl OlapOperations for ConfiguredDBClient {
         let mut tables = Vec::new();
         let mut unsupported_tables = Vec::new();
 
-        'table_loop: while let Some((table_name, engine, create_query)) = cursor
+        'table_loop: while let Some((table_name, engine, create_query, partition_key)) = cursor
             .next()
             .await
             .map_err(|e| OlapChangesError::DatabaseError(e.to_string()))?
@@ -1289,6 +1290,14 @@ impl OlapOperations for ConfiguredDBClient {
                 name: table_name, // Keep the original table name with version
                 columns,
                 order_by: order_by_cols, // Use the extracted ORDER BY columns
+                partition_by: {
+                    let p = partition_key.trim();
+                    if p.is_empty() || p == "tuple()" {
+                        None
+                    } else {
+                        Some(p.to_string())
+                    }
+                },
                 engine: engine_parsed,
                 version,
                 source_primitive,
@@ -1369,6 +1378,31 @@ pub fn extract_order_by_from_create_query(create_query: &str) -> Vec<String> {
 
     debug!("No explicit ORDER BY clause found");
     Vec::new()
+}
+
+/// Extracts PARTITION BY expression from a CREATE TABLE query, if present
+pub fn extract_partition_by_from_create_query(create_query: &str) -> Option<String> {
+    // Use uppercase for searching keywords, but slice using original string
+    let upper = create_query.to_uppercase();
+    if let Some(idx) = upper.find("PARTITION BY") {
+        // Start right after PARTITION BY
+        let after = &create_query[idx + "PARTITION BY".len()..];
+        // Clause ends before ORDER BY, PRIMARY KEY, SAMPLE BY, SETTINGS, or end of string
+        let mut end = after.len();
+        for kw in ["ORDER BY", "PRIMARY KEY", "SAMPLE BY", "SETTINGS"] {
+            if let Some(i) = after.to_uppercase().find(kw) {
+                end = std::cmp::min(end, i);
+            }
+        }
+        let expr = after[..end].trim();
+        if expr.is_empty() {
+            None
+        } else {
+            Some(expr.to_string())
+        }
+    } else {
+        None
+    }
 }
 
 #[cfg(test)]

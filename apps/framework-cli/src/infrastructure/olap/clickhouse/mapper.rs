@@ -290,6 +290,7 @@ pub fn std_table_to_clickhouse_table(table: &Table) -> Result<ClickHouseTable, C
         version: table.version.clone(),
         columns,
         order_by: table.order_by.clone(),
+        partition_by: table.partition_by.clone(),
         engine: clickhouse_engine,
         table_settings: table.table_settings.clone(),
     })

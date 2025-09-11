@@ -99,6 +99,8 @@ message Table {
   optional string engine_params_hash = 10;
   // Alterable table settings (can be changed with ALTER TABLE MODIFY SETTING)
   map<string, string> table_settings = 11;
+  // Optional PARTITION BY expression for ClickHouse tables
+  optional string partition_by = 12;
 }
 
 message View {

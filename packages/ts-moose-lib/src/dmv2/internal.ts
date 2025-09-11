@@ -89,6 +89,8 @@ interface TableJson {
   columns: Column[];
   /** List of column names used for the ORDER BY clause. */
   orderBy: string[];
+  /** The column name used for the PARTITION BY clause. */
+  partitionBy?: string;
   /** Engine configuration with type-safe, engine-specific parameters */
   engineConfig?: EngineConfig;
   /** Optional version string for the table configuration. */
@@ -325,6 +327,7 @@ export const toInfraMap = (registry: typeof moose_internal) => {
       name: table.name,
       columns: table.columnArray,
       orderBy: table.config.orderByFields ?? [],
+      partitionBy: table.config.partitionBy,
       engineConfig,
       version: table.config.version,
       metadata,

@@ -159,6 +159,10 @@ type BaseOlapConfig<T> = {
    */
   orderByFields?: (keyof T & string)[] | ["tuple()"];
   /**
+   * Optional PARTITION BY expression (single ClickHouse SQL expression)
+   */
+  partitionBy?: string;
+  /**
    * An optional version string for this configuration.
    */
   version?: string;

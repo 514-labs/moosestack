@@ -237,6 +237,18 @@ impl TableDiffStrategy for ClickHouseTableDiffStrategy {
             ];
         }
 
+        // Check if PARTITION BY has changed
+        if before.partition_by != after.partition_by {
+            log::debug!(
+                "ClickHouse: PARTITION BY changed for table '{}', requiring drop+create",
+                before.name
+            );
+            return vec![
+                OlapChange::Table(TableChange::Removed(before.clone())),
+                OlapChange::Table(TableChange::Added(after.clone())),
+            ];
+        }
+
         // Check if primary key structure has changed
         let before_primary_keys = before.primary_key_columns();
         let after_primary_keys = after.primary_key_columns();
@@ -413,6 +425,7 @@ mod tests {
                 },
             ],
             order_by,
+            partition_by: None,
             engine: deduplicate.then_some(ClickhouseEngine::ReplacingMergeTree {
                 ver: None,
                 is_deleted: None,
@@ -880,6 +893,7 @@ mod tests {
             name: "test_s3".to_string(),
             columns: vec![],
             order_by: vec![],
+            partition_by: None,
             engine: Some(ClickhouseEngine::S3Queue {
                 s3_path: "s3://bucket/path".to_string(),
                 format: "JSONEachRow".to_string(),

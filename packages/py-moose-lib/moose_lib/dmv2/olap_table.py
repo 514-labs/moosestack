@@ -103,6 +103,7 @@ class OlapConfig(BaseModel):
     Attributes:
         order_by_fields: List of column names to use for the ORDER BY clause.
                        Crucial for `ReplacingMergeTree` and performance.
+        partition_by: Optional PARTITION BY expression (single ClickHouse SQL expression).
         engine: The ClickHouse table engine to use. Can be either a ClickHouseEngines enum value
                 (for backward compatibility) or an EngineConfig instance (recommended).
         version: Optional version string for tracking configuration changes.
@@ -112,6 +113,7 @@ class OlapConfig(BaseModel):
                   These are alterable settings that can be changed without recreating the table.
     """
     order_by_fields: list[str] = []
+    partition_by: Optional[str] = None
     engine: Optional[Union[ClickHouseEngines, EngineConfig]] = None
     version: Optional[str] = None
     metadata: Optional[dict] = None
