@@ -35,6 +35,8 @@ class StreamConfig(BaseModel):
     metadata: Optional[dict] = None
     life_cycle: Optional[LifeCycle] = None
     default_dead_letter_queue: "Optional[DeadLetterQueue]" = None
+    # allow DeadLetterQueue
+    model_config = ConfigDict(arbitrary_types_allowed=True)
 
 
 class TransformConfig(BaseModel):
