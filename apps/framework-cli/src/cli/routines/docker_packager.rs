@@ -194,11 +194,12 @@ COPY --chown=moose:moose ./project.tom[l] ./project.toml
 COPY --chown=moose:moose ./moose.config.tom[l] ./moose.config.toml
 COPY --chown=moose:moose ./versions .moose/versions
 
+# Ensure application directory is owned by moose user
+RUN chown -R moose:moose /application
+
 # Placeholder for the language specific install command
 INSTALL_COMMAND
 
-# Ensure application directory is owned by moose user
-RUN chown -R moose:moose /application
 
 # all commands from here on will be run as the moose user
 USER moose:moose
