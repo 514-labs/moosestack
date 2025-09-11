@@ -212,8 +212,11 @@ class QueryClient:
         print(f"[QueryClient] | Query: {' '.join(preview_query.split())}")
         start = perf_counter()
         val = self.ch_client.query(clickhouse_query, values)
-        ms = (perf_counter() - start) * 1000
-        print(f"[QueryClient] | Query completed: {format_timespan(ms)}")
+        secs = perf_counter() - start
+        if secs < 1:
+            print(f"[QueryClient] | Query completed: {secs * 1000:.0f} ms")
+        else:
+            print(f"[QueryClient] | Query completed: {format_timespan(secs)}")
 
         if row_type is None:
             return list(val.named_results())
