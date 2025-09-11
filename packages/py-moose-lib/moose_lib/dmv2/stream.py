@@ -109,10 +109,10 @@ class Stream(TypedMooseResource, Generic[T]):
     _multipleTransformations: Optional[Callable[[T], list[_RoutedMessage]]] = None
     default_dead_letter_queue: "Optional[DeadLetterQueue[T]]" = None
 
-    def __init__(self, name: str, config: StreamConfig = StreamConfig(), **kwargs):
+    def __init__(self, name: str, config: "StreamConfig" = None, **kwargs):
         super().__init__()
         self._set_type(name, self._get_type(kwargs))
-        self.config = config
+        self.config = config if config is not None else StreamConfig()
         self.metadata = config.metadata
         self.consumers = []
         self.transformations = {}
