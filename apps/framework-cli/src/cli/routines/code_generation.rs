@@ -172,7 +172,7 @@ fn write_external_models_file(
                 .create(true)
                 .write(true)
                 .truncate(true)
-                .open(format!("{APP_DIR}/{PYTHON_EXTERNAL_FILE}"))
+                .open(&*file)
                 .map_err(|e| {
                     RoutineFailure::new(
                         Message::new("Failure".to_string(), format!("opening {file}")),
