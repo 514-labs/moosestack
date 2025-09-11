@@ -239,7 +239,7 @@ class Customer(BaseModel):
 class Order(BaseModel):
     order_id: Key[str]
     amount: clickhouse_decimal(10, 2)
-    status: str  # Use Literal[...] for LowCardinality
+    status: Literal["Paid", "Shipped", "Delivered"] # translated to LowCardinality(String) in ClickHouse
     created_at: datetime
     customer: Annotated[Customer, "ClickHouseNamedTuple"]
 ```
