@@ -250,7 +250,7 @@ class DeadLetterQueue(Stream, Generic[T]):
 
     _model_type: type[T]
 
-    def __init__(self, name: str, config: StreamConfig = StreamConfig(), **kwargs):
+    def __init__(self, name: str, config: "StreamConfig" = None, **kwargs):
         """Initialize a new DeadLetterQueue.
 
         Args:
@@ -259,7 +259,7 @@ class DeadLetterQueue(Stream, Generic[T]):
         """
         self._model_type = self._get_type(kwargs)
         kwargs["t"] = DeadLetterModel[self._model_type]
-        super().__init__(name, config, **kwargs)
+        super().__init__(name, config if config is not None else StreamConfig(), **kwargs)
 
     def add_transform(self, destination: Stream[U], transformation: Callable[[DeadLetterModel[T]], ZeroOrMany[U]],
                       config: TransformConfig = None):
