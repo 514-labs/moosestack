@@ -445,8 +445,8 @@ async fn execute_modify_table_column(
         "Executing ModifyTableColumn for table: {}, column: {} ({}→{})",
         table_name,
         after_column.name,
-        before_column.data_type.to_string(),
-        after_column.data_type.to_string()
+        before_column.data_type,
+        after_column.data_type
     );
 
     // Full column modification including type change
