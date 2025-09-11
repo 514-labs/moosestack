@@ -186,7 +186,9 @@ RUN groupadd --gid 1001 moose \
 # Set the working directory inside the container
 WORKDIR /application
 
+# Ensure application directory is owned by moose user
 RUN chown -R moose:moose /application
+
 # Placeholder for the language specific copy package file copy
 COPY_PACKAGE_FILE
 
@@ -195,7 +197,6 @@ COPY --chown=moose:moose ./project.tom[l] ./project.toml
 COPY --chown=moose:moose ./moose.config.tom[l] ./moose.config.toml
 COPY --chown=moose:moose ./versions .moose/versions
 
-# Ensure application directory is owned by moose user
 
 # Placeholder for the language specific install command
 INSTALL_COMMAND
