@@ -438,7 +438,7 @@ impl ClickHouseRecord {
     }
 
     pub fn insert(&mut self, column: String, value: ClickHouseValue) {
-        self.values.insert(sanitize_column_name(column), value);
+        self.values.insert(column, value);
     }
 
     pub fn get(&self, column: &str) -> Option<&ClickHouseValue> {
@@ -509,10 +509,6 @@ impl ClickHouseTable {
             })
             .collect()
     }
-}
-
-pub fn sanitize_column_name(name: String) -> String {
-    name.replace([' ', '-'], "_")
 }
 
 /// Wraps a column name in backticks for safe use in ClickHouse SQL queries

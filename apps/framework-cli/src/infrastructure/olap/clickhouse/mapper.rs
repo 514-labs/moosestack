@@ -10,7 +10,6 @@ use crate::infrastructure::olap::clickhouse::model::{
 };
 
 use super::errors::ClickhouseError;
-use super::model::sanitize_column_name;
 use super::queries::ClickhouseEngine;
 
 /// Generates a column comment, preserving any existing user comment and adding/updating metadata for enums
@@ -77,7 +76,7 @@ pub fn std_column_to_clickhouse_column(
     }
 
     let clickhouse_column = ClickHouseColumn {
-        name: sanitize_column_name(column.name),
+        name: column.name,
         column_type,
         required: column.required,
         unique: column.unique,

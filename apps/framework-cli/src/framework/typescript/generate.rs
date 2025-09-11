@@ -102,7 +102,7 @@ fn generate_enum(data_enum: &DataEnum, name: &str) -> String {
 
 fn quote_name_if_needed(column_name: &str) -> String {
     if column_name.contains(' ') {
-        format!("'{name}'")
+        format!("'{column_name}'")
     } else {
         column_name.to_string()
     }
