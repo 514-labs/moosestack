@@ -65,9 +65,48 @@ use std::time::Duration;
 use tokio::time::timeout;
 
 /// Generic prompt function that handles different types of user input
+#[allow(dead_code)]
 fn prompt_user(prompt_text: &str) -> Result<String, RoutineFailure> {
+    prompt_user_with_hints(prompt_text, None, None)
+}
+
+/// Generic prompt function that handles different types of user input with optional default value
+#[allow(dead_code)]
+fn prompt_user_with_default(
+    prompt_text: &str,
+    default: Option<&str>,
+) -> Result<String, RoutineFailure> {
+    prompt_user_with_hints(prompt_text, default, None)
+}
+
+/// Generic prompt function with hints, default values, and better formatting
+fn prompt_user_with_hints(
+    prompt_text: &str,
+    default: Option<&str>,
+    hint: Option<&str>,
+) -> Result<String, RoutineFailure> {
     use std::io::{self, Write};
-    print!("{}", prompt_text);
+
+    // Build the prompt with proper formatting
+    let mut full_prompt = String::new();
+
+    // Add the main prompt text
+    full_prompt.push_str(prompt_text);
+
+    // Add default value if provided
+    if let Some(default_value) = default {
+        full_prompt.push_str(&format!(" (default: {})", default_value));
+    }
+
+    // Add hint if provided
+    if let Some(hint_text) = hint {
+        full_prompt.push_str(&format!("\n  💡 Hint: {}", hint_text));
+    }
+
+    // Add the prompt indicator
+    full_prompt.push_str("\n> ");
+
+    print!("{}", full_prompt);
     let _ = io::stdout().flush();
     let mut input = String::new();
     io::stdin().read_line(&mut input).map_err(|e| {
@@ -78,13 +117,14 @@ fn prompt_user(prompt_text: &str) -> Result<String, RoutineFailure> {
     })?;
     let trimmed = input.trim();
 
-    Ok(trimmed.to_string())
+    // Return default if input is empty, otherwise return the trimmed input
+    let result = if trimmed.is_empty() {
+        default.unwrap_or("").to_string()
+    } else {
+        trimmed.to_string()
+    };
 
-    // if let Some(processor) = post_process {
-    //     processor(trimmed)
-    // } else {
-    //     trimmed.to_string()
-    // }
+    Ok(result)
 }
 
 #[derive(Parser)]
@@ -208,11 +248,13 @@ pub async fn top_command_handler(
                             MessageType::Info,
                             Message::new(
                                 "Init".to_string(),
-                                "Select language: [1] TypeScript  [2] Python (default: 1)"
-                                    .to_string(),
+                                "Setting up your new Moose project".to_string(),
                             ),
                         );
-                        let input = prompt_user("Enter choice (1/2): ")?;
+                        let input = prompt_user_with_default(
+                            "Select language [1] TypeScript [2] Python",
+                            Some("1"),
+                        )?;
 
                         match input.as_str() {
                             "2" | "python" | "Python" => "python-empty".to_string(),
@@ -245,13 +287,14 @@ pub async fn top_command_handler(
                 }
                 Some(None) => {
                     // --from-remote flag provided, but no URL given - use interactive prompts
-                    let base = prompt_user(
-                        "Enter HTTPS host and port (e.g. https://your-service-id.region.clickhouse.cloud:8443)\n  ❓ Help: https://docs.fiveonefour.com/moose/getting-started/from-clickhouse#troubleshooting\n  ☁️ ClickHouse Cloud Console: https://clickhouse.cloud/\n> "
+                    let base = prompt_user_with_hints(
+                        "Enter ClickHouse host URL and port",
+                        None,
+                        Some("Format: https://your-service-id.region.clickhouse.cloud:8443\n  🔗 Get your URL: https://clickhouse.cloud/\n  📖 Troubleshooting: https://docs.fiveonefour.com/moose/getting-started/from-clickhouse#troubleshooting")
                     )?.trim_end_matches('/').to_string();
-                    let user = prompt_user("Enter username: ")?;
-                    let pass = prompt_user("Enter password: ")?;
-                    let db = prompt_user("Enter database name (default: default): ")?;
-                    let db = if db.is_empty() { "default" } else { &db };
+                    let user = prompt_user_with_default("Enter username", Some("default"))?;
+                    let pass = prompt_user("Enter password")?;
+                    let db = prompt_user_with_default("Enter database name", Some("default"))?;
 
                     let mut out = format!(
                         "https://{}:{}@{}",
