@@ -24,7 +24,7 @@ use super::display::{
 use super::routines::auth::validate_auth_token;
 use super::routines::scripts::{
     get_workflow_history, run_workflow_and_get_run_ids, temporal_dashboard_url,
-    terminate_all_workflows,
+    terminate_all_workflows, terminate_workflow,
 };
 use super::settings::Settings;
 use crate::infrastructure::redis::redis_client::RedisClient;
@@ -628,6 +628,49 @@ async fn workflows_trigger_route(
                 serde_json::to_string(&serde_json::json!({
                     "error": "Failed to start workflow",
                     "details": format!("{:?}", e)
+                }))
+                .unwrap(),
+            ))),
+    }
+}
+
+async fn workflows_terminate_route(
+    req: Request<hyper::body::Incoming>,
+    is_prod: bool,
+    project: Arc<Project>,
+    workflow_name: String,
+) -> Result<Response<Full<Bytes>>, hyper::http::Error> {
+    if is_prod {
+        let auth_header = req.headers().get(hyper::header::AUTHORIZATION);
+        if !check_authorization(auth_header, &MOOSE_CONSUMPTION_API_KEY, &None).await {
+            return Response::builder()
+                .status(StatusCode::UNAUTHORIZED)
+                .body(Full::new(Bytes::from(
+                    "Unauthorized: Invalid or missing token",
+                )));
+        }
+    }
+
+    match terminate_workflow(&project, &workflow_name).await {
+        Ok(success) => Response::builder()
+            .status(StatusCode::OK)
+            .header("Content-Type", "application/json")
+            .header("Access-Control-Allow-Origin", "*")
+            .body(Full::new(Bytes::from(
+                serde_json::to_string(&serde_json::json!({
+                    "status": "terminated",
+                    "message": success.message.details,
+                }))
+                .unwrap(),
+            ))),
+        Err(err) => Response::builder()
+            .status(StatusCode::BAD_REQUEST)
+            .header("Content-Type", "application/json")
+            .header("Access-Control-Allow-Origin", "*")
+            .body(Full::new(Bytes::from(
+                serde_json::to_string(&serde_json::json!({
+                    "error": "Failed to terminate workflow",
+                    "details": err.message.details,
                 }))
                 .unwrap(),
             ))),
@@ -1516,6 +1559,9 @@ async fn router(
             )
             .await
         }
+        (_, &hyper::Method::POST, ["workflows", name, "terminate"]) => {
+            workflows_terminate_route(req, is_prod, project.clone(), name.to_string()).await
+        }
         (_, &hyper::Method::OPTIONS, _) => options_route(),
         _ => route_not_found_response(),
     };
@@ -1707,7 +1753,12 @@ async fn print_available_routes(
             "POST",
             "/workflows/name/trigger".to_string(),
             "Trigger a workflow".to_string(),
-        )
+        ),
+        (
+            "POST",
+            "/workflows/name/terminate".to_string(),
+            "Terminate a workflow".to_string(),
+        ),
     ];
 
     // Collect ingestion routes
