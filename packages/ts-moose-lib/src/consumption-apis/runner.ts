@@ -169,6 +169,7 @@ const apiHandler = async (
           }
 
           modulesCache.set(pathName, userFuncModule);
+          console.log(`[API] | Executing API: ${apiName}`);
         } else {
           userFuncModule = require(pathName);
           modulesCache.set(pathName, userFuncModule);

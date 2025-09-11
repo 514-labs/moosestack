@@ -6,11 +6,12 @@ import {
 } from "@temporalio/client";
 import { StringValue } from "@temporalio/common";
 import { createHash, randomUUID } from "node:crypto";
-import * as path from "path";
+import { performance } from "perf_hooks";
+import prettyMs from "pretty-ms";
 import * as fs from "fs";
 import { getWorkflows } from "../dmv2/internal";
 import { JWTPayload } from "jose";
-import { Sql, sql, RawValue, toQuery } from "../sqlHelpers";
+import { Sql, sql, RawValue, toQuery, toQueryPreview } from "../sqlHelpers";
 
 export interface ApiUtil {
   client: MooseClient;
@@ -46,7 +47,9 @@ export class QueryClient {
   ): Promise<ResultSet<"JSONEachRow"> & { __query_result_t?: T[] }> {
     const [query, query_params] = toQuery(sql);
 
-    return this.client.query({
+    console.log(`[QueryClient] | Query: ${toQueryPreview(sql)}`);
+    const start = performance.now();
+    const result = await this.client.query({
       query,
       query_params,
       format: "JSONEachRow",
@@ -54,15 +57,10 @@ export class QueryClient {
       // Note: wait_end_of_query deliberately NOT set here as this is used for SELECT queries
       // where response buffering would harm streaming performance and concurrency
     });
+    const elapsedMs = performance.now() - start;
+    console.log(`[QueryClient] | Query completed: ${prettyMs(elapsedMs)}`);
+    return result;
   }
-}
-
-interface WorkflowConfig {
-  name: string;
-  schedule: string;
-  retries: number;
-  timeout: string;
-  tasks: string[];
 }
 
 export class WorkflowClient {
