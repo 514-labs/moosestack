@@ -226,7 +226,7 @@ pub async fn top_command_handler(
             // Determine template, prompting for language if needed (especially for --from-remote)
             let template = match template {
                 Some(t) => t.to_lowercase(),
-                None => match language.as_ref().map(|l| l.to_lowercase()) {
+                None => match language.as_deref().map(|l| l.to_lowercase()).as_deref() {
                     Some("typescript") => "typescript-empty".to_string(),
                     Some("python") => "python-empty".to_string(),
                     Some(lang) => {
