@@ -320,7 +320,7 @@ pub async fn top_command_handler(
 
             let success_message = if let Some(connection_string) = normalized_url {
                 format!(
-                    "\n\n{post_install_message}\n\n🔗 Your ClickHouse connection string:\n{}\n\n📋 After setting up your development environment, open a new terminal and seed your local database:\n      moose seed clickhouse \"{}\" --limit 1000\n\n💡 Tip: Save the connection string as an environment variable for future use:\n   export MOOSE_SEED_CLICKHOUSE_URL=\"{}\"\n",
+                    "\n\n{post_install_message}\n\n🔗 Your ClickHouse connection string:\n{}\n\n📋 After setting up your development environment, open a new terminal and seed your local database:\n      moose seed clickhouse \"{}\" --limit 1000\n\n💡 Tip: Save the connection string as an environment variable for future use:\n   export MOOSE_REMOTE_CLICKHOUSE_URL=\"{}\"\n",
                     connection_string,
                     connection_string,
                     connection_string
