@@ -36,7 +36,7 @@ fn map_column_type_to_python(
         },
         ColumnType::BigInt => "int".to_string(),
         ColumnType::Float(float_type) => match float_type {
-            FloatType::Float32 => "Annotated[float, ClickhouseSize(4)]".to_string(),
+            FloatType::Float32 => "Annotated[float, \"float32\"]".to_string(),
             FloatType::Float64 => "float".to_string(),
         },
         ColumnType::Decimal { precision, scale } => {
