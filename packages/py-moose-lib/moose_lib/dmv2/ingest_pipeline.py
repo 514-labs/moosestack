@@ -129,22 +129,24 @@ class IngestPipeline(TypedMooseResource, Generic[T]):
                 table_config.version = config.version
             table_config.metadata = table_metadata
             self.table = OlapTable(name, table_config, t=self._t)
+        if config.dead_letter_queue:
+            dlq_stream_config = StreamConfig() if config.dead_letter_queue is True else config.dead_letter_queue
+            if config.version:
+                dlq_stream_config.version = config.version
+            dlq_stream_config.metadata = stream_metadata
+            self.dead_letter_queue = DeadLetterQueue(f"{name}DeadLetterQueue", dlq_stream_config, t=self._t)
         if config.stream:
             stream_config = (config.stream if isinstance(config.stream, StreamConfig) else 
                            StreamConfig(life_cycle=config.life_cycle))
             if config.table and stream_config.destination is not None:
                 raise ValueError("The destination of the stream should be the table created in the IngestPipeline")
             stream_config.destination = self.table
+            if self.dead_letter_queue is not None:
+                stream_config.default_dead_letter_queue = self.dead_letter_queue
             if config.version:
                 stream_config.version = config.version
             stream_config.metadata = stream_metadata
             self.stream = Stream(name, stream_config, t=self._t)
-        if config.dead_letter_queue:
-            stream_config = StreamConfig() if config.dead_letter_queue is True else config.dead_letter_queue
-            if config.version:
-                stream_config.version = config.version
-            stream_config.metadata = stream_metadata
-            self.dead_letter_queue = DeadLetterQueue(f"{name}DeadLetterQueue", stream_config, t=self._t)
         if config.ingest:
             if self.stream is None:
                 raise ValueError("Ingest API needs a stream to write to.")
