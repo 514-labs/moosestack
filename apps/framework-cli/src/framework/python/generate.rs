@@ -153,7 +153,8 @@ fn generate_nested_model(
                     column
                         .name
                         .strip_prefix("_")
-                        .unwrap_or(&column.name)
+                        .map(|n| format!("UNDERSCORE_PREFIXED_{n}"))
+                        .unwrap_or(column.name.clone())
                         .replace(' ', "_"),
                     if default == " = None" {
                         format!(" = Field(default=None, alias=\"{}\")", column.name)
