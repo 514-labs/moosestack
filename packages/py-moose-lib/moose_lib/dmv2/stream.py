@@ -115,10 +115,10 @@ class Stream(TypedMooseResource, Generic[T]):
         super().__init__()
         self._set_type(name, self._get_type(kwargs))
         self.config = config if config is not None else StreamConfig()
-        self.metadata = config.metadata
+        self.metadata = self.config.metadata
         self.consumers = []
         self.transformations = {}
-        self.default_dead_letter_queue = config.default_dead_letter_queue
+        self.default_dead_letter_queue = self.config.default_dead_letter_queue
         _streams[name] = self
 
     def add_transform(self, destination: "Stream[U]", transformation: Callable[[T], ZeroOrMany[U]],
