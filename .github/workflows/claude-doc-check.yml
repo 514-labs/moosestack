@@ -179,6 +179,38 @@ jobs:
       - name: Prepare File Contents for Claude
         id: prepare-contents
         run: |
+          # Get PR information based on event type
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            # For PR events, use the PR context directly
+            PR_TITLE="${{ github.event.pull_request.title }}"
+            PR_BODY="${{ github.event.pull_request.body }}"
+          else
+            # For workflow_dispatch, try to get PR info from the current branch
+            # Check if we're on a branch that has an associated PR
+            CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
+            
+            # Try to extract PR info from recent commit messages or branch name
+            # This is a fallback - in workflow_dispatch, we won't have PR context
+            PR_TITLE="Manual Run on branch: $CURRENT_BRANCH"
+            
+            # Get the last few commit messages as context
+            PR_BODY=$(git log --pretty=format:"%s" -n 5 | sed 's/^/- /')
+            
+            # If running from a PR branch, try to get more context
+            if [[ "$CURRENT_BRANCH" =~ ^(feature|fix|docs|refactor)/.+ ]]; then
+              PR_TITLE="$PR_TITLE (${CURRENT_BRANCH})"
+            fi
+          fi
+          
+          # Store PR information in outputs
+          echo "pr_title<<EOF" >> $GITHUB_OUTPUT
+          echo "$PR_TITLE" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+          
+          echo "pr_body<<EOF" >> $GITHUB_OUTPUT
+          echo "$PR_BODY" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+          
           # Read pr_summary.txt and store in output
           if [ -f pr_summary.txt ]; then
             echo "pr_summary<<EOF" >> $GITHUB_OUTPUT
@@ -253,8 +285,8 @@ jobs:
             Please analyze this pull request for documentation requirements.
             
             ## PR Information
-            - PR Title: ${{ github.event.pull_request.title }}
-            - PR Description: ${{ github.event.pull_request.body }}
+            - PR Title: ${{ steps.prepare-contents.outputs.pr_title }}
+            - PR Description: ${{ steps.prepare-contents.outputs.pr_body }}
             
             ## Components Changed
             - TypeScript Moose Library: ${{ needs.detect-changes.outputs.ts_moose_changed }}
