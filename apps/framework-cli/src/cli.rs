@@ -932,7 +932,11 @@ pub async fn top_command_handler(
             }
         }
         Commands::Db(DbArgs {
-            command: DbCommands::Pull { connection_string },
+            command:
+                DbCommands::Pull {
+                    connection_string,
+                    file_path,
+                },
         }) => {
             info!("Running db pull command");
             let project = load_project()?;
@@ -944,9 +948,14 @@ pub async fn top_command_handler(
                 machine_id.clone(),
                 HashMap::new(),
             );
-            db_pull(connection_string, &project).await.map_err(|e| {
-                RoutineFailure::new(Message::new("DB Pull".to_string(), "failed".to_string()), e)
-            })?;
+            db_pull(connection_string, &project, file_path.as_deref())
+                .await
+                .map_err(|e| {
+                    RoutineFailure::new(
+                        Message::new("DB Pull".to_string(), "failed".to_string()),
+                        e,
+                    )
+                })?;
 
             wait_for_usage_capture(capture_handle).await;
             Ok(RoutineSuccess::success(Message::new(

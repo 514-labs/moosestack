@@ -128,7 +128,17 @@ async fn create_client_and_db(
 fn write_external_models_file(
     language: SupportedLanguages,
     tables: &[Table],
+    file_path: Option<&str>,
 ) -> Result<(), RoutineFailure> {
+    let file = match (language, file_path) {
+        (_, Some(path)) => Cow::Borrowed(path),
+        (SupportedLanguages::Typescript, None) => {
+            Cow::Owned(format!("{APP_DIR}/{TYPESCRIPT_EXTERNAL_FILE}"))
+        }
+        (SupportedLanguages::Python, None) => {
+            Cow::Owned(format!("{APP_DIR}/{PYTHON_EXTERNAL_FILE}"))
+        }
+    };
     match language {
         SupportedLanguages::Typescript => {
             let table_definitions =
@@ -138,13 +148,10 @@ fn write_external_models_file(
                 .create(true)
                 .write(true)
                 .truncate(true)
-                .open(format!("{APP_DIR}/{TYPESCRIPT_EXTERNAL_FILE}"))
+                .open(&*file)
                 .map_err(|e| {
                     RoutineFailure::new(
-                        Message::new(
-                            "Failure".to_string(),
-                            format!("opening {TYPESCRIPT_EXTERNAL_FILE}"),
-                        ),
+                        Message::new("Failure".to_string(), format!("opening {file}")),
                         e,
                     )
                 })?;
@@ -168,10 +175,7 @@ fn write_external_models_file(
                 .open(format!("{APP_DIR}/{PYTHON_EXTERNAL_FILE}"))
                 .map_err(|e| {
                     RoutineFailure::new(
-                        Message::new(
-                            "Failure".to_string(),
-                            format!("opening {PYTHON_EXTERNAL_FILE}"),
-                        ),
+                        Message::new("Failure".to_string(), format!("opening {file}")),
                         e,
                     )
                 })?;
@@ -448,31 +452,22 @@ pub async fn db_to_dmv2(remote_url: &str, dir_path: &Path) -> Result<(), Routine
 
 /// Pulls schema for ExternallyManaged tables and regenerates only external model files.
 /// Does not modify `main.py` or `index.ts`.
-pub async fn db_pull(remote_url: &str, project: &Project) -> Result<(), RoutineFailure> {
+pub async fn db_pull(
+    remote_url: &str,
+    project: &Project,
+    file_path: Option<&str>,
+) -> Result<(), RoutineFailure> {
     let (client, db) = create_client_and_db(remote_url).await?;
 
-    let infra_map = if project.features.data_model_v2 {
-        debug!("Loading InfrastructureMap from user code (DMV2)");
-        InfrastructureMap::load_from_user_code(project)
-            .await
-            .map_err(|e| {
-                RoutineFailure::error(Message::new(
-                    "Failure".to_string(),
-                    format!("loading infra map: {e:?}"),
-                ))
-            })?
-    } else {
-        debug!("Loading InfrastructureMap from primitives");
-        let primitive_map = crate::framework::core::primitive_map::PrimitiveMap::load(project)
-            .await
-            .map_err(|e| {
-                RoutineFailure::error(Message::new(
-                    "Failure".to_string(),
-                    format!("loading primitives: {e:?}"),
-                ))
-            })?;
-        crate::framework::core::infrastructure_map::InfrastructureMap::new(project, primitive_map)
-    };
+    debug!("Loading InfrastructureMap from user code (DMV2)");
+    let infra_map = InfrastructureMap::load_from_user_code(project)
+        .await
+        .map_err(|e| {
+            RoutineFailure::error(Message::new(
+                "Failure".to_string(),
+                format!("loading infra map: {e:?}"),
+            ))
+        })?;
 
     let externally_managed_names: std::collections::HashSet<String> = infra_map
         .tables
@@ -488,12 +483,12 @@ pub async fn db_pull(remote_url: &str, project: &Project) -> Result<(), RoutineF
         )
     })?;
 
-    let externally_managed: Vec<_> = tables
+    let externally_managed: Vec<Table> = tables
         .into_iter()
         .filter(|t| externally_managed_names.contains(&t.name))
         .collect();
 
-    write_external_models_file(project.language, &externally_managed)?;
+    write_external_models_file(project.language, &externally_managed, file_path)?;
 
     match create_code_generation_commit(
         ".".as_ref(),

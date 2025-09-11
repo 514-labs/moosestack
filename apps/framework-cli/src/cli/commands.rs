@@ -28,8 +28,12 @@ pub enum Commands {
         #[arg(long)]
         no_fail_already_exists: bool,
 
-        /// Initialize from a remote template repository
-        #[arg(long, required_unless_present = "template")]
+        /// Initialize from a remote database. E.g. https://play.clickhouse.com/?user=explorer
+        #[arg(
+            long,
+            required_unless_present = "template",
+            value_name = "CONNECTION_STRING"
+        )]
         from_remote: Option<String>,
 
         /// Programming language to use for the project
@@ -332,10 +336,13 @@ pub struct DbArgs {
 
 #[derive(Debug, Subcommand)]
 pub enum DbCommands {
-    /// Pull DB schema and refresh external models
+    /// Update DB schema for EXTERNALLY_MANAGED tables
     Pull {
-        /// ClickHouse connection string (e.g. 'clickhouse://user:pass@host:port/database')
+        /// ClickHouse connection string (e.g. 'E.g. https://play.clickhouse.com/?user=explorer')
         #[arg(long, value_name = "CONNECTION_STRING")]
         connection_string: String,
+        /// File storing the EXTERNALLY_MANAGED table definitions, defaults to app/external_models.py or app/externalModels.ts
+        #[arg(long)]
+        file_path: Option<String>,
     },
 }
