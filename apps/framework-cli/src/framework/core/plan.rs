@@ -346,6 +346,7 @@ mod tests {
                 comment: None,
             }],
             order_by: vec!["id".to_string()],
+            partition_by: None,
             engine: None,
             version: Some(Version::from_string("1.0.0".to_string())),
             source_primitive: PrimitiveSignature {

@@ -127,7 +127,8 @@ CREATE TABLE IF NOT EXISTS `{{db_name}}`.`{{table_name}}`
 {{/each}}
 )
 ENGINE = {{engine}}{{#if primary_key_string}}
-PRIMARY KEY ({{primary_key_string}}){{/if}}{{#if order_by_string}}
+PRIMARY KEY ({{primary_key_string}}){{/if}}{{#if partition_by}}
+PARTITION BY {{partition_by}}{{/if}}{{#if order_by_string}}
 ORDER BY ({{order_by_string}}){{/if}}{{#if settings}}
 SETTINGS {{settings}}{{/if}}"#;
 
@@ -770,6 +771,7 @@ pub fn create_table_query(
         } else {
             None
         },
+        "partition_by": table.partition_by.as_deref(),
         "engine": engine,
         "settings": settings
     });
@@ -1133,6 +1135,7 @@ mod tests {
                 },
             ],
             order_by: vec![],
+            partition_by: None,
             engine: ClickhouseEngine::MergeTree,
             table_settings: None,
         };
@@ -1165,6 +1168,7 @@ PRIMARY KEY (`id`)
                 comment: None,
             }],
             order_by: vec![],
+            partition_by: None,
             engine: ClickhouseEngine::MergeTree,
             table_settings: None,
         };
@@ -1196,6 +1200,7 @@ ENGINE = MergeTree
                 comment: None,
             }],
             order_by: vec![],
+            partition_by: None,
             engine: ClickhouseEngine::MergeTree,
             table_settings: None,
         };
@@ -1226,6 +1231,7 @@ ENGINE = MergeTree
                 comment: None,
             }],
             order_by: vec!["id".to_string()],
+            partition_by: None,
             engine: ClickhouseEngine::ReplacingMergeTree {
                 ver: None,
                 is_deleted: None,
@@ -1264,6 +1270,7 @@ ORDER BY (`id`) "#;
                 is_deleted: None,
             },
             order_by: vec![],
+            partition_by: None,
             table_settings: None,
         };
 
@@ -1300,6 +1307,7 @@ ORDER BY (`id`) "#;
                 },
             ],
             order_by: vec!["id".to_string()],
+            partition_by: None,
             engine: ClickhouseEngine::ReplacingMergeTree {
                 ver: Some("version".to_string()),
                 is_deleted: None,
@@ -1355,6 +1363,7 @@ ORDER BY (`id`) "#;
                 },
             ],
             order_by: vec!["id".to_string()],
+            partition_by: None,
             engine: ClickhouseEngine::ReplacingMergeTree {
                 ver: Some("version".to_string()),
                 is_deleted: Some("is_deleted".to_string()),
@@ -1391,6 +1400,7 @@ ORDER BY (`id`) "#;
                 comment: None,
             }],
             order_by: vec!["id".to_string()],
+            partition_by: None,
             engine: ClickhouseEngine::ReplacingMergeTree {
                 ver: None,
                 is_deleted: Some("is_deleted".to_string()),
@@ -1541,6 +1551,7 @@ ORDER BY (`id`) "#;
             ],
             engine: ClickhouseEngine::MergeTree,
             order_by: vec!["id".to_string()],
+            partition_by: None,
             table_settings: None,
         };
 
@@ -1592,6 +1603,7 @@ ORDER BY (`id`) "#;
                 },
             ],
             order_by: vec![],
+            partition_by: None,
             engine: ClickhouseEngine::S3Queue {
                 s3_path: "s3://my-bucket/data/*.json".to_string(),
                 format: "JSONEachRow".to_string(),
@@ -2060,6 +2072,7 @@ SETTINGS keeper_path = '/clickhouse/s3queue/test_table', mode = 'unordered', s3q
                 comment: None,
             }],
             order_by: vec![],
+            partition_by: None,
             engine: ClickhouseEngine::S3Queue {
                 s3_path: "s3://my-bucket/data/*.csv".to_string(),
                 format: "CSV".to_string(),

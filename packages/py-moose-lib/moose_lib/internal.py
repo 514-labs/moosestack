@@ -46,6 +46,7 @@ class Target(BaseModel):
     version: Optional[str] = None
     metadata: Optional[dict] = None
 
+
 class Consumer(BaseModel):
     """Represents a consumer attached to a stream.
 
@@ -54,14 +55,17 @@ class Consumer(BaseModel):
     """
     version: Optional[str] = None
 
+
 class BaseEngineConfigDict(BaseModel):
     """Base engine configuration for all ClickHouse table engines."""
     model_config = model_config
     engine: str
 
+
 class MergeTreeConfigDict(BaseEngineConfigDict):
     """Configuration for MergeTree engine."""
     engine: Literal["MergeTree"] = "MergeTree"
+
 
 class ReplacingMergeTreeConfigDict(BaseEngineConfigDict):
     """Configuration for ReplacingMergeTree engine."""
@@ -69,13 +73,16 @@ class ReplacingMergeTreeConfigDict(BaseEngineConfigDict):
     ver: Optional[str] = None
     is_deleted: Optional[str] = None
 
+
 class AggregatingMergeTreeConfigDict(BaseEngineConfigDict):
     """Configuration for AggregatingMergeTree engine."""
     engine: Literal["AggregatingMergeTree"] = "AggregatingMergeTree"
 
+
 class SummingMergeTreeConfigDict(BaseEngineConfigDict):
     """Configuration for SummingMergeTree engine."""
     engine: Literal["SummingMergeTree"] = "SummingMergeTree"
+
 
 class S3QueueConfigDict(BaseEngineConfigDict):
     """Configuration for S3Queue engine with all specific fields."""
@@ -87,6 +94,7 @@ class S3QueueConfigDict(BaseEngineConfigDict):
     compression: Optional[str] = None
     headers: Optional[Dict[str, str]] = None
 
+
 # Discriminated union of all engine configurations
 EngineConfigDict = Union[
     MergeTreeConfigDict,
@@ -96,6 +104,7 @@ EngineConfigDict = Union[
     S3QueueConfigDict
 ]
 
+
 class TableConfig(BaseModel):
     """Internal representation of an OLAP table configuration for serialization.
 
@@ -103,6 +112,7 @@ class TableConfig(BaseModel):
         name: Name of the table.
         columns: List of columns with their types and attributes.
         order_by: List of columns used for the ORDER BY clause.
+        partition_by: The column name used for the PARTITION BY clause.
         engine_config: Engine configuration with type-safe, engine-specific parameters.
         version: Optional version string of the table configuration.
         metadata: Optional metadata for the table.
@@ -114,11 +124,13 @@ class TableConfig(BaseModel):
     name: str
     columns: List[Column]
     order_by: List[str]
+    partition_by: Optional[str]
     engine_config: Optional[EngineConfigDict] = Field(None, discriminator='engine')
     version: Optional[str] = None
     metadata: Optional[dict] = None
     life_cycle: Optional[str] = None
     table_settings: Optional[Dict[str, str]] = None
+
 
 class TopicConfig(BaseModel):
     """Internal representation of a stream/topic configuration for serialization.
@@ -152,6 +164,7 @@ class TopicConfig(BaseModel):
     metadata: Optional[dict] = None
     life_cycle: Optional[str] = None
 
+
 class IngestApiConfig(BaseModel):
     """Internal representation of an Ingest API configuration for serialization.
 
@@ -172,6 +185,7 @@ class IngestApiConfig(BaseModel):
     metadata: Optional[dict] = None
     json_schema: dict[str, Any] = Field(serialization_alias="schema")
 
+
 class InternalApiConfig(BaseModel):
     """Internal representation of a API configuration for serialization.
 
@@ -190,6 +204,7 @@ class InternalApiConfig(BaseModel):
     version: Optional[str] = None
     metadata: Optional[dict] = None
 
+
 class WorkflowJson(BaseModel):
     """Internal representation of a workflow configuration for serialization.
 
@@ -206,6 +221,7 @@ class WorkflowJson(BaseModel):
     timeout: Optional[str] = None
     schedule: Optional[str] = None
 
+
 class InfrastructureSignatureJson(BaseModel):
     """Represents the unique signature of an infrastructure component (Table, Topic, etc.).
 
@@ -217,6 +233,7 @@ class InfrastructureSignatureJson(BaseModel):
     """
     id: str
     kind: Literal["Table", "Topic", "ApiEndpoint", "TopicToTableSyncProcess", "View", "SqlResource"]
+
 
 class SqlResourceConfig(BaseModel):
     """Internal representation of a generic SQL resource (like View, MaterializedView) for serialization.
@@ -280,12 +297,12 @@ def _map_sql_resource_ref(r: Any) -> InfrastructureSignatureJson:
     if hasattr(r, 'kind'):
         if r.kind == "OlapTable":
             # Explicitly cast for type hint checking if needed, though Python is dynamic
-            table = r # type: OlapTable
+            table = r  # type: OlapTable
             res_id = f"{table.name}_{table.config.version}" if table.config.version else table.name
             return InfrastructureSignatureJson(id=res_id, kind="Table")
         elif r.kind == "SqlResource":
             # Explicitly cast for type hint checking if needed
-            resource = r # type: SqlResource
+            resource = r  # type: SqlResource
             return InfrastructureSignatureJson(id=resource.name, kind="SqlResource")
         else:
             raise TypeError(f"Unknown SQL resource kind: {r.kind} for object: {r}")
@@ -294,7 +311,8 @@ def _map_sql_resource_ref(r: Any) -> InfrastructureSignatureJson:
         raise TypeError(f"Object {r} lacks a 'kind' attribute for dependency mapping.")
 
 
-def _convert_engine_to_config_dict(engine: Union[ClickHouseEngines, EngineConfig], table: OlapTable) -> EngineConfigDict:
+def _convert_engine_to_config_dict(engine: Union[ClickHouseEngines, EngineConfig],
+                                   table: OlapTable) -> EngineConfigDict:
     """Convert engine enum or EngineConfig instance to new engine config format.
     
     Args:
@@ -306,12 +324,12 @@ def _convert_engine_to_config_dict(engine: Union[ClickHouseEngines, EngineConfig
     """
     from moose_lib import ClickHouseEngines
     from moose_lib.blocks import (
-        EngineConfig, S3QueueEngine, MergeTreeEngine, 
-        ReplacingMergeTreeEngine, AggregatingMergeTreeEngine, 
+        EngineConfig, S3QueueEngine, MergeTreeEngine,
+        ReplacingMergeTreeEngine, AggregatingMergeTreeEngine,
         SummingMergeTreeEngine
     )
     from moose_lib.commons import Logger
-    
+
     # Check if engine is an EngineConfig instance (new API)
     if isinstance(engine, EngineConfig):
         if isinstance(engine, S3QueueEngine):
@@ -337,13 +355,13 @@ def _convert_engine_to_config_dict(engine: Union[ClickHouseEngines, EngineConfig
         else:
             # Fallback for any other EngineConfig subclass - use base class
             return BaseEngineConfigDict(engine=engine.__class__.__name__.replace("Engine", ""))
-    
+
     # Handle legacy enum-based engine configuration
     if isinstance(engine, ClickHouseEngines):
         engine_name = engine.value
     else:
         engine_name = str(engine)
-    
+
     # For S3Queue with legacy configuration, check for s3_queue_engine_config
     if engine_name == "S3Queue" and hasattr(table.config, 's3_queue_engine_config'):
         s3_config = table.config.s3_queue_engine_config
@@ -361,7 +379,7 @@ def _convert_engine_to_config_dict(engine: Union[ClickHouseEngines, EngineConfig
                 compression=s3_config.compression,
                 headers=s3_config.headers
             )
-    
+
     # Map engine names to specific config classes
     engine_map = {
         "MergeTree": MergeTreeConfigDict,
@@ -369,13 +387,14 @@ def _convert_engine_to_config_dict(engine: Union[ClickHouseEngines, EngineConfig
         "AggregatingMergeTree": AggregatingMergeTreeConfigDict,
         "SummingMergeTree": SummingMergeTreeConfigDict,
     }
-    
+
     config_class = engine_map.get(engine_name)
     if config_class:
         return config_class()
-    
+
     # Fallback for unknown engines
     return BaseEngineConfigDict(engine=engine_name)
+
 
 def to_infra_map() -> dict:
     """Converts the registered `dmv2` resources into the serializable `InfrastructureMap` format.
@@ -400,25 +419,27 @@ def to_infra_map() -> dict:
         engine_config = None
         if table.config.engine:
             engine_config = _convert_engine_to_config_dict(table.config.engine, table)
-        
+
         # Get table settings, applying defaults for S3Queue
         table_settings = table.config.settings.copy() if table.config.settings else {}
-        
+
         # Apply default settings for S3Queue if not already specified
         if engine_config and engine_config.engine == "S3Queue":
             # Set default mode to 'unordered' if not specified
             if "mode" not in table_settings:
                 table_settings["mode"] = "unordered"
-        
+
         tables[name] = TableConfig(
             name=name,
             columns=_to_columns(table._t),
             order_by=table.config.order_by_fields,
+            partition_by=table.config.partition_by,
             engine_config=engine_config,
             version=table.config.version,
             metadata=getattr(table, "metadata", None),
             life_cycle=table.config.life_cycle.value if table.config.life_cycle else None,
-            table_settings=table_settings if table_settings else None,  # Map 'settings' to 'table_settings' for internal use
+            # Map 'settings' to 'table_settings' for internal use
+            table_settings=table_settings if table_settings else None,
         )
 
     for name, stream in get_streams().items():

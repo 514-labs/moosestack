@@ -1059,7 +1059,8 @@ impl OlapOperations for ConfiguredDBClient {
             SELECT
                 name,
                 engine,
-                create_table_query
+                create_table_query,
+                partition_key
             FROM system.tables
             WHERE database = '{db_name}'
             AND engine != 'View'
@@ -1073,7 +1074,7 @@ impl OlapOperations for ConfiguredDBClient {
         let mut cursor = self
             .client
             .query(&query)
-            .fetch::<(String, String, String)>()
+            .fetch::<(String, String, String, String)>()
             .map_err(|e| {
                 debug!("Error fetching tables: {}", e);
                 OlapChangesError::DatabaseError(e.to_string())
@@ -1082,7 +1083,7 @@ impl OlapOperations for ConfiguredDBClient {
         let mut tables = Vec::new();
         let mut unsupported_tables = Vec::new();
 
-        'table_loop: while let Some((table_name, engine, create_query)) = cursor
+        'table_loop: while let Some((table_name, engine, create_query, partition_key)) = cursor
             .next()
             .await
             .map_err(|e| OlapChangesError::DatabaseError(e.to_string()))?
@@ -1289,6 +1290,10 @@ impl OlapOperations for ConfiguredDBClient {
                 name: table_name, // Keep the original table name with version
                 columns,
                 order_by: order_by_cols, // Use the extracted ORDER BY columns
+                partition_by: {
+                    let p = partition_key.trim();
+                    (!p.is_empty()).then(|| p.to_string())
+                },
                 engine: engine_parsed,
                 version,
                 source_primitive,

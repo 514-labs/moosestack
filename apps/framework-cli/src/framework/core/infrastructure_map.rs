@@ -2345,6 +2345,7 @@ mod tests {
                 },
             ],
             order_by: vec!["id".to_string()],
+            partition_by: None,
             version: Some(Version::from_string("1.0".to_string())),
             source_primitive: PrimitiveSignature {
                 name: "test_primitive".to_string(),
@@ -2392,6 +2393,7 @@ mod tests {
                 },
             ],
             order_by: vec!["id".to_string(), "name".to_string()], // Changed order_by
+            partition_by: None,
             version: Some(Version::from_string("1.1".to_string())),
             source_primitive: PrimitiveSignature {
                 name: "test_primitive".to_string(),
@@ -2557,6 +2559,7 @@ mod diff_tests {
             engine: None,
             columns: vec![],
             order_by: vec![],
+            partition_by: None,
             version: Some(Version::from_string(version.to_string())),
             source_primitive: PrimitiveSignature {
                 name: "test_primitive".to_string(),
