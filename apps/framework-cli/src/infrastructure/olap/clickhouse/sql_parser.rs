@@ -934,4 +934,229 @@ mod tests {
             TableReference::with_database("analytics".to_string(), "events".to_string());
         assert_eq!(table_ref_with_db.qualified_name(), "analytics.events");
     }
+
+    // Tests for SharedMergeTree family engines
+    #[test]
+    fn test_extract_shared_merge_tree() {
+        let sql = r#"CREATE TABLE test (x Int32) 
+            ENGINE = SharedMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}') 
+            ORDER BY x"#;
+        let result = extract_engine_from_create_table(sql);
+        assert_eq!(
+            result,
+            Some("SharedMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}')".to_string())
+        );
+    }
+
+    #[test]
+    fn test_extract_shared_replacing_merge_tree_no_params() {
+        let sql = r#"CREATE TABLE test (x Int32) 
+            ENGINE = SharedReplacingMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}') 
+            ORDER BY x"#;
+        let result = extract_engine_from_create_table(sql);
+        assert_eq!(
+            result,
+            Some(
+                "SharedReplacingMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}')"
+                    .to_string()
+            )
+        );
+    }
+
+    #[test]
+    fn test_extract_shared_replacing_merge_tree_with_ver() {
+        let sql = r#"CREATE TABLE test (x Int32, version DateTime) 
+            ENGINE = SharedReplacingMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}', version) 
+            ORDER BY x"#;
+        let result = extract_engine_from_create_table(sql);
+        assert_eq!(
+            result,
+            Some("SharedReplacingMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}', version)".to_string())
+        );
+    }
+
+    #[test]
+    fn test_extract_shared_replacing_merge_tree_with_ver_and_is_deleted() {
+        let sql = r#"CREATE TABLE test (x Int32, _peerdb_version DateTime, _peerdb_is_deleted UInt8) 
+            ENGINE = SharedReplacingMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}', _peerdb_version, _peerdb_is_deleted) 
+            ORDER BY x"#;
+        let result = extract_engine_from_create_table(sql);
+        assert_eq!(
+            result,
+            Some("SharedReplacingMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}', _peerdb_version, _peerdb_is_deleted)".to_string())
+        );
+    }
+
+    #[test]
+    fn test_extract_shared_aggregating_merge_tree() {
+        let sql = r#"CREATE TABLE test (x Int32) 
+            ENGINE = SharedAggregatingMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}') 
+            ORDER BY x"#;
+        let result = extract_engine_from_create_table(sql);
+        assert_eq!(
+            result,
+            Some(
+                "SharedAggregatingMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}')"
+                    .to_string()
+            )
+        );
+    }
+
+    #[test]
+    fn test_extract_shared_summing_merge_tree() {
+        let sql = r#"CREATE TABLE test (x Int32, sum_column Int64) 
+            ENGINE = SharedSummingMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}', sum_column) 
+            ORDER BY x"#;
+        let result = extract_engine_from_create_table(sql);
+        assert_eq!(
+            result,
+            Some("SharedSummingMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}', sum_column)".to_string())
+        );
+    }
+
+    #[test]
+    fn test_extract_replicated_replacing_merge_tree_no_params() {
+        let sql = r#"CREATE TABLE test (x Int32) 
+            ENGINE = ReplicatedReplacingMergeTree('/clickhouse/tables/01/{shard}/hits', '{replica}') 
+            ORDER BY x"#;
+        let result = extract_engine_from_create_table(sql);
+        assert_eq!(
+            result,
+            Some(
+                "ReplicatedReplacingMergeTree('/clickhouse/tables/01/{shard}/hits', '{replica}')"
+                    .to_string()
+            )
+        );
+    }
+
+    #[test]
+    fn test_extract_replicated_replacing_merge_tree_with_ver() {
+        let sql = r#"CREATE TABLE test (x Int32, ver DateTime) 
+            ENGINE = ReplicatedReplacingMergeTree('/clickhouse/tables/01/{shard}/hits', '{replica}', ver) 
+            ORDER BY x"#;
+        let result = extract_engine_from_create_table(sql);
+        assert_eq!(
+            result,
+            Some("ReplicatedReplacingMergeTree('/clickhouse/tables/01/{shard}/hits', '{replica}', ver)".to_string())
+        );
+    }
+
+    #[test]
+    fn test_extract_replicated_replacing_merge_tree_with_ver_and_is_deleted() {
+        let sql = r#"CREATE TABLE test (x Int32, ver DateTime, is_deleted UInt8) 
+            ENGINE = ReplicatedReplacingMergeTree('/clickhouse/tables/01/{shard}/hits', '{replica}', ver, is_deleted) 
+            ORDER BY x"#;
+        let result = extract_engine_from_create_table(sql);
+        assert_eq!(
+            result,
+            Some("ReplicatedReplacingMergeTree('/clickhouse/tables/01/{shard}/hits', '{replica}', ver, is_deleted)".to_string())
+        );
+    }
+
+    #[test]
+    fn test_extract_shared_merge_tree_with_backticks() {
+        // Test with backticks in column names (common in ClickHouse)
+        let sql = r#"CREATE TABLE test (x Int32, `version` DateTime) 
+            ENGINE = SharedReplacingMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}', `version`) 
+            ORDER BY x"#;
+        let result = extract_engine_from_create_table(sql);
+        assert_eq!(
+            result,
+            Some("SharedReplacingMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}', `version`)".to_string())
+        );
+    }
+
+    #[test]
+    fn test_extract_shared_merge_tree_complex_path() {
+        // Test with more complex path patterns
+        let sql = r#"CREATE TABLE test (x Int32) 
+            ENGINE = SharedMergeTree('/clickhouse/prod/tables/{database}/{table}/{uuid}', 'replica-{replica_num}') 
+            ORDER BY x"#;
+        let result = extract_engine_from_create_table(sql);
+        assert_eq!(
+            result,
+            Some("SharedMergeTree('/clickhouse/prod/tables/{database}/{table}/{uuid}', 'replica-{replica_num}')".to_string())
+        );
+    }
+
+    #[test]
+    fn test_extract_shared_merge_tree_with_settings() {
+        // Ensure extraction stops at engine definition and doesn't include SETTINGS
+        let sql = r#"CREATE TABLE test (x Int32) 
+            ENGINE = SharedMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}') 
+            ORDER BY x
+            SETTINGS index_granularity = 8192"#;
+        let result = extract_engine_from_create_table(sql);
+        assert_eq!(
+            result,
+            Some("SharedMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}')".to_string())
+        );
+    }
+
+    #[test]
+    fn test_extract_clickhouse_cloud_real_example() {
+        // Real example from ClickHouse Cloud as shown in the user's message
+        let sql = r#"CREATE TABLE `f45-lionheart-backen-staging-408b5`.RawGCPData_0_0 ( 
+            `studio_object_id` String, 
+            `studio_id` String, 
+            `studio_access_code` String, 
+            `user_object_id` String, 
+            `user_name` String, 
+            `user_email` String, 
+            `serial` String, 
+            `max` String, 
+            `totalpoints` String, 
+            `totalcalories` String, 
+            `averagebpm` String, 
+            `bpmmax` String, 
+            `bpmin` String, 
+            `hr70plus` String, 
+            `workoutname` String, 
+            `session_type` String, 
+            `workouttime` String, 
+            `workouttimestamp` String, 
+            `localip` String, 
+            `uuid` String, 
+            `scalar` String, 
+            `columns` Nested(time Array(Float64), percent Array(Float64), calories Array(Float64), points Array(Float64), certainty Array(Float64), bpm Array(Float64)), 
+            `created_at` String, 
+            `workouttimestampiso` String, 
+            `file_name` String, 
+            `line_number` Float64 
+        ) ENGINE = SharedMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}') 
+        PRIMARY KEY studio_object_id 
+        ORDER BY studio_object_id 
+        SETTINGS index_granularity = 8192"#;
+        let result = extract_engine_from_create_table(sql);
+        assert_eq!(
+            result,
+            Some("SharedMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}')".to_string())
+        );
+    }
+
+    #[test]
+    fn test_extract_shared_replacing_merge_tree_quoted_params() {
+        // Test with quoted column names as parameters
+        let sql = r#"CREATE TABLE test (x Int32, `_version` DateTime, `_is_deleted` UInt8) 
+            ENGINE = SharedReplacingMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}', '_version', '_is_deleted') 
+            ORDER BY x"#;
+        let result = extract_engine_from_create_table(sql);
+        assert_eq!(
+            result,
+            Some("SharedReplacingMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}', '_version', '_is_deleted')".to_string())
+        );
+    }
+
+    #[test]
+    fn test_extract_shared_replacing_merge_tree_special_chars_in_path() {
+        // Test with special characters in the path
+        let sql = r#"CREATE TABLE test (x Int32) 
+            ENGINE = SharedReplacingMergeTree('/clickhouse/tables-v2/{uuid:01234-5678}/{shard}', '{replica}') 
+            ORDER BY x"#;
+        let result = extract_engine_from_create_table(sql);
+        assert_eq!(
+            result,
+            Some("SharedReplacingMergeTree('/clickhouse/tables-v2/{uuid:01234-5678}/{shard}', '{replica}')".to_string())
+        );
+    }
 }
