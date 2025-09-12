@@ -5,6 +5,7 @@ use std::sync::Arc;
 use crate::cli::display::{show_table, Message};
 use crate::cli::routines::{RoutineFailure, RoutineSuccess};
 use crate::framework::core::infrastructure_map::InfrastructureMap;
+use crate::framework::scripts::executor::WorkflowStartInfo;
 use crate::infrastructure::orchestration::temporal_client::TemporalClientManager;
 use crate::project::Project;
 use crate::utilities::decode_object::decode_base64_to_json;
@@ -107,6 +108,23 @@ pub async fn run_workflow(
 ) -> Result<RoutineSuccess, RoutineFailure> {
     let namespace = project.temporal_config.get_temporal_namespace();
 
+    let info = run_workflow_and_get_run_ids(project, name, input).await?;
+
+    let dashboard_url = temporal_dashboard_url(&namespace, &info.workflow_id, &info.run_id);
+
+    Ok(RoutineSuccess::success(Message {
+        action: "Workflow".to_string(),
+        details: format!(
+            "'{name}' started successfully.\nView it in the Temporal dashboard: {dashboard_url}\n",
+        ),
+    }))
+}
+
+pub async fn run_workflow_and_get_run_ids(
+    project: &Project,
+    name: &str,
+    input: Option<String>,
+) -> Result<WorkflowStartInfo, RoutineFailure> {
     let infra_map = InfrastructureMap::load_from_user_code(project)
         .await
         .map_err(|e| {
@@ -128,7 +146,7 @@ pub async fn run_workflow(
         }));
     };
 
-    let run_id: String = workflow
+    let info: WorkflowStartInfo = workflow
         .start(&project.temporal_config, input)
         .await
         .map_err(|e| {
@@ -141,23 +159,21 @@ pub async fn run_workflow(
             )
         })?;
 
-    // Check if run_id is empty or invalid
-    if run_id.is_empty() {
+    if info.run_id.is_empty() {
         return Err(RoutineFailure::error(Message {
             action: "Workflow".to_string(),
             details: format!("'{name}' failed to start: Invalid run ID\n"),
         }));
     }
 
-    let dashboard_url =
-        format!("http://localhost:8080/namespaces/{namespace}/workflows/{name}/{run_id}/history",);
+    Ok(info)
+}
 
-    Ok(RoutineSuccess::success(Message {
-        action: "Workflow".to_string(),
-        details: format!(
-            "'{name}' started successfully.\nView it in the Temporal dashboard: {dashboard_url}\n",
-        ),
-    }))
+pub fn temporal_dashboard_url(namespace: &str, workflow_id: &str, run_id: &str) -> String {
+    format!(
+        "http://localhost:8080/namespaces/{}/workflows/{}/{}/history",
+        namespace, workflow_id, run_id
+    )
 }
 
 pub async fn get_workflow_history(

@@ -50,7 +50,7 @@ impl Workflow {
         &self,
         temporal_config: &TemporalConfig,
         input: Option<String>,
-    ) -> Result<String, anyhow::Error> {
+    ) -> Result<executor::WorkflowStartInfo, anyhow::Error> {
         Ok(executor::execute_workflow(
             temporal_config,
             self.language,
