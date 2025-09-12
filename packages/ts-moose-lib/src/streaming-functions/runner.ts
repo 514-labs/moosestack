@@ -37,15 +37,15 @@ const KAFKAJS_BYTE_MESSAGE_OVERHEAD = 500;
 /**
  * Parses a comma-separated broker string into an array of valid broker addresses.
  * Handles whitespace trimming and filters out empty elements.
- * 
+ *
  * @param brokerString - Comma-separated broker addresses (e.g., "broker1:9092, broker2:9092, , broker3:9092")
  * @returns Array of trimmed, non-empty broker addresses
  */
 const parseBrokerString = (brokerString: string): string[] => {
   return brokerString
-    .split(',')
-    .map(broker => broker.trim())
-    .filter(broker => broker.length > 0);
+    .split(",")
+    .map((broker) => broker.trim())
+    .filter((broker) => broker.length > 0);
 };
 
 //Dummy change
@@ -925,9 +925,8 @@ export const runStreamingFunctions = async (
           logger.log(`Sending message size with ${event.payload.size}`);
         });
 
-        if (args.targetTopic !== undefined) {
-          await startProducer(logger, producer);
-        }
+        // always start producer because DLQ may need it
+        await startProducer(logger, producer);
 
         try {
           await startConsumer(

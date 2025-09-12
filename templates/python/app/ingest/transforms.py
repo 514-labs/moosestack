@@ -46,9 +46,6 @@ def foo_to_bar(foo: Foo):
 fooModel.get_stream().add_transform(
     destination=barModel.get_stream(),
     transformation=foo_to_bar,
-    config=TransformConfig(
-        dead_letter_queue=fooModel.get_dead_letter_queue()
-    )
 )
 
 
