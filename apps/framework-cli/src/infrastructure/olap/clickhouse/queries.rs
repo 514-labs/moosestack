@@ -192,74 +192,192 @@ impl<'a> TryFrom<&'a str> for ClickhouseEngine {
     type Error = &'a str;
 
     fn try_from(value: &'a str) -> Result<Self, &'a str> {
-        // Handle SharedReplacingMergeTree and ReplicatedReplacingMergeTree specially
-        // These have format: SharedReplacingMergeTree(path, replica [, ver [, is_deleted]])
+        // Try to parse distributed variants first (SharedMergeTree, ReplicatedMergeTree)
+        if let Some(engine) = Self::try_parse_distributed_engine(value) {
+            return engine;
+        }
+
+        // Try to parse regular engines (with or without Shared/Replicated prefix)
+        Self::parse_regular_engine(value)
+    }
+}
+
+impl ClickhouseEngine {
+    /// Try to parse distributed engine variants (Shared/Replicated)
+    /// Returns Some(Result) if it matches a distributed pattern, None otherwise
+    fn try_parse_distributed_engine(value: &str) -> Option<Result<Self, &str>> {
+        // Handle SharedReplacingMergeTree and ReplicatedReplacingMergeTree
         if value.starts_with("SharedReplacingMergeTree(")
             || value.starts_with("ReplicatedReplacingMergeTree(")
         {
-            let prefix = if value.starts_with("SharedReplacingMergeTree(") {
-                "SharedReplacingMergeTree("
-            } else {
-                "ReplicatedReplacingMergeTree("
-            };
+            return Some(Self::parse_distributed_replacing_merge_tree(value));
+        }
 
-            if let Some(content) = value.strip_prefix(prefix).and_then(|s| s.strip_suffix(")")) {
-                // Parse all parameters
-                let params = parse_quoted_csv(content);
+        // Handle SharedMergeTree and ReplicatedMergeTree
+        if value.starts_with("SharedMergeTree(") || value.starts_with("ReplicatedMergeTree(") {
+            return Some(Self::parse_distributed_merge_tree(value));
+        }
 
-                // SharedReplacingMergeTree/ReplicatedReplacingMergeTree have at least 2 params (path, replica)
-                // Optional 3rd param is ver, optional 4th is is_deleted
-                if params.len() >= 2 {
-                    let ver = if params.len() > 2 {
-                        Some(params[2].clone())
-                    } else {
-                        None
-                    };
+        // Handle SharedAggregatingMergeTree and ReplicatedAggregatingMergeTree
+        if value.starts_with("SharedAggregatingMergeTree(")
+            || value.starts_with("ReplicatedAggregatingMergeTree(")
+        {
+            return Some(Self::parse_distributed_aggregating_merge_tree(value));
+        }
 
-                    let is_deleted = if params.len() > 3 {
-                        Some(params[3].clone())
-                    } else {
-                        None
-                    };
+        // Handle SharedSummingMergeTree and ReplicatedSummingMergeTree
+        if value.starts_with("SharedSummingMergeTree(")
+            || value.starts_with("ReplicatedSummingMergeTree(")
+        {
+            return Some(Self::parse_distributed_summing_merge_tree(value));
+        }
 
-                    return Ok(ClickhouseEngine::ReplacingMergeTree { ver, is_deleted });
-                }
-            }
+        None
+    }
+
+    /// Parse SharedReplacingMergeTree or ReplicatedReplacingMergeTree
+    /// Format: (path, replica [, ver [, is_deleted]])
+    fn parse_distributed_replacing_merge_tree(value: &str) -> Result<Self, &str> {
+        let content = Self::extract_engine_content(
+            value,
+            &["SharedReplacingMergeTree(", "ReplicatedReplacingMergeTree("],
+        )?;
+
+        let params = parse_quoted_csv(content);
+
+        // Require at least 2 params (path, replica)
+        if params.len() < 2 {
             return Err(value);
         }
 
-        // "There is a SharedMergeTree analog for every specific MergeTree engine type"
-        match value
+        // Optional 3rd param is ver, optional 4th is is_deleted
+        let ver = params.get(2).cloned();
+        let is_deleted = params.get(3).cloned();
+
+        Ok(ClickhouseEngine::ReplacingMergeTree { ver, is_deleted })
+    }
+
+    /// Parse SharedMergeTree or ReplicatedMergeTree
+    /// Format: (path, replica)
+    fn parse_distributed_merge_tree(value: &str) -> Result<Self, &str> {
+        let content =
+            Self::extract_engine_content(value, &["SharedMergeTree(", "ReplicatedMergeTree("])?;
+
+        let params = parse_quoted_csv(content);
+
+        // Require at least 2 params (path, replica)
+        if params.len() >= 2 {
+            Ok(ClickhouseEngine::MergeTree)
+        } else {
+            Err(value)
+        }
+    }
+
+    /// Parse SharedAggregatingMergeTree or ReplicatedAggregatingMergeTree
+    /// Format: (path, replica)
+    fn parse_distributed_aggregating_merge_tree(value: &str) -> Result<Self, &str> {
+        let content = Self::extract_engine_content(
+            value,
+            &[
+                "SharedAggregatingMergeTree(",
+                "ReplicatedAggregatingMergeTree(",
+            ],
+        )?;
+
+        let params = parse_quoted_csv(content);
+
+        // Require at least 2 params (path, replica)
+        if params.len() >= 2 {
+            Ok(ClickhouseEngine::AggregatingMergeTree)
+        } else {
+            Err(value)
+        }
+    }
+
+    /// Parse SharedSummingMergeTree or ReplicatedSummingMergeTree
+    /// Format: (path, replica [, columns...])
+    fn parse_distributed_summing_merge_tree(value: &str) -> Result<Self, &str> {
+        let content = Self::extract_engine_content(
+            value,
+            &["SharedSummingMergeTree(", "ReplicatedSummingMergeTree("],
+        )?;
+
+        let params = parse_quoted_csv(content);
+
+        // Require at least 2 params (path, replica)
+        // Note: SummingMergeTree can have additional column parameters after path/replica
+        if params.len() >= 2 {
+            Ok(ClickhouseEngine::SummingMergeTree)
+        } else {
+            Err(value)
+        }
+    }
+
+    /// Extract content from engine string with given prefixes
+    /// Returns the content within parentheses
+    fn extract_engine_content<'a>(value: &'a str, prefixes: &[&str]) -> Result<&'a str, &'a str> {
+        for prefix in prefixes {
+            if value.starts_with(prefix) {
+                if let Some(content) = value.strip_prefix(prefix).and_then(|s| s.strip_suffix(")"))
+                {
+                    return Ok(content);
+                }
+            }
+        }
+        Err(value)
+    }
+
+    /// Parse regular engines (including those with Shared/Replicated prefix but no parameters)
+    fn parse_regular_engine(value: &str) -> Result<Self, &str> {
+        // Strip Shared or Replicated prefix if present (for engines without parameters)
+        let engine_name = value
             .strip_prefix("Shared")
-            // TODO: properly handle replicated
-            .unwrap_or(value.strip_prefix("Replicated").unwrap_or(value))
-        {
+            .or_else(|| value.strip_prefix("Replicated"))
+            .unwrap_or(value);
+
+        match engine_name {
             "MergeTree" => Ok(ClickhouseEngine::MergeTree),
             "ReplacingMergeTree" => Ok(ClickhouseEngine::ReplacingMergeTree {
                 ver: None,
                 is_deleted: None,
             }),
             s if s.starts_with("ReplacingMergeTree(") => {
-                if let Some(content) = s
-                    .strip_prefix("ReplacingMergeTree(")
-                    .and_then(|s| s.strip_suffix(")"))
-                {
-                    Self::parse_replacing_merge_tree(content).map_err(|_| value)
-                } else {
-                    Err(value)
-                }
+                Self::parse_regular_replacing_merge_tree(s, value)
             }
             "AggregatingMergeTree" => Ok(ClickhouseEngine::AggregatingMergeTree),
             "SummingMergeTree" => Ok(ClickhouseEngine::SummingMergeTree),
-            s if s.starts_with("S3Queue(") => {
-                if let Some(content) = s.strip_prefix("S3Queue(").and_then(|s| s.strip_suffix(")"))
-                {
-                    Self::parse_s3queue(content).map_err(|_| value)
-                } else {
-                    Err(value)
-                }
-            }
+            s if s.starts_with("S3Queue(") => Self::parse_regular_s3queue(s, value),
             _ => Err(value),
+        }
+    }
+
+    /// Parse regular ReplacingMergeTree with parameters
+    fn parse_regular_replacing_merge_tree<'a>(
+        engine_name: &str,
+        original_value: &'a str,
+    ) -> Result<Self, &'a str> {
+        if let Some(content) = engine_name
+            .strip_prefix("ReplacingMergeTree(")
+            .and_then(|s| s.strip_suffix(")"))
+        {
+            Self::parse_replacing_merge_tree(content).map_err(|_| original_value)
+        } else {
+            Err(original_value)
+        }
+    }
+
+    /// Parse regular S3Queue with parameters
+    fn parse_regular_s3queue<'a>(
+        engine_name: &str,
+        original_value: &'a str,
+    ) -> Result<Self, &'a str> {
+        if let Some(content) = engine_name
+            .strip_prefix("S3Queue(")
+            .and_then(|s| s.strip_suffix(")"))
+        {
+            Self::parse_s3queue(content).map_err(|_| original_value)
+        } else {
+            Err(original_value)
         }
     }
 }
@@ -2205,6 +2323,275 @@ PRIMARY KEY (`id`)"#;
                 }
                 _ => panic!("Expected ReplacingMergeTree for input: {}", input),
             }
+        }
+    }
+
+    #[test]
+    fn test_shared_merge_tree_engine_parsing() {
+        // Test SharedMergeTree without parameters
+        let engine = ClickhouseEngine::try_from("SharedMergeTree").unwrap();
+        assert_eq!(engine, ClickhouseEngine::MergeTree);
+
+        // Test SharedMergeTree with parameters - should normalize to MergeTree
+        let test_cases = vec![
+            "SharedMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}')",
+            "SharedMergeTree('/clickhouse/prod/tables/{database}/{table}', 'replica-{num}')",
+        ];
+
+        for input in test_cases {
+            let engine = ClickhouseEngine::try_from(input).unwrap();
+            assert_eq!(
+                engine,
+                ClickhouseEngine::MergeTree,
+                "Failed for input: {}",
+                input
+            );
+        }
+    }
+
+    #[test]
+    fn test_shared_aggregating_merge_tree_engine_parsing() {
+        // Test SharedAggregatingMergeTree without parameters
+        let engine = ClickhouseEngine::try_from("SharedAggregatingMergeTree").unwrap();
+        assert_eq!(engine, ClickhouseEngine::AggregatingMergeTree);
+
+        // Test SharedAggregatingMergeTree with parameters - should normalize to AggregatingMergeTree
+        let test_cases = vec![
+            "SharedAggregatingMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}')",
+            "SharedAggregatingMergeTree('/clickhouse/tables/{uuid}', 'replica-1')",
+        ];
+
+        for input in test_cases {
+            let engine = ClickhouseEngine::try_from(input).unwrap();
+            assert_eq!(
+                engine,
+                ClickhouseEngine::AggregatingMergeTree,
+                "Failed for input: {}",
+                input
+            );
+        }
+    }
+
+    #[test]
+    fn test_shared_summing_merge_tree_engine_parsing() {
+        // Test SharedSummingMergeTree without parameters
+        let engine = ClickhouseEngine::try_from("SharedSummingMergeTree").unwrap();
+        assert_eq!(engine, ClickhouseEngine::SummingMergeTree);
+
+        // Test SharedSummingMergeTree with parameters - should normalize to SummingMergeTree
+        let test_cases = vec![
+            "SharedSummingMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}')",
+            "SharedSummingMergeTree('/clickhouse/tables/{uuid}', 'replica-1')",
+        ];
+
+        for input in test_cases {
+            let engine = ClickhouseEngine::try_from(input).unwrap();
+            assert_eq!(
+                engine,
+                ClickhouseEngine::SummingMergeTree,
+                "Failed for input: {}",
+                input
+            );
+        }
+    }
+
+    #[test]
+    fn test_replicated_merge_tree_engine_parsing() {
+        // Test ReplicatedMergeTree without parameters
+        let engine = ClickhouseEngine::try_from("ReplicatedMergeTree").unwrap();
+        assert_eq!(engine, ClickhouseEngine::MergeTree);
+
+        // Test ReplicatedMergeTree with parameters - should normalize to MergeTree
+        let test_cases = vec![
+            "ReplicatedMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}')",
+            "ReplicatedMergeTree('/clickhouse/prod/tables/{database}', 'replica-{num}')",
+        ];
+
+        for input in test_cases {
+            let engine = ClickhouseEngine::try_from(input).unwrap();
+            assert_eq!(
+                engine,
+                ClickhouseEngine::MergeTree,
+                "Failed for input: {}",
+                input
+            );
+        }
+    }
+
+    #[test]
+    fn test_replicated_aggregating_merge_tree_engine_parsing() {
+        // Test ReplicatedAggregatingMergeTree without parameters
+        let engine = ClickhouseEngine::try_from("ReplicatedAggregatingMergeTree").unwrap();
+        assert_eq!(engine, ClickhouseEngine::AggregatingMergeTree);
+
+        // Test ReplicatedAggregatingMergeTree with parameters - should normalize to AggregatingMergeTree
+        let test_cases = vec![
+            "ReplicatedAggregatingMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}')",
+            "ReplicatedAggregatingMergeTree('/clickhouse/tables/{uuid}', 'replica-1')",
+        ];
+
+        for input in test_cases {
+            let engine = ClickhouseEngine::try_from(input).unwrap();
+            assert_eq!(
+                engine,
+                ClickhouseEngine::AggregatingMergeTree,
+                "Failed for input: {}",
+                input
+            );
+        }
+    }
+
+    #[test]
+    fn test_replicated_summing_merge_tree_engine_parsing() {
+        // Test ReplicatedSummingMergeTree without parameters
+        let engine = ClickhouseEngine::try_from("ReplicatedSummingMergeTree").unwrap();
+        assert_eq!(engine, ClickhouseEngine::SummingMergeTree);
+
+        // Test ReplicatedSummingMergeTree with parameters - should normalize to SummingMergeTree
+        let test_cases = vec![
+            "ReplicatedSummingMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}')",
+            "ReplicatedSummingMergeTree('/clickhouse/tables/{uuid}', 'replica-1')",
+        ];
+
+        for input in test_cases {
+            let engine = ClickhouseEngine::try_from(input).unwrap();
+            assert_eq!(
+                engine,
+                ClickhouseEngine::SummingMergeTree,
+                "Failed for input: {}",
+                input
+            );
+        }
+    }
+
+    #[test]
+    fn test_shared_replacing_merge_tree_with_backticks() {
+        // Test with backticks in column names
+        let input = "SharedReplacingMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}', `version`, `is_deleted`)";
+        let engine = ClickhouseEngine::try_from(input).unwrap();
+        match engine {
+            ClickhouseEngine::ReplacingMergeTree { ver, is_deleted } => {
+                assert_eq!(ver, Some("`version`".to_string()));
+                assert_eq!(is_deleted, Some("`is_deleted`".to_string()));
+            }
+            _ => panic!("Expected ReplacingMergeTree"),
+        }
+    }
+
+    #[test]
+    fn test_shared_replacing_merge_tree_complex_paths() {
+        // Test with complex path patterns
+        let test_cases = vec![
+            (
+                "SharedReplacingMergeTree('/clickhouse/prod/tables/{database}/{table}/{uuid}', 'replica-{replica_num}')",
+                None,
+                None,
+            ),
+            (
+                "SharedReplacingMergeTree('/clickhouse/tables-v2/{uuid:01234-5678}/{shard}', '{replica}', updated_at)",
+                Some("updated_at"),
+                None,
+            ),
+        ];
+
+        for (input, expected_ver, expected_is_deleted) in test_cases {
+            let engine = ClickhouseEngine::try_from(input).unwrap();
+            match engine {
+                ClickhouseEngine::ReplacingMergeTree { ver, is_deleted } => {
+                    assert_eq!(ver.as_deref(), expected_ver, "Failed for input: {}", input);
+                    assert_eq!(
+                        is_deleted.as_deref(),
+                        expected_is_deleted,
+                        "Failed for input: {}",
+                        input
+                    );
+                }
+                _ => panic!("Expected ReplacingMergeTree for input: {}", input),
+            }
+        }
+    }
+
+    #[test]
+    fn test_shared_merge_tree_invalid_params() {
+        // Test invalid SharedReplacingMergeTree with missing parameters
+        let invalid_cases = vec![
+            "SharedReplacingMergeTree()",        // No parameters
+            "SharedReplacingMergeTree('/path')", // Only one parameter
+            "SharedMergeTree()",                 // No parameters for SharedMergeTree
+        ];
+
+        for input in invalid_cases {
+            let result = ClickhouseEngine::try_from(input);
+            assert!(result.is_err(), "Should fail for input: {}", input);
+        }
+    }
+
+    #[test]
+    fn test_parse_quoted_csv_with_shared_merge_tree_params() {
+        // Test the parse_quoted_csv helper function with SharedMergeTree parameters
+        let test_cases = vec![
+            (
+                "'/clickhouse/tables/{uuid}/{shard}', '{replica}'",
+                vec!["/clickhouse/tables/{uuid}/{shard}", "{replica}"],
+            ),
+            (
+                "'/clickhouse/tables/{uuid}/{shard}', '{replica}', version",
+                vec!["/clickhouse/tables/{uuid}/{shard}", "{replica}", "version"],
+            ),
+            (
+                "'/clickhouse/tables/{uuid}/{shard}', '{replica}', 'version', 'is_deleted'",
+                vec![
+                    "/clickhouse/tables/{uuid}/{shard}",
+                    "{replica}",
+                    "version",
+                    "is_deleted",
+                ],
+            ),
+        ];
+
+        for (input, expected) in test_cases {
+            let result = parse_quoted_csv(input);
+            assert_eq!(result, expected, "Failed for input: {}", input);
+        }
+    }
+
+    #[test]
+    fn test_engine_normalization_consistency() {
+        // Test that both Shared and Replicated variants normalize to the same base engine
+        let shared_input =
+            "SharedReplacingMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}', version)";
+        let replicated_input = "ReplicatedReplacingMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}', version)";
+
+        let shared_engine = ClickhouseEngine::try_from(shared_input).unwrap();
+        let replicated_engine = ClickhouseEngine::try_from(replicated_input).unwrap();
+
+        // Both should normalize to the same ReplacingMergeTree with version
+        assert_eq!(shared_engine, replicated_engine);
+        match shared_engine {
+            ClickhouseEngine::ReplacingMergeTree { ver, is_deleted } => {
+                assert_eq!(ver, Some("version".to_string()));
+                assert_eq!(is_deleted, None);
+            }
+            _ => panic!("Expected ReplacingMergeTree"),
+        }
+    }
+
+    #[test]
+    fn test_clickhouse_cloud_real_engine_parsing() {
+        // Real example from ClickHouse Cloud
+        let engine_str = "SharedMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}')";
+        let engine = ClickhouseEngine::try_from(engine_str).unwrap();
+        assert_eq!(engine, ClickhouseEngine::MergeTree);
+
+        // Another real example with SharedReplacingMergeTree
+        let replacing_str = "SharedReplacingMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}', _version, _is_deleted)";
+        let replacing_engine = ClickhouseEngine::try_from(replacing_str).unwrap();
+        match replacing_engine {
+            ClickhouseEngine::ReplacingMergeTree { ver, is_deleted } => {
+                assert_eq!(ver, Some("_version".to_string()));
+                assert_eq!(is_deleted, Some("_is_deleted".to_string()));
+            }
+            _ => panic!("Expected ReplacingMergeTree"),
         }
     }
 }
