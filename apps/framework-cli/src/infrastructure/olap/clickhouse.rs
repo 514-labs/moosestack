@@ -1376,31 +1376,6 @@ pub fn extract_order_by_from_create_query(create_query: &str) -> Vec<String> {
     Vec::new()
 }
 
-/// Extracts PARTITION BY expression from a CREATE TABLE query, if present
-pub fn extract_partition_by_from_create_query(create_query: &str) -> Option<String> {
-    // Use uppercase for searching keywords, but slice using original string
-    let upper = create_query.to_uppercase();
-    if let Some(idx) = upper.find("PARTITION BY") {
-        // Start right after PARTITION BY
-        let after = &create_query[idx + "PARTITION BY".len()..];
-        // Clause ends before ORDER BY, PRIMARY KEY, SAMPLE BY, SETTINGS, or end of string
-        let mut end = after.len();
-        for kw in ["ORDER BY", "PRIMARY KEY", "SAMPLE BY", "SETTINGS"] {
-            if let Some(i) = after.to_uppercase().find(kw) {
-                end = std::cmp::min(end, i);
-            }
-        }
-        let expr = after[..end].trim();
-        if expr.is_empty() {
-            None
-        } else {
-            Some(expr.to_string())
-        }
-    } else {
-        None
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
