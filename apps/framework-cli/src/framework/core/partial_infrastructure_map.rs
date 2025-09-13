@@ -47,6 +47,7 @@ use crate::{
         consumption::model::ConsumptionQueryParam, languages::SupportedLanguages,
         scripts::Workflow, versions::Version,
     },
+    infrastructure::olap::clickhouse::queries::ClickhouseEngine,
     utilities::constants,
 };
 
@@ -100,16 +101,64 @@ impl LifeCycle {
 ///
 /// This structure captures the essential properties needed to create a table in the infrastructure,
 /// including column definitions, ordering, and deduplication settings.
+/// Engine-specific configuration using discriminated union pattern.
+/// This provides type-safe deserialization of engine configurations from TypeScript.
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct S3QueueConfig {
+    #[serde(alias = "s3Path")]
+    s3_path: String,
+    format: String,
+    #[serde(alias = "awsAccessKeyId")]
+    aws_access_key_id: Option<String>,
+    #[serde(alias = "awsSecretAccessKey")]
+    aws_secret_access_key: Option<String>,
+    compression: Option<String>,
+    headers: Option<std::collections::HashMap<String, String>>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(tag = "engine", rename_all = "camelCase")]
+enum EngineConfig {
+    #[serde(rename = "MergeTree")]
+    MergeTree {},
+
+    #[serde(rename = "ReplacingMergeTree")]
+    ReplacingMergeTree {
+        #[serde(default)]
+        ver: Option<String>,
+        #[serde(alias = "isDeleted", default)]
+        is_deleted: Option<String>,
+    },
+
+    #[serde(rename = "AggregatingMergeTree")]
+    AggregatingMergeTree {},
+
+    #[serde(rename = "SummingMergeTree")]
+    SummingMergeTree {},
+
+    #[serde(rename = "S3Queue")]
+    S3Queue(Box<S3QueueConfig>),
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct PartialTable {
     pub name: String,
     pub columns: Vec<Column>,
+    #[serde(alias = "order_by")]
     pub order_by: Vec<String>,
-    pub engine: Option<String>,
+    #[serde(default)]
+    pub partition_by: Option<String>,
+    #[serde(alias = "engine_config")]
+    pub engine_config: Option<EngineConfig>,
     pub version: Option<String>,
     pub metadata: Option<Metadata>,
+    #[serde(alias = "life_cycle")]
     pub life_cycle: Option<LifeCycle>,
+    #[serde(alias = "table_settings")]
+    pub table_settings: Option<std::collections::HashMap<String, String>>,
 }
 
 /// Represents a topic definition from user code before it's converted into a complete [`Topic`].
@@ -161,6 +210,7 @@ struct PartialIngestApi {
     /// If not specified, defaults to "ingest/{name}/{version}"
     #[serde(default)]
     pub path: Option<String>,
+    pub schema: serde_json::Map<String, serde_json::Value>,
 }
 
 /// Represents an egress API endpoint definition before conversion to a complete [`ApiEndpoint`].
@@ -426,6 +476,45 @@ impl PartialInfrastructureMap {
                     .as_ref()
                     .map(|v_str| Version::from_string(v_str.clone()));
 
+                let engine = self.parse_engine(partial_table);
+                let engine_params_hash = engine.as_ref().map(|e| e.non_alterable_params_hash());
+
+                // S3Queue settings should come directly from table_settings in the user code
+                let mut table_settings = partial_table.table_settings.clone().unwrap_or_default();
+
+                // Apply ClickHouse default settings for MergeTree family engines
+                // This ensures our internal representation matches what ClickHouse actually has
+                // and prevents unnecessary diffs
+                // Note: When engine is None, ClickHouse defaults to MergeTree, so we apply defaults in that case too
+                let should_apply_mergetree_defaults = match &engine {
+                    None => true, // No engine specified defaults to MergeTree
+                    Some(eng) => eng.is_merge_tree_family(),
+                };
+
+                if should_apply_mergetree_defaults {
+                    // Apply MergeTree defaults if not explicitly set by user
+                    // These are the most common defaults that appear in system.tables
+
+                    // Index granularity settings (readonly after table creation)
+                    table_settings
+                        .entry("index_granularity".to_string())
+                        .or_insert("8192".to_string());
+                    table_settings
+                        .entry("index_granularity_bytes".to_string())
+                        .or_insert("10485760".to_string()); // 10 * 1024 * 1024
+
+                    // In ClickHouse 19.11+, this defaults to true (readonly after creation)
+                    table_settings
+                        .entry("enable_mixed_granularity_parts".to_string())
+                        .or_insert("1".to_string()); // true = 1 in ClickHouse settings
+
+                    // Note: We don't set other defaults like:
+                    // - min_bytes_for_wide_part (defaults to 10485760 but is modifiable)
+                    // - min_rows_for_wide_part (defaults to 0 but is modifiable)
+                    // - merge_max_block_size (defaults to 8192 but is modifiable)
+                    // Because they are modifiable and won't cause issues if not set
+                }
+
                 let table = Table {
                     name: version
                         .as_ref()
@@ -434,7 +523,8 @@ impl PartialInfrastructureMap {
                         }),
                     columns: partial_table.columns.clone(),
                     order_by: partial_table.order_by.clone(),
-                    engine: partial_table.engine.clone(),
+                    partition_by: partial_table.partition_by.clone(),
+                    engine,
                     version,
                     source_primitive: PrimitiveSignature {
                         name: partial_table.name.clone(),
@@ -442,10 +532,51 @@ impl PartialInfrastructureMap {
                     },
                     metadata: partial_table.metadata.clone(),
                     life_cycle: partial_table.life_cycle.unwrap_or(LifeCycle::FullyManaged),
+                    engine_params_hash,
+                    table_settings: if table_settings.is_empty() {
+                        None
+                    } else {
+                        Some(table_settings)
+                    },
                 };
                 (table.id(), table)
             })
             .collect()
+    }
+
+    /// Parses the engine configuration from a partial table using the discriminated union approach.
+    /// This provides type-safe conversion from the serialized engine configuration to ClickhouseEngine.
+    fn parse_engine(&self, partial_table: &PartialTable) -> Option<ClickhouseEngine> {
+        match &partial_table.engine_config {
+            Some(EngineConfig::MergeTree {}) => Some(ClickhouseEngine::MergeTree),
+
+            Some(EngineConfig::ReplacingMergeTree { ver, is_deleted }) => {
+                Some(ClickhouseEngine::ReplacingMergeTree {
+                    ver: ver.clone(),
+                    is_deleted: is_deleted.clone(),
+                })
+            }
+
+            Some(EngineConfig::AggregatingMergeTree {}) => {
+                Some(ClickhouseEngine::AggregatingMergeTree)
+            }
+
+            Some(EngineConfig::SummingMergeTree {}) => Some(ClickhouseEngine::SummingMergeTree),
+
+            Some(EngineConfig::S3Queue(config)) => {
+                // S3Queue settings are handled in table_settings, not in the engine
+                Some(ClickhouseEngine::S3Queue {
+                    s3_path: config.s3_path.clone(),
+                    format: config.format.clone(),
+                    compression: config.compression.clone(),
+                    headers: config.headers.clone(),
+                    aws_access_key_id: config.aws_access_key_id.clone(),
+                    aws_secret_access_key: config.aws_secret_access_key.clone(),
+                })
+            }
+
+            None => None,
+        }
     }
 
     /// Converts partial topic definitions into complete [`Topic`] instances.
@@ -536,8 +667,9 @@ impl PartialInfrastructureMap {
                 name: partial_api.name.clone(),
                 api_type: APIType::INGRESS {
                     target_topic_id: target_topic.id(),
-                    data_model: Some(data_model),
+                    data_model: Some(Box::new(data_model)),
                     dead_letter_queue: partial_api.dead_letter_queue.clone(),
+                    schema: partial_api.schema.clone(),
                 },
                 path: if let Some(custom_path) = &partial_api.path {
                     // Use custom path if provided, ensuring it starts with "ingest/"

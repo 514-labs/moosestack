@@ -11,7 +11,7 @@ mod watcher;
 use super::metrics::Metrics;
 use crate::utilities::docker::DockerClient;
 use clap::Parser;
-use commands::{Commands, GenerateCommand, TemplateSubCommands, WorkflowCommands};
+use commands::{Commands, DbCommands, GenerateCommand, TemplateSubCommands, WorkflowCommands};
 use config::ConfigError;
 use display::with_spinner_completion;
 use log::{debug, info, warn};
@@ -54,13 +54,63 @@ use crate::utilities::constants::{
     PROJECT_NAME_ALLOW_PATTERN,
 };
 
-use crate::cli::routines::code_generation::db_to_dmv2;
+use crate::cli::commands::DbArgs;
+use crate::cli::routines::code_generation::{db_pull, db_to_dmv2};
 use crate::cli::routines::ls::ls_dmv2;
 use crate::cli::routines::templates::create_project_from_template;
 use crate::framework::core::migration_plan::MIGRATION_SCHEMA;
+use crate::utilities::clickhouse_url::convert_http_to_clickhouse;
 use anyhow::Result;
 use std::time::Duration;
 use tokio::time::timeout;
+
+/// Generic prompt function with hints, default values, and better formatting
+fn prompt_user(
+    prompt_text: &str,
+    default: Option<&str>,
+    hint: Option<&str>,
+) -> Result<String, RoutineFailure> {
+    use std::io::{self, Write};
+
+    // Build the prompt with proper formatting
+    let mut full_prompt = String::new();
+
+    // Add the main prompt text
+    full_prompt.push_str(prompt_text);
+
+    // Add default value if provided
+    if let Some(default_value) = default {
+        full_prompt.push_str(&format!(" (default: {})", default_value));
+    }
+
+    // Add hint if provided
+    if let Some(hint_text) = hint {
+        full_prompt.push_str(&format!("\n  💡 Hint: {}", hint_text));
+    }
+
+    // Add the prompt indicator
+    full_prompt.push_str("\n> ");
+
+    print!("{}", full_prompt);
+    let _ = io::stdout().flush();
+    let mut input = String::new();
+    io::stdin().read_line(&mut input).map_err(|e| {
+        RoutineFailure::error(Message {
+            action: "Init".to_string(),
+            details: format!("Failed to prompt user: {e:?}"),
+        })
+    })?;
+    let trimmed = input.trim();
+
+    // Return default if input is empty, otherwise return the trimmed input
+    let result = if trimmed.is_empty() {
+        default.unwrap_or("").to_string()
+    } else {
+        trimmed.to_string()
+    };
+
+    Ok(result)
+}
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None, arg_required_else_help(true), next_display_order = None)]
@@ -173,9 +223,10 @@ pub async fn top_command_handler(
                 name, location, template, language
             );
 
+            // Determine template, prompting for language if needed (especially for --from-remote)
             let template = match template {
-                None => match language.as_ref().map(|l| l.to_lowercase()).as_deref() {
-                    None => panic!("Either template or language should be specified."), // clap command line parsing enforces either is present
+                Some(t) => t.to_lowercase(),
+                None => match language.as_deref().map(|l| l.to_lowercase()).as_deref() {
                     Some("typescript") => "typescript-empty".to_string(),
                     Some("python") => "python-empty".to_string(),
                     Some(lang) => {
@@ -184,8 +235,27 @@ pub async fn top_command_handler(
                             format!("language {lang}"),
                         )))
                     }
+                    None => {
+                        display::show_message_wrapper(
+                            MessageType::Info,
+                            Message::new(
+                                "Init".to_string(),
+                                "Setting up your new Moose project".to_string(),
+                            ),
+                        );
+                        let input = prompt_user(
+                            "Select language [1] TypeScript [2] Python",
+                            Some("1"),
+                            None,
+                        )?
+                        .to_lowercase();
+
+                        match input.as_str() {
+                            "2" | "Python" | "py" => "python-empty".to_string(),
+                            _ => "typescript-empty".to_string(),
+                        }
+                    }
                 },
-                Some(template) => template.to_lowercase(),
             };
 
             let dir_path = Path::new(location.as_deref().unwrap_or(name));
@@ -204,15 +274,86 @@ pub async fn top_command_handler(
                 create_project_from_template(&template, name, dir_path, *no_fail_already_exists)
                     .await?;
 
-            if let Some(remote_url) = from_remote {
-                db_to_dmv2(remote_url, dir_path).await?;
-            }
+            let normalized_url = match from_remote {
+                None => {
+                    // No --from-remote flag provided
+                    None
+                }
+                Some(None) => {
+                    // --from-remote flag provided, but no URL given - use interactive prompts
+                    let base = prompt_user(
+                        "Enter ClickHouse host and port",
+                        None,
+                        Some("Format: https://your-service-id.region.clickhouse.cloud:8443\n  🔗 Get your URL: https://clickhouse.cloud/\n  📖 Troubleshooting: https://docs.fiveonefour.com/moose/getting-started/from-clickhouse#troubleshooting")
+                    )?.trim_end_matches('/').trim_start_matches("https://").to_string();
+                    let user = prompt_user("Enter username", Some("default"), None)?;
+                    let pass = prompt_user("Enter password", None, None)?;
+                    let db = prompt_user("Enter database name", Some("default"), None)?;
+
+                    let mut url = reqwest::Url::parse(&format!("https://{base}")).map_err(|e| {
+                        RoutineFailure::new(
+                            Message::new("Malformed".to_string(), format!("host and port: {base}")),
+                            e,
+                        )
+                    })?;
+                    url.set_username(&user).map_err(|()| {
+                        RoutineFailure::error(Message::new(
+                            "Malformed".to_string(),
+                            format!("URL: {url}"),
+                        ))
+                    })?;
+
+                    if !pass.is_empty() {
+                        url.set_password(Some(&pass)).map_err(|()| {
+                            RoutineFailure::error(Message::new(
+                                "Malformed".to_string(),
+                                format!("URL: {url}"),
+                            ))
+                        })?
+                    }
+
+                    url.query_pairs_mut().append_pair("database", &db);
+                    let url = url.to_string();
+                    db_to_dmv2(&url, dir_path).await?;
+                    Some(url)
+                }
+                Some(Some(url_str)) => {
+                    // --from-remote flag provided with URL - validate and use
+                    match convert_http_to_clickhouse(url_str) {
+                        Ok(_) => {
+                            db_to_dmv2(url_str, dir_path).await?;
+                            Some(url_str.to_string())
+                        }
+                        Err(e) => {
+                            return Err(RoutineFailure::error(Message::new(
+                                "Init from remote".to_string(),
+                                format!(
+                                    "Invalid ClickHouse URL. Use HTTPS protocol and correct port. Run `moose init {} --from-remote` without arguments for interactive setup.\nDetails: {}",
+                                    name,
+                                    e
+                                ),
+                            )));
+                        }
+                    }
+                }
+            };
 
             wait_for_usage_capture(capture_handle).await;
 
+            let success_message = if let Some(connection_string) = normalized_url {
+                format!(
+                    "\n\n{post_install_message}\n\n🔗 Your ClickHouse connection string:\n{}\n\n📋 After setting up your development environment, open a new terminal and seed your local database:\n      moose seed clickhouse \"{}\" --limit 1000\n\n💡 Tip: Save the connection string as an environment variable for future use:\n   export MOOSE_REMOTE_CLICKHOUSE_URL=\"{}\"\n",
+                    connection_string,
+                    connection_string,
+                    connection_string
+                )
+            } else {
+                format!("\n\n{post_install_message}")
+            };
+
             Ok(RoutineSuccess::highlight(Message::new(
                 "Get Started".to_string(),
-                format!("\n\n{post_install_message}"),
+                success_message,
             )))
         }
         // This command is used to check the project for errors that are not related to runtime
@@ -930,6 +1071,38 @@ pub async fn top_command_handler(
                 }
             }
         }
+        Commands::Db(DbArgs {
+            command:
+                DbCommands::Pull {
+                    connection_string,
+                    file_path,
+                },
+        }) => {
+            info!("Running db pull command");
+            let project = load_project()?;
+
+            let capture_handle = crate::utilities::capture::capture_usage(
+                ActivityType::DbPullCommand,
+                Some(project.name()),
+                &settings,
+                machine_id.clone(),
+                HashMap::new(),
+            );
+            db_pull(connection_string, &project, file_path.as_deref())
+                .await
+                .map_err(|e| {
+                    RoutineFailure::new(
+                        Message::new("DB Pull".to_string(), "failed".to_string()),
+                        e,
+                    )
+                })?;
+
+            wait_for_usage_capture(capture_handle).await;
+            Ok(RoutineSuccess::success(Message::new(
+                "DB Pull".to_string(),
+                "External models refreshed".to_string(),
+            )))
+        }
         Commands::Refresh { url, token } => {
             info!("Running refresh command");
 
@@ -954,6 +1127,10 @@ pub async fn top_command_handler(
         Commands::Seed(seed_args) => {
             let project = load_project()?;
             seed_data::handle_seed_command(seed_args, &project).await
+        }
+        Commands::Truncate { tables, all, rows } => {
+            let project = load_project()?;
+            routines::truncate_table::truncate_tables(&project, tables.clone(), *all, *rows).await
         }
     }
 }

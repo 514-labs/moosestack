@@ -237,7 +237,7 @@ class Api(BaseTypedResource, Generic[U]):
             A dictionary representing the JSON schema.
         """
         from pydantic.type_adapter import TypeAdapter
-        return TypeAdapter(self.return_type).json_schema(
+        return TypeAdapter(self.return_type()).json_schema(
             ref_template='#/components/schemas/{model}'
         )
 

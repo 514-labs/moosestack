@@ -166,6 +166,7 @@ pub mod ps;
 pub mod scripts;
 pub mod seed_data;
 pub mod templates;
+pub mod truncate_table;
 mod util;
 pub mod validate;
 
@@ -712,7 +713,8 @@ fn calculate_plan_diff_local(
     use crate::infrastructure::olap::clickhouse::diff_strategy::ClickHouseTableDiffStrategy;
 
     let clickhouse_strategy = ClickHouseTableDiffStrategy;
-    current_map.diff_with_table_strategy(target_map, &clickhouse_strategy)
+    // planning about action on prod env, respect_life_cycle is true
+    current_map.diff_with_table_strategy(target_map, &clickhouse_strategy, true)
 }
 
 /// Legacy implementation of remote_plan using the existing /admin/plan endpoint

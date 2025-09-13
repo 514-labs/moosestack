@@ -111,6 +111,7 @@ fn to_info(endpoint: &ApiEndpoint) -> Either<IngestionApiInfo, ConsumptionApiInf
             target_topic_id,
             dead_letter_queue: _,
             data_model: _,
+            schema: _,
         } => Either::Left(IngestionApiInfo {
             name: endpoint.name.clone(),
             destination: target_topic_id.clone(),

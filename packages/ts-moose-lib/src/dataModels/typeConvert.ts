@@ -103,7 +103,9 @@ const handleAggregated = (
 
 /** Detect ClickHouse default annotation on a type and return raw sql */
 const handleDefault = (t: ts.Type, checker: TypeChecker): string | null => {
-  const defaultSymbol = t.getProperty("_clickhouse_default");
+  // Ensure we check the non-nullable part so optionals still surface defaults
+  const nonNull = t.getNonNullableType();
+  const defaultSymbol = nonNull.getProperty("_clickhouse_default");
   if (defaultSymbol === undefined) return null;
   const defaultType = checker.getNonNullableType(
     checker.getTypeOfSymbol(defaultSymbol),
@@ -185,9 +187,14 @@ const handleStringType = (
   t: ts.Type,
   checker: TypeChecker,
   fieldName: string,
+  annotations: [string, any][],
 ): string => {
   const tagSymbol = t.getProperty("typia.tag");
   if (tagSymbol === undefined) {
+    if (t.isUnion() && t.types.every((v) => v.isStringLiteral())) {
+      annotations.push(["LowCardinality", true]);
+    }
+
     return "String";
   } else {
     const typiaProps = checker.getNonNullableType(
@@ -380,12 +387,13 @@ const tsTypeToDataType = (
   const nullable = nonNull != t;
 
   const aggregationFunction = handleAggregated(t, checker, fieldName, typeName);
+  const annotations: [string, any][] = [];
 
   const dataType: DataType =
     isEnum(nonNull) ? enumConvert(nonNull)
     : isStringAnyRecord(nonNull, checker) ? "Json"
     : checker.isTypeAssignableTo(nonNull, checker.getStringType()) ?
-      handleStringType(nonNull, checker, fieldName)
+      handleStringType(nonNull, checker, fieldName, annotations)
     : isNumberType(nonNull, checker) ?
       handleNumberType(nonNull, checker, fieldName)
     : checker.isTypeAssignableTo(nonNull, checker.getBooleanType()) ? "Boolean"
@@ -411,7 +419,6 @@ const tsTypeToDataType = (
       }
     : nonNull == checker.getNeverType() ? throwNullType(fieldName, typeName)
     : throwUnknownType(t, fieldName, typeName);
-  const annotations: [string, any][] = [];
   if (aggregationFunction !== undefined) {
     annotations.push(["aggregationFunction", aggregationFunction]);
   }

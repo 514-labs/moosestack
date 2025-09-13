@@ -228,7 +228,7 @@ export class Cluster<C> {
         Object.values(cluster.workers || {})
           .filter((worker) => !!worker)
           .forEach((worker) => {
-            if (!worker.isDead()) {
+            if (worker && !worker.isDead()) {
               ++workersAlive;
               if (funcRun == 1) {
                 worker.kill(signal);

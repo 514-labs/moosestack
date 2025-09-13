@@ -62,6 +62,35 @@ Clears temporary data and stops development infrastructure.
 moose clean
 ```
 
+### Seed (ClickHouse)
+Seed your local ClickHouse from a remote ClickHouse instance.
+```bash
+moose seed clickhouse [--connection-string <CONNECTION_STRING>] [--table <name>] [--limit <n> | --all]
+```
+- `--connection-string`: Remote ClickHouse HTTPS/ClickHouse URL. If omitted, the CLI uses `MOOSE_SEED_CLICKHOUSE_URL`.
+- `--table`: Seed only the specified table (default: all Moose tables).
+- `--limit`: Copy up to N rows (mutually exclusive with `--all`). Large limits are automatically batched.
+- `--all`: Copy entire table(s) in batches (mutually exclusive with `--limit`).
+
+Notes:
+- Seeding is batched with progress output; Ctrl+C finishes the current batch gracefully.
+- Use env var fallback:
+```bash
+export MOOSE_SEED_CLICKHOUSE_URL='https://username:password@host:8443/?database=default'
+```
+
+### Truncate
+Truncate tables or delete the last N rows from local ClickHouse tables.
+```bash
+moose truncate [TABLE[,TABLE...]] [--all] [--rows <n>]
+```
+- `TABLE[,TABLE...]`: One or more table names (comma-separated). Omit to use `--all`.
+- `--all`: Apply to all non-view tables in the current database (mutually exclusive with listing tables).
+- `--rows <n>`: Delete the last N rows per table; omit to remove all rows (TRUNCATE).
+
+Notes:
+- For `--rows`, the command uses the table ORDER BY when available; otherwise it falls back to a timestamp heuristic.
+
 ## Monitoring Commands
 
 ### Logs

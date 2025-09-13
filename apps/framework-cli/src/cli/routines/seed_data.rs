@@ -1,5 +1,6 @@
 use crate::cli::commands::SeedSubcommands;
-use crate::cli::display::Message;
+use crate::cli::display;
+use crate::cli::display::{Message, MessageType};
 use crate::cli::routines::RoutineFailure;
 use crate::cli::routines::RoutineSuccess;
 use crate::framework::core::infrastructure_map::InfrastructureMap;
@@ -9,6 +10,7 @@ use crate::infrastructure::olap::clickhouse::config::ClickHouseConfig;
 use crate::project::Project;
 use crate::utilities::clickhouse_url::convert_http_to_clickhouse;
 use log::{debug, info};
+use std::cmp::min;
 
 fn parse_clickhouse_connection_string(
     conn_str: &str,
@@ -60,12 +62,10 @@ pub async fn handle_seed_command(
         Some(SeedSubcommands::Clickhouse {
             connection_string,
             limit,
+            all,
             table,
         }) => {
-            info!(
-                "Running seed clickhouse command with connection string: {}",
-                connection_string
-            );
+            info!("Running seed clickhouse command with connection string: {connection_string}");
 
             let infra_map = if project.features.data_model_v2 {
                 InfrastructureMap::load_from_user_code(project)
@@ -115,10 +115,13 @@ pub async fn handle_seed_command(
                     .fetch_one::<String>()
                     .await
                     .map_err(|e| {
-                        RoutineFailure::error(Message::new(
-                            "SeedClickhouse".to_string(),
-                            format!("Failed to query remote database: {e}"),
-                        ))
+                        RoutineFailure::new(
+                            Message::new(
+                                "SeedClickhouse".to_string(),
+                                "Failed to query remote database".to_string(),
+                            ),
+                            e,
+                        )
                     })?;
 
                 remote_config.db_name = current_db;
@@ -146,7 +149,7 @@ pub async fn handle_seed_command(
                 &local_clickhouse,
                 &remote_config,
                 table.clone(),
-                *limit,
+                if *all { None } else { Some(*limit) },
             )
             .await?;
 
@@ -168,7 +171,7 @@ pub async fn seed_clickhouse_tables(
     local_clickhouse: &ClickHouseClient,
     remote_config: &ClickHouseConfig,
     table_name: Option<String>,
-    limit: usize,
+    limit: Option<usize>,
 ) -> Result<Vec<String>, RoutineFailure> {
     let remote_host = &remote_config.host;
     let remote_db = &remote_config.db_name;
@@ -198,20 +201,57 @@ pub async fn seed_clickhouse_tables(
     let remote_host_and_port = format!("{remote_host}:{remote_port}");
 
     for table_name in tables {
-        let sql = format!(
-            "INSERT INTO `{local_db}`.`{table_name}` SELECT * FROM remoteSecure('{remote_host_and_port}', '{remote_db}', '{table_name}', '{remote_user}', '{remote_password}') LIMIT {limit}"
-        );
+        let batch_size: usize = 50_000;
+        let mut copied_total: usize = 0;
+        let remote_total = {
+            let count_sql = format!(
+                "SELECT count() FROM remoteSecure('{remote_host_and_port}', '{remote_db}', '{table_name}', '{remote_user}', '{remote_password}')"
+            );
+            let remote_count_failure =
+                || Message::new("Remote".to_string(), "count failed".to_string());
+            let body = local_clickhouse
+                .execute_sql(&count_sql)
+                .await
+                .map_err(|e| RoutineFailure::new(remote_count_failure(), e))?;
+            body.trim()
+                .parse::<usize>()
+                .map_err(|e| RoutineFailure::new(remote_count_failure(), e))?
+        };
+        let total_rows = match limit {
+            None => remote_total,
+            Some(l) => min(remote_total, l),
+        };
+        let mut i: usize = 0;
+        'table_batches: while copied_total < total_rows {
+            i += 1;
+            let limit = match limit {
+                None => batch_size,
+                Some(l) => min(l - copied_total, batch_size),
+            };
+            let sql = format!(
+                "INSERT INTO `{local_db}`.`{table_name}` SELECT * FROM remoteSecure('{remote_host_and_port}', '{remote_db}', '{table_name}', '{remote_user}', '{remote_password}') LIMIT {limit} OFFSET {copied_total}"
+            );
 
-        debug!("Executing SQL: {}", sql);
+            debug!("Executing SQL: table={table_name}, offset={copied_total}, limit={limit}");
 
-        match local_clickhouse.execute_sql(&sql).await {
-            Ok(_) => {
-                summary.push(format!("✓ {table_name}: copied from remote"));
-            }
-            Err(e) => {
-                summary.push(format!("✗ {table_name}: failed to copy - {e}"));
+            match local_clickhouse.execute_sql(&sql).await {
+                Ok(_) => {
+                    copied_total += batch_size;
+                    display::show_message_wrapper(
+                        MessageType::Info,
+                        Message::new(
+                            "Seed".to_string(),
+                            format!("{table_name}: copied batch {i}"),
+                        ),
+                    );
+                }
+                Err(e) => {
+                    summary.push(format!("✗ {table_name}: failed to copy - {e}"));
+                    break 'table_batches;
+                }
             }
         }
+        summary.push(format!("✓ {table_name}: copied from remote"));
     }
 
     info!("ClickHouse seeding completed");

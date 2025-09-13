@@ -1756,6 +1756,7 @@ impl Webserver {
                                 target_topic_id,
                                 dead_letter_queue,
                                 data_model,
+                                schema: _,
                             } => {
                                 // This is not namespaced
                                 let topic =
@@ -1770,7 +1771,7 @@ impl Webserver {
                                 route_table.insert(
                                     api_endpoint.path.clone(),
                                     RouteMeta {
-                                        data_model: data_model.unwrap(),
+                                        data_model: *data_model.unwrap(),
                                         dead_letter_queue,
                                         kafka_topic_name: kafka_topic.name,
                                         version: api_endpoint.version,
@@ -1805,6 +1806,7 @@ impl Webserver {
                                 target_topic_id,
                                 dead_letter_queue,
                                 data_model,
+                                schema: _,
                             } => {
                                 log::info!("Replacing route: {:?} with {:?}", before, after);
 
@@ -1819,7 +1821,7 @@ impl Webserver {
                                 route_table.insert(
                                     after.path.clone(),
                                     RouteMeta {
-                                        data_model: data_model.as_ref().unwrap().clone(),
+                                        data_model: *data_model.as_ref().unwrap().clone(),
                                         dead_letter_queue: dead_letter_queue.clone(),
                                         kafka_topic_name: kafka_topic.name,
                                         version: after.version,
@@ -2673,8 +2675,11 @@ async fn admin_plan_route(
     // Use ClickHouse-specific strategy for table diffing
     let clickhouse_strategy =
         crate::infrastructure::olap::clickhouse::diff_strategy::ClickHouseTableDiffStrategy;
-    let changes =
-        current_infra_map.diff_with_table_strategy(&plan_request.infra_map, &clickhouse_strategy);
+    let changes = current_infra_map.diff_with_table_strategy(
+        &plan_request.infra_map,
+        &clickhouse_strategy,
+        true,
+    );
 
     // Prepare the response
     let response = PlanResponse {
@@ -2801,6 +2806,7 @@ mod tests {
                 comment: None,
             }],
             order_by: vec!["id".to_string()],
+            partition_by: None,
             engine: None,
             version: Some(Version::from_string("1.0.0".to_string())),
             source_primitive: PrimitiveSignature {
@@ -2809,6 +2815,8 @@ mod tests {
             },
             metadata: None,
             life_cycle: LifeCycle::FullyManaged,
+            engine_params_hash: None,
+            table_settings: None,
         }
     }
 

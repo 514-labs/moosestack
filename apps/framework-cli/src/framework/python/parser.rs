@@ -19,18 +19,18 @@
 //! ## Error Handling
 //! All parsing operations return `Result<T, PythonParserError>` for robust error handling.
 
-use std::fmt::Debug;
-use std::path::{Path, PathBuf};
-
 use crate::{
     framework::data_model::{model::DataModel, parser::FileObjects},
     project::python_project::PythonProject,
     utilities::constants::REQUIREMENTS_TXT,
 };
+use log::warn;
 use rustpython_parser::{
     ast::{self, Constant, Expr, ExprName, Identifier, Keyword, Stmt, StmtClassDef},
     Parse,
 };
+use std::fmt::Debug;
+use std::path::{Path, PathBuf};
 
 use crate::framework::core::infrastructure::table::{
     Column, ColumnType, DataEnum as FrameworkEnum, FloatType, IntType, Nested,
@@ -745,12 +745,17 @@ pub fn get_project_from_file(path: &Path) -> Result<PythonProject, PythonParserE
 
     // Try to read requirements.txt from the same directory as setup.py
     let requirements_path = path.parent().unwrap().join(REQUIREMENTS_TXT);
-    if let Ok(requirements_content) = std::fs::read_to_string(&requirements_path) {
-        project.dependencies = requirements_content
-            .lines()
-            .filter(|line| !line.trim().is_empty() && !line.trim().starts_with('#'))
-            .map(|line| line.trim().to_string())
-            .collect();
+    match std::fs::read_to_string(&requirements_path) {
+        Ok(requirements_content) => {
+            project.dependencies = requirements_content
+                .lines()
+                .filter(|line| !line.trim().is_empty() && !line.trim().starts_with('#'))
+                .map(|line| line.trim().to_string())
+                .collect();
+        }
+        Err(e) => {
+            warn!("Error reading requirements file: {}", e);
+        }
     }
 
     Ok(project)

@@ -77,6 +77,30 @@ pub enum AtomicOlapOperation {
         /// Dependency information
         dependency_info: DependencyInfo,
     },
+    /// Modify table settings using ALTER TABLE MODIFY SETTING
+    ModifyTableSettings {
+        /// The table to modify settings for
+        table: Table,
+        /// The settings before modification
+        before_settings: Option<std::collections::HashMap<String, String>>,
+        /// The settings after modification
+        after_settings: Option<std::collections::HashMap<String, String>>,
+        /// Dependency information
+        dependency_info: DependencyInfo,
+    },
+    /// Populate a materialized view with initial data
+    PopulateMaterializedView {
+        /// Name of the materialized view
+        view_name: String,
+        /// Target table that will receive the data
+        target_table: String,
+        /// Target database (if different from default)
+        target_database: Option<String>,
+        /// The SELECT statement to populate with
+        select_statement: String,
+        /// Dependency information
+        dependency_info: DependencyInfo,
+    },
     /// Create a new view
     CreateView {
         /// The view to create
@@ -150,6 +174,37 @@ impl AtomicOlapOperation {
                 before_column: before_column.clone(),
                 after_column: after_column.clone(),
             },
+            AtomicOlapOperation::ModifyTableSettings {
+                table,
+                before_settings,
+                after_settings,
+                dependency_info: _,
+            } => SerializableOlapOperation::ModifyTableSettings {
+                table: table.name.clone(),
+                before_settings: before_settings.clone(),
+                after_settings: after_settings.clone(),
+            },
+            AtomicOlapOperation::PopulateMaterializedView {
+                view_name: _,
+                target_table,
+                target_database,
+                select_statement,
+                dependency_info: _,
+            } => {
+                // Generate the INSERT statement for populating the MV
+                let insert_sql = if let Some(database) = target_database {
+                    format!(
+                        "INSERT INTO `{}`.`{}` {}",
+                        database, target_table, select_statement
+                    )
+                } else {
+                    format!("INSERT INTO `{}` {}", target_table, select_statement)
+                };
+                SerializableOlapOperation::RawSql {
+                    sql: vec![insert_sql],
+                    description: format!("Populating materialized view data into {}", target_table),
+                }
+            }
             // views are not in DMV2, convert them to RawSql
             AtomicOlapOperation::CreateView {
                 view,
@@ -210,6 +265,14 @@ impl AtomicOlapOperation {
             AtomicOlapOperation::ModifyTableColumn { table, .. } => {
                 InfrastructureSignature::Table { id: table.id() }
             }
+            AtomicOlapOperation::ModifyTableSettings { table, .. } => {
+                InfrastructureSignature::Table { id: table.id() }
+            }
+            AtomicOlapOperation::PopulateMaterializedView { view_name, .. } => {
+                InfrastructureSignature::SqlResource {
+                    id: view_name.clone(),
+                }
+            }
             AtomicOlapOperation::CreateView { view, .. } => {
                 InfrastructureSignature::View { id: view.id() }
             }
@@ -245,6 +308,12 @@ impl AtomicOlapOperation {
                 dependency_info, ..
             }
             | AtomicOlapOperation::ModifyTableColumn {
+                dependency_info, ..
+            }
+            | AtomicOlapOperation::ModifyTableSettings {
+                dependency_info, ..
+            }
+            | AtomicOlapOperation::PopulateMaterializedView {
                 dependency_info, ..
             }
             | AtomicOlapOperation::CreateView {
@@ -481,16 +550,37 @@ fn handle_table_remove(table: &Table) -> OperationPlan {
 
 /// Handles updating a table operation
 ///
-/// Process column-level changes for a table update.
+/// Process column-level changes and settings changes for a table update.
 ///
 /// This function now uses a generic approach since database-specific logic
 /// has been moved to the planning phase via TableDiffStrategy implementations.
 /// The ddl_ordering module should only receive the operations that the database
 /// can actually perform.
 ///
-/// Note: This function only handles column changes. Complex table updates that
+/// Note: This function handles both column changes and settings changes. Complex table updates that
 /// require drop+create operations should have been converted to separate
 /// Remove+Add operations by the appropriate TableDiffStrategy.
+/// Handles changes to table settings only
+///
+/// This function generates a ModifyTableSettings operation when only table settings
+/// have changed (no structural changes). This allows using ALTER TABLE MODIFY SETTING
+/// and ALTER TABLE RESET SETTING commands.
+fn handle_table_settings_change(
+    table: Table,
+    before_settings: Option<std::collections::HashMap<String, String>>,
+    after_settings: Option<std::collections::HashMap<String, String>>,
+) -> OperationPlan {
+    let mut plan = OperationPlan::new();
+    plan.setup_ops
+        .push(AtomicOlapOperation::ModifyTableSettings {
+            table,
+            before_settings,
+            after_settings,
+            dependency_info: create_empty_dependency_info(),
+        });
+    plan
+}
+
 fn handle_table_column_updates(
     before: &Table,
     after: &Table,
@@ -501,6 +591,8 @@ fn handle_table_column_updates(
     // via column-level operations. If a database requires drop+create for certain
     // changes, those should have been converted to separate Remove+Add operations
     // by the appropriate TableDiffStrategy.
+
+    // Process column changes as before
     process_column_changes(before, after, column_changes)
 }
 
@@ -654,6 +746,7 @@ fn handle_view_update(before: &View, after: &View) -> OperationPlan {
 }
 
 /// Handles adding a SQL resource operation
+/// Handle adding a SQL resource
 fn handle_sql_resource_add(resource: &SqlResource) -> OperationPlan {
     let pulls_from = resource.pulls_data_from();
     let pushes_to = resource.pushes_data_to();
@@ -670,6 +763,7 @@ fn handle_sql_resource_remove(resource: &SqlResource) -> OperationPlan {
 }
 
 /// Handles updating a SQL resource operation
+/// Handle updating a SQL resource
 fn handle_sql_resource_update(before: &SqlResource, after: &SqlResource) -> OperationPlan {
     let before_pulls = before.pulls_data_from();
     let before_pushes = before.pushes_data_to();
@@ -701,6 +795,30 @@ fn handle_sql_resource_update(before: &SqlResource, after: &SqlResource) -> Oper
 pub fn order_olap_changes(
     changes: &[OlapChange],
 ) -> Result<(Vec<AtomicOlapOperation>, Vec<AtomicOlapOperation>), PlanOrderingError> {
+    // First, collect all tables from the changes to provide context for SQL resource processing
+    let mut tables = HashMap::new();
+    for change in changes {
+        if let OlapChange::Table(table_change) = change {
+            match table_change {
+                TableChange::Added(table) => {
+                    tables.insert(table.name.clone(), table.clone());
+                }
+                TableChange::Updated { after, .. } => {
+                    tables.insert(after.name.clone(), after.clone());
+                }
+                TableChange::Removed(table) => {
+                    // Keep removed tables for context during teardown
+                    tables.insert(table.name.clone(), table.clone());
+                }
+                TableChange::SettingsChanged { table, .. } => {
+                    tables.insert(table.name.clone(), table.clone());
+                }
+            }
+        } else if let OlapChange::PopulateMaterializedView { .. } = change {
+            // No table to track for population operations
+        }
+    }
+
     // Process each change to get atomic operations
     let mut plan = OperationPlan::new();
 
@@ -715,6 +833,47 @@ pub fn order_olap_changes(
                 column_changes,
                 ..
             }) => handle_table_column_updates(before, after, column_changes),
+            OlapChange::Table(TableChange::SettingsChanged {
+                table,
+                before_settings,
+                after_settings,
+                ..
+            }) => handle_table_settings_change(
+                table.clone(),
+                before_settings.clone(),
+                after_settings.clone(),
+            ),
+            OlapChange::PopulateMaterializedView {
+                view_name,
+                target_table,
+                target_database,
+                select_statement,
+                source_tables,
+            } => {
+                // Create the PopulateMaterializedView operation with proper dependencies
+                let mut plan = OperationPlan::new();
+
+                // Dependencies: reads from source tables
+                let pulls_from = source_tables
+                    .iter()
+                    .map(|table| InfrastructureSignature::Table { id: table.clone() })
+                    .collect();
+
+                // Pushes to target table
+                let pushes_to = vec![InfrastructureSignature::Table {
+                    id: target_table.clone(),
+                }];
+
+                plan.setup_ops
+                    .push(AtomicOlapOperation::PopulateMaterializedView {
+                        view_name: view_name.clone(),
+                        target_table: target_table.clone(),
+                        target_database: target_database.clone(),
+                        select_statement: select_statement.clone(),
+                        dependency_info: create_dependency_info(pulls_from, pushes_to),
+                    });
+                plan
+            }
             OlapChange::View(Change::Added(boxed_view)) => handle_view_add(boxed_view),
             OlapChange::View(Change::Removed(boxed_view)) => handle_view_remove(boxed_view),
             OlapChange::View(Change::Updated { before, after }) => {
@@ -891,6 +1050,7 @@ mod tests {
         core::infrastructure_map::{PrimitiveSignature, PrimitiveTypes},
         versions::Version,
     };
+    use crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine;
 
     #[test]
     fn test_basic_operations() {
@@ -903,6 +1063,7 @@ mod tests {
             // Include minimal required fields
             columns: vec![],
             order_by: vec![],
+            partition_by: None,
             engine: None,
             version: None,
             source_primitive: PrimitiveSignature {
@@ -911,6 +1072,8 @@ mod tests {
             },
             metadata: None,
             life_cycle: LifeCycle::FullyManaged,
+            engine_params_hash: None,
+            table_settings: None,
         };
 
         // Create some atomic operations
@@ -969,6 +1132,7 @@ mod tests {
             name: "table_a".to_string(),
             columns: vec![],
             order_by: vec![],
+            partition_by: None,
             engine: None,
             version: None,
             source_primitive: PrimitiveSignature {
@@ -977,6 +1141,8 @@ mod tests {
             },
             metadata: None,
             life_cycle: LifeCycle::FullyManaged,
+            engine_params_hash: None,
+            table_settings: None,
         };
 
         // Create table B - depends on table A
@@ -984,6 +1150,7 @@ mod tests {
             name: "table_b".to_string(),
             columns: vec![],
             order_by: vec![],
+            partition_by: None,
             engine: None,
             version: None,
             source_primitive: PrimitiveSignature {
@@ -992,6 +1159,8 @@ mod tests {
             },
             metadata: None,
             life_cycle: LifeCycle::FullyManaged,
+            engine_params_hash: None,
+            table_settings: None,
         };
 
         // Create view C - depends on table B
@@ -1070,6 +1239,7 @@ mod tests {
             name: "table_a".to_string(),
             columns: vec![],
             order_by: vec![],
+            partition_by: None,
             engine: None,
             version: None,
             source_primitive: PrimitiveSignature {
@@ -1078,6 +1248,8 @@ mod tests {
             },
             metadata: None,
             life_cycle: LifeCycle::FullyManaged,
+            engine_params_hash: None,
+            table_settings: None,
         };
 
         // Create table B - target for materialized view
@@ -1085,6 +1257,7 @@ mod tests {
             name: "table_b".to_string(),
             columns: vec![],
             order_by: vec![],
+            partition_by: None,
             engine: None,
             version: None,
             source_primitive: PrimitiveSignature {
@@ -1093,6 +1266,8 @@ mod tests {
             },
             metadata: None,
             life_cycle: LifeCycle::FullyManaged,
+            engine_params_hash: None,
+            table_settings: None,
         };
 
         // Create view C - depends on table B
@@ -1191,6 +1366,7 @@ mod tests {
             name: "test_table".to_string(),
             columns: vec![],
             order_by: vec![],
+            partition_by: None,
             engine: None,
             version: None,
             source_primitive: PrimitiveSignature {
@@ -1199,6 +1375,8 @@ mod tests {
             },
             metadata: None,
             life_cycle: LifeCycle::FullyManaged,
+            engine_params_hash: None,
+            table_settings: None,
         };
 
         let view = View {
@@ -1339,6 +1517,7 @@ mod tests {
             name: "table_a".to_string(),
             columns: vec![],
             order_by: vec![],
+            partition_by: None,
             engine: None,
             version: None,
             source_primitive: PrimitiveSignature {
@@ -1347,12 +1526,15 @@ mod tests {
             },
             metadata: None,
             life_cycle: LifeCycle::FullyManaged,
+            engine_params_hash: None,
+            table_settings: None,
         };
 
         let table_b = Table {
             name: "table_b".to_string(),
             columns: vec![],
             order_by: vec![],
+            partition_by: None,
             engine: None,
             version: None,
             source_primitive: PrimitiveSignature {
@@ -1361,12 +1543,15 @@ mod tests {
             },
             metadata: None,
             life_cycle: LifeCycle::FullyManaged,
+            engine_params_hash: None,
+            table_settings: None,
         };
 
         let table_c = Table {
             name: "table_c".to_string(),
             columns: vec![],
             order_by: vec![],
+            partition_by: None,
             engine: None,
             version: None,
             source_primitive: PrimitiveSignature {
@@ -1375,6 +1560,8 @@ mod tests {
             },
             metadata: None,
             life_cycle: LifeCycle::FullyManaged,
+            engine_params_hash: None,
+            table_settings: None,
         };
 
         // Test operations
@@ -1449,6 +1636,7 @@ mod tests {
             name: "table_a".to_string(),
             columns: vec![],
             order_by: vec![],
+            partition_by: None,
             engine: None,
             version: None,
             source_primitive: PrimitiveSignature {
@@ -1457,12 +1645,15 @@ mod tests {
             },
             metadata: None,
             life_cycle: LifeCycle::FullyManaged,
+            engine_params_hash: None,
+            table_settings: None,
         };
 
         let table_b = Table {
             name: "table_b".to_string(),
             columns: vec![],
             order_by: vec![],
+            partition_by: None,
             engine: None,
             version: None,
             source_primitive: PrimitiveSignature {
@@ -1471,12 +1662,15 @@ mod tests {
             },
             metadata: None,
             life_cycle: LifeCycle::FullyManaged,
+            engine_params_hash: None,
+            table_settings: None,
         };
 
         let table_c = Table {
             name: "table_c".to_string(),
             columns: vec![],
             order_by: vec![],
+            partition_by: None,
             engine: None,
             version: None,
             source_primitive: PrimitiveSignature {
@@ -1485,12 +1679,15 @@ mod tests {
             },
             metadata: None,
             life_cycle: LifeCycle::FullyManaged,
+            engine_params_hash: None,
+            table_settings: None,
         };
 
         let table_d = Table {
             name: "table_d".to_string(),
             columns: vec![],
             order_by: vec![],
+            partition_by: None,
             engine: None,
             version: None,
             source_primitive: PrimitiveSignature {
@@ -1499,12 +1696,15 @@ mod tests {
             },
             metadata: None,
             life_cycle: LifeCycle::FullyManaged,
+            engine_params_hash: None,
+            table_settings: None,
         };
 
         let table_e = Table {
             name: "table_e".to_string(),
             columns: vec![],
             order_by: vec![],
+            partition_by: None,
             engine: None,
             version: None,
             source_primitive: PrimitiveSignature {
@@ -1513,6 +1713,8 @@ mod tests {
             },
             metadata: None,
             life_cycle: LifeCycle::FullyManaged,
+            engine_params_hash: None,
+            table_settings: None,
         };
 
         let op_create_a = AtomicOlapOperation::CreateTable {
@@ -1650,6 +1852,7 @@ mod tests {
             name: "table_a".to_string(),
             columns: vec![],
             order_by: vec![],
+            partition_by: None,
             engine: None,
             version: None,
             source_primitive: PrimitiveSignature {
@@ -1658,6 +1861,8 @@ mod tests {
             },
             metadata: None,
             life_cycle: LifeCycle::FullyManaged,
+            engine_params_hash: None,
+            table_settings: None,
         };
 
         // Create table B - target for materialized view
@@ -1665,6 +1870,7 @@ mod tests {
             name: "table_b".to_string(),
             columns: vec![],
             order_by: vec![],
+            partition_by: None,
             engine: None,
             version: None,
             source_primitive: PrimitiveSignature {
@@ -1673,6 +1879,8 @@ mod tests {
             },
             metadata: None,
             life_cycle: LifeCycle::FullyManaged,
+            engine_params_hash: None,
+            table_settings: None,
         };
 
         // Create SQL resource for a materialized view
@@ -1778,6 +1986,7 @@ mod tests {
             name: "table_a".to_string(),
             columns: vec![],
             order_by: vec![],
+            partition_by: None,
             engine: None,
             version: None,
             source_primitive: PrimitiveSignature {
@@ -1786,6 +1995,8 @@ mod tests {
             },
             metadata: None,
             life_cycle: LifeCycle::FullyManaged,
+            engine_params_hash: None,
+            table_settings: None,
         };
 
         // Create table B - target for materialized view
@@ -1793,6 +2004,7 @@ mod tests {
             name: "table_b".to_string(),
             columns: vec![],
             order_by: vec![],
+            partition_by: None,
             engine: None,
             version: None,
             source_primitive: PrimitiveSignature {
@@ -1801,6 +2013,8 @@ mod tests {
             },
             metadata: None,
             life_cycle: LifeCycle::FullyManaged,
+            engine_params_hash: None,
+            table_settings: None,
         };
 
         // Create SQL resource for a materialized view
@@ -1911,6 +2125,7 @@ mod tests {
             name: "table_a".to_string(),
             columns: vec![],
             order_by: vec![],
+            partition_by: None,
             engine: None,
             version: None,
             source_primitive: PrimitiveSignature {
@@ -1919,12 +2134,15 @@ mod tests {
             },
             metadata: None,
             life_cycle: LifeCycle::FullyManaged,
+            engine_params_hash: None,
+            table_settings: None,
         };
 
         let table_b = Table {
             name: "table_b".to_string(),
             columns: vec![],
             order_by: vec![],
+            partition_by: None,
             engine: None,
             version: None,
             source_primitive: PrimitiveSignature {
@@ -1933,6 +2151,8 @@ mod tests {
             },
             metadata: None,
             life_cycle: LifeCycle::FullyManaged,
+            engine_params_hash: None,
+            table_settings: None,
         };
 
         // Create SQL resource for materialized view
@@ -2122,6 +2342,7 @@ mod tests {
             name: "test_table".to_string(),
             columns: vec![],
             order_by: vec![],
+            partition_by: None,
             engine: None,
             version: None,
             source_primitive: PrimitiveSignature {
@@ -2130,6 +2351,8 @@ mod tests {
             },
             metadata: None,
             life_cycle: LifeCycle::FullyManaged,
+            engine_params_hash: None,
+            table_settings: None,
         };
 
         // Create a column
@@ -2219,6 +2442,7 @@ mod tests {
             name: "test_table".to_string(),
             columns: vec![],
             order_by: vec![],
+            partition_by: None,
             engine: None,
             version: None,
             source_primitive: PrimitiveSignature {
@@ -2227,6 +2451,8 @@ mod tests {
             },
             metadata: None,
             life_cycle: LifeCycle::FullyManaged,
+            engine_params_hash: None,
+            table_settings: None,
         };
 
         // Create operations with signatures that work with the current implementation
@@ -2327,7 +2553,8 @@ mod tests {
                 },
             ],
             order_by: vec!["id".to_string()],
-            engine: Some("MergeTree".to_string()),
+            partition_by: None,
+            engine: Some(ClickhouseEngine::MergeTree),
             version: None,
             source_primitive: PrimitiveSignature {
                 name: "test".to_string(),
@@ -2335,6 +2562,8 @@ mod tests {
             },
             metadata: None,
             life_cycle: LifeCycle::FullyManaged,
+            engine_params_hash: None,
+            table_settings: None,
         };
 
         let after_table = Table {
@@ -2361,8 +2590,9 @@ mod tests {
                     comment: None,
                 },
             ],
-            order_by: vec!["id".to_string()], // Same ORDER BY
-            engine: None,
+            order_by: vec!["id".to_string()],
+            partition_by: None,
+            engine: Some(ClickhouseEngine::MergeTree),
             version: None,
             source_primitive: PrimitiveSignature {
                 name: "test".to_string(),
@@ -2370,6 +2600,8 @@ mod tests {
             },
             metadata: None,
             life_cycle: LifeCycle::FullyManaged,
+            engine_params_hash: None,
+            table_settings: None,
         };
 
         // Create column changes (remove old_column, add new_column)

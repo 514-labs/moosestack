@@ -85,8 +85,14 @@ interface ExampleSchema {
 
 // Create a standalone table named "example_table"
 export const exampleTable = new OlapTable<ExampleSchema>("example_table", {
-  orderByFields: ["id", "dateField"], // Optional when using a primary key
-  engine: ClickHouseEngines.ReplacingMergeTree,  // Optional: keep only the latest version of each record
+  orderByFields: ["id", "dateField"] // Optional when using a primary key
+});
+
+// For deduplication, use the ReplacingMergeTree factory
+export const dedupTable = OlapTable.withReplacingMergeTree<ExampleSchema>("example_table", {
+  orderByFields: ["id", "dateField"],
+  ver: "updatedAt",  // Optional: version column (keeps highest value)
+  isDeleted: "deleted"  // Optional: soft delete flag (requires ver)
 });
 
 // Now you can:
@@ -108,10 +114,13 @@ class ExampleSchema(BaseModel):
     boolean_field: bool
 
 # Create a standalone table named "example_table"
-example_table = OlapTable[ExampleSchema]("example_table", {
-  orderByFields: ["id", "date_field"],
-  engine: ClickHouseEngines.ReplacingMergeTree,
-})
+from moose_lib import OlapTable, OlapConfig
+from moose_lib.blocks import ReplacingMergeTreeEngine
+
+example_table = OlapTable[ExampleSchema]("example_table", OlapConfig(
+  order_by_fields=["id", "date_field"],
+  engine=ReplacingMergeTreeEngine()
+))
 ```
 </Python>
 
@@ -147,8 +156,7 @@ const eventsPipeline = new IngestPipeline<UserEvent>("user_events", {
   ingest: true,    // Creates a REST API endpoint at POST localhost:4000/ingest/user_events
   stream: true,    // Creates Kafka/Redpanda topic
   table: {         // Creates and configures the table named "user_events"
-    orderByFields: ["id", "timestamp"],
-    engine: ClickHouseEngines.ReplacingMergeTree
+    orderByFields: ["id", "timestamp"]
   }
 });
 
@@ -168,14 +176,17 @@ class UserEvent(BaseModel):
     timestamp: Date
     event_type: str
 
-events_pipeline = IngestPipeline[UserEvent]("user_events", {
-  ingest: True, # Creates a REST API endpoint at POST localhost:4000/ingest/user_events
-  stream: True, # Creates a Kafka/Redpanda topic
-  table: {      # Creates and configures the table named "user_events"
-    orderByFields: ["id", "timestamp"],
-    engine: ClickHouseEngines.ReplacingMergeTree
-  }
-})
+from moose_lib import IngestPipeline, IngestPipelineConfig, OlapConfig
+from moose_lib.blocks import ReplacingMergeTreeEngine
+
+events_pipeline = IngestPipeline[UserEvent]("user_events", IngestPipelineConfig(
+  ingest=True, # Creates a REST API endpoint at POST localhost:4000/ingest/user_events
+  stream=True, # Creates a Kafka/Redpanda topic
+  table=OlapConfig(      # Creates and configures the table named "user_events"
+    order_by_fields=["id", "timestamp"],
+    engine=ReplacingMergeTreeEngine()
+  )
+))
 
 # Access the table component when needed:
 events_table = events_pipeline.get_table()
@@ -228,7 +239,7 @@ class Customer(BaseModel):
 class Order(BaseModel):
     order_id: Key[str]
     amount: clickhouse_decimal(10, 2)
-    status: str  # Use Literal[...] for LowCardinality
+    status: Literal["Paid", "Shipped", "Delivered"] # translated to LowCardinality(String) in ClickHouse
     created_at: datetime
     customer: Annotated[Customer, "ClickHouseNamedTuple"]
 ```
@@ -286,7 +297,21 @@ The value passed into the `clickhouse_default` function can either be a string l
 
 </Python>
 
+<Callout type="info" title="ClickHouse defaults with optional fields">
+If a field is optional in your app model but you provide a ClickHouse default, Moose infers a non-nullable ClickHouse column with a DEFAULT clause.
 
+<TypeScript>
+  - Optional without default (e.g., `field?: number`) → ClickHouse Nullable type.
+  - Optional with default (e.g., `field?: number & ClickHouseDefault<"18">` or `WithDefault<number, "18">`) → non-nullable column with default `18`.
+
+</TypeScript>
+<Python>
+  - Optional without default → ClickHouse Nullable type.
+  - Optional with default (using `clickhouse_default("18")` in annotations) → non-nullable column with default `18`.
+</Python>
+
+This lets you keep optional fields at the application layer while avoiding Nullable columns in ClickHouse when a server-side default exists.
+</Callout>
 
 ### Primary Keys and Sorting
 
@@ -427,26 +452,40 @@ multi_key_table = OlapTable[MultiKeyRecord]("multi_key_table", OlapTableConfig(
 
 
 ### Table engines
-By default, Moose will create tables with the `MergeTree` engine. You can change the engine by setting the `engine` property in the table config. To use a different engine, you can set the `engine` property in the table config.
+By default, Moose will create tables with the `MergeTree` engine. You can use different engines through factory methods or engine configuration classes.
 
 <TypeScript>
 ```ts filename="TableEngine.ts" copy
-import { OlapTable, ClickHouseEngines } from "@514labs/moose-lib";
+import { OlapTable } from "@514labs/moose-lib";
 
+// Default MergeTree engine
 const table = new OlapTable<Record>("table", {
+  orderByFields: ["id"]
+});
+
+// Use factory methods for other engines
+const dedupTable = OlapTable.withReplacingMergeTree<Record>("table", {
   orderByFields: ["id"],
-  engine: ClickHouseEngines.MergeTree  // Default engine
+  ver: "version",  // Optional: keeps row with highest version
+  isDeleted: "deleted"  // Optional: soft delete when deleted=1
 });
 ```
 </TypeScript>
 
 <Python>
 ```py filename="TableEngine.py" copy
-from moose_lib import OlapTable, OlapTableConfig, ClickHouseEngines
+from moose_lib import OlapTable, OlapConfig
+from moose_lib.blocks import MergeTreeEngine, ReplacingMergeTreeEngine
 
-table = OlapTable[Record]("table", OlapTableConfig(
-  orderByFields=["id"],
-  engine=ClickHouseEngines.MergeTree  # Default engine
+# Default MergeTree engine
+table = OlapTable[Record]("table", OlapConfig(
+  order_by_fields=["id"]
+))
+
+# Explicitly specify engine
+dedup_table = OlapTable[Record]("table", OlapConfig(
+  order_by_fields=["id"],
+  engine=ReplacingMergeTreeEngine()
 ))
 ```
 </Python>
@@ -456,29 +495,121 @@ Use the `ReplacingMergeTree` engine to keep only the latest record for your desi
 
 <TypeScript>
 ```ts filename="DeduplicatedTable.ts" copy
-const table = new OlapTable<Record>("table", {
+// Basic deduplication
+const table = OlapTable.withReplacingMergeTree<Record>("table", {
+  orderByFields: ["id"]
+});
+
+// With version column (keeps record with highest version)
+const versionedTable = OlapTable.withReplacingMergeTree<Record>("table", {
   orderByFields: ["id"],
-  engine: ClickHouseEngines.ReplacingMergeTree
+  ver: "updated_at"  // Column that determines which version to keep
+});
+
+// With soft deletes (requires ver parameter)
+const softDeleteTable = OlapTable.withReplacingMergeTree<Record>("table", {
+  orderByFields: ["id"],
+  ver: "updated_at",
+  isDeleted: "deleted"  // UInt8 column: 1 marks row for deletion
 });
 ```
 </TypeScript> 
 
 <Python>
 ```py filename="DeduplicatedTable.py" copy
-from moose_lib import Key, OlapTable, OlapTableConfig
+from moose_lib import Key, OlapTable, OlapConfig
+from moose_lib.blocks import ReplacingMergeTreeEngine
 
 class Record(BaseModel):
     id: Key[str]
+    updated_at: str  # Version column
+    deleted: int = 0  # Soft delete marker (UInt8)
 
-table = OlapTable[Record]("table", OlapTableConfig(
-  orderByFields=["id"],
-  engine=ClickHouseEngines.ReplacingMergeTree
+# Basic deduplication
+table = OlapTable[Record]("table", OlapConfig(
+  order_by_fields=["id"],
+  engine=ReplacingMergeTreeEngine()
+))
+
+# With version column (keeps record with highest version)
+versioned_table = OlapTable[Record]("table", OlapConfig(
+  order_by_fields=["id"],
+  engine=ReplacingMergeTreeEngine(ver="updated_at")
+))
+
+# With soft deletes (requires ver parameter)
+soft_delete_table = OlapTable[Record]("table", OlapConfig(
+  order_by_fields=["id"],
+  engine=ReplacingMergeTreeEngine(
+    ver="updated_at",
+    is_deleted="deleted"  # UInt8 column: 1 marks row for deletion
+  )
 ))
 ```
 </Python>
 
 <Callout type="warning" title="Deduplication Caveats">
-ClickHouse's ReplacingMergeTree engine runs deduplication in the background AFTER data is inserted into the table. This means that duplicate records may not be removed immediately. For more details, see the [ClickHouse documentation](https://clickhouse.com/docs/en/engines/table-engines/mergetree-family/replacingmergetree).
+ClickHouse's ReplacingMergeTree engine runs deduplication in the background AFTER data is inserted into the table. This means that duplicate records may not be removed immediately. 
+
+**Version Column (`ver`)**: When specified, ClickHouse keeps the row with the maximum version value for each unique sort key.
+
+**Soft Deletes (`is_deleted`)**: When specified along with `ver`, rows where this column equals 1 are deleted during merges. This column must be UInt8 type.
+
+For more details, see the [ClickHouse documentation](https://clickhouse.com/docs/en/engines/table-engines/mergetree-family/replacingmergetree).
+</Callout>
+
+#### Streaming from S3 (`S3Queue`)
+Use the `S3Queue` engine to automatically ingest data from S3 buckets as files are added:
+
+<TypeScript>
+```ts filename="S3StreamingTable.ts" copy
+import { OlapTable } from '@514labs/moose-lib';
+
+// Modern API using factory method
+export const s3Events = OlapTable.withS3Queue<S3Event>(
+  "s3_events",
+  "s3://my-bucket/data/*.json",
+  "JSONEachRow",
+  {
+    awsAccessKeyId: "AKIA...",
+    awsSecretAccessKey: "secret...",
+    settings: {
+      mode: "unordered",
+      keeper_path: "/clickhouse/s3queue/events"
+    }
+  }
+);
+```
+</TypeScript>
+
+<Python>
+```py filename="S3StreamingTable.py" copy
+from moose_lib import OlapTable, OlapConfig
+from moose_lib.blocks import S3QueueEngine
+
+class S3Event(BaseModel):
+    id: str
+    timestamp: datetime
+    data: dict
+
+# Modern API using engine configuration
+s3_events = OlapTable[S3Event]("s3_events", OlapConfig(
+    engine=S3QueueEngine(
+        s3_path="s3://my-bucket/data/*.json",
+        format="JSONEachRow",
+        aws_access_key_id="AKIA...",
+        aws_secret_access_key="secret..."
+    ),
+    settings={
+        "mode": "unordered",
+        "keeper_path": "/clickhouse/s3queue/events"
+    }
+))
+```
+</Python>
+
+<Callout type="info" title="S3Queue Requirements">
+S3Queue requires ClickHouse 24.7+ and proper ZooKeeper/ClickHouse Keeper configuration for coordination between replicas. Files are processed exactly once across all replicas.
 </Callout>
 
 ## Externally Managed Tables

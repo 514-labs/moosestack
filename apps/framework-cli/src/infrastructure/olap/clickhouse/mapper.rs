@@ -10,7 +10,6 @@ use crate::infrastructure::olap::clickhouse::model::{
 };
 
 use super::errors::ClickhouseError;
-use super::model::sanitize_column_name;
 use super::queries::ClickhouseEngine;
 
 /// Generates a column comment, preserving any existing user comment and adding/updating metadata for enums
@@ -77,7 +76,7 @@ pub fn std_column_to_clickhouse_column(
     }
 
     let clickhouse_column = ClickHouseColumn {
-        name: sanitize_column_name(column.name),
+        name: column.name,
         column_type,
         required: column.required,
         unique: column.unique,
@@ -282,11 +281,7 @@ pub fn std_table_to_clickhouse_table(table: &Table) -> Result<ClickHouseTable, C
     let columns = std_columns_to_clickhouse_columns(&table.columns)?;
 
     let clickhouse_engine = match &table.engine {
-        Some(engine) => ClickhouseEngine::try_from(engine.as_str()).map_err(|e| {
-            ClickhouseError::InvalidParameters {
-                message: format!("engine: {e}"),
-            }
-        })?,
+        Some(engine) => engine.clone(),
         None => ClickhouseEngine::MergeTree,
     };
 
@@ -295,7 +290,9 @@ pub fn std_table_to_clickhouse_table(table: &Table) -> Result<ClickHouseTable, C
         version: table.version.clone(),
         columns,
         order_by: table.order_by.clone(),
+        partition_by: table.partition_by.clone(),
         engine: clickhouse_engine,
+        table_settings: table.table_settings.clone(),
     })
 }
 

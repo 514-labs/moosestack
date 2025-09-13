@@ -167,7 +167,18 @@ def py_type_to_column_type(t: type, mds: list[Any]) -> Tuple[bool, list[Any], Da
             data_type = "Int"
     elif t is float:
         size = next((md for md in mds if isinstance(md, ClickhouseSize)), None)
-        if size is None or size.size == 8:
+        if size is None:
+            bit_size = next((md for md in mds if isinstance(md, str) and re.match(r'^float\d+$', md)), None)
+            if bit_size:
+                if bit_size == "float32":
+                    data_type = "Float32"
+                elif bit_size == "float64":
+                    data_type = "Float64"
+                else:
+                    raise ValueError(f'Unsupported float size "{bit_size}"')
+            else:
+                data_type = "Float64"
+        elif size.size == 8:
             data_type = "Float64"
         elif size.size == 4:
             data_type = "Float32"

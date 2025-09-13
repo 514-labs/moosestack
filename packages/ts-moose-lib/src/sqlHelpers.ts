@@ -16,7 +16,9 @@ const isTable = (
   value: RawValue | Column | OlapTable<any>,
 ): value is OlapTable<any> =>
   typeof value === "object" &&
-  Object.getPrototypeOf(value).constructor.name === "OlapTable";
+  value !== null &&
+  "kind" in value &&
+  value.kind === "OlapTable";
 
 export type IdentifierBrandedString = string & {
   readonly __identifier_brand?: unique symbol;
@@ -165,6 +167,50 @@ export const toQuery = (sql: Sql): [string, { [pN: string]: any }] => {
   );
   return [query, query_params];
 };
+
+/**
+ * Build a display-only SQL string with values inlined for logging/debugging.
+ * Does not alter execution behavior; use toQuery for actual execution.
+ */
+export const toQueryPreview = (sql: Sql): string => {
+  try {
+    const formatValue = (v: Value): string => {
+      // Unwrap identifiers: ["Identifier", name]
+      if (Array.isArray(v)) {
+        const [type, val] = v as unknown as [string, any];
+        if (type === "Identifier") {
+          // Quote identifiers with backticks like other helpers
+          return `\`${String(val)}\``;
+        }
+        // Fallback for unexpected arrays
+        return `[${(v as unknown as any[]).map((x) => formatValue(x as Value)).join(", ")}]`;
+      }
+      if (v === null || v === undefined) return "NULL";
+      if (typeof v === "string") return `'${v.replace(/'/g, "''")}'`;
+      if (typeof v === "number") return String(v);
+      if (typeof v === "boolean") return v ? "true" : "false";
+      if (v instanceof Date)
+        return `'${v.toISOString().replace("T", " ").slice(0, 19)}'`;
+      try {
+        return JSON.stringify(v as unknown as any);
+      } catch {
+        return String(v);
+      }
+    };
+
+    let out = sql.strings[0] ?? "";
+    for (let i = 0; i < sql.values.length; i++) {
+      const val = getValueFromParameter(sql.values[i] as any);
+      out += formatValue(val as Value);
+      out += sql.strings[i + 1] ?? "";
+    }
+    return out.replace(/\s+/g, " ").trim();
+  } catch (error) {
+    console.log(`toQueryPreview error: ${error}`);
+    return "/* query preview unavailable */";
+  }
+};
+
 export const getValueFromParameter = (value: any) => {
   if (Array.isArray(value)) {
     const [type, val] = value;

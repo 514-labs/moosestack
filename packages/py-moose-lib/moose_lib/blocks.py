@@ -1,6 +1,8 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
-from typing import Dict, Optional
+from typing import Dict, List, Optional, Any, Union
+from abc import ABC
+import warnings
 
 
 class ClickHouseEngines(Enum):
@@ -11,6 +13,162 @@ class ClickHouseEngines(Enum):
     CollapsingMergeTree = "CollapsingMergeTree"
     VersionedCollapsingMergeTree = "VersionedCollapsingMergeTree"
     GraphiteMergeTree = "GraphiteMergeTree"
+    S3Queue = "S3Queue"
+
+# ==========================
+# New Engine Configuration Classes
+# ==========================
+
+@dataclass
+class EngineConfig(ABC):
+    """Base class for engine configurations"""
+    pass
+
+@dataclass
+class MergeTreeEngine(EngineConfig):
+    """Configuration for MergeTree engine"""
+    pass
+
+@dataclass  
+class ReplacingMergeTreeEngine(EngineConfig):
+    """Configuration for ReplacingMergeTree engine (with deduplication)
+    
+    Args:
+        ver: Optional column name for version tracking
+        is_deleted: Optional column name for deletion marking (requires ver)
+    """
+    ver: Optional[str] = None
+    is_deleted: Optional[str] = None
+    
+    def __post_init__(self):
+        if self.is_deleted and not self.ver:
+            raise ValueError("is_deleted requires ver to be specified")
+
+@dataclass
+class AggregatingMergeTreeEngine(EngineConfig):
+    """Configuration for AggregatingMergeTree engine"""
+    pass
+
+@dataclass
+class SummingMergeTreeEngine(EngineConfig):
+    """Configuration for SummingMergeTree engine"""
+    pass
+
+@dataclass
+class S3QueueEngine(EngineConfig):
+    """Configuration for S3Queue engine - only non-alterable constructor parameters.
+    
+    S3Queue-specific settings like 'mode', 'keeper_path', etc. should be specified
+    in the settings field of OlapConfig, not here.
+    """
+    
+    # Required fields
+    s3_path: str  # S3 bucket path with wildcards (e.g., 's3://bucket/prefix/*.json')
+    format: str   # Data format (e.g., 'JSONEachRow', 'CSV', 'Parquet')
+    
+    # Optional AWS credentials
+    aws_access_key_id: Optional[str] = None
+    aws_secret_access_key: Optional[str] = None
+    
+    # Optional configuration
+    compression: Optional[str] = None  # e.g., 'gzip', 'zstd'
+    headers: Optional[Dict[str, str]] = None
+    
+    def __post_init__(self):
+        """Validate required fields"""
+        if not self.s3_path:
+            raise ValueError("S3Queue engine requires 's3_path'")
+        if not self.format:
+            raise ValueError("S3Queue engine requires 'format'")
+
+# ==========================
+# New Table Configuration (Recommended API)
+# ==========================
+
+@dataclass
+class TableConfig:
+    """Modern table configuration with engine-specific settings"""
+    
+    # Engine configuration (required in new API)
+    engine: EngineConfig
+    
+    # Common settings
+    name: str
+    columns: Dict[str, str]
+    order_by: Optional[str] = None
+    
+    @classmethod
+    def with_s3_queue(cls,
+                      name: str,
+                      columns: Dict[str, str],
+                      s3_path: str,
+                      format: str,
+                      order_by: Optional[str] = None,
+                      **kwargs) -> 'TableConfig':
+        """Create a table with S3Queue engine"""
+        return cls(
+            name=name,
+            columns=columns,
+            engine=S3QueueEngine(s3_path=s3_path, format=format, **kwargs),
+            order_by=order_by
+        )
+    
+    @classmethod
+    def with_merge_tree(cls,
+                        name: str,
+                        columns: Dict[str, str],
+                        order_by: Optional[str] = None,
+                        deduplicate: bool = False,
+                        **kwargs) -> 'TableConfig':
+        """Create a table with MergeTree or ReplacingMergeTree engine"""
+        engine = ReplacingMergeTreeEngine() if deduplicate else MergeTreeEngine()
+        return cls(
+            name=name,
+            columns=columns,
+            engine=engine,
+            order_by=order_by
+        )
+    
+    @classmethod
+    def with_replacing_merge_tree(cls,
+                                  name: str,
+                                  columns: Dict[str, str],
+                                  order_by: Optional[str] = None,
+                                  ver: Optional[str] = None,
+                                  is_deleted: Optional[str] = None,
+                                  **kwargs) -> 'TableConfig':
+        """Create a table with ReplacingMergeTree engine
+        
+        Args:
+            name: Table name
+            columns: Column definitions
+            order_by: Order by clause
+            ver: Optional version column name
+            is_deleted: Optional is_deleted column name (requires ver)
+        """
+        return cls(
+            name=name,
+            columns=columns,
+            engine=ReplacingMergeTreeEngine(ver=ver, is_deleted=is_deleted),
+            order_by=order_by
+        )
+
+# ==========================
+# Legacy API Support (Deprecated)
+# ==========================
+
+@dataclass
+class S3QueueEngineConfig:
+    """Legacy S3Queue configuration (deprecated - use S3QueueEngine instead)"""
+    path: str  # S3 path pattern (e.g., 's3://bucket/data/*.json')
+    format: str  # Data format (e.g., 'JSONEachRow', 'CSV', etc.)
+    # Optional S3 access credentials - can be NOSIGN for public buckets
+    aws_access_key_id: Optional[str] = None
+    aws_secret_access_key: Optional[str] = None
+    # Optional compression
+    compression: Optional[str] = None
+    # Optional headers
+    headers: Optional[Dict[str, str]] = None
 
 @dataclass
 class TableCreateOptions:
@@ -18,6 +176,82 @@ class TableCreateOptions:
     columns: Dict[str, str]
     engine: Optional[ClickHouseEngines] = ClickHouseEngines.MergeTree
     order_by: Optional[str] = None
+    s3_queue_engine_config: Optional[S3QueueEngineConfig] = None  # Required when engine is S3Queue
+
+    def __post_init__(self):
+        """Validate S3Queue configuration"""
+        if self.engine == ClickHouseEngines.S3Queue and self.s3_queue_engine_config is None:
+            raise ValueError(
+                "s3_queue_engine_config is required when using ClickHouseEngines.S3Queue engine. "
+                "Please provide s3_queue_engine_config with path, format, and optional settings."
+            )
+
+# ==========================
+# Backward Compatibility Layer
+# ==========================
+
+def is_new_config(config: Any) -> bool:
+    """Check if configuration uses new API"""
+    if isinstance(config, TableConfig):
+        return True
+    if hasattr(config, 'engine') and isinstance(getattr(config, 'engine'), EngineConfig):
+        return True
+    return False
+
+def migrate_legacy_config(legacy: TableCreateOptions) -> TableConfig:
+    """Convert legacy configuration to new format"""
+    
+    # Show deprecation warning
+    warnings.warn(
+        "Using deprecated TableCreateOptions. Please migrate to TableConfig:\n"
+        "- For S3Queue: Use TableConfig.with_s3_queue()\n"
+        "- For deduplication: Use engine=ReplacingMergeTreeEngine()\n"
+        "See documentation for examples.",
+        DeprecationWarning,
+        stacklevel=2
+    )
+    
+    # Handle S3Queue with separate config
+    if legacy.engine == ClickHouseEngines.S3Queue and legacy.s3_queue_engine_config:
+        s3_config = legacy.s3_queue_engine_config
+        return TableConfig(
+            name=legacy.name,
+            columns=legacy.columns,
+            engine=S3QueueEngine(
+                s3_path=s3_config.path,
+                format=s3_config.format,
+                aws_access_key_id=s3_config.aws_access_key_id,
+                aws_secret_access_key=s3_config.aws_secret_access_key,
+                compression=s3_config.compression,
+                headers=s3_config.headers
+            ),
+            order_by=legacy.order_by
+        )
+    
+    # Map legacy engine enum to new engine classes
+    engine_map = {
+        ClickHouseEngines.MergeTree: MergeTreeEngine(),
+        ClickHouseEngines.ReplacingMergeTree: ReplacingMergeTreeEngine(),
+        ClickHouseEngines.AggregatingMergeTree: AggregatingMergeTreeEngine(),
+        ClickHouseEngines.SummingMergeTree: SummingMergeTreeEngine(),
+    }
+    
+    engine = engine_map.get(legacy.engine) if legacy.engine else MergeTreeEngine()
+    if engine is None:
+        engine = MergeTreeEngine()
+    
+    return TableConfig(
+        name=legacy.name,
+        columns=legacy.columns,
+        engine=engine,
+        order_by=legacy.order_by
+    )
+
+def normalize_config(config: Union[TableConfig, TableCreateOptions]) -> TableConfig:
+    """Normalize any configuration format to new API"""
+    if is_new_config(config):
+        return config  # type: ignore
+    return migrate_legacy_config(config)  # type: ignore
 
 @dataclass
 class AggregationCreateOptions:
@@ -93,7 +327,7 @@ def create_table(options: TableCreateOptions) -> str:
     """
     column_definitions = ",\n".join([f"{name} {type}" for name, type in options.columns.items()])
     order_by_clause = f"ORDER BY {options.order_by}" if options.order_by else ""
-    engine = options.engine.value
+    engine = options.engine.value if options.engine else "MergeTree"
 
     return f"""
     CREATE TABLE IF NOT EXISTS {options.name} 
