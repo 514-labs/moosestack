@@ -172,7 +172,9 @@ class IngestApiConfig(BaseModel):
         name: Name of the Ingest API.
         columns: List of columns expected in the input data.
         write_to: The target stream where the ingested data is written.
+        dead_letter_queue: Optional dead letter queue name.
         version: Optional version string of the API configuration.
+        path: Optional custom path for the ingestion endpoint.
         metadata: Optional metadata for the API.
     """
     model_config = model_config
@@ -182,6 +184,7 @@ class IngestApiConfig(BaseModel):
     write_to: Target
     dead_letter_queue: Optional[str] = None
     version: Optional[str] = None
+    path: Optional[str] = None
     metadata: Optional[dict] = None
     json_schema: dict[str, Any] = Field(serialization_alias="schema")
 
@@ -194,6 +197,7 @@ class InternalApiConfig(BaseModel):
         query_params: List of columns representing the expected query parameters.
         response_schema: JSON schema definition of the API's response body.
         version: Optional version string of the API configuration.
+        path: Optional custom path for the API endpoint.
         metadata: Optional metadata for the API.
     """
     model_config = model_config
@@ -202,6 +206,7 @@ class InternalApiConfig(BaseModel):
     query_params: List[Column]
     response_schema: JsonSchemaValue
     version: Optional[str] = None
+    path: Optional[str] = None
     metadata: Optional[dict] = None
 
 
@@ -479,6 +484,7 @@ def to_infra_map() -> dict:
             name=name,
             columns=_to_columns(api._t),
             version=api.config.version,
+            path=api.config.path,
             write_to=Target(
                 kind="stream",
                 name=api.config.destination.name
@@ -496,6 +502,7 @@ def to_infra_map() -> dict:
             query_params=_to_columns(api.model_type),
             response_schema=api.get_response_schema(),
             version=api.config.version,
+            path=api.config.path,
             metadata=getattr(api, "metadata", None),
         )
 

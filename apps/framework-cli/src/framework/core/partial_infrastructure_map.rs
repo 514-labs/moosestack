@@ -206,6 +206,10 @@ struct PartialIngestApi {
     pub metadata: Option<Metadata>,
     #[serde(default)]
     pub dead_letter_queue: Option<String>,
+    /// Optional custom path for the ingestion endpoint.
+    /// If not specified, defaults to "ingest/{name}/{version}"
+    #[serde(default)]
+    pub path: Option<String>,
     pub schema: serde_json::Map<String, serde_json::Value>,
 }
 
@@ -220,6 +224,10 @@ struct PartialApi {
     pub response_schema: serde_json::Value,
     pub version: Option<String>,
     pub metadata: Option<Metadata>,
+    /// Optional custom path for the consumption endpoint.
+    /// If not specified, defaults to "{name}" or "{name}/{version}"
+    #[serde(default)]
+    pub path: Option<String>,
 }
 
 /// Specifies a write destination for data ingestion.
@@ -663,15 +671,43 @@ impl PartialInfrastructureMap {
                     dead_letter_queue: partial_api.dead_letter_queue.clone(),
                     schema: partial_api.schema.clone(),
                 },
-                path: PathBuf::from_iter(
-                    [
-                        "ingest",
-                        &partial_api.name,
-                        partial_api.version.as_deref().unwrap_or_default(),
-                    ]
-                    .into_iter()
-                    .filter(|s| !s.is_empty()),
-                ),
+                path: if let Some(custom_path) = &partial_api.path {
+                    // Use custom path if provided, ensuring it starts with "ingest/"
+                    let mut path_str = if custom_path.starts_with("ingest/") {
+                        custom_path.clone()
+                    } else {
+                        format!("ingest/{}", custom_path)
+                    };
+
+                    // Append version if specified and not already in the path
+                    if let Some(version) = &partial_api.version {
+                        // Check if the path already ends with the version
+                        let path_ends_with_version = path_str.ends_with(&format!("/{}", version))
+                            || path_str.ends_with(version) && path_str.len() == version.len()
+                            || path_str.ends_with(version)
+                                && path_str.chars().rev().nth(version.len()) == Some('/');
+
+                        if !path_ends_with_version {
+                            if !path_str.ends_with('/') {
+                                path_str.push('/');
+                            }
+                            path_str.push_str(version);
+                        }
+                    }
+
+                    PathBuf::from(path_str)
+                } else {
+                    // Default path: ingest/{name}/{version}
+                    PathBuf::from_iter(
+                        [
+                            "ingest",
+                            &partial_api.name,
+                            partial_api.version.as_deref().unwrap_or_default(),
+                        ]
+                        .into_iter()
+                        .filter(|s| !s.is_empty()),
+                    )
+                },
                 method: Method::POST,
                 version: partial_api
                     .version
@@ -702,11 +738,34 @@ impl PartialInfrastructureMap {
                         .collect(),
                     output_schema: partial_api.response_schema.clone(),
                 },
-                path: match partial_api.version.as_ref() {
-                    Some(version) => {
-                        PathBuf::from(format!("{}/{}", partial_api.name.clone(), version.clone()))
+                path: if let Some(custom_path) = &partial_api.path {
+                    // Use custom path if provided, and append version if specified and not already in the path
+                    let mut path_str = custom_path.clone();
+                    if let Some(version) = &partial_api.version {
+                        // Check if the path already ends with the version
+                        let path_ends_with_version = path_str.ends_with(&format!("/{}", version))
+                            || path_str.ends_with(version) && path_str.len() == version.len()
+                            || path_str.ends_with(version)
+                                && path_str.chars().rev().nth(version.len()) == Some('/');
+
+                        if !path_ends_with_version {
+                            if !path_str.ends_with('/') {
+                                path_str.push('/');
+                            }
+                            path_str.push_str(version);
+                        }
                     }
-                    None => PathBuf::from(partial_api.name.clone()),
+                    PathBuf::from(path_str)
+                } else {
+                    // Default path: {name} or {name}/{version}
+                    match partial_api.version.as_ref() {
+                        Some(version) => PathBuf::from(format!(
+                            "{}/{}",
+                            partial_api.name.clone(),
+                            version.clone()
+                        )),
+                        None => PathBuf::from(partial_api.name.clone()),
+                    }
                 },
                 method: Method::GET,
                 version: partial_api

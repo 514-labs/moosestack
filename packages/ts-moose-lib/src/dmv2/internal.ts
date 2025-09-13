@@ -168,6 +168,8 @@ interface IngestApiJson {
   deadLetterQueue?: string;
   /** Optional version string for the API configuration. */
   version?: string;
+  /** Optional custom path for the ingestion endpoint. */
+  path?: string;
   /** Optional description for the API. */
   metadata?: { description?: string };
   /** JSON schema */
@@ -186,6 +188,8 @@ interface ApiJson {
   responseSchema: IJsonSchemaCollection.IV3_1;
   /** Optional version string for the API configuration. */
   version?: string;
+  /** Optional custom path for the API endpoint. */
+  path?: string;
   /** Optional description for the API. */
   metadata?: { description?: string };
 }
@@ -392,6 +396,7 @@ export const toInfraMap = (registry: typeof moose_internal) => {
       name: api.name,
       columns: api.columnArray,
       version: api.config.version,
+      path: api.config.path,
       writeTo: {
         kind: "stream",
         name: api.config.destination.name,
@@ -410,6 +415,7 @@ export const toInfraMap = (registry: typeof moose_internal) => {
       queryParams: api.columnArray,
       responseSchema: api.responseSchema,
       version: api.config.version,
+      path: api.config.path,
       metadata: api.metadata,
     };
   });
