@@ -401,7 +401,7 @@ pub fn tables_to_python(tables: &[Table], life_cycle: Option<LifeCycle>) -> Stri
 
         writeln!(
             output,
-            "{}_model = OlapTable[{}](\"{}\", OlapConfig(",
+            "{}_table = OlapTable[{}](\"{}\", OlapConfig(",
             table.name.to_case(Case::Snake),
             table.name,
             table.name
@@ -573,7 +573,7 @@ class Foo(BaseModel):
     timestamp: float
     optional_text: Optional[str] = None
 
-foo_model = OlapTable[Foo]("Foo", OlapConfig(
+foo_table = OlapTable[Foo]("Foo", OlapConfig(
     order_by_fields=["primary_key"],
     engine=MergeTreeEngine(),
 ))"#
@@ -646,7 +646,7 @@ foo_model = OlapTable[Foo]("Foo", OlapConfig(
     numbers: list[Annotated[int, "int32"]]
     nested_numbers: list[list[Optional[Annotated[int, "int32"]]]]
 
-nested_array_model = OlapTable[NestedArray]("NestedArray", OlapConfig(
+nested_array_table = OlapTable[NestedArray]("NestedArray", OlapConfig(
     order_by_fields=["id"],
     engine=MergeTreeEngine(),
 ))"#
@@ -755,7 +755,7 @@ class User(BaseModel):
     address: Address
     addresses: Optional[list[Address]] = None
 
-user_model = OlapTable[User]("User", OlapConfig(
+user_table = OlapTable[User]("User", OlapConfig(
     order_by_fields=["id"],
     engine=MergeTreeEngine(),
 ))"#
