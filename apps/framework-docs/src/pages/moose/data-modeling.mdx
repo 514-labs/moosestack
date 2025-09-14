@@ -256,6 +256,23 @@ tx = Event(
 
 **The metadata annotations are compile-time only** - they don't affect your runtime code. Your application works with regular strings and numbers, while Moose uses the metadata to generate optimized infrastructure.
 
+### Python naming and Pydantic aliases
+
+<Callout type="info" title="Invalid/underscore-prefixed field names in Python" compact={true}>
+If a ClickHouse column name isn't a valid Python identifier or starts with an underscore, Moose generates a safe Python field name and sets a Pydantic alias to the real column name. Moose then uses the alias for ClickHouse DDL and data mapping, so your model remains valid while preserving the true column name.
+
+```python
+from pydantic import BaseModel, Field
+
+class CHUser(BaseModel):
+    # ClickHouse: "_id" → safe Python attribute with alias
+    UNDERSCORE_PREFIXED_id: str = Field(alias="_id")
+
+    # ClickHouse: "user name" → replace spaces, keep alias
+    user_name: str = Field(alias="user name")
+```
+</Callout>
+
 ## Building Data Models: From Simple to Complex
 
 Let's walk through how to model data for different infrastructure components and see how types behave across them.
