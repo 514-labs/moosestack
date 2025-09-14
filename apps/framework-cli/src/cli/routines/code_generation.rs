@@ -363,7 +363,7 @@ pub async fn db_to_dmv2(remote_url: &str, dir_path: &Path) -> Result<(), Routine
                     )
                 })?;
                 let main_path = format!("{APP_DIR}/{PYTHON_MAIN_FILE}");
-                let import_stmt = "from external_models import *";
+                let import_stmt = "from .external_models import *";
                 let needs_import = match std::fs::read_to_string(&main_path) {
                     Ok(contents) => !contents.contains(import_stmt),
                     Err(_) => true,
