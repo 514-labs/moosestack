@@ -17,6 +17,16 @@ const rawMeta = {
   "schema-optimization": {
     title: "Schema Optimization",
   },
+  "---Remote DB---": {
+    title: "Remote ClickHouse",
+    type: "separator",
+  },
+  "external-tables": {
+    title: "External Tables",
+  },
+  "db-pull": {
+    title: "Syncing External Tables",
+  },
   "---Migrations---": {
     title: "Migrations",
     type: "separator",
@@ -25,10 +35,7 @@ const rawMeta = {
     title: "Applying Migrations",
   },
   "planned-migrations": {
-    title: "Planned Migrations",
-  },
-  "external-tables": {
-    title: "External Tables",
+    title: "Generating Migrations",
   },
   "schema-versioning": {
     title: "Table Versioning",

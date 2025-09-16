@@ -47,6 +47,30 @@ my_table = OlapTable[MyFirstTable]("first_table")
 ```
 </Python>
 
+## Getting started
+
+If you’re new to Moose OLAP, choose one of these paths:
+
+### Import your schema from an existing ClickHouse database
+```bash filename="Terminal" copy
+moose init your-project-name --from-remote
+```
+<Callout type="info" title="Review the full guide" href="/moose/getting-started/from-clickhouse" ctaLabel="Get started" compact={true}>
+Review the full guide to learn more about how to bootstrap a new Moose OLAP project from an existing ClickHouse DB.
+</Callout>
+
+### Start from scratch
+Create a blank project, then model your first table:
+  ```bash filename="Terminal" copy
+  moose init your-project-name --language <typescript-empty|python-empty>
+  cd your-project-name
+  ```
+  <Callout type="info" title="Next steps: Model a table" href="/moose/olap/model-table" ctaLabel="Model a table" compact={true}>
+  Review the guide to learn more about how to model your first table.
+  </Callout>
+
+Working with ClickPipes/PeerDB? Read [External Tables](/moose/olap/external-tables) and keep them in sync with [DB Pull](/moose/olap/db-pull).
+
 ## Enabling Moose OLAP
 
 In your `moose.config.toml` file, enable the OLAP Database capability:

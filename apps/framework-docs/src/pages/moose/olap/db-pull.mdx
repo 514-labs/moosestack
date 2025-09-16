@@ -1,0 +1,143 @@
+---
+title: Syncing External Tables
+description: Refresh your external table models from an existing ClickHouse database
+---
+
+import { Callout, LanguageSwitcher, TypeScript, Python, BulletPointsCard } from "@/components";
+
+# Syncing External Tables
+
+<LanguageSwitcher />
+
+## What this is
+
+Use `moose db pull` to refresh the definitions of tables you marked as `EXTERNALLY_MANAGED` from a live ClickHouse instance. It reads your code to find external tables, fetches their remote schemas, regenerates one external models file, and creates a small git commit if anything changed.
+
+## When to use it
+
+- **External tables changed remotely**: a DBA, CDC, or ETL pipeline updated schema.
+- **Keep types in sync**: update generated models without touching fully-managed tables.
+- **Safe by design**: does not modify the database or your managed models.
+
+<Callout type="info">This is a read-only sync for your code models. For concepts and modeling guidance, see [External Tables](/moose/olap/external-tables). To bootstrap a project from an existing DB, see [Initialize from ClickHouse](/moose/getting-started/from-clickhouse).</Callout>
+
+## Requirements
+
+- Tables are defined with <TypeScript inline>`lifeCycle: EXTERNALLY_MANAGED`</TypeScript><Python inline>`life_cycle=LifeCycle.EXTERNALLY_MANAGED`</Python>
+- A ClickHouse connection string (native or HTTP/S)
+
+## Connection strings
+
+`db pull` accepts both native and HTTP(S) URLs. Native strings are automatically converted to HTTP(S) with the appropriate ports.
+
+Examples:
+
+```bash filename="Terminal" copy
+# Native (auto-converted to HTTPS + 8443)
+moose db pull --connection-string "clickhouse://explorer@play.clickhouse.com:9440/default"
+
+# HTTPS (explicit database via query param)
+moose db pull --connection-string "https://play.clickhouse.com/?user=explorer&database=default"
+
+# Local HTTP
+moose db pull --connection-string "http://localhost:8123/?user=default&database=default"
+```
+
+## What gets written
+
+- TypeScript: `app/externalModels.ts`
+- Python: `app/external_models.py`
+
+The file contains only the tables you marked as `EXTERNALLY_MANAGED` and starts with an auto-generated header.
+
+Important:
+
+- The generator always writes to the specified output path, overwriting the file each time. If you pass `--file-path`, that path is regenerated on every run.
+- We recommend keeping external models at the default paths above. Moose’s init/remote import flows add imports to <TypeScript inline>`app/index.ts`</TypeScript><Python inline>`app/main.py`</Python> that expect these defaults. If you change the output path, make sure your main file imports the new location so the models are loaded.
+
+## How it works
+
+When you run `db pull` the CLI does the following:
+
+- Loads your project’s infrastructure map and identifies tables marked as `EXTERNALLY_MANAGED`.
+- Connects to the remote ClickHouse specified by `--connection-string` and introspects the live schemas for those tables.
+- Regenerates a single external models file that mirrors the remote schema.
+- Does not change any fully managed tables, your <TypeScript inline>`app/index.ts`</TypeScript><Python inline>`app/main.py`</Python>, or the database itself.
+- Creates a small git commit if the generated file changed, so you can review and share the update.
+
+### TypeScript output example
+
+<TypeScript>
+```ts filename="app/externalModels.ts"
+// AUTO-GENERATED FILE. DO NOT EDIT.
+// This file will be replaced when you run `moose db pull`.
+
+// ...typed table definitions matching remote EXTERNALLY_MANAGED tables...
+```
+</TypeScript>
+
+### Python output example
+
+<Python>
+```py filename="app/external_models.py"
+# AUTO-GENERATED FILE. DO NOT EDIT.
+# This file will be replaced when you run `moose db pull`.
+
+# ...pydantic models matching remote EXTERNALLY_MANAGED tables...
+```
+</Python>
+
+## Command
+
+```bash filename="Terminal" copy
+moose db pull --connection-string <STRING> [--file-path <OUTPUT_PATH>]
+```
+
+- **--connection-string**: Required. ClickHouse URL (native or HTTP/S)
+- **--file-path**: Optional. Override the default output file. The file at this path will be regenerated (overwritten) on each run.
+
+## Typical Use Cases
+
+### Remote schema changed; update local types
+  Your DBA, CDC pipeline (e.g., ClickPipes), or ETL job updated a table’s schema. To keep your code accurate and type-safe, refresh your external models so queries, APIs, and materialized views reference the correct columns and types.
+  ```bash filename="Terminal" copy
+  moose db pull --connection-string <YOUR_CLICKHOUSE_URL>
+  ```
+  This updates only `EXTERNALLY_MANAGED` models and leaves managed code untouched.
+
+### Automatically run on dev startup (keep local fresh)
+  In active development, schemas can drift faster than you commit updates. Running `db pull` on dev startup helps ensure your local code matches the live schema you depend on.
+  ```bash filename="Terminal" copy
+  export REMOTE_CLICKHOUSE_URL="clickhouse://<user>:<password>@<host>:<port>/<database>"
+  ```
+  Add to `moose.config.toml`:
+  ```toml filename="moose.config.toml" copy
+  [http_server_config]
+  on_first_start_script = "moose db pull --connection-string $REMOTE_CLICKHOUSE_URL"
+  ```
+  This runs once when the dev server first starts. To run after code reloads, use `on_reload_complete_script`. If you run this frequently, prefer HTTP(S) URLs and cache credentials via env/secrets to avoid friction.
+
+### New project from an existing DB
+  If you’re starting with an existing ClickHouse database, bootstrap code with `init --from-remote`, then use `db pull` over time to keep external models fresh:
+  ```bash filename="Terminal" copy
+  moose init my-project --from-remote $REMOTE_CLICKHOUSE_URL --language <typescript|python>
+  ```
+
+  <Callout type="info" title="See the full guide" ctaLink="/moose/getting-started/from-clickhouse" ctaLabel="Get started">
+  Review the full getting started guide to learn more about how to bootstrap a new Moose OLAP project from an existing ClickHouse DB.
+  </Callout>
+
+## Troubleshooting
+
+- **No changes written**: Ensure tables are actually marked as `EXTERNALLY_MANAGED` and names match remote.
+- **Unsupported types**: The CLI will list tables with unsupported types; they’re skipped in the generated file.
+- **Auth/TLS errors**: Verify scheme/ports (8123 or 8443) and credentials; try HTTPS if native URL fails.
+- **Git commit issues**: The command attempts a lightweight commit; commit manually if your working tree is dirty.
+
+## Related
+
+- **External Tables**: <a href="/moose/olap/external-tables">concepts and configuration</a>
+- **Initialize from ClickHouse**: <a href="/moose/getting-started/from-clickhouse">bootstrap projects from an existing DB</a>
+- **Supported Types**: <a href="/moose/olap/supported-types">mapping and constraints</a>
+
+
