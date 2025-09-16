@@ -11,7 +11,6 @@ use crate::project::Project;
 use crate::utilities::clickhouse_url::convert_http_to_clickhouse;
 use itertools::Itertools;
 use log::{debug, info};
-use std::borrow::Cow;
 use std::cmp::min;
 
 fn parse_clickhouse_connection_string(
@@ -226,7 +225,7 @@ pub async fn seed_clickhouse_tables(
             None => remote_total,
             Some(l) => min(remote_total, l),
         };
-        let order_by = match order_by {
+        let order_by_clause = match order_by {
             None => {
                 let table = infra_map.tables.get(&table_name).ok_or_else(|| {
                     RoutineFailure::error(Message::new(
@@ -234,15 +233,23 @@ pub async fn seed_clickhouse_tables(
                         format!("{table_name} not found."),
                     ))
                 })?;
-                Cow::Owned(
-                    table
-                        .order_by
-                        .iter()
-                        .map(|field| format!("`{field}` DESC"))
-                        .join(", "),
-                )
+                let fields = table
+                    .order_by
+                    .iter()
+                    .map(|field| format!("`{field}` DESC"))
+                    .join(", ");
+                if !fields.is_empty() {
+                    format!("ORDER BY {fields}")
+                } else if total_rows <= batch_size {
+                    "".to_string()
+                } else {
+                    return Err(RoutineFailure::error(Message::new(
+                        "Seed".to_string(),
+                        format!("Table {table_name} without ORDER BY. Supply ordering with --order-by to prevent the same row fetched in multiple batches."),
+                    )));
+                }
             }
-            Some(order_by) => Cow::Borrowed(order_by),
+            Some(order_by) => format!("ORDER BY {order_by}"),
         };
         let mut i: usize = 0;
         'table_batches: while copied_total < total_rows {
@@ -251,8 +258,9 @@ pub async fn seed_clickhouse_tables(
                 None => batch_size,
                 Some(l) => min(l - copied_total, batch_size),
             };
+
             let sql = format!(
-                "INSERT INTO `{local_db}`.`{table_name}` SELECT * FROM remoteSecure('{remote_host_and_port}', '{remote_db}', '{table_name}', '{remote_user}', '{remote_password}') ORDER BY {order_by} LIMIT {limit} OFFSET {copied_total}"
+                "INSERT INTO `{local_db}`.`{table_name}` SELECT * FROM remoteSecure('{remote_host_and_port}', '{remote_db}', '{table_name}', '{remote_user}', '{remote_password}') {order_by_clause} LIMIT {limit} OFFSET {copied_total}"
             );
 
             debug!("Executing SQL: table={table_name}, offset={copied_total}, limit={limit}");

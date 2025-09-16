@@ -318,6 +318,7 @@ pub enum SeedSubcommands {
         #[arg(long, default_value = "false", conflicts_with = "limit")]
         all: bool,
         /// ORDER BY clause of the query. e.g. `--order-by 'timestamp DESC' --limit 10` to the latest 10 rows
+        #[arg(long)]
         order_by: Option<String>,
         /// Only seed a specific table (optional)
         #[arg(long, value_name = "TABLE_NAME")]
