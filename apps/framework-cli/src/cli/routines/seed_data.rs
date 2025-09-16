@@ -9,7 +9,9 @@ use crate::infrastructure::olap::clickhouse::client::ClickHouseClient;
 use crate::infrastructure::olap::clickhouse::config::ClickHouseConfig;
 use crate::project::Project;
 use crate::utilities::clickhouse_url::convert_http_to_clickhouse;
+use itertools::Itertools;
 use log::{debug, info};
+use std::borrow::Cow;
 use std::cmp::min;
 
 fn parse_clickhouse_connection_string(
@@ -64,6 +66,7 @@ pub async fn handle_seed_command(
             limit,
             all,
             table,
+            order_by,
         }) => {
             info!("Running seed clickhouse command with connection string: {connection_string}");
 
@@ -150,6 +153,7 @@ pub async fn handle_seed_command(
                 &remote_config,
                 table.clone(),
                 if *all { None } else { Some(*limit) },
+                order_by.as_deref(),
             )
             .await?;
 
@@ -172,6 +176,7 @@ pub async fn seed_clickhouse_tables(
     remote_config: &ClickHouseConfig,
     table_name: Option<String>,
     limit: Option<usize>,
+    order_by: Option<&str>,
 ) -> Result<Vec<String>, RoutineFailure> {
     let remote_host = &remote_config.host;
     let remote_db = &remote_config.db_name;
@@ -221,6 +226,24 @@ pub async fn seed_clickhouse_tables(
             None => remote_total,
             Some(l) => min(remote_total, l),
         };
+        let order_by = match order_by {
+            None => {
+                let table = infra_map.tables.get(&table_name).ok_or_else(|| {
+                    RoutineFailure::error(Message::new(
+                        "Seed".to_string(),
+                        format!("{table_name} not found."),
+                    ))
+                })?;
+                Cow::Owned(
+                    table
+                        .order_by
+                        .iter()
+                        .map(|field| format!("`{field}` DESC"))
+                        .join(", "),
+                )
+            }
+            Some(order_by) => Cow::Borrowed(order_by),
+        };
         let mut i: usize = 0;
         'table_batches: while copied_total < total_rows {
             i += 1;
@@ -229,7 +252,7 @@ pub async fn seed_clickhouse_tables(
                 Some(l) => min(l - copied_total, batch_size),
             };
             let sql = format!(
-                "INSERT INTO `{local_db}`.`{table_name}` SELECT * FROM remoteSecure('{remote_host_and_port}', '{remote_db}', '{table_name}', '{remote_user}', '{remote_password}') LIMIT {limit} OFFSET {copied_total}"
+                "INSERT INTO `{local_db}`.`{table_name}` SELECT * FROM remoteSecure('{remote_host_and_port}', '{remote_db}', '{table_name}', '{remote_user}', '{remote_password}') ORDER BY {order_by} LIMIT {limit} OFFSET {copied_total}"
             );
 
             debug!("Executing SQL: table={table_name}, offset={copied_total}, limit={limit}");
