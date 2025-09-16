@@ -317,7 +317,7 @@ pub enum SeedSubcommands {
         /// Copy all rows (ignore limit). If set for a table, copies entire table.
         #[arg(long, default_value = "false", conflicts_with = "limit")]
         all: bool,
-        /// ORDER BY clause of the query. e.g. `--order-by 'timestamp DESC' --limit 10` to the latest 10 rows
+        /// ORDER BY clause of the query. e.g. `--order-by 'timestamp DESC' --limit 10` for the latest 10 rows
         #[arg(long)]
         order_by: Option<String>,
         /// Only seed a specific table (optional)
