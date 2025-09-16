@@ -612,6 +612,26 @@ s3_events = OlapTable[S3Event]("s3_events", OlapConfig(
 S3Queue requires ClickHouse 24.7+ and proper ZooKeeper/ClickHouse Keeper configuration for coordination between replicas. Files are processed exactly once across all replicas.
 </Callout>
 
+<Python>
+### Irregular column names and Python Aliases
+
+If a ClickHouse column name isn't a valid Python identifier or starts with an underscore,
+you can use a safe Python field name and set a Pydantic alias to the real column name.
+MooseOLAP then uses the alias for ClickHouse DDL and data mapping,
+so your model remains valid while preserving the true column name.
+
+```python
+from pydantic import BaseModel, Field
+
+class CHUser(BaseModel):
+    # ClickHouse: "_id" → safe Python attribute with alias
+    UNDERSCORE_PREFIXED_id: str = Field(alias="_id")
+
+    # ClickHouse: "user name" → replace spaces, keep alias
+    user_name: str = Field(alias="user name")
+```
+</Python>
+
 ## Externally Managed Tables
 If you have a table that is managed by an external system (e.g Change Data Capture like ClickPipes), you can still use Moose to query it. You can set the config in the table config to set the lifecycle to `EXTERNALLY_MANAGED`.
 
