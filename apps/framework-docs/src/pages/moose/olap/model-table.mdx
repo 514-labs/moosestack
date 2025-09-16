@@ -654,7 +654,7 @@ from moose_lib import OlapTable, OlapConfig, LifeCycle
 # Table managed by external system
 external_table = OlapTable[UserData]("external_users", OlapConfig(
     order_by_fields=["id", "timestamp"],
-    life_cycle=LifeCycle.EXTERNALLY_MANAGED  # Moose won't create or modify this table
+    life_cycle=LifeCycle.EXTERNALLY_MANAGED  # Moose won't create or modify this table in prod mode
 ))
 ```
 </Python>
