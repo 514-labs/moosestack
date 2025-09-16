@@ -615,7 +615,10 @@ S3Queue requires ClickHouse 24.7+ and proper ZooKeeper/ClickHouse Keeper configu
 <Python>
 ### Irregular column names and Python Aliases
 
-If a ClickHouse column name isn't a valid Python identifier or starts with an underscore, you can use a safe Python field name and set a Pydantic alias to the real column name. MooseOLAP then uses the alias for ClickHouse DDL and data mapping, so your model remains valid while preserving the true column name.            
+If a ClickHouse column name isn't a valid Python identifier or starts with an underscore,
+you can use a safe Python field name and set a Pydantic alias to the real column name.
+MooseOLAP then uses the alias for ClickHouse DDL and data mapping,
+so your model remains valid while preserving the true column name.
 
 ```python
 from pydantic import BaseModel, Field
