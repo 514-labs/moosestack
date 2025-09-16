@@ -203,15 +203,27 @@ class QueryClient:
 
         clickhouse_query = input.format_map(params)
         preview_query = input.format_map(preview_params)
+        print(f"[QueryClient] | Query: {' '.join(preview_query.split())}")
+        return self.execute_raw(
+            clickhouse_query, values, row_type
+        )
 
+    def execute_raw(
+            self,
+            clickhouse_query: str,
+            parameters: Optional[dict[str, Any]],
+            row_type: Type[BaseModel] = None
+    ):
+        """
+        Uses raw clickhouse SQL syntax.
+        """
         # We are not using the result of the ping
         # but this ensures that if the clickhouse cloud service is idle, we
         # wake it up, before we send the query.
         self.ch_client.ping()
 
-        print(f"[QueryClient] | Query: {' '.join(preview_query.split())}")
         start = perf_counter()
-        val = self.ch_client.query(clickhouse_query, values)
+        val = self.ch_client.query(clickhouse_query, parameters)
         secs = perf_counter() - start
         if secs < 1:
             print(f"[QueryClient] | Query completed: {secs * 1000:.0f} ms")
@@ -354,7 +366,7 @@ class WorkflowClient:
         dmv2_workflow = get_workflow(name)
         if dmv2_workflow is None:
             raise ValueError(f"DMv2 workflow '{name}' not found")
-            
+
         return {
             'retry_count': dmv2_workflow.config.retries or 3,
             'timeout_str': dmv2_workflow.config.timeout or "1h",
@@ -387,8 +399,6 @@ class WorkflowClient:
     def _build_workflow_args(self, name: str, input_data: Any) -> list:
         """Build workflow arguments for DMv2 workflow."""
         return [{"workflow_name": name, "execution_mode": "start"}, input_data]
-
-
 
     def parse_timeout_to_timedelta(self, timeout_str: str) -> Optional[timedelta]:
         if timeout_str == "never":
