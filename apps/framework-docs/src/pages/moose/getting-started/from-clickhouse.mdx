@@ -233,25 +233,6 @@ Check what Moose created from your tables in the `app/main.py` file:
 <div className="text-sm mt-2">Learn more about export pattern: <a href="/moose/local-dev#hot-reloading-development" className="text-blue-500 hover:underline">local development</a> / <a href="/moose/migrate" className="text-blue-500 hover:underline">hosted</a></div>
 </Callout>
 
-<Callout type="info" title="Python naming and Pydantic aliases" compact={true}>
-When a ClickHouse column name is not a valid Python identifier (e.g. contains spaces) or starts with an underscore (`_` has special meaning in Pydantic), the generator will:
-
-- Rename the field to a safe Python name
-- Set `Field(alias="<original_clickhouse_name>")` so the original column name is preserved
-
-Moose reads the alias to map the field to the real ClickHouse column name, while your Python code uses the safe attribute name.
-
-```python
-from pydantic import BaseModel, Field
-
-class Demo(BaseModel):
-    # Column name was "_secret" in ClickHouse
-    UNDERSCORE_PREFIXED_secret: str = Field(alias="_secret")
-
-    # Column name was "some space" in ClickHouse
-    some_space: int = Field(alias="some space")
-```
-</Callout>
 </Python>
 
 <TypeScript>
