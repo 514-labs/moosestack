@@ -476,6 +476,10 @@ pub async fn db_pull(
         .map(|t| t.name.clone())
         .collect();
 
+    // Names of all known tables in the project (managed or external)
+    let known_table_names: std::collections::HashSet<String> =
+        infra_map.tables.values().map(|t| t.name.clone()).collect();
+
     let (tables, _unsupported) = client.list_tables(&db, project).await.map_err(|e| {
         RoutineFailure::new(
             Message::new("Failure".to_string(), "listing tables".to_string()),
@@ -483,12 +487,20 @@ pub async fn db_pull(
         )
     })?;
 
-    let externally_managed: Vec<Table> = tables
+    // Overwrite the external models file with:
+    // - existing external tables (from infra map)
+    // - plus any unknown (not present in infra map) tables, marked as external
+    let mut tables_for_external_file: Vec<Table> = tables
         .into_iter()
-        .filter(|t| externally_managed_names.contains(&t.name))
+        .filter(|t| {
+            externally_managed_names.contains(&t.name) || !known_table_names.contains(&t.name)
+        })
         .collect();
 
-    write_external_models_file(project.language, &externally_managed, file_path)?;
+    // Keep a stable ordering for deterministic output
+    tables_for_external_file.sort_by(|a, b| a.name.cmp(&b.name));
+
+    write_external_models_file(project.language, &tables_for_external_file, file_path)?;
 
     match create_code_generation_commit(
         ".".as_ref(),
