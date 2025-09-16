@@ -152,7 +152,12 @@ moose generate migration --url https://<remote-env> --token <api-token> --save
 ```
 - Writes `./migrations/plan.yaml` and snapshots `remote_state.json` and `local_infra_map.json`
 - Omit `--save` to output to stdout without writing files
-- Requires `[features].olap = true`; execution of saved plan requires `[features].ddl_plan = true`
+- Requires these feature flags in `moose.config.toml`:
+  ```toml filename="moose.config.toml" copy
+  [features]
+  olap = true
+  ddl_plan = true
+  ```
 
 ### DB Pull (External Tables)
 Refresh `EXTERNALLY_MANAGED` table definitions from a remote ClickHouse instance.
@@ -164,7 +169,7 @@ moose db pull --connection-string <CONNECTION_STRING> [--file-path <OUTPUT_PATH>
 
 Notes:
 - Only tables marked `EXTERNALLY_MANAGED` in your code are refreshed.
-- The command writes a single external models file and creates a small git commit if changes are detected.
+- The command writes a single external models file and overwrites the file on each run.
 - See the full guide: [/moose/olap/db-pull](/moose/olap/db-pull)
 
 ## Workflow Management

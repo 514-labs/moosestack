@@ -232,8 +232,6 @@ Check what Moose created from your tables in the `app/main.py` file:
 <div>Your generated table models are imported here so Moose can detect them.</div>
 <div className="text-sm mt-2">Learn more about export pattern: <a href="/moose/local-dev#hot-reloading-development" className="text-blue-500 hover:underline">local development</a> / <a href="/moose/migrate" className="text-blue-500 hover:underline">hosted</a></div>
 </Callout>
-
-If Moose detects CDC‑managed tables (ClickPipes/PeerDB) during init, it will also generate an `external_models.py` and add `from external_models import *` to `app/main.py` so those external tables are loaded automatically.
 </Python>
 
 <TypeScript>
@@ -248,8 +246,6 @@ Check what Moose created from your tables in the `app/index.ts` file:
 <div>Your generated table models are exported here so Moose can detect them.</div>
 <div className="text-sm mt-2">Learn more about export pattern: <a href="/moose/local-dev#hot-reloading-development" className="text-blue-500 hover:underline">local development</a> / <a href="/moose/migrate" className="text-blue-500 hover:underline">hosted</a></div>
 </Callout>
-
-If Moose detects CDC‑managed tables (ClickPipes/PeerDB) during init, it will also generate an `externalModels.ts`and add `import "./externalModels"` to `app/index.ts` so those external tables are loaded automatically.
 </TypeScript>
 
 ### If your database includes ClickPipes/PeerDB (CDC) tables

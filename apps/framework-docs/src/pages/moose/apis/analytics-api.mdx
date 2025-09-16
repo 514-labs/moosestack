@@ -108,17 +108,17 @@ SourceTable = SourcePipeline.get_table()
 
 # Define the route handler function
 def run(client: MooseClient, params: QueryParams) -> list[ResponseBody]:
-    query = """
+    query = f"""
     SELECT 
-      id
+      id,
       name,
       value
-    FROM {table: Identifier}
-    WHERE category = {filterField: String}
-    LIMIT {maxResults: UInt32}
+    FROM {SourceTable.name}
+    WHERE category = '{params.filterField}'
+    LIMIT {params.maxResults}
     """
 
-    return client.query.execute(query, {"table": SourceTable.name, "filterField": params.filterField, "maxResults": params.maxResults})
+    return client.query.execute(query)
 
 # Create the API
 example_api = Api[QueryParams, ResponseBody](name="example_endpoint", query_function=run)
@@ -394,65 +394,18 @@ The `sql` template literal in Moose provides type-safe query construction with p
 
 <Python>
 
-There are two recommended patterns for building your queries:
-
-<Tabs items={["Using Parameter Binding", "Using F-strings"]}>
-<Tabs.Tab title="Using Parameter Binding">
-
-**Pattern 1: ClickHouse Native Parameter Binding**
-
-This pattern follows the official ClickHouse Python client approach using parameter binding:
+You can use f-strings with Pydantic validation to build safe queries:
 
 ```python filename="ExampleApi.py" copy
-def run(client: MooseClient, params: QueryParams):
-    # Use named parameters with {:type} syntax for safe parameter binding
-    query = """
-        SELECT *
-        FROM users
-        WHERE age >= {min_age:Int32}
-        AND status = {status:String}
-        LIMIT {limit:UInt32}
-    """
-    
-    # Parameters passed as a dictionary
-    result = client.query.execute(
-        query,
-        parameters={
-            "min_age": params.min_age,
-            "status": params.status,
-            "limit": params.limit
-        }
-    )
-    return result
-```
-
-This approach:
-- Uses ClickHouse's native parameter binding with `{:type}` syntax
-- Explicitly specifies ClickHouse types for parameters
-- Provides protection against SQL injection by default
-- Handles type conversion automatically
-
-</Tabs.Tab>
-
-<Tabs.Tab title="Using F-strings">
-
-**Pattern 2: F-String with Pydantic Validation**
-
-Alternatively, you can use f-strings with careful Pydantic validation:
-
-```python filename="ExampleApi.py" copy
-from pydantic import BaseModel, Field, constr
-from typing import Literal
+from pydantic import BaseModel, Field
 
 class QueryParams(BaseModel):
-    # Strict validation ensures safety when using f-strings
-    min_age: int = Field(ge=0, le=150)  # Constrain age range
-    status: str = Field(pattern=r"^(active|inactive)$") ## Only allow specific values
-    limit: int = Field(default=10, ge=1, le=1000)  # Constrain limit range
-    search_text: str = Field(pattern=r'^[a-zA-Z0-9\s]*$')  # Only alphanumeric + spaces
+    min_age: int = Field(ge=0, le=150)
+    status: str = Field(pattern=r"^(active|inactive)$")
+    limit: int = Field(default=10, ge=1, le=1000)
+    search_text: str = Field(pattern=r'^[a-zA-Z0-9\s]*$')
 
 def run(client: MooseClient, params: QueryParams):
-    # Since Pydantic has validated the inputs, f-string usage is safe
     query = f"""
         SELECT *
         FROM users
@@ -461,14 +414,11 @@ def run(client: MooseClient, params: QueryParams):
         AND name ILIKE '%{params.search_text}%'
         LIMIT {params.limit}
     """
-    
-    return client.query.execute(query)
+    return client.query.execute(query, {"min_age": params.min_age, "status": params.status, "limit": params.limit, "search_text": params.search_text})
 ```
-</Tabs.Tab>
-</Tabs>
 
 <Callout type="warning">
-When using Pattern 2 (f-strings), you MUST be extremely careful with your Pydantic model definitions:
+When using f-strings, you MUST be extremely careful with your Pydantic model definitions:
 - Use strict field validations with `Field()` constraints
 - Consider using `Literal` types for fixed value sets
 - Use `constr` with patterns for string validation
@@ -478,7 +428,6 @@ When using Pattern 2 (f-strings), you MUST be extremely careful with your Pydant
 Improper validation could lead to SQL injection vulnerabilities.
 </Callout>
 
-For most cases, Pattern 1 (ClickHouse Parameter Binding) is recommended as it provides better safety guarantees. Only use Pattern 2 when you have complete confidence in your Pydantic validation rules and understand the security implications.
 </Python>
 
 
@@ -556,56 +505,8 @@ Static type checking ensures you only reference columns that actually exist.
 
 <Python>
 
-<Tabs items={["Using Parameter Binding (Recommended)", "Using F-strings (With Extra Care)"]}>
-<Tabs.Tab title="Using Parameter Binding">
-
-```python filename="SafeParameterBinding.py" copy
-from moose_lib import Api, MooseClient
-from pydantic import BaseModel
-from typing import Literal, Optional, List
-from enum import Enum
-from app.UserTable import UserTable
-
-class QueryParams(BaseModel):
-    # Validation not needed (but still recommended)
-    column: str = Field(pattern=r"^(id|name|email)$", description="Uses a regex pattern to only allow valid column names")
-    search_term: str 
-    limit: int = 10
-
-def run(client: MooseClient, params: QueryParams):
-    # Use proper ClickHouse parameter binding
-    query = """
-        SELECT {column:Identifier}
-        FROM {tableName:Identifier}
-        WHERE name ILIKE %{search_term:String}%
-        LIMIT {limit:UInt32}
-    """
-    
-    # Parameters are safely bound with proper type handling
-    result = client.query.execute(
-        query,
-        parameters={
-            "column": params.column,
-            "tableName": UserTable.name,
-            "search_term": params.search_term,
-            "limit": params.limit
-        }
-    )
-    return result
-
-# Example usage:
-# GET /api/search?column=name&search_term=O'Connor&limit=10
-# Safely handles special characters through parameter binding
-```
-
-This approach is recommended because:
-- Parameter binding handles all escaping and type conversion
-- No need for complex validation rules
-- Handles special characters and SQL injection attempts automatically
-- Uses enum for column names instead of regex
-</Tabs.Tab>
-
-<Tabs.Tab title="Using F-strings">
+<Tabs items={["Using f-strings"]}>
+<Tabs.Tab title="Using f-strings">
 
 ```python filename="ValidatedFStrings.py" copy
 from moose_lib import Api, MooseClient
@@ -644,16 +545,11 @@ def run(client: MooseClient, params: QueryParams):
     # No parameters dict needed with f-strings
     return client.query.execute(query)
 
-# WARNING: This approach requires perfect validation
-# Better to use parameter binding shown in the first tab
+# WARNING: This approach requires strict validation
 ```
 
 <Callout type="warning">
-Even with strict validation, f-strings are inherently riskier:
-- Must perfectly validate every character that could be used in SQL injection
-- Need to handle all edge cases (special characters, Unicode, etc.)
-- Risk of missing a validation case
-- **Strongly recommend using parameter binding instead**
+When using f-strings, validate every interpolated value strictly (patterns, bounds, enums) to avoid injection.
 </Callout>
 
 </Tabs.Tab>
@@ -763,8 +659,6 @@ const queryHandler = async ({ tableName = "users" }: QueryParams, { client, sql 
 
 <Python>
 
-<Tabs items={["Using f-strings", "Using Parameter Binding"]}>
-<Tabs.Tab title="Using f-strings">
 
 ```python filename="DynamicColumns.py" copy
 from app.UserTable import UserTable
@@ -779,7 +673,7 @@ class QueryResult(BaseModel):
 
 def run(client: MooseClient, params: QueryParams):
     query = f"""SELECT {params.colName} FROM {UserTable.name}"""
-    data = client.query.execute(query, {}) ## No parameter binding is done because we are using f-strings
+    data = client.query.execute(query, {"colName": params.colName, "tableName": UserTable.name}) 
     return data
 
 ## Create the API
@@ -796,35 +690,6 @@ When using f-strings, be careful to validate your query parameters to prevent SQ
 - Consider using `pattern` validation for string validation
 - Never allow arbitrary string input without validation
 </Callout>
-
-</Tabs.Tab>
-
-<Tabs.Tab title="Using Parameter Binding">
-```python filename="DynamicColumns.py" copy
-from app.UserTable import UserTable
-
-class QueryParams(BaseModel):
-    colName: str ## No validation is done on the input parameters, so must use parameter binding to prevent SQL injection
-
-class QueryResult(BaseModel):
-    id: Optional[int]
-    name: Optional[str]
-    email: Optional[str]
-
-def run(client: MooseClient, params: QueryParams):
-    query = "SELECT {colName: Identifier} FROM {tableName: Identifier}"
-    data = client.query.execute(query, {"colName": params.colName, "tableName": UserTable.name})
-    return data
-
-## Create the API
-bar = Api[QueryParams, QueryResult](name="bar", query_function=run)
-
-## Call the API
-## HTTP Request: GET http://localhost:4000/api/bar?colName=id
-## EXECUTED QUERY: SELECT id FROM users
-```
-</Tabs.Tab>
-</Tabs>
 
 <ToggleBlock openText="Show UserTable" closeText="Hide UserTable">
 ```python filename="UserTable.py" copy
@@ -885,7 +750,7 @@ const buildQuery = ({ minAge, status, searchText }: FilterParams, { sql }) => {
 
 <Python>
 
-<Tabs items={["Using f-strings", "Using Parameter Binding"]}>
+<Tabs items={["Using f-strings"]}>
 <Tabs.Tab title="Using f-strings">
 
 ```python filename="ConditionalColumns.py" copy   
@@ -902,21 +767,18 @@ class QueryResult(BaseModel):
 
 def build_query(client: MooseClient, params: FilterParams) -> QueryResult:
     conditions = []
-    interpolated = {}
     if params.min_age:
         conditions.append(f"age >= {params.min_age}")
-        interpolated["min_age"] = params.min_age
     
     if params.status:
-        conditions.append(f"status = {params.status}")
-        interpolated["status"] = params.status
+        conditions.append(f"status = '{params.status}'")
     
     if params.search_text:
-        conditions.append(f"name ILIKE '%{params.search_text}%' OR email ILIKE '%{params.search_text}%'")
-        interpolated["search_text"] = params.search_text
+        conditions.append(f"(name ILIKE '%{params.search_text}%' OR email ILIKE '%{params.search_text}%')")
 
-    query = f"""SELECT * FROM users WHERE {" AND ".join(conditions)} ORDER BY created_at DESC"""
-    data = client.query.execute(query, interpolated)
+    where_clause = f" WHERE {' AND '.join(conditions)}" if conditions else ""
+    query = f"""SELECT * FROM users{where_clause} ORDER BY created_at DESC"""
+    data = client.query.execute(query)
     return data
 
 ## Create the API
@@ -927,48 +789,6 @@ bar = Api[FilterParams, QueryResult](name="bar", query_function=build_query)
 ## EXECUTED QUERY: SELECT * FROM users WHERE age >= 20 AND status = 'active' AND (name ILIKE '%John%' OR email ILIKE '%John%') ORDER BY created_at DESC
 ```
 </Tabs.Tab>
-
-<Tabs.Tab title="Using Parameter Binding">
-
-```python filename="ConditionalColumns.py" copy   
-
-class FilterParams(BaseModel):
-    min_age: Optional[int]
-    status: Optional[str] = Field(pattern=r"^(active|inactive)$")
-    search_text: Optional[str] = Field(pattern=r"^[a-zA-Z0-9\s]+$", description="Alphanumeric search text without special characters to prevent SQL injection")
-
-class QueryResult(BaseModel):
-    id: Optional[int]
-    name: Optional[str]
-    email: Optional[str]
-
-def build_query(client: MooseClient, params: FilterParams) -> None:
-    conditions = []
-    interpolated = {}
-    if params.min_age:
-        conditions.append("age >= {min_age:UInt32}")
-        interpolated["min_age"] = params.min_age
-    
-    if params.status:
-        conditions.append("status = {status:String}")
-        interpolated["status"] = params.status
-    
-    if params.search_text:
-        conditions.append("name ILIKE %{search_text:String}% OR email ILIKE %{search_text:String}%")
-        interpolated["search_text"] = params.search_text
-
-    query = f"""SELECT * FROM users WHERE {" AND ".join(conditions)} ORDER BY created_at DESC"""
-    data = client.query.execute(query, interpolated)
-    return data
-
-## Create the API
-bar = Api[FilterParams, QueryResult](name="bar", query_function=build_query)
-
-## Call the API
-## HTTP Request: GET http://localhost:4000/api/bar?min_age=20&status=active&search_text=John
-## EXECUTED QUERY: SELECT * FROM users WHERE age >= 20 AND status = 'active' AND (name ILIKE '%John%' OR email ILIKE '%John%') ORDER BY created_at DESC
-```
-</Tabs.Tab> 
 </Tabs>
 
 </Python>
@@ -1107,14 +927,14 @@ class ResponseItem(BaseModel):
 
 def run(client: MooseClient, params: QueryParams):
     # 1. Fetch raw data
-    query = """
+    query = f"""
     SELECT id, name, value, timestamp
     FROM data_table
-    WHERE category = {category:String}
-    LIMIT {maxResults:UInt32}
+    WHERE category = '{params.category}'
+    LIMIT {params.maxResults}
     """
     
-    raw_results = client.query.execute(query, {"category": params.category, "maxResults": params.maxResults})
+    raw_results = client.query.execute(query)
     
     # 2. Post-process the results
     processed_results = []

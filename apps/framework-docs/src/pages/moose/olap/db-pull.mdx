@@ -11,7 +11,7 @@ import { Callout, LanguageSwitcher, TypeScript, Python, BulletPointsCard } from 
 
 ## What this is
 
-Use `moose db pull` to refresh the definitions of tables you marked as `EXTERNALLY_MANAGED` from a live ClickHouse instance. It reads your code to find external tables, fetches their remote schemas, regenerates one external models file, and creates a small git commit if anything changed.
+Use `moose db pull` to refresh the definitions of tables you marked as `EXTERNALLY_MANAGED` from a live ClickHouse instance. It reads your code to find external tables, fetches their remote schemas, regenerates one external models file, and creates a small git commit if anything changed. If new external tables were added remotely (e.g., new CDC streams), they are added to the external models file as part of the same run.
 
 ## When to use it
 
@@ -45,15 +45,18 @@ moose db pull --connection-string "http://localhost:8123/?user=default&database=
 
 ## What gets written
 
-- TypeScript: `app/externalModels.ts`
-- Python: `app/external_models.py`
+<TypeScript inline>`app/externalModels.ts`</TypeScript><Python inline>`app/external_models.py`</Python>
 
-The file contains only the tables you marked as `EXTERNALLY_MANAGED` and starts with an auto-generated header.
+`db pull` treats this file as the single source of truth for `EXTERNALLY_MANAGED` tables. It introspects the remote schema, updates existing external tables, and adds any newly detected external tables here. It does not modify models elsewhere in your codebase.
+
+<Callout type="warning" title="Structure for external tables">
+Keep all external tables in this file and import it once from your root (<TypeScript inline>`app/index.ts`</TypeScript><Python inline>`app/main.py`</Python>).
+</Callout>
 
 Important:
 
-- The generator always writes to the specified output path, overwriting the file each time. If you pass `--file-path`, that path is regenerated on every run.
-- We recommend keeping external models at the default paths above. Moose’s init/remote import flows add imports to <TypeScript inline>`app/index.ts`</TypeScript><Python inline>`app/main.py`</Python> that expect these defaults. If you change the output path, make sure your main file imports the new location so the models are loaded.
+- The file is overwritten on every run (or at the path passed via `--file-path`).
+- If you customize the path, ensure your root file imports it so Moose loads your external models.
 
 ## How it works
 
@@ -62,10 +65,11 @@ When you run `db pull` the CLI does the following:
 - Loads your project’s infrastructure map and identifies tables marked as `EXTERNALLY_MANAGED`.
 - Connects to the remote ClickHouse specified by `--connection-string` and introspects the live schemas for those tables.
 - Regenerates a single external models file that mirrors the remote schema.
+- Adds any newly detected external tables from the remote database to the generated file so your code stays in sync as sources evolve.
 - Does not change any fully managed tables, your <TypeScript inline>`app/index.ts`</TypeScript><Python inline>`app/main.py`</Python>, or the database itself.
 - Creates a small git commit if the generated file changed, so you can review and share the update.
 
-### TypeScript output example
+### Example output
 
 <TypeScript>
 ```ts filename="app/externalModels.ts"
@@ -75,8 +79,6 @@ When you run `db pull` the CLI does the following:
 // ...typed table definitions matching remote EXTERNALLY_MANAGED tables...
 ```
 </TypeScript>
-
-### Python output example
 
 <Python>
 ```py filename="app/external_models.py"
@@ -126,6 +128,13 @@ moose db pull --connection-string <STRING> [--file-path <OUTPUT_PATH>]
   <Callout type="info" title="See the full guide" ctaLink="/moose/getting-started/from-clickhouse" ctaLabel="Get started">
   Review the full getting started guide to learn more about how to bootstrap a new Moose OLAP project from an existing ClickHouse DB.
   </Callout>
+
+### A new CDC/external table appeared; add it to code
+  Your CDC pipeline created a new table (or exposed a new stream). Pull to add the new table to your external models file automatically.
+  ```bash filename="Terminal" copy
+  moose db pull --connection-string <YOUR_CLICKHOUSE_URL>
+  ```
+  The regenerated external models file will now include the newly discovered external table.
 
 ## Troubleshooting
 
