@@ -232,7 +232,6 @@ Check what Moose created from your tables in the `app/main.py` file:
 <div>Your generated table models are imported here so Moose can detect them.</div>
 <div className="text-sm mt-2">Learn more about export pattern: <a href="/moose/local-dev#hot-reloading-development" className="text-blue-500 hover:underline">local development</a> / <a href="/moose/migrate" className="text-blue-500 hover:underline">hosted</a></div>
 </Callout>
-
 </Python>
 
 <TypeScript>
@@ -248,6 +247,34 @@ Check what Moose created from your tables in the `app/index.ts` file:
 <div className="text-sm mt-2">Learn more about export pattern: <a href="/moose/local-dev#hot-reloading-development" className="text-blue-500 hover:underline">local development</a> / <a href="/moose/migrate" className="text-blue-500 hover:underline">hosted</a></div>
 </Callout>
 </TypeScript>
+
+### If your database includes ClickPipes/PeerDB (CDC) tables
+
+As noted above, when you use `moose init --from-remote`, Moose introspects your database. If it detects CDC‑managed tables (e.g., PeerDB/ClickPipes with fields like `_peerdb_synced_at`, `_peerdb_is_deleted`, `_peerdb_version`), it marks those as `EXTERNALLY_MANAGED` and writes them into a dedicated external models file. Your root file is updated to load these models automatically.
+
+<TypeScript>
+<FileTree>
+  <FileTree.Folder name="app" defaultOpen>
+    <FileTree.File name="index.ts" />
+    <FileTree.File name="externalModels.ts" />
+  </FileTree.Folder>
+</FileTree>
+
+</TypeScript>
+
+<Python>
+<FileTree>
+  <FileTree.Folder name="app" defaultOpen>
+    <FileTree.File name="main.py" />
+    <FileTree.File name="external_models.py" />
+  </FileTree.Folder>
+</FileTree>
+
+</Python>
+
+This separation is a best‑effort by the CLI to keep clearly CDC‑owned tables external. For other tables you don’t want Moose to manage, set the lifecycle to external and move them into the external file. See: 
+- [External Tables](/moose/olap/external-tables) documentation for more information on how external tables work.
+- [DB Pull](/moose/olap/db-pull) for keeping models in sync with the remote schema.
 
 <br />
 
