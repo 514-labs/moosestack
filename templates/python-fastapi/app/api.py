@@ -1,12 +1,11 @@
-from fastapi import FastAPI, Depends
+from fastapi import FastAPI, Depends, HTTPException
 from typing_extensions import Literal
 from app.db.views import BarAggregatedTable as BarAgg
 from moose_lib import QueryClient, WorkflowClient
 from moose_lib.config.runtime import config_registry
 from pydantic import BaseModel, Field
 from typing import Optional, List, Literal
-from app.db.models import BarTable, BarModel
-from app.workflows.generator import ingest_workflow
+from app.db.models import BarTable, BarModel    
 
 app = FastAPI()
 
@@ -46,44 +45,169 @@ class QueryResult(BaseModel):
     total_text_length: Optional[int] = None
 
 
+class InsertResponse(BaseModel):
+    message: str
+    successful_count: int
+    failed_count: int
+    total_count: int
+    errors: Optional[List[dict]] = None
+
+
+class ErrorDetail(BaseModel):
+    record_index: int
+    error_message: str
+    field_errors: Optional[dict] = None
+
+
 @app.get("/bar", response_model=List[QueryResult])
 def get_bar_data(params: QueryParams = Depends()):
-    global query_client
-    if query_client is None:
-        query_client = QueryClient(config_registry.get_clickhouse_config())
-    
-    query = f"""
-    SELECT
-        {BarAgg.columns.day_of_month},
-        {params.order_by}
-    FROM {BarAgg.name}
-    WHERE {BarAgg.columns.day_of_month} >= {params.start_day}
-    AND {BarAgg.columns.day_of_month} <= {params.end_day}
-    ORDER BY {params.order_by} DESC
-    LIMIT {params.limit}
     """
+    Retrieve bar data with comprehensive error handling.
     
-    result = query_client.execute(
-        query,
-        {
-            "order_by": params.order_by,
-            "start_day": params.start_day,
-            "end_day": params.end_day,
-            "limit": params.limit
-        },
-        QueryResult
-    )
+    Returns aggregated data based on the specified parameters with proper
+    error handling for database connection and query execution issues.
+    """
+    global query_client
+    
+    try:
+        # Initialize query client if needed
+        if query_client is None:
+            query_client = QueryClient(config_registry.get_clickhouse_config())
+        
+        # Validate date range
+        if params.start_day is not None and params.end_day is not None and params.start_day > params.end_day:
+            raise HTTPException(
+                status_code=400,
+                detail="start_day must be less than or equal to end_day"
+            )
+        
+        # Build the query
+        query = f"""
+        SELECT
+            {BarAgg.columns.day_of_month},
+            {params.order_by}
+        FROM {BarAgg.name}
+        WHERE {BarAgg.columns.day_of_month} >= {params.start_day}
+        AND {BarAgg.columns.day_of_month} <= {params.end_day}
+        ORDER BY {params.order_by} DESC
+        LIMIT {params.limit}
+        """
+        
+        # Execute the query
+        result = query_client.execute(
+            query,
+            {
+                "order_by": params.order_by,
+                "start_day": params.start_day,
+                "end_day": params.end_day,
+                "limit": params.limit
+            },
+            QueryResult
+        )
+        
+        return result
+        
+    except HTTPException:
+        # Re-raise HTTP exceptions (validation errors)
+        raise
+    except Exception as e:
+     
+        # Handle specific error types
+        if "connection" in str(e).lower() or "database" in str(e).lower():
+            raise HTTPException(
+                status_code=503,
+                detail="Database connection error. Please try again later."
+            )
+        elif "syntax" in str(e).lower() or "sql" in str(e).lower():
+            raise HTTPException(
+                status_code=500,
+                detail="Query execution error. Please contact support."
+            )
+        else:
+            raise HTTPException(
+                status_code=500,
+                detail="Internal server error during data retrieval"
+            )
 
-    return result
 
-
-@app.post("/bar")
+@app.post("/bar", response_model=InsertResponse)
 def post_bar_data(data: List[BarModel]):
-    result = BarTable.insert(data)
+    """
+    Insert bar data into the database with comprehensive error handling.
     
-    if result.successful:
-        return {"message": "Data inserted successfully"}
-    elif result.failed:
-        return {"message": "Data inserted with errors", "errors": result.failed_records}
-    else:
-        return {"message": "Data inserted with errors", "errors": result.failed_records}
+    Returns detailed information about the insertion results including:
+    - Number of successful and failed records
+    - Detailed error information for failed records
+    - Appropriate HTTP status codes
+    """
+    if not data:
+        raise HTTPException(
+            status_code=400,
+            detail="No data provided. At least one record is required."
+        )
+    
+    try:
+        # Perform the insert operation
+        result = BarTable.insert(data)
+        
+        # Prepare error details if there are failed records
+        error_details = None
+        if result.failed_records:
+            error_details = []
+            for failed_record in result.failed_records:
+                error_detail = {
+                    "record_index": getattr(failed_record, 'index', -1),
+                    "error_message": str(failed_record.error),
+                    "field_errors": getattr(failed_record, 'field_errors', None)
+                }
+                error_details.append(error_detail)
+        
+        # Determine response based on results
+        if result.failed == 0:
+            # All records successful
+            return InsertResponse(
+                message="All data inserted successfully",
+                successful_count=result.successful,
+                failed_count=result.failed,
+                total_count=result.total,
+                errors=None
+            )
+        elif result.successful == 0:
+            # All records failed
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "message": "All records failed validation or insertion",
+                    "successful_count": result.successful,
+                    "failed_count": result.failed,
+                    "total_count": result.total,
+                    "errors": error_details
+                }
+            )
+        else:
+            # Partial success - some records failed
+            return InsertResponse(
+                message=f"Partial success: {result.successful} records inserted, {result.failed} records failed",
+                successful_count=result.successful,
+                failed_count=result.failed,
+                total_count=result.total,
+                errors=error_details
+            )
+            
+    except Exception as e:        
+        # Handle specific error types
+        if "validation" in str(e).lower():
+            raise HTTPException(
+                status_code=422,
+                detail=f"Data validation error: {str(e)}"
+            )
+        elif "connection" in str(e).lower() or "database" in str(e).lower():
+            raise HTTPException(
+                status_code=503,
+                detail="Database connection error. Please try again later."
+            )
+        else:
+            raise HTTPException(
+                status_code=500,
+                detail="Internal server error during data insertion"
+            )
