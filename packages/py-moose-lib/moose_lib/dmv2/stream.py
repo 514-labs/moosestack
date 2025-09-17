@@ -15,6 +15,7 @@ from .olap_table import OlapTable
 from ._registry import _streams
 from .life_cycle import LifeCycle
 
+
 class StreamConfig(BaseModel):
     """Configuration for data streams (e.g., Redpanda topics).
 
@@ -25,6 +26,7 @@ class StreamConfig(BaseModel):
         version: Optional version string for tracking configuration changes.
         metadata: Optional metadata for the stream.
         life_cycle: Determines how changes in code will propagate to the resources.
+        default_dead_letter_queue: default dead letter queue used by transforms/consumers
     """
     parallelism: int = 1
     retention_period: int = 60 * 60 * 24 * 7  # 7 days
@@ -32,6 +34,10 @@ class StreamConfig(BaseModel):
     version: Optional[str] = None
     metadata: Optional[dict] = None
     life_cycle: Optional[LifeCycle] = None
+    default_dead_letter_queue: "Optional[DeadLetterQueue]" = None
+    # allow DeadLetterQueue
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
 
 class TransformConfig(BaseModel):
     """Configuration for stream transformations.
@@ -45,6 +51,7 @@ class TransformConfig(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
     metadata: Optional[dict] = None
 
+
 class ConsumerConfig(BaseModel):
     """Configuration for stream consumers.
 
@@ -56,11 +63,13 @@ class ConsumerConfig(BaseModel):
     dead_letter_queue: "Optional[DeadLetterQueue]" = None
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
+
 @dataclasses.dataclass
 class _RoutedMessage:
     """Internal class representing a message routed to a specific stream."""
     destination: "Stream[Any]"
     values: ZeroOrMany[Any]
+
 
 @dataclasses.dataclass
 class ConsumerEntry(Generic[T]):
@@ -68,12 +77,14 @@ class ConsumerEntry(Generic[T]):
     consumer: Callable[[T], None]
     config: ConsumerConfig
 
+
 @dataclasses.dataclass
 class TransformEntry(Generic[T]):
     """Internal class representing a transformation with its configuration."""
     destination: "Stream[Any]"
     transformation: Callable[[T], ZeroOrMany[Any]]
     config: TransformConfig
+
 
 class Stream(TypedMooseResource, Generic[T]):
     """Represents a data stream (e.g., a Redpanda topic) typed with a Pydantic model.
@@ -98,14 +109,16 @@ class Stream(TypedMooseResource, Generic[T]):
     transformations: dict[str, list[TransformEntry[T]]]
     consumers: list[ConsumerEntry[T]]
     _multipleTransformations: Optional[Callable[[T], list[_RoutedMessage]]] = None
+    default_dead_letter_queue: "Optional[DeadLetterQueue[T]]" = None
 
-    def __init__(self, name: str, config: StreamConfig = StreamConfig(), **kwargs):
+    def __init__(self, name: str, config: "StreamConfig" = None, **kwargs):
         super().__init__()
         self._set_type(name, self._get_type(kwargs))
-        self.config = config
-        self.metadata = config.metadata
+        self.config = config if config is not None else StreamConfig()
+        self.metadata = self.config.metadata
         self.consumers = []
         self.transformations = {}
+        self.default_dead_letter_queue = self.config.default_dead_letter_queue
         _streams[name] = self
 
     def add_transform(self, destination: "Stream[U]", transformation: Callable[[T], ZeroOrMany[U]],
@@ -121,6 +134,12 @@ class Stream(TypedMooseResource, Generic[T]):
             config: Optional configuration, primarily for setting a version.
         """
         config = config or TransformConfig()
+        if (
+                self.default_dead_letter_queue is not None
+                and config.dead_letter_queue is None
+        ):
+            config = config.model_copy()
+            config.dead_letter_queue = self.default_dead_letter_queue
         if destination.name in self.transformations:
             existing_transforms = self.transformations[destination.name]
             # Check if a transform with this version already exists
@@ -142,6 +161,12 @@ class Stream(TypedMooseResource, Generic[T]):
             config: Optional configuration, primarily for setting a version.
         """
         config = config or ConsumerConfig()
+        if (
+                self.default_dead_letter_queue is not None
+                and config.dead_letter_queue is None
+        ):
+            config = config.model_copy()
+            config.dead_letter_queue = self.default_dead_letter_queue
         has_version = any(c.config.version == config.version for c in self.consumers)
         if not has_version:
             self.consumers.append(ConsumerEntry(consumer=consumer, config=config))
@@ -191,6 +216,7 @@ class Stream(TypedMooseResource, Generic[T]):
         """
         self._multipleTransformations = transformation
 
+
 class DeadLetterModel(BaseModel, Generic[T]):
     """Model for dead letter queue messages.
 
@@ -213,6 +239,7 @@ class DeadLetterModel(BaseModel, Generic[T]):
     def as_typed(self) -> T:
         return self._t.model_validate(self.original_record)
 
+
 class DeadLetterQueue(Stream, Generic[T]):
     """A specialized Stream for handling failed records.
 
@@ -225,7 +252,7 @@ class DeadLetterQueue(Stream, Generic[T]):
 
     _model_type: type[T]
 
-    def __init__(self, name: str, config: StreamConfig = StreamConfig(), **kwargs):
+    def __init__(self, name: str, config: "StreamConfig" = None, **kwargs):
         """Initialize a new DeadLetterQueue.
 
         Args:
@@ -234,7 +261,7 @@ class DeadLetterQueue(Stream, Generic[T]):
         """
         self._model_type = self._get_type(kwargs)
         kwargs["t"] = DeadLetterModel[self._model_type]
-        super().__init__(name, config, **kwargs)
+        super().__init__(name, config if config is not None else StreamConfig(), **kwargs)
 
     def add_transform(self, destination: Stream[U], transformation: Callable[[DeadLetterModel[T]], ZeroOrMany[U]],
                       config: TransformConfig = None):
