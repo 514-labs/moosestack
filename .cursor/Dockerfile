@@ -32,6 +32,21 @@ RUN apt-get update -o Acquire::Check-Valid-Until=false -o Acquire::Check-Date=fa
     apt-transport-https \
     software-properties-common \
     sudo \
+    iptables \
+    && rm -rf /var/lib/apt/lists/*
+
+# Add Docker's official GPG key and repository
+RUN mkdir -p /etc/apt/keyrings && \
+    curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg && \
+    echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" > /etc/apt/sources.list.d/docker.list
+
+# Install Docker Engine (docker-ce), CLI, Containerd, and Docker Compose plugin
+RUN apt-get update -o Acquire::Check-Valid-Until=false -o Acquire::Check-Date=false && apt-get install -y --no-install-recommends \
+    docker-ce \
+    docker-ce-cli \
+    containerd.io \
+    docker-buildx-plugin \
+    docker-compose-plugin \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Node.js 20.x
@@ -64,6 +79,15 @@ RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
 # Set up PATH environment variables for consistent access in all contexts
 ENV PATH="/root/.cargo/bin:${PATH}"
 
+# Create docker group and add the default 'ubuntu' user to both docker and sudo groups
+RUN groupadd -f docker && \
+    usermod -aG docker,sudo ubuntu && \
+    echo "ubuntu ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
+
+# Switch iptables to legacy mode for Docker compatibility
+RUN update-alternatives --set iptables /usr/sbin/iptables-legacy && \
+    update-alternatives --set ip6tables /usr/sbin/ip6tables-legacy
+
 # Verify installations
 RUN node --version \
     && npm --version \
@@ -73,10 +97,17 @@ RUN node --version \
     && protoc --version \
     && maturin --version \
     && rustc --version \
-    && cargo --version
+    && cargo --version \
+    && docker --version
 
 # Set working directory
 WORKDIR /workspace
+
+# Switch to ubuntu user for the running environment
+USER ubuntu
+
+# Declare Docker data volume
+VOLUME /var/lib/docker
 
 # Copy and run verification script
 COPY scripts/verify-environment.sh /tmp/verify-environment.sh
