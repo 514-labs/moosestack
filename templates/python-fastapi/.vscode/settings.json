@@ -12,6 +12,7 @@
       "name": "moose clickhouse"
     }
   ],
-  "python.analysis.extraPaths": [".moose/versions"],
+  "python.pythonPath": "./.venv/bin/python",
+  "python.defaultInterpreterPath": "./.venv/bin/python",
   "python.analysis.typeCheckingMode": "basic"
 }

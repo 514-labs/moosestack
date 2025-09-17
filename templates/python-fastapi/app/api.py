@@ -6,6 +6,7 @@ from moose_lib.config.runtime import config_registry
 from pydantic import BaseModel, Field
 from typing import Optional, List, Literal
 from app.db.models import BarTable, BarModel
+from app.workflows.generator import ingest_workflow
 
 app = FastAPI()
 
@@ -51,8 +52,6 @@ def get_bar_data(params: QueryParams = Depends()):
     if query_client is None:
         query_client = QueryClient(config_registry.get_clickhouse_config())
     
-    workflow_client = WorkflowClient(config_registry.get_temporal_config())
-
     query = f"""
     SELECT
         {BarAgg.columns.day_of_month},
@@ -88,4 +87,3 @@ def post_bar_data(data: List[BarModel]):
         return {"message": "Data inserted with errors", "errors": result.failed_records}
     else:
         return {"message": "Data inserted with errors", "errors": result.failed_records}
-    
