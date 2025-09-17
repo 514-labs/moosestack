@@ -1,9 +1,9 @@
 {
   "name": "stuff",
   "devDependencies": {
-    "typescript": "latest",
-    "ts-patch": "latest",
+    "typescript": "5.7.3",
+    "ts-patch": "3.3.0",
     "@514labs/moose-lib": "latest",
-    "ts-node": "latest"
+    "ts-node": "10.9.2"
   }
 }

@@ -17,11 +17,11 @@
   "bin": "./dist/index.js",
   "devDependencies": {
     "@types/node": "18.16.19",
-    "@typescript-eslint/eslint-plugin": "^5.62.0",
-    "@typescript-eslint/parser": "^5.62.0",
-    "eslint": "^8.46.0",
+    "@typescript-eslint/eslint-plugin": "5.62.0",
+    "@typescript-eslint/parser": "5.62.0",
+    "eslint": "8.57.1",
     "@repo/ts-config": "workspace:*",
-    "typescript": "^5.7.0"
+    "typescript": "5.8.3"
   },
   "dependencies": {
     "@514labs/moose-cli": "0.3.205"

@@ -1,11 +1,11 @@
 {
-    "name": "pulimi-test",
-    "main": "index.ts",
-    "devDependencies": {
-        "@types/node": "^18"
-    },
-    "dependencies": {
-        "@pulumi/pulumi": "^3.0.0",
-        "@pulumi/gcp": "^7.0.0"
-    }
+  "name": "pulimi-test",
+  "main": "index.ts",
+  "devDependencies": {
+    "@types/node": "18"
+  },
+  "dependencies": {
+    "@pulumi/pulumi": "3.0.0",
+    "@pulumi/gcp": "7.0.0"
+  }
 }

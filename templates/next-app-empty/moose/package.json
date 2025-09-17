@@ -8,11 +8,11 @@
   },
   "dependencies": {
     "@514labs/moose-lib": "latest",
-    "ts-patch": "^3.3.0",
-    "typia": "^9.6.1"
+    "ts-patch": "3.3.0",
+    "typia": "7.6.4"
   },
   "devDependencies": {
-    "@types/node": "^20.12.12",
+    "@types/node": "20.17.27",
     "@514labs/moose-cli": "latest"
   }
 }

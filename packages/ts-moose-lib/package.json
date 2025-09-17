@@ -33,37 +33,37 @@
   "dependencies": {
     "@clickhouse/client": "1.8.1",
     "@clickhouse/client-web": "1.5.0",
-    "@temporalio/activity": "^1.11.7",
-    "@temporalio/client": "^1.11.7",
-    "@temporalio/common": "^1.11.7",
-    "@temporalio/worker": "^1.11.7",
-    "@temporalio/workflow": "^1.11.7",
-    "commander": "^13.1.0",
-    "csv-parse": "^5.5.5",
+    "@temporalio/activity": "1.11.8",
+    "@temporalio/client": "1.11.8",
+    "@temporalio/common": "1.11.8",
+    "@temporalio/worker": "1.11.8",
+    "@temporalio/workflow": "1.11.8",
+    "commander": "13.1.0",
+    "csv-parse": "5.6.0",
     "fastq": "1.17.1",
     "jose": "5.9.2",
     "kafkajs": "2.2.4",
     "pretty-ms": "9.2.0",
-    "redis": "^4.6.13",
+    "redis": "4.7.1",
     "toml": "3.0.0",
-    "ts-node": "^10.9.1",
-    "typescript": "~5.9.2"
+    "ts-node": "10.9.2",
+    "typescript": "5.9.2"
   },
   "devDependencies": {
     "@repo/ts-config": "workspace:*",
-    "@types/chai": "^4.3.5",
-    "@types/mocha": "^10.0.1",
+    "@types/chai": "4.3.20",
+    "@types/mocha": "10.0.10",
     "@types/node": "20.12.13",
-    "@typescript-eslint/eslint-plugin": "^5.62.0",
-    "@typescript-eslint/parser": "^5.62.0",
-    "chai": "^4.3.7",
-    "eslint": "^8.46.0",
-    "mocha": "^10.2.0",
-    "tsup": "^8.4.0"
+    "@typescript-eslint/eslint-plugin": "5.62.0",
+    "@typescript-eslint/parser": "5.62.0",
+    "chai": "4.5.0",
+    "eslint": "8.57.1",
+    "mocha": "10.8.2",
+    "tsup": "8.5.0"
   },
   "peerDependencies": {
-    "ts-patch": "^3.3.0",
-    "typia": "^9.6.1"
+    "ts-patch": "3.3.0",
+    "typia": "9.7.1"
   },
   "peerDependenciesMeta": {
     "ts-patch": {

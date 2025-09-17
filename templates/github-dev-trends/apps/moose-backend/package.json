@@ -8,17 +8,17 @@
   },
   "dependencies": {
     "@514labs/moose-lib": "latest",
-    "@octokit/rest": "^21.1.1",
-    "axios": "^1.7.7",
-    "dotenv": "^16.4.7",
-    "ts-patch": "^3.3.0",
-    "typia": "^9.6.1",
+    "@octokit/rest": "21.1.1",
+    "axios": "1.7.7",
+    "dotenv": "16.4.7",
+    "ts-patch": "3.3.0",
+    "typia": "9.6.1",
     "moose-objects": "workspace:*"
   },
   "devDependencies": {
     "@514labs/moose-cli": "latest",
-    "@types/node": "^20.12.12",
-    "@octokit/types": "^14.1.0"
+    "@types/node": "20.12.12",
+    "@octokit/types": "14.1.0"
   },
   "files": [
     "dist"

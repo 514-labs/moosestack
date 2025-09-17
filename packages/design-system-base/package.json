@@ -6,17 +6,17 @@
   "types": "./dist/index.d.ts",
   "dependencies": {
     "@514labs/event-capture": "workspace:*",
-    "tailwind-merge": "^2.2.2",
-    "tailwindcss": "^3.4.1"
+    "tailwind-merge": "2.6.0",
+    "tailwindcss": "3.4.17"
   },
   "devDependencies": {
-    "@sentry/nextjs": "^7.106.0",
-    "@types/node": "^20.14.5",
-    "autoprefixer": "^10.0.1",
-    "eslint": "^8",
+    "@sentry/nextjs": "7.120.3",
+    "@types/node": "20.17.51",
+    "autoprefixer": "10.4.21",
+    "eslint": "8.57.1",
     "eslint-config-next": "14.1.3",
-    "postcss": "^8",
-    "typescript": "^5"
+    "postcss": "8.5.3",
+    "typescript": "5.8.3"
   },
   "exports": {
     "./globals.css": "./globals.css",

@@ -9,11 +9,11 @@
     "dev": "tspc --watch"
   },
   "devDependencies": {
-    "typescript": "~5.9.2",
-    "ts-patch": "^3.3.0"
+    "typescript": "5.9.2",
+    "ts-patch": "3.3.0"
   },
   "dependencies": {
     "@514labs/moose-lib": "latest",
-    "typia": "^9.6.1"
+    "typia": "9.6.1"
   }
 }

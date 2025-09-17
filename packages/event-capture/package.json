@@ -2,10 +2,10 @@
   "name": "@514labs/event-capture",
   "version": "0.0.1",
   "dependencies": {
-    "mixpanel": "^0.18.0",
+    "mixpanel": "0.18.1",
     "next": "14.2.30",
-    "react": "^18",
-    "react-dom": "^18"
+    "react": "18.3.1",
+    "react-dom": "18.3.1"
   },
   "exports": {
     "./client-event": "./events/sendClientEvent.ts",
@@ -14,6 +14,6 @@
     "./event-library": "./events/eventLibrary.ts"
   },
   "devDependencies": {
-    "@types/react": "^18.2.74"
+    "@types/react": "18.3.23"
   }
 }

@@ -13,7 +13,7 @@
     "moose:build": "pnpm --filter github-dev-trends-moose-backend build"
   },
   "devDependencies": {
-    "@types/node": "^20"
+    "@types/node": "20"
   },
   "engines": {
     "node": ">=20",

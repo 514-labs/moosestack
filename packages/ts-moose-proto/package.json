@@ -12,12 +12,12 @@
     "build": "tsup"
   },
   "dependencies": {
-    "@bufbuild/buf": "^1.45.0",
-    "@protobuf-ts/runtime": "^2.9.4",
-    "rimraf": "^6.0.1"
+    "@bufbuild/buf": "1.54.0",
+    "@protobuf-ts/runtime": "2.11.0",
+    "rimraf": "6.0.1"
   },
   "devDependencies": {
-    "@protobuf-ts/plugin": "^2.9.4",
-    "tsup": "^8.3.5"
+    "@protobuf-ts/plugin": "2.11.0",
+    "tsup": "8.5.0"
   }
 }

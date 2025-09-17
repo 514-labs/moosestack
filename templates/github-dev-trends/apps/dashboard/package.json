@@ -9,30 +9,30 @@
     "lint": "next lint"
   },
   "dependencies": {
-    "@radix-ui/react-label": "^2.1.2",
-    "@radix-ui/react-select": "^2.1.6",
-    "@radix-ui/react-slot": "^1.1.2",
-    "@tanstack/react-query": "^5.69.0",
+    "@radix-ui/react-label": "2.1.2",
+    "@radix-ui/react-select": "2.1.6",
+    "@radix-ui/react-slot": "1.1.2",
+    "@tanstack/react-query": "5.69.0",
     "moose-objects": "workspace:*",
-    "class-variance-authority": "^0.7.1",
-    "clsx": "^2.1.1",
-    "lucide-react": "^0.483.0",
+    "class-variance-authority": "0.7.1",
+    "clsx": "2.1.1",
+    "lucide-react": "0.483.0",
     "next": "15.2.4",
-    "react": "^19.0.0",
-    "react-dom": "^19.0.0",
-    "recharts": "^2.15.1",
-    "tailwind-merge": "^3.0.2",
-    "tailwindcss-animate": "^1.0.7"
+    "react": "19.0.0",
+    "react-dom": "19.0.0",
+    "recharts": "2.15.1",
+    "tailwind-merge": "3.0.2",
+    "tailwindcss-animate": "1.0.7"
   },
   "devDependencies": {
-    "@eslint/eslintrc": "^3",
-    "@tailwindcss/postcss": "^4",
-    "@types/node": "^20",
-    "@types/react": "^19",
-    "@types/react-dom": "^19",
-    "eslint": "^9",
+    "@eslint/eslintrc": "3",
+    "@tailwindcss/postcss": "4",
+    "@types/node": "20",
+    "@types/react": "19",
+    "@types/react-dom": "19",
+    "eslint": "9",
     "eslint-config-next": "15.2.3",
-    "tailwindcss": "^4.0.14",
-    "typescript": "~5.9.2"
+    "tailwindcss": "4.0.14",
+    "typescript": "5.9.2"
   }
 }
