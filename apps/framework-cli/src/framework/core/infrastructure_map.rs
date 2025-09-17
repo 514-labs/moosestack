@@ -2214,7 +2214,7 @@ fn columns_are_equivalent(before: &Column, after: &Column) -> bool {
 ///
 /// # Returns
 /// A vector of `ColumnChange` objects describing the differences
-fn compute_table_columns_diff(before: &Table, after: &Table) -> Vec<ColumnChange> {
+pub fn compute_table_columns_diff(before: &Table, after: &Table) -> Vec<ColumnChange> {
     let mut diff = Vec::new();
 
     // Create a HashMap of the 'before' columns: O(n)

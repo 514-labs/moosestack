@@ -9,7 +9,7 @@ pub enum SecretError {
     StorageError(String),
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct KeyringSecretRepository;
 
 pub trait SecretRepository: Send + Sync {

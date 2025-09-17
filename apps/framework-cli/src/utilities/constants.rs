@@ -108,3 +108,12 @@ pub const KEY_REMOTE_ADMIN_TOKEN: &str = "remote_admin_token";
 pub const MIGRATION_FILE: &str = "./migrations/plan.yaml";
 pub const MIGRATION_BEFORE_STATE_FILE: &str = "./migrations/remote_state.json";
 pub const MIGRATION_AFTER_STATE_FILE: &str = "./migrations/local_infra_map.json";
+
+pub const STORE_CRED_PROMPT: &str = r#"You have externally managed tables in your code base.
+Ensure your code is up to date with `moose pull`.
+You can also configure `moose dev` to automatically check each time you start the dev server,
+so you're not developing with out-of-date data models/schemas.
+
+In order to set this up we will need:
+1. The production URL of your moose deployment
+2. The Admin authentication token"#;

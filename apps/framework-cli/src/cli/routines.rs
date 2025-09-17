@@ -101,15 +101,17 @@ use tokio::time::{interval, Duration};
 use crate::cli::routines::openapi::openapi;
 use crate::framework::core::execute::execute_initial_infra_change;
 use crate::framework::core::infra_reality_checker::InfraDiscrepancies;
-use crate::framework::core::infrastructure_map::{InfrastructureMap, OlapChange, TableChange};
+use crate::framework::core::infrastructure_map::{
+    compute_table_columns_diff, InfrastructureMap, OlapChange, TableChange,
+};
 use crate::framework::core::migration_plan::{MigrationPlan, MigrationPlanWithBeforeAfter};
 use crate::project::Project;
 
 use super::super::metrics::Metrics;
-use super::display;
 use super::local_webserver::{PlanRequest, PlanResponse, Webserver};
 use super::settings::{set_suppress_dev_setup_prompt, Settings};
 use super::watcher::FileWatcher;
+use super::{display, prompt_user};
 use super::{Message, MessageType};
 
 use crate::framework::core::partial_infrastructure_map::LifeCycle;
@@ -117,13 +119,14 @@ use crate::framework::core::plan::plan_changes;
 use crate::framework::core::plan::InfraPlan;
 use crate::framework::core::primitive_map::PrimitiveMap;
 use crate::infrastructure::olap::clickhouse::{check_ready, create_client};
+use crate::infrastructure::olap::OlapOperations;
 use crate::infrastructure::orchestration::temporal_client::{
     manager_from_project_if_enabled, probe_temporal,
 };
 use crate::infrastructure::stream::kafka::client::fetch_topics;
 use crate::utilities::constants::{
-    KEY_REMOTE_ADMIN_TOKEN, KEY_REMOTE_ADMIN_URL, MIGRATION_AFTER_STATE_FILE,
-    MIGRATION_BEFORE_STATE_FILE, MIGRATION_FILE,
+    KEY_REMOTE_CLICKHOUSE_URL, MIGRATION_AFTER_STATE_FILE, MIGRATION_BEFORE_STATE_FILE,
+    MIGRATION_FILE, STORE_CRED_PROMPT,
 };
 use crate::utilities::keyring::{KeyringSecretRepository, SecretRepository};
 
@@ -391,153 +394,93 @@ pub async fn start_development_mode(
         .await;
 
     let (_, plan) = plan_changes(&redis_client, &project).await?;
-    {
-        let has_externally_managed = plan
-            .target_infra_map
-            .tables
-            .values()
-            .any(|t| t.life_cycle == LifeCycle::ExternallyManaged);
-        if has_externally_managed {
-            let repo = KeyringSecretRepository;
-            let project_name = project.name();
-            let admin_url = repo
-                .get(&project_name, KEY_REMOTE_ADMIN_URL)
-                .ok()
-                .flatten()
-                .or_else(|| std::env::var("MOOSE_REMOTE_ADMIN_URL").ok());
-            let admin_token = repo
-                .get(&project_name, KEY_REMOTE_ADMIN_TOKEN)
-                .ok()
-                .flatten()
-                .or_else(|| std::env::var("MOOSE_ADMIN_TOKEN").ok());
 
-            if let (Some(admin_url), Some(admin_token)) = (admin_url, admin_token) {
-                if let Ok(remote_infra) =
-                    get_remote_inframap_protobuf(Some(&admin_url), &Some(admin_token)).await
-                {
-                    if let Ok(local_infra) = InfrastructureMap::load_from_user_code(&project).await
-                    {
-                        let clickhouse_strategy = crate::infrastructure::olap::clickhouse::diff_strategy::ClickHouseTableDiffStrategy;
-                        let changes = remote_infra.diff_with_table_strategy(
-                            &local_infra,
-                            &clickhouse_strategy,
-                            true,
+    let externally_managed: Vec<_> = plan
+        .target_infra_map
+        .tables
+        .values()
+        .filter(|t| t.life_cycle == LifeCycle::ExternallyManaged)
+        .collect();
+    if !externally_managed.is_empty() {
+        match KeyringSecretRepository.get(&project.name(), KEY_REMOTE_CLICKHOUSE_URL) {
+            Ok(stored) => {
+                let remote_clickhouse_url = match stored {
+                    Some(url) => Some(url),
+                    None if settings.dev.suppress_dev_setup_prompt => None,
+                    None => {
+                        display::show_message_wrapper(
+                            MessageType::Info,
+                            Message::new("Info".to_string(), STORE_CRED_PROMPT.to_string()),
                         );
-
-                        // Warn only if changes affect externally managed tables
-                        let has_externally_managed_table_change =
-                                changes.olap_changes.iter().any(|c| {
-                                    if let crate::framework::core::infrastructure_map::OlapChange::Table(
-                                        tc,
-                                    ) = c
-                                    {
-                                        use crate::framework::core::infrastructure_map::TableChange as TC;
-                                        match tc {
-                                            TC::Added(t) => t.life_cycle == LifeCycle::ExternallyManaged,
-                                            TC::Removed(t) => t.life_cycle == LifeCycle::ExternallyManaged,
-                                            TC::Updated { before, after, .. } => {
-                                                before.life_cycle == LifeCycle::ExternallyManaged
-                                                    || after.life_cycle == LifeCycle::ExternallyManaged
-                                            }
-                                            TC::SettingsChanged { table, .. } => {
-                                                table.life_cycle == LifeCycle::ExternallyManaged
-                                            }
-                                        }
-                                    } else {
-                                        false
-                                    }
-                                });
-
-                        if has_externally_managed_table_change {
-                            display::show_message_wrapper(
-                                    MessageType::Highlight,
-                                    Message::new(
-                                        "Drift".to_string(),
-                                        "⚠️ Ohoh looks like there is a drift on your externally managed tables\n\nYou should run `moose pull` in a new terminal to update the schemas of the tables that are externally managed to match what is in production.".to_string(),
-                                    ),
-                                );
-                        }
-                    }
-                }
-            } else if !settings.dev.suppress_dev_setup_prompt {
-                display::show_message_wrapper(
-                        MessageType::Info,
-                        Message::new(
-                            "Info".to_string(),
-                            "You have externally managed tables in your code base. Ensure your code is up to date with `moose pull`. You can also configure `moose dev` to automatically check each time you start the dev server, so you're not developing with out-of-date data models/schemas.\n\nIn order to set this up we will need:\n1. The production URL of your moose deployment\n2. The Admin authentication token"
-                                .to_string(),
-                        ),
-                    );
-
-                // local helper prompt
-                fn prompt_line(prompt: &str, default: Option<&str>) -> String {
-                    use std::io::{self, Write};
-                    let mut full = String::new();
-                    full.push_str(prompt);
-                    if let Some(d) = default {
-                        full.push_str(&format!(" (default: {})", d));
-                    }
-                    full.push_str("\n> ");
-                    print!("{}", full);
-                    let _ = io::stdout().flush();
-                    let mut input = String::new();
-                    if io::stdin().read_line(&mut input).is_ok() {
-                        let trimmed = input.trim();
-                        if trimmed.is_empty() {
-                            default.unwrap_or("").to_string()
+                        let setup_choice =
+                            prompt_user("Do you want to set this up now (Y/n)?", Some("Y"), None)?;
+                        if matches!(
+                            setup_choice.trim().to_lowercase().as_str(),
+                            "" | "y" | "yes"
+                        ) {
+                            Some("".to_string())
                         } else {
-                            trimmed.to_string()
-                        }
-                    } else {
-                        default.unwrap_or("").to_string()
-                    }
-                }
-
-                let setup_choice = prompt_line("Do you want to set this up now (Y/n)?", Some("Y"));
-                let setup = setup_choice.trim().is_empty()
-                    || matches!(setup_choice.trim().to_lowercase().as_str(), "y" | "yes");
-                if setup {
-                    let repo = KeyringSecretRepository;
-                    let admin_url = prompt_line(
-                        "What's your moose deployment url (https://myprod.boreal.cloud):",
-                        None,
-                    );
-                    let admin_token = prompt_line("What's your production Admin token?", None);
-                    let project_name = project.name();
-                    if let Err(e) = repo.store(&project_name, KEY_REMOTE_ADMIN_URL, &admin_url) {
-                        log::warn!("Failed to store admin URL: {e:?}");
-                    }
-                    if let Err(e) = repo.store(&project_name, KEY_REMOTE_ADMIN_TOKEN, &admin_token)
-                    {
-                        log::warn!("Failed to store admin token: {e:?}");
-                    }
-
-                    display::show_message_wrapper(
-                        MessageType::Success,
-                        Message::new("Setup".to_string(), "You are all set".to_string()),
-                    );
-                } else {
-                    let again_choice = prompt_line(
-                            "Too bad, do you want me to ask you this again next time you run `moose dev` (Y/n)",
-                            Some("Y"),
-                        );
-                    let ask_again = again_choice.trim().is_empty()
-                        || matches!(again_choice.trim().to_lowercase().as_str(), "y" | "yes");
-                    if !ask_again {
-                        if let Err(e) = set_suppress_dev_setup_prompt(true) {
-                            show_message!(
-                                MessageType::Error,
-                                Message {
-                                    action: "Failed".to_string(),
-                                    details: "to write suppression flag to config".to_string(),
+                            let again_choice =prompt_user(
+                                "Do you want me to ask you this again next time you run `moose dev` (Y/n)",
+                                Some("Y"),
+                                None,
+                            )?;
+                            if !matches!(
+                                again_choice.trim().to_lowercase().as_str(),
+                                "" | "y" | "yes"
+                            ) {
+                                if let Err(e) = set_suppress_dev_setup_prompt(true) {
+                                    show_message!(
+                                        MessageType::Error,
+                                        Message {
+                                            action: "Failed".to_string(),
+                                            details: "to write suppression flag to config"
+                                                .to_string(),
+                                        }
+                                    );
+                                    log::warn!("Failed to write suppression flag to config: {e:?}");
                                 }
-                            );
-                            log::warn!("Failed to write suppression flag to config: {e:?}");
+                            }
+                            None
                         }
+                    }
+                };
+                if let Some(ref remote_url) = remote_clickhouse_url {
+                    let (client, db) = code_generation::create_client_and_db(remote_url).await?;
+                    let (tables, _unsupported) = client.list_tables(&db, &project).await?;
+                    let tables: HashMap<_, _> =
+                        tables.into_iter().map(|t| (t.name.clone(), t)).collect();
+
+                    let changed = externally_managed.iter().any(|t| {
+                        if let Some(remote_table) = tables.get(&t.name) {
+                            !compute_table_columns_diff(t, remote_table).is_empty()
+                                || !remote_table.order_by_equals(t)
+                                || t.engine != remote_table.engine
+                        } else {
+                            true
+                        }
+                    });
+                    if changed {
+                        show_message!(
+                            MessageType::Highlight,
+                            Message {
+                                action: "Remote".to_string(),
+                                details: "change detected in externally managed tables. Run `moose db pull` to regenerate.".to_string(),
+                            }
+                        );
                     }
                 }
             }
-        }
+            Err(e) => {
+                show_message!(
+                    MessageType::Error,
+                    Message {
+                        action: "Secret".to_string(),
+                        details: format!("failed to fetch stored remote URL. {e:?}")
+                    }
+                );
+            }
+        };
     }
 
     maybe_warmup_connections(&project, &redis_client).await;

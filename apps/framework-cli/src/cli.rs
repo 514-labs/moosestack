@@ -67,7 +67,7 @@ use std::time::Duration;
 use tokio::time::timeout;
 
 /// Generic prompt function with hints, default values, and better formatting
-fn prompt_user(
+pub fn prompt_user(
     prompt_text: &str,
     default: Option<&str>,
     hint: Option<&str>,
@@ -97,10 +97,13 @@ fn prompt_user(
     let _ = io::stdout().flush();
     let mut input = String::new();
     io::stdin().read_line(&mut input).map_err(|e| {
-        RoutineFailure::error(Message {
-            action: "Init".to_string(),
-            details: format!("Failed to prompt user: {e:?}"),
-        })
+        RoutineFailure::new(
+            Message {
+                action: "Init".to_string(),
+                details: "Failed to prompt user".to_string(),
+            },
+            e,
+        )
     })?;
     let trimmed = input.trim();
 

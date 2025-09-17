@@ -25,7 +25,7 @@ fn should_be_externally_managed(table: &Table) -> bool {
 }
 
 // Shared helpers
-async fn create_client_and_db(
+pub async fn create_client_and_db(
     remote_url: &str,
 ) -> Result<(ConfiguredDBClient, String), RoutineFailure> {
     let mut url = Url::parse(remote_url).map_err(|e| {
