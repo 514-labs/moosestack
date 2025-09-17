@@ -1,13 +1,25 @@
 import { Readable } from "node:stream";
-import {
-  Consumer,
-  Kafka,
-  KafkaMessage,
-  Producer,
-  SASLOptions,
-  KafkaJSError,
-  KafkaJSProtocolError,
-} from "kafkajs";
+import { KafkaJS } from "@confluentinc/kafka-javascript";
+const { Kafka, KafkaJSError, KafkaJSProtocolError } = KafkaJS;
+
+// Type definitions for compatibility
+type Consumer = any;
+type Producer = any;
+
+type KafkaMessage = {
+  value: Buffer | string | null;
+  key?: Buffer | string | null;
+  partition?: number;
+  offset?: string;
+  timestamp?: string;
+  headers?: Record<string, Buffer | string | undefined>;
+};
+
+type SASLOptions = {
+  mechanism: "plain" | "scram-sha-256" | "scram-sha-512";
+  username: string;
+  password: string;
+};
 import { Buffer } from "node:buffer";
 import process from "node:process";
 import http from "http";
@@ -55,9 +67,9 @@ const parseBrokerString = (brokerString: string): string[] => {
  */
 const isMessageTooLargeError = (error: any): boolean => {
   return (
-    error instanceof KafkaJSError &&
-    ((error instanceof KafkaJSProtocolError &&
-      error.type === "MESSAGE_TOO_LARGE") ||
+    KafkaJS.isKafkaJSError?.(error) &&
+    (error.type === "ERR_MSG_SIZE_TOO_LARGE" ||
+      error.code === 10 ||
       (error.cause !== undefined && isMessageTooLargeError(error.cause)))
   );
 };
@@ -660,15 +672,13 @@ const startConsumer = async (
 
   await consumer.subscribe({
     topics: [args.sourceTopic.name], // Use full topic name for Kafka operations
-    fromBeginning: true,
   });
 
   await consumer.run({
-    autoCommitInterval: AUTO_COMMIT_INTERVAL_MS,
     eachBatchAutoResolve: true,
     // Enable parallel processing of partitions
     partitionsConsumedConcurrently: PARTITIONS_CONSUMED_CONCURRENTLY, // To be adjusted
-    eachBatch: async ({ batch, heartbeat, isRunning, isStale }) => {
+    eachBatch: async ({ batch, heartbeat, isRunning, isStale }: any) => {
       if (!isRunning() || isStale()) {
         return;
       }
@@ -890,43 +900,48 @@ export const runStreamingFunctions = async (
       }
 
       const kafka = new Kafka({
-        clientId: processId,
-        brokers: brokers,
-        ssl: args.securityProtocol === "SASL_SSL",
-        sasl: buildSaslConfig(logger, args),
-        retry: {
-          initialRetryTime: RETRY_INITIAL_TIME_MS,
-          maxRetryTime: MAX_RETRY_TIME_MS,
-          retries: MAX_RETRIES,
+        kafkaJS: {
+          clientId: processId,
+          brokers: brokers,
+          ssl: args.securityProtocol === "SASL_SSL",
+          sasl: buildSaslConfig(logger, args),
+          retry: {
+            initialRetryTime: RETRY_INITIAL_TIME_MS,
+            maxRetryTime: MAX_RETRY_TIME_MS,
+            retries: MAX_RETRIES,
+          },
         },
       });
 
       const consumer: Consumer = kafka.consumer({
-        groupId: streamingFuncId,
-        sessionTimeout: SESSION_TIMEOUT_CONSUMER,
-        heartbeatInterval: HEARTBEAT_INTERVAL_CONSUMER,
-        retry: {
-          retries: MAX_RETRIES_CONSUMER,
+        kafkaJS: {
+          groupId: streamingFuncId,
+          sessionTimeout: SESSION_TIMEOUT_CONSUMER,
+          heartbeatInterval: HEARTBEAT_INTERVAL_CONSUMER,
+          retry: {
+            retries: MAX_RETRIES_CONSUMER,
+          },
+          fromBeginning: true,
+          autoCommit: true,
+          autoCommitInterval: AUTO_COMMIT_INTERVAL_MS,
         },
       });
 
       const producer: Producer = kafka.producer({
-        transactionalId: processId,
-        idempotent: true,
-        retry: {
-          retries: MAX_RETRIES_PRODUCER,
-          factor: RETRY_FACTOR_PRODUCER,
-          maxRetryTime: MAX_RETRY_TIME_MS,
+        kafkaJS: {
+          transactionalId: processId,
+          idempotent: true,
+          retry: {
+            retries: MAX_RETRIES_PRODUCER,
+            maxRetryTime: MAX_RETRY_TIME_MS,
+          },
         },
       });
 
       try {
-        producer.on(producer.events.REQUEST, (event) => {
-          logger.log(`Sending message size with ${event.payload.size}`);
-        });
-
-        // always start producer because DLQ may need it
-        await startProducer(logger, producer);
+        if (args.targetTopic !== undefined) {
+          await startProducer(logger, producer);
+        }
 
         try {
           await startConsumer(
@@ -955,8 +970,7 @@ export const runStreamingFunctions = async (
     },
     workerStop: async ([logger, producer, consumer]) => {
       logger.log(`Received SIGTERM, shutting down ...`);
-      await consumer.stop(); // Stop consuming new messages
-      // Wait for in-flight messages to complete
+      // Wait for in-flight messages to complete (consumer.stop() not available in Confluent client)
       await new Promise((resolve) => setTimeout(resolve, 5000));
       await stopProducer(logger, producer);
       await stopConsumer(logger, consumer);

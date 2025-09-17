@@ -42,7 +42,7 @@
     "csv-parse": "^5.5.5",
     "fastq": "1.17.1",
     "jose": "5.9.2",
-    "kafkajs": "2.2.4",
+    "@confluentinc/kafka-javascript": "^1.4.1",
     "pretty-ms": "9.2.0",
     "redis": "^4.6.13",
     "toml": "3.0.0",
