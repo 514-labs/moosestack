@@ -402,6 +402,14 @@ pub async fn start_development_mode(
         .filter(|t| t.life_cycle == LifeCycle::ExternallyManaged)
         .collect();
     if !externally_managed.is_empty() {
+        show_message!(
+            MessageType::Info,
+            Message::new(
+                "Secret".to_string(),
+                "Fetching stored remote URL, you may see a pop up asking for your authorization."
+                    .to_string()
+            )
+        );
         match KeyringSecretRepository.get(&project.name(), KEY_REMOTE_CLICKHOUSE_URL) {
             Ok(stored) => {
                 let remote_clickhouse_url = match stored {
