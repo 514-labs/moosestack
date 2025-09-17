@@ -100,7 +100,10 @@ pub const TYPESCRIPT_EXTERNAL_FILE: &str = "externalModels.ts";
 pub const WORKFLOW_TYPE: &str = "ScriptWorkflow";
 pub const PYTHON_TASK_QUEUE: &str = "python-script-queue";
 pub const TYPESCRIPT_TASK_QUEUE: &str = "typescript-script-queue";
-pub const MOOSE_CLI_IDENTITY: &str = "moose-cli";
+pub const MOOSE_CLI_NAME: &str = "moose-cli";
+pub const KEY_REMOTE_CLICKHOUSE_URL: &str = "remote_clickhouse_url";
+pub const KEY_REMOTE_ADMIN_URL: &str = "remote_admin_url";
+pub const KEY_REMOTE_ADMIN_TOKEN: &str = "remote_admin_token";
 
 pub const MIGRATION_FILE: &str = "./migrations/plan.yaml";
 pub const MIGRATION_BEFORE_STATE_FILE: &str = "./migrations/remote_state.json";

@@ -34,7 +34,7 @@ use home::home_dir;
 use log::warn;
 use serde::Deserialize;
 use std::path::PathBuf;
-use toml_edit::{table, value, DocumentMut, Item};
+use toml_edit::{table, value, DocumentMut, Entry, Item};
 
 use super::display::{Message, MessageType};
 use super::logger::LoggerSettings;
@@ -146,6 +146,11 @@ pub struct DevSettings {
     /// Default is 120 seconds if not specified
     #[serde(default = "default_infrastructure_timeout")]
     pub infrastructure_timeout_seconds: u64,
+
+    /// Suppress the dev setup prompt for externally managed tables
+    /// When true, `moose dev` will not ask to configure remote drift checks
+    #[serde(default)]
+    pub suppress_dev_setup_prompt: bool,
 }
 
 impl Default for DevSettings {
@@ -155,6 +160,7 @@ impl Default for DevSettings {
             skip_container_shutdown: false,
             bypass_infrastructure_execution: false,
             infrastructure_timeout_seconds: default_infrastructure_timeout(),
+            suppress_dev_setup_prompt: false,
         }
     }
 }
@@ -317,6 +323,56 @@ impl Settings {
     pub fn should_bypass_infrastructure_execution(&self) -> bool {
         self.dev.bypass_infrastructure_execution
     }
+}
+
+/// Updates the global CLI config (~/.moose/config.toml) to set the
+/// dev.suppress_dev_setup_prompt flag using toml_edit. Creates the
+/// [dev] table if missing.
+pub fn set_suppress_dev_setup_prompt(value_to_set: bool) -> Result<(), std::io::Error> {
+    //
+    // // Ensure [dev] table and defaults exist
+    // let dev_table_exists_as_table = matches!(toml.get("dev"), Some(Item::Table(_)));
+    // if !dev_table_exists_as_table {
+    //     toml["dev"] = table();
+    // }
+    // let dev_table = match toml.get_mut("dev") {
+    //     Some(Item::Table(tbl)) => tbl,
+    //     Some(_) => {
+    //         warn!("dev in config is not a table.");
+    //         toml["dev"] = table();
+    //         toml["dev"].as_table_mut().unwrap()
+    //     }
+    //     None => unreachable!(),
+    // };
+    // dev_table
+    //     .entry("suppress_dev_setup_prompt")
+    //     .or_insert(value(false));
+
+    let path = config_path();
+    let contents = std::fs::read_to_string(&path)?;
+    let mut doc: DocumentMut = contents
+        .parse()
+        .map_err(|_| std::io::Error::other("Failed to parse CLI config"))?;
+
+    let table = match doc.get_mut("dev") {
+        Some(Item::Table(table)) => table,
+        Some(_) => {
+            return Err(std::io::Error::other("Dev in config is not a table."));
+        }
+        None => {
+            doc["dev"] = table();
+            doc["dev"].as_table_mut().unwrap()
+        }
+    };
+
+    match table.entry("suppress_dev_setup_prompt") {
+        Entry::Occupied(entry) => *entry.into_mut() = value(value_to_set),
+        Entry::Vacant(entry) => {
+            entry.insert(value(value_to_set));
+        }
+    }
+
+    std::fs::write(path, doc.to_string())
 }
 
 #[cfg(test)]

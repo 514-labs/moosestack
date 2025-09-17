@@ -49,10 +49,12 @@ use crate::framework::core::primitive_map::PrimitiveMap;
 use crate::metrics::TelemetryMetadata;
 use crate::project::Project;
 use crate::utilities::capture::{wait_for_usage_capture, ActivityType};
+use crate::utilities::constants::KEY_REMOTE_CLICKHOUSE_URL;
 use crate::utilities::constants::{
     CLI_VERSION, MIGRATION_AFTER_STATE_FILE, MIGRATION_BEFORE_STATE_FILE, MIGRATION_FILE,
     PROJECT_NAME_ALLOW_PATTERN,
 };
+use crate::utilities::keyring::{KeyringSecretRepository, SecretRepository};
 
 use crate::cli::commands::DbArgs;
 use crate::cli::routines::code_generation::{db_pull, db_to_dmv2};
@@ -216,7 +218,6 @@ pub async fn top_command_handler(
             no_fail_already_exists,
             from_remote,
             language,
-            // database,
         } => {
             info!(
                 "Running init command with name: {}, location: {:?}, template: {:?}, language: {:?}",
@@ -337,6 +338,34 @@ pub async fn top_command_handler(
                     }
                 }
             };
+
+            // Offer to store the connection string for future db pull convenience
+            if let Some(ref connection_string) = normalized_url {
+                let save_choice = prompt_user(
+                    "Save this connection string to your system keychain for easy `moose db pull` later? [Y/n]",
+                    Some("Y"),
+                    Some("You can always pass --connection-string explicitly to override."),
+                )?;
+
+                let save = save_choice.trim().is_empty()
+                    || matches!(save_choice.trim().to_lowercase().as_str(), "y" | "yes");
+                if save {
+                    let repo = KeyringSecretRepository;
+                    match repo.store(name, KEY_REMOTE_CLICKHOUSE_URL, connection_string) {
+                        Ok(()) => display::show_message_wrapper(
+                            MessageType::Success,
+                            Message::new(
+                                "Keychain".to_string(),
+                                format!(
+                                    "Saved ClickHouse connection string for project '{}'.",
+                                    name
+                                ),
+                            ),
+                        ),
+                        Err(e) => warn!("Failed to store connection string: {e:?}"),
+                    }
+                }
+            }
 
             wait_for_usage_capture(capture_handle).await;
 
@@ -1088,7 +1117,29 @@ pub async fn top_command_handler(
                 machine_id.clone(),
                 HashMap::new(),
             );
-            db_pull(connection_string, &project, file_path.as_deref())
+            let resolved_connection_string: String = match connection_string {
+                Some(s) => s.clone(),
+                None => {
+                    let repo = KeyringSecretRepository;
+                    match repo.get(&project.name(), KEY_REMOTE_CLICKHOUSE_URL) {
+                        Ok(Some(s)) => s,
+                        Ok(None) => return Err(RoutineFailure::error(Message {
+                            action: "DB Pull".to_string(),
+                            details: "No connection string provided and none saved. Pass --connection-string or save one during `moose init --from-remote`.".to_string(),
+                        })),
+                        Err(e) => {
+                            return Err(RoutineFailure::error(Message {
+                                action: "DB Pull".to_string(),
+                                details: format!(
+                                    "Failed to read saved connection string from keychain: {e:?}"
+                                ),
+                            }));
+                        }
+                    }
+                }
+            };
+
+            db_pull(&resolved_connection_string, &project, file_path.as_deref())
                 .await
                 .map_err(|e| {
                     RoutineFailure::new(
