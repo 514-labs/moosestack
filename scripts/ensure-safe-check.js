@@ -56,7 +56,7 @@ function checkSafeChain() {
       process.exit(0);
     }
 
-    // In unexpcted cases exit 1 to be cautious
+    // In unexpected cases exit 1 to be cautious
     process.exit(1);
   });
 }
