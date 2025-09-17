@@ -4,7 +4,5 @@
 import app.db.models as models
 import app.db.views as views
 
-import app.api as api
-
-app = api.api
+from app.fastapi import api as fastapi
 

@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field
 from typing import Optional, List, Literal
 from app.db.models import BarTable, BarModel    
 
-app = FastAPI()
+api = FastAPI()
 
 query_client: Optional[QueryClient] = None
 
@@ -59,7 +59,7 @@ class ErrorDetail(BaseModel):
     field_errors: Optional[dict] = None
 
 
-@app.get("/bar", response_model=List[QueryResult])
+@api.get("/bar", response_model=List[QueryResult])
 def get_bar_data(params: QueryParams = Depends()):
     """
     Retrieve bar data with comprehensive error handling.
@@ -130,7 +130,7 @@ def get_bar_data(params: QueryParams = Depends()):
             )
 
 
-@app.post("/bar", response_model=InsertResponse)
+@api.post("/bar", response_model=InsertResponse)
 def post_bar_data(data: List[BarModel]):
     """
     Insert bar data into the database with comprehensive error handling.
