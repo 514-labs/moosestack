@@ -17,13 +17,13 @@ function checkSafeChain() {
   // We need to run the test in a shell context to properly test if safe-chain is working
 
   spawn(
-    "source ~/.bashrc 2>/dev/null || source ~/.zshrc 2>/dev/null && pnpm install --workspace-root safe-chain-test 2&>1 >/dev/null",
+    "source ~/.bashrc 2>/dev/null || source ~/.zshrc 2>/dev/null && pnpm install --no-lockfile --ignore-scripts --ignore-workspace safe-chain-test 2>/dev/null >/dev/null",
     [],
     { stdio: "inherit", shell: process.env.SHELL || "/bin/bash" },
   ).on("close", (code) => {
     if (code !== 0) {
       // Safe-chain blocked the installation - this is the expected behavior
-      console.log("✅ Safe-chain is properly installed and configured");
+      // console.log("✅ Safe-chain is properly installed and configured");
 
       process.exit(0);
     }
