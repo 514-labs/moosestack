@@ -14,5 +14,8 @@
   },
   "publishConfig": {
     "access": "public"
+  },
+  "scripts": {
+    "preinstall": "node ../../scripts/ensure-safe-check.js"
   }
 }

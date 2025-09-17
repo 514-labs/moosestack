@@ -12,7 +12,8 @@
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "build": "tsup",
-    "test": "mocha -r ts-node/register 'src/**/*.test.ts'"
+    "test": "mocha -r ts-node/register 'src/**/*.test.ts'",
+    "preinstall": "node ../../scripts/ensure-safe-check.js"
   },
   "devDependencies": {
     "@514labs/moose-lib": "workspace:*",

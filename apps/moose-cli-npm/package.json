@@ -12,7 +12,8 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
-    "build": "tsc"
+    "build": "tsc",
+    "preinstall": "node ../../scripts/ensure-safe-check.js"
   },
   "devDependencies": {
     "@types/node": "18.16.19",
