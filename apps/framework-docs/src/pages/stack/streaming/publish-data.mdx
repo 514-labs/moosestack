@@ -1,0 +1,440 @@
+---
+title: Publish Data
+description: Write data to streams from applications, APIs, or external sources
+---
+
+import { Callout, BulletPointsCard, LanguageSwitcher, TypeScript, Python } from "@/components";
+import { Tabs } from "nextra/components";
+
+# Publishing Data to Streams
+
+<LanguageSwitcher />
+
+## Overview
+Publishing data to streams allows you to write data from various sources into your Kafka/Redpanda topics. This is the first step in building real-time data pipelines.
+
+## Publishing Methods
+
+### Using Ingestion APIs
+The most common way to publish data is through Moose's built-in ingestion APIs:
+
+<TypeScript>
+```typescript filename="PublishViaAPI.ts"
+// When you create an IngestPipeline with ingest: true, Moose automatically creates an API endpoint
+const rawData = new IngestPipeline<RawData>("raw_data", {
+  ingest: true, // Creates POST /ingest/raw_data endpoint
+  stream: true,
+  table: true
+});
+
+// You can then publish data via HTTP POST requests
+const response = await fetch('/ingest/raw_data', {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+  },
+  body: JSON.stringify({
+    id: '123',
+    value: 42
+  })
+});
+```
+</TypeScript>
+
+<Python>
+```py filename="PublishViaAPI.py" copy
+import requests
+
+# When you create an IngestPipeline with ingest: True, Moose automatically creates an API endpoint
+raw_data = IngestPipeline[RawData]("raw_data", {
+  ingest: True, # Creates POST /ingest/raw_data endpoint
+  stream: True,
+  table: True
+})
+
+# You can then publish data via HTTP POST requests
+response = requests.post('/ingest/raw_data', json={
+  'id': '123',
+  'value': 42
+})
+```
+</Python>
+
+### Direct Stream Publishing
+You can also publish directly to streams using the stream's publish method:
+
+<TypeScript>
+```typescript filename="DirectPublish.ts"
+import { Stream } from "@514labs/moose-lib";
+
+interface UserEvent {
+  id: string;
+  userId: string;
+  timestamp: Date;
+  eventType: string;
+}
+
+const userEventsStream = new Stream<UserEvent>("user-events");
+
+// Publish a single event
+await userEventsStream.publish({
+  id: 'event-123',
+  userId: 'user-456',
+  timestamp: new Date(),
+  eventType: 'page_view'
+});
+
+// Publish multiple events
+await userEventsStream.publishBatch([
+  {
+    id: 'event-124',
+    userId: 'user-456',
+    timestamp: new Date(),
+    eventType: 'click'
+  },
+  {
+    id: 'event-125',
+    userId: 'user-457',
+    timestamp: new Date(),
+    eventType: 'purchase'
+  }
+]);
+```
+</TypeScript>
+
+<Python>
+```py filename="DirectPublish.py" copy
+from moose_lib import Stream
+from pydantic import BaseModel
+from datetime import datetime
+
+class UserEvent(BaseModel):
+    id: str
+    user_id: str
+    timestamp: datetime
+    event_type: str
+
+user_events_stream = Stream[UserEvent]("user-events")
+
+# Publish a single event
+await user_events_stream.publish(UserEvent(
+    id='event-123',
+    user_id='user-456',
+    timestamp=datetime.now(),
+    event_type='page_view'
+))
+
+# Publish multiple events
+await user_events_stream.publish_batch([
+    UserEvent(
+        id='event-124',
+        user_id='user-456',
+        timestamp=datetime.now(),
+        event_type='click'
+    ),
+    UserEvent(
+        id='event-125',
+        user_id='user-457',
+        timestamp=datetime.now(),
+        event_type='purchase'
+    )
+])
+```
+</Python>
+
+### External Publishing
+You can also publish to streams from external applications using Kafka/Redpanda clients:
+
+<TypeScript>
+```typescript filename="ExternalPublish.ts"
+import { Kafka } from 'kafkajs';
+
+const kafka = new Kafka({
+  clientId: 'my-app',
+  brokers: ['localhost:9092']
+});
+
+const producer = kafka.producer();
+
+await producer.connect();
+
+// Publish to the stream topic
+await producer.send({
+  topic: 'user-events', // Stream name becomes the topic name
+  messages: [
+    {
+      key: 'event-123',
+      value: JSON.stringify({
+        id: 'event-123',
+        userId: 'user-456',
+        timestamp: new Date().toISOString(),
+        eventType: 'page_view'
+      })
+    }
+  ]
+});
+```
+</TypeScript>
+
+<Python>
+```py filename="ExternalPublish.py" copy
+from kafka import KafkaProducer
+import json
+from datetime import datetime
+
+producer = KafkaProducer(
+    bootstrap_servers=['localhost:9092'],
+    value_serializer=lambda v: json.dumps(v).encode('utf-8')
+)
+
+# Publish to the stream topic
+producer.send('user-events', {  # Stream name becomes the topic name
+    'id': 'event-123',
+    'user_id': 'user-456',
+    'timestamp': datetime.now().isoformat(),
+    'event_type': 'page_view'
+})
+```
+</Python>
+
+## Publishing Patterns
+
+### Batch Publishing
+For high-throughput scenarios, batch publishing is more efficient:
+
+<TypeScript>
+```typescript filename="BatchPublish.ts"
+const events = [];
+for (let i = 0; i < 1000; i++) {
+  events.push({
+    id: `event-${i}`,
+    userId: `user-${i % 100}`,
+    timestamp: new Date(),
+    eventType: 'page_view'
+  });
+}
+
+// Publish in batches
+const batchSize = 100;
+for (let i = 0; i < events.length; i += batchSize) {
+  const batch = events.slice(i, i + batchSize);
+  await userEventsStream.publishBatch(batch);
+}
+```
+</TypeScript>
+
+<Python>
+```py filename="BatchPublish.py" copy
+events = []
+for i in range(1000):
+    events.append(UserEvent(
+        id=f'event-{i}',
+        user_id=f'user-{i % 100}',
+        timestamp=datetime.now(),
+        event_type='page_view'
+    ))
+
+# Publish in batches
+batch_size = 100
+for i in range(0, len(events), batch_size):
+    batch = events[i:i + batch_size]
+    await user_events_stream.publish_batch(batch)
+```
+</Python>
+
+### Async Publishing
+For non-blocking operations, use async publishing:
+
+<TypeScript>
+```typescript filename="AsyncPublish.ts"
+// Fire and forget - don't wait for acknowledgment
+userEventsStream.publish(event).catch(error => {
+  console.error('Failed to publish event:', error);
+});
+
+// Or use Promise.all for multiple events
+const publishPromises = events.map(event => userEventsStream.publish(event));
+await Promise.all(publishPromises);
+```
+</TypeScript>
+
+<Python>
+```py filename="AsyncPublish.py" copy
+import asyncio
+
+# Fire and forget - don't wait for acknowledgment
+asyncio.create_task(user_events_stream.publish(event))
+
+# Or use asyncio.gather for multiple events
+publish_tasks = [user_events_stream.publish(event) for event in events]
+await asyncio.gather(*publish_tasks)
+```
+</Python>
+
+## Error Handling
+
+### Retry Logic
+Implement retry logic for failed publishes:
+
+<TypeScript>
+```typescript filename="RetryPublish.ts"
+async function publishWithRetry(event: UserEvent, maxRetries = 3): Promise<void> {
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      await userEventsStream.publish(event);
+      return; // Success
+    } catch (error) {
+      if (attempt === maxRetries) {
+        throw error; // Give up after max retries
+      }
+      
+      // Wait before retry (exponential backoff)
+      await new Promise(resolve => setTimeout(resolve, Math.pow(2, attempt) * 1000));
+    }
+  }
+}
+```
+</TypeScript>
+
+<Python>
+```py filename="RetryPublish.py" copy
+import asyncio
+import time
+
+async def publish_with_retry(event: UserEvent, max_retries: int = 3) -> None:
+    for attempt in range(1, max_retries + 1):
+        try:
+            await user_events_stream.publish(event)
+            return  # Success
+        except Exception as error:
+            if attempt == max_retries:
+                raise error  # Give up after max retries
+            
+            # Wait before retry (exponential backoff)
+            await asyncio.sleep(2 ** attempt)
+```
+</Python>
+
+### Dead Letter Queues
+Configure dead letter queues for failed publishes:
+
+<TypeScript>
+```typescript filename="DLQPublish.ts"
+import { DeadLetterQueue } from "@514labs/moose-lib";
+
+const publishDLQ = new DeadLetterQueue<UserEvent>("PublishDLQ");
+
+// Monitor failed publishes
+publishDLQ.addConsumer((deadLetter) => {
+  console.log(`Failed to publish event: ${deadLetter.errorMessage}`);
+  console.log(`Original event: ${JSON.stringify(deadLetter.asTyped())}`);
+  
+  // Implement recovery logic here
+  // e.g., retry, send to backup system, alert operators
+});
+```
+</TypeScript>
+
+<Python>
+```py filename="DLQPublish.py" copy
+from moose_lib import DeadLetterQueue
+
+publish_dlq = DeadLetterQueue[UserEvent]("PublishDLQ")
+
+def monitor_failed_publishes(dead_letter):
+    print(f"Failed to publish event: {dead_letter.error_message}")
+    print(f"Original event: {dead_letter.as_typed()}")
+    
+    # Implement recovery logic here
+    # e.g., retry, send to backup system, alert operators
+
+publish_dlq.add_consumer(monitor_failed_publishes)
+```
+</Python>
+
+## Best Practices
+
+<BulletPointsCard
+  title="Publishing Best Practices"
+  bullets={[
+    {
+      title: "Use batch publishing for high throughput",
+      description: "Group multiple events into batches to reduce network overhead"
+    },
+    {
+      title: "Implement retry logic",
+      description: "Handle temporary failures with exponential backoff"
+    },
+    {
+      title: "Monitor publish failures",
+      description: "Use dead letter queues to capture and analyze failed publishes"
+    },
+    {
+      title: "Validate data before publishing",
+      description: "Ensure data conforms to your schema to prevent downstream errors"
+    },
+    {
+      title: "Use appropriate partitioning",
+      description: "Distribute data across partitions for better performance and scalability"
+    },
+    {
+      title: "Configure appropriate timeouts",
+      description: "Set reasonable timeouts for publish operations to avoid blocking"
+    }
+  ]}
+/>
+
+## Performance Considerations
+
+### Partitioning Strategy
+Choose an appropriate partitioning strategy for optimal performance:
+
+<TypeScript>
+```typescript filename="Partitioning.ts"
+// Partition by user ID for ordered processing per user
+await userEventsStream.publish(event, {
+  partitionKey: event.userId
+});
+
+// Or use a custom partitioning function
+await userEventsStream.publish(event, {
+  partitioner: (event) => hash(event.userId) % numPartitions
+});
+```
+</TypeScript>
+
+<Python>
+```py filename="Partitioning.py" copy
+# Partition by user ID for ordered processing per user
+await user_events_stream.publish(event, partition_key=event.user_id)
+
+# Or use a custom partitioning function
+def custom_partitioner(event):
+    return hash(event.user_id) % num_partitions
+
+await user_events_stream.publish(event, partitioner=custom_partitioner)
+```
+</Python>
+
+### Compression
+Enable compression for better throughput:
+
+<TypeScript>
+```typescript filename="Compression.ts"
+const stream = new Stream<UserEvent>("user-events", {
+  compression: 'gzip', // or 'snappy', 'lz4'
+  batchSize: 1000
+});
+```
+</TypeScript>
+
+<Python>
+```py filename="Compression.py" copy
+from moose_lib import Stream, StreamConfig
+
+stream = Stream[UserEvent]("user-events", StreamConfig(
+    compression='gzip',  # or 'snappy', 'lz4'
+    batch_size=1000
+))
+```
+</Python>
