@@ -311,8 +311,17 @@ const startProducer = async (
   logger: Logger,
   producer: Producer,
 ): Promise<void> => {
-  await producer.connect();
-  logger.log("Producer is running...");
+  try {
+    logger.log("Connecting producer...");
+    await producer.connect();
+    logger.log("Producer is running...");
+  } catch (error) {
+    logger.error("Failed to connect producer:");
+    if (error instanceof Error) {
+      logError(logger, error);
+    }
+    throw error;
+  }
 };
 
 /**
@@ -655,7 +664,17 @@ const startConsumer = async (
     validateTopicConfig(args.targetTopic);
   }
 
-  await consumer.connect();
+  try {
+    logger.log("Connecting consumer...");
+    await consumer.connect();
+    logger.log("Consumer connected successfully");
+  } catch (error) {
+    logger.error("Failed to connect consumer:");
+    if (error instanceof Error) {
+      logError(logger, error);
+    }
+    throw error;
+  }
 
   logger.log(
     `Starting consumer group '${streamingFuncId}' with source topic: ${args.sourceTopic.name} and target topic: ${args.targetTopic?.name || "none"}`,
@@ -899,7 +918,7 @@ export const runStreamingFunctions = async (
         throw new Error(`No valid broker addresses found in: "${args.broker}"`);
       }
 
-      const kafka = new Kafka({
+      const kafkaConfig = {
         kafkaJS: {
           clientId: processId,
           brokers: brokers,
@@ -911,7 +930,23 @@ export const runStreamingFunctions = async (
             retries: MAX_RETRIES,
           },
         },
-      });
+        // Add librdkafka-specific configuration for Redpanda compatibility
+        "security.protocol":
+          args.securityProtocol === "SASL_SSL" ? "sasl_ssl" : "plaintext",
+        "api.version.request": true,
+        "api.version.fallback.ms": 0,
+        "broker.version.fallback": "0.10.0.0",
+        "socket.keepalive.enable": true,
+        "socket.timeout.ms": 30000,
+        "metadata.request.timeout.ms": 10000,
+        "connections.max.idle.ms": 300000,
+      };
+
+      logger.log(`Creating Kafka client with brokers: ${brokers.join(", ")}`);
+      logger.log(`Security protocol: ${args.securityProtocol || "plaintext"}`);
+      logger.log(`Client ID: ${processId}`);
+
+      const kafka = new Kafka(kafkaConfig);
 
       const consumer: Consumer = kafka.consumer({
         kafkaJS: {
@@ -925,6 +960,13 @@ export const runStreamingFunctions = async (
           autoCommit: true,
           autoCommitInterval: AUTO_COMMIT_INTERVAL_MS,
         },
+        // librdkafka-specific consumer configuration for Redpanda
+        "enable.auto.commit": true,
+        "auto.commit.interval.ms": AUTO_COMMIT_INTERVAL_MS,
+        "session.timeout.ms": SESSION_TIMEOUT_CONSUMER,
+        "heartbeat.interval.ms": HEARTBEAT_INTERVAL_CONSUMER,
+        "max.poll.interval.ms": 300000,
+        "fetch.wait.max.ms": 500,
       });
 
       const producer: Producer = kafka.producer({
@@ -936,14 +978,26 @@ export const runStreamingFunctions = async (
             maxRetryTime: MAX_RETRY_TIME_MS,
           },
         },
+        // librdkafka-specific producer configuration for Redpanda
+        "enable.idempotence": true,
+        "transactional.id": processId,
+        retries: MAX_RETRIES_PRODUCER,
+        "retry.backoff.ms": 100,
+        "request.timeout.ms": 30000,
+        "delivery.timeout.ms": 120000,
+        "linger.ms": 5,
+        "batch.size": 16384,
+        "compression.type": "snappy",
       });
 
       try {
         if (args.targetTopic !== undefined) {
+          logger.log("Starting producer...");
           await startProducer(logger, producer);
         }
 
         try {
+          logger.log("Starting consumer...");
           await startConsumer(
             args,
             logger,
@@ -958,12 +1012,16 @@ export const runStreamingFunctions = async (
           if (e instanceof Error) {
             logError(logger, e);
           }
+          // Re-throw to ensure proper error handling
+          throw e;
         }
       } catch (e) {
         logger.error("Failed to start kafka producer: ");
         if (e instanceof Error) {
           logError(logger, e);
         }
+        // Re-throw to ensure proper error handling
+        throw e;
       }
 
       return [logger, producer, consumer] as [Logger, Producer, Consumer];
