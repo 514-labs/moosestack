@@ -31,8 +31,11 @@ Keep this terminal running - the services need to stay active.
 #### 2. Start the FastAPI Server
 In a **new terminal window**:
 ```bash
-uvicorn app.api:app --reload --port 8000
+fastapi dev app/main.py
 ```
+
+Make sure you have run `pip install fastapi["standard"]` to install the FastAPI CLI.
+
 **Purpose:** This starts your actual API server:
 - **FastAPI application** (port 8000) - your REST API endpoints
 - **Auto-reload enabled** - restarts when you make code changes
