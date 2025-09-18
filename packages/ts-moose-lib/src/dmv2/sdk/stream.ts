@@ -94,8 +94,10 @@ export interface TransformConfig<T> {
   /**
    * Optional dead letter queue for handling transformation failures.
    * Failed records will be sent to this queue for manual inspection or reprocessing.
+   * Uses {@link Stream.defaultDeadLetterQueue} by default
+   * unless a DeadLetterQueue is provided, or it is explicitly disabled with a null value
    */
-  deadLetterQueue?: DeadLetterQueue<T>;
+  deadLetterQueue?: DeadLetterQueue<T> | null;
 }
 
 /**
@@ -113,8 +115,10 @@ export interface ConsumerConfig<T> {
   /**
    * Optional dead letter queue for handling consumer failures.
    * Failed records will be sent to this queue for manual inspection or reprocessing.
+   * Uses {@link Stream.defaultDeadLetterQueue} by default
+   * unless a DeadLetterQueue is provided, or it is explicitly disabled with a null value
    */
-  deadLetterQueue?: DeadLetterQueue<T>;
+  deadLetterQueue?: DeadLetterQueue<T> | null;
 }
 
 /**
@@ -166,6 +170,8 @@ export interface StreamConfig<T> {
   version?: string;
   metadata?: { description?: string };
   lifeCycle?: LifeCycle;
+
+  defaultDeadLetterQueue?: DeadLetterQueue<T>;
 }
 
 /**
@@ -175,6 +181,8 @@ export interface StreamConfig<T> {
  * @template T The data type of the messages flowing through the stream. The structure of T defines the message schema.
  */
 export class Stream<T> extends TypedBase<T, StreamConfig<T>> {
+  defaultDeadLetterQueue?: DeadLetterQueue<T>;
+
   /**
    * Creates a new Stream instance.
    * @param name The name of the stream. This name is used for the underlying Redpanda topic.
@@ -202,6 +210,7 @@ export class Stream<T> extends TypedBase<T, StreamConfig<T>> {
       throw new Error(`Stream with name ${name} already exists`);
     }
     streams.set(name, this);
+    this.defaultDeadLetterQueue = this.config.defaultDeadLetterQueue;
   }
 
   /**
@@ -248,7 +257,12 @@ export class Stream<T> extends TypedBase<T, StreamConfig<T>> {
     transformation: SyncOrAsyncTransform<T, U>,
     config?: TransformConfig<T>,
   ) {
-    const transformConfig = config ?? {};
+    const transformConfig = {
+      ...(config ?? {}),
+    };
+    if (transformConfig.deadLetterQueue === undefined) {
+      transformConfig.deadLetterQueue = this.defaultDeadLetterQueue;
+    }
 
     if (this._transformations.has(destination.name)) {
       const existingTransforms = this._transformations.get(destination.name)!;
@@ -274,7 +288,12 @@ export class Stream<T> extends TypedBase<T, StreamConfig<T>> {
    * @param config Optional configuration for this specific consumer, like a version.
    */
   addConsumer(consumer: Consumer<T>, config?: ConsumerConfig<T>) {
-    const consumerConfig = config ?? {};
+    const consumerConfig = {
+      ...(config ?? {}),
+    };
+    if (consumerConfig.deadLetterQueue === undefined) {
+      consumerConfig.deadLetterQueue = this.defaultDeadLetterQueue;
+    }
     const hasVersion = this._consumers.some(
       (existing) => existing.config.version === consumerConfig.version,
     );

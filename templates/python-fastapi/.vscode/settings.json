@@ -1,0 +1,18 @@
+{
+  "sqltools.connections": [
+    {
+      "server": "localhost",
+      "port": 18123,
+      "useHTTPS": false,
+      "database": "local",
+      "username": "panda",
+      "enableTls": false,
+      "password": "pandapass",
+      "driver": "ClickHouse",
+      "name": "moose clickhouse"
+    }
+  ],
+  "python.pythonPath": "./.venv/bin/python",
+  "python.defaultInterpreterPath": "./.venv/bin/python",
+  "python.analysis.typeCheckingMode": "basic"
+}

@@ -235,25 +235,6 @@ export class IngestPipeline<T> extends TypedBase<T, IngestPipelineConfig<T>> {
       );
     }
 
-    // Create stream if configured, linking it to the table as destination
-    if (config.stream) {
-      const streamConfig = {
-        destination: this.table,
-        ...(typeof config.stream === "object" ?
-          config.stream
-        : { lifeCycle: config.lifeCycle }),
-        ...(config.version && { version: config.version }),
-      };
-      this.stream = new Stream(
-        name,
-        streamConfig,
-        this.schema,
-        this.columnArray,
-      );
-      // Set pipeline parent reference for internal framework use
-      (this.stream as any).pipelineParent = this;
-    }
-
     if (config.deadLetterQueue) {
       const streamConfig = {
         destination: undefined,
@@ -267,6 +248,26 @@ export class IngestPipeline<T> extends TypedBase<T, IngestPipelineConfig<T>> {
         streamConfig,
         validators!.assert!,
       );
+    }
+
+    // Create stream if configured, linking it to the table as destination
+    if (config.stream) {
+      const streamConfig: StreamConfig<T> = {
+        destination: this.table,
+        defaultDeadLetterQueue: this.deadLetterQueue,
+        ...(typeof config.stream === "object" ?
+          config.stream
+        : { lifeCycle: config.lifeCycle }),
+        ...(config.version && { version: config.version }),
+      };
+      this.stream = new Stream(
+        name,
+        streamConfig,
+        this.schema,
+        this.columnArray,
+      );
+      // Set pipeline parent reference for internal framework use
+      (this.stream as any).pipelineParent = this;
     }
 
     // Create ingest API if configured, requiring a stream as destination
