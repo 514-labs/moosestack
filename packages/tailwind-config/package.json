@@ -5,8 +5,5 @@
   "main": "index.js",
   "devDependencies": {
     "tailwindcss": "^3.2.4"
-  },
-  "scripts": {
-    "preinstall": "node ../../scripts/ensure-safe-check.js"
   }
 }

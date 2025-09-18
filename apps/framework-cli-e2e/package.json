@@ -4,8 +4,7 @@
   "description": "E2E tests for framework-cli",
   "scripts": {
     "pretest": "cd ../.. && cargo build && pnpm run build --filter=@514labs/moose-lib && ./scripts/package-templates.js",
-    "test": "mocha -r ts-node/register -p 'test/**/*.ts' --jobs 1 --slow 120000 --async-only --timeout 120000",
-    "preinstall": "node ../../scripts/ensure-safe-check.js"
+    "test": "mocha -r ts-node/register -p 'test/**/*.ts' --jobs 1 --slow 120000 --async-only --timeout 120000"
   },
   "devDependencies": {
     "@iarna/toml": "^3.0.0",
