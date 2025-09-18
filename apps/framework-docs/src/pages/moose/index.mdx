@@ -107,7 +107,7 @@ redpanda_topic = Stream[DataModel]("TopicName", StreamConfig(
 ))
  
 # Create an ingest API endpoint
-ingest_api = IngestApi[DataModel]("post-api-route", IngestApiConfig(
+ingest_api = IngestApi[DataModel]("post-api-route", IngestConfig(
     destination=redpanda_topic,
 ))
  
