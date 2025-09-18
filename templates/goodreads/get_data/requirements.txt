@@ -1,3 +1,0 @@
-kaggle==1.5.16
-pandas==2.2.1
-requests==2.32.4 
