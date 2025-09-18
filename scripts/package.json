@@ -3,8 +3,5 @@
   "type": "commonjs",
   "dependencies": {
     "@iarna/toml": "^3.0.0"
-  },
-  "scripts": {
-    "preinstall": "node ./ensure-safe-check.js"
   }
 }

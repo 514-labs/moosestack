@@ -6,8 +6,7 @@
     "lint": "turbo lint",
     "clean": "turbo clean",
     "prepare": "husky install",
-    "format": "prettier --write './apps/**/*.{ts,tsx}'",
-    "preinstall": "node scripts/ensure-safe-check.js"
+    "format": "prettier --write './apps/**/*.{ts,tsx}'"
   },
   "devDependencies": {
     "@repo/eslint-config-custom": "workspace:*",

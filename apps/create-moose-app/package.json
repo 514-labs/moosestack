@@ -11,8 +11,7 @@
     "dist"
   ],
   "scripts": {
-    "build": "tsc",
-    "preinstall": "node ../../scripts/ensure-safe-check.js"
+    "build": "tsc"
   },
   "license": "MIT",
   "bin": "./dist/index.js",

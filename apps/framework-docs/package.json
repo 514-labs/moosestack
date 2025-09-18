@@ -7,8 +7,7 @@
     "build": "npx next telemetry disable && next build",
     "postbuild": "next-sitemap",
     "start": "next start",
-    "lint": "next lint",
-    "preinstall": "node ../../scripts/ensure-safe-check.js"
+    "lint": "next lint"
   },
   "dependencies": {
     "@mux/mux-player-react": "^3.3.0",
