@@ -98,7 +98,7 @@ use crate::framework::core::migration_plan::{MigrationPlan, MigrationPlanWithBef
 use crate::framework::core::plan_validator;
 use crate::infrastructure::redis::redis_client::RedisClient;
 use crate::project::Project;
-use log::{debug, error, info};
+use log::{debug, error, info, warn};
 use serde::Deserialize;
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
@@ -410,7 +410,9 @@ pub async fn start_development_mode(
                     .to_string()
             )
         );
-        match KeyringSecretRepository.get(&project.name(), KEY_REMOTE_CLICKHOUSE_URL) {
+        let repo = KeyringSecretRepository;
+        let project_name = project.name();
+        match repo.get(&project_name, KEY_REMOTE_CLICKHOUSE_URL) {
             Ok(stored) => {
                 let remote_clickhouse_url = match stored {
                     Some(url) => Some(url),
@@ -426,7 +428,31 @@ pub async fn start_development_mode(
                             setup_choice.trim().to_lowercase().as_str(),
                             "" | "y" | "yes"
                         ) {
-                            Some(prompt_user_for_remote_ch_http()?)
+                            let url = prompt_user_for_remote_ch_http()?;
+                            match repo.store(&project_name, KEY_REMOTE_CLICKHOUSE_URL, &url) {
+                                Ok(()) => display::show_message_wrapper(
+                                    MessageType::Success,
+                                    Message::new(
+                                        "Keychain".to_string(),
+                                        format!(
+                                            "Saved ClickHouse connection string for project '{}'.",
+                                            project_name
+                                        ),
+                                    ),
+                                ),
+                                Err(e) => {
+                                    display::show_message_wrapper(
+                                        MessageType::Error,
+                                        Message::new(
+                                            "Keychain".to_string(),
+                                            format!("Failed to store connection string: {e:?}"),
+                                        ),
+                                    );
+                                    warn!("Failed to store connection string: {e:?}")
+                                }
+                            }
+
+                            Some(url)
                         } else {
                             let again_choice =prompt_user(
                                 "Do you want me to ask you this again next time you run `moose dev` (Y/n)",
