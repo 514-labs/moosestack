@@ -65,18 +65,18 @@ export const rawIngestionStream = new IngestPipeline<RawData>("raw_data", {
 
 <Python>
 ```py filename="IngestionStream.py" copy {10}
-from moose_lib import IngestPipeline, Key
+from moose_lib import IngestPipeline, IngestPipelineConfig, Key
 from pydantic import BaseModel
 
 class RawData(BaseModel):
     id: Key[str]
     value: int
 
-raw_ingestion_stream = IngestPipeline[RawData]("raw_data", {
+raw_ingestion_stream = IngestPipeline[RawData]("raw_data", IngestPipelineConfig(
   ingest: True, # Creates an ingestion API endpoint at `POST /ingest/raw_data`
   stream: True, # Buffers data between the ingestion API and the database table
   table: True, # Creates an OLAP table named `raw_data`
-})
+))
 ```
 </Python>
 
@@ -109,7 +109,7 @@ export const rawIngestApi = new IngestApi<RawData>("raw_data", {
 
 <Python>
 ```py filename="StreamObject.py" copy {8-12}
-from moose_lib import IngestPipeline, Key
+from moose_lib import Stream, StreamConfig, Key, IngestApi, IngestConfig
 from pydantic import BaseModel
 
 class RawData(BaseModel):
@@ -117,12 +117,12 @@ class RawData(BaseModel):
     value: int
 
 raw_table = OlapTable[RawData]("raw_data")
-raw_stream = Stream[RawData]("raw_data", {
+raw_stream = Stream[RawData]("raw_data", StreamConfig(
   destination: raw_table # Optional: Specify a destination table for the stream, sets up a process to sync data from the stream to the table
-})
-raw_ingest_api = IngestApi[RawData]("raw_data", {
+))
+raw_ingest_api = IngestApi[RawData]("raw_data", IngestConfig(
   destination: raw_stream # Configure Moose to write all validated data to the stream
-})
+))
 ```
 </Python>
 </Tabs.Tab>
@@ -209,18 +209,18 @@ class TransformedData(BaseModel):
     transformedAt: Date    # Timestamp of transformation
 
 # Create pipeline for raw data - only for ingestion and streaming
-raw_data = IngestPipeline[RawData]("raw_data", {
+raw_data = IngestPipeline[RawData]("raw_data", IngestPipelineConfig(
   ingest: True,   # Enable API endpoint
   stream: True,   # Create stream for buffering
   table: False    # No table needed for raw data
-})
+))
 
 # Create pipeline for transformed data - for storage only
-transformed_data = IngestPipeline[TransformedData]("transformed_data", {
+transformed_data = IngestPipeline[TransformedData]("transformed_data", IngestPipelineConfig(
   ingest: False,  # No direct API endpoint
   stream: True,   # Create stream to receive transformed data
   table: True     # Store transformed data in table
-})
+))
 
 # Define a named transformation function
 def transform_function(record: RawData) -> TransformedData:
