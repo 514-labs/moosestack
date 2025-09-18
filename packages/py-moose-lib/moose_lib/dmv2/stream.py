@@ -30,7 +30,7 @@ class StreamConfig(BaseModel):
     """
     parallelism: int = 1
     retention_period: int = 60 * 60 * 24 * 7  # 7 days
-    destination: Optional[OlapTable[Any]] = None
+    destination: Optional[OlapTable] = None
     version: Optional[str] = None
     metadata: Optional[dict] = None
     life_cycle: Optional[LifeCycle] = None
