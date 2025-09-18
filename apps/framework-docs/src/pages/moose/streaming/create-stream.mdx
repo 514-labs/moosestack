@@ -56,7 +56,7 @@ interface RawData {
 }
 
 export const rawIngestionStream = new IngestPipeline<RawData>("raw_data", {
-  ingest: true, // Creates an ingestion API endpoint at `POST /ingest/raw_data`
+  ingestApi: true, // Creates an ingestion API endpoint at `POST /ingest/raw_data`
   stream: true, // Buffers data between the ingestion API and the database table
   table: true // Creates an OLAP table named `raw_data`
 });
@@ -65,18 +65,18 @@ export const rawIngestionStream = new IngestPipeline<RawData>("raw_data", {
 
 <Python>
 ```py filename="IngestionStream.py" copy {10}
-from moose_lib import IngestPipeline, Key
+from moose_lib import IngestPipeline, IngestPipelineConfig, Key
 from pydantic import BaseModel
 
 class RawData(BaseModel):
     id: Key[str]
     value: int
 
-raw_ingestion_stream = IngestPipeline[RawData]("raw_data", {
-  ingest: True, # Creates an ingestion API endpoint at `POST /ingest/raw_data`
-  stream: True, # Buffers data between the ingestion API and the database table
-  table: True, # Creates an OLAP table named `raw_data`
-})
+raw_ingestion_stream = IngestPipeline[RawData]("raw_data", IngestPipelineConfig(
+  ingest_api = True, # Creates an ingestion API endpoint at `POST /ingest/raw_data`
+  stream = True, # Buffers data between the ingestion API and the database table
+  table = True, # Creates an OLAP table named `raw_data`
+))
 ```
 </Python>
 
@@ -109,7 +109,7 @@ export const rawIngestApi = new IngestApi<RawData>("raw_data", {
 
 <Python>
 ```py filename="StreamObject.py" copy {8-12}
-from moose_lib import IngestPipeline, Key
+from moose_lib import Stream, StreamConfig, Key, IngestApi, IngestConfig
 from pydantic import BaseModel
 
 class RawData(BaseModel):
@@ -117,12 +117,12 @@ class RawData(BaseModel):
     value: int
 
 raw_table = OlapTable[RawData]("raw_data")
-raw_stream = Stream[RawData]("raw_data", {
+raw_stream = Stream[RawData]("raw_data", StreamConfig(
   destination: raw_table # Optional: Specify a destination table for the stream, sets up a process to sync data from the stream to the table
-})
-raw_ingest_api = IngestApi[RawData]("raw_data", {
+))
+raw_ingest_api = IngestApi[RawData]("raw_data", IngestConfig(
   destination: raw_stream # Configure Moose to write all validated data to the stream
-})
+))
 ```
 </Python>
 </Tabs.Tab>
@@ -171,14 +171,14 @@ interface TransformedData {
 
 // Configure components for raw data ingestion & buffering
 const rawData = new IngestPipeline<RawData>("raw_data", {
-  ingest: true,
+  ingestApi: true,
   stream: true, // Buffers data between the ingestion API and the database table
   table: false // Don't create a table for the raw data
 });
 
 // Create a table for the transformed data
 const transformedData = new IngestPipeline<TransformedData>("transformed_data", {
-  ingest: false, // Don't create an ingestion API for the transformed data
+  ingestApi: false, // Don't create an ingestion API for the transformed data
   stream: true, // Create destination stream for the transformed data
   table: true // Create a table for the transformed data
 });
@@ -209,18 +209,18 @@ class TransformedData(BaseModel):
     transformedAt: Date    # Timestamp of transformation
 
 # Create pipeline for raw data - only for ingestion and streaming
-raw_data = IngestPipeline[RawData]("raw_data", {
-  ingest: True,   # Enable API endpoint
-  stream: True,   # Create stream for buffering
-  table: False    # No table needed for raw data
-})
+raw_data = IngestPipeline[RawData]("raw_data", IngestPipelineConfig(
+  ingest_api = True,   # Enable API endpoint
+  stream = True,   # Create stream for buffering
+  table = False    # No table needed for raw data
+))
 
 # Create pipeline for transformed data - for storage only
-transformed_data = IngestPipeline[TransformedData]("transformed_data", {
-  ingest: False,  # No direct API endpoint
-  stream: True,   # Create stream to receive transformed data
-  table: True     # Store transformed data in table
-})
+transformed_data = IngestPipeline[TransformedData]("transformed_data", IngestPipelineConfig(
+  ingest_api = False,  # No direct API endpoint
+  stream = True,   # Create stream to receive transformed data
+  table = True     # Store transformed data in table
+))
 
 # Define a named transformation function
 def transform_function(record: RawData) -> TransformedData:
@@ -353,7 +353,7 @@ interface FinalData {
 // Create the first pipeline for raw data ingestion
 // Only create an API and a stream (no table) since we're ingesting the raw data
 const rawData = new IngestPipeline<RawData>("raw_data", {
-  ingest: true,   // Enable HTTP ingestion endpoint
+  ingestApi: true,   // Enable HTTP ingestion endpoint
   stream: true,   // Create a stream to buffer data
   table: false    // Don't store raw data in a table
 });
@@ -370,7 +370,7 @@ rawData.stream.addTransform(intermediateStream, (record) => ({
 
 // Create the final pipeline that will store the fully transformed data
 const finalData = new IngestPipeline<FinalData>("final_stream", {
-  ingest: false,  // No direct ingestion to this pipeline
+  ingestApi: false,  // No direct ingestion to this pipeline
   stream: true,   // Create a stream for processing
   table: true     // Store final results in a table
 });
@@ -410,7 +410,7 @@ class FinalData(BaseModel):
 # Create the first pipeline for raw data ingestion
 # Only create an API and a stream (no table) since we're ingesting the raw data
 raw_data = IngestPipeline[RawData]("raw_data", IngestPipelineConfig(
-  ingest=True,
+  ingest_api=True,
   stream=True,
   table=False
 ))
@@ -427,7 +427,7 @@ raw_data.get_stream().add_transform(destination=intermediate_stream, transformat
 
 # Create the final pipeline that will store the fully transformed data
 final_data = IngestPipeline[FinalData]("final_stream", IngestPipelineConfig(
-  ingest=False,
+  ingest_api=False,
   stream=True,
   table=True
 ))
@@ -502,4 +502,4 @@ dev_stream = Stream[Data]("dev_stream", StreamConfig(
 ```
 </Python>
 
-See the [API Reference](./api-reference#stream) for complete configuration options.
+See the [API Reference](/moose/reference/ts-moose-lib#stream) for complete configuration options.
