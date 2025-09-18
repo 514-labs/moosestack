@@ -87,8 +87,17 @@
 //!
 
 use crate::cli::local_webserver::{IntegrateChangesRequest, RouteMeta};
+use crate::cli::routines::code_generation::prompt_user_for_remote_ch_http;
+use crate::cli::routines::openapi::openapi;
+use crate::framework::core::execute::execute_initial_infra_change;
+use crate::framework::core::infra_reality_checker::InfraDiscrepancies;
+use crate::framework::core::infrastructure_map::{
+    compute_table_columns_diff, InfrastructureMap, OlapChange, TableChange,
+};
+use crate::framework::core::migration_plan::{MigrationPlan, MigrationPlanWithBeforeAfter};
 use crate::framework::core::plan_validator;
 use crate::infrastructure::redis::redis_client::RedisClient;
+use crate::project::Project;
 use log::{debug, error, info};
 use serde::Deserialize;
 use std::collections::{HashMap, HashSet};
@@ -97,15 +106,6 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tokio::time::{interval, Duration};
-
-use crate::cli::routines::openapi::openapi;
-use crate::framework::core::execute::execute_initial_infra_change;
-use crate::framework::core::infra_reality_checker::InfraDiscrepancies;
-use crate::framework::core::infrastructure_map::{
-    compute_table_columns_diff, InfrastructureMap, OlapChange, TableChange,
-};
-use crate::framework::core::migration_plan::{MigrationPlan, MigrationPlanWithBeforeAfter};
-use crate::project::Project;
 
 use super::super::metrics::Metrics;
 use super::local_webserver::{PlanRequest, PlanResponse, Webserver};
@@ -426,7 +426,7 @@ pub async fn start_development_mode(
                             setup_choice.trim().to_lowercase().as_str(),
                             "" | "y" | "yes"
                         ) {
-                            Some("".to_string())
+                            Some(prompt_user_for_remote_ch_http()?)
                         } else {
                             let again_choice =prompt_user(
                                 "Do you want me to ask you this again next time you run `moose dev` (Y/n)",
