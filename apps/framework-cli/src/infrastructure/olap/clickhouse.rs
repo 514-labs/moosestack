@@ -953,20 +953,6 @@ pub async fn check_table_size(
     Ok(result as i64)
 }
 
-/// Represents details about a table in ClickHouse
-///
-/// # Fields
-/// * `engine` - The table's engine type
-/// * `total_rows` - Optional count of rows in the table
-///
-/// # Usage
-/// Used internally for table metadata operations and checks
-#[derive(Debug, Clone, Deserialize, Serialize, clickhouse::Row)]
-struct TableDetail {
-    pub engine: String,
-    pub total_rows: Option<u64>,
-}
-
 pub struct TableWithUnsupportedType {
     pub name: String,
     pub col_name: String,
