@@ -27,5 +27,8 @@
       "types": "./types/design-system.d.ts",
       "default": "./lib/animation-helpers.js"
     }
+  },
+  "scripts": {
+    "preinstall": "node ../../scripts/ensure-safe-check.js"
   }
 }

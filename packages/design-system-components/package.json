@@ -59,5 +59,8 @@
       "default": "./lib/animation-helpers.js"
     },
     "./utils": "./lib/utils.ts"
+  },
+  "scripts": {
+    "preinstall": "node ../../scripts/ensure-safe-check.js"
   }
 }

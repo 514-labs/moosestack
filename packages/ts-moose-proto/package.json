@@ -9,7 +9,8 @@
   ],
   "scripts": {
     "gen": "rimraf generated && mkdir generated && buf generate",
-    "build": "tsup"
+    "build": "tsup",
+    "preinstall": "node ../../scripts/ensure-safe-check.js"
   },
   "dependencies": {
     "@bufbuild/buf": "^1.45.0",

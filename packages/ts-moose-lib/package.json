@@ -28,7 +28,8 @@
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "build": "tsup",
-    "test": "mocha -r ts-node/register 'src/**/*.test.ts'"
+    "test": "mocha -r ts-node/register 'src/**/*.test.ts'",
+    "preinstall": "node ../../scripts/ensure-safe-check.js"
   },
   "dependencies": {
     "@clickhouse/client": "1.8.1",

@@ -15,5 +15,8 @@
   },
   "devDependencies": {
     "@types/react": "^18.2.74"
+  },
+  "scripts": {
+    "preinstall": "node ../../scripts/ensure-safe-check.js"
   }
 }
