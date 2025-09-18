@@ -6,6 +6,7 @@ and utilities for defining data models and SQL queries.
 """
 from clickhouse_connect.driver.client import Client as ClickhouseClient
 from clickhouse_connect import get_client
+from moose_lib.dmv2 import OlapTable
 from pydantic import BaseModel
 from dataclasses import dataclass, asdict
 from enum import Enum
@@ -21,6 +22,8 @@ from temporalio.common import RetryPolicy, WorkflowIDConflictPolicy, WorkflowIDR
 from datetime import timedelta
 from time import perf_counter
 from humanfriendly import format_timespan
+
+from .data_models import Column
 from .config.runtime import RuntimeClickHouseConfig
 
 from moose_lib.commons import EnhancedJSONEncoder
@@ -193,12 +196,16 @@ class QueryClient:
                     # handling passing the value of the query string dict directly to variables
                     value = value[0]
 
-                t = 'String' if isinstance(value, str) else \
-                    'Int64' if isinstance(value, int) else \
-                        'Float64' if isinstance(value, float) else "String"  # unknown type
-
-                params[variable_name] = f'{{p{i}: {t}}}'
-                values[f'p{i}'] = value
+                if isinstance(value, Column) or isinstance(value, OlapTable):
+                    params[variable_name] = f'{{p{i}: Identifier}}'
+                    values[f'p{i}'] = value.name
+                else:
+                    t = 'String' if isinstance(value, str) else \
+                        'Int64' if isinstance(value, int) else \
+                            'Float64' if isinstance(value, float) else \
+                                "String"  # unknown type
+                    params[variable_name] = f'{{p{i}: {t}}}'
+                    values[f'p{i}'] = value
                 preview_params[variable_name] = self._format_value_for_preview(value)
 
         clickhouse_query = input.format_map(params)
@@ -257,6 +264,9 @@ class QueryClient:
             # Escape backslashes and single quotes for ClickHouse single-quoted strings
             escaped = value.replace('\\', '\\\\').replace("'", "\\'")
             return f"'{escaped}'"
+
+        if isinstance(value, Column) or isinstance(value, OlapTable):
+            return value.name
 
         # Lists / tuples (format as [item1, item2, ...])
         if isinstance(value, (list, tuple)):

@@ -436,7 +436,7 @@ def to_infra_map() -> dict:
 
         tables[name] = TableConfig(
             name=name,
-            columns=_to_columns(table._t),
+            columns=table._column_list,
             order_by=table.config.order_by_fields,
             partition_by=table.config.partition_by,
             engine_config=engine_config,

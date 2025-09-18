@@ -12,12 +12,11 @@ from clickhouse_connect.driver.exceptions import ClickHouseError
 from dataclasses import dataclass
 from pydantic import BaseModel
 from typing import List, Optional, Any, Literal, Union, Tuple, TypeVar, Generic, Iterator
-from moose_lib import ClickHouseEngines
-from ..blocks import EngineConfig  # Add import for EngineConfig
-from ..commons import Logger  # Add import for Moose logging
+from ..blocks import ClickHouseEngines, EngineConfig
+from ..commons import Logger
 from ..config.runtime import RuntimeClickHouseConfig
 from ..utilities.sql import quote_identifier
-from .types import TypedMooseResource, T
+from .types import TypedMooseResource, T, Cols
 from ._registry import _tables
 from ..data_models import Column, is_array_nested_type, is_nested_type, _to_columns
 from .life_cycle import LifeCycle
@@ -140,12 +139,16 @@ class OlapTable(TypedMooseResource, Generic[T]):
     _memoized_client: Optional[Client] = None
     _config_hash: Optional[str] = None
     _cached_table_name: Optional[str] = None
+    _column_list: list[Column]
+    _cols: Cols
 
     def __init__(self, name: str, config: OlapConfig = OlapConfig(), **kwargs):
         super().__init__()
         self._set_type(name, self._get_type(kwargs))
         self.config = config
         self.metadata = config.metadata
+        self._column_list = _to_columns(self._t)
+        self._cols = Cols(self._column_list)
         _tables[name] = self
         
         # Check if using legacy enum-based engine configuration
@@ -179,6 +182,10 @@ class OlapTable(TypedMooseResource, Generic[T]):
                 DeprecationWarning,
                 stacklevel=2
             )
+
+    @property
+    def cols(self):
+        return self._cols
 
     def _generate_table_name(self) -> str:
         """Generate the versioned table name following Moose's naming convention.

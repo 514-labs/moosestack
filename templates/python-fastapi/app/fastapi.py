@@ -82,28 +82,27 @@ def get_bar_data(params: QueryParams = Depends()):
             )
         
         # Build the query
-        query = f"""
+        query = """
         SELECT
-            {BarAgg.columns.day_of_month},
-            {params.order_by}
-        FROM {BarAgg.name}
-        WHERE {BarAgg.columns.day_of_month} >= {params.start_day}
-        AND {BarAgg.columns.day_of_month} <= {params.end_day}
-        ORDER BY {params.order_by} DESC
-        LIMIT {params.limit}
+            day_of_month,
+            total_rows,
+            rows_with_text,
+            max_text_length,
+            total_text_length
+        FROM {table}
+        WHERE day_of_month >= {start_day}
+        AND day_of_month <= {end_day}
+        ORDER BY {order_by} DESC
+        LIMIT {limit}
         """
-        
-        # Execute the query
-        result = query_client.execute(
-            query,
-            {
-                "order_by": params.order_by,
-                "start_day": params.start_day,
-                "end_day": params.end_day,
-                "limit": params.limit
-            },
-            QueryResult
-        )
+
+        result = query_client.execute(query, {
+            "table": BarAgg,
+            "order_by": barAggregatedMV.target_table.cols[params.order_by],
+            "start_day": params.start_day,
+            "end_day": params.end_day,
+            "limit": params.limit
+        }, QueryResult)
         
         return result
         
