@@ -87,9 +87,18 @@
 //!
 
 use crate::cli::local_webserver::{IntegrateChangesRequest, RouteMeta};
+use crate::cli::routines::code_generation::prompt_user_for_remote_ch_http;
+use crate::cli::routines::openapi::openapi;
+use crate::framework::core::execute::execute_initial_infra_change;
+use crate::framework::core::infra_reality_checker::InfraDiscrepancies;
+use crate::framework::core::infrastructure_map::{
+    compute_table_columns_diff, InfrastructureMap, OlapChange, TableChange,
+};
+use crate::framework::core::migration_plan::{MigrationPlan, MigrationPlanWithBeforeAfter};
 use crate::framework::core::plan_validator;
 use crate::infrastructure::redis::redis_client::RedisClient;
-use log::{debug, error, info};
+use crate::project::Project;
+use log::{debug, error, info, warn};
 use serde::Deserialize;
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
@@ -98,31 +107,28 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 use tokio::time::{interval, Duration};
 
-use crate::cli::routines::openapi::openapi;
-use crate::framework::core::execute::execute_initial_infra_change;
-use crate::framework::core::infra_reality_checker::InfraDiscrepancies;
-use crate::framework::core::infrastructure_map::{InfrastructureMap, OlapChange, TableChange};
-use crate::framework::core::migration_plan::{MigrationPlan, MigrationPlanWithBeforeAfter};
-use crate::project::Project;
-
 use super::super::metrics::Metrics;
-use super::display;
 use super::local_webserver::{PlanRequest, PlanResponse, Webserver};
-use super::settings::Settings;
+use super::settings::{set_suppress_dev_setup_prompt, Settings};
 use super::watcher::FileWatcher;
+use super::{display, prompt_user};
 use super::{Message, MessageType};
 
+use crate::framework::core::partial_infrastructure_map::LifeCycle;
 use crate::framework::core::plan::plan_changes;
 use crate::framework::core::plan::InfraPlan;
 use crate::framework::core::primitive_map::PrimitiveMap;
 use crate::infrastructure::olap::clickhouse::{check_ready, create_client};
+use crate::infrastructure::olap::OlapOperations;
 use crate::infrastructure::orchestration::temporal_client::{
     manager_from_project_if_enabled, probe_temporal,
 };
 use crate::infrastructure::stream::kafka::client::fetch_topics;
 use crate::utilities::constants::{
-    MIGRATION_AFTER_STATE_FILE, MIGRATION_BEFORE_STATE_FILE, MIGRATION_FILE,
+    KEY_REMOTE_CLICKHOUSE_URL, MIGRATION_AFTER_STATE_FILE, MIGRATION_BEFORE_STATE_FILE,
+    MIGRATION_FILE, STORE_CRED_PROMPT,
 };
+use crate::utilities::keyring::{KeyringSecretRepository, SecretRepository};
 
 async fn maybe_warmup_connections(project: &Project, redis_client: &Arc<RedisClient>) {
     if std::env::var("MOOSE_CONNECTION_POOL_WARMUP").is_ok() {
@@ -388,6 +394,129 @@ pub async fn start_development_mode(
         .await;
 
     let (_, plan) = plan_changes(&redis_client, &project).await?;
+
+    let externally_managed: Vec<_> = plan
+        .target_infra_map
+        .tables
+        .values()
+        .filter(|t| t.life_cycle == LifeCycle::ExternallyManaged)
+        .collect();
+    if !externally_managed.is_empty() {
+        show_message!(
+            MessageType::Info,
+            Message::new(
+                "Secret".to_string(),
+                "Fetching stored remote URL, you may see a pop up asking for your authorization."
+                    .to_string()
+            )
+        );
+        let repo = KeyringSecretRepository;
+        let project_name = project.name();
+        match repo.get(&project_name, KEY_REMOTE_CLICKHOUSE_URL) {
+            Ok(stored) => {
+                let remote_clickhouse_url = match stored {
+                    Some(url) => Some(url),
+                    None if settings.dev.suppress_dev_setup_prompt => None,
+                    None => {
+                        display::show_message_wrapper(
+                            MessageType::Info,
+                            Message::new("Info".to_string(), STORE_CRED_PROMPT.to_string()),
+                        );
+                        let setup_choice =
+                            prompt_user("Do you want to set this up now (Y/n)?", Some("Y"), None)?;
+                        if matches!(
+                            setup_choice.trim().to_lowercase().as_str(),
+                            "" | "y" | "yes"
+                        ) {
+                            let url = prompt_user_for_remote_ch_http()?;
+                            match repo.store(&project_name, KEY_REMOTE_CLICKHOUSE_URL, &url) {
+                                Ok(()) => display::show_message_wrapper(
+                                    MessageType::Success,
+                                    Message::new(
+                                        "Keychain".to_string(),
+                                        format!(
+                                            "Saved ClickHouse connection string for project '{}'.",
+                                            project_name
+                                        ),
+                                    ),
+                                ),
+                                Err(e) => {
+                                    display::show_message_wrapper(
+                                        MessageType::Error,
+                                        Message::new(
+                                            "Keychain".to_string(),
+                                            format!("Failed to store connection string: {e:?}"),
+                                        ),
+                                    );
+                                    warn!("Failed to store connection string: {e:?}")
+                                }
+                            }
+
+                            Some(url)
+                        } else {
+                            let again_choice =prompt_user(
+                                "Do you want me to ask you this again next time you run `moose dev` (Y/n)",
+                                Some("Y"),
+                                None,
+                            )?;
+                            if !matches!(
+                                again_choice.trim().to_lowercase().as_str(),
+                                "" | "y" | "yes"
+                            ) {
+                                if let Err(e) = set_suppress_dev_setup_prompt(true) {
+                                    show_message!(
+                                        MessageType::Error,
+                                        Message {
+                                            action: "Failed".to_string(),
+                                            details: "to write suppression flag to config"
+                                                .to_string(),
+                                        }
+                                    );
+                                    log::warn!("Failed to write suppression flag to config: {e:?}");
+                                }
+                            }
+                            None
+                        }
+                    }
+                };
+                if let Some(ref remote_url) = remote_clickhouse_url {
+                    let (client, db) = code_generation::create_client_and_db(remote_url).await?;
+                    let (tables, _unsupported) = client.list_tables(&db, &project).await?;
+                    let tables: HashMap<_, _> =
+                        tables.into_iter().map(|t| (t.name.clone(), t)).collect();
+
+                    let changed = externally_managed.iter().any(|t| {
+                        if let Some(remote_table) = tables.get(&t.name) {
+                            !compute_table_columns_diff(t, remote_table).is_empty()
+                                || !remote_table.order_by_equals(t)
+                                || t.engine != remote_table.engine
+                        } else {
+                            true
+                        }
+                    });
+                    if changed {
+                        show_message!(
+                            MessageType::Highlight,
+                            Message {
+                                action: "Remote".to_string(),
+                                details: "change detected in externally managed tables. Run `moose db pull` to regenerate.".to_string(),
+                            }
+                        );
+                    }
+                }
+            }
+            Err(e) => {
+                show_message!(
+                    MessageType::Error,
+                    Message {
+                        action: "Secret".to_string(),
+                        details: format!("failed to fetch stored remote URL. {e:?}")
+                    }
+                );
+            }
+        };
+    }
+
     maybe_warmup_connections(&project, &redis_client).await;
 
     plan_validator::validate(&project, &plan)?;
@@ -625,7 +754,7 @@ pub enum InfraRetrievalError {
 /// # Returns
 /// * `Ok(InfrastructureMap)` - Successfully retrieved inframap
 /// * `Err(InfraRetrievalError)` - Various error conditions including endpoint not found
-async fn get_remote_inframap_protobuf(
+pub(crate) async fn get_remote_inframap_protobuf(
     base_url: Option<&str>,
     token: &Option<String>,
 ) -> Result<InfrastructureMap, InfraRetrievalError> {

@@ -1,4 +1,5 @@
 use crate::cli::display::{Message, MessageType};
+use crate::cli::prompt_user;
 use crate::cli::routines::RoutineFailure;
 use crate::framework::core::infrastructure::table::Table;
 use crate::framework::core::infrastructure_map::InfrastructureMap;
@@ -20,12 +21,42 @@ use std::env;
 use std::io::Write;
 use std::path::Path;
 
+pub fn prompt_user_for_remote_ch_http() -> Result<String, RoutineFailure> {
+    let base = prompt_user(
+        "Enter ClickHouse host and port",
+        None,
+        Some("Format: https://your-service-id.region.clickhouse.cloud:8443\n  🔗 Get your URL: https://clickhouse.cloud/\n  📖 Troubleshooting: https://docs.fiveonefour.com/moose/getting-started/from-clickhouse#troubleshooting")
+    )?.trim_end_matches('/').trim_start_matches("https://").to_string();
+    let user = prompt_user("Enter username", Some("default"), None)?;
+    let pass = prompt_user("Enter password", None, None)?;
+    let db = prompt_user("Enter database name", Some("default"), None)?;
+
+    let mut url = reqwest::Url::parse(&format!("https://{base}")).map_err(|e| {
+        RoutineFailure::new(
+            Message::new("Malformed".to_string(), format!("host and port: {base}")),
+            e,
+        )
+    })?;
+    url.set_username(&user).map_err(|()| {
+        RoutineFailure::error(Message::new("Malformed".to_string(), format!("URL: {url}")))
+    })?;
+
+    if !pass.is_empty() {
+        url.set_password(Some(&pass)).map_err(|()| {
+            RoutineFailure::error(Message::new("Malformed".to_string(), format!("URL: {url}")))
+        })?
+    }
+
+    url.query_pairs_mut().append_pair("database", &db);
+    Ok(url.to_string())
+}
+
 fn should_be_externally_managed(table: &Table) -> bool {
     table.columns.iter().any(|c| c.name.starts_with("_peerdb_"))
 }
 
 // Shared helpers
-async fn create_client_and_db(
+pub async fn create_client_and_db(
     remote_url: &str,
 ) -> Result<(ConfiguredDBClient, String), RoutineFailure> {
     let mut url = Url::parse(remote_url).map_err(|e| {

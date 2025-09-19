@@ -9,6 +9,8 @@ use crate::infrastructure::olap::clickhouse::client::ClickHouseClient;
 use crate::infrastructure::olap::clickhouse::config::ClickHouseConfig;
 use crate::project::Project;
 use crate::utilities::clickhouse_url::convert_http_to_clickhouse;
+use crate::utilities::constants::KEY_REMOTE_CLICKHOUSE_URL;
+use crate::utilities::keyring::{KeyringSecretRepository, SecretRepository};
 use itertools::Itertools;
 use log::{debug, info};
 use std::cmp::min;
@@ -67,7 +69,29 @@ pub async fn handle_seed_command(
             table,
             order_by,
         }) => {
-            info!("Running seed clickhouse command with connection string: {connection_string}");
+            let resolved_connection_string = match connection_string {
+                Some(s) => s.clone(),
+                None => {
+                    let repo = KeyringSecretRepository;
+                    match repo.get(&project.name(), KEY_REMOTE_CLICKHOUSE_URL) {
+                        Ok(Some(s)) => s,
+                        Ok(None) => {
+                            return Err(RoutineFailure::error(Message::new(
+                                "SeedClickhouse".to_string(),
+                                "No connection string provided and none saved. Pass --connection-string or save one via `moose init --from-remote`.".to_string(),
+                            )))
+                        }
+                        Err(e) => {
+                            return Err(RoutineFailure::error(Message::new(
+                                "SeedClickhouse".to_string(),
+                                format!("Failed to read saved connection string from keychain: {e:?}"),
+                            )))
+                        }
+                    }
+                }
+            };
+
+            info!("Running seed clickhouse command with connection string: {resolved_connection_string}");
 
             let infra_map = if project.features.data_model_v2 {
                 InfrastructureMap::load_from_user_code(project)
@@ -89,7 +113,7 @@ pub async fn handle_seed_command(
             };
 
             let (mut remote_config, db_name) =
-                parse_clickhouse_connection_string(connection_string).map_err(|e| {
+                parse_clickhouse_connection_string(&resolved_connection_string).map_err(|e| {
                     RoutineFailure::error(Message::new(
                         "SeedClickhouse".to_string(),
                         format!("Invalid connection string: {e}"),
@@ -97,8 +121,9 @@ pub async fn handle_seed_command(
                 })?;
 
             if db_name.is_none() {
-                let mut client = clickhouse::Client::default().with_url(connection_string);
-                let url = convert_http_to_clickhouse(connection_string).map_err(|e| {
+                let mut client =
+                    clickhouse::Client::default().with_url(&resolved_connection_string);
+                let url = convert_http_to_clickhouse(&resolved_connection_string).map_err(|e| {
                     RoutineFailure::error(Message::new(
                         "SeedClickhouse".to_string(),
                         format!("Failed to parse connection string: {e}"),
@@ -157,7 +182,7 @@ pub async fn handle_seed_command(
             .await?;
 
             Ok(RoutineSuccess::success(Message::new(
-                "Seeded ClickHouse".to_string(),
+                "Local CH Seeded".to_string(),
                 summary.join("\n"),
             )))
         }

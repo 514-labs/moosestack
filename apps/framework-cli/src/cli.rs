@@ -49,13 +49,15 @@ use crate::framework::core::primitive_map::PrimitiveMap;
 use crate::metrics::TelemetryMetadata;
 use crate::project::Project;
 use crate::utilities::capture::{wait_for_usage_capture, ActivityType};
+use crate::utilities::constants::KEY_REMOTE_CLICKHOUSE_URL;
 use crate::utilities::constants::{
     CLI_VERSION, MIGRATION_AFTER_STATE_FILE, MIGRATION_BEFORE_STATE_FILE, MIGRATION_FILE,
     PROJECT_NAME_ALLOW_PATTERN,
 };
+use crate::utilities::keyring::{KeyringSecretRepository, SecretRepository};
 
 use crate::cli::commands::DbArgs;
-use crate::cli::routines::code_generation::{db_pull, db_to_dmv2};
+use crate::cli::routines::code_generation::{db_pull, db_to_dmv2, prompt_user_for_remote_ch_http};
 use crate::cli::routines::ls::ls_dmv2;
 use crate::cli::routines::templates::create_project_from_template;
 use crate::framework::core::migration_plan::MIGRATION_SCHEMA;
@@ -65,7 +67,7 @@ use std::time::Duration;
 use tokio::time::timeout;
 
 /// Generic prompt function with hints, default values, and better formatting
-fn prompt_user(
+pub fn prompt_user(
     prompt_text: &str,
     default: Option<&str>,
     hint: Option<&str>,
@@ -95,10 +97,13 @@ fn prompt_user(
     let _ = io::stdout().flush();
     let mut input = String::new();
     io::stdin().read_line(&mut input).map_err(|e| {
-        RoutineFailure::error(Message {
-            action: "Init".to_string(),
-            details: format!("Failed to prompt user: {e:?}"),
-        })
+        RoutineFailure::new(
+            Message {
+                action: "Init".to_string(),
+                details: "Failed to prompt user".to_string(),
+            },
+            e,
+        )
     })?;
     let trimmed = input.trim();
 
@@ -216,7 +221,6 @@ pub async fn top_command_handler(
             no_fail_already_exists,
             from_remote,
             language,
-            // database,
         } => {
             info!(
                 "Running init command with name: {}, location: {:?}, template: {:?}, language: {:?}",
@@ -281,39 +285,7 @@ pub async fn top_command_handler(
                 }
                 Some(None) => {
                     // --from-remote flag provided, but no URL given - use interactive prompts
-                    let base = prompt_user(
-                        "Enter ClickHouse host and port",
-                        None,
-                        Some("Format: https://your-service-id.region.clickhouse.cloud:8443\n  🔗 Get your URL: https://clickhouse.cloud/\n  📖 Troubleshooting: https://docs.fiveonefour.com/moose/getting-started/from-clickhouse#troubleshooting")
-                    )?.trim_end_matches('/').trim_start_matches("https://").to_string();
-                    let user = prompt_user("Enter username", Some("default"), None)?;
-                    let pass = prompt_user("Enter password", None, None)?;
-                    let db = prompt_user("Enter database name", Some("default"), None)?;
-
-                    let mut url = reqwest::Url::parse(&format!("https://{base}")).map_err(|e| {
-                        RoutineFailure::new(
-                            Message::new("Malformed".to_string(), format!("host and port: {base}")),
-                            e,
-                        )
-                    })?;
-                    url.set_username(&user).map_err(|()| {
-                        RoutineFailure::error(Message::new(
-                            "Malformed".to_string(),
-                            format!("URL: {url}"),
-                        ))
-                    })?;
-
-                    if !pass.is_empty() {
-                        url.set_password(Some(&pass)).map_err(|()| {
-                            RoutineFailure::error(Message::new(
-                                "Malformed".to_string(),
-                                format!("URL: {url}"),
-                            ))
-                        })?
-                    }
-
-                    url.query_pairs_mut().append_pair("database", &db);
-                    let url = url.to_string();
+                    let url = prompt_user_for_remote_ch_http()?;
                     db_to_dmv2(&url, dir_path).await?;
                     Some(url)
                 }
@@ -337,6 +309,34 @@ pub async fn top_command_handler(
                     }
                 }
             };
+
+            // Offer to store the connection string for future db pull convenience
+            if let Some(ref connection_string) = normalized_url {
+                let save_choice = prompt_user(
+                    "Save this connection string to your system keychain for easy `moose db pull` later? [Y/n]",
+                    Some("Y"),
+                    Some("You can always pass --connection-string explicitly to override."),
+                )?;
+
+                let save = save_choice.trim().is_empty()
+                    || matches!(save_choice.trim().to_lowercase().as_str(), "y" | "yes");
+                if save {
+                    let repo = KeyringSecretRepository;
+                    match repo.store(name, KEY_REMOTE_CLICKHOUSE_URL, connection_string) {
+                        Ok(()) => display::show_message_wrapper(
+                            MessageType::Success,
+                            Message::new(
+                                "Keychain".to_string(),
+                                format!(
+                                    "Saved ClickHouse connection string for project '{}'.",
+                                    name
+                                ),
+                            ),
+                        ),
+                        Err(e) => warn!("Failed to store connection string: {e:?}"),
+                    }
+                }
+            }
 
             wait_for_usage_capture(capture_handle).await;
 
@@ -1088,7 +1088,29 @@ pub async fn top_command_handler(
                 machine_id.clone(),
                 HashMap::new(),
             );
-            db_pull(connection_string, &project, file_path.as_deref())
+            let resolved_connection_string: String = match connection_string {
+                Some(s) => s.clone(),
+                None => {
+                    let repo = KeyringSecretRepository;
+                    match repo.get(&project.name(), KEY_REMOTE_CLICKHOUSE_URL) {
+                        Ok(Some(s)) => s,
+                        Ok(None) => return Err(RoutineFailure::error(Message {
+                            action: "DB Pull".to_string(),
+                            details: "No connection string provided and none saved. Pass --connection-string or save one during `moose init --from-remote`.".to_string(),
+                        })),
+                        Err(e) => {
+                            return Err(RoutineFailure::error(Message {
+                                action: "DB Pull".to_string(),
+                                details: format!(
+                                    "Failed to read saved connection string from keychain: {e:?}"
+                                ),
+                            }));
+                        }
+                    }
+                }
+            };
+
+            db_pull(&resolved_connection_string, &project, file_path.as_deref())
                 .await
                 .map_err(|e| {
                     RoutineFailure::new(
