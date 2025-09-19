@@ -132,7 +132,7 @@ example_api = Api[QueryParams, ResponseBody](name="example_endpoint", query_func
 <Tabs.Tab>
 Use parameter binding even when selecting simple columns to avoid injection:
 
-```python filename="ExampleApiSafe.py" copy
+```python filename="ExampleApi.py" copy
 from moose_lib import Api, MooseClient
 from pydantic import BaseModel
 
