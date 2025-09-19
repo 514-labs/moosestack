@@ -42,9 +42,32 @@ const data = await result.json();
 </TypeScript>
 
 <Python>
-<Tabs items={["execute_raw (Recommended)", "f-strings (Simple cases)"]}>
+<Tabs items={["execute", "execute_raw"]}>
 <Tabs.Tab>
-Use `execute_raw` with parameter binding for safe, typed queries:
+You can use a formatted string with `execute`:
+
+```py filename="BasicQuerying.py"
+from moose_lib import MooseClient
+from app.UserTable import UserTable
+client = MooseClient()
+
+status = "active"
+limit = 10
+query = """
+  SELECT id, name, email
+  FROM {table}
+  WHERE status = {status}
+  LIMIT {limit}
+"""
+rows = client.query.execute(query, {"table": UserTable, "status": status, "limit": limit})
+
+rows = client.query.execute(query)
+```
+This allows you to safely interpolate the table and column names while still using your Moose OlapTables and columns.
+
+</Tabs.Tab>
+<Tabs.Tab>
+If you'd rather just use the raw ClickHouse python driver with server-side parameter binding, you can use `execute_raw`:
 
 ```py filename="BasicQuerying.py"
 from moose_lib import MooseClient
@@ -63,28 +86,6 @@ rows = client.query.execute_raw(query, {
     "status": "active",
     "limit": 10
 })
-```
-</Tabs.Tab>
-<Tabs.Tab>
-Use f-strings with `execute` for simple, static queries:
-
-```py filename="BasicQueryingFString.py"
-from moose_lib import MooseClient
-from app.UserTable import UserTable
-client = MooseClient()
-
-# Simple f-string query (only for trusted, static data)
-status = "active"
-limit = 10
-query = """
-  SELECT id, name, email
-  FROM {table: Identifier}
-  WHERE status = {status:String}
-  LIMIT {limit:UInt32}
-"""
-rows = client.query.execute(query, {"table": UserTable, "status": status, "limit": limit})
-
-rows = client.query.execute(query)
 ```
 </Tabs.Tab>
 </Tabs>
@@ -111,7 +112,26 @@ const result = await client.query.execute(query);
 </TypeScript>
 
 <Python>
-<Tabs items={["execute_raw (Recommended)", "f-strings (Simple cases)"]}>
+<Tabs items={["execute", "execute_raw"]}>
+<Tabs.Tab>
+You can use a formatted string with `execute`:
+
+```py filename="QueryMaterializedView.py"
+from moose_lib import MooseClient
+
+client = MooseClient()
+
+min_orders = 10
+query = """
+  SELECT user_id, total_orders, average_order_value
+  FROM user_stats_view
+  WHERE total_orders > {minOrders}
+  ORDER BY average_order_value DESC
+"""
+rows = client.query.execute(query, {"minOrders": min_orders})
+
+```
+</Tabs.Tab>
 <Tabs.Tab>
 Use `execute_raw` with parameter binding:
 
@@ -119,6 +139,8 @@ Use `execute_raw` with parameter binding:
 from moose_lib import MooseClient
 
 client = MooseClient()
+
+min_orders = 10
 
 # Query existing materialized view
 query = """
@@ -128,28 +150,7 @@ query = """
   ORDER BY average_order_value DESC
 """
 
-rows = client.query.execute_raw(query, {"minOrders": 10})
-```
-</Tabs.Tab>
-<Tabs.Tab>
-Use f-strings with `execute`:
-
-```py filename="QueryMaterializedViewFString.py"
-from moose_lib import MooseClient
-
-client = MooseClient()
-
-# Simple f-string query
-min_orders = 10
-query = """
-  SELECT user_id, total_orders, average_order_value
-  FROM user_stats_view
-  WHERE total_orders > {minOrders:UInt32}
-  ORDER BY average_order_value DESC
-"""
 rows = client.query.execute_raw(query, {"minOrders": min_orders})
-
-rows = client.query.execute(query)
 ```
 </Tabs.Tab>
 </Tabs>
@@ -224,9 +225,39 @@ const query = sql`
 </TypeScript>
 
 <Python>
-<Tabs items={["execute_raw (Recommended)", "f-strings (Simple cases)"]}>
+<Tabs items={["execute", "execute_raw"]}>
 <Tabs.Tab>
-Use `execute_raw` with parameter binding:
+
+```py filename="TypedReferences.py"
+from moose_lib import MooseClient
+from app.UserTable import UserTable
+client = MooseClient()
+
+status = "active"
+query = """
+  SELECT 
+    id,
+    name,
+    email
+  FROM {table: Identifier}
+  WHERE status = {status:String}
+"""
+rows = client.query.execute(query, {"table": UserTable, "status": status})
+
+# Multiple table references (static example)
+join_query = """
+  SELECT 
+    u.id,
+    u.name,
+    o.order_value
+  FROM users u
+  JOIN orders o ON u.id = o.user_id
+"""
+
+rows = client.query.execute(query)
+```
+</Tabs.Tab>
+<Tabs.Tab>
 
 ```py filename="TypedReferences.py"
 from moose_lib import MooseClient
@@ -254,39 +285,6 @@ join_query = """
 """
 
 rows = client.query.execute_raw(query, {"status": "active"})
-```
-</Tabs.Tab>
-<Tabs.Tab>
-When using f-strings with `execute` you can reference the column names directly in your query:
-
-```py filename="TypedReferencesFString.py"
-from moose_lib import MooseClient
-from app.UserTable import UserTable
-client = MooseClient()
-
-# Simple f-string queries
-status = "active"
-query = """
-  SELECT 
-    id,
-    name,
-    email
-  FROM {table: Identifier}
-  WHERE status = {status:String}
-"""
-rows = client.query.execute(query, {"table": UserTable, "status": status})
-
-# Multiple table references (static example)
-join_query = """
-  SELECT 
-    u.id,
-    u.name,
-    o.order_value
-  FROM users u
-  JOIN orders o ON u.id = o.user_id
-"""
-
-rows = client.query.execute(query)
 ```
 </Tabs.Tab>
 </Tabs>
@@ -322,55 +320,8 @@ const rangeQuery = sql`
 </TypeScript>
 
 <Python>
-<Tabs items={["execute_raw (Recommended)", "f-strings (Simple cases)"]}>
+<Tabs items={["execute", "execute_raw"]}>
 <Tabs.Tab>
-Use `execute_raw` with parameter binding:
-
-```py filename="WhereClauses.py"
-from moose_lib import MooseClient
-
-client = MooseClient()
-
-# Multiple WHERE conditions
-filter_query = """
-  SELECT id, name
-  FROM users
-  WHERE status = {status:String}
-    AND created_at > {startDate:DateTime}
-    AND email ILIKE {searchPattern:String}
-"""
-
-# Using BETWEEN
-range_query = """
-  SELECT * FROM users
-  WHERE age BETWEEN {minAge:UInt32} AND {maxAge:UInt32}
-"""
-
-# Using IN with typed arrays
-in_query = """
-  SELECT * FROM users
-  WHERE id IN {userIds:Array(UInt32)}
-"""
-
-# Execute examples
-filter_rows = client.query.execute_raw(filter_query, {
-    "status": "active",
-    "startDate": "2024-01-01",
-    "searchPattern": "%example%"
-})
-
-range_rows = client.query.execute_raw(range_query, {
-    "minAge": 18,
-    "maxAge": 65
-})
-
-in_rows = client.query.execute_raw(in_query, {
-    "userIds": [1, 2, 3, 4, 5]
-})
-```
-</Tabs.Tab>
-<Tabs.Tab>
-Use f-strings with `execute`:
 
 ```py filename="WhereClausesFString.py"
 from moose_lib import MooseClient
@@ -410,6 +361,51 @@ in_query = """
 filter_rows = client.query.execute_raw(filter_query, {"table": UserTable, "status": status, "startDate": start_date, "searchPattern": search_pattern})
 range_rows = client.query.execute_raw(range_query, {"table": UserTable, "minAge": min_age, "maxAge": max_age})
 in_rows = client.query.execute_raw(in_query, {"table": UserTable, "userIds": user_ids})
+```
+</Tabs.Tab>
+
+<Tabs.Tab>
+```py filename="WhereClauses.py"
+from moose_lib import MooseClient
+
+client = MooseClient()
+
+# Multiple WHERE conditions
+filter_query = """
+  SELECT id, name
+  FROM users
+  WHERE status = {status}
+    AND created_at > {startDate}
+    AND email ILIKE {searchPattern}
+"""
+
+# Using BETWEEN
+range_query = """
+  SELECT * FROM users
+  WHERE age BETWEEN {minAge} AND {maxAge}
+"""
+
+# Using IN with typed arrays
+in_query = """
+  SELECT * FROM users
+  WHERE id IN {userIds}
+"""
+
+# Execute examples
+filter_rows = client.query.execute_raw(filter_query, {
+    "status": "active",
+    "startDate": "2024-01-01",
+    "searchPattern": "%example%"
+})
+
+range_rows = client.query.execute_raw(range_query, {
+    "minAge": 18,
+    "maxAge": 65
+})
+
+in_rows = client.query.execute_raw(in_query, {
+    "userIds": [1, 2, 3, 4, 5]
+})
 ```
 </Tabs.Tab>
 </Tabs>
@@ -453,10 +449,57 @@ const buildDynamicQuery = ({ sortBy, fields, filters }: QueryParams) => {
 </TypeScript>
 
 <Python>
-<Tabs items={["execute_raw (Recommended)", "f-strings (Simple cases)"]}>
+<Tabs items={["execute", "execute_raw"]}>
 <Tabs.Tab>
-Use `execute_raw` with parameter binding:
+```py filename="DynamicQueries.py"
+from moose_lib import MooseClient
+from typing import Dict, Any
 
+client = MooseClient()
+
+def build_dynamic_query(filters: Dict[str, Any], sort_by: str, limit: int):
+    conditions: list[str] = []
+
+    # Known valid columns and values - validate against these
+    valid_columns = {"status", "age", "city", "department"}
+    valid_statuses = {"active", "inactive", "pending"}
+    valid_sort_columns = {"id", "name", "created_at", "age"}
+
+    # Validate sort_by column
+    if sort_by not in valid_sort_columns:
+        raise ValueError(f"Invalid sort column: {sort_by}")
+
+    params = {}
+    for key, value in filters.items():
+        if value is not None and key in valid_columns:
+            # Additional validation for specific columns
+            if key == "status" and value not in valid_statuses:
+                raise ValueError(f"Invalid status: {value}")
+            
+            column = key
+            valueVariable = f"{key}Value"
+            
+            conditions.append("{" + key + "} = {" + valueVariable + "}")
+            params[key] = key
+            params[valueVariable] = value
+
+
+    query = "SELECT * FROM {table}"
+
+    if conditions:
+        query += " WHERE " + " AND ".join(conditions)
+
+    # Include column name directly (already validated!) and bind limit
+    query += " ORDER BY {sort_by} LIMIT {limit}"
+
+    return client.query.execute(query, {"table": UserTable, "limit": limit})
+
+# Usage example
+filters = {"status": "active", "city": "New York"}
+result = build_dynamic_query(filters, "created_at", 10)
+```
+</Tabs.Tab>
+<Tabs.Tab>
 ```py filename="DynamicQueries.py"
 from moose_lib import MooseClient
 from typing import Dict, Any
@@ -485,51 +528,6 @@ def build_dynamic_query(filters: Dict[str, str], sort_by: str, limit: int):
     params["limit"] = limit
 
     return client.query.execute_raw(query, params)
-
-# Usage example
-filters = {"status": "active", "city": "New York"}
-result = build_dynamic_query(filters, "created_at", 10)
-```
-</Tabs.Tab>
-<Tabs.Tab>
-Use f-strings with `execute` (only for trusted, validated input):
-
-```py filename="DynamicQueriesFString.py"
-from moose_lib import MooseClient
-from typing import Dict, Any
-
-client = MooseClient()
-
-def build_dynamic_query(filters: Dict[str, Any], sort_by: str, limit: int):
-    conditions: list[str] = []
-
-    # Known valid columns and values - validate against these
-    valid_columns = {"status", "age", "city", "department"}
-    valid_statuses = {"active", "inactive", "pending"}
-    valid_sort_columns = {"id", "name", "created_at", "age"}
-
-    # Validate sort_by column
-    if sort_by not in valid_sort_columns:
-        raise ValueError(f"Invalid sort column: {sort_by}")
-
-    for key, value in filters.items():
-        if value is not None and key in valid_columns:
-            # Additional validation for specific columns
-            if key == "status" and value not in valid_statuses:
-                raise ValueError(f"Invalid status: {value}")
-            
-            # WARNING: Only use with validated input to prevent SQL injection
-            conditions.append(f"{key} = '{value}'")
-
-    query = "SELECT * FROM {table: Identifier}"
-
-    if conditions:
-        query += " WHERE " + " AND ".join(conditions)
-
-    # Include column name directly (already validated!) and bind limit
-    query += f" ORDER BY {sort_by} LIMIT {{limit:UInt32}}"
-
-    return client.query.execute(query, {"table": UserTable, "limit": limit})
 
 # Usage example
 filters = {"status": "active", "city": "New York"}
@@ -595,20 +593,49 @@ const buildConditionalQuery = (filters: FilterParams) => {
 
 Moose provides two distinct approaches for executing queries in Python. Choose the right one for your use case:
 
-- Option 1: Use `execute_raw` with parameter binding
-- Option 2: Use f-strings with `execute`
+- Option 1: Use formatted strings with `execute 
+- Option 2: Use `execute_raw` with parameter binding (lowest level of abstraction)
 
-<Tabs items={["execute_raw", "execute"]}>
+<Tabs items={["execute", "execute_raw"]}>
 <Tabs.Tab>
-**Use when:** You have dynamic identifiers (table names, column names) that aren't known until query time, or when you need server-side parameter binding.
+```py filename="execute.py"
+from moose_lib import MooseClient
+from pydantic import BaseModel, Field, validator
+from typing import Optional
 
-**What it does:** Exposes the underlying ClickHouse driver with server-side parameter binding for values, while allowing dynamic identifiers in the query string.
+client = MooseClient()
 
-**Benefits:** 
-- Server-side parameter binding for values (prevents SQL injection)
-- Dynamic table/column names in query structure
-- Automatic type conversion for bound parameters
+# Example: Static query with validated parameters
+def get_active_users(status: str, limit: int):
+    # Static table/column names, validated parameters
+    query = """
+        SELECT id, name, email
+        FROM {table}
+        WHERE status = {status}
+        LIMIT {limit}
+    """
+    return client.query.execute(query, {"table": UserTable, "status": status, "limit": limit})
 
+# Usage with validated input
+active_users = get_active_users("active", 10)
+
+class UserQueryParams(BaseModel):
+    status: str = Field(..., pattern=r"^(active|inactive|pending)$")
+    limit: int = Field(default=10, ge=1, le=1000)
+
+def build_validated_query(params: UserQueryParams):
+    # All parameters are validated by Pydantic
+    query = """
+        SELECT id, name, email
+        FROM {table}
+        WHERE status = {status}
+        LIMIT {limit}
+    """
+    
+    return client.query.execute(query, {"table": UserTable, "status": params.status, "limit": params.limit})
+```
+</Tabs.Tab>
+<Tabs.Tab>
 ```py filename="ParameterBinding.py"
 from moose_lib import MooseClient
 
@@ -619,10 +646,10 @@ def query_user_data(table_name: str, status_filter: str, limit: int):
     # Dynamic identifiers in query structure, bound parameters for values
     query = """
       SELECT id, name, email
-      FROM {table_name:Identifier}  # Dynamic table name
-      WHERE status = {{status:String}}  # Server-side parameter binding
-        AND created_at > {{startDate:DateTime}}
-      LIMIT {{limit:UInt32}}
+      FROM {table_name:Identifier} 
+      WHERE status = {status:String} 
+        AND created_at > {startDate:DateTime}
+      LIMIT {limit:UInt32}
     """
     
     return client.query.execute_raw(query, {
@@ -663,59 +690,7 @@ def build_conditional_query(client: MooseClient, params: FilterParams):
     return client.query.execute_raw(query, parameters)
 ```
 </Tabs.Tab>
-<Tabs.Tab>
-**Use when:**
-Have Moose to provide the types for the parameters in the generated SQL.
-Use Moose objects for dynamic identifies.
-
-```py filename="execute.py"
-from moose_lib import MooseClient
-from pydantic import BaseModel, Field, validator
-from typing import Optional
-
-client = MooseClient()
-
-# Example: Static query with validated parameters
-def get_active_users(status: str, limit: int):
-    # Static table/column names, validated parameters
-    query = """
-        SELECT id, name, email
-        FROM {table}
-        WHERE status = {status}
-        LIMIT {limit}
-    """
-    return client.query.execute(query, {"table": UserTable, "status": status, "limit": limit})
-
-# Usage with validated input
-active_users = get_active_users("active", 10)
-
-class UserQueryParams(BaseModel):
-    status: str = Field(..., pattern=r"^(active|inactive|pending)$")
-    limit: int = Field(default=10, ge=1, le=1000)
-
-def build_validated_query(params: UserQueryParams):
-    # All parameters are validated by Pydantic
-    query = """
-        SELECT id, name, email
-        FROM {table}
-        WHERE status = {status}
-        LIMIT {limit}
-    """
-    
-    return client.query.execute(query, {"table": UserTable, "status": params.status, "limit": params.limit})
-```
-</Tabs.Tab>
 </Tabs>
-
-<Callout type="warning">
-**Security Guidelines:**
-- **execute_raw**: Use when you have dynamic identifiers (table/column names) or need server-side parameter binding
-- **execute with f-strings**: Only for static queries with known table/column names and validated parameters
-- Always validate input with Pydantic when using f-strings
-- Never use f-strings with unvalidated user input or dynamic identifiers
-- When in doubt, use execute_raw for maximum security
-</Callout>
-
 </Python>
 
 
