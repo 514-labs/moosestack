@@ -6,6 +6,7 @@ and utilities for defining data models and SQL queries.
 """
 from clickhouse_connect.driver.client import Client as ClickhouseClient
 from clickhouse_connect import get_client
+from moose_lib.dmv2 import OlapTable
 from pydantic import BaseModel
 from dataclasses import dataclass, asdict
 from enum import Enum
@@ -18,9 +19,11 @@ import asyncio
 from string import Formatter
 from temporalio.client import Client as TemporalClient, TLSConfig
 from temporalio.common import RetryPolicy, WorkflowIDConflictPolicy, WorkflowIDReusePolicy
-from datetime import timedelta
+from datetime import timedelta, datetime
 from time import perf_counter
 from humanfriendly import format_timespan
+
+from .data_models import Column
 from .config.runtime import RuntimeClickHouseConfig
 
 from moose_lib.commons import EnhancedJSONEncoder
@@ -183,7 +186,7 @@ class QueryClient:
 
     def execute(self, input, variables, row_type: Type[BaseModel] = None):
         params = {}
-        values = {}
+        values: dict[str, Any] = {}
         preview_params = {}
 
         for i, (_, variable_name, _, _) in enumerate(Formatter().parse(input)):
@@ -193,12 +196,29 @@ class QueryClient:
                     # handling passing the value of the query string dict directly to variables
                     value = value[0]
 
-                t = 'String' if isinstance(value, str) else \
-                    'Int64' if isinstance(value, int) else \
-                        'Float64' if isinstance(value, float) else "String"  # unknown type
-
-                params[variable_name] = f'{{p{i}: {t}}}'
-                values[f'p{i}'] = value
+                if isinstance(value, Column) or isinstance(value, OlapTable):
+                    params[variable_name] = f'{{p{i}: Identifier}}'
+                    values[f'p{i}'] = value.name
+                else:
+                    if isinstance(value, bool):
+                        params[variable_name] = f'{{p{i}: Bool}}'
+                        values[f'p{i}'] = value
+                    elif isinstance(value, datetime):
+                        params[variable_name] = f'{{p{i}: DateTime}}'
+                        values[f'p{i}'] = value
+                    elif isinstance(value, int):
+                        params[variable_name] = f'{{p{i}: Int64}}'
+                        values[f'p{i}'] = value
+                    elif isinstance(value, float):
+                        params[variable_name] = f'{{p{i}: Float64}}'
+                        values[f'p{i}'] = value
+                    elif isinstance(value, str):
+                        params[variable_name] = f'{{p{i}: String}}'
+                        values[f'p{i}'] = value
+                    else:
+                        print(f"unhandled type in QueryClient {type(value)}", file=sys.stderr)
+                        params[variable_name] = f'{{p{i}: String}}'
+                        values[f'p{i}'] = str(value)
                 preview_params[variable_name] = self._format_value_for_preview(value)
 
         clickhouse_query = input.format_map(params)
@@ -257,6 +277,13 @@ class QueryClient:
             # Escape backslashes and single quotes for ClickHouse single-quoted strings
             escaped = value.replace('\\', '\\\\').replace("'", "\\'")
             return f"'{escaped}'"
+
+        # DateTime
+        if isinstance(value, datetime):
+            return f"'{value.strftime('%Y-%m-%d %H:%M:%S')}'"
+
+        if isinstance(value, Column) or isinstance(value, OlapTable):
+            return value.name
 
         # Lists / tuples (format as [item1, item2, ...])
         if isinstance(value, (list, tuple)):

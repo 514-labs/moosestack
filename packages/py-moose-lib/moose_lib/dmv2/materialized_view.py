@@ -7,7 +7,7 @@ including their SQL statements, target tables, and dependencies.
 from typing import Any, Optional, Union, Generic, TypeVar
 from pydantic import BaseModel, ConfigDict, model_validator
 
-from moose_lib import ClickHouseEngines
+from ..blocks import ClickHouseEngines
 from ..utilities.sql import quote_identifier
 from .types import BaseTypedResource, T
 from .olap_table import OlapTable, OlapConfig
