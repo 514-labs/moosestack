@@ -624,15 +624,33 @@ class SearchResult(BaseModel):
 # Create validated API endpoint
 async def search_handler(params: SearchParams, context) -> List[SearchResult]:
     # Params are already validated when this runs
+    # Build a parameterized query safely
+    clauses = [
+      "timestamp >= {startDate:DateTime}",
+      "timestamp <= {endDate:DateTime}"
+    ]
+    params_dict = {
+      "startDate": params.start_date,
+      "endDate": params.end_date,
+      "limit": params.limit or 10,
+      "offset": ((params.page or 1) - 1) * (params.limit or 10)
+    }
+    if params.min_value is not None:
+      clauses.append("value >= {minValue:Float64}")
+      params_dict["minValue"] = params.min_value
+    if params.max_value is not None:
+      clauses.append("value <= {maxValue:Float64}")
+      params_dict["maxValue"] = params.max_value
+    if params.category is not None:
+      clauses.append("category = {category:String}")
+      params_dict["category"] = params.category
+
+    where_clause = " AND ".join(clauses)
     query = f"""
       SELECT * FROM data_table
-      WHERE timestamp >= '{params.start_date}'
-      AND timestamp <= '{params.end_date}'
-      {"AND value >= " + str(params.min_value) if params.min_value else ""}
-      {"AND value <= " + str(params.max_value) if params.max_value else ""}
-      {"AND category = '" + params.category + "'" if params.category else ""}
-      LIMIT {params.limit or 10}
-      OFFSET {((params.page or 1) - 1) * (params.limit or 10)}
+      WHERE {where_clause}
+      LIMIT {{limit:UInt32}}
+      OFFSET {{offset:UInt32}}
     """
     
     results = await context.client.query(query)

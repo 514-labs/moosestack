@@ -30,7 +30,7 @@ const client = new MooseClient();
 
 // Query existing table
 const query = sql`
-  SELECT id, name, email 
+  SELECT id, name, email
   FROM ${UserTable}
   WHERE status = 'active'
   LIMIT 10
@@ -53,7 +53,7 @@ client = MooseClient()
 
 # Query existing table using execute_raw with explicit ClickHouse types
 query = """
-  SELECT id, name, email 
+  SELECT id, name, email
   FROM users
   WHERE status = {status:String}
   LIMIT {limit:UInt32}
@@ -76,12 +76,13 @@ client = MooseClient()
 # Simple f-string query (only for trusted, static data)
 status = "active"
 limit = 10
-query = f"""
-  SELECT {UserTable.columns.id}, {UserTable.columns.name}, {UserTable.columns.email} 
-  FROM {UserTable.name}
-  WHERE {UserTable.columns.status} = '{status}'
-  LIMIT {limit}
+query = """
+  SELECT id, name, email
+  FROM {table: Identifier}
+  WHERE status = {status:String}
+  LIMIT {limit:UInt32}
 """
+rows = client.query.execute(query, {"table": UserTable, "status": status, "limit": limit})
 
 rows = client.query.execute(query)
 ```
@@ -140,12 +141,13 @@ client = MooseClient()
 
 # Simple f-string query
 min_orders = 10
-query = f"""
+query = """
   SELECT user_id, total_orders, average_order_value
   FROM user_stats_view
-  WHERE total_orders > {min_orders}
+  WHERE total_orders > {minOrders:UInt32}
   ORDER BY average_order_value DESC
 """
+rows = client.query.execute_raw(query, {"minOrders": min_orders})
 
 rows = client.query.execute(query)
 ```
@@ -231,17 +233,17 @@ from moose_lib import MooseClient
 
 client = MooseClient()
 
-# Python API does not expose typed column references; use explicit identifiers
+# Use parameter binding with explicit identifiers
 query = """
   SELECT 
     id,
     name,
     email
-  FROM users
+  FROM {table: Identifier}
   WHERE status = {status:String}
 """
 
-# Multiple table references
+# Multiple table references (static names)
 join_query = """
   SELECT 
     u.id,
@@ -264,23 +266,24 @@ client = MooseClient()
 
 # Simple f-string queries
 status = "active"
-query = f"""
+query = """
   SELECT 
-    {UserTable.columns.id},
-    {UserTable.columns.name},
-    {UserTable.columns.email}
-  FROM {UserTable.name}
-  WHERE {UserTable.columns.status} = '{status}'
+    id,
+    name,
+    email
+  FROM {table: Identifier}
+  WHERE status = {status:String}
 """
+rows = client.query.execute(query, {"table": UserTable, "status": status})
 
-# Multiple table references
-join_query = f"""
+# Multiple table references (static example)
+join_query = """
   SELECT 
-    u.{UserTable.columns.id},
-    u.{UserTable.columns.name},
-    o.{OrderTable.columns.order_value}
-  FROM {UserTable.name} u
-  JOIN {OrderTable.name} o ON u.{UserTable.columns.id} = o.{OrderTable.columns.user_id}
+    u.id,
+    u.name,
+    o.order_value
+  FROM users u
+  JOIN orders o ON u.id = o.user_id
 """
 
 rows = client.query.execute(query)
@@ -383,30 +386,30 @@ max_age = 65
 user_ids = [1, 2, 3, 4, 5]
 
 # Multiple WHERE conditions
-filter_query = f"""
-  SELECT {UserTable.columns.id}, {UserTable.columns.name}
-  FROM {UserTable.name}
-  WHERE {UserTable.columns.status} = '{status}'
-    AND {UserTable.columns.created_at} > '{start_date}'
-    AND {UserTable.columns.email} ILIKE '{search_pattern}'
+filter_query = """
+  SELECT id, name
+  FROM {table: Identifier}
+  WHERE status = {status:String}
+    AND created_at > {startDate:DateTime}
+    AND email ILIKE {searchPattern:String}
 """
 
 # Using BETWEEN
-range_query = f"""
-  SELECT * FROM {UserTable.name}
-  WHERE {UserTable.columns.age} BETWEEN {min_age} AND {max_age}
+range_query = """
+  SELECT * FROM {table: Identifier}
+  WHERE age BETWEEN {minAge:UInt32} AND {maxAge:UInt32}
 """
 
 # Using IN
-in_query = f"""
-  SELECT * FROM {UserTable.name}
-  WHERE {UserTable.columns.id} IN ({','.join(map(str, user_ids))})
+in_query = """
+  SELECT * FROM {table: Identifier}
+  WHERE id IN {userIds:Array(UInt32)}
 """
 
 # Execute examples
-filter_rows = client.query.execute(filter_query)
-range_rows = client.query.execute(range_query)
-in_rows = client.query.execute(in_query)
+filter_rows = client.query.execute_raw(filter_query, {"table": UserTable, "status": status, "startDate": start_date, "searchPattern": search_pattern})
+range_rows = client.query.execute_raw(range_query, {"table": UserTable, "minAge": min_age, "maxAge": max_age})
+in_rows = client.query.execute_raw(in_query, {"table": UserTable, "userIds": user_ids})
 ```
 </Tabs.Tab>
 </Tabs>
@@ -518,15 +521,15 @@ def build_dynamic_query(filters: Dict[str, Any], sort_by: str, limit: int):
             # WARNING: Only use with validated input to prevent SQL injection
             conditions.append(f"{key} = '{value}'")
 
-    query = f"SELECT * FROM {UserTable.name}"
+    query = "SELECT * FROM {table: Identifier}"
 
     if conditions:
         query += " WHERE " + " AND ".join(conditions)
 
-    # Include column name directly (already validated!)
-    query += f" ORDER BY {sort_by} LIMIT {limit}"
+    # Include column name directly (already validated!) and bind limit
+    query += f" ORDER BY {sort_by} LIMIT {{limit:UInt32}}"
 
-    return client.query.execute(query)
+    return client.query.execute(query, {"table": UserTable, "limit": limit})
 
 # Usage example
 filters = {"status": "active", "city": "New York"}
@@ -682,12 +685,13 @@ client = MooseClient()
 # Example: Static query with validated parameters
 def get_active_users(status: str, limit: int):
     # Static table/column names, validated parameters
-    query = f"""
-        SELECT {UserTable.columns.id}, {UserTable.columns.name}, {UserTable.columns.email}
-        FROM {UserTable.name}  # Static table name
-        WHERE {UserTable.columns.status} = '{status}'  # Validated parameter
-        LIMIT {limit}
+    query = """
+        SELECT id, name, email
+        FROM {table: Identifier}
+        WHERE status = {status:String}
+        LIMIT {limit:UInt32}
     """
+    return client.query.execute_raw(query, {"table": UserTable, "status": status, "limit": limit})
     
     return client.query.execute(query)
 
@@ -701,14 +705,14 @@ class UserQueryParams(BaseModel):
 
 def build_validated_query(params: UserQueryParams):
     # All parameters are validated by Pydantic
-    query = f"""
-        SELECT {UserTable.columns.id}, {UserTable.columns.name}, {UserTable.columns.email}
-        FROM {UserTable.name}
-        WHERE {UserTable.columns.status} = '{params.status}'
-        LIMIT {params.limit}
+    query = """
+        SELECT id, name, email
+        FROM {table: Identifier}
+        WHERE status = {status:String}
+        LIMIT {limit:UInt32}
     """
     
-    return client.query.execute(query)
+    return client.query.execute_raw(query, {"table": UserTable, "status": params.status, "limit": params.limit})
 ```
 </Tabs.Tab>
 </Tabs>
