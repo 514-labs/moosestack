@@ -7,6 +7,7 @@ pub mod constants;
 pub mod decode_object;
 pub mod docker;
 pub mod git;
+pub mod keyring;
 pub mod machine_id;
 pub mod nodejs_version;
 pub mod package_managers;

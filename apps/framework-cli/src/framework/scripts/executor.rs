@@ -12,7 +12,7 @@ use crate::infrastructure::orchestration::temporal::TemporalConfig;
 use crate::infrastructure::orchestration::temporal_client::TemporalClientManager;
 use crate::project::Project;
 use crate::utilities::constants::{
-    MOOSE_CLI_IDENTITY, PYTHON_TASK_QUEUE, TYPESCRIPT_TASK_QUEUE, WORKFLOW_TYPE,
+    MOOSE_CLI_NAME, PYTHON_TASK_QUEUE, TYPESCRIPT_TASK_QUEUE, WORKFLOW_TYPE,
 };
 use temporal_sdk_core::protos::temporal::api::common::v1::{
     Payload, Payloads, RetryPolicy, WorkflowType,
@@ -252,7 +252,7 @@ fn create_workflow_execution_request(
                 })
             }
         },
-        identity: MOOSE_CLI_IDENTITY.to_string(),
+        identity: MOOSE_CLI_NAME.to_string(),
         request_id: uuid::Uuid::new_v4().to_string(),
         // Allow duplicate doesn't actually allow concurrent runs of the same workflow ID
         // It allows reuse of that workflow ID after the previous run has completed

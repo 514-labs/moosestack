@@ -110,6 +110,8 @@ tonic = { version = "0.12", features = ["transport", "prost", "codegen"] }
 tempfile = "3.15.0"
 prost-wkt-types = "0.6.0"
 
+keyring = { version = "3.6", features = ["apple-native", "linux-native"] }
+
 [dev-dependencies]
 clickhouse = { version = "0.11.5", features = ["uuid", "test-util"] }
 assert_cmd = "2.0.12"
