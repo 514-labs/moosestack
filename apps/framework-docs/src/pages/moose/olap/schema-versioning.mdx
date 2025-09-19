@@ -146,7 +146,7 @@ migrate_events_to_v01 = MaterializedView[EventV1](
     MaterializedViewOptions(
         materialized_view_name="mv_events_to_0_1",
         select_statement=(
-            "SELECT * FROM {events_table: Identifier}"
+            f"SELECT * FROM {events.name}"
         ),
         select_tables=[events],
     ),

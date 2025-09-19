@@ -86,7 +86,7 @@ export const SourcePipeline = new IngestPipeline<SourceSchema>("Source" {
 </TypeScript>
 
 <Python>
-<Tabs items={["execute_raw (Recommended)", "f-strings (Simple cases)"]}>
+<Tabs items={["execute_raw", "execute (Recommended)"]}>
 <Tabs.Tab>
 Use `execute_raw` with parameter binding for safe, typed queries:
 
@@ -141,8 +141,8 @@ from app.path.to.SourcePipeline import SourcePipeline
 
 # Define the query parameters
 class QueryParams(BaseModel):
-    filterField: str
-    maxResults: int
+    filter_field: str
+    max_results: int
 
 # Define the response body
 class ResponseBody(BaseModel):
@@ -160,12 +160,12 @@ def run(client: MooseClient, params: QueryParams) -> list[ResponseBody]:
       id,
       name,
       value
-    FROM {table: Identifier}
-    WHERE category = {category:String}
-    LIMIT {limit:UInt32}
+    FROM {table}
+    WHERE category = {category}
+    LIMIT {limit}
     """
 
-    return client.query.execute_raw(query, {"table": SourceTable, "category": params.filterField, "limit": params.maxResults})
+    return client.query.execute(query, {"table": SourceTable, "category": params.filter_field, "limit": params.max_results})
 
 # Create the API
 example_api = Api[QueryParams, ResponseBody](name="example_endpoint", query_function=run)
@@ -778,8 +778,8 @@ class QueryResult(BaseModel):
     email: Optional[str]
 
 def run(client: MooseClient, params: QueryParams):
-    # Use Identifier binding for column and table
-    query = "SELECT {column: Identifier} FROM {table: Identifier}"
+    # Put column and table in the dict for variables
+    query = "SELECT {column} FROM {table}"
     return client.query.execute(query, {"column": UserTable.cols[params.colName], "table": UserTable})
 
 ## Create the API
@@ -926,8 +926,8 @@ async (
 
 def run(client: MooseClient, params: QueryParams, jwt: dict):
     # Use parameter binding with JWT data
-    query = """SELECT * FROM userReports WHERE user_id = {user_id:UInt64} LIMIT 5"""
-    return client.query.execute_raw(query, {"user_id": jwt["userId"]})
+    query = """SELECT * FROM userReports WHERE user_id = {user_id} LIMIT 5"""
+    return client.query.execute(query, {"user_id": jwt["userId"]})
 ```
 </Python>
 
@@ -1022,7 +1022,7 @@ from pydantic import BaseModel
 
 class QueryParams(BaseModel):
     category: str
-    maxResults: int = 10
+    max_results: int = 10
 
 class ResponseItem(BaseModel):
     itemId: int
@@ -1036,11 +1036,11 @@ def run(client: MooseClient, params: QueryParams):
     query = """
     SELECT id, name, value, timestamp
     FROM data_table
-    WHERE category = {category:String}
-    LIMIT {limit:UInt32}
+    WHERE category = {category}
+    LIMIT {limit}
     """
     
-    raw_results = client.query.execute_raw(query, {"category": params.category, "limit": params.maxResults})
+    raw_results = client.query.execute(query, {"category": params.category, "limit": params.max_results})
     
     # 2. Post-process the results
     processed_results = []

@@ -598,7 +598,7 @@ Moose provides two distinct approaches for executing queries in Python. Choose t
 - Option 1: Use `execute_raw` with parameter binding
 - Option 2: Use f-strings with `execute`
 
-<Tabs items={["execute_raw (Dynamic identifiers)", "f-strings (Simple cases)"]}>
+<Tabs items={["execute_raw", "execute"]}>
 <Tabs.Tab>
 **Use when:** You have dynamic identifiers (table names, column names) that aren't known until query time, or when you need server-side parameter binding.
 
@@ -664,18 +664,11 @@ def build_conditional_query(client: MooseClient, params: FilterParams):
 ```
 </Tabs.Tab>
 <Tabs.Tab>
-**Use when:** Simple, static queries where table/column names are known at code time and you have trusted, validated data.
+**Use when:**
+Have Moose to provide the types for the parameters in the generated SQL.
+Use Moose objects for dynamic identifies.
 
-**What it does:** Uses Python f-strings for query construction with client-side parameter interpolation.
-
-**Benefits:**
-- Simpler syntax for basic cases
-- No parameter dictionary needed
-- Direct string interpolation
-
-**WARNING:** Only use with trusted, validated input to prevent SQL injection. Not suitable for dynamic identifiers.
-
-```py filename="FStrings.py"
+```py filename="execute.py"
 from moose_lib import MooseClient
 from pydantic import BaseModel, Field, validator
 from typing import Optional
@@ -687,18 +680,15 @@ def get_active_users(status: str, limit: int):
     # Static table/column names, validated parameters
     query = """
         SELECT id, name, email
-        FROM {table: Identifier}
-        WHERE status = {status:String}
-        LIMIT {limit:UInt32}
+        FROM {table}
+        WHERE status = {status}
+        LIMIT {limit}
     """
-    return client.query.execute_raw(query, {"table": UserTable, "status": status, "limit": limit})
-    
-    return client.query.execute(query)
+    return client.query.execute(query, {"table": UserTable, "status": status, "limit": limit})
 
 # Usage with validated input
 active_users = get_active_users("active", 10)
 
-# For more complex validation, use Pydantic
 class UserQueryParams(BaseModel):
     status: str = Field(..., pattern=r"^(active|inactive|pending)$")
     limit: int = Field(default=10, ge=1, le=1000)
@@ -707,12 +697,12 @@ def build_validated_query(params: UserQueryParams):
     # All parameters are validated by Pydantic
     query = """
         SELECT id, name, email
-        FROM {table: Identifier}
-        WHERE status = {status:String}
-        LIMIT {limit:UInt32}
+        FROM {table}
+        WHERE status = {status}
+        LIMIT {limit}
     """
     
-    return client.query.execute_raw(query, {"table": UserTable, "status": params.status, "limit": params.limit})
+    return client.query.execute(query, {"table": UserTable, "status": params.status, "limit": params.limit})
 ```
 </Tabs.Tab>
 </Tabs>

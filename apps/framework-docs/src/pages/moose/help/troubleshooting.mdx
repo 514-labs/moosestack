@@ -171,12 +171,14 @@ native_port = 9000
    <Python>
    ```python
    # In query API
-   query = """
+   results = client.query.execute(
+     # not an f-string, the values are provided in the dict
+     """
      SELECT * FROM large_table
-     WHERE category = {category:String}
-     LIMIT {limit:UInt32}
-   """
-   results = client.query.execute_raw(query, {"category": "example", "limit": 100})
+     WHERE category = {category}
+     LIMIT {limit}
+     """, {"category": "example", "limit": 100}
+   )
    ```
    </Python>
 
