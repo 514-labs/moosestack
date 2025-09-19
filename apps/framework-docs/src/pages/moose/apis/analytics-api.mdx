@@ -86,7 +86,7 @@ export const SourcePipeline = new IngestPipeline<SourceSchema>("Source" {
 </TypeScript>
 
 <Python>
-<Tabs items={["execute_raw (Recommended)", "f-strings (Simple cases)"]}>
+<Tabs items={["execute_raw", "execute (Recommended)"]}>
 <Tabs.Tab>
 Use `execute_raw` with parameter binding for safe, typed queries:
 
@@ -130,9 +130,9 @@ example_api = Api[QueryParams, ResponseBody](name="example_endpoint", query_func
 ```
 </Tabs.Tab>
 <Tabs.Tab>
-Use f-strings with `execute` for simple, static queries:
+Use parameter binding even when selecting simple columns to avoid injection:
 
-```python filename="ExampleApiFString.py" copy
+```python filename="ExampleApi.py" copy
 from moose_lib import Api, MooseClient
 from pydantic import BaseModel
 
@@ -141,8 +141,8 @@ from app.path.to.SourcePipeline import SourcePipeline
 
 # Define the query parameters
 class QueryParams(BaseModel):
-    filterField: str
-    maxResults: int
+    filter_field: str
+    max_results: int
 
 # Define the response body
 class ResponseBody(BaseModel):
@@ -153,22 +153,19 @@ class ResponseBody(BaseModel):
 
 SourceTable = SourcePipeline.get_table()
 
-# Define the route handler function (using f-strings for simple queries)
+# Define the route handler function (parameterized)
 def run(client: MooseClient, params: QueryParams) -> list[ResponseBody]:
-    # Simple f-string query (only for trusted, static data)
-    category = params.filterField
-    limit = params.maxResults
-    query = f"""
+    query = """
     SELECT 
       id,
       name,
       value
-    FROM Source
-    WHERE category = '{category}'
+    FROM {table}
+    WHERE category = {category}
     LIMIT {limit}
     """
 
-    return client.query.execute(query)
+    return client.query.execute(query, {"table": SourceTable, "category": params.filter_field, "limit": params.max_results})
 
 # Create the API
 example_api = Api[QueryParams, ResponseBody](name="example_endpoint", query_function=run)
@@ -781,9 +778,9 @@ class QueryResult(BaseModel):
     email: Optional[str]
 
 def run(client: MooseClient, params: QueryParams):
-    # Using f-string with validated column name
-    query = f"""SELECT {params.colName} FROM {UserTable.name}"""
-    return client.query.execute(query)
+    # Put column and table in the dict for variables
+    query = "SELECT {column} FROM {table}"
+    return client.query.execute(query, {"column": UserTable.cols[params.colName], "table": UserTable})
 
 ## Create the API
 bar = Api[QueryParams, QueryResult](name="bar", query_function=run)
@@ -928,9 +925,9 @@ async (
 ```python filename="Authentication.py" copy
 
 def run(client: MooseClient, params: QueryParams, jwt: dict):
-    # Using f-string with JWT data
-    query = f"""SELECT * FROM userReports WHERE user_id = {jwt["userId"]} LIMIT 5"""
-    return client.query.execute(query)
+    # Use parameter binding with JWT data
+    query = """SELECT * FROM userReports WHERE user_id = {user_id} LIMIT 5"""
+    return client.query.execute(query, {"user_id": jwt["userId"]})
 ```
 </Python>
 
@@ -1025,7 +1022,7 @@ from pydantic import BaseModel
 
 class QueryParams(BaseModel):
     category: str
-    maxResults: int = 10
+    max_results: int = 10
 
 class ResponseItem(BaseModel):
     itemId: int
@@ -1035,15 +1032,15 @@ class ResponseItem(BaseModel):
     date: str
 
 def run(client: MooseClient, params: QueryParams):
-    # 1. Fetch raw data
-    query = f"""
+    # 1. Fetch raw data using parameter binding
+    query = """
     SELECT id, name, value, timestamp
     FROM data_table
-    WHERE category = '{params.category}'
-    LIMIT {params.maxResults}
+    WHERE category = {category}
+    LIMIT {limit}
     """
     
-    raw_results = client.query.execute(query)
+    raw_results = client.query.execute(query, {"category": params.category, "limit": params.max_results})
     
     # 2. Post-process the results
     processed_results = []

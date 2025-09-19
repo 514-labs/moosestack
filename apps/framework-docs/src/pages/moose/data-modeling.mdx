@@ -622,20 +622,38 @@ class SearchResult(BaseModel):
     timestamp: datetime
 
 # Create validated API endpoint
-async def search_handler(params: SearchParams, context) -> List[SearchResult]:
+async def search_handler(params: SearchParams, client: MooseClient) -> List[SearchResult]:
     # Params are already validated when this runs
+    # Build a parameterized query safely
+    clauses = [
+      "timestamp >= {startDate}",
+      "timestamp <= {endDate}"
+    ]
+    params_dict = {
+      "startDate": params.start_date,
+      "endDate": params.end_date,
+      "limit": params.limit or 10,
+      "offset": ((params.page or 1) - 1) * (params.limit or 10)
+    }
+    if params.min_value is not None:
+      clauses.append("value >= {minValue}")
+      params_dict["minValue"] = params.min_value
+    if params.max_value is not None:
+      clauses.append("value <= {maxValue}")
+      params_dict["maxValue"] = params.max_value
+    if params.category is not None:
+      clauses.append("category = {category}")
+      params_dict["category"] = params.category
+
+    where_clause = " AND ".join(clauses)
     query = f"""
       SELECT * FROM data_table
-      WHERE timestamp >= '{params.start_date}'
-      AND timestamp <= '{params.end_date}'
-      {"AND value >= " + str(params.min_value) if params.min_value else ""}
-      {"AND value <= " + str(params.max_value) if params.max_value else ""}
-      {"AND category = '" + params.category + "'" if params.category else ""}
-      LIMIT {params.limit or 10}
-      OFFSET {((params.page or 1) - 1) * (params.limit or 10)}
+      WHERE {where_clause}
+      LIMIT {limit}
+      OFFSET {offset}
     """
     
-    results = await context.client.query(query)
+    results = await client.query.execute(query, params=params_dict)
     return [SearchResult(**row) for row in results]
 
 search_api = Api[SearchParams, List[SearchResult]](
@@ -736,7 +754,15 @@ class ProcessedData(BaseModel):
 
 # Create streams
 raw_stream = Stream[RawData]("raw-stream")
-processed_stream = Stream[ProcessedData]("processed-stream")
+
+
+processed_table = OlapTable[ProcessedData]("processed_data", OlapConfig(
+    order_by_fields = ["id", "timestamp"]
+))
+
+processed_stream = Stream[ProcessedData]("processed-stream", StreamConfig(
+    destination=processed_table
+))
 
 # Transform raw data
 async def process_data(raw: RawData):
@@ -751,15 +777,8 @@ async def process_data(raw: RawData):
         attributes=parsed.get("attributes", {})
     )
     
-    await processed_stream.publish(processed)
+raw_stream.add_transform(processed_stream, process_data)
 
-raw_stream.add_consumer(process_data)
-
-# Sink to ClickHouse
-table = OlapTable[ProcessedData]("processed_data", {
-    "stream": processed_stream,
-    "order_by_fields": ["id", "timestamp"]
-})
 ```
 </Python>
 
