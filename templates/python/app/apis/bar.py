@@ -118,10 +118,10 @@ def run_v1(client: MooseClient, params: QueryParams):
         item["metadata"] = {
             "version": "1.0",
             "query_params": {
-                "order_by": order_by,
-                "limit": limit,
-                "start_day": start_day,
-                "end_day": end_day,
+                "order_by": params.order_by,
+                "limit": params.limit,
+                "start_day": params.start_day,
+                "end_day": params.end_day,
             }
         }
 
