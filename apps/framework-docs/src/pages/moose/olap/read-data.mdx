@@ -125,10 +125,10 @@ min_orders = 10
 query = """
   SELECT user_id, total_orders, average_order_value
   FROM user_stats_view
-  WHERE total_orders > {minOrders}
+  WHERE total_orders > {min_orders}
   ORDER BY average_order_value DESC
 """
-rows = client.query.execute(query, {"minOrders": min_orders})
+rows = client.query.execute(query, {"min_orders": min_orders})
 
 ```
 </Tabs.Tab>
@@ -146,11 +146,11 @@ min_orders = 10
 query = """
   SELECT user_id, total_orders, average_order_value
   FROM user_stats_view
-  WHERE total_orders > {minOrders:UInt32}
+  WHERE total_orders > {min_orders:UInt32}
   ORDER BY average_order_value DESC
 """
 
-rows = client.query.execute_raw(query, {"minOrders": min_orders})
+rows = client.query.execute_raw(query, {"min_orders": min_orders})
 ```
 </Tabs.Tab>
 </Tabs>
@@ -239,27 +239,16 @@ query = """
     id,
     name,
     email
-  FROM {table: Identifier}
-  WHERE status = {status:String}
+  FROM {table}
+  WHERE status = {status}
 """
 rows = client.query.execute(query, {"table": UserTable, "status": status})
 
-# Multiple table references (static example)
-join_query = """
-  SELECT 
-    u.id,
-    u.name,
-    o.order_value
-  FROM users u
-  JOIN orders o ON u.id = o.user_id
-"""
-
-rows = client.query.execute(query)
 ```
 </Tabs.Tab>
 <Tabs.Tab>
 
-```py filename="TypedReferences.py"
+```python copy
 from moose_lib import MooseClient
 
 client = MooseClient()
@@ -274,17 +263,7 @@ query = """
   WHERE status = {status:String}
 """
 
-# Multiple table references (static names)
-join_query = """
-  SELECT 
-    u.id,
-    u.name,
-    o.order_value
-  FROM users u
-  JOIN orders o ON u.id = o.user_id
-"""
-
-rows = client.query.execute_raw(query, {"status": "active"})
+rows = client.query.execute_raw(query, {"table": UserTable, "status": "active"})
 ```
 </Tabs.Tab>
 </Tabs>
@@ -339,22 +318,22 @@ user_ids = [1, 2, 3, 4, 5]
 # Multiple WHERE conditions
 filter_query = """
   SELECT id, name
-  FROM {table: Identifier}
-  WHERE status = {status:String}
-    AND created_at > {startDate:DateTime}
-    AND email ILIKE {searchPattern:String}
+  FROM {table}
+  WHERE status = {status}
+    AND created_at > {start_date}
+    AND email ILIKE {search_pattern}
 """
 
 # Using BETWEEN
 range_query = """
-  SELECT * FROM {table: Identifier}
-  WHERE age BETWEEN {minAge:UInt32} AND {maxAge:UInt32}
+  SELECT * FROM {table}
+  WHERE age BETWEEN {min_age} AND {max_age}
 """
 
 # Using IN
 in_query = """
-  SELECT * FROM {table: Identifier}
-  WHERE id IN {userIds:Array(UInt32)}
+  SELECT * FROM {table}
+  WHERE id IN {user_ids}
 """
 
 # Execute examples
@@ -412,133 +391,6 @@ in_rows = client.query.execute_raw(in_query, {
 </Python>
 
 ## Dynamic Query Building
-
-<TypeScript>
-```ts filename="DynamicQueries.ts"
-import { sql, ApiHelpers as CH } from "@514labs/moose-lib";
-
-interface QueryParams {
-  sortBy: string;
-  fields: string[];
-  filters: Record<string, any>;
-}
-
-const buildDynamicQuery = ({ sortBy, fields, filters }: QueryParams) => {
-  // Build field list
-  const fieldList = fields.map(field => sql`${CH.column(field)}`);
-  
-  // Build WHERE conditions
-  const conditions = Object.entries(filters)
-    .filter(([_, value]) => value !== undefined)
-    .map(([key, value]) => sql`${CH.column(key)} = ${value}`);
-  
-  let query = sql`
-    SELECT ${fieldList.join(', ')}
-    FROM ${UserTable}
-  `;
-  
-  if (conditions.length > 0) {
-    query = sql`${query} WHERE ${conditions.join(' AND ')}`;
-  }
-  
-  query = sql`${query} ORDER BY ${CH.column(sortBy)}`;
-  
-  return query;
-};
-```
-</TypeScript>
-
-<Python>
-<Tabs items={["execute", "execute_raw"]}>
-<Tabs.Tab>
-```py filename="DynamicQueries.py"
-from moose_lib import MooseClient
-from typing import Dict, Any
-
-client = MooseClient()
-
-def build_dynamic_query(filters: Dict[str, Any], sort_by: str, limit: int):
-    conditions: list[str] = []
-
-    # Known valid columns and values - validate against these
-    valid_columns = {"status", "age", "city", "department"}
-    valid_statuses = {"active", "inactive", "pending"}
-    valid_sort_columns = {"id", "name", "created_at", "age"}
-
-    # Validate sort_by column
-    if sort_by not in valid_sort_columns:
-        raise ValueError(f"Invalid sort column: {sort_by}")
-
-    params = {}
-    for key, value in filters.items():
-        if value is not None and key in valid_columns:
-            # Additional validation for specific columns
-            if key == "status" and value not in valid_statuses:
-                raise ValueError(f"Invalid status: {value}")
-            
-            column = key
-            valueVariable = f"{key}Value"
-            
-            conditions.append("{" + key + "} = {" + valueVariable + "}")
-            params[key] = key
-            params[valueVariable] = value
-
-
-    query = "SELECT * FROM {table}"
-
-    if conditions:
-        query += " WHERE " + " AND ".join(conditions)
-
-    # Include column name directly (already validated!) and bind limit
-    query += " ORDER BY {sort_by} LIMIT {limit}"
-
-    return client.query.execute(query, {"table": UserTable, "limit": limit})
-
-# Usage example
-filters = {"status": "active", "city": "New York"}
-result = build_dynamic_query(filters, "created_at", 10)
-```
-</Tabs.Tab>
-<Tabs.Tab>
-```py filename="DynamicQueries.py"
-from moose_lib import MooseClient
-from typing import Dict, Any
-
-client = MooseClient()
-
-def build_dynamic_query(filters: Dict[str, str], sort_by: str, limit: int):
-    conditions: list[str] = []
-    params: Dict[str, Any] = {}
-
-    # Known valid columns - validate against this list
-    valid_columns = {"status", "age", "city", "department"}
-    
-    for key, value in filters.items():
-        if value is not None and key in valid_columns:
-            conditions.append(f"{key} = {{{key}:String}}")
-            params[key] = value
-
-    query = "SELECT * FROM users"
-
-    if conditions:
-        query += " WHERE " + " AND ".join(conditions)
-
-    # Use f-string for column name (validate first!)
-    query += f" ORDER BY {sort_by} LIMIT {{limit:UInt32}}"
-    params["limit"] = limit
-
-    return client.query.execute_raw(query, params)
-
-# Usage example
-filters = {"status": "active", "city": "New York"}
-result = build_dynamic_query(filters, "created_at", 10)
-```
-</Tabs.Tab>
-</Tabs>
-</Python>
-
-### Interpolation and Security
-
 <TypeScript>
 Use the `sql` template literal to build safe queries:
 
@@ -593,7 +445,7 @@ const buildConditionalQuery = (filters: FilterParams) => {
 
 Moose provides two distinct approaches for executing queries in Python. Choose the right one for your use case:
 
-- Option 1: Use formatted strings with `execute 
+- Option 1: Use formatted strings with `execute` 
 - Option 2: Use `execute_raw` with parameter binding (lowest level of abstraction)
 
 <Tabs items={["execute", "execute_raw"]}>
