@@ -86,7 +86,49 @@ export const SourcePipeline = new IngestPipeline<SourceSchema>("Source" {
 </TypeScript>
 
 <Python>
-<Tabs items={["execute_raw", "execute (Recommended)"]}>
+<Tabs items={["execute", "execute_raw"]}>
+<Tabs.Tab>
+`execute` is the recommended way to execute queries. It provides a thin wrapper around the ClickHouse Python client so that you can safely pass `OlapTable` and `Column` objects to your query without needing to worry about ClickHouse identifiers:
+
+  ```python filename="ExampleApi.py" copy
+  from moose_lib import Api, MooseClient
+  from pydantic import BaseModel
+
+  ## Import the source pipeline
+  from app.path.to.SourcePipeline import SourcePipeline
+
+  # Define the query parameters
+  class QueryParams(BaseModel):
+      filter_field: str
+      max_results: int
+
+  # Define the response body
+class ResponseBody(BaseModel):
+    id: int
+    name: str
+    value: float
+
+
+SourceTable = SourcePipeline.get_table()
+
+# Define the route handler function (parameterized)
+def run(client: MooseClient, params: QueryParams) -> list[ResponseBody]:
+    query = """
+    SELECT 
+      id,
+      name,
+      value
+    FROM {table}
+    WHERE category = {category}
+    LIMIT {limit}
+    """
+
+    return client.query.execute(query, {"table": SourceTable, "category": params.filter_field, "limit": params.max_results})
+
+# Create the API
+example_api = Api[QueryParams, ResponseBody](name="example_endpoint", query_function=run)
+```
+</Tabs.Tab>
 <Tabs.Tab>
 Use `execute_raw` with parameter binding for safe, typed queries:
 
@@ -129,48 +171,6 @@ def run(client: MooseClient, params: QueryParams) -> list[ResponseBody]:
 example_api = Api[QueryParams, ResponseBody](name="example_endpoint", query_function=run)
 ```
 </Tabs.Tab>
-<Tabs.Tab>
-Use parameter binding even when selecting simple columns to avoid injection:
-
-```python filename="ExampleApi.py" copy
-from moose_lib import Api, MooseClient
-from pydantic import BaseModel
-
-## Import the source pipeline
-from app.path.to.SourcePipeline import SourcePipeline
-
-# Define the query parameters
-class QueryParams(BaseModel):
-    filter_field: str
-    max_results: int
-
-# Define the response body
-class ResponseBody(BaseModel):
-    id: int
-    name: str
-    value: float
-
-
-SourceTable = SourcePipeline.get_table()
-
-# Define the route handler function (parameterized)
-def run(client: MooseClient, params: QueryParams) -> list[ResponseBody]:
-    query = """
-    SELECT 
-      id,
-      name,
-      value
-    FROM {table}
-    WHERE category = {category}
-    LIMIT {limit}
-    """
-
-    return client.query.execute(query, {"table": SourceTable, "category": params.filter_field, "limit": params.max_results})
-
-# Create the API
-example_api = Api[QueryParams, ResponseBody](name="example_endpoint", query_function=run)
-```
-</Tabs.Tab>
 </Tabs>
 <ToggleBlock openText="Show Source Pipeline" closeText="Hide Source Pipeline">
 ```python filename="SourcePipeline.py" copy
@@ -182,8 +182,8 @@ class SourceSchema(BaseModel):
   name: str
   value: float
 
-SourcePipeline = IngestPipeline<SourceSchema>("Source", IngestPipelineConfig(
-  ingest=False,
+SourcePipeline = IngestPipeline[SourceSchema]("Source", IngestPipelineConfig(
+  ingest_api=False,
   stream=True,
   table=True,
 ))
@@ -417,36 +417,41 @@ export const UserTable = new OlapTable<UserSchema>("users")
 </TypeScript>
 
 <Python>
-<Tabs items={["execute_raw (Recommended)", "f-strings (Simple cases)"]}>
+<Tabs items={["execute", "execute_raw"]}>
+<Tabs.Tab>
+```python filename="ExampleApi.py" copy
+from moose_lib import MooseClient
+from app.UserTable import UserTable
+
+
+def run(client: MooseClient, params: QueryParams):
+  # You can use a formatted string for simple static query
+  query = """
+    SELECT COUNT(*) FROM {table}
+  """
+
+  ## You can optionally pass the table object to the query
+  return client.query.execute(query, {"table": UserTable})
+
+## Create the API
+example_api = Api[QueryParams, ResponseBody](name="example_endpoint", query_function=run)
+```
+</Tabs.Tab>
+
 <Tabs.Tab>
 Use `execute_raw` with parameter binding:
 
 ```python filename="ExampleApi.py" copy
 from moose_lib import MooseClient
 
-def run(client: MooseClient, params: QueryParams):
+def run(params: QueryParams, client: MooseClient):
   # Using execute_raw for safe queries
   query = """
-    SELECT * FROM UserTable
+    SELECT COUNT(*) FROM {table: Identifier}
   """
-  return client.query.execute_raw(query, {})
 
-## Create the API
-example_api = Api[QueryParams, ResponseBody](name="example_endpoint", query_function=run)
-```
-</Tabs.Tab>
-<Tabs.Tab>
-Use f-strings with `execute`:
-
-```python filename="ExampleApiFString.py" copy
-from moose_lib import MooseClient
-
-def run(client: MooseClient, params: QueryParams):
-  # Using f-string for simple static query
-  query = f"""
-    SELECT * FROM UserTable
-  """
-  return client.query.execute(query)
+  ## Must be the name of the table, not the table object
+  return client.query.execute_raw(query, {"table": UserTable.name})
 
 ## Create the API
 example_api = Api[QueryParams, ResponseBody](name="example_endpoint", query_function=run)
@@ -464,11 +469,30 @@ The `sql` template literal in Moose provides type-safe query construction with p
 
 <Python>
 
-You can use f-strings with Pydantic validation to build safe queries:
-
-<Tabs items={["execute_raw (Recommended)", "f-strings (Use with Caution)"]}>
+<Tabs items={["execute", "execute_raw"]}>
 <Tabs.Tab>
-Use `execute_raw` with parameter binding for maximum security:
+```python filename="SafeQueries.py" copy
+from pydantic import BaseModel, Field
+
+class QueryParams(BaseModel):
+    min_age: int = Field(ge=0, le=150)
+    status: str = Field(pattern=r"^(active|inactive)$")
+    limit: int = Field(default=10, ge=1, le=1000)
+    search_text: str = Field(pattern=r'^[a-zA-Z0-9\s]*$')
+
+def run(client: MooseClient, params: QueryParams):
+    query = """
+        SELECT *
+        FROM users
+        WHERE age >= {min_age}
+        AND status = '{status}'
+        AND name ILIKE '%{search_text}%'
+        LIMIT {limit}
+    """
+    return client.query.execute(query, {"min_age": params.min_age, "status": params.status, "search_text": params.search_text, "limit": params.limit})
+```
+</Tabs.Tab>
+<Tabs.Tab>
 
 ```python filename="SafeQueries.py" copy
 from pydantic import BaseModel, Field
@@ -496,44 +520,7 @@ def run(client: MooseClient, params: QueryParams):
     })
 ```
 </Tabs.Tab>
-<Tabs.Tab>
-Use f-strings with `execute` (only for trusted, validated input):
-
-```python filename="SafeQueriesFString.py" copy
-from pydantic import BaseModel, Field
-
-class QueryParams(BaseModel):
-    min_age: int = Field(ge=0, le=150)
-    status: str = Field(pattern=r"^(active|inactive)$")
-    limit: int = Field(default=10, ge=1, le=1000)
-    search_text: str = Field(pattern=r'^[a-zA-Z0-9\s]*$')
-
-def run(client: MooseClient, params: QueryParams):
-    # WARNING: Only use with validated input to prevent SQL injection
-    query = f"""
-        SELECT *
-        FROM users
-        WHERE age >= {params.min_age}
-        AND status = '{params.status}'
-        AND name ILIKE '%{params.search_text}%'
-        LIMIT {params.limit}
-    """
-    return client.query.execute(query)
-```
-</Tabs.Tab>
 </Tabs>
-
-<Callout type="warning">
-When using f-strings, you MUST be extremely careful with your Pydantic model definitions:
-- Use strict field validations with `Field()` constraints
-- Consider using `Literal` types for fixed value sets
-- Use `constr` with patterns for string validation
-- Add bounds checking for numeric values
-- Never allow arbitrary string input without validation
-
-Improper validation could lead to SQL injection vulnerabilities.
-</Callout>
-
 </Python>
 
 
@@ -611,10 +598,8 @@ Static type checking ensures you only reference columns that actually exist.
 
 <Python>
 
-<Tabs items={["Using f-strings"]}>
-<Tabs.Tab title="Using f-strings">
 
-```python filename="ValidatedFStrings.py" copy
+```python filename="ValidatedQueries.py" copy
 from moose_lib import Api, MooseClient
 from pydantic import BaseModel, Field, constr
 from typing import Literal, Optional
@@ -640,26 +625,16 @@ class QueryParams(BaseModel):
     )
 
 def run(client: MooseClient, params: QueryParams):
-    # Even with validation, f-strings are riskier than parameter binding
-    query = f"""
-        SELECT {params.column}
-        FROM {UserTable.name}
-        WHERE name ILIKE '%{params.search_term}%'
-        LIMIT {params.limit}
+    query = """
+        SELECT {column}
+        FROM {table}
+        WHERE name ILIKE '%{search_term}%'
+        LIMIT {limit}
     """
     
-    # No parameters dict needed with f-strings
-    return client.query.execute(query)
+    return client.query.execute(query, {"column": UserTable.cols[params.column], "table": UserTable, "search_term": params.search_term, "limit": params.limit})
 
-# WARNING: This approach requires strict validation
 ```
-
-<Callout type="warning">
-When using f-strings, validate every interpolated value strictly (patterns, bounds, enums) to avoid injection.
-</Callout>
-
-</Tabs.Tab>
-</Tabs>
 
 <ToggleBlock openText="Show UserTable" closeText="Hide UserTable">
 ```python filename="UserTable.py" copy
@@ -675,39 +650,6 @@ UserTable = OlapTable[UserSchema]("users")
 ```
 </ToggleBlock>
 </Python>
-
-#### Table and Column References
-<TypeScript>
-Reference tables and columns directly from your Moose objects as variables in your `sql` template literals:
-```ts filename="ExampleTableColumnQuery.ts" copy
-import { userTable } from "../tables/userTable";
-
-const query = sql`
-  SELECT 
-    ${UserTable.columns.id},
-    ${UserTable.columns.name},
-    ${UserTable.columns.email}
-  FROM ${UserTable}
-  WHERE ${UserTable.columns.isActive} = true
-`;
-
-// EXECUTION: SELECT id, name, email FROM users WHERE is_active = true
-```
-<ToggleBlock openText="Show UserTable" closeText="Hide UserTable">
-```ts filename="UserTable.ts" copy
-import { OlapTable } from "@514labs/moose-lib";
-
-interface UserSchema {
-  id: Key<number>
-  name: string
-  email: string
-}
-
-export const UserTable = new OlapTable<UserSchema>("users")
-```
-</ToggleBlock>
-</TypeScript>
-
 
 ### Advanced Query Patterns
 
@@ -765,7 +707,6 @@ const queryHandler = async ({ tableName = "users" }: QueryParams, { client, sql 
 
 <Python>
 
-
 ```python filename="DynamicColumns.py" copy
 from app.UserTable import UserTable
 
@@ -789,14 +730,6 @@ bar = Api[QueryParams, QueryResult](name="bar", query_function=run)
 ## HTTP Request: GET http://localhost:4000/api/bar?colName=id
 ## EXECUTED QUERY: SELECT id FROM users
 ```
-
-<Callout type="warning">
-When using f-strings, be careful to validate your query parameters to prevent SQL injection:
-- Use strict field validations with `Field()` constraints
-- Consider using `pattern` validation for string validation
-- Never allow arbitrary string input without validation
-</Callout>
-
 <ToggleBlock openText="Show UserTable" closeText="Hide UserTable">
 ```python filename="UserTable.py" copy
 from moose_lib import OlapTable, Key
@@ -855,10 +788,6 @@ const buildQuery = ({ minAge, status, searchText }: FilterParams, { sql }) => {
 </TypeScript>
 
 <Python>
-
-<Tabs items={["Using f-strings"]}>
-<Tabs.Tab title="Using f-strings">
-
 ```python filename="ConditionalColumns.py" copy   
 
 class FilterParams(BaseModel):
@@ -875,17 +804,20 @@ def build_query(client: MooseClient, params: FilterParams) -> QueryResult:
     # Using f-strings with validated parameters
     conditions = []
     if params.min_age:
-        conditions.append(f"age >= {params.min_age}")
+        conditions.append("age >= {min_age}")
+        parameters["min_age"] = params.min_age
     
     if params.status:
-        conditions.append(f"status = '{params.status}'")
+        conditions.append("status = {status}")
+        parameters["status"] = params.status
     
     if params.search_text:
-        conditions.append(f"(name ILIKE '%{params.search_text}%' OR email ILIKE '%{params.search_text}%')")
+        conditions.append("(name ILIKE {search_text} OR email ILIKE {search_text})")
+        parameters["search_text"] = params.search_text
 
     where_clause = f" WHERE {' AND '.join(conditions)}" if conditions else ""
-    query = f"""SELECT * FROM users{where_clause} ORDER BY created_at DESC"""
-    return client.query.execute(query)
+    query = f"""SELECT * FROM users {where_clause} ORDER BY created_at DESC"""
+    return client.query.execute(query, parameters)
 
 ## Create the API
 bar = Api[FilterParams, QueryResult](name="bar", query_function=build_query)
@@ -894,8 +826,6 @@ bar = Api[FilterParams, QueryResult](name="bar", query_function=build_query)
 ## HTTP Request: GET http://localhost:4000/api/bar?min_age=20&status=active&search_text=John
 ## EXECUTED QUERY: SELECT * FROM users WHERE age >= 20 AND status = 'active' AND (name ILIKE '%John%' OR email ILIKE '%John%') ORDER BY created_at DESC
 ```
-</Tabs.Tab>
-</Tabs>
 
 </Python>
 

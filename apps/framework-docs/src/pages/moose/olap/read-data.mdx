@@ -236,13 +236,11 @@ client = MooseClient()
 status = "active"
 query = """
   SELECT 
-    id,
-    name,
-    email
+    {column}
   FROM {table}
   WHERE status = {status}
 """
-rows = client.query.execute(query, {"table": UserTable, "status": status})
+rows = client.query.execute(query, {"column": UserTable.cols.id, "table": UserTable, "status": status})
 
 ```
 </Tabs.Tab>
@@ -263,7 +261,7 @@ query = """
   WHERE status = {status:String}
 """
 
-rows = client.query.execute_raw(query, {"table": UserTable, "status": "active"})
+rows = client.query.execute_raw(query, {"table": UserTable.name, "status": "active"})
 ```
 </Tabs.Tab>
 </Tabs>
@@ -302,12 +300,11 @@ const rangeQuery = sql`
 <Tabs items={["execute", "execute_raw"]}>
 <Tabs.Tab>
 
-```py filename="WhereClausesFString.py"
+```py copy
 from moose_lib import MooseClient
 
 client = MooseClient()
 
-# Simple f-string queries (only for trusted, static data)
 status = "active"
 start_date = "2024-01-01"
 search_pattern = "%example%"
@@ -337,9 +334,9 @@ in_query = """
 """
 
 # Execute examples
-filter_rows = client.query.execute_raw(filter_query, {"table": UserTable, "status": status, "startDate": start_date, "searchPattern": search_pattern})
-range_rows = client.query.execute_raw(range_query, {"table": UserTable, "minAge": min_age, "maxAge": max_age})
-in_rows = client.query.execute_raw(in_query, {"table": UserTable, "userIds": user_ids})
+filter_rows = client.query.execute(filter_query, {"table": UserTable, "status": status, "startDate": start_date, "searchPattern": search_pattern})
+range_rows = client.query.execute(range_query, {"table": UserTable, "minAge": min_age, "maxAge": max_age})
+in_rows = client.query.execute(in_query, {"table": UserTable, "userIds": user_ids})
 ```
 </Tabs.Tab>
 
@@ -353,21 +350,21 @@ client = MooseClient()
 filter_query = """
   SELECT id, name
   FROM users
-  WHERE status = {status}
-    AND created_at > {startDate}
-    AND email ILIKE {searchPattern}
+  WHERE status = {status:String}
+    AND created_at > {startDate:DateTime}
+    AND email ILIKE {searchPattern:String}
 """
 
 # Using BETWEEN
 range_query = """
   SELECT * FROM users
-  WHERE age BETWEEN {minAge} AND {maxAge}
+  WHERE age BETWEEN {minAge:UInt32} AND {maxAge:UInt32}
 """
 
 # Using IN with typed arrays
 in_query = """
   SELECT * FROM users
-  WHERE id IN {userIds}
+  WHERE id IN {userIds:Array(UInt32)}
 """
 
 # Execute examples
