@@ -236,13 +236,11 @@ client = MooseClient()
 status = "active"
 query = """
   SELECT 
-    id,
-    name,
-    email
+    {column}
   FROM {table}
   WHERE status = {status}
 """
-rows = client.query.execute(query, {"table": UserTable, "status": status})
+rows = client.query.execute(query, {"column": UserTable.cols.id, "table": UserTable, "status": status})
 
 ```
 </Tabs.Tab>
