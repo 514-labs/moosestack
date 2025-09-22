@@ -1,6 +1,5 @@
 use log::info;
 use std::collections::HashMap;
-use tokio::process::Child;
 
 use crate::{
     cli::settings::Settings,
@@ -9,7 +8,7 @@ use crate::{
         languages::SupportedLanguages, python, typescript,
     },
     project::Project,
-    utilities::system::{kill_child, KillProcessError},
+    utilities::system::KillProcessError,
 };
 
 /// Error types that can occur when managing orchestration workers
@@ -31,7 +30,7 @@ pub enum OrchestrationWorkersRegistryError {
 /// Registry that manages orchestration worker processes
 pub struct OrchestrationWorkersRegistry {
     /// Map of worker IDs to their running process handles
-    workers: HashMap<String, Child>,
+    workers: HashMap<String, crate::utilities::system::RestartingProcess>,
     /// Directory containing worker scripts
     project: Project,
     /// Settings
@@ -73,13 +72,26 @@ impl OrchestrationWorkersRegistry {
 
         let language = orchestration_worker.supported_language;
 
-        if language == SupportedLanguages::Python {
-            let child = python::scripts_worker::start_worker(&self.project).await?;
-            self.workers.insert(orchestration_worker.id(), child);
-        } else {
-            let child = typescript::scripts_worker::start_worker(&self.project).await?;
-            self.workers.insert(orchestration_worker.id(), child);
-        }
+        // Wrap workers with RestartingProcess (same as APIs/functions) so they are supervised
+        let project = self.project.clone();
+        let start_fn: crate::utilities::system::StartChildFn<OrchestrationWorkersRegistryError> =
+            if language == SupportedLanguages::Python {
+                Box::new(move || {
+                    python::scripts_worker::start_worker(&project)
+                        .map_err(OrchestrationWorkersRegistryError::from)
+                })
+            } else {
+                Box::new(move || {
+                    typescript::scripts_worker::start_worker(&project)
+                        .map_err(OrchestrationWorkersRegistryError::from)
+                })
+            };
+
+        let restarting = crate::utilities::system::RestartingProcess::create(
+            orchestration_worker.id(),
+            start_fn,
+        )?;
+        self.workers.insert(orchestration_worker.id(), restarting);
         Ok(())
     }
 
@@ -103,8 +115,8 @@ impl OrchestrationWorkersRegistry {
             orchestration_worker.id()
         );
 
-        if let Some(child) = self.workers.get(&orchestration_worker.id()) {
-            kill_child(child).await?;
+        if let Some(restarting) = self.workers.remove(&orchestration_worker.id()) {
+            restarting.stop().await;
         }
         Ok(())
     }
@@ -114,9 +126,9 @@ impl OrchestrationWorkersRegistry {
     /// # Returns
     /// * `Result<(), OrchestrationWorkersRegistryError>` - Ok if all workers stopped successfully, Error otherwise
     pub async fn stop_all(&mut self) -> Result<(), OrchestrationWorkersRegistryError> {
-        for (id, running_function_process) in self.workers.iter_mut() {
+        for (id, restarting) in self.workers.drain() {
             info!("Stopping orchestration worker {:?}...", id);
-            kill_child(running_function_process).await?;
+            restarting.stop().await;
         }
         Ok(())
     }
