@@ -1,4 +1,3 @@
-use anyhow::Result;
 use log::{error, info, warn};
 use std::fs;
 use tokio::io::{AsyncBufReadExt, BufReader};
@@ -19,7 +18,7 @@ pub enum WorkerProcessError {
     ProjectFileError(#[from] ProjectFileError),
 }
 
-pub async fn start_worker(project: &Project) -> Result<Child, WorkerProcessError> {
+pub fn start_worker(project: &Project) -> Result<Child, WorkerProcessError> {
     // Create the wrapper lib files inside the .moose directory
     let internal_dir = project.internal_dir()?;
     let python_worker_lib_dir = internal_dir.join(PYTHON_WORKER_WRAPPER_PACKAGE_NAME);
