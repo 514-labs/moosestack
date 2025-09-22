@@ -493,7 +493,7 @@ pub async fn top_command_handler(
                 )))
             }
         }
-        Commands::Dev {} => {
+        Commands::Dev { no_infra } => {
             info!("Running dev command");
             info!("Moose Version: {}", CLI_VERSION);
 
@@ -510,14 +510,20 @@ pub async fn top_command_handler(
             );
 
             check_project_name(&project_arc.name())?;
-            run_local_infrastructure_with_timeout(&project_arc, &settings)
-                .await
-                .map_err(|e| {
-                    RoutineFailure::error(Message {
-                        action: "Dev".to_string(),
-                        details: format!("Failed to run local infrastructure: {e:?}"),
-                    })
-                })?;
+
+            // Only run infrastructure if --no-infra flag is not set
+            if !no_infra {
+                run_local_infrastructure_with_timeout(&project_arc, &settings)
+                    .await
+                    .map_err(|e| {
+                        RoutineFailure::error(Message {
+                            action: "Dev".to_string(),
+                            details: format!("Failed to run local infrastructure: {e:?}"),
+                        })
+                    })?;
+            } else {
+                info!("Skipping infrastructure startup due to --no-infra flag");
+            }
 
             let redis_client = setup_redis_client(project_arc.clone()).await.map_err(|e| {
                 RoutineFailure::error(Message {

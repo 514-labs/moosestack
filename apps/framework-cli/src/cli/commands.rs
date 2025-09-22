@@ -91,7 +91,11 @@ pub enum Commands {
         stream: bool,
     },
     /// Starts a local development environment to build your data-intensive app or service
-    Dev {},
+    Dev {
+        /// Skip starting docker containers for infrastructure
+        #[arg(long)]
+        no_infra: bool,
+    },
     /// Start a remote environment for use in cloud deployments
     Prod {
         /// Include and manage dependencies (ClickHouse, Redpanda, etc.) using Docker containers
