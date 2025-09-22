@@ -128,8 +128,7 @@ const pipeline = new IngestPipeline<MyDataModel>("MyDataPipeline", {
   ingest: true,    // POST API endpoint
   stream: true,    // Kafka topic
   table: {         // ClickHouse table
-    orderByFields: ["primaryKey", "someDate"],
-    engine: ClickHouseEngines.ReplacingMergeTree,
+    orderByFields: ["primaryKey", "someDate"]
   }
 });
 ```
@@ -525,7 +524,7 @@ APIs use runtime validation to ensure query parameters meet your requirements:
 
 <TypeScript>
 ```ts filename="app/apis/consumption_with_validation.ts"
-import { tags, ConsumptionAPI } from "@514labs/moose-lib";
+import { tags, Api } from "@514labs/moose-lib";
 
 // Query parameters with runtime validation
 interface SearchParams {
@@ -555,7 +554,7 @@ interface SearchResult {
 }
 
 // Create validated API endpoint
-const searchAPI = new ConsumptionAPI<SearchParams, SearchResult[]>(
+const searchAPI = new Api<SearchParams, SearchResult[]>(
   "search",
   async (params, { client }) => {
     // Params are already validated when this runs
@@ -583,16 +582,16 @@ const searchAPI = new ConsumptionAPI<SearchParams, SearchResult[]>(
 );
 
 // API Usage Examples:
-// ✅ Valid: GET /consumption/search?startDate=2024-01-01&endDate=2024-01-31
-// ✅ Valid: GET /consumption/search?startDate=2024-01-01&endDate=2024-01-31&minValue=100&limit=50
-// ❌ Invalid: GET /consumption/search?startDate=Jan-1-2024 (wrong date format)
-// ❌ Invalid: GET /consumption/search?startDate=2024-01-01&endDate=2024-01-31&limit=200 (exceeds max)
+// ✅ Valid: GET /api/search?startDate=2024-01-01&endDate=2024-01-31
+// ✅ Valid: GET /api/search?startDate=2024-01-01&endDate=2024-01-31&minValue=100&limit=50
+// ❌ Invalid: GET /api/search?startDate=Jan-1-2024 (wrong date format)
+// ❌ Invalid: GET /api/search?startDate=2024-01-01&endDate=2024-01-31&limit=200 (exceeds max)
 ```
 </TypeScript>
 
 <Python>
 ```python filename="app/apis/consumption_with_validation.py"
-from moose_lib import ConsumptionAPI
+from moose_lib import Api
 from pydantic import BaseModel, Field
 from datetime import datetime
 from typing import Optional, List
@@ -623,32 +622,50 @@ class SearchResult(BaseModel):
     timestamp: datetime
 
 # Create validated API endpoint
-async def search_handler(params: SearchParams, context) -> List[SearchResult]:
+async def search_handler(params: SearchParams, client: MooseClient) -> List[SearchResult]:
     # Params are already validated when this runs
+    # Build a parameterized query safely
+    clauses = [
+      "timestamp >= {startDate}",
+      "timestamp <= {endDate}"
+    ]
+    params_dict = {
+      "startDate": params.start_date,
+      "endDate": params.end_date,
+      "limit": params.limit or 10,
+      "offset": ((params.page or 1) - 1) * (params.limit or 10)
+    }
+    if params.min_value is not None:
+      clauses.append("value >= {minValue}")
+      params_dict["minValue"] = params.min_value
+    if params.max_value is not None:
+      clauses.append("value <= {maxValue}")
+      params_dict["maxValue"] = params.max_value
+    if params.category is not None:
+      clauses.append("category = {category}")
+      params_dict["category"] = params.category
+
+    where_clause = " AND ".join(clauses)
     query = f"""
       SELECT * FROM data_table
-      WHERE timestamp >= '{params.start_date}'
-      AND timestamp <= '{params.end_date}'
-      {"AND value >= " + str(params.min_value) if params.min_value else ""}
-      {"AND value <= " + str(params.max_value) if params.max_value else ""}
-      {"AND category = '" + params.category + "'" if params.category else ""}
-      LIMIT {params.limit or 10}
-      OFFSET {((params.page or 1) - 1) * (params.limit or 10)}
+      WHERE {where_clause}
+      LIMIT {limit}
+      OFFSET {offset}
     """
     
-    results = await context.client.query(query)
+    results = await client.query.execute(query, params=params_dict)
     return [SearchResult(**row) for row in results]
 
-search_api = ConsumptionAPI[SearchParams, List[SearchResult]](
+search_api = Api[SearchParams, List[SearchResult]](
     "search",
     handler=search_handler
 )
 
 # API Usage Examples:
-# ✅ Valid: GET /consumption/search?start_date=2024-01-01&end_date=2024-01-31
-# ✅ Valid: GET /consumption/search?start_date=2024-01-01&end_date=2024-01-31&min_value=100&limit=50
-# ❌ Invalid: GET /consumption/search?start_date=Jan-1-2024 (wrong date format)
-# ❌ Invalid: GET /consumption/search?start_date=2024-01-01&end_date=2024-01-31&limit=200 (exceeds max)
+# ✅ Valid: GET /api/search?start_date=2024-01-01&end_date=2024-01-31
+# ✅ Valid: GET /api/search?start_date=2024-01-01&end_date=2024-01-31&min_value=100&limit=50
+# ❌ Invalid: GET /api/search?start_date=Jan-1-2024 (wrong date format)
+# ❌ Invalid: GET /api/search?start_date=2024-01-01&end_date=2024-01-31&limit=200 (exceeds max)
 ```
 </Python>
 
@@ -737,7 +754,15 @@ class ProcessedData(BaseModel):
 
 # Create streams
 raw_stream = Stream[RawData]("raw-stream")
-processed_stream = Stream[ProcessedData]("processed-stream")
+
+
+processed_table = OlapTable[ProcessedData]("processed_data", OlapConfig(
+    order_by_fields = ["id", "timestamp"]
+))
+
+processed_stream = Stream[ProcessedData]("processed-stream", StreamConfig(
+    destination=processed_table
+))
 
 # Transform raw data
 async def process_data(raw: RawData):
@@ -752,15 +777,8 @@ async def process_data(raw: RawData):
         attributes=parsed.get("attributes", {})
     )
     
-    await processed_stream.publish(processed)
+raw_stream.add_transform(processed_stream, process_data)
 
-raw_stream.add_consumer(process_data)
-
-# Sink to ClickHouse
-table = OlapTable[ProcessedData]("processed_data", {
-    "stream": processed_stream,
-    "order_by_fields": ["id", "timestamp"]
-})
 ```
 </Python>
 
@@ -807,15 +825,15 @@ interface TaskOutput {
 const exampleTask = new Task<TaskInput, TaskOutput>(
   "example-task",
   {
-    run: async (input) => {
+    run: async (ctx) => {
       // Process data based on task type
       const output: TaskOutput = {
-        id: input.id,
+        id: ctx.input.id,
         processedAt: new Date()
       };
       
-      if (input.taskType === "typeA") {
-        output.resultA = await processTypeA(input);
+      if (ctx.input.taskType === "typeA") {
+        output.resultA = await processTypeA(ctx.input);
       }
       
       return output;
@@ -830,7 +848,7 @@ const exampleTask = new Task<TaskInput, TaskOutput>(
 
 <Python>
 ```python filename="app/workflows/task_example.py"
-from moose_lib import Task
+from moose_lib import Task, TaskContext
 from pydantic import BaseModel, Field
 from typing import Optional, List, Literal, Dict, Any
 from datetime import datetime
@@ -869,15 +887,15 @@ class TaskOutput(BaseModel):
     result_c: Optional[ResultC] = None
 
 # Create workflow task
-async def run_task(input_data: TaskInput) -> TaskOutput:
+async def run_task(ctx: TaskContext[TaskInput]) -> TaskOutput:
     # Process data based on task type
     output = TaskOutput(
-        id=input_data.id,
+        id=ctx.input.id,
         processed_at=datetime.now()
     )
     
-    if input_data.task_type == "typeA":
-        output.result_a = await process_type_a(input_data)
+    if ctx.input.task_type == "typeA":
+        output.result_a = await process_type_a(ctx.input)
     
     return output
 

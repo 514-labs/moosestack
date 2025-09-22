@@ -1,5 +1,5 @@
 import { tags } from "typia";
-import { ConsumptionUtil } from "@514labs/moose-lib/browserCompatible";
+import { ApiUtil } from "@514labs/moose-lib/browserCompatible";
 import { RepoStarEvent } from "../index.js";
 
 export interface QueryParams {
@@ -22,7 +22,7 @@ export interface ResponseBody {
 
 export async function getTopicTimeseries(
   { interval = "minute", limit = 10, exclude = "" }: QueryParams,
-  { client, sql }: ConsumptionUtil,
+  { client, sql }: ApiUtil,
 ): Promise<ResponseBody[]> {
   const RepoTable = RepoStarEvent.table!;
   const cols = RepoTable.columns;

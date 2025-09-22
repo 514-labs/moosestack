@@ -24,7 +24,9 @@ class IngestPipelineConfig(BaseModel):
         table: Configuration for the OLAP table component.
         stream: Configuration for the stream component.
         ingest: Configuration for the ingest API component.
+        dead_letter_queue: Configuration for the dead letter queue.
         version: Optional version string applied to all created components.
+        path: Optional custom path for the ingestion API endpoint.
         metadata: Optional metadata for the ingestion pipeline.
         life_cycle: Determines how changes in code will propagate to the resources.
     """
@@ -33,6 +35,7 @@ class IngestPipelineConfig(BaseModel):
     ingest: bool | IngestConfig = True
     dead_letter_queue: bool | StreamConfig = True
     version: Optional[str] = None
+    path: Optional[str] = None
     metadata: Optional[dict] = None
     life_cycle: Optional[LifeCycle] = None
 
@@ -89,7 +92,7 @@ class IngestPipeline(TypedMooseResource, Generic[T]):
             raise ValueError("Stream was not configured for this pipeline")
         return self.stream
 
-    def get_dead_letter_queue(self) -> Stream[T]:
+    def get_dead_letter_queue(self) -> DeadLetterQueue[T]:
         """Retrieves the pipeline's dead letter queue.
 
         Raises:
@@ -129,22 +132,24 @@ class IngestPipeline(TypedMooseResource, Generic[T]):
                 table_config.version = config.version
             table_config.metadata = table_metadata
             self.table = OlapTable(name, table_config, t=self._t)
+        if config.dead_letter_queue:
+            dlq_stream_config = StreamConfig() if config.dead_letter_queue is True else config.dead_letter_queue
+            if config.version:
+                dlq_stream_config.version = config.version
+            dlq_stream_config.metadata = stream_metadata
+            self.dead_letter_queue = DeadLetterQueue(f"{name}DeadLetterQueue", dlq_stream_config, t=self._t)
         if config.stream:
             stream_config = (config.stream if isinstance(config.stream, StreamConfig) else 
                            StreamConfig(life_cycle=config.life_cycle))
             if config.table and stream_config.destination is not None:
                 raise ValueError("The destination of the stream should be the table created in the IngestPipeline")
             stream_config.destination = self.table
+            if self.dead_letter_queue is not None:
+                stream_config.default_dead_letter_queue = self.dead_letter_queue
             if config.version:
                 stream_config.version = config.version
             stream_config.metadata = stream_metadata
             self.stream = Stream(name, stream_config, t=self._t)
-        if config.dead_letter_queue:
-            stream_config = StreamConfig() if config.dead_letter_queue is True else config.dead_letter_queue
-            if config.version:
-                stream_config.version = config.version
-            stream_config.metadata = stream_metadata
-            self.dead_letter_queue = DeadLetterQueue(f"{name}DeadLetterQueue", stream_config, t=self._t)
         if config.ingest:
             if self.stream is None:
                 raise ValueError("Ingest API needs a stream to write to.")
@@ -154,6 +159,8 @@ class IngestPipeline(TypedMooseResource, Generic[T]):
             ingest_config_dict["destination"] = self.stream
             if config.version:
                 ingest_config_dict["version"] = config.version
+            if config.path:
+                ingest_config_dict["path"] = config.path
             if self.dead_letter_queue:
                 ingest_config_dict["dead_letter_queue"] = self.dead_letter_queue
             ingest_config_dict["metadata"] = ingest_metadata

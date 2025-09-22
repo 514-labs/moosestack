@@ -25,13 +25,13 @@ The template implements a modern full-stack architecture with the following comp
 1. **Frontend Layer (Next.js)**
    - Real-time dashboard for trending topics
    - Interactive data visualization
-   - Type-safe API integration with Moose Consumption APIs
+   - Type-safe API integration with Moose Analytics APIs
    - Built with TypeScript and Tailwind CSS
 
 2. **Backend Layer (Moose)**
    - GitHub Events data ingestion
    - Real-time data processing pipeline
-   - Type-safe APIs with Moose Consumption APIs
+   - Type-safe APIs with Moose Analytics APIs
    - ClickHouse for analytics storage
 
 3. **Infrastructure Layer**
@@ -42,7 +42,7 @@ The template implements a modern full-stack architecture with the following comp
 
 ```mermaid
 graph TD
-    A[Next.js Dashboard] --> B[Moose Consumption APIs]
+    A[Next.js Dashboard] --> B[Moose Analytics APIs]
     B --> C[ClickHouse]
     D[GitHub API] --> E[Moose Workflow]
     E --> F[Moose Ingest Pipeline]
@@ -78,7 +78,7 @@ moose-github-dev-trends/
 │
 ├── moose-backend/               # Backend services
 │   ├── app/
-│   │   ├── apis/                # Consumption API definitions
+│   │   ├── apis/                # Analytics API definitions
 │   │   ├── ingest/              # Data ingestion logic
 │   │   ├── blocks/              # Reusable processing blocks
 │   │   └── scripts/             # Workflow scripts
@@ -141,7 +141,7 @@ cd moose-backend && moose dev
 Key components:
 - **GitHub Event Polling**: Workflow in `app/scripts/` fetches public events and posts them to the Moose Ingest Pipeline.
 - **Ingest Pipeline**: Data Model and infrastructure for ingesting GitHub Events in `app/ingest/WatchEvent.ts`
-- **Consumption APIs**: Consumption APIs in `app/apis/` expose the data for the frontend
+- **Analytics APIs**: Analytics APIs in `app/apis/` expose the data for the frontend
 
 #### Start the Moose Backend
 Spin up the Moose dev server:
@@ -156,7 +156,7 @@ The frontend automatically integrates with the Moose backend through generated A
 
 <Steps>
 #### API Client Generation
-Moose generates an OpenAPI spec from your Consumption APIs that we use with [OpenAPI Generator](https://openapi-generator.tech/):
+Moose generates an OpenAPI spec from your Analytics APIs that we use with [OpenAPI Generator](https://openapi-generator.tech/):
 - Generated client located in `live-dev-trends-dashboard/generated-client`
 - Based on OpenAPI schema from `moose-backend/.moose/openapi.yaml`
 
@@ -172,7 +172,7 @@ openapi-generator-cli generate -i .moose/openapi.yaml -g typescript-fetch -o ../
 
 <Callout type="warning" title="When to Regenerate">
 Remember to regenerate the client when you:
-- Update Consumption API schemas
+- Update Analytics API schemas
 - Modify Ingest Pipeline definitions
 - Change API endpoints or parameters
 </Callout>
@@ -191,8 +191,8 @@ const apiConfig = new Configuration({
 });
 const mooseClient = new DefaultApi(apiConfig);
 
-export type TopicTimeseriesRequest = ConsumptionTopicTimeseriesGetRequest;
-export type TopicTimeseriesResponse = ConsumptionTopicTimeseriesGet200ResponseInner;
+export type TopicTimeseriesRequest = ApiTopicTimeseriesGetRequest;
+export type TopicTimeseriesResponse = TopicTimeseriesGet200ResponseInner;
 ```
 </ToggleBlock>
 <ToggleBlock openText="Show Data Fetching & State Management" closeText="Hide Details">
@@ -206,7 +206,7 @@ export function TrendingTopicsChart() {
   const { data, isLoading, error } = useQuery({
     queryKey: ["topicTimeseries", interval, limit, exclude],
     queryFn: async () => {
-      const result = await mooseClient.consumptionTopicTimeseriesGet({
+      const result = await mooseClient.ApiTopicTimeseriesGet({
         interval,
         limit,
         exclude: exclude || undefined,

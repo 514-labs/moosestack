@@ -71,7 +71,7 @@ pub fn install_packages(
         Err(e) => {
             error!(
                 "Failed to decode stdout as UTF-8 for command: `{}` with args {:?} in directory {:?}. Raw output: {:?}. Error: {:?}",
-                package_manager.to_string(),
+                package_manager,
                 command.get_args().collect::<Vec<_>>(),
                 command.get_current_dir(),
                 &stdout,
@@ -101,7 +101,7 @@ pub fn run_build(
         Err(e) => {
             error!(
                 "Failed to decode stdout as UTF-8 for command: `{}` with args {:?} in directory {:?}. Raw output: {:?}. Error: {:?}",
-                package_manager.to_string(),
+                package_manager,
                 command.get_args().collect::<Vec<_>>(),
                 command.get_current_dir(),
                 &stdout,
@@ -138,7 +138,7 @@ pub fn link_sdk(
         Err(e) => {
             error!(
                 "Failed to decode stdout as UTF-8 for command: `{}` with args {:?} in directory {:?}. Raw output: {:?}. Error: {:?}",
-                package_manager.to_string(),
+                package_manager,
                 command.get_args().collect::<Vec<_>>(),
                 command.get_current_dir(),
                 &stdout,

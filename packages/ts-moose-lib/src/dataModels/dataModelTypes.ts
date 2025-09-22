@@ -23,7 +23,7 @@ export interface Column {
   required: boolean;
   unique: false; // what is this for?
   primary_key: boolean;
-  default: null;
+  default: string | null;
   annotations: [string, any][];
 }
 

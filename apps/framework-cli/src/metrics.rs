@@ -281,7 +281,7 @@ impl Metrics {
         );
         registry.register(
             CONSUMED_BYTES,
-            "Bytes sent out through consumption endpoints",
+            "Bytes sent out through analytics endpoints",
             data.http_consumed_bytes.clone(),
         );
         registry.register(

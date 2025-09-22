@@ -14,7 +14,7 @@ const typesToArgsLength = new Map([
   ["DeadLetterQueue", 2],
   ["IngestPipeline", 2],
   ["IngestApi", 2],
-  ["ConsumptionApi", 2],
+  ["Api", 2],
   ["MaterializedView", 1],
   ["Task", 2],
 ]);

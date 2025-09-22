@@ -1,5 +1,4 @@
 import { render } from "@/components";
-import Display from "@/components/display";
 
 export default render({
   index: {

@@ -6,10 +6,10 @@ import {
   transformNewMooseResource,
 } from "./dmv2/dataModelMetadata";
 import {
-  isCreateConsumptionApi,
-  isCreateConsumptionApiV2,
-  transformCreateConsumptionApi,
-  transformLegacyConsumptionApi,
+  isCreateApi,
+  isCreateApiV2,
+  transformCreateApi,
+  transformLegacyApi,
 } from "./consumption-apis/typiaValidation";
 
 /**
@@ -35,20 +35,18 @@ const applyTransformation = (
   node: ts.Node,
   typeChecker: ts.TypeChecker,
 ): { transformed: ts.Node; wasTransformed: boolean } => {
-  if (isCreateConsumptionApi(node, typeChecker)) {
-    compilerLog(
-      "[CompilerPlugin] Found legacy consumption API, transforming...",
-    );
+  if (isCreateApi(node, typeChecker)) {
+    compilerLog("[CompilerPlugin] Found legacy API, transforming...");
     return {
-      transformed: transformLegacyConsumptionApi(node, typeChecker),
+      transformed: transformLegacyApi(node, typeChecker),
       wasTransformed: true,
     };
   }
 
-  if (isCreateConsumptionApiV2(node, typeChecker)) {
-    compilerLog("[CompilerPlugin] Found consumption API v2, transforming...");
+  if (isCreateApiV2(node, typeChecker)) {
+    compilerLog("[CompilerPlugin] Found API v2, transforming...");
     return {
-      transformed: transformCreateConsumptionApi(node, typeChecker),
+      transformed: transformCreateApi(node, typeChecker),
       wasTransformed: true,
     };
   }

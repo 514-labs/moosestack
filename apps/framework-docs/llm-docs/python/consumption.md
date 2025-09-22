@@ -1,45 +1,20 @@
-# Consumption APIs
+# Analytics APIs
 
 ## Overview
 
-Moose provides two main types of APIs for exposing data:
+Moose provides one type of API for exposing data:
 
-1. **EgressApi**: Use this for simple data surfacing from tables with SQL queries and parameter support. This is the recommended approach for most data access patterns.
+**Api**:  They are designed to read data from your OLAP database. Out of the box, these APIs provide:
 
-2. **ConsumptionApi**: Use this for complex data transformations, custom business logic, or when you need fine-grained control over the response format.
+- Automatic type validation and type conversion for your query parameters, which are sent in the URL, and response body
+- Managed database client connection
+- Automatic OpenAPI documentation generation
 
-Choose the right API type based on your needs:
+## Api Usage
 
-- Use `EgressApi` when you just need to surface table data with filtering and pagination
-- Use `ConsumptionApi` when you need custom business logic or complex data transformations
-
-## EgressApi Usage
-
-The `EgressApi` is the recommended way to surface table data. It provides a simple, type-safe interface for exposing data with built-in parameter support.
-
-### Basic Setup
-
-```python
-from moose_lib import EgressApi
-
-# Define an egress API for brain data
-get_brain_data = EgressApi(
-    name="get_brain_data",
-    table="brain_data",
-    sql="""
-        SELECT * FROM brain_data
-        WHERE ({start_time:Nullable(Float64)} IS NULL OR timestamp >= {start_time:Nullable(Float64)})
-          AND ({end_time:Nullable(Float64)} IS NULL OR timestamp <= {end_time:Nullable(Float64)})
-        ORDER BY timestamp DESC
-        LIMIT {limit:Int32}
-    """,
-    query_params={
-        "limit": {"type": "int", "default": 100},
-        "start_time": {"type": "float", "required": False},
-        "end_time": {"type": "float", "required": False},
-    }
-)
-```
+- Powering user-facing analytics, dashboards and other front-end components
+- Enabling AI tools to interact with your data
+- Building custom APIs for your internal tools
 
 ### Features
 
@@ -70,12 +45,12 @@ get_brain_data = EgressApi(
    - SQL errors are caught and returned as proper HTTP errors
    - Invalid parameter types are rejected
 
-## ConsumptionApi Usage
+## Api Usage
 
-The `ConsumptionApi` class requires both input (query) and output (response) type parameters, and must be instantiated with a name as the first positional parameter. Here's the correct pattern:
+The `Api` class requires both input (query) and output (response) type parameters, and must be instantiated with a name as the first positional parameter. Here's the correct pattern:
 
 ```python
-from moose_lib import ConsumptionApi, EgressConfig
+from moose_lib import Api, ApiConfig
 from pydantic import BaseModel
 from typing import Dict, Any, Optional
 
@@ -127,12 +102,12 @@ def get_heart_rate_stats(client, params: HeartRateStatsQuery) -> HeartRateStats:
     # Return the first (and only) row of results
     return HeartRateStats(**result[0])
 
-# Create the consumption API
-heart_rate_stats_api = ConsumptionApi[HeartRateStatsQuery, HeartRateStats](
+# Create the analytics API
+heart_rate_stats_api = Api[HeartRateStatsQuery, HeartRateStats](
     "getHeartRateStats",
     query_function=get_heart_rate_stats,
     source="heart_rate_measurement",
-    config=EgressConfig()  # Empty config is valid
+    config=ApiConfig()  # Empty config is valid
 )
 ```
 
@@ -156,13 +131,13 @@ heart_rate_stats_api = ConsumptionApi[HeartRateStatsQuery, HeartRateStats](
    - ✅ Correct: `client.query.execute(query, {"param": value})`
 
 3. **API Creation**
-   - Must use generic type parameters: `ConsumptionApi[QueryModel, ResponseModel]`
+   - Must use generic type parameters: `Api[QueryModel, ResponseModel]`
    - Must provide name as first positional parameter
    - Must provide query function
    - Must provide source table name
-   - Must use empty `EgressConfig()` for configuration
-   - ❌ Incorrect: `config=EgressConfig(auth={"required": True})`
-   - ✅ Correct: `config=EgressConfig()`
+   - Must use empty `ApiConfig()` for configuration
+   - ❌ Incorrect: `config=ApiConfig(auth={"required": True})`
+   - ✅ Correct: `config=ApiConfig()`
 
 ### Common Issues and Solutions
 
@@ -177,8 +152,8 @@ heart_rate_stats_api = ConsumptionApi[HeartRateStatsQuery, HeartRateStats](
    - Solution: Always use `client.query.execute(query, variables)` with ClickHouse-style `{param}` syntax
 
 3. **Configuration Errors**
-   - Problem: Passing parameters to EgressConfig
-   - Solution: Use empty EgressConfig: `config=EgressConfig()`
+   - Problem: Passing parameters to ApiConfig
+   - Solution: Use empty ApiConfig: `config=ApiConfig()`
 
 ### Best Practices
 
@@ -204,16 +179,16 @@ heart_rate_stats_api = ConsumptionApi[HeartRateStatsQuery, HeartRateStats](
 4. **API Creation**
    - Use proper generic type parameters
    - Provide all required parameters
-   - Use empty EgressConfig
+   - Use empty ApiConfig
 
 ## Python-Specific Requirements
 
-When creating Python consumption APIs, you must follow these requirements exactly:
+When creating Python analytics APIs, you must follow these requirements exactly:
 
 1. **Imports**
 
    ```python
-   from moose_lib import ConsumptionApi
+   from moose_lib import Api
    from pydantic import BaseModel
    from typing import Optional, Dict, Any
    ```
@@ -356,7 +331,7 @@ When creating Python consumption APIs, you must follow these requirements exactl
 
    ```python
    # CORRECT: API name is derived from the variable name
-   BrainDataApi = ConsumptionApi[BrainData, get_brain_data](
+   BrainDataApi = Api[BrainData, get_brain_data](
        source="brain_data",
        settings={
            "auth": {
@@ -367,7 +342,7 @@ When creating Python consumption APIs, you must follow these requirements exactl
    )
 
    # INCORRECT: Do not specify name parameter
-   BrainDataApi = ConsumptionApi[BrainData, get_brain_data](
+   BrainDataApi = Api[BrainData, get_brain_data](
        name="BrainDataApi",  # This will cause an error
        source="brain_data"
    )
@@ -452,7 +427,7 @@ When creating Python consumption APIs, you must follow these requirements exactl
 ## Basic API Setup
 
 ```python
-from moose_lib import ConsumptionApi
+from moose_lib import Api
 from pydantic import BaseModel
 from typing import Optional, Dict, Any
 
@@ -462,7 +437,7 @@ class UserEvent(BaseModel):
     event_type: str
     timestamp: str
 
-# Create a consumption API with a query function
+# Create a analytics API with a query function
 def get_user_events(params: Dict[str, Any], utils) -> list[UserEvent]:
     client = utils.client
     sql = utils.sql
@@ -478,14 +453,14 @@ def get_user_events(params: Dict[str, Any], utils) -> list[UserEvent]:
 
     return result
 
-UserEventApi = ConsumptionApi[UserEvent, get_user_events](
+UserEventApi = Api[UserEvent, get_user_events](
     source="UserEventTable"
 )
 ```
 
 ## API Configuration
 
-The `ConsumptionApi` class accepts the following configuration:
+The `Api` class accepts the following configuration:
 
 ```python
 from typing import TypedDict, Literal, Optional, Callable, Any
@@ -518,7 +493,7 @@ def get_event_by_id(params: Dict[str, Any], utils) -> Optional[UserEvent]:
 
     return result[0] if result else None
 
-GetByIdApi = ConsumptionApi[UserEvent, get_event_by_id](
+GetByIdApi = Api[UserEvent, get_event_by_id](
     name="GetByIdApi",
     source="UserEventTable"
 )
@@ -540,7 +515,7 @@ def list_events(params: Dict[str, Any], utils) -> list[UserEvent]:
 
     return result
 
-ListApi = ConsumptionApi[UserEvent, list_events](
+ListApi = Api[UserEvent, list_events](
     name="ListApi",
     source="UserEventTable"
 )
@@ -576,7 +551,7 @@ def get_event_stats(params: Dict[str, Any], utils) -> list[EventStats]:
 
     return result
 
-StatsApi = ConsumptionApi[EventStats, get_event_stats](
+StatsApi = Api[EventStats, get_event_stats](
     name="StatsApi",
     source="UserEventTable"
 )
@@ -603,7 +578,7 @@ def get_secure_events(params: Dict[str, Any], utils) -> list[UserEvent]:
 
     return result
 
-SecureApi = ConsumptionApi[UserEvent, get_secure_events](
+SecureApi = Api[UserEvent, get_secure_events](
     name="SecureApi",
     source="UserEventTable",
     settings={
@@ -630,7 +605,7 @@ def get_rate_limited_events(params: Dict[str, Any], utils) -> list[UserEvent]:
 
     return result
 
-RateLimitedApi = ConsumptionApi[UserEvent, get_rate_limited_events](
+RateLimitedApi = Api[UserEvent, get_rate_limited_events](
     name="RateLimitedApi",
     source="UserEventTable",
     settings={
@@ -689,7 +664,7 @@ def get_basic_events(params: Dict[str, Any], utils) -> list[UserEvent]:
 
     return result
 
-BasicApi = ConsumptionApi[UserEvent, get_basic_events](
+BasicApi = Api[UserEvent, get_basic_events](
     name="BasicApi",
     source="UserEventTable"
 )
@@ -718,7 +693,7 @@ def get_advanced_stats(params: Dict[str, Any], utils) -> list[EventStats]:
 
     return result
 
-AdvancedApi = ConsumptionApi[EventStats, get_advanced_stats](
+AdvancedApi = Api[EventStats, get_advanced_stats](
     name="AdvancedApi",
     source="UserEventTable",
     settings={
@@ -730,79 +705,6 @@ AdvancedApi = ConsumptionApi[EventStats, get_advanced_stats](
             "requests": 100,
             "period": 60
         }
-    }
-)
-```
-
-## Choosing Between APIs
-
-### Use EgressApi when:
-
-- You need to surface table data directly
-- You want simple filtering and pagination
-- You don't need complex business logic
-- You want type-safe parameter handling
-- You need automatic parameter validation
-
-### Use ConsumptionApi when:
-
-- You need custom business logic
-- You want to transform the data before returning
-- You need to combine data from multiple sources
-- You want fine-grained control over the response format
-- You need to implement complex authentication logic
-
-## Example: Converting from ConsumptionApi to EgressApi
-
-### Before (ConsumptionApi):
-
-```python
-from moose_lib import ConsumptionApi
-from pydantic import BaseModel
-
-class BrainData(BaseModel):
-    id: str
-    timestamp: float
-    value: float
-
-def get_brain_data(params: Dict[str, Any], utils) -> list[BrainData]:
-    client = utils.client
-    sql = utils.sql
-
-    result = await client.query.execute(sql"""
-        SELECT * FROM brain_data
-        WHERE timestamp >= {params.get('start_time')}
-        AND timestamp <= {params.get('end_time')}
-        ORDER BY timestamp DESC
-        LIMIT {params.get('limit', 100)}
-    """)
-
-    return result
-
-BrainDataApi = ConsumptionApi[BrainDataQuery, BrainData](
-    source="brain_data"
-)
-```
-
-### After (EgressApi):
-
-```python
-from moose_lib import EgressApi
-
-get_brain_data = EgressApi(
-    name="get_brain_data",
-    table="brain_data",
-    sql="""
-        SELECT * FROM brain_data
-        WHERE ({start_time:Nullable(Float64)} IS NULL OR timestamp >= {start_time:Nullable(Float64)})
-          AND ({end_time:Nullable(Float64)} IS NULL OR timestamp <= {end_time:Nullable(Float64)})
-        ORDER BY timestamp DESC
-        LIMIT {limit:Int32}
-    """,
-    query_params={
-        "limit": {"type": "int", "default": 100},
-        "start_time": {"type": "float", "required": False},
-        "end_time": {"type": "float", "required": False},
     }
 )
 ```
@@ -962,10 +864,10 @@ When writing SQL queries in your query functions, follow these rules:
 
 ## Response Models
 
-When creating a ConsumptionApi, you need to define both the query parameters model and the response model. For list responses, you should create a wrapper model:
+When creating an Api, you need to define both the query parameters model and the response model. For list responses, you should create a wrapper model:
 
 ```python
-from moose_lib import ConsumptionApi, EgressConfig
+from moose_lib import Api, ApiConfig
 from pydantic import BaseModel
 from typing import List, Optional
 
@@ -1007,28 +909,28 @@ def get_brain_data(params: BrainDataQuery, utils) -> BrainDataListResponse:
         total=len(result)
     )
 
-# CORRECT: Use proper response model and EgressConfig
-brain_data_api = ConsumptionApi[BrainDataQuery, BrainDataListResponse](
+# CORRECT: Use proper response model and ApiConfig
+brain_data_api = Api[BrainDataQuery, BrainDataListResponse](
     "get_brain_data",
     query_function=get_brain_data,
     source="brain_data",
-    config=EgressConfig()  # Empty config is valid
+    config=ApiConfig()  # Empty config is valid
 )
 
 # INCORRECT: Using base model for list response
-brain_data_api = ConsumptionApi[BrainDataQuery, BrainData](  # Wrong: should use list response model
+brain_data_api = Api[BrainDataQuery, BrainData](  # Wrong: should use list response model
     "get_brain_data",
     query_function=get_brain_data,
     source="brain_data",
-    config=EgressConfig()
+    config=ApiConfig()
 )
 
-# INCORRECT: Invalid EgressConfig parameters
-brain_data_api = ConsumptionApi[BrainDataQuery, BrainDataListResponse](
+# INCORRECT: Invalid ApiConfig parameters
+brain_data_api = Api[BrainDataQuery, BrainDataListResponse](
     "get_brain_data",
     query_function=get_brain_data,
     source="brain_data",
-    config=EgressConfig(
+    config=ApiConfig(
         auth={"required": True}  # Wrong: invalid config parameter
     )
 )
@@ -1076,7 +978,7 @@ brain_data_api = ConsumptionApi[BrainDataQuery, BrainDataListResponse](
        )
    ```
 
-### EgressConfig Usage
+### ApiConfig Usage
 
 1. **Basic Configuration**
 
@@ -1086,10 +988,10 @@ brain_data_api = ConsumptionApi[BrainDataQuery, BrainDataListResponse](
 
    ```python
    # CORRECT
-   config=EgressConfig()  # Empty config is valid
+   config=ApiConfig()  # Empty config is valid
 
    # INCORRECT
-   config=EgressConfig(
+   config=ApiConfig(
        auth={"required": True}  # Wrong: invalid parameter
    )
    ```
@@ -1102,12 +1004,12 @@ brain_data_api = ConsumptionApi[BrainDataQuery, BrainDataListResponse](
 
    ```python
    # CORRECT
-   config=EgressConfig(
+   config=ApiConfig(
        # Add supported parameters here
    )
 
    # INCORRECT
-   config=EgressConfig(
+   config=ApiConfig(
        unsupported_param=True  # Wrong: unsupported parameter
    )
    ```
@@ -1129,19 +1031,19 @@ brain_data_api = ConsumptionApi[BrainDataQuery, BrainDataListResponse](
        # ...
    ```
 
-2. **Invalid EgressConfig**
+2. **Invalid ApiConfig**
 
    - Problem: Using unsupported parameters
    - Solution: Use only supported parameters
 
    ```python
    # Wrong
-   config=EgressConfig(
+   config=ApiConfig(
        auth={"required": True}  # Wrong: invalid parameter
    )
 
    # Correct
-   config=EgressConfig()  # Empty config is valid
+   config=ApiConfig()  # Empty config is valid
    ```
 
 3. **Empty Results**
@@ -1169,7 +1071,7 @@ brain_data_api = ConsumptionApi[BrainDataQuery, BrainDataListResponse](
 
 2. **Configuration**
 
-   - Use empty EgressConfig if no settings needed
+   - Use empty ApiConfig if no settings needed
    - Follow configuration guidelines
    - Use only supported parameters
 

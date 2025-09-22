@@ -10,7 +10,6 @@ use crate::infrastructure::olap::clickhouse::model::{
 };
 
 use super::errors::ClickhouseError;
-use super::model::sanitize_column_name;
 use super::queries::ClickhouseEngine;
 
 /// Generates a column comment, preserving any existing user comment and adding/updating metadata for enums
@@ -58,16 +57,31 @@ pub fn std_column_to_clickhouse_column(
 ) -> Result<ClickHouseColumn, ClickhouseError> {
     let comment = generate_column_comment(&column)?;
 
+    let mut column_type =
+        std_field_type_to_clickhouse_type_mapper(column.data_type, &column.annotations)?;
+
+    // Wrap non-required columns as Nullable for consistency across CREATE and ALTER TABLE operations
+    // This logic belongs here rather than in std_field_type_to_clickhouse_type_mapper because:
+    // 1. The type mapper only has access to the ColumnType, not the full Column with its `required` field
+    // 2. This ensures ALL column conversions (single or batch) get consistent nullable handling
+    // 3. ClickHouse requires explicit Nullable type for ALTER TABLE operations
+    if !column.required {
+        // Only wrap if not already Nullable and not an array/nested type (which can't be nullable)
+        if !matches!(column_type, ClickHouseColumnType::Nullable(_))
+            && !matches!(column_type, ClickHouseColumnType::Array(_))
+            && !matches!(column_type, ClickHouseColumnType::Nested(_))
+        {
+            column_type = ClickHouseColumnType::Nullable(Box::new(column_type));
+        }
+    }
+
     let clickhouse_column = ClickHouseColumn {
-        name: sanitize_column_name(column.name),
-        column_type: std_field_type_to_clickhouse_type_mapper(
-            column.data_type,
-            &column.annotations,
-        )?,
+        name: column.name,
+        column_type,
         required: column.required,
         unique: column.unique,
         primary_key: column.primary_key,
-        default: None, // TODO: Implement the default mapper
+        default: column.default.clone(),
         comment,
     };
 
@@ -100,7 +114,7 @@ pub fn build_enum_metadata_comment(data_enum: &DataEnum) -> Result<String, Click
     Ok(format!("{METADATA_PREFIX}{json}"))
 }
 
-pub fn std_field_type_to_clickhouse_type_mapper(
+fn std_field_type_to_clickhouse_type_mapper(
     field_type: ColumnType,
     annotations: &[(String, Value)],
 ) -> Result<ClickHouseColumnType, ClickhouseError> {
@@ -249,40 +263,25 @@ pub fn std_field_type_to_clickhouse_type_mapper(
     }
 }
 
+/// Convert multiple standard columns to ClickHouse columns
+/// This delegates to std_column_to_clickhouse_column to ensure consistent handling of:
+/// - Nullable wrapping for non-required columns
+/// - Default value mapping
+/// - Column metadata/comments
 pub fn std_columns_to_clickhouse_columns(
-    columns: &Vec<Column>,
+    columns: &[Column],
 ) -> Result<Vec<ClickHouseColumn>, ClickhouseError> {
-    let mut clickhouse_columns: Vec<ClickHouseColumn> = Vec::new();
-    for column in columns {
-        let comment = generate_column_comment(column)?;
-
-        let clickhouse_column = ClickHouseColumn {
-            name: sanitize_column_name(column.name.clone()),
-            column_type: std_field_type_to_clickhouse_type_mapper(
-                column.data_type.clone(),
-                &column.annotations,
-            )?,
-            required: column.required,
-            unique: column.unique,
-            primary_key: column.primary_key,
-            default: None, // TODO: Implement the default mapper
-            comment,
-        };
-        clickhouse_columns.push(clickhouse_column);
-    }
-
-    Ok(clickhouse_columns)
+    columns
+        .iter()
+        .map(|column| std_column_to_clickhouse_column(column.clone()))
+        .collect()
 }
 
 pub fn std_table_to_clickhouse_table(table: &Table) -> Result<ClickHouseTable, ClickhouseError> {
     let columns = std_columns_to_clickhouse_columns(&table.columns)?;
 
     let clickhouse_engine = match &table.engine {
-        Some(engine) => ClickhouseEngine::try_from(engine.as_str()).map_err(|e| {
-            ClickhouseError::InvalidParameters {
-                message: format!("engine: {e}"),
-            }
-        })?,
+        Some(engine) => engine.clone(),
         None => ClickhouseEngine::MergeTree,
     };
 
@@ -291,7 +290,9 @@ pub fn std_table_to_clickhouse_table(table: &Table) -> Result<ClickHouseTable, C
         version: table.version.clone(),
         columns,
         order_by: table.order_by.clone(),
+        partition_by: table.partition_by.clone(),
         engine: clickhouse_engine,
+        table_settings: table.table_settings.clone(),
     })
 }
 

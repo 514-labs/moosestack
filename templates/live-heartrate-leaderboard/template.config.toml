@@ -1,6 +1,15 @@
 language = "python" # Must be typescript or python
 description = "live heart rate leaderboard. Inspired by F45"
 post_install_print = """
+Deploy on Boreal
+
+The easiest way to deploy your MooseStack Applications is to use Boreal
+from the creators of MooseStack.
+
+https://boreal.cloud
+
+---------------------------------------------------------
+
 📂 Go to your project directory:
     $ cd {project_dir}
 

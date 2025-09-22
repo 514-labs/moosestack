@@ -82,7 +82,7 @@ export default {
 pub static TS_BASE_APIS_SAMPLE: &str = r#"
 import {
   createConsumptionApi,
-  ConsumptionHelpers as CH,
+  ApiHelpers as AH,
 } from "@514labs/moose-lib";
 import { tags } from "typia";
 
@@ -103,12 +103,12 @@ export default createConsumptionApi<QueryParams>(
     const query = sql`
       SELECT 
         dayOfMonth,
-        ${CH.column(orderBy)}
+        ${AH.column(orderBy)}
       FROM BarAggregated_MV
       WHERE 
         dayOfMonth >= ${startDay} 
         AND dayOfMonth <= ${endDay}
-      ORDER BY ${CH.column(orderBy)} DESC
+      ORDER BY ${AH.column(orderBy)} DESC
       LIMIT ${limit}
     `;
 

@@ -1,6 +1,6 @@
 use super::parser::PythonParserError;
 use crate::framework::core::check::CheckerError;
-use crate::framework::core::infrastructure::table::{Column, ColumnDefaults, ColumnType};
+use crate::framework::core::infrastructure::table::{Column, ColumnType};
 use crate::framework::versions::parse_version;
 
 use tokio::process::Command;
@@ -14,7 +14,7 @@ pub struct ColumnBuilder {
     pub primary_key: Option<bool>,
     pub jwt: Option<bool>,
     pub path: Option<String>,
-    pub default: Option<ColumnDefaults>,
+    pub default: Option<String>,
 }
 
 impl ColumnBuilder {

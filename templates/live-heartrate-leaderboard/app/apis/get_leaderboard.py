@@ -1,4 +1,4 @@
-from moose_lib.dmv2 import ConsumptionApi
+from moose_lib.dmv2 import Api
 from moose_lib import MooseClient
 from pydantic import BaseModel, Field
 from typing import List
@@ -114,7 +114,7 @@ def run(client: MooseClient, params: LeaderboardQueryParams) -> LeaderboardRespo
 
 
 # Create the API endpoint
-get_leaderboard_api = ConsumptionApi[LeaderboardQueryParams, LeaderboardResponse](
+get_leaderboard_api = Api[LeaderboardQueryParams, LeaderboardResponse](
     name="getLeaderboard",
     query_function=run
 )

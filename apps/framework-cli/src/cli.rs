@@ -11,7 +11,7 @@ mod watcher;
 use super::metrics::Metrics;
 use crate::utilities::docker::DockerClient;
 use clap::Parser;
-use commands::{Commands, GenerateCommand, TemplateSubCommands, WorkflowCommands};
+use commands::{Commands, DbCommands, GenerateCommand, TemplateSubCommands, WorkflowCommands};
 use config::ConfigError;
 use display::with_spinner_completion;
 use log::{debug, info, warn};
@@ -20,17 +20,17 @@ use routines::auth::generate_hash_token;
 use routines::build::build_package;
 use routines::clean::clean_project;
 use routines::docker_packager::{build_dockerfile, create_dockerfile};
-use routines::ls::{list_db, list_streaming};
 use routines::metrics_console::run_console;
 use routines::peek::peek;
 use routines::ps::show_processes;
 use routines::scripts::{
-    cancel_workflow, get_workflow_status, init_workflow, list_workflows_history, pause_workflow,
-    run_workflow, terminate_workflow, unpause_workflow,
+    cancel_workflow, get_workflow_status, list_workflows_history, pause_workflow, run_workflow,
+    terminate_workflow, unpause_workflow,
 };
 use routines::templates::list_available_templates;
 
 use settings::Settings;
+use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -49,16 +49,73 @@ use crate::framework::core::primitive_map::PrimitiveMap;
 use crate::metrics::TelemetryMetadata;
 use crate::project::Project;
 use crate::utilities::capture::{wait_for_usage_capture, ActivityType};
+use crate::utilities::constants::KEY_REMOTE_CLICKHOUSE_URL;
 use crate::utilities::constants::{
     CLI_VERSION, MIGRATION_AFTER_STATE_FILE, MIGRATION_BEFORE_STATE_FILE, MIGRATION_FILE,
     PROJECT_NAME_ALLOW_PATTERN,
 };
+use crate::utilities::keyring::{KeyringSecretRepository, SecretRepository};
 
-use crate::cli::routines::code_generation::db_to_dmv2;
+use crate::cli::commands::DbArgs;
+use crate::cli::routines::code_generation::{db_pull, db_to_dmv2, prompt_user_for_remote_ch_http};
 use crate::cli::routines::ls::ls_dmv2;
 use crate::cli::routines::templates::create_project_from_template;
 use crate::framework::core::migration_plan::MIGRATION_SCHEMA;
+use crate::utilities::clickhouse_url::convert_http_to_clickhouse;
 use anyhow::Result;
+use std::time::Duration;
+use tokio::time::timeout;
+
+/// Generic prompt function with hints, default values, and better formatting
+pub fn prompt_user(
+    prompt_text: &str,
+    default: Option<&str>,
+    hint: Option<&str>,
+) -> Result<String, RoutineFailure> {
+    use std::io::{self, Write};
+
+    // Build the prompt with proper formatting
+    let mut full_prompt = String::new();
+
+    // Add the main prompt text
+    full_prompt.push_str(prompt_text);
+
+    // Add default value if provided
+    if let Some(default_value) = default {
+        full_prompt.push_str(&format!(" (default: {})", default_value));
+    }
+
+    // Add hint if provided
+    if let Some(hint_text) = hint {
+        full_prompt.push_str(&format!("\n  💡 Hint: {}", hint_text));
+    }
+
+    // Add the prompt indicator
+    full_prompt.push_str("\n> ");
+
+    print!("{}", full_prompt);
+    let _ = io::stdout().flush();
+    let mut input = String::new();
+    io::stdin().read_line(&mut input).map_err(|e| {
+        RoutineFailure::new(
+            Message {
+                action: "Init".to_string(),
+                details: "Failed to prompt user".to_string(),
+            },
+            e,
+        )
+    })?;
+    let trimmed = input.trim();
+
+    // Return default if input is empty, otherwise return the trimmed input
+    let result = if trimmed.is_empty() {
+        default.unwrap_or("").to_string()
+    } else {
+        trimmed.to_string()
+    };
+
+    Ok(result)
+}
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None, arg_required_else_help(true), next_display_order = None)]
@@ -110,6 +167,47 @@ fn check_project_name(name: &str) -> Result<(), RoutineFailure> {
     Ok(())
 }
 
+/// Runs local infrastructure with a configurable timeout
+async fn run_local_infrastructure_with_timeout(
+    project: &Arc<Project>,
+    settings: &Settings,
+) -> anyhow::Result<()> {
+    let timeout_duration = Duration::from_secs(settings.dev.infrastructure_timeout_seconds);
+
+    // Wrap the synchronous function in a blocking task to make it work with timeout
+    let run_future = tokio::task::spawn_blocking({
+        let project = project.clone();
+        let settings = settings.clone();
+        move || {
+            let docker_client = DockerClient::new(&settings);
+            run_local_infrastructure(&project, &settings, &docker_client)
+        }
+    });
+
+    match timeout(timeout_duration, run_future).await {
+        Ok(Ok(result)) => result,
+        Ok(Err(e)) => Err(e.into()),
+        Err(_) => {
+            Err(anyhow::anyhow!(
+                "Docker container startup and validation timed out after {} seconds.\n\n\
+                This usually happens when Docker is in an unresponsive state.\n\n\
+                Troubleshooting steps:\n\
+                • Check if Docker is running: `docker info`\n\
+                • Stop existing containers: `docker stop $(docker ps -aq)`\n\
+                • Restart Docker Desktop (if using Desktop)\n\
+                • On Linux, restart Docker daemon: `sudo systemctl restart docker`\n\
+                • Check for port conflicts: `lsof -i :4000-4002`\n\
+                • If the issue persists, you can increase the timeout in your Moose configuration:\n\
+                  [dev]\n\
+                  infrastructure_timeout_seconds = {}\n\n\
+                For more help, visit: https://docs.moosejs.com/help/troubleshooting",
+                timeout_duration.as_secs(),
+                timeout_duration.as_secs() * 2
+            ))
+        }
+    }
+}
+
 pub async fn top_command_handler(
     settings: Settings,
     commands: &Commands,
@@ -123,16 +221,16 @@ pub async fn top_command_handler(
             no_fail_already_exists,
             from_remote,
             language,
-            // database,
         } => {
             info!(
                 "Running init command with name: {}, location: {:?}, template: {:?}, language: {:?}",
                 name, location, template, language
             );
 
+            // Determine template, prompting for language if needed (especially for --from-remote)
             let template = match template {
-                None => match language.as_ref().map(|l| l.to_lowercase()).as_deref() {
-                    None => panic!("Either template or language should be specified."), // clap command line parsing enforces either is present
+                Some(t) => t.to_lowercase(),
+                None => match language.as_deref().map(|l| l.to_lowercase()).as_deref() {
                     Some("typescript") => "typescript-empty".to_string(),
                     Some("python") => "python-empty".to_string(),
                     Some(lang) => {
@@ -141,8 +239,27 @@ pub async fn top_command_handler(
                             format!("language {lang}"),
                         )))
                     }
+                    None => {
+                        display::show_message_wrapper(
+                            MessageType::Info,
+                            Message::new(
+                                "Init".to_string(),
+                                "Setting up your new Moose project".to_string(),
+                            ),
+                        );
+                        let input = prompt_user(
+                            "Select language [1] TypeScript [2] Python",
+                            Some("1"),
+                            None,
+                        )?
+                        .to_lowercase();
+
+                        match input.as_str() {
+                            "2" | "Python" | "py" => "python-empty".to_string(),
+                            _ => "typescript-empty".to_string(),
+                        }
+                    }
                 },
-                Some(template) => template.to_lowercase(),
             };
 
             let dir_path = Path::new(location.as_deref().unwrap_or(name));
@@ -152,6 +269,7 @@ pub async fn top_command_handler(
                 Some(name.to_string()),
                 &settings,
                 machine_id.clone(),
+                HashMap::from([("template".to_string(), template.to_string())]),
             );
 
             check_project_name(name)?;
@@ -160,15 +278,82 @@ pub async fn top_command_handler(
                 create_project_from_template(&template, name, dir_path, *no_fail_already_exists)
                     .await?;
 
-            if let Some(remote_url) = from_remote {
-                db_to_dmv2(remote_url, dir_path).await?;
+            let normalized_url = match from_remote {
+                None => {
+                    // No --from-remote flag provided
+                    None
+                }
+                Some(None) => {
+                    // --from-remote flag provided, but no URL given - use interactive prompts
+                    let url = prompt_user_for_remote_ch_http()?;
+                    db_to_dmv2(&url, dir_path).await?;
+                    Some(url)
+                }
+                Some(Some(url_str)) => {
+                    // --from-remote flag provided with URL - validate and use
+                    match convert_http_to_clickhouse(url_str) {
+                        Ok(_) => {
+                            db_to_dmv2(url_str, dir_path).await?;
+                            Some(url_str.to_string())
+                        }
+                        Err(e) => {
+                            return Err(RoutineFailure::error(Message::new(
+                                "Init from remote".to_string(),
+                                format!(
+                                    "Invalid ClickHouse URL. Use HTTPS protocol and correct port. Run `moose init {} --from-remote` without arguments for interactive setup.\nDetails: {}",
+                                    name,
+                                    e
+                                ),
+                            )));
+                        }
+                    }
+                }
+            };
+
+            // Offer to store the connection string for future db pull convenience
+            if let Some(ref connection_string) = normalized_url {
+                let save_choice = prompt_user(
+                    "Save this connection string to your system keychain for easy `moose db pull` later? [Y/n]",
+                    Some("Y"),
+                    Some("You can always pass --connection-string explicitly to override."),
+                )?;
+
+                let save = save_choice.trim().is_empty()
+                    || matches!(save_choice.trim().to_lowercase().as_str(), "y" | "yes");
+                if save {
+                    let repo = KeyringSecretRepository;
+                    match repo.store(name, KEY_REMOTE_CLICKHOUSE_URL, connection_string) {
+                        Ok(()) => display::show_message_wrapper(
+                            MessageType::Success,
+                            Message::new(
+                                "Keychain".to_string(),
+                                format!(
+                                    "Saved ClickHouse connection string for project '{}'.",
+                                    name
+                                ),
+                            ),
+                        ),
+                        Err(e) => warn!("Failed to store connection string: {e:?}"),
+                    }
+                }
             }
 
             wait_for_usage_capture(capture_handle).await;
 
+            let success_message = if let Some(connection_string) = normalized_url {
+                format!(
+                    "\n\n{post_install_message}\n\n🔗 Your ClickHouse connection string:\n{}\n\n📋 After setting up your development environment, open a new terminal and seed your local database:\n      moose seed clickhouse --connection-string \"{}\" --limit 1000\n\n💡 Tip: Save the connection string as an environment variable for future use:\n   export MOOSE_REMOTE_CLICKHOUSE_URL=\"{}\"\n",
+                    connection_string,
+                    connection_string,
+                    connection_string
+                )
+            } else {
+                format!("\n\n{post_install_message}")
+            };
+
             Ok(RoutineSuccess::highlight(Message::new(
                 "Get Started".to_string(),
-                format!("\n\n{post_install_message}"),
+                success_message,
             )))
         }
         // This command is used to check the project for errors that are not related to runtime
@@ -186,6 +371,7 @@ pub async fn top_command_handler(
                 Some(project_arc.name()),
                 &settings,
                 machine_id.clone(),
+                HashMap::new(),
             );
 
             check_project_name(&project_arc.name())?;
@@ -261,6 +447,7 @@ pub async fn top_command_handler(
                     Some(project_arc.name()),
                     &settings,
                     machine_id.clone(),
+                    HashMap::new(),
                 );
 
                 let docker_client = DockerClient::new(&settings);
@@ -280,6 +467,7 @@ pub async fn top_command_handler(
                     Some(project_arc.name()),
                     &settings,
                     machine_id.clone(),
+                    HashMap::new(),
                 );
 
                 // Use the new build_package function instead of Docker build
@@ -307,6 +495,7 @@ pub async fn top_command_handler(
         }
         Commands::Dev {} => {
             info!("Running dev command");
+            info!("Moose Version: {}", CLI_VERSION);
 
             let mut project = load_project()?;
             project.set_is_production_env(false);
@@ -317,17 +506,18 @@ pub async fn top_command_handler(
                 Some(project_arc.name()),
                 &settings,
                 machine_id.clone(),
+                HashMap::new(),
             );
 
-            let docker_client = DockerClient::new(&settings);
-
             check_project_name(&project_arc.name())?;
-            run_local_infrastructure(&project_arc, &settings, &docker_client).map_err(|e| {
-                RoutineFailure::error(Message {
-                    action: "Dev".to_string(),
-                    details: format!("Failed to run local infrastructure: {e:?}"),
-                })
-            })?;
+            run_local_infrastructure_with_timeout(&project_arc, &settings)
+                .await
+                .map_err(|e| {
+                    RoutineFailure::error(Message {
+                        action: "Dev".to_string(),
+                        details: format!("Failed to run local infrastructure: {e:?}"),
+                    })
+                })?;
 
             let redis_client = setup_redis_client(project_arc.clone()).await.map_err(|e| {
                 RoutineFailure::error(Message {
@@ -384,6 +574,7 @@ pub async fn top_command_handler(
                     Some(project_arc.name()),
                     &settings,
                     machine_id.clone(),
+                    HashMap::new(),
                 );
 
                 check_project_name(&project_arc.name())?;
@@ -406,6 +597,7 @@ pub async fn top_command_handler(
                     Some(project.name()),
                     &settings,
                     machine_id.clone(),
+                    HashMap::new(),
                 );
 
                 check_project_name(&project.name())?;
@@ -582,6 +774,7 @@ pub async fn top_command_handler(
                 Some(project_arc.name()),
                 &settings,
                 machine_id.clone(),
+                HashMap::new(),
             );
 
             routines::start_production_mode(&settings, project_arc, arc_metrics, redis_client)
@@ -609,6 +802,7 @@ pub async fn top_command_handler(
                 Some(project.name()),
                 &settings,
                 machine_id.clone(),
+                HashMap::new(),
             );
 
             check_project_name(&project.name())?;
@@ -638,6 +832,7 @@ pub async fn top_command_handler(
                 Some(project_arc.name()),
                 &settings,
                 machine_id.clone(),
+                HashMap::new(),
             );
 
             check_project_name(&project_arc.name())?;
@@ -662,6 +857,7 @@ pub async fn top_command_handler(
                 Some(project.name()),
                 &settings,
                 machine_id.clone(),
+                HashMap::new(),
             );
 
             check_project_name(&project.name())?;
@@ -699,6 +895,7 @@ pub async fn top_command_handler(
                 Some(project_arc.name()),
                 &settings,
                 machine_id.clone(),
+                HashMap::new(),
             );
 
             let result = show_processes(project_arc);
@@ -707,14 +904,7 @@ pub async fn top_command_handler(
 
             result
         }
-        Commands::Ls {
-            version,
-            limit,
-            streaming,
-            _type,
-            name,
-            json,
-        } => {
+        Commands::Ls { _type, name, json } => {
             info!("Running ls command");
 
             let project = load_project()?;
@@ -725,14 +915,16 @@ pub async fn top_command_handler(
                 Some(project_arc.name()),
                 &settings,
                 machine_id.clone(),
+                HashMap::new(),
             );
 
             let res = if project_arc.features.data_model_v2 {
                 ls_dmv2(&project_arc, _type.as_deref(), name.as_deref(), *json).await
-            } else if *streaming {
-                list_streaming(project_arc, limit).await
             } else {
-                list_db(project_arc, version, limit).await
+                Err(RoutineFailure::error(Message {
+                    action: "List".to_string(),
+                    details: "Please upgrade to Moose Data Model v2".to_string(),
+                }))
             };
 
             wait_for_usage_capture(capture_handle).await;
@@ -756,6 +948,7 @@ pub async fn top_command_handler(
                 Some(project_arc.name()),
                 &settings,
                 machine_id.clone(),
+                HashMap::new(),
             );
 
             // Default to table if neither table nor stream is specified
@@ -778,6 +971,7 @@ pub async fn top_command_handler(
                 None,
                 &settings,
                 machine_id.clone(),
+                HashMap::new(),
             );
 
             let result = run_console().await;
@@ -797,7 +991,6 @@ pub async fn top_command_handler(
             }
 
             let activity_type = match &workflow_args.command {
-                Some(WorkflowCommands::Init { .. }) => ActivityType::WorkflowInitCommand,
                 Some(WorkflowCommands::Run { .. }) => ActivityType::WorkflowRunCommand,
                 Some(WorkflowCommands::List { .. }) => ActivityType::WorkflowListCommand,
                 Some(WorkflowCommands::History { .. }) => ActivityType::WorkflowListCommand,
@@ -815,12 +1008,10 @@ pub async fn top_command_handler(
                 Some(project.name()),
                 &settings,
                 machine_id.clone(),
+                HashMap::new(),
             );
 
             let result = match &workflow_args.command {
-                Some(WorkflowCommands::Init { name, tasks, task }) => {
-                    init_workflow(&project, name, tasks.clone(), task.clone()).await
-                }
                 Some(WorkflowCommands::Run { name, input }) => {
                     run_workflow(&project, name, input.clone()).await
                 }
@@ -869,6 +1060,7 @@ pub async fn top_command_handler(
                         None,
                         &settings,
                         machine_id.clone(),
+                        HashMap::new(),
                     );
 
                     let result = list_available_templates(CLI_VERSION).await;
@@ -878,6 +1070,60 @@ pub async fn top_command_handler(
                     result
                 }
             }
+        }
+        Commands::Db(DbArgs {
+            command:
+                DbCommands::Pull {
+                    connection_string,
+                    file_path,
+                },
+        }) => {
+            info!("Running db pull command");
+            let project = load_project()?;
+
+            let capture_handle = crate::utilities::capture::capture_usage(
+                ActivityType::DbPullCommand,
+                Some(project.name()),
+                &settings,
+                machine_id.clone(),
+                HashMap::new(),
+            );
+            let resolved_connection_string: String = match connection_string {
+                Some(s) => s.clone(),
+                None => {
+                    let repo = KeyringSecretRepository;
+                    match repo.get(&project.name(), KEY_REMOTE_CLICKHOUSE_URL) {
+                        Ok(Some(s)) => s,
+                        Ok(None) => return Err(RoutineFailure::error(Message {
+                            action: "DB Pull".to_string(),
+                            details: "No connection string provided and none saved. Pass --connection-string or save one during `moose init --from-remote`.".to_string(),
+                        })),
+                        Err(e) => {
+                            return Err(RoutineFailure::error(Message {
+                                action: "DB Pull".to_string(),
+                                details: format!(
+                                    "Failed to read saved connection string from keychain: {e:?}"
+                                ),
+                            }));
+                        }
+                    }
+                }
+            };
+
+            db_pull(&resolved_connection_string, &project, file_path.as_deref())
+                .await
+                .map_err(|e| {
+                    RoutineFailure::new(
+                        Message::new("DB Pull".to_string(), "failed".to_string()),
+                        e,
+                    )
+                })?;
+
+            wait_for_usage_capture(capture_handle).await;
+            Ok(RoutineSuccess::success(Message::new(
+                "DB Pull".to_string(),
+                "External models refreshed".to_string(),
+            )))
         }
         Commands::Refresh { url, token } => {
             info!("Running refresh command");
@@ -889,6 +1135,7 @@ pub async fn top_command_handler(
                 Some(project.name()),
                 &settings,
                 machine_id.clone(),
+                HashMap::new(),
             );
 
             let output = remote_refresh(&project, url, token).await.map_err(|e| {
@@ -902,6 +1149,10 @@ pub async fn top_command_handler(
         Commands::Seed(seed_args) => {
             let project = load_project()?;
             seed_data::handle_seed_command(seed_args, &project).await
+        }
+        Commands::Truncate { tables, all, rows } => {
+            let project = load_project()?;
+            routines::truncate_table::truncate_tables(&project, tables.clone(), *all, *rows).await
         }
     }
 }

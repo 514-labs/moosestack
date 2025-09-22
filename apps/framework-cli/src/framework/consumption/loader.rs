@@ -12,7 +12,7 @@ use std::{fs, path::Path};
 
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
-pub enum ConsumptionLoaderError {
+pub enum AnalyticsApiLoaderError {
     #[error("Failed to open file: {0}")]
     FailedToOpenFile(std::io::Error),
     #[error("Failed to load query params: {0}")]
@@ -26,7 +26,7 @@ pub struct QueryParamOutput {
     pub params: Vec<ConsumptionQueryParam>,
 }
 
-pub async fn load_consumption(project: &Project) -> Result<Consumption, ConsumptionLoaderError> {
+pub async fn load_consumption(project: &Project) -> Result<Consumption, AnalyticsApiLoaderError> {
     let mut endpoint_files = Vec::new();
     for f in walkdir::WalkDir::new(project.consumption_dir())
         .into_iter()
@@ -48,12 +48,12 @@ pub async fn load_consumption(project: &Project) -> Result<Consumption, Consumpt
 async fn build_endpoint_file(
     project: &Project,
     file_path: &Path,
-) -> Result<Option<EndpointFile>, ConsumptionLoaderError> {
+) -> Result<Option<EndpointFile>, AnalyticsApiLoaderError> {
     if let Ok(path) = file_path.strip_prefix(project.consumption_dir()) {
         let mut file =
-            fs::File::open(file_path).map_err(ConsumptionLoaderError::FailedToOpenFile)?;
+            fs::File::open(file_path).map_err(AnalyticsApiLoaderError::FailedToOpenFile)?;
         let mut hasher = Sha256::new();
-        std::io::copy(&mut file, &mut hasher).map_err(ConsumptionLoaderError::FailedToOpenFile)?;
+        std::io::copy(&mut file, &mut hasher).map_err(AnalyticsApiLoaderError::FailedToOpenFile)?;
         let hash = hasher.finalize();
 
         let mut path = path.to_path_buf();
@@ -66,11 +66,11 @@ async fn build_endpoint_file(
                 &project.project_location,
             )
             .await
-            .map_err(ConsumptionLoaderError::FailedToLoadTypescriptParams)?,
+            .map_err(AnalyticsApiLoaderError::FailedToLoadTypescriptParams)?,
             SupportedLanguages::Python => {
                 let params = load_python_query_param(project, &project.project_location, &path)
                     .await
-                    .map_err(ConsumptionLoaderError::FailedToLoadPythonParams)?;
+                    .map_err(AnalyticsApiLoaderError::FailedToLoadPythonParams)?;
                 (params, Value::Null, None)
             }
         };

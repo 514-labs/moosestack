@@ -1,4 +1,4 @@
-import { ConsumptionApi, MooseCache } from "@514labs/moose-lib";
+import { Api, MooseCache } from "@514labs/moose-lib";
 import { BarAggregatedMV } from "../views/barAggregated";
 import { tags } from "typia";
 
@@ -31,7 +31,7 @@ interface ResponseDataV1 {
   };
 }
 
-export const BarApi = new ConsumptionApi<QueryParams, ResponseData[]>(
+export const BarApi = new Api<QueryParams, ResponseData[]>(
   "bar",
   async (
     { orderBy = "totalRows", limit = 5, startDay = 1, endDay = 31 },
@@ -67,7 +67,7 @@ export const BarApi = new ConsumptionApi<QueryParams, ResponseData[]>(
   },
 );
 
-export const BarApiV1 = new ConsumptionApi<QueryParams, ResponseDataV1[]>(
+export const BarApiV1 = new Api<QueryParams, ResponseDataV1[]>(
   "bar",
   async (
     { orderBy = "totalRows", limit = 5, startDay = 1, endDay = 31 },

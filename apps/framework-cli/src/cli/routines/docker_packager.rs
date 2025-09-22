@@ -7,6 +7,7 @@ use crate::utilities::constants::{
     SETUP_PY, TSCONFIG_JSON,
 };
 use crate::utilities::docker::DockerClient;
+use crate::utilities::nodejs_version::determine_node_version_from_package_json;
 use crate::utilities::package_managers::get_lock_file_path;
 use crate::utilities::{constants, system};
 use crate::{cli::display::Message, project::Project};
@@ -67,27 +68,46 @@ struct PathMapping {
     package_directory: String, // The directory name from the filesystem path
 }
 
-// Adapted from https://github.com/nodejs/docker-node/blob/2928850549388a57a33365302fc5ebac91f78ffe/20/bookworm-slim/Dockerfile
-// and removed yarn
-static TS_BASE_DOCKER_FILE: &str = r#"
-FROM node:20-bookworm-slim
+/// Generates the TypeScript base Dockerfile with dynamic Node.js version
+fn generate_ts_base_dockerfile(node_version: &str) -> String {
+    format!(
+        r#"
+FROM node:{}-bookworm-slim
 
 # This is to remove the notice to update NPM that will break the output from STDOUT
 RUN npm config set update-notifier false
 
 # Install alternative package managers globally
 RUN npm install -g pnpm@latest
-"#;
+"#,
+        node_version
+    )
+}
 
 // Python and node 'slim' term is flipped
 static PY_BASE_DOCKER_FILE: &str = r#"
 FROM python:3.12-slim-bookworm
 "#;
 
-// Monorepo-aware TypeScript Dockerfile template
-static TS_MONOREPO_DOCKER_FILE: &str = r#"
+/// Generates the monorepo TypeScript Dockerfile with dynamic Node.js version and lock file
+fn generate_ts_monorepo_dockerfile(node_version: &str, lock_file_name: Option<&str>) -> String {
+    let lock_file_copy = match lock_file_name {
+        Some(name) => format!("COPY {} ./", name),
+        None => "# No lock file found".to_string(),
+    };
+
+    let install_command = match lock_file_name {
+        Some("pnpm-lock.yaml") => "RUN pnpm install --frozen-lockfile",
+        Some("package-lock.json") => "RUN npm ci",
+        Some("yarn.lock") => "RUN yarn install --frozen-lockfile",
+        Some(_) => "RUN pnpm install --frozen-lockfile", // fallback to pnpm
+        None => "RUN pnpm install",                      // no lock file, regular install
+    };
+
+    format!(
+        r#"
 # Stage 1: Full monorepo context for dependency resolution
-FROM node:20-bookworm-slim AS monorepo-base
+FROM node:{}-bookworm-slim AS monorepo-base
 
 # This is to remove the notice to update NPM that will break the output from STDOUT
 RUN npm config set update-notifier false
@@ -100,23 +120,26 @@ WORKDIR /monorepo
 
 # Copy workspace configuration files
 COPY pnpm-workspace.yaml ./
-COPY pnpm-lock.yaml ./
+{}
 
 # Copy workspace package directories (will be replaced with actual patterns)
 MONOREPO_PACKAGE_COPIES
 
 # Install all dependencies from monorepo root
-RUN pnpm install --frozen-lockfile
+{}
 
 # Stage 2: Production image  
-FROM node:20-bookworm-slim
+FROM node:{}-bookworm-slim
 
 # This is to remove the notice to update NPM that will break the output from STDOUT
 RUN npm config set update-notifier false
 
 # Install alternative package managers globally
 RUN npm install -g pnpm@latest
-"#;
+"#,
+        node_version, lock_file_copy, install_command, node_version
+    )
+}
 
 static DOCKER_FILE_COMMON: &str = r#"
 ARG DEBIAN_FRONTEND=noninteractive
@@ -160,11 +183,11 @@ HEALTHCHECK --interval=30s --timeout=3s \
 RUN groupadd --gid 1001 moose \
   && useradd --uid 1001 --gid moose --shell /bin/bash --create-home moose
 
-# all commands from here on will be run as the moose user
-USER moose:moose
-
 # Set the working directory inside the container
 WORKDIR /application
+
+# Ensure application directory is owned by moose user
+RUN chown -R moose:moose /application
 
 # Placeholder for the language specific copy package file copy
 COPY_PACKAGE_FILE
@@ -174,8 +197,13 @@ COPY --chown=moose:moose ./project.tom[l] ./project.toml
 COPY --chown=moose:moose ./moose.config.tom[l] ./moose.config.toml
 COPY --chown=moose:moose ./versions .moose/versions
 
+
 # Placeholder for the language specific install command
 INSTALL_COMMAND
+
+
+# all commands from here on will be run as the moose user
+USER moose:moose
 
 # Checks that the project is valid
 RUN which moose
@@ -272,9 +300,32 @@ pub fn create_dockerfile(
         SupportedLanguages::Typescript => {
             let project_root = project.project_location.clone();
 
+            // Determine Node.js version from package.json
+            let package_json_path = project_root.join("package.json");
+            let node_version = determine_node_version_from_package_json(&package_json_path);
+            let node_version_str = node_version.to_major_string();
+
+            info!(
+                "Using Node.js version {} for Docker image",
+                node_version_str
+            );
+
             // Check if we're in a pnpm workspace (monorepo)
             if let Some(workspace_root) = find_pnpm_workspace_root(&project_root) {
                 info!("Detected pnpm workspace at: {:?}", workspace_root);
+
+                // Detect lock file at workspace root
+                let workspace_lock_file = get_lock_file_path(&workspace_root);
+                let lock_file_name = workspace_lock_file
+                    .as_ref()
+                    .and_then(|path| path.file_name())
+                    .and_then(|name| name.to_str());
+
+                if let Some(name) = lock_file_name {
+                    info!("Found lock file in workspace: {}", name);
+                } else {
+                    info!("No lock file found in workspace root");
+                }
 
                 // Calculate relative path from workspace root to project
                 let relative_project_path = match project_root.strip_prefix(&workspace_root) {
@@ -282,7 +333,11 @@ pub fn create_dockerfile(
                     Err(e) => {
                         error!("Failed to calculate relative project path: {}", e);
                         // Fall back to standard build if we can't determine the relative path
-                        return create_standard_typescript_dockerfile(project, &internal_dir);
+                        return create_standard_typescript_dockerfile(
+                            project,
+                            &internal_dir,
+                            &node_version_str,
+                        );
                     }
                 };
 
@@ -292,7 +347,11 @@ pub fn create_dockerfile(
                     Err(e) => {
                         error!("Failed to read workspace config: {:?}", e);
                         // Fall back to standard build if we can't read the workspace config
-                        return create_standard_typescript_dockerfile(project, &internal_dir);
+                        return create_standard_typescript_dockerfile(
+                            project,
+                            &internal_dir,
+                            &node_version_str,
+                        );
                     }
                 };
 
@@ -324,7 +383,8 @@ pub fn create_dockerfile(
                 };
 
                 // Build the monorepo Dockerfile
-                let mut dockerfile = TS_MONOREPO_DOCKER_FILE.to_string();
+                let mut dockerfile =
+                    generate_ts_monorepo_dockerfile(&node_version_str, lock_file_name);
                 dockerfile = dockerfile.replace("MONOREPO_PACKAGE_COPIES", &package_copies);
 
                 // Add the common Docker sections
@@ -347,6 +407,17 @@ pub fn create_dockerfile(
                     .collect::<Vec<_>>()
                     .join("\n");
 
+                // Prepare lock file copy command for deployment stage
+                let deploy_lock_file_copy = match lock_file_name {
+                    Some(name) => format!("COPY --from=monorepo-base /monorepo/{} ./", name),
+                    None => "# No lock file found".to_string(),
+                };
+
+                let deploy_install_command = format!(
+                    "RUN pnpm --filter \"./{}\" deploy /temp-deploy --legacy",
+                    relative_project_path.to_string_lossy()
+                );
+
                 // Modify the copy commands to copy from the build stage
                 let copy_from_build = format!(
                     r#"
@@ -359,12 +430,12 @@ COPY --from=monorepo-base --chown=moose:moose /monorepo/{}/tsconfig.json ./tscon
 USER root:root
 WORKDIR /temp-monorepo
 COPY --from=monorepo-base /monorepo/pnpm-workspace.yaml ./
-COPY --from=monorepo-base /monorepo/pnpm-lock.yaml ./
+{}
 COPY --from=monorepo-base /monorepo/{} ./{}
 # Copy all workspace directories that exist
 {}
-# Use pnpm deploy from workspace to install only production dependencies
-RUN pnpm --filter "./{}" deploy /temp-deploy --legacy
+# Use package manager to install only production dependencies
+{}
 RUN cp -r /temp-deploy/node_modules /application/node_modules
 RUN chown -R moose:moose /application/node_modules
 
@@ -379,10 +450,11 @@ WORKDIR /application"#,
                     relative_project_path.to_string_lossy(), // 1: /monorepo/{}/app
                     relative_project_path.to_string_lossy(), // 2: /monorepo/{}/package.json
                     relative_project_path.to_string_lossy(), // 3: /monorepo/{}/tsconfig.json
-                    relative_project_path.to_string_lossy(), // 4: /monorepo/{} ./{}
+                    deploy_lock_file_copy,                   // 4: lock file copy or comment
                     relative_project_path.to_string_lossy(), // 5: /monorepo/{} ./{}
-                    workspace_copies,                        // 6: {} (workspace_copies)
-                    relative_project_path.to_string_lossy(), // 7: --filter "./{}"
+                    relative_project_path.to_string_lossy(), // 6: /monorepo/{} ./{}
+                    workspace_copies,                        // 7: {} (workspace_copies)
+                    deploy_install_command,                  // 8: package manager install command
                 );
 
                 dockerfile = dockerfile.replace("COPY_PACKAGE_FILE", &copy_from_build);
@@ -415,7 +487,7 @@ WORKDIR /application"#,
                 dockerfile
             } else {
                 // Not a monorepo, use standard Dockerfile generation
-                create_standard_typescript_dockerfile_content(project)?
+                create_standard_typescript_dockerfile_content(project, &node_version_str)?
             }
         }
         SupportedLanguages::Python => {
@@ -572,7 +644,7 @@ pub fn build_dockerfile(
     // so we set it to a recent version for the purpose of local dev testing.
     let mut cli_version = constants::CLI_VERSION;
     if cli_version == "0.0.1" {
-        cli_version = "0.3.810";
+        cli_version = "0.6.34";
     }
 
     // Check if this is a monorepo build
@@ -1073,6 +1145,7 @@ fn transform_tsconfig_for_docker(
 /// Creates standard TypeScript Dockerfile content (non-monorepo)
 fn create_standard_typescript_dockerfile_content(
     project: &Project,
+    node_version: &str,
 ) -> Result<String, RoutineFailure> {
     let project_root = project.project_location.clone();
     let (install_command, lock_file_copy) =
@@ -1129,15 +1202,17 @@ fn create_standard_typescript_dockerfile_content(
         )
         .replace("INSTALL_COMMAND", &install_command);
 
-    Ok(format!("{TS_BASE_DOCKER_FILE}{install}"))
+    let ts_base_dockerfile = generate_ts_base_dockerfile(node_version);
+    Ok(format!("{ts_base_dockerfile}{install}"))
 }
 
 /// Creates standard TypeScript Dockerfile and writes it to disk
 fn create_standard_typescript_dockerfile(
     project: &Project,
     internal_dir: &Path,
+    node_version: &str,
 ) -> Result<RoutineSuccess, RoutineFailure> {
-    let dockerfile_content = create_standard_typescript_dockerfile_content(project)?;
+    let dockerfile_content = create_standard_typescript_dockerfile_content(project, node_version)?;
     let file_path = internal_dir.join("packager/Dockerfile");
 
     fs::write(&file_path, dockerfile_content).map_err(|err| {

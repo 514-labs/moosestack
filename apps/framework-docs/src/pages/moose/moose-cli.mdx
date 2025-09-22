@@ -62,6 +62,35 @@ Clears temporary data and stops development infrastructure.
 moose clean
 ```
 
+### Seed (ClickHouse)
+Seed your local ClickHouse from a remote ClickHouse instance.
+```bash
+moose seed clickhouse [--connection-string <CONNECTION_STRING>] [--table <name>] [--limit <n> | --all]
+```
+- `--connection-string`: Remote ClickHouse HTTPS/ClickHouse URL. If omitted, the CLI uses `MOOSE_SEED_CLICKHOUSE_URL`.
+- `--table`: Seed only the specified table (default: all Moose tables).
+- `--limit`: Copy up to N rows (mutually exclusive with `--all`). Large limits are automatically batched.
+- `--all`: Copy entire table(s) in batches (mutually exclusive with `--limit`).
+
+Notes:
+- Seeding is batched with progress output; Ctrl+C finishes the current batch gracefully.
+- Use env var fallback:
+```bash
+export MOOSE_SEED_CLICKHOUSE_URL='https://username:password@host:8443/?database=default'
+```
+
+### Truncate
+Truncate tables or delete the last N rows from local ClickHouse tables.
+```bash
+moose truncate [TABLE[,TABLE...]] [--all] [--rows <n>]
+```
+- `TABLE[,TABLE...]`: One or more table names (comma-separated). Omit to use `--all`.
+- `--all`: Apply to all non-view tables in the current database (mutually exclusive with listing tables).
+- `--rows <n>`: Delete the last N rows per table; omit to remove all rows (TRUNCATE).
+
+Notes:
+- For `--rows`, the command uses the table ORDER BY when available; otherwise it falls back to a timestamp heuristic.
+
 ## Monitoring Commands
 
 ### Logs
@@ -115,6 +144,33 @@ Generate authentication tokens for API access.
 moose generate hash-token
 ```
 Generates both a plain-text Bearer token and its corresponding hashed version for authentication.
+
+### Generate Migration Plan (OLAP)
+Create an ordered ClickHouse DDL plan by comparing a remote instance with your local code.
+```bash
+moose generate migration --url https://<remote-env> --token <api-token> --save
+```
+- Writes `./migrations/plan.yaml` and snapshots `remote_state.json` and `local_infra_map.json`
+- Omit `--save` to output to stdout without writing files
+- Requires these feature flags in `moose.config.toml`:
+  ```toml filename="moose.config.toml" copy
+  [features]
+  olap = true
+  ddl_plan = true
+  ```
+
+### DB Pull (External Tables)
+Refresh `EXTERNALLY_MANAGED` table definitions from a remote ClickHouse instance.
+```bash
+moose db pull --connection-string <CONNECTION_STRING> [--file-path <OUTPUT_PATH>]
+```
+- `--connection-string`: ClickHouse URL; native `clickhouse://` is auto-converted to HTTP(S). Include `?database=` or the CLI will query the current database.
+- `--file-path`: Optional override for the generated external models file (defaults to `app/externalModels.ts` or `app/external_models.py`).
+
+Notes:
+- Only tables marked `EXTERNALLY_MANAGED` in your code are refreshed.
+- The command writes a single external models file and overwrites the file on each run.
+- See the full guide: [/moose/olap/db-pull](/moose/olap/db-pull)
 
 ## Workflow Management
 

@@ -3,7 +3,7 @@ title: Moose OLAP
 description: Create and manage ClickHouse tables, materialized views, and data migrations
 ---
 
-import { Callout, BulletPointsCard, CheckmarkBullets, LanguageSwitcher, TypeScript, Python, CTACards, CTACard, PathConfig } from "@/components";
+import { Callout, BulletPointsCard, CheckmarkBullets, LanguageSwitcher, TypeScript, Python, CTACards, CTACard, PathConfig, ExportRequirement } from "@/components";
 import { Tabs } from "nextra/components";
 
 # Moose OLAP
@@ -13,17 +13,9 @@ import { Tabs } from "nextra/components";
 
 The Moose OLAP module provides standalone ClickHouse database management with type-safe schemas. You can use this capability independently to create tables, materialized views, and manage your table schemas without requiring other MooseStack components.
 
-
-## Enabling Moose OLAP
-
-In your `moose.config.toml` file, enable the OLAP Database capability:
-
-```toml
-[features]
-olap = true
-```
-
 ### Basic Example
+
+<ExportRequirement primitive="OlapTable" example="export { myTable }" />
 
 <TypeScript>
 ```ts filename="FirstTable.ts" copy
@@ -34,7 +26,7 @@ interface MyFirstTable {
 }
 
 // Create a table named "first_table"
-const myTable = new OlapTable<MyFirstTable>("first_table");
+export const myTable = new OlapTable<MyFirstTable>("first_table");
 ```
 </TypeScript>
 
@@ -50,8 +42,43 @@ class MyFirstTable(BaseModel):
 
 # Create a table named "first_table"
 my_table = OlapTable[MyFirstTable]("first_table") 
+
+# No export needed - Python modules are automatically discovered
 ```
 </Python>
+
+## Getting started
+
+If you’re new to Moose OLAP, choose one of these paths:
+
+### Import your schema from an existing ClickHouse database
+```bash filename="Terminal" copy
+moose init your-project-name --from-remote
+```
+<Callout type="info" title="Review the full guide" href="/moose/getting-started/from-clickhouse" ctaLabel="Get started" compact={true}>
+Review the full guide to learn more about how to bootstrap a new Moose OLAP project from an existing ClickHouse DB.
+</Callout>
+
+### Start from scratch
+Create a blank project, then model your first table:
+  ```bash filename="Terminal" copy
+  moose init your-project-name --language <typescript|python>
+  cd your-project-name
+  ```
+  <Callout type="info" title="Next steps: Model a table" href="/moose/olap/model-table" ctaLabel="Model a table" compact={true}>
+  Review the guide to learn more about how to model your first table.
+  </Callout>
+
+Working with ClickPipes/PeerDB? Read [External Tables](/moose/olap/external-tables) and keep them in sync with [DB Pull](/moose/olap/db-pull).
+
+## Enabling Moose OLAP
+
+In your `moose.config.toml` file, enable the OLAP Database capability:
+
+```toml
+[features]
+olap = true
+```
 
 ## Core Capabilities
 

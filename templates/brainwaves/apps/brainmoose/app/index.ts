@@ -28,7 +28,7 @@ import "./functions/UserActivity__ParsedActivity";
  * ✅ Data Models: Converted to DMV2 IngestPipeline pattern for complete data flow management
  * ✅ Streaming Functions: Migrated to pipeline.stream!.addTransform pattern
  * ✅ Blocks/Aggregations: Converted to MaterializedView with pipeline table references
- * ✅ APIs: Migrated to ConsumptionApi classes with type safety
+ * ✅ APIs: Migrated to Api classes with type safety
  * ✅ Infrastructure: Single source of truth through IngestPipeline declarations
  *
  * Key Changes:

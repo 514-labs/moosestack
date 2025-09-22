@@ -6,6 +6,7 @@ and utilities for defining data models and SQL queries.
 """
 from clickhouse_connect.driver.client import Client as ClickhouseClient
 from clickhouse_connect import get_client
+from moose_lib.dmv2 import OlapTable
 from pydantic import BaseModel
 from dataclasses import dataclass, asdict
 from enum import Enum
@@ -18,7 +19,11 @@ import asyncio
 from string import Formatter
 from temporalio.client import Client as TemporalClient, TLSConfig
 from temporalio.common import RetryPolicy, WorkflowIDConflictPolicy, WorkflowIDReusePolicy
-from datetime import timedelta
+from datetime import timedelta, datetime
+from time import perf_counter
+from humanfriendly import format_timespan
+
+from .data_models import Column
 from .config.runtime import RuntimeClickHouseConfig
 
 from moose_lib.commons import EnhancedJSONEncoder
@@ -136,7 +141,7 @@ JWTPayload = Dict[str, Any]
 
 
 @dataclass
-class ConsumptionApiResult:
+class ApiResult:
     """Standard structure for returning results from a Consumption API handler.
 
     Attributes:
@@ -145,6 +150,11 @@ class ConsumptionApiResult:
     """
     status: int
     body: Any
+
+
+# Backward compatibility alias (deprecated)
+ConsumptionApiResult = ApiResult
+"""@deprecated: Use ApiResult instead of ConsumptionApiResult"""
 
 
 class QueryClient:
@@ -176,7 +186,8 @@ class QueryClient:
 
     def execute(self, input, variables, row_type: Type[BaseModel] = None):
         params = {}
-        values = {}
+        values: dict[str, Any] = {}
+        preview_params = {}
 
         for i, (_, variable_name, _, _) in enumerate(Formatter().parse(input)):
             if variable_name:
@@ -185,25 +196,104 @@ class QueryClient:
                     # handling passing the value of the query string dict directly to variables
                     value = value[0]
 
-                t = 'String' if isinstance(value, str) else \
-                    'Int64' if isinstance(value, int) else \
-                        'Float64' if isinstance(value, float) else "String"  # unknown type
+                if isinstance(value, Column) or isinstance(value, OlapTable):
+                    params[variable_name] = f'{{p{i}: Identifier}}'
+                    values[f'p{i}'] = value.name
+                else:
+                    if isinstance(value, bool):
+                        params[variable_name] = f'{{p{i}: Bool}}'
+                        values[f'p{i}'] = value
+                    elif isinstance(value, datetime):
+                        params[variable_name] = f'{{p{i}: DateTime}}'
+                        values[f'p{i}'] = value
+                    elif isinstance(value, int):
+                        params[variable_name] = f'{{p{i}: Int64}}'
+                        values[f'p{i}'] = value
+                    elif isinstance(value, float):
+                        params[variable_name] = f'{{p{i}: Float64}}'
+                        values[f'p{i}'] = value
+                    elif isinstance(value, str):
+                        params[variable_name] = f'{{p{i}: String}}'
+                        values[f'p{i}'] = value
+                    else:
+                        print(f"unhandled type in QueryClient {type(value)}", file=sys.stderr)
+                        params[variable_name] = f'{{p{i}: String}}'
+                        values[f'p{i}'] = str(value)
+                preview_params[variable_name] = self._format_value_for_preview(value)
 
-                params[variable_name] = f'{{p{i}: {t}}}'
-                values[f'p{i}'] = value
         clickhouse_query = input.format_map(params)
+        preview_query = input.format_map(preview_params)
+        print(f"[QueryClient] | Query: {' '.join(preview_query.split())}")
+        return self.execute_raw(
+            clickhouse_query, values, row_type
+        )
 
+    def execute_raw(
+            self,
+            clickhouse_query: str,
+            parameters: Optional[dict[str, Any]],
+            row_type: Type[BaseModel] = None
+    ):
+        """
+        Uses raw clickhouse SQL syntax.
+        """
         # We are not using the result of the ping
         # but this ensures that if the clickhouse cloud service is idle, we
         # wake it up, before we send the query.
         self.ch_client.ping()
 
-        val = self.ch_client.query(clickhouse_query, values)
+        start = perf_counter()
+        val = self.ch_client.query(clickhouse_query, parameters)
+        secs = perf_counter() - start
+        if secs < 1:
+            print(f"[QueryClient] | Query completed: {secs * 1000:.0f} ms")
+        else:
+            print(f"[QueryClient] | Query completed: {format_timespan(secs)}")
 
         if row_type is None:
             return list(val.named_results())
         else:
             return list(row_type(**row) for row in val.named_results())
+
+    def _format_value_for_preview(self, value: Any) -> str:
+        """Format a Python value as a ClickHouse SQL literal for preview logging.
+
+        This does not affect execution; it's only for human-readable query logs.
+        """
+        # NULL handling
+        if value is None:
+            return 'NULL'
+
+        # Booleans (ClickHouse accepts true/false)
+        if isinstance(value, bool):
+            return 'true' if value else 'false'
+
+        # Numbers
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            return str(value)
+
+        # Strings
+        if isinstance(value, str):
+            # Escape backslashes and single quotes for ClickHouse single-quoted strings
+            escaped = value.replace('\\', '\\\\').replace("'", "\\'")
+            return f"'{escaped}'"
+
+        # DateTime
+        if isinstance(value, datetime):
+            return f"'{value.strftime('%Y-%m-%d %H:%M:%S')}'"
+
+        if isinstance(value, Column) or isinstance(value, OlapTable):
+            return value.name
+
+        # Lists / tuples (format as [item1, item2, ...])
+        if isinstance(value, (list, tuple)):
+            formatted_items = ', '.join(self._format_value_for_preview(v) for v in value)
+            return f"[{formatted_items}]"
+
+        # Fallback: stringify and single-quote
+        fallback = str(value)
+        escaped_fallback = fallback.replace('\\', '\\\\').replace("'", "\\'")
+        return f"'{escaped_fallback}'"
 
     def close(self):
         """Close the ClickHouse client connection."""
@@ -215,7 +305,7 @@ class QueryClient:
 
 
 class WorkflowClient:
-    """Client for interacting with Temporal workflows.
+    """Client for interacting with Temporal DMv2 workflows.
 
     Args:
         temporal_client: An instance of the Temporal client.
@@ -223,8 +313,6 @@ class WorkflowClient:
 
     def __init__(self, temporal_client: TemporalClient):
         self.temporal_client = temporal_client
-        self.configs = self.load_consolidated_configs()
-        print(f"WorkflowClient - configs: {self.configs}")
 
     # Test workflow executor in rust if this changes significantly
     def execute(self, name: str, input_data: Any) -> Dict[str, Any]:
@@ -273,42 +361,43 @@ class WorkflowClient:
         run_timeout = self.parse_timeout_to_timedelta(config['timeout_str'])
 
         print(
-            f"WorkflowClient - starting {'DMv2 ' if config['is_dmv2'] else ''}workflow: {name} with retry policy: {retry_policy} and timeout: {run_timeout}")
+            f"WorkflowClient - starting DMv2 workflow: {name} with retry policy: {retry_policy} and timeout: {run_timeout}")
 
         # Start workflow with appropriate args
-        workflow_args = self._build_workflow_args(name, processed_input, config['is_dmv2'])
+        workflow_args = self._build_workflow_args(name, processed_input)
+
+        # Handle "never" timeout by omitting run_timeout parameter
+        workflow_kwargs = {
+            "args": workflow_args,
+            "id": workflow_id,
+            "task_queue": "python-script-queue",
+            "id_conflict_policy": WorkflowIDConflictPolicy.FAIL,
+            "id_reuse_policy": WorkflowIDReusePolicy.ALLOW_DUPLICATE,
+            "retry_policy": retry_policy,
+        }
+
+        if run_timeout is not None:
+            workflow_kwargs["run_timeout"] = run_timeout
 
         workflow_handle = await self.temporal_client.start_workflow(
             "ScriptWorkflow",
-            args=workflow_args,
-            id=workflow_id,
-            task_queue="python-script-queue",
-            id_conflict_policy=WorkflowIDConflictPolicy.FAIL,
-            id_reuse_policy=WorkflowIDReusePolicy.ALLOW_DUPLICATE,
-            retry_policy=retry_policy,
-            run_timeout=run_timeout
+            **workflow_kwargs
         )
 
         return workflow_id, workflow_handle.result_run_id
 
     def _get_workflow_config(self, name: str) -> Dict[str, Any]:
-        """Extract workflow configuration from DMv2 or legacy config."""
+        """Extract workflow configuration from DMv2 workflow."""
         from moose_lib.dmv2 import get_workflow
 
         dmv2_workflow = get_workflow(name)
-        if dmv2_workflow is not None:
-            return {
-                'retry_count': dmv2_workflow.config.retries or 3,
-                'timeout_str': dmv2_workflow.config.timeout or "1h",
-                'is_dmv2': True
-            }
-        else:
-            config = self.configs.get(name, {})
-            return {
-                'retry_count': config.get('retries', 3),
-                'timeout_str': config.get('timeout', "1h"),
-                'is_dmv2': False
-            }
+        if dmv2_workflow is None:
+            raise ValueError(f"DMv2 workflow '{name}' not found")
+
+        return {
+            'retry_count': dmv2_workflow.config.retries or 3,
+            'timeout_str': dmv2_workflow.config.timeout or "1h",
+        }
 
     def _process_input_data(self, name: str, input_data: Any) -> tuple[Any, str]:
         """Process input data and generate workflow ID."""
@@ -334,26 +423,14 @@ class WorkflowClient:
 
         return input_data, workflow_id
 
-    def _build_workflow_args(self, name: str, input_data: Any, is_dmv2: bool) -> list:
-        """Build workflow arguments based on workflow type."""
-        if is_dmv2:
-            return [f"{name}", input_data]
-        else:
-            return [f"{os.getcwd()}/app/scripts/{name}", input_data]
+    def _build_workflow_args(self, name: str, input_data: Any) -> list:
+        """Build workflow arguments for DMv2 workflow."""
+        return [{"workflow_name": name, "execution_mode": "start"}, input_data]
 
-    # TODO: Remove when workflows dmv1 is removed
-    def load_consolidated_configs(self):
-        try:
-            file_path = os.path.join(os.getcwd(), ".moose", "workflow_configs.json")
-            with open(file_path, 'r') as file:
-                data = json.load(file)
-                config_map = {config['name']: config for config in data}
-                return config_map
-        except Exception as e:
-            print(f"Could not load configs for workflows v1: {e}")
-
-    def parse_timeout_to_timedelta(self, timeout_str: str) -> timedelta:
-        if timeout_str.endswith('h'):
+    def parse_timeout_to_timedelta(self, timeout_str: str) -> Optional[timedelta]:
+        if timeout_str == "never":
+            return None  # Unlimited execution timeout
+        elif timeout_str.endswith('h'):
             return timedelta(hours=int(timeout_str[:-1]))
         elif timeout_str.endswith('m'):
             return timedelta(minutes=int(timeout_str[:-1]))

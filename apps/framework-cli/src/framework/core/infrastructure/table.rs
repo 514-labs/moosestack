@@ -1,19 +1,20 @@
 use crate::framework::core::infrastructure_map::PrimitiveSignature;
 use crate::framework::core::partial_infrastructure_map::LifeCycle;
 use crate::framework::versions::Version;
+use crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine;
 use crate::proto::infrastructure_map;
 use crate::proto::infrastructure_map::column_type::T;
 use crate::proto::infrastructure_map::Decimal as ProtoDecimal;
 use crate::proto::infrastructure_map::FloatType as ProtoFloatType;
 use crate::proto::infrastructure_map::IntType as ProtoIntType;
 use crate::proto::infrastructure_map::LifeCycle as ProtoLifeCycle;
+use crate::proto::infrastructure_map::SimpleColumnType;
 use crate::proto::infrastructure_map::Table as ProtoTable;
 use crate::proto::infrastructure_map::{column_type, DateType};
-use crate::proto::infrastructure_map::{ColumnDefaults as ProtoColumnDefaults, SimpleColumnType};
 use crate::proto::infrastructure_map::{ColumnType as ProtoColumnType, Map, Tuple};
 use num_traits::ToPrimitive;
 use protobuf::well_known_types::wrappers::StringValue;
-use protobuf::{EnumOrUnknown, MessageField};
+use protobuf::MessageField;
 use serde::de::{Error, IgnoredAny, MapAccess, Visitor};
 use serde::ser::SerializeStruct;
 use serde::{Deserialize, Deserializer, Serialize};
@@ -77,18 +78,32 @@ pub enum EnumValueMetadata {
     String(String),
 }
 
+/// TODO: This struct is supposed to be a database agnostic abstraction but it is clearly not.
+/// The inclusion of ClickHouse-specific engine types makes this leaky.
+/// This needs to be fixed in a subsequent PR to properly separate database-specific
+/// concerns from the core table abstraction.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Table {
     pub name: String,
     pub columns: Vec<Column>,
     pub order_by: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub partition_by: Option<String>,
     #[serde(default)]
-    pub engine: Option<String>,
+    pub engine: Option<ClickhouseEngine>,
     pub version: Option<Version>,
     pub source_primitive: PrimitiveSignature,
     pub metadata: Option<Metadata>,
     #[serde(default = "LifeCycle::default_for_deserialization")]
     pub life_cycle: LifeCycle,
+    /// Hash of engine's non-alterable parameters (including credentials)
+    /// Used for change detection without storing sensitive data
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub engine_params_hash: Option<String>,
+    /// Table-level settings that can be modified with ALTER TABLE MODIFY SETTING
+    /// These are separate from engine constructor parameters
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub table_settings: Option<std::collections::HashMap<String, String>>,
 }
 
 impl Table {
@@ -123,7 +138,7 @@ impl Table {
             self.order_by.join(","),
             self.engine
                 .as_ref()
-                .map(|e| format!(" - engine: {}", e))
+                .map(|e| format!(" - engine: {}", Into::<String>::into(e.clone())))
                 .unwrap_or_default()
         )
     }
@@ -162,16 +177,23 @@ impl Table {
             name: self.name.clone(),
             columns: self.columns.iter().map(|c| c.to_proto()).collect(),
             order_by: self.order_by.clone(),
+            partition_by: self.partition_by.clone(),
             version: self.version.as_ref().map(|v| v.to_string()),
             source_primitive: MessageField::some(self.source_primitive.to_proto()),
             deduplicate: self
                 .engine
                 .as_ref()
-                .is_some_and(|e| e.contains("ReplacingMergeTree")),
+                .is_some_and(|e| matches!(e, ClickhouseEngine::ReplacingMergeTree { .. })),
             engine: MessageField::from_option(self.engine.as_ref().map(|engine| StringValue {
-                value: engine.to_string(),
+                value: engine.clone().to_proto_string(),
                 special_fields: Default::default(),
             })),
+            // Store the hash for change detection (or calculate it if not present)
+            engine_params_hash: self
+                .engine_params_hash
+                .clone()
+                .or_else(|| self.engine.as_ref().map(|e| e.non_alterable_params_hash())),
+            table_settings: self.table_settings.clone().unwrap_or_default(),
             metadata: MessageField::from_option(self.metadata.as_ref().map(|m| {
                 infrastructure_map::Metadata {
                     description: m.description.clone().unwrap_or_default(),
@@ -188,17 +210,31 @@ impl Table {
     }
 
     pub fn from_proto(proto: ProtoTable) -> Self {
+        // First, reconstruct the basic engine from the string representation
+        // This gives us the engine type and non-alterable parameters (e.g., S3 path, format)
+        let engine = proto
+            .engine
+            .into_option()
+            .and_then(|wrapper| wrapper.value.as_str().try_into().ok())
+            .or_else(|| {
+                proto
+                    .deduplicate
+                    .then_some(ClickhouseEngine::ReplacingMergeTree {
+                        ver: None,
+                        is_deleted: None,
+                    })
+            });
+
+        // Engine settings are now handled via table_settings field
+
         Table {
             name: proto.name,
             columns: proto.columns.into_iter().map(Column::from_proto).collect(),
             order_by: proto.order_by,
+            partition_by: proto.partition_by,
             version: proto.version.map(Version::from_string),
             source_primitive: PrimitiveSignature::from_proto(proto.source_primitive.unwrap()),
-            engine: proto
-                .engine
-                .into_option()
-                .map(|wrapper| wrapper.value)
-                .or_else(|| proto.deduplicate.then(|| "ReplacingMergeTree".to_string())),
+            engine,
             metadata: proto.metadata.into_option().map(|m| Metadata {
                 description: if m.description.is_empty() {
                     None
@@ -210,6 +246,14 @@ impl Table {
                 ProtoLifeCycle::FULLY_MANAGED => LifeCycle::FullyManaged,
                 ProtoLifeCycle::DELETION_PROTECTED => LifeCycle::DeletionProtected,
                 ProtoLifeCycle::EXTERNALLY_MANAGED => LifeCycle::ExternallyManaged,
+            },
+            // Preserve the engine params hash for change detection
+            engine_params_hash: proto.engine_params_hash,
+            // Load table settings from proto
+            table_settings: if !proto.table_settings.is_empty() {
+                Some(proto.table_settings)
+            } else {
+                None
             },
         }
     }
@@ -223,19 +267,11 @@ pub struct Column {
     pub required: bool,
     pub unique: bool,
     pub primary_key: bool,
-    pub default: Option<ColumnDefaults>,
+    pub default: Option<String>,
     #[serde(default)]
     pub annotations: Vec<(String, Value)>, // workaround for needing to Hash
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub comment: Option<String>, // Column comment for metadata storage
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
-pub enum ColumnDefaults {
-    AutoIncrement,
-    CUID,
-    UUID,
-    Now,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
@@ -650,10 +686,13 @@ impl Column {
             required: self.required,
             unique: self.unique,
             primary_key: self.primary_key,
-            default: EnumOrUnknown::new(match &self.default {
-                None => ProtoColumnDefaults::NONE,
-                Some(column_default) => column_default.to_proto(),
-            }),
+            // The enum removed in favor of free-form default expression string,
+            // ColumnDefaults::NONE was deserialized the same as 0
+            default: 0,
+            default_expr: MessageField::from_option(self.default.as_ref().map(|d| StringValue {
+                value: d.clone(),
+                special_fields: Default::default(),
+            })),
             annotations: self
                 .annotations
                 .iter()
@@ -678,14 +717,7 @@ impl Column {
             required: proto.required,
             unique: proto.unique,
             primary_key: proto.primary_key,
-            default: match proto
-                .default
-                .enum_value()
-                .expect("Invalid default enum value")
-            {
-                ProtoColumnDefaults::NONE => None,
-                default => Some(ColumnDefaults::from_proto(default)),
-            },
+            default: proto.default_expr.into_option().map(|w| w.value),
             annotations,
             comment: proto.comment,
         }
@@ -935,27 +967,6 @@ impl EnumValue {
             crate::proto::infrastructure_map::enum_value::Value::StringValue(s) => {
                 EnumValue::String(s)
             }
-        }
-    }
-}
-
-impl ColumnDefaults {
-    fn to_proto(&self) -> ProtoColumnDefaults {
-        match self {
-            ColumnDefaults::AutoIncrement => ProtoColumnDefaults::AUTO_INCREMENT,
-            ColumnDefaults::CUID => ProtoColumnDefaults::CUID,
-            ColumnDefaults::UUID => ProtoColumnDefaults::UUID,
-            ColumnDefaults::Now => ProtoColumnDefaults::NOW,
-        }
-    }
-
-    pub fn from_proto(proto: ProtoColumnDefaults) -> Self {
-        match proto {
-            ProtoColumnDefaults::AUTO_INCREMENT => ColumnDefaults::AutoIncrement,
-            ProtoColumnDefaults::CUID => ColumnDefaults::CUID,
-            ProtoColumnDefaults::UUID => ColumnDefaults::UUID,
-            ProtoColumnDefaults::NOW => ColumnDefaults::Now,
-            ProtoColumnDefaults::NONE => panic!("NONE should be handled as Option::None"),
         }
     }
 }

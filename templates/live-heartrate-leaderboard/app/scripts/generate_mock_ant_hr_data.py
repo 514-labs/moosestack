@@ -1,4 +1,4 @@
-from moose_lib import Task, Workflow, TaskConfig, WorkflowConfig, Logger
+from moose_lib import Task, Workflow, TaskConfig, WorkflowConfig, Logger, TaskContext
 import requests
 import json
 import random
@@ -22,7 +22,7 @@ def load_mock_device_ids() -> list[int]:
     print(f"Using mock device IDs: {device_ids}")
     return device_ids
 
-def generate_mock_ant_hr_data() -> None:
+def generate_mock_ant_hr_data(ctx: TaskContext[RawAntHRPacket]) -> None:
     """
     This script mocks N users who are wearing an ANT+ heart rate monitor.
     It sends data to Moose four times per second indefinitely

@@ -41,12 +41,12 @@ class MooseClient:
     workflow: Optional[WorkflowClient]  # For workflow operations
 ```
 
-### `ConsumptionApiResult`
-Class representing the result of a consumption API call.
+### `ApiResult`
+Class representing the result of a analytics API call.
 
 ```python
 @dataclass
-class ConsumptionApiResult:
+class ApiResult:
     status: int  # HTTP status code
     body: Any    # Response body
 ```
@@ -57,9 +57,35 @@ class ConsumptionApiResult:
 Configuration for OLAP tables.
 
 ```python
+from typing import Union
+from moose_lib.blocks import EngineConfig
+
 class OlapConfig(BaseModel):
     order_by_fields: list[str] = []  # Fields to order by
-    engine: Optional[ClickHouseEngines] = None  # Table engine
+    engine: Optional[EngineConfig] = None  # Table engine configuration
+```
+
+### `EngineConfig` Classes
+Base class and implementations for table engine configurations.
+
+```python
+# Base class
+class EngineConfig:
+    pass
+
+# Available engine implementations
+class MergeTreeEngine(EngineConfig):
+    pass
+
+class ReplacingMergeTreeEngine(EngineConfig):
+    ver: Optional[str] = None  # Version column for keeping latest
+    is_deleted: Optional[str] = None  # Soft delete marker (requires ver)
+    
+class AggregatingMergeTreeEngine(EngineConfig):
+    pass
+    
+class SummingMergeTreeEngine(EngineConfig):
+    pass
 ```
 
 ### `StreamConfig`
@@ -96,13 +122,16 @@ class IngestPipelineConfig(BaseModel):
 Creates a ClickHouse table with the schema of type T.
 
 ```python
+from moose_lib import OlapTable, OlapConfig
+from moose_lib.blocks import ReplacingMergeTreeEngine
+
 # Basic usage
 my_table = OlapTable[UserProfile]("user_profiles")
 
 # With configuration
 my_table = OlapTable[UserProfile]("user_profiles", OlapConfig(
     order_by_fields=["id", "timestamp"],
-    engine=ClickHouseEngines.ReplacingMergeTree,
+    engine=ReplacingMergeTreeEngine(),
 ))
 ```
 
@@ -136,7 +165,7 @@ my_ingest_api = IngestApi[UserEvent]("user_events", IngestConfigWithDestination(
 ))
 ```
 
-### `ConsumptionApi[T, U]`
+### `Api[T, U]`
 Creates an HTTP endpoint for querying data with request type T and response type U.
 
 ```python
@@ -145,7 +174,7 @@ def get_user_profiles(params: UserQuery) -> list[UserProfile]:
     # Query implementation
     return [UserProfile(...), UserProfile(...)]
 
-my_api = ConsumptionApi[UserQuery, list[UserProfile]](
+my_api = Api[UserQuery, list[UserProfile]](
     "get_user_profiles",
     get_user_profiles
 )
@@ -155,6 +184,9 @@ my_api = ConsumptionApi[UserQuery, list[UserProfile]](
 Combines ingest API, stream, and table creation in a single component.
 
 ```python
+from moose_lib import IngestPipeline, IngestPipelineConfig, StreamConfig, OlapConfig
+from moose_lib.blocks import ReplacingMergeTreeEngine
+
 # Basic usage
 pipeline = IngestPipeline[UserEvent]("user_pipeline", IngestPipelineConfig(
     ingest=True,
@@ -168,7 +200,7 @@ pipeline = IngestPipeline[UserEvent]("user_pipeline", IngestPipelineConfig(
     stream=StreamConfig(parallelism=3),
     table=OlapConfig(
         order_by_fields=["id", "timestamp"],
-        engine=ClickHouseEngines.ReplacingMergeTree,
+        engine=ReplacingMergeTreeEngine(),
     )
 ))
 ```
@@ -188,18 +220,43 @@ view = MaterializedView[UserStatistics](MaterializedViewOptions(
 
 ## ClickHouse Utilities
 
-### `ClickHouseEngines`
-Enum for supported ClickHouse table engines.
+### Engine Configuration Classes
+Type-safe configuration classes for table engines:
 
 ```python
-class ClickHouseEngines(Enum):
-    MergeTree = "MergeTree"
-    ReplacingMergeTree = "ReplacingMergeTree"
-    SummingMergeTree = "SummingMergeTree"
-    AggregatingMergeTree = "AggregatingMergeTree"
-    CollapsingMergeTree = "CollapsingMergeTree"
-    VersionedCollapsingMergeTree = "VersionedCollapsingMergeTree"
-    GraphiteMergeTree = "GraphiteMergeTree"
+from moose_lib.blocks import (
+    MergeTreeEngine,
+    ReplacingMergeTreeEngine,
+    AggregatingMergeTreeEngine,
+    SummingMergeTreeEngine,
+    S3QueueEngine
+)
+
+# ReplacingMergeTree with version control and soft deletes
+dedup_engine = ReplacingMergeTreeEngine(
+    ver="updated_at",  # Optional: version column for keeping latest
+    is_deleted="deleted"  # Optional: soft delete marker (requires ver)
+)
+
+# S3Queue configuration for streaming from S3
+s3_engine = S3QueueEngine(
+    s3_path="s3://bucket/data/*.json",
+    format="JSONEachRow",
+    aws_access_key_id="AKIA...",  # Optional
+    aws_secret_access_key="secret...",  # Optional
+    compression="gzip",  # Optional
+    headers={"X-Custom": "value"}  # Optional
+)
+
+# Use with OlapTable
+s3_table = OlapTable[MyData]("s3_events", OlapConfig(
+    engine=s3_engine,
+    settings={
+        "mode": "unordered",
+        "keeper_path": "/clickhouse/s3queue/events",
+        "loading_retries": "3"
+    }
+))
 ```
 
 ## Task Management
@@ -208,7 +265,7 @@ class ClickHouseEngines(Enum):
 A class that represents a single task within a workflow system, with typed input and output.
 
 ```python
-from moose_lib import Task, TaskConfig
+from moose_lib import Task, TaskConfig, TaskContext
 from pydantic import BaseModel
 
 # Define input and output models
@@ -220,9 +277,9 @@ class OutputData(BaseModel):
     status: bool
 
 # Task with input and output
-def process_user(user_data: InputData) -> OutputData:
+def process_user(ctx: TaskContext[InputData]) -> OutputData:
     # Process the user data
-    return OutputData(result=f"Processed {user_data.user_id}", status=True)
+    return OutputData(result=f"Processed {ctx.input.user_id}", status=True)
 
 user_task = Task[InputData, OutputData](
     name="process_user",
@@ -234,7 +291,7 @@ user_task = Task[InputData, OutputData](
 )
 
 # Task with no input, but with output
-def fetch_data() -> OutputData:
+def fetch_data(ctx: TaskContext[None]) -> OutputData:
     return OutputData(result="Fetched data", status=True)
     
 fetch_task = Task[None, OutputData](
@@ -243,8 +300,8 @@ fetch_task = Task[None, OutputData](
 )
 
 # Task with input but no output
-def log_event(data: InputData) -> None:
-    print(f"Event logged for: {data.user_id}")
+def log_event(ctx: TaskContext[InputData]) -> None:
+    print(f"Event logged for: {ctx.input.user_id}")
 
 log_task = Task[InputData, None](
     name="log_event",
@@ -252,7 +309,7 @@ log_task = Task[InputData, None](
 )
 
 # Task with neither input nor output
-def cleanup() -> None:
+def cleanup(ctx: TaskContext[None]) -> None:
     print("Cleanup complete")
 
 cleanup_task = Task[None, None](
@@ -273,8 +330,11 @@ class TaskConfig(Generic[T, U]):
     
     # Optional list of tasks to run after this task completes
     on_complete: Optional[list[Task[U, Any]]] = None
+
+    # Optional function that is called when the task is cancelled
+    on_cancel: Optional[Callable[[TaskContext[T_none]], Union[None, Awaitable[None]]]] = None
     
-    # Optional timeout string (e.g. "5m", "1h")
+    # Optional timeout string (e.g. "5m", "1h", "never")
     timeout: Optional[str] = None
     
     # Optional number of retry attempts

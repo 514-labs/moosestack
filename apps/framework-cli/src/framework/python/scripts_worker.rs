@@ -20,8 +20,6 @@ pub enum WorkerProcessError {
 }
 
 pub async fn start_worker(project: &Project) -> Result<Child, WorkerProcessError> {
-    let scripts_dir = project.scripts_dir();
-
     // Create the wrapper lib files inside the .moose directory
     let internal_dir = project.internal_dir()?;
     let python_worker_lib_dir = internal_dir.join(PYTHON_WORKER_WRAPPER_PACKAGE_NAME);
@@ -80,7 +78,6 @@ pub async fn start_worker(project: &Project) -> Result<Child, WorkerProcessError
             args: vec![
                 project.temporal_config.temporal_url(),
                 project.temporal_config.get_temporal_namespace(),
-                scripts_dir.to_string_lossy().to_string(),
                 project.temporal_config.client_cert.clone(),
                 project.temporal_config.client_key.clone(),
                 project.temporal_config.api_key.clone(),

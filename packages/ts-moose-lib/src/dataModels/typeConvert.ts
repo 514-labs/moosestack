@@ -101,6 +101,23 @@ const handleAggregated = (
   }
 };
 
+/** Detect ClickHouse default annotation on a type and return raw sql */
+const handleDefault = (t: ts.Type, checker: TypeChecker): string | null => {
+  // Ensure we check the non-nullable part so optionals still surface defaults
+  const nonNull = t.getNonNullableType();
+  const defaultSymbol = nonNull.getProperty("_clickhouse_default");
+  if (defaultSymbol === undefined) return null;
+  const defaultType = checker.getNonNullableType(
+    checker.getTypeOfSymbol(defaultSymbol),
+  );
+  if (!defaultType.isStringLiteral()) {
+    throw new UnsupportedFeature(
+      'ClickHouseDefault must use a string literal, e.g. ClickHouseDefault<"now()">',
+    );
+  }
+  return defaultType.value;
+};
+
 const handleNumberType = (
   t: ts.Type,
   checker: TypeChecker,
@@ -170,9 +187,14 @@ const handleStringType = (
   t: ts.Type,
   checker: TypeChecker,
   fieldName: string,
+  annotations: [string, any][],
 ): string => {
   const tagSymbol = t.getProperty("typia.tag");
   if (tagSymbol === undefined) {
+    if (t.isUnion() && t.types.every((v) => v.isStringLiteral())) {
+      annotations.push(["LowCardinality", true]);
+    }
+
     return "String";
   } else {
     const typiaProps = checker.getNonNullableType(
@@ -365,12 +387,13 @@ const tsTypeToDataType = (
   const nullable = nonNull != t;
 
   const aggregationFunction = handleAggregated(t, checker, fieldName, typeName);
+  const annotations: [string, any][] = [];
 
   const dataType: DataType =
     isEnum(nonNull) ? enumConvert(nonNull)
     : isStringAnyRecord(nonNull, checker) ? "Json"
     : checker.isTypeAssignableTo(nonNull, checker.getStringType()) ?
-      handleStringType(nonNull, checker, fieldName)
+      handleStringType(nonNull, checker, fieldName, annotations)
     : isNumberType(nonNull, checker) ?
       handleNumberType(nonNull, checker, fieldName)
     : checker.isTypeAssignableTo(nonNull, checker.getBooleanType()) ? "Boolean"
@@ -396,7 +419,6 @@ const tsTypeToDataType = (
       }
     : nonNull == checker.getNeverType() ? throwNullType(fieldName, typeName)
     : throwUnknownType(t, fieldName, typeName);
-  const annotations: [string, any][] = [];
   if (aggregationFunction !== undefined) {
     annotations.push(["aggregationFunction", aggregationFunction]);
   }
@@ -442,6 +464,25 @@ const hasJwtWrapping = (typeNode: ts.TypeNode | undefined) => {
   return hasWrapping(typeNode, "JWT");
 };
 
+const handleDefaultWrapping = (
+  typeNode: ts.TypeNode | undefined,
+): string | undefined => {
+  if (typeNode !== undefined && isTypeReferenceNode(typeNode)) {
+    const typeName = typeNode.typeName;
+    const name = isIdentifier(typeName) ? typeName.text : typeName.right.text;
+    if (name === "WithDefault" && typeNode.typeArguments?.length === 2) {
+      const defaultValueType = typeNode.typeArguments[1];
+      if (
+        ts.isLiteralTypeNode(defaultValueType) &&
+        ts.isStringLiteral(defaultValueType.literal)
+      ) {
+        return defaultValueType.literal.text;
+      }
+    }
+  }
+  return undefined;
+};
+
 export const toColumns = (t: ts.Type, checker: TypeChecker): Column[] => {
   if (checker.getIndexInfosOfType(t).length !== 0) {
     console.log(checker.getIndexInfosOfType(t));
@@ -454,6 +495,9 @@ export const toColumns = (t: ts.Type, checker: TypeChecker): Column[] => {
 
     const isKey = hasKeyWrapping(node.type);
     const isJwt = hasJwtWrapping(node.type);
+
+    const defaultExpression = handleDefaultWrapping(node.type);
+
     const [nullable, annotations, dataType] = tsTypeToDataType(
       type,
       checker,
@@ -468,7 +512,7 @@ export const toColumns = (t: ts.Type, checker: TypeChecker): Column[] => {
       primary_key: isKey,
       required: !nullable,
       unique: false,
-      default: null,
+      default: defaultExpression ?? handleDefault(type, checker),
       annotations,
     };
   });

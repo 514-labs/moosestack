@@ -5,15 +5,18 @@ This module provides classes for defining and configuring OLAP tables,
 particularly for ClickHouse.
 """
 import json
+import warnings
 from clickhouse_connect import get_client
 from clickhouse_connect.driver.client import Client
 from clickhouse_connect.driver.exceptions import ClickHouseError
 from dataclasses import dataclass
 from pydantic import BaseModel
 from typing import List, Optional, Any, Literal, Union, Tuple, TypeVar, Generic, Iterator
-from moose_lib import ClickHouseEngines
+from ..blocks import ClickHouseEngines, EngineConfig
+from ..commons import Logger
 from ..config.runtime import RuntimeClickHouseConfig
-from .types import TypedMooseResource, T
+from ..utilities.sql import quote_identifier
+from .types import TypedMooseResource, T, Cols
 from ._registry import _tables
 from ..data_models import Column, is_array_nested_type, is_nested_type, _to_columns
 from .life_cycle import LifeCycle
@@ -92,21 +95,29 @@ class InsertResult(Generic[T]):
     failed_records: Optional[List[FailedRecord[T]]] = None
 
 class OlapConfig(BaseModel):
+    model_config = {"extra": "forbid"}  # Reject unknown fields for a clean API
+    
     """Configuration for OLAP tables (e.g., ClickHouse tables).
 
     Attributes:
         order_by_fields: List of column names to use for the ORDER BY clause.
                        Crucial for `ReplacingMergeTree` and performance.
-        engine: The ClickHouse table engine to use (e.g., MergeTree, ReplacingMergeTree).
+        partition_by: Optional PARTITION BY expression (single ClickHouse SQL expression).
+        engine: The ClickHouse table engine to use. Can be either a ClickHouseEngines enum value
+                (for backward compatibility) or an EngineConfig instance (recommended).
         version: Optional version string for tracking configuration changes.
         metadata: Optional metadata for the table.
         life_cycle: Determines how changes in code will propagate to the resources.
+        settings: Optional table-level settings that can be modified with ALTER TABLE MODIFY SETTING.
+                  These are alterable settings that can be changed without recreating the table.
     """
     order_by_fields: list[str] = []
-    engine: Optional[ClickHouseEngines] = None
+    partition_by: Optional[str] = None
+    engine: Optional[Union[ClickHouseEngines, EngineConfig]] = None
     version: Optional[str] = None
     metadata: Optional[dict] = None
     life_cycle: Optional[LifeCycle] = None
+    settings: Optional[dict[str, str]] = None
 
 class OlapTable(TypedMooseResource, Generic[T]):
     """Represents an OLAP table (e.g., a ClickHouse table) typed with a Pydantic model.
@@ -128,13 +139,53 @@ class OlapTable(TypedMooseResource, Generic[T]):
     _memoized_client: Optional[Client] = None
     _config_hash: Optional[str] = None
     _cached_table_name: Optional[str] = None
+    _column_list: list[Column]
+    _cols: Cols
 
     def __init__(self, name: str, config: OlapConfig = OlapConfig(), **kwargs):
         super().__init__()
         self._set_type(name, self._get_type(kwargs))
         self.config = config
         self.metadata = config.metadata
+        self._column_list = _to_columns(self._t)
+        self._cols = Cols(self._column_list)
         _tables[name] = self
+        
+        # Check if using legacy enum-based engine configuration
+        if config.engine and isinstance(config.engine, ClickHouseEngines):
+            logger = Logger(action="OlapTable")
+            
+            # Special case for S3Queue - more detailed migration message
+            if config.engine == ClickHouseEngines.S3Queue:
+                logger.highlight(
+                    f"Table '{name}' uses legacy S3Queue configuration. "
+                    "Please migrate to the new API:\n"
+                    "  Old: engine=ClickHouseEngines.S3Queue\n"
+                    "  New: engine=S3QueueEngine(s3_path='...', format='...')\n"
+                    "See documentation for complete S3Queue configuration options."
+                )
+            else:
+                # Generic message for other engines
+                engine_name = config.engine.value
+                logger.highlight(
+                    f"Table '{name}' uses legacy engine configuration. "
+                    f"Consider migrating to the new API:\n"
+                    f"  Old: engine=ClickHouseEngines.{engine_name}\n"
+                    f"  New: from moose_lib.blocks import {engine_name}Engine; engine={engine_name}Engine()\n"
+                    "The new API provides better type safety and configuration options."
+                )
+            
+            # Also emit a Python warning for development environments
+            warnings.warn(
+                f"Table '{name}' uses deprecated ClickHouseEngines enum. "
+                f"Please migrate to engine configuration classes (e.g., {config.engine.value}Engine).",
+                DeprecationWarning,
+                stacklevel=2
+            )
+
+    @property
+    def cols(self):
+        return self._cols
 
     def _generate_table_name(self) -> str:
         """Generate the versioned table name following Moose's naming convention.
@@ -462,7 +513,7 @@ class OlapTable(TypedMooseResource, Generic[T]):
                 settings["input_format_allow_errors_ratio"] = options.allow_errors_ratio
 
         if is_stream:
-            return table_name, data, settings
+            return quote_identifier(table_name), data, settings
 
         if not isinstance(validated_data, list):
             validated_data = [validated_data]
@@ -475,9 +526,9 @@ class OlapTable(TypedMooseResource, Generic[T]):
             preprocessed_record = self._map_to_clickhouse_record(record_dict)
             dict_data.append(preprocessed_record)
         if not dict_data:
-            return table_name, b"", settings
+            return quote_identifier(table_name), b"", settings
         json_lines = self._to_json_each_row(dict_data)
-        return table_name, json_lines, settings
+        return quote_identifier(table_name), json_lines, settings
 
     def _create_success_result(
         self,
@@ -536,7 +587,7 @@ class OlapTable(TypedMooseResource, Generic[T]):
     ) -> InsertResult[T]:
         successful: List[T] = []
         failed: List[FailedRecord[T]] = []
-        table_name = self._generate_table_name()
+        table_name = quote_identifier(self._generate_table_name())
         records_dict = []
         for record in records:
             if hasattr(record, 'model_dump'):
@@ -685,7 +736,8 @@ class OlapTable(TypedMooseResource, Generic[T]):
 
                 if len(batch) >= 1000:  # Batch size
                     json_lines = self._to_json_each_row(batch)
-                    sql = f"INSERT INTO {table_name} FORMAT JSONEachRow"
+                    quoted = quote_identifier(table_name)
+                    sql = f"INSERT INTO {quoted} FORMAT JSONEachRow"
                     # Add wait_end_of_query to batch settings using helper function
                     batch_settings = self._with_wait_end_settings(settings)
                     client.command(sql, data=json_lines, settings=batch_settings)
@@ -694,7 +746,8 @@ class OlapTable(TypedMooseResource, Generic[T]):
 
             if batch:  # Insert any remaining records
                 json_lines = self._to_json_each_row(batch)
-                sql = f"INSERT INTO {table_name} FORMAT JSONEachRow"
+                quoted = quote_identifier(table_name)
+                sql = f"INSERT INTO {quoted} FORMAT JSONEachRow"
                 # Add wait_end_of_query to final batch settings using helper function
                 final_settings = self._with_wait_end_settings(settings)
                 client.command(sql, data=json_lines, settings=final_settings)

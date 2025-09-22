@@ -1,6 +1,6 @@
 import datetime
 
-from moose_lib.dmv2 import ConsumptionApi
+from moose_lib.dmv2 import Api
 from moose_lib import MooseClient
 from pydantic import BaseModel, Field
 from typing import Optional
@@ -98,7 +98,7 @@ def run(client: MooseClient, params: QueryParams) -> HeartRateStatsResponse:
 
 
 # Create the API endpoint
-get_user_live_heart_rate_stats = ConsumptionApi[QueryParams, HeartRateStatsResponse](
+get_user_live_heart_rate_stats = Api[QueryParams, HeartRateStatsResponse](
     name="getUserLiveHeartRateStats",
     query_function=run
 )

@@ -9,7 +9,7 @@ use crate::framework::data_model::config::DataModelConfig;
 use crate::framework::data_model::DuplicateModelError;
 use crate::framework::languages::SupportedLanguages;
 use crate::framework::{
-    consumption::loader::{load_consumption, ConsumptionLoaderError},
+    consumption::loader::{load_consumption, AnalyticsApiLoaderError},
     core::infrastructure::table::ColumnType,
 };
 use crate::utilities::PathExt;
@@ -41,8 +41,8 @@ pub enum PrimitiveMapLoadingError {
     #[error("Failed to load functions")]
     FunctionsLoading(#[from] crate::framework::streaming::model::FunctionError),
 
-    #[error("Failed to load consumption")]
-    Consumption(#[from] ConsumptionLoaderError),
+    #[error("Failed to load analytics apis")]
+    AnalyticsApis(#[from] AnalyticsApiLoaderError),
 }
 
 #[derive(Debug, thiserror::Error)]

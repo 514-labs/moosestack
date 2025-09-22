@@ -26,6 +26,15 @@ class ClickhouseSize:
     size: int
 
 
+@dataclasses.dataclass
+class ClickhouseDefault:
+    expression: str
+
+
+def clickhouse_default(expression: str) -> ClickhouseDefault:
+    return ClickhouseDefault(expression=expression)
+
+
 def clickhouse_decimal(precision: int, scale: int) -> Type[Decimal]:
     return Annotated[Decimal, Field(max_digits=precision, decimal_places=scale)]
 
@@ -135,6 +144,7 @@ class Column(BaseModel):
     required: bool
     unique: Literal[False]
     primary_key: bool
+    default: str | None = None
     annotations: list[Tuple[str, Any]] = []
 
 
@@ -157,7 +167,18 @@ def py_type_to_column_type(t: type, mds: list[Any]) -> Tuple[bool, list[Any], Da
             data_type = "Int"
     elif t is float:
         size = next((md for md in mds if isinstance(md, ClickhouseSize)), None)
-        if size is None or size.size == 8:
+        if size is None:
+            bit_size = next((md for md in mds if isinstance(md, str) and re.match(r'^float\d+$', md)), None)
+            if bit_size:
+                if bit_size == "float32":
+                    data_type = "Float32"
+                elif bit_size == "float64":
+                    data_type = "Float64"
+                else:
+                    raise ValueError(f'Unsupported float size "{bit_size}"')
+            else:
+                data_type = "Float64"
+        elif size.size == 8:
             data_type = "Float64"
         elif size.size == 4:
             data_type = "Float32"
@@ -255,6 +276,12 @@ def _to_columns(model: type[BaseModel]) -> list[Column]:
 
         column_name = field_name if field_info.alias is None else field_info.alias
 
+        # Extract default expression from metadata, if provided
+        default_expr = next(
+            (md.expression for md in mds if isinstance(md, ClickhouseDefault)),
+            None,
+        )
+
         columns.append(
             Column(
                 name=column_name,
@@ -262,6 +289,7 @@ def _to_columns(model: type[BaseModel]) -> list[Column]:
                 required=not optional,
                 unique=False,
                 primary_key=primary_key,
+                default=default_expr,
                 annotations=annotations,
             )
         )

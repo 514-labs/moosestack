@@ -1,3 +1,4 @@
+use crate::cli::display::message::{Message, MessageType};
 use crate::framework::consumption::model::ConsumptionQueryParam;
 use crate::framework::python::executor::{run_python_program, PythonProgram};
 use crate::infrastructure::olap::clickhouse::config::ClickHouseConfig;
@@ -92,19 +93,32 @@ pub fn run(
     let stdout = consumption_process
         .stdout
         .take()
-        .expect("Consumption process did not have a handle to stdout");
+        .expect("Analytics api process did not have a handle to stdout");
 
     let stderr = consumption_process
         .stderr
         .take()
-        .expect("Consumption process did not have a handle to stderr");
+        .expect("Analytics api process did not have a handle to stderr");
 
     let mut stdout_reader = BufReader::new(stdout).lines();
     let mut stderr_reader = BufReader::new(stderr).lines();
 
     tokio::spawn(async move {
         while let Ok(Some(line)) = stdout_reader.next_line().await {
-            info!("{}", line);
+            let stripped = line
+                .strip_prefix("[QueryClient] | ")
+                .or_else(|| line.strip_prefix("[API] | "));
+            if let Some(stripped) = stripped {
+                show_message!(
+                    MessageType::Info,
+                    Message {
+                        action: "API".to_string(),
+                        details: stripped.to_string(),
+                    }
+                );
+            } else {
+                info!("{}", line);
+            }
         }
     });
 

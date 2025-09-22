@@ -44,7 +44,7 @@ pub enum ProcessRegistryError {
     OrchestrationWorkersProcessError(#[from] OrchestrationWorkersRegistryError),
 
     /// Error that occurs when stopping a consumption process fails
-    #[error("Failed to stop the consumption process")]
+    #[error("Failed to stop the analytics api process")]
     ConsumptionProcessError(#[from] ConsumptionError),
 }
 

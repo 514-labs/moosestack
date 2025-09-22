@@ -1,3 +1,5 @@
+import { quoteIdentifier } from "../sqlHelpers";
+
 interface AggregationCreateOptions {
   tableCreateOptions: TableCreateOptions;
   materializedViewName: string;
@@ -40,45 +42,14 @@ export enum ClickHouseEngines {
   CollapsingMergeTree = "CollapsingMergeTree",
   VersionedCollapsingMergeTree = "VersionedCollapsingMergeTree",
   GraphiteMergeTree = "GraphiteMergeTree",
-}
-
-/**
- * Drops an aggregation's view & underlying table.
- */
-export function dropAggregation(options: AggregationDropOptions): string[] {
-  return [dropView(options.viewName), dropTable(options.tableName)];
-}
-
-/**
- * Drops an existing table if it exists.
- */
-export function dropTable(name: string): string {
-  return `DROP TABLE IF EXISTS ${name}`.trim();
+  S3Queue = "S3Queue",
 }
 
 /**
  * Drops an existing view if it exists.
  */
 export function dropView(name: string): string {
-  return `DROP VIEW IF EXISTS ${name}`.trim();
-}
-
-/**
- * Creates an aggregation which includes a table, materialized view, and initial data load.
- */
-export function createAggregation(options: AggregationCreateOptions): string[] {
-  return [
-    createTable(options.tableCreateOptions),
-    createMaterializedView({
-      name: options.materializedViewName,
-      destinationTable: options.tableCreateOptions.name,
-      select: options.select,
-    }),
-    populateTable({
-      destinationTable: options.tableCreateOptions.name,
-      select: options.select,
-    }),
-  ];
+  return `DROP VIEW IF EXISTS ${quoteIdentifier(name)}`.trim();
 }
 
 /**
@@ -87,37 +58,21 @@ export function createAggregation(options: AggregationCreateOptions): string[] {
 export function createMaterializedView(
   options: MaterializedViewCreateOptions,
 ): string {
-  return `CREATE MATERIALIZED VIEW IF NOT EXISTS ${options.name} 
-        TO ${options.destinationTable}
+  return `CREATE MATERIALIZED VIEW IF NOT EXISTS ${quoteIdentifier(options.name)}
+        TO ${quoteIdentifier(options.destinationTable)}
         AS ${options.select}`.trim();
 }
 
 /**
- * Creates a new table with default MergeTree engine.
- */
-export function createTable(options: TableCreateOptions): string {
-  const columnDefinitions = Object.entries(options.columns)
-    .map(([name, type]) => `${name} ${type}`)
-    .join(",\n");
-
-  const orderByClause = options.orderBy ? `ORDER BY ${options.orderBy}` : "";
-
-  const engine = options.engine || ClickHouseEngines.MergeTree;
-
-  return `
-    CREATE TABLE IF NOT EXISTS ${options.name} 
-    (
-      ${columnDefinitions}
-    )
-    ENGINE = ${engine}()
-    ${orderByClause}
-  `.trim();
-}
-
-/**
+ * @deprecated Population of tables is now handled automatically by the Rust infrastructure.
+ * This function is kept for backwards compatibility but will be ignored.
+ * The framework now intelligently determines when to populate based on:
+ * - Whether the materialized view is new or being replaced
+ * - Whether the source is an S3Queue table (which doesn't support SELECT)
+ *
  * Populates a table with data.
  */
 export function populateTable(options: PopulateTableOptions): string {
-  return `INSERT INTO ${options.destinationTable}
+  return `INSERT INTO ${quoteIdentifier(options.destinationTable)}
           ${options.select}`.trim();
 }

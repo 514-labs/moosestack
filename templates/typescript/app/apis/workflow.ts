@@ -1,15 +1,15 @@
-import { ConsumptionApi } from "@514labs/moose-lib";
+import { Api } from "@514labs/moose-lib";
 
 interface WorkflowResponse {
   workflowId: string;
   status: string;
 }
 
-const triggerApi = new ConsumptionApi<{}, WorkflowResponse>(
-  "start-workflow",
+const triggerApi = new Api<{}, WorkflowResponse>(
+  "start-generator-workflow",
   async (_, { client }) => {
     // Trigger the workflow with input parameters
-    const workflowExecution = await client.workflow.execute("workflow", {});
+    const workflowExecution = await client.workflow.execute("generator", {});
 
     return {
       workflowId: workflowExecution.body,
@@ -18,11 +18,11 @@ const triggerApi = new ConsumptionApi<{}, WorkflowResponse>(
   },
 );
 
-const terminateAPI = new ConsumptionApi<{}, WorkflowResponse>(
-  "terminate-workflow",
+const terminateAPI = new Api<{}, WorkflowResponse>(
+  "terminate-generator-workflow",
   async (_, { client }) => {
     // Terminate the workflow by name
-    const workflowExecution = await client.workflow.terminate("workflow");
+    const workflowExecution = await client.workflow.terminate("generator");
 
     return {
       workflowId: workflowExecution.body,

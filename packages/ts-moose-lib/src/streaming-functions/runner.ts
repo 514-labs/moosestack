@@ -34,6 +34,20 @@ const RETRY_INITIAL_TIME_MS = 100;
 // We put 500 to be safe.
 const KAFKAJS_BYTE_MESSAGE_OVERHEAD = 500;
 
+/**
+ * Parses a comma-separated broker string into an array of valid broker addresses.
+ * Handles whitespace trimming and filters out empty elements.
+ *
+ * @param brokerString - Comma-separated broker addresses (e.g., "broker1:9092, broker2:9092, , broker3:9092")
+ * @returns Array of trimmed, non-empty broker addresses
+ */
+const parseBrokerString = (brokerString: string): string[] => {
+  return brokerString
+    .split(",")
+    .map((broker) => broker.trim())
+    .filter((broker) => broker.length > 0);
+};
+
 //Dummy change
 
 /**
@@ -199,7 +213,7 @@ export interface StreamingFunctionArgs {
   sourceTopic: TopicConfig;
   targetTopic?: TopicConfig;
   functionFilePath: string;
-  broker: string;
+  broker: string; // Comma-separated list of Kafka broker addresses (e.g., "broker1:9092, broker2:9092"). Whitespace around commas is automatically trimmed.
   maxSubscriberCount: number;
   isDmv2: boolean;
   saslUsername?: string;
@@ -870,9 +884,14 @@ export const runStreamingFunctions = async (
       const clientIdPrefix = HOSTNAME ? `${HOSTNAME}-` : "";
       const processId = clientIdPrefix + streamingFuncId + "-ts-" + worker.id;
 
+      const brokers = parseBrokerString(args.broker);
+      if (brokers.length === 0) {
+        throw new Error(`No valid broker addresses found in: "${args.broker}"`);
+      }
+
       const kafka = new Kafka({
         clientId: processId,
-        brokers: [args.broker],
+        brokers: brokers,
         ssl: args.securityProtocol === "SASL_SSL",
         sasl: buildSaslConfig(logger, args),
         retry: {
@@ -906,9 +925,8 @@ export const runStreamingFunctions = async (
           logger.log(`Sending message size with ${event.payload.size}`);
         });
 
-        if (args.targetTopic !== undefined) {
-          await startProducer(logger, producer);
-        }
+        // always start producer because DLQ may need it
+        await startProducer(logger, producer);
 
         try {
           await startConsumer(

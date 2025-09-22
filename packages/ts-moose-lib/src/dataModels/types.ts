@@ -20,6 +20,10 @@ export type LowCardinality = {
   _LowCardinality?: true;
 };
 
+export type ClickHouseFloat<Value extends "float32" | "float64"> = tags.Type<
+  Value extends "float32" ? "float" : "double"
+>;
+
 export type ClickHouseInt<
   Value extends
     | "int8"
@@ -59,3 +63,21 @@ export type ClickHouseInt<
 export type ClickHouseNamedTuple = {
   _clickhouse_mapped_type?: "namedTuple";
 };
+
+/**
+ * typia may have trouble handling this type.
+ * In which case, use {@link WithDefault} as a workaround
+ *
+ * @example
+ * { field: number & ClickHouseDefault<"0"> }
+ */
+export type ClickHouseDefault<SqlExpression extends string> = {
+  _clickhouse_default?: SqlExpression;
+};
+
+/**
+ * See also {@link ClickHouseDefault}
+ *
+ * @example{ updated_at: WithDefault<Date, "now()"> }
+ */
+export type WithDefault<T, _SqlExpression extends string> = T;

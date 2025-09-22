@@ -23,7 +23,7 @@ const iife = (statements: ts.Statement[]): ts.CallExpression =>
     [],
   );
 
-export const isCreateConsumptionApi = (
+export const isCreateApi = (
   node: ts.Node,
   checker: ts.TypeChecker,
 ): node is ts.CallExpression => {
@@ -39,10 +39,10 @@ export const isCreateConsumptionApi = (
 
   const { name } = checker.getTypeAtLocation(declaration).symbol;
 
-  return name == "createConsumptionApi";
+  return name == "createApi";
 };
 
-export const isCreateConsumptionApiV2 = (
+export const isCreateApiV2 = (
   node: ts.Node,
   checker: ts.TypeChecker,
 ): node is ts.NewExpression => {
@@ -57,7 +57,7 @@ export const isCreateConsumptionApiV2 = (
   }
 
   const sym = checker.getSymbolAtLocation(node.expression);
-  return sym?.name === "ConsumptionApi";
+  return sym?.name === "Api" || sym?.name === "ConsumptionApi";
 };
 
 const getParamType = (
@@ -93,24 +93,24 @@ const typeToOutputSchema = (t: ts.Type, checker: ts.TypeChecker): ts.Type => {
   }
 };
 
-export const transformCreateConsumptionApi = (
+export const transformCreateApi = (
   node: ts.Node,
   checker: ts.TypeChecker,
 ): ts.Node => {
-  if (isCreateConsumptionApi(node, checker)) {
-    return transformLegacyConsumptionApi(node, checker);
-  } else if (isCreateConsumptionApiV2(node, checker)) {
-    return transformNewConsumptionApi(node as ts.NewExpression, checker);
+  if (isCreateApi(node, checker)) {
+    return transformLegacyApi(node, checker);
+  } else if (isCreateApiV2(node, checker)) {
+    return transformNewApi(node as ts.NewExpression, checker);
   }
 
   return node;
 };
 
-export const transformLegacyConsumptionApi = (
+export const transformLegacyApi = (
   node: ts.Node,
   checker: ts.TypeChecker,
 ): ts.Node => {
-  if (!isCreateConsumptionApi(node, checker)) {
+  if (!isCreateApi(node, checker)) {
     return node;
   }
 
@@ -236,8 +236,8 @@ export const transformLegacyConsumptionApi = (
       ),
     ),
     // the user provided function
-    // the Parameters of createConsumptionApi is a trick to avoid extra imports
-    // const handlerFunc: Parameters<typeof createConsumptionApi<DailyActiveUsersParams>>[0] = async(...) => ...
+    // the Parameters of createApi is a trick to avoid extra imports
+    // const handlerFunc: Parameters<typeof createApi<DailyActiveUsersParams>>[0] = async(...) => ...
     factory.createVariableStatement(
       undefined,
       factory.createVariableDeclarationList(
@@ -250,7 +250,7 @@ export const transformLegacyConsumptionApi = (
                 factory.createIdentifier("Parameters"),
                 [
                   factory.createTypeQueryNode(
-                    factory.createIdentifier("createConsumptionApi"),
+                    factory.createIdentifier("createApi"),
                     [paramType],
                   ),
                 ],
@@ -324,13 +324,13 @@ export const transformLegacyConsumptionApi = (
   ]);
 };
 
-// TODO: When the legacy consumption api is removed, follow the args
+// TODO: When the legacy api is removed, follow the args
 // pattern in transformNewMooseResource
-const transformNewConsumptionApi = (
+const transformNewApi = (
   node: ts.NewExpression,
   checker: ts.TypeChecker,
 ): ts.Node => {
-  if (!isCreateConsumptionApiV2(node, checker)) {
+  if (!isCreateApiV2(node, checker)) {
     return node;
   }
 
@@ -338,7 +338,7 @@ const transformNewConsumptionApi = (
     return node;
   }
 
-  // Get both type parameters from ConsumptionApi<T, R>
+  // Get both type parameters from Api<T, R>
   const typeNode = node.typeArguments[0];
   const responseTypeNode =
     node.typeArguments[1] ||
@@ -474,7 +474,7 @@ const transformNewConsumptionApi = (
       node.arguments[2]
     : factory.createObjectLiteralExpression([], false);
 
-  // Update the ConsumptionApi constructor call with all necessary arguments
+  // Update the Api constructor call with all necessary arguments
   return factory.updateNewExpression(
     node,
     node.expression,

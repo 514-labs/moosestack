@@ -1,15 +1,19 @@
 import { getMooseInternal } from "../internal";
 
 /**
- * A function type that handles task execution.
+ * Context passed to task handlers. Single param to future-proof API changes.
  *
- * @template T - The input type for the task handler
- * @template R - The return type for the task handler
- * @param input - The input data to be processed by the task
- * @returns A promise that resolves to the processed result or void
+ * - state: shared mutable state for the task and its lifecycle hooks
+ * - input: optional typed input for the task (undefined when task has no input)
  */
-type TaskHandler<T, R> =
-  T extends null ? () => Promise<R> : (input: T) => Promise<R>;
+/**
+ * Task handler context. If the task declares an input type (T != null),
+ * `input` is required and strongly typed. For no-input tasks (T = null),
+ * `input` is omitted/optional.
+ */
+export type TaskContext<TInput> =
+  TInput extends null ? { state: any; input?: null }
+  : { state: any; input: TInput };
 
 /**
  * Configuration options for defining a task within a workflow.
@@ -19,7 +23,7 @@ type TaskHandler<T, R> =
  */
 export interface TaskConfig<T, R> {
   /** The main function that executes the task logic */
-  run: TaskHandler<T, R>;
+  run: (context: TaskContext<T>) => Promise<R>;
 
   /**
    * Optional array of tasks to execute after this task completes successfully.
@@ -35,7 +39,8 @@ export interface TaskConfig<T, R> {
   /**
    * Optional function that is called when the task is cancelled.
    */
-  onCancel?: () => Promise<void>;
+  /** Optional function that is called when the task is cancelled. */
+  onCancel?: (context: TaskContext<T>) => Promise<void>;
 
   /** Optional timeout duration for the task execution (e.g., "30s", "5m") */
   timeout?: string;

@@ -1,7 +1,16 @@
 language = "typescript" # Must be typescript or python
 description = "A brainwave capture and analysis system"
 post_install_print = """
-This is a Moose application for working with Brainwave Data.
+Deploy on Boreal
+
+The easiest way to deploy your MooseStack Applications is to use Boreal
+from the creators of MooseStack.
+
+https://boreal.cloud
+
+---------------------------------------------------------
+
+This is a MooseStack application for working with Brainwave Data.
 
 To get started, follow these steps:
 
@@ -13,6 +22,5 @@ To get started, follow these steps:
 
 🛠️ Start dev server:
     $ moose dev
-
 """
 default_sloan_telemetry="comprehensive"

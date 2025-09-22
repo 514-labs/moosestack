@@ -118,7 +118,7 @@ def convert_dataclass_definition(cls: type) -> list[QueryField]:
     return fields_list
 
 
-def convert_consumption_api_param(module) -> Optional[tuple[type, list[QueryField]]]:
+def convert_api_param(module) -> Optional[tuple[type, list[QueryField]]]:
     run_func = module.run
     params_arg = inspect.getfullargspec(run_func).args[1]
     param_class: type = run_func.__annotations__.get(params_arg)

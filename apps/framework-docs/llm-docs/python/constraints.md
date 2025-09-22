@@ -25,7 +25,7 @@ Configuration constraints in Moose provide a way to enforce rules and limitation
 - No complex Python types
 - Large integers must be stored as strings
 
-## Consumption API Constraints
+## Analytics API Constraints
 
 ### Function Signature Requirements
 
@@ -59,11 +59,11 @@ Configuration constraints in Moose provide a way to enforce rules and limitation
 
 ### API Creation Requirements
 
-- Must use generic type parameters: `ConsumptionApi[QueryModel, ResponseModel]`
+- Must use generic type parameters: `Api[QueryModel, ResponseModel]`
 - Must provide name as first positional parameter
 - Must provide query function
 - Must provide source table name
-- Must use empty `EgressConfig()` for configuration
+- Must use empty `ApiConfig()` for configuration
 
 ### Common Issues and Solutions
 
@@ -89,7 +89,7 @@ Configuration constraints in Moose provide a way to enforce rules and limitation
 
 5. **API Creation Errors**
    - Problem: Incorrect API configuration
-   - Solution: Use empty EgressConfig: `config=EgressConfig()`
+   - Solution: Use empty ApiConfig: `config=ApiConfig()`
 
 ## Field Naming and Structure
 

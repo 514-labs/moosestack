@@ -195,7 +195,13 @@ impl<T: OlapOperations> InfraRealityChecker<T> {
                     mapped_tables.insert(name.clone(), mapped_table.clone());
 
                     // Flip the order of arguments to make infra_map the reference
-                    InfrastructureMap::diff_tables(&actual_tables, &mapped_tables, &mut changes);
+                    InfrastructureMap::diff_tables(
+                        &actual_tables,
+                        &mapped_tables,
+                        &mut changes,
+                        // respect_life_cycle is false to not hide the difference
+                        false,
+                    );
                     debug!(
                         "Found {} changes for table {}: {:?}",
                         changes.len(),
@@ -242,6 +248,7 @@ mod tests {
     };
     use crate::framework::core::partial_infrastructure_map::LifeCycle;
     use crate::framework::versions::Version;
+    use crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine;
     use crate::infrastructure::olap::clickhouse::TableWithUnsupportedType;
     use async_trait::async_trait;
 
@@ -312,6 +319,7 @@ mod tests {
                 comment: None,
             }],
             order_by: vec!["id".to_string()],
+            partition_by: None,
             engine: None,
             version: Some(Version::from_string("1.0.0".to_string())),
             source_primitive: PrimitiveSignature {
@@ -320,6 +328,8 @@ mod tests {
             },
             metadata: None,
             life_cycle: LifeCycle::FullyManaged,
+            engine_params_hash: None,
+            table_settings: None,
         }
     }
 
@@ -511,7 +521,10 @@ mod tests {
         let mut infra_table = create_base_table("test_table");
 
         // Set different engine values
-        actual_table.engine = Some("ReplacingMergeTree".to_string());
+        actual_table.engine = Some(ClickhouseEngine::ReplacingMergeTree {
+            ver: None,
+            is_deleted: None,
+        });
         infra_table.engine = None;
 
         let mock_client = MockOlapClient {
@@ -549,8 +562,11 @@ mod tests {
         // Verify the change is from reality's perspective - we need to change engine to match infra map
         match &discrepancies.mismatched_tables[0] {
             OlapChange::Table(TableChange::Updated { before, after, .. }) => {
-                assert_eq!(before.engine.as_deref(), Some("ReplacingMergeTree"));
-                assert_eq!(after.engine.as_deref(), None);
+                assert!(matches!(
+                    before.engine.as_ref(),
+                    Some(ClickhouseEngine::ReplacingMergeTree { .. })
+                ));
+                assert_eq!(after.engine.as_ref(), None);
             }
             _ => panic!("Expected TableChange::Updated variant"),
         }

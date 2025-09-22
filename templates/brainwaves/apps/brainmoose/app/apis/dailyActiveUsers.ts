@@ -1,5 +1,5 @@
-// DMV2 ConsumptionApi: Serves the daily active users materialized view
-import { ConsumptionApi } from "@514labs/moose-lib";
+// DMV2 Api: Serves the daily active users materialized view
+import { Api } from "@514labs/moose-lib";
 
 interface QueryParams {
   limit?: string;
@@ -11,7 +11,7 @@ interface DailyActiveUsersResponse {
   dailyActiveUsers: number;
 }
 
-export const dailyActiveUsersApi = new ConsumptionApi<
+export const dailyActiveUsersApi = new Api<
   QueryParams,
   DailyActiveUsersResponse[]
 >(

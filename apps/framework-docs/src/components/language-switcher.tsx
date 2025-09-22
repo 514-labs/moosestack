@@ -13,7 +13,7 @@ export function LanguageSwitcher() {
   const { language, setLanguage } = useLanguage();
 
   return (
-    <div className="sticky top-[64px] z-50 bg-background flex items-center justify-start gap-2 transition-[border] duration-200 [@supports(overflow-clip:unset)]:border-0 [@scroll(0)]:border-b-0 border-b">
+    <div className="sticky top-[64px] z-10 bg-background flex items-center justify-start gap-2 transition-[border] duration-200 [@supports(overflow-clip:unset)]:border-0 [@scroll(0)]:border-b-0 border-b">
       <Heading level={HeadingLevel.l5} className="text-captialize text-primary">
         Viewing:
       </Heading>

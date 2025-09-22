@@ -10,6 +10,7 @@
 //! - Type system conversion
 //! - Version tracking
 //! - Table naming conventions
+//! - Intelligent materialized view handling
 //!
 //! ## Dependencies
 //! - clickhouse: Client library for ClickHouse database
@@ -36,8 +37,15 @@ use errors::ClickhouseError;
 use itertools::Itertools;
 use log::{debug, info};
 use mapper::{std_column_to_clickhouse_column, std_table_to_clickhouse_table};
-use queries::{basic_field_type_to_string, create_table_query, drop_table_query};
+use model::ClickHouseColumn;
+use queries::ClickhouseEngine;
+use queries::{
+    alter_table_modify_settings_query, alter_table_reset_settings_query,
+    basic_field_type_to_string, create_table_query, drop_table_query,
+};
 use serde::{Deserialize, Serialize};
+use sql_parser::{extract_engine_from_create_table, extract_table_settings_from_create_table};
+use std::ops::Deref;
 
 use self::model::ClickHouseSystemTable;
 use crate::framework::core::infrastructure::table::{
@@ -59,6 +67,7 @@ pub mod inserter;
 pub mod mapper;
 pub mod model;
 pub mod queries;
+pub mod sql_parser;
 pub mod type_parser;
 
 pub use config::ClickHouseConfig;
@@ -134,6 +143,15 @@ pub enum SerializableOlapOperation {
         before_column_name: String,
         /// Name of the column after renaming
         after_column_name: String,
+    },
+    /// Modify table settings using ALTER TABLE MODIFY SETTING
+    ModifyTableSettings {
+        /// The table to modify settings for
+        table: String,
+        /// The settings before modification
+        before_settings: Option<std::collections::HashMap<String, String>>,
+        /// The settings after modification
+        after_settings: Option<std::collections::HashMap<String, String>>,
     },
     RawSql {
         /// The SQL statements to execute
@@ -259,6 +277,14 @@ pub async fn execute_atomic_operation(
             )
             .await?;
         }
+        SerializableOlapOperation::ModifyTableSettings {
+            table,
+            before_settings,
+            after_settings,
+        } => {
+            execute_modify_table_settings(db_name, table, before_settings, after_settings, client)
+                .await?;
+        }
         SerializableOlapOperation::RawSql { sql, description } => {
             execute_raw_sql(sql, description, client).await?;
         }
@@ -299,6 +325,11 @@ async fn execute_drop_table(
     Ok(())
 }
 
+// Note: The nullable wrapping logic has been moved to std_column_to_clickhouse_column
+// in mapper.rs to ensure consistent handling across all uses.
+// TODO: Future refactoring opportunity - Consider eliminating the `required` boolean field
+// from ClickHouseColumn and rely solely on the Nullable type wrapper.
+
 async fn execute_add_table_column(
     db_name: &str,
     table_name: &str,
@@ -315,12 +346,20 @@ async fn execute_add_table_column(
     let clickhouse_column = std_column_to_clickhouse_column(column.clone())?;
     let column_type_string = basic_field_type_to_string(&clickhouse_column.column_type)?;
 
+    // Include DEFAULT clause if column has a default value
+    let default_clause = clickhouse_column
+        .default
+        .as_ref()
+        .map(|d| format!(" DEFAULT {}", d))
+        .unwrap_or_default();
+
     let add_column_query = format!(
-        "ALTER TABLE `{}`.`{}` ADD COLUMN `{}` {} {}",
+        "ALTER TABLE `{}`.`{}` ADD COLUMN `{}` {}{} {}",
         db_name,
         table_name,
         clickhouse_column.name,
         column_type_string,
+        default_clause,
         match after_column {
             None => "FIRST".to_string(),
             Some(after_col) => format!("AFTER `{after_col}`"),
@@ -376,12 +415,13 @@ async fn execute_modify_table_column(
 ) -> Result<(), ClickhouseChangesError> {
     // Check if only the comment has changed
     let data_type_changed = before_column.data_type != after_column.data_type;
+    let default_changed = before_column.default != after_column.default;
     let required_changed = before_column.required != after_column.required;
     let comment_changed = before_column.comment != after_column.comment;
 
     // If only the comment changed, use a simpler ALTER TABLE ... MODIFY COLUMN ... COMMENT
     // This is more efficient and avoids unnecessary table rebuilds
-    if !data_type_changed && !required_changed && comment_changed {
+    if !data_type_changed && !required_changed && !default_changed && comment_changed {
         log::info!(
             "Executing comment-only modification for table: {}, column: {}",
             table_name,
@@ -405,28 +445,13 @@ async fn execute_modify_table_column(
         "Executing ModifyTableColumn for table: {}, column: {} ({}→{})",
         table_name,
         after_column.name,
-        before_column.data_type.to_string(),
-        after_column.data_type.to_string()
+        before_column.data_type,
+        after_column.data_type
     );
 
     // Full column modification including type change
     let clickhouse_column = std_column_to_clickhouse_column(after_column.clone())?;
-    let column_type_string = basic_field_type_to_string(&clickhouse_column.column_type)?;
-
-    // Build the MODIFY COLUMN query with optional comment
-    let modify_column_query = if let Some(ref comment) = clickhouse_column.comment {
-        // Escape single quotes in the comment for SQL safety
-        let escaped_comment = comment.replace('\'', "''");
-        format!(
-            "ALTER TABLE `{}`.`{}` MODIFY COLUMN IF EXISTS `{}` {} COMMENT '{}'",
-            db_name, table_name, clickhouse_column.name, column_type_string, escaped_comment
-        )
-    } else {
-        format!(
-            "ALTER TABLE `{}`.`{}` MODIFY COLUMN IF EXISTS `{}` {}",
-            db_name, table_name, clickhouse_column.name, column_type_string
-        )
-    };
+    let modify_column_query = build_modify_column_sql(db_name, table_name, &clickhouse_column)?;
 
     log::debug!("Modifying column: {}", modify_column_query);
     run_query(&modify_column_query, client).await.map_err(|e| {
@@ -455,18 +480,8 @@ async fn execute_modify_column_comment(
         column.name
     );
 
-    // Get the ClickHouse column type for the ALTER statement
-    let clickhouse_column = std_column_to_clickhouse_column(column.clone())?;
-    let column_type_string = basic_field_type_to_string(&clickhouse_column.column_type)?;
-
-    // Escape single quotes in the comment for SQL safety
-    let escaped_comment = comment.replace('\'', "''");
-
-    // ClickHouse requires MODIFY COLUMN with the full column definition when changing comment
-    let modify_comment_query = format!(
-        "ALTER TABLE `{}`.`{}` MODIFY COLUMN `{}` {} COMMENT '{}'",
-        db_name, table_name, column.name, column_type_string, escaped_comment
-    );
+    let modify_comment_query =
+        build_modify_column_comment_sql(db_name, table_name, &column.name, comment)?;
 
     log::debug!("Modifying column comment: {}", modify_comment_query);
     run_query(&modify_comment_query, client)
@@ -475,6 +490,114 @@ async fn execute_modify_column_comment(
             error: e,
             resource: Some(table_name.to_string()),
         })?;
+    Ok(())
+}
+
+fn build_modify_column_sql(
+    db_name: &str,
+    table_name: &str,
+    ch_col: &ClickHouseColumn,
+) -> Result<String, ClickhouseChangesError> {
+    let column_type_string = basic_field_type_to_string(&ch_col.column_type)?;
+
+    let default_clause = ch_col
+        .default
+        .as_ref()
+        .map(|d| format!(" DEFAULT {}", d))
+        .unwrap_or_default();
+
+    let sql = if let Some(ref comment) = ch_col.comment {
+        let escaped_comment = comment.replace('\'', "''");
+        format!(
+            "ALTER TABLE `{}`.`{}` MODIFY COLUMN IF EXISTS `{}` {}{} COMMENT '{}'",
+            db_name, table_name, ch_col.name, column_type_string, default_clause, escaped_comment
+        )
+    } else {
+        format!(
+            "ALTER TABLE `{}`.`{}` MODIFY COLUMN IF EXISTS `{}` {}{}",
+            db_name, table_name, ch_col.name, column_type_string, default_clause
+        )
+    };
+    Ok(sql)
+}
+
+fn build_modify_column_comment_sql(
+    db_name: &str,
+    table_name: &str,
+    column_name: &str,
+    comment: &str,
+) -> Result<String, ClickhouseChangesError> {
+    let escaped_comment = comment.replace('\'', "''");
+    Ok(format!(
+        "ALTER TABLE `{}`.`{}` MODIFY COLUMN `{}` COMMENT '{}'",
+        db_name, table_name, column_name, escaped_comment
+    ))
+}
+
+/// Execute a ModifyTableSettings operation
+async fn execute_modify_table_settings(
+    db_name: &str,
+    table_name: &str,
+    before_settings: &Option<std::collections::HashMap<String, String>>,
+    after_settings: &Option<std::collections::HashMap<String, String>>,
+    client: &ConfiguredDBClient,
+) -> Result<(), ClickhouseChangesError> {
+    use std::collections::HashMap;
+
+    let before = before_settings.clone().unwrap_or_default();
+    let after = after_settings.clone().unwrap_or_default();
+
+    // Determine which settings to modify (changed or added)
+    let mut settings_to_modify = HashMap::new();
+    for (key, value) in &after {
+        if before.get(key) != Some(value) {
+            settings_to_modify.insert(key.clone(), value.clone());
+        }
+    }
+
+    // Determine which settings to reset (removed)
+    let mut settings_to_reset = Vec::new();
+    for key in before.keys() {
+        if !after.contains_key(key) {
+            settings_to_reset.push(key.clone());
+        }
+    }
+
+    log::info!(
+        "Executing ModifyTableSettings for table: {} - modifying {} settings, resetting {} settings",
+        table_name,
+        settings_to_modify.len(),
+        settings_to_reset.len()
+    );
+
+    // Execute MODIFY SETTING if there are settings to modify
+    if !settings_to_modify.is_empty() {
+        let alter_settings_query =
+            alter_table_modify_settings_query(db_name, table_name, &settings_to_modify)?;
+        log::debug!("Modifying table settings: {}", alter_settings_query);
+
+        run_query(&alter_settings_query, client)
+            .await
+            .map_err(|e| ClickhouseChangesError::ClickhouseClient {
+                error: e,
+                resource: Some(table_name.to_string()),
+            })?;
+    }
+
+    // Execute RESET SETTING if there are settings to reset
+    if !settings_to_reset.is_empty() {
+        let reset_settings_query =
+            alter_table_reset_settings_query(db_name, table_name, &settings_to_reset)?;
+        log::debug!("Resetting table settings: {}", reset_settings_query);
+
+        run_query(&reset_settings_query, client)
+            .await
+            .map_err(|e| ClickhouseChangesError::ClickhouseClient {
+                error: e,
+                resource: Some(table_name.to_string()),
+            })?;
+    }
+
     Ok(())
 }
 
@@ -830,20 +953,6 @@ pub async fn check_table_size(
     Ok(result as i64)
 }
 
-/// Represents details about a table in ClickHouse
-///
-/// # Fields
-/// * `engine` - The table's engine type
-/// * `total_rows` - Optional count of rows in the table
-///
-/// # Usage
-/// Used internally for table metadata operations and checks
-#[derive(Debug, Clone, Deserialize, Serialize, clickhouse::Row)]
-struct TableDetail {
-    pub engine: String,
-    pub total_rows: Option<u64>,
-}
-
 pub struct TableWithUnsupportedType {
     pub name: String,
     pub col_name: String,
@@ -933,13 +1042,14 @@ impl OlapOperations for ConfiguredDBClient {
         // First get basic table information
         let query = format!(
             r#"
-            SELECT 
+            SELECT
                 name,
                 engine,
-                create_table_query
-            FROM system.tables 
-            WHERE database = '{db_name}' 
-            AND engine != 'View' 
+                create_table_query,
+                partition_key
+            FROM system.tables
+            WHERE database = '{db_name}'
+            AND engine != 'View'
             AND engine != 'MaterializedView'
             AND NOT name LIKE '.%'
             ORDER BY name
@@ -950,7 +1060,7 @@ impl OlapOperations for ConfiguredDBClient {
         let mut cursor = self
             .client
             .query(&query)
-            .fetch::<(String, String, String)>()
+            .fetch::<(String, String, String, String)>()
             .map_err(|e| {
                 debug!("Error fetching tables: {}", e);
                 OlapChangesError::DatabaseError(e.to_string())
@@ -959,7 +1069,7 @@ impl OlapOperations for ConfiguredDBClient {
         let mut tables = Vec::new();
         let mut unsupported_tables = Vec::new();
 
-        'table_loop: while let Some((table_name, engine, create_query)) = cursor
+        'table_loop: while let Some((table_name, engine, create_query, partition_key)) = cursor
             .next()
             .await
             .map_err(|e| OlapChangesError::DatabaseError(e.to_string()))?
@@ -987,7 +1097,9 @@ impl OlapOperations for ConfiguredDBClient {
                     type,
                     comment,
                     is_in_primary_key,
-                    is_in_sorting_key
+                    is_in_sorting_key,
+                    default_kind,
+                    default_expression
                 FROM system.columns
                 WHERE database = '{db_name}'
                 AND table = '{table_name}'
@@ -1002,7 +1114,7 @@ impl OlapOperations for ConfiguredDBClient {
             let mut columns_cursor = self
                 .client
                 .query(&columns_query)
-                .fetch::<(String, String, String, u8, u8)>()
+                .fetch::<(String, String, String, u8, u8, String, String)>()
                 .map_err(|e| {
                     debug!("Error fetching columns for table {}: {}", table_name, e);
                     OlapChangesError::DatabaseError(e.to_string())
@@ -1010,7 +1122,15 @@ impl OlapOperations for ConfiguredDBClient {
 
             let mut columns = Vec::new();
 
-            while let Some((col_name, col_type, comment, is_primary, is_sorting)) = columns_cursor
+            while let Some((
+                col_name,
+                col_type,
+                comment,
+                is_primary,
+                is_sorting,
+                default_kind,
+                default_expression,
+            )) = columns_cursor
                 .next()
                 .await
                 .map_err(|e| OlapChangesError::DatabaseError(e.to_string()))?
@@ -1092,13 +1212,26 @@ impl OlapOperations for ConfiguredDBClient {
                     None
                 };
 
+                let default = match default_kind.deref() {
+                    "" => None,
+                    "DEFAULT" => Some(default_expression),
+                    "MATERIALIZED" | "ALIAS" => {
+                        debug!("MATERIALIZED and ALIAS not yet handled.");
+                        None
+                    }
+                    _ => {
+                        debug!("Unknown default kind: {default_kind} for column {col_name}");
+                        None
+                    }
+                };
+
                 let column = Column {
                     name: col_name.clone(),
                     data_type,
                     required: !is_nullable,
                     unique: false,
                     primary_key: is_actual_primary_key,
-                    default: None,
+                    default,
                     annotations: Default::default(),
                     comment: column_comment,
                 };
@@ -1118,16 +1251,43 @@ impl OlapOperations for ConfiguredDBClient {
             };
 
             // Create the Table object using the original table_name
+            // Parse the engine from the CREATE TABLE query to get full engine configuration
+            // This is more reliable than using the system.tables engine column which
+            // only contains the engine name without parameters (e.g., "S3Queue" instead of
+            // "S3Queue('path', 'format', ...)")
+            let engine_parsed = if let Some(engine_def) =
+                extract_engine_from_create_table(&create_query)
+            {
+                // Try to parse the extracted engine definition
+                engine_def.as_str().try_into().ok()
+            } else {
+                // Fallback to the simple engine name from system.tables
+                debug!("Could not extract engine from CREATE TABLE query, falling back to system.tables engine column");
+                engine.as_str().try_into().ok()
+            };
+            let engine_params_hash = engine_parsed
+                .as_ref()
+                .map(|e: &ClickhouseEngine| e.non_alterable_params_hash());
+
+            // Extract table settings from CREATE TABLE query
+            let table_settings = extract_table_settings_from_create_table(&create_query);
+
             let table = Table {
                 name: table_name, // Keep the original table name with version
                 columns,
                 order_by: order_by_cols, // Use the extracted ORDER BY columns
-                engine: Some(engine),
+                partition_by: {
+                    let p = partition_key.trim();
+                    (!p.is_empty()).then(|| p.to_string())
+                },
+                engine: engine_parsed,
                 version,
                 source_primitive,
                 metadata: None,
                 // this does not matter as we refer to the lifecycle in infra map
                 life_cycle: LifeCycle::ExternallyManaged,
+                engine_params_hash,
+                table_settings,
             };
             debug!("Created table object: {:?}", table);
 
@@ -1156,7 +1316,7 @@ impl OlapOperations for ConfiguredDBClient {
 /// let order_by = extract_order_by_from_create_query(query);
 /// assert_eq!(order_by, vec!["id".to_string(), "timestamp".to_string()]);
 /// ```
-fn extract_order_by_from_create_query(create_query: &str) -> Vec<String> {
+pub fn extract_order_by_from_create_query(create_query: &str) -> Vec<String> {
     debug!("Extracting ORDER BY from query: {}", create_query);
 
     // Find the ORDER BY clause, being careful not to match PRIMARY KEY
@@ -1377,6 +1537,92 @@ mod tests {
     }
 
     #[test]
+    fn test_modify_column_includes_default_and_comment() {
+        use crate::framework::core::infrastructure::table::{Column, IntType};
+
+        // Build before/after where default changes and comment present
+        let before_column = Column {
+            name: "count".to_string(),
+            data_type: ColumnType::Int(IntType::Int32),
+            required: true,
+            unique: false,
+            primary_key: false,
+            default: Some("1".to_string()),
+            annotations: vec![],
+            comment: Some("Number of things".to_string()),
+        };
+        let after_column = Column {
+            default: Some("42".to_string()),
+            ..before_column.clone()
+        };
+
+        let ch_after = std_column_to_clickhouse_column(after_column).unwrap();
+        let sql = build_modify_column_sql("db", "table", &ch_after).unwrap();
+
+        assert_eq!(
+            sql,
+            "ALTER TABLE `db`.`table` MODIFY COLUMN IF EXISTS `count` Int32 DEFAULT 42 COMMENT 'Number of things'".to_string()
+        );
+    }
+
+    #[test]
+    fn test_modify_column_comment_only_no_default_change() {
+        use crate::framework::core::infrastructure::table::Column;
+
+        // same type/required/default; only comment changed => should be handled via comment-only path
+        let before_column = Column {
+            name: "status".to_string(),
+            data_type: ColumnType::String,
+            required: true,
+            unique: false,
+            primary_key: false,
+            default: Some("'open'".to_string()),
+            annotations: vec![],
+            comment: Some("old".to_string()),
+        };
+
+        let after_column = Column {
+            comment: Some("new".to_string()),
+            ..before_column.clone()
+        };
+
+        // Use the pure SQL builder for comment-only update
+        let sql =
+            build_modify_column_comment_sql("db", "table", &after_column.name, "new").unwrap();
+        assert_eq!(
+            sql,
+            "ALTER TABLE `db`.`table` MODIFY COLUMN `status` COMMENT 'new'"
+        );
+    }
+
+    #[test]
+    fn test_modify_nullable_column_with_default() {
+        use crate::framework::core::infrastructure::table::Column;
+        use crate::infrastructure::olap::clickhouse::mapper::std_column_to_clickhouse_column;
+
+        // Test modifying a nullable column with a default value
+        let column = Column {
+            name: "description".to_string(),
+            data_type: ColumnType::String,
+            required: false,
+            unique: false,
+            primary_key: false,
+            default: Some("'updated default'".to_string()),
+            annotations: vec![],
+            comment: Some("Updated description field".to_string()),
+        };
+
+        let clickhouse_column = std_column_to_clickhouse_column(column).unwrap();
+
+        let sql = build_modify_column_sql("test_db", "users", &clickhouse_column).unwrap();
+
+        assert_eq!(
+            sql,
+            "ALTER TABLE `test_db`.`users` MODIFY COLUMN IF EXISTS `description` Nullable(String) DEFAULT 'updated default' COMMENT 'Updated description field'"
+        );
+    }
+
+    #[test]
     fn test_extract_order_by_from_create_query_edge_cases() {
         // Test with multiple ORDER BY clauses (should only use the first one)
         let query =
@@ -1421,5 +1667,96 @@ mod tests {
         let query = "CREATE TABLE test (`PRIMARY KEY` Int64) ENGINE = MergeTree() ORDER BY (`id`)";
         let order_by = extract_order_by_from_create_query(query);
         assert_eq!(order_by, vec!["id".to_string()]);
+    }
+
+    #[test]
+    fn test_add_column_with_default_value() {
+        use crate::framework::core::infrastructure::table::{Column, IntType};
+        use crate::infrastructure::olap::clickhouse::mapper::std_column_to_clickhouse_column;
+        use crate::infrastructure::olap::clickhouse::queries::basic_field_type_to_string;
+
+        // Test adding a column with a default value
+        let column = Column {
+            name: "count".to_string(),
+            data_type: ColumnType::Int(IntType::Int32),
+            required: true,
+            unique: false,
+            primary_key: false,
+            default: Some("42".to_string()),
+            annotations: vec![],
+            comment: Some("Number of items".to_string()),
+        };
+
+        let clickhouse_column = std_column_to_clickhouse_column(column).unwrap();
+        let column_type_string =
+            basic_field_type_to_string(&clickhouse_column.column_type).unwrap();
+
+        // Include DEFAULT clause if column has a default value
+        let default_clause = clickhouse_column
+            .default
+            .as_ref()
+            .map(|d| format!(" DEFAULT {}", d))
+            .unwrap_or_default();
+
+        let add_column_query = format!(
+            "ALTER TABLE `{}`.`{}` ADD COLUMN `{}` {}{} {}",
+            "test_db",
+            "test_table",
+            clickhouse_column.name,
+            column_type_string,
+            default_clause,
+            "FIRST"
+        );
+
+        assert_eq!(
+            add_column_query,
+            "ALTER TABLE `test_db`.`test_table` ADD COLUMN `count` Int32 DEFAULT 42 FIRST"
+        );
+    }
+
+    #[test]
+    fn test_add_nullable_column_with_default_string() {
+        use crate::framework::core::infrastructure::table::Column;
+        use crate::infrastructure::olap::clickhouse::mapper::std_column_to_clickhouse_column;
+        use crate::infrastructure::olap::clickhouse::queries::basic_field_type_to_string;
+
+        // Test adding a nullable column with a default string value
+        let column = Column {
+            name: "description".to_string(),
+            data_type: ColumnType::String,
+            required: false,
+            unique: false,
+            primary_key: false,
+            default: Some("'default text'".to_string()),
+            annotations: vec![],
+            comment: None,
+        };
+
+        let clickhouse_column = std_column_to_clickhouse_column(column).unwrap();
+
+        let column_type_string =
+            basic_field_type_to_string(&clickhouse_column.column_type).unwrap();
+
+        // Include DEFAULT clause if column has a default value
+        let default_clause = clickhouse_column
+            .default
+            .as_ref()
+            .map(|d| format!(" DEFAULT {}", d))
+            .unwrap_or_default();
+
+        let add_column_query = format!(
+            "ALTER TABLE `{}`.`{}` ADD COLUMN `{}` {}{} {}",
+            "test_db",
+            "test_table",
+            clickhouse_column.name,
+            column_type_string,
+            default_clause,
+            "AFTER `id`"
+        );
+
+        assert_eq!(
+            add_column_query,
+            "ALTER TABLE `test_db`.`test_table` ADD COLUMN `description` Nullable(String) DEFAULT 'default text' AFTER `id`"
+        );
     }
 }

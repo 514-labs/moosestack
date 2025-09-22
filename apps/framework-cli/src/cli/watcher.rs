@@ -90,7 +90,7 @@ impl EventBuckets {
         };
 
         for path in event.paths {
-            if !path.ext_is_supported_lang() && !path.ext_is_script_config() {
+            if !path.ext_is_supported_lang() {
                 continue;
             }
             self.changes.insert(path);
@@ -160,7 +160,7 @@ async fn watch(
                     receiver_ack.send_replace(EventBuckets::default());
                     rx.mark_unchanged();
 
-                    let _ = with_spinner_completion_async(
+                    let result: anyhow::Result<()> = with_spinner_completion_async(
                         "Processing Infrastructure changes from file watcher",
                         "Infrastructure changes processed successfully",
                         async {
@@ -226,15 +226,23 @@ async fn watch(
                         },
                         !project.is_production,
                     )
-                    .await
-                    .map_err(|e: anyhow::Error| {
-                        show_message!(MessageType::Error, {
-                            Message {
-                                action: "Failed".to_string(),
-                                details: format!("Processing Infrastructure changes failed:\n{e:?}"),
-                            }
-                        });
-                    });
+                    .await;
+                    match result {
+                        Ok(()) => {
+                            project
+                                .http_server_config
+                                .run_after_dev_server_reload_script()
+                                .await;
+                        }
+                        Err(e) => {
+                            show_message!(MessageType::Error, {
+                                Message {
+                                    action: "Failed".to_string(),
+                                    details: format!("Processing Infrastructure changes failed:\n{e:?}"),
+                                }
+                            });
+                        }
+                    }
                 }
             }
         }

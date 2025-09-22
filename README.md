@@ -1,25 +1,29 @@
 <a href="https://docs.fiveonefour.com/moose/"><img src="https://raw.githubusercontent.com/514-labs/moose/main/logo-m-light.png" alt="moose logo" height="100px"></a>
 
-[![Made by 514 Labs](https://img.shields.io/badge/MADE%20BY-514%20Labs-black.svg)](https://www.fiveonefour.com)
+[![Made by Fiveonefour](https://img.shields.io/badge/MADE%20BY-Fiveonefour-black.svg)](https://www.fiveonefour.com)
 [![NPM Version](https://img.shields.io/npm/v/%40514labs%2Fmoose-cli?logo=npm)](https://www.npmjs.com/package/@514labs/moose-cli?activeTab=readme)
-[![Moose Community](https://img.shields.io/badge/slack-moose_community-purple.svg?logo=slack)](https://join.slack.com/t/moose-community/shared_invite/zt-2fjh5n3wz-cnOmM9Xe9DYAgQrNu8xKxg)
-[![Docs](https://img.shields.io/badge/quick_start-docs-blue.svg)](https://docs.fiveonefour.com/moose/getting-started/quickstart)
-[![MIT license](https://img.shields.io/badge/license-MIT-yellow.svg)](LICENSE)
+[![MooseStack Community](https://img.shields.io/badge/Slack-MooseStack_community-purple.svg?logo=slack)](https://join.slack.com/t/moose-community/shared_invite/zt-2fjh5n3wz-cnOmM9Xe9DYAgQrNu8xKxg)
+[![Docs](https://img.shields.io/badge/Quickstart-Docs-blue.svg)](https://docs.fiveonefour.com/moose/getting-started/quickstart)
+[![MIT license](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 # MooseStack
 
-**Developer toolkit for building real-time analytical backends in Typescript and Python** — MooseStack modules offer type‑safe, code‑first abstractions for popular open source analytical infrastructure, including [ClickHouse](https://clickhouse.com/), [Kafka](https://kafka.apache.org/), [Redpanda](https://redpanda.com/), [Temporal](https://temporal.io/), and [Redis](https://redis.io/).
+**Developer toolkit for building real-time analytical backends in Typescript and Python** — MooseStack brings data engineering best practices and a modern web development DX to any engineer building on data infra.
 
-MooseStack is designed to bring the best of the modern web-development experience to any developer building an application that needs to integrate an analytics stack.
+MooseStack modules offer a type‑safe, code‑first developer experience layer for popular open source analytical infrastructure, including [ClickHouse](https://clickhouse.com/), [Kafka](https://kafka.apache.org/), [Redpanda](https://redpanda.com/), and [Temporal](https://temporal.io/).
+
+MooseStack is designed for:
+1. Software engineers integrating analytics & AI into their apps, and leaning into real-time / OLAP infrastructure best practices
+2. Data engineers building software & AI applications on their data infra, and leaning into software development best practices
 
 ## Why MooseStack?
 
-- **5‑minute setup**: Install the CLI and [bootstrap a backend](https://docs.fiveonefour.com/moose/getting-started/quickstart).
-- **Pre‑integrated components**: ClickHouse (storage), Redpanda (streaming), Temporal (orchestration).
-- **Hot‑reload development**: Run everything locally with live schema migrations.
+- **Git-native development**: Version control, collaboration, and governance built-in
+- **Local-first experience**: Full mirror of production environment on your laptop with `moose dev`
+- **Schema & migration management**: typed schemas in your application code, with transparent migration support
 - **Code‑first infrastructure**: Declare tables, streams, workflows, and APIs in TS/Python -> MooseStack wires it all up.
 - **Modular design**: Only enable the modules you need. Each module is independent and can be adopted incrementally.
-- **Built for speed**: [ClickHouse](https://clickhouse.com/) is a columnar database that is roughly 100× faster than traditional databases for analytical queries.
+- **AI copilot friendly**: Designed from the ground up for LLM-powered development
 
 ## MooseStack Modules
 
@@ -27,13 +31,13 @@ MooseStack is designed to bring the best of the modern web-development experienc
 - [Moose **Streaming**](https://docs.fiveonefour.com/moose/streaming): Real‑time pipelines with Kafka/Redpanda and transformation functions.
 - [Moose **Workflows**](https://docs.fiveonefour.com/moose/workflows): ETL pipelines and tasks with Temporal.
 - [Moose **APIs**](https://docs.fiveonefour.com/moose/apis): Type‑safe ingestion and query endpoints with auto‑generated OpenAPI docs.
-- Moose Tooling: [Moose **Deploy**](https://docs.fiveonefour.com/moose/deploying), [Moose **Migrate**](https://docs.fiveonefour.com/moose/migrate), [Moose **Observability**](https://docs.fiveonefour.com/moose/metrics)
+- MooseStack Tooling: [Moose **Deploy**](https://docs.fiveonefour.com/moose/deploying), [Moose **Migrate**](https://docs.fiveonefour.com/moose/migrate), [Moose **Observability**](https://docs.fiveonefour.com/moose/metrics)
 
 ## Quickstart
 
 Also available in the Docs: [5-minute Quickstart](https://docs.fiveonefour.com/moose/getting-started/quickstart)
 
-Already running Clickhouse: [Getting Started with Existing Clickhouse](https://docs.fiveonefour.com/moose/getting-started/quickstart)
+Already running Clickhouse: [Getting Started with Existing Clickhouse](https://docs.fiveonefour.com/moose/getting-started/from-clickhouse)
 
 ### Install the CLI
 
@@ -62,7 +66,7 @@ MooseStack will start ClickHouse, Redpanda, Temporal, and Redis; the CLI validat
 
 ## Deploy with Boreal
 
-The easiest way to deploy your Moose app is to use [Boreal](https://www.fiveonefour.com/boreal) from 514 Labs, the creators of Moose. Boreal provides zero-config deployments, automatic scaling, managed or BYO infrastructure, monitoring and observability integrations.
+The easiest way to deploy your MooseStack Applications is to use [Boreal](https://www.fiveonefour.com/boreal) from 514 Labs, the creators of Moose. Boreal provides zero-config deployments, automatic scaling, managed or BYO infrastructure, monitoring and observability integrations.
 
 [Get started with Boreal →](https://www.fiveonefour.com/boreal)
 
@@ -141,6 +145,45 @@ def handler(client, params: QueryParams):
 consumption_api = ConsumptionApi[RequestParams, DataModel]("get-api-route", query_function=handler)
 ```
 
+## 5 Minute Quickstart
+
+**Already running Clickhouse?** MooseStack gives you a modern software DX on your existing ClickHouse or ClickHouse Cloud cluster: [Getting Started with Existing Clickhouse](https://docs.fiveonefour.com/moose/getting-started/quickstart)
+
+### Install the CLI
+
+```bash
+bash -i <(curl -fsSL https://fiveonefour.com/install.sh) moose
+```
+
+### Create a project
+
+```bash
+# typescript
+moose init my-project --from-remote <YOUR_CLICKHOUSE_CONNECTION_STRING> --language typescript
+
+# python
+moose init my-project --from-remote <YOUR_CLICKHOUSE_CONNECTION_STRING> --language python
+```
+
+### Run locally
+
+```bash
+cd my-project
+moose dev
+```
+
+MooseStack will start ClickHouse, Redpanda, Temporal, and Redis; the CLI validates each component.
+
+## Deploy with Boreal
+
+The easiest way to deploy to production with MooseStack is to use [Boreal](https://www.fiveonefour.com/boreal) from Fiveonefour, the creators of MooseStack. Boreal provides github integration for CI/CD and one click deploys, cloud previews of your dev branches, managed or BYO infrastructure, and security + observability. Boreal works natively with ClickHouse Cloud and RedPanda Cloud.
+
+[Get started with Boreal →](https://www.fiveonefour.com/boreal)
+
+## Deploy Yourself
+
+MooseStack is open source, and apps built with MooseStack can be self-hosted. For detailed self-hosting instructions, see our [deployment documentation](https://docs.fiveonefour.com/moose/deploying).
+
 ## Docs
 
 - [Overview](https://docs.fiveonefour.com/moose)
@@ -153,7 +196,6 @@ consumption_api = ConsumptionApi[RequestParams, DataModel]("get-api-route", quer
 - [Redpanda](https://redpanda.com/) (streaming)
 - [Temporal](https://temporal.io/) (workflow orchestration)
 - [Redis](https://redis.io/) (internal state)
-
 
 ## Community
 

@@ -32,8 +32,8 @@ export interface Foo {
 }
 
 export const task1 = new Task<Foo, void>("task1", {
-  run: async (input: Foo) => {
-    const name = input.name ?? "world";
+  run: async (ctx) => {
+    const name = ctx.input.name ?? "world";
     const greeting = `hello, ${name}!`;
     console.log(greeting);
   },
@@ -49,14 +49,14 @@ Export `Task` and `Workflow` objects. Specify `startingTask` in the `Workflow` c
 
 <Python>
 ```python filename="app/main.py" copy
-from moose_lib import Task, TaskConfig, Workflow, WorkflowConfig
+from moose_lib import Task, TaskConfig, TaskContext, Workflow, WorkflowConfig
 from pydantic import BaseModel
 
 class Foo(BaseModel):
   name: str;
 
-def run_task1(input: Foo) -> None:
-  name = input.name or "world"
+def run_task1(ctx: TaskContext[Foo]) -> None:
+  name = ctx.input.name or "world"
   greeting = f"hello, {name}!"
 
 task1 = Task[Foo, None](
@@ -97,14 +97,14 @@ export interface Bar {
 }
 
 export const task2 = new Task<Bar, void>("task2", {
-  run: async (input: Bar) => {
-    console.log(`task2 input: ${JSON.stringify(input)}`);
+  run: async (ctx) => {
+    console.log(`task2 input: ${JSON.stringify(ctx.input)}`);
   }
 });
 
 export const task1 = new Task<Foo, Bar>("task1", {
-  run: async (input: Foo) => {
-    const name = input.name ?? "world";
+  run: async (ctx) => {
+    const name = ctx.input.name ?? "world";
     const greeting = `hello, ${name}!`;
 
     return {
@@ -124,7 +124,7 @@ export const myworkflow = new Workflow("myworkflow", {
 
 <Python>
 ```python filename="app/main.py" copy
-from moose_lib import Task, TaskConfig, Workflow, WorkflowConfig, Logger
+from moose_lib import Task, TaskConfig, TaskContext, Workflow, WorkflowConfig, Logger
 from pydantic import BaseModel
 
 class Foo(BaseModel):
@@ -135,17 +135,17 @@ class Bar(BaseModel):
   greeting: str
   counter: int
 
-def run_task2(input: Bar) -> None:
+def run_task2(ctx: TaskContext[Bar]) -> None:
   logger = Logger(action="run_task2")
-  logger.info(f"task2 input: {input.model_dump_json()}")
+  logger.info(f"task2 input: {ctx.input.model_dump_json()}")
 
 task2 = Task[Bar, None](
   name="task2",
   config=TaskConfig(run=run_task2)
 )
 
-def run_task1(input: Foo) -> Bar:
-  name = input.name or "world"
+def run_task1(ctx: TaskContext[Foo]) -> Bar:
+  name = ctx.input.name or "world"
   greeting = f"hello, {name}!"
 
   return Bar(

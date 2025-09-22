@@ -94,6 +94,13 @@ message Table {
   google.protobuf.StringValue engine = 7;
   Metadata metadata = 8;
   LifeCycle life_cycle = 9;
+
+  // Hash of non-alterable engine parameters for change detection
+  optional string engine_params_hash = 10;
+  // Alterable table settings (can be changed with ALTER TABLE MODIFY SETTING)
+  map<string, string> table_settings = 11;
+  // Optional PARTITION BY expression for ClickHouse tables
+  optional string partition_by = 12;
 }
 
 message View {
@@ -148,7 +155,10 @@ message Column {
   bool required = 3;
   bool unique = 4;
   bool primary_key = 5;
-  ColumnDefaults default = 6;
+  // was an enum that we never used
+  int32 default = 6 [deprecated = true];
+  // Column default is now a free-form SQL expression passed as a string
+  google.protobuf.StringValue default_expr = 9;
 
   map<string, string> annotations = 7;
   optional string comment = 8; // Column comment for metadata storage
@@ -258,14 +268,6 @@ message EnumValue {
   }
 }
 
-enum ColumnDefaults {
-  NONE = 0;
-  AUTO_INCREMENT = 1;
-  CUID = 2;
-  UUID = 3;
-  NOW = 4;
-}
-
 message PrimitiveSignature {
   string name = 1;
   PrimitiveTypes primitive_type = 2;
@@ -283,6 +285,8 @@ enum LifeCycle {
   DELETION_PROTECTED = 1;
   EXTERNALLY_MANAGED = 2;
 }
+
+
 
 message OrchestrationWorker {
   string supported_language = 1;

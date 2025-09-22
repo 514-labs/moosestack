@@ -1,4 +1,4 @@
-use log::{info, warn};
+use log::info;
 use std::collections::HashMap;
 use tokio::process::Child;
 
@@ -6,16 +6,10 @@ use crate::{
     cli::settings::Settings,
     framework::{
         core::infrastructure::orchestration_worker::OrchestrationWorker,
-        languages::SupportedLanguages,
-        python,
-        scripts::collector::{Collector, WorkflowCollector},
-        typescript,
+        languages::SupportedLanguages, python, typescript,
     },
     project::Project,
-    utilities::{
-        constants::WORKFLOW_CONFIGS,
-        system::{kill_child, KillProcessError},
-    },
+    utilities::system::{kill_child, KillProcessError},
 };
 
 /// Error types that can occur when managing orchestration workers
@@ -78,18 +72,6 @@ impl OrchestrationWorkersRegistry {
         );
 
         let language = orchestration_worker.supported_language;
-        let mut collector = WorkflowCollector::new();
-
-        match collector.collect(self.project.scripts_dir()) {
-            Ok(_) => {
-                if let Ok(internal_dir) = self.project.internal_dir() {
-                    collector.serialize_configs(language, internal_dir.join(WORKFLOW_CONFIGS))
-                }
-            }
-            Err(e) => {
-                warn!("Failed to collect orchestration configs: {}", e);
-            }
-        }
 
         if language == SupportedLanguages::Python {
             let child = python::scripts_worker::start_worker(&self.project).await?;

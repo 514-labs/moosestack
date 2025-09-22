@@ -15,7 +15,7 @@ This is a monorepo containing the Moose project, built with Rust, TypeScript, an
 - Run tests:
   - Rust: `cargo test`
   - TypeScript/JavaScript: `pnpm test`
-  - End-to-end tests: See apps directory
+  - End-to-end tests: ./apps/framework-cli-e2e and then pnpm test
 - Full CI check: Run appropriate build and test commands for affected packages
 
 ## Repository Structure

@@ -81,15 +81,19 @@ use std::net::SocketAddr;
 use std::ops::Deref;
 use std::path::PathBuf;
 use std::pin::Pin;
+use std::process::Stdio;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
 use tokio::net::TcpListener;
+use tokio::process::Command;
 use tokio::sync::mpsc;
 use tokio::sync::RwLock;
 
 use crate::framework::core::infra_reality_checker::InfraDiscrepancies;
 use crate::framework::core::infrastructure::table::Table;
 use crate::infrastructure::processes::process_registry::ProcessRegistries;
+use crate::utilities::constants;
 
 /// Request wrapper for router handling.
 /// This struct combines the HTTP request with the route table for processing.
@@ -139,6 +143,16 @@ pub struct LocalWebserverConfig {
     /// Maximum request body size in bytes (default: 10MB)
     #[serde(default = "default_max_request_body_size")]
     pub max_request_body_size: usize,
+    /// Script to run after dev server reload completes for code/infrastructure changes
+    #[serde(
+        default,
+        alias = "on_change_script",
+        alias = "post_dev_server_ready_script"
+    )]
+    pub on_reload_complete_script: Option<String>,
+    /// Script to run once when the dev server first starts (never repeats in this process)
+    #[serde(default, alias = "post_dev_server_start_script")]
+    pub on_first_start_script: Option<String>,
 }
 
 pub fn default_proxy_port() -> u16 {
@@ -169,6 +183,123 @@ impl LocalWebserverConfig {
             }
         })
     }
+
+    pub async fn run_after_dev_server_reload_script(&self) {
+        if let Some(ref script) = self.on_reload_complete_script {
+            let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".into());
+
+            let child = Command::new(shell)
+                .arg("-c")
+                .arg(script)
+                .stdin(Stdio::null())
+                .stdout(Stdio::inherit())
+                .stderr(Stdio::inherit())
+                .spawn();
+            match child {
+                Ok(mut child) => {
+                    match child.wait().await {
+                        Ok(status) if status.success() => {
+                            show_message!(MessageType::Success, {
+                                Message {
+                                    action: "Ran".to_string(),
+                                    details: "script after dev server reload".to_string(),
+                                }
+                            });
+                        }
+                        Ok(status) => {
+                            show_message!(MessageType::Error, {
+                                Message {
+                                    action: "Fail".to_string(),
+                                    details: format!("script after dev server reload: {status}"),
+                                }
+                            });
+                        }
+                        Err(e) => {
+                            show_message!(MessageType::Error, {
+                                Message {
+                                    action: "Failed".to_string(),
+                                    details: format!(
+                                        "to wait for script after dev server reload\n{e:?}"
+                                    ),
+                                }
+                            });
+                        }
+                    };
+                }
+                Err(e) => {
+                    show_message!(MessageType::Error, {
+                        Message {
+                            action: "Failed".to_string(),
+                            details: format!("to spawn on_reload_complete_script:\n{e:?}"),
+                        }
+                    });
+                }
+            }
+        }
+    }
+
+    pub async fn run_dev_start_script_once(&self) {
+        static START_SCRIPT_RAN: AtomicBool = AtomicBool::new(false);
+
+        if START_SCRIPT_RAN
+            .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+            .is_err()
+        {
+            return;
+        }
+
+        if let Some(ref script) = self.on_first_start_script {
+            let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".into());
+
+            let child = Command::new(shell)
+                .arg("-c")
+                .arg(script)
+                .stdin(Stdio::null())
+                .stdout(Stdio::inherit())
+                .stderr(Stdio::inherit())
+                .spawn();
+            match child {
+                Ok(mut child) => {
+                    match child.wait().await {
+                        Ok(status) if status.success() => {
+                            show_message!(MessageType::Success, {
+                                Message {
+                                    action: "Ran".to_string(),
+                                    details: "script for dev server start".to_string(),
+                                }
+                            });
+                        }
+                        Ok(status) => {
+                            show_message!(MessageType::Error, {
+                                Message {
+                                    action: "Fail".to_string(),
+                                    details: format!("script for dev server start: {status}"),
+                                }
+                            });
+                        }
+                        Err(e) => {
+                            show_message!(MessageType::Error, {
+                                Message {
+                                    action: "Failed".to_string(),
+                                    details: format!(
+                                        "to wait for script for dev server start\n{e:?}"
+                                    ),
+                                }
+                            });
+                        }
+                    };
+                }
+                Err(e) => {
+                    show_message!(MessageType::Error, {
+                        Message {
+                            action: "Failed".to_string(),
+                            details: format!("to spawn on_first_start_script:\n{e:?}"),
+                        }
+                    });
+                }
+            }
+        }
+    }
 }
 
 impl Default for LocalWebserverConfig {
@@ -180,6 +311,8 @@ impl Default for LocalWebserverConfig {
             proxy_port: default_proxy_port(),
             path_prefix: None,
             max_request_body_size: default_max_request_body_size(),
+            on_reload_complete_script: None,
+            on_first_start_script: None,
         }
     }
 }
@@ -205,11 +338,17 @@ async fn get_consumption_api_res(
             )))?);
     }
 
+    let full_path = req.uri().path();
+    let stripped_for_proxy = full_path
+        .strip_prefix("/api")
+        .or_else(|| full_path.strip_prefix("/consumption"))
+        .unwrap_or(full_path);
+
     let url = format!(
         "http://{}:{}{}{}",
         host,
         proxy_port,
-        req.uri().path().strip_prefix("/consumption").unwrap_or(""),
+        stripped_for_proxy,
         req.uri()
             .query()
             .map_or("".to_string(), |q| format!("?{q}"))
@@ -219,18 +358,19 @@ async fn get_consumption_api_res(
     {
         let consumption_apis = consumption_apis.read().await;
 
-        let consumption_name = req
-            .uri()
-            .path()
-            .strip_prefix("/consumption/")
-            .unwrap_or(req.uri().path());
+        // Normalize to the API name by removing either prefix
+        let raw_path = req.uri().path();
+        let consumption_name = raw_path
+            .strip_prefix("/api/")
+            .or_else(|| raw_path.strip_prefix("/consumption/"))
+            .unwrap_or(raw_path);
 
         // Allow forwarding even if not an exact match; the proxy layer (runner) will
         // handle aliasing (unversioned -> sole versioned) or return 404.
         if !consumption_apis.contains(consumption_name) && !is_prod {
             use crossterm::{execute, style::Print};
             let msg = format!(
-                "Exact match for Consumption API {} not found. Looking for fallback API. Known consumption paths: {}",
+                "Exact match for Analytics API {} not found. Looking for fallback API. Known analytics api paths: {}",
                 consumption_name,
                 consumption_apis
                     .iter()
@@ -464,6 +604,86 @@ async fn health_route(
     } else {
         StatusCode::SERVICE_UNAVAILABLE
     };
+    let json_response = serde_json::to_string_pretty(&serde_json::json!({
+        "healthy": healthy,
+        "unhealthy": unhealthy
+    }))
+    .unwrap_or_else(|_| String::from("{\"error\":\"Failed to serialize response\"}"));
+
+    Response::builder()
+        .status(status)
+        .header("Content-Type", "application/json")
+        .body(Full::new(Bytes::from(json_response)))
+}
+
+async fn ready_route(
+    project: &Project,
+    redis_client: &Arc<RedisClient>,
+) -> Result<Response<Full<Bytes>>, hyper::http::Error> {
+    // This endpoint validates that backing services are not only reachable but their
+    // connections are warmed/ready for immediate use.
+
+    let mut healthy = Vec::new();
+    let mut unhealthy = Vec::new();
+
+    // Redis: explicit PING via connection manager
+    let mut cm = redis_client.connection_manager.clone();
+    if cm.ping().await {
+        healthy.push("Redis")
+    } else {
+        unhealthy.push("Redis")
+    }
+
+    // Redpanda/Kafka: simple metadata probe that is Send-safe
+    if project.features.streaming_engine {
+        match crate::infrastructure::stream::kafka::client::health_check(&project.redpanda_config)
+            .await
+        {
+            Ok(true) => healthy.push("Redpanda"),
+            Ok(false) | Err(_) => unhealthy.push("Redpanda"),
+        }
+    }
+
+    // ClickHouse: run a small query using the configured client (ensures HTTP pool is ready)
+    if project.features.olap {
+        let ch = crate::infrastructure::olap::clickhouse::create_client(
+            project.clickhouse_config.clone(),
+        );
+        match crate::infrastructure::olap::clickhouse::check_ready(&ch).await {
+            Ok(_) => healthy.push("ClickHouse"),
+            Err(e) => {
+                warn!("Ready check: ClickHouse not ready: {}", e);
+                unhealthy.push("ClickHouse")
+            }
+        }
+    }
+
+    // Temporal: if enabled, perform a namespace describe probe
+    if let Some(manager) =
+        crate::infrastructure::orchestration::temporal_client::manager_from_project_if_enabled(
+            project,
+        )
+    {
+        let namespace = project.temporal_config.get_temporal_namespace();
+        let res = crate::infrastructure::orchestration::temporal_client::probe_temporal_namespace(
+            &manager, namespace,
+        )
+        .await;
+        match res {
+            Ok(_) => healthy.push("Temporal"),
+            Err(e) => {
+                warn!("Ready check: Temporal not ready: {:?}", e);
+                unhealthy.push("Temporal")
+            }
+        }
+    }
+
+    let status = if unhealthy.is_empty() {
+        StatusCode::OK
+    } else {
+        StatusCode::SERVICE_UNAVAILABLE
+    };
+
     let json_response = serde_json::to_string_pretty(&serde_json::json!({
         "healthy": healthy,
         "unhealthy": unhealthy
@@ -1065,9 +1285,13 @@ async fn router(
 
     let route_split = route.to_str().unwrap().split('/').collect::<Vec<&str>>();
     let res = match (configured_producer, req.method(), &route_split[..]) {
-        (Some(configured_producer), &hyper::Method::POST, ["ingest", _]) => {
-            if project.features.data_model_v2 {
-                // For v2, find the latest version if no version specified
+        // Handle ingestion routes with nested paths
+        (Some(configured_producer), &hyper::Method::POST, segments)
+            if segments.len() >= 2 && segments[0] == "ingest" =>
+        {
+            // For nested paths, we need to handle version resolution differently
+            if project.features.data_model_v2 && segments.len() == 2 {
+                // For v2 with simple path (e.g., /ingest/model_name), find the latest version
                 let route_table_read = route_table.read().await;
                 let base_path = route.to_str().unwrap();
                 let mut latest_version: Option<&Version> = None;
@@ -1112,8 +1336,8 @@ async fn router(
                         .await
                     }
                 }
-            } else {
-                // For v1, append current version as before
+            } else if !project.features.data_model_v2 && segments.len() == 2 {
+                // For v1 with simple path, append current version
                 ingest_route(
                     req,
                     route.join(&current_version),
@@ -1124,19 +1348,19 @@ async fn router(
                     project.http_server_config.max_request_body_size,
                 )
                 .await
+            } else {
+                // For nested paths or paths with explicit version, use as-is
+                ingest_route(
+                    req,
+                    route,
+                    configured_producer,
+                    route_table,
+                    is_prod,
+                    jwt_config,
+                    project.http_server_config.max_request_body_size,
+                )
+                .await
             }
-        }
-        (Some(configured_producer), &hyper::Method::POST, ["ingest", _, _]) => {
-            ingest_route(
-                req,
-                route,
-                configured_producer,
-                route_table,
-                is_prod,
-                jwt_config,
-                project.http_server_config.max_request_body_size,
-            )
-            .await
         }
         (_, &hyper::Method::POST, ["admin", "integrate-changes"]) => {
             admin_integrate_changes_route(
@@ -1168,7 +1392,8 @@ async fn router(
             .await
         }
         (_, &hyper::Method::GET, route_segments)
-            if route_segments.len() >= 2 && route_segments[0] == "consumption" =>
+            if route_segments.len() >= 2
+                && (route_segments[0] == "api" || route_segments[0] == "consumption") =>
         {
             match get_consumption_api_res(
                 http_client,
@@ -1190,6 +1415,7 @@ async fn router(
             }
         }
         (_, &hyper::Method::GET, ["health"]) => health_route(&project, &redis_client).await,
+        (_, &hyper::Method::GET, ["ready"]) => ready_route(&project, &redis_client).await,
         (_, &hyper::Method::GET, ["admin", "reality-check"]) => {
             admin_reality_check_route(
                 req,
@@ -1233,7 +1459,8 @@ async fn router(
                 .await;
         }
 
-        if metrics_path_clone.starts_with("consumption/") {
+        if metrics_path_clone.starts_with("consumption/") || metrics_path_clone.starts_with("api/")
+        {
             let _ = metrics_clone
                 .send_metric_event(MetricEvent::ConsumedEvent {
                     timestamp: Utc::now(),
@@ -1336,7 +1563,9 @@ async fn management_router<I: InfraMapProvider>(
                 }
             }
         }
-        (&hyper::Method::GET, "openapi.yaml") => openapi_route(is_prod, openapi_path).await,
+        (&hyper::Method::GET, constants::OPENAPI_FILE) => {
+            openapi_route(is_prod, openapi_path).await
+        }
         _ => route_not_found_response(),
     };
 
@@ -1348,6 +1577,139 @@ pub struct Webserver {
     host: String,
     port: u16,
     management_port: u16,
+}
+
+/// Prints available routes in a clean table format
+async fn print_available_routes(
+    route_table: &'static RwLock<HashMap<PathBuf, RouteMeta>>,
+    consumption_apis: &'static RwLock<HashSet<String>>,
+    project: &Project,
+) {
+    let route_table_read = route_table.read().await;
+    let consumption_apis_read = consumption_apis.read().await;
+
+    // Collect routes by category
+    let mut static_routes = vec![
+        (
+            "GET",
+            "/admin/inframap".to_string(),
+            "Admin: Get infrastructure map".to_string(),
+        ),
+        (
+            "GET",
+            "/admin/reality-check".to_string(),
+            "Admin: Reality check - provides a diff when drift is detected between the running instance of moose and the db it is connected to".to_string(),
+        ),
+        (
+            "GET",
+            "/health".to_string(),
+            "Health check endpoint".to_string(),
+        ),
+        (
+            "GET",
+            "/ready".to_string(),
+            "Readiness check endpoint".to_string(),
+        ),
+        (
+            "GET",
+            "/workflows/list".to_string(),
+            "List workflows".to_string(),
+        ),
+    ];
+
+    // Collect ingestion routes
+    let mut ingest_routes = Vec::new();
+    for (path, meta) in route_table_read.iter() {
+        let path_str = path.to_str().unwrap_or("");
+        let method = "POST";
+        let endpoint = format!("/{}", path_str);
+        let description = format!(
+            "Ingest data to {} (v{})",
+            meta.data_model.name,
+            meta.version
+                .as_ref()
+                .map_or("latest".to_string(), |v| v.to_string())
+        );
+        ingest_routes.push((method, endpoint, description));
+    }
+
+    // Collect consumption/API routes
+    let mut consumption_routes = Vec::new();
+    for api_path in consumption_apis_read.iter() {
+        let method = "GET";
+        let endpoint = format!("/api/{}", api_path);
+        let description = "Consumption API endpoint".to_string();
+        consumption_routes.push((method, endpoint, description));
+    }
+
+    // Sort each section alphabetically by endpoint
+    static_routes.sort_by(|a, b| a.1.cmp(&b.1));
+    ingest_routes.sort_by(|a, b| a.1.cmp(&b.1));
+    consumption_routes.sort_by(|a, b| a.1.cmp(&b.1));
+
+    // Print the routes if any exist
+    if !static_routes.is_empty() || !ingest_routes.is_empty() || !consumption_routes.is_empty() {
+        let base_url = project.http_server_config.url();
+        println!("\n📍 Available Routes:");
+        println!("  Base URL: {}\n", base_url);
+
+        // Calculate column widths for alignment across all sections
+        let method_width = 6; // "METHOD" or "POST"/"GET"
+        let all_routes: Vec<_> = static_routes
+            .iter()
+            .chain(ingest_routes.iter())
+            .chain(consumption_routes.iter())
+            .collect();
+        let endpoint_width = all_routes
+            .iter()
+            .map(|(_, endpoint, _)| endpoint.len())
+            .max()
+            .unwrap_or(30)
+            .min(60);
+
+        // Helper function to print a section
+        let print_section = |title: &str, routes: &[(&str, String, String)]| {
+            if !routes.is_empty() {
+                println!("  {}", title);
+                println!(
+                    "  {:<method_width$}  {:<endpoint_width$}  DESCRIPTION",
+                    "METHOD",
+                    "ENDPOINT",
+                    method_width = method_width,
+                    endpoint_width = endpoint_width
+                );
+                println!(
+                    "  {:<method_width$}  {:<endpoint_width$}  -----------",
+                    "------",
+                    "--------",
+                    method_width = method_width,
+                    endpoint_width = endpoint_width
+                );
+
+                for (method, endpoint, description) in routes {
+                    let truncated_endpoint = if endpoint.len() > 60 {
+                        format!("{}...", &endpoint[..57])
+                    } else {
+                        endpoint.clone()
+                    };
+                    println!(
+                        "  {:<method_width$}  {:<endpoint_width$}  {}",
+                        method,
+                        truncated_endpoint,
+                        description,
+                        method_width = method_width,
+                        endpoint_width = endpoint_width
+                    );
+                }
+                println!(); // Empty line after section
+            }
+        };
+
+        // Print each section
+        print_section("Static Routes:", &static_routes);
+        print_section("Ingestion Routes:", &ingest_routes);
+        print_section("Consumption Routes:", &consumption_routes);
+    }
 }
 
 impl Webserver {
@@ -1394,6 +1756,7 @@ impl Webserver {
                                 target_topic_id,
                                 dead_letter_queue,
                                 data_model,
+                                schema: _,
                             } => {
                                 // This is not namespaced
                                 let topic =
@@ -1408,7 +1771,7 @@ impl Webserver {
                                 route_table.insert(
                                     api_endpoint.path.clone(),
                                     RouteMeta {
-                                        data_model: data_model.unwrap(),
+                                        data_model: *data_model.unwrap(),
                                         dead_letter_queue,
                                         kafka_topic_name: kafka_topic.name,
                                         version: api_endpoint.version,
@@ -1443,6 +1806,7 @@ impl Webserver {
                                 target_topic_id,
                                 dead_letter_queue,
                                 data_model,
+                                schema: _,
                             } => {
                                 log::info!("Replacing route: {:?} with {:?}", before, after);
 
@@ -1457,7 +1821,7 @@ impl Webserver {
                                 route_table.insert(
                                     after.path.clone(),
                                     RouteMeta {
-                                        data_model: data_model.as_ref().unwrap().clone(),
+                                        data_model: *data_model.as_ref().unwrap().clone(),
                                         dead_letter_queue: dead_letter_queue.clone(),
                                         kafka_topic_name: kafka_topic.name,
                                         version: after.version,
@@ -1524,7 +1888,21 @@ impl Webserver {
             }
         );
 
+        // Print available routes in table format
+        print_available_routes(route_table, consumption_apis, &project).await;
+
         if !project.is_production {
+            // Fire once-only startup script as soon as server starts
+            {
+                let project_clone = project.clone();
+                tokio::spawn(async move {
+                    project_clone
+                        .http_server_config
+                        .run_dev_start_script_once()
+                        .await;
+                });
+            }
+
             show_message!(
                 MessageType::Highlight,
                 Message {
@@ -1532,6 +1910,8 @@ impl Webserver {
                     details: format!("\n\n💻 Run the moose 👉 `ls` 👈 command for a bird's eye view of your application and infrastructure\n\n📥 Send Data to Moose\n\tYour local development server is running at: {}/ingest\n", project.http_server_config.url()),
                 }
             );
+
+            // Do not run after_dev_server_reload_script at initial start; it's intended for reloads only.
         }
 
         let mut sigterm =
@@ -2295,8 +2675,11 @@ async fn admin_plan_route(
     // Use ClickHouse-specific strategy for table diffing
     let clickhouse_strategy =
         crate::infrastructure::olap::clickhouse::diff_strategy::ClickHouseTableDiffStrategy;
-    let changes =
-        current_infra_map.diff_with_table_strategy(&plan_request.infra_map, &clickhouse_strategy);
+    let changes = current_infra_map.diff_with_table_strategy(
+        &plan_request.infra_map,
+        &clickhouse_strategy,
+        true,
+    );
 
     // Prepare the response
     let response = PlanResponse {
@@ -2423,6 +2806,7 @@ mod tests {
                 comment: None,
             }],
             order_by: vec!["id".to_string()],
+            partition_by: None,
             engine: None,
             version: Some(Version::from_string("1.0.0".to_string())),
             source_primitive: PrimitiveSignature {
@@ -2431,6 +2815,8 @@ mod tests {
             },
             metadata: None,
             life_cycle: LifeCycle::FullyManaged,
+            engine_params_hash: None,
+            table_settings: None,
         }
     }
 

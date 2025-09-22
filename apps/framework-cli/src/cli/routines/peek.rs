@@ -79,8 +79,6 @@ pub async fn peek(
             ))
         })?;
 
-    let version_suffix = project.cur_version().as_suffix();
-
     let consumer_ref: StreamConsumer;
     let table_ref: ClickHouseTable;
 
@@ -89,15 +87,12 @@ pub async fn peek(
 
         consumer_ref = create_consumer(&project.redpanda_config, &[("group.id", &group_id)]);
         let consumer = &consumer_ref;
-        // in dmv2 we still have version as the suffix for topics
-        // but not so for tables. we might want to change that
-        let topic_versioned = format!("{name}_{version_suffix}");
 
         let topic = infra
             .topics
             .iter()
             .find_map(|(key, topic)| {
-                if key.to_lowercase() == topic_versioned.to_lowercase() {
+                if key.to_lowercase() == name.to_lowercase() {
                     Some(topic)
                 } else {
                     None
@@ -144,18 +139,11 @@ pub async fn peek(
                 .map(Result::unwrap),
         )
     } else {
-        let expected_key = if project.features.data_model_v2 {
-            name.to_string()
-        } else {
-            // ¯\_(ツ)_/¯
-            format!("{name}_{version_suffix}_{version_suffix}")
-        };
-
         let table = infra
             .tables
             .iter()
             .find_map(|(key, table)| {
-                if key.to_lowercase() == expected_key.to_lowercase() {
+                if key.to_lowercase() == name.to_lowercase() {
                     Some(table)
                 } else {
                     None

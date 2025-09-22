@@ -3,7 +3,7 @@ title: Moose Streaming
 description: Build real-time data pipelines with Redpanda/Kafka streams, transformations, and event processing
 ---
 
-import { Callout, BulletPointsCard, LanguageSwitcher, TypeScript, Python, CTACards, CTACard } from "@/components";
+import { Callout, BulletPointsCard, LanguageSwitcher, TypeScript, Python, CTACards, CTACard, ExportRequirement } from "@/components";
 import { Tabs } from "nextra/components";
 
 # Moose Streaming
@@ -14,6 +14,8 @@ import { Tabs } from "nextra/components";
 The Streaming module provides standalone real-time data processing with Kafka/Redpanda topics. You can use this capability independently to build event-driven architectures, data transformations, and real-time pipelines without requiring other MooseStack components.
 
 ## Basic Usage
+
+<ExportRequirement primitive="Stream" example="export { exampleStream }" />
 
 <TypeScript>
 ```ts filename="Stream.ts" copy
@@ -27,7 +29,7 @@ interface ExampleEvent {
 }
 
 // Create a standalone stream for events
-const exampleStream = new Stream<ExampleEvent>("streaming-topic-name", {
+export const exampleStream = new Stream<ExampleEvent>("streaming-topic-name", {
   // Optional: specify destination table
   destination: new OlapTable<ExampleEvent>("table-name")
 });
@@ -61,6 +63,8 @@ def process_event(event: ExampleEvent):
     # Custom processing logic here
 
 example_stream.add_consumer(process_event)
+
+# No export needed - Python modules are automatically discovered
 ```
 </Python>
 

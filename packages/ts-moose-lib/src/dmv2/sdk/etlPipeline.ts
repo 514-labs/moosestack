@@ -107,7 +107,7 @@ export class ETLPipeline<T, U> {
     taskConfig: TaskConfig,
   ): Task<null, BatchResult<T>> {
     return new Task<null, BatchResult<T>>(`${this.name}_extract`, {
-      run: async () => {
+      run: async ({}) => {
         console.log(`Running extract task for ${this.name}...`);
         const batch = await this.batcher.getNextBatch();
         console.log(`Extract task completed with ${batch.items.length} items`);
@@ -124,7 +124,9 @@ export class ETLPipeline<T, U> {
     return new Task<BatchResult<T>, TransformedResult<U>>(
       `${this.name}_transform`,
       {
-        run: async (batch: { items: T[]; hasMore: boolean }) => {
+        // Use new single-parameter context API for handlers
+        run: async ({ input }) => {
+          const batch = input!;
           console.log(
             `Running transform task for ${this.name} with ${batch.items.length} items...`,
           );
@@ -150,7 +152,7 @@ export class ETLPipeline<T, U> {
     taskConfig: TaskConfig,
   ): Task<TransformedResult<U>, void> {
     return new Task<TransformedResult<U>, void>(`${this.name}_load`, {
-      run: async (transformedItems: TransformedResult<U>) => {
+      run: async ({ input: transformedItems }) => {
         console.log(
           `Running load task for ${this.name} with ${transformedItems.items.length} items...`,
         );

@@ -17,7 +17,7 @@ export function Contact() {
         />
         <CTACard
           title="Watch Tutorials"
-          description="Video tutorials, demos, and deep-dives into Moose features"
+          description="Video tutorials, demos, and deep-dives into MooseStack features"
           ctaLink={PathConfig.youtube.path}
           ctaLabel="Watch Tutorials"
           Icon={Icons.youtube}
@@ -25,7 +25,7 @@ export function Contact() {
         />
         <CTACard
           title="Talk to Us"
-          description="Contact the Moose maintainers for support and feedback"
+          description="Contact the MooseStack maintainers for support and feedback"
           ctaLink={PathConfig.calendly.path}
           ctaLabel="Schedule a Call"
           Icon={Icons.contact}
@@ -33,7 +33,7 @@ export function Contact() {
         />
         <CTACard
           title="View GitHub"
-          description="Check out the code, contribute to Moose, and report issues"
+          description="Check out the code, contribute to MooseStack, and report issues"
           ctaLink={PathConfig.github.path}
           ctaLabel="Contribute"
           Icon={Icons.github}

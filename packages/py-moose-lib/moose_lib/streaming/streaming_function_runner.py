@@ -209,9 +209,14 @@ parser.add_argument('--security_protocol', type=str, help='The security protocol
 parser.add_argument('--dmv2', action=argparse.BooleanOptionalAction, type=bool,
                     help='Whether to use the DMV2 format for the streaming function')
 
-args = parser.parse_args()
+args: argparse.Namespace = parser.parse_args()
 
-print(args)
+for arg in vars(args):
+    value = getattr(args, arg)
+    if 'password' in arg and value is not None:
+        value = '******'
+    print(arg, value)
+
 source_topic = KafkaTopicConfig(**json.loads(args.source_topic_json))
 target_topic = KafkaTopicConfig(**json.loads(args.target_topic_json)) if args.target_topic_json else None
 function_file_dir = args.function_file_dir
@@ -323,6 +328,8 @@ def create_producer() -> Optional[KafkaProducer]:
     Returns:
         Configured KafkaProducer instance
     """
+    max_request_size = KafkaProducer.DEFAULT_CONFIG['max_request_size'] if target_topic is None \
+        else target_topic.max_message_bytes
     if sasl_config['mechanism'] is not None:
         return KafkaProducer(
             bootstrap_servers=broker,
@@ -330,13 +337,13 @@ def create_producer() -> Optional[KafkaProducer]:
             sasl_plain_password=sasl_config['password'],
             sasl_mechanism=sasl_config['mechanism'],
             security_protocol=args.security_protocol,
-            max_request_size=target_topic.max_message_bytes
+            max_request_size=max_request_size
         )
     log("No sasl mechanism specified. Using default producer.")
     return KafkaProducer(
         bootstrap_servers=broker,
         max_in_flight_requests_per_connection=1,
-        max_request_size=target_topic.max_message_bytes
+        max_request_size=max_request_size
     )
 
 

@@ -1,7 +1,7 @@
 """
-Consumption (Egress) API definitions for Moose Data Model v2 (dmv2).
+API definitions for Moose Data Model v2 (dmv2).
 
-This module provides classes for defining and configuring consumption APIs
+This module provides classes for defining and configuring APIs
 that allow querying data through user-defined functions.
 """
 import os
@@ -12,7 +12,7 @@ from pydantic import BaseModel
 from pydantic.json_schema import JsonSchemaValue
 
 from .types import BaseTypedResource, T, U
-from ._registry import _egress_apis, _egress_api_name_aliases
+from ._registry import _apis, _api_name_aliases, _api_path_map
 
 # Global base URL configuration
 _global_base_url: Optional[str] = None
@@ -22,7 +22,7 @@ def _generate_api_key(name: str, version: Optional[str] = None) -> str:
 
 
 def set_moose_base_url(url: str) -> None:
-    """Set the global base URL for consumption API calls.
+    """Set the global base URL for API calls.
     
     Args:
         url: The base URL to use for API calls
@@ -43,40 +43,42 @@ def get_moose_base_url() -> Optional[str]:
     return os.getenv('MOOSE_BASE_URL')
 
 
-class EgressConfig(BaseModel):
-    """Configuration for Consumption (Egress) APIs.
+class ApiConfig(BaseModel):
+    """Configuration for APIs.
 
     Attributes:
         version: Optional version string.
-        metadata: Optional metadata for the consumption API.
+        path: Optional custom path for the API endpoint. If not specified, defaults to the API name.
+        metadata: Optional metadata for the API.
     """
     version: Optional[str] = None
+    path: Optional[str] = None
     metadata: Optional[dict] = None
 
 
-class ConsumptionApi(BaseTypedResource, Generic[U]):
-    """Represents a Consumption (Egress) API endpoint.
+class Api(BaseTypedResource, Generic[U]):
+    """Represents a API endpoint.
 
     Allows querying data, typically powered by a user-defined function.
     Requires two Pydantic models: `T` for query parameters and `U` for the response body.
 
     Args:
-        name: The name of the consumption API endpoint.
+        name: The name of the API endpoint.
         query_function: The callable that executes the query logic.
                       It receives parameters matching model `T` (and potentially
                       other runtime utilities) and should return data matching model `U`.
         config: Optional configuration (currently only `version`).
         t: A tuple containing the input (`T`) and output (`U`) Pydantic models
-           (passed via `ConsumptionApi[InputModel, OutputModel](...)`).
+           (passed via `Api[InputModel, OutputModel](...)`).
 
     Attributes:
-        config (EgressConfig): Configuration for the API.
+        config (ApiConfig): Configuration for the API.
         query_function (Callable[..., U]): The handler function for the API.
         name (str): The name of the API.
         model_type (type[T]): The Pydantic model for the input/query parameters.
         return_type (type[U]): The Pydantic model for the response body.
     """
-    config: EgressConfig
+    config: ApiConfig
     query_function: Callable[..., U]
     _u: type[U]
 
@@ -91,7 +93,7 @@ class ConsumptionApi(BaseTypedResource, Generic[U]):
 
         return curried_constructor
 
-    def __init__(self, name: str, query_function: Callable[..., U], config: EgressConfig = None, version: str = None, **kwargs):
+    def __init__(self, name: str, query_function: Callable[..., U], config: ApiConfig = None, version: str = None, **kwargs):
         super().__init__()
         self._set_type(name, self._get_type(kwargs))
         
@@ -100,7 +102,7 @@ class ConsumptionApi(BaseTypedResource, Generic[U]):
             # If config is provided, use it as base
             if version is not None:
                 # If version is also provided, update the config's version
-                self.config = EgressConfig(
+                self.config = ApiConfig(
                     version=version,
                     metadata=config.metadata
                 )
@@ -109,28 +111,84 @@ class ConsumptionApi(BaseTypedResource, Generic[U]):
                 self.config = config
         elif version is not None:
             # Only version provided, create new config with version
-            self.config = EgressConfig(version=version)
+            self.config = ApiConfig(version=version)
         else:
             # Neither provided, use default config
-            self.config = EgressConfig()
-            
+            self.config = ApiConfig()
+
         self.query_function = query_function
         self.metadata = getattr(self.config, 'metadata', {}) or {}
         key = _generate_api_key(name, self.config.version)
-        _egress_apis[key] = self
+
+        # Check for duplicate registration
+        if key in _apis:
+            raise ValueError(
+                f"Consumption API with name {name} and version {self.config.version} already exists"
+            )
+        _apis[key] = self
+
+        # Register by custom path if provided
+        if self.config.path:
+            # For unversioned APIs or when path should be used as-is
+            if self.config.version is None:
+                # Check for collision
+                if self.config.path in _api_path_map:
+                    existing = _api_path_map[self.config.path]
+                    raise ValueError(
+                        f'Cannot register API "{name}" with custom path "{self.config.path}" - '
+                        f'this path is already used by API "{existing.name}"'
+                    )
+                # Only register unversioned path for unversioned APIs
+                _api_path_map[self.config.path] = self
+            else:
+                # For versioned APIs, check if version is already in the path
+                path_ends_with_version = (
+                    self.config.path.endswith(f"/{self.config.version}") or
+                    self.config.path == self.config.version or
+                    (self.config.path.endswith(self.config.version) and 
+                     len(self.config.path) > len(self.config.version) and
+                     self.config.path[-(len(self.config.version) + 1)] == '/')
+                )
+                
+                if path_ends_with_version:
+                    # Path already contains version, check for collision
+                    if self.config.path in _api_path_map:
+                        existing = _api_path_map[self.config.path]
+                        raise ValueError(
+                            f'Cannot register API "{name}" with path "{self.config.path}" - '
+                            f'this path is already used by API "{existing.name}"'
+                        )
+                    _api_path_map[self.config.path] = self
+                else:
+                    # Path doesn't contain version, register with version appended
+                    path_with_version = f"{self.config.path.rstrip('/')}/{self.config.version}"
+                    
+                    # Check for collision on versioned path
+                    if path_with_version in _api_path_map:
+                        existing = _api_path_map[path_with_version]
+                        raise ValueError(
+                            f'Cannot register API "{name}" with path "{path_with_version}" - '
+                            f'this path is already used by API "{existing.name}"'
+                        )
+                    _api_path_map[path_with_version] = self
+                    
+                    # Also register the unversioned path if not already claimed
+                    # (This is intentionally more permissive - first API gets the unversioned path)
+                    if self.config.path not in _api_path_map:
+                        _api_path_map[self.config.path] = self
 
         # Maintain alias for base name:
         # - If explicit unversioned registered, alias -> that
         # - Else, if exactly one versioned exists, alias -> that
         base = name
         if self.config.version is None:
-            _egress_api_name_aliases[base] = self
+            _api_name_aliases[base] = self
             return
 
         # Versioned registration: only adjust alias if no explicit unversioned exists
-        if base in _egress_apis:
+        if base in _apis:
             # Explicit unversioned present, ensure alias points to it
-            _egress_api_name_aliases[base] = _egress_apis[base]
+            _api_name_aliases[base] = _apis[base]
             return
 
         # Determine if there is exactly one versioned API
@@ -138,16 +196,16 @@ class ConsumptionApi(BaseTypedResource, Generic[U]):
         # Early exit on 2 matches to avoid O(n) counting
         match_count = 0
         sole = None
-        for k in _egress_apis.keys():
+        for k in _apis.keys():
             if k.startswith(prefix):
                 match_count += 1
-                sole = _egress_apis[k]
+                sole = _apis[k]
                 if match_count > 1:
                     break
         if match_count == 1 and sole is not None:
-            _egress_api_name_aliases[base] = sole
+            _api_name_aliases[base] = sole
         else:
-            _egress_api_name_aliases.pop(base, None)
+            _api_name_aliases.pop(base, None)
 
     @classmethod
     def _get_type(cls, keyword_args: dict):
@@ -179,12 +237,12 @@ class ConsumptionApi(BaseTypedResource, Generic[U]):
             A dictionary representing the JSON schema.
         """
         from pydantic.type_adapter import TypeAdapter
-        return TypeAdapter(self.return_type).json_schema(
+        return TypeAdapter(self.return_type()).json_schema(
             ref_template='#/components/schemas/{model}'
         )
 
     def call(self, params: T, base_url: Optional[str] = None) -> U:
-        """Call the consumption API with the given parameters.
+        """Call the API with the given parameters.
         
         Args:
             params: Parameters matching the input model T
@@ -205,8 +263,27 @@ class ConsumptionApi(BaseTypedResource, Generic[U]):
                 "MOOSE_BASE_URL environment variable, or pass base_url parameter."
             )
 
-        # Construct the API endpoint URL
-        url = f"{effective_base_url.rstrip('/')}/consumption/{self.name}"
+        # Construct the API endpoint URL using custom path or default to name
+        if self.config.path:
+            # Check if the custom path already contains the version
+            if self.config.version:
+                path_ends_with_version = (
+                    self.config.path.endswith(f"/{self.config.version}") or
+                    self.config.path == self.config.version or
+                    (self.config.path.endswith(self.config.version) and 
+                     len(self.config.path) > len(self.config.version) and
+                     self.config.path[-(len(self.config.version) + 1)] == '/')
+                )
+                if path_ends_with_version:
+                    path = self.config.path
+                else:
+                    path = f"{self.config.path.rstrip('/')}/{self.config.version}"
+            else:
+                path = self.config.path
+        else:
+            # Default to name with optional version
+            path = self.name if not self.config.version else f"{self.name}/{self.config.version}"
+        url = f"{effective_base_url.rstrip('/')}/api/{path}"
 
         # Convert Pydantic model to dictionary
         params_dict = params.model_dump()
@@ -228,3 +305,11 @@ class ConsumptionApi(BaseTypedResource, Generic[U]):
         # Parse JSON response and return as the expected type
         response_data = response.json()
         return self._u.model_validate(response_data)
+
+
+# Backward compatibility aliases (deprecated)
+ConsumptionApi = Api
+"""@deprecated: Use Api instead of ConsumptionApi"""
+
+EgressConfig = ApiConfig
+"""@deprecated: Use ApiConfig instead of EgressConfig"""

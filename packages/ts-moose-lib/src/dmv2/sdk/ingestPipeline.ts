@@ -10,6 +10,7 @@ import {
 import { OlapConfig, OlapTable } from "./olapTable";
 import { IngestApi, IngestConfig } from "./ingestApi";
 import { LifeCycle } from "./lifeCycle";
+import { ClickHouseEngines } from "../../blocks/helpers";
 
 /**
  * Configuration options for a complete ingestion pipeline, potentially including an Ingest API, a Stream, and an OLAP Table.
@@ -51,7 +52,7 @@ export type IngestPipelineConfig<T> = {
    * Configuration for the stream component of the pipeline.
    *
    * - If `true`, a stream with default settings is created.
-   * - If a partial `StreamConfig` object (excluding `destination`) is provided, it specifies the stream's configuration.
+   * - Pass a config object to specify the stream's configuration.
    * - The stream's destination will automatically be set to the pipeline's table if one exists.
    * - If `false`, no stream is created.
    *
@@ -89,6 +90,14 @@ export type IngestPipelineConfig<T> = {
    * @example "v1.0.0", "2023-12", "prod"
    */
   version?: string;
+
+  /**
+   * An optional custom path for the ingestion API endpoint.
+   * This will be used as the HTTP path for the ingest API if one is created.
+   *
+   * @example "pipelines/analytics", "data/events"
+   */
+  path?: string;
 
   /**
    * Optional metadata for the pipeline.
@@ -206,12 +215,17 @@ export class IngestPipeline<T> extends TypedBase<T, IngestPipelineConfig<T>> {
 
     // Create OLAP table if configured
     if (config.table) {
-      const tableConfig = {
-        ...(typeof config.table === "object" ?
-          config.table
-        : { lifeCycle: config.lifeCycle }),
-        ...(config.version && { version: config.version }),
-      };
+      const tableConfig: OlapConfig<T> =
+        typeof config.table === "object" ?
+          {
+            ...config.table,
+            ...(config.version && { version: config.version }),
+          }
+        : {
+            lifeCycle: config.lifeCycle,
+            engine: ClickHouseEngines.MergeTree,
+            ...(config.version && { version: config.version }),
+          };
       this.table = new OlapTable(
         name,
         tableConfig,
@@ -219,25 +233,6 @@ export class IngestPipeline<T> extends TypedBase<T, IngestPipelineConfig<T>> {
         this.columnArray,
         this.validators,
       );
-    }
-
-    // Create stream if configured, linking it to the table as destination
-    if (config.stream) {
-      const streamConfig = {
-        destination: this.table,
-        ...(typeof config.stream === "object" ?
-          config.stream
-        : { lifeCycle: config.lifeCycle }),
-        ...(config.version && { version: config.version }),
-      };
-      this.stream = new Stream(
-        name,
-        streamConfig,
-        this.schema,
-        this.columnArray,
-      );
-      // Set pipeline parent reference for internal framework use
-      (this.stream as any).pipelineParent = this;
     }
 
     if (config.deadLetterQueue) {
@@ -255,6 +250,26 @@ export class IngestPipeline<T> extends TypedBase<T, IngestPipelineConfig<T>> {
       );
     }
 
+    // Create stream if configured, linking it to the table as destination
+    if (config.stream) {
+      const streamConfig: StreamConfig<T> = {
+        destination: this.table,
+        defaultDeadLetterQueue: this.deadLetterQueue,
+        ...(typeof config.stream === "object" ?
+          config.stream
+        : { lifeCycle: config.lifeCycle }),
+        ...(config.version && { version: config.version }),
+      };
+      this.stream = new Stream(
+        name,
+        streamConfig,
+        this.schema,
+        this.columnArray,
+      );
+      // Set pipeline parent reference for internal framework use
+      (this.stream as any).pipelineParent = this;
+    }
+
     // Create ingest API if configured, requiring a stream as destination
     if (config.ingest) {
       if (!this.stream) {
@@ -266,6 +281,7 @@ export class IngestPipeline<T> extends TypedBase<T, IngestPipelineConfig<T>> {
         deadLetterQueue: this.deadLetterQueue,
         ...(typeof config.ingest === "object" ? config.ingest : {}),
         ...(config.version && { version: config.version }),
+        ...(config.path && { path: config.path }),
       };
       this.ingestApi = new IngestApi(
         name,

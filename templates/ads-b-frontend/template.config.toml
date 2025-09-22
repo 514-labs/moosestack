@@ -1,6 +1,15 @@
 language = "typescript" # Must be typescript or python
 description = "Real-time aircraft transponder data, with a frontend."
 post_install_print = """
+Deploy on Boreal
+
+The easiest way to deploy your MooseStack Applications is to use Boreal
+from the creators of MooseStack.
+
+https://boreal.cloud
+
+---------------------------------------------------------
+
 🫎 Initialize Moose project
 
 📂 Go to your moose project:

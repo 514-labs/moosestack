@@ -1,4 +1,4 @@
-import { ConsumptionApi } from "@514labs/moose-lib";
+import { Api } from "@514labs/moose-lib";
 
 // This file is where you can define your API templates for consuming your data
 // All query_params are passed in as strings, and are used within the sql tag to parameterize you queries
@@ -14,20 +14,19 @@ interface SessionInsightResponse {
   };
 }
 
-export const sessionInsightsApi = new ConsumptionApi<
-  QueryParams,
-  SessionInsightResponse
->("session-insights", async ({ sessions }, { client, sql }) => {
-  // Parse the sessions string into an array of sessionId and sessionLabel pairs
-  const sessionData = sessions.split(",").map((session) => {
-    const [sessionId, sessionLabel] = session.trim().split("|");
-    return { sessionId, sessionLabel };
-  });
+export const sessionInsightsApi = new Api<QueryParams, SessionInsightResponse>(
+  "session-insights",
+  async ({ sessions }, { client, sql }) => {
+    // Parse the sessions string into an array of sessionId and sessionLabel pairs
+    const sessionData = sessions.split(",").map((session) => {
+      const [sessionId, sessionLabel] = session.trim().split("|");
+      return { sessionId, sessionLabel };
+    });
 
-  // Map through each sessionData and run the query
-  const queryResults = await Promise.all(
-    sessionData.map(async ({ sessionId, sessionLabel }) => {
-      const result = await client.query.execute(sql`SELECT
+    // Map through each sessionData and run the query
+    const queryResults = await Promise.all(
+      sessionData.map(async ({ sessionId, sessionLabel }) => {
+        const result = await client.query.execute(sql`SELECT
           sessionId,
           ${sessionLabel} AS sessionLabel,
           SUM(sqrt((arrayElement(acc, 1) * arrayElement(acc, 1)) +
@@ -48,22 +47,23 @@ export const sessionInsightsApi = new ConsumptionApi<
           sessionId = ${sessionId}
       GROUP BY
           sessionId`);
-      return result;
-    }),
-  );
+        return result;
+      }),
+    );
 
-  const formattedData = await Promise.all(
-    queryResults.map(async (queryResult) => {
-      const result = await queryResult.json();
-      return result.map((row: any) => row);
-    }),
-  );
+    const formattedData = await Promise.all(
+      queryResults.map(async (queryResult) => {
+        const result = await queryResult.json();
+        return result.map((row: any) => row);
+      }),
+    );
 
-  return {
-    status: 200,
-    success: true,
-    data: {
-      queryResult: formattedData,
-    },
-  };
-});
+    return {
+      status: 200,
+      success: true,
+      data: {
+        queryResult: formattedData,
+      },
+    };
+  },
+);

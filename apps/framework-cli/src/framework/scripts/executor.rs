@@ -2,19 +2,17 @@ use anyhow::Result;
 use log::info;
 use sha2::{Digest, Sha256};
 use std::collections::{HashMap, HashSet};
-use std::path::Path;
 
 use super::{config::WorkflowConfig, Workflow};
 use crate::framework::{
     languages::SupportedLanguages,
     scripts::utils::{parse_schedule, parse_timeout_to_seconds, TemporalExecutionError},
-    scripts::Workflows,
 };
 use crate::infrastructure::orchestration::temporal::TemporalConfig;
 use crate::infrastructure::orchestration::temporal_client::TemporalClientManager;
 use crate::project::Project;
 use crate::utilities::constants::{
-    MOOSE_CLI_IDENTITY, PYTHON_TASK_QUEUE, TYPESCRIPT_TASK_QUEUE, WORKFLOW_TYPE,
+    MOOSE_CLI_NAME, PYTHON_TASK_QUEUE, TYPESCRIPT_TASK_QUEUE, WORKFLOW_TYPE,
 };
 use temporal_sdk_core::protos::temporal::api::common::v1::{
     Payload, Payloads, RetryPolicy, WorkflowType,
@@ -39,7 +37,6 @@ pub enum WorkflowExecutionError {
 struct WorkflowExecutionParams<'a> {
     temporal_config: &'a TemporalConfig,
     workflow_id: &'a str,
-    execution_path: &'a Path,
     config: &'a WorkflowConfig,
     input: Option<String>,
     task_queue_name: &'a str,
@@ -51,7 +48,6 @@ pub(crate) async fn execute_workflow(
     language: SupportedLanguages,
     workflow_id: &str,
     config: &WorkflowConfig,
-    execution_path: &Path,
     input: Option<String>,
 ) -> Result<String, WorkflowExecutionError> {
     match language {
@@ -59,7 +55,6 @@ pub(crate) async fn execute_workflow(
             let params = WorkflowExecutionParams {
                 temporal_config,
                 workflow_id,
-                execution_path,
                 config,
                 input,
                 task_queue_name: PYTHON_TASK_QUEUE,
@@ -71,7 +66,6 @@ pub(crate) async fn execute_workflow(
             let params = WorkflowExecutionParams {
                 temporal_config,
                 workflow_id,
-                execution_path,
                 config,
                 input,
                 task_queue_name: TYPESCRIPT_TASK_QUEUE,
@@ -96,6 +90,7 @@ async fn execute_workflow_for_language(
     client_manager
         .execute(|mut client| async move {
             let request = create_workflow_execution_request(namespace, &params)?;
+            info!("Starting workflow execution: {:?}", request);
             client
                 .start_workflow_execution(request)
                 .await
@@ -119,36 +114,21 @@ async fn execute_workflow_for_language(
 /// * `Result<(), WorkflowExecutionError>` - Success or an error if workflow startup fails
 pub(crate) async fn execute_scheduled_workflows(
     project: &Project,
-    dmv2_workflows: &HashMap<String, Workflow>,
+    workflows: &HashMap<String, Workflow>,
 ) {
     if !project.features.workflows {
         info!("Workflows are not enabled for this project. Not auto-starting scheduled workflows");
         return;
     }
 
-    let workflows = match Workflows::from_dir(project.scripts_dir()) {
-        Ok(w) => w,
-        Err(e) => {
-            log::error!("Failed to read workflows during auto-start: {}", e);
-            return;
-        }
-    };
-
-    info!(
-        "Auto-start workflows found {} workflows",
-        workflows.get_defined_workflows().len() + dmv2_workflows.len()
-    );
+    info!("Auto-start workflows found {} workflows", workflows.len());
 
     let running_workflows = list_running_workflows(project).await;
     info!("Found {} running workflow IDs", running_workflows.len());
 
-    async fn handle_workflow(
-        workflow: &Workflow,
-        running_workflows: &HashSet<String>,
-        project: &Project,
-    ) {
+    for workflow in workflows.values() {
         if workflow.config.schedule.is_empty() {
-            return;
+            continue;
         }
 
         if running_workflows.contains(&workflow.name) {
@@ -156,23 +136,13 @@ pub(crate) async fn execute_scheduled_workflows(
                 "Workflow {} is already running. Skipping auto-start",
                 workflow.name
             );
-            return;
+            continue;
         }
 
         match workflow.start(&project.temporal_config, None).await {
             Ok(_) => info!("Auto-started workflow: {}", workflow.name),
             Err(e) => log::error!("Failed to auto-start workflow {}: {}", workflow.name, e),
         }
-    }
-
-    // Handle regular workflows
-    for workflow in workflows.get_defined_workflows() {
-        handle_workflow(workflow, &running_workflows, project).await;
-    }
-
-    // Handle dmv2 workflows
-    for workflow in dmv2_workflows.values() {
-        handle_workflow(workflow, &running_workflows, project).await;
     }
 }
 
@@ -220,12 +190,17 @@ fn create_workflow_execution_request(
     namespace: String,
     params: &WorkflowExecutionParams<'_>,
 ) -> Result<StartWorkflowExecutionRequest, TemporalExecutionError> {
+    let workflow_request = serde_json::json!({
+        "workflow_name": params.workflow_id,
+        "execution_mode": "start"
+    });
+
     let mut payloads = vec![Payload {
         metadata: HashMap::from([(
             String::from("encoding"),
             String::from("json/plain").into_bytes(),
         )]),
-        data: serde_json::to_string(params.execution_path)
+        data: serde_json::to_string(&workflow_request)
             .unwrap()
             .as_bytes()
             .to_vec(),
@@ -267,11 +242,17 @@ fn create_workflow_execution_request(
             normal_name: params.task_queue_name.to_string(),
         }),
         input: Some(Payloads { payloads }),
-        workflow_run_timeout: Some(prost_wkt_types::Duration {
-            seconds: parse_timeout_to_seconds(&params.config.timeout)?,
-            nanos: 0,
-        }),
-        identity: MOOSE_CLI_IDENTITY.to_string(),
+        workflow_run_timeout: {
+            if params.config.timeout == "never" {
+                None
+            } else {
+                Some(prost_wkt_types::Duration {
+                    seconds: parse_timeout_to_seconds(&params.config.timeout)?,
+                    nanos: 0,
+                })
+            }
+        },
+        identity: MOOSE_CLI_NAME.to_string(),
         request_id: uuid::Uuid::new_v4().to_string(),
         // Allow duplicate doesn't actually allow concurrent runs of the same workflow ID
         // It allows reuse of that workflow ID after the previous run has completed

@@ -10,15 +10,16 @@ moose workflow cancel <workflow-name>
 
 For workflows that are running and have clean up operations to perform, you can implement a termination callback.
 
-This is especially useful for any long running tasks that have open connections or subscriptions to other services that need to be closed:
+This is especially useful for any long running tasks that have open connections or subscriptions to other services that need to be closed. 
+You may also use the `state` within the run/cancel context to supplement your business logic.
 
 <Python>
 ```python filename="workflows/workflows.py" copy
 
-def run_task1(input: Foo) -> None:
+def run_task1(ctx: TaskContext[Foo]) -> None:
     connection.open()
 
-def on_cancel() -> None:
+def on_cancel(ctx: TaskContext[Foo]) -> None:
     # Clean up any resources
     connection.close()
 
@@ -32,8 +33,6 @@ myworkflow = Workflow(
   config=WorkflowConfig(starting_task=task1, retries=3)
 )
 ```
-
-Unlike the `run()` function, the `on_cancel` callback does not receive any input arguments.
 </Python>
 
 
@@ -42,10 +41,10 @@ Unlike the `run()` function, the `on_cancel` callback does not receive any input
 
 const task1 = new Task<Foo, void>({
   name: "task1",
-  run: async (input: Foo) => {
+  run: async (ctx) => {
     connection.open();
   },
-  onCancel: async () => {
+  onCancel: async (ctx) => {
     // Clean up any resources
     connection.close();
   },
@@ -57,7 +56,5 @@ const myworkflow = new Workflow({
   retries: 3,
 });
 ```
-
-Unlike the `run()` function, the `onCancel` callback does not receive any input arguments.
 </TypeScript>
 

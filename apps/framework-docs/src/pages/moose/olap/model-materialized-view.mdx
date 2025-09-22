@@ -13,7 +13,34 @@ import { Lightbulb } from "lucide-react";
 
 ## Overview
 
-Materialized views are write-time pipelines. They run a static `SELECT` to transform data from one or more source table(s) to a target destination table. You query the destination table like any other table.
+Materialized views are write-time transformations in ClickHouse. A static `SELECT` populates a destination table from one or more sources. You query the destination like any other table. The `MaterializedView` class wraps [ClickHouse `MATERIALIZED VIEW`](https://clickhouse.com/docs/en/sql-reference/statements/create/view/#create-materialized-view) and keeps the `SELECT` explicit. When you edit the destination schema in code and update the `SELECT` accordingly, Moose applies the corresponding DDL, orders dependent updates, and backfills as needed, so the pipeline stays consistent as you iterate in <Python>Python</Python><TypeScript>TypeScript</TypeScript>.
+
+<BulletPointsCard title="Materialized Views: ClickHouse vs. Other Databases" bulletStyle="number" compact bullets={[
+    "Requires two parts: a SELECT transformation and a destination table schema",
+    "Transformation is write-time: runs on INSERT into source table(s) and writes to the destination table",
+    "SQL‑native pipelines: MV ‘triggers’ live inside ClickHouse, so pipelines are defined and executed entirely in the database — no external orchestrator needed. Cascading MVs require correct DDL order."
+]} />
+
+In local dev, Moose Migrate generates and applies DDL to your local database.
+
+<BulletPointsCard title="On change, Moose Migrate:"
+bulletStyle="check"
+compact
+bullets={[
+    "Generates and applies destination table DDL when you update the schema in code",
+    "Applies DDL in dependency order across views and tables",
+    "Backfills or rewires when the SELECT changes",
+    "Hot‑reloads the view and destination table locally and keeps APIs in sync"
+]}
+/>
+
+<Callout type="info" title="Roadmap: inferring schema from SELECT" compact>
+Today, destination schemas are declared in code and kept in sync manually with your `SELECT`. Moose Migrate coordinates DDL and dependencies when you make those changes. A future enhancement will infer the destination schema from the `SELECT` and update it automatically.
+</Callout>
+
+<Callout type="info" title="Dependency awareness" compact icon={Lightbulb}>
+This dependency awareness is critical for [cascading materialized views](https://clickhouse.com/docs/en/sql-reference/statements/create/view/#create-materialized-view-with-dependencies). Moose Migrate [orders DDL across views and tables](https://www.fiveonefour.com/blog/Moose-SQL-Getting-DDL-Dependencies-in-Order) to avoid failed migrations and partial states.
+</Callout>
 
 ### Basic Usage
 
@@ -28,7 +55,7 @@ interface TargetSchema {
   average_rating: number;
   num_reviews: number;
 }
-const mv = new MaterializedView<TargetSchema>({
+export const mv = new MaterializedView<TargetSchema>({
   // The transformation to run on the source table
   selectStatement: sql`
   SELECT
@@ -218,10 +245,6 @@ new MaterializedView<Dest>({
 
 <Python>
 
-<Callout type="warning" title="Coming soon" compact>
-The decoupled target table is not yet supported in Python.
-</Callout>
-
 ```python filename="DecoupledTarget.py" copy
 from pydantic import BaseModel
 from moose_lib import MaterializedView, MaterializedViewOptions, OlapConfig, ClickHouseEngines
@@ -242,9 +265,8 @@ mv = MaterializedView[TargetSchema](MaterializedViewOptions(
         SELECT {source_table.columns.id}, toInt32({source_table.columns.value}) AS value FROM {source_table}
     """,
     select_tables=[source_table],
-    target_table=target_table, ## This is the standalone table that is managed independently from the MV
     materialized_view_name="mv_to_target_table",
-))
+), target_table=target_table)
 ```
 </Python>
 
@@ -490,8 +512,7 @@ class DailyCounts(BaseModel):
     events: int
 
 # Create the destination table explicitly
-daily = OlapTable[DailyCounts](OlapConfig(
-    name="daily_counts",
+daily = OlapTable[DailyCounts]("daily_counts", OlapConfig(
     engine=ClickHouseEngines.SummingMergeTree,
     order_by_fields=["day", "user_id"],
 ))
@@ -500,17 +521,15 @@ daily = OlapTable[DailyCounts](OlapConfig(
 mv1 = MaterializedView[DailyCounts](MaterializedViewOptions(
     select_statement="SELECT toDate(ts) AS day, user_id, 1 AS events FROM {webEvents}",
     select_tables=[webEvents],
-    target_table=daily,
     materialized_view_name="mv_web_to_daily_counts",
-))
+), target_table=daily)
 
 # MV 2 - write to the daily_counts table
 mv2 = MaterializedView[DailyCounts](MaterializedViewOptions(
     select_statement="SELECT toDate(ts) AS day, user_id, 1 AS events FROM {mobileEvents}",
     select_tables=[mobileEvents],
-    target_table=daily,
     materialized_view_name="mv_mobile_to_daily_counts",
-))
+), target_table=daily)
 ```
 </Python>
 
@@ -582,6 +601,7 @@ mv = MaterializedView[Dest](MaterializedViewOptions(
         WHERE {events.columns.active} = 1
     """,
     select_tables=[events, users],
+    order_by_fields=["id"],
     table_name="user_activity_by_day",
     materialized_view_name="mv_user_activity_by_day",
 ))
@@ -746,7 +766,7 @@ When using an `AggregatingMergeTree` target table, you must use the `AggregateFu
   from moose_lib import MaterializedView, AggregateFunction, MaterializedViewOptions
 
   class MetricsById(TypedDict):
-      id: str
+      id: Key[str]
       # avg_rating stores result of avgState(events.rating)
       # daily_uniques stores result of uniqExactState(events.user_id)
       #   - uniqExact returns an integer; use number & ClickHouseInt<"uint64"> for precision
@@ -887,11 +907,9 @@ agg_stmt = '''
 mv = MaterializedView[MetricsById](MaterializedViewOptions(
     select_statement=agg_stmt,
     select_tables=[reviews],
-    target_table=OlapConfig(
-        name="metrics_by_id",
-        engine=ClickHouseEngines.AggregatingMergeTree,
-        order_by_fields=["id"],
-    ),
+    table_name="metrics_by_id",
+    engine=ClickHouseEngines.AggregatingMergeTree,
+    order_by_fields=["id"],
     materialized_view_name="mv_metrics_by_id",
 ))
 ```

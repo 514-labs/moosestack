@@ -13,7 +13,7 @@ use crate::{
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum ConsumptionError {
-    #[error("Failed to start/stop the consumption process")]
+    #[error("Failed to start/stop the analytics api process")]
     IoError(#[from] std::io::Error),
 
     #[error("Kill process Error")]
@@ -58,7 +58,7 @@ impl ConsumptionProcessRegistry {
     }
 
     pub fn start(&mut self) -> Result<(), ConsumptionError> {
-        info!("Starting consumption API...");
+        info!("Starting analytics api...");
 
         let project = self.project.clone();
         let clickhouse_config = self.clickhouse_config.clone();
@@ -100,7 +100,7 @@ impl ConsumptionProcessRegistry {
     }
 
     pub async fn stop(&mut self) -> Result<(), ConsumptionError> {
-        info!("Stopping consumption...");
+        info!("Stopping analytics apis...");
 
         if let Some(child) = self.api_process.take() {
             child.stop().await

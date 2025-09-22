@@ -1,16 +1,16 @@
 # This file is where you can define your API templates for consuming your data
+# The implementation has been moved to FastAPI routes in main.py
 
-from moose_lib import MooseClient, ConsumptionApi, MooseCache
+from moose_lib import MooseClient, Api, MooseCache
 from pydantic import BaseModel, Field
-from typing import Optional
+from typing import Optional, Literal
 from app.views.bar_aggregated import barAggregatedMV
 from datetime import datetime, timezone
 
 # Query params are defined as Pydantic models and are validated automatically
 class QueryParams(BaseModel):
-    order_by: Optional[str] = Field(
+    order_by: Optional[Literal["total_rows", "rows_with_text", "max_text_length", "total_text_length"]] = Field(
         default="total_rows",
-        pattern=r"^(total_rows|rows_with_text|max_text_length|total_text_length)$",
         description="Must be one of: total_rows, rows_with_text, max_text_length, total_text_length"
     )
     limit: Optional[int] = Field(
@@ -52,26 +52,27 @@ def run(client: MooseClient, params: QueryParams):
     if cached_result and len(cached_result) > 0:
         return cached_result
 
-    start_day = params.start_day
-    end_day = params.end_day
-    limit = params.limit
-    order_by = params.order_by
-    
-    query = f"""
+    query = """
     SELECT 
         day_of_month,
         total_rows,
         rows_with_text,
         max_text_length,
         total_text_length
-    FROM {barAggregatedMV.target_table.name} 
+    FROM {table}
     WHERE day_of_month >= {start_day} 
     AND day_of_month <= {end_day} 
     ORDER BY {order_by} DESC
     LIMIT {limit}
     """    
 
-    result = client.query.execute(query, {"order_by": order_by, "start_day": start_day, "end_day": end_day, "limit": limit})
+    result = client.query.execute(query, {
+        "table": barAggregatedMV.target_table,
+        "order_by": barAggregatedMV.target_table.cols[params.order_by],
+        "start_day": params.start_day,
+        "end_day": params.end_day,
+        "limit": params.limit
+    })
 
     # Cache query results
     cache.set(result, cache_key, 3600)  # Cache for 1 hour
@@ -90,36 +91,37 @@ def run_v1(client: MooseClient, params: QueryParams):
     if cached_result and len(cached_result) > 0:
         return cached_result
 
-    start_day = params.start_day
-    end_day = params.end_day
-    limit = params.limit
-    order_by = params.order_by
-    
-    query = f"""
-    SELECT 
+    query = """
+    SELECT
         day_of_month,
         total_rows,
         rows_with_text,
         max_text_length,
         total_text_length
-    FROM {barAggregatedMV.target_table.name} 
-    WHERE day_of_month >= {start_day} 
-    AND day_of_month <= {end_day} 
+    FROM {table}
+    WHERE day_of_month >= {start_day}
+    AND day_of_month <= {end_day}
     ORDER BY {order_by} DESC
     LIMIT {limit}
-    """    
+    """
 
-    result = client.query.execute(query, {"order_by": order_by, "start_day": start_day, "end_day": end_day, "limit": limit})
+    result = client.query.execute(query, {
+        "table": barAggregatedMV.target_table,
+        "order_by": barAggregatedMV.target_table.cols[params.order_by],
+        "start_day": params.start_day,
+        "end_day": params.end_day,
+        "limit": params.limit
+    })
 
     # V1 specific: Add metadata
     for item in result:
         item["metadata"] = {
             "version": "1.0",
             "query_params": {
-                "order_by": order_by,
-                "limit": limit,
-                "start_day": start_day,
-                "end_day": end_day,
+                "order_by": params.order_by,
+                "limit": params.limit,
+                "start_day": params.start_day,
+                "end_day": params.end_day,
             }
         }
 
@@ -128,5 +130,5 @@ def run_v1(client: MooseClient, params: QueryParams):
 
     return result
 
-bar = ConsumptionApi[QueryParams, QueryResult](name="bar", query_function=run)
-bar_v1 = ConsumptionApi[QueryParams, QueryResult](name="bar", query_function=run_v1, version="1")
+bar = Api[QueryParams, QueryResult](name="bar", query_function=run)
+bar_v1 = Api[QueryParams, QueryResult](name="bar", query_function=run_v1, version="1")

@@ -5,23 +5,17 @@
  * This module manages the registration of user-defined dmv2 resources (Tables, Streams, APIs, etc.)
  * and provides functions to serialize these resources into a JSON format (`InfrastructureMap`)
  * expected by the Moose infrastructure management system. It also includes helper functions
- * to retrieve registered handler functions (for streams and egress APIs) and the base class
+ * to retrieve registered handler functions (for streams and APIs) and the base class
  * (`TypedBase`) used by dmv2 resource classes.
  *
  * @internal This module is intended for internal use by the Moose library and compiler plugin.
  *           Its API might change without notice.
  */
 import process from "process";
-import {
-  ConsumptionApi,
-  IngestApi,
-  SqlResource,
-  Task,
-  Workflow,
-} from "./index";
+import { Api, IngestApi, SqlResource, Task, Workflow } from "./index";
 import { IJsonSchemaCollection } from "typia/src/schemas/json/IJsonSchemaCollection";
 import { Column } from "../dataModels/dataModelTypes";
-import { ClickHouseEngines, ConsumptionUtil } from "../index";
+import { ClickHouseEngines, ApiUtil } from "../index";
 import { OlapTable } from "./sdk/olapTable";
 import { ConsumerConfig, Stream, TransformConfig } from "./sdk/stream";
 import { compilerLog } from "../commons";
@@ -35,7 +29,7 @@ const moose_internal = {
   tables: new Map<string, OlapTable<any>>(),
   streams: new Map<string, Stream<any>>(),
   ingestApis: new Map<string, IngestApi<any>>(),
-  egressApis: new Map<string, ConsumptionApi<any>>(),
+  apis: new Map<string, Api<any>>(),
   sqlResources: new Map<string, SqlResource>(),
   workflows: new Map<string, Workflow>(),
 };
@@ -43,6 +37,47 @@ const moose_internal = {
  * Default retention period for streams if not specified (7 days in seconds).
  */
 const defaultRetentionPeriod = 60 * 60 * 24 * 7;
+
+/**
+ * Engine-specific configuration types using discriminated union pattern
+ */
+interface MergeTreeEngineConfig {
+  engine: "MergeTree";
+}
+
+interface ReplacingMergeTreeEngineConfig {
+  engine: "ReplacingMergeTree";
+  ver?: string;
+  isDeleted?: string;
+}
+
+interface AggregatingMergeTreeEngineConfig {
+  engine: "AggregatingMergeTree";
+}
+
+interface SummingMergeTreeEngineConfig {
+  engine: "SummingMergeTree";
+}
+
+interface S3QueueEngineConfig {
+  engine: "S3Queue";
+  s3Path: string;
+  format: string;
+  awsAccessKeyId?: string;
+  awsSecretAccessKey?: string;
+  compression?: string;
+  headers?: { [key: string]: string };
+}
+
+/**
+ * Union type for all supported engine configurations
+ */
+type EngineConfig =
+  | MergeTreeEngineConfig
+  | ReplacingMergeTreeEngineConfig
+  | AggregatingMergeTreeEngineConfig
+  | SummingMergeTreeEngineConfig
+  | S3QueueEngineConfig;
 
 /**
  * JSON representation of an OLAP table configuration.
@@ -54,14 +89,18 @@ interface TableJson {
   columns: Column[];
   /** List of column names used for the ORDER BY clause. */
   orderBy: string[];
-  /** The name of the ClickHouse engine (e.g., "MergeTree", "ReplacingMergeTree"). */
-  engine?: string;
+  /** The column name used for the PARTITION BY clause. */
+  partitionBy?: string;
+  /** Engine configuration with type-safe, engine-specific parameters */
+  engineConfig?: EngineConfig;
   /** Optional version string for the table configuration. */
   version?: string;
   /** Optional metadata for the table (e.g., description). */
   metadata?: { description?: string };
   /** Lifecycle management setting for the table. */
   lifeCycle?: string;
+  /** Optional table-level settings that can be modified with ALTER TABLE MODIFY SETTING. */
+  tableSettings?: { [key: string]: string };
 }
 /**
  * Represents a target destination for data flow, typically a stream.
@@ -129,15 +168,19 @@ interface IngestApiJson {
   deadLetterQueue?: string;
   /** Optional version string for the API configuration. */
   version?: string;
+  /** Optional custom path for the ingestion endpoint. */
+  path?: string;
   /** Optional description for the API. */
   metadata?: { description?: string };
+  /** JSON schema */
+  schema: IJsonSchemaCollection.IV3_1;
 }
 
 /**
- * JSON representation of an Egress (Consumption) API configuration.
+ * JSON representation of an API configuration.
  */
-interface EgressApiJson {
-  /** The name of the Egress API endpoint. */
+interface ApiJson {
+  /** The name of the API endpoint. */
   name: string;
   /** Array defining the expected query parameters schema. */
   queryParams: Column[];
@@ -145,6 +188,8 @@ interface EgressApiJson {
   responseSchema: IJsonSchemaCollection.IV3_1;
   /** Optional version string for the API configuration. */
   version?: string;
+  /** Optional custom path for the API endpoint. */
+  path?: string;
   /** Optional description for the API. */
   metadata?: { description?: string };
 }
@@ -195,13 +240,13 @@ interface SqlResourceJson {
  * This map is serialized to JSON and used by the Moose infrastructure system.
  *
  * @param registry The internal Moose resource registry (`moose_internal`).
- * @returns An object containing dictionaries of tables, topics, ingest APIs, egress APIs, and SQL resources, formatted according to the `*Json` interfaces.
+ * @returns An object containing dictionaries of tables, topics, ingest APIs, APIs, and SQL resources, formatted according to the `*Json` interfaces.
  */
 export const toInfraMap = (registry: typeof moose_internal) => {
   const tables: { [key: string]: TableJson } = {};
   const topics: { [key: string]: StreamJson } = {};
   const ingestApis: { [key: string]: IngestApiJson } = {};
-  const egressApis: { [key: string]: EgressApiJson } = {};
+  const apis: { [key: string]: ApiJson } = {};
   const sqlResources: { [key: string]: SqlResourceJson } = {};
   const workflows: { [key: string]: WorkflowJson } = {};
 
@@ -211,14 +256,91 @@ export const toInfraMap = (registry: typeof moose_internal) => {
     if (!metadata && table.config && (table as any).pipelineParent) {
       metadata = (table as any).pipelineParent.metadata;
     }
+    // Create type-safe engine configuration
+    const engineConfig: EngineConfig | undefined = (() => {
+      // Handle legacy configuration by checking if engine property exists
+      const engine =
+        "engine" in table.config ?
+          table.config.engine
+        : ClickHouseEngines.MergeTree;
+      switch (engine) {
+        case ClickHouseEngines.MergeTree:
+          return { engine: "MergeTree" };
+
+        case ClickHouseEngines.ReplacingMergeTree:
+          const replConfig = table.config as any; // Cast to access specific properties
+          return {
+            engine: "ReplacingMergeTree",
+            ver: replConfig.ver,
+            isDeleted: replConfig.isDeleted,
+          };
+
+        case ClickHouseEngines.AggregatingMergeTree:
+          return { engine: "AggregatingMergeTree" };
+
+        case ClickHouseEngines.SummingMergeTree:
+          return { engine: "SummingMergeTree" };
+
+        case ClickHouseEngines.S3Queue: {
+          const s3Config = table.config as any; // Cast to access S3Queue-specific properties
+
+          return {
+            engine: "S3Queue",
+            s3Path: s3Config.s3Path,
+            format: s3Config.format,
+            awsAccessKeyId: s3Config.awsAccessKeyId,
+            awsSecretAccessKey: s3Config.awsSecretAccessKey,
+            compression: s3Config.compression,
+            headers: s3Config.headers,
+          };
+        }
+
+        default:
+          return undefined;
+      }
+    })();
+
+    // Get table settings, applying defaults for S3Queue
+    let tableSettings: { [key: string]: string } | undefined = undefined;
+
+    if (table.config.settings) {
+      // Convert all settings to strings, filtering out undefined values
+      tableSettings = Object.entries(table.config.settings).reduce(
+        (acc, [key, value]) => {
+          if (value !== undefined) {
+            acc[key] = String(value);
+          }
+          return acc;
+        },
+        {} as { [key: string]: string },
+      );
+    }
+
+    // Apply default settings for S3Queue if not already specified
+    if (engineConfig?.engine === "S3Queue") {
+      if (!tableSettings) {
+        tableSettings = {};
+      }
+      // Set default mode to 'unordered' if not specified
+      if (!tableSettings.mode) {
+        tableSettings.mode = "unordered";
+      }
+    }
+
     tables[table.name] = {
       name: table.name,
       columns: table.columnArray,
       orderBy: table.config.orderByFields ?? [],
-      engine: table.config.engine,
+      partitionBy: table.config.partitionBy,
+      engineConfig,
       version: table.config.version,
       metadata,
       lifeCycle: table.config.lifeCycle,
+      // Map 'settings' to 'tableSettings' for internal use
+      tableSettings:
+        tableSettings && Object.keys(tableSettings).length > 0 ?
+          tableSettings
+        : undefined,
     };
   });
 
@@ -274,23 +396,26 @@ export const toInfraMap = (registry: typeof moose_internal) => {
       name: api.name,
       columns: api.columnArray,
       version: api.config.version,
+      path: api.config.path,
       writeTo: {
         kind: "stream",
         name: api.config.destination.name,
       },
       deadLetterQueue: api.config.deadLetterQueue?.name,
       metadata,
+      schema: api.schema,
     };
   });
 
-  registry.egressApis.forEach((api, key) => {
+  registry.apis.forEach((api, key) => {
     const rustKey =
       api.config.version ? `${api.name}:${api.config.version}` : api.name;
-    egressApis[rustKey] = {
+    apis[rustKey] = {
       name: api.name,
       queryParams: api.columnArray,
       responseSchema: api.responseSchema,
       version: api.config.version,
+      path: api.config.path,
       metadata: api.metadata,
     };
   });
@@ -359,7 +484,7 @@ export const toInfraMap = (registry: typeof moose_internal) => {
     topics,
     tables,
     ingestApis,
-    egressApis,
+    apis,
     sqlResources,
     workflows,
   };
@@ -407,11 +532,12 @@ const loadIndex = () => {
     if (details.includes("ERR_REQUIRE_ESM") || details.includes("ES Module")) {
       hint =
         "The file or its dependencies are ESM-only. Switch to packages that dual-support CJS & ESM, or upgrade to Node 22.12+. " +
-        "If you must use Node 20, you may try Node 20.19";
+        "If you must use Node 20, you may try Node 20.19\n\n";
     }
 
-    const errorMsg = `${hint ?? ""}\n\n${details}`;
-    throw new Error(errorMsg);
+    const errorMsg = `${hint ?? ""}${details}`;
+    const cause = error instanceof Error ? error : undefined;
+    throw new Error(errorMsg, { cause });
   }
 };
 
@@ -455,16 +581,16 @@ export const getStreamingFunctions = async () => {
 
 /**
  * Loads the user's application entry point and extracts all registered
- * Egress API handler functions.
+ * API handler functions.
  *
- * @returns A Map where keys are the names of the Egress APIs and values
+ * @returns A Map where keys are the names of the APIs and values
  *          are their corresponding handler functions.
  */
-export const getEgressApis = async () => {
+export const getApis = async () => {
   loadIndex();
-  const egressFunctions = new Map<
+  const apiFunctions = new Map<
     string,
-    (params: unknown, utils: ConsumptionUtil) => unknown
+    (params: unknown, utils: ApiUtil) => unknown
   >();
 
   const registry = getMooseInternal();
@@ -472,21 +598,21 @@ export const getEgressApis = async () => {
   const versionCountByName = new Map<string, number>();
   const nameToSoleVersionHandler = new Map<
     string,
-    (params: unknown, utils: ConsumptionUtil) => unknown
+    (params: unknown, utils: ApiUtil) => unknown
   >();
 
-  registry.egressApis.forEach((api, key) => {
+  registry.apis.forEach((api, key) => {
     const handler = api.getHandler();
-    egressFunctions.set(key, handler);
+    apiFunctions.set(key, handler);
 
     if (!api.config.version) {
       // Explicit unversioned takes precedence for alias
-      if (!egressFunctions.has(api.name)) {
-        egressFunctions.set(api.name, handler);
+      if (!apiFunctions.has(api.name)) {
+        apiFunctions.set(api.name, handler);
       }
       nameToSoleVersionHandler.delete(api.name);
       versionCountByName.delete(api.name);
-    } else if (!egressFunctions.has(api.name)) {
+    } else if (!apiFunctions.has(api.name)) {
       // Only track versioned for alias if no explicit unversioned present
       const count = (versionCountByName.get(api.name) ?? 0) + 1;
       versionCountByName.set(api.name, count);
@@ -500,12 +626,12 @@ export const getEgressApis = async () => {
 
   // Finalize aliases for names that have exactly one versioned API and no unversioned
   nameToSoleVersionHandler.forEach((handler, name) => {
-    if (!egressFunctions.has(name)) {
-      egressFunctions.set(name, handler);
+    if (!apiFunctions.has(name)) {
+      apiFunctions.set(name, handler);
     }
   });
 
-  return egressFunctions;
+  return apiFunctions;
 };
 
 export const dlqSchema: IJsonSchemaCollection.IV3_1 = {

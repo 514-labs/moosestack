@@ -5,10 +5,8 @@ use std::sync::Arc;
 use crate::cli::display::{show_table, Message};
 use crate::cli::routines::{RoutineFailure, RoutineSuccess};
 use crate::framework::core::infrastructure_map::InfrastructureMap;
-use crate::framework::scripts::Workflow;
 use crate::infrastructure::orchestration::temporal_client::TemporalClientManager;
 use crate::project::Project;
-use crate::utilities::constants::{APP_DIR, SCRIPTS_DIR};
 use crate::utilities::decode_object::decode_base64_to_json;
 use chrono::{DateTime, Utc};
 use futures::future::try_join_all;
@@ -102,39 +100,6 @@ fn calculate_duration_from_timestamps(
     }
 }
 
-pub async fn init_workflow(
-    project: &Project,
-    name: &str,
-    tasks: Option<String>,
-    task: Option<Vec<String>>,
-) -> Result<RoutineSuccess, RoutineFailure> {
-    // Convert steps string to vector if present
-    let task_vec = if let Some(tasks_str) = tasks {
-        tasks_str.split(',').map(|s| s.trim().to_string()).collect()
-    } else {
-        task.unwrap_or_default()
-    };
-
-    // Initialize the workflow using the existing Workflow::init method
-    Workflow::init(project, name, &task_vec).map_err(|e| {
-        RoutineFailure::new(
-            Message {
-                action: "Workflow Init Failed".to_string(),
-                details: format!("Could not initialize workflow '{}': {e}", project.name()),
-            },
-            e,
-        )
-    })?;
-
-    // Return success with helpful next steps
-    Ok(RoutineSuccess::success(Message {
-        action: "Created".to_string(),
-        details: format!(
-            "Workflow '{name}' initialized successfully\n\nNext Steps:\n1. cd {APP_DIR}/{SCRIPTS_DIR}/{name}\n2. Edit your workflow tasks\n3. Run with: moose-cli workflow run {name}"
-        ),
-    }))
-}
-
 pub async fn run_workflow(
     project: &Project,
     name: &str,
@@ -154,37 +119,13 @@ pub async fn run_workflow(
             )
         })?;
 
-    // Check if workflow exists in infra map, otherwise check if it's a folder-based workflow
     let workflow = if infra_map.workflows.contains_key(name) {
         infra_map.workflows.get(name).unwrap().clone()
     } else {
-        let workflow_dir = project.scripts_dir().join(name);
-        // Check if workflow directory exists
-        if !workflow_dir.exists() {
-            return Err(RoutineFailure::error(Message {
-                action: "Workflow".to_string(),
-                details: format!(
-                    "'{}' not found. Add to directory {} or use Workflow & Task from moose-lib\n",
-                    name,
-                    workflow_dir.display()
-                ),
-            }));
-        }
-
-        Workflow::from_dir(workflow_dir.clone()).map_err(|e| {
-            RoutineFailure::new(
-                Message {
-                    action: "Workflow".to_string(),
-                    details: format!(
-                        "Could not create workflow '{}' from directory {}: {}\n",
-                        name,
-                        workflow_dir.display(),
-                        e
-                    ),
-                },
-                e,
-            )
-        })?
+        return Err(RoutineFailure::error(Message {
+            action: "Workflow".to_string(),
+            details: format!("Could not find workflow '{name}'"),
+        }));
     };
 
     let run_id: String = workflow
@@ -202,13 +143,10 @@ pub async fn run_workflow(
 
     // Check if run_id is empty or invalid
     if run_id.is_empty() {
-        return Err(RoutineFailure::new(
-            Message {
-                action: "Workflow".to_string(),
-                details: format!("'{name}' failed to start: Invalid run ID\n"),
-            },
-            anyhow::anyhow!("Invalid run ID"),
-        ));
+        return Err(RoutineFailure::error(Message {
+            action: "Workflow".to_string(),
+            details: format!("'{name}' failed to start: Invalid run ID\n"),
+        }));
     }
 
     let dashboard_url =
@@ -1133,124 +1071,5 @@ pub async fn get_workflow_status(
             action: "Workflow".to_string(),
             details,
         }))
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use crate::framework::languages::SupportedLanguages;
-    use crate::project::Project;
-
-    use super::*;
-    use std::fs;
-    use tempfile::TempDir;
-
-    fn setup() -> Project {
-        let temp_dir = TempDir::new().unwrap();
-        let project = Project::new(
-            temp_dir.path(),
-            "project-name".to_string(),
-            SupportedLanguages::Python,
-        );
-        project
-    }
-
-    #[tokio::test]
-    async fn test_workflow_init_basic() {
-        let project = setup();
-
-        let result = init_workflow(&project, "daily-etl", None, None)
-            .await
-            .unwrap();
-
-        assert!(result.message.details.contains("daily-etl"));
-
-        let workflow_dir = project.app_dir().join(SCRIPTS_DIR).join("daily-etl");
-
-        assert!(
-            workflow_dir.exists(),
-            "Workflow directory should be created in app/scripts"
-        );
-
-        let config_path = workflow_dir.join("config.toml");
-        assert!(config_path.exists(), "config.toml should be created");
-    }
-
-    #[tokio::test]
-    async fn test_workflow_init_with_tasks() {
-        let project = setup();
-
-        let result = init_workflow(
-            &project,
-            "daily-etl",
-            Some("extract,transform,load".to_string()),
-            None,
-        )
-        .await
-        .unwrap();
-
-        assert!(result.message.details.contains("daily-etl"));
-
-        let workflow_dir = project.app_dir().join(SCRIPTS_DIR).join("daily-etl");
-
-        for (i, task) in ["extract", "transform", "load"].iter().enumerate() {
-            let file_path = workflow_dir.join(format!("{}.{}.py", i + 1, task));
-            assert!(file_path.exists(), "Task file {task} should exist");
-
-            let content = fs::read_to_string(&file_path).unwrap();
-            assert!(content.contains("@task()"));
-
-            let expected_string = format!(r#""task": "{task}""#);
-            assert!(
-                content.contains(&expected_string),
-                "Content should contain '{expected_string}'"
-            );
-        }
-    }
-
-    #[tokio::test]
-    async fn test_workflow_init_failure() {
-        let project = setup();
-
-        // Create a file where the workflow directory should be to cause a failure
-        fs::create_dir_all(project.app_dir().join(SCRIPTS_DIR)).unwrap();
-        fs::write(project.app_dir().join(SCRIPTS_DIR).join("daily-etl"), "").unwrap();
-
-        let result = init_workflow(&project, "daily-etl", None, None).await;
-
-        assert!(result.is_err());
-        let err = result.unwrap_err();
-        assert_eq!(err.message.action, "Workflow Init Failed");
-    }
-
-    // Test is ignored because it requires temporal as a dependency
-    #[ignore]
-    #[tokio::test]
-    async fn test_run_workflow() {
-        let project = setup();
-
-        const WORKFLOW_NAME: &str = "daily-etl";
-
-        // First initialize a workflow
-        let _ = init_workflow(
-            &project,
-            WORKFLOW_NAME,
-            Some("extract,transform,load".to_string()),
-            None,
-        )
-        .await
-        .unwrap();
-
-        // Verify workflow exists
-        let workflow_dir = project.app_dir().join(SCRIPTS_DIR).join(WORKFLOW_NAME);
-        assert!(workflow_dir.exists(), "Workflow directory should exist");
-
-        // Run the workflow
-        let result = run_workflow(&project, WORKFLOW_NAME, None).await;
-        println!("Result: {result:?}");
-        assert!(result.is_ok(), "Workflow should run successfully");
-
-        let success = result.unwrap();
-        assert!(success.message.details.contains("started successfully"));
     }
 }

@@ -1,6 +1,6 @@
 /**
  * @module dmv2
- * This module defines the core Moose v2 data model constructs, including OlapTable, Stream, IngestApi, ConsumptionApi,
+ * This module defines the core Moose v2 data model constructs, including OlapTable, Stream, IngestApi, Api,
  * IngestPipeline, View, and MaterializedView. These classes provide a typed interface for defining and managing
  * data infrastructure components like ClickHouse tables, Redpanda streams, and data processing pipelines.
  */
@@ -21,7 +21,7 @@ export type Aggregated<
   _argTypes?: ArgTypes;
 };
 
-export { OlapTable, OlapConfig } from "./sdk/olapTable";
+export { OlapTable, OlapConfig, S3QueueTableSettings } from "./sdk/olapTable";
 export {
   Stream,
   StreamConfig,
@@ -33,9 +33,15 @@ export {
 } from "./sdk/stream";
 
 export { Workflow, Task } from "./sdk/workflow";
+export type { TaskContext, TaskConfig } from "./sdk/workflow";
 
 export { IngestApi, IngestConfig } from "./sdk/ingestApi";
-export { ConsumptionApi, EgressConfig } from "./sdk/consumptionApi";
+export {
+  Api,
+  ApiConfig,
+  EgressConfig,
+  ConsumptionApi,
+} from "./sdk/consumptionApi";
 export { IngestPipeline, IngestPipelineConfig } from "./sdk/ingestPipeline";
 export { ETLPipeline, ETLPipelineConfig } from "./sdk/etlPipeline";
 export {

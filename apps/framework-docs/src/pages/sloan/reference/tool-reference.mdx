@@ -102,7 +102,7 @@ When you need to understand what data exists in your Moose project and how it's 
 
 **Sample prompts:**
 - *"Tell me about the data in my Moose project"*
-- *"Tell me about the data in my consumption table"* 
+- *"Tell me about the data in my analytics table"* 
 - *"Tell me about the data streams in my Moose project"*
 - *"Describe my DLQ topic"*
 - *"Tell me about the data in my enrichment data stream"*
@@ -116,8 +116,8 @@ When you need to understand what data exists in your Moose project and how it's 
 When you need to verify data flow and check if your data transformations are working correctly. *(Also requires `write-moose-tools`)*
 
 **Sample prompts:**
-- *"Did data land in my consumption table?"*
-- *"Did the data in my consumption table change?"*
+- *"Did data land in my analytics table?"*
+- *"Did the data in my analytics table change?"*
 - *"Did my materialized view update?"*
 - *"Show me recent data in my user_events stream"*
 
@@ -224,7 +224,7 @@ When you need to build the core components of your data infrastructure.
 
 <ToggleBlock openText="End-to-End Project Creation" closeText="End-to-End Project Creation">
 
-When you want to build a complete data product from ingestion to consumption.
+When you want to build a complete data product from ingestion to analytics.
 
 **Sample prompts:**
 - *"Create a new Moose project that ingests GitHub star data, enriches it with repository metadata, and creates APIs for analytics dashboards"*
@@ -242,7 +242,7 @@ When you want to create optimized data products for specific use cases.
 **Sample prompts:**
 - *"Create a data product for visualizing user engagement metrics with real-time updates"*
 - *"Build materialized views that improve query performance for my analytics dashboard"*
-- *"Create consumption APIs that support my frontend application's data needs"*
+- *"Create analytics APIs that support my frontend application's data needs"*
 
 **Tools used:** `write_materialized_view`, `create_egress_api`, `test_egress_api`
 
@@ -562,7 +562,7 @@ Infrastructure created:
 <ToggleBlock openText="Show sample egress API code" closeText="Hide sample egress API code">
 
 ```ts filename="/project/app/apis/<egress-api-name>.ts" copy
-import { ConsumptionApi } from "@514labs/moose-lib";
+import { Api } from "@514labs/moose-lib";
 import { tags } from "typia";
 
 interface AircraftRadiusParams {
@@ -571,7 +571,7 @@ interface AircraftRadiusParams {
   radius: number; // Search radius in miles
 }
 
-export const getAircraftWithinRadius = new ConsumptionApi<AircraftRadiusParams>(
+export const getAircraftWithinRadius = new Api<AircraftRadiusParams>(
   "getAircraftWithinRadius",
   async (params, { client, sql }) => {
     // Execute the query using the Haversine formula to calculate distances

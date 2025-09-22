@@ -17,8 +17,9 @@ Keep the following best practices in mind when defining your column types:
 
 Nullable columns in ClickHouse have significant performance overhead. 
 
-<Callout type="info" title="Default Value API Coming Soon" href={PathConfig.slack.path} ctaLabel="Join Slack">
-We've got a new API in the works for setting default values on your columns that will make this a lot easier. Join our slack for updates as soon as it's ready.
+<Callout type="info" title="Use ClickHouse defaults instead of nulls">
+<TypeScript inline>Instead of using `?` or `| undefined`, add the  `& ClickHouseDefault<"...">` to your column type</TypeScript>
+<Python inline>Instead of using `| None` or `Optional[type]`, add the `Annotated[type, clickhouse_default("...")]` to your column type</Python>.
 </Callout>
 
 <TypeScript>
@@ -39,7 +40,7 @@ interface UserEvent {
   id: string;
   userId: string;
   eventType: string;
-  description: string & Default<"">  // Default empty string
+  description: string & ClickHouseDefault<"''">  // DEFAULT ''
   createdAt: Date;
 }
 
@@ -78,7 +79,7 @@ user_events_table = OlapTable[UserEvent]("user_events", {
 ```
 </Python>
 
-### Use `LowCardinality` as much as possible
+### Use `LowCardinality` where possible
 
 `LowCardinality` is ClickHouse's most efficient string type for columns with limited unique values.
 

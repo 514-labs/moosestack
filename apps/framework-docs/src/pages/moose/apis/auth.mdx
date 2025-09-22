@@ -41,7 +41,7 @@ issuer = "https://my-auth-server.com/"
 audience = "my-moose-app"
 # Optional: Enforce JWT on all ingest APIs (default: false)
 enforce_on_all_ingest_apis = false
-# Optional: Enforce JWT on all consumption APIs (default: false)
+# Optional: Enforce JWT on all Analytics APIs (default: false)
 enforce_on_all_consumptions_apis = false
 ```
 
@@ -70,7 +70,7 @@ Set environment variables with **hashed** API keys:
 # For ingest endpoints
 export MOOSE_INGEST_API_KEY='your_pbkdf2_hmac_sha256_hashed_key'
 
-# For consumption endpoints  
+# For analytics endpoints  
 export MOOSE_CONSUMPTION_API_KEY='your_pbkdf2_hmac_sha256_hashed_key'
 
 # For admin endpoints
@@ -109,9 +109,9 @@ enforce_on_all_ingest_apis = true
 Then, only JWT will be accepted if JWT is configured.
 
 
-### Consumption Endpoints
+### API Endpoints
 
-(Same as Ingest Endpoints, but for `/consumption` endpoints)
+(Same as Ingest Endpoints, but for `/api` endpoints)
 
 If both JWT (in the `[jwt]` table) and an API (`MOOSE_CONSUMPTION_API_KEY`) are configured, and you have `jwt.enforce_on_all_consumptions_apis` set to `false` in your `moose.config.toml` (or its not set):
 
@@ -124,7 +124,7 @@ enforce_on_all_consumptions_apis = false
 MOOSE_CONSUMPTION_API_KEY='your_pbkdf2_hmac_sha256_hashed_key'
 ```
 
-Then, when a request is made to an `/consumption` endpoint, the server will:
+Then, when a request is made to an `/api` endpoint, the server will:
 
 - First attempt JWT validation (RS256 signature check). 
 - If that fails or is not applicable, it will then try to validate using the API key (PBKDF2 HMAC SHA256). 

@@ -35,7 +35,7 @@ pub enum SyncProcessChangesError {
     #[error("Failed in the blocks registry")]
     OlapProcess(#[from] BlocksError),
 
-    #[error("Failed in the consumption registry")]
+    #[error("Failed in the analytics api registry")]
     ConsumptionProcess(#[from] ConsumptionError),
 
     #[error("Failed in the orchestration workers registry")]
@@ -175,18 +175,18 @@ pub async fn execute_changes(
                 after: _,
             }) => {}
             ProcessChange::ConsumptionApiWebServer(Change::Added(_)) => {
-                log::info!("Starting Consumption webserver process");
+                log::info!("Starting analytics api webserver process");
                 process_registry.consumption.start()?;
             }
             ProcessChange::ConsumptionApiWebServer(Change::Removed(_)) => {
-                log::info!("Stoping Consumption webserver process");
+                log::info!("Stopping analytics api webserver process");
                 process_registry.consumption.stop().await?;
             }
             ProcessChange::ConsumptionApiWebServer(Change::Updated {
                 before: _,
                 after: _,
             }) => {
-                log::info!("Re-Starting Consumption webserver process");
+                log::info!("Re-Starting analytics api webserver process");
                 process_registry.consumption.stop().await?;
                 process_registry.consumption.start()?;
             }

@@ -1,8 +1,10 @@
 use crate::framework::core::infrastructure::table::{
     ColumnType, DataEnum, EnumValue, FloatType, Nested, Table,
 };
+use crate::framework::core::partial_infrastructure_map::LifeCycle;
 use convert_case::{Case, Casing};
 use itertools::Itertools;
+use serde_json::json;
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::fmt::Write;
@@ -98,6 +100,14 @@ fn generate_enum(data_enum: &DataEnum, name: &str) -> String {
     enum_def
 }
 
+fn quote_name_if_needed(column_name: &str) -> String {
+    if column_name.contains(' ') {
+        format!("'{column_name}'")
+    } else {
+        column_name.to_string()
+    }
+}
+
 fn generate_interface(
     nested: &Nested,
     name: &str,
@@ -119,20 +129,21 @@ fn generate_interface(
         } else {
             type_str
         };
-        writeln!(interface, "    {}: {};", column.name, type_str).unwrap();
+        let name = quote_name_if_needed(&column.name);
+        writeln!(interface, "    {name}: {type_str};").unwrap();
     }
     writeln!(interface, "}}").unwrap();
     writeln!(interface).unwrap();
     interface
 }
 
-pub fn tables_to_typescript(tables: &[Table]) -> String {
+pub fn tables_to_typescript(tables: &[Table], life_cycle: Option<LifeCycle>) -> String {
     let mut output = String::new();
 
     // Add imports
     writeln!(
         output,
-        "import {{ IngestPipeline, Key, ClickHouseInt, ClickHouseDecimal, ClickHousePrecision, ClickHouseByteSize, ClickHouseNamedTuple }} from \"@514labs/moose-lib\";"
+        "import {{ IngestPipeline, OlapTable, Key, ClickHouseInt, ClickHouseDecimal, ClickHousePrecision, ClickHouseByteSize, ClickHouseNamedTuple, ClickHouseEngines, ClickHouseDefault, WithDefault, LifeCycle }} from \"@514labs/moose-lib\";"
     )
     .unwrap();
     writeln!(output, "import typia from \"typia\";").unwrap();
@@ -213,6 +224,16 @@ pub fn tables_to_typescript(tables: &[Table]) -> String {
 
         for column in &table.columns {
             let type_str = map_column_type_to_typescript(&column.data_type, &enums, &nested_models);
+            let type_str = match column.default {
+                None => type_str,
+                Some(ref default) if type_str == "Date" => {
+                    // https://github.com/samchon/typia/issues/1658
+                    format!("WithDefault<{type_str}, {:?}>", default)
+                }
+                Some(ref default) => {
+                    format!("{type_str} & ClickHouseDefault<{:?}>", default)
+                }
+            };
             let type_str = if can_use_key_wrapping && column.primary_key {
                 format!("Key<{type_str}>")
             } else {
@@ -223,13 +244,14 @@ pub fn tables_to_typescript(tables: &[Table]) -> String {
             } else {
                 type_str
             };
-            writeln!(output, "    {}: {};", column.name, type_str).unwrap();
+            let name = quote_name_if_needed(&column.name);
+            writeln!(output, "    {name}: {type_str};").unwrap();
         }
         writeln!(output, "}}").unwrap();
         writeln!(output).unwrap();
     }
 
-    // Generate pipeline configurations
+    // Generate table configurations
     for table in tables {
         let order_by_fields = if table.order_by.is_empty() {
             "\"tuple()\"".to_string()
@@ -242,17 +264,90 @@ pub fn tables_to_typescript(tables: &[Table]) -> String {
         };
         writeln!(
             output,
-            "export const {}Pipeline = new IngestPipeline<{}>(\"{}\", {{",
+            "export const {}Table = new OlapTable<{}>(\"{}\", {{",
             table.name.to_case(Case::Pascal),
             table.name,
             table.name
         )
         .unwrap();
-        writeln!(output, "    table: {{").unwrap();
-        writeln!(output, "        orderByFields: [{order_by_fields}]").unwrap();
-        writeln!(output, "    }}").unwrap();
-        writeln!(output, "    stream: true,").unwrap();
-        writeln!(output, "    ingest: true,").unwrap();
+        writeln!(output, "    orderByFields: [{order_by_fields}],").unwrap();
+        if let Some(partition_by) = &table.partition_by {
+            writeln!(output, "    partitionBy: {:?},", partition_by).unwrap();
+        }
+        if let Some(engine) = &table.engine {
+            match engine {
+                crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine::S3Queue {
+                    s3_path,
+                    format,
+                    compression,
+                    headers,
+                    aws_access_key_id,
+                    aws_secret_access_key,
+                } => {
+                    // For S3Queue, properties are at the same level as orderByFields
+                    writeln!(output, "    engine: ClickHouseEngines.S3Queue,").unwrap();
+                    writeln!(output, "    s3Path: {:?},", s3_path).unwrap();
+                    writeln!(output, "    format: {:?},", format).unwrap();
+                    if let Some(compression) = compression {
+                        writeln!(output, "    compression: {:?},", compression).unwrap();
+                    }
+                    if let Some(key_id) = aws_access_key_id {
+                        writeln!(output, "    awsAccessKeyId: {:?},", key_id).unwrap();
+                    }
+                    if let Some(secret) = aws_secret_access_key {
+                        writeln!(output, "    awsSecretAccessKey: {:?},", secret).unwrap();
+                    }
+                    if let Some(headers) = headers {
+                        write!(output, "    headers: {{").unwrap();
+                        for (i, (key, value)) in headers.iter().enumerate() {
+                            if i > 0 { write!(output, ",").unwrap(); }
+                            write!(output, " {:?}: {:?}", key, value).unwrap();
+                        }
+                        writeln!(output, " }},").unwrap();
+                    }
+                }
+                crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine::MergeTree => {
+                    writeln!(output, "    engine: ClickHouseEngines.MergeTree,").unwrap();
+                }
+                crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine::ReplacingMergeTree { ver, is_deleted } => {
+                    // Emit ReplacingMergeTree engine configuration
+                    writeln!(output, "    engine: ClickHouseEngines.ReplacingMergeTree,").unwrap();
+                    if let Some(ver_col) = ver {
+                        writeln!(output, "    ver: \"{}\",", ver_col).unwrap();
+                    }
+                    if let Some(is_deleted_col) = is_deleted {
+                        writeln!(output, "    isDeleted: \"{}\",", is_deleted_col).unwrap();
+                    }
+                }
+                crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine::AggregatingMergeTree => {
+                    writeln!(output, "    engine: ClickHouseEngines.AggregatingMergeTree,").unwrap();
+                }
+                crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine::SummingMergeTree => {
+                    writeln!(output, "    engine: ClickHouseEngines.SummingMergeTree,").unwrap();
+                }
+            }
+        }
+        // Add table settings if present (works for all engines)
+        if let Some(settings) = &table.table_settings {
+            if !settings.is_empty() {
+                write!(output, "    settings: {{").unwrap();
+                for (i, (key, value)) in settings.iter().enumerate() {
+                    if i > 0 {
+                        write!(output, ",").unwrap();
+                    }
+                    write!(output, " {}: {:?}", key, value).unwrap();
+                }
+                writeln!(output, " }},").unwrap();
+            }
+        }
+        if let Some(life_cycle) = life_cycle {
+            writeln!(
+                output,
+                "    lifeCycle: LifeCycle.{},",
+                json!(life_cycle).as_str().unwrap() // reuse SCREAMING_SNAKE_CASE of serde
+            )
+            .unwrap();
+        };
         writeln!(output, "}});").unwrap();
         writeln!(output).unwrap();
     }
@@ -266,6 +361,7 @@ mod tests {
     use crate::framework::core::infrastructure::table::{Column, ColumnType, EnumMember, Nested};
     use crate::framework::core::infrastructure_map::{PrimitiveSignature, PrimitiveTypes};
     use crate::framework::core::partial_infrastructure_map::LifeCycle;
+    use crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine;
 
     #[test]
     fn test_nested_types() {
@@ -344,7 +440,8 @@ mod tests {
                 },
             ],
             order_by: vec!["id".to_string()],
-            engine: Some("MergeTree".to_string()),
+            partition_by: None,
+            engine: Some(ClickhouseEngine::MergeTree),
             version: None,
             source_primitive: PrimitiveSignature {
                 name: "User".to_string(),
@@ -352,9 +449,11 @@ mod tests {
             },
             metadata: None,
             life_cycle: LifeCycle::FullyManaged,
+            engine_params_hash: None,
+            table_settings: None,
         }];
 
-        let result = tables_to_typescript(&tables);
+        let result = tables_to_typescript(&tables, None);
         println!("{result}");
         assert!(result.contains(
             r#"export interface Address {
@@ -369,14 +468,179 @@ export interface User {
     addresses: Address[] | undefined;
 }
 
-export const UserPipeline = new IngestPipeline<User>("User", {
-    table: {
-        orderByFields: ["id"]
-    }
-    stream: true,
-    ingest: true,
+export const UserTable = new OlapTable<User>("User", {
+    orderByFields: ["id"],
+    engine: ClickHouseEngines.MergeTree,
 });"#
         ));
+    }
+
+    #[test]
+    fn test_s3queue_engine() {
+        use crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine;
+
+        let tables = vec![Table {
+            name: "Events".to_string(),
+            columns: vec![
+                Column {
+                    name: "id".to_string(),
+                    data_type: ColumnType::String,
+                    required: true,
+                    unique: false,
+                    primary_key: true,
+                    default: None,
+                    annotations: vec![],
+                    comment: None,
+                },
+                Column {
+                    name: "data".to_string(),
+                    data_type: ColumnType::String,
+                    required: true,
+                    unique: false,
+                    primary_key: false,
+                    default: None,
+                    annotations: vec![],
+                    comment: None,
+                },
+            ],
+            order_by: vec!["id".to_string()],
+            partition_by: None,
+            engine: Some(ClickhouseEngine::S3Queue {
+                s3_path: "s3://bucket/path".to_string(),
+                format: "JSONEachRow".to_string(),
+                compression: Some("gzip".to_string()),
+                headers: None,
+                aws_access_key_id: None,
+                aws_secret_access_key: None,
+            }),
+            version: None,
+            source_primitive: PrimitiveSignature {
+                name: "Events".to_string(),
+                primitive_type: PrimitiveTypes::DataModel,
+            },
+            metadata: None,
+            life_cycle: LifeCycle::FullyManaged,
+            engine_params_hash: None,
+            table_settings: Some(
+                vec![("mode".to_string(), "unordered".to_string())]
+                    .into_iter()
+                    .collect(),
+            ),
+        }];
+
+        let result = tables_to_typescript(&tables, None);
+
+        // The generated code should have S3Queue properties at the same level as orderByFields
+        assert!(result.contains("engine: ClickHouseEngines.S3Queue,"));
+        assert!(result.contains("s3Path: \"s3://bucket/path\""));
+        assert!(result.contains("format: \"JSONEachRow\""));
+        assert!(result.contains("compression: \"gzip\""));
+        assert!(result.contains("settings: { mode: \"unordered\" }"));
+    }
+
+    #[test]
+    fn test_table_settings_all_engines() {
+        let tables = vec![Table {
+            name: "UserData".to_string(),
+            columns: vec![Column {
+                name: "id".to_string(),
+                data_type: ColumnType::String,
+                required: true,
+                unique: false,
+                primary_key: true,
+                default: None,
+                annotations: vec![],
+                comment: None,
+            }],
+            order_by: vec!["id".to_string()],
+            partition_by: None,
+            engine: Some(ClickhouseEngine::MergeTree),
+            version: None,
+            source_primitive: PrimitiveSignature {
+                name: "UserData".to_string(),
+                primitive_type: PrimitiveTypes::DataModel,
+            },
+            metadata: None,
+            life_cycle: LifeCycle::FullyManaged,
+            engine_params_hash: None,
+            table_settings: Some(
+                vec![
+                    ("index_granularity".to_string(), "8192".to_string()),
+                    ("merge_with_ttl_timeout".to_string(), "3600".to_string()),
+                ]
+                .into_iter()
+                .collect(),
+            ),
+        }];
+
+        let result = tables_to_typescript(&tables, None);
+
+        // Settings should work for all engines, not just S3Queue
+        assert!(result.contains("engine: ClickHouseEngines.MergeTree,"));
+        assert!(result.contains("index_granularity"));
+        assert!(result.contains("merge_with_ttl_timeout"));
+    }
+
+    #[test]
+    fn test_replacing_merge_tree_with_parameters() {
+        use crate::framework::core::infrastructure::table::IntType;
+        let tables = vec![Table {
+            name: "UserData".to_string(),
+            columns: vec![
+                Column {
+                    name: "id".to_string(),
+                    data_type: ColumnType::String,
+                    required: true,
+                    unique: false,
+                    primary_key: true,
+                    default: None,
+                    annotations: vec![],
+                    comment: None,
+                },
+                Column {
+                    name: "version".to_string(),
+                    data_type: ColumnType::DateTime { precision: None },
+                    required: true,
+                    unique: false,
+                    primary_key: false,
+                    default: None,
+                    annotations: vec![],
+                    comment: None,
+                },
+                Column {
+                    name: "is_deleted".to_string(),
+                    data_type: ColumnType::Int(IntType::UInt8),
+                    required: true,
+                    unique: false,
+                    primary_key: false,
+                    default: None,
+                    annotations: vec![],
+                    comment: None,
+                },
+            ],
+            order_by: vec!["id".to_string()],
+            partition_by: None,
+            engine: Some(ClickhouseEngine::ReplacingMergeTree {
+                ver: Some("version".to_string()),
+                is_deleted: Some("is_deleted".to_string()),
+            }),
+            version: None,
+            source_primitive: PrimitiveSignature {
+                name: "UserData".to_string(),
+                primitive_type: PrimitiveTypes::DataModel,
+            },
+            metadata: None,
+            life_cycle: LifeCycle::FullyManaged,
+            engine_params_hash: None,
+            table_settings: None,
+        }];
+
+        let result = tables_to_typescript(&tables, None);
+
+        // Check that ver and isDeleted parameters are correctly generated
+        assert!(result.contains("engine: ClickHouseEngines.ReplacingMergeTree,"));
+        assert!(result.contains("ver: \"version\","));
+        assert!(result.contains("isDeleted: \"is_deleted\","));
     }
 
     #[test]
@@ -420,7 +684,8 @@ export const UserPipeline = new IngestPipeline<User>("User", {
                 },
             ],
             order_by: vec!["id".to_string()],
-            engine: Some("MergeTree".to_string()),
+            partition_by: None,
+            engine: Some(ClickhouseEngine::MergeTree),
             version: None,
             source_primitive: PrimitiveSignature {
                 name: "Task".to_string(),
@@ -428,9 +693,11 @@ export const UserPipeline = new IngestPipeline<User>("User", {
             },
             metadata: None,
             life_cycle: LifeCycle::FullyManaged,
+            engine_params_hash: None,
+            table_settings: None,
         }];
 
-        let result = tables_to_typescript(&tables);
+        let result = tables_to_typescript(&tables, None);
         println!("{result}");
         assert!(result.contains(
             r#"export enum Status {
@@ -443,12 +710,9 @@ export interface Task {
     status: Status;
 }
 
-export const TaskPipeline = new IngestPipeline<Task>("Task", {
-    table: {
-        orderByFields: ["id"]
-    }
-    stream: true,
-    ingest: true,
+export const TaskTable = new OlapTable<Task>("Task", {
+    orderByFields: ["id"],
+    engine: ClickHouseEngines.MergeTree,
 });"#
         ));
     }

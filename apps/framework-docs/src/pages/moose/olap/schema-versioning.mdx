@@ -5,19 +5,26 @@ description: Use table versions and materialized views to migrate breaking schem
 
 import { Callout, LanguageSwitcher, TypeScript, Python, BulletPointsCard } from "@/components";
 
-# Schema Versioning
+# Table Versioning & Blue/Green Migrations
 
 <LanguageSwitcher />
 
 ## Overview
-This guide walks through a common pattern for migrating breaking schema changes in an OLAP database, by creating a new table with the new schema and migrating data from the old table to the new one with a materialized view.
 
-### Mental model
+Changing a table's storage layout (engine or sorting key) in ClickHouse requires a full table rewrite. Doing it in-place can block or slow concurrent reads and writes due to heavy merges and metadata changes, creating real risk for production workloads. Blue/Green avoids this by creating a new versioned table and migrating data live via a materialized view, so traffic continues uninterrupted.
 
-- **Why versions**: Breaking changes require safe coordination amongst the upstream producers and downstream consumers for a given table. Give the new table the same logical name, but add a `version` so Moose creates a separate physical table (e.g., `events_0_1`). This allows old and new to coexist while dependencies can upgrade on their own schedule.
-- **Why materialized views**: In ClickHouse, a MATERIALIZED VIEW is a trigger on insert. It can both backfill the new table and continuously transform new rows inserted into the old table—perfect for moving data during a schema migration. This is a more efficient way to migrate data than a traditional ETL process because it pushes everything down to the ClickHouse engine.
+**When to use it**: 
+- Change the **table engine** (e.g., MergeTree → ReplacingMergeTree)
+- Update **ORDER BY fields** (sorting keys) to better match query patterns
+- Reshape **primary keys** or perform type changes that require a rewrite
 
-<Callout type="info">
+**How Moose does it**:
+1. Define a new table with the same logical name and a bumped `version`, setting the new <TypeScript inline> `orderByFields`</TypeScript><Python inline> `order_by_fields`</Python> and/or `engine` ([Table modeling](/moose/olap/model-table)).
+2. Create a [Materialized view](/moose/olap/model-materialized-view) that selects from the old table and writes to the new one; Moose backfills once and keeps the view live for new inserts.
+3. Later on, cut over readers/writers to the new export and clean up old resources ([Applying migrations](/moose/olap/apply-migrations)).
+
+
+<Callout type="info" title="Version configuration">
 Setting `config.version` on an `OlapTable` changes only the underlying table name (suffixes dots with underscores). Your code still refers to the logical table you exported.
 </Callout>
 
@@ -36,11 +43,10 @@ Setting `config.version` on an `OlapTable` changes only the underlying table nam
   divider={false}
 />
 
-## Example: rename a column and add a new one
+## Example: change sorting key (ORDER BY)
 
-Assume the original `events` table has a `name` column. We want to:
-- rename `name` → `eventName`
-- add a new `type` column with a default
+Assume the original `events` table orders by `id` only. We want to update the
+sorting key to optimize reads by ordering on `id, createdAt`.
 
 ### Original table (version 0.0)
 
@@ -49,12 +55,12 @@ Assume the original `events` table has a `name` column. We want to:
 import { Key, OlapTable } from "@514labs/moose-lib";
 
 interface EventV0 {
-  id: Key<string>;
+  id: string;
   name: string;
   createdAt: Date;
 }
 
-export const events = new OlapTable<EventV0>("events", { version: "0.0" });
+export const events = new OlapTable<EventV0>("events", { version: "0.0", orderByFields: ["id"] });
 ```
 </TypeScript>
 
@@ -62,20 +68,20 @@ export const events = new OlapTable<EventV0>("events", { version: "0.0" });
 ```python filename="app/tables/events.py" copy
 from typing import Annotated
 from pydantic import BaseModel
-from moose_lib import OlapTable, Key
+from moose_lib import OlapTable, Key, OlapConfig
 
 class EventV0(BaseModel):
-    id: Annotated[str, Key]
+    id: str
     name: str
     created_at: str  # datetime in your format
 
-events = OlapTable[EventV0]("events", config=OlapTableConfig(version="0.0"))
+events = OlapTable[EventV0]("events", config=OlapConfig(version="0.0", order_by_fields=["id"]))
 ```
 </Python>
 
 ### New table (bump to version 0.1)
 
-Create a new table with the same logical name, but set `version: "0.1"`. Moose will create `events_0_1` in ClickHouse.
+Create a new table with the same logical name, but set `version: "0.1"` and update the ordering to `id, createdAt`. Moose will create `events_0_1` in ClickHouse.
 
 <TypeScript>
 ```ts filename="app/tables/events_v01.ts" copy
@@ -83,28 +89,22 @@ import { Key, OlapTable } from "@514labs/moose-lib";
 
 interface EventV1 {
   id: Key<string>;
-  eventName: string; // renamed
-  type: string;      // new
+  name: string;
   createdAt: Date;
 }
 
-export const eventsV1 = new OlapTable<EventV1>("events", { version: "0.1" });
+export const eventsV1 = new OlapTable<EventV1>("events", { version: "0.1", orderByFields: ["id", "createdAt"] });
 ```
 </TypeScript>
 
 <Python>
 ```python filename="app/tables/events_v01.py" copy
-from typing import Annotated
-from pydantic import BaseModel
-from moose_lib import OlapTable, Key
-
 class EventV1(BaseModel):
-    id: Annotated[str, Key]
-    event_name: str
-    type: str
+    id: Key[str]
+    name: str
     created_at: str
 
-events_v1 = OlapTable[EventV1]("events", config=OlapTableConfig(version="0.1"))
+events_v1 = OlapTable[EventV1]("events", config=OlapConfig(version="0.1", order_by_fields=["id", "created_at"]))
 ```
 </Python>
 
@@ -112,7 +112,7 @@ events_v1 = OlapTable[EventV1]("events", config=OlapTableConfig(version="0.1"))
 
 Create a materialized view that:
 - SELECTs from the old table (`events_v0`)
-- maps fields to the new schema
+- copies fields 1:1 to the new table
 - writes into the versioned target table (`events_v1`)
 
 <Callout type="warning">
@@ -129,15 +129,9 @@ export const migrateEventsToV01 = new MaterializedView<EventV1>({
   materializedViewName: "mv_events_to_0_1",
   selectTables: [events],
   selectStatement: sql`
-    SELECT
-      ${events.columns.id}            as id,
-      ${events.columns.name}          as eventName,
-      'user'                          as type,
-      ${events.columns.createdAt}     as createdAt
-    FROM ${events}
+    SELECT * FROM ${events}
   `,
   targetTable: eventsV1,
-  orderByFields: ["id"],
 });
 ```
 </TypeScript>
@@ -148,15 +142,16 @@ from moose_lib import MaterializedView, MaterializedViewOptions
 from app.tables.events import events
 from app.tables.events_v01 import events_v1, EventV1
 
-migrate_events_to_v01 = MaterializedView[EventV1](MaterializedViewOptions(
-    materialized_view_name="mv_events_to_0_1",
-    select_statement=(
-        f"SELECT id as id, name as event_name, 'user' as type, created_at as created_at FROM {events.name}"
+migrate_events_to_v01 = MaterializedView[EventV1](
+    MaterializedViewOptions(
+        materialized_view_name="mv_events_to_0_1",
+        select_statement=(
+            f"SELECT * FROM {events.name}"
+        ),
+        select_tables=[events],
     ),
-    select_tables=[events],
-    table_name=events_v1,
-    order_by_fields=["id"],
-))
+    target_table=events_v1,
+)
 ```
 </Python>
 

@@ -85,6 +85,8 @@ pub enum ActivityType {
     TemplateListCommand,
     #[serde(rename = "refreshListCommand")]
     RefreshListCommand,
+    #[serde(rename = "dbPullCommand")]
+    DbPullCommand,
 }
 
 pub fn capture_usage(
@@ -92,6 +94,7 @@ pub fn capture_usage(
     project_name: Option<String>,
     settings: &Settings,
     machine_id: String,
+    parameters: HashMap<String, String>,
 ) -> Option<tokio::task::JoinHandle<()>> {
     // Skip if telemetry is disabled
     if !settings.telemetry.enabled {
@@ -110,6 +113,10 @@ pub fn capture_usage(
     context.insert("sequence_id".into(), sequence_id.into());
     context.insert("project".into(), project.into());
 
+    parameters.iter().for_each(|(key, value)| {
+        context.insert(key.to_string(), value.to_string().into());
+    });
+
     // Add list of flags used on the CLI invocation, if any
     let flags = collect_cli_flags();
     if !flags.is_empty() {
@@ -117,15 +124,15 @@ pub fn capture_usage(
     }
 
     // Create PostHog client
-    let client = match PostHog514Client::from_env(machine_id) {
-        Some(client) => client,
-        None => {
-            log::warn!("PostHog client not configured - missing POSTHOG_API_KEY");
-            return None;
-        }
-    };
-
     Some(tokio::task::spawn(async move {
+        let client = match PostHog514Client::from_env(machine_id) {
+            Some(client) => client,
+            None => {
+                log::warn!("PostHog client not configured - missing POSTHOG_API_KEY");
+                return;
+            }
+        };
+
         if let Err(e) = client
             .capture_cli_command(
                 "moose_cli_command",

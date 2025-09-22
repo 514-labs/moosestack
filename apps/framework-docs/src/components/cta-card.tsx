@@ -107,7 +107,7 @@ export function CTACard({
         <CardContent>
           <Heading className="text-primary mb-0" level={HeadingLevel.l5}>
             {isMooseModule ?
-              <span className="text-muted-foreground">Moose </span>
+              <span className="text-muted-foreground">Moose</span>
             : ""}
             {title}
           </Heading>

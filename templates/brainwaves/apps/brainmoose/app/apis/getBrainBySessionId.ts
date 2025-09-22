@@ -1,11 +1,11 @@
-import { ConsumptionApi } from "@514labs/moose-lib";
+import { Api } from "@514labs/moose-lib";
 import { Brain } from "../datamodels/brain";
 
 interface QueryParams {
   sessionId: string;
 }
 
-export const getBrainBySessionIdApi = new ConsumptionApi<QueryParams, Brain[]>(
+export const getBrainBySessionIdApi = new Api<QueryParams, Brain[]>(
   "get-brain-by-session-id",
   async ({ sessionId }, { client, sql }) => {
     if (!sessionId) {

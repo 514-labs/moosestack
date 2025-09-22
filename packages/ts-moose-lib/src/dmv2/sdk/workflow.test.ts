@@ -29,7 +29,7 @@ describe("Workflows & Tasks", () => {
     describe("Task Creation", () => {
       it("should create a task with no input and no output", async () => {
         const taskConfig: TaskConfig<null, void> = {
-          run: async () => {
+          run: async ({}) => {
             console.log("Task with no input/output executed");
           },
         };
@@ -43,7 +43,7 @@ describe("Workflows & Tasks", () => {
 
       it("should create a task with no input but with output", async () => {
         const taskConfig: TaskConfig<null, ReportData> = {
-          run: async () => {
+          run: async ({}) => {
             return {
               total: 100,
               processed: 95,
@@ -63,7 +63,7 @@ describe("Workflows & Tasks", () => {
 
       it("should create a task with input but no output", async () => {
         const taskConfig: TaskConfig<UserData, void> = {
-          run: async (input: UserData) => {
+          run: async ({ input }) => {
             console.log(`Processing user: ${input.name}`);
           },
         };
@@ -76,7 +76,7 @@ describe("Workflows & Tasks", () => {
 
       it("should create a task with both input and output", async () => {
         const taskConfig: TaskConfig<UserData, ProcessedData> = {
-          run: async (input: UserData) => {
+          run: async ({ input }) => {
             const domain = input.email.split("@")[1];
             return {
               userId: input.id,
@@ -99,7 +99,7 @@ describe("Workflows & Tasks", () => {
     describe("Task Configuration", () => {
       it("should handle task configuration with timeout and retries", () => {
         const taskConfig: TaskConfig<UserData, ProcessedData> = {
-          run: async (input: UserData) => {
+          run: async ({ input }) => {
             return {
               userId: input.id,
               fullName: input.name,
@@ -121,7 +121,7 @@ describe("Workflows & Tasks", () => {
 
       it("should handle task configuration with onComplete tasks", () => {
         const firstTask = new Task<null, UserData>("firstTask", {
-          run: async () => ({
+          run: async ({}) => ({
             id: "1",
             name: "Test User",
             email: "test@example.com",
@@ -129,7 +129,7 @@ describe("Workflows & Tasks", () => {
         });
 
         const secondTask = new Task<UserData, ProcessedData>("secondTask", {
-          run: async (input: UserData) => ({
+          run: async ({ input }) => ({
             userId: input.id,
             fullName: input.name,
             domain: input.email.split("@")[1],
@@ -137,11 +137,11 @@ describe("Workflows & Tasks", () => {
         });
 
         const thirdTask = new Task<ProcessedData, void>("thirdTask", {
-          run: async (input: ProcessedData) => {},
+          run: async ({ input }) => {},
         });
 
         const fourthTask = new Task<null, void>("fourthTask", {
-          run: async () => {},
+          run: async ({}) => {},
         });
 
         // Verifies onComplete can take different permutations of Task input & output types
@@ -152,7 +152,7 @@ describe("Workflows & Tasks", () => {
 
       it("should handle task with multiple onComplete tasks", () => {
         const mainTask = new Task<null, UserData>("mainTask", {
-          run: async () => ({
+          run: async ({}) => ({
             id: "1",
             name: "Test User",
             email: "test@example.com",
@@ -160,13 +160,13 @@ describe("Workflows & Tasks", () => {
         });
 
         const task1 = new Task<UserData, void>("task1", {
-          run: async (input: UserData) => {
+          run: async ({ input }) => {
             console.log(`Task 1 processing ${input.name}`);
           },
         });
 
         const task2 = new Task<UserData, void>("task2", {
-          run: async (input: UserData) => {
+          run: async ({ input }) => {
             console.log(`Task 2 processing ${input.name}`);
           },
         });
@@ -180,7 +180,7 @@ describe("Workflows & Tasks", () => {
     describe("Workflow Creation", () => {
       it("should support different starting task types", () => {
         const task1 = new Task<null, UserData>("task1", {
-          run: async () => ({
+          run: async ({}) => ({
             id: "1",
             name: "Test",
             email: "test@example.com",
@@ -193,7 +193,7 @@ describe("Workflows & Tasks", () => {
         expect(workflow1.config.startingTask).to.equal(task1);
 
         const task2 = new Task<null, void>("task2", {
-          run: async () => {
+          run: async ({}) => {
             console.log("Void task");
           },
         });
@@ -204,7 +204,7 @@ describe("Workflows & Tasks", () => {
         expect(workflow2.config.startingTask).to.equal(task2);
 
         const task3 = new Task<UserData, ProcessedData>("task3", {
-          run: async (input: UserData) => ({
+          run: async ({ input }) => ({
             userId: input.id,
             fullName: input.name,
             domain: input.email.split("@")[1],
@@ -217,7 +217,7 @@ describe("Workflows & Tasks", () => {
         expect(workflow3.config.startingTask).to.equal(task3);
 
         const task4 = new Task<UserData, void>("task4", {
-          run: async (input: UserData) => {
+          run: async ({ input }) => {
             console.log(`Processing ${input.name}`);
           },
         });
@@ -232,7 +232,7 @@ describe("Workflows & Tasks", () => {
     describe("Workflow Registration", () => {
       it("should register workflows in moose internal upon creation", () => {
         const startingTask = new Task<null, void>("registrationTask", {
-          run: async () => {
+          run: async ({}) => {
             console.log("Registration test task");
           },
         });
@@ -250,11 +250,11 @@ describe("Workflows & Tasks", () => {
 
       it("should register multiple workflows without conflicts", () => {
         const task1 = new Task<null, void>("task1", {
-          run: async () => console.log("Task 1"),
+          run: async ({}) => console.log("Task 1"),
         });
 
         const task2 = new Task<null, void>("task2", {
-          run: async () => console.log("Task 2"),
+          run: async ({}) => console.log("Task 2"),
         });
 
         const workflow1 = new Workflow("workflow1", {
@@ -295,11 +295,11 @@ describe("Workflows & Tasks", () => {
 
       it("should throw an error when creating workflows with duplicate names", () => {
         const task1 = new Task<null, void>("task1", {
-          run: async () => console.log("Task 1"),
+          run: async ({}) => console.log("Task 1"),
         });
 
         const task2 = new Task<null, void>("task2", {
-          run: async () => console.log("Task 2"),
+          run: async ({}) => console.log("Task 2"),
         });
 
         const workflow1 = new Workflow("duplicateName", {
@@ -344,7 +344,7 @@ describe("Workflows & Tasks", () => {
 
       it("should throw an error when a task in the chain is null", () => {
         const startingTask = new Task<null, void>("startingTask", {
-          run: async () => console.log("Starting task"),
+          run: async ({}) => console.log("Starting task"),
           onComplete: [null as any],
         });
 
@@ -362,11 +362,11 @@ describe("Workflows & Tasks", () => {
         let infiniteLoopTask2: Task<null, void>;
 
         infiniteLoopTask2 = new Task<null, void>("infiniteLoopTask2", {
-          run: async () => console.log("infiniteLoopTask2"),
+          run: async ({}) => console.log("infiniteLoopTask2"),
         });
 
         infiniteLoopTask1 = new Task<null, void>("infiniteLoopTask1", {
-          run: async () => console.log("infiniteLoopTask1"),
+          run: async ({}) => console.log("infiniteLoopTask1"),
           onComplete: [infiniteLoopTask2],
         });
 
@@ -386,7 +386,7 @@ describe("Workflows & Tasks", () => {
         let selfReferencingTask: Task<null, void>;
 
         selfReferencingTask = new Task<null, void>("selfReferencingTask", {
-          run: async () => console.log("selfReferencingTask"),
+          run: async ({}) => console.log("selfReferencingTask"),
         });
 
         // Create self-reference
@@ -407,15 +407,15 @@ describe("Workflows & Tasks", () => {
         let task3: Task<null, void>;
 
         task1 = new Task<null, void>("task1", {
-          run: async () => console.log("task1"),
+          run: async ({}) => console.log("task1"),
         });
 
         task2 = new Task<null, void>("task2", {
-          run: async () => console.log("task2"),
+          run: async ({}) => console.log("task2"),
         });
 
         task3 = new Task<null, void>("task3", {
-          run: async () => console.log("task3"),
+          run: async ({}) => console.log("task3"),
         });
 
         // Create a cycle: task1 -> task2 -> task3 -> task1
@@ -434,7 +434,7 @@ describe("Workflows & Tasks", () => {
 
       it("should handle workflows with shared tasks (diamond pattern)", () => {
         const startTask = new Task<null, UserData>("startTask", {
-          run: async () => ({
+          run: async ({}) => ({
             id: "1",
             name: "Test",
             email: "test@example.com",
@@ -442,7 +442,7 @@ describe("Workflows & Tasks", () => {
         });
 
         const leftTask = new Task<UserData, ProcessedData>("leftTask", {
-          run: async (input: UserData) => ({
+          run: async ({ input }) => ({
             userId: input.id,
             fullName: input.name,
             domain: input.email.split("@")[1],
@@ -450,7 +450,7 @@ describe("Workflows & Tasks", () => {
         });
 
         const rightTask = new Task<UserData, ProcessedData>("rightTask", {
-          run: async (input: UserData) => ({
+          run: async ({ input }) => ({
             userId: input.id,
             fullName: input.name.toUpperCase(),
             domain: input.email.split("@")[1],
@@ -458,7 +458,7 @@ describe("Workflows & Tasks", () => {
         });
 
         const endTask = new Task<ProcessedData, void>("endTask", {
-          run: async (input: ProcessedData) => {
+          run: async ({ input }) => {
             console.log(`Final processing: ${input.fullName}`);
           },
         });

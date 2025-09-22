@@ -1,4 +1,4 @@
-import { ConsumptionApi } from "@514labs/moose-lib";
+import { Api } from "@514labs/moose-lib";
 
 interface QueryParams {
   sessionId: string;
@@ -20,7 +20,7 @@ interface BrainwaveData {
   record_count: number;
 }
 
-export const getMostActiveBrainwavesApi = new ConsumptionApi<QueryParams, any>(
+export const getMostActiveBrainwavesApi = new Api<QueryParams, any>(
   "get-most-active-brainwaves",
   async ({ sessionId, limit }, { client, sql }) => {
     if (!sessionId) {

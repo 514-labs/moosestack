@@ -66,7 +66,7 @@ You can skip this step if you've already completed the [Egress Demo](/sloan/demo
 </Tabs.Tab>
 <Tabs.Tab>
 
-If you prefer to implement the egress API manually, you can create the following consumption API:
+If you prefer to implement the egress API manually, you can create the following analytics API:
 
 ```typescript filename="app/index.ts"
 ...
@@ -76,7 +76,7 @@ export * from './apis/getAircraftWithinRadius';
 
 
 ```typescript filename="app/apis/getAircraftWithinRadius.ts"
-import { ConsumptionApi } from "@514labs/moose-lib";
+import { Api } from "@514labs/moose-lib";
 import { tags } from "typia";
 
 /**
@@ -100,7 +100,7 @@ interface AircraftRadiusParams {
  * API to retrieve aircraft within a specified radius from given coordinates
  * Uses ClickHouse's geoDistance function to calculate great circle distance
  */
-export const getAircraftWithinRadius = new ConsumptionApi<AircraftRadiusParams>(
+export const getAircraftWithinRadius = new Api<AircraftRadiusParams>(
   "getAircraftWithinRadius",
   async (params, { client, sql }) => {
     // Execute the query with proper parameter handling

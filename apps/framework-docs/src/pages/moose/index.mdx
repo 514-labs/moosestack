@@ -40,8 +40,8 @@ bash -i <(curl -fsSL https://fiveonefour.com/install.sh) moose
     orientation="horizontal"
   />
   <CTACard
-    title="Bootstrap with an Area Code Template"
-    description="Start with a template for integrating Moose with complex microservices architectures"
+    title="Bootstrap with a Reference Application"
+    description="Start with a reference application for integrating Moose with complex microservices architectures"
     ctaLink="https://github.com/514-labs/area-code"
     Icon={Github}
     variant="default"
@@ -58,7 +58,7 @@ Declare all infrastructure (e.g. ClickHouse tables, Redpanda streams, APIs, etc.
 <Tabs items={["TypeScript", "Python"]}>
 <Tabs.Tab>
 ```ts filename="Complete Analytical Backend in 1 TS file" copy
-import { Key, OlapTable, Stream, IngestApi, ConsumptionApi } from "@514labs/moose-lib";
+import { Key, OlapTable, Stream, IngestApi, Api } from "@514labs/moose-lib";
  
 interface DataModel {
   primaryKey: Key<string>;
@@ -77,11 +77,11 @@ export const ingestApi = new IngestApi<DataModel>("post-api-route", {
   destination: redpandaTopic,
 });
  
-// Create consumption API endpoint
+// Create analytics API endpoint
 interface QueryParams {
   limit?: number;
 }
-export const consumptionApi = new ConsumptionApi<QueryParams, DataModel[]>("get-api-route", 
+export const analyticsApi = new Api<QueryParams, DataModel[]>("get-api-route", 
   async ({limit = 10}: QueryParams, {client, sql}) => {
     const result = await client.query.execute(sql`SELECT * FROM ${clickhouseTable} LIMIT ${limit}`);
     return await result.json();
@@ -91,7 +91,7 @@ export const consumptionApi = new ConsumptionApi<QueryParams, DataModel[]>("get-
 </Tabs.Tab>
 <Tabs.Tab>
 ```python filename="Complete Analytical Backend in 1 Python file" copy
-from moose_lib import Key, OlapTable, Stream, StreamConfig, IngestApi, IngestApiConfig, ConsumptionApi
+from moose_lib import Key, OlapTable, Stream, StreamConfig, IngestApi, IngestApiConfig, Api
 from pydantic import BaseModel
  
 class DataModel(BaseModel):
@@ -107,11 +107,11 @@ redpanda_topic = Stream[DataModel]("TopicName", StreamConfig(
 ))
  
 # Create an ingest API endpoint
-ingest_api = IngestApi[DataModel]("post-api-route", IngestApiConfig(
+ingest_api = IngestApi[DataModel]("post-api-route", IngestConfig(
     destination=redpanda_topic,
 ))
  
-# Create a consumption API endpoint
+# Create a analytics API endpoint
 class QueryParams(BaseModel):
     limit: int = 10
  
@@ -121,7 +121,7 @@ def handler(client, params: QueryParams):
         "limit": params.limit,
     })
  
-consumption_api = ConsumptionApi[RequestParams, DataModel]("get-api-route", query_function=handler)
+analytics_api = Api[RequestParams, DataModel]("get-api-route", query_function=handler)
 ``` 
 </Tabs.Tab>
 </Tabs>
@@ -221,7 +221,7 @@ consumption_api = ConsumptionApi[RequestParams, DataModel]("get-api-route", quer
     <StaggeredContent
       isMooseModule={true}
       title="Streaming"
-      description="Build real-time data pipelines with Kafka/Redpanda streams and transformations in code"
+      description="Build real-time data pipelines with Kafka/Redpanda streams and transformations in code."
       cta={{
         label: "Learn more",
         href: PathConfig.streaming.path,
@@ -245,7 +245,7 @@ consumption_api = ConsumptionApi[RequestParams, DataModel]("get-api-route", quer
     <StaggeredContent
       isMooseModule={true}
       title="Workflows"
-      description="Build ETL pipelines and task orchestration with in-memory workflow code"
+      description="Build ETL pipelines and task orchestration with in-memory workflow code."
       cta={{
         label: "Learn more",
         href: PathConfig.workflows.path,
@@ -281,7 +281,7 @@ consumption_api = ConsumptionApi[RequestParams, DataModel]("get-api-route", quer
         destination: stream,
       });
      
-      const getEvents = new ConsumptionApi<Params, Event>("get-events", {
+      const getEvents = new Api<Params, Event>("get-events", {
         async handler({limit = 10}, {client, sql}) {
           // query database and return results
           return await client.query.execute(sql`
@@ -308,7 +308,7 @@ Each module is independent and can be used on its own. You can start with one ca
     <StaggeredContent
       isMooseModule={true}
       title="Build"
-      description="Easily package up your application for deploying to production"
+      description="Easily package up your application for deploying to production."
       cta={{
         label: "Learn more",
         href: PathConfig.deploying.path,
@@ -326,7 +326,7 @@ Each module is independent and can be used on its own. You can start with one ca
     <StaggeredContent
       isMooseModule={true}
       title="Migrate"
-      description="Preview and validate infrastructure changes before deployment with detailed schema diffs, migration planning, and rollback capabilities"
+      description="Preview and validate infrastructure changes before deployment with detailed schema diffs, migration planning, and rollback capabilities."
       cta={{
         label: "Learn more",
         href: PathConfig.migrate.path,

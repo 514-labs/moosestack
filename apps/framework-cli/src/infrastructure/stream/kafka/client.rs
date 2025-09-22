@@ -689,12 +689,12 @@ pub fn create_subscriber(config: &KafkaConfig, group_id: &str, topic: &str) -> S
 /// * Logs errors for cancelled futures
 pub async fn wait_for_delivery(topic: &str, future: DeliveryFuture) {
     match future.await {
-        Ok(Ok((partition, offset))) => {
-            if offset % 1024 == 0 {
+        Ok(Ok(delivery)) => {
+            if delivery.offset % 1024 == 0 {
                 info!(
                     // the timestamp of this logging is not the same time Kafka receives the message
                     "Sent to {} partition {} offset {}",
-                    topic, partition, offset
+                    topic, delivery.partition, delivery.offset
                 )
             }
         }

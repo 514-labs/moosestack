@@ -28,17 +28,17 @@ pub enum Commands {
         #[arg(long)]
         no_fail_already_exists: bool,
 
-        /// Initialize from a remote template repository
-        #[arg(long, required_unless_present = "template")]
-        from_remote: Option<String>,
-
-        /// Programming language to use for the project
+        /// Initialize from a remote database. E.g. https://play.clickhouse.com/?user=explorer
         #[arg(
             long,
-            requires = "from_remote",
             required_unless_present = "template",
-            conflicts_with = "template"
+            value_name = "CONNECTION_STRING",
+            num_args = 0..=1
         )]
+        from_remote: Option<Option<String>>,
+
+        /// Programming language to use for the project
+        #[arg(long, conflicts_with = "template")]
         language: Option<String>,
     },
     /// Builds your moose project
@@ -116,18 +116,6 @@ pub enum Commands {
     Ps {},
     /// View Moose primitives & infrastructure
     Ls {
-        /// Limit output to a specific number of data models
-        #[arg(short, long, default_value = "10", hide = true)]
-        limit: u16,
-
-        /// View a specific version of data models & database infrastructure (default: latest)
-        #[arg(short, long, hide = true)]
-        version: Option<String>,
-
-        /// View streaming topics
-        #[arg(short, long, default_value = "false", hide = true)]
-        streaming: bool,
-
         /// Filter by infrastructure type (tables, streams, ingestion, sql_resource, consumption)
         #[arg(long)]
         _type: Option<String>,
@@ -147,6 +135,8 @@ pub enum Commands {
     Workflow(WorkflowArgs),
     /// Manage templates
     Template(TemplateCommands),
+    /// Manage database schema import
+    Db(DbArgs),
     /// Integrate matching tables from a remote Moose instance into the local project
     Refresh {
         /// URL of the remote Moose instance (default: http://localhost:4000)
@@ -162,6 +152,20 @@ pub enum Commands {
     },
     /// Seed data into your project
     Seed(SeedCommands),
+    /// Truncate tables or delete the last N rows
+    Truncate {
+        /// List of table names to target (omit when using --all)
+        #[arg(value_name = "TABLE", num_args = 0.., value_delimiter = ',')]
+        tables: Vec<String>,
+
+        /// Apply the operation to all tables in the current database
+        #[arg(long, conflicts_with = "tables", default_value = "false")]
+        all: bool,
+
+        /// Number of most recent rows to delete per table. Omit to delete all rows.
+        #[arg(long)]
+        rows: Option<u64>,
+    },
 }
 
 #[derive(Debug, Args)]
@@ -197,19 +201,6 @@ pub struct WorkflowArgs {
 
 #[derive(Debug, Subcommand)]
 pub enum WorkflowCommands {
-    /// Initialize a new workflow
-    Init {
-        /// Name of your workflow
-        name: String,
-
-        /// Comma-separated list of task names
-        #[arg(long)]
-        tasks: Option<String>,
-
-        /// Individual task names (can be specified multiple times)
-        #[arg(long)]
-        task: Option<Vec<String>>,
-    },
     /// Run a workflow
     Run {
         /// Name of the workflow to run
@@ -312,14 +303,45 @@ pub struct SeedCommands {
 pub enum SeedSubcommands {
     /// Seed ClickHouse tables with data
     Clickhouse {
-        /// ClickHouse connection string (e.g. clickhouse://user:pass@host:port/db)
+        /// ClickHouse connection string (e.g. 'clickhouse://explorer@play.clickhouse.com:9440/default')
         #[arg(long, value_name = "CONNECTION_STRING")]
-        connection_string: String,
+        connection_string: Option<String>,
         /// Limit the number of rows to copy per table (default: 1000)
-        #[arg(long, value_name = "LIMIT", default_value_t = 1000)]
+        #[arg(
+            long,
+            value_name = "LIMIT",
+            default_value_t = 1000,
+            conflicts_with = "all"
+        )]
         limit: usize,
+        /// Copy all rows (ignore limit). If set for a table, copies entire table.
+        #[arg(long, default_value = "false", conflicts_with = "limit")]
+        all: bool,
+        /// ORDER BY clause of the query. e.g. `--order-by 'timestamp DESC' --limit 10` for the latest 10 rows
+        #[arg(long)]
+        order_by: Option<String>,
         /// Only seed a specific table (optional)
         #[arg(long, value_name = "TABLE_NAME")]
         table: Option<String>,
+    },
+}
+
+#[derive(Debug, Args)]
+#[command(arg_required_else_help = true)]
+pub struct DbArgs {
+    #[command(subcommand)]
+    pub command: DbCommands,
+}
+
+#[derive(Debug, Subcommand)]
+pub enum DbCommands {
+    /// Update DB schema for EXTERNALLY_MANAGED tables
+    Pull {
+        /// ClickHouse connection string (e.g. 'E.g. https://play.clickhouse.com/?user=explorer')
+        #[arg(long, value_name = "CONNECTION_STRING")]
+        connection_string: Option<String>,
+        /// File storing the EXTERNALLY_MANAGED table definitions, defaults to app/external_models.py or app/externalModels.ts
+        #[arg(long)]
+        file_path: Option<String>,
     },
 }

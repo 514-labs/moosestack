@@ -7,4 +7,8 @@ export default render({
   lifecycle: {
     title: "Lifecycle Management",
   },
+  planned: {
+    title: "Planned DDL (OLAP)",
+    href: "/moose/olap/planned-migrations",
+  },
 });

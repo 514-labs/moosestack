@@ -1,12 +1,12 @@
-# Consumption APIs
+# Analytics APIs
 
 ## Overview
-Consumption APIs provide a type-safe way to query and transform data from your tables. They allow you to create custom endpoints that can perform complex queries, transformations, and data processing.
+Analytics APIs provide a type-safe way to query and transform data from your tables. They allow you to create custom endpoints that can perform complex queries, transformations, and data processing.
 
-## Basic Consumption API Setup
+## Basic Analytics API Setup
 
 ```typescript
-import { ConsumptionApi } from '@514labs/moose-lib';
+import { Api } from '@514labs/moose-lib';
 import { tags } from "typia";
 
 // Define your parameter interface with Typia tags for validation
@@ -17,8 +17,8 @@ interface QueryParams {
   limit?: number & tags.Type<"int64"> & tags.Minimum<1> & tags.Maximum<100>;
 }
 
-// Create a consumption API
-export const UserAnalyticsApi = new ConsumptionApi<QueryParams>(
+// Create a analytics API
+export const UserAnalyticsApi = new Api<QueryParams>(
   "user-analytics",
   async (params, utils) => {
     const { client, sql } = utils;
@@ -73,10 +73,10 @@ interface ValidatedParams {
 
 ## Available Utilities
 
-The `ConsumptionUtil` object provides several helpful utilities:
+The `ApiUtil` object provides several helpful utilities:
 
 ```typescript
-interface ConsumptionUtil {
+interface ApiUtil {
   client: MooseClient;  // Query client for database access
   sql: Sql;            // SQL template literal helper
   jwt?: any;           // JWT payload if authentication is enabled
@@ -85,12 +85,12 @@ interface ConsumptionUtil {
 
 ### SQL Helper
 
-The `sql` template literal helper provides type-safe SQL query construction. For dynamic column or table names, use the `ConsumptionHelpers`:
+The `sql` template literal helper provides type-safe SQL query construction. For dynamic column or table names, use the `ApiHelpers`:
 
 ```typescript
-import { ConsumptionHelpers as CH } from "@514labs/moose-lib";
+import { ApiHelpers as AH } from "@514labs/moose-lib";
 
-// Use static strings directly - no need for ConsumptionHelpers
+// Use static strings directly - no need for ApiHelpers
 const staticQuery = sql`
   SELECT *
   FROM events
@@ -111,22 +111,22 @@ interface DynamicQueryParams {
   };
 }
 
-export const DynamicQueryApi = new ConsumptionApi<DynamicQueryParams>(
+export const DynamicQueryApi = new Api<DynamicQueryParams>(
   "dynamic-query",
   async (params, utils) => {
     const { client, sql } = utils;
     
     // Build dynamic column list
-    const columnList = params.columns.map(col => CH.column(col)).join(", ");
+    const columnList = params.columns.map(col => AH.column(col)).join(", ");
     
     // Build dynamic filters
     const filterConditions = params.filters.map(filter => 
-      sql`${CH.column(filter.column)} ${filter.operator} ${filter.value}`
+      sql`${AH.column(filter.column)} ${filter.operator} ${filter.value}`
     );
     
     // Build dynamic order by
     const orderByClause = params.orderBy 
-      ? sql`ORDER BY ${CH.column(params.orderBy.column)} ${params.orderBy.direction}`
+      ? sql`ORDER BY ${AH.column(params.orderBy.column)} ${params.orderBy.direction}`
       : sql``;
 
     // Join filter conditions with AND
@@ -171,7 +171,7 @@ interface SimpleQueryParams {
   offset?: number & tags.Type<"int64"> & tags.Minimum<0>;
 }
 
-export const RecentEventsApi = new ConsumptionApi<SimpleQueryParams>(
+export const RecentEventsApi = new Api<SimpleQueryParams>(
   "recent-events",
   async (params, utils) => {
     const { client, sql } = utils;
@@ -191,10 +191,10 @@ export const RecentEventsApi = new ConsumptionApi<SimpleQueryParams>(
 
 ## Complete Example
 
-Here's a complete example showing how to set up a full consumption API with Typia validation:
+Here's a complete example showing how to set up a full analytics API with Typia validation:
 
 ```typescript
-import { ConsumptionApi, Sql } from '@514labs/moose-lib';
+import { Api, Sql } from '@514labs/moose-lib';
 import { tags } from "typia";
 
 // Define your parameter interface with Typia validation
@@ -210,8 +210,8 @@ interface UserMetricsParams {
   limit?: number & tags.Type<"int64"> & tags.Minimum<1> & tags.Maximum<100>;
 }
 
-// Create a consumption API
-export const UserMetricsApi = new ConsumptionApi<UserMetricsParams>(
+// Create an analytics API
+export const UserMetricsApi = new Api<UserMetricsParams>(
   "user-metrics",
   async (params, utils) => {
     const { client, sql } = utils;

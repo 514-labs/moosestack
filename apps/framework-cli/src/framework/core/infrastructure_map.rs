@@ -73,7 +73,7 @@ pub trait TableDiffStrategy {
     ///
     /// # Arguments
     /// * `before` - The table before changes
-    /// * `after` - The table after changes  
+    /// * `after` - The table after changes
     /// * `column_changes` - Detailed column-level changes
     /// * `order_by_change` - Changes to the ORDER BY clause
     ///
@@ -291,6 +291,17 @@ pub enum TableChange {
         /// Complete representation of the table after changes
         after: Table,
     },
+    /// Only table settings have been modified (can use ALTER TABLE MODIFY SETTING)
+    SettingsChanged {
+        /// Name of the table
+        name: String,
+        /// Table settings before the change
+        before_settings: Option<std::collections::HashMap<String, String>>,
+        /// Table settings after the change
+        after_settings: Option<std::collections::HashMap<String, String>>,
+        /// Complete table representation for context
+        table: Table,
+    },
 }
 
 /// Generic representation of a change to any infrastructure component
@@ -334,6 +345,19 @@ pub enum OlapChange {
     /// Change to a database view
     View(Change<View>),
     SqlResource(Change<SqlResource>),
+    /// Explicit operation to populate a materialized view with initial data
+    PopulateMaterializedView {
+        /// Name of the materialized view
+        view_name: String,
+        /// Target table that will receive the data
+        target_table: String,
+        /// Target database (if different from default)
+        target_database: Option<String>,
+        /// The SELECT statement to populate with
+        select_statement: String,
+        /// Source tables that data is pulled from
+        source_tables: Vec<String>,
+    },
 }
 
 /// Changes to streaming components
@@ -758,29 +782,6 @@ impl InfrastructureMap {
         process_changes
     }
 
-    /// Compares this infrastructure map with a target map to determine changes
-    ///
-    /// This is a central method of the infrastructure management system. It performs a
-    /// comprehensive comparison between this map (representing the current state) and
-    /// a target map (representing the desired state), calculating all changes needed
-    /// to transform the current state into the desired state.
-    ///
-    /// The method:
-    /// - Analyzes each component type separately (topics, API endpoints, tables, views, etc.)
-    /// - Identifies additions, removals, and modifications
-    /// - For complex components like tables, calculates detailed changes (column additions, etc.)
-    /// - Logs detailed information about the detected changes
-    ///
-    /// # Arguments
-    /// * `target_map` - The target infrastructure map to compare against
-    ///
-    /// # Returns
-    /// An `InfraChanges` object containing all detected changes
-    pub fn diff(&self, target_map: &InfrastructureMap) -> InfraChanges {
-        let default_strategy = DefaultTableDiffStrategy;
-        self.diff_with_table_strategy(target_map, &default_strategy)
-    }
-
     /// Compares this infrastructure map with a target map using a custom table diff strategy
     ///
     /// This method is similar to `diff()` but allows specifying a custom strategy for
@@ -798,6 +799,7 @@ impl InfrastructureMap {
         &self,
         target_map: &InfrastructureMap,
         table_diff_strategy: &dyn TableDiffStrategy,
+        respect_life_cycle: bool,
     ) -> InfraChanges {
         let mut changes = InfraChanges::default();
 
@@ -806,6 +808,7 @@ impl InfrastructureMap {
             &self.topics,
             &target_map.topics,
             &mut changes.streaming_engine_changes,
+            respect_life_cycle,
         );
 
         // API Endpoints
@@ -823,6 +826,7 @@ impl InfrastructureMap {
             &target_map.tables,
             &mut changes.olap_changes,
             table_diff_strategy,
+            respect_life_cycle,
         );
         let table_changes = changes.olap_changes.len() - olap_changes_len_before;
         log::info!("Table changes detected: {}", table_changes);
@@ -830,12 +834,13 @@ impl InfrastructureMap {
         // Views
         Self::diff_views(&self.views, &target_map.views, &mut changes.olap_changes);
 
-        // SQL Resources
+        // SQL Resources (needs tables context for MV population detection)
         log::info!("Analyzing changes in SQL Resources...");
         let olap_changes_len_before = changes.olap_changes.len();
         Self::diff_sql_resources(
             &self.sql_resources,
             &target_map.sql_resources,
+            &target_map.tables, // Pass target tables for MV analysis
             &mut changes.olap_changes,
         );
         let sql_resource_changes = changes.olap_changes.len() - olap_changes_len_before;
@@ -872,6 +877,7 @@ impl InfrastructureMap {
         self_topics: &HashMap<String, Topic>,
         target_topics: &HashMap<String, Topic>,
         streaming_changes: &mut Vec<StreamingChange>,
+        respect_life_cycle: bool,
     ) -> (usize, usize, usize) {
         log::info!("Analyzing changes in Topics...");
         let mut topic_updates = 0;
@@ -882,7 +888,8 @@ impl InfrastructureMap {
             if let Some(target_topic) = target_topics.get(id) {
                 if topic != target_topic {
                     // Respect lifecycle: ExternallyManaged topics are never modified
-                    if target_topic.life_cycle == LifeCycle::ExternallyManaged {
+                    if target_topic.life_cycle == LifeCycle::ExternallyManaged && respect_life_cycle
+                    {
                         log::debug!(
                             "Topic '{}' has changes but is externally managed - skipping update",
                             topic.name
@@ -898,21 +905,21 @@ impl InfrastructureMap {
                 }
             } else {
                 // Respect lifecycle: DeletionProtected and ExternallyManaged topics are never removed
-                match topic.life_cycle {
-                    LifeCycle::FullyManaged => {
+                match (topic.life_cycle, respect_life_cycle) {
+                    (LifeCycle::FullyManaged, _) | (_, false) => {
                         log::debug!("Topic removed: {} ({})", topic.name, id);
                         topic_removals += 1;
                         streaming_changes.push(StreamingChange::Topic(Change::<Topic>::Removed(
                             Box::new(topic.clone()),
                         )));
                     }
-                    LifeCycle::DeletionProtected => {
+                    (LifeCycle::DeletionProtected, true) => {
                         log::debug!(
                             "Topic '{}' marked for removal but is deletion-protected - skipping removal",
                             topic.name
                         );
                     }
-                    LifeCycle::ExternallyManaged => {
+                    (LifeCycle::ExternallyManaged, true) => {
                         log::debug!(
                             "Topic '{}' marked for removal but is externally managed - skipping removal",
                             topic.name
@@ -925,7 +932,7 @@ impl InfrastructureMap {
         for (id, topic) in target_topics {
             if !self_topics.contains_key(id) {
                 // Respect lifecycle: ExternallyManaged topics are never added automatically
-                if topic.life_cycle == LifeCycle::ExternallyManaged {
+                if topic.life_cycle == LifeCycle::ExternallyManaged && respect_life_cycle {
                     log::debug!(
                         "Topic '{}' marked for addition but is externally managed - skipping addition",
                         topic.name
@@ -1302,11 +1309,11 @@ impl InfrastructureMap {
         target_process: &ConsumptionApiWebServer,
         process_changes: &mut Vec<ProcessChange>,
     ) {
-        log::info!("Analyzing changes in Consumption API processes...");
+        log::info!("Analyzing changes in Analytics API processes...");
 
         // We are currently not tracking individual consumption endpoints, so we will just restart
         // the consumption web server when something changed
-        log::debug!("Consumption API Web Server updated (assumed for now)");
+        log::debug!("Analytics API Web Server updated (assumed for now)");
         process_changes.push(ProcessChange::ConsumptionApiWebServer(Change::<
             ConsumptionApiWebServer,
         >::Updated {
@@ -1393,10 +1400,12 @@ impl InfrastructureMap {
     /// # Arguments
     /// * `self_sql_resources` - HashMap of source SQL resources to compare from
     /// * `target_sql_resources` - HashMap of target SQL resources to compare against
+    /// * `target_tables` - Target tables for MV population analysis
     /// * `olap_changes` - Mutable vector to collect the identified changes
     pub fn diff_sql_resources(
         self_sql_resources: &HashMap<String, SqlResource>,
         target_sql_resources: &HashMap<String, SqlResource>,
+        target_tables: &HashMap<String, Table>,
         olap_changes: &mut Vec<OlapChange>,
     ) {
         log::info!(
@@ -1436,6 +1445,15 @@ impl InfrastructureMap {
                 olap_changes.push(OlapChange::SqlResource(Change::Added(Box::new(
                     sql_resource.clone(),
                 ))));
+
+                // Check if this is a materialized view that needs population (ClickHouse-specific)
+                use crate::infrastructure::olap::clickhouse::diff_strategy::ClickHouseTableDiffStrategy;
+                ClickHouseTableDiffStrategy::check_materialized_view_population(
+                    sql_resource,
+                    target_tables,
+                    true,
+                    olap_changes,
+                );
             }
         }
 
@@ -1467,6 +1485,7 @@ impl InfrastructureMap {
         target_tables: &HashMap<String, Table>,
         olap_changes: &mut Vec<OlapChange>,
         strategy: &dyn TableDiffStrategy,
+        respect_life_cycle: bool,
     ) {
         log::info!(
             "Analyzing table differences between {} source tables and {} target tables",
@@ -1482,7 +1501,8 @@ impl InfrastructureMap {
             if let Some(target_table) = target_tables.get(id) {
                 if table != target_table {
                     // Respect lifecycle: ExternallyManaged tables are never modified
-                    if target_table.life_cycle == LifeCycle::ExternallyManaged {
+                    if target_table.life_cycle == LifeCycle::ExternallyManaged && respect_life_cycle
+                    {
                         log::debug!(
                             "Table '{}' has changes but is externally managed - skipping update",
                             table.name
@@ -1492,7 +1512,9 @@ impl InfrastructureMap {
                         let mut column_changes = compute_table_columns_diff(table, target_table);
 
                         // For DeletionProtected tables, filter out destructive column changes
-                        if target_table.life_cycle == LifeCycle::DeletionProtected {
+                        if target_table.life_cycle == LifeCycle::DeletionProtected
+                            && respect_life_cycle
+                        {
                             let original_len = column_changes.len();
                             column_changes.retain(|change| match change {
                                 ColumnChange::Removed(_) => {
@@ -1571,19 +1593,19 @@ impl InfrastructureMap {
                 }
             } else {
                 // Respect lifecycle: DeletionProtected and ExternallyManaged tables are never removed
-                match table.life_cycle {
-                    LifeCycle::FullyManaged => {
+                match (table.life_cycle, respect_life_cycle) {
+                    (LifeCycle::FullyManaged, _) | (_, false) => {
                         log::debug!("Table '{}' removed", table.name);
                         table_removals += 1;
                         olap_changes.push(OlapChange::Table(TableChange::Removed(table.clone())));
                     }
-                    LifeCycle::DeletionProtected => {
+                    (LifeCycle::DeletionProtected, true) => {
                         log::debug!(
                             "Table '{}' marked for removal but is deletion-protected - skipping removal",
                             table.name
                         );
                     }
-                    LifeCycle::ExternallyManaged => {
+                    (LifeCycle::ExternallyManaged, true) => {
                         log::debug!(
                             "Table '{}' marked for removal but is externally managed - skipping removal",
                             table.name
@@ -1596,7 +1618,7 @@ impl InfrastructureMap {
         for (id, table) in target_tables {
             if !self_tables.contains_key(id) {
                 // Respect lifecycle: ExternallyManaged tables are never added automatically
-                if table.life_cycle == LifeCycle::ExternallyManaged {
+                if table.life_cycle == LifeCycle::ExternallyManaged && respect_life_cycle {
                     log::debug!(
                         "Table '{}' marked for addition but is externally managed - skipping addition",
                         table.name
@@ -1637,6 +1659,7 @@ impl InfrastructureMap {
         self_tables: &HashMap<String, Table>,
         target_tables: &HashMap<String, Table>,
         olap_changes: &mut Vec<OlapChange>,
+        respect_life_cycle: bool,
     ) {
         let default_strategy = DefaultTableDiffStrategy;
         Self::diff_tables_with_strategy(
@@ -1644,6 +1667,7 @@ impl InfrastructureMap {
             target_tables,
             olap_changes,
             &default_strategy,
+            respect_life_cycle,
         );
     }
 
@@ -1847,6 +1871,35 @@ impl InfrastructureMap {
             .context("Failed to get InfrastructureMap from Redis")?;
 
         if let Some(encoded) = encoded {
+            let decoded = InfrastructureMap::from_proto(encoded).map_err(|e| {
+                anyhow::anyhow!("Failed to decode InfrastructureMap from proto: {}", e)
+            })?;
+            Ok(Some(decoded))
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// Loads an infrastructure map using the last deployment's Redis key prefix.
+    pub async fn load_from_last_redis_prefix(redis_client: &RedisClient) -> Result<Option<Self>> {
+        let last_prefix = &redis_client.config.last_key_prefix;
+
+        log::info!(
+            "Loading InfrastructureMap from last Redis prefix: {}",
+            last_prefix
+        );
+
+        let encoded = redis_client
+            .get_with_explicit_prefix(last_prefix, "infrastructure_map")
+            .await
+            .context("Failed to get InfrastructureMap from Redis using LAST_KEY_PREFIX");
+
+        if let Err(e) = encoded {
+            log::error!("{}", e);
+            return Ok(None);
+        }
+
+        if let Ok(Some(encoded)) = encoded {
             let decoded = InfrastructureMap::from_proto(encoded).map_err(|e| {
                 anyhow::anyhow!("Failed to decode InfrastructureMap from proto: {}", e)
             })?;
@@ -2161,7 +2214,7 @@ fn columns_are_equivalent(before: &Column, after: &Column) -> bool {
 ///
 /// # Returns
 /// A vector of `ColumnChange` objects describing the differences
-fn compute_table_columns_diff(before: &Table, after: &Table) -> Vec<ColumnChange> {
+pub fn compute_table_columns_diff(before: &Table, after: &Table) -> Vec<ColumnChange> {
     let mut diff = Vec::new();
 
     // Create a HashMap of the 'before' columns: O(n)
@@ -2240,8 +2293,8 @@ impl Default for InfrastructureMap {
 
 #[cfg(test)]
 mod tests {
-
     use crate::framework::core::infrastructure::table::IntType;
+    use crate::framework::core::infrastructure_map::DefaultTableDiffStrategy;
     use crate::framework::core::infrastructure_map::{
         Change, InfrastructureMap, OlapChange, StreamingChange, TableChange,
     };
@@ -2292,6 +2345,7 @@ mod tests {
                 },
             ],
             order_by: vec!["id".to_string()],
+            partition_by: None,
             version: Some(Version::from_string("1.0".to_string())),
             source_primitive: PrimitiveSignature {
                 name: "test_primitive".to_string(),
@@ -2299,6 +2353,8 @@ mod tests {
             },
             metadata: None,
             life_cycle: LifeCycle::FullyManaged,
+            engine_params_hash: None,
+            table_settings: None,
         };
 
         let after = Table {
@@ -2337,6 +2393,7 @@ mod tests {
                 },
             ],
             order_by: vec!["id".to_string(), "name".to_string()], // Changed order_by
+            partition_by: None,
             version: Some(Version::from_string("1.1".to_string())),
             source_primitive: PrimitiveSignature {
                 name: "test_primitive".to_string(),
@@ -2344,6 +2401,8 @@ mod tests {
             },
             metadata: None,
             life_cycle: LifeCycle::FullyManaged,
+            engine_params_hash: None,
+            table_settings: None,
         };
 
         let diff = compute_table_columns_diff(&before, &after);
@@ -2459,7 +2518,7 @@ mod tests {
         externally_managed_topic.life_cycle = LifeCycle::ExternallyManaged;
         map2.add_topic(externally_managed_topic.clone());
 
-        let changes = map1.diff(&map2);
+        let changes = map1.diff_with_table_strategy(&map2, &DefaultTableDiffStrategy, true);
 
         // Should have no OLAP changes (table removal filtered out)
         let table_removals = changes
@@ -2488,10 +2547,9 @@ mod tests {
 #[cfg(test)]
 mod diff_tests {
     use super::*;
-    use crate::framework::core::infrastructure::table::{
-        Column, ColumnDefaults, ColumnType, FloatType, IntType,
-    };
+    use crate::framework::core::infrastructure::table::{Column, ColumnType, FloatType, IntType};
     use crate::framework::versions::Version;
+    use crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine;
     use serde_json::Value as JsonValue;
 
     // Helper function to create a basic test table
@@ -2501,6 +2559,7 @@ mod diff_tests {
             engine: None,
             columns: vec![],
             order_by: vec![],
+            partition_by: None,
             version: Some(Version::from_string(version.to_string())),
             source_primitive: PrimitiveSignature {
                 name: "test_primitive".to_string(),
@@ -2508,6 +2567,8 @@ mod diff_tests {
             },
             metadata: None,
             life_cycle: LifeCycle::FullyManaged,
+            engine_params_hash: None,
+            table_settings: None,
         }
     }
 
@@ -2745,6 +2806,7 @@ mod diff_tests {
             &HashMap::from([("test".to_string(), before)]),
             &HashMap::from([("test".to_string(), after)]),
             &mut changes,
+            true,
         );
 
         assert_eq!(changes.len(), 1, "Expected one change");
@@ -2764,14 +2826,18 @@ mod diff_tests {
         let mut before = create_test_table("test", "1.0");
         let mut after = create_test_table("test", "1.0");
 
-        before.engine = Some("MergeTree".to_string());
-        after.engine = Some("ReplacingMergeTree".to_string());
+        before.engine = Some(ClickhouseEngine::MergeTree);
+        after.engine = Some(ClickhouseEngine::ReplacingMergeTree {
+            ver: None,
+            is_deleted: None,
+        });
 
         let mut changes = Vec::new();
         InfrastructureMap::diff_tables(
             &HashMap::from([("test".to_string(), before)]),
             &HashMap::from([("test".to_string(), after)]),
             &mut changes,
+            true,
         );
 
         assert_eq!(changes.len(), 1, "Expected one change");
@@ -2781,8 +2847,11 @@ mod diff_tests {
                 after: a,
                 ..
             }) => {
-                assert_eq!(b.engine.as_deref(), Some("MergeTree"));
-                assert_eq!(a.engine.as_deref(), Some("ReplacingMergeTree"));
+                assert_eq!(b.engine.as_ref(), Some(&ClickhouseEngine::MergeTree));
+                assert!(matches!(
+                    a.engine.as_ref(),
+                    Some(ClickhouseEngine::ReplacingMergeTree { .. })
+                ));
             }
             _ => panic!("Expected Updated change with engine modification"),
         }
@@ -2799,7 +2868,7 @@ mod diff_tests {
             required: true,
             unique: false,
             primary_key: false,
-            default: Some(ColumnDefaults::AutoIncrement),
+            default: Some("auto_increment".to_string()),
             annotations: vec![],
             comment: None,
         });
@@ -2810,7 +2879,7 @@ mod diff_tests {
             required: true,
             unique: false,
             primary_key: false,
-            default: Some(ColumnDefaults::Now),
+            default: Some("now()".to_string()),
             annotations: vec![],
             comment: None,
         });
@@ -2822,8 +2891,8 @@ mod diff_tests {
                 before: b,
                 after: a,
             } => {
-                assert_eq!(b.default, Some(ColumnDefaults::AutoIncrement));
-                assert_eq!(a.default, Some(ColumnDefaults::Now));
+                assert_eq!(b.default.as_deref(), Some("auto_increment"));
+                assert_eq!(a.default.as_deref(), Some("now()"));
             }
             _ => panic!("Expected Updated change"),
         }
@@ -3255,9 +3324,11 @@ mod diff_sql_resources_tests {
         let target_resources = HashMap::new();
         let mut olap_changes = Vec::new();
 
+        let tables = HashMap::new(); // Empty tables for tests
         InfrastructureMap::diff_sql_resources(
             &self_resources,
             &target_resources,
+            &tables,
             &mut olap_changes,
         );
         assert!(olap_changes.is_empty());
@@ -3273,9 +3344,11 @@ mod diff_sql_resources_tests {
         target_resources.insert(resource1.name.clone(), resource1);
 
         let mut olap_changes = Vec::new();
+        let tables = HashMap::new(); // Empty tables for tests
         InfrastructureMap::diff_sql_resources(
             &self_resources,
             &target_resources,
+            &tables,
             &mut olap_changes,
         );
         assert!(olap_changes.is_empty());
@@ -3289,9 +3362,11 @@ mod diff_sql_resources_tests {
         target_resources.insert(resource1.name.clone(), resource1.clone());
 
         let mut olap_changes = Vec::new();
+        let tables = HashMap::new(); // Empty tables for tests
         InfrastructureMap::diff_sql_resources(
             &self_resources,
             &target_resources,
+            &tables,
             &mut olap_changes,
         );
 
@@ -3312,9 +3387,11 @@ mod diff_sql_resources_tests {
 
         let target_resources = HashMap::new();
         let mut olap_changes = Vec::new();
+        let tables = HashMap::new(); // Empty tables for tests
         InfrastructureMap::diff_sql_resources(
             &self_resources,
             &target_resources,
+            &tables,
             &mut olap_changes,
         );
 
@@ -3339,9 +3416,11 @@ mod diff_sql_resources_tests {
         target_resources.insert(after_resource.name.clone(), after_resource.clone());
 
         let mut olap_changes = Vec::new();
+        let tables = HashMap::new(); // Empty tables for tests
         InfrastructureMap::diff_sql_resources(
             &self_resources,
             &target_resources,
+            &tables,
             &mut olap_changes,
         );
 
@@ -3371,9 +3450,11 @@ mod diff_sql_resources_tests {
         target_resources.insert(after_resource.name.clone(), after_resource.clone());
 
         let mut olap_changes = Vec::new();
+        let tables = HashMap::new(); // Empty tables for tests
         InfrastructureMap::diff_sql_resources(
             &self_resources,
             &target_resources,
+            &tables,
             &mut olap_changes,
         );
 
@@ -3412,9 +3493,11 @@ mod diff_sql_resources_tests {
         target_resources.insert(res4_after.name.clone(), res4_after.clone());
 
         let mut olap_changes = Vec::new();
+        let tables = HashMap::new(); // Empty tables for tests
         InfrastructureMap::diff_sql_resources(
             &self_resources,
             &target_resources,
+            &tables,
             &mut olap_changes,
         );
 
@@ -3496,7 +3579,7 @@ mod diff_topic_tests {
         map1.add_topic(topic.clone());
         map2.add_topic(topic);
 
-        let changes = map1.diff(&map2);
+        let changes = map1.diff_with_table_strategy(&map2, &DefaultTableDiffStrategy, true);
         assert!(
             changes.streaming_engine_changes.is_empty(),
             "Expected no streaming changes"
@@ -3514,7 +3597,7 @@ mod diff_topic_tests {
         let topic = create_test_topic("topic1", "1.0");
         map2.add_topic(topic.clone());
 
-        let changes = map1.diff(&map2);
+        let changes = map1.diff_with_table_strategy(&map2, &DefaultTableDiffStrategy, true);
         assert_eq!(
             changes.streaming_engine_changes.len(),
             1,
@@ -3538,7 +3621,7 @@ mod diff_topic_tests {
         let topic = create_test_topic("topic1", "1.0");
         map1.add_topic(topic.clone());
 
-        let changes = map1.diff(&map2);
+        let changes = map1.diff_with_table_strategy(&map2, &DefaultTableDiffStrategy, true);
         assert_eq!(
             changes.streaming_engine_changes.len(),
             1,
@@ -3579,7 +3662,7 @@ mod diff_topic_tests {
         map1.topics.insert(topic_before.id(), topic_before.clone());
         map2.topics.insert(topic_after.id(), topic_after.clone()); // Now uses the stable ID
 
-        let changes = map1.diff(&map2);
+        let changes = map1.diff_with_table_strategy(&map2, &DefaultTableDiffStrategy, true);
         assert_eq!(
             changes.streaming_engine_changes.len(),
             1,
@@ -3639,7 +3722,7 @@ mod diff_view_tests {
         map1.views.insert(view.id(), view.clone());
         map2.views.insert(view.id(), view);
 
-        let changes = map1.diff(&map2);
+        let changes = map1.diff_with_table_strategy(&map2, &DefaultTableDiffStrategy, true);
         assert!(changes.olap_changes.is_empty(), "Expected no OLAP changes");
         // Check other change types are also empty to be sure (except processes)
         assert!(changes.streaming_engine_changes.is_empty());
@@ -3653,7 +3736,7 @@ mod diff_view_tests {
         let view = create_test_view("view1", "1.0", "table1");
         map2.views.insert(view.id(), view.clone());
 
-        let changes = map1.diff(&map2);
+        let changes = map1.diff_with_table_strategy(&map2, &DefaultTableDiffStrategy, true);
         assert_eq!(changes.olap_changes.len(), 1, "Expected one OLAP change");
         match &changes.olap_changes[0] {
             OlapChange::View(Change::Added(v)) => {
@@ -3673,7 +3756,7 @@ mod diff_view_tests {
         let view = create_test_view("view1", "1.0", "table1");
         map1.views.insert(view.id(), view.clone());
 
-        let changes = map1.diff(&map2);
+        let changes = map1.diff_with_table_strategy(&map2, &DefaultTableDiffStrategy, true);
         assert_eq!(changes.olap_changes.len(), 1, "Expected one OLAP change");
         match &changes.olap_changes[0] {
             OlapChange::View(Change::Removed(v)) => {
@@ -3708,7 +3791,7 @@ mod diff_view_tests {
         map1.views.insert(view_before.id(), view_before.clone());
         map2.views.insert(view_after.id(), view_after.clone());
 
-        let changes = map1.diff(&map2);
+        let changes = map1.diff_with_table_strategy(&map2, &DefaultTableDiffStrategy, true);
         assert_eq!(changes.olap_changes.len(), 1, "Expected one OLAP change");
         match &changes.olap_changes[0] {
             OlapChange::View(Change::Updated { before, after }) => {
@@ -3782,7 +3865,7 @@ mod diff_topic_to_table_sync_process_tests {
         map2.topic_to_table_sync_processes
             .insert(process.id(), process);
 
-        let changes = map1.diff(&map2);
+        let changes = map1.diff_with_table_strategy(&map2, &DefaultTableDiffStrategy, true);
         // Check only process changes, as others should be empty
         let process_change_found = changes
             .processes_changes
@@ -3803,7 +3886,7 @@ mod diff_topic_to_table_sync_process_tests {
         map2.topic_to_table_sync_processes
             .insert(process.id(), process.clone());
 
-        let changes = map1.diff(&map2);
+        let changes = map1.diff_with_table_strategy(&map2, &DefaultTableDiffStrategy, true);
         let process_change_found = changes
             .processes_changes
             .iter()
@@ -3829,7 +3912,7 @@ mod diff_topic_to_table_sync_process_tests {
         map1.topic_to_table_sync_processes
             .insert(process.id(), process.clone());
 
-        let changes = map1.diff(&map2);
+        let changes = map1.diff_with_table_strategy(&map2, &DefaultTableDiffStrategy, true);
         let process_change_found = changes
             .processes_changes
             .iter()
@@ -3894,7 +3977,7 @@ mod diff_topic_to_table_sync_process_tests {
         map2.topic_to_table_sync_processes
             .insert(process_after.id(), process_after.clone());
 
-        let changes = map1.diff(&map2);
+        let changes = map1.diff_with_table_strategy(&map2, &DefaultTableDiffStrategy, true);
         let process_change_found = changes
             .processes_changes
             .iter()
@@ -3955,7 +4038,7 @@ mod diff_topic_to_topic_sync_process_tests {
         map2.topic_to_topic_sync_processes
             .insert(process.id(), process);
 
-        let changes = map1.diff(&map2);
+        let changes = map1.diff_with_table_strategy(&map2, &DefaultTableDiffStrategy, true);
         let process_change_found = changes
             .processes_changes
             .iter()
@@ -3975,7 +4058,7 @@ mod diff_topic_to_topic_sync_process_tests {
         map2.topic_to_topic_sync_processes
             .insert(process.id(), process.clone());
 
-        let changes = map1.diff(&map2);
+        let changes = map1.diff_with_table_strategy(&map2, &DefaultTableDiffStrategy, true);
         let process_change_found = changes
             .processes_changes
             .iter()
@@ -4001,7 +4084,7 @@ mod diff_topic_to_topic_sync_process_tests {
         map1.topic_to_topic_sync_processes
             .insert(process.id(), process.clone());
 
-        let changes = map1.diff(&map2);
+        let changes = map1.diff_with_table_strategy(&map2, &DefaultTableDiffStrategy, true);
         let process_change_found = changes
             .processes_changes
             .iter()
@@ -4048,7 +4131,7 @@ mod diff_topic_to_topic_sync_process_tests {
         map2.topic_to_topic_sync_processes
             .insert(process_after.id(), process_after.clone());
 
-        let changes = map1.diff(&map2);
+        let changes = map1.diff_with_table_strategy(&map2, &DefaultTableDiffStrategy, true);
         let process_change_found = changes
             .processes_changes
             .iter()
@@ -4124,7 +4207,7 @@ mod diff_function_process_tests {
         map2.function_processes
             .insert(process.id(), process.clone()); // Identical process
 
-        let changes = map1.diff(&map2);
+        let changes = map1.diff_with_table_strategy(&map2, &DefaultTableDiffStrategy, true);
         let process_change_found = changes
             .processes_changes
             .iter()
@@ -4151,7 +4234,7 @@ mod diff_function_process_tests {
         map2.function_processes
             .insert(process.id(), process.clone());
 
-        let changes = map1.diff(&map2);
+        let changes = map1.diff_with_table_strategy(&map2, &DefaultTableDiffStrategy, true);
         let process_change_found = changes
             .processes_changes
             .iter()
@@ -4177,7 +4260,7 @@ mod diff_function_process_tests {
         map1.function_processes
             .insert(process.id(), process.clone());
 
-        let changes = map1.diff(&map2);
+        let changes = map1.diff_with_table_strategy(&map2, &DefaultTableDiffStrategy, true);
         let process_change_found = changes
             .processes_changes
             .iter()
@@ -4226,7 +4309,7 @@ mod diff_function_process_tests {
         map2.function_processes
             .insert(process_after.id(), process_after.clone());
 
-        let changes = map1.diff(&map2);
+        let changes = map1.diff_with_table_strategy(&map2, &DefaultTableDiffStrategy, true);
         let process_change_found = changes
             .processes_changes
             .iter()
@@ -4281,7 +4364,7 @@ mod diff_orchestration_worker_tests {
         map2.orchestration_workers
             .insert(id.clone(), worker.clone()); // Identical worker
 
-        let changes = map1.diff(&map2);
+        let changes = map1.diff_with_table_strategy(&map2, &DefaultTableDiffStrategy, true);
         let process_change_found = changes
             .processes_changes
             .iter()
@@ -4312,7 +4395,7 @@ mod diff_orchestration_worker_tests {
         map2.orchestration_workers
             .insert(id.clone(), worker.clone());
 
-        let changes = map1.diff(&map2);
+        let changes = map1.diff_with_table_strategy(&map2, &DefaultTableDiffStrategy, true);
         let process_change_found = changes
             .processes_changes
             .iter()
@@ -4340,7 +4423,7 @@ mod diff_orchestration_worker_tests {
         map1.orchestration_workers
             .insert(id.clone(), worker.clone());
 
-        let changes = map1.diff(&map2);
+        let changes = map1.diff_with_table_strategy(&map2, &DefaultTableDiffStrategy, true);
         let process_change_found = changes
             .processes_changes
             .iter()
@@ -4373,7 +4456,7 @@ mod diff_orchestration_worker_tests {
         map2.orchestration_workers
             .insert(worker_ts.id(), worker_ts.clone());
 
-        let changes = map1.diff(&map2);
+        let changes = map1.diff_with_table_strategy(&map2, &DefaultTableDiffStrategy, true);
 
         let mut removed_found = false;
         let mut added_found = false;

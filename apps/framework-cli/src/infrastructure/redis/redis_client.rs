@@ -137,6 +137,8 @@ pub struct RedisConfig {
     pub url: String,
     #[serde(default = "RedisConfig::default_key_prefix")]
     pub key_prefix: String,
+    #[serde(default = "RedisConfig::default_key_prefix")]
+    pub last_key_prefix: String,
     #[serde(default = "RedisConfig::default_port")]
     pub port: u16,
     /// Whether to use TLS (rediss://) or plain Redis (redis://)
@@ -255,6 +257,7 @@ impl Default for RedisConfig {
         RedisConfig {
             url: RedisConfig::default_url(),
             key_prefix: RedisConfig::default_key_prefix(),
+            last_key_prefix: RedisConfig::default_key_prefix(),
             port: RedisConfig::default_port(),
             tls: RedisConfig::default_tls(),
             hostname: RedisConfig::default_hostname(),
@@ -846,6 +849,17 @@ impl RedisClient {
         Ok(result)
     }
 
+    pub async fn get_with_explicit_prefix<V: redis::FromRedisValue + Send + Sync>(
+        &self,
+        explicit_prefix: &str,
+        key: &str,
+    ) -> anyhow::Result<Option<V>> {
+        let prefixed_key = self.service_prefix_from(explicit_prefix, &[key]);
+        let mut conn = self.connection_manager.connection.clone();
+        let result = conn.get(&prefixed_key).await?;
+        Ok(result)
+    }
+
     pub async fn get_queue_message_compat(
         &self,
         feature_name: Option<&str>,
@@ -998,6 +1012,10 @@ impl Drop for RedisClient {
 impl RedisClient {
     pub fn service_prefix(&self, keys: &[&str]) -> String {
         format!("{}::{}", self.config.key_prefix, keys.join("::"))
+    }
+
+    pub fn service_prefix_from(&self, explicit_prefix: &str, keys: &[&str]) -> String {
+        format!("{}::{}", explicit_prefix, keys.join("::"))
     }
 
     pub fn instance_prefix(&self, key: &str) -> String {

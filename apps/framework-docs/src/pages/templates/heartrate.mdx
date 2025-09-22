@@ -34,7 +34,7 @@ The template implements a three-stage data processing pipeline:
    - Adds calculated metrics and validation
 
 3. **Unified Format** (`UnifiedHRPacket`)
-   - Standardizes heart rate data for consumption
+   - Standardizes heart rate data for analytics
    - Includes user information and derived metrics
 
 ### Streamlit Frontend Dashboard
@@ -86,11 +86,11 @@ streamlit run streamlit_app.py
 
 The template exposes two main API endpoints:
 
-- `/consumption/getUserLiveHeartRateStats`
+- `/api/getUserLiveHeartRateStats`
   - Parameters: user_name, window_seconds
   - Returns: Recent heart rate statistics for a specific user
 
-- `/consumption/getLeaderboard`
+- `/api/getLeaderboard`
   - Parameters: time_window_seconds, limit
   - Returns: Ranked list of users based on performance metrics
 

@@ -6,6 +6,7 @@ export {
   Aggregated,
   OlapTable,
   OlapConfig,
+  S3QueueTableSettings,
   Stream,
   StreamConfig,
   DeadLetterModel,
@@ -13,6 +14,8 @@ export {
   DeadLetterQueue,
   IngestApi,
   IngestConfig,
+  Api,
+  ApiConfig,
   ConsumptionApi,
   EgressConfig,
   IngestPipeline,
@@ -30,11 +33,14 @@ export {
   ClickHousePrecision,
   ClickHouseDecimal,
   ClickHouseByteSize,
+  ClickHouseFloat,
   ClickHouseInt,
   LowCardinality,
   ClickHouseNamedTuple,
+  ClickHouseDefault,
+  WithDefault,
 } from "./dataModels/types";
 
-export type { ConsumptionUtil } from "./consumption-apis/helpers";
+export type { ApiUtil, ConsumptionUtil } from "./consumption-apis/helpers";
 
 export * from "./sqlHelpers";

@@ -6,19 +6,23 @@ import {
 } from "@temporalio/client";
 import { StringValue } from "@temporalio/common";
 import { createHash, randomUUID } from "node:crypto";
-import * as path from "path";
+import { performance } from "perf_hooks";
+import prettyMs from "pretty-ms";
 import * as fs from "fs";
 import { getWorkflows } from "../dmv2/internal";
 import { JWTPayload } from "jose";
-import { Sql, sql, RawValue, toQuery } from "../sqlHelpers";
+import { Sql, sql, RawValue, toQuery, toQueryPreview } from "../sqlHelpers";
 
-export interface ConsumptionUtil {
+export interface ApiUtil {
   client: MooseClient;
 
   // SQL interpolator
   sql: typeof sql;
   jwt: JWTPayload | undefined;
 }
+
+/** @deprecated Use ApiUtil instead. */
+export type ConsumptionUtil = ApiUtil;
 
 export class MooseClient {
   query: QueryClient;
@@ -43,7 +47,9 @@ export class QueryClient {
   ): Promise<ResultSet<"JSONEachRow"> & { __query_result_t?: T[] }> {
     const [query, query_params] = toQuery(sql);
 
-    return this.client.query({
+    console.log(`[QueryClient] | Query: ${toQueryPreview(sql)}`);
+    const start = performance.now();
+    const result = await this.client.query({
       query,
       query_params,
       format: "JSONEachRow",
@@ -51,15 +57,10 @@ export class QueryClient {
       // Note: wait_end_of_query deliberately NOT set here as this is used for SELECT queries
       // where response buffering would harm streaming performance and concurrency
     });
+    const elapsedMs = performance.now() - start;
+    console.log(`[QueryClient] | Query completed: ${prettyMs(elapsedMs)}`);
+    return result;
   }
-}
-
-interface WorkflowConfig {
-  name: string;
-  schedule: string;
-  retries: number;
-  timeout: string;
-  tasks: string[];
 }
 
 export class WorkflowClient {
@@ -78,7 +79,7 @@ export class WorkflowClient {
         };
       }
 
-      // Get workflow configuration (DMv2 or legacy)
+      // Get workflow configuration
       const config = await this.getWorkflowConfig(name);
 
       // Process input data and generate workflow ID
@@ -88,18 +89,14 @@ export class WorkflowClient {
       );
 
       console.log(
-        `WorkflowClient - starting ${config.is_dmv2 ? "DMv2 " : ""}workflow: ${name} with config ${JSON.stringify(config)} and input_data ${JSON.stringify(processedInput)}`,
-      );
-
-      // Start workflow with appropriate args
-      const workflowArgs = this.buildWorkflowArgs(
-        name,
-        processedInput,
-        config.is_dmv2,
+        `WorkflowClient - starting workflow: ${name} with config ${JSON.stringify(config)} and input_data ${JSON.stringify(processedInput)}`,
       );
 
       const handle = await this.client.workflow.start("ScriptWorkflow", {
-        args: workflowArgs,
+        args: [
+          { workflow_name: name, execution_mode: "start" as const },
+          processedInput,
+        ],
         taskQueue: "typescript-script-queue",
         workflowId,
         workflowIdConflictPolicy: "FAIL",
@@ -148,34 +145,17 @@ export class WorkflowClient {
 
   private async getWorkflowConfig(
     name: string,
-  ): Promise<{ retries: number; timeout: string; is_dmv2: boolean }> {
-    // Check for DMv2 workflow first
-    try {
-      const workflows = await getWorkflows();
-      const dmv2Workflow = workflows.get(name);
-      if (dmv2Workflow) {
-        return {
-          retries: dmv2Workflow.config.retries || 3,
-          timeout: dmv2Workflow.config.timeout || "1h",
-          is_dmv2: true,
-        };
-      }
-    } catch (error) {
-      // Fall through to legacy config
+  ): Promise<{ retries: number; timeout: string }> {
+    const workflows = await getWorkflows();
+    const dmv2Workflow = workflows.get(name);
+    if (dmv2Workflow) {
+      return {
+        retries: dmv2Workflow.config.retries || 3,
+        timeout: dmv2Workflow.config.timeout || "1h",
+      };
     }
 
-    // Fall back to legacy configuration
-    const configs = await this.loadConsolidatedConfigs();
-    const config = configs[name];
-    if (!config) {
-      throw new Error(`Workflow config not found for ${name}`);
-    }
-
-    return {
-      retries: config.retries || 3,
-      timeout: config.timeout || "1h",
-      is_dmv2: false,
-    };
+    throw new Error(`Workflow config not found for ${name}`);
   }
 
   private processInputData(name: string, input_data: any): [any, string] {
@@ -188,42 +168,6 @@ export class WorkflowClient {
       workflowId = `${name}-${hash}`;
     }
     return [input_data, workflowId];
-  }
-
-  private buildWorkflowArgs(
-    name: string,
-    input_data: any,
-    is_dmv2: boolean,
-  ): any[] {
-    if (is_dmv2) {
-      return [name, input_data];
-    } else {
-      return [`${process.cwd()}/app/scripts/${name}`, input_data];
-    }
-  }
-
-  private async loadConsolidatedConfigs(): Promise<
-    Record<string, WorkflowConfig>
-  > {
-    const configPath = path.join(
-      process.cwd(),
-      ".moose",
-      "workflow_configs.json",
-    );
-    const configContent = await fs.readFileSync(configPath, "utf8");
-    const configArray = JSON.parse(configContent) as WorkflowConfig[];
-
-    const configMap = configArray.reduce(
-      (map: Record<string, WorkflowConfig>, config: WorkflowConfig) => {
-        if (config.name) {
-          map[config.name] = config;
-        }
-        return map;
-      },
-      {},
-    );
-
-    return configMap;
   }
 }
 
@@ -283,10 +227,13 @@ export async function getTemporalClient(
   }
 }
 
-export const ConsumptionHelpers = {
+export const ApiHelpers = {
   column: (value: string) => ["Identifier", value] as [string, string],
   table: (value: string) => ["Identifier", value] as [string, string],
 };
+
+/** @deprecated Use ApiHelpers instead. */
+export const ConsumptionHelpers = ApiHelpers;
 
 export function joinQueries({
   values,

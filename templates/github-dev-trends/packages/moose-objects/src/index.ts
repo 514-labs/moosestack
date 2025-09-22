@@ -7,9 +7,9 @@ import {
 
 import {
   IngestPipeline,
-  ConsumptionApi,
+  Api,
   Key,
-  ConsumptionUtil,
+  ApiUtil,
 } from "@514labs/moose-lib/browserCompatible";
 
 // Pipeline to receive raw events from the Github API
@@ -27,7 +27,7 @@ export const RepoStarEvent = new IngestPipeline<IRepoStarEvent>("RepoStar", {
 });
 
 // Consumption API to get a timeseries of the top `n` topics over a given interval
-export const topicTimeseriesApi = new ConsumptionApi<
-  QueryParams,
-  ResponseBody[]
->("topicTimeseries", getTopicTimeseries);
+export const topicTimeseriesApi = new Api<QueryParams, ResponseBody[]>(
+  "topicTimeseries",
+  getTopicTimeseries,
+);
