@@ -8,7 +8,9 @@ volumes:
   clickhouse-0-users: null
   clickhouse-keeper-data: null
 {{/if}}
+{{#if redis}}
   redis-data: null
+{{/if}}
 {{#if scripts_feature}}
   temporal-data: null
   postgresql-data: null
@@ -28,6 +30,7 @@ configs:
 {{/if}}
 
 services:
+{{#if redis}}
   redis:
     image: redis:latest
     ports:
@@ -40,6 +43,7 @@ services:
         reservations:
           cpus: '2.0'
           memory: 4G
+{{/if}}
 
 {{#if streaming_engine}}
   redpanda:

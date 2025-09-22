@@ -167,6 +167,10 @@ pub struct ProjectFeatures {
     /// Execute planned DDL file unless MOOSE_AUTO_APPROVE_MIGRATIONS=true
     #[serde(default)]
     pub ddl_plan: bool,
+
+    /// Whether Redis is enabled in Docker compose
+    #[serde(default = "_true")]
+    pub redis: bool,
 }
 
 impl Default for ProjectFeatures {
@@ -177,6 +181,7 @@ impl Default for ProjectFeatures {
             data_model_v2: false,
             olap: true,
             ddl_plan: false,
+            redis: true,
         }
     }
 }

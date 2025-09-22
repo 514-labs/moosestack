@@ -493,12 +493,18 @@ pub async fn top_command_handler(
                 )))
             }
         }
-        Commands::Dev {} => {
+        Commands::Dev { no_redis } => {
             info!("Running dev command");
             info!("Moose Version: {}", CLI_VERSION);
 
             let mut project = load_project()?;
             project.set_is_production_env(false);
+
+            // Set Redis feature based on command line flag
+            if *no_redis {
+                project.features.redis = false;
+            }
+
             let project_arc = Arc::new(project);
 
             let capture_handle = crate::utilities::capture::capture_usage(

@@ -374,7 +374,8 @@ impl DockerClient {
         let mut data = json!({
             "scripts_feature": settings.features.scripts || project.features.workflows,
             "streaming_engine": project.features.streaming_engine,
-            "storage": project.features.olap
+            "storage": project.features.olap,
+            "redis": project.features.redis
         });
 
         // Thread Redpanda broker host/port from config into the compose template
