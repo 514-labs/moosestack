@@ -147,6 +147,11 @@ class Column(BaseModel):
     default: str | None = None
     annotations: list[Tuple[str, Any]] = []
 
+    def to_expr(self):
+        # Lazy import to avoid circular dependency at import time
+        from .query_builder import ColumnRef
+        return ColumnRef(self)
+
 
 def py_type_to_column_type(t: type, mds: list[Any]) -> Tuple[bool, list[Any], DataType]:
     # handle Annotated[Optional[Annotated[...], ...]
