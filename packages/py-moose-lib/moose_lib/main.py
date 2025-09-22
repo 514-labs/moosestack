@@ -27,7 +27,7 @@ from .data_models import Column
 from .config.runtime import RuntimeClickHouseConfig
 
 from moose_lib.commons import EnhancedJSONEncoder
-from .query_builder import Query as MooseQuery, Params as MooseParams, ColumnRef as MooseColumnRef, col as to_expr
+from .query_builder import Query
 
 
 @dataclass
@@ -185,7 +185,13 @@ class QueryClient:
     def __call__(self, input, variables):
         return self.execute(input, variables)
 
-    def execute(self, input: Union[str, "Query"], variables, row_type: Type[BaseModel] = None):
+    def execute(self, input: Union[str, Query], variables, row_type: Type[BaseModel] = None):
+        # Handle Moose query-builder input directly
+        if isinstance(input, Query):
+            sql, params = input.to_sql_and_params()
+            print(f"[QueryClient] | Query: {sql}")
+            return self.execute_raw(sql, params, row_type)
+
         params = {}
         values: dict[str, Any] = {}
         preview_params = {}
