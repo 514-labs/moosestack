@@ -23,7 +23,7 @@ def test_simple_select_and_where():
     bar_cols = bar_model.get_table().cols
 
     q1 = Query().from_(bar_model.get_table()).select(bar_cols.has_text, bar_cols.text_length)
-    assert q1.to_sql() == 'SELECT "Bar"."has_text", "Bar"."text_length" FROM "Bar"'
+    assert q1.to_sql() == 'SELECT "Bar"."has_text", "Bar"."text_length" FROM Bar'
 
     q2 = (
         Query()
@@ -32,7 +32,7 @@ def test_simple_select_and_where():
         .where(col(bar_cols.has_text).eq(True))
     )
     sql, params = q2.to_sql_and_params()
-    assert sql == 'SELECT "Bar"."has_text", "Bar"."text_length" FROM "Bar" WHERE "Bar"."has_text" = {p0: Bool}'
+    assert sql == 'SELECT "Bar"."has_text", "Bar"."text_length" FROM Bar WHERE "Bar"."has_text" = {p0: Bool}'
     assert params == {"p0": True}
 
 
