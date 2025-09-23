@@ -1,10 +1,10 @@
 import { Readable } from "node:stream";
 import { KafkaJS } from "@confluentinc/kafka-javascript";
-const { Kafka, KafkaJSError, KafkaJSProtocolError } = KafkaJS;
+const { Kafka } = KafkaJS;
 
-// Type definitions for compatibility
-type Consumer = any;
-type Producer = any;
+// Type definitions from @confluentinc/kafka-javascript
+type Consumer = KafkaJS.Consumer;
+type Producer = KafkaJS.Producer;
 
 type KafkaMessage = {
   value: Buffer | string | null;
@@ -21,12 +21,12 @@ type SASLOptions = {
   password: string;
 };
 import { Buffer } from "node:buffer";
-import process from "node:process";
-import http from "http";
+import * as process from "node:process";
+import * as http from "node:http";
 import { cliLog } from "../commons";
 import { Cluster } from "../cluster-utils";
 import { getStreamingFunctions } from "../dmv2/internal";
-import { ConsumerConfig, TransformConfig } from "../dmv2";
+import type { ConsumerConfig, TransformConfig } from "../dmv2";
 import { jsonDateReviver } from "../utilities/json";
 
 const HOSTNAME = process.env.HOSTNAME;
@@ -38,7 +38,6 @@ const MAX_RETRIES_PRODUCER = 150;
 const MAX_RETRIES_CONSUMER = 150;
 const SESSION_TIMEOUT_CONSUMER = 30000;
 const HEARTBEAT_INTERVAL_CONSUMER = 3000;
-const RETRY_FACTOR_PRODUCER = 0.2;
 const DEFAULT_MAX_STREAMING_CONCURRENCY = 100;
 const RETRY_INITIAL_TIME_MS = 100;
 // https://github.com/apache/kafka/blob/trunk/clients/src/main/java/org/apache/kafka/common/record/AbstractRecords.java#L124
@@ -65,7 +64,7 @@ const parseBrokerString = (brokerString: string): string[] => {
 /**
  * Checks if an error is a MESSAGE_TOO_LARGE error from Kafka
  */
-const isMessageTooLargeError = (error: any): boolean => {
+const isMessageTooLargeError = (error: unknown): boolean => {
   return (
     KafkaJS.isKafkaJSError?.(error) &&
     (error.type === "ERR_MSG_SIZE_TOO_LARGE" ||
@@ -124,7 +123,7 @@ const sendChunkWithRetry = async (
   currentMaxSize: number,
   maxRetries: number = 3,
 ): Promise<void> => {
-  let currentMessages = messages;
+  const currentMessages = messages;
   let attempts = 0;
 
   while (attempts < maxRetries) {
@@ -257,7 +256,7 @@ const logError = (logger: Logger, e: Error): void => {
  */
 const MAX_STREAMING_CONCURRENCY =
   process.env.MAX_STREAMING_CONCURRENCY ?
-    parseInt(process.env.MAX_STREAMING_CONCURRENCY)
+    parseInt(process.env.MAX_STREAMING_CONCURRENCY, 10)
   : DEFAULT_MAX_STREAMING_CONCURRENCY;
 
 /**
@@ -288,7 +287,7 @@ const buildSaslConfig = (
  */
 export const metricsLog: (log: MetricsData) => void = (log) => {
   const req = http.request({
-    port: parseInt(process.env.MOOSE_MANAGEMENT_PORT ?? "5001"),
+    port: parseInt(process.env.MOOSE_MANAGEMENT_PORT ?? "5001", 10),
     method: "POST",
     path: "/metrics-logs",
   });
@@ -381,6 +380,8 @@ const stopConsumer = async (
  */
 const handleMessage = async (
   logger: Logger,
+  // Note: TransformConfig<any> is intentionally generic here as it handles
+  // various data model types that are determined at runtime
   streamingFunctionWithConfigList: [StreamingFunction, TransformConfig<any>][],
   message: KafkaMessage,
   producer: Producer,
@@ -414,7 +415,7 @@ const handleMessage = async (
               action: "DeadLetter",
               message: `Sending message to DLQ ${deadLetterQueue.name}: ${e instanceof Error ? e.message : String(e)}`,
               message_type: "Error",
-            } as any);
+            });
             // Send to the DLQ
             try {
               await producer.send({
@@ -430,7 +431,7 @@ const handleMessage = async (
               action: "Function",
               message: `Error processing message (no DLQ configured): ${e instanceof Error ? e.message : String(e)}`,
               message_type: "Error",
-            } as any);
+            });
           }
 
           // rethrow for the outside error handling
@@ -516,10 +517,7 @@ const sendMessages = async (
       } else {
         // Add the new message to the current chunk
         chunk.push(message);
-        chunk.forEach(
-          (message) =>
-            (metrics.bytes += Buffer.byteLength(message.value, "utf8")),
-        );
+        metrics.bytes += Buffer.byteLength(message.value, "utf8");
         chunkSize += messageSize;
       }
     }
@@ -593,7 +591,7 @@ const sendMessageMetrics = (logger: Logger, metrics: Metrics) => {
  * ```
  */
 function loadStreamingFunction(functionFilePath: string) {
-  let streamingFunctionImport;
+  let streamingFunctionImport: { default: StreamingFunction };
   try {
     streamingFunctionImport = require(
       functionFilePath.substring(0, functionFilePath.length - 3),
@@ -653,7 +651,7 @@ const startConsumer = async (
   args: StreamingFunctionArgs,
   logger: Logger,
   metrics: Metrics,
-  parallelism: number,
+  _parallelism: number,
   consumer: Consumer,
   producer: Producer,
   streamingFuncId: string,
@@ -681,6 +679,8 @@ const startConsumer = async (
   );
 
   // We preload the function to not have to load it for each message
+  // Note: Config types use 'any' as generics because they handle various
+  // data model types determined at runtime, not compile time
   const streamingFunctions: [
     StreamingFunction,
     TransformConfig<any> | ConsumerConfig<any>,
@@ -697,6 +697,9 @@ const startConsumer = async (
     eachBatchAutoResolve: true,
     // Enable parallel processing of partitions
     partitionsConsumedConcurrently: PARTITIONS_CONSUMED_CONCURRENTLY, // To be adjusted
+    // Note: Kafka client batch handler parameters are typed as 'any' because
+    // @confluentinc/kafka-javascript doesn't export proper TypeScript interfaces
+    // for these callback parameters
     eachBatch: async ({ batch, heartbeat, isRunning, isStale }: any) => {
       if (!isRunning() || isStale()) {
         return;
@@ -711,8 +714,20 @@ const startConsumer = async (
       logger.log(`Received ${batch.messages.length} message(s)`);
 
       let index = 0;
+      // Node.js 16.5.0+ added .map() and .toArray() methods to Readable streams,
+      // but TypeScript definitions may not include them yet. We extend the type
+      // to provide proper typing without using 'any'.
+      const readableStream = Readable.from(batch.messages) as Readable & {
+        map<T>(
+          // Note: 'any' used here because batch.messages can contain various
+          // Kafka message formats depending on the source topic structure
+          fn: (message: any) => Promise<T>,
+          options: { concurrency: number },
+        ): Readable & { toArray(): Promise<T[]> };
+      };
+
       const processedMessages: (SlimKafkaMessage[] | undefined)[] =
-        await Readable.from(batch.messages)
+        await readableStream
           .map(
             async (message) => {
               index++;
@@ -902,7 +917,7 @@ export const runStreamingFunctions = async (
     workerStart: async (worker, parallelism) => {
       const logger = buildLogger(args, worker.id);
 
-      let metrics = {
+      const metrics = {
         count_in: 0,
         count_out: 0,
         bytes: 0,
@@ -911,7 +926,7 @@ export const runStreamingFunctions = async (
       setTimeout(() => sendMessageMetrics(logger, metrics), 1000);
 
       const clientIdPrefix = HOSTNAME ? `${HOSTNAME}-` : "";
-      const processId = clientIdPrefix + streamingFuncId + "-ts-" + worker.id;
+      const processId = `${clientIdPrefix}${streamingFuncId}-ts-${worker.id}`;
 
       const brokers = parseBrokerString(args.broker);
       if (brokers.length === 0) {
@@ -932,7 +947,9 @@ export const runStreamingFunctions = async (
         },
         // Add librdkafka-specific configuration for Redpanda compatibility
         "security.protocol":
-          args.securityProtocol === "SASL_SSL" ? "sasl_ssl" : "plaintext",
+          args.securityProtocol === "SASL_SSL" ?
+            ("sasl_ssl" as const)
+          : ("plaintext" as const),
         "api.version.request": true,
         "api.version.fallback.ms": 0,
         "broker.version.fallback": "0.10.0.0",
