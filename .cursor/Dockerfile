@@ -1,84 +1,104 @@
+# Base image
 FROM ubuntu:24.04
 
-# Set non-interactive mode to prevent prompts
+# Set environment variables
 ENV DEBIAN_FRONTEND=noninteractive
+ENV TERM=xterm-256color
+ENV PROTOC_VERSION=28.3
+ENV NVM_VERSION=v0.40.1
+ENV NODE_VERSION=22
+ENV PNPM_VERSION=9.15.2
 
-# Set timezone early to prevent clock skew issues
-ENV TZ=UTC
-RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
-
-# Work around potential clock skew in build environment for apt
-RUN printf 'Acquire::Check-Valid-Until "false";\nAcquire::Check-Date "false";\n' > /etc/apt/apt.conf.d/99no-check-valid-until
-
-# Install system dependencies (protobuf-compiler will be installed separately with specific version)
-# Use apt options to handle potential clock skew issues
-RUN apt-get update -o Acquire::Check-Valid-Until=false -o Acquire::Check-Date=false && apt-get install -y --no-install-recommends \
+# Update and install basic dependencies
+RUN apt-get update && apt-get install -y \
     curl \
     wget \
     git \
-    build-essential \
-    pkg-config \
-    libssl-dev \
-    libsqlite3-dev \
-    libpq-dev \
-    unzip \
-    zip \
+    sudo \
     ca-certificates \
     gnupg \
     lsb-release \
-    python3-dev \
+    build-essential \
+    unzip \
+    iptables \
+    python3.12 \
+    python3.12-venv \
+    python3.12-dev \
     python3-pip \
-    python3-venv \
-    apt-transport-https \
-    software-properties-common \
-    sudo \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Node.js 20.x
-RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
-    && apt-get install -y nodejs
+# Switch to iptables-legacy
+RUN update-alternatives --set iptables /usr/sbin/iptables-legacy && \
+    update-alternatives --set ip6tables /usr/sbin/ip6tables-legacy
 
-# Install pnpm
-RUN npm install -g pnpm@9.9.0
+# Install Docker using the convenience script
+RUN curl -fsSL https://get.docker.com -o get-docker.sh && \
+    sh get-docker.sh && \
+    rm get-docker.sh
 
-# Install Python 3.12 (Ubuntu 24.04 comes with Python 3.12 by default)
-RUN apt-get update -o Acquire::Check-Valid-Until=false -o Acquire::Check-Date=false \
-    && apt-get install -y python3 python3-dev python3-venv python3-pip \
-    && rm -rf /var/lib/apt/lists/*
+# Install Protocol Buffers
+RUN PROTOC_ZIP=protoc-${PROTOC_VERSION}-linux-x86_64.zip && \
+    curl -LO https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOC_VERSION}/${PROTOC_ZIP} && \
+    unzip -o ${PROTOC_ZIP} -d /usr/local bin/protoc && \
+    unzip -o ${PROTOC_ZIP} -d /usr/local 'include/*' && \
+    rm -f ${PROTOC_ZIP} && \
+    chmod +x /usr/local/bin/protoc
 
-# Install additional Python packages needed for development
-RUN python3 -m pip install --break-system-packages virtualenv setuptools wheel maturin==1.8.1
+# Create non-root user with sudo privileges
+RUN useradd -m -s /bin/bash developer && \
+    echo 'developer ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers && \
+    usermod -aG docker developer
 
-# Install Protocol Buffers compiler (version 24.4 to match CI)
-RUN PROTOC_VERSION=24.4 \
-    && PROTOC_ZIP=protoc-$PROTOC_VERSION-linux-x86_64.zip \
-    && curl -OL https://github.com/protocolbuffers/protobuf/releases/download/v$PROTOC_VERSION/$PROTOC_ZIP \
-    && unzip -o $PROTOC_ZIP -d /usr/local bin/protoc \
-    && unzip -o $PROTOC_ZIP -d /usr/local 'include/*' \
-    && rm -f $PROTOC_ZIP \
-    && chmod +x /usr/local/bin/protoc
+RUN echo '#!/bin/bash' > /usr/local/bin/docker-entrypoint.sh && \
+    echo '# Fix Docker socket permissions if mounted from host' >> /usr/local/bin/docker-entrypoint.sh && \
+    echo 'if [ -S /var/run/docker.sock ]; then' >> /usr/local/bin/docker-entrypoint.sh && \
+    echo '    sudo chmod 666 /var/run/docker.sock' >> /usr/local/bin/docker-entrypoint.sh && \
+    echo 'else' >> /usr/local/bin/docker-entrypoint.sh && \
+    echo '    # Start Docker daemon if no socket exists' >> /usr/local/bin/docker-entrypoint.sh && \
+    echo '    echo "Starting Docker daemon..."' >> /usr/local/bin/docker-entrypoint.sh && \
+    echo '    sudo dockerd &' >> /usr/local/bin/docker-entrypoint.sh && \
+    echo '    sleep 5' >> /usr/local/bin/docker-entrypoint.sh && \
+    echo 'fi' >> /usr/local/bin/docker-entrypoint.sh && \
+    echo 'exec "$@"' >> /usr/local/bin/docker-entrypoint.sh && \
+    chmod +x /usr/local/bin/docker-entrypoint.sh
 
-# Install Rust toolchain
+# Switch to non-root user for remaining installations
+USER developer
+WORKDIR /home/developer
+ENV HOME=/home/developer
+
+# Install Rust for the non-root user
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+ENV PATH="/home/developer/.cargo/bin:${PATH}"
 
-# Set up PATH environment variables for consistent access in all contexts
-ENV PATH="/root/.cargo/bin:${PATH}"
+# Install NVM, Node.js 22, and pnpm
+SHELL ["/bin/bash", "-c"]
+RUN curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/${NVM_VERSION}/install.sh | bash && \
+    source ~/.nvm/nvm.sh && \
+    nvm install ${NODE_VERSION} && \
+    nvm alias default ${NODE_VERSION} && \
+    nvm use default && \
+    npm install -g pnpm@${PNPM_VERSION}
 
-# Verify installations
-RUN node --version \
-    && npm --version \
-    && pnpm --version \
-    && python3 --version \
-    && pip --version \
-    && protoc --version \
-    && maturin --version \
-    && rustc --version \
-    && cargo --version
+# Setup shell initialization for nvm and docker group
+RUN echo 'export NVM_DIR="$HOME/.nvm"' >> ~/.bashrc && \
+    echo '[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"' >> ~/.bashrc && \
+    echo '[ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"' >> ~/.bashrc && \
+    echo 'export PATH="$HOME/.cargo/bin:$PATH"' >> ~/.bashrc && \
+    echo '' >> ~/.bashrc && \
+    echo '# Ensure docker group is active' >> ~/.bashrc && \
+    echo 'if groups | grep -q docker; then' >> ~/.bashrc && \
+    echo '    # Docker group is already active' >> ~/.bashrc && \
+    echo '    :' >> ~/.bashrc && \
+    echo 'else' >> ~/.bashrc && \
+    echo '    # If docker group exists but is not active, activate it' >> ~/.bashrc && \
+    echo '    if getent group docker > /dev/null 2>&1; then' >> ~/.bashrc && \
+    echo '        exec newgrp docker' >> ~/.bashrc && \
+    echo '    fi' >> ~/.bashrc && \
+    echo 'fi' >> ~/.bashrc
 
-# Set working directory
-WORKDIR /workspace
+WORKDIR /home/developer
 
-# Copy and run verification script
-COPY scripts/verify-environment.sh /tmp/verify-environment.sh
-RUN chmod +x /tmp/verify-environment.sh \
-    && /tmp/verify-environment.sh
+# Set up the entrypoint
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
+CMD ["/bin/bash"]

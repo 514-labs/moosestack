@@ -201,6 +201,17 @@ MooseStack is open source, and apps built with MooseStack can be self-hosted. Fo
 
 [Join us on Slack](https://join.slack.com/t/moose-community/shared_invite/zt-2fjh5n3wz-cnOmM9Xe9DYAgQrNu8xKxg)
 
+## Cursor Background Agents
+
+MooseStack works with Cursor's background agents for remote development. The repository includes a pre-configured Docker-in-Docker setup that enables Moose's Docker dependencies to run in the agent environment.
+
+### Quick Setup
+1. Enable background agents in Cursor
+2. The environment will automatically build with Docker support
+3. Run `moose dev` or other Moose commands in the agent
+
+For detailed setup instructions and troubleshooting, see [Docker Setup Documentation](.cursor/DOCKER_SETUP.md).
+
 ## Contributing
 
 We welcome contributions! See the [contribution guidelines](https://github.com/514-labs/moose/blob/main/CONTRIBUTING.md).
