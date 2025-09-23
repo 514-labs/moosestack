@@ -56,6 +56,22 @@ const throwIndexTypeError = (t: ts.Type, checker: TypeChecker): never => {
   throw new IndexType(interfaceName, signatures);
 };
 
+/** Recursively search for a property on a type, traversing intersections */
+const getPropertyDeep = (t: ts.Type, name: string): ts.Symbol | undefined => {
+  const direct = t.getProperty(name);
+  if (direct !== undefined) return direct;
+  // Intersection constituents may carry the marker symbols
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const types = (t as any).types as ts.Type[] | undefined;
+  if (Array.isArray(types)) {
+    for (const sub of types) {
+      const found = getPropertyDeep(sub, name);
+      if (found) return found;
+    }
+  }
+  return undefined;
+};
+
 const toArrayType = ([elementNullable, _, elementType]: [
   boolean,
   [string, any][],
@@ -123,6 +139,24 @@ const handleNumberType = (
   checker: TypeChecker,
   fieldName: string,
 ): string => {
+  // Detect Decimal(P, S) annotation on number via ClickHouseDecimal
+  const decimalPrecisionSymbol = getPropertyDeep(t, "_clickhouse_precision");
+  const decimalScaleSymbol = getPropertyDeep(t, "_clickhouse_scale");
+  if (
+    decimalPrecisionSymbol !== undefined &&
+    decimalScaleSymbol !== undefined
+  ) {
+    const precisionType = checker.getNonNullableType(
+      checker.getTypeOfSymbol(decimalPrecisionSymbol),
+    );
+    const scaleType = checker.getNonNullableType(
+      checker.getTypeOfSymbol(decimalScaleSymbol),
+    );
+    if (precisionType.isNumberLiteral() && scaleType.isNumberLiteral()) {
+      return `Decimal(${precisionType.value}, ${scaleType.value})`;
+    }
+  }
+
   const tagSymbol = t.getProperty("typia.tag");
   if (tagSymbol === undefined) {
     return "Float";
@@ -141,6 +175,7 @@ const handleNumberType = (
         const valueTypeLiteral = checker.getTypeOfSymbol(valueSymbol);
         const numberTypeMappings = {
           float: "Float32",
+          double: "Float64",
           int8: "Int8",
           int16: "Int16",
           int32: "Int32",
@@ -396,6 +431,7 @@ const tsTypeToDataType = (
   fieldName: string,
   typeName: string,
   isJwt: boolean,
+  typeNode?: ts.TypeNode,
 ): [boolean, [string, any][], DataType] => {
   const nonNull = t.getNonNullableType();
   const nullable = nonNull != t;
@@ -416,9 +452,58 @@ const tsTypeToDataType = (
 
   const annotations: [string, any][] = [];
 
+  // Recognize Date aliases (DateTime, DateTime64<P>) as DateTime-like
+  let datePrecisionFromNode: number | undefined = undefined;
+  if (typeNode && isTypeReferenceNode(typeNode)) {
+    const tn = typeNode.typeName;
+    const name = isIdentifier(tn) ? tn.text : tn.right.text;
+    if (name === "DateTime64") {
+      const arg = typeNode.typeArguments?.[0];
+      if (
+        arg &&
+        ts.isLiteralTypeNode(arg) &&
+        ts.isNumericLiteral(arg.literal)
+      ) {
+        datePrecisionFromNode = Number(arg.literal.text);
+      }
+    } else if (name === "DateTime") {
+      datePrecisionFromNode = undefined; // DateTime without explicit precision
+    }
+  }
+  const typeSymbolName = nonNull.symbol?.name || t.symbol?.name;
+  const isDateLike =
+    typeSymbolName === "DateTime" ||
+    typeSymbolName === "DateTime64" ||
+    checker.isTypeAssignableTo(nonNull, dateType(checker));
+
+  if (isDateLike) {
+    // Debug: ensure only Date-like fields hit this path during tests
+    // console.log("isDateLike", { fieldName, typeSymbolName });
+  }
+
   const dataType: DataType =
     isEnum(nonNull) ? enumConvert(nonNull)
     : isStringAnyRecord(nonNull, checker) ? "Json"
+    : isDateLike ?
+      (() => {
+        // Prefer precision from AST (DateTime64<P>) if available
+        if (datePrecisionFromNode !== undefined) {
+          return `DateTime(${datePrecisionFromNode})` as DataType;
+        }
+        // Add precision support for Date via ClickHousePrecision<P>
+        const precisionSymbol =
+          getPropertyDeep(nonNull, "_clickhouse_precision") ||
+          getPropertyDeep(t, "_clickhouse_precision");
+        if (precisionSymbol !== undefined) {
+          const precisionType = checker.getNonNullableType(
+            checker.getTypeOfSymbol(precisionSymbol),
+          );
+          if (precisionType.isNumberLiteral()) {
+            return `DateTime(${precisionType.value})` as DataType;
+          }
+        }
+        return "DateTime" as DataType;
+      })()
     : checker.isTypeAssignableTo(nonNull, checker.getStringType()) ?
       handleStringType(nonNull, checker, fieldName, annotations)
     : isNumberType(nonNull, checker) ?
@@ -433,6 +518,7 @@ const tsTypeToDataType = (
           fieldName,
           typeName,
           isJwt,
+          undefined,
         ),
       )
     : isNamedTuple(nonNull, checker) ? handleNamedTuple(nonNull, checker)
@@ -534,6 +620,7 @@ export const toColumns = (t: ts.Type, checker: TypeChecker): Column[] => {
       prop.name,
       t.symbol?.name || "inline_type",
       isJwt,
+      node.type,
     );
 
     return {

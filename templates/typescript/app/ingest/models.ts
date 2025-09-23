@@ -4,6 +4,11 @@ import {
   OlapTable,
   DeadLetterModel,
   DateTime,
+  DateTime64,
+  UInt8,
+  Int16,
+  Float32,
+  LowCardinality,
 } from "@514labs/moose-lib";
 
 /**
@@ -24,8 +29,13 @@ export interface Foo {
 export interface Bar {
   primaryKey: Key<string>; // From Foo.primaryKey
   utcTimestamp: DateTime; // From Foo.timestamp
+  updatedAt: DateTime64<3>; // Millisecond precision
   hasText: boolean; // From Foo.optionalText?
   textLength: number; // From Foo.optionalText.length
+  metricU8: UInt8; // Example unsigned tinyint
+  metricI16: Int16; // Example signed smallint
+  ratioF32: Float32; // Example float32
+  lcStatus: string & LowCardinality; // LowCardinality string
 }
 
 /** =======Pipeline Configuration========= */
