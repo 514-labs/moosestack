@@ -186,7 +186,21 @@ class QueryClient:
         return self.execute(input, variables)
 
     def execute(self, input: Union[str, Query], variables = None, row_type: Type[BaseModel] = None):
-        # Handle Moose query-builder input directly
+        """
+        Execute a query.
+
+        - If `input` is a `Query`, do not supply `variables`.
+        - If `input` is a `str` intended for `string.Formatter` interpolation, `variables` must be a dict
+          mapping placeholder names to values.
+
+        Args:
+            input: Either a `Query` object or a `Formatter`-style SQL template string.
+            variables: Dict used to fill a `Formatter` string; must be omitted when `input` is a `Query`.
+            row_type: Optional Pydantic model class to map result rows into.
+
+        Returns:
+            A list of row dicts, or a list of `row_type` instances if provided.
+        """
         if isinstance(input, Query):
             if variables is not None:
                 raise ValueError("Do not supply variables when you provide Query")
