@@ -45,6 +45,19 @@ RUN useradd -m -s /bin/bash developer && \
     echo 'developer ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers && \
     usermod -aG docker developer
 
+RUN echo '#!/bin/bash' > /usr/local/bin/docker-entrypoint.sh && \
+    echo '# Fix Docker socket permissions if mounted from host' >> /usr/local/bin/docker-entrypoint.sh && \
+    echo 'if [ -S /var/run/docker.sock ]; then' >> /usr/local/bin/docker-entrypoint.sh && \
+    echo '    sudo chmod 666 /var/run/docker.sock' >> /usr/local/bin/docker-entrypoint.sh && \
+    echo 'else' >> /usr/local/bin/docker-entrypoint.sh && \
+    echo '    # Start Docker daemon if no socket exists' >> /usr/local/bin/docker-entrypoint.sh && \
+    echo '    echo "Starting Docker daemon..."' >> /usr/local/bin/docker-entrypoint.sh && \
+    echo '    sudo dockerd &' >> /usr/local/bin/docker-entrypoint.sh && \
+    echo '    sleep 5' >> /usr/local/bin/docker-entrypoint.sh && \
+    echo 'fi' >> /usr/local/bin/docker-entrypoint.sh && \
+    echo 'exec "$@"' >> /usr/local/bin/docker-entrypoint.sh && \
+    chmod +x /usr/local/bin/docker-entrypoint.sh
+
 # Switch to non-root user for remaining installations
 USER developer
 WORKDIR /home/developer
@@ -80,23 +93,6 @@ RUN echo 'export NVM_DIR="$HOME/.nvm"' >> ~/.bashrc && \
     echo '    fi' >> ~/.bashrc && \
     echo 'fi' >> ~/.bashrc
 
-# Create a script to ensure Docker daemon is running when container starts
-USER root
-RUN echo '#!/bin/bash' > /usr/local/bin/docker-entrypoint.sh && \
-    echo '# Fix Docker socket permissions if mounted from host' >> /usr/local/bin/docker-entrypoint.sh && \
-    echo 'if [ -S /var/run/docker.sock ]; then' >> /usr/local/bin/docker-entrypoint.sh && \
-    echo '    sudo chmod 666 /var/run/docker.sock' >> /usr/local/bin/docker-entrypoint.sh && \
-    echo 'else' >> /usr/local/bin/docker-entrypoint.sh && \
-    echo '    # Start Docker daemon if no socket exists' >> /usr/local/bin/docker-entrypoint.sh && \
-    echo '    echo "Starting Docker daemon..."' >> /usr/local/bin/docker-entrypoint.sh && \
-    echo '    sudo dockerd &' >> /usr/local/bin/docker-entrypoint.sh && \
-    echo '    sleep 5' >> /usr/local/bin/docker-entrypoint.sh && \
-    echo 'fi' >> /usr/local/bin/docker-entrypoint.sh && \
-    echo 'exec "$@"' >> /usr/local/bin/docker-entrypoint.sh && \
-    chmod +x /usr/local/bin/docker-entrypoint.sh
-
-# Switch back to non-root user
-USER developer
 WORKDIR /home/developer
 
 # Set up the entrypoint
