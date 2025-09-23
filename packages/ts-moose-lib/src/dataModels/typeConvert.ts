@@ -309,6 +309,20 @@ const isRecordType = (t: ts.Type, checker: ts.TypeChecker): boolean => {
 };
 
 /**
+ * Detects a tag-like object type that only carries metadata, e.g. { _tag: ... }
+ */
+const isSingleUnderscoreMetaObject = (
+  t: ts.Type,
+  checker: ts.TypeChecker,
+): boolean => {
+  const props = checker.getPropertiesOfType(t);
+  if (props.length !== 1) return false;
+  const onlyProp = props[0];
+  const name = onlyProp.name;
+  return typeof name === "string" && name.startsWith("_");
+};
+
+/**
  * Handle Record<K, V> types and convert them to Map types
  */
 const handleRecordType = (
@@ -387,6 +401,19 @@ const tsTypeToDataType = (
   const nullable = nonNull != t;
 
   const aggregationFunction = handleAggregated(t, checker, fieldName, typeName);
+
+  let withoutTags = nonNull;
+  // clean up intersection type tags
+  if (nonNull.isIntersection()) {
+    const nonTagTypes = nonNull.types.filter(
+      (candidate) => !isSingleUnderscoreMetaObject(candidate, checker),
+    );
+
+    if (nonTagTypes.length == 1) {
+      withoutTags = nonTagTypes[0];
+    }
+  }
+
   const annotations: [string, any][] = [];
 
   const dataType: DataType =
@@ -398,7 +425,7 @@ const tsTypeToDataType = (
       handleNumberType(nonNull, checker, fieldName)
     : checker.isTypeAssignableTo(nonNull, checker.getBooleanType()) ? "Boolean"
     : checker.isTypeAssignableTo(nonNull, dateType(checker)) ? "DateTime"
-    : checker.isArrayType(nonNull) ?
+    : checker.isArrayType(withoutTags) ?
       toArrayType(
         tsTypeToDataType(
           nonNull.getNumberIndexType()!,
@@ -411,10 +438,13 @@ const tsTypeToDataType = (
     : isNamedTuple(nonNull, checker) ? handleNamedTuple(nonNull, checker)
     : isRecordType(nonNull, checker) ?
       handleRecordType(nonNull, checker, fieldName, typeName, isJwt)
-    : nonNull.isClassOrInterface() || (nonNull.flags & TypeFlags.Object) !== 0 ?
+    : (
+      withoutTags.isClassOrInterface() ||
+      (withoutTags.flags & TypeFlags.Object) !== 0
+    ) ?
       {
-        name: getNestedName(nonNull, fieldName),
-        columns: toColumns(nonNull, checker),
+        name: getNestedName(withoutTags, fieldName),
+        columns: toColumns(withoutTags, checker),
         jwt: isJwt,
       }
     : nonNull == checker.getNeverType() ? throwNullType(fieldName, typeName)
