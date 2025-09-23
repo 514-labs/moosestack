@@ -21,6 +21,10 @@ RUN apt-get update && apt-get install -y \
     build-essential \
     unzip \
     iptables \
+    python3.12 \
+    python3.12-venv \
+    python3.12-dev \
+    python3-pip \
     && rm -rf /var/lib/apt/lists/*
 
 # Switch to iptables-legacy
