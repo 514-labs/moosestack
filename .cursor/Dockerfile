@@ -62,11 +62,22 @@ RUN curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/${NVM_VERSION}/install
     nvm use default && \
     npm install -g pnpm@${PNPM_VERSION}
 
-# Setup shell initialization for nvm
+# Setup shell initialization for nvm and docker group
 RUN echo 'export NVM_DIR="$HOME/.nvm"' >> ~/.bashrc && \
     echo '[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"' >> ~/.bashrc && \
     echo '[ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"' >> ~/.bashrc && \
-    echo 'export PATH="$HOME/.cargo/bin:$PATH"' >> ~/.bashrc
+    echo 'export PATH="$HOME/.cargo/bin:$PATH"' >> ~/.bashrc && \
+    echo '' >> ~/.bashrc && \
+    echo '# Ensure docker group is active' >> ~/.bashrc && \
+    echo 'if groups | grep -q docker; then' >> ~/.bashrc && \
+    echo '    # Docker group is already active' >> ~/.bashrc && \
+    echo '    :' >> ~/.bashrc && \
+    echo 'else' >> ~/.bashrc && \
+    echo '    # If docker group exists but is not active, activate it' >> ~/.bashrc && \
+    echo '    if getent group docker > /dev/null 2>&1; then' >> ~/.bashrc && \
+    echo '        exec newgrp docker' >> ~/.bashrc && \
+    echo '    fi' >> ~/.bashrc && \
+    echo 'fi' >> ~/.bashrc
 
 # Create a script to ensure Docker daemon is running when container starts
 USER root
