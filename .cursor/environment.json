@@ -1,4 +1,5 @@
 {
+  "start": "sudo service docker start",
   "build": {
     "dockerfile": "Dockerfile"
   },
