@@ -537,8 +537,8 @@ importers:
         specifier: 1.5.0
         version: 1.5.0
       '@confluentinc/kafka-javascript':
-        specifier: ^1.4.1
-        version: 1.4.1
+        specifier: 1.5.0
+        version: 1.5.0
       '@temporalio/activity':
         specifier: ^1.11.7
         version: 1.11.8
@@ -1097,8 +1097,8 @@ packages:
     resolution: {integrity: sha512-Ec0pCdwftIPD7hCxhOukHS0Zxr2tDc5mNAHBqkT3c0c6GO2WQdZkME9+EcfGcoF7+foUp82F5a0bPfSDDjfWmg==}
     engines: {node: '>=16'}
 
-  '@confluentinc/kafka-javascript@1.4.1':
-    resolution: {integrity: sha512-oB/6ZeBHqqAwgBSGhf6uO/BeOdMN1psOs1yENsjtMC6IQv9VOX/OM6WpyikZqFwuuZTE9mLM0/9UESgBphCYbA==}
+  '@confluentinc/kafka-javascript@1.5.0':
+    resolution: {integrity: sha512-MvpjUlYv/SCQ6L/Siv4fpJCP/LSqQzky/Ch7xdIAI04sTlil1Ie/Vev3A/4SD4c1LC4gzdf2KSFXYxO+FScifA==}
     engines: {node: '>=18.0.0'}
 
   '@corex/deepmerge@4.0.43':
@@ -8666,7 +8666,7 @@ snapshots:
     dependencies:
       '@clickhouse/client-common': 1.8.1
 
-  '@confluentinc/kafka-javascript@1.4.1':
+  '@confluentinc/kafka-javascript@1.5.0':
     dependencies:
       '@mapbox/node-pre-gyp': 1.0.11
       bindings: 1.5.0
