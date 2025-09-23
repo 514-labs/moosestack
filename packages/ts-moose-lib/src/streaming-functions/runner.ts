@@ -991,10 +991,8 @@ export const runStreamingFunctions = async (
       });
 
       try {
-        if (args.targetTopic !== undefined) {
-          logger.log("Starting producer...");
-          await startProducer(logger, producer);
-        }
+        logger.log("Starting producer...");
+        await startProducer(logger, producer);
 
         try {
           logger.log("Starting consumer...");
