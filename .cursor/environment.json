@@ -1,4 +1,6 @@
 {
-  "start": "sudo service docker start && sleep 2 && docker info > /dev/null 2>&1 && echo 'Docker started successfully' || echo 'Docker startup may have issues'",
-  "install": "echo 'Installing Moose dependencies...' && pnpm install && cargo fetch"
+  "build": {
+    "dockerfile": "Dockerfile"
+  },
+  "terminals": []
 }
