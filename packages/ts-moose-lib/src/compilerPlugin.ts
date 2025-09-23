@@ -4,6 +4,8 @@ import { compilerLog } from "./commons";
 import {
   isNewMooseResourceWithTypeParam,
   transformNewMooseResource,
+  isOlapTableFactoryCallWithTypeParam,
+  transformOlapTableFactoryCall,
 } from "./dmv2/dataModelMetadata";
 import {
   isCreateApi,
@@ -57,6 +59,16 @@ const applyTransformation = (
     );
     return {
       transformed: transformNewMooseResource(node, typeChecker),
+      wasTransformed: true,
+    };
+  }
+
+  if (isOlapTableFactoryCallWithTypeParam(node, typeChecker)) {
+    compilerLog(
+      "[CompilerPlugin] Found OlapTable static factory with type param, transforming...",
+    );
+    return {
+      transformed: transformOlapTableFactoryCall(node, typeChecker),
       wasTransformed: true,
     };
   }

@@ -89,11 +89,14 @@ export const exampleTable = new OlapTable<ExampleSchema>("example_table", {
 });
 
 // For deduplication, use the ReplacingMergeTree factory
-export const dedupTable = OlapTable.withReplacingMergeTree<ExampleSchema>("example_table", {
-  orderByFields: ["id", "dateField"],
-  ver: "updatedAt",  // Optional: version column (keeps highest value)
-  isDeleted: "deleted"  // Optional: soft delete flag (requires ver)
-});
+export const dedupTable = OlapTable.withReplacingMergeTree<ExampleSchema>(
+  "example_table",
+  ["id", "dateField"],
+  {
+    ver: "updatedAt",  // Optional: version column (keeps highest value)
+    isDeleted: "deleted",  // Optional: soft delete flag (requires ver)
+  },
+);
 
 // Now you can:
 // - Write to this table from streams
@@ -462,15 +465,18 @@ import { OlapTable } from "@514labs/moose-lib";
 
 // Default MergeTree engine
 const table = new OlapTable<Record>("table", {
-  orderByFields: ["id"]
+  orderByFields: ["id"],
 });
 
 // Use factory methods for other engines
-const dedupTable = OlapTable.withReplacingMergeTree<Record>("table", {
-  orderByFields: ["id"],
-  ver: "version",  // Optional: keeps row with highest version
-  isDeleted: "deleted"  // Optional: soft delete when deleted=1
-});
+const dedupTable = OlapTable.withReplacingMergeTree<Record>(
+  "table",
+  ["id"],
+  {
+    ver: "version",  // Optional: keeps row with highest version
+    isDeleted: "deleted",  // Optional: soft delete when deleted=1
+  },
+);
 ```
 </TypeScript>
 
@@ -498,22 +504,21 @@ Use the `ReplacingMergeTree` engine to keep only the latest record for your desi
 <TypeScript>
 ```ts filename="DeduplicatedTable.ts" copy
 // Basic deduplication
-const table = OlapTable.withReplacingMergeTree<Record>("table", {
-  orderByFields: ["id"]
-});
+const table = OlapTable.withReplacingMergeTree<Record>("table", ["id"]);
 
 // With version column (keeps record with highest version)
-const versionedTable = OlapTable.withReplacingMergeTree<Record>("table", {
-  orderByFields: ["id"],
-  ver: "updated_at"  // Column that determines which version to keep
-});
+const versionedTable = OlapTable.withReplacingMergeTree<Record>(
+  "table",
+  ["id"],
+  { ver: "updated_at" },  // Column that determines which version to keep
+);
 
 // With soft deletes (requires ver parameter)
-const softDeleteTable = OlapTable.withReplacingMergeTree<Record>("table", {
-  orderByFields: ["id"],
-  ver: "updated_at",
-  isDeleted: "deleted"  // UInt8 column: 1 marks row for deletion
-});
+const softDeleteTable = OlapTable.withReplacingMergeTree<Record>(
+  "table",
+  ["id"],
+  { ver: "updated_at", isDeleted: "deleted" },  // UInt8 column: 1 marks row for deletion
+);
 ```
 </TypeScript>
 

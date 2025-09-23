@@ -56,10 +56,10 @@ export const myConfiguredTable = new OlapTable<UserProfile>("user_profiles", {
 // For deduplication, use the ReplacingMergeTree factory
 export const dedupTable = OlapTable.withReplacingMergeTree<UserProfile>(
   "user_profiles",
-  { 
-    orderByFields: ["id", "timestamp"],
+  ["id", "timestamp"],
+  {
     ver: "updated_at",  // Optional: version column for keeping latest
-    isDeleted: "deleted"  // Optional: soft delete marker (requires ver)
+    isDeleted: "deleted",  // Optional: soft delete marker (requires ver)
   }
 );
 ```

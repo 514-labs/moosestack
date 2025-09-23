@@ -630,6 +630,31 @@ describe("Moose Templates", () => {
         "Optional Text: Hello world",
       ]);
     });
+
+    it("should create OlapTable factory tables (MergeTree, ReplacingMergeTree, S3Queue)", async function () {
+      const client = createClient(TEST_CONFIG.clickhouse);
+      try {
+        const result = await client.query({
+          query: "SHOW TABLES",
+          format: "JSONEachRow",
+        });
+        const tables: any[] = await result.json();
+        const names = tables.map((t) => t.name);
+
+        // Allow versioned table name (e.g., BarFactory_1_0_0) or unversioned
+        const hasBarFactory =
+          names.includes("BarFactory") ||
+          names.some((n) => n.startsWith("BarFactory_"));
+        expect(
+          hasBarFactory,
+          `Expected BarFactory table (versioned or not), got: ${names.join(", ")}`,
+        ).to.equal(true);
+        expect(names).to.include("BarReplacingFactory");
+        expect(names).to.include("BarS3Factory");
+      } finally {
+        await client.close();
+      }
+    });
   });
 
   describe("python template", () => {

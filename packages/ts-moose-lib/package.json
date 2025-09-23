@@ -31,7 +31,7 @@
     "test": "mocha -r ts-node/register 'tests/**/*.test.ts'"
   },
   "dependencies": {
-    "@clickhouse/client": "1.8.1",
+    "@clickhouse/client": "1.12.1",
     "@clickhouse/client-web": "1.5.0",
     "@temporalio/activity": "^1.11.7",
     "@temporalio/client": "^1.11.7",
@@ -46,20 +46,20 @@
     "pretty-ms": "9.2.0",
     "redis": "^4.6.13",
     "toml": "3.0.0",
-    "ts-node": "^10.9.1",
-    "tsconfig-paths": "^4.2.0",
-    "typescript": "~5.9.2"
+    "tsconfig-paths": "4.2.0",
+    "ts-node": "10.9.2",
+    "typescript": "5.9.2"
   },
   "devDependencies": {
     "@repo/ts-config": "workspace:*",
-    "@types/chai": "^4.3.5",
-    "@types/mocha": "^10.0.1",
-    "@types/node": "20.12.13",
+    "@types/chai": "4.3.20",
+    "@types/mocha": "10.0.10",
+    "@types/node": "20.17.51",
     "@typescript-eslint/eslint-plugin": "^5.62.0",
     "@typescript-eslint/parser": "^5.62.0",
-    "chai": "^4.3.7",
+    "chai": "4.5.0",
     "eslint": "^8.46.0",
-    "mocha": "^10.2.0",
+    "mocha": "10.8.2",
     "tsup": "^8.4.0"
   },
   "peerDependencies": {

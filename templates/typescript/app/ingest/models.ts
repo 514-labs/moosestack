@@ -50,3 +50,27 @@ export const BarPipeline = new IngestPipeline<Bar>("Bar", {
   stream: true, // Buffer processed records
   ingest: false, // No API; only derive from processed Foo records
 });
+
+/** =======Factory Method Examples========= */
+
+// Example: Create a MergeTree-backed table using the OlapTable factory
+// This demonstrates the recommended factory API that the compiler plugin supports
+export const BarFactory = OlapTable.withMergeTree<Bar>(
+  "BarFactory",
+  ["primaryKey", "utcTimestamp"],
+  { version: "1.0.0" },
+);
+
+// Example: Create a ReplacingMergeTree-backed table using the factory
+export const BarReplacingFactory = OlapTable.withReplacingMergeTree<Bar>(
+  "BarReplacingFactory",
+  ["primaryKey", "utcTimestamp"],
+  { ver: "utcTimestamp" },
+);
+
+// Example: Create an S3Queue-backed table using the factory
+export const BarS3Factory = OlapTable.withS3Queue<Omit<Bar, "primaryKey">>(
+  "BarS3Factory",
+  "s3://example-bucket/path/*.json",
+  "JSONEachRow",
+);
