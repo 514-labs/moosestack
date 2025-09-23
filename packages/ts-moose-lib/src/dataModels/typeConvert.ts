@@ -438,10 +438,13 @@ const tsTypeToDataType = (
     : isNamedTuple(nonNull, checker) ? handleNamedTuple(nonNull, checker)
     : isRecordType(nonNull, checker) ?
       handleRecordType(nonNull, checker, fieldName, typeName, isJwt)
-    : nonNull.isClassOrInterface() || (nonNull.flags & TypeFlags.Object) !== 0 ?
+    : (
+      withoutTags.isClassOrInterface() ||
+      (withoutTags.flags & TypeFlags.Object) !== 0
+    ) ?
       {
-        name: getNestedName(nonNull, fieldName),
-        columns: toColumns(nonNull, checker),
+        name: getNestedName(withoutTags, fieldName),
+        columns: toColumns(withoutTags, checker),
         jwt: isJwt,
       }
     : nonNull == checker.getNeverType() ? throwNullType(fieldName, typeName)
