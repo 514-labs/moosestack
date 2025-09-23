@@ -3,14 +3,14 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 
+use super::errors::ClickhouseError;
+use super::model::ClickHouseColumn;
 use crate::framework::core::infrastructure::table::EnumValue;
+use crate::infrastructure::olap::clickhouse::model::ClickHouseColumnType::Nullable;
 use crate::infrastructure::olap::clickhouse::model::{
     wrap_and_join_column_names, AggregationFunction, ClickHouseColumnType, ClickHouseFloat,
     ClickHouseInt, ClickHouseTable,
 };
-
-use super::errors::ClickhouseError;
-use super::model::ClickHouseColumn;
 
 /// Format a ClickHouse setting value with proper quoting.
 /// - Numeric values (integers, floats) are not quoted
@@ -1034,8 +1034,10 @@ pub fn basic_field_type_to_string(
                 .map(|col| {
                     let field_type_string = basic_field_type_to_string(&col.column_type)?;
                     match col.required {
-                        true => Ok(format!("{} {}", col.name, field_type_string)),
-                        false => Ok(format!("{} Nullable({})", col.name, field_type_string)),
+                        false if !matches!(col.column_type, Nullable(_)) => {
+                            Ok(format!("{} Nullable({})", col.name, field_type_string))
+                        }
+                        _ => Ok(format!("{} {}", col.name, field_type_string)),
                     }
                 })
                 .collect::<Result<Vec<String>, ClickhouseError>>()?
