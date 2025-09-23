@@ -537,8 +537,8 @@ importers:
         specifier: 1.12.1
         version: 1.12.1
       '@clickhouse/client-web':
-        specifier: 1.5.0
-        version: 1.5.0
+        specifier: 1.12.1
+        version: 1.12.1
       '@temporalio/activity':
         specifier: ^1.11.7
         version: 1.11.8
@@ -1083,14 +1083,11 @@ packages:
   '@clickhouse/client-common@1.12.1':
     resolution: {integrity: sha512-ccw1N6hB4+MyaAHIaWBwGZ6O2GgMlO99FlMj0B0UEGfjxM9v5dYVYql6FpP19rMwrVAroYs/IgX2vyZEBvzQLg==}
 
-  '@clickhouse/client-common@1.5.0':
-    resolution: {integrity: sha512-U3vDp+PDnNVEv6kia+Mq5ygnlMZzsYU+3TX+0da3XvL926jzYLMBlIvFUxe2+/5k47ySvnINRC/2QxVK7PC2/A==}
-
   '@clickhouse/client-common@1.8.1':
     resolution: {integrity: sha512-Z0R5zKaS3N35Op338WVRHIfoqDh9gotXZwekm0lbHQmwNaj3nY2iJ113dFYKjb1V+ESu+PvLEA//LJUGZyPQOg==}
 
-  '@clickhouse/client-web@1.5.0':
-    resolution: {integrity: sha512-21+c2UJ4cx9SPiIWQThCLULb8h/zng0pNrtTwbbnaoCqMbasyRCyRTHs3wRr7fqRUcZ3p9krIPuN0gnJw3GJ6Q==}
+  '@clickhouse/client-web@1.12.1':
+    resolution: {integrity: sha512-r4FbR0ShxwZ9lt2tE4uvL7Pu5y6jjoU0TX1DsKvhiERvfTIZeSWB1pwbu3hEHBNK9IzvArgAeA2gdVMiFxNArg==}
 
   '@clickhouse/client@1.12.1':
     resolution: {integrity: sha512-7ORY85rphRazqHzImNXMrh4vsaPrpetFoTWpZYueCO2bbO6PXYDXp/GQ4DgxnGIqbWB/Di1Ai+Xuwq2o7DJ36A==}
@@ -8636,13 +8633,11 @@ snapshots:
 
   '@clickhouse/client-common@1.12.1': {}
 
-  '@clickhouse/client-common@1.5.0': {}
-
   '@clickhouse/client-common@1.8.1': {}
 
-  '@clickhouse/client-web@1.5.0':
+  '@clickhouse/client-web@1.12.1':
     dependencies:
-      '@clickhouse/client-common': 1.5.0
+      '@clickhouse/client-common': 1.12.1
 
   '@clickhouse/client@1.12.1':
     dependencies:
