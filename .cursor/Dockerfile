@@ -3,6 +3,7 @@ FROM ubuntu:24.04
 
 # Set environment variables
 ENV DEBIAN_FRONTEND=noninteractive
+ENV TERM=xterm-256color
 ENV PROTOC_VERSION=28.3
 ENV NVM_VERSION=v0.40.1
 ENV NODE_VERSION=22
