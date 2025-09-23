@@ -200,13 +200,14 @@ events_table = events_pipeline.get_table()
 
 <TypeScript>
 ```ts filename="ClickHouseTypes.ts" copy
-import { Key, ClickHouseDecimal, LowCardinality, ClickHouseNamedTuple, tags } from "@514labs/moose-lib";
+import { Key, Decimal, ClickHouseDecimal, LowCardinality, ClickHouseNamedTuple, tags } from "@514labs/moose-lib";
 
 export interface ClickHouseOptimizedExample {
   id: Key<string>;
   stringField: string;
   numberField: number;
-  decimalField: string & ClickHouseDecimal<10, 2>;      // Precise decimal storage
+  decimalField: Decimal<10, 2>;                         // Precise decimal storage - cleaner syntax
+  // Alternative: decimalField: string & ClickHouseDecimal<10, 2>; // Verbose syntax still works
   lowCardinalityField: string & LowCardinality;         // Faster queries for enum-like data
   nestedObject: {
     innerString: string;
@@ -251,7 +252,7 @@ Use defaults instead of nullable columns to keep queries fast and schemas simple
 
 <TypeScript>
 ```ts filename="Defaults.ts" copy
-import { OlapTable, Key, ClickHouseDefault, ClickHouseDecimal } from "@514labs/moose-lib";
+import { OlapTable, Key, ClickHouseDefault, Decimal, ClickHouseDecimal } from "@514labs/moose-lib";
 
 interface Event {
   id: Key<string>;
@@ -260,8 +261,9 @@ interface Event {
   retries: number & ClickHouseDefault<"0">;          // DEFAULT 0
   // Server-side timestamps
   createdAt: Date & ClickHouseDefault<"now()">;      // DEFAULT now()
-  // Decimal with default
-  amount: (string & ClickHouseDecimal<10, 2> & ClickHouseDefault<"0">);
+  // Decimal with default - cleaner syntax
+  amount: Decimal<10, 2> & ClickHouseDefault<"0">;
+  // Alternative: amount: (string & ClickHouseDecimal<10, 2> & ClickHouseDefault<"0">); // Verbose syntax
 }
 
 export const events = new OlapTable<Event>("events", {

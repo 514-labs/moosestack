@@ -419,20 +419,21 @@ ClickHouse type annotations optimize database performance but are **transparent 
 
 <TypeScript>
 ```ts filename="app/datamodels/ClickHouseOptimized.ts"
-import { Key, ClickHouseDecimal, LowCardinality, ClickHouseNamedTuple } from "@514labs/moose-lib";
+import { Key, Decimal, ClickHouseDecimal, LowCardinality, ClickHouseNamedTuple } from "@514labs/moose-lib";
 
 export interface ClickHouseOptimized {
   id: Key<string>;
   
-  // ClickHouse-specific type annotations
-  amount: string & ClickHouseDecimal<10, 2>;    // Decimal(10,2) in ClickHouse
-  category: string & LowCardinality;             // LowCardinality(String) in ClickHouse
+  // ClickHouse-specific type annotations - cleaner syntax
+  amount: Decimal<10, 2>;                       // Decimal(10,2) in ClickHouse
+  // Alternative: amount: string & ClickHouseDecimal<10, 2>; // Verbose syntax still works
+  category: string & LowCardinality;            // LowCardinality(String) in ClickHouse
   
   // Optimized nested type
   details: {
     name: string;
     value: number;
-  } & ClickHouseNamedTuple;                      // NamedTuple in ClickHouse
+  } & ClickHouseNamedTuple;                     // NamedTuple in ClickHouse
   
   timestamp: Date;
 }
