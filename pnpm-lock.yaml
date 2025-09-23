@@ -30,10 +30,10 @@ importers:
         specifier: ^0.1.13
         version: 0.1.13(prettier@3.6.2)
       turbo:
-        specifier: ^2.5.5
+        specifier: 2.5.5
         version: 2.5.5
       typescript:
-        specifier: ~5.9.2
+        specifier: 5.9.2
         version: 5.9.2
 
   apps/create-moose-app:
