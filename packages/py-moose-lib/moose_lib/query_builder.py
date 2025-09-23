@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Callable
+from typing import Callable, Literal
 
 import sqlglot as sg
 import sqlglot.expressions as sge
@@ -48,6 +48,11 @@ def to_column(col: Column, table_name: str | None = None) -> sge.Column:
 
 type Predicate = Callable[["Query"], sge.Expression]
 
+# Order-by type annotations
+type OrderDirection = Literal["asc", "desc"]
+type OrderExpr = sge.Expression | Column | "ColumnRef"
+type OrderItem = OrderExpr | tuple[OrderExpr, OrderDirection]
+
 
 class ColumnRef:
     def __init__(self, column: Column):
@@ -70,16 +75,16 @@ class ColumnRef:
         return self._binary_op("neq", value)
 
     def lt(self, value: object) -> Predicate:
-        return self._binary_op("lt", value)
+        return self._binary_op("__lt__", value)
 
     def le(self, value: object) -> Predicate:
-        return self._binary_op("lte", value)
+        return self._binary_op("__le__", value)
 
     def gt(self, value: object) -> Predicate:
-        return self._binary_op("gt", value)
+        return self._binary_op("__gt__", value)
 
     def ge(self, value: object) -> Predicate:
-        return self._binary_op("gte", value)
+        return self._binary_op("__ge__", value)
 
     def in_(self, values: list[object]) -> Predicate:
         def resolve(query: "Query") -> sge.Expression:
@@ -127,8 +132,71 @@ class Query:
         self.inner = self.inner.where(expr)
         return self
 
+    def order_by(self, *items: OrderItem) -> "Query":
+        orders: list[sge.Expression] = []
+        table_name = self._from_table.name if self._from_table is not None else None
+
+        for item in items:
+            desc = False
+            expr: sge.Expression
+
+            if isinstance(item, tuple) and len(item) == 2:
+                col_like, direction = item
+                if isinstance(direction, str):
+                    desc = direction.lower() == "desc"
+                else:
+                    raise ValueError("order_by direction must be 'asc' or 'desc'")
+                if isinstance(col_like, Column):
+                    expr = to_column(col_like, table_name)
+                elif isinstance(col_like, ColumnRef):
+                    expr = to_column(col_like._column, table_name)
+                else:
+                    expr = col_like
+            else:
+                if isinstance(item, Column):
+                    expr = to_column(item, table_name)
+                elif isinstance(item, ColumnRef):
+                    expr = to_column(item._column, table_name)
+                else:
+                    expr = item
+
+            orders.append(sge.Ordered(this=expr, desc=desc))
+
+        self.inner = self.inner.order_by(*orders)
+        return self
+
     def to_sql(self) -> str:
         return self.inner.sql(dialect="clickhouse")
 
     def to_sql_and_params(self) -> tuple[str, dict[str, object]]:
         return self.to_sql(), dict(self.params.bindings)
+
+    def limit(self, n: int) -> "Query":
+        self.inner = self.inner.limit(n)
+        return self
+
+
+def and_(*predicates_or_exprs) -> Predicate:
+    def resolve(query: "Query") -> sge.Expression:
+        exprs = [p(query) if callable(p) else p for p in predicates_or_exprs]
+        if not exprs:
+            raise ValueError("and_ requires at least one predicate")
+        combined = exprs[0]
+        for e in exprs[1:]:
+            combined = combined.and_(e)
+        return combined
+
+    return resolve
+
+
+def or_(*predicates_or_exprs) -> Predicate:
+    def resolve(query: "Query") -> sge.Expression:
+        exprs = [p(query) if callable(p) else p for p in predicates_or_exprs]
+        if not exprs:
+            raise ValueError("or_ requires at least one predicate")
+        combined = exprs[0]
+        for e in exprs[1:]:
+            combined = combined.or_(e)
+        return combined
+
+    return resolve
