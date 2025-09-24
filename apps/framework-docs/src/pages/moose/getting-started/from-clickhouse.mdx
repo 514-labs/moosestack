@@ -335,16 +335,25 @@ Copy real data from your production ClickHouse to your local development environ
 ```bash filename="Terminal" copy
 moose seed clickhouse --connection-string <YOUR_CLICKHOUSE_CONNECTION_STRING> --limit 100000
 ```
+
+**Connection String Format:**
+The connection string must use ClickHouse native protocol:
+```bash
+# ClickHouse native protocol (secure connection)
+clickhouse://username:password@host:9440/database
+```
+
+**Note:** Data transfer uses ClickHouse's native TCP protocol via `remoteSecure()`. The remote server must have the native TCP port accessible. The command automatically handles table mismatches gracefully.
 </Tabs.Tab>
 <Tabs.Tab>
 ```bash filename="Terminal" copy
-moose seed clickhouse --connection-string https://explorer:@play.clickhouse.com:443/?database=default --limit 100000
+moose seed clickhouse --connection-string clickhouse://explorer:@play.clickhouse.com:9440/default --limit 100000
 ```
 </Tabs.Tab>
 <Tabs.Tab>
 ```bash filename="Terminal" copy
 # You can omit --connection-string by setting an env var
-export MOOSE_SEED_CLICKHOUSE_URL='https://username:password@host:8443/?database=default'
+export MOOSE_SEED_CLICKHOUSE_URL='clickhouse://username:password@host:9440/database'
 
 # copy a limited number of rows (batched under the hood)
 moose seed clickhouse --limit 100000
@@ -357,6 +366,21 @@ moose seed clickhouse --limit 100000
 - `--all` can be used to copy the entire table(s), use with caution as it can be very slow and computationally intensive.
 - Large copies are automatically batched to avoid remote limits; you’ll see per-batch progress.
 - If you stop with Ctrl+C, the current batch finishes and the command exits gracefully.
+
+**Expected Output:**
+```bash
+✓ Database seeding completed
+Seeded 'local_db' from 'remote_db'
+
+✓ table1: copied from remote
+⚠️  table2: skipped (not found on remote)
+✓ table3: copied from remote
+```
+
+**Troubleshooting:**
+- Tables that don't exist on remote are automatically skipped with warnings
+- Use `--table <name>` to seed a specific table that exists in both databases
+- Check `moose ls table` to see your local tables
 </Callout>
 
 <br />
