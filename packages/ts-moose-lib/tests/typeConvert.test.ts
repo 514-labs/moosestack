@@ -11,22 +11,24 @@ function createProgramWithSource(tempDir: string, sourceText: string) {
 
   const compilerOptions: ts.CompilerOptions = {
     target: ts.ScriptTarget.ES2022,
-    module: ts.ModuleKind.ESNext,
-    moduleResolution: ts.ModuleResolutionKind.NodeNext,
+    module: ts.ModuleKind.CommonJS,
+    moduleResolution: ts.ModuleResolutionKind.Node10,
     strict: true,
     esModuleInterop: true,
     skipLibCheck: true,
-    lib: ["es5", "es2020", "dom"],
-    baseUrl: "/",
+    baseUrl: path.resolve(__dirname, ".."),
     paths: {
       "@514labs/moose-lib": [
-        "/workspace/packages/ts-moose-lib/src/browserCompatible.ts",
+        path.resolve(__dirname, "../src/browserCompatible.ts"),
       ],
     },
   };
 
   const program = ts.createProgram({
-    rootNames: [srcFile, "/workspace/packages/ts-moose-lib/src/browserCompatible.ts"],
+    rootNames: [
+      srcFile,
+      path.resolve(__dirname, "../src/browserCompatible.ts"),
+    ],
     options: compilerOptions,
   });
 
@@ -34,7 +36,8 @@ function createProgramWithSource(tempDir: string, sourceText: string) {
   const sourceFile = program.getSourceFile(srcFile)!;
 
   const interfaceDecl = sourceFile.statements.find(
-    (s): s is ts.InterfaceDeclaration => ts.isInterfaceDeclaration(s) && s.name.text === "TestModel",
+    (s): s is ts.InterfaceDeclaration =>
+      ts.isInterfaceDeclaration(s) && s.name.text === "TestModel",
   );
   if (!interfaceDecl) throw new Error("TestModel interface not found");
   const type = checker.getTypeAtLocation(interfaceDecl);
@@ -80,4 +83,3 @@ describe("typeConvert mappings for helper types", () => {
     expect(byName.status.annotations).to.deep.include(["LowCardinality", true]);
   });
 });
-

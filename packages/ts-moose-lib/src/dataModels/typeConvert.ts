@@ -450,8 +450,6 @@ const tsTypeToDataType = (
     }
   }
 
-  const annotations: [string, any][] = [];
-
   // Recognize Date aliases (DateTime, DateTime64<P>) as DateTime-like
   let datePrecisionFromNode: number | undefined = undefined;
   if (typeNode && isTypeReferenceNode(typeNode)) {
@@ -470,16 +468,14 @@ const tsTypeToDataType = (
       datePrecisionFromNode = undefined; // DateTime without explicit precision
     }
   }
+
+  const annotations: [string, any][] = [];
+
   const typeSymbolName = nonNull.symbol?.name || t.symbol?.name;
   const isDateLike =
     typeSymbolName === "DateTime" ||
     typeSymbolName === "DateTime64" ||
     checker.isTypeAssignableTo(nonNull, dateType(checker));
-
-  if (isDateLike) {
-    // Debug: ensure only Date-like fields hit this path during tests
-    // console.log("isDateLike", { fieldName, typeSymbolName });
-  }
 
   const dataType: DataType =
     isEnum(nonNull) ? enumConvert(nonNull)
