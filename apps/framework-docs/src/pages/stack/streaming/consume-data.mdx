@@ -1,0 +1,619 @@
+---
+title: Consume Data
+description: Read and process data from streams with consumers and processors
+---
+
+import { Callout, BulletPointsCard, LanguageSwitcher, TypeScript, Python } from "@/components";
+import { Tabs } from "nextra/components";
+
+# Consuming Data from Streams
+
+<LanguageSwitcher />
+
+## Overview
+Consuming data from streams allows you to read and process data in real-time as it flows through your Kafka/Redpanda topics. This enables building responsive, event-driven applications.
+
+## Consumer Types
+
+### Stream Consumers
+Add consumers directly to streams for real-time processing:
+
+<TypeScript>
+```typescript filename="StreamConsumer.ts"
+import { Stream } from "@514labs/moose-lib";
+
+interface UserEvent {
+  id: string;
+  userId: string;
+  timestamp: Date;
+  eventType: string;
+}
+
+const userEventsStream = new Stream<UserEvent>("user-events");
+
+// Add a consumer to process events in real-time
+userEventsStream.addConsumer(async (event: UserEvent) => {
+  console.log(`Processing event: ${event.id} for user: ${event.userId}`);
+  
+  // Process the event
+  await processUserEvent(event);
+  
+  // Update analytics
+  await updateAnalytics(event);
+  
+  // Send notifications if needed
+  if (event.eventType === 'purchase') {
+    await sendPurchaseNotification(event);
+  }
+});
+```
+</TypeScript>
+
+<Python>
+```py filename="StreamConsumer.py" copy
+from moose_lib import Stream
+from pydantic import BaseModel
+from datetime import datetime
+
+class UserEvent(BaseModel):
+    id: str
+    user_id: str
+    timestamp: datetime
+    event_type: str
+
+user_events_stream = Stream[UserEvent]("user-events")
+
+# Add a consumer to process events in real-time
+async def process_user_event_handler(event: UserEvent):
+    print(f"Processing event: {event.id} for user: {event.user_id}")
+    
+    # Process the event
+    await process_user_event(event)
+    
+    # Update analytics
+    await update_analytics(event)
+    
+    # Send notifications if needed
+    if event.event_type == 'purchase':
+        await send_purchase_notification(event)
+
+user_events_stream.add_consumer(process_user_event_handler)
+```
+</Python>
+
+### Multiple Consumers
+You can add multiple consumers to the same stream for different processing logic:
+
+<TypeScript>
+```typescript filename="MultipleConsumers.ts"
+// Analytics consumer
+userEventsStream.addConsumer(async (event) => {
+  await analyticsService.track(event);
+});
+
+// Notification consumer
+userEventsStream.addConsumer(async (event) => {
+  if (shouldNotify(event)) {
+    await notificationService.send(event);
+  }
+});
+
+// Audit consumer
+userEventsStream.addConsumer(async (event) => {
+  await auditLog.record(event);
+});
+```
+</TypeScript>
+
+<Python>
+```py filename="MultipleConsumers.py" copy
+# Analytics consumer
+async def analytics_consumer(event: UserEvent):
+    await analytics_service.track(event)
+
+user_events_stream.add_consumer(analytics_consumer)
+
+# Notification consumer
+async def notification_consumer(event: UserEvent):
+    if should_notify(event):
+        await notification_service.send(event)
+
+user_events_stream.add_consumer(notification_consumer)
+
+# Audit consumer
+async def audit_consumer(event: UserEvent):
+    await audit_log.record(event)
+
+user_events_stream.add_consumer(audit_consumer)
+```
+</Python>
+
+## Consumer Groups
+Use consumer groups for scalable processing across multiple instances:
+
+<TypeScript>
+```typescript filename="ConsumerGroups.ts"
+// Create consumers with the same group ID for load balancing
+const stream = new Stream<UserEvent>("user-events");
+
+// Instance 1
+stream.addConsumer(processEvent, {
+  groupId: 'user-event-processors',
+  consumerId: 'processor-1'
+});
+
+// Instance 2 (in another process/container)
+stream.addConsumer(processEvent, {
+  groupId: 'user-event-processors',
+  consumerId: 'processor-2'
+});
+
+// Events will be distributed between the two consumers
+async function processEvent(event: UserEvent) {
+  console.log(`Processing on ${process.env.INSTANCE_ID}: ${event.id}`);
+  await heavyProcessing(event);
+}
+```
+</TypeScript>
+
+<Python>
+```py filename="ConsumerGroups.py" copy
+# Create consumers with the same group ID for load balancing
+stream = Stream[UserEvent]("user-events")
+
+# Instance 1
+async def process_event_instance_1(event: UserEvent):
+    print(f"Processing on instance-1: {event.id}")
+    await heavy_processing(event)
+
+stream.add_consumer(process_event_instance_1, ConsumerConfig(
+    group_id='user-event-processors',
+    consumer_id='processor-1'
+))
+
+# Instance 2 (in another process/container)
+async def process_event_instance_2(event: UserEvent):
+    print(f"Processing on instance-2: {event.id}")
+    await heavy_processing(event)
+
+stream.add_consumer(process_event_instance_2, ConsumerConfig(
+    group_id='user-event-processors',
+    consumer_id='processor-2'
+))
+```
+</Python>
+
+## Consumer Configuration
+
+### Basic Configuration
+Configure consumer behavior for optimal processing:
+
+<TypeScript>
+```typescript filename="ConsumerConfig.ts"
+userEventsStream.addConsumer(processEvent, {
+  groupId: 'processors',
+  maxBatchSize: 100,           // Process up to 100 events at once
+  maxWaitTime: 1000,           // Wait max 1 second before processing batch
+  autoCommit: true,            // Automatically commit offsets
+  commitInterval: 5000,        // Commit every 5 seconds
+  maxRetries: 3,              // Retry failed events up to 3 times
+  retryDelay: 1000            // Wait 1 second between retries
+});
+```
+</TypeScript>
+
+<Python>
+```py filename="ConsumerConfig.py" copy
+from moose_lib import ConsumerConfig
+
+user_events_stream.add_consumer(process_event, ConsumerConfig(
+    group_id='processors',
+    max_batch_size=100,         # Process up to 100 events at once
+    max_wait_time=1000,         # Wait max 1 second before processing batch
+    auto_commit=True,           # Automatically commit offsets
+    commit_interval=5000,       # Commit every 5 seconds
+    max_retries=3,             # Retry failed events up to 3 times
+    retry_delay=1000           # Wait 1 second between retries
+))
+```
+</Python>
+
+### Offset Management
+Control how consumers track their position in the stream:
+
+<TypeScript>
+```typescript filename="OffsetManagement.ts"
+// Start from beginning of stream
+userEventsStream.addConsumer(processEvent, {
+  offsetReset: 'earliest'
+});
+
+// Start from latest messages only
+userEventsStream.addConsumer(processEvent, {
+  offsetReset: 'latest'
+});
+
+// Manual offset management
+userEventsStream.addConsumer(async (event, context) => {
+  try {
+    await processEvent(event);
+    // Manually commit offset after successful processing
+    await context.commit();
+  } catch (error) {
+    console.error('Processing failed:', error);
+    // Don't commit - message will be reprocessed
+  }
+}, {
+  autoCommit: false
+});
+```
+</TypeScript>
+
+<Python>
+```py filename="OffsetManagement.py" copy
+# Start from beginning of stream
+user_events_stream.add_consumer(process_event, ConsumerConfig(
+    offset_reset='earliest'
+))
+
+# Start from latest messages only
+user_events_stream.add_consumer(process_event, ConsumerConfig(
+    offset_reset='latest'
+))
+
+# Manual offset management
+async def manual_process_event(event: UserEvent, context):
+    try:
+        await process_event(event)
+        # Manually commit offset after successful processing
+        await context.commit()
+    except Exception as error:
+        print(f"Processing failed: {error}")
+        # Don't commit - message will be reprocessed
+
+user_events_stream.add_consumer(manual_process_event, ConsumerConfig(
+    auto_commit=False
+))
+```
+</Python>
+
+## Batch Processing
+Process multiple events together for improved efficiency:
+
+<TypeScript>
+```typescript filename="BatchProcessing.ts"
+// Batch consumer processes multiple events at once
+userEventsStream.addBatchConsumer(async (events: UserEvent[]) => {
+  console.log(`Processing batch of ${events.length} events`);
+  
+  // Process events in parallel
+  const promises = events.map(event => processEvent(event));
+  await Promise.all(promises);
+  
+  // Or process sequentially
+  for (const event of events) {
+    await processEventSequentially(event);
+  }
+  
+  // Bulk operations are more efficient
+  await bulkUpdateDatabase(events);
+}, {
+  batchSize: 50,
+  maxWaitTime: 2000
+});
+```
+</TypeScript>
+
+<Python>
+```py filename="BatchProcessing.py" copy
+import asyncio
+
+# Batch consumer processes multiple events at once
+async def batch_process_events(events: List[UserEvent]):
+    print(f"Processing batch of {len(events)} events")
+    
+    # Process events in parallel
+    tasks = [process_event(event) for event in events]
+    await asyncio.gather(*tasks)
+    
+    # Or process sequentially
+    for event in events:
+        await process_event_sequentially(event)
+    
+    # Bulk operations are more efficient
+    await bulk_update_database(events)
+
+user_events_stream.add_batch_consumer(batch_process_events, ConsumerConfig(
+    batch_size=50,
+    max_wait_time=2000
+))
+```
+</Python>
+
+## Error Handling
+
+### Retry Logic
+Handle temporary failures with automatic retries:
+
+<TypeScript>
+```typescript filename="RetryLogic.ts"
+userEventsStream.addConsumer(async (event) => {
+  try {
+    await processEvent(event);
+  } catch (error) {
+    if (isRetryableError(error)) {
+      throw error; // Will be retried automatically
+    } else {
+      // Log non-retryable errors and continue
+      console.error('Non-retryable error:', error);
+      await logError(event, error);
+    }
+  }
+}, {
+  maxRetries: 3,
+  retryDelay: 1000,
+  retryBackoff: 'exponential' // 1s, 2s, 4s delays
+});
+```
+</TypeScript>
+
+<Python>
+```py filename="RetryLogic.py" copy
+async def process_with_retry(event: UserEvent):
+    try:
+        await process_event(event)
+    except Exception as error:
+        if is_retryable_error(error):
+            raise error  # Will be retried automatically
+        else:
+            # Log non-retryable errors and continue
+            print(f"Non-retryable error: {error}")
+            await log_error(event, error)
+
+user_events_stream.add_consumer(process_with_retry, ConsumerConfig(
+    max_retries=3,
+    retry_delay=1000,
+    retry_backoff='exponential'  # 1s, 2s, 4s delays
+))
+```
+</Python>
+
+### Dead Letter Queues
+Route failed messages to dead letter queues for analysis:
+
+<TypeScript>
+```typescript filename="DLQConsumer.ts"
+import { DeadLetterQueue } from "@514labs/moose-lib";
+
+const dlq = new DeadLetterQueue<UserEvent>("UserEventDLQ");
+
+userEventsStream.addConsumer(async (event) => {
+  await processEvent(event);
+}, {
+  maxRetries: 3,
+  deadLetterQueue: dlq
+});
+
+// Monitor dead letter messages
+dlq.addConsumer(async (deadLetter) => {
+  console.log(`Failed event: ${deadLetter.errorMessage}`);
+  
+  const originalEvent = deadLetter.asTyped();
+  console.log(`Original event: ${originalEvent.id}`);
+  
+  // Implement recovery logic
+  await handleFailedEvent(originalEvent, deadLetter.errorMessage);
+});
+```
+</TypeScript>
+
+<Python>
+```py filename="DLQConsumer.py" copy
+from moose_lib import DeadLetterQueue
+
+dlq = DeadLetterQueue[UserEvent]("UserEventDLQ")
+
+user_events_stream.add_consumer(process_event, ConsumerConfig(
+    max_retries=3,
+    dead_letter_queue=dlq
+))
+
+# Monitor dead letter messages
+async def handle_dead_letter(dead_letter):
+    print(f"Failed event: {dead_letter.error_message}")
+    
+    original_event = dead_letter.as_typed()
+    print(f"Original event: {original_event.id}")
+    
+    # Implement recovery logic
+    await handle_failed_event(original_event, dead_letter.error_message)
+
+dlq.add_consumer(handle_dead_letter)
+```
+</Python>
+
+## External Consumers
+Consume from streams using external Kafka/Redpanda clients:
+
+<TypeScript>
+```typescript filename="ExternalConsumer.ts"
+import { Kafka } from 'kafkajs';
+
+const kafka = new Kafka({
+  clientId: 'my-consumer-app',
+  brokers: ['localhost:9092']
+});
+
+const consumer = kafka.consumer({ groupId: 'external-group' });
+
+await consumer.connect();
+await consumer.subscribe({ topic: 'user-events' });
+
+await consumer.run({
+  eachMessage: async ({ topic, partition, message }) => {
+    const event = JSON.parse(message.value.toString());
+    console.log(`Received event: ${event.id}`);
+    
+    // Process the event
+    await processExternalEvent(event);
+  }
+});
+```
+</TypeScript>
+
+<Python>
+```py filename="ExternalConsumer.py" copy
+from kafka import KafkaConsumer
+import json
+
+consumer = KafkaConsumer(
+    'user-events',
+    bootstrap_servers=['localhost:9092'],
+    group_id='external-group',
+    value_deserializer=lambda m: json.loads(m.decode('utf-8'))
+)
+
+for message in consumer:
+    event = message.value
+    print(f"Received event: {event['id']}")
+    
+    # Process the event
+    await process_external_event(event)
+```
+</Python>
+
+## Performance Optimization
+
+### Parallel Processing
+Scale processing with parallel consumers:
+
+<TypeScript>
+```typescript filename="ParallelProcessing.ts"
+// Process events in parallel within a single consumer
+userEventsStream.addConsumer(async (event) => {
+  // Don't await - process in background
+  processEventAsync(event).catch(console.error);
+}, {
+  parallelism: 10 // Process up to 10 events concurrently
+});
+
+// Or use worker pools
+const workerPool = new WorkerPool(5);
+
+userEventsStream.addConsumer(async (event) => {
+  await workerPool.execute(() => processEvent(event));
+});
+```
+</TypeScript>
+
+<Python>
+```py filename="ParallelProcessing.py" copy
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
+
+# Process events in parallel within a single consumer
+async def parallel_process_event(event: UserEvent):
+    # Don't await - process in background
+    asyncio.create_task(process_event_async(event))
+
+user_events_stream.add_consumer(parallel_process_event, ConsumerConfig(
+    parallelism=10  # Process up to 10 events concurrently
+))
+
+# Or use thread pools for CPU-intensive work
+executor = ThreadPoolExecutor(max_workers=5)
+
+async def thread_pool_consumer(event: UserEvent):
+    loop = asyncio.get_event_loop()
+    await loop.run_in_executor(executor, cpu_intensive_processing, event)
+
+user_events_stream.add_consumer(thread_pool_consumer)
+```
+</Python>
+
+## Best Practices
+
+<BulletPointsCard
+  title="Consumer Best Practices"
+  bullets={[
+    {
+      title: "Use appropriate batch sizes",
+      description: "Balance between latency and throughput with optimal batch sizes"
+    },
+    {
+      title: "Implement idempotent processing",
+      description: "Ensure your consumers can safely process the same message multiple times"
+    },
+    {
+      title: "Monitor consumer lag",
+      description: "Track how far behind consumers are from the latest messages"
+    },
+    {
+      title: "Handle backpressure gracefully",
+      description: "Implement flow control when processing can't keep up with incoming data"
+    },
+    {
+      title: "Use dead letter queues",
+      description: "Route failed messages to DLQs for analysis and recovery"
+    },
+    {
+      title: "Scale horizontally",
+      description: "Use consumer groups to distribute load across multiple instances"
+    }
+  ]}
+/>
+
+## Monitoring and Observability
+
+### Consumer Metrics
+Monitor consumer performance and health:
+
+<TypeScript>
+```typescript filename="ConsumerMetrics.ts"
+userEventsStream.addConsumer(async (event, context) => {
+  const startTime = Date.now();
+  
+  try {
+    await processEvent(event);
+    
+    // Record success metrics
+    metrics.increment('events.processed.success');
+    metrics.histogram('events.processing.duration', Date.now() - startTime);
+  } catch (error) {
+    // Record error metrics
+    metrics.increment('events.processed.error');
+    metrics.increment(`events.error.${error.code}`);
+    
+    throw error;
+  }
+}, {
+  groupId: 'monitored-processors'
+});
+```
+</TypeScript>
+
+<Python>
+```py filename="ConsumerMetrics.py" copy
+import time
+
+async def monitored_process_event(event: UserEvent, context):
+    start_time = time.time()
+    
+    try:
+        await process_event(event)
+        
+        # Record success metrics
+        metrics.increment('events.processed.success')
+        metrics.histogram('events.processing.duration', time.time() - start_time)
+    except Exception as error:
+        # Record error metrics
+        metrics.increment('events.processed.error')
+        metrics.increment(f'events.error.{error.__class__.__name__}')
+        
+        raise error
+
+user_events_stream.add_consumer(monitored_process_event, ConsumerConfig(
+    group_id='monitored-processors'
+))
+```
+</Python>
