@@ -149,7 +149,12 @@ class OlapTable(TypedMooseResource, Generic[T]):
         self.metadata = config.metadata
         self._column_list = _to_columns(self._t)
         self._cols = Cols(self._column_list)
-        _tables[name] = self
+        # Register with version-aware key to allow multiple versions of the same base name
+        version = self.config.version
+        registry_key = f"{name}_{version}" if version else name
+        # Use version-aware key; allow overwriting in the rare case of duplicate unversioned
+        # tables to preserve backward compatibility with prior behavior and tests.
+        _tables[registry_key] = self
         
         # Check if using legacy enum-based engine configuration
         if config.engine and isinstance(config.engine, ClickHouseEngines):

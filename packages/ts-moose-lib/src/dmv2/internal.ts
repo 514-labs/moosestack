@@ -327,7 +327,10 @@ export const toInfraMap = (registry: typeof moose_internal) => {
       }
     }
 
-    tables[table.name] = {
+    const tableId = table.config.version
+      ? `${table.name}_${String(table.config.version).replace(/\./g, "_")}`
+      : table.name;
+    tables[tableId] = {
       name: table.name,
       columns: table.columnArray,
       orderBy: table.config.orderByFields ?? [],
