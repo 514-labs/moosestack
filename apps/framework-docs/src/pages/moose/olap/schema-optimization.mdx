@@ -6,7 +6,7 @@ import { TypeScript, Python, LanguageSwitcher, BulletPointsCard, Callout, PathCo
 
 
 <Callout type="warning" title="Schema Optimization Matters">
-Choosing the right data types and column ordering for your tables is crucial for ClickHouse performance and storage efficiency. Poor schema design can lead to 10-100x slower queries and 2-5x larger storage requirements. 
+Choosing the right data types and column ordering for your tables is crucial for ClickHouse performance and storage efficiency. Poor schema design can lead to 10-100x slower queries and 2-5x larger storage requirements.
 </Callout>
 
 ## Data Types
@@ -15,7 +15,7 @@ Keep the following best practices in mind when defining your column types:
 
 ### Avoid Nullable Columns
 
-Nullable columns in ClickHouse have significant performance overhead. 
+Nullable columns in ClickHouse have significant performance overhead.
 
 <Callout type="info" title="Use ClickHouse defaults instead of nulls">
 <TypeScript inline>Instead of using `?` or `| undefined`, add the  `& ClickHouseDefault<"...">` to your column type</TypeScript>
@@ -135,10 +135,10 @@ import { OlapTable, UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64 } f
 interface UserEvent {
   id: string;
   userId: string;
-  age: number & UInt8;                    // ✅ 0-255 (1 byte)
-  score: number & Int16;                   // ✅ -32,768 to 32,767 (2 bytes)
-  viewCount: number & UInt32;             // ✅ 0 to ~4 billion (4 bytes)
-  timestamp: number & UInt64;             // ✅ Unix timestamp (8 bytes)
+  age: UInt8;                             // ✅ 0-255 (1 byte)
+  score: Int16;                           // ✅ -32,768 to 32,767 (2 bytes)
+  viewCount: UInt32;                      // ✅ 0 to ~4 billion (4 bytes)
+  timestamp: UInt64;                      // ✅ Unix timestamp (8 bytes)
   eventType: string;
   createdAt: Date;
 }
@@ -195,9 +195,9 @@ interface UserEvent {
   userId: string;
   eventType: string;
   createdAt: DateTime;             // ✅ Second precision (default)
-  updatedAt: DateTime64(3);        // ✅ Millisecond precision
-  processedAt: DateTime64(6);      // ✅ Microsecond precision
-  loggedAt: DateTime64(9);         // ✅ Nanosecond precision
+  updatedAt: DateTime64<3>;        // ✅ Millisecond precision
+  processedAt: DateTime64<6>;      // ✅ Microsecond precision
+  loggedAt: DateTime64<9>;         // ✅ Nanosecond precision
 }
 
 const userEventsTable = new OlapTable<UserEvent>("user_events", {
@@ -238,10 +238,10 @@ import { OlapTable, Decimal } from "@514labs/moose-lib";
 interface Order {
   id: string;
   userId: string;
-  amount: Decimal(10, 2);         // ✅ 10 total digits, 2 decimal places
-  tax: Decimal(8, 2);             // ✅ 8 total digits, 2 decimal places
-  discount: Decimal(5, 2);        // ✅ 5 total digits, 2 decimal places
-  total: Decimal(12, 2);          // ✅ 12 total digits, 2 decimal places
+  amount: Decimal<10, 2>;         // ✅ 10 total digits, 2 decimal places
+  tax: Decimal<8, 2>;             // ✅ 8 total digits, 2 decimal places
+  discount: Decimal<5, 2>;        // ✅ 5 total digits, 2 decimal places
+  total: Decimal<12, 2>;          // ✅ 12 total digits, 2 decimal places
   createdAt: Date;
 }
 
@@ -417,7 +417,7 @@ user_events_table = OlapTable[UserEvent]("user_events", {
 ```
 </Python>
 
-### `ORDER BY` should prioritize LowCardinality columns first 
+### `ORDER BY` should prioritize LowCardinality columns first
 
 Place `LowCardinality` columns first in your <Python inline>`order_by_fields`</Python><TypeScript inline>`orderByFields`</TypeScript> for better compression and query performance.
 
@@ -472,9 +472,3 @@ bad_user_events_table = OlapTable[UserEvent]("user_events", {
 })
 ```
 </Python>
-
-
-
-
-
-

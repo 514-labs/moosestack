@@ -560,7 +560,7 @@ describe("Moose Templates", () => {
       utils.removeTestProject(TEST_PROJECT_DIR);
     });
 
-    it("should successfully ingest data and verify through consumption API", async function () {
+    it("should successfully ingest data and verify through consumption API (DateTime support)", async function () {
       const eventId = randomUUID();
 
       // Send multiple records to trigger batch write (batch size is likely 1000+)

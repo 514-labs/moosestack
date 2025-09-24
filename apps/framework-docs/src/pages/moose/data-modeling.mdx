@@ -12,7 +12,7 @@ import { PathConfig } from "@/components/ctas";
 
 ## Overview
 
-In Moose, data models are just <TypeScript inline>TypeScript interfaces</TypeScript><Python inline>Pydantic models</Python> that become the authoritative source for your infrastructure schemas. 
+In Moose, data models are just <TypeScript inline>TypeScript interfaces</TypeScript><Python inline>Pydantic models</Python> that become the authoritative source for your infrastructure schemas.
 
 Data Models are used to define:
 - [OLAP Tables and Materialized Views](/moose/olap) (automatically generated DDL)
@@ -23,7 +23,7 @@ Data Models are used to define:
 ## Philosophy
 
 ### Problem: Analytical Backends are Prone to Schema Drift
-Analytical backends are unique in that they typically have to coordinate schemas across multiple systems that each have their own type systems and constraints. 
+Analytical backends are unique in that they typically have to coordinate schemas across multiple systems that each have their own type systems and constraints.
 
 Consider a typical pipeline for ingesting events into a ClickHouse table.
 
@@ -33,7 +33,7 @@ Consider a typical pipeline for ingesting events into a ClickHouse table.
 // API endpoint → Kafka topic → ClickHouse table → Analytics API
 
 // Traditional approach: Define schema 4 times
-// 1. API validation schema 
+// 1. API validation schema
 const apiSchema = z.object({
   userId: z.string(),
   eventType: z.enum(["click", "view", "purchase"]),
@@ -176,15 +176,15 @@ interface Event {
   // Base type: string
   // ClickHouse: String with primary key
   id: Key<string>;
-  
+
   // Base type: string
   // ClickHouse: Decimal(10,2) for precise money
   amount: string & ClickHouseDecimal<10, 2>;
-  
+
   // Base type: string
   // ClickHouse: LowCardinality(String) for enums
   status: string & LowCardinality;
-  
+
   // Base type: Date
   // ClickHouse: DateTime
   createdAt: Date;
@@ -220,15 +220,15 @@ class Model(BaseModel):
     # Base type: str
     # ClickHouse: String with primary key
     id: Key[str]
-    
+
     # Base type: Decimal
     # ClickHouse: Decimal(10,2) for precise money
     amount: clickhouse_decimal(10, 2)
-    
+
     # Base type: str
     # ClickHouse: LowCardinality(String) for enums
     status: Annotated[str, "LowCardinality"]
-    
+
     # Base type: datetime
     # ClickHouse: DateTime
     created_at: datetime
@@ -325,18 +325,18 @@ import { Key } from "@514labs/moose-lib";
 export interface CompositeShared {
   id: Key<string>;  // Primary key
   status: "active" | "pending" | "completed";  // Enum
-  
+
   // Nested object
   metadata: {
     category: string;
     priority: number;
     tags: string[];
   };
-  
+
   // Arrays and maps
   values: number[];
   attributes: Record<string, any>;
-  
+
   // Optional field
   description?: string;
   createdAt: Date;
@@ -378,14 +378,14 @@ class Metadata(BaseModel):
 class CompositeShared(BaseModel):
     id: Key[str]  # Primary key
     status: Literal["active", "pending", "completed"]  # Enum
-    
+
     # Nested object
     metadata: Metadata
-    
+
     # Arrays and maps
     values: List[float]
     attributes: Dict[str, Any]
-    
+
     # Optional field
     description: Optional[str] = None
     created_at: datetime
@@ -419,21 +419,22 @@ ClickHouse type annotations optimize database performance but are **transparent 
 
 <TypeScript>
 ```ts filename="app/datamodels/ClickHouseOptimized.ts"
-import { Key, ClickHouseDecimal, LowCardinality, ClickHouseNamedTuple } from "@514labs/moose-lib";
+import { Key, Decimal, ClickHouseDecimal, LowCardinality, ClickHouseNamedTuple } from "@514labs/moose-lib";
 
 export interface ClickHouseOptimized {
   id: Key<string>;
-  
+
   // ClickHouse-specific type annotations
-  amount: string & ClickHouseDecimal<10, 2>;    // Decimal(10,2) in ClickHouse
-  category: string & LowCardinality;             // LowCardinality(String) in ClickHouse
-  
+  amount: Decimal<10, 2>;                       // Decimal(10,2) in ClickHouse
+  // Alternative: amount: string & ClickHouseDecimal<10, 2>; // Verbose syntax still works
+  category: string & LowCardinality;            // LowCardinality(String) in ClickHouse
+
   // Optimized nested type
   details: {
     name: string;
     value: number;
-  } & ClickHouseNamedTuple;                      // NamedTuple in ClickHouse
-  
+  } & ClickHouseNamedTuple;                     // NamedTuple in ClickHouse
+
   timestamp: Date;
 }
 
@@ -478,14 +479,14 @@ class Details(BaseModel):
 
 class ClickHouseOptimized(BaseModel):
     id: Key[str]
-    
+
     # ClickHouse-specific type annotations
     amount: clickhouse_decimal(10, 2)              # Decimal(10,2) in ClickHouse
     category: Annotated[str, "LowCardinality"]    # LowCardinality(String) in ClickHouse
-    
+
     # Optimized nested type
     details: Annotated[Details, "ClickHouseNamedTuple"]  # NamedTuple in ClickHouse
-    
+
     timestamp: datetime
 
 # SCENARIO 1: Standalone OlapTable - gets all optimizations
@@ -531,14 +532,14 @@ interface SearchParams {
   // Date range validation
   startDate: string & tags.Format<"date">;              // Must be YYYY-MM-DD
   endDate: string & tags.Format<"date">;
-  
+
   // Numeric constraints
   minValue?: number & tags.Minimum<0>;                 // Optional, but if provided >= 0
   maxValue?: number & tags.Maximum<1000>;              // Optional, but if provided <= 1000
-  
+
   // String validation
   category?: string & tags.MinLength<2> & tags.MaxLength<50>;
-  
+
   // Pagination
   page?: number & tags.Type<"int32"> & tags.Minimum<1>;
   limit?: number & tags.Type<"int32"> & tags.Minimum<1> & tags.Maximum<100>;
@@ -568,7 +569,7 @@ const searchAPI = new Api<SearchParams, SearchResult[]>(
       LIMIT {limit: UInt32}
       OFFSET {offset: UInt32}
     `;
-    
+
     return client.query(query, {
       startDate: params.startDate,
       endDate: params.endDate,
@@ -601,14 +602,14 @@ class SearchParams(BaseModel):
     # Date range validation
     start_date: str = Field(..., regex="^\\d{4}-\\d{2}-\\d{2}$")  # Must be YYYY-MM-DD
     end_date: str = Field(..., regex="^\\d{4}-\\d{2}-\\d{2}$")
-    
+
     # Numeric constraints
     min_value: Optional[float] = Field(None, ge=0)          # Optional, but if provided >= 0
     max_value: Optional[float] = Field(None, le=1000)       # Optional, but if provided <= 1000
-    
+
     # String validation
     category: Optional[str] = Field(None, min_length=2, max_length=50)
-    
+
     # Pagination
     page: Optional[int] = Field(None, ge=1)
     limit: Optional[int] = Field(None, ge=1, le=100)
@@ -652,7 +653,7 @@ async def search_handler(params: SearchParams, client: MooseClient) -> List[Sear
       LIMIT {limit}
       OFFSET {offset}
     """
-    
+
     results = await client.query.execute(query, params=params_dict)
     return [SearchResult(**row) for row in results]
 
@@ -707,7 +708,7 @@ const processedStream = new Stream<ProcessedData>("processed-stream");
 // Transform raw data to processed
 rawStream.addConsumer(async (raw: RawData) => {
   const parsed = JSON.parse(raw.rawPayload);
-  
+
   const processed: ProcessedData = {
     id: raw.id,
     timestamp: raw.timestamp,
@@ -716,7 +717,7 @@ rawStream.addConsumer(async (raw: RawData) => {
     numericValue: parseFloat(parsed.value) || 0,
     attributes: parsed.attributes || {}
   };
-  
+
   await processedStream.publish(processed);
 });
 
@@ -767,7 +768,7 @@ processed_stream = Stream[ProcessedData]("processed-stream", StreamConfig(
 # Transform raw data
 async def process_data(raw: RawData):
     parsed = json.loads(raw.raw_payload)
-    
+
     processed = ProcessedData(
         id=raw.id,
         timestamp=raw.timestamp,
@@ -776,7 +777,7 @@ async def process_data(raw: RawData):
         numeric_value=float(parsed.get("value", 0)),
         attributes=parsed.get("attributes", {})
     )
-    
+
 raw_stream.add_transform(processed_stream, process_data)
 
 ```
@@ -831,14 +832,14 @@ const exampleTask = new Task<TaskInput, TaskOutput>(
         id: ctx.input.id,
         processedAt: new Date()
       };
-      
+
       if (ctx.input.taskType === "typeA") {
         output.resultA = await processTypeA(ctx.input);
       }
-      
+
       return output;
     },
-    
+
     retries: 3,
     timeout: 30000  // 30 seconds
   }
@@ -893,10 +894,10 @@ async def run_task(ctx: TaskContext[TaskInput]) -> TaskOutput:
         id=ctx.input.id,
         processed_at=datetime.now()
     )
-    
+
     if ctx.input.task_type == "typeA":
         output.result_a = await process_type_a(ctx.input)
-    
+
     return output
 
 example_task = Task[TaskInput, TaskOutput](
