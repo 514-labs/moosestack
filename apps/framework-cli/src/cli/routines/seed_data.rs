@@ -253,8 +253,13 @@ pub async fn handle_seed_command(
             .await?;
 
             Ok(RoutineSuccess::success(Message::new(
-                format!("Seeded '{}' from '{}'", local_db_name, remote_db_name),
-                format!("\n{}", summary.join("\n")),
+                "Seeded".to_string(),
+                format!(
+                    "Seeded '{}' from '{}'\n{}",
+                    local_db_name,
+                    remote_db_name,
+                    summary.join("\n")
+                ),
             )))
         }
         None => Err(RoutineFailure::error(Message {
