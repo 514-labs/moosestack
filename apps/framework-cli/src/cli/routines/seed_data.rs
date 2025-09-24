@@ -124,47 +124,6 @@ async fn load_infrastructure_map(project: &Project) -> Result<InfrastructureMap,
     }
 }
 
-/// Resolves the remote database name from the connection if not provided
-async fn resolve_remote_database_name(
-    remote_config: &mut ClickHouseConfig,
-    connection_string: &str,
-    db_name: Option<String>,
-) -> Result<(), RoutineFailure> {
-    if db_name.is_none() {
-        let mut client = clickhouse::Client::default().with_url(connection_string);
-        let url = convert_http_to_clickhouse(connection_string).map_err(|e| {
-            RoutineFailure::error(Message::new(
-                "SeedClickhouse".to_string(),
-                format!("Failed to parse connection string: {e}"),
-            ))
-        })?;
-
-        if !url.username().is_empty() {
-            client = client.with_user(url.username());
-        }
-        if let Some(password) = url.password() {
-            client = client.with_password(password);
-        }
-
-        let current_db = client
-            .query("select database()")
-            .fetch_one::<String>()
-            .await
-            .map_err(|e| {
-                RoutineFailure::new(
-                    Message::new(
-                        "SeedClickhouse".to_string(),
-                        "Failed to query remote database".to_string(),
-                    ),
-                    e,
-                )
-            })?;
-
-        remote_config.db_name = current_db;
-    }
-    Ok(())
-}
-
 /// Builds the ORDER BY clause for a table based on infrastructure map or provided order
 fn build_order_by_clause(
     table_name: &str,
@@ -365,16 +324,12 @@ async fn seed_clickhouse_operation(
     let infra_map = load_infrastructure_map(project).await?;
 
     // Parse connection string
-    let (mut remote_config, db_name) = parse_clickhouse_connection_string(connection_string)
-        .map_err(|e| {
-            RoutineFailure::error(Message::new(
-                "SeedClickhouse".to_string(),
-                format!("Invalid connection string: {e}"),
-            ))
-        })?;
-
-    // Resolve remote database name if not provided
-    resolve_remote_database_name(&mut remote_config, connection_string, db_name).await?;
+    let remote_config = parse_clickhouse_connection_string(connection_string).map_err(|e| {
+        RoutineFailure::error(Message::new(
+            "SeedClickhouse".to_string(),
+            format!("Invalid connection string: {e}"),
+        ))
+    })?;
 
     // Validate database name
     validate_database_name(&remote_config.db_name)?;
@@ -440,9 +395,7 @@ async fn get_remote_tables(
     Ok(tables)
 }
 
-fn parse_clickhouse_connection_string(
-    conn_str: &str,
-) -> anyhow::Result<(ClickHouseConfig, Option<String>)> {
+fn parse_clickhouse_connection_string(conn_str: &str) -> anyhow::Result<ClickHouseConfig> {
     let url = convert_http_to_clickhouse(conn_str)?;
 
     let user = url.username().to_string();
@@ -458,18 +411,19 @@ fn parse_clickhouse_connection_string(
 
     let port = url.port().unwrap_or(if use_ssl { 9440 } else { 9000 }) as i32;
 
-    // Get database name from path or query parameter
+    // Get database name from path or query parameter, default to "default"
     let db_name = if !url.path().is_empty() && url.path() != "/" {
-        Some(url.path().trim_start_matches('/').to_string())
+        url.path().trim_start_matches('/').to_string()
     } else {
         url.query_pairs()
             .find(|(k, _)| k == "database")
             .map(|(_, v)| v.to_string())
             .filter(|s| !s.is_empty())
+            .unwrap_or_else(|| "default".to_string())
     };
 
     let config = ClickHouseConfig {
-        db_name: db_name.clone().unwrap_or_default(),
+        db_name,
         user,
         password,
         use_ssl,
@@ -479,7 +433,7 @@ fn parse_clickhouse_connection_string(
         host_data_path: None,
     };
 
-    Ok((config, db_name))
+    Ok(config)
 }
 
 pub async fn handle_seed_command(
@@ -763,7 +717,7 @@ mod tests {
         let result = parse_clickhouse_connection_string(conn_str);
 
         assert!(result.is_ok());
-        let (config, db_name) = result.unwrap();
+        let config = result.unwrap();
 
         assert_eq!(config.user, "user");
         assert_eq!(config.password, "pass");
@@ -771,7 +725,6 @@ mod tests {
         assert_eq!(config.native_port, 9440);
         assert!(config.use_ssl);
         assert_eq!(config.db_name, "mydb");
-        assert_eq!(db_name, Some("mydb".to_string()));
     }
 
     #[test]
@@ -780,7 +733,7 @@ mod tests {
         let result = parse_clickhouse_connection_string(conn_str);
 
         assert!(result.is_ok());
-        let (config, _) = result.unwrap();
+        let config = result.unwrap();
 
         assert!(!config.use_ssl);
         assert_eq!(config.native_port, 9000);
@@ -792,10 +745,10 @@ mod tests {
         let result = parse_clickhouse_connection_string(conn_str);
 
         assert!(result.is_ok());
-        let (config, db_name) = result.unwrap();
+        let config = result.unwrap();
 
-        assert_eq!(config.db_name, "");
-        assert_eq!(db_name, None);
+        // Should default to "default" database when none specified
+        assert_eq!(config.db_name, "default");
     }
 
     #[test]
@@ -804,10 +757,9 @@ mod tests {
         let result = parse_clickhouse_connection_string(conn_str);
 
         assert!(result.is_ok());
-        let (config, db_name) = result.unwrap();
+        let config = result.unwrap();
 
         assert_eq!(config.db_name, "mydb");
-        assert_eq!(db_name, Some("mydb".to_string()));
     }
 
     #[test]
@@ -816,7 +768,7 @@ mod tests {
         let result = parse_clickhouse_connection_string(conn_str);
 
         assert!(result.is_ok());
-        let (config, _) = result.unwrap();
+        let config = result.unwrap();
 
         assert!(config.use_ssl);
         assert_eq!(config.native_port, 9440);
