@@ -5,6 +5,7 @@ import {
   DeadLetterModel,
   DateTime,
   ClickHouseDefault,
+  ClickHouseEngines,
 } from "@514labs/moose-lib";
 
 /**
@@ -285,3 +286,39 @@ export const OptionalNestedTestPipeline =
     stream: true,
     ingestApi: true,
   });
+
+/** =======Versioned OlapTables Test========= */
+// Test versioned OlapTables - same name, different versions
+// This demonstrates the OlapTable versioning functionality
+
+/** Version 1.0 of user events - basic structure */
+export interface UserEventV1 {
+  userId: Key<string>;
+  eventType: string;
+  timestamp: number;
+  metadata?: string;
+}
+
+/** Version 2.0 of user events - enhanced with session tracking */
+export interface UserEventV2 {
+  userId: Key<string>;
+  eventType: string;
+  timestamp: number;
+  metadata?: string;
+  sessionId: string;
+  userAgent?: string;
+}
+
+// Version 1.0 - MergeTree engine
+export const userEventsV1 = new OlapTable<UserEventV1>("UserEvents", {
+  version: "1.0",
+  engine: ClickHouseEngines.MergeTree,
+  orderByFields: ["userId", "timestamp"],
+});
+
+// Version 2.0 - ReplacingMergeTree engine with enhanced schema
+export const userEventsV2 = new OlapTable<UserEventV2>("UserEvents", {
+  version: "2.0",
+  engine: ClickHouseEngines.ReplacingMergeTree,
+  orderByFields: ["userId", "sessionId", "timestamp"],
+});
