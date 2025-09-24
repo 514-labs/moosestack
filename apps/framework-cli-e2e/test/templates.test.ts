@@ -220,32 +220,40 @@ const utils = {
 
   cleanupClickhouseData: async (): Promise<void> => {
     console.log("Cleaning up ClickHouse data...");
-    await utils.withRetries(async () => {
-      const client = createClient(TEST_CONFIG.clickhouse);
-      try {
-        const result = await client.query({
-          query: "SHOW TABLES",
-          format: "JSONEachRow",
-        });
-        const tables: any[] = await result.json();
-        console.log("Existing tables:", tables.map((t) => t.name));
+    await utils.withRetries(
+      async () => {
+        const client = createClient(TEST_CONFIG.clickhouse);
+        try {
+          const result = await client.query({
+            query: "SHOW TABLES",
+            format: "JSONEachRow",
+          });
+          const tables: any[] = await result.json();
+          console.log(
+            "Existing tables:",
+            tables.map((t) => t.name),
+          );
 
-        await client.command({ query: "TRUNCATE TABLE IF EXISTS Bar" });
-        console.log("Truncated Bar table");
+          await client.command({ query: "TRUNCATE TABLE IF EXISTS Bar" });
+          console.log("Truncated Bar table");
 
-        const mvTables = ["BarAggregated", "bar_aggregated"];
-        for (const table of mvTables) {
-          try {
-            await client.command({ query: `TRUNCATE TABLE IF EXISTS ${table}` });
-            console.log(`Truncated ${table} table`);
-          } catch (error) {
-            console.log(`Failed to truncate ${table}:`, error);
+          const mvTables = ["BarAggregated", "bar_aggregated"];
+          for (const table of mvTables) {
+            try {
+              await client.command({
+                query: `TRUNCATE TABLE IF EXISTS ${table}`,
+              });
+              console.log(`Truncated ${table} table`);
+            } catch (error) {
+              console.log(`Failed to truncate ${table}:`, error);
+            }
           }
+        } finally {
+          await client.close();
         }
-      } finally {
-        await client.close();
-      }
-    }, { attempts: 10, delayMs: 1000 });
+      },
+      { attempts: 10, delayMs: 1000 },
+    );
     console.log("ClickHouse data cleanup completed successfully");
   },
 
@@ -290,129 +298,142 @@ const utils = {
     eventId: string,
     primaryKeyField: string,
   ): Promise<void> => {
-    await utils.withRetries(async () => {
-      const client = createClient(TEST_CONFIG.clickhouse);
-      try {
-        const result = await client.query({
-          query: `SELECT * FROM ${tableName} WHERE ${primaryKeyField} = '${eventId}'`,
-          format: "JSONEachRow",
-        });
-        const rows: any[] = await result.json();
-        console.log(`${tableName} data:`, rows);
+    await utils.withRetries(
+      async () => {
+        const client = createClient(TEST_CONFIG.clickhouse);
+        try {
+          const result = await client.query({
+            query: `SELECT * FROM ${tableName} WHERE ${primaryKeyField} = '${eventId}'`,
+            format: "JSONEachRow",
+          });
+          const rows: any[] = await result.json();
+          console.log(`${tableName} data:`, rows);
 
-        expect(rows).to.have.length.greaterThan(
-          0,
-          `Expected at least one row in ${tableName} with ${primaryKeyField} = ${eventId}`,
-        );
-        expect(rows[0][primaryKeyField]).to.equal(
-          eventId,
-          `${primaryKeyField} in ${tableName} should match the generated UUID`,
-        );
-      } finally {
-        await client.close();
-      }
-    }, { attempts: 20, delayMs: 1000 });
+          expect(rows).to.have.length.greaterThan(
+            0,
+            `Expected at least one row in ${tableName} with ${primaryKeyField} = ${eventId}`,
+          );
+          expect(rows[0][primaryKeyField]).to.equal(
+            eventId,
+            `${primaryKeyField} in ${tableName} should match the generated UUID`,
+          );
+        } finally {
+          await client.close();
+        }
+      },
+      { attempts: 20, delayMs: 1000 },
+    );
   },
 
   verifyConsumptionApi: async (
     endpoint: string,
     expectedResponse: any,
   ): Promise<void> => {
-    await utils.withRetries(async () => {
-      const response = await fetch(`${TEST_CONFIG.server.url}/api/${endpoint}`);
-      if (!response.ok) {
-        const text = await response.text();
-        throw new Error(`${response.status}: ${text}`);
-      }
-      console.log("Test request sent successfully");
-      const json = (await response.json()) as any[];
+    await utils.withRetries(
+      async () => {
+        const response = await fetch(
+          `${TEST_CONFIG.server.url}/api/${endpoint}`,
+        );
+        if (!response.ok) {
+          const text = await response.text();
+          throw new Error(`${response.status}: ${text}`);
+        }
+        console.log("Test request sent successfully");
+        const json = (await response.json()) as any[];
 
-      expect(json).to.be.an("array");
-      expect(json.length).to.be.at.least(1);
+        expect(json).to.be.an("array");
+        expect(json.length).to.be.at.least(1);
 
-      json.forEach((item: any) => {
-        Object.keys(expectedResponse[0]).forEach((key) => {
-          expect(item).to.have.property(key);
-          expect(item[key]).to.not.be.null;
+        json.forEach((item: any) => {
+          Object.keys(expectedResponse[0]).forEach((key) => {
+            expect(item).to.have.property(key);
+            expect(item[key]).to.not.be.null;
+          });
+
+          if (item.hasOwnProperty("rows_with_text")) {
+            expect(item.rows_with_text).to.be.at.least(1);
+          }
+
+          if (item.hasOwnProperty("total_rows")) {
+            expect(item.total_rows).to.be.at.least(1);
+          }
         });
-
-        if (item.hasOwnProperty("rows_with_text")) {
-          expect(item.rows_with_text).to.be.at.least(1);
-        }
-
-        if (item.hasOwnProperty("total_rows")) {
-          expect(item.total_rows).to.be.at.least(1);
-        }
-      });
-    }, { attempts: 10, delayMs: 1000 });
+      },
+      { attempts: 10, delayMs: 1000 },
+    );
   },
 
   verifyVersionedConsumptionApi: async (
     endpoint: string,
     expectedResponse: any,
   ): Promise<void> => {
-    await utils.withRetries(async () => {
-      const response = await fetch(`${TEST_CONFIG.server.url}/api/${endpoint}`);
-      if (!response.ok) {
-        const text = await response.text();
-        throw new Error(`${response.status}: ${text}`);
-      }
-      console.log("Versioned API test request sent successfully");
-      const json = (await response.json()) as any[];
+    await utils.withRetries(
+      async () => {
+        const response = await fetch(
+          `${TEST_CONFIG.server.url}/api/${endpoint}`,
+        );
+        if (!response.ok) {
+          const text = await response.text();
+          throw new Error(`${response.status}: ${text}`);
+        }
+        console.log("Versioned API test request sent successfully");
+        const json = (await response.json()) as any[];
 
-      expect(json).to.be.an("array");
-      expect(json.length).to.be.at.least(1);
+        expect(json).to.be.an("array");
+        expect(json.length).to.be.at.least(1);
 
-      json.forEach((item: any, index: number) => {
-        const expected = expectedResponse[index] || expectedResponse[0];
+        json.forEach((item: any, index: number) => {
+          const expected = expectedResponse[index] || expectedResponse[0];
 
-        Object.keys(expected).forEach((key) => {
-          const expectedValue = expected[key];
-          expect(item).to.have.property(key);
+          Object.keys(expected).forEach((key) => {
+            const expectedValue = expected[key];
+            expect(item).to.have.property(key);
 
-          if (
-            typeof expectedValue === "object" &&
-            expectedValue !== null &&
-            !Array.isArray(expectedValue)
-          ) {
-            expect(item[key]).to.be.an("object");
+            if (
+              typeof expectedValue === "object" &&
+              expectedValue !== null &&
+              !Array.isArray(expectedValue)
+            ) {
+              expect(item[key]).to.be.an("object");
 
-            Object.keys(expectedValue).forEach((nestedKey) => {
-              const nestedExpected = expectedValue[nestedKey];
-              if (
-                typeof nestedExpected === "object" &&
-                nestedExpected !== null
-              ) {
-                const camelCaseKey = nestedKey;
-                const snakeCaseKey = nestedKey
-                  .replace(/([A-Z])/g, "_$1")
-                  .toLowerCase();
-                const hasCamelCase = item[key].hasOwnProperty(camelCaseKey);
-                const hasSnakeCase = item[key].hasOwnProperty(snakeCaseKey);
-                expect(hasCamelCase || hasSnakeCase).to.be.true;
-                const nestedField =
-                  item[key][camelCaseKey] || item[key][snakeCaseKey];
-                expect(nestedField).to.be.an("object");
-              } else {
-                expect(item[key]).to.have.property(nestedKey);
-                if (typeof nestedExpected === "string") {
-                  expect(item[key][nestedKey]).to.equal(nestedExpected);
+              Object.keys(expectedValue).forEach((nestedKey) => {
+                const nestedExpected = expectedValue[nestedKey];
+                if (
+                  typeof nestedExpected === "object" &&
+                  nestedExpected !== null
+                ) {
+                  const camelCaseKey = nestedKey;
+                  const snakeCaseKey = nestedKey
+                    .replace(/([A-Z])/g, "_$1")
+                    .toLowerCase();
+                  const hasCamelCase = item[key].hasOwnProperty(camelCaseKey);
+                  const hasSnakeCase = item[key].hasOwnProperty(snakeCaseKey);
+                  expect(hasCamelCase || hasSnakeCase).to.be.true;
+                  const nestedField =
+                    item[key][camelCaseKey] || item[key][snakeCaseKey];
+                  expect(nestedField).to.be.an("object");
+                } else {
+                  expect(item[key]).to.have.property(nestedKey);
+                  if (typeof nestedExpected === "string") {
+                    expect(item[key][nestedKey]).to.equal(nestedExpected);
+                  }
                 }
-              }
-            });
-          } else {
-            expect(item[key]).to.not.be.null;
+              });
+            } else {
+              expect(item[key]).to.not.be.null;
+            }
+          });
+
+          if (item.hasOwnProperty("rows_with_text")) {
+            expect(item.rows_with_text).to.be.at.least(1);
+          }
+          if (item.hasOwnProperty("total_rows")) {
+            expect(item.total_rows).to.be.at.least(1);
           }
         });
-
-        if (item.hasOwnProperty("rows_with_text")) {
-          expect(item.rows_with_text).to.be.at.least(1);
-        }
-        if (item.hasOwnProperty("total_rows")) {
-          expect(item.total_rows).to.be.at.least(1);
-        }
-      });
-    }, { attempts: 10, delayMs: 1000 });
+      },
+      { attempts: 10, delayMs: 1000 },
+    );
   },
 
   verifyConsumerLogs: async (
@@ -425,31 +446,34 @@ const utils = {
     const logFileName = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}-cli.log`;
     let logPath = path.join(mooseDir, logFileName);
 
-    await utils.withRetries(async () => {
-      if (!fs.existsSync(logPath)) {
-        // Fallback: pick the most recent cli.log in ~/.moose
-        const files = fs
-          .readdirSync(mooseDir)
-          .filter((f) => f.endsWith("-cli.log"))
-          .map((f) => ({
-            name: f,
-            time: fs.statSync(path.join(mooseDir, f)).mtimeMs,
-          }))
-          .sort((a, b) => b.time - a.time);
-        if (files.length > 0) {
-          logPath = path.join(mooseDir, files[0].name);
+    await utils.withRetries(
+      async () => {
+        if (!fs.existsSync(logPath)) {
+          // Fallback: pick the most recent cli.log in ~/.moose
+          const files = fs
+            .readdirSync(mooseDir)
+            .filter((f) => f.endsWith("-cli.log"))
+            .map((f) => ({
+              name: f,
+              time: fs.statSync(path.join(mooseDir, f)).mtimeMs,
+            }))
+            .sort((a, b) => b.time - a.time);
+          if (files.length > 0) {
+            logPath = path.join(mooseDir, files[0].name);
+          }
         }
-      }
 
-      console.log("Checking consumer logs in:", logPath);
-      const logContent = fs.readFileSync(logPath, "utf-8");
-      for (const expected of expectedOutput) {
-        expect(logContent).to.include(
-          expected,
-          `Log should contain "${expected}"`,
-        );
-      }
-    }, { attempts: 10, delayMs: 1000 });
+        console.log("Checking consumer logs in:", logPath);
+        const logContent = fs.readFileSync(logPath, "utf-8");
+        for (const expected of expectedOutput) {
+          expect(logContent).to.include(
+            expected,
+            `Log should contain "${expected}"`,
+          );
+        }
+      },
+      { attempts: 10, delayMs: 1000 },
+    );
   },
 };
 
@@ -542,21 +566,27 @@ describe("Moose Templates", () => {
       // Send multiple records to trigger batch write (batch size is likely 1000+)
       const recordsToSend = 50; // Send enough to trigger a batch
       for (let i = 0; i < recordsToSend; i++) {
-        await utils.withRetries(async () => {
-          const response = await fetch(`${TEST_CONFIG.server.url}/ingest/Foo`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              primaryKey: i === 0 ? eventId : randomUUID(),
-              timestamp: TEST_CONFIG.timestamp,
-              optionalText: `Hello world ${i}`,
-            }),
-          });
-          if (!response.ok) {
-            const text = await response.text();
-            throw new Error(`${response.status}: ${text}`);
-          }
-        }, { attempts: 5, delayMs: 500 });
+        await utils.withRetries(
+          async () => {
+            const response = await fetch(
+              `${TEST_CONFIG.server.url}/ingest/Foo`,
+              {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  primaryKey: i === 0 ? eventId : randomUUID(),
+                  timestamp: TEST_CONFIG.timestamp,
+                  optionalText: `Hello world ${i}`,
+                }),
+              },
+            );
+            if (!response.ok) {
+              const text = await response.text();
+              throw new Error(`${response.status}: ${text}`);
+            }
+          },
+          { attempts: 5, delayMs: 500 },
+        );
       }
 
       await utils.waitForDBWrite(devProcess!, "Bar", recordsToSend);
@@ -723,22 +753,25 @@ describe("Moose Templates", () => {
 
     it("should successfully ingest data and verify through consumption API", async function () {
       const eventId = randomUUID();
-      await utils.withRetries(async () => {
-        const response = await fetch(`${TEST_CONFIG.server.url}/ingest/foo`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            primary_key: eventId,
-            baz: "QUUX",
-            timestamp: TEST_CONFIG.timestamp,
-            optional_text: "Hello from Python",
-          }),
-        });
-        if (!response.ok) {
-          const text = await response.text();
-          throw new Error(`${response.status}: ${text}`);
-        }
-      }, { attempts: 5, delayMs: 500 });
+      await utils.withRetries(
+        async () => {
+          const response = await fetch(`${TEST_CONFIG.server.url}/ingest/foo`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              primary_key: eventId,
+              baz: "QUUX",
+              timestamp: TEST_CONFIG.timestamp,
+              optional_text: "Hello from Python",
+            }),
+          });
+          if (!response.ok) {
+            const text = await response.text();
+            throw new Error(`${response.status}: ${text}`);
+          }
+        },
+        { attempts: 5, delayMs: 500 },
+      );
 
       await utils.waitForDBWrite(devProcess!, "Bar", 1);
       await utils.verifyClickhouseData("Bar", eventId, "primary_key");
