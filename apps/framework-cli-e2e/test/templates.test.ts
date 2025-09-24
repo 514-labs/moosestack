@@ -491,7 +491,10 @@ it("should return the dummy version in debug build", async () => {
 describe("Moose Templates", () => {
   describe("typescript template default", () => {
     let devProcess: ChildProcess | null = null;
-    const TEST_PROJECT_DIR = path.join(__dirname, "../temp-test-project-ts-default");
+    const TEST_PROJECT_DIR = path.join(
+      __dirname,
+      "../temp-test-project-ts-default",
+    );
 
     before(async function () {
       this.timeout(240_000);
@@ -634,7 +637,10 @@ describe("Moose Templates", () => {
 
   describe("typescript template tests", () => {
     let devProcess: ChildProcess | null = null;
-    const TEST_PROJECT_DIR = path.join(__dirname, "../temp-test-project-ts-tests");
+    const TEST_PROJECT_DIR = path.join(
+      __dirname,
+      "../temp-test-project-ts-tests",
+    );
 
     before(async function () {
       this.timeout(240_000);
@@ -777,7 +783,10 @@ describe("Moose Templates", () => {
 
   describe("python template default", () => {
     let devProcess: ChildProcess | null = null;
-    const TEST_PROJECT_DIR = path.join(__dirname, "../temp-test-project-py-default");
+    const TEST_PROJECT_DIR = path.join(
+      __dirname,
+      "../temp-test-project-py-default",
+    );
 
     before(async function () {
       this.timeout(240_000);
@@ -966,7 +975,10 @@ describe("Moose Templates", () => {
 
   describe("python template tests", () => {
     let devProcess: ChildProcess | null = null;
-    const TEST_PROJECT_DIR = path.join(__dirname, "../temp-test-project-py-tests");
+    const TEST_PROJECT_DIR = path.join(
+      __dirname,
+      "../temp-test-project-py-tests",
+    );
 
     before(async function () {
       this.timeout(240_000);
