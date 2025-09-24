@@ -226,7 +226,7 @@ class QueryClient:
                     from moose_lib.utilities.sql import clickhouse_param_type_for_value
                     ch_type = clickhouse_param_type_for_value(value)
                     params[variable_name] = f'{{p{i}: {ch_type}}}'
-                    values[f'p{i}'] = value if ch_type != 'String' else (value if isinstance(value, str) else str(value))
+                    values[f'p{i}'] = value
                 preview_params[variable_name] = self._format_value_for_preview(value)
 
         clickhouse_query = input.format_map(params)
