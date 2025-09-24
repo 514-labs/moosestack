@@ -509,7 +509,6 @@ const tsTypeToDataType = (
     : isNumberType(nonNull, checker) ?
       handleNumberType(nonNull, checker, fieldName)
     : checker.isTypeAssignableTo(nonNull, checker.getBooleanType()) ? "Boolean"
-    : checker.isTypeAssignableTo(nonNull, dateType(checker)) ? "DateTime"
     : checker.isArrayType(withoutTags) ?
       toArrayType(
         tsTypeToDataType(
