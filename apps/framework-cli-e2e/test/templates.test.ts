@@ -539,742 +539,396 @@ it("should return the dummy version in debug build", async () => {
   expect(version).to.equal(expectedVersion);
 });
 
+// Template test configuration
+interface TemplateTestConfig {
+  templateName: string;
+  displayName: string;
+  projectDirSuffix: string;
+  appName: string;
+  language: "typescript" | "python";
+  isTestsVariant: boolean;
+}
+
+const TEMPLATE_CONFIGS: TemplateTestConfig[] = [
+  {
+    templateName: "typescript",
+    displayName: "TypeScript Default Template",
+    projectDirSuffix: "ts-default",
+    appName: "moose-ts-app",
+    language: "typescript",
+    isTestsVariant: false,
+  },
+  {
+    templateName: "typescript-tests",
+    displayName: "TypeScript Tests Template",
+    projectDirSuffix: "ts-tests",
+    appName: "moose-ts-app",
+    language: "typescript",
+    isTestsVariant: true,
+  },
+  {
+    templateName: "python",
+    displayName: "Python Default Template",
+    projectDirSuffix: "py-default",
+    appName: "moose-py-app",
+    language: "python",
+    isTestsVariant: false,
+  },
+  {
+    templateName: "python-tests",
+    displayName: "Python Tests Template",
+    projectDirSuffix: "py-tests",
+    appName: "moose-py-app",
+    language: "python",
+    isTestsVariant: true,
+  },
+];
+
+// Common setup functions
+const setupTypeScriptProject = async (
+  projectDir: string,
+  templateName: string,
+): Promise<void> => {
+  // Initialize project
+  console.log(
+    `Initializing TypeScript project with ${templateName} template...`,
+  );
+  await execAsync(
+    `"${CLI_PATH}" init moose-ts-app ${templateName} --location "${projectDir}"`,
+  );
+
+  // Update package.json to use local moose-lib
+  console.log("Updating package.json to use local moose-lib...");
+  const packageJsonPath = path.join(projectDir, "package.json");
+  const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, "utf-8"));
+  packageJson.dependencies["@514labs/moose-lib"] = `file:${MOOSE_LIB_PATH}`;
+  fs.writeFileSync(packageJsonPath, JSON.stringify(packageJson, null, 2));
+
+  // Install dependencies
+  console.log("Installing dependencies...");
+  await new Promise<void>((resolve, reject) => {
+    const npmInstall = spawn("npm", ["install"], {
+      stdio: "inherit",
+      cwd: projectDir,
+    });
+    npmInstall.on("close", (code) => {
+      console.log(`npm install exited with code ${code}`);
+      code === 0 ? resolve() : (
+        reject(new Error(`npm install failed with code ${code}`))
+      );
+    });
+  });
+};
+
+const setupPythonProject = async (
+  projectDir: string,
+  templateName: string,
+): Promise<void> => {
+  // Initialize project
+  console.log(`Initializing Python project with ${templateName} template...`);
+  await execAsync(
+    `"${CLI_PATH}" init moose-py-app ${templateName} --location "${projectDir}"`,
+  );
+
+  // Set up Python environment and install dependencies
+  console.log(
+    "Setting up Python virtual environment and installing dependencies...",
+  );
+  await new Promise<void>((resolve, reject) => {
+    const setupCmd = process.platform === "win32" ? "python" : "python3";
+    const venvCmd = spawn(setupCmd, ["-m", "venv", ".venv"], {
+      stdio: "inherit",
+      cwd: projectDir,
+    });
+    venvCmd.on("close", async (code) => {
+      if (code !== 0) {
+        reject(new Error(`venv creation failed with code ${code}`));
+        return;
+      }
+
+      // First install project dependencies from requirements.txt
+      const pipReqCmd = spawn(
+        process.platform === "win32" ? ".venv\\Scripts\\pip" : ".venv/bin/pip",
+        ["install", "-r", "requirements.txt"],
+        {
+          stdio: "inherit",
+          cwd: projectDir,
+        },
+      );
+
+      pipReqCmd.on("close", (reqPipCode) => {
+        if (reqPipCode !== 0) {
+          reject(
+            new Error(
+              `requirements.txt pip install failed with code ${reqPipCode}`,
+            ),
+          );
+          return;
+        }
+
+        // Then install the local moose lib
+        const pipMooseCmd = spawn(
+          process.platform === "win32" ?
+            ".venv\\Scripts\\pip"
+          : ".venv/bin/pip",
+          ["install", "-e", MOOSE_PY_LIB_PATH],
+          {
+            stdio: "inherit",
+            cwd: projectDir,
+          },
+        );
+
+        pipMooseCmd.on("close", (moosePipCode) => {
+          if (moosePipCode !== 0) {
+            reject(
+              new Error(
+                `moose lib pip install failed with code ${moosePipCode}`,
+              ),
+            );
+            return;
+          }
+          resolve();
+        });
+      });
+    });
+  });
+};
+
+const createTemplateTestSuite = (config: TemplateTestConfig) => {
+  const testName =
+    config.isTestsVariant ?
+      `${config.language} template tests`
+    : `${config.language} template default`;
+
+  describe(testName, () => {
+    let devProcess: ChildProcess | null = null;
+    const TEST_PROJECT_DIR = path.join(
+      __dirname,
+      `../temp-test-project-${config.projectDirSuffix}`,
+    );
+
+    before(async function () {
+      this.timeout(240_000);
+      try {
+        await fs.promises.access(CLI_PATH, fs.constants.F_OK);
+      } catch (err) {
+        console.error(
+          `CLI not found at ${CLI_PATH}. It should be built in the pretest step.`,
+        );
+        throw err;
+      }
+
+      if (fs.existsSync(TEST_PROJECT_DIR)) {
+        utils.removeTestProject(TEST_PROJECT_DIR);
+      }
+
+      // Setup project based on language
+      if (config.language === "typescript") {
+        await setupTypeScriptProject(TEST_PROJECT_DIR, config.templateName);
+      } else {
+        await setupPythonProject(TEST_PROJECT_DIR, config.templateName);
+      }
+
+      // Start dev server
+      console.log("Starting dev server...");
+      const devEnv =
+        config.language === "python" ?
+          {
+            ...process.env,
+            VIRTUAL_ENV: path.join(TEST_PROJECT_DIR, ".venv"),
+            PATH: `${path.join(TEST_PROJECT_DIR, ".venv", "bin")}:${process.env.PATH}`,
+          }
+        : process.env;
+
+      devProcess = spawn(CLI_PATH, ["dev"], {
+        stdio: "pipe",
+        cwd: TEST_PROJECT_DIR,
+        env: devEnv,
+      });
+
+      await utils.waitForServerStart(
+        devProcess,
+        TEST_CONFIG.server.startupTimeout,
+      );
+      console.log("Server started, cleaning up old data...");
+      await utils.cleanupClickhouseData();
+      console.log("Waiting before running tests...");
+      await setTimeoutAsync(10000);
+    });
+
+    after(async function () {
+      this.timeout(90_000); // Increased timeout for cleanup
+      try {
+        console.log(`Starting cleanup for ${config.displayName} test...`);
+        await utils.stopDevProcess(devProcess);
+        await utils.cleanupDocker(TEST_PROJECT_DIR, config.appName);
+        utils.removeTestProject(TEST_PROJECT_DIR);
+        console.log(`Cleanup completed for ${config.displayName} test`);
+      } catch (error) {
+        console.error("Error during cleanup:", error);
+        // Force cleanup even if some steps fail
+        try {
+          if (devProcess && !devProcess.killed) {
+            devProcess.kill("SIGKILL");
+          }
+        } catch (killError) {
+          console.error("Error killing process:", killError);
+        }
+        utils.removeTestProject(TEST_PROJECT_DIR);
+      }
+    });
+
+    // Create test case based on language
+    if (config.language === "typescript") {
+      it("should successfully ingest data and verify through consumption API (DateTime support)", async function () {
+        const eventId = randomUUID();
+
+        // Send multiple records to trigger batch write (batch size is likely 1000+)
+        const recordsToSend = 50; // Send enough to trigger a batch
+        for (let i = 0; i < recordsToSend; i++) {
+          await utils.withRetries(
+            async () => {
+              const response = await fetch(
+                `${TEST_CONFIG.server.url}/ingest/Foo`,
+                {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    primaryKey: i === 0 ? eventId : randomUUID(),
+                    timestamp: TEST_CONFIG.timestamp,
+                    optionalText: `Hello world ${i}`,
+                  }),
+                },
+              );
+              if (!response.ok) {
+                const text = await response.text();
+                throw new Error(`${response.status}: ${text}`);
+              }
+            },
+            { attempts: 5, delayMs: 500 },
+          );
+        }
+
+        await utils.waitForDBWrite(devProcess!, "Bar", recordsToSend);
+        await utils.verifyClickhouseData("Bar", eventId, "primaryKey");
+        await utils.waitForMaterializedViewUpdate("BarAggregated", 1);
+        await utils.verifyConsumptionApi(
+          "bar?orderBy=totalRows&startDay=19&endDay=19&limit=1",
+          [
+            {
+              // output_format_json_quote_64bit_integers is true by default in ClickHouse
+              dayOfMonth: "19",
+              totalRows: "1",
+            },
+          ],
+        );
+
+        // Test versioned API (V1)
+        await utils.verifyVersionedConsumptionApi(
+          "bar/1?orderBy=totalRows&startDay=19&endDay=19&limit=1",
+          [
+            {
+              dayOfMonth: "19",
+              totalRows: "1",
+              metadata: {
+                version: "1.0",
+                queryParams: {
+                  orderBy: "totalRows",
+                  limit: 1,
+                  startDay: 19,
+                  endDay: 19,
+                },
+              },
+            },
+          ],
+        );
+
+        // Verify consumer logs
+        await utils.verifyConsumerLogs(TEST_PROJECT_DIR, [
+          "Received Foo event:",
+          `Primary Key: ${eventId}`,
+          "Optional Text: Hello world",
+        ]);
+      });
+    } else {
+      it("should successfully ingest data and verify through consumption API", async function () {
+        const eventId = randomUUID();
+        await utils.withRetries(
+          async () => {
+            const response = await fetch(
+              `${TEST_CONFIG.server.url}/ingest/foo`,
+              {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  primary_key: eventId,
+                  baz: "QUUX",
+                  timestamp: TEST_CONFIG.timestamp,
+                  optional_text: "Hello from Python",
+                }),
+              },
+            );
+            if (!response.ok) {
+              const text = await response.text();
+              throw new Error(`${response.status}: ${text}`);
+            }
+          },
+          { attempts: 5, delayMs: 500 },
+        );
+
+        await utils.waitForDBWrite(devProcess!, "Bar", 1);
+        await utils.verifyClickhouseData("Bar", eventId, "primary_key");
+        await utils.waitForMaterializedViewUpdate("bar_aggregated", 1);
+        await utils.verifyConsumptionApi(
+          "bar?order_by=total_rows&start_day=19&end_day=19&limit=1",
+          [
+            {
+              day_of_month: 19,
+              total_rows: 1,
+              rows_with_text: 1,
+              max_text_length: 17,
+              total_text_length: 17,
+            },
+          ],
+        );
+
+        // Test versioned API (V1)
+        await utils.verifyVersionedConsumptionApi(
+          "bar/1?order_by=total_rows&start_day=19&end_day=19&limit=1",
+          [
+            {
+              day_of_month: 19,
+              total_rows: 1,
+              rows_with_text: 1,
+              max_text_length: 17,
+              total_text_length: 17,
+              metadata: {
+                version: "1.0",
+                query_params: {
+                  order_by: "total_rows",
+                  limit: 1,
+                  start_day: 19,
+                  end_day: 19,
+                },
+              },
+            },
+          ],
+        );
+
+        // Verify consumer logs
+        await utils.verifyConsumerLogs(TEST_PROJECT_DIR, [
+          "Received Foo event:",
+          `Primary Key: ${eventId}`,
+          "Optional Text: Hello from Python",
+        ]);
+      });
+    }
+  });
+};
+
 describe("Moose Templates", () => {
-  describe("typescript template default", () => {
-    let devProcess: ChildProcess | null = null;
-    const TEST_PROJECT_DIR = path.join(
-      __dirname,
-      "../temp-test-project-ts-default",
-    );
-
-    before(async function () {
-      this.timeout(240_000);
-      try {
-        await fs.promises.access(CLI_PATH, fs.constants.F_OK);
-      } catch (err) {
-        console.error(
-          `CLI not found at ${CLI_PATH}. It should be built in the pretest step.`,
-        );
-        throw err;
-      }
-
-      if (fs.existsSync(TEST_PROJECT_DIR)) {
-        utils.removeTestProject(TEST_PROJECT_DIR);
-      }
-
-      // Initialize project with default typescript template
-      console.log("Initializing TypeScript project with default template...");
-      await execAsync(
-        `"${CLI_PATH}" init moose-ts-app typescript --location "${TEST_PROJECT_DIR}"`,
-      );
-
-      // Update package.json to use local moose-lib
-      console.log("Updating package.json to use local moose-lib...");
-      const packageJsonPath = path.join(TEST_PROJECT_DIR, "package.json");
-      const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, "utf-8"));
-      packageJson.dependencies["@514labs/moose-lib"] = `file:${MOOSE_LIB_PATH}`;
-      fs.writeFileSync(packageJsonPath, JSON.stringify(packageJson, null, 2));
-
-      // Install dependencies
-      console.log("Installing dependencies...");
-      await new Promise<void>((resolve, reject) => {
-        const npmInstall = spawn("npm", ["install"], {
-          stdio: "inherit",
-          cwd: TEST_PROJECT_DIR,
-        });
-        npmInstall.on("close", (code) => {
-          console.log(`npm install exited with code ${code}`);
-          code === 0 ? resolve() : (
-            reject(new Error(`npm install failed with code ${code}`))
-          );
-        });
-      });
-
-      // Start dev server
-      console.log("Starting dev server...");
-      devProcess = spawn(CLI_PATH, ["dev"], {
-        stdio: "pipe",
-        cwd: TEST_PROJECT_DIR,
-      });
-
-      await utils.waitForServerStart(
-        devProcess,
-        TEST_CONFIG.server.startupTimeout,
-      );
-      console.log("Server started, cleaning up old data...");
-      await utils.cleanupClickhouseData();
-      console.log("Waiting before running tests...");
-      await setTimeoutAsync(10000);
-    });
-
-    after(async function () {
-      this.timeout(90_000); // Increased timeout for cleanup
-      try {
-        console.log("Starting cleanup for TypeScript default template test...");
-        await utils.stopDevProcess(devProcess);
-        await utils.cleanupDocker(TEST_PROJECT_DIR, "moose-ts-app");
-        utils.removeTestProject(TEST_PROJECT_DIR);
-        console.log("Cleanup completed for TypeScript default template test");
-      } catch (error) {
-        console.error("Error during cleanup:", error);
-        // Force cleanup even if some steps fail
-        try {
-          if (devProcess && !devProcess.killed) {
-            devProcess.kill("SIGKILL");
-          }
-        } catch (killError) {
-          console.error("Error killing process:", killError);
-        }
-        utils.removeTestProject(TEST_PROJECT_DIR);
-      }
-    });
-
-    it("should successfully ingest data and verify through consumption API (DateTime support)", async function () {
-      const eventId = randomUUID();
-
-      // Send multiple records to trigger batch write (batch size is likely 1000+)
-      const recordsToSend = 50; // Send enough to trigger a batch
-      for (let i = 0; i < recordsToSend; i++) {
-        await utils.withRetries(
-          async () => {
-            const response = await fetch(
-              `${TEST_CONFIG.server.url}/ingest/Foo`,
-              {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  primaryKey: i === 0 ? eventId : randomUUID(),
-                  timestamp: TEST_CONFIG.timestamp,
-                  optionalText: `Hello world ${i}`,
-                }),
-              },
-            );
-            if (!response.ok) {
-              const text = await response.text();
-              throw new Error(`${response.status}: ${text}`);
-            }
-          },
-          { attempts: 5, delayMs: 500 },
-        );
-      }
-
-      await utils.waitForDBWrite(devProcess!, "Bar", recordsToSend);
-      await utils.verifyClickhouseData("Bar", eventId, "primaryKey");
-      await utils.waitForMaterializedViewUpdate("BarAggregated", 1);
-      await utils.verifyConsumptionApi(
-        "bar?orderBy=totalRows&startDay=19&endDay=19&limit=1",
-        [
-          {
-            // output_format_json_quote_64bit_integers is true by default in ClickHouse
-            dayOfMonth: "19",
-            totalRows: "1",
-          },
-        ],
-      );
-
-      // Test versioned API (V1)
-      await utils.verifyVersionedConsumptionApi(
-        "bar/1?orderBy=totalRows&startDay=19&endDay=19&limit=1",
-        [
-          {
-            dayOfMonth: "19",
-            totalRows: "1",
-            metadata: {
-              version: "1.0",
-              queryParams: {
-                orderBy: "totalRows",
-                limit: 1,
-                startDay: 19,
-                endDay: 19,
-              },
-            },
-          },
-        ],
-      );
-
-      // Verify consumer logs
-      await utils.verifyConsumerLogs(TEST_PROJECT_DIR, [
-        "Received Foo event:",
-        `Primary Key: ${eventId}`,
-        "Optional Text: Hello world",
-      ]);
-    });
-  });
-
-  describe("typescript template tests", () => {
-    let devProcess: ChildProcess | null = null;
-    const TEST_PROJECT_DIR = path.join(
-      __dirname,
-      "../temp-test-project-ts-tests",
-    );
-
-    before(async function () {
-      this.timeout(240_000);
-      try {
-        await fs.promises.access(CLI_PATH, fs.constants.F_OK);
-      } catch (err) {
-        console.error(
-          `CLI not found at ${CLI_PATH}. It should be built in the pretest step.`,
-        );
-        throw err;
-      }
-
-      if (fs.existsSync(TEST_PROJECT_DIR)) {
-        utils.removeTestProject(TEST_PROJECT_DIR);
-      }
-
-      // Initialize project with typescript-tests template
-      console.log("Initializing TypeScript project with tests template...");
-      await execAsync(
-        `"${CLI_PATH}" init moose-ts-app typescript-tests --location "${TEST_PROJECT_DIR}"`,
-      );
-
-      // Update package.json to use local moose-lib
-      console.log("Updating package.json to use local moose-lib...");
-      const packageJsonPath = path.join(TEST_PROJECT_DIR, "package.json");
-      const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, "utf-8"));
-      packageJson.dependencies["@514labs/moose-lib"] = `file:${MOOSE_LIB_PATH}`;
-      fs.writeFileSync(packageJsonPath, JSON.stringify(packageJson, null, 2));
-
-      // Install dependencies
-      console.log("Installing dependencies...");
-      await new Promise<void>((resolve, reject) => {
-        const npmInstall = spawn("npm", ["install"], {
-          stdio: "inherit",
-          cwd: TEST_PROJECT_DIR,
-        });
-        npmInstall.on("close", (code) => {
-          console.log(`npm install exited with code ${code}`);
-          code === 0 ? resolve() : (
-            reject(new Error(`npm install failed with code ${code}`))
-          );
-        });
-      });
-
-      // Start dev server
-      console.log("Starting dev server...");
-      devProcess = spawn(CLI_PATH, ["dev"], {
-        stdio: "pipe",
-        cwd: TEST_PROJECT_DIR,
-      });
-
-      await utils.waitForServerStart(
-        devProcess,
-        TEST_CONFIG.server.startupTimeout,
-      );
-      console.log("Server started, cleaning up old data...");
-      await utils.cleanupClickhouseData();
-      console.log("Waiting before running tests...");
-      await setTimeoutAsync(10000);
-    });
-
-    after(async function () {
-      this.timeout(90_000); // Increased timeout for cleanup
-      try {
-        console.log("Starting cleanup for TypeScript tests template test...");
-        await utils.stopDevProcess(devProcess);
-        await utils.cleanupDocker(TEST_PROJECT_DIR, "moose-ts-app");
-        utils.removeTestProject(TEST_PROJECT_DIR);
-        console.log("Cleanup completed for TypeScript tests template test");
-      } catch (error) {
-        console.error("Error during cleanup:", error);
-        // Force cleanup even if some steps fail
-        try {
-          if (devProcess && !devProcess.killed) {
-            devProcess.kill("SIGKILL");
-          }
-        } catch (killError) {
-          console.error("Error killing process:", killError);
-        }
-        utils.removeTestProject(TEST_PROJECT_DIR);
-      }
-    });
-
-    it("should successfully ingest data and verify through consumption API (DateTime support)", async function () {
-      const eventId = randomUUID();
-
-      // Send multiple records to trigger batch write (batch size is likely 1000+)
-      const recordsToSend = 50; // Send enough to trigger a batch
-      for (let i = 0; i < recordsToSend; i++) {
-        await utils.withRetries(
-          async () => {
-            const response = await fetch(
-              `${TEST_CONFIG.server.url}/ingest/Foo`,
-              {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  primaryKey: i === 0 ? eventId : randomUUID(),
-                  timestamp: TEST_CONFIG.timestamp,
-                  optionalText: `Hello world ${i}`,
-                }),
-              },
-            );
-            if (!response.ok) {
-              const text = await response.text();
-              throw new Error(`${response.status}: ${text}`);
-            }
-          },
-          { attempts: 5, delayMs: 500 },
-        );
-      }
-
-      await utils.waitForDBWrite(devProcess!, "Bar", recordsToSend);
-      await utils.verifyClickhouseData("Bar", eventId, "primaryKey");
-      await utils.waitForMaterializedViewUpdate("BarAggregated", 1);
-      await utils.verifyConsumptionApi(
-        "bar?orderBy=totalRows&startDay=19&endDay=19&limit=1",
-        [
-          {
-            // output_format_json_quote_64bit_integers is true by default in ClickHouse
-            dayOfMonth: "19",
-            totalRows: "1",
-          },
-        ],
-      );
-
-      // Test versioned API (V1)
-      await utils.verifyVersionedConsumptionApi(
-        "bar/1?orderBy=totalRows&startDay=19&endDay=19&limit=1",
-        [
-          {
-            dayOfMonth: "19",
-            totalRows: "1",
-            metadata: {
-              version: "1.0",
-              queryParams: {
-                orderBy: "totalRows",
-                limit: 1,
-                startDay: 19,
-                endDay: 19,
-              },
-            },
-          },
-        ],
-      );
-
-      // Verify consumer logs
-      await utils.verifyConsumerLogs(TEST_PROJECT_DIR, [
-        "Received Foo event:",
-        `Primary Key: ${eventId}`,
-        "Optional Text: Hello world",
-      ]);
-    });
-  });
-
-  describe("python template default", () => {
-    let devProcess: ChildProcess | null = null;
-    const TEST_PROJECT_DIR = path.join(
-      __dirname,
-      "../temp-test-project-py-default",
-    );
-
-    before(async function () {
-      this.timeout(240_000);
-      try {
-        await fs.promises.access(CLI_PATH, fs.constants.F_OK);
-      } catch (err) {
-        console.error(
-          `CLI not found at ${CLI_PATH}. It should be built in the pretest step.`,
-        );
-        throw err;
-      }
-
-      if (fs.existsSync(TEST_PROJECT_DIR)) {
-        utils.removeTestProject(TEST_PROJECT_DIR);
-      }
-
-      // Initialize project with default python template
-      console.log("Initializing Python project with default template...");
-      await execAsync(
-        `"${CLI_PATH}" init moose-py-app python --location "${TEST_PROJECT_DIR}"`,
-      );
-
-      // Set up Python environment and install dependencies
-      console.log(
-        "Setting up Python virtual environment and installing dependencies...",
-      );
-      await new Promise<void>((resolve, reject) => {
-        const setupCmd = process.platform === "win32" ? "python" : "python3";
-        const venvCmd = spawn(setupCmd, ["-m", "venv", ".venv"], {
-          stdio: "inherit",
-          cwd: TEST_PROJECT_DIR,
-        });
-        venvCmd.on("close", async (code) => {
-          if (code !== 0) {
-            reject(new Error(`venv creation failed with code ${code}`));
-            return;
-          }
-
-          // First install project dependencies from requirements.txt
-          const pipReqCmd = spawn(
-            process.platform === "win32" ?
-              ".venv\\Scripts\\pip"
-            : ".venv/bin/pip",
-            ["install", "-r", "requirements.txt"],
-            {
-              stdio: "inherit",
-              cwd: TEST_PROJECT_DIR,
-            },
-          );
-
-          pipReqCmd.on("close", (reqPipCode) => {
-            if (reqPipCode !== 0) {
-              reject(
-                new Error(
-                  `requirements.txt pip install failed with code ${reqPipCode}`,
-                ),
-              );
-              return;
-            }
-
-            // Then install the local moose lib
-            const pipMooseCmd = spawn(
-              process.platform === "win32" ?
-                ".venv\\Scripts\\pip"
-              : ".venv/bin/pip",
-              ["install", "-e", MOOSE_PY_LIB_PATH],
-              {
-                stdio: "inherit",
-                cwd: TEST_PROJECT_DIR,
-              },
-            );
-
-            pipMooseCmd.on("close", (moosePipCode) => {
-              if (moosePipCode !== 0) {
-                reject(
-                  new Error(
-                    `moose lib pip install failed with code ${moosePipCode}`,
-                  ),
-                );
-                return;
-              }
-              resolve();
-            });
-          });
-        });
-      });
-
-      // Start dev server
-      console.log("Starting dev server...");
-      devProcess = spawn(CLI_PATH, ["dev"], {
-        stdio: "pipe",
-        cwd: TEST_PROJECT_DIR,
-        env: {
-          ...process.env,
-          VIRTUAL_ENV: path.join(TEST_PROJECT_DIR, ".venv"),
-          PATH: `${path.join(TEST_PROJECT_DIR, ".venv", "bin")}:${process.env.PATH}`,
-        },
-      });
-
-      await utils.waitForServerStart(
-        devProcess,
-        TEST_CONFIG.server.startupTimeout,
-      );
-      console.log("Server started, cleaning up old data...");
-      await utils.cleanupClickhouseData();
-      console.log("Waiting before running tests...");
-      await setTimeoutAsync(10000);
-    });
-
-    after(async function () {
-      this.timeout(90_000); // Increased timeout for cleanup
-      try {
-        console.log("Starting cleanup for Python default template test...");
-        await utils.stopDevProcess(devProcess);
-        await utils.cleanupDocker(TEST_PROJECT_DIR, "moose-py-app");
-        utils.removeTestProject(TEST_PROJECT_DIR);
-        console.log("Cleanup completed for Python default template test");
-      } catch (error) {
-        console.error("Error during cleanup:", error);
-        // Force cleanup even if some steps fail
-        try {
-          if (devProcess && !devProcess.killed) {
-            devProcess.kill("SIGKILL");
-          }
-        } catch (killError) {
-          console.error("Error killing process:", killError);
-        }
-        utils.removeTestProject(TEST_PROJECT_DIR);
-      }
-    });
-
-    it("should successfully ingest data and verify through consumption API", async function () {
-      const eventId = randomUUID();
-      await utils.withRetries(
-        async () => {
-          const response = await fetch(`${TEST_CONFIG.server.url}/ingest/foo`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              primary_key: eventId,
-              baz: "QUUX",
-              timestamp: TEST_CONFIG.timestamp,
-              optional_text: "Hello from Python",
-            }),
-          });
-          if (!response.ok) {
-            const text = await response.text();
-            throw new Error(`${response.status}: ${text}`);
-          }
-        },
-        { attempts: 5, delayMs: 500 },
-      );
-
-      await utils.waitForDBWrite(devProcess!, "Bar", 1);
-      await utils.verifyClickhouseData("Bar", eventId, "primary_key");
-      await utils.waitForMaterializedViewUpdate("bar_aggregated", 1);
-      await utils.verifyConsumptionApi(
-        "bar?order_by=total_rows&start_day=19&end_day=19&limit=1",
-        [
-          {
-            day_of_month: 19,
-            total_rows: 1,
-            rows_with_text: 1,
-            max_text_length: 17,
-            total_text_length: 17,
-          },
-        ],
-      );
-
-      // Test versioned API (V1)
-      await utils.verifyVersionedConsumptionApi(
-        "bar/1?order_by=total_rows&start_day=19&end_day=19&limit=1",
-        [
-          {
-            day_of_month: 19,
-            total_rows: 1,
-            rows_with_text: 1,
-            max_text_length: 17,
-            total_text_length: 17,
-            metadata: {
-              version: "1.0",
-              query_params: {
-                order_by: "total_rows",
-                limit: 1,
-                start_day: 19,
-                end_day: 19,
-              },
-            },
-          },
-        ],
-      );
-
-      // Verify consumer logs
-      await utils.verifyConsumerLogs(TEST_PROJECT_DIR, [
-        "Received Foo event:",
-        `Primary Key: ${eventId}`,
-        "Optional Text: Hello from Python",
-      ]);
-    });
-  });
-
-  describe("python template tests", () => {
-    let devProcess: ChildProcess | null = null;
-    const TEST_PROJECT_DIR = path.join(
-      __dirname,
-      "../temp-test-project-py-tests",
-    );
-
-    before(async function () {
-      this.timeout(240_000);
-      try {
-        await fs.promises.access(CLI_PATH, fs.constants.F_OK);
-      } catch (err) {
-        console.error(
-          `CLI not found at ${CLI_PATH}. It should be built in the pretest step.`,
-        );
-        throw err;
-      }
-
-      if (fs.existsSync(TEST_PROJECT_DIR)) {
-        utils.removeTestProject(TEST_PROJECT_DIR);
-      }
-
-      // Initialize project with python-tests template
-      console.log("Initializing Python project with tests template...");
-      await execAsync(
-        `"${CLI_PATH}" init moose-py-app python-tests --location "${TEST_PROJECT_DIR}"`,
-      );
-
-      // Set up Python environment and install dependencies
-      console.log(
-        "Setting up Python virtual environment and installing dependencies...",
-      );
-      await new Promise<void>((resolve, reject) => {
-        const setupCmd = process.platform === "win32" ? "python" : "python3";
-        const venvCmd = spawn(setupCmd, ["-m", "venv", ".venv"], {
-          stdio: "inherit",
-          cwd: TEST_PROJECT_DIR,
-        });
-        venvCmd.on("close", async (code) => {
-          if (code !== 0) {
-            reject(new Error(`venv creation failed with code ${code}`));
-            return;
-          }
-
-          // First install project dependencies from requirements.txt
-          const pipReqCmd = spawn(
-            process.platform === "win32" ?
-              ".venv\\Scripts\\pip"
-            : ".venv/bin/pip",
-            ["install", "-r", "requirements.txt"],
-            {
-              stdio: "inherit",
-              cwd: TEST_PROJECT_DIR,
-            },
-          );
-
-          pipReqCmd.on("close", (reqPipCode) => {
-            if (reqPipCode !== 0) {
-              reject(
-                new Error(
-                  `requirements.txt pip install failed with code ${reqPipCode}`,
-                ),
-              );
-              return;
-            }
-
-            // Then install the local moose lib
-            const pipMooseCmd = spawn(
-              process.platform === "win32" ?
-                ".venv\\Scripts\\pip"
-              : ".venv/bin/pip",
-              ["install", "-e", MOOSE_PY_LIB_PATH],
-              {
-                stdio: "inherit",
-                cwd: TEST_PROJECT_DIR,
-              },
-            );
-
-            pipMooseCmd.on("close", (moosePipCode) => {
-              if (moosePipCode !== 0) {
-                reject(
-                  new Error(
-                    `moose lib pip install failed with code ${moosePipCode}`,
-                  ),
-                );
-                return;
-              }
-              resolve();
-            });
-          });
-        });
-      });
-
-      // Start dev server
-      console.log("Starting dev server...");
-      devProcess = spawn(CLI_PATH, ["dev"], {
-        stdio: "pipe",
-        cwd: TEST_PROJECT_DIR,
-        env: {
-          ...process.env,
-          VIRTUAL_ENV: path.join(TEST_PROJECT_DIR, ".venv"),
-          PATH: `${path.join(TEST_PROJECT_DIR, ".venv", "bin")}:${process.env.PATH}`,
-        },
-      });
-
-      await utils.waitForServerStart(
-        devProcess,
-        TEST_CONFIG.server.startupTimeout,
-      );
-      console.log("Server started, cleaning up old data...");
-      await utils.cleanupClickhouseData();
-      console.log("Waiting before running tests...");
-      await setTimeoutAsync(10000);
-    });
-
-    after(async function () {
-      this.timeout(90_000); // Increased timeout for cleanup
-      try {
-        console.log("Starting cleanup for Python tests template test...");
-        await utils.stopDevProcess(devProcess);
-        await utils.cleanupDocker(TEST_PROJECT_DIR, "moose-py-app");
-        utils.removeTestProject(TEST_PROJECT_DIR);
-        console.log("Cleanup completed for Python tests template test");
-      } catch (error) {
-        console.error("Error during cleanup:", error);
-        // Force cleanup even if some steps fail
-        try {
-          if (devProcess && !devProcess.killed) {
-            devProcess.kill("SIGKILL");
-          }
-        } catch (killError) {
-          console.error("Error killing process:", killError);
-        }
-        utils.removeTestProject(TEST_PROJECT_DIR);
-      }
-    });
-
-    it("should successfully ingest data and verify through consumption API", async function () {
-      const eventId = randomUUID();
-      await utils.withRetries(
-        async () => {
-          const response = await fetch(`${TEST_CONFIG.server.url}/ingest/foo`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              primary_key: eventId,
-              baz: "QUUX",
-              timestamp: TEST_CONFIG.timestamp,
-              optional_text: "Hello from Python",
-            }),
-          });
-          if (!response.ok) {
-            const text = await response.text();
-            throw new Error(`${response.status}: ${text}`);
-          }
-        },
-        { attempts: 5, delayMs: 500 },
-      );
-
-      await utils.waitForDBWrite(devProcess!, "Bar", 1);
-      await utils.verifyClickhouseData("Bar", eventId, "primary_key");
-      await utils.waitForMaterializedViewUpdate("bar_aggregated", 1);
-      await utils.verifyConsumptionApi(
-        "bar?order_by=total_rows&start_day=19&end_day=19&limit=1",
-        [
-          {
-            day_of_month: 19,
-            total_rows: 1,
-            rows_with_text: 1,
-            max_text_length: 17,
-            total_text_length: 17,
-          },
-        ],
-      );
-
-      // Test versioned API (V1)
-      await utils.verifyVersionedConsumptionApi(
-        "bar/1?order_by=total_rows&start_day=19&end_day=19&limit=1",
-        [
-          {
-            day_of_month: 19,
-            total_rows: 1,
-            rows_with_text: 1,
-            max_text_length: 17,
-            total_text_length: 17,
-            metadata: {
-              version: "1.0",
-              query_params: {
-                order_by: "total_rows",
-                limit: 1,
-                start_day: 19,
-                end_day: 19,
-              },
-            },
-          },
-        ],
-      );
-
-      // Verify consumer logs
-      await utils.verifyConsumerLogs(TEST_PROJECT_DIR, [
-        "Received Foo event:",
-        `Primary Key: ${eventId}`,
-        "Optional Text: Hello from Python",
-      ]);
-    });
-  });
+  // Generate test suites for all template configurations
+  TEMPLATE_CONFIGS.forEach(createTemplateTestSuite);
 });
 
 // Global cleanup to ensure no hanging processes
