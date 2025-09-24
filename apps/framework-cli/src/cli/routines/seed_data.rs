@@ -1,6 +1,6 @@
 use crate::cli::commands::SeedSubcommands;
 use crate::cli::display;
-use crate::cli::display::{Message, MessageType};
+use crate::cli::display::{with_spinner_completion_async, Message, MessageType};
 use crate::cli::routines::RoutineFailure;
 use crate::cli::routines::RoutineSuccess;
 use crate::framework::core::infrastructure_map::InfrastructureMap;
@@ -12,8 +12,46 @@ use crate::utilities::clickhouse_url::convert_http_to_clickhouse;
 use crate::utilities::constants::KEY_REMOTE_CLICKHOUSE_URL;
 use crate::utilities::keyring::{KeyringSecretRepository, SecretRepository};
 use itertools::Itertools;
-use log::{debug, info};
+use log::{debug, info, warn};
 use std::cmp::min;
+use std::collections::HashSet;
+
+/// Get list of available tables from remote ClickHouse database
+async fn get_remote_tables(
+    local_clickhouse: &ClickHouseClient,
+    remote_config: &ClickHouseConfig,
+) -> Result<HashSet<String>, RoutineFailure> {
+    let remote_host_and_port = format!("{}:{}", remote_config.host, remote_config.native_port);
+    let remote_db = &remote_config.db_name;
+    let remote_user = &remote_config.user;
+    let remote_password = &remote_config.password;
+
+    let sql = format!(
+        "SELECT name FROM remoteSecure('{}', 'system', 'tables', '{}', '{}') WHERE database = '{}'",
+        remote_host_and_port, remote_user, remote_password, remote_db
+    );
+
+    debug!("Querying remote tables: {}", sql);
+
+    let result = local_clickhouse.execute_sql(&sql).await.map_err(|e| {
+        RoutineFailure::new(
+            Message::new(
+                "Remote Tables".to_string(),
+                "Failed to query remote database tables".to_string(),
+            ),
+            e,
+        )
+    })?;
+
+    let tables: HashSet<String> = result
+        .lines()
+        .map(|line| line.trim().to_string())
+        .filter(|table| !table.is_empty())
+        .collect();
+
+    debug!("Found {} remote tables: {:?}", tables.len(), tables);
+    Ok(tables)
+}
 
 fn parse_clickhouse_connection_string(
     conn_str: &str,
@@ -171,19 +209,40 @@ pub async fn handle_seed_command(
                     ))
                 })?;
 
-            let summary = seed_clickhouse_tables(
-                &infra_map,
-                &local_clickhouse,
-                &remote_config,
-                table.clone(),
-                if *all { None } else { Some(*limit) },
-                order_by.as_deref(),
+            let local_db = &local_clickhouse.config().db_name;
+            let remote_db = &remote_config.db_name;
+
+            debug!(
+                "Local database: '{}', Remote database: '{}'",
+                local_db, remote_db
+            );
+
+            let summary = with_spinner_completion_async(
+                &format!(
+                    "Seeding local database '{}' from remote '{}'",
+                    local_db, remote_db
+                ),
+                "Database seeding completed",
+                seed_clickhouse_tables(
+                    &infra_map,
+                    &local_clickhouse,
+                    &remote_config,
+                    table.clone(),
+                    if *all { None } else { Some(*limit) },
+                    order_by.as_deref(),
+                ),
+                !project.is_production,
             )
             .await?;
 
             Ok(RoutineSuccess::success(Message::new(
-                "Local CH Seeded".to_string(),
-                summary.join("\n"),
+                "Seeded".to_string(),
+                format!(
+                    "'{}' from '{}' \n{}",
+                    local_db,
+                    remote_db,
+                    summary.join("\n")
+                ),
             )))
         }
         None => Err(RoutineFailure::error(Message {
@@ -229,22 +288,72 @@ pub async fn seed_clickhouse_tables(
 
     let remote_host_and_port = format!("{remote_host}:{remote_port}");
 
+    // Get available remote tables for validation (unless specific table is requested)
+    let remote_tables = if table_name.is_some() {
+        // Skip validation if user specified a specific table
+        None
+    } else {
+        match get_remote_tables(local_clickhouse, remote_config).await {
+            Ok(tables) => Some(tables),
+            Err(e) => {
+                warn!("Failed to query remote tables for validation: {:?}", e);
+                display::show_message_wrapper(
+                    MessageType::Info,
+                    Message::new(
+                        "Validation".to_string(),
+                        "Skipping table validation - proceeding with seeding".to_string(),
+                    ),
+                );
+                None
+            }
+        }
+    };
+
     for table_name in tables {
+        // Validate table exists on remote (if validation was successful and no specific table requested)
+        if let Some(ref remote_table_set) = remote_tables {
+            if !remote_table_set.contains(&table_name) {
+                debug!(
+                    "Table '{}' exists locally but not on remote - skipping",
+                    table_name
+                );
+                summary.push(format!("⚠️  {}: skipped (not found on remote)", table_name));
+                continue;
+            }
+        }
         let batch_size: usize = 50_000;
         let mut copied_total: usize = 0;
         let remote_total = {
             let count_sql = format!(
                 "SELECT count() FROM remoteSecure('{remote_host_and_port}', '{remote_db}', '{table_name}', '{remote_user}', '{remote_password}')"
             );
-            let remote_count_failure =
-                || Message::new("Remote".to_string(), "count failed".to_string());
-            let body = local_clickhouse
-                .execute_sql(&count_sql)
-                .await
-                .map_err(|e| RoutineFailure::new(remote_count_failure(), e))?;
-            body.trim()
-                .parse::<usize>()
-                .map_err(|e| RoutineFailure::new(remote_count_failure(), e))?
+            let body = match local_clickhouse.execute_sql(&count_sql).await {
+                Ok(result) => result,
+                Err(e) => {
+                    let error_msg = format!("{:?}", e);
+                    if error_msg.contains("There is no table")
+                        || error_msg.contains("NO_REMOTE_SHARD_AVAILABLE")
+                    {
+                        debug!(
+                            "Table '{}' not found on remote database - skipping",
+                            table_name
+                        );
+                        summary.push(format!("⚠️  {}: skipped (not found on remote)", table_name));
+                        continue;
+                    } else {
+                        return Err(RoutineFailure::new(
+                            Message::new("Remote".to_string(), "count failed".to_string()),
+                            e,
+                        ));
+                    }
+                }
+            };
+            body.trim().parse::<usize>().map_err(|e| {
+                RoutineFailure::new(
+                    Message::new("Remote".to_string(), "count parsing failed".to_string()),
+                    e,
+                )
+            })?
         };
         let total_rows = match limit {
             None => remote_total,
@@ -277,6 +386,7 @@ pub async fn seed_clickhouse_tables(
             Some(order_by) => format!("ORDER BY {order_by}"),
         };
         let mut i: usize = 0;
+        let mut seeding_successful = true;
         'table_batches: while copied_total < total_rows {
             i += 1;
             let limit = match limit {
@@ -293,21 +403,20 @@ pub async fn seed_clickhouse_tables(
             match local_clickhouse.execute_sql(&sql).await {
                 Ok(_) => {
                     copied_total += batch_size;
-                    display::show_message_wrapper(
-                        MessageType::Info,
-                        Message::new(
-                            "Seed".to_string(),
-                            format!("{table_name}: copied batch {i}"),
-                        ),
-                    );
+                    debug!("{table_name}: copied batch {i}");
                 }
                 Err(e) => {
                     summary.push(format!("✗ {table_name}: failed to copy - {e}"));
+                    seeding_successful = false;
                     break 'table_batches;
                 }
             }
         }
-        summary.push(format!("✓ {table_name}: copied from remote"));
+
+        // Only add success message if seeding was actually successful
+        if seeding_successful {
+            summary.push(format!("✓ {table_name}: copied from remote"));
+        }
     }
 
     info!("ClickHouse seeding completed");
