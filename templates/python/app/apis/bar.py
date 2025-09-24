@@ -1,7 +1,7 @@
 # This file is where you can define your API templates for consuming your data
 # The implementation has been moved to FastAPI routes in main.py
 
-from moose_lib import MooseClient, Api, MooseCache
+from moose_lib import MooseClient, Api, MooseCache, Query, and_
 from pydantic import BaseModel, Field
 from typing import Optional, Literal
 from app.views.bar_aggregated import barAggregatedMV
@@ -91,27 +91,24 @@ def run_v1(client: MooseClient, params: QueryParams):
     if cached_result and len(cached_result) > 0:
         return cached_result
 
-    query = """
-    SELECT
-        day_of_month,
-        total_rows,
-        rows_with_text,
-        max_text_length,
-        total_text_length
-    FROM {table}
-    WHERE day_of_month >= {start_day}
-    AND day_of_month <= {end_day}
-    ORDER BY {order_by} DESC
-    LIMIT {limit}
-    """
-
-    result = client.query.execute(query, {
-        "table": barAggregatedMV.target_table,
-        "order_by": barAggregatedMV.target_table.cols[params.order_by],
-        "start_day": params.start_day,
-        "end_day": params.end_day,
-        "limit": params.limit
-    })
+    query = Query() \
+        .select(
+            barAggregatedMV.target_table.cols.day_of_month,
+            barAggregatedMV.target_table.cols.total_rows,
+            barAggregatedMV.target_table.cols.rows_with_text,
+            barAggregatedMV.target_table.cols.max_text_length,
+            barAggregatedMV.target_table.cols.total_text_length,
+        ) \
+        .from_(barAggregatedMV.target_table) \
+        .where(
+            and_(
+                barAggregatedMV.target_table.cols.day_of_month.to_expr().ge(params.start_day),
+                barAggregatedMV.target_table.cols.day_of_month.to_expr().le(params.end_day),
+            )
+        ) \
+        .order_by((barAggregatedMV.target_table.cols[params.order_by], "desc")) \
+        .limit(params.limit)
+    result = client.query.execute(query)
 
     # V1 specific: Add metadata
     for item in result:

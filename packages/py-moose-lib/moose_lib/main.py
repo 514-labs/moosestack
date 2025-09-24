@@ -27,6 +27,7 @@ from .data_models import Column
 from .config.runtime import RuntimeClickHouseConfig
 
 from moose_lib.commons import EnhancedJSONEncoder
+from .query_builder import Query
 
 
 @dataclass
@@ -184,7 +185,29 @@ class QueryClient:
     def __call__(self, input, variables):
         return self.execute(input, variables)
 
-    def execute(self, input, variables, row_type: Type[BaseModel] = None):
+    def execute(self, input: Union[str, Query], variables = None, row_type: Type[BaseModel] = None):
+        """
+        Execute a query.
+
+        - If `input` is a `Query`, do not supply `variables`.
+        - If `input` is a `str` intended for `string.Formatter` interpolation, `variables` must be a dict
+          mapping placeholder names to values.
+
+        Args:
+            input: Either a `Query` object or a `Formatter`-style SQL template string.
+            variables: Dict used to fill a `Formatter` string; must be omitted when `input` is a `Query`.
+            row_type: Optional Pydantic model class to map result rows into.
+
+        Returns:
+            A list of row dicts, or a list of `row_type` instances if provided.
+        """
+        if isinstance(input, Query):
+            if variables is not None:
+                raise ValueError("Do not supply variables when you provide Query")
+            sql, params = input.to_sql_and_params()
+            print(f"[QueryClient] | Query: {sql}")
+            return self.execute_raw(sql, params, row_type)
+
         params = {}
         values: dict[str, Any] = {}
         preview_params = {}
@@ -200,25 +223,10 @@ class QueryClient:
                     params[variable_name] = f'{{p{i}: Identifier}}'
                     values[f'p{i}'] = value.name
                 else:
-                    if isinstance(value, bool):
-                        params[variable_name] = f'{{p{i}: Bool}}'
-                        values[f'p{i}'] = value
-                    elif isinstance(value, datetime):
-                        params[variable_name] = f'{{p{i}: DateTime}}'
-                        values[f'p{i}'] = value
-                    elif isinstance(value, int):
-                        params[variable_name] = f'{{p{i}: Int64}}'
-                        values[f'p{i}'] = value
-                    elif isinstance(value, float):
-                        params[variable_name] = f'{{p{i}: Float64}}'
-                        values[f'p{i}'] = value
-                    elif isinstance(value, str):
-                        params[variable_name] = f'{{p{i}: String}}'
-                        values[f'p{i}'] = value
-                    else:
-                        print(f"unhandled type in QueryClient {type(value)}", file=sys.stderr)
-                        params[variable_name] = f'{{p{i}: String}}'
-                        values[f'p{i}'] = str(value)
+                    from moose_lib.utilities.sql import clickhouse_param_type_for_value
+                    ch_type = clickhouse_param_type_for_value(value)
+                    params[variable_name] = f'{{p{i}: {ch_type}}}'
+                    values[f'p{i}'] = value
                 preview_params[variable_name] = self._format_value_for_preview(value)
 
         clickhouse_query = input.format_map(params)
