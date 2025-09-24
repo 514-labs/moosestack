@@ -151,10 +151,10 @@ const utils = {
     expectedRecords: number,
     timeout: number = 60_000,
   ): Promise<void> => {
-    const client = createClient(TEST_CONFIG.clickhouse);
-    const startTime = Date.now();
-    try {
-      while (Date.now() - startTime < timeout) {
+    const attempts = Math.ceil(timeout / 1000); // Convert timeout to attempts (1 second per attempt)
+    await utils.withRetries(
+      async () => {
+        const client = createClient(TEST_CONFIG.clickhouse);
         try {
           const result = await client.query({
             query: `SELECT COUNT(*) as count FROM ${tableName}`,
@@ -163,18 +163,18 @@ const utils = {
           const rows: any[] = await result.json();
           const count = parseInt(rows[0].count);
           console.log(`Records in ${tableName}:`, count);
-          if (count >= expectedRecords) return;
-        } catch (err) {
-          console.log("ClickHouse count query failed, will retry...", err);
+          if (count >= expectedRecords) {
+            return; // Success - exit retry loop
+          }
+          throw new Error(
+            `Expected ${expectedRecords} records, but found ${count}`,
+          );
+        } finally {
+          await client.close();
         }
-        await setTimeoutAsync(1000);
-      }
-      throw new Error(
-        `${tableName} did not reach ${expectedRecords} records within ${timeout}ms`,
-      );
-    } finally {
-      await client.close();
-    }
+      },
+      { attempts, delayMs: 1000, backoffFactor: 1 }, // Linear backoff
+    );
   },
 
   stopDevProcess: async (devProcess: ChildProcess | null): Promise<void> => {
@@ -263,34 +263,34 @@ const utils = {
     timeout: number = 60_000,
   ): Promise<void> => {
     console.log(`Waiting for materialized view ${tableName} to update...`);
-    const client = createClient(TEST_CONFIG.clickhouse);
-    const startTime = Date.now();
+    const attempts = Math.ceil(timeout / 1000); // Convert timeout to attempts (1 second per attempt)
+    await utils.withRetries(
+      async () => {
+        const client = createClient(TEST_CONFIG.clickhouse);
+        try {
+          const result = await client.query({
+            query: `SELECT COUNT(*) as count FROM ${tableName}`,
+            format: "JSONEachRow",
+          });
+          const rows: any[] = await result.json();
+          const count = parseInt(rows[0].count);
 
-    try {
-      while (Date.now() - startTime < timeout) {
-        const result = await client.query({
-          query: `SELECT COUNT(*) as count FROM ${tableName}`,
-          format: "JSONEachRow",
-        });
-        const rows: any[] = await result.json();
-        const count = parseInt(rows[0].count);
+          if (count >= expectedRows) {
+            console.log(
+              `Materialized view ${tableName} updated with ${count} rows`,
+            );
+            return; // Success - exit retry loop
+          }
 
-        if (count >= expectedRows) {
-          console.log(
-            `Materialized view ${tableName} updated with ${count} rows`,
+          throw new Error(
+            `Expected ${expectedRows} rows in ${tableName}, but found ${count}`,
           );
-          return;
+        } finally {
+          await client.close();
         }
-
-        await setTimeoutAsync(1000); // Wait 1 second before checking again
-      }
-
-      throw new Error(
-        `Materialized view ${tableName} did not update within ${timeout}ms`,
-      );
-    } finally {
-      await client.close();
-    }
+      },
+      { attempts, delayMs: 1000, backoffFactor: 1 }, // Linear backoff
+    );
   },
 
   verifyClickhouseData: async (
