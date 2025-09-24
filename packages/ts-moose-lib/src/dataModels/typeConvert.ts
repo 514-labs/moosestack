@@ -107,8 +107,17 @@ const handleAggregated = (
   );
 
   if (functionStringLiteral.isStringLiteral() && checker.isTupleType(types)) {
-    const argumentTypes = ((types as TupleType).typeArguments || []).map(
-      (t) => tsTypeToDataType(t, checker, fieldName, typeName, false)[2],
+    const argumentTypes = ((types as TupleType).typeArguments || []).map((t) =>
+      // For Aggregated argument types, prefer mapping plain Date to Date (Date32)
+      tsTypeToDataType(
+        t,
+        checker,
+        fieldName,
+        typeName,
+        false,
+        undefined,
+        true,
+      )[2],
     );
     return { functionName: functionStringLiteral.value, argumentTypes };
   } else {
@@ -432,6 +441,8 @@ const tsTypeToDataType = (
   typeName: string,
   isJwt: boolean,
   typeNode?: ts.TypeNode,
+  // When true, plain Date types (not DateTime aliases) map to Date (Date32)
+  preferDate32ForDateLike: boolean = false,
 ): [boolean, [string, any][], DataType] => {
   const nonNull = t.getNonNullableType();
   const nullable = nonNull != t;
@@ -476,12 +487,18 @@ const tsTypeToDataType = (
     typeSymbolName === "DateTime" ||
     typeSymbolName === "DateTime64" ||
     checker.isTypeAssignableTo(nonNull, dateType(checker));
+  const isAliasedDateTime =
+    typeSymbolName === "DateTime" || typeSymbolName === "DateTime64";
 
   const dataType: DataType =
     isEnum(nonNull) ? enumConvert(nonNull)
     : isStringAnyRecord(nonNull, checker) ? "Json"
     : isDateLike ?
       (() => {
+        // If requested, map plain TS Date to Date (which resolves to ClickHouse Date32)
+        if (preferDate32ForDateLike && !isAliasedDateTime) {
+          return "Date" as DataType;
+        }
         // Prefer precision from AST (DateTime64<P>) if available
         if (datePrecisionFromNode !== undefined) {
           return `DateTime(${datePrecisionFromNode})` as DataType;
@@ -494,7 +511,7 @@ const tsTypeToDataType = (
           const precisionType = checker.getNonNullableType(
             checker.getTypeOfSymbol(precisionSymbol),
           );
-          if (precisionType.isNumberLiteral()) {
+        	  if (precisionType.isNumberLiteral()) {
             return `DateTime(${precisionType.value})` as DataType;
           }
         }

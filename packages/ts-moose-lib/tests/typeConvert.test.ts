@@ -82,4 +82,34 @@ describe("typeConvert mappings for helper types", () => {
     expect(byName.status.data_type).to.equal("String");
     expect(byName.status.annotations).to.deep.include(["LowCardinality", true]);
   });
+
+  it("maps Aggregated with Date args to AggregateFunction(argMax, Date32, Date32)", () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "moose-typeconv-"));
+
+    const source = `
+      import { Aggregated } from "@514labs/moose-lib";
+
+      export interface TestModel {
+        // result type is Date (should remain DateTime by default for direct fields)
+        // but argument types for Aggregated should resolve Date -> Date (Date32)
+        created: Date & Aggregated<"argMax", [Date, Date]>;
+      }
+    `;
+
+    const { checker, type } = createProgramWithSource(tempDir, source);
+    const columns = toColumns(type, checker);
+    const byName: Record<string, any> = Object.fromEntries(
+      columns.map((c) => [c.name, c]),
+    );
+
+    // Ensure aggregation annotation is present
+    const ann = byName.created.annotations.find(
+      ([k]) => k === "aggregationFunction",
+    );
+    expect(ann).to.not.equal(undefined);
+    const agg = ann![1];
+    expect(agg.functionName).to.equal("argMax");
+    // Expect both argument types mapped to Date (ClickHouse Date32)
+    expect(agg.argumentTypes).to.deep.equal(["Date", "Date"]);
+  });
 });
