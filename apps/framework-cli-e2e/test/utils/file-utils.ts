@@ -12,18 +12,15 @@ export const removeTestProject = (dir: string): void => {
 };
 
 /**
- * Creates a random temporary directory for test projects
- * Returns the full path to the created directory
+ * Generates a random temporary directory path for test projects
+ * Returns the full path (directory is not created yet - CLI will create it)
  */
 export const createTempTestDirectory = (suffix: string): string => {
   const tempDir = os.tmpdir();
   const randomDir = `moose-e2e-test-${suffix}-${randomUUID()}`;
   const fullPath = path.join(tempDir, randomDir);
-
-  // Ensure the directory exists
-  fs.mkdirSync(fullPath, { recursive: true });
-
-  console.log(`Created temporary test directory: ${fullPath}`);
+  
+  console.log(`Generated temporary test directory path: ${fullPath}`);
   return fullPath;
 };
 

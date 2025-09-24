@@ -182,8 +182,8 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
       await waitForServerStart(
         devProcess,
         TIMEOUTS.SERVER_STARTUP_MS,
-        SERVER_CONFIG.STARTUP_MESSAGE,
-        SERVER_CONFIG.URL,
+        SERVER_CONFIG.startupMessage,
+        SERVER_CONFIG.url,
       );
       console.log("Server started, cleaning up old data...");
       await cleanupClickhouseData();
@@ -223,7 +223,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
         for (let i = 0; i < recordsToSend; i++) {
           await withRetries(
             async () => {
-              const response = await fetch(`${SERVER_CONFIG.URL}/ingest/Foo`, {
+              const response = await fetch(`${SERVER_CONFIG.url}/ingest/Foo`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
@@ -287,7 +287,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
         const eventId = randomUUID();
         await withRetries(
           async () => {
-            const response = await fetch(`${SERVER_CONFIG.URL}/ingest/foo`, {
+            const response = await fetch(`${SERVER_CONFIG.url}/ingest/foo`, {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({

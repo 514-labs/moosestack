@@ -18,9 +18,20 @@ export const setupTypeScriptProject = async (
   console.log(
     `Initializing TypeScript project with ${templateName} template...`,
   );
-  await execAsync(
-    `"${cliPath}" init moose-ts-app ${templateName} --location "${projectDir}"`,
-  );
+  try {
+    const result = await execAsync(
+      `"${cliPath}" init moose-ts-app ${templateName} --location "${projectDir}"`,
+    );
+    console.log("CLI init stdout:", result.stdout);
+    if (result.stderr) {
+      console.log("CLI init stderr:", result.stderr);
+    }
+  } catch (error: any) {
+    console.error("CLI init failed:", error.message);
+    if (error.stdout) console.error("stdout:", error.stdout);
+    if (error.stderr) console.error("stderr:", error.stderr);
+    throw error;
+  }
 
   // Update package.json to use local moose-lib
   console.log("Updating package.json to use local moose-lib...");
@@ -56,9 +67,20 @@ export const setupPythonProject = async (
 ): Promise<void> => {
   // Initialize project
   console.log(`Initializing Python project with ${templateName} template...`);
-  await execAsync(
-    `"${cliPath}" init moose-py-app ${templateName} --location "${projectDir}"`,
-  );
+  try {
+    const result = await execAsync(
+      `"${cliPath}" init moose-py-app ${templateName} --location "${projectDir}"`,
+    );
+    console.log("CLI init stdout:", result.stdout);
+    if (result.stderr) {
+      console.log("CLI init stderr:", result.stderr);
+    }
+  } catch (error: any) {
+    console.error("CLI init failed:", error.message);
+    if (error.stdout) console.error("stdout:", error.stdout);
+    if (error.stderr) console.error("stderr:", error.stderr);
+    throw error;
+  }
 
   // Set up Python environment and install dependencies
   console.log(

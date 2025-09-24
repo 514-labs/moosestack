@@ -66,16 +66,16 @@ export const TEST_DATA = {
 
 // ClickHouse configuration
 export const CLICKHOUSE_CONFIG = {
-  URL: "http://localhost:18123",
-  USERNAME: "panda",
-  PASSWORD: "pandapass",
-  DATABASE: "local",
+  url: "http://localhost:18123",
+  username: "panda",
+  password: "pandapass",
+  database: "local",
 } as const;
 
 // Server configuration
 export const SERVER_CONFIG = {
-  URL: "http://localhost:4000",
-  STARTUP_MESSAGE:
+  url: "http://localhost:4000",
+  startupMessage:
     "Your local development server is running at: http://localhost:4000/ingest",
 } as const;
 

@@ -10,7 +10,7 @@ export const verifyConsumptionApi = async (
 ): Promise<void> => {
   await withRetries(
     async () => {
-      const response = await fetch(`${SERVER_CONFIG.URL}/api/${endpoint}`);
+      const response = await fetch(`${SERVER_CONFIG.url}/api/${endpoint}`);
       if (!response.ok) {
         const text = await response.text();
         throw new Error(`${response.status}: ${text}`);
@@ -61,7 +61,7 @@ export const verifyVersionedConsumptionApi = async (
 ): Promise<void> => {
   await withRetries(
     async () => {
-      const response = await fetch(`${SERVER_CONFIG.URL}/api/${endpoint}`);
+      const response = await fetch(`${SERVER_CONFIG.url}/api/${endpoint}`);
       if (!response.ok) {
         const text = await response.text();
         throw new Error(`${response.status}: ${text}`);
