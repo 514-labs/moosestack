@@ -1,0 +1,57 @@
+# Moose specific
+.moose
+.sloan
+
+# Python bytecode and cache
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache
+.mypy_cache
+.hypothesis
+.coverage
+
+# Python virtual environments
+.Python
+env
+.venv
+venv
+ENV
+env.bak
+
+# IDE and editor files
+.spyderproject
+.ropeproject
+.idea
+*.ipynb_checkpoints
+.cache
+.cursor
+
+# Build and distribution
+*.so
+*.egg
+*.egg-info
+dist
+build
+develop-eggs
+downloads
+eggs
+lib
+lib64
+parts
+sdist
+var
+wheels
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Coverage reports
+cover
+*.cover
+
+# OS specific
+.DS_Store
+

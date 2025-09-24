@@ -511,7 +511,7 @@ describe("Moose Templates", () => {
       // Initialize project
       console.log("Initializing TypeScript project...");
       await execAsync(
-        `"${CLI_PATH}" init moose-ts-app typescript --location "${TEST_PROJECT_DIR}"`,
+        `"${CLI_PATH}" init moose-ts-app typescript-tests --location "${TEST_PROJECT_DIR}"`,
       );
 
       // Update package.json to use local moose-lib
@@ -654,7 +654,7 @@ describe("Moose Templates", () => {
       // Initialize project
       console.log("Initializing Python project...");
       await execAsync(
-        `"${CLI_PATH}" init moose-py-app python --location "${TEST_PROJECT_DIR}"`,
+        `"${CLI_PATH}" init moose-py-app python-tests --location "${TEST_PROJECT_DIR}"`,
       );
 
       // Set up Python environment and install dependencies
