@@ -27,10 +27,6 @@ class Params:
         self.bindings[name] = value
         return expr
 
-    def _infer_clickhouse_type(self, value: object) -> str:
-        # Deprecated: kept for backward compatibility; now uses utilities.clickhouse_param_type_for_value
-        return clickhouse_param_type_for_value(value)
-
 
 def to_column(col: Column, table_name: str | None = None) -> sge.Column:
     col_name = getattr(col, "name")

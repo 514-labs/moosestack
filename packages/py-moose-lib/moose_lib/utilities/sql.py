@@ -1,3 +1,6 @@
+import sys
+
+
 def quote_identifier(name: str) -> str:
     """Quote a ClickHouse identifier with backticks if not already quoted.
 
@@ -25,5 +28,7 @@ def clickhouse_param_type_for_value(value: Any) -> str:
         return "Float64"
     if isinstance(value, datetime):
         return "DateTime"
+    if not isinstance(value, str):
+        print(f"unhandled type {type(value)}", file=sys.stderr)
     return "String"
 
