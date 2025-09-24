@@ -43,7 +43,7 @@ class MyFirstTable(BaseModel):
     age: int
 
 # Create a table named "first_table"
-my_table = OlapTable[MyFirstTable]("first_table") 
+my_table = OlapTable[MyFirstTable]("first_table")
 
 # No export needed - Python modules are automatically discovered
 ```
@@ -206,7 +206,7 @@ export interface ClickHouseOptimizedExample {
   id: Key<string>;
   stringField: string;
   numberField: number;
-  decimalField: Decimal<10, 2>;                         // Precise decimal storage - cleaner syntax
+  decimalField: Decimal<10, 2>;                         // Precise decimal storage
   // Alternative: decimalField: string & ClickHouseDecimal<10, 2>; // Verbose syntax still works
   lowCardinalityField: string & LowCardinality;         // Faster queries for enum-like data
   nestedObject: {
@@ -261,7 +261,7 @@ interface Event {
   retries: number & ClickHouseDefault<"0">;          // DEFAULT 0
   // Server-side timestamps
   createdAt: Date & ClickHouseDefault<"now()">;      // DEFAULT now()
-  // Decimal with default - cleaner syntax
+  // Decimal with default
   amount: Decimal<10, 2> & ClickHouseDefault<"0">;
   // Alternative: amount: (string & ClickHouseDecimal<10, 2> & ClickHouseDefault<"0">); // Verbose syntax
 }
@@ -515,7 +515,7 @@ const softDeleteTable = OlapTable.withReplacingMergeTree<Record>("table", {
   isDeleted: "deleted"  // UInt8 column: 1 marks row for deletion
 });
 ```
-</TypeScript> 
+</TypeScript>
 
 <Python>
 ```py filename="DeduplicatedTable.py" copy
@@ -551,7 +551,7 @@ soft_delete_table = OlapTable[Record]("table", OlapConfig(
 </Python>
 
 <Callout type="warning" title="Deduplication Caveats">
-ClickHouse's ReplacingMergeTree engine runs deduplication in the background AFTER data is inserted into the table. This means that duplicate records may not be removed immediately. 
+ClickHouse's ReplacingMergeTree engine runs deduplication in the background AFTER data is inserted into the table. This means that duplicate records may not be removed immediately.
 
 **Version Column (`ver`)**: When specified, ClickHouse keeps the row with the maximum version value for each unique sort key.
 

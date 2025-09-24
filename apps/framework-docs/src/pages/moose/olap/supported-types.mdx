@@ -60,9 +60,9 @@ class User(BaseModel):
 import { Int8, Int16, Int32, Int64, UInt8, UInt16, UInt32, UInt64 } from "@514labs/moose-lib";
 
 interface Metrics {
-  user_id: Int32;           // Int32 - cleaner syntax
-  count: UInt64;            // UInt64 - cleaner syntax  
-  small_value: Int8;        // Int8 - cleaner syntax
+  user_id: Int32;           // Int32
+  count: UInt64;            // UInt64
+  small_value: Int8;        // Int8
 }
 
 // Alternative: You can still use the verbose syntax if preferred
@@ -115,8 +115,8 @@ import { Float32, Float64 } from "@514labs/moose-lib";
 import { tags } from "typia";
 
 interface SensorData {
-  temperature: Float32;                     // Float32 - cleaner syntax
-  humidity: Float64;                        // Float64 - cleaner syntax
+  temperature: Float32;                     // Float32
+  humidity: Float64;                        // Float64
   pressure: number;                         // Default Float64
 }
 
@@ -156,9 +156,9 @@ class SensorData(BaseModel):
 import { Decimal, ClickHouseDecimal } from "@514labs/moose-lib";
 
 interface FinancialData {
-  amount: Decimal<10, 2>;                     // Decimal(10,2) - cleaner syntax
-  rate: Decimal<5, 4>;                        // Decimal(5,4) - cleaner syntax
-  fee: Decimal<8, 3>;                         // Decimal(8,3) - cleaner syntax
+  amount: Decimal<10, 2>;                     // Decimal(10,2)
+  rate: Decimal<5, 4>;                        // Decimal(5,4)
+  fee: Decimal<8, 3>;                         // Decimal(8,3)
 }
 
 // Alternative: You can still use the verbose syntax if preferred
@@ -222,8 +222,8 @@ class User(BaseModel):
 import { DateTime, DateTime64, ClickHousePrecision } from "@514labs/moose-lib";
 
 interface Event {
-  created_at: DateTime;                               // DateTime - cleaner syntax
-  updated_at: DateTime64<3>;                         // DateTime(3) - cleaner syntax
+  created_at: DateTime;                               // DateTime
+  updated_at: DateTime64<3>;                         // DateTime(3)
   logged_at: DateTime64<6>;                          // DateTime(6) - microsecond precision
   birth_date: Date;                                   // Date
 }
