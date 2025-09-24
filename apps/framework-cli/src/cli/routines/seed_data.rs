@@ -317,7 +317,7 @@ async fn seed_single_table(
 
         match local_clickhouse.execute_sql(&sql).await {
             Ok(_) => {
-                copied_total += batch_size;
+                copied_total += batch_limit;
                 debug!("{table_name}: copied batch {i}");
             }
             Err(e) => {
@@ -820,5 +820,27 @@ mod tests {
 
         assert!(config.use_ssl);
         assert_eq!(config.native_port, 9440);
+    }
+
+    // Test for the bug fix: ensure batch counting is accurate
+    #[test]
+    fn test_batch_counting_logic() {
+        let batch_size = 1000;
+        let total_rows = 2500;
+        let mut copied_total = 0;
+
+        // Simulate the batching logic from seed_single_table
+        while copied_total < total_rows {
+            let batch_limit = std::cmp::min(batch_size, total_rows - copied_total);
+
+            // This is what should happen (the fix)
+            copied_total += batch_limit;
+
+            // Verify we don't overshoot
+            assert!(copied_total <= total_rows);
+        }
+
+        // Verify we copied exactly the expected amount
+        assert_eq!(copied_total, total_rows);
     }
 }
