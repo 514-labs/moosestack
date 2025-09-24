@@ -16,6 +16,113 @@ use log::{debug, info, warn};
 use std::cmp::min;
 use std::collections::HashSet;
 
+/// Performs the complete ClickHouse seeding operation including infrastructure loading,
+/// table validation, and data copying
+async fn seed_clickhouse_operation(
+    project: &Project,
+    connection_string: &str,
+    table: Option<String>,
+    limit: Option<usize>,
+    order_by: Option<&str>,
+) -> Result<(String, String, Vec<String>), RoutineFailure> {
+    let infra_map = if project.features.data_model_v2 {
+        InfrastructureMap::load_from_user_code(project)
+            .await
+            .map_err(|e| {
+                RoutineFailure::error(Message {
+                    action: "SeedClickhouse".to_string(),
+                    details: format!("Failed to load InfrastructureMap: {e:?}"),
+                })
+            })?
+    } else {
+        let primitive_map = PrimitiveMap::load(project).await.map_err(|e| {
+            RoutineFailure::error(Message {
+                action: "SeedClickhouse".to_string(),
+                details: format!("Failed to load Primitives: {e:?}"),
+            })
+        })?;
+        InfrastructureMap::new(project, primitive_map)
+    };
+
+    let (mut remote_config, db_name) = parse_clickhouse_connection_string(connection_string)
+        .map_err(|e| {
+            RoutineFailure::error(Message::new(
+                "SeedClickhouse".to_string(),
+                format!("Invalid connection string: {e}"),
+            ))
+        })?;
+
+    if db_name.is_none() {
+        let mut client = clickhouse::Client::default().with_url(connection_string);
+        let url = convert_http_to_clickhouse(connection_string).map_err(|e| {
+            RoutineFailure::error(Message::new(
+                "SeedClickhouse".to_string(),
+                format!("Failed to parse connection string: {e}"),
+            ))
+        })?;
+
+        if !url.username().is_empty() {
+            client = client.with_user(url.username());
+        }
+        if let Some(password) = url.password() {
+            client = client.with_password(password);
+        }
+
+        let current_db = client
+            .query("select database()")
+            .fetch_one::<String>()
+            .await
+            .map_err(|e| {
+                RoutineFailure::new(
+                    Message::new(
+                        "SeedClickhouse".to_string(),
+                        "Failed to query remote database".to_string(),
+                    ),
+                    e,
+                )
+            })?;
+
+        remote_config.db_name = current_db;
+    }
+
+    // Ensure we have a valid database name
+    if remote_config.db_name.is_empty() {
+        return Err(RoutineFailure::error(Message::new(
+            "SeedClickhouse".to_string(),
+            "No database specified in connection string and unable to determine current database"
+                .to_string(),
+        )));
+    }
+
+    // Create local ClickHouseClient from local config
+    let local_clickhouse = ClickHouseClient::new(&project.clickhouse_config).map_err(|e| {
+        RoutineFailure::error(Message::new(
+            "SeedClickhouse".to_string(),
+            format!("Failed to create local ClickHouseClient: {e}"),
+        ))
+    })?;
+
+    let local_db = local_clickhouse.config().db_name.clone();
+    let remote_db = remote_config.db_name.clone();
+
+    debug!(
+        "Local database: '{}', Remote database: '{}'",
+        local_db, remote_db
+    );
+
+    let summary = seed_clickhouse_tables(
+        &infra_map,
+        &local_clickhouse,
+        &remote_config,
+        table,
+        limit,
+        order_by,
+    )
+    .await?;
+
+    Ok((local_db, remote_db, summary))
+}
+
 /// Get list of available tables from remote ClickHouse database
 async fn get_remote_tables(
     local_clickhouse: &ClickHouseClient,
@@ -131,102 +238,12 @@ pub async fn handle_seed_command(
 
             info!("Running seed clickhouse command with connection string: {resolved_connection_string}");
 
-            let infra_map = if project.features.data_model_v2 {
-                InfrastructureMap::load_from_user_code(project)
-                    .await
-                    .map_err(|e| {
-                        RoutineFailure::error(Message {
-                            action: "SeedClickhouse".to_string(),
-                            details: format!("Failed to load InfrastructureMap: {e:?}"),
-                        })
-                    })?
-            } else {
-                let primitive_map = PrimitiveMap::load(project).await.map_err(|e| {
-                    RoutineFailure::error(Message {
-                        action: "SeedClickhouse".to_string(),
-                        details: format!("Failed to load Primitives: {e:?}"),
-                    })
-                })?;
-                InfrastructureMap::new(project, primitive_map)
-            };
-
-            let (mut remote_config, db_name) =
-                parse_clickhouse_connection_string(&resolved_connection_string).map_err(|e| {
-                    RoutineFailure::error(Message::new(
-                        "SeedClickhouse".to_string(),
-                        format!("Invalid connection string: {e}"),
-                    ))
-                })?;
-
-            if db_name.is_none() {
-                let mut client =
-                    clickhouse::Client::default().with_url(&resolved_connection_string);
-                let url = convert_http_to_clickhouse(&resolved_connection_string).map_err(|e| {
-                    RoutineFailure::error(Message::new(
-                        "SeedClickhouse".to_string(),
-                        format!("Failed to parse connection string: {e}"),
-                    ))
-                })?;
-
-                if !url.username().is_empty() {
-                    client = client.with_user(url.username());
-                }
-                if let Some(password) = url.password() {
-                    client = client.with_password(password);
-                }
-
-                let current_db = client
-                    .query("select database()")
-                    .fetch_one::<String>()
-                    .await
-                    .map_err(|e| {
-                        RoutineFailure::new(
-                            Message::new(
-                                "SeedClickhouse".to_string(),
-                                "Failed to query remote database".to_string(),
-                            ),
-                            e,
-                        )
-                    })?;
-
-                remote_config.db_name = current_db;
-            }
-
-            // Ensure we have a valid database name
-            if remote_config.db_name.is_empty() {
-                return Err(RoutineFailure::error(Message::new(
-                    "SeedClickhouse".to_string(),
-                    "No database specified in connection string and unable to determine current database".to_string(),
-                )));
-            }
-
-            // Create local ClickHouseClient from local config
-            let local_clickhouse =
-                ClickHouseClient::new(&project.clickhouse_config).map_err(|e| {
-                    RoutineFailure::error(Message::new(
-                        "SeedClickhouse".to_string(),
-                        format!("Failed to create local ClickHouseClient: {e}"),
-                    ))
-                })?;
-
-            let local_db = &local_clickhouse.config().db_name;
-            let remote_db = &remote_config.db_name;
-
-            debug!(
-                "Local database: '{}', Remote database: '{}'",
-                local_db, remote_db
-            );
-
-            let summary = with_spinner_completion_async(
-                &format!(
-                    "Seeding local database '{}' from remote '{}'",
-                    local_db, remote_db
-                ),
+            let (local_db_name, remote_db_name, summary) = with_spinner_completion_async(
+                "Initializing database seeding operation...",
                 "Database seeding completed",
-                seed_clickhouse_tables(
-                    &infra_map,
-                    &local_clickhouse,
-                    &remote_config,
+                seed_clickhouse_operation(
+                    project,
+                    &resolved_connection_string,
                     table.clone(),
                     if *all { None } else { Some(*limit) },
                     order_by.as_deref(),
@@ -236,13 +253,8 @@ pub async fn handle_seed_command(
             .await?;
 
             Ok(RoutineSuccess::success(Message::new(
-                "Seeded".to_string(),
-                format!(
-                    "'{}' from '{}' \n{}",
-                    local_db,
-                    remote_db,
-                    summary.join("\n")
-                ),
+                format!("Seeded '{}' from '{}'", local_db_name, remote_db_name),
+                format!("\n{}", summary.join("\n")),
             )))
         }
         None => Err(RoutineFailure::error(Message {
