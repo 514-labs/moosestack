@@ -40,7 +40,8 @@ export type UInt32 = number & ClickHouseInt<"uint32">;
 export type UInt64 = number & ClickHouseInt<"uint64">;
 
 // Decimal(P, S) annotation
-export type Decimal<P extends number, S extends number> = number & ClickHouseDecimal<P, S>;
+export type Decimal<P extends number, S extends number> = string &
+  ClickHouseDecimal<P, S>;
 
 export type ClickHouseFloat<Value extends "float32" | "float64"> = tags.Type<
   Value extends "float32" ? "float" : "double"
