@@ -460,3 +460,77 @@ export const validateSchemasWithDebugging = async (
 
   return validationResult;
 };
+
+/**
+ * Verifies that versioned tables exist in ClickHouse
+ */
+export const verifyVersionedTables = async (
+  baseTableName: string,
+  expectedVersions: string[],
+): Promise<void> => {
+  console.log(`Verifying versioned tables for ${baseTableName}...`);
+  await withRetries(
+    async () => {
+      const client = createClient(CLICKHOUSE_CONFIG);
+      try {
+        const result = await client.query({
+          query: "SHOW TABLES",
+          format: "JSONEachRow",
+        });
+        const tables: any[] = await result.json();
+        const tableNames = tables.map((t) => t.name);
+        console.log("All tables:", tableNames);
+
+        // Check for each expected versioned table
+        for (const version of expectedVersions) {
+          const versionSuffix = version.replace(/\./g, "_");
+          const expectedTableName = `${baseTableName}_${versionSuffix}`;
+
+          if (!tableNames.includes(expectedTableName)) {
+            throw new Error(
+              `Expected versioned table ${expectedTableName} not found. Available tables: ${tableNames.join(", ")}`,
+            );
+          }
+          console.log(`✓ Found versioned table: ${expectedTableName}`);
+        }
+
+        // Verify table structures are different by checking column counts
+        const tableStructures: Record<string, number> = {};
+        for (const version of expectedVersions) {
+          const versionSuffix = version.replace(/\./g, "_");
+          const tableName = `${baseTableName}_${versionSuffix}`;
+
+          const descResult = await client.query({
+            query: `DESCRIBE TABLE ${tableName}`,
+            format: "JSONEachRow",
+          });
+          const columns: any[] = await descResult.json();
+          tableStructures[tableName] = columns.length;
+          console.log(`Table ${tableName} has ${columns.length} columns`);
+        }
+
+        // Verify that different versions have different structures (for our test case)
+        const columnCounts = Object.values(tableStructures);
+        if (columnCounts.length > 1) {
+          // Check if at least some versions have different column counts
+          const uniqueCounts = new Set(columnCounts);
+          if (uniqueCounts.size === 1) {
+            console.log(
+              "Warning: All versioned tables have the same column count",
+            );
+          } else {
+            console.log(
+              "✓ Versioned tables have different structures as expected",
+            );
+          }
+        }
+      } finally {
+        await client.close();
+      }
+    },
+    {
+      attempts: RETRY_CONFIG.DEFAULT_ATTEMPTS,
+      delayMs: RETRY_CONFIG.DEFAULT_DELAY_MS,
+    },
+  );
+};

@@ -25,9 +25,39 @@ You can find the logs for moose if you need to troublehoot into `~/.moose/*-cli.
 - **Format Rust code**: `rustfmt --edition 2021 <file.rs>`
 
 ### Testing
+
+#### Unit Tests (Library Testing)
 - **Rust tests**: `cargo test`
-- **TypeScript/JavaScript tests**: Use appropriate test commands for specific packages
+- **TypeScript library tests**: Navigate to `./packages/ts-moose-lib` and run `pnpm test`
+- **Python library tests**: Navigate to `./packages/py-moose-lib` and run `pytest`
+
+Unit tests should be colocated with the library code they test:
+- TypeScript library tests: `packages/ts-moose-lib/tests/`
+- Python library tests: `packages/py-moose-lib/tests/`
+- Rust tests: Inline with code using `#[cfg(test)]` modules
+
+#### End-to-End Tests (Template Integration Testing)
 - **End-to-end tests**: Navigate to `./apps/framework-cli-e2e` and run `pnpm test`
+
+End-to-end tests verify that complete MooseStack applications work correctly:
+- Tests use the templates in `templates/` as working Moose applications
+- Templates like `python-tests` and `typescript-tests` are complete MooseStack projects
+- E2E tests verify infrastructure creation, data ingestion, API responses, etc.
+
+#### Testing Distinction: Templates vs Libraries
+**IMPORTANT**: Templates are NOT for library unit tests. They are working MooseStack applications.
+
+- **Templates** (`templates/python-tests`, `templates/typescript-tests`): 
+  - Complete, runnable Moose applications
+  - Used by E2E tests to verify end-to-end functionality
+  - Should demonstrate features and serve as examples
+  - Tested by `apps/framework-cli-e2e`
+
+- **Library Tests** (`packages/*/tests/`):
+  - Unit tests for library functionality
+  - Test individual functions, classes, and modules
+  - Should be colocated with the library code
+  - Run independently of the CLI or infrastructure
 
 ## Repository Architecture
 

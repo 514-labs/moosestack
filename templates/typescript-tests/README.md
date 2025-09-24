@@ -13,6 +13,15 @@ This is a [Moose](https://docs.fiveonefour.com/moose) project bootstrapped with 
 
 Get up and running with your own Moose project in minutes by using our [Quick Start Tutorial](https://docs.fiveonefour.com/moose/getting-started/quickstart). We also have our [Docs](https://docs.fiveonefour.com/moose) where you can pick your path, learn more about Moose, and learn what types of applications can be built with Moose.
 
+## OlapTable Versioning Demo
+
+This template demonstrates OlapTable versioning functionality by including two versions of the same table:
+
+- `UserEvents` v1.0 - Basic structure with MergeTree engine
+- `UserEvents` v2.0 - Enhanced with session tracking and ReplacingMergeTree engine
+
+The versioned tables are defined in `app/ingest/models.ts` and showcase how multiple versions of the same table can coexist, supporting blue/green migration scenarios.
+
 # Beta release
 
 Moose is beta software and is in active development. Multiple public companies across the globe are using Moose in production. We'd love for you to [get your hands on it and try it out](https://docs.fiveonefour.com/moose/getting-started/quickstart). If you're interested in using Moose in production, or if you just want to chat, you can reach us at [hello@moosejs.dev](mailto:hello@moosejs.dev) or in the Moose developer community below.
