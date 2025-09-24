@@ -40,6 +40,8 @@ import {
   waitForDBWrite,
   waitForMaterializedViewUpdate,
   verifyClickhouseData,
+  verifyDateAggregationData,
+  verifyDateAggregationSummary,
   withRetries,
   verifyConsumptionApi,
   verifyVersionedConsumptionApi,
@@ -316,6 +318,73 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
           "Optional Text: Hello world",
         ]);
       });
+
+      // Add Date aggregation test only for the tests variant
+      // This test verifies ENG-845: Date & Aggregated<"argMax", [Date, Date]> type combination
+      if (config.isTestsVariant) {
+        it("should successfully handle Date & Aggregated types and verify argMax functionality", async function () {
+          const testId = randomUUID();
+          const testCategory = "TestCategory";
+          const testValue = 42.5;
+
+          // Send test data to DateAggregationTest endpoint
+          console.log("Sending Date aggregation test data...");
+          await withRetries(
+            async () => {
+              const response = await fetch(
+                `${SERVER_CONFIG.url}/ingest/DateAggregationTest`,
+                {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    id: testId,
+                    lastUpdated: new Date().toISOString(),
+                    value: testValue,
+                    category: testCategory,
+                  }),
+                },
+              );
+              if (!response.ok) {
+                const text = await response.text();
+                throw new Error(`${response.status}: ${text}`);
+              }
+            },
+            { attempts: 5, delayMs: 500 },
+          );
+
+          // Wait for data to be written to DateAggregationTest table
+          console.log("Waiting for DateAggregationTest data write...");
+          await waitForDBWrite(devProcess!, "DateAggregationTest", 1);
+
+          // Verify data exists in DateAggregationTest table
+          await verifyDateAggregationData(testId);
+
+          // Wait for materialized view to update
+          console.log(
+            "Waiting for DateAggregationSummary materialized view update...",
+          );
+          await waitForMaterializedViewUpdate("DateAggregationSummary", 1);
+
+          // Verify materialized view data (tests argMax with Date field)
+          await verifyDateAggregationSummary(testCategory);
+
+          // Test the consumption API endpoint
+          console.log("Testing Date aggregation consumption API...");
+          await verifyConsumptionApi(
+            `dateAggregation?category=${testCategory}&limit=1&orderBy=totalRecords`,
+            [
+              {
+                category: testCategory,
+                totalRecords: 1,
+                avgValue: testValue,
+                mostRecentUpdate: new Date(), // We'll verify it's not null in the API verification
+              },
+            ],
+          );
+
+          console.log("Date aggregation test completed successfully");
+        });
+      }
     } else {
       it("should successfully ingest data and verify through consumption API", async function () {
         const eventId = randomUUID();
