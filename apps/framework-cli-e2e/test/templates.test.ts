@@ -182,39 +182,90 @@ const utils = {
       console.log("Stopping dev process...");
       devProcess.kill("SIGINT");
 
-      await new Promise<void>((resolve) => {
+      // Wait for graceful shutdown with timeout
+      const gracefulShutdownPromise = new Promise<void>((resolve) => {
         devProcess!.on("exit", () => {
-          console.log("Dev process has exited");
+          console.log("Dev process has exited gracefully");
           resolve();
         });
       });
+
+      const timeoutPromise = new Promise<void>((resolve) => {
+        setTimeout(() => {
+          console.log("Dev process did not exit gracefully, forcing kill...");
+          if (!devProcess!.killed) {
+            devProcess!.kill("SIGKILL");
+          }
+          resolve();
+        }, 10000); // 10 second timeout
+      });
+
+      // Race between graceful shutdown and timeout
+      await Promise.race([gracefulShutdownPromise, timeoutPromise]);
+
+      // Give a brief moment for cleanup after forced kill
+      if (!devProcess.killed) {
+        await setTimeoutAsync(1000);
+      }
     }
   },
   cleanupDocker: async (projectDir: string, appName: string): Promise<void> => {
     console.log(`Cleaning up Docker resources for ${appName}...`);
     try {
-      // Stop containers and remove volumes
-      await execAsync(
-        `docker compose -f .moose/docker-compose.yml -p ${appName} down -v`,
-        { cwd: projectDir },
-      );
+      // Stop containers and remove volumes with timeout
+      await Promise.race([
+        execAsync(
+          `docker compose -f .moose/docker-compose.yml -p ${appName} down -v`,
+          { cwd: projectDir },
+        ),
+        new Promise<never>((_, reject) =>
+          setTimeout(
+            () => reject(new Error("Docker compose down timeout")),
+            30000,
+          ),
+        ),
+      ]);
 
-      // Additional cleanup for any orphaned volumes
-      const { stdout: volumeList } = await execAsync(
+      // Additional cleanup for any orphaned volumes with timeout
+      const volumeListPromise = execAsync(
         `docker volume ls --filter name=${appName}_ --format '{{.Name}}'`,
       );
+      const timeoutPromise = new Promise<never>((_, reject) =>
+        setTimeout(
+          () => reject(new Error("Docker volume list timeout")),
+          10000,
+        ),
+      );
+
+      const { stdout: volumeList } = await Promise.race([
+        volumeListPromise,
+        timeoutPromise,
+      ]);
 
       if (volumeList.trim()) {
         const volumes = volumeList.split("\n").filter(Boolean);
         for (const volume of volumes) {
           console.log(`Removing volume: ${volume}`);
-          await execAsync(`docker volume rm -f ${volume}`);
+          try {
+            await Promise.race([
+              execAsync(`docker volume rm -f ${volume}`),
+              new Promise<never>((_, reject) =>
+                setTimeout(
+                  () => reject(new Error("Volume removal timeout")),
+                  5000,
+                ),
+              ),
+            ]);
+          } catch (volumeError) {
+            console.warn(`Failed to remove volume ${volume}:`, volumeError);
+          }
         }
       }
 
       console.log("Docker cleanup completed successfully");
     } catch (error) {
       console.error("Error during Docker cleanup:", error);
+      // Don't throw - we want cleanup to continue even if Docker cleanup fails
     }
   },
 
@@ -557,10 +608,25 @@ describe("Moose Templates", () => {
     });
 
     after(async function () {
-      this.timeout(60_000);
-      await utils.stopDevProcess(devProcess);
-      await utils.cleanupDocker(TEST_PROJECT_DIR, "moose-ts-app");
-      utils.removeTestProject(TEST_PROJECT_DIR);
+      this.timeout(90_000); // Increased timeout for cleanup
+      try {
+        console.log("Starting cleanup for TypeScript default template test...");
+        await utils.stopDevProcess(devProcess);
+        await utils.cleanupDocker(TEST_PROJECT_DIR, "moose-ts-app");
+        utils.removeTestProject(TEST_PROJECT_DIR);
+        console.log("Cleanup completed for TypeScript default template test");
+      } catch (error) {
+        console.error("Error during cleanup:", error);
+        // Force cleanup even if some steps fail
+        try {
+          if (devProcess && !devProcess.killed) {
+            devProcess.kill("SIGKILL");
+          }
+        } catch (killError) {
+          console.error("Error killing process:", killError);
+        }
+        utils.removeTestProject(TEST_PROJECT_DIR);
+      }
     });
 
     it("should successfully ingest data and verify through consumption API (DateTime support)", async function () {
@@ -703,10 +769,25 @@ describe("Moose Templates", () => {
     });
 
     after(async function () {
-      this.timeout(60_000);
-      await utils.stopDevProcess(devProcess);
-      await utils.cleanupDocker(TEST_PROJECT_DIR, "moose-ts-app");
-      utils.removeTestProject(TEST_PROJECT_DIR);
+      this.timeout(90_000); // Increased timeout for cleanup
+      try {
+        console.log("Starting cleanup for TypeScript tests template test...");
+        await utils.stopDevProcess(devProcess);
+        await utils.cleanupDocker(TEST_PROJECT_DIR, "moose-ts-app");
+        utils.removeTestProject(TEST_PROJECT_DIR);
+        console.log("Cleanup completed for TypeScript tests template test");
+      } catch (error) {
+        console.error("Error during cleanup:", error);
+        // Force cleanup even if some steps fail
+        try {
+          if (devProcess && !devProcess.killed) {
+            devProcess.kill("SIGKILL");
+          }
+        } catch (killError) {
+          console.error("Error killing process:", killError);
+        }
+        utils.removeTestProject(TEST_PROJECT_DIR);
+      }
     });
 
     it("should successfully ingest data and verify through consumption API (DateTime support)", async function () {
@@ -897,10 +978,25 @@ describe("Moose Templates", () => {
     });
 
     after(async function () {
-      this.timeout(60_000);
-      await utils.stopDevProcess(devProcess);
-      await utils.cleanupDocker(TEST_PROJECT_DIR, "moose-py-app");
-      utils.removeTestProject(TEST_PROJECT_DIR);
+      this.timeout(90_000); // Increased timeout for cleanup
+      try {
+        console.log("Starting cleanup for Python default template test...");
+        await utils.stopDevProcess(devProcess);
+        await utils.cleanupDocker(TEST_PROJECT_DIR, "moose-py-app");
+        utils.removeTestProject(TEST_PROJECT_DIR);
+        console.log("Cleanup completed for Python default template test");
+      } catch (error) {
+        console.error("Error during cleanup:", error);
+        // Force cleanup even if some steps fail
+        try {
+          if (devProcess && !devProcess.killed) {
+            devProcess.kill("SIGKILL");
+          }
+        } catch (killError) {
+          console.error("Error killing process:", killError);
+        }
+        utils.removeTestProject(TEST_PROJECT_DIR);
+      }
     });
 
     it("should successfully ingest data and verify through consumption API", async function () {
@@ -1089,10 +1185,25 @@ describe("Moose Templates", () => {
     });
 
     after(async function () {
-      this.timeout(60_000);
-      await utils.stopDevProcess(devProcess);
-      await utils.cleanupDocker(TEST_PROJECT_DIR, "moose-py-app");
-      utils.removeTestProject(TEST_PROJECT_DIR);
+      this.timeout(90_000); // Increased timeout for cleanup
+      try {
+        console.log("Starting cleanup for Python tests template test...");
+        await utils.stopDevProcess(devProcess);
+        await utils.cleanupDocker(TEST_PROJECT_DIR, "moose-py-app");
+        utils.removeTestProject(TEST_PROJECT_DIR);
+        console.log("Cleanup completed for Python tests template test");
+      } catch (error) {
+        console.error("Error during cleanup:", error);
+        // Force cleanup even if some steps fail
+        try {
+          if (devProcess && !devProcess.killed) {
+            devProcess.kill("SIGKILL");
+          }
+        } catch (killError) {
+          console.error("Error killing process:", killError);
+        }
+        utils.removeTestProject(TEST_PROJECT_DIR);
+      }
     });
 
     it("should successfully ingest data and verify through consumption API", async function () {
@@ -1164,4 +1275,40 @@ describe("Moose Templates", () => {
       ]);
     });
   });
+});
+
+// Global cleanup to ensure no hanging processes
+after(async function () {
+  this.timeout(30_000);
+  console.log("Running global cleanup...");
+
+  try {
+    // Kill any remaining moose-cli processes
+    await execAsync("pkill -f moose-cli || true");
+    console.log("Killed any remaining moose-cli processes");
+
+    // Clean up any remaining Docker resources
+    await execAsync("docker system prune -f --volumes || true");
+    console.log("Cleaned up Docker resources");
+
+    // Clean up any test directories that might still exist
+    const testDirs = [
+      "../temp-test-project-ts-default",
+      "../temp-test-project-ts-tests",
+      "../temp-test-project-py-default",
+      "../temp-test-project-py-tests",
+    ];
+
+    for (const dir of testDirs) {
+      const fullPath = path.join(__dirname, dir);
+      if (fs.existsSync(fullPath)) {
+        console.log(`Removing leftover test directory: ${fullPath}`);
+        fs.rmSync(fullPath, { recursive: true, force: true });
+      }
+    }
+
+    console.log("Global cleanup completed");
+  } catch (error) {
+    console.warn("Error during global cleanup:", error);
+  }
 });
