@@ -1,7 +1,7 @@
 # This file is where you can define your API templates for consuming your data
 # The implementation has been moved to FastAPI routes in main.py
 
-from moose_lib import MooseClient, Api, MooseCache
+from moose_lib import MooseClient, Api, MooseCache, Query, and_
 from pydantic import BaseModel, Field
 from typing import Optional, Literal
 from app.views.bar_aggregated import barAggregatedMV
