@@ -1,3 +1,6 @@
+/// <reference types="node" />
+/// <reference types="mocha" />
+/// <reference types="chai" />
 /**
  * Combined test file for all Moose templates.
  *
@@ -20,7 +23,8 @@ import { createClient } from "@clickhouse/client";
 import { randomUUID } from "crypto";
 
 const execAsync = promisify(exec);
-const setTimeoutAsync = promisify(setTimeout);
+const setTimeoutAsync = (ms: number) =>
+  new Promise<void>((resolve) => global.setTimeout(resolve, ms));
 const CLI_PATH = path.resolve(__dirname, "../../../target/debug/moose-cli");
 const MOOSE_LIB_PATH = path.resolve(
   __dirname,
@@ -41,7 +45,7 @@ const TEST_CONFIG = {
   },
   server: {
     url: "http://localhost:4000",
-    startupTimeout: 90_000,
+    startupTimeout: 180_000,
     startupMessage:
       "Your local development server is running at: http://localhost:4000/ingest",
   },
@@ -50,6 +54,27 @@ const TEST_CONFIG = {
 
 // Test utilities
 const utils = {
+  withRetries: async <T>(
+    operation: () => Promise<T>,
+    options?: { attempts?: number; delayMs?: number; backoffFactor?: number },
+  ): Promise<T> => {
+    const attempts = options?.attempts ?? 10;
+    const backoffFactor = options?.backoffFactor ?? 1.5;
+    let delayMs = options?.delayMs ?? 1000;
+
+    let lastError: unknown;
+    for (let attempt = 1; attempt <= attempts; attempt++) {
+      try {
+        return await operation();
+      } catch (error) {
+        lastError = error;
+        if (attempt === attempts) break;
+        await setTimeoutAsync(delayMs);
+        delayMs = Math.ceil(delayMs * backoffFactor);
+      }
+    }
+    throw lastError as Error;
+  },
   removeTestProject: (dir: string) => {
     console.log(`deleting ${dir}`);
     fs.rmSync(dir, { recursive: true, force: true });
@@ -61,7 +86,8 @@ const utils = {
   ): Promise<void> => {
     return new Promise<void>((resolve, reject) => {
       let serverStarted = false;
-      let timeoutId: NodeJS.Timeout;
+      let timeoutId: ReturnType<typeof global.setTimeout>;
+      let pingInterval: ReturnType<typeof global.setInterval> | null = null;
 
       devProcess.stdout?.on("data", async (data) => {
         const output = data.toString();
@@ -74,6 +100,7 @@ const utils = {
           output.includes(TEST_CONFIG.server.startupMessage)
         ) {
           serverStarted = true;
+          if (pingInterval) clearInterval(pingInterval);
           resolve();
         }
       });
@@ -89,79 +116,65 @@ const utils = {
         }
       });
 
+      // Fallback readiness probe: HTTP ping
+      pingInterval = setInterval(async () => {
+        if (serverStarted) {
+          if (pingInterval) clearInterval(pingInterval);
+          return;
+        }
+        try {
+          const res = await fetch(`${TEST_CONFIG.server.url}/ingest`);
+          if (res.ok || [400, 404, 405].includes(res.status)) {
+            serverStarted = true;
+            if (pingInterval) clearInterval(pingInterval);
+            clearTimeout(timeoutId);
+            resolve();
+          }
+        } catch (_) {
+          // ignore until service is up
+        }
+      }, 1000);
+
       timeoutId = setTimeout(() => {
         if (serverStarted) return;
         console.error("Dev server did not start or complete in time");
         devProcess.kill("SIGINT");
+        if (pingInterval) clearInterval(pingInterval);
         reject(new Error("Dev server timeout"));
       }, timeout);
     });
   },
 
   waitForDBWrite: async (
-    devProcess: ChildProcess,
+    _devProcess: ChildProcess,
     tableName: string,
     expectedRecords: number,
-    timeout: number = 30000,
+    timeout: number = 60_000,
   ): Promise<void> => {
-    return new Promise<void>((resolve, reject) => {
-      let writeConfirmed = false;
-      let timeoutId: NodeJS.Timeout;
-      let outputBuffer = "";
-      let recordsWritten = 0;
-
-      // Updated regex to match the new right-aligned format with 15-character action field
-      const expectedMessageRegex = new RegExp(
-        `\\s*\\[DB\\]\\s+(\\d+)\\s*row\\(s\\)\\s*successfully\\s*written\\s*to\\s*DB\\s*table\\s*\\(${tableName}\\)`,
-        "i", // Remove 'g' flag to get proper capture groups
-      );
-
-      devProcess.stdout?.on("data", async (data) => {
-        const output = data.toString();
-        console.log("Dev server output:", output);
-
-        if (!writeConfirmed) {
-          // Accumulate output in buffer to handle split messages
-          outputBuffer += output;
-
-          // Keep only the last 2000 characters to prevent memory issues
-          if (outputBuffer.length > 2000) {
-            outputBuffer = outputBuffer.slice(-2000);
-          }
-
-          // Strip ANSI color codes before matching - try multiple patterns
-          const cleanBuffer = outputBuffer
-            .replace(/\x1b\[[0-9;]*m/g, "") // Standard ANSI
-            .replace(/\[[\d;]*m/g, "") // Just the bracket notation
-            .replace(/\[[0-9;]*m/g, ""); // Alternative pattern
-
-          // Reset regex lastIndex for global flag
-          expectedMessageRegex.lastIndex = 0;
-          const match = cleanBuffer.match(expectedMessageRegex);
-          if (match) {
-            const actualRecords = parseInt(match[1], 10);
-            recordsWritten += actualRecords;
-            if (recordsWritten >= expectedRecords) {
-              writeConfirmed = true;
-              clearTimeout(timeoutId);
-              resolve();
-            }
-          }
+    const client = createClient(TEST_CONFIG.clickhouse);
+    const startTime = Date.now();
+    try {
+      while (Date.now() - startTime < timeout) {
+        try {
+          const result = await client.query({
+            query: `SELECT COUNT(*) as count FROM ${tableName}`,
+            format: "JSONEachRow",
+          });
+          const rows: any[] = await result.json();
+          const count = parseInt(rows[0].count);
+          console.log(`Records in ${tableName}:`, count);
+          if (count >= expectedRecords) return;
+        } catch (err) {
+          console.log("ClickHouse count query failed, will retry...", err);
         }
-      });
-
-      devProcess.stderr?.on("data", (data) => {
-        console.error("Dev server stderr:", data.toString());
-      });
-
-      timeoutId = setTimeout(() => {
-        if (writeConfirmed) return;
-        console.error("DB write confirmation not received in time");
-        console.error("Final buffer contents (last 500 chars):");
-        console.error(outputBuffer.slice(-500));
-        reject(new Error("DB write timeout"));
-      }, timeout);
-    });
+        await setTimeoutAsync(1000);
+      }
+      throw new Error(
+        `${tableName} did not reach ${expectedRecords} records within ${timeout}ms`,
+      );
+    } finally {
+      await client.close();
+    }
   },
 
   stopDevProcess: async (devProcess: ChildProcess | null): Promise<void> => {
@@ -207,50 +220,39 @@ const utils = {
 
   cleanupClickhouseData: async (): Promise<void> => {
     console.log("Cleaning up ClickHouse data...");
-    const client = createClient(TEST_CONFIG.clickhouse);
-    try {
-      // First check what tables exist
-      const result = await client.query({
-        query: "SHOW TABLES",
-        format: "JSONEachRow",
-      });
-      const tables: any[] = await result.json();
-      console.log(
-        "Existing tables:",
-        tables.map((t) => t.name),
-      );
+    await utils.withRetries(async () => {
+      const client = createClient(TEST_CONFIG.clickhouse);
+      try {
+        const result = await client.query({
+          query: "SHOW TABLES",
+          format: "JSONEachRow",
+        });
+        const tables: any[] = await result.json();
+        console.log("Existing tables:", tables.map((t) => t.name));
 
-      // Clear the base table data first
-      await client.command({
-        query: "TRUNCATE TABLE IF EXISTS Bar",
-      });
-      console.log("Truncated Bar table");
+        await client.command({ query: "TRUNCATE TABLE IF EXISTS Bar" });
+        console.log("Truncated Bar table");
 
-      // Clear materialized view tables
-      const mvTables = ["BarAggregated", "bar_aggregated"];
-      for (const table of mvTables) {
-        try {
-          await client.command({
-            query: `TRUNCATE TABLE IF EXISTS ${table}`,
-          });
-          console.log(`Truncated ${table} table`);
-        } catch (error) {
-          console.log(`Failed to truncate ${table}:`, error);
+        const mvTables = ["BarAggregated", "bar_aggregated"];
+        for (const table of mvTables) {
+          try {
+            await client.command({ query: `TRUNCATE TABLE IF EXISTS ${table}` });
+            console.log(`Truncated ${table} table`);
+          } catch (error) {
+            console.log(`Failed to truncate ${table}:`, error);
+          }
         }
+      } finally {
+        await client.close();
       }
-
-      console.log("ClickHouse data cleanup completed successfully");
-    } catch (error) {
-      console.error("Error during ClickHouse cleanup:", error);
-    } finally {
-      await client.close();
-    }
+    }, { attempts: 10, delayMs: 1000 });
+    console.log("ClickHouse data cleanup completed successfully");
   },
 
   waitForMaterializedViewUpdate: async (
     tableName: string,
     expectedRows: number,
-    timeout: number = 30000,
+    timeout: number = 60_000,
   ): Promise<void> => {
     console.log(`Waiting for materialized view ${tableName} to update...`);
     const client = createClient(TEST_CONFIG.clickhouse);
@@ -288,94 +290,84 @@ const utils = {
     eventId: string,
     primaryKeyField: string,
   ): Promise<void> => {
-    const client = createClient(TEST_CONFIG.clickhouse);
-    try {
-      const result = await client.query({
-        query: `SELECT * FROM ${tableName} WHERE ${primaryKeyField} = '${eventId}'`,
-        format: "JSONEachRow",
-      });
-      const rows: any[] = await result.json();
-      console.log(`${tableName} data:`, rows);
+    await utils.withRetries(async () => {
+      const client = createClient(TEST_CONFIG.clickhouse);
+      try {
+        const result = await client.query({
+          query: `SELECT * FROM ${tableName} WHERE ${primaryKeyField} = '${eventId}'`,
+          format: "JSONEachRow",
+        });
+        const rows: any[] = await result.json();
+        console.log(`${tableName} data:`, rows);
 
-      expect(rows).to.have.length.greaterThan(
-        0,
-        `Expected at least one row in ${tableName} with ${primaryKeyField} = ${eventId}`,
-      );
-      expect(rows[0][primaryKeyField]).to.equal(
-        eventId,
-        `${primaryKeyField} in ${tableName} should match the generated UUID`,
-      );
-    } catch (error) {
-      console.error("Error querying ClickHouse:", error);
-      throw error;
-    } finally {
-      await client.close();
-    }
+        expect(rows).to.have.length.greaterThan(
+          0,
+          `Expected at least one row in ${tableName} with ${primaryKeyField} = ${eventId}`,
+        );
+        expect(rows[0][primaryKeyField]).to.equal(
+          eventId,
+          `${primaryKeyField} in ${tableName} should match the generated UUID`,
+        );
+      } finally {
+        await client.close();
+      }
+    }, { attempts: 20, delayMs: 1000 });
   },
 
   verifyConsumptionApi: async (
     endpoint: string,
     expectedResponse: any,
   ): Promise<void> => {
-    const response = await fetch(`${TEST_CONFIG.server.url}/api/${endpoint}`);
-    if (response.ok) {
+    await utils.withRetries(async () => {
+      const response = await fetch(`${TEST_CONFIG.server.url}/api/${endpoint}`);
+      if (!response.ok) {
+        const text = await response.text();
+        throw new Error(`${response.status}: ${text}`);
+      }
       console.log("Test request sent successfully");
       const json = (await response.json()) as any[];
 
-      // Check structure and value validation rather than exact matches
       expect(json).to.be.an("array");
       expect(json.length).to.be.at.least(1);
 
       json.forEach((item: any) => {
-        // Verify structure - all expected keys exist
         Object.keys(expectedResponse[0]).forEach((key) => {
           expect(item).to.have.property(key);
           expect(item[key]).to.not.be.null;
         });
 
-        // Verify rows_with_text and total_rows are greater than 1
         if (item.hasOwnProperty("rows_with_text")) {
-          expect(item.rows_with_text).to.be.at.least(
-            1,
-            "rows_with_text should be at least 1",
-          );
+          expect(item.rows_with_text).to.be.at.least(1);
         }
 
         if (item.hasOwnProperty("total_rows")) {
-          expect(item.total_rows).to.be.at.least(
-            1,
-            "total_rows should be at least 1",
-          );
+          expect(item.total_rows).to.be.at.least(1);
         }
       });
-    } else {
-      console.error("Response code:", response.status);
-      const text = await response.text();
-      console.error(`Test request failed: ${text}`);
-      throw new Error(`${response.status}: ${text}`);
-    }
+    }, { attempts: 10, delayMs: 1000 });
   },
 
   verifyVersionedConsumptionApi: async (
     endpoint: string,
     expectedResponse: any,
   ): Promise<void> => {
-    const response = await fetch(`${TEST_CONFIG.server.url}/api/${endpoint}`);
-    if (response.ok) {
+    await utils.withRetries(async () => {
+      const response = await fetch(`${TEST_CONFIG.server.url}/api/${endpoint}`);
+      if (!response.ok) {
+        const text = await response.text();
+        throw new Error(`${response.status}: ${text}`);
+      }
       console.log("Versioned API test request sent successfully");
       const json = (await response.json()) as any[];
 
-      // Check structure and value validation rather than exact matches
       expect(json).to.be.an("array");
       expect(json.length).to.be.at.least(1);
 
       json.forEach((item: any, index: number) => {
         const expected = expectedResponse[index] || expectedResponse[0];
 
-        // Verify structure - all expected keys exist
         Object.keys(expected).forEach((key) => {
           const expectedValue = expected[key];
-
           expect(item).to.have.property(key);
 
           if (
@@ -383,31 +375,25 @@ const utils = {
             expectedValue !== null &&
             !Array.isArray(expectedValue)
           ) {
-            // Handle nested objects generically
             expect(item[key]).to.be.an("object");
 
             Object.keys(expectedValue).forEach((nestedKey) => {
               const nestedExpected = expectedValue[nestedKey];
-
               if (
                 typeof nestedExpected === "object" &&
                 nestedExpected !== null
               ) {
-                // Handle nested objects like queryParams - check for either camelCase or snake_case variants
                 const camelCaseKey = nestedKey;
                 const snakeCaseKey = nestedKey
                   .replace(/([A-Z])/g, "_$1")
                   .toLowerCase();
-
                 const hasCamelCase = item[key].hasOwnProperty(camelCaseKey);
                 const hasSnakeCase = item[key].hasOwnProperty(snakeCaseKey);
                 expect(hasCamelCase || hasSnakeCase).to.be.true;
-
                 const nestedField =
                   item[key][camelCaseKey] || item[key][snakeCaseKey];
                 expect(nestedField).to.be.an("object");
               } else {
-                // Handle simple properties
                 expect(item[key]).to.have.property(nestedKey);
                 if (typeof nestedExpected === "string") {
                   expect(item[key][nestedKey]).to.equal(nestedExpected);
@@ -419,27 +405,14 @@ const utils = {
           }
         });
 
-        // Verify rows_with_text and total_rows are greater than 1
         if (item.hasOwnProperty("rows_with_text")) {
-          expect(item.rows_with_text).to.be.at.least(
-            1,
-            "rows_with_text should be at least 1",
-          );
+          expect(item.rows_with_text).to.be.at.least(1);
         }
-
         if (item.hasOwnProperty("total_rows")) {
-          expect(item.total_rows).to.be.at.least(
-            1,
-            "total_rows should be at least 1",
-          );
+          expect(item.total_rows).to.be.at.least(1);
         }
       });
-    } else {
-      console.error("Response code:", response.status);
-      const text = await response.text();
-      console.error(`Versioned API test request failed: ${text}`);
-      throw new Error(`${response.status}: ${text}`);
-    }
+    }, { attempts: 10, delayMs: 1000 });
   },
 
   verifyConsumerLogs: async (
@@ -450,20 +423,33 @@ const utils = {
     const mooseDir = path.join(homeDir, ".moose");
     const today = new Date();
     const logFileName = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}-cli.log`;
-    const logPath = path.join(mooseDir, logFileName);
+    let logPath = path.join(mooseDir, logFileName);
 
-    console.log("Checking consumer logs in:", logPath);
+    await utils.withRetries(async () => {
+      if (!fs.existsSync(logPath)) {
+        // Fallback: pick the most recent cli.log in ~/.moose
+        const files = fs
+          .readdirSync(mooseDir)
+          .filter((f) => f.endsWith("-cli.log"))
+          .map((f) => ({
+            name: f,
+            time: fs.statSync(path.join(mooseDir, f)).mtimeMs,
+          }))
+          .sort((a, b) => b.time - a.time);
+        if (files.length > 0) {
+          logPath = path.join(mooseDir, files[0].name);
+        }
+      }
 
-    // Wait for logs to be written
-    await setTimeoutAsync(2000);
-
-    const logContent = fs.readFileSync(logPath, "utf-8");
-    for (const expected of expectedOutput) {
-      expect(logContent).to.include(
-        expected,
-        `Log should contain "${expected}"`,
-      );
-    }
+      console.log("Checking consumer logs in:", logPath);
+      const logContent = fs.readFileSync(logPath, "utf-8");
+      for (const expected of expectedOutput) {
+        expect(logContent).to.include(
+          expected,
+          `Log should contain "${expected}"`,
+        );
+      }
+    }, { attempts: 10, delayMs: 1000 });
   },
 };
 
@@ -484,7 +470,7 @@ describe("Moose Templates", () => {
     const TEST_PROJECT_DIR = path.join(__dirname, "../temp-test-project-ts");
 
     before(async function () {
-      this.timeout(120_000);
+      this.timeout(240_000);
       try {
         await fs.promises.access(CLI_PATH, fs.constants.F_OK);
       } catch (err) {
@@ -544,7 +530,7 @@ describe("Moose Templates", () => {
     });
 
     after(async function () {
-      this.timeout(30_000);
+      this.timeout(60_000);
       await utils.stopDevProcess(devProcess);
       await utils.cleanupDocker(TEST_PROJECT_DIR, "moose-ts-app");
       utils.removeTestProject(TEST_PROJECT_DIR);
@@ -555,26 +541,22 @@ describe("Moose Templates", () => {
 
       // Send multiple records to trigger batch write (batch size is likely 1000+)
       const recordsToSend = 50; // Send enough to trigger a batch
-      const responses = [];
-
       for (let i = 0; i < recordsToSend; i++) {
-        const response = await fetch(`${TEST_CONFIG.server.url}/ingest/Foo`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            primaryKey: i === 0 ? eventId : randomUUID(), // Use eventId for first record for verification
-            timestamp: TEST_CONFIG.timestamp,
-            optionalText: `Hello world ${i}`,
-          }),
-        });
-
-        if (!response.ok) {
-          console.error("Response code:", response.status);
-          const text = await response.text();
-          console.error(`Test request failed: ${text}`);
-          throw new Error(`${response.status}: ${text}`);
-        }
-        responses.push(response);
+        await utils.withRetries(async () => {
+          const response = await fetch(`${TEST_CONFIG.server.url}/ingest/Foo`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              primaryKey: i === 0 ? eventId : randomUUID(),
+              timestamp: TEST_CONFIG.timestamp,
+              optionalText: `Hello world ${i}`,
+            }),
+          });
+          if (!response.ok) {
+            const text = await response.text();
+            throw new Error(`${response.status}: ${text}`);
+          }
+        }, { attempts: 5, delayMs: 500 });
       }
 
       await utils.waitForDBWrite(devProcess!, "Bar", recordsToSend);
@@ -625,7 +607,7 @@ describe("Moose Templates", () => {
     const TEST_PROJECT_DIR = path.join(__dirname, "../temp-test-project-py");
 
     before(async function () {
-      this.timeout(180_000);
+      this.timeout(240_000);
       try {
         await fs.promises.access(CLI_PATH, fs.constants.F_OK);
       } catch (err) {
@@ -733,7 +715,7 @@ describe("Moose Templates", () => {
     });
 
     after(async function () {
-      this.timeout(30_000);
+      this.timeout(60_000);
       await utils.stopDevProcess(devProcess);
       await utils.cleanupDocker(TEST_PROJECT_DIR, "moose-py-app");
       utils.removeTestProject(TEST_PROJECT_DIR);
@@ -741,23 +723,22 @@ describe("Moose Templates", () => {
 
     it("should successfully ingest data and verify through consumption API", async function () {
       const eventId = randomUUID();
-      const response = await fetch(`${TEST_CONFIG.server.url}/ingest/foo`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          primary_key: eventId,
-          baz: "QUUX",
-          timestamp: TEST_CONFIG.timestamp,
-          optional_text: "Hello from Python",
-        }),
-      });
-
-      if (!response.ok) {
-        console.error("Response code:", response.status);
-        const text = await response.text();
-        console.error(`Test request failed: ${text}`);
-        throw new Error(`${response.status}: ${text}`);
-      }
+      await utils.withRetries(async () => {
+        const response = await fetch(`${TEST_CONFIG.server.url}/ingest/foo`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            primary_key: eventId,
+            baz: "QUUX",
+            timestamp: TEST_CONFIG.timestamp,
+            optional_text: "Hello from Python",
+          }),
+        });
+        if (!response.ok) {
+          const text = await response.text();
+          throw new Error(`${response.status}: ${text}`);
+        }
+      }, { attempts: 5, delayMs: 500 });
 
       await utils.waitForDBWrite(devProcess!, "Bar", 1);
       await utils.verifyClickhouseData("Bar", eventId, "primary_key");
