@@ -65,12 +65,26 @@ const parseBrokerString = (brokerString: string): string[] => {
  * Checks if an error is a MESSAGE_TOO_LARGE error from Kafka
  */
 const isMessageTooLargeError = (error: unknown): boolean => {
-  return (
-    KafkaJS.isKafkaJSError?.(error) &&
-    (error.type === "ERR_MSG_SIZE_TOO_LARGE" ||
-      error.code === 10 ||
-      (error.cause !== undefined && isMessageTooLargeError(error.cause)))
-  );
+  // Check if it's a KafkaJS error first
+  if (KafkaJS.isKafkaJSError && KafkaJS.isKafkaJSError(error)) {
+    return (
+      (error as any).type === "ERR_MSG_SIZE_TOO_LARGE" ||
+      (error as any).code === 10 ||
+      ((error as any).cause !== undefined && isMessageTooLargeError((error as any).cause))
+    );
+  }
+  
+  // Fallback for other error types that might have these properties
+  if (error && typeof error === 'object') {
+    const err = error as any;
+    return (
+      err.type === "ERR_MSG_SIZE_TOO_LARGE" ||
+      err.code === 10 ||
+      (err.cause !== undefined && isMessageTooLargeError(err.cause))
+    );
+  }
+  
+  return false;
 };
 
 /**
@@ -357,8 +371,26 @@ const stopConsumer = async (
   logger: Logger,
   consumer: Consumer,
 ): Promise<void> => {
-  await consumer.disconnect();
-  logger.log("Consumer is shutting down...");
+  try {
+    // Try to pause the consumer first if the method exists
+    if (typeof (consumer as any).pause === 'function') {
+      logger.log("Pausing consumer...");
+      await (consumer as any).pause();
+    }
+    
+    logger.log("Disconnecting consumer...");
+    await consumer.disconnect();
+    logger.log("Consumer is shutting down...");
+  } catch (error) {
+    logger.error(`Error during consumer shutdown: ${error}`);
+    // Continue with disconnect even if pause fails
+    try {
+      await consumer.disconnect();
+      logger.log("Consumer disconnected after error");
+    } catch (disconnectError) {
+      logger.error(`Failed to disconnect consumer: ${disconnectError}`);
+    }
+  }
 };
 
 /**
@@ -691,6 +723,7 @@ const startConsumer = async (
 
   await consumer.subscribe({
     topics: [args.sourceTopic.name], // Use full topic name for Kafka operations
+    fromBeginning: true,
   });
 
   await consumer.run({
@@ -973,7 +1006,6 @@ export const runStreamingFunctions = async (
           retry: {
             retries: MAX_RETRIES_CONSUMER,
           },
-          fromBeginning: true,
           autoCommit: true,
           autoCommitInterval: AUTO_COMMIT_INTERVAL_MS,
         },
@@ -1042,11 +1074,21 @@ export const runStreamingFunctions = async (
       return [logger, producer, consumer] as [Logger, Producer, Consumer];
     },
     workerStop: async ([logger, producer, consumer]) => {
-      logger.log(`Received SIGTERM, shutting down ...`);
-      // Wait for in-flight messages to complete (consumer.stop() not available in Confluent client)
-      await new Promise((resolve) => setTimeout(resolve, 5000));
-      await stopProducer(logger, producer);
+      logger.log(`Received SIGTERM, shutting down gracefully...`);
+      
+      // First stop the consumer to prevent new messages
+      logger.log("Stopping consumer first...");
       await stopConsumer(logger, consumer);
+      
+      // Wait a bit for in-flight messages to complete processing
+      logger.log("Waiting for in-flight messages to complete...");
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+      
+      // Then stop the producer
+      logger.log("Stopping producer...");
+      await stopProducer(logger, producer);
+      
+      logger.log("Graceful shutdown completed");
     },
   });
 
