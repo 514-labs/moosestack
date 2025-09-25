@@ -30,7 +30,12 @@ from typing import Optional, Callable, Tuple, Any
 
 from moose_lib.dmv2 import get_streams, DeadLetterModel
 from moose_lib import cli_log, CliLogData, DeadLetterQueue
-from moose_lib.commons import EnhancedJSONEncoder, moose_management_port
+from moose_lib.commons import (
+    EnhancedJSONEncoder,
+    moose_management_port,
+    get_kafka_consumer,
+    get_kafka_producer,
+)
 
 # Force stdout to be unbuffered
 sys.stdout = io.TextIOWrapper(
@@ -294,29 +299,19 @@ def create_consumer() -> KafkaConsumer:
     Returns:
         Configured KafkaConsumer instance
     """
-    if sasl_config['mechanism'] is not None:
-        return KafkaConsumer(
-            source_topic.name,
-            client_id="python_streaming_function_consumer",
-            group_id=streaming_function_id,
-            bootstrap_servers=broker,
-            sasl_plain_username=sasl_config['username'],
-            sasl_plain_password=sasl_config['password'],
-            sasl_mechanism=sasl_config['mechanism'],
-            security_protocol=args.security_protocol,
-            # consumer_timeout_ms=10000,
-            value_deserializer=lambda m: json.loads(m.decode('utf-8'))
-        )
-    else:
-        log("No sasl mechanism specified. Using default consumer.")
-        return KafkaConsumer(
-            source_topic.name,
-            client_id="python_streaming_function_consumer",
-            group_id=streaming_function_id,
-            bootstrap_servers=broker,
-            # consumer_timeout_ms=10000,
-            value_deserializer=lambda m: json.loads(m.decode('utf-8'))
-        )
+    kwargs = dict(
+        broker=broker,
+        client_id="python_streaming_function_consumer",
+        group_id=streaming_function_id,
+        value_deserializer=lambda m: json.loads(m.decode("utf-8")),
+        sasl_username=sasl_config.get("username"),
+        sasl_password=sasl_config.get("password"),
+        sasl_mechanism=sasl_config.get("mechanism"),
+        security_protocol=args.security_protocol,
+    )
+    consumer = get_kafka_consumer(**kwargs)
+    consumer.subscribe([source_topic.name])
+    return consumer
 
 
 def create_producer() -> Optional[KafkaProducer]:
@@ -330,20 +325,13 @@ def create_producer() -> Optional[KafkaProducer]:
     """
     max_request_size = KafkaProducer.DEFAULT_CONFIG['max_request_size'] if target_topic is None \
         else target_topic.max_message_bytes
-    if sasl_config['mechanism'] is not None:
-        return KafkaProducer(
-            bootstrap_servers=broker,
-            sasl_plain_username=sasl_config['username'],
-            sasl_plain_password=sasl_config['password'],
-            sasl_mechanism=sasl_config['mechanism'],
-            security_protocol=args.security_protocol,
-            max_request_size=max_request_size
-        )
-    log("No sasl mechanism specified. Using default producer.")
-    return KafkaProducer(
-        bootstrap_servers=broker,
-        max_in_flight_requests_per_connection=1,
-        max_request_size=max_request_size
+    return get_kafka_producer(
+        broker=broker,
+        sasl_username=sasl_config.get("username"),
+        sasl_password=sasl_config.get("password"),
+        sasl_mechanism=sasl_config.get("mechanism"),
+        security_protocol=args.security_protocol,
+        max_request_size=max_request_size,
     )
 
 
@@ -416,8 +404,7 @@ def main():
             kafka_refs['consumer'] = consumer
             kafka_refs['producer'] = producer
 
-            # Subscribe to topic
-            consumer.subscribe([source_topic.name])
+            # Already subscribed in create_consumer
 
             log("Kafka consumer and producer initialized in processing thread")
 

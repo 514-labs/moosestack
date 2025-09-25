@@ -309,32 +309,30 @@ class Stream(TypedMooseResource, Generic[T]):
                 self._memoized_producer = None
                 self._kafka_config_hash = None
 
-    def send(self, values: Union[ZeroOrMany[T], list[ZeroOrMany[T]]]) -> None:
+    def send(self, values: ZeroOrMany[T]) -> None:
         """Send one or more records to this stream's Kafka topic.
 
         Values are JSON-serialized using EnhancedJSONEncoder.
         """
         # Normalize inputs to a flat list of records
-        flat: list[T] = []
+        filtered: list[T] = []
         if isinstance(values, list):
             for v in values:
                 if v is None:
                     continue
-                if isinstance(v, list):
-                    flat.extend([i for i in v if i is not None])
                 else:
-                    flat.append(v)  # type: ignore[arg-type]
+                    filtered.append(v)
         elif values is not None:
             flat.append(values)  # type: ignore[arg-type]
 
-        if not flat:
+        if len(filtered) == 0:
             return
 
         producer, cfg = self._get_memoized_producer()
         topic = self._build_full_topic_name(getattr(cfg, "namespace", None))
 
-        for rec in flat:
-            producer.send(topic, value=rec)
+        for rec in filtered:
+            producer.send(topic, value=rec.model_dump_json().encode('utf-8'))
         producer.flush()
 
 

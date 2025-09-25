@@ -4,8 +4,9 @@ from datetime import datetime, timezone
 
 import requests
 import json
-from typing import Optional, Literal
+from typing import Optional, Literal, Any
 import os
+from kafka import KafkaConsumer, KafkaProducer
 
 
 class CliLogData:
@@ -100,3 +101,81 @@ class EnhancedJSONEncoder(json.JSONEncoder):
         if dataclasses.is_dataclass(o):
             return dataclasses.asdict(o)
         return super().default(o)
+
+
+def _build_kafka_kwargs(
+    broker: str,
+    sasl_username: Optional[str] = None,
+    sasl_password: Optional[str] = None,
+    sasl_mechanism: Optional[str] = None,
+    security_protocol: Optional[str] = None,
+) -> dict[str, Any]:
+    """Builds common Kafka client kwargs from provided parameters."""
+    kwargs: dict[str, Any] = {
+        "bootstrap_servers": broker,
+    }
+    if sasl_mechanism:
+        kwargs["sasl_mechanism"] = sasl_mechanism
+    if sasl_username is not None:
+        kwargs["sasl_plain_username"] = sasl_username
+    if sasl_password is not None:
+        kwargs["sasl_plain_password"] = sasl_password
+    if security_protocol is not None:
+        kwargs["security_protocol"] = security_protocol
+    return kwargs
+
+
+def get_kafka_consumer(
+    *,
+    broker: str,
+    client_id: str,
+    group_id: str,
+    sasl_username: Optional[str] = None,
+    sasl_password: Optional[str] = None,
+    sasl_mechanism: Optional[str] = None,
+    security_protocol: Optional[str] = None,
+    value_deserializer=lambda m: json.loads(m.decode("utf-8")),
+) -> KafkaConsumer:
+    """Creates a configured KafkaConsumer with optional SASL/security settings."""
+    kwargs = _build_kafka_kwargs(
+        broker,
+        sasl_username=sasl_username,
+        sasl_password=sasl_password,
+        sasl_mechanism=sasl_mechanism,
+        security_protocol=security_protocol,
+    )
+    return KafkaConsumer(
+        client_id=client_id,
+        group_id=group_id,
+        value_deserializer=value_deserializer,
+        **kwargs,
+    )
+
+
+def get_kafka_producer(
+    *,
+    broker: str,
+    sasl_username: Optional[str] = None,
+    sasl_password: Optional[str] = None,
+    sasl_mechanism: Optional[str] = None,
+    security_protocol: Optional[str] = None,
+    max_request_size: Optional[int] = None,
+    set_no_sasl_defaults: bool = True,
+) -> KafkaProducer:
+    """Creates a configured KafkaProducer with optional SASL/security settings.
+
+    If no SASL is configured and set_no_sasl_defaults is True, sets
+    max_in_flight_requests_per_connection=1 for safer ordering.
+    """
+    kwargs = _build_kafka_kwargs(
+        broker,
+        sasl_username=sasl_username,
+        sasl_password=sasl_password,
+        sasl_mechanism=sasl_mechanism,
+        security_protocol=security_protocol,
+    )
+    if max_request_size is not None:
+        kwargs["max_request_size"] = max_request_size
+    if not sasl_mechanism and set_no_sasl_defaults:
+        kwargs["max_in_flight_requests_per_connection"] = 1
+    return KafkaProducer(**kwargs)
