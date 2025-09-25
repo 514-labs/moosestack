@@ -143,8 +143,12 @@ export async function getKafkaProducer(
   const kafka = await getKafkaClient(cfg);
 
   const producer = kafka.producer({
-    allowAutoTopicCreation: false,
-    retry: { retries: 150 },
+    idempotent: true,
+    retry: {
+      retries: MAX_RETRIES_PRODUCER,
+      factor: RETRY_FACTOR_PRODUCER,
+      maxRetryTime: MAX_RETRY_TIME_MS,
+    },
   });
   await producer.connect();
   return producer;

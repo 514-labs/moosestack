@@ -20,6 +20,7 @@ import type {
   RuntimeKafkaConfig,
   ConfigurationRegistry,
 } from "../../config/runtime";
+import { createHash } from "node:crypto";
 
 /**
  * Represents zero, one, or many values of type T.
@@ -267,7 +268,7 @@ export class Stream<T> extends TypedBase<T, StreamConfig<T>> {
    * Creates a fast hash string from relevant Kafka configuration fields.
    */
   private createConfigHash(kafkaConfig: RuntimeKafkaConfig): string {
-    const s = [
+    const configString = [
       kafkaConfig.broker,
       kafkaConfig.messageTimeoutMs,
       kafkaConfig.saslUsername,
@@ -276,12 +277,10 @@ export class Stream<T> extends TypedBase<T, StreamConfig<T>> {
       kafkaConfig.securityProtocol,
       kafkaConfig.namespace,
     ].join(":");
-    let h = 0;
-    for (let i = 0; i < s.length; i++) {
-      h = (h << 5) - h + s.charCodeAt(i);
-      h |= 0;
-    }
-    return String(h);
+    return createHash("sha256")
+      .update(configString)
+      .digest("hex")
+      .substring(0, 16);
   }
 
   /**
@@ -305,6 +304,7 @@ export class Stream<T> extends TypedBase<T, StreamConfig<T>> {
     producer: any;
     kafkaConfig: RuntimeKafkaConfig;
   }> {
+    // dynamic import to keep Stream objects browser compatible
     await import("../../config/runtime");
     const configRegistry = (globalThis as any)
       ._mooseConfigRegistry as ConfigurationRegistry;

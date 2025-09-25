@@ -16,7 +16,7 @@ from .types import TypedMooseResource, ZeroOrMany, T, U
 from .olap_table import OlapTable
 from ._registry import _streams
 from .life_cycle import LifeCycle
-from ..config.runtime import config_registry
+from ..config.runtime import config_registry, RuntimeKafkaConfig
 from ..commons import EnhancedJSONEncoder
 
 
@@ -228,25 +228,21 @@ class Stream(TypedMooseResource, Generic[T]):
         base = f"{self.name}{version_suffix}"
         return f"{namespace}.{base}" if namespace else base
 
-    def _create_kafka_config_hash(self, cfg: Any) -> str:
-        s = ":".join(
+    def _create_kafka_config_hash(self, cfg: RuntimeKafkaConfig) -> str:
+        import hashlib
+        config_string = ":".join(
             str(x)
             for x in (
-                getattr(cfg, "broker", None),
-                getattr(cfg, "message_timeout_ms", None),
-                getattr(cfg, "retention_ms", None),
-                getattr(cfg, "replication_factor", None),
-                getattr(cfg, "sasl_username", None),
-                getattr(cfg, "sasl_mechanism", None),
-                getattr(cfg, "security_protocol", None),
-                getattr(cfg, "namespace", None),
+                cfg.broker,
+                cfg.message_timeout_ms,
+                cfg.sasl_username,
+                cfg.sasl_password,
+                cfg.sasl_mechanism,
+                cfg.security_protocol,
+                cfg.namespace,
             )
         )
-        h = 0
-        for ch in s:
-            h = ((h << 5) - h) + ord(ch)
-            h &= 0xFFFFFFFF
-        return str(h)
+        return hashlib.sha256(config_string.encode()).hexdigest()[:16]
 
     def _parse_brokers(self, broker_string: str) -> list[str]:
         if not broker_string:
