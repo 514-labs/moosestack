@@ -316,6 +316,15 @@ class Stream(TypedMooseResource, Generic[T]):
         if len(filtered) == 0:
             return
 
+        # ensure all records are instances of the stream's model type
+        model_type = self._t
+        for rec in filtered:
+            if not isinstance(rec, model_type):
+                raise TypeError(
+                    f"Stream '{self.name}' expects instances of {model_type.__name__}, "
+                    f"got {type(rec).__name__}"
+                )
+
         producer, cfg = self._get_memoized_producer()
         topic = self._build_full_topic_name(getattr(cfg, "namespace", None))
 
