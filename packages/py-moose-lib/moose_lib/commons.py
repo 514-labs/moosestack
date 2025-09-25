@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 
 import requests
 import json
-from typing import Optional, Literal, Any
+from typing import Optional, Literal, Any, Union, Callable
 import os
 from kafka import KafkaConsumer, KafkaProducer
 
@@ -104,7 +104,7 @@ class EnhancedJSONEncoder(json.JSONEncoder):
 
 
 def _build_kafka_kwargs(
-    broker: str,
+    broker: Union[str, list[str]],
     sasl_username: Optional[str] = None,
     sasl_password: Optional[str] = None,
     sasl_mechanism: Optional[str] = None,
@@ -127,7 +127,7 @@ def _build_kafka_kwargs(
 
 def get_kafka_consumer(
     *,
-    broker: str,
+    broker: Union[str, list[str]],
     client_id: str,
     group_id: str,
     sasl_username: Optional[str] = None,
@@ -135,6 +135,7 @@ def get_kafka_consumer(
     sasl_mechanism: Optional[str] = None,
     security_protocol: Optional[str] = None,
     value_deserializer=lambda m: json.loads(m.decode("utf-8")),
+    **extra_kwargs: Any,
 ) -> KafkaConsumer:
     """Creates a configured KafkaConsumer with optional SASL/security settings."""
     kwargs = _build_kafka_kwargs(
@@ -149,18 +150,21 @@ def get_kafka_consumer(
         group_id=group_id,
         value_deserializer=value_deserializer,
         **kwargs,
+        **extra_kwargs,
     )
 
 
 def get_kafka_producer(
     *,
-    broker: str,
+    broker: Union[str, list[str]],
     sasl_username: Optional[str] = None,
     sasl_password: Optional[str] = None,
     sasl_mechanism: Optional[str] = None,
     security_protocol: Optional[str] = None,
     max_request_size: Optional[int] = None,
     set_no_sasl_defaults: bool = True,
+    value_serializer: Optional[Callable[[Any], bytes]] = None,
+    **extra_kwargs: Any,
 ) -> KafkaProducer:
     """Creates a configured KafkaProducer with optional SASL/security settings.
 
@@ -178,4 +182,8 @@ def get_kafka_producer(
         kwargs["max_request_size"] = max_request_size
     if not sasl_mechanism and set_no_sasl_defaults:
         kwargs["max_in_flight_requests_per_connection"] = 1
+    if value_serializer is not None:
+        kwargs["value_serializer"] = value_serializer
+    # Allow callers to pass through additional Kafka configs like linger_ms, acks, retries, etc.
+    kwargs.update(extra_kwargs)
     return KafkaProducer(**kwargs)

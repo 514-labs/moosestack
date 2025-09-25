@@ -17,7 +17,7 @@ from .olap_table import OlapTable
 from ._registry import _streams
 from .life_cycle import LifeCycle
 from ..config.runtime import config_registry, RuntimeKafkaConfig
-from ..commons import EnhancedJSONEncoder
+from ..commons import get_kafka_producer
 
 
 class StreamConfig(BaseModel):
@@ -271,26 +271,14 @@ class Stream(TypedMooseResource, Generic[T]):
         if not brokers:
             raise RuntimeError(f"No valid broker addresses found in: '{getattr(cfg, 'broker', '')}'")
 
-        kwargs: dict[str, Any] = {
-            "bootstrap_servers": brokers,
-            "linger_ms": 5,
-            "acks": "all",
-            "retries": 5,
-        }
-
-        # Security/SASL
-        if getattr(cfg, "security_protocol", None):
-            kwargs["security_protocol"] = cfg.security_protocol
-        if getattr(cfg, "sasl_mechanism", None):
-            kwargs["sasl_mechanism"] = cfg.sasl_mechanism
-        if getattr(cfg, "sasl_username", None) is not None:
-            kwargs["sasl_plain_username"] = cfg.sasl_username
-        if getattr(cfg, "sasl_password", None) is not None:
-            kwargs["sasl_plain_password"] = cfg.sasl_password
-
-        producer = KafkaProducer(
+        producer = get_kafka_producer(
+            broker=brokers,
+            sasl_username=getattr(cfg, "sasl_username", None),
+            sasl_password=getattr(cfg, "sasl_password", None),
+            sasl_mechanism=getattr(cfg, "sasl_mechanism", None),
+            security_protocol=getattr(cfg, "security_protocol", None),
             value_serializer=lambda v: v.model_dump_json().encode('utf-8'),
-            **kwargs,
+            acks="all",
         )
 
         self._memoized_producer = producer
