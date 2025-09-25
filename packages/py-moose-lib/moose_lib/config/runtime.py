@@ -26,6 +26,7 @@ class ConfigurationRegistry:
     """
     _instance: Optional['ConfigurationRegistry'] = None
     _clickhouse_config: Optional[RuntimeClickHouseConfig] = None
+    _kafka_config: Optional[RuntimeKafkaConfig] = None
 
     @classmethod
     def get_instance(cls) -> 'ConfigurationRegistry':
@@ -45,6 +46,14 @@ class ConfigurationRegistry:
             config: The ClickHouse configuration to use.
         """
         self._clickhouse_config = config
+
+    def set_kafka_config(self, config: 'RuntimeKafkaConfig') -> None:
+        """Set the runtime Kafka configuration.
+
+        Args:
+            config: The Kafka configuration to use.
+        """
+        self._kafka_config = config
 
     def get_clickhouse_config(self) -> RuntimeClickHouseConfig:
         """Get the current ClickHouse configuration.
@@ -98,6 +107,69 @@ class ConfigurationRegistry:
         except Exception as e:
             raise RuntimeError(f"Failed to get ClickHouse configuration: {e}")
 
+    def get_kafka_config(self) -> 'RuntimeKafkaConfig':
+        """Get the current Kafka configuration.
+
+        If runtime configuration is not set, falls back to reading from moose.config.toml
+        and environment variables (Redpanda- and Kafka-prefixed).
+
+        Returns:
+            The current Kafka configuration.
+        """
+        if self._kafka_config:
+            return self._kafka_config
+
+        from .config_file import read_project_config
+
+        def _env(name: str) -> Optional[str]:
+            val = os.environ.get(name)
+            if val is None:
+                return None
+            trimmed = val.strip()
+            return trimmed if trimmed else None
+
+        try:
+            config = read_project_config()
+
+            # Prefer Redpanda-prefixed env vars; fallback to Kafka-prefixed
+            broker = _env("MOOSE_REDPANDA_CONFIG__BROKER") or _env("MOOSE_KAFKA_CONFIG__BROKER")
+            message_timeout_ms = _env("MOOSE_REDPANDA_CONFIG__MESSAGE_TIMEOUT_MS") or _env("MOOSE_KAFKA_CONFIG__MESSAGE_TIMEOUT_MS")
+            retention_ms = _env("MOOSE_REDPANDA_CONFIG__RETENTION_MS") or _env("MOOSE_KAFKA_CONFIG__RETENTION_MS")
+            replication_factor = _env("MOOSE_REDPANDA_CONFIG__REPLICATION_FACTOR") or _env("MOOSE_KAFKA_CONFIG__REPLICATION_FACTOR")
+            sasl_username = _env("MOOSE_REDPANDA_CONFIG__SASL_USERNAME") or _env("MOOSE_KAFKA_CONFIG__SASL_USERNAME")
+            sasl_password = _env("MOOSE_REDPANDA_CONFIG__SASL_PASSWORD") or _env("MOOSE_KAFKA_CONFIG__SASL_PASSWORD")
+            sasl_mechanism = _env("MOOSE_REDPANDA_CONFIG__SASL_MECHANISM") or _env("MOOSE_KAFKA_CONFIG__SASL_MECHANISM")
+            security_protocol = _env("MOOSE_REDPANDA_CONFIG__SECURITY_PROTOCOL") or _env("MOOSE_KAFKA_CONFIG__SECURITY_PROTOCOL")
+            namespace = _env("MOOSE_REDPANDA_CONFIG__NAMESPACE") or _env("MOOSE_KAFKA_CONFIG__NAMESPACE")
+
+            file_kafka = config.redpanda_config or config.kafka_config
+
+            def _to_int(value: Optional[str], fallback: int) -> int:
+                try:
+                    return int(value) if value is not None else fallback
+                except Exception:
+                    return fallback
+
+            def _to_opt_int(value: Optional[str], fallback: Optional[int]) -> Optional[int]:
+                try:
+                    return int(value) if value is not None else fallback
+                except Exception:
+                    return fallback
+
+            return RuntimeKafkaConfig(
+                broker=broker or (file_kafka.broker if file_kafka else "localhost:19092"),
+                message_timeout_ms=_to_int(message_timeout_ms, file_kafka.message_timeout_ms if file_kafka else 1000),
+                retention_ms=_to_int(retention_ms, file_kafka.retention_ms if file_kafka else 30000),
+                replication_factor=_to_opt_int(replication_factor, file_kafka.replication_factor if file_kafka else 1),
+                sasl_username=sasl_username if sasl_username is not None else (file_kafka.sasl_username if file_kafka else None),
+                sasl_password=sasl_password if sasl_password is not None else (file_kafka.sasl_password if file_kafka else None),
+                sasl_mechanism=sasl_mechanism if sasl_mechanism is not None else (file_kafka.sasl_mechanism if file_kafka else None),
+                security_protocol=security_protocol if security_protocol is not None else (file_kafka.security_protocol if file_kafka else None),
+                namespace=namespace if namespace is not None else (file_kafka.namespace if file_kafka else None),
+            )
+        except Exception as e:
+            raise RuntimeError(f"Failed to get Kafka configuration: {e}")
+
     def has_runtime_config(self) -> bool:
         """Check if runtime configuration is set.
 
@@ -105,6 +177,20 @@ class ConfigurationRegistry:
             True if runtime configuration is set, False otherwise.
         """
         return self._clickhouse_config is not None
+
+
+@dataclass
+class RuntimeKafkaConfig:
+    """Runtime Kafka configuration settings."""
+    broker: str
+    message_timeout_ms: int
+    retention_ms: int
+    replication_factor: Optional[int]
+    sasl_username: Optional[str]
+    sasl_password: Optional[str]
+    sasl_mechanism: Optional[str]
+    security_protocol: Optional[str]
+    namespace: Optional[str]
 
 # Create singleton instance
 config_registry = ConfigurationRegistry.get_instance()

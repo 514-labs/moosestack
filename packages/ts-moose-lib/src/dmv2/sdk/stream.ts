@@ -16,6 +16,10 @@ import { Column } from "../../dataModels/dataModelTypes";
 import { dlqColumns, dlqSchema, getMooseInternal } from "../internal";
 import { OlapTable } from "./olapTable";
 import { LifeCycle } from "./lifeCycle";
+import type {
+  RuntimeKafkaConfig,
+  ConfigurationRegistry,
+} from "../../config/runtime";
 
 /**
  * Represents zero, one, or many values of type T.
@@ -182,6 +186,10 @@ export interface StreamConfig<T> {
  */
 export class Stream<T> extends TypedBase<T, StreamConfig<T>> {
   defaultDeadLetterQueue?: DeadLetterQueue<T>;
+  /** @internal Memoized KafkaJS producer for reusing connections across sends */
+  private _memoizedProducer?: any;
+  /** @internal Hash of the configuration used to create the memoized Kafka producer */
+  private _kafkaConfigHash?: string;
 
   /**
    * Creates a new Stream instance.
@@ -241,6 +249,137 @@ export class Stream<T> extends TypedBase<T, StreamConfig<T>> {
     consumer: Consumer<T>;
     config: ConsumerConfig<T>;
   }>();
+
+  /**
+   * Builds the full Kafka topic name including optional namespace and version suffix.
+   * Version suffix is appended as _x_y_z where dots in version are replaced with underscores.
+   */
+  private buildFullTopicName(namespace?: string): string {
+    const versionSuffix =
+      this.config.version ? `_${this.config.version.replace(/\./g, "_")}` : "";
+    const base = `${this.name}${versionSuffix}`;
+    return namespace !== undefined && namespace.length > 0 ?
+        `${namespace}.${base}`
+      : base;
+  }
+
+  /**
+   * Creates a fast hash string from relevant Kafka configuration fields.
+   */
+  private createConfigHash(kafkaConfig: RuntimeKafkaConfig): string {
+    const s = [
+      kafkaConfig.broker,
+      kafkaConfig.messageTimeoutMs,
+      kafkaConfig.saslUsername,
+      kafkaConfig.saslPassword,
+      kafkaConfig.saslMechanism,
+      kafkaConfig.securityProtocol,
+      kafkaConfig.namespace,
+    ].join(":");
+    let h = 0;
+    for (let i = 0; i < s.length; i++) {
+      h = (h << 5) - h + s.charCodeAt(i);
+      h |= 0;
+    }
+    return String(h);
+  }
+
+  /**
+   * Builds SASL options if configured.
+   */
+  private buildSaslConfig(kafkaConfig: any): any | undefined {
+    if (!kafkaConfig?.saslUsername || !kafkaConfig?.saslPassword)
+      return undefined;
+    const mechanism = (kafkaConfig.saslMechanism || "plain").toLowerCase();
+    return {
+      mechanism: mechanism as any,
+      username: kafkaConfig.saslUsername,
+      password: kafkaConfig.saslPassword,
+    } as any;
+  }
+
+  /**
+   * Gets or creates a memoized KafkaJS producer using runtime configuration.
+   */
+  private async getMemoizedProducer(): Promise<{
+    producer: any;
+    kafkaConfig: RuntimeKafkaConfig;
+  }> {
+    await import("../../config/runtime");
+    const configRegistry = (globalThis as any)
+      ._mooseConfigRegistry as ConfigurationRegistry;
+    const { getKafkaProducer } = await import("../../commons");
+
+    const kafkaConfig = await (configRegistry as any).getKafkaConfig();
+    const currentHash = this.createConfigHash(kafkaConfig);
+
+    if (this._memoizedProducer && this._kafkaConfigHash === currentHash) {
+      return { producer: this._memoizedProducer, kafkaConfig };
+    }
+
+    // Close existing producer if config changed
+    if (this._memoizedProducer && this._kafkaConfigHash !== currentHash) {
+      try {
+        await this._memoizedProducer.disconnect();
+      } catch {
+        // ignore
+      }
+      this._memoizedProducer = undefined;
+    }
+
+    const clientId = `moose-sdk-stream-${this.name}`;
+    const producer = await getKafkaProducer({
+      clientId,
+      broker: kafkaConfig.broker,
+      securityProtocol: kafkaConfig.securityProtocol,
+      saslUsername: kafkaConfig.saslUsername,
+      saslPassword: kafkaConfig.saslPassword,
+      saslMechanism: kafkaConfig.saslMechanism,
+    });
+
+    this._memoizedProducer = producer;
+    this._kafkaConfigHash = currentHash;
+
+    return { producer, kafkaConfig };
+  }
+
+  /**
+   * Closes the memoized Kafka producer if it exists.
+   */
+  async closeProducer(): Promise<void> {
+    if (this._memoizedProducer) {
+      try {
+        await this._memoizedProducer.disconnect();
+      } catch {
+        // ignore
+      } finally {
+        this._memoizedProducer = undefined;
+        this._kafkaConfigHash = undefined;
+      }
+    }
+  }
+
+  /**
+   * Sends one or more records to this stream's Kafka topic.
+   * Values are JSON-serialized as message values.
+   */
+  async send(values: ZeroOrMany<T>): Promise<void> {
+    // Normalize to flat array of records
+    const flat: T[] =
+      Array.isArray(values) ? values
+      : values !== undefined && values !== null ? [values as T]
+      : [];
+
+    if (flat.length === 0) return;
+
+    const { producer, kafkaConfig } = await this.getMemoizedProducer();
+    const topic = this.buildFullTopicName(kafkaConfig.namespace);
+
+    await producer.send({
+      topic,
+      messages: flat.map((v) => ({ value: JSON.stringify(v) })),
+    });
+  }
 
   /**
    * Adds a transformation step that processes messages from this stream and sends the results to a destination stream.

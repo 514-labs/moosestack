@@ -15,12 +15,41 @@ export interface ClickHouseConfig {
 }
 
 /**
+ * Redpanda/Kafka configuration from moose.config.toml
+ */
+export interface KafkaConfig {
+  /** Broker connection string (e.g., "host:port" or comma-separated list) */
+  broker: string;
+  /** Message timeout in milliseconds */
+  message_timeout_ms: number;
+  /** Default retention period in milliseconds */
+  retention_ms: number;
+  /** Topic replication factor */
+  replication_factor?: number;
+  /** SASL username for authentication, if required */
+  sasl_username?: string;
+  /** SASL password for authentication, if required */
+  sasl_password?: string;
+  /** SASL mechanism (e.g., "PLAIN", "SCRAM-SHA-256") */
+  sasl_mechanism?: string;
+  /** Security protocol (e.g., "SASL_SSL", "PLAINTEXT") */
+  security_protocol?: string;
+  /** Optional namespace used as a prefix for topics */
+  namespace?: string;
+}
+
+/**
  * Project configuration from moose.config.toml
  */
 export interface ProjectConfig {
   language: string;
   clickhouse_config: ClickHouseConfig;
-  // Add other config sections as needed
+  /**
+   * Redpanda/Kafka configuration. Historically named `kafka_config` in some places.
+   * Prefer `redpanda_config` but support both for backward compatibility.
+   */
+  redpanda_config?: KafkaConfig;
+  kafka_config?: KafkaConfig;
 }
 
 /**

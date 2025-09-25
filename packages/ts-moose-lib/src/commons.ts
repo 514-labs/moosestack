@@ -1,5 +1,6 @@
 import http from "http";
 import { createClient } from "@clickhouse/client";
+import { Kafka, Producer } from "kafkajs";
 
 /**
  * Utility function for compiler-related logging that can be disabled via environment variable.
@@ -102,3 +103,81 @@ export function mapTstoJs(filePath: string): string {
     .replace(/\.cts$/, ".cjs")
     .replace(/\.mts$/, ".mjs");
 }
+
+export const MAX_RETRIES = 150;
+export const MAX_RETRY_TIME_MS = 1000;
+export const RETRY_INITIAL_TIME_MS = 100;
+
+export const MAX_RETRIES_PRODUCER = 150;
+export const RETRY_FACTOR_PRODUCER = 0.2;
+
+/**
+ * Parses a comma-separated broker string into an array of valid broker addresses.
+ * Handles whitespace trimming and filters out empty elements.
+ *
+ * @param brokerString - Comma-separated broker addresses (e.g., "broker1:9092, broker2:9092, , broker3:9092")
+ * @returns Array of trimmed, non-empty broker addresses
+ */
+const parseBrokerString = (brokerString: string): string[] =>
+  brokerString
+    .split(",")
+    .map((b) => b.trim())
+    .filter((b) => b.length > 0);
+
+export type KafkaClientConfig = {
+  clientId: string;
+  broker: string;
+  securityProtocol?: string; // e.g. "SASL_SSL" or "PLAINTEXT"
+  saslUsername?: string;
+  saslPassword?: string;
+  saslMechanism?: string; // e.g. "scram-sha-256", "plain"
+};
+
+/**
+ * Dynamically creates and connects a KafkaJS producer using the provided configuration.
+ * Returns a connected producer instance.
+ */
+export async function getKafkaProducer(
+  cfg: KafkaClientConfig,
+): Promise<Producer> {
+  const kafka = await getKafkaClient(cfg);
+
+  const producer = kafka.producer({
+    allowAutoTopicCreation: false,
+    retry: { retries: 150 },
+  });
+  await producer.connect();
+  return producer;
+}
+
+/**
+ * Dynamically creates a KafkaJS client configured with provided settings.
+ * Use this to construct producers/consumers with custom options.
+ */
+export const getKafkaClient = async (
+  cfg: KafkaClientConfig,
+): Promise<Kafka> => {
+  const brokers = parseBrokerString(cfg.broker || "");
+  if (brokers.length === 0) {
+    throw new Error(`No valid broker addresses found in: "${cfg.broker}"`);
+  }
+
+  return new Kafka({
+    clientId: cfg.clientId,
+    brokers,
+    ssl: cfg.securityProtocol === "SASL_SSL",
+    sasl:
+      cfg.saslUsername && cfg.saslPassword ?
+        {
+          mechanism: (cfg.saslMechanism || "plain").toLowerCase() as any,
+          username: cfg.saslUsername,
+          password: cfg.saslPassword,
+        }
+      : undefined,
+    retry: {
+      initialRetryTime: RETRY_INITIAL_TIME_MS,
+      maxRetryTime: MAX_RETRY_TIME_MS,
+      retries: MAX_RETRIES,
+    },
+  });
+};
