@@ -71,7 +71,7 @@ jobs:
           # Check if any relevant files were changed
           if grep -q -E "${GREP_PATTERN}" changes.txt; then
             echo "::notice title=✅ Running Tests::Detected relevant changes in the codebase. Tests will run."
-            echo "should_run=true" >> $GITHUB_OUTPUT 
+            echo "should_run=true" >> $GITHUB_OUTPUT
           else
             echo "::notice title=⏭️ Skipping Tests::No relevant changes detected. Tests will be skipped."
             echo "should_run=false" >> $GITHUB_OUTPUT
@@ -151,12 +151,6 @@ jobs:
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: stable
-          cache: true
-          cache-shared-key: ${{ runner.os }}-rust
-          cache-on-failure: true
-          cache: true
-          cache-shared-key: ${{ runner.os }}-rust
-          cache-on-failure: true
           cache: true
           cache-shared-key: ${{ runner.os }}-rust
           cache-on-failure: true
@@ -280,12 +274,6 @@ jobs:
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: stable
-          cache: true
-          cache-shared-key: ${{ runner.os }}-rust
-          cache-on-failure: true
-          cache: true
-          cache-shared-key: ${{ runner.os }}-rust
-          cache-on-failure: true
           cache: true
           cache-shared-key: ${{ runner.os }}-rust
           cache-on-failure: true
