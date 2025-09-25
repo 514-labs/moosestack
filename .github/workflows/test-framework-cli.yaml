@@ -112,6 +112,8 @@ jobs:
           cache: true
           cache-shared-key: ${{ runner.os }}-${{ steps.system.outputs.distro }}-${{ steps.system.outputs.version }}-${{ runner.arch }}-rust
           cache-on-failure: true
+          cache-all-crates: true
+          cache-workspace-crates: true
 
       - name: Run cargo check
         run: cargo check
@@ -169,6 +171,8 @@ jobs:
           cache: true
           cache-shared-key: ${{ runner.os }}-${{ steps.system.outputs.distro }}-${{ steps.system.outputs.version }}-${{ runner.arch }}-rust
           cache-on-failure: true
+          cache-all-crates: true
+          cache-workspace-crates: true
 
       - name: Run pnpm install
         run: pnpm install --filter=@repo/scripts # for package-templates.js
@@ -298,6 +302,8 @@ jobs:
           cache: true
           cache-shared-key: ${{ runner.os }}-${{ steps.system.outputs.distro }}-${{ steps.system.outputs.version }}-${{ runner.arch }}-rust
           cache-on-failure: true
+          cache-all-crates: true
+          cache-workspace-crates: true
 
       - name: Run TypeScript E2E Tests (Default Template)
         run: pnpm install --frozen-lockfile && pnpm --filter=framework-cli-e2e run test -- --grep "typescript template default"
@@ -357,6 +363,8 @@ jobs:
           cache: true
           cache-shared-key: ${{ runner.os }}-${{ steps.system.outputs.distro }}-${{ steps.system.outputs.version }}-${{ runner.arch }}-rust
           cache-on-failure: true
+          cache-all-crates: true
+          cache-workspace-crates: true
 
       - name: Run TypeScript E2E Tests (Tests Template)
         run: pnpm install --frozen-lockfile && pnpm --filter=framework-cli-e2e run test -- --grep "typescript template tests"
@@ -416,6 +424,8 @@ jobs:
           cache: true
           cache-shared-key: ${{ runner.os }}-${{ steps.system.outputs.distro }}-${{ steps.system.outputs.version }}-${{ runner.arch }}-rust
           cache-on-failure: true
+          cache-all-crates: true
+          cache-workspace-crates: true
 
       - name: Setup Python ${{ matrix.python-version }} for E2E tests
         uses: actions/setup-python@v4
@@ -483,6 +493,8 @@ jobs:
           cache: true
           cache-shared-key: ${{ runner.os }}-${{ steps.system.outputs.distro }}-${{ steps.system.outputs.version }}-${{ runner.arch }}-rust
           cache-on-failure: true
+          cache-all-crates: true
+          cache-workspace-crates: true
 
       - name: Setup Python ${{ matrix.python-version }} for E2E tests
         uses: actions/setup-python@v4
@@ -535,6 +547,8 @@ jobs:
           cache: true
           cache-shared-key: ${{ runner.os }}-${{ steps.system.outputs.distro }}-${{ steps.system.outputs.version }}-${{ runner.arch }}-rust
           cache-on-failure: true
+          cache-all-crates: true
+          cache-workspace-crates: true
 
       # to trigger code gen
       - name: Run cargo build
