@@ -140,7 +140,7 @@ class ConfigurationRegistry {
   }
 
   hasRuntimeConfig(): boolean {
-    return !!this.clickhouseConfig && !!this.kafkaConfig;
+    return !!this.clickhouseConfig || !!this.kafkaConfig;
   }
 }
 

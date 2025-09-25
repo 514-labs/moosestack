@@ -189,9 +189,9 @@ class ConfigurationRegistry:
         """Check if runtime configuration is set.
 
         Returns:
-            True if runtime configuration is set, False otherwise.
+            True if either runtime clickhouse or kafka configuration is set, False otherwise.
         """
-        return self._clickhouse_config is not None
+        return self._clickhouse_config is not None or self._kafka_config is not None
 
 
 # Create singleton instance
