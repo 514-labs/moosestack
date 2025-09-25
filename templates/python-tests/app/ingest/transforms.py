@@ -38,7 +38,7 @@ def foo_to_bar(foo: Foo):
     )
 
     # Store the result in cache
-    cache.set(result, cache_key, 3600)  # Cache for 1 hour
+    cache.set(cache_key, result, 3600)  # Cache for 1 hour
     return result
 
 

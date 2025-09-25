@@ -75,7 +75,7 @@ def run(client: MooseClient, params: QueryParams):
     })
 
     # Cache query results
-    cache.set(result, cache_key, 3600)  # Cache for 1 hour
+    cache.set(cache_key, result, 3600)  # Cache for 1 hour
 
     return result
 
@@ -123,7 +123,7 @@ def run_v1(client: MooseClient, params: QueryParams):
         }
 
     # Cache query results
-    cache.set(result, cache_key, 3600)  # Cache for 1 hour
+    cache.set(cache_key, result, 3600)  # Cache for 1 hour
 
     return result
 
