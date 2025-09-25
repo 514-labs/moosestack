@@ -4,11 +4,12 @@ import os
 import redis
 import threading
 from pydantic import BaseModel
-from typing import Optional, TypeVar, Type, Union, TypeAlias
+from typing import Optional, TypeVar, Type, Union, TypeAlias, List, Any
 
 
-T = TypeVar('T')
-SupportedValue: TypeAlias = Union[str, BaseModel]
+T = TypeVar("T")
+SupportedValue: TypeAlias = Union[str, BaseModel, List[Any]]
+
 
 class MooseCache:
     """
@@ -18,6 +19,7 @@ class MooseCache:
     Example:
         cache = MooseCache()  # Gets or creates the singleton instance
     """
+
     _instance = None
     _redis_url: str
     _key_prefix: str
@@ -36,10 +38,10 @@ class MooseCache:
         if self._client is not None:
             return
 
-        self._redis_url = os.getenv('MOOSE_REDIS_CONFIG__URL', 'redis://127.0.0.1:6379')
-        prefix = os.getenv('MOOSE_REDIS_CONFIG__KEY_PREFIX', 'MS')
+        self._redis_url = os.getenv("MOOSE_REDIS_CONFIG__URL", "redis://127.0.0.1:6379")
+        prefix = os.getenv("MOOSE_REDIS_CONFIG__KEY_PREFIX", "MS")
         # 30 seconds of inactivity before disconnecting
-        self._idle_timeout = int(os.getenv('MOOSE_REDIS_CONFIG__IDLE_TIMEOUT', '30'))
+        self._idle_timeout = int(os.getenv("MOOSE_REDIS_CONFIG__IDLE_TIMEOUT", "30"))
         self._key_prefix = f"{prefix}::moosecache::"
 
         self._ensure_connected()
@@ -65,14 +67,16 @@ class MooseCache:
         self._clear_disconnect_timer()
         self._disconnect_timer.start()
 
-    def set(self, key: str, value: SupportedValue, ttl_seconds: Optional[int] = None) -> None:
+    def set(
+        self, key: str, value: SupportedValue, ttl_seconds: Optional[int] = None
+    ) -> None:
         """
-        Sets a value in the cache. Only accepts strings or Pydantic models.
+        Sets a value in the cache. Accepts strings, Pydantic models, or lists.
         Objects are automatically JSON stringified.
 
         Args:
             key: The key to store the value under
-            value: The value to store. Must be a string or Pydantic model
+            value: The value to store. Must be a string, Pydantic model, or list
             ttl_seconds: Optional time-to-live in seconds. If not provided, defaults to 1 hour (3600 seconds).
                        Must be a non-negative number. If 0, the key will expire immediately.
 
@@ -85,12 +89,15 @@ class MooseCache:
                 baz: int
                 qux: bool
             cache.set("foo:config", Config(baz=123, qux=True))
+
+            ### Store a list
+            cache.set("foo:list", [{"id": 1}, {"id": 2}])
         """
         try:
             # Validate value type
-            if not isinstance(value, (str, BaseModel)):
+            if not isinstance(value, (str, BaseModel, list)):
                 raise TypeError(
-                    f"Value must be a string or Pydantic model. Got {type(value).__name__}"
+                    f"Value must be a string, Pydantic model, or list. Got {type(value).__name__}"
                 )
 
             # Validate TTL
@@ -102,8 +109,10 @@ class MooseCache:
 
             if isinstance(value, str):
                 string_value = value
-            else:
+            elif isinstance(value, BaseModel):
                 string_value = value.model_dump_json()
+            else:  # list
+                string_value = json.dumps(value)
 
             # Use provided TTL or default to 1 hour
             ttl = ttl_seconds if ttl_seconds is not None else 3600
@@ -114,13 +123,13 @@ class MooseCache:
 
     def get(self, key: str, type_hint: Type[T] = str) -> Optional[T]:
         """
-        Retrieves a value from the cache. Only supports strings or Pydantic models.
+        Retrieves a value from the cache. Supports strings, Pydantic models, or lists.
         The type_hint parameter determines how the value will be parsed and returned.
 
         Args:
             key: The key to retrieve
-            type_hint: Type hint for the return value. Must be str or a Pydantic model class.
-                      Defaults to str.
+            type_hint: Type hint for the return value. Must be str, list, or a Pydantic model class.
+                      Defaults to str, but will auto-detect lists.
 
         Returns:
             The value parsed as the specified type. Returns None if key doesn't exist.
@@ -134,14 +143,21 @@ class MooseCache:
                 baz: int
                 qux: bool
             config = cache.get("foo:config", Config)
+
+            ### Get a list (auto-detected or explicit)
+            items = cache.get("foo:list", list)
         """
         try:
             # Validate type_hint
             if not isinstance(type_hint, type):
                 raise TypeError("type_hint must be a type")
-            if not (type_hint is str or issubclass(type_hint, BaseModel)):
+            if not (
+                type_hint is str
+                or type_hint is list
+                or issubclass(type_hint, BaseModel)
+            ):
                 raise TypeError(
-                    "type_hint must be str or a Pydantic model class. "
+                    "type_hint must be str, list, or a Pydantic model class. "
                     f"Got {type_hint.__name__}"
                 )
 
@@ -152,7 +168,19 @@ class MooseCache:
             if value is None:
                 return None
             elif type_hint is str:
+                # Auto-detect if this is a JSON array and deserialize it
+                if value.strip().startswith("[") and value.strip().endswith("]"):
+                    try:
+                        return json.loads(value)
+                    except (json.JSONDecodeError, ValueError):
+                        # If JSON parsing fails, return as string
+                        return value
                 return value
+            elif type_hint is list:
+                try:
+                    return json.loads(value)
+                except (json.JSONDecodeError, ValueError) as e:
+                    raise ValueError(f"Failed to parse cached value as list: {e}")
             elif isinstance(type_hint, type) and issubclass(type_hint, BaseModel):
                 try:
                     parsed = json.loads(value)
