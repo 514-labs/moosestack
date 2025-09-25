@@ -152,6 +152,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
           config.templateName,
           CLI_PATH,
           MOOSE_LIB_PATH,
+          config.appName,
         );
       } else {
         await setupPythonProject(
@@ -159,6 +160,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
           config.templateName,
           CLI_PATH,
           MOOSE_PY_LIB_PATH,
+          config.appName,
         );
       }
 

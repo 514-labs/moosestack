@@ -13,6 +13,7 @@ export const setupTypeScriptProject = async (
   templateName: string,
   cliPath: string,
   mooseLibPath: string,
+  appName: string,
 ): Promise<void> => {
   // Initialize project
   console.log(
@@ -20,7 +21,7 @@ export const setupTypeScriptProject = async (
   );
   try {
     const result = await execAsync(
-      `"${cliPath}" init moose-ts-app ${templateName} --location "${projectDir}"`,
+      `"${cliPath}" init ${appName} ${templateName} --location "${projectDir}"`,
     );
     console.log("CLI init stdout:", result.stdout);
     if (result.stderr) {
@@ -64,12 +65,13 @@ export const setupPythonProject = async (
   templateName: string,
   cliPath: string,
   moosePyLibPath: string,
+  appName: string,
 ): Promise<void> => {
   // Initialize project
   console.log(`Initializing Python project with ${templateName} template...`);
   try {
     const result = await execAsync(
-      `"${cliPath}" init moose-py-app ${templateName} --location "${projectDir}"`,
+      `"${cliPath}" init ${appName} ${templateName} --location "${projectDir}"`,
     );
     console.log("CLI init stdout:", result.stdout);
     if (result.stderr) {
