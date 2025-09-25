@@ -289,7 +289,7 @@ class Stream(TypedMooseResource, Generic[T]):
             kwargs["sasl_plain_password"] = cfg.sasl_password
 
         producer = KafkaProducer(
-            value_serializer=lambda v: json.dumps(v, cls=EnhancedJSONEncoder).encode("utf-8"),
+            value_serializer=lambda v: v.model_dump_json().encode('utf-8'),
             **kwargs,
         )
 
@@ -323,7 +323,7 @@ class Stream(TypedMooseResource, Generic[T]):
                 else:
                     filtered.append(v)
         elif values is not None:
-            flat.append(values)  # type: ignore[arg-type]
+            filtered.append(values)  # type: ignore[arg-type]
 
         if len(filtered) == 0:
             return
@@ -332,7 +332,7 @@ class Stream(TypedMooseResource, Generic[T]):
         topic = self._build_full_topic_name(getattr(cfg, "namespace", None))
 
         for rec in filtered:
-            producer.send(topic, value=rec.model_dump_json().encode('utf-8'))
+            producer.send(topic, value=rec)
         producer.flush()
 
 
