@@ -228,11 +228,11 @@ jobs:
         env:
           MOOSE_TELEMETRY_ENABLED: false
 
-  test-e2e-typescript:
+  test-e2e-typescript-default:
     needs:
       [detect-changes, check, test-cli, test-ts-moose-lib, test-py-moose-lib]
     if: needs.detect-changes.outputs.should_run == 'true'
-    name: Test E2E TypeScript (Node ${{ matrix.node-version }})
+    name: Test E2E TypeScript Default Template (Node ${{ matrix.node-version }})
     runs-on: ubuntu-latest
     # Add explicit read-only permissions
     permissions:
@@ -268,8 +268,8 @@ jobs:
         with:
           toolchain: stable
 
-      - name: Run TypeScript E2E Tests
-        run: pnpm install --frozen-lockfile && pnpm --filter=framework-cli-e2e run test -- --grep "typescript template"
+      - name: Run TypeScript E2E Tests (Default Template)
+        run: pnpm install --frozen-lockfile && pnpm --filter=framework-cli-e2e run test -- --grep "typescript template default"
         env:
           MOOSE_TELEMETRY_ENABLED: false
 
@@ -278,11 +278,61 @@ jobs:
         run: |
           cat ~/.moose/*-cli.log
 
-  test-e2e-python:
+  test-e2e-typescript-tests:
     needs:
       [detect-changes, check, test-cli, test-ts-moose-lib, test-py-moose-lib]
     if: needs.detect-changes.outputs.should_run == 'true'
-    name: Test E2E Python (Python ${{ matrix.python-version }})
+    name: Test E2E TypeScript Tests Template (Node ${{ matrix.node-version }})
+    runs-on: ubuntu-latest
+    # Add explicit read-only permissions
+    permissions:
+      contents: read
+    env:
+      RUST_BACKTRACE: full
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version: [20, 22, 24]
+    steps:
+      - name: Install Protoc (Needed for Temporal)
+        uses: arduino/setup-protoc@v3
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+          version: "23.x"
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - uses: pnpm/action-setup@v4
+
+      - name: Install node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: "pnpm"
+
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+
+      - name: Run TypeScript E2E Tests (Tests Template)
+        run: pnpm install --frozen-lockfile && pnpm --filter=framework-cli-e2e run test -- --grep "typescript template tests"
+        env:
+          MOOSE_TELEMETRY_ENABLED: false
+
+      - name: Inspect Logs
+        if: always()
+        run: |
+          cat ~/.moose/*-cli.log
+
+  test-e2e-python-default:
+    needs:
+      [detect-changes, check, test-cli, test-ts-moose-lib, test-py-moose-lib]
+    if: needs.detect-changes.outputs.should_run == 'true'
+    name: Test E2E Python Default Template (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
     # Add explicit read-only permissions
     permissions:
@@ -326,8 +376,66 @@ jobs:
       - name: Upgrade Python build tools
         run: pip install --upgrade pip setuptools wheel
 
-      - name: Run Python E2E Tests
-        run: pnpm install --frozen-lockfile && pnpm --filter=framework-cli-e2e run test -- --grep "python template"
+      - name: Run Python E2E Tests (Default Template)
+        run: pnpm install --frozen-lockfile && pnpm --filter=framework-cli-e2e run test -- --grep "python template default"
+        env:
+          MOOSE_TELEMETRY_ENABLED: false
+
+      - name: Inspect Logs
+        if: always()
+        run: |
+          cat ~/.moose/*-cli.log
+
+  test-e2e-python-tests:
+    needs:
+      [detect-changes, check, test-cli, test-ts-moose-lib, test-py-moose-lib]
+    if: needs.detect-changes.outputs.should_run == 'true'
+    name: Test E2E Python Tests Template (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    # Add explicit read-only permissions
+    permissions:
+      contents: read
+    env:
+      RUST_BACKTRACE: full
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.12", "3.13"]
+    steps:
+      - name: Install Protoc (Needed for Temporal)
+        uses: arduino/setup-protoc@v3
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+          version: "23.x"
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - uses: pnpm/action-setup@v4
+
+      - name: Install node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: "pnpm"
+
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+
+      - name: Setup Python ${{ matrix.python-version }} for E2E tests
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Upgrade Python build tools
+        run: pip install --upgrade pip setuptools wheel
+
+      - name: Run Python E2E Tests (Tests Template)
+        run: pnpm install --frozen-lockfile && pnpm --filter=framework-cli-e2e run test -- --grep "python template tests"
         env:
           MOOSE_TELEMETRY_ENABLED: false
 
@@ -381,8 +489,10 @@ jobs:
         test-cli,
         test-ts-moose-lib,
         test-py-moose-lib,
-        test-e2e-typescript,
-        test-e2e-python,
+        test-e2e-typescript-default,
+        test-e2e-typescript-tests,
+        test-e2e-python-default,
+        test-e2e-python-tests,
         lints,
       ]
     if: always()
@@ -406,8 +516,10 @@ jobs:
              [[ "${{ needs.test-cli.result }}" == "failure" ]] || \
              [[ "${{ needs.test-ts-moose-lib.result }}" == "failure" ]] || \
              [[ "${{ needs.test-py-moose-lib.result }}" == "failure" ]] || \
-             [[ "${{ needs.test-e2e-typescript.result }}" == "failure" ]] || \
-             [[ "${{ needs.test-e2e-python.result }}" == "failure" ]] || \
+             [[ "${{ needs.test-e2e-typescript-default.result }}" == "failure" ]] || \
+             [[ "${{ needs.test-e2e-typescript-tests.result }}" == "failure" ]] || \
+             [[ "${{ needs.test-e2e-python-default.result }}" == "failure" ]] || \
+             [[ "${{ needs.test-e2e-python-tests.result }}" == "failure" ]] || \
              [[ "${{ needs.lints.result }}" == "failure" ]]; then
             echo "One or more required jobs failed"
             exit 1
@@ -417,8 +529,10 @@ jobs:
              [[ "${{ needs.test-cli.result }}" == "success" ]] && \
              [[ "${{ needs.test-ts-moose-lib.result }}" == "success" ]] && \
              [[ "${{ needs.test-py-moose-lib.result }}" == "success" ]] && \
-             [[ "${{ needs.test-e2e-typescript.result }}" == "success" ]] && \
-             [[ "${{ needs.test-e2e-python.result }}" == "success" ]] && \
+             [[ "${{ needs.test-e2e-typescript-default.result }}" == "success" ]] && \
+             [[ "${{ needs.test-e2e-typescript-tests.result }}" == "success" ]] && \
+             [[ "${{ needs.test-e2e-python-default.result }}" == "success" ]] && \
+             [[ "${{ needs.test-e2e-python-tests.result }}" == "success" ]] && \
              [[ "${{ needs.lints.result }}" == "success" ]]; then
             echo "All required jobs succeeded"
             exit 0

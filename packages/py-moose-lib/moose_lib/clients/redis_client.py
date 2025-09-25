@@ -4,11 +4,12 @@ import os
 import redis
 import threading
 from pydantic import BaseModel
-from typing import Optional, TypeVar, Type, Union, TypeAlias
+from typing import Optional, TypeVar, Type, Union, TypeAlias, List, Any
 
 
-T = TypeVar('T')
-SupportedValue: TypeAlias = Union[str, BaseModel]
+T = TypeVar("T")
+SupportedValue: TypeAlias = Union[str, BaseModel, List[Any]]
+
 
 class MooseCache:
     """
@@ -18,6 +19,7 @@ class MooseCache:
     Example:
         cache = MooseCache()  # Gets or creates the singleton instance
     """
+
     _instance = None
     _redis_url: str
     _key_prefix: str
@@ -36,10 +38,10 @@ class MooseCache:
         if self._client is not None:
             return
 
-        self._redis_url = os.getenv('MOOSE_REDIS_CONFIG__URL', 'redis://127.0.0.1:6379')
-        prefix = os.getenv('MOOSE_REDIS_CONFIG__KEY_PREFIX', 'MS')
+        self._redis_url = os.getenv("MOOSE_REDIS_CONFIG__URL", "redis://127.0.0.1:6379")
+        prefix = os.getenv("MOOSE_REDIS_CONFIG__KEY_PREFIX", "MS")
         # 30 seconds of inactivity before disconnecting
-        self._idle_timeout = int(os.getenv('MOOSE_REDIS_CONFIG__IDLE_TIMEOUT', '30'))
+        self._idle_timeout = int(os.getenv("MOOSE_REDIS_CONFIG__IDLE_TIMEOUT", "30"))
         self._key_prefix = f"{prefix}::moosecache::"
 
         self._ensure_connected()
@@ -65,14 +67,16 @@ class MooseCache:
         self._clear_disconnect_timer()
         self._disconnect_timer.start()
 
-    def set(self, key: str, value: SupportedValue, ttl_seconds: Optional[int] = None) -> None:
+    def set(
+        self, key: str, value: SupportedValue, ttl_seconds: Optional[int] = None
+    ) -> None:
         """
-        Sets a value in the cache. Only accepts strings or Pydantic models.
+        Sets a value in the cache. Accepts strings, Pydantic models, or lists.
         Objects are automatically JSON stringified.
 
         Args:
             key: The key to store the value under
-            value: The value to store. Must be a string or Pydantic model
+            value: The value to store. Must be a string, Pydantic model, or list
             ttl_seconds: Optional time-to-live in seconds. If not provided, defaults to 1 hour (3600 seconds).
                        Must be a non-negative number. If 0, the key will expire immediately.
 
@@ -85,12 +89,15 @@ class MooseCache:
                 baz: int
                 qux: bool
             cache.set("foo:config", Config(baz=123, qux=True))
+
+            ### Store a list
+            cache.set("foo:list", [{"id": 1}, {"id": 2}])
         """
         try:
             # Validate value type
-            if not isinstance(value, (str, BaseModel)):
+            if not isinstance(value, (str, BaseModel, list)):
                 raise TypeError(
-                    f"Value must be a string or Pydantic model. Got {type(value).__name__}"
+                    f"Value must be a string, Pydantic model, or list. Got {type(value).__name__}"
                 )
 
             # Validate TTL
@@ -99,27 +106,39 @@ class MooseCache:
 
             self._ensure_connected()
             prefixed_key = self._get_prefixed_key(key)
+            metadata_key = f"{prefixed_key}:__type__"
 
             if isinstance(value, str):
                 string_value = value
-            else:
+                value_type = "str"
+            elif isinstance(value, BaseModel):
                 string_value = value.model_dump_json()
+                value_type = f"pydantic:{value.__class__.__name__}"
+            else:  # list
+                string_value = json.dumps(value)
+                value_type = "list"
 
             # Use provided TTL or default to 1 hour
             ttl = ttl_seconds if ttl_seconds is not None else 3600
-            self._client.setex(prefixed_key, ttl, string_value)
+            
+            # Store the value and its type metadata
+            pipe = self._client.pipeline()
+            pipe.setex(prefixed_key, ttl, string_value)
+            pipe.setex(metadata_key, ttl, value_type)
+            pipe.execute()
+            
         except Exception as e:
             print(f"Error setting cache key {key}: {e}")
             raise
 
     def get(self, key: str, type_hint: Type[T] = str) -> Optional[T]:
         """
-        Retrieves a value from the cache. Only supports strings or Pydantic models.
+        Retrieves a value from the cache. Supports strings, Pydantic models, or lists.
         The type_hint parameter determines how the value will be parsed and returned.
 
         Args:
             key: The key to retrieve
-            type_hint: Type hint for the return value. Must be str or a Pydantic model class.
+            type_hint: Type hint for the return value. Must be str, list, or a Pydantic model class.
                       Defaults to str.
 
         Returns:
@@ -134,25 +153,82 @@ class MooseCache:
                 baz: int
                 qux: bool
             config = cache.get("foo:config", Config)
+
+            ### Get a list
+            items = cache.get("foo:list", list)
         """
         try:
             # Validate type_hint
             if not isinstance(type_hint, type):
                 raise TypeError("type_hint must be a type")
-            if not (type_hint is str or issubclass(type_hint, BaseModel)):
+            if not (
+                type_hint is str
+                or type_hint is list
+                or issubclass(type_hint, BaseModel)
+            ):
                 raise TypeError(
-                    "type_hint must be str or a Pydantic model class. "
+                    "type_hint must be str, list, or a Pydantic model class. "
                     f"Got {type_hint.__name__}"
                 )
 
             self._ensure_connected()
             prefixed_key = self._get_prefixed_key(key)
-            value = self._client.get(prefixed_key)
+            metadata_key = f"{prefixed_key}:__type__"
+            
+            # Get both the value and metadata in a single pipeline call
+            pipe = self._client.pipeline()
+            pipe.get(prefixed_key)
+            pipe.get(metadata_key)
+            results = pipe.execute()
+            
+            value, stored_type = results[0], results[1]
 
             if value is None:
                 return None
-            elif type_hint is str:
+
+            # If we have metadata, use it to determine the correct deserialization
+            if stored_type:
+                if stored_type == "str":
+                    if type_hint is str:
+                        return value
+                    elif type_hint is list:
+                        # Type mismatch: stored as string but requested as list
+                        raise ValueError(f"Value was stored as string but requested as list")
+                    else:
+                        raise ValueError(f"Value was stored as string but requested as {type_hint.__name__}")
+                
+                elif stored_type == "list":
+                    parsed_value = json.loads(value)
+                    if type_hint is list:
+                        return parsed_value
+                    elif type_hint is str:
+                        # Type mismatch: stored as list but requested as string
+                        raise ValueError(f"Value was stored as list but requested as string")
+                    else:
+                        raise ValueError(f"Value was stored as list but requested as {type_hint.__name__}")
+                
+                elif stored_type.startswith("pydantic:"):
+                    parsed_value = json.loads(value)
+                    if isinstance(type_hint, type) and issubclass(type_hint, BaseModel):
+                        return type_hint.model_validate(parsed_value)
+                    elif type_hint is str:
+                        # Type mismatch: stored as Pydantic but requested as string
+                        raise ValueError(f"Value was stored as Pydantic model but requested as string")
+                    elif type_hint is list:
+                        # Type mismatch: stored as Pydantic but requested as list
+                        raise ValueError(f"Value was stored as Pydantic model but requested as list")
+                    else:
+                        return type_hint.model_validate(parsed_value)
+            
+            # Backwards compatibility: no metadata found, use legacy behavior
+            # But remove the problematic auto-detection for strings
+            if type_hint is str:
                 return value
+            elif type_hint is list:
+                try:
+                    return json.loads(value)
+                except (json.JSONDecodeError, ValueError) as e:
+                    raise ValueError(f"Failed to parse cached value as list: {e}")
             elif isinstance(type_hint, type) and issubclass(type_hint, BaseModel):
                 try:
                     parsed = json.loads(value)
@@ -179,7 +255,13 @@ class MooseCache:
         try:
             self._ensure_connected()
             prefixed_key = self._get_prefixed_key(key)
-            self._client.delete(prefixed_key)
+            metadata_key = f"{prefixed_key}:__type__"
+            
+            # Delete both the value and its metadata
+            pipe = self._client.pipeline()
+            pipe.delete(prefixed_key)
+            pipe.delete(metadata_key)
+            pipe.execute()
         except Exception as e:
             print(f"Error deleting cache key {key}: {e}")
             raise
@@ -198,6 +280,7 @@ class MooseCache:
         try:
             self._ensure_connected()
             prefixed_key = self._get_prefixed_key(key_prefix)
+            # Get both data keys and metadata keys
             keys = self._client.keys(f"{prefixed_key}*")
             if keys:
                 self._client.delete(*keys)
