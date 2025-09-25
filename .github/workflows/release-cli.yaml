@@ -240,8 +240,6 @@ jobs:
       contents: "write"
       id-token: "write"
     env:
-      SCCACHE_GHA_ENABLED: "true"
-      RUSTC_WRAPPER: "sccache"
       POSTHOG_API_KEY: ${{ secrets.POSTHOG_API_KEY }}
     strategy:
       fail-fast: false
@@ -282,10 +280,11 @@ jobs:
         with:
           toolchain: ${{ matrix.build.TOOLCHAIN }}
           target: ${{ matrix.build.TARGET }}
+          cache: true
+          cache-shared-key: ${{ runner.os }}-rust
+          cache-on-failure: true
 
-      - name: Run sccache-cache
-        if: ${{ matrix.build.OS != 'ubuntu-22-8-core' }}
-        uses: mozilla-actions/sccache-action@v0.0.9
+      # sccache is managed by maturin (sccache: true), no separate action needed
 
       - name: Install node
         uses: actions/setup-node@v4

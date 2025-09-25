@@ -99,6 +99,10 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha }}
 
       - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          cache: true
+          cache-shared-key: ${{ runner.os }}-rust
+          cache-on-failure: true
 
       - name: Run cargo check
         run: cargo check
@@ -147,6 +151,15 @@ jobs:
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: stable
+          cache: true
+          cache-shared-key: ${{ runner.os }}-rust
+          cache-on-failure: true
+          cache: true
+          cache-shared-key: ${{ runner.os }}-rust
+          cache-on-failure: true
+          cache: true
+          cache-shared-key: ${{ runner.os }}-rust
+          cache-on-failure: true
 
       - name: Run pnpm install
         run: pnpm install --filter=@repo/scripts # for package-templates.js
@@ -267,6 +280,15 @@ jobs:
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: stable
+          cache: true
+          cache-shared-key: ${{ runner.os }}-rust
+          cache-on-failure: true
+          cache: true
+          cache-shared-key: ${{ runner.os }}-rust
+          cache-on-failure: true
+          cache: true
+          cache-shared-key: ${{ runner.os }}-rust
+          cache-on-failure: true
 
       - name: Run TypeScript E2E Tests (Default Template)
         run: pnpm install --frozen-lockfile && pnpm --filter=framework-cli-e2e run test -- --grep "typescript template default"
@@ -317,6 +339,9 @@ jobs:
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: stable
+          cache: true
+          cache-shared-key: ${{ runner.os }}-rust
+          cache-on-failure: true
 
       - name: Run TypeScript E2E Tests (Tests Template)
         run: pnpm install --frozen-lockfile && pnpm --filter=framework-cli-e2e run test -- --grep "typescript template tests"
@@ -468,6 +493,9 @@ jobs:
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           components: rustfmt, clippy
+          cache: true
+          cache-shared-key: ${{ runner.os }}-rust
+          cache-on-failure: true
 
       # to trigger code gen
       - name: Run cargo build
