@@ -159,17 +159,25 @@ jobs:
           node-version: 20
           cache: "pnpm"
 
-      - name: Get system info
-        id: system
+      - name: Get system info (Linux)
+        id: system-linux
+        if: runner.os == 'Linux'
         run: |
           echo "version=$(lsb_release -rs)" >> $GITHUB_OUTPUT
           echo "distro=$(lsb_release -is)" >> $GITHUB_OUTPUT
+
+      - name: Get system info (macOS)
+        id: system-macos
+        if: runner.os == 'macOS'
+        run: |
+          echo "version=$(sw_vers -productVersion)" >> $GITHUB_OUTPUT
+          echo "distro=macOS" >> $GITHUB_OUTPUT
 
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: stable
           cache: true
-          cache-shared-key: ${{ runner.os }}-${{ steps.system.outputs.distro }}-${{ steps.system.outputs.version }}-${{ runner.arch }}-rust
+          cache-shared-key: ${{ runner.os }}-${{ steps.system-linux.outputs.distro || steps.system-macos.outputs.distro }}-${{ steps.system-linux.outputs.version || steps.system-macos.outputs.version }}-${{ runner.arch }}-rust
           cache-on-failure: true
           cache-all-crates: true
           cache-workspace-crates: true
