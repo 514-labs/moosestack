@@ -81,7 +81,9 @@ jobs:
     needs: detect-changes
     if: needs.detect-changes.outputs.should_run == 'true'
     name: Check
-    runs-on: ubuntu-latest
+    # This is doing both checks and compilation hence why there is a
+    # Bigger machine
+    runs-on: ubuntu-22-8-core
     # Add explicit read-only permissions
     permissions:
       contents: read
