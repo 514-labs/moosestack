@@ -100,11 +100,17 @@ jobs:
           repository: ${{ github.event.pull_request.head.repo.full_name }}
           ref: ${{ github.event.pull_request.head.sha }}
 
+      - name: Get system info
+        id: system
+        run: |
+          echo "version=$(lsb_release -rs)" >> $GITHUB_OUTPUT
+          echo "distro=$(lsb_release -is)" >> $GITHUB_OUTPUT
+
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: stable
           cache: true
-          cache-shared-key: ubuntu-latest-rust
+          cache-shared-key: ${{ runner.os }}-${{ steps.system.outputs.distro }}-${{ steps.system.outputs.version }}-${{ runner.arch }}-rust
           cache-on-failure: true
 
       - name: Run cargo check
@@ -151,11 +157,17 @@ jobs:
           node-version: 20
           cache: "pnpm"
 
+      - name: Get system info
+        id: system
+        run: |
+          echo "version=$(lsb_release -rs)" >> $GITHUB_OUTPUT
+          echo "distro=$(lsb_release -is)" >> $GITHUB_OUTPUT
+
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: stable
           cache: true
-          cache-shared-key: ${{ matrix.os }}-rust
+          cache-shared-key: ${{ runner.os }}-${{ steps.system.outputs.distro }}-${{ steps.system.outputs.version }}-${{ runner.arch }}-rust
           cache-on-failure: true
 
       - name: Run pnpm install
@@ -274,11 +286,17 @@ jobs:
           node-version: ${{ matrix.node-version }}
           cache: "pnpm"
 
+      - name: Get system info
+        id: system
+        run: |
+          echo "version=$(lsb_release -rs)" >> $GITHUB_OUTPUT
+          echo "distro=$(lsb_release -is)" >> $GITHUB_OUTPUT
+
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: stable
           cache: true
-          cache-shared-key: ubuntu-latest-rust
+          cache-shared-key: ${{ runner.os }}-${{ steps.system.outputs.distro }}-${{ steps.system.outputs.version }}-${{ runner.arch }}-rust
           cache-on-failure: true
 
       - name: Run TypeScript E2E Tests (Default Template)
@@ -327,11 +345,17 @@ jobs:
           node-version: ${{ matrix.node-version }}
           cache: "pnpm"
 
+      - name: Get system info
+        id: system
+        run: |
+          echo "version=$(lsb_release -rs)" >> $GITHUB_OUTPUT
+          echo "distro=$(lsb_release -is)" >> $GITHUB_OUTPUT
+
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: stable
           cache: true
-          cache-shared-key: ubuntu-latest-rust
+          cache-shared-key: ${{ runner.os }}-${{ steps.system.outputs.distro }}-${{ steps.system.outputs.version }}-${{ runner.arch }}-rust
           cache-on-failure: true
 
       - name: Run TypeScript E2E Tests (Tests Template)
@@ -380,11 +404,17 @@ jobs:
           node-version: 20
           cache: "pnpm"
 
+      - name: Get system info
+        id: system
+        run: |
+          echo "version=$(lsb_release -rs)" >> $GITHUB_OUTPUT
+          echo "distro=$(lsb_release -is)" >> $GITHUB_OUTPUT
+
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: stable
           cache: true
-          cache-shared-key: ubuntu-latest-rust
+          cache-shared-key: ${{ runner.os }}-${{ steps.system.outputs.distro }}-${{ steps.system.outputs.version }}-${{ runner.arch }}-rust
           cache-on-failure: true
 
       - name: Setup Python ${{ matrix.python-version }} for E2E tests
@@ -441,11 +471,17 @@ jobs:
           node-version: 20
           cache: "pnpm"
 
+      - name: Get system info
+        id: system
+        run: |
+          echo "version=$(lsb_release -rs)" >> $GITHUB_OUTPUT
+          echo "distro=$(lsb_release -is)" >> $GITHUB_OUTPUT
+
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: stable
           cache: true
-          cache-shared-key: ubuntu-latest-rust
+          cache-shared-key: ${{ runner.os }}-${{ steps.system.outputs.distro }}-${{ steps.system.outputs.version }}-${{ runner.arch }}-rust
           cache-on-failure: true
 
       - name: Setup Python ${{ matrix.python-version }} for E2E tests
@@ -487,11 +523,17 @@ jobs:
           repository: ${{ github.event.pull_request.head.repo.full_name }}
           ref: ${{ github.event.pull_request.head.sha }}
 
+      - name: Get system info
+        id: system
+        run: |
+          echo "version=$(lsb_release -rs)" >> $GITHUB_OUTPUT
+          echo "distro=$(lsb_release -is)" >> $GITHUB_OUTPUT
+
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           components: rustfmt, clippy
           cache: true
-          cache-shared-key: ubuntu-latest-rust
+          cache-shared-key: ${{ runner.os }}-${{ steps.system.outputs.distro }}-${{ steps.system.outputs.version }}-${{ runner.arch }}-rust
           cache-on-failure: true
 
       # to trigger code gen
