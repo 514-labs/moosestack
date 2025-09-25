@@ -40,6 +40,7 @@ const SESSION_TIMEOUT_CONSUMER = 30000;
 const HEARTBEAT_INTERVAL_CONSUMER = 3000;
 const DEFAULT_MAX_STREAMING_CONCURRENCY = 100;
 const RETRY_INITIAL_TIME_MS = 100;
+const ACKs = 2;
 // https://github.com/apache/kafka/blob/trunk/clients/src/main/java/org/apache/kafka/common/record/AbstractRecords.java#L124
 // According to the above, the overhead should be 12 + 22 bytes - 34 bytes.
 // We put 500 to be safe.
@@ -70,12 +71,13 @@ const isMessageTooLargeError = (error: unknown): boolean => {
     return (
       (error as any).type === "ERR_MSG_SIZE_TOO_LARGE" ||
       (error as any).code === 10 ||
-      ((error as any).cause !== undefined && isMessageTooLargeError((error as any).cause))
+      ((error as any).cause !== undefined &&
+        isMessageTooLargeError((error as any).cause))
     );
   }
-  
+
   // Fallback for other error types that might have these properties
-  if (error && typeof error === 'object') {
+  if (error && typeof error === "object") {
     const err = error as any;
     return (
       err.type === "ERR_MSG_SIZE_TOO_LARGE" ||
@@ -83,7 +85,7 @@ const isMessageTooLargeError = (error: unknown): boolean => {
       (err.cause !== undefined && isMessageTooLargeError(err.cause))
     );
   }
-  
+
   return false;
 };
 
@@ -373,11 +375,11 @@ const stopConsumer = async (
 ): Promise<void> => {
   try {
     // Try to pause the consumer first if the method exists
-    if (typeof (consumer as any).pause === 'function') {
+    if (typeof (consumer as any).pause === "function") {
       logger.log("Pausing consumer...");
       await (consumer as any).pause();
     }
-    
+
     logger.log("Disconnecting consumer...");
     await consumer.disconnect();
     logger.log("Consumer is shutting down...");
@@ -723,7 +725,6 @@ const startConsumer = async (
 
   await consumer.subscribe({
     topics: [args.sourceTopic.name], // Use full topic name for Kafka operations
-    fromBeginning: true,
   });
 
   await consumer.run({
@@ -966,30 +967,19 @@ export const runStreamingFunctions = async (
         throw new Error(`No valid broker addresses found in: "${args.broker}"`);
       }
 
+      const saslConfig = buildSaslConfig(logger, args);
       const kafkaConfig = {
         kafkaJS: {
           clientId: processId,
           brokers: brokers,
           ssl: args.securityProtocol === "SASL_SSL",
-          sasl: buildSaslConfig(logger, args),
+          ...(saslConfig && { sasl: saslConfig }),
           retry: {
             initialRetryTime: RETRY_INITIAL_TIME_MS,
             maxRetryTime: MAX_RETRY_TIME_MS,
             retries: MAX_RETRIES,
           },
         },
-        // Add librdkafka-specific configuration for Redpanda compatibility
-        "security.protocol":
-          args.securityProtocol === "SASL_SSL" ?
-            ("sasl_ssl" as const)
-          : ("plaintext" as const),
-        "api.version.request": true,
-        "api.version.fallback.ms": 0,
-        "broker.version.fallback": "0.10.0.0",
-        "socket.keepalive.enable": true,
-        "socket.timeout.ms": 30000,
-        "metadata.request.timeout.ms": 10000,
-        "connections.max.idle.ms": 300000,
       };
 
       logger.log(`Creating Kafka client with brokers: ${brokers.join(", ")}`);
@@ -1008,35 +998,19 @@ export const runStreamingFunctions = async (
           },
           autoCommit: true,
           autoCommitInterval: AUTO_COMMIT_INTERVAL_MS,
+          fromBeginning: true,
         },
-        // librdkafka-specific consumer configuration for Redpanda
-        "enable.auto.commit": true,
-        "auto.commit.interval.ms": AUTO_COMMIT_INTERVAL_MS,
-        "session.timeout.ms": SESSION_TIMEOUT_CONSUMER,
-        "heartbeat.interval.ms": HEARTBEAT_INTERVAL_CONSUMER,
-        "max.poll.interval.ms": 300000,
-        "fetch.wait.max.ms": 500,
       });
 
       const producer: Producer = kafka.producer({
         kafkaJS: {
-          transactionalId: processId,
           idempotent: true,
+          acks: ACKs,
           retry: {
             retries: MAX_RETRIES_PRODUCER,
             maxRetryTime: MAX_RETRY_TIME_MS,
           },
         },
-        // librdkafka-specific producer configuration for Redpanda
-        "enable.idempotence": true,
-        "transactional.id": processId,
-        retries: MAX_RETRIES_PRODUCER,
-        "retry.backoff.ms": 100,
-        "request.timeout.ms": 30000,
-        "delivery.timeout.ms": 120000,
-        "linger.ms": 5,
-        "batch.size": 16384,
-        "compression.type": "snappy",
       });
 
       try {
@@ -1075,19 +1049,19 @@ export const runStreamingFunctions = async (
     },
     workerStop: async ([logger, producer, consumer]) => {
       logger.log(`Received SIGTERM, shutting down gracefully...`);
-      
+
       // First stop the consumer to prevent new messages
       logger.log("Stopping consumer first...");
       await stopConsumer(logger, consumer);
-      
+
       // Wait a bit for in-flight messages to complete processing
       logger.log("Waiting for in-flight messages to complete...");
       await new Promise((resolve) => setTimeout(resolve, 2000));
-      
+
       // Then stop the producer
       logger.log("Stopping producer...");
       await stopProducer(logger, producer);
-      
+
       logger.log("Graceful shutdown completed");
     },
   });

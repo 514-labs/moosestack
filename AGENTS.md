@@ -3,8 +3,11 @@
 When you are changing MooseStack functionality (either in the language specific libraries or in the Rust core) ALWAYS run the
 end-to-end tests to make sure you did not break anything.
 
-When you change user facing functionality for the moose, always add end to end tests for the python-tests and typescript-tests
-templates and ALWAYS audit for the documentation for update needs.
+When you change user facing functionality for moose, always add end-to-end tests for the `python-tests` and `typescript-tests`
+templates and ALWAYS audit for the documentation for update needs. Those projects are Moose project that should be using Moose code.
+The checks if the moose code works as expected should be inside `apps/framework-cli-e2e`. 
+
+You can find the logs for moose if you need to troublehoot into `~/.moose/*-cli.log`
 
 ## Commands
 
