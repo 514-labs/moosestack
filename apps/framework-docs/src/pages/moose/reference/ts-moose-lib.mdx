@@ -53,15 +53,13 @@ export const myConfiguredTable = new OlapTable<UserProfile>("user_profiles", {
   orderByFields: ["id", "timestamp"]
 });
 
-// For deduplication, use the ReplacingMergeTree factory
-export const dedupTable = OlapTable.withReplacingMergeTree<UserProfile>(
-  "user_profiles",
-  { 
-    orderByFields: ["id", "timestamp"],
-    ver: "updated_at",  // Optional: version column for keeping latest
-    isDeleted: "deleted"  // Optional: soft delete marker (requires ver)
-  }
-);
+// For deduplication, explicitly set the ReplacingMergeTree engine
+export const dedupTable = new OlapTable<UserProfile>("user_profiles", {
+  engine: ClickHouseEngines.ReplacingMergeTree,
+  orderByFields: ["id", "timestamp"],
+  ver: "updated_at",  // Optional: version column for keeping latest
+  isDeleted: "deleted"  // Optional: soft delete marker (requires ver)
+});
 ```
 
 ### `Stream<T>`
@@ -207,23 +205,17 @@ interface S3QueueTableSettings {
 ```
 
 ### S3Queue Configuration
-Configure S3Queue tables for streaming data from S3 buckets:
+Configure S3Queue tables for streaming data from S3 buckets (ORDER BY is not supported):
 ```ts
-// Use the withS3Queue factory method
-export const s3Events = OlapTable.withS3Queue<S3Event>(
-  "s3_events",
-  "s3://bucket/data/*.json",
-  "JSONEachRow",
-  {
-    awsAccessKeyId: "AKIA...",
-    awsSecretAccessKey: "secret...",
-    compression: "gzip",
-    settings: {
-      mode: "unordered",
-      keeper_path: "/clickhouse/s3queue/events"
-    }
+export const s3Events = new OlapTable<S3Event>("s3_events", {
+  engine: ClickHouseEngines.S3Queue,
+  s3Path: "s3://bucket/data/*.json",
+  format: "JSONEachRow",
+  settings: {
+    mode: "unordered",
+    keeper_path: "/clickhouse/s3queue/events"
   }
-);
+});
 ```
 
 ## Task Management
