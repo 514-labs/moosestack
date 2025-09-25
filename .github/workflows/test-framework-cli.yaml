@@ -276,7 +276,7 @@ jobs:
         with:
           toolchain: stable
           cache: true
-          cache-shared-key: ${{ runner.os }}-rust
+          cache-shared-key: ubuntu-latest-rust
           cache-on-failure: true
 
       - name: Run TypeScript E2E Tests (Default Template)
