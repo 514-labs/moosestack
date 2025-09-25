@@ -123,7 +123,7 @@ class ConfigurationRegistry {
       this._env("MOOSE_KAFKA_CONFIG__NAMESPACE");
 
     const fileKafka =
-      projectConfig.redpanda_config ?? projectConfig.kafka_config;
+      projectConfig.kafka_config ?? projectConfig.redpanda_config;
 
     return {
       broker: envBroker ?? fileKafka?.broker ?? "localhost:19092",

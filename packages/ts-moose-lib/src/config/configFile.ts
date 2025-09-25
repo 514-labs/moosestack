@@ -46,7 +46,7 @@ export interface ProjectConfig {
   clickhouse_config: ClickHouseConfig;
   /**
    * Redpanda/Kafka configuration. Historically named `kafka_config` in some places.
-   * Prefer `redpanda_config` but support both for backward compatibility.
+   * Prefer `kafka_config` but support both for backward compatibility.
    */
   redpanda_config?: KafkaConfig;
   kafka_config?: KafkaConfig;
