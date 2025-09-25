@@ -36,6 +36,17 @@ To learn more about Moose, take a look at the following resources:
 
 You can join the Moose community [on Slack](https://join.slack.com/t/moose-community/shared_invite/zt-2fjh5n3wz-cnOmM9Xe9DYAgQrNu8xKxg). Check out the [MooseStack repo on GitHub](https://github.com/514-labs/moosestack).
 
+# Engine Testing
+
+This template includes comprehensive tests for all supported ClickHouse engines in `app/ingest/engine_tests.py`:
+
+- **MergeTree**: Default engine for general-purpose tables
+- **ReplacingMergeTree**: Deduplication engine with support for version columns and soft deletes
+- **SummingMergeTree**: Automatic summation of numeric columns  
+- **AggregatingMergeTree**: Advanced aggregation capabilities
+
+The engine test file demonstrates proper configuration for each engine type using the new engine configuration classes to ensure compatibility and correct table creation.
+
 ## Deploy on Boreal
 
 The easiest way to deploy your MooseStack Applications is to use [Boreal](https://www.fiveonefour.com/boreal) from 514 Labs, the creators of Moose.
