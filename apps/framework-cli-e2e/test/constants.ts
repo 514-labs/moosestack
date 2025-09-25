@@ -88,6 +88,8 @@ export const TEMPLATE_NAMES = {
 } as const;
 
 export const APP_NAMES = {
-  TYPESCRIPT: "moose-ts-app",
-  PYTHON: "moose-py-app",
+  TYPESCRIPT_DEFAULT: "moose-ts-default-app",
+  TYPESCRIPT_TESTS: "moose-ts-tests-app",
+  PYTHON_DEFAULT: "moose-py-default-app",
+  PYTHON_TESTS: "moose-py-tests-app",
 } as const;
