@@ -20,6 +20,18 @@ class RuntimeClickHouseConfig:
     use_ssl: bool
 
 
+@dataclass
+class RuntimeKafkaConfig:
+    """Runtime Kafka configuration settings."""
+    broker: str
+    message_timeout_ms: int
+    sasl_username: Optional[str]
+    sasl_password: Optional[str]
+    sasl_mechanism: Optional[str]
+    security_protocol: Optional[str]
+    namespace: Optional[str]
+
+
 class ConfigurationRegistry:
     """Singleton registry for managing runtime configuration.
 
@@ -180,18 +192,6 @@ class ConfigurationRegistry:
             True if runtime configuration is set, False otherwise.
         """
         return self._clickhouse_config is not None
-
-
-@dataclass
-class RuntimeKafkaConfig:
-    """Runtime Kafka configuration settings."""
-    broker: str
-    message_timeout_ms: int
-    sasl_username: Optional[str]
-    sasl_password: Optional[str]
-    sasl_mechanism: Optional[str]
-    security_protocol: Optional[str]
-    namespace: Optional[str]
 
 
 # Create singleton instance
