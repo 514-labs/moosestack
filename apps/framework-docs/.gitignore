@@ -40,3 +40,6 @@ yarn-error.log*
 
 # Generated sitemaps
 public/sitemap*.xml
+
+# Cache files
+cache/

@@ -18,7 +18,7 @@ export interface EngineTestData {
   value: number;
   category: string;
   version: number;
-  isDeleted: number; // For ReplacingMergeTree soft deletes
+  isDeleted: boolean; // For ReplacingMergeTree soft deletes (UInt8 in ClickHouse)
 }
 
 // Test MergeTree engine (default)

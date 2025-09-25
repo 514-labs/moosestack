@@ -21,7 +21,7 @@ class EngineTestData(BaseModel):
     value: int
     category: str
     version: int
-    is_deleted: int  # For ReplacingMergeTree soft deletes
+    is_deleted: bool  # For ReplacingMergeTree soft deletes (UInt8 in ClickHouse)
 
 
 # Test MergeTree engine (default)
