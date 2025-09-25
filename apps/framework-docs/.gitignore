@@ -37,3 +37,9 @@ yarn-error.log*
 .sentryclirc
 
 .env*.local
+
+# Generated sitemaps
+public/sitemap*.xml
+
+# Cache files
+cache/

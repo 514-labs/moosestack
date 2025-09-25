@@ -97,61 +97,10 @@ class TableConfig:
     columns: Dict[str, str]
     order_by: Optional[str] = None
     
-    @classmethod
-    def with_s3_queue(cls,
-                      name: str,
-                      columns: Dict[str, str],
-                      s3_path: str,
-                      format: str,
-                      order_by: Optional[str] = None,
-                      **kwargs) -> 'TableConfig':
-        """Create a table with S3Queue engine"""
-        return cls(
-            name=name,
-            columns=columns,
-            engine=S3QueueEngine(s3_path=s3_path, format=format, **kwargs),
-            order_by=order_by
-        )
-    
-    @classmethod
-    def with_merge_tree(cls,
-                        name: str,
-                        columns: Dict[str, str],
-                        order_by: Optional[str] = None,
-                        deduplicate: bool = False,
-                        **kwargs) -> 'TableConfig':
-        """Create a table with MergeTree or ReplacingMergeTree engine"""
-        engine = ReplacingMergeTreeEngine() if deduplicate else MergeTreeEngine()
-        return cls(
-            name=name,
-            columns=columns,
-            engine=engine,
-            order_by=order_by
-        )
-    
-    @classmethod
-    def with_replacing_merge_tree(cls,
-                                  name: str,
-                                  columns: Dict[str, str],
-                                  order_by: Optional[str] = None,
-                                  ver: Optional[str] = None,
-                                  is_deleted: Optional[str] = None,
-                                  **kwargs) -> 'TableConfig':
-        """Create a table with ReplacingMergeTree engine
-        
-        Args:
-            name: Table name
-            columns: Column definitions
-            order_by: Order by clause
-            ver: Optional version column name
-            is_deleted: Optional is_deleted column name (requires ver)
-        """
-        return cls(
-            name=name,
-            columns=columns,
-            engine=ReplacingMergeTreeEngine(ver=ver, is_deleted=is_deleted),
-            order_by=order_by
-        )
+    # Note: Factory methods (with_s3_queue, with_merge_tree, with_replacing_merge_tree)
+    # were removed in ENG-856. Use direct configuration instead, e.g.:
+    # TableConfig(name="table", columns={...}, engine=S3QueueEngine(s3_path="...", format="..."))
+    # TableConfig(name="table", columns={...}, engine=ReplacingMergeTreeEngine(ver="updated_at"))
 
 # ==========================
 # Legacy API Support (Deprecated)
@@ -204,8 +153,8 @@ def migrate_legacy_config(legacy: TableCreateOptions) -> TableConfig:
     # Show deprecation warning
     warnings.warn(
         "Using deprecated TableCreateOptions. Please migrate to TableConfig:\n"
-        "- For S3Queue: Use TableConfig.with_s3_queue()\n"
-        "- For deduplication: Use engine=ReplacingMergeTreeEngine()\n"
+        "- For S3Queue: Use TableConfig(name='table', columns={...}, engine=S3QueueEngine(s3_path='...', format='...'))\n"
+        "- For deduplication: Use TableConfig(name='table', columns={...}, engine=ReplacingMergeTreeEngine())\n"
         "See documentation for examples.",
         DeprecationWarning,
         stacklevel=2
