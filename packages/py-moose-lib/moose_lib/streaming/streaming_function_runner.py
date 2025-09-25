@@ -310,7 +310,6 @@ def create_consumer() -> KafkaConsumer:
         security_protocol=args.security_protocol,
     )
     consumer = get_kafka_consumer(**kwargs)
-    consumer.subscribe([source_topic.name])
     return consumer
 
 
@@ -404,7 +403,7 @@ def main():
             kafka_refs['consumer'] = consumer
             kafka_refs['producer'] = producer
 
-            # Already subscribed in create_consumer
+            consumer.subscribe([source_topic.name])
 
             log("Kafka consumer and producer initialized in processing thread")
 
