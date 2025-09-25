@@ -19,7 +19,7 @@ export const createTempTestDirectory = (suffix: string): string => {
   const tempDir = os.tmpdir();
   const randomDir = `moose-e2e-test-${suffix}-${randomUUID()}`;
   const fullPath = path.join(tempDir, randomDir);
-  
+
   console.log(`Generated temporary test directory path: ${fullPath}`);
   return fullPath;
 };
