@@ -64,9 +64,85 @@ response = requests.post('/ingest/raw_data', json={
 See the [OpenAPI documentation](/stack/open-api) to learn more about how to generate type-safe client SDKs in your language of choice for all of your Moose APIs.
 </Callout>
 
-### Direct Stream Publishing (Coming Soon)
+### Direct Stream Publishing
 
-Soon, you will be able to publish directly to streams using the stream's publish method. This is an efficient way to publish data to streams from within other parts of your Moose backend--in particular, from your workflows.
+You can publish directly to a stream from your Moose code using the stream's `send` method.
+This is useful when emitting events from workflows or other backend logic.
+`send` accepts a single record or an array of records.
+
+<Tabs items={["TypeScript", "Python"]}>
+<Tabs.Tab>
+<TypeScript>
+```ts filename="DirectPublish.ts" copy
+import { Stream, Key } from "@514labs/moose-lib";
+
+interface UserEvent {
+  id: Key<string>;
+  userId: string;
+  timestamp: Date;
+  eventType: string;
+}
+
+// Create a stream (optionally configure destination to sync to a table)
+const events = new Stream<UserEvent>("user-events");
+
+// Publish a single record
+await events.send({
+  id: "evt_1",
+  userId: "user_123",
+  timestamp: new Date(),
+  eventType: "click",
+});
+
+// Publish multiple records
+await events.send([
+  { id: "evt_2", userId: "user_456", timestamp: new Date(), eventType: "view" },
+  { id: "evt_3", userId: "user_789", timestamp: new Date(), eventType: "signup" },
+]);
+```
+</TypeScript>
+</Tabs.Tab>
+
+<Tabs.Tab>
+<Python>
+```py filename="DirectPublish.py" copy
+from moose_lib import Stream, StreamConfig, Key
+from pydantic import BaseModel
+from datetime import datetime
+
+class UserEvent(BaseModel):
+    id: Key[str]
+    user_id: str
+    timestamp: datetime
+    event_type: str
+
+# Create a stream (optionally pass StreamConfig with destination/table settings)
+events = Stream[UserEvent]("user_events", StreamConfig())
+
+# Publish a single record
+events.send(UserEvent(
+    id="evt_1",
+    user_id="user_123",
+    timestamp=datetime.now(),
+    event_type="click"
+))
+
+# Publish multiple records
+events.send([
+    UserEvent(id="evt_2", user_id="user_456", timestamp=datetime.now(), event_type="view"),
+    UserEvent(id="evt_3", user_id="user_789", timestamp=datetime.now(), event_type="signup"),
+])
+```
+</Python>
+</Tabs.Tab>
+</Tabs>
+
+<Callout type="info" title="Topic naming and versions">
+Moose builds the Kafka topic name from your stream name,
+optional namespace, and optional version (dots become underscores).
+For example, a stream named `events` with version `1.2.0` becomes `events_1_2_0`
+(or `my_ns.events_1_2_0` when the namespace is `"my_ns"`).
+</Callout>
 
 ### Using the Kafka/Redpanda Client from External Applications
 You can also publish to streams from external applications using Kafka/Redpanda clients:

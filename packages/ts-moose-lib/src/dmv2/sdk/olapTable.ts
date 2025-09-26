@@ -9,9 +9,13 @@ import { ClickHouseEngines } from "../../blocks/helpers";
 import { getMooseInternal } from "../internal";
 import { Readable } from "node:stream";
 import { createHash } from "node:crypto";
-import type { ConfigurationRegistry } from "../../config/runtime";
+import type {
+  ConfigurationRegistry,
+  RuntimeClickHouseConfig,
+} from "../../config/runtime";
 import { LifeCycle } from "./lifeCycle";
 import { IdentifierBrandedString, quoteIdentifier } from "../../sqlHelpers";
+import type { NodeClickHouseClient } from "@clickhouse/client/dist/client";
 
 /**
  * Represents a failed record during insertion with error details
@@ -357,16 +361,16 @@ export class OlapTable<T> extends TypedBase<T, OlapConfig<T>> {
    *
    * @private
    */
-  private async getMemoizedClient() {
+  private async getMemoizedClient(): Promise<{
+    client: NodeClickHouseClient;
+    config: RuntimeClickHouseConfig;
+  }> {
     await import("../../config/runtime");
     const configRegistry = (globalThis as any)
       ._mooseConfigRegistry as ConfigurationRegistry;
     const { getClickhouseClient } = await import("../../commons");
 
-    // Get configuration from registry (with fallback to file)
     const clickhouseConfig = await configRegistry.getClickHouseConfig();
-
-    // Create a fast hash of the current configuration to detect changes
     const currentConfigHash = this.createConfigHash(clickhouseConfig);
 
     // If we have a cached client and the config hasn't changed, reuse it

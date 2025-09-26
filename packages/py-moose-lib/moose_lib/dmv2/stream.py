@@ -6,14 +6,18 @@ including stream transformations, consumers, and dead letter queues.
 """
 import dataclasses
 import datetime
+import json
 from typing import Any, Optional, Callable, Union, Literal, Generic
 from pydantic import BaseModel, ConfigDict, AliasGenerator
 from pydantic.alias_generators import to_camel
+from kafka import KafkaProducer
 
 from .types import TypedMooseResource, ZeroOrMany, T, U
 from .olap_table import OlapTable
 from ._registry import _streams
 from .life_cycle import LifeCycle
+from ..config.runtime import config_registry, RuntimeKafkaConfig
+from ..commons import get_kafka_producer
 
 
 class StreamConfig(BaseModel):
@@ -110,6 +114,8 @@ class Stream(TypedMooseResource, Generic[T]):
     consumers: list[ConsumerEntry[T]]
     _multipleTransformations: Optional[Callable[[T], list[_RoutedMessage]]] = None
     default_dead_letter_queue: "Optional[DeadLetterQueue[T]]" = None
+    _memoized_producer: Optional[KafkaProducer] = None
+    _kafka_config_hash: Optional[str] = None
 
     def __init__(self, name: str, config: "StreamConfig" = None, **kwargs):
         super().__init__()
@@ -215,6 +221,116 @@ class Stream(TypedMooseResource, Generic[T]):
             transformation: The multi-routing transformation function.
         """
         self._multipleTransformations = transformation
+
+    def _build_full_topic_name(self, namespace: Optional[str]) -> str:
+        """Build full topic name with optional namespace and version suffix."""
+        version_suffix = f"_{self.config.version.replace('.', '_')}" if self.config.version else ""
+        base = f"{self.name}{version_suffix}"
+        return f"{namespace}.{base}" if namespace else base
+
+    def _create_kafka_config_hash(self, cfg: RuntimeKafkaConfig) -> str:
+        import hashlib
+        config_string = ":".join(
+            str(x)
+            for x in (
+                cfg.broker,
+                cfg.message_timeout_ms,
+                cfg.sasl_username,
+                cfg.sasl_password,
+                cfg.sasl_mechanism,
+                cfg.security_protocol,
+                cfg.namespace,
+            )
+        )
+        return hashlib.sha256(config_string.encode()).hexdigest()[:16]
+
+    def _parse_brokers(self, broker_string: str) -> list[str]:
+        if not broker_string:
+            return []
+        return [b.strip() for b in broker_string.split(",") if b.strip()]
+
+    def _get_memoized_producer(self) -> tuple[KafkaProducer, Any]:
+        """Create or reuse a KafkaProducer using runtime configuration."""
+        cfg = config_registry.get_kafka_config()
+        current_hash = self._create_kafka_config_hash(cfg)
+
+        if self._memoized_producer is not None and self._kafka_config_hash == current_hash:
+            return self._memoized_producer, cfg
+
+        # Close previous producer if config changed
+        if self._memoized_producer is not None and self._kafka_config_hash != current_hash:
+            try:
+                self._memoized_producer.flush()
+                self._memoized_producer.close()
+            except Exception:
+                pass
+            finally:
+                self._memoized_producer = None
+
+        brokers = self._parse_brokers(getattr(cfg, "broker", "localhost:19092"))
+        if not brokers:
+            raise RuntimeError(f"No valid broker addresses found in: '{getattr(cfg, 'broker', '')}'")
+
+        producer = get_kafka_producer(
+            broker=brokers,
+            sasl_username=getattr(cfg, "sasl_username", None),
+            sasl_password=getattr(cfg, "sasl_password", None),
+            sasl_mechanism=getattr(cfg, "sasl_mechanism", None),
+            security_protocol=getattr(cfg, "security_protocol", None),
+            value_serializer=lambda v: v.model_dump_json().encode('utf-8'),
+            acks="all",
+        )
+
+        self._memoized_producer = producer
+        self._kafka_config_hash = current_hash
+        return producer, cfg
+
+    def close_producer(self) -> None:
+        """Closes the memoized Kafka producer if it exists."""
+        if self._memoized_producer is not None:
+            try:
+                self._memoized_producer.flush()
+                self._memoized_producer.close()
+            except Exception:
+                pass
+            finally:
+                self._memoized_producer = None
+                self._kafka_config_hash = None
+
+    def send(self, values: ZeroOrMany[T]) -> None:
+        """Send one or more records to this stream's Kafka topic.
+
+        Values are JSON-serialized using EnhancedJSONEncoder.
+        """
+        # Normalize inputs to a flat list of records
+        filtered: list[T] = []
+        if isinstance(values, list):
+            for v in values:
+                if v is None:
+                    continue
+                else:
+                    filtered.append(v)
+        elif values is not None:
+            filtered.append(values)  # type: ignore[arg-type]
+
+        if len(filtered) == 0:
+            return
+
+        # ensure all records are instances of the stream's model type
+        model_type = self._t
+        for rec in filtered:
+            if not isinstance(rec, model_type):
+                raise TypeError(
+                    f"Stream '{self.name}' expects instances of {model_type.__name__}, "
+                    f"got {type(rec).__name__}"
+                )
+
+        producer, cfg = self._get_memoized_producer()
+        topic = self._build_full_topic_name(getattr(cfg, "namespace", None))
+
+        for rec in filtered:
+            producer.send(topic, value=rec)
+        producer.flush()
 
 
 class DeadLetterModel(BaseModel, Generic[T]):

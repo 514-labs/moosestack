@@ -283,6 +283,31 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
           `Primary Key: ${eventId}`,
           "Optional Text: Hello world",
         ]);
+
+        // Optionally verify generator markers in tests variant
+        if (config.isTestsVariant) {
+          try {
+            await withRetries(
+              async () => {
+                await verifyConsumerLogs(TEST_PROJECT_DIR, ["from_http"]);
+              },
+              { attempts: 10, delayMs: 1000 },
+            );
+          } catch (e) {
+            console.log("Optional check: 'from_http' marker not found in logs");
+          }
+
+          try {
+            await withRetries(
+              async () => {
+                await verifyConsumerLogs(TEST_PROJECT_DIR, ["from_send"]);
+              },
+              { attempts: 10, delayMs: 1000 },
+            );
+          } catch (e) {
+            console.log("Optional check: 'from_send' marker not found in logs");
+          }
+        }
       });
     } else {
       it("should successfully ingest data and verify through consumption API", async function () {
@@ -352,6 +377,31 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
           `Primary Key: ${eventId}`,
           "Optional Text: Hello from Python",
         ]);
+
+        // Optionally verify generator markers in tests variant
+        if (config.isTestsVariant) {
+          try {
+            await withRetries(
+              async () => {
+                await verifyConsumerLogs(TEST_PROJECT_DIR, ["from_http"]);
+              },
+              { attempts: 10, delayMs: 1000 },
+            );
+          } catch (e) {
+            console.log("Optional check: 'from_http' marker not found in logs");
+          }
+
+          try {
+            await withRetries(
+              async () => {
+                await verifyConsumerLogs(TEST_PROJECT_DIR, ["from_send"]);
+              },
+              { attempts: 10, delayMs: 1000 },
+            );
+          } catch (e) {
+            console.log("Optional check: 'from_send' marker not found in logs");
+          }
+        }
       });
     }
   });

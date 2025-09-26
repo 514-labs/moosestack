@@ -1,5 +1,5 @@
 import { Task, Workflow, OlapTable, Key } from "@514labs/moose-lib";
-import { Foo } from "../ingest/models";
+import { Foo, FooPipeline } from "../ingest/models";
 import { faker } from "@faker-js/faker";
 
 // Data model for OLAP Table
@@ -15,34 +15,57 @@ const workflowTable = new OlapTable<FooWorkflow>("FooWorkflow");
 export const ingest = new Task<null, void>("ingest", {
   run: async () => {
     for (let i = 0; i < 1000; i++) {
-      const foo: Foo = {
+      const baseTimestamp = faker.date.recent({ days: 365 }).getTime();
+      const fooHttp: Foo = {
         primaryKey: faker.string.uuid(),
-        timestamp: faker.date.recent({ days: 365 }).getTime(),
-        optionalText: Math.random() < 0.5 ? faker.lorem.text() : undefined,
+        timestamp: baseTimestamp,
+        optionalText:
+          Math.random() < 0.5 ? "from_http\n" + faker.lorem.text() : undefined,
       };
 
+      const fooSend: Foo = {
+        primaryKey: faker.string.uuid(),
+        timestamp: baseTimestamp,
+        optionalText:
+          Math.random() < 0.5 ? "from_send:\n" + faker.lorem.text() : undefined,
+      };
+
+      // HTTP ingest path
       try {
         const response = await fetch("http://localhost:4000/ingest/Foo", {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify(foo),
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(fooHttp),
         });
-
         if (!response.ok) {
-          console.log(
-            `Failed to ingest record ${i}: ${response.status} ${response.statusText}`,
-          );
-          // Insert ingestion result into OLAP table
           workflowTable.insert([
-            { id: "1", success: false, message: response.statusText },
+            {
+              id: "1",
+              success: false,
+              message: `HTTP ${response.status} ${response.statusText}`,
+            },
           ]);
         }
       } catch (error) {
-        console.log(`Error ingesting record ${i}: ${error}`);
         workflowTable.insert([
-          { id: "1", success: false, message: error.message },
+          {
+            id: "1",
+            success: false,
+            message: `HTTP error: ${(error as Error).message}`,
+          },
+        ]);
+      }
+
+      // Direct stream send path
+      try {
+        await FooPipeline.stream!.send(fooSend);
+      } catch (error) {
+        workflowTable.insert([
+          {
+            id: "1",
+            success: false,
+            message: `SEND error: ${(error as Error).message}`,
+          },
         ]);
       }
 
