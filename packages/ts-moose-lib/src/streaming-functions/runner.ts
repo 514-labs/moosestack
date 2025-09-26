@@ -835,7 +835,8 @@ const startConsumer = async (
  * ```
  */
 const buildLogger = (args: StreamingFunctionArgs, workerId: number): Logger => {
-  const logPrefix = `${args.sourceTopic.name} -> ${args.targetTopic?.name || "void"} - ${workerId}`;
+  const targetLabel = args.targetTopic?.name ? ` -> ${args.targetTopic.name}` : " (consumer)";
+  const logPrefix = `${args.sourceTopic.name}${targetLabel} (worker ${workerId})`;
   const logger: Logger = {
     logPrefix: logPrefix,
     log: (message: string): void => {
