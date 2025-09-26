@@ -111,6 +111,20 @@ export const TYPESCRIPT_TEST_SCHEMAS: ExpectedTableSchema[] = [
       { name: "complexArray", type: /Nested\(.*\)/ },
     ],
   },
+  {
+    tableName: "OptionalNestedTest",
+    columns: [
+      { name: "id", type: "String" },
+      { name: "timestamp", type: /DateTime\('UTC'\)/ },
+      // Arrays of objects with optional fields - should become Nested type with nullable inner fields
+      {
+        name: "nested",
+        type: /Nested\(name Nullable\(String\), age Nullable\(Float64\)\)/,
+      },
+      // Optional field with ClickHouse default - should have default value
+      { name: "other", type: "Nullable(String)", nullable: true },
+    ],
+  },
 ];
 
 // ============ PYTHON TEMPLATE SCHEMA DEFINITIONS ============
@@ -214,6 +228,20 @@ export const PYTHON_TEST_SCHEMAS: ExpectedTableSchema[] = [
       { name: "nullable_number", type: "Nullable(Float64)", nullable: true },
       { name: "moderate_nesting", type: /Nested\(.*\)/ },
       { name: "complex_array", type: /Nested\(.*\)/ },
+    ],
+  },
+  {
+    tableName: "OptionalNestedTest",
+    columns: [
+      { name: "id", type: "String" },
+      { name: "timestamp", type: /DateTime\('UTC'\)/ },
+      // Arrays of objects with optional fields - should become Nested type with nullable inner fields
+      {
+        name: "nested",
+        type: /Nested\(name Nullable\(String\), age Nullable\(Float64\)\)/,
+      },
+      // Optional field with ClickHouse default - should have default value
+      { name: "other", type: "Nullable(String)", nullable: true },
     ],
   },
 ];
