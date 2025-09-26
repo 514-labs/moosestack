@@ -435,3 +435,100 @@ export const IndexTestTable = new OlapTable<IndexTest>("IndexTest", {
     },
   ],
 });
+
+/** =======Real-World Production Patterns (District Cannabis Inspired)========= */
+
+/** Test 8: Complex discount structure with mixed nullability */
+export interface DiscountInfo {
+  discountId?: number;
+  discountName?: string | null; // Explicit null union
+  discountReason?: string | null;
+  amount: number; // Required field
+}
+
+/** Test 9: Transaction item with complex nested structure */
+export interface ProductItem {
+  productId?: number;
+  productName?: string | null;
+  quantity: number;
+  unitPrice: number;
+  unitCost?: number | null;
+  packageId?: string | null;
+}
+
+/** Test 10: Complex transaction with multiple array types and ReplacingMergeTree */
+export interface ComplexTransaction {
+  transactionId: Key<number>; // Primary key
+  customerId?: number;
+  transactionDate: DateTime;
+  location: string; // Part of order by
+  subtotal: number;
+  tax: number;
+  total: number;
+  // Multiple complex array fields
+  items: ProductItem[];
+  discounts: DiscountInfo[];
+  orderIds: number[]; // Simple array
+  // Mixed nullability patterns
+  tipAmount?: number | null;
+  invoiceNumber?: string | null;
+  terminalName?: string; // Optional without null
+  // Boolean fields
+  isVoid: boolean;
+  isTaxInclusive?: boolean;
+}
+
+/** Test 11: Omit pattern with type extension (common pattern) */
+interface BaseProduct {
+  productId?: number;
+  productName?: string | null;
+  description?: string | null;
+  categoryId?: number | null;
+  tags: string[]; // Remove optional - arrays cannot be nullable in ClickHouse
+}
+
+export interface ProductWithLocation extends Omit<BaseProduct, "productId"> {
+  productId: number; // Make required
+  location: string;
+  inventoryId: Key<number>;
+}
+
+/** Test 12: Engine and ordering configuration test */
+export interface EngineTest {
+  id: Key<string>;
+  timestamp: DateTime;
+  location: string;
+  category: string;
+  value: number;
+}
+
+/** =======Pipeline Configurations for Production Patterns========= */
+
+export const ComplexTransactionPipeline =
+  new IngestPipeline<ComplexTransaction>("ComplexTransaction", {
+    table: {
+      engine: ClickHouseEngines.ReplacingMergeTree,
+      orderByFields: ["transactionId", "location", "transactionDate"], // Primary key must be first
+    },
+    stream: true,
+    ingestApi: true,
+  });
+
+export const ProductWithLocationPipeline =
+  new IngestPipeline<ProductWithLocation>("ProductWithLocation", {
+    table: {
+      engine: ClickHouseEngines.ReplacingMergeTree,
+      orderByFields: ["inventoryId", "location"],
+    },
+    stream: true,
+    ingestApi: true,
+  });
+
+export const EngineTestPipeline = new IngestPipeline<EngineTest>("EngineTest", {
+  table: {
+    engine: ClickHouseEngines.MergeTree,
+    orderByFields: ["id", "location", "category"],
+  },
+  stream: true,
+  ingestApi: true,
+});
