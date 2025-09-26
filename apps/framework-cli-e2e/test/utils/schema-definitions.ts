@@ -19,11 +19,11 @@ export const TYPESCRIPT_BASIC_SCHEMAS: ExpectedTableSchema[] = [
     tableName: "FooDeadLetter",
     columns: [
       // Based on actual ClickHouse output, DeadLetter tables have different structure
-      { name: "originalRecord", type: "String" },
+      { name: "originalRecord", type: "JSON" }, // ClickHouse uses JSON type for complex data
       { name: "errorType", type: "String" },
       { name: "failedAt", type: /DateTime\('UTC'\)/ },
       { name: "errorMessage", type: "String" },
-      { name: "source", type: "String" },
+      { name: "source", type: "LowCardinality(String)" }, // ClickHouse optimizes with LowCardinality
     ],
   },
 ];
