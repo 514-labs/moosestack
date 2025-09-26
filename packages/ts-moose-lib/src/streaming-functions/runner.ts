@@ -360,26 +360,38 @@ const stopProducer = async (
 };
 
 /**
- * Disconnects a Kafka consumer and logs the shutdown
+ * Gracefully stops a Kafka consumer by pausing all partitions and then disconnecting
  *
  * @param logger - Logger instance for outputting consumer status
  * @param consumer - KafkaJS Consumer instance to disconnect
+ * @param sourceTopic - Topic configuration containing name and partition count
  * @returns Promise that resolves when consumer is disconnected
  * @example
  * ```ts
- * await stopConsumer(logger, consumer); // Disconnects consumer and logs shutdown
+ * await stopConsumer(logger, consumer, sourceTopic); // Pauses all partitions and disconnects consumer
  * ```
  */
 const stopConsumer = async (
   logger: Logger,
   consumer: Consumer,
+  sourceTopic: TopicConfig,
 ): Promise<void> => {
   try {
     // Try to pause the consumer first if the method exists
-    if (typeof (consumer as any).pause === "function") {
-      logger.log("Pausing consumer...");
-      await (consumer as any).pause();
-    }
+    logger.log("Pausing consumer...");
+
+    // Generate partition numbers array based on the topic's partition count
+    const partitionNumbers = Array.from(
+      { length: sourceTopic.partitions },
+      (_, i) => i,
+    );
+
+    await consumer.pause([
+      {
+        topic: sourceTopic.name,
+        partitions: partitionNumbers,
+      },
+    ]);
 
     logger.log("Disconnecting consumer...");
     await consumer.disconnect();
@@ -1053,7 +1065,7 @@ export const runStreamingFunctions = async (
 
       // First stop the consumer to prevent new messages
       logger.log("Stopping consumer first...");
-      await stopConsumer(logger, consumer);
+      await stopConsumer(logger, consumer, args.sourceTopic);
 
       // Wait a bit for in-flight messages to complete processing
       logger.log("Waiting for in-flight messages to complete...");
