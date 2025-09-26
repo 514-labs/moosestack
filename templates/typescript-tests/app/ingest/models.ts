@@ -4,6 +4,7 @@ import {
   OlapTable,
   DeadLetterModel,
   DateTime,
+  ClickHouseDefault,
 } from "@514labs/moose-lib";
 
 /**
@@ -262,3 +263,25 @@ export const EdgeCasesPipeline = new IngestPipeline<EdgeCases>("EdgeCases", {
   stream: true,
   ingest: true,
 });
+
+/** =======Optional Nested Fields with ClickHouse Defaults Test========= */
+
+/** Test interface with optional nested fields and ClickHouse defaults */
+export interface TestNested {
+  name?: string;
+  age?: number;
+}
+
+export interface OptionalNestedTest {
+  id: Key<string>;
+  timestamp: DateTime;
+  nested: TestNested[];
+  other?: string & ClickHouseDefault<"''">;
+}
+
+export const OptionalNestedTestPipeline =
+  new IngestPipeline<OptionalNestedTest>("OptionalNestedTest", {
+    table: true,
+    stream: true,
+    ingest: true,
+  });
