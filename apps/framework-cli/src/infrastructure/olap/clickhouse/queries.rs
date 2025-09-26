@@ -1034,8 +1034,16 @@ pub fn basic_field_type_to_string(
                 .map(|col| {
                     let field_type_string = basic_field_type_to_string(&col.column_type)?;
                     match col.required {
-                        // if type is Nullable, `field_type_string` is already wrapped in Nullable
-                        false if !matches!(col.column_type, ClickHouseColumnType::Nullable(_)) => {
+                        false
+                            if !matches!(
+                                col.column_type,
+                                // if type is Nullable, `field_type_string` is already wrapped in Nullable
+                                ClickHouseColumnType::Nullable(_)
+                                    // Nested and Array are not allowed to be nullable
+                                    | ClickHouseColumnType::Nested(_)
+                                    | ClickHouseColumnType::Array(_)
+                            ) =>
+                        {
                             Ok(format!("{} Nullable({})", col.name, field_type_string))
                         }
                         _ => Ok(format!("{} {}", col.name, field_type_string)),
