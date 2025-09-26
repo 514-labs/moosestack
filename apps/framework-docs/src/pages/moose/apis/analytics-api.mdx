@@ -303,8 +303,8 @@ interface QueryParams {
   // Date validations
   startDate: string & tags.Format<"date">;  // YYYY-MM-DD format
   
-  // Enum validation
-  status: string & tags.Enum<"active" | "pending" | "inactive">;  // Must be one of these values
+  // Literal validation
+  status: "active" | "pending" | "inactive";  // Must be one of these values
   
   // Optional parameters
   limit?: number & tags.Type<"uint32"> & tags.Maximum<100>;  // Optional, if provided: positive integer <= 100
