@@ -40,7 +40,7 @@ const SESSION_TIMEOUT_CONSUMER = 30000;
 const HEARTBEAT_INTERVAL_CONSUMER = 3000;
 const DEFAULT_MAX_STREAMING_CONCURRENCY = 100;
 const RETRY_INITIAL_TIME_MS = 100;
-const ACKs = 2;
+const ACKs = "all";
 // https://github.com/apache/kafka/blob/trunk/clients/src/main/java/org/apache/kafka/common/record/AbstractRecords.java#L124
 // According to the above, the overhead should be 12 + 22 bytes - 34 bytes.
 // We put 500 to be safe.
