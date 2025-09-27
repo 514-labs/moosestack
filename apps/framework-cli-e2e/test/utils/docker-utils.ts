@@ -24,7 +24,10 @@ const withTimeout = async <T>(
   timeoutMessage: string,
 ): Promise<T> => {
   return new Promise<T>((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error(timeoutMessage)), timeoutMs);
+    const timer = setTimeout(
+      () => reject(new Error(timeoutMessage)),
+      timeoutMs,
+    );
     promise.then(
       (value) => {
         clearTimeout(timer);

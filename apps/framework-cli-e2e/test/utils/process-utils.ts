@@ -24,9 +24,7 @@ const setTimeoutAsync = (ms: number) =>
 /**
  * Stops a development process with graceful shutdown and forced termination fallback
  */
-export const stopDevProcess = async (
-  devProcess: any,
-): Promise<void> => {
+export const stopDevProcess = async (devProcess: any): Promise<void> => {
   if (devProcess && !devProcess.killed) {
     console.log("Stopping dev process...");
     devProcess.kill("SIGINT");
