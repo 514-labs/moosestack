@@ -301,8 +301,8 @@ export const PYTHON_TEST_SCHEMAS: ExpectedTableSchema[] = [
         name: "nested",
         type: /Nested\(name Nullable\(String\), age Nullable\(Float64\)\)/,
       },
-      // Optional field with ClickHouse default - should have default value
-      { name: "other", type: "Nullable(String)", nullable: true },
+      // Field with ClickHouse default - should be String with default value, not nullable
+      { name: "other", type: "String", nullable: false },
     ],
   },
   // Production pattern tests for Python
@@ -326,7 +326,7 @@ export const PYTHON_TEST_SCHEMAS: ExpectedTableSchema[] = [
       { name: "is_tax_inclusive", type: "Nullable(Bool)", nullable: true },
     ],
     engine: "ReplacingMergeTree",
-    orderBy: ["location", "transaction_id", "transaction_date"],
+    orderBy: ["transaction_id", "location", "transaction_date"],
   },
   {
     tableName: "ProductWithLocation",
