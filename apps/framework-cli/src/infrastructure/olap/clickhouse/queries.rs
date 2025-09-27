@@ -1,4 +1,5 @@
 use handlebars::{no_escape, Handlebars};
+use log::info;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
@@ -6,7 +7,6 @@ use sha2::{Digest, Sha256};
 use super::errors::ClickhouseError;
 use super::model::ClickHouseColumn;
 use crate::framework::core::infrastructure::table::EnumValue;
-use crate::infrastructure::olap::clickhouse::model::ClickHouseColumnType::Nullable;
 use crate::infrastructure::olap::clickhouse::model::{
     wrap_and_join_column_names, AggregationFunction, ClickHouseColumnType, ClickHouseFloat,
     ClickHouseInt, ClickHouseTable,
@@ -1034,8 +1034,16 @@ pub fn basic_field_type_to_string(
                 .map(|col| {
                     let field_type_string = basic_field_type_to_string(&col.column_type)?;
                     match col.required {
-                        // if type is Nullable, `field_type_string` is already wrapped in Nullable
-                        false if !matches!(col.column_type, Nullable(_)) => {
+                        false
+                            if !matches!(
+                                col.column_type,
+                                // if type is Nullable, `field_type_string` is already wrapped in Nullable
+                                ClickHouseColumnType::Nullable(_)
+                                    // Nested and Array are not allowed to be nullable
+                                    | ClickHouseColumnType::Nested(_)
+                                    | ClickHouseColumnType::Array(_)
+                            ) =>
+                        {
                             Ok(format!("{} Nullable({})", col.name, field_type_string))
                         }
                         _ => Ok(format!("{} {}", col.name, field_type_string)),
@@ -1056,8 +1064,14 @@ pub fn basic_field_type_to_string(
         }
         ClickHouseColumnType::Nullable(inner_type) => {
             let inner_type_string = basic_field_type_to_string(inner_type)?;
-            // <column_name> String NULL is equivalent to <column_name> Nullable(String)
-            Ok(format!("Nullable({inner_type_string})"))
+            match inner_type.as_ref() {
+                ClickHouseColumnType::Array(_) | ClickHouseColumnType::Nested(_) => {
+                    info!("Nullability stripped from array/nested field as this is not allowed in ClickHouse.");
+                    Ok(inner_type_string)
+                }
+                // <column_name> String NULL is equivalent to <column_name> Nullable(String)
+                _ => Ok(format!("Nullable({inner_type_string})")),
+            }
         }
         ClickHouseColumnType::AggregateFunction(
             AggregationFunction {
