@@ -19,11 +19,15 @@ export const TIMEOUTS = {
 
   // Process termination timeout (10 seconds)
   PROCESS_TERMINATION_MS: 10_000,
+  // Process kill command timeout (5 seconds)
+  PROCESS_KILL_MS: 5_000,
 
   // Docker operations timeouts
   DOCKER_COMPOSE_DOWN_MS: 30_000,
   DOCKER_VOLUME_LIST_MS: 10_000,
   DOCKER_VOLUME_REMOVE_MS: 5_000,
+  // Global docker prune timeout (20 seconds)
+  DOCKER_SYSTEM_PRUNE_MS: 20_000,
 
   // Wait time before tests (10 seconds)
   PRE_TEST_WAIT_MS: 10_000,

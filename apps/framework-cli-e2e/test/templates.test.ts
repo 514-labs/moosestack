@@ -399,18 +399,30 @@ after(async function () {
   this.timeout(TIMEOUTS.GLOBAL_CLEANUP_MS);
   console.log("Running global cleanup...");
 
+  let watchdog: any | undefined;
+  const start = Date.now();
   try {
-    // Kill any remaining moose-cli processes
+    watchdog = setTimeout(() => {
+      console.warn(
+        `Global cleanup watchdog fired after ${TIMEOUTS.GLOBAL_CLEANUP_MS}ms; forcing exit soon...`,
+      );
+    }, TIMEOUTS.GLOBAL_CLEANUP_MS - 1000);
+
+    console.log("Global cleanup: killing remaining processes...");
     await killRemainingProcesses();
 
-    // Clean up any remaining Docker resources
+    console.log("Global cleanup: docker prune...");
     await globalDockerCleanup();
 
-    // Clean up any leftover test directories
+    console.log("Global cleanup: leftover dirs...");
     cleanupLeftoverTestDirectories();
 
-    console.log("Global cleanup completed");
+    console.log(
+      `Global cleanup completed in ${Date.now() - start}ms`,
+    );
   } catch (error) {
     console.warn("Error during global cleanup:", error);
+  } finally {
+    if (watchdog) clearTimeout(watchdog);
   }
 });

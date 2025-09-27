@@ -1,4 +1,5 @@
-import { promisify } from "util";
+declare const require: any;
+const { promisify } = require("util");
 import { TIMEOUTS } from "../constants";
 
 const execAsync = promisify(require("child_process").exec);
@@ -74,7 +75,15 @@ export const cleanupDocker = async (
  */
 export const globalDockerCleanup = async (): Promise<void> => {
   try {
-    await execAsync("docker system prune -f --volumes || true");
+    await Promise.race([
+      execAsync("docker system prune -f --volumes || true"),
+      new Promise<never>((_, reject) =>
+        setTimeout(
+          () => reject(new Error("Docker system prune timeout")),
+          TIMEOUTS.DOCKER_SYSTEM_PRUNE_MS,
+        ),
+      ),
+    ]);
     console.log("Cleaned up Docker resources");
   } catch (error) {
     console.warn("Error during global Docker cleanup:", error);

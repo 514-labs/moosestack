@@ -1,10 +1,12 @@
-import { ChildProcess } from "child_process";
-import { promisify } from "util";
+declare const require: any;
+type ChildProcess = any;
+const { exec: execCb } = require("child_process");
+const { promisify } = require("util");
 import { TIMEOUTS } from "../constants";
 
-const execAsync = promisify(require("child_process").exec);
+const execAsync = promisify(execCb);
 const setTimeoutAsync = (ms: number) =>
-  new Promise<void>((resolve) => global.setTimeout(resolve, ms));
+  new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 /**
  * Stops a development process with graceful shutdown and forced termination fallback
@@ -18,14 +20,15 @@ export const stopDevProcess = async (
 
     // Wait for graceful shutdown with timeout
     const gracefulShutdownPromise = new Promise<void>((resolve) => {
-      devProcess!.on("exit", () => {
+      devProcess!.once("exit", () => {
         console.log("Dev process has exited gracefully");
         resolve();
       });
     });
 
+    let killTimeout: any;
     const timeoutPromise = new Promise<void>((resolve) => {
-      setTimeout(() => {
+      killTimeout = setTimeout(() => {
         console.log("Dev process did not exit gracefully, forcing kill...");
         if (!devProcess!.killed) {
           devProcess!.kill("SIGKILL");
@@ -36,6 +39,7 @@ export const stopDevProcess = async (
 
     // Race between graceful shutdown and timeout
     await Promise.race([gracefulShutdownPromise, timeoutPromise]);
+    if (killTimeout) clearTimeout(killTimeout);
 
     // Give a brief moment for cleanup after forced kill
     if (!devProcess.killed) {
@@ -55,32 +59,49 @@ export const waitForServerStart = async (
 ): Promise<void> => {
   return new Promise<void>((resolve, reject) => {
     let serverStarted = false;
-    let timeoutId: ReturnType<typeof global.setTimeout>;
-    let pingInterval: ReturnType<typeof global.setInterval> | null = null;
+    let timeoutId: any | undefined;
+    let pingInterval: any | null = null;
 
-    devProcess.stdout?.on("data", async (data) => {
-      const output = data.toString();
+    const cleanup = () => {
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+        timeoutId = undefined;
+      }
+      if (pingInterval) {
+        clearInterval(pingInterval);
+        pingInterval = null;
+      }
+      try { devProcess.stdout?.off?.("data", onStdout); } catch (_) {}
+      try { devProcess.stderr?.off?.("data", onStderr); } catch (_) {}
+      try { devProcess.off?.("exit", onExit); } catch (_) {}
+    };
+
+    const onStdout = async (data: unknown) => {
+      const output = String(data);
       if (!output.match(/^\n[⢹⢺⢼⣸⣇⡧⡗⡏] Starting local infrastructure$/)) {
         console.log("Dev server output:", output);
       }
 
       if (!serverStarted && output.includes(startupMessage)) {
         serverStarted = true;
-        if (pingInterval) clearInterval(pingInterval);
+        cleanup();
         resolve();
       }
-    });
-
-    devProcess.stderr?.on("data", (data) => {
-      console.error("Dev server stderr:", data.toString());
-    });
-
-    devProcess.on("exit", (code) => {
+    };
+    const onStderr = (data: unknown) => {
+      console.error("Dev server stderr:", String(data));
+    };
+    const onExit = (code: number | null) => {
       console.log(`Dev process exited with code ${code}`);
       if (!serverStarted) {
+        cleanup();
         reject(new Error(`Dev process exited with code ${code}`));
       }
-    });
+    };
+
+    devProcess.stdout?.on?.("data", onStdout);
+    devProcess.stderr?.on?.("data", onStderr);
+    devProcess.on?.("exit", onExit);
 
     // Fallback readiness probe: HTTP ping
     pingInterval = setInterval(async () => {
@@ -92,8 +113,7 @@ export const waitForServerStart = async (
         const res = await fetch(`${serverUrl}/ingest`);
         if (res.ok || [400, 404, 405].includes(res.status)) {
           serverStarted = true;
-          if (pingInterval) clearInterval(pingInterval);
-          clearTimeout(timeoutId);
+          cleanup();
           resolve();
         }
       } catch (_) {
@@ -105,7 +125,7 @@ export const waitForServerStart = async (
       if (serverStarted) return;
       console.error("Dev server did not start or complete in time");
       devProcess.kill("SIGINT");
-      if (pingInterval) clearInterval(pingInterval);
+      cleanup();
       reject(new Error("Dev server timeout"));
     }, timeout);
   });
@@ -116,8 +136,16 @@ export const waitForServerStart = async (
  */
 export const killRemainingProcesses = async (): Promise<void> => {
   try {
-    await execAsync("pkill -f moose-cli || true");
-    console.log("Killed any remaining moose-cli processes");
+    await Promise.race([
+      execAsync("pkill -9 -f moose-cli || true"),
+      new Promise<never>((_, reject) =>
+        setTimeout(
+          () => reject(new Error("pkill timeout")),
+          TIMEOUTS.PROCESS_KILL_MS,
+        ),
+      ),
+    ]);
+    console.log("Killed any remaining moose-cli processes (or none were running)");
   } catch (error) {
     console.warn("Error killing remaining processes:", error);
   }
