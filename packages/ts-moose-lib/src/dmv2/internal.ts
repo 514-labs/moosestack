@@ -251,6 +251,7 @@ export const toInfraMap = (registry: typeof moose_internal) => {
   const workflows: { [key: string]: WorkflowJson } = {};
 
   registry.tables.forEach((table) => {
+    const id = table.config.version ? `${table.name}_${table.config.version}` : table.name;
     // If the table is part of an IngestPipeline, inherit metadata if not set
     let metadata = (table as any).metadata;
     if (!metadata && table.config && (table as any).pipelineParent) {
@@ -327,7 +328,7 @@ export const toInfraMap = (registry: typeof moose_internal) => {
       }
     }
 
-    tables[table.name] = {
+    tables[id] = {
       name: table.name,
       columns: table.columnArray,
       orderBy: table.config.orderByFields ?? [],

@@ -53,6 +53,7 @@ import {
   printSchemaValidationResults,
   getExpectedSchemas,
   validateSchemasWithDebugging,
+  verifyVersionedTables,
 } from "./utils";
 
 const execAsync = promisify(require("child_process").exec);
@@ -246,6 +247,16 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
 
       console.log(`✅ Schema validation passed for ${config.displayName}`);
     });
+
+    // Add versioned tables test for tests templates
+    if (config.isTestsVariant) {
+      it("should create versioned OlapTables correctly", async function () {
+        this.timeout(TIMEOUTS.TEST_SETUP_MS);
+
+        // Verify that both versions of UserEvents tables are created
+        await verifyVersionedTables("UserEvents", ["1.0", "2.0"]);
+      });
+    }
 
     // Create test case based on language
     if (config.language === "typescript") {

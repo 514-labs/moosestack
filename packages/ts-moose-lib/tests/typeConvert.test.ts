@@ -45,7 +45,8 @@ function createProgramWithSource(tempDir: string, sourceText: string) {
 }
 
 describe("typeConvert mappings for helper types", () => {
-  it("maps DateTime, DateTime64, numeric aliases, Decimal and LowCardinality", () => {
+  it("maps DateTime, DateTime64, numeric aliases, Decimal and LowCardinality", function() {
+    this.timeout(10000); // Increase timeout for TypeScript compilation
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "moose-typeconv-"));
 
     const source = `
