@@ -235,17 +235,23 @@ def py_type_to_column_type(t: type, mds: list[Any]) -> Tuple[bool, list[Any], Da
     elif not isclass(t):
         raise ValueError(f"Unknown type {t}")
     elif issubclass(t, BaseModel):
+        columns = _to_columns(t)
+        for c in columns:
+            if c.default is not None:
+                raise ValueError(
+                    "Default in inner field. Put ClickHouseDefault in top level field."
+                )
         if any(md == "ClickHouseNamedTuple" for md in mds):
             data_type = NamedTupleType(
                 fields=[(
                     column.name,
                     column.data_type
-                ) for column in _to_columns(t)],
+                ) for column in columns],
             )
         else:
             data_type = Nested(
                 name=t.__name__,
-                columns=_to_columns(t),
+                columns=columns,
             )
     elif issubclass(t, Enum):
         values = [EnumValue(name=member.name, value=member.value) for member in t]
