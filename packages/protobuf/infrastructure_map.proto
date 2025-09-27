@@ -174,7 +174,9 @@ enum SimpleColumnType {
   // in clickhouse, this is the 32-bit date
   // otherwise, see DateType where the precision can be specified
   DATETIME = 6;
+  // Framework Date (standard) -> ClickHouse Date32 (4 bytes)
   DATE = 7;
+  // Framework Date16 (memory-optimized) -> ClickHouse Date (2 bytes)
   DATE16 = 8;
   IPV4 = 9;
   IPV6 = 10;

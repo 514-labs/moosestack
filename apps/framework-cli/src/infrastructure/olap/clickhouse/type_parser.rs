@@ -1210,7 +1210,9 @@ pub fn convert_ast_to_column_type(
                 "Bool" | "Boolean" => Ok(ColumnType::Boolean),
                 "JSON" => Ok(ColumnType::Json),
                 "UUID" => Ok(ColumnType::Uuid),
+                // ClickHouse Date (2 bytes) -> Framework Date16 (memory-optimized)
                 "Date" => Ok(ColumnType::Date16),
+                // ClickHouse Date32 (4 bytes) -> Framework Date (standard)
                 "Date32" => Ok(ColumnType::Date),
                 "IPv4" => Ok(ColumnType::IpV4),
                 "IPv6" => Ok(ColumnType::IpV6),

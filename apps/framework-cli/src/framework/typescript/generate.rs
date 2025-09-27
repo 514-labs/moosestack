@@ -33,7 +33,9 @@ fn map_column_type_to_typescript(
         } => {
             format!("string & typia.tags.Format<\"date-time\"> & ClickHousePrecision<{precision}>")
         }
+        // Framework Date (standard) -> ClickHouse Date32 (4 bytes)
         ColumnType::Date => "string & typia.tags.Format<\"date\">".to_string(),
+        // Framework Date16 (memory-optimized) -> ClickHouse Date (2 bytes)
         ColumnType::Date16 => {
             "string & typia.tags.Format<\"date\"> & ClickHouseByteSize<2>".to_string()
         }
