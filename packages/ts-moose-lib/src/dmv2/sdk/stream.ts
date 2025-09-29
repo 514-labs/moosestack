@@ -21,6 +21,7 @@ import type {
   ConfigurationRegistry,
 } from "../../config/runtime";
 import { createHash } from "node:crypto";
+import { Logger } from "../../commons";
 
 /**
  * Represents zero, one, or many values of type T.
@@ -328,14 +329,30 @@ export class Stream<T> extends TypedBase<T, StreamConfig<T>> {
     }
 
     const clientId = `moose-sdk-stream-${this.name}`;
-    const producer = await getKafkaProducer({
-      clientId,
-      broker: kafkaConfig.broker,
-      securityProtocol: kafkaConfig.securityProtocol,
-      saslUsername: kafkaConfig.saslUsername,
-      saslPassword: kafkaConfig.saslPassword,
-      saslMechanism: kafkaConfig.saslMechanism,
-    });
+    const logger: Logger = {
+      logPrefix: clientId,
+      log: (message: string): void => {
+        console.log(`${clientId}: ${message}`);
+      },
+      error: (message: string): void => {
+        console.error(`${clientId}: ${message}`);
+      },
+      warn: (message: string): void => {
+        console.warn(`${clientId}: ${message}`);
+      },
+    };
+
+    const producer = await getKafkaProducer(
+      {
+        clientId,
+        broker: kafkaConfig.broker,
+        securityProtocol: kafkaConfig.securityProtocol,
+        saslUsername: kafkaConfig.saslUsername,
+        saslPassword: kafkaConfig.saslPassword,
+        saslMechanism: kafkaConfig.saslMechanism,
+      },
+      logger,
+    );
 
     this._memoizedProducer = producer;
     this._kafkaConfigHash = currentHash;

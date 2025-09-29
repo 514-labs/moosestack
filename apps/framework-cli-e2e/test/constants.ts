@@ -30,6 +30,9 @@ export const TIMEOUTS = {
 
   // Brief cleanup wait (1 second)
   BRIEF_CLEANUP_WAIT_MS: 1_000,
+
+  // Schema validation timeout (30 seconds)
+  SCHEMA_VALIDATION_MS: 30_000,
 } as const;
 
 // Retry configuration

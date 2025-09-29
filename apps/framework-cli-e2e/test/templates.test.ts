@@ -49,6 +49,10 @@ import {
   cleanupLeftoverTestDirectories,
   setupTypeScriptProject,
   setupPythonProject,
+  validateMultipleTableSchemas,
+  printSchemaValidationResults,
+  getExpectedSchemas,
+  validateSchemasWithDebugging,
 } from "./utils";
 
 const execAsync = promisify(require("child_process").exec);
@@ -213,6 +217,34 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
         }
         removeTestProject(TEST_PROJECT_DIR);
       }
+    });
+
+    // Schema validation test - runs for all templates
+    it("should create tables with correct schema structure", async function () {
+      this.timeout(TIMEOUTS.SCHEMA_VALIDATION_MS);
+
+      console.log(`Validating schema for ${config.displayName}...`);
+
+      // Get expected schemas for this template
+      const expectedSchemas = getExpectedSchemas(
+        config.language,
+        config.isTestsVariant,
+      );
+
+      // Validate all table schemas with debugging
+      const validationResult =
+        await validateSchemasWithDebugging(expectedSchemas);
+
+      // Assert that all schemas are valid
+      if (!validationResult.valid) {
+        const failedTables = validationResult.results
+          .filter((r) => !r.valid)
+          .map((r) => r.tableName)
+          .join(", ");
+        throw new Error(`Schema validation failed for tables: ${failedTables}`);
+      }
+
+      console.log(`✅ Schema validation passed for ${config.displayName}`);
     });
 
     // Create test case based on language

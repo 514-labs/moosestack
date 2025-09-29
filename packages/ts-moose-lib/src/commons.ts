@@ -1,6 +1,12 @@
 import http from "http";
 import { createClient } from "@clickhouse/client";
-import { Kafka, Producer } from "kafkajs";
+import { KafkaJS } from "@confluentinc/kafka-javascript";
+import { StreamingFunctionArgs } from "./streaming-functions/runner";
+import { SASLOptions } from "@confluentinc/kafka-javascript/types/kafkajs";
+const { Kafka } = KafkaJS;
+type Kafka = KafkaJS.Kafka;
+type Consumer = KafkaJS.Consumer;
+type Producer = KafkaJS.Producer;
 
 /**
  * Utility function for compiler-related logging that can be disabled via environment variable.
@@ -110,6 +116,8 @@ export const RETRY_INITIAL_TIME_MS = 100;
 
 export const MAX_RETRIES_PRODUCER = 150;
 export const RETRY_FACTOR_PRODUCER = 0.2;
+// Means all replicas need to acknowledge the message
+export const ACKs = -1;
 
 /**
  * Parses a comma-separated broker string into an array of valid broker addresses.
@@ -139,15 +147,18 @@ export type KafkaClientConfig = {
  */
 export async function getKafkaProducer(
   cfg: KafkaClientConfig,
+  logger: Logger,
 ): Promise<Producer> {
-  const kafka = await getKafkaClient(cfg);
+  const kafka = await getKafkaClient(cfg, logger);
 
   const producer = kafka.producer({
-    idempotent: true,
-    retry: {
-      retries: MAX_RETRIES_PRODUCER,
-      factor: RETRY_FACTOR_PRODUCER,
-      maxRetryTime: MAX_RETRY_TIME_MS,
+    kafkaJS: {
+      idempotent: true,
+      acks: ACKs,
+      retry: {
+        retries: MAX_RETRIES_PRODUCER,
+        maxRetryTime: MAX_RETRY_TIME_MS,
+      },
     },
   });
   await producer.connect();
@@ -155,33 +166,76 @@ export async function getKafkaProducer(
 }
 
 /**
+ * Interface for logging functionality
+ */
+export interface Logger {
+  logPrefix: string;
+  log: (message: string) => void;
+  error: (message: string) => void;
+  warn: (message: string) => void;
+}
+
+export const logError = (logger: Logger, e: Error): void => {
+  logger.error(e.message);
+  const stack = e.stack;
+  if (stack) {
+    logger.error(stack);
+  }
+};
+
+/**
+ * Builds SASL configuration for Kafka client authentication
+ */
+const buildSaslConfig = (
+  logger: Logger,
+  args: KafkaClientConfig,
+): SASLOptions | undefined => {
+  const mechanism = args.saslMechanism ? args.saslMechanism.toLowerCase() : "";
+  switch (mechanism) {
+    case "plain":
+    case "scram-sha-256":
+    case "scram-sha-512":
+      return {
+        mechanism: mechanism,
+        username: args.saslUsername || "",
+        password: args.saslPassword || "",
+      };
+    default:
+      logger.warn(`Unsupported SASL mechanism: ${args.saslMechanism}`);
+      return undefined;
+  }
+};
+
+/**
  * Dynamically creates a KafkaJS client configured with provided settings.
  * Use this to construct producers/consumers with custom options.
  */
 export const getKafkaClient = async (
   cfg: KafkaClientConfig,
+  logger: Logger,
 ): Promise<Kafka> => {
   const brokers = parseBrokerString(cfg.broker || "");
   if (brokers.length === 0) {
     throw new Error(`No valid broker addresses found in: "${cfg.broker}"`);
   }
 
+  logger.log(`Creating Kafka client with brokers: ${brokers.join(", ")}`);
+  logger.log(`Security protocol: ${cfg.securityProtocol || "plaintext"}`);
+  logger.log(`Client ID: ${cfg.clientId}`);
+
+  const saslConfig = buildSaslConfig(logger, cfg);
+
   return new Kafka({
-    clientId: cfg.clientId,
-    brokers,
-    ssl: cfg.securityProtocol === "SASL_SSL",
-    sasl:
-      cfg.saslUsername && cfg.saslPassword ?
-        {
-          mechanism: (cfg.saslMechanism || "plain").toLowerCase() as any,
-          username: cfg.saslUsername,
-          password: cfg.saslPassword,
-        }
-      : undefined,
-    retry: {
-      initialRetryTime: RETRY_INITIAL_TIME_MS,
-      maxRetryTime: MAX_RETRY_TIME_MS,
-      retries: MAX_RETRIES,
+    kafkaJS: {
+      clientId: cfg.clientId,
+      brokers,
+      ssl: cfg.securityProtocol === "SASL_SSL",
+      ...(saslConfig && { sasl: saslConfig }),
+      retry: {
+        initialRetryTime: RETRY_INITIAL_TIME_MS,
+        maxRetryTime: MAX_RETRY_TIME_MS,
+        retries: MAX_RETRIES,
+      },
     },
   });
 };
