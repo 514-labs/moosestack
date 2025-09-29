@@ -316,7 +316,12 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
           "Optional Text: Hello world",
         ]);
 
-        await checkConsumerLogsForGeneratorIngest(TEST_PROJECT_DIR, config);
+        if (config.isTestsVariant) {
+          await verifyConsumerLogs(TEST_PROJECT_DIR, [
+            "from_http",
+            "from_send",
+          ]);
+        }
       });
     } else {
       it("should successfully ingest data and verify through consumption API", async function () {
@@ -387,7 +392,12 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
           "Optional Text: Hello from Python",
         ]);
 
-        await checkConsumerLogsForGeneratorIngest(TEST_PROJECT_DIR, config);
+        if (config.isTestsVariant) {
+          await verifyConsumerLogs(TEST_PROJECT_DIR, [
+            "from_http",
+            "from_send",
+          ]);
+        }
       });
     }
   });
@@ -418,17 +428,3 @@ after(async function () {
     console.warn("Error during global cleanup:", error);
   }
 });
-
-const checkConsumerLogsForGeneratorIngest = async (
-  TEST_PROJECT_DIR: string,
-  config: TemplateTestConfig,
-) => {
-  if (config.isTestsVariant) {
-    await withRetries(
-      async () => {
-        await verifyConsumerLogs(TEST_PROJECT_DIR, ["from_http", "from_send"]);
-      },
-      { attempts: 10, delayMs: 1000 },
-    );
-  }
-};
