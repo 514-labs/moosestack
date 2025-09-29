@@ -316,30 +316,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
           "Optional Text: Hello world",
         ]);
 
-        // Optionally verify generator markers in tests variant
-        if (config.isTestsVariant) {
-          try {
-            await withRetries(
-              async () => {
-                await verifyConsumerLogs(TEST_PROJECT_DIR, ["from_http"]);
-              },
-              { attempts: 10, delayMs: 1000 },
-            );
-          } catch (e) {
-            console.log("Optional check: 'from_http' marker not found in logs");
-          }
-
-          try {
-            await withRetries(
-              async () => {
-                await verifyConsumerLogs(TEST_PROJECT_DIR, ["from_send"]);
-              },
-              { attempts: 10, delayMs: 1000 },
-            );
-          } catch (e) {
-            console.log("Optional check: 'from_send' marker not found in logs");
-          }
-        }
+        await checkConsumerLogsForGeneratorIngest(TEST_PROJECT_DIR, config);
       });
     } else {
       it("should successfully ingest data and verify through consumption API", async function () {
@@ -410,30 +387,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
           "Optional Text: Hello from Python",
         ]);
 
-        // Optionally verify generator markers in tests variant
-        if (config.isTestsVariant) {
-          try {
-            await withRetries(
-              async () => {
-                await verifyConsumerLogs(TEST_PROJECT_DIR, ["from_http"]);
-              },
-              { attempts: 10, delayMs: 1000 },
-            );
-          } catch (e) {
-            console.log("Optional check: 'from_http' marker not found in logs");
-          }
-
-          try {
-            await withRetries(
-              async () => {
-                await verifyConsumerLogs(TEST_PROJECT_DIR, ["from_send"]);
-              },
-              { attempts: 10, delayMs: 1000 },
-            );
-          } catch (e) {
-            console.log("Optional check: 'from_send' marker not found in logs");
-          }
-        }
+        await checkConsumerLogsForGeneratorIngest(TEST_PROJECT_DIR, config);
       });
     }
   });
@@ -464,3 +418,17 @@ after(async function () {
     console.warn("Error during global cleanup:", error);
   }
 });
+
+const checkConsumerLogsForGeneratorIngest = async (
+  TEST_PROJECT_DIR: string,
+  config: TemplateTestConfig,
+) => {
+  if (config.isTestsVariant) {
+    await withRetries(
+      async () => {
+        await verifyConsumerLogs(TEST_PROJECT_DIR, ["from_http", "from_send"]);
+      },
+      { attempts: 10, delayMs: 1000 },
+    );
+  }
+};
