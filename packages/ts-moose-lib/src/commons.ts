@@ -1,7 +1,6 @@
 import http from "http";
 import { createClient } from "@clickhouse/client";
 import { KafkaJS } from "@confluentinc/kafka-javascript";
-import { StreamingFunctionArgs } from "./streaming-functions/runner";
 import { SASLOptions } from "@confluentinc/kafka-javascript/types/kafkajs";
 const { Kafka } = KafkaJS;
 type Kafka = KafkaJS.Kafka;
