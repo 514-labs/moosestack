@@ -1,7 +1,7 @@
 import { RETRY_CONFIG } from "../constants";
 
 const setTimeoutAsync = (ms: number) =>
-  new Promise<void>((resolve) => global.setTimeout(resolve, ms));
+  new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 export interface RetryOptions {
   attempts?: number;
