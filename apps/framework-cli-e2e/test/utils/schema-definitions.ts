@@ -244,6 +244,65 @@ export const PYTHON_TEST_SCHEMAS: ExpectedTableSchema[] = [
       { name: "other", type: "Nullable(String)", nullable: true },
     ],
   },
+  {
+    tableName: "ComprehensiveTypes",
+    columns: [
+      // identity and time
+      { name: "id", type: "String" },
+      { name: "timestamp", type: /DateTime\('UTC'\)/ },
+
+      // signed ints
+      { name: "int8_field", type: "Int8" },
+      { name: "int16_field", type: "Int16" },
+      { name: "int32_field", type: "Int32" },
+      { name: "int64_field", type: "Int64" },
+
+      // unsigned ints
+      { name: "uint8_field", type: "UInt8" },
+      { name: "uint16_field", type: "UInt16" },
+      { name: "uint32_field", type: "UInt32" },
+      { name: "uint64_field", type: "UInt64" },
+
+      // floats and decimals
+      { name: "float32_field", type: "Float32" },
+      { name: "decimal_small", type: /Decimal\(10, 2\)/ },
+      { name: "decimal_large", type: /Decimal\(20, 4\)/ },
+
+      // LowCardinality string
+      { name: "low_card_string", type: /LowCardinality\(String\)/ },
+
+      // UUID
+      { name: "user_id", type: "UUID" },
+
+      // dates and datetimes
+      { name: "simple_date", type: "Date32" },
+      { name: "compact_date", type: "Date" },
+      { name: "precise_time", type: /DateTime64\(3\)/ },
+
+      // IPs
+      { name: "ip4", type: "IPv4" },
+      { name: "ip6", type: "IPv6" },
+
+      // Map
+      { name: "labels", type: /Map\(String, Int64\)/ },
+      { name: "metrics", type: /Map\(String, Float64\)/ },
+
+      // JSON
+      { name: "json_map", type: /Map\(String, JSON\)/ },
+      { name: "json_raw", type: "JSON" },
+
+      // Named Tuple
+      { name: "customer", type: /Tuple\(name String, age Int32\)/ },
+
+      // Enum with string values becomes Enum8/16 depending; we match Enum*
+      { name: "status_enum", type: /Enum\d*\(.+\)/ },
+
+      // Nullable/Optional variants
+      { name: "optional_low_card", type: /Nullable\(LowCardinality\(String\)\)/, nullable: true },
+      { name: "optional_with_default", type: "Nullable(String)", nullable: true },
+      { name: "optional_json", type: "Nullable(JSON)", nullable: true },
+    ],
+  },
 ];
 
 // ============ HELPER FUNCTIONS ============
