@@ -57,17 +57,19 @@ The current `Api` class
 endpoints through a tightly coupled system:
 
 1. User defines an `Api` instance with a handler:
-        ```typescript
-        export const consumptionApi = new Api<QueryParams, DataModel[]>(
-          "get-api-route",
-          async ({limit = 10}: QueryParams, {client, sql}) => {
-            const result = await client.query.execute(
-              sql`SELECT * FROM ${clickhouseTable} LIMIT ${limit}`
-            );
-            return await result.json();
-          }
-        );
-        ```
+
+```typescript
+export const consumptionApi = new Api<QueryParams, DataModel[]>(
+  "get-api-route",
+  async ({limit = 10}: QueryParams, {client, sql}) => {
+    const result = await client.query.execute(
+      sql`SELECT * FROM ${clickhouseTable} LIMIT ${limit}`
+    );
+    return await result.json();
+  }
+);
+```
+
 2. The CLI runs `moose-runner consumption-apis` (packages/ts-moose-lib/src/moose-runner.ts:114)
 3. `runApis()` function
    (packages/ts-moose-lib/src/consumption-apis/runner.ts:254) instantiates:
@@ -297,29 +299,6 @@ export const myApi = new Api<QueryParams, ResponseData>(
 
 The `runApis()` function in `consumption-apis/runner.ts` remains operational
 for users who prefer the batteries-included approach.
-
-### Migration Path for Users
-
-Users can incrementally adopt BYOF:
-
-**Step 1**: Keep using `Api` class (no changes)
-
-**Step 2**: Experiment with BYOF for new endpoints
-
-```typescript
-// Some endpoints use Api class
-export const legacyApi = new Api(...);
-
-// New endpoints use custom framework
-// In separate server.js file
-```
-
-**Step 3**: Fully migrate to BYOF when ready
-
-```typescript
-// Convert all Api handlers to Express/Fastify routes
-// Disable built-in server
-```
 
 ### OpenAPI Documentation Considerations
 
@@ -811,24 +790,25 @@ exactly as before.
 5. **IngestApi Coordination**: Even though IngestApi refactor is separate,
    should this RFD propose a unified configuration structure that both can
    use? For example:
-        ```typescript
-        // moose.config.ts
-        export default {
-          servers: {
-            consumption: {
-              framework: 'express', // or 'fastify', 'custom', 'builtin'
-              port: 3000,
-            },
-            ingestion: {
-              framework: 'builtin', // for now
-              port: 4000,
-            },
-          },
-          clients: {
-            // ... client configs
-          },
-        };
-        ```
+
+```typescript
+// moose.config.ts
+export default {
+  servers: {
+    consumption: {
+      framework: 'express', // or 'fastify', 'custom', 'builtin'
+      port: 3000,
+    },
+    ingestion: {
+      framework: 'builtin', // for now
+      port: 4000,
+    },
+  },
+  clients: {
+    // ... client configs
+  },
+};
+```
 
 ### Discussion Topics for Review
 
