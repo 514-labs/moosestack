@@ -12,6 +12,7 @@ homepage = "https://www.fiveonefour.com/moose"
 
 [dependencies]
 posthog514client-rs = { path = "../../packages/posthog514client-rs" }
+sqlparser = "0.58.0"
 itertools = "0.13.0"
 openssl = { version = "0.10", features = ["vendored"] }
 clap = { version = "4.3.17", features = ["derive"] }
@@ -29,7 +30,7 @@ home = "0.5.5"
 clickhouse = { version = "0.11.5", features = ["uuid"] }
 clickhouse-rs = { version = "1.1.0-alpha.1", features = ["tls"] }
 handlebars = "5.1"
-rdkafka = { version = "0.36", features = ["ssl"] }
+rdkafka = { version = "0.38", features = ["ssl"] }
 convert_case = "0.6.0"
 log = "0.4"
 fern = { version = "0.7", features = ["date-based"] }
@@ -54,7 +55,7 @@ toml_edit = "0.22.9"
 flate2 = "1.0"
 tar = "0.4"
 rustpython-parser = "0.3.1"
-rustpython-ast = { version = "0.3.1" , features = ["unparse"]}
+rustpython-ast = { version = "0.3.1", features = ["unparse"] }
 walkdir = "2"
 comfy-table = "7.1.1"
 ratatui = "0.27.0"
@@ -71,7 +72,7 @@ redis = { version = "0.29.1", features = [
     "tokio-comp",
     "aio",
     "tokio-native-tls-comp",
-    "connection-manager"
+    "connection-manager",
 ] }
 jsonwebtoken = "9.3.0"
 num-traits = "0.2.19"
@@ -108,6 +109,8 @@ prost-types = "0.13.0"
 tonic = { version = "0.12", features = ["transport", "prost", "codegen"] }
 tempfile = "3.15.0"
 prost-wkt-types = "0.6.0"
+
+keyring = { version = "3.6", features = ["apple-native", "linux-native"] }
 
 [dev-dependencies]
 clickhouse = { version = "0.11.5", features = ["uuid", "test-util"] }

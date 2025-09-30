@@ -45,13 +45,20 @@ interface ApiUtil {
 ### `OlapTable<T>`
 Creates a ClickHouse table with the schema of type T.
 ```ts
-// Basic usage
+// Basic usage with MergeTree (default)
 export const myTable = new OlapTable<UserProfile>("user_profiles");
 
-// With configuration
+// With sorting configuration
 export const myConfiguredTable = new OlapTable<UserProfile>("user_profiles", {
-  orderByFields: ["id", "timestamp"],
+  orderByFields: ["id", "timestamp"]
+});
+
+// For deduplication, explicitly set the ReplacingMergeTree engine
+export const dedupTable = new OlapTable<UserProfile>("user_profiles", {
   engine: ClickHouseEngines.ReplacingMergeTree,
+  orderByFields: ["id", "timestamp"],
+  ver: "updated_at",  // Optional: version column for keeping latest
+  isDeleted: "deleted"  // Optional: soft delete marker (requires ver)
 });
 ```
 
@@ -113,8 +120,7 @@ export const advancedPipeline = new IngestPipeline<UserEvent>("advanced_pipeline
   ingestApi: true,
   stream: { parallelism: 3 },
   table: { 
-    orderByFields: ["id", "timestamp"],
-    engine: ClickHouseEngines.ReplacingMergeTree,
+    orderByFields: ["id", "timestamp"]
   }
 });
 ```
@@ -159,18 +165,57 @@ class MooseClient {
 
 ## ClickHouse Utilities
 
-### `ClickHouseEngines`
-Enum for supported ClickHouse table engines.
+### Table Engine Configurations
+
+#### `ClickHouseEngines` Enum
+Available table engines:
 ```ts
 enum ClickHouseEngines {
   MergeTree = "MergeTree",
   ReplacingMergeTree = "ReplacingMergeTree",
-  SummingMergeTree = "SummingMergeTree",
   AggregatingMergeTree = "AggregatingMergeTree",
-  CollapsingMergeTree = "CollapsingMergeTree",
-  VersionedCollapsingMergeTree = "VersionedCollapsingMergeTree",
-  GraphiteMergeTree = "GraphiteMergeTree"
+  SummingMergeTree = "SummingMergeTree",
+  S3Queue = "S3Queue"
 }
+```
+
+#### `ReplacingMergeTreeConfig<T>`
+Configuration for ReplacingMergeTree tables:
+```ts
+type ReplacingMergeTreeConfig<T> = {
+  engine: ClickHouseEngines.ReplacingMergeTree;
+  orderByFields?: (keyof T & string)[];
+  ver?: keyof T & string;  // Optional: version column for keeping latest
+  isDeleted?: keyof T & string;  // Optional: soft delete marker (requires ver)
+  settings?: { [key: string]: string };
+}
+```
+
+### `S3QueueTableSettings`
+Type-safe interface for S3Queue-specific table settings (ClickHouse 24.7+).
+```ts
+interface S3QueueTableSettings {
+  mode?: "ordered" | "unordered";  // Processing mode
+  after_processing?: "keep" | "delete";  // File handling after processing
+  keeper_path?: string;  // ZooKeeper path for coordination
+  loading_retries?: string;  // Number of retry attempts
+  processing_threads_num?: string;  // Parallel processing threads
+  // ... and many more settings
+}
+```
+
+### S3Queue Configuration
+Configure S3Queue tables for streaming data from S3 buckets (ORDER BY is not supported):
+```ts
+export const s3Events = new OlapTable<S3Event>("s3_events", {
+  engine: ClickHouseEngines.S3Queue,
+  s3Path: "s3://bucket/data/*.json",
+  format: "JSONEachRow",
+  settings: {
+    mode: "unordered",
+    keeper_path: "/clickhouse/s3queue/events"
+  }
+});
 ```
 
 ## Task Management
@@ -189,18 +234,17 @@ export const task1 = new Task<null, void>("task1", {
 
 // With input and output
 export const task2 = new Task<InputType, OutputType>("task2", {
-  run: async (input: InputType) => {
-    return process(input);
+  run: async (ctx) => {
+    return process(ctx.input);
   },
   onComplete: [nextTask]
 });
 ```
 
-### `TaskHandler<T, R>`
-A function type that handles task execution.
+### `TaskContext<T>`
+A context object that includes input & state passed between the task's run/cancel functions.
 ```ts
-type TaskHandler<T, R> =
-  T extends null ? () => Promise<R> : (input: T) => Promise<R>;
+export type TaskContext<T> = T extends null ? { state: any; input?: null } : { state: any; input: T };
 ```
 
 ### `TaskConfig<T, R>`
@@ -208,12 +252,15 @@ Configuration options for tasks.
 ```ts
 interface TaskConfig<T, R> {
   // The main function that executes the task logic
-  run: TaskHandler<T, R>;
+  run: (context: TaskContext<T>) => Promise<R>;
   
   // Optional array of tasks to execute after this task completes
   onComplete?: (Task<R extends void ? null : R, any> | Task<R extends void ? null : R, void>)[];
+
+  // Optional function that is called when the task is cancelled.
+  onCancel?: (context: TaskContext<T>) => Promise<void>;
   
-  // Optional timeout duration (e.g., "30s", "5m")
+  // Optional timeout duration (e.g., "30s", "5m", "never")
   timeout?: string;
   
   // Optional number of retry attempts
@@ -243,7 +290,7 @@ interface WorkflowConfig {
   // Optional number of retry attempts
   retries?: number;
   
-  // Optional timeout duration (e.g., "10m", "1h")
+  // Optional timeout duration (e.g., "10m", "1h", "never")
   timeout?: string;
   
   // Optional cron-style schedule string

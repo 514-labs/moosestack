@@ -1,8 +1,7 @@
 use crate::framework::consumption::model::ConsumptionQueryParam;
 use crate::framework::core::infrastructure::api_endpoint::{APIType, ApiEndpoint};
-use crate::framework::core::infrastructure::table::{Column, ColumnType};
+use crate::framework::core::infrastructure::table::ColumnType;
 use crate::framework::core::infrastructure_map::InfrastructureMap;
-use crate::framework::data_model::model::DataModel;
 use crate::project::Project;
 use crate::utilities::constants::OPENAPI_FILE;
 
@@ -73,18 +72,7 @@ struct Operation {
 #[derive(Serialize, Deserialize)]
 struct RequestBody {
     required: bool,
-    content: HashMap<String, MediaType>,
-}
-
-#[derive(Serialize, Deserialize)]
-struct MediaType {
-    schema: MediaTypeSchema,
-}
-
-#[derive(Serialize, Deserialize, Clone)]
-struct MediaTypeSchema {
-    #[serde(rename = "$ref")]
-    ref_: String,
+    content: HashMap<String, Value>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -122,22 +110,12 @@ fn generate_openapi_spec(project: &Arc<Project>, infra_map: &InfrastructureMap) 
     let mut schemas = HashMap::new();
 
     for api_endpoint in infra_map.api_endpoints.values() {
-        if let APIType::INGRESS {
-            data_model: Some(data_model),
-            ..
-        } = &api_endpoint.api_type
-        {
-            build_data_model_schema(data_model, &mut schemas);
-        }
-    }
-
-    for api_endpoint in infra_map.api_endpoints.values() {
         match &api_endpoint.api_type {
-            APIType::INGRESS {
-                data_model: Some(data_model),
-                ..
-            } => {
-                let path_item = create_ingress_path_item(api_endpoint, data_model);
+            APIType::INGRESS { schema, .. } => {
+                let (schema, component_schemas) =
+                    extract_component_schemas(Value::Object(schema.clone()));
+                schemas.extend(component_schemas);
+                let path_item = create_ingress_path_item(api_endpoint, schema);
                 paths.insert(
                     format!("/{}", api_endpoint.path.to_string_lossy()),
                     path_item,
@@ -157,12 +135,11 @@ fn generate_openapi_spec(project: &Arc<Project>, infra_map: &InfrastructureMap) 
                 // Merge egress schemas into the main schemas map
                 schemas.extend(component_schemas);
             }
-            _ => {}
         }
     }
 
     OpenAPI {
-        openapi: "3.0.0".to_string(),
+        openapi: "3.1.1".to_string(),
         info: Info {
             title: format!("{} API", project.name()),
             version: project.cur_version().to_string(),
@@ -176,7 +153,7 @@ fn generate_openapi_spec(project: &Arc<Project>, infra_map: &InfrastructureMap) 
     }
 }
 
-fn create_ingress_path_item(api_endpoint: &ApiEndpoint, data_model: &DataModel) -> PathItem {
+fn create_ingress_path_item(api_endpoint: &ApiEndpoint, schema: Value) -> PathItem {
     PathItem {
         post: Some(Operation {
             summary: format!("Ingress endpoint for {}", api_endpoint.name),
@@ -185,14 +162,7 @@ fn create_ingress_path_item(api_endpoint: &ApiEndpoint, data_model: &DataModel) 
                 required: true,
                 content: {
                     let mut content = HashMap::new();
-                    content.insert(
-                        "application/json".to_string(),
-                        MediaType {
-                            schema: MediaTypeSchema {
-                                ref_: format!("#/components/schemas/{}", data_model.name),
-                            },
-                        },
-                    );
+                    content.insert("application/json".to_string(), json!({"schema": schema}));
                     content
                 },
             }),
@@ -300,111 +270,6 @@ fn create_default_responses() -> HashMap<String, Response> {
     responses
 }
 
-fn build_data_model_schema(data_model: &DataModel, schemas: &mut HashMap<String, Value>) {
-    build_schema(&data_model.columns, data_model.name.clone(), schemas);
-}
-
-fn build_schema(columns: &Vec<Column>, parent_name: String, schemas: &mut HashMap<String, Value>) {
-    let mut properties = HashMap::new();
-    let mut required = Vec::new();
-
-    for column in columns {
-        let property = match &column.data_type {
-            ColumnType::Nested(fields) => {
-                let component_name = format!("{}_{}", parent_name, column.name);
-                build_schema(&fields.columns, component_name.clone(), schemas);
-                json!({
-                    "$ref": format!("#/components/schemas/{component_name}")
-                })
-            }
-            ColumnType::Array {
-                element_type: column_type,
-                element_nullable,
-            } => {
-                let item_schema = if let ColumnType::Nested(fields) = &**column_type {
-                    let component_name = format!("{}_{}", parent_name, column.name);
-                    build_schema(&fields.columns, component_name.clone(), schemas);
-                    json!({
-                        "$ref": format!("#/components/schemas/{component_name}")
-                    })
-                } else {
-                    let (property_type, _) = map_column_type(column_type);
-                    if *element_nullable {
-                        json!({
-                            "oneOf": [
-                                {"type": "null"},
-                                {"type": property_type}
-                            ]
-                        })
-                    } else {
-                        json!({"type": property_type})
-                    }
-                };
-                json!({
-                    "type": "array",
-                    "items": item_schema
-                })
-            }
-            _ => {
-                let (property_type, example) = map_column_type(&column.data_type);
-                let mut prop = json!({"type": property_type});
-                if let Some(ex) = example {
-                    prop["example"] = ex;
-                }
-                prop
-            }
-        };
-
-        properties.insert(column.name.clone(), property);
-
-        if column.required {
-            required.push(column.name.clone());
-        }
-    }
-
-    let schema = json!({
-        "type": "object",
-        "properties": properties,
-        "required": required
-    });
-
-    schemas.insert(parent_name, schema);
-}
-
-fn map_column_type(column_type: &ColumnType) -> (String, Option<serde_json::Value>) {
-    match column_type {
-        ColumnType::Boolean => ("boolean".to_string(), Some(serde_json::Value::Bool(true))),
-        ColumnType::Int(_) | ColumnType::BigInt => (
-            "integer".to_string(),
-            Some(serde_json::Value::Number(1.into())),
-        ),
-        ColumnType::Float(_) | ColumnType::Decimal { .. } => (
-            "number".to_string(),
-            Some(serde_json::Value::Number(
-                serde_json::Number::from_f64(1.0).unwrap(),
-            )),
-        ),
-        ColumnType::DateTime { .. } => (
-            "string".to_string(),
-            Some(serde_json::Value::String(Local::now().to_rfc3339())),
-        ),
-        ColumnType::Array { .. } => (
-            "array".to_string(),
-            Some(serde_json::Value::Array(vec![serde_json::Value::String(
-                "add array items here".to_string(),
-            )])),
-        ),
-        ColumnType::Nested(_) => (
-            "object".to_string(),
-            Some(serde_json::Value::Object(serde_json::Map::new())),
-        ),
-        _ => (
-            "string".to_string(),
-            Some(serde_json::Value::String("stringValue".to_string())),
-        ),
-    }
-}
-
 fn map_query_param_type(data_type: &ColumnType) -> (String, Option<serde_json::Value>) {
     match data_type {
         ColumnType::Boolean => ("boolean".to_string(), Some(serde_json::Value::Bool(true))),
@@ -432,6 +297,9 @@ fn map_query_param_type(data_type: &ColumnType) -> (String, Option<serde_json::V
 fn save_openapi_to_file(openapi_spec: &OpenAPI, file_path: &str) -> std::io::Result<()> {
     let openapi_yaml = serde_yaml::to_string(openapi_spec).unwrap();
     let mut file = File::create(file_path)?;
+    if openapi_spec.openapi.starts_with("3.1") {
+        file.write_all("# Use https://editor-next.swagger.io/ if the current version does not support 3.1 yet.\n".as_bytes())?;
+    }
     file.write_all(openapi_yaml.as_bytes())?;
     Ok(())
 }

@@ -32,10 +32,10 @@ export interface Bar {
 }
 
 export const task1 = new Task<Foo, Bar>("task1", {
-  run: async (input: Foo) => {
-    const greeting = `hello, ${input.name}!`;
+  run: async (ctx) => {
+    const greeting = `hello, ${ctx.input.name}!`;
     return {
-      name: input.name,
+      name: ctx.input.name,
       greeting,
       counter: 1
     };
@@ -43,8 +43,8 @@ export const task1 = new Task<Foo, Bar>("task1", {
 });
 
 export const task2 = new Task<Bar, void>("task2", {
-  run: async (input: Bar) => {
-    console.log(`${input.greeting} (count: ${input.counter})`);
+  run: async (ctx) => {
+    console.log(`${ctx.input.greeting} (count: ${ctx.input.counter})`);
   },
 });
 
@@ -57,7 +57,7 @@ export const myworkflow = new Workflow("myworkflow", {
 
 <Python>
 ```python filename="DataFlow.py" copy
-from moose_lib import Task, TaskConfig, Workflow, WorkflowConfig
+from moose_lib import Task, TaskConfig, TaskContext, Workflow, WorkflowConfig
 from pydantic import BaseModel
 
 class Foo(BaseModel):
@@ -68,16 +68,16 @@ class Bar(BaseModel):
     greeting: str
     counter: int
 
-def run_task1(input: Foo) -> Bar:
-    greeting = f"hello, {input.name}!"
+def run_task1(ctx: TaskContext[Foo]) -> Bar:
+    greeting = f"hello, {ctx.input.name}!"
     return Bar(
-        name=input.name,
+        name=ctx.input.name,
         greeting=greeting,
         counter=1
     )
 
-def run_task2(input: Bar) -> None:
-    print(f"{input.greeting} (count: {input.counter})")
+def run_task2(ctx: TaskContext[Bar]) -> None:
+    print(f"{ctx.input.greeting} (count: {ctx.input.counter})")
 
 task1 = Task[Foo, Bar](
     name="task1",

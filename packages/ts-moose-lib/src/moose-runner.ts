@@ -16,6 +16,7 @@ if (
   process.argv[2] == "scripts"
 ) {
   register({
+    require: ["tsconfig-paths/register"],
     esm: true,
     experimentalTsImportSpecifiers: true,
     compiler: "ts-patch/compiler",
@@ -178,7 +179,10 @@ program
   .description("Run streaming functions")
   .argument("<source-topic>", "Source topic configuration as JSON")
   .argument("<function-file-path>", "Path to the function file")
-  .argument("<broker>", "Kafka broker address")
+  .argument(
+    "<broker>",
+    "Kafka broker address(es) - comma-separated for multiple brokers (e.g., 'broker1:9092, broker2:9092'). Whitespace around commas is automatically trimmed.",
+  )
   .argument("<max-subscriber-count>", "Maximum number of subscribers")
   .option("--target-topic <target-topic>", "Target topic configuration as JSON")
   .option("--sasl-username <username>", "SASL username")

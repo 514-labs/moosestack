@@ -708,7 +708,7 @@ impl<'a> DataModelVisitor<'a> {
         }
         let mut missing_fields: Vec<String> = Vec::new();
         for (column, state) in self.columns.values_mut() {
-            if !state.seen && column.required {
+            if !state.seen && column.required && column.default.is_none() {
                 let parent_path = parent_context_to_string(self.parent_context);
                 let path = add_path_component(parent_path, Either::Left(&column.name));
 

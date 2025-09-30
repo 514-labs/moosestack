@@ -104,7 +104,10 @@ def handler_with_client(moose_client):
                               str(size)))
         def do_GET(self):
             parsed_path = urlparse(self.path)
-            path_parts = parsed_path.path.lstrip('/').rstrip('/').split('/')
+            full_path = parsed_path.path.lstrip('/').rstrip('/')
+            path_parts = full_path.split('/')
+            
+            # For backward compatibility, keep the old parsing logic
             module_name = path_parts[0]
             version_from_path = "/".join(path_parts[1:]) if len(path_parts) > 1 else None
 
@@ -128,13 +131,19 @@ def handler_with_client(moose_client):
                 query_params = parse_qs(parsed_path.query)
 
                 if is_dmv2:
-                    # Use alias-aware lookup: unversioned name resolves to explicit unversioned
-                    # or the sole versioned API if exactly one exists
-                    user_api = (
-                        get_api(f"{module_name}:{version_from_path}")
-                        if version_from_path
-                        else get_api(module_name)
-                    )
+                    # First try to look up by the full path (for custom paths)
+                    user_api = get_api(full_path)
+                    
+                    # If not found by path, fall back to name:version lookup
+                    if user_api is None:
+                        # Use alias-aware lookup: unversioned name resolves to explicit unversioned
+                        # or the sole versioned API if exactly one exists
+                        user_api = (
+                            get_api(f"{module_name}:{version_from_path}")
+                            if version_from_path
+                            else get_api(module_name)
+                        )
+                    
                     if user_api is not None:
                         query_fields = convert_pydantic_definition(user_api.model_type)
                         try:
@@ -148,6 +157,7 @@ def handler_with_client(moose_client):
                         args = [moose_client, params]
                         if jwt_payload is not None:
                             args.append(jwt_payload)
+                        print(f"[API] | Executing API: {user_api.name}")
                         response = user_api.query_function(*args)
                         # Convert Pydantic model to dict before JSON serialization
                         if isinstance(response, BaseModel):

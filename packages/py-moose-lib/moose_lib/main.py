@@ -6,6 +6,7 @@ and utilities for defining data models and SQL queries.
 """
 from clickhouse_connect.driver.client import Client as ClickhouseClient
 from clickhouse_connect import get_client
+from moose_lib.dmv2 import OlapTable
 from pydantic import BaseModel
 from dataclasses import dataclass, asdict
 from enum import Enum
@@ -18,10 +19,15 @@ import asyncio
 from string import Formatter
 from temporalio.client import Client as TemporalClient, TLSConfig
 from temporalio.common import RetryPolicy, WorkflowIDConflictPolicy, WorkflowIDReusePolicy
-from datetime import timedelta
+from datetime import timedelta, datetime
+from time import perf_counter
+from humanfriendly import format_timespan
+
+from .data_models import Column
 from .config.runtime import RuntimeClickHouseConfig
 
 from moose_lib.commons import EnhancedJSONEncoder
+from .query_builder import Query
 
 
 @dataclass
@@ -179,9 +185,32 @@ class QueryClient:
     def __call__(self, input, variables):
         return self.execute(input, variables)
 
-    def execute(self, input, variables, row_type: Type[BaseModel] = None):
+    def execute(self, input: Union[str, Query], variables = None, row_type: Type[BaseModel] = None):
+        """
+        Execute a query.
+
+        - If `input` is a `Query`, do not supply `variables`.
+        - If `input` is a `str` intended for `string.Formatter` interpolation, `variables` must be a dict
+          mapping placeholder names to values.
+
+        Args:
+            input: Either a `Query` object or a `Formatter`-style SQL template string.
+            variables: Dict used to fill a `Formatter` string; must be omitted when `input` is a `Query`.
+            row_type: Optional Pydantic model class to map result rows into.
+
+        Returns:
+            A list of row dicts, or a list of `row_type` instances if provided.
+        """
+        if isinstance(input, Query):
+            if variables is not None:
+                raise ValueError("Do not supply variables when you provide Query")
+            sql, params = input.to_sql_and_params()
+            print(f"[QueryClient] | Query: {sql}")
+            return self.execute_raw(sql, params, row_type)
+
         params = {}
-        values = {}
+        values: dict[str, Any] = {}
+        preview_params = {}
 
         for i, (_, variable_name, _, _) in enumerate(Formatter().parse(input)):
             if variable_name:
@@ -190,25 +219,89 @@ class QueryClient:
                     # handling passing the value of the query string dict directly to variables
                     value = value[0]
 
-                t = 'String' if isinstance(value, str) else \
-                    'Int64' if isinstance(value, int) else \
-                        'Float64' if isinstance(value, float) else "String"  # unknown type
+                if isinstance(value, Column) or isinstance(value, OlapTable):
+                    params[variable_name] = f'{{p{i}: Identifier}}'
+                    values[f'p{i}'] = value.name
+                else:
+                    from moose_lib.utilities.sql import clickhouse_param_type_for_value
+                    ch_type = clickhouse_param_type_for_value(value)
+                    params[variable_name] = f'{{p{i}: {ch_type}}}'
+                    values[f'p{i}'] = value
+                preview_params[variable_name] = self._format_value_for_preview(value)
 
-                params[variable_name] = f'{{p{i}: {t}}}'
-                values[f'p{i}'] = value
         clickhouse_query = input.format_map(params)
+        preview_query = input.format_map(preview_params)
+        print(f"[QueryClient] | Query: {' '.join(preview_query.split())}")
+        return self.execute_raw(
+            clickhouse_query, values, row_type
+        )
 
+    def execute_raw(
+            self,
+            clickhouse_query: str,
+            parameters: Optional[dict[str, Any]],
+            row_type: Type[BaseModel] = None
+    ):
+        """
+        Uses raw clickhouse SQL syntax.
+        """
         # We are not using the result of the ping
         # but this ensures that if the clickhouse cloud service is idle, we
         # wake it up, before we send the query.
         self.ch_client.ping()
 
-        val = self.ch_client.query(clickhouse_query, values)
+        start = perf_counter()
+        val = self.ch_client.query(clickhouse_query, parameters)
+        secs = perf_counter() - start
+        if secs < 1:
+            print(f"[QueryClient] | Query completed: {secs * 1000:.0f} ms")
+        else:
+            print(f"[QueryClient] | Query completed: {format_timespan(secs)}")
 
         if row_type is None:
             return list(val.named_results())
         else:
             return list(row_type(**row) for row in val.named_results())
+
+    def _format_value_for_preview(self, value: Any) -> str:
+        """Format a Python value as a ClickHouse SQL literal for preview logging.
+
+        This does not affect execution; it's only for human-readable query logs.
+        """
+        # NULL handling
+        if value is None:
+            return 'NULL'
+
+        # Booleans (ClickHouse accepts true/false)
+        if isinstance(value, bool):
+            return 'true' if value else 'false'
+
+        # Numbers
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            return str(value)
+
+        # Strings
+        if isinstance(value, str):
+            # Escape backslashes and single quotes for ClickHouse single-quoted strings
+            escaped = value.replace('\\', '\\\\').replace("'", "\\'")
+            return f"'{escaped}'"
+
+        # DateTime
+        if isinstance(value, datetime):
+            return f"'{value.strftime('%Y-%m-%d %H:%M:%S')}'"
+
+        if isinstance(value, Column) or isinstance(value, OlapTable):
+            return value.name
+
+        # Lists / tuples (format as [item1, item2, ...])
+        if isinstance(value, (list, tuple)):
+            formatted_items = ', '.join(self._format_value_for_preview(v) for v in value)
+            return f"[{formatted_items}]"
+
+        # Fallback: stringify and single-quote
+        fallback = str(value)
+        escaped_fallback = fallback.replace('\\', '\\\\').replace("'", "\\'")
+        return f"'{escaped_fallback}'"
 
     def close(self):
         """Close the ClickHouse client connection."""
@@ -308,7 +401,7 @@ class WorkflowClient:
         dmv2_workflow = get_workflow(name)
         if dmv2_workflow is None:
             raise ValueError(f"DMv2 workflow '{name}' not found")
-            
+
         return {
             'retry_count': dmv2_workflow.config.retries or 3,
             'timeout_str': dmv2_workflow.config.timeout or "1h",
@@ -341,8 +434,6 @@ class WorkflowClient:
     def _build_workflow_args(self, name: str, input_data: Any) -> list:
         """Build workflow arguments for DMv2 workflow."""
         return [{"workflow_name": name, "execution_mode": "start"}, input_data]
-
-
 
     def parse_timeout_to_timedelta(self, timeout_str: str) -> Optional[timedelta]:
         if timeout_str == "never":

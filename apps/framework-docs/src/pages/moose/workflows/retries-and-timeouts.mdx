@@ -32,14 +32,15 @@ myworkflow = Workflow(
 
 ### Task-Level Errors and Retries
 
-For more granular control over task-level errors and retries, you can configure your individual tasks to have their own retry behavior:
+For more granular control over task-level errors and retries, you can configure your individual tasks to have their own retry behavior. 
+For workflows & tasks that may not have a predefined timeout, you may set `never` as the timeout.
 
 <TypeScript>
 ```typescript filename="app/index.ts" {5-6} copy
 import { Task, Workflow } from "@514labs/moose-lib";
 
 export const task1 = new Task<Foo, void>("task1", {
-  run: async (input: Foo) => {},
+  run: async (ctx) => {},
   retries: 1,
   timeout: "5m"
 });
@@ -54,9 +55,9 @@ export const myworkflow = new Workflow("myworkflow", {
 
 <Python>
 ```python filename="app/main.py" {8} copy
-from moose_lib import Task, TaskConfig, Workflow, WorkflowConfig
+from moose_lib import Task, TaskConfig, TaskContext, Workflow, WorkflowConfig
 
-def run_task1(input: Foo) -> None:
+def run_task1(ctx: TaskContext[Foo]) -> None:
     pass
 
 task1 = Task[Foo, None](
@@ -83,7 +84,7 @@ When configuring retries, it's important to understand how workflow-level and ta
 import { Task, Workflow } from "@514labs/moose-lib";
 
 export const task1 = new Task<Foo, void>("task1", {
-  run: async (input: Foo) => {},
+  run: async (ctx) => {},
   retries: 3,
 });
 
@@ -96,9 +97,9 @@ export const myworkflow = new Workflow("myworkflow", {
 
 <Python>
 ```python filename="app/main.py" {8,13} copy
-from moose_lib import Task, TaskConfig, Workflow, WorkflowConfig
+from moose_lib import Task, TaskConfig, TaskContext, Workflow, WorkflowConfig
 
-def run_task1(input: Foo) -> None:
+def run_task1(ctx: TaskContext[Foo]) -> None:
     pass
 
 task1 = Task[Foo, None](

@@ -68,6 +68,8 @@ pub struct TemporalConfig {
     pub temporal_scheme: Option<TemporalScheme>,
     #[serde(default = "default_temporal_version")]
     pub temporal_version: String,
+    #[serde(default = "default_temporal_region")]
+    pub temporal_region: String,
     #[serde(default = "default_admin_tools_version")]
     pub admin_tools_version: String,
     #[serde(default = "default_ui_version")]
@@ -163,6 +165,11 @@ fn default_api_key() -> String {
     "".to_string()
 }
 
+fn default_temporal_region() -> String {
+    // Default Temporal Cloud region
+    "us-west1".to_string()
+}
+
 impl TemporalConfig {
     pub fn to_env_vars(&self) -> Vec<(String, String)> {
         vec![
@@ -247,6 +254,17 @@ impl TemporalConfig {
             self.namespace.clone()
         }
     }
+
+    /// For API key auth against Temporal Cloud, construct the regional gRPC endpoint.
+    /// Example: https://us-west1.gcp.api.temporal.io:7233
+    pub fn get_temporal_api_key_endpoint(&self) -> String {
+        format!("https://{}:7233", self.get_temporal_api_key_domain())
+    }
+
+    /// The TLS domain name to use for API key auth
+    pub fn get_temporal_api_key_domain(&self) -> String {
+        format!("{}.gcp.api.temporal.io", self.temporal_region)
+    }
 }
 
 impl Default for TemporalConfig {
@@ -270,6 +288,7 @@ impl Default for TemporalConfig {
             client_key: default_client_key(),
             ca_cert: default_ca_cert(),
             api_key: default_api_key(),
+            temporal_region: default_temporal_region(),
         }
     }
 }
@@ -393,5 +412,43 @@ mod tests {
         let result = config.temporal_url_with_scheme();
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), "http://example.com:7233");
+    }
+
+    #[test]
+    fn test_get_temporal_namespace_from_tmprl_cloud_host() {
+        let config = TemporalConfig {
+            temporal_host: "b-514-demos-moose-node-app-f-main-fdf7b.mn0rx.tmprl.cloud".to_string(),
+            ..Default::default()
+        };
+        assert_eq!(
+            config.get_temporal_namespace(),
+            "b-514-demos-moose-node-app-f-main-fdf7b.mn0rx"
+        );
+    }
+
+    #[test]
+    fn test_get_temporal_namespace_falls_back_to_configured_namespace() {
+        let config = TemporalConfig {
+            namespace: "my-namespace".to_string(),
+            temporal_host: "localhost".to_string(),
+            ..Default::default()
+        };
+        assert_eq!(config.get_temporal_namespace(), "my-namespace");
+    }
+
+    #[test]
+    fn test_get_temporal_api_key_endpoint_uses_region() {
+        let config = TemporalConfig {
+            temporal_region: "us-east1".to_string(),
+            ..Default::default()
+        };
+        assert_eq!(
+            config.get_temporal_api_key_endpoint(),
+            "https://us-east1.gcp.api.temporal.io:7233"
+        );
+        assert_eq!(
+            config.get_temporal_api_key_domain(),
+            "us-east1.gcp.api.temporal.io"
+        );
     }
 }

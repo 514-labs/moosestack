@@ -139,24 +139,40 @@ const apiHandler = async (
       if (userFuncModule === undefined) {
         if (isDmv2) {
           let apiName = fileName.replace(/^\/+|\/+$/g, "");
-          let version = url.searchParams.get("version");
+          let version: string | null = null;
 
-          // Check if version is in the path (e.g., /bar/1)
-          if (!version && apiName.includes("/")) {
-            const pathParts = apiName.split("/");
-            if (pathParts.length >= 2) {
-              apiName = pathParts[0];
-              version = pathParts.slice(1).join("/");
+          // First, try to find the API by the full path (for custom paths)
+          userFuncModule = apis.get(apiName);
+
+          if (!userFuncModule) {
+            // Fall back to the old name:version parsing
+            version = url.searchParams.get("version");
+
+            // Check if version is in the path (e.g., /bar/1)
+            if (!version && apiName.includes("/")) {
+              const pathParts = apiName.split("/");
+              if (pathParts.length >= 2) {
+                // Try the full path first (it might be a custom path)
+                userFuncModule = apis.get(apiName);
+                if (!userFuncModule) {
+                  // If not found, treat it as name/version
+                  apiName = pathParts[0];
+                  version = pathParts.slice(1).join("/");
+                }
+              }
+            }
+
+            // Only do versioned lookup if we still haven't found it
+            if (!userFuncModule) {
+              if (version) {
+                const versionedKey = `${apiName}:${version}`;
+                userFuncModule = apis.get(versionedKey);
+              } else {
+                userFuncModule = apis.get(apiName);
+              }
             }
           }
 
-          // Try versioned lookup first if version is available; otherwise rely on aliasing
-          if (version) {
-            const versionedKey = `${apiName}:${version}`;
-            userFuncModule = apis.get(versionedKey);
-          } else {
-            userFuncModule = apis.get(apiName);
-          }
           if (!userFuncModule) {
             const availableApis = Array.from(apis.keys()).map((key) =>
               key.replace(":", "/"),
@@ -169,6 +185,7 @@ const apiHandler = async (
           }
 
           modulesCache.set(pathName, userFuncModule);
+          console.log(`[API] | Executing API: ${apiName}`);
         } else {
           userFuncModule = require(pathName);
           modulesCache.set(pathName, userFuncModule);

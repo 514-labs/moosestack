@@ -7,7 +7,8 @@ including their SQL statements, target tables, and dependencies.
 from typing import Any, Optional, Union, Generic, TypeVar
 from pydantic import BaseModel, ConfigDict, model_validator
 
-from moose_lib import ClickHouseEngines
+from ..blocks import ClickHouseEngines
+from ..utilities.sql import quote_identifier
 from .types import BaseTypedResource, T
 from .olap_table import OlapTable, OlapConfig
 from .sql_resource import SqlResource
@@ -94,10 +95,9 @@ class MaterializedView(SqlResource, BaseTypedResource, Generic[T]):
             raise ValueError("Target table name cannot be the same as the materialized view name")
 
         setup = [
-            f"CREATE MATERIALIZED VIEW IF NOT EXISTS {options.materialized_view_name} TO {target_table.name} AS {options.select_statement}",
-            f"INSERT INTO {target_table.name} {options.select_statement}"
+            f"CREATE MATERIALIZED VIEW IF NOT EXISTS {quote_identifier(options.materialized_view_name)} TO {quote_identifier(target_table.name)} AS {options.select_statement}",
         ]
-        teardown = [f"DROP VIEW IF EXISTS {options.materialized_view_name}"]
+        teardown = [f"DROP VIEW IF EXISTS {quote_identifier(options.materialized_view_name)}"]
 
         super().__init__(
             options.materialized_view_name,

@@ -107,7 +107,7 @@ redpanda_topic = Stream[DataModel]("TopicName", StreamConfig(
 ))
  
 # Create an ingest API endpoint
-ingest_api = IngestApi[DataModel]("post-api-route", IngestApiConfig(
+ingest_api = IngestApi[DataModel]("post-api-route", IngestConfig(
     destination=redpanda_topic,
 ))
  
@@ -221,7 +221,7 @@ analytics_api = Api[RequestParams, DataModel]("get-api-route", query_function=ha
     <StaggeredContent
       isMooseModule={true}
       title="Streaming"
-      description="Build real-time data pipelines with Kafka/Redpanda streams and transformations in code"
+      description="Build real-time data pipelines with Kafka/Redpanda streams and transformations in code."
       cta={{
         label: "Learn more",
         href: PathConfig.streaming.path,
@@ -245,7 +245,7 @@ analytics_api = Api[RequestParams, DataModel]("get-api-route", query_function=ha
     <StaggeredContent
       isMooseModule={true}
       title="Workflows"
-      description="Build ETL pipelines and task orchestration with in-memory workflow code"
+      description="Build ETL pipelines and task orchestration with in-memory workflow code."
       cta={{
         label: "Learn more",
         href: PathConfig.workflows.path,
@@ -308,7 +308,7 @@ Each module is independent and can be used on its own. You can start with one ca
     <StaggeredContent
       isMooseModule={true}
       title="Build"
-      description="Easily package up your application for deploying to production"
+      description="Easily package up your application for deploying to production."
       cta={{
         label: "Learn more",
         href: PathConfig.deploying.path,
@@ -326,7 +326,7 @@ Each module is independent and can be used on its own. You can start with one ca
     <StaggeredContent
       isMooseModule={true}
       title="Migrate"
-      description="Preview and validate infrastructure changes before deployment with detailed schema diffs, migration planning, and rollback capabilities"
+      description="Preview and validate infrastructure changes before deployment with detailed schema diffs, migration planning, and rollback capabilities."
       cta={{
         label: "Learn more",
         href: PathConfig.migrate.path,

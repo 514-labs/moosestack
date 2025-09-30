@@ -43,7 +43,10 @@ pub fn run(
             project.http_server_config.management_port.to_string(),
         );
 
-    if binary_command == "consumption-apis" || binary_command == "consumption-type-serializer" {
+    if binary_command == "consumption-apis"
+        || binary_command == "consumption-type-serializer"
+        || binary_command == "dmv2-serializer"
+    {
         command.env("TS_NODE_COMPILER", "ts-patch/compiler");
     }
 

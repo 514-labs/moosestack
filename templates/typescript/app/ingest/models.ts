@@ -3,6 +3,7 @@ import {
   Key,
   OlapTable,
   DeadLetterModel,
+  DateTime,
 } from "@514labs/moose-lib";
 
 /**
@@ -22,7 +23,7 @@ export interface Foo {
 /** Analyzed text metrics derived from Foo */
 export interface Bar {
   primaryKey: Key<string>; // From Foo.primaryKey
-  utcTimestamp: Date; // From Foo.timestamp
+  utcTimestamp: DateTime; // From Foo.timestamp
   hasText: boolean; // From Foo.optionalText?
   textLength: number; // From Foo.optionalText.length
 }

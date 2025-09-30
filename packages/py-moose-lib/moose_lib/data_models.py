@@ -147,6 +147,11 @@ class Column(BaseModel):
     default: str | None = None
     annotations: list[Tuple[str, Any]] = []
 
+    def to_expr(self):
+        # Lazy import to avoid circular dependency at import time
+        from .query_builder import ColumnRef
+        return ColumnRef(self)
+
 
 def py_type_to_column_type(t: type, mds: list[Any]) -> Tuple[bool, list[Any], DataType]:
     # handle Annotated[Optional[Annotated[...], ...]
@@ -167,7 +172,18 @@ def py_type_to_column_type(t: type, mds: list[Any]) -> Tuple[bool, list[Any], Da
             data_type = "Int"
     elif t is float:
         size = next((md for md in mds if isinstance(md, ClickhouseSize)), None)
-        if size is None or size.size == 8:
+        if size is None:
+            bit_size = next((md for md in mds if isinstance(md, str) and re.match(r'^float\d+$', md)), None)
+            if bit_size:
+                if bit_size == "float32":
+                    data_type = "Float32"
+                elif bit_size == "float64":
+                    data_type = "Float64"
+                else:
+                    raise ValueError(f'Unsupported float size "{bit_size}"')
+            else:
+                data_type = "Float64"
+        elif size.size == 8:
             data_type = "Float64"
         elif size.size == 4:
             data_type = "Float32"
@@ -219,17 +235,23 @@ def py_type_to_column_type(t: type, mds: list[Any]) -> Tuple[bool, list[Any], Da
     elif not isclass(t):
         raise ValueError(f"Unknown type {t}")
     elif issubclass(t, BaseModel):
+        columns = _to_columns(t)
+        for c in columns:
+            if c.default is not None:
+                raise ValueError(
+                    "Default in inner field. Put ClickHouseDefault in top level field."
+                )
         if any(md == "ClickHouseNamedTuple" for md in mds):
             data_type = NamedTupleType(
                 fields=[(
                     column.name,
                     column.data_type
-                ) for column in _to_columns(t)],
+                ) for column in columns],
             )
         else:
             data_type = Nested(
                 name=t.__name__,
-                columns=_to_columns(t),
+                columns=columns,
             )
     elif issubclass(t, Enum):
         values = [EnumValue(name=member.name, value=member.value) for member in t]

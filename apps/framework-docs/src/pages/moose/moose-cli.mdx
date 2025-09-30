@@ -62,6 +62,53 @@ Clears temporary data and stops development infrastructure.
 moose clean
 ```
 
+### Seed (ClickHouse)
+Seed your local ClickHouse from a remote ClickHouse instance.
+```bash
+moose seed clickhouse [--connection-string <CONNECTION_STRING>] [--table <name>] [--limit <n> | --all]
+```
+- `--connection-string`: Remote ClickHouse connection string. If omitted, the CLI uses `MOOSE_SEED_CLICKHOUSE_URL`.
+- `--table`: Seed only the specified table (default: all Moose tables).
+- `--limit`: Copy up to N rows (mutually exclusive with `--all`). Large limits are automatically batched.
+- `--all`: Copy entire table(s) in batches (mutually exclusive with `--limit`).
+
+**Connection String Format:**
+The connection string must use ClickHouse native protocol:
+```bash
+# ClickHouse native protocol (secure connection)
+clickhouse://username:password@host:9440/database
+```
+
+**Important:** 
+- The data transfer uses ClickHouse's native TCP protocol via `remoteSecure()` function. The remote ClickHouse server must have the native TCP port accessible (typically port 9440 for secure connections).
+- **Smart table matching**: The command automatically validates tables between local and remote databases. Tables that don't exist on the remote are gracefully skipped with warnings.
+- Use `--table <name>` to seed a specific table that exists in both local and remote databases.
+
+**User Experience:**
+- Progress indicator shows seeding status with spinner
+- Tables that don't exist on remote are automatically skipped with clear warnings
+- Final summary shows successful and skipped tables
+- Clean, streamlined output focused on results
+
+Notes:
+- Seeding is batched automatically for large datasets; Ctrl+C finishes the current batch gracefully.
+- Use env var fallback:
+```bash
+export MOOSE_SEED_CLICKHOUSE_URL='clickhouse://username:password@host:9440/database'
+```
+
+### Truncate
+Truncate tables or delete the last N rows from local ClickHouse tables.
+```bash
+moose truncate [TABLE[,TABLE...]] [--all] [--rows <n>]
+```
+- `TABLE[,TABLE...]`: One or more table names (comma-separated). Omit to use `--all`.
+- `--all`: Apply to all non-view tables in the current database (mutually exclusive with listing tables).
+- `--rows <n>`: Delete the last N rows per table; omit to remove all rows (TRUNCATE).
+
+Notes:
+- For `--rows`, the command uses the table ORDER BY when available; otherwise it falls back to a timestamp heuristic.
+
 ## Monitoring Commands
 
 ### Logs
@@ -123,7 +170,25 @@ moose generate migration --url https://<remote-env> --token <api-token> --save
 ```
 - Writes `./migrations/plan.yaml` and snapshots `remote_state.json` and `local_infra_map.json`
 - Omit `--save` to output to stdout without writing files
-- Requires `[features].olap = true`; execution of saved plan requires `[features].ddl_plan = true`
+- Requires these feature flags in `moose.config.toml`:
+  ```toml filename="moose.config.toml" copy
+  [features]
+  olap = true
+  ddl_plan = true
+  ```
+
+### DB Pull (External Tables)
+Refresh `EXTERNALLY_MANAGED` table definitions from a remote ClickHouse instance.
+```bash
+moose db pull --connection-string <CONNECTION_STRING> [--file-path <OUTPUT_PATH>]
+```
+- `--connection-string`: ClickHouse URL; native `clickhouse://` is auto-converted to HTTP(S). Include `?database=` or the CLI will query the current database.
+- `--file-path`: Optional override for the generated external models file (defaults to `app/externalModels.ts` or `app/external_models.py`).
+
+Notes:
+- Only tables marked `EXTERNALLY_MANAGED` in your code are refreshed.
+- The command writes a single external models file and overwrites the file on each run.
+- See the full guide: [/moose/olap/db-pull](/moose/olap/db-pull)
 
 ## Workflow Management
 

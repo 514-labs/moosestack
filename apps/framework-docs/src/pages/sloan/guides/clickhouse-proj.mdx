@@ -104,7 +104,7 @@ moose dev
 ### Get sample data
 
 ```bash filename="Terminal" copy
-moose seed clickhouse --connection-string clickhouse://explorer:@play.clickhouse.com/default --limit 100
+moose seed clickhouse --connection-string clickhouse://explorer:@play.clickhouse.com:9440/default --limit 100
 ```
 
 This will seed your local ClickHouse database with 100 rows of sample data from your remote ClickHouse database—here, the ClickHouse Playground. You can change the number of rows with the `--limit` flag.

@@ -71,6 +71,23 @@ api = IngestApi[ExampleModel]("your-api-route", IngestConfig(
 ```
 </Python>
 
+<Callout type="info" title="Optional fields with ClickHouse defaults in IngestPipeline">
+If your IngestPipeline’s schema marks a field as optional but annotates a ClickHouse default, Moose treats:
+
+- API request and Stream message: field is optional (you may omit it)
+- ClickHouse table storage: field is required with a DEFAULT clause
+
+Behavior: When the API/stream inserts into ClickHouse and the field is missing, ClickHouse sets it to the configured default value. This keeps request payloads simple while avoiding Nullable columns in storage.
+
+Example:
+<TypeScript>
+`field?: number & ClickHouseDefault<"18">` or `WithDefault<number, "18">`
+</TypeScript>
+<Python>
+`Annotated[int, clickhouse_default("18")]` (or equivalent annotation)
+</Python>
+</Callout>
+
 <Tabs items={["Valid Event", "Invalid: Missing Field", "Invalid: Bad Date"]}>
 <Tabs.Tab>
 Send a valid event - routed to the destination stream

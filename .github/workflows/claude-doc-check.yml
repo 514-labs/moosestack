@@ -1,0 +1,362 @@
+name: Claude Documentation Check
+
+on:
+  # Manual trigger only
+  workflow_dispatch:
+  
+  # Uncomment to enable automatic PR analysis
+  # pull_request:
+  #   types: [opened, synchronize, reopened]
+  #   paths:
+  #     - 'packages/ts-moose-lib/**'
+  #     - 'packages/py-moose-lib/**'
+  #     - 'apps/framework-cli/**'
+
+jobs:
+  # Initial check for changes in relevant directories
+  detect-changes:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      should_run: ${{ steps.check-changes.outputs.should_run }}
+      changed_files: ${{ steps.check-changes.outputs.changed_files }}
+      ts_moose_changed: ${{ steps.check-changes.outputs.ts_moose_changed }}
+      py_moose_changed: ${{ steps.check-changes.outputs.py_moose_changed }}
+      cli_changed: ${{ steps.check-changes.outputs.cli_changed }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get changed files
+        id: check-changes
+        run: |
+          # Determine the base reference based on the event type
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            BASE_REF="${{ github.base_ref }}"
+            echo "Running on PR, base ref: $BASE_REF"
+            git diff --name-only origin/$BASE_REF...HEAD > changed_files.txt
+          elif [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            # For manual runs, compare against main branch
+            BASE_REF="main"
+            echo "Running manually, comparing against main branch"
+            git fetch origin main:main || true
+            git diff --name-only main...HEAD > changed_files.txt 2>/dev/null || echo "" > changed_files.txt
+          else
+            # For other events, skip the workflow
+            echo "Event type '${{ github.event_name }}' not supported, skipping"
+            echo "" > changed_files.txt
+          fi
+          
+          echo "::group::📋 Changed Files"
+          cat changed_files.txt
+          echo "::endgroup::"
+          
+          # Check for changes in each component
+          TS_MOOSE_CHANGED=false
+          PY_MOOSE_CHANGED=false
+          CLI_CHANGED=false
+          
+          if grep -q "^packages/ts-moose-lib/" changed_files.txt; then
+            TS_MOOSE_CHANGED=true
+            echo "✅ TypeScript Moose Library changes detected"
+          fi
+          
+          if grep -q "^packages/py-moose-lib/" changed_files.txt; then
+            PY_MOOSE_CHANGED=true
+            echo "✅ Python Moose Library changes detected"
+          fi
+          
+          if grep -q "^apps/framework-cli/" changed_files.txt; then
+            CLI_CHANGED=true
+            echo "✅ Framework CLI changes detected"
+          fi
+          
+          # Check if any relevant files were changed
+          if [ "$TS_MOOSE_CHANGED" = true ] || [ "$PY_MOOSE_CHANGED" = true ] || [ "$CLI_CHANGED" = true ]; then
+            echo "should_run=true" >> $GITHUB_OUTPUT
+            echo "ts_moose_changed=$TS_MOOSE_CHANGED" >> $GITHUB_OUTPUT
+            echo "py_moose_changed=$PY_MOOSE_CHANGED" >> $GITHUB_OUTPUT
+            echo "cli_changed=$CLI_CHANGED" >> $GITHUB_OUTPUT
+            
+            # Output the list of changed files for the next job
+            CHANGED_FILES=$(cat changed_files.txt | tr '\n' ' ')
+            echo "changed_files=$CHANGED_FILES" >> $GITHUB_OUTPUT
+            
+            echo "::notice title=📖 Documentation Check Required::Changes detected in framework components. Documentation check will run."
+          else
+            echo "should_run=false" >> $GITHUB_OUTPUT
+            echo "ts_moose_changed=false" >> $GITHUB_OUTPUT
+            echo "py_moose_changed=false" >> $GITHUB_OUTPUT
+            echo "cli_changed=false" >> $GITHUB_OUTPUT
+            echo "changed_files=" >> $GITHUB_OUTPUT
+            echo "::notice title=⏭️ Skipping Documentation Check::No changes in framework components detected."
+          fi
+
+  # Run Claude Code to analyze documentation requirements
+  documentation-analysis:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.should_run == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout PR branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Fetch base branch
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            git fetch origin ${{ github.base_ref }}:${{ github.base_ref }}
+          else
+            git fetch origin main:main || true
+          fi
+
+      - name: Get PR diff
+        id: get-diff
+        run: |
+          # Determine base ref
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            BASE_REF="${{ github.base_ref }}"
+          else
+            BASE_REF="main"
+          fi
+          
+          # Get the detailed diff for analysis
+          git diff $BASE_REF...HEAD > pr_diff.txt
+          
+          # Also get a summary of changes
+          echo "## Summary of Changes" > pr_summary.txt
+          echo "" >> pr_summary.txt
+          
+          if [ "${{ needs.detect-changes.outputs.ts_moose_changed }}" = "true" ]; then
+            echo "### TypeScript Moose Library Changes:" >> pr_summary.txt
+            git diff --stat $BASE_REF...HEAD -- packages/ts-moose-lib/ >> pr_summary.txt
+            echo "" >> pr_summary.txt
+          fi
+          
+          if [ "${{ needs.detect-changes.outputs.py_moose_changed }}" = "true" ]; then
+            echo "### Python Moose Library Changes:" >> pr_summary.txt
+            git diff --stat $BASE_REF...HEAD -- packages/py-moose-lib/ >> pr_summary.txt
+            echo "" >> pr_summary.txt
+          fi
+          
+          if [ "${{ needs.detect-changes.outputs.cli_changed }}" = "true" ]; then
+            echo "### Framework CLI Changes:" >> pr_summary.txt
+            git diff --stat $BASE_REF...HEAD -- apps/framework-cli/ >> pr_summary.txt
+            echo "" >> pr_summary.txt
+          fi
+
+      - name: Check documentation updates
+        id: check-docs
+        run: |
+          # Determine base ref
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            BASE_REF="${{ github.base_ref }}"
+          else
+            BASE_REF="main"
+          fi
+          
+          # Check if documentation files were updated
+          DOC_UPDATED=false
+          if git diff --name-only $BASE_REF...HEAD | grep -q "^apps/framework-docs/"; then
+            DOC_UPDATED=true
+            echo "📚 Documentation files were updated in this PR"
+            
+            # Get list of updated documentation files
+            echo "## Updated Documentation Files:" > doc_updates.txt
+            git diff --name-only $BASE_REF...HEAD | grep "^apps/framework-docs/" >> doc_updates.txt
+          else
+            echo "⚠️ No documentation files were updated in this PR"
+            echo "## No Documentation Updates Found" > doc_updates.txt
+          fi
+          
+          echo "doc_updated=$DOC_UPDATED" >> $GITHUB_OUTPUT
+
+      - name: Prepare File Contents for Claude
+        id: prepare-contents
+        run: |
+          # Get PR information based on event type
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            # For PR events, use the PR context directly
+            PR_TITLE="${{ github.event.pull_request.title }}"
+            PR_BODY="${{ github.event.pull_request.body }}"
+          else
+            # For workflow_dispatch, try to get PR info from the current branch
+            # Check if we're on a branch that has an associated PR
+            CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
+            
+            # Try to extract PR info from recent commit messages or branch name
+            # This is a fallback - in workflow_dispatch, we won't have PR context
+            PR_TITLE="Manual Run on branch: $CURRENT_BRANCH"
+            
+            # Get the last few commit messages as context
+            PR_BODY=$(git log --pretty=format:"%s" -n 5 | sed 's/^/- /')
+            
+            # If running from a PR branch, try to get more context
+            if [[ "$CURRENT_BRANCH" =~ ^(feature|fix|docs|refactor)/.+ ]]; then
+              PR_TITLE="$PR_TITLE (${CURRENT_BRANCH})"
+            fi
+          fi
+          
+          # Store PR information in outputs
+          echo "pr_title<<EOF" >> $GITHUB_OUTPUT
+          echo "$PR_TITLE" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+          
+          echo "pr_body<<EOF" >> $GITHUB_OUTPUT
+          echo "$PR_BODY" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+          
+          # Read pr_summary.txt and store in output
+          if [ -f pr_summary.txt ]; then
+            echo "pr_summary<<EOF" >> $GITHUB_OUTPUT
+            cat pr_summary.txt >> $GITHUB_OUTPUT
+            echo "EOF" >> $GITHUB_OUTPUT
+          else
+            echo "pr_summary=No summary available" >> $GITHUB_OUTPUT
+          fi
+          
+          # Read doc_updates.txt and store in output
+          if [ -f doc_updates.txt ]; then
+            echo "doc_updates<<EOF" >> $GITHUB_OUTPUT
+            cat doc_updates.txt >> $GITHUB_OUTPUT
+            echo "EOF" >> $GITHUB_OUTPUT
+          else
+            echo "doc_updates=No documentation updates" >> $GITHUB_OUTPUT
+          fi
+          
+          # Read first 5000 lines of pr_diff.txt and store in output
+          if [ -f pr_diff.txt ]; then
+            echo "pr_diff<<EOF" >> $GITHUB_OUTPUT
+            head -n 5000 pr_diff.txt >> $GITHUB_OUTPUT
+            echo "EOF" >> $GITHUB_OUTPUT
+          else
+            echo "pr_diff=No diff available" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Run Claude Code Analysis
+        uses: anthropics/claude-code-action@v1
+        id: claude-analysis
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          model: claude-3-5-sonnet-20241022
+          max_tokens: 4096
+          temperature: 0.2
+          system_prompt: |
+            You are a documentation reviewer for the Moose framework. Your role is to analyze pull request changes and determine if documentation updates are required.
+            
+            The Moose framework consists of:
+            - TypeScript Moose Library (packages/ts-moose-lib/): TypeScript SDK for building data-intensive applications
+            - Python Moose Library (packages/py-moose-lib/): Python SDK for building data-intensive applications
+            - Framework CLI (apps/framework-cli/): Command-line interface for managing Moose projects
+            
+            Documentation is located in apps/framework-docs/ and includes:
+            - API documentation
+            - Getting started guides
+            - Reference documentation
+            - Migration guides
+            - Deployment guides
+            - Workflow documentation
+            
+            Your task is to:
+            1. Analyze the code changes
+            2. Determine if any changes require documentation updates
+            3. Check if corresponding documentation has been updated
+            4. Provide a detailed analysis report for the team to review
+            
+            Focus on:
+            - New features or APIs that need documentation
+            - Breaking changes that need migration guides
+            - Changed behavior that needs updated examples
+            - New configuration options that need documentation
+            - Deprecated features that need warnings
+            
+            Be specific about:
+            - Which files in the documentation need updates
+            - What specific sections need to be added or modified
+            - Example code that should be updated
+            
+            Format your response as a clear, detailed analysis report.
+          prompt: |
+            Please analyze this pull request for documentation requirements.
+            
+            ## PR Information
+            - PR Title: ${{ steps.prepare-contents.outputs.pr_title }}
+            - PR Description: ${{ steps.prepare-contents.outputs.pr_body }}
+            
+            ## Components Changed
+            - TypeScript Moose Library: ${{ needs.detect-changes.outputs.ts_moose_changed }}
+            - Python Moose Library: ${{ needs.detect-changes.outputs.py_moose_changed }}
+            - Framework CLI: ${{ needs.detect-changes.outputs.cli_changed }}
+            
+            ## Changed Files
+            ${{ needs.detect-changes.outputs.changed_files }}
+            
+            ## Documentation Status
+            Documentation files updated: ${{ steps.check-docs.outputs.doc_updated }}
+            
+            ## Summary of Changes
+            ${{ steps.prepare-contents.outputs.pr_summary }}
+            
+            ## Documentation Updates (if any)
+            ${{ steps.prepare-contents.outputs.doc_updates }}
+            
+            ## Detailed Code Changes
+            Please analyze the following diff and determine if documentation updates are needed:
+            
+            ```diff
+            ${{ steps.prepare-contents.outputs.pr_diff }}
+            ```
+            
+            Based on these changes:
+            1. Do these changes require documentation updates?
+            2. If yes, what specific documentation is missing or needs updating?
+            3. Provide actionable feedback for the PR author.
+            
+            If documentation is already properly updated, acknowledge that.
+            If no documentation changes are needed, explain why.
+            
+            Be constructive and specific in your feedback.
+
+      - name: Output Analysis Results
+        if: steps.claude-analysis.outputs.response != ''
+        run: |
+          echo "## 📖 Documentation Review by Claude"
+          echo ""
+          echo "${{ steps.claude-analysis.outputs.response }}"
+          echo ""
+          echo "---"
+          echo "Analysis complete. Check the workflow logs for details."
+
+  # Summary job to provide final status
+  documentation-check-complete:
+    needs: [detect-changes, documentation-analysis]
+    if: always()
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Summary
+        run: |
+          if [[ "${{ needs.detect-changes.outputs.should_run }}" == "false" ]]; then
+            echo "✅ No documentation check needed - no changes in framework components"
+            exit 0
+          fi
+          
+          if [[ "${{ needs.documentation-analysis.result }}" == "success" ]]; then
+            echo "✅ Documentation analysis completed successfully"
+            exit 0
+          elif [[ "${{ needs.documentation-analysis.result }}" == "failure" ]]; then
+            echo "❌ Documentation analysis failed"
+            exit 1
+          elif [[ "${{ needs.documentation-analysis.result }}" == "skipped" ]]; then
+            echo "⏭️ Documentation analysis was skipped"
+            exit 0
+          else
+            echo "⚠️ Documentation analysis status: ${{ needs.documentation-analysis.result }}"
+            exit 0
+          fi

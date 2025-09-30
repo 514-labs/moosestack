@@ -20,6 +20,33 @@ export type LowCardinality = {
   _LowCardinality?: true;
 };
 
+// ClickHouse-friendly helper aliases for clarity in user schemas
+// These are erased at compile time but guide the ClickHouse mapping logic.
+export type DateTime = Date;
+export type DateTime64<P extends number> = Date & ClickHousePrecision<P>;
+
+// Numeric convenience tags mirroring ClickHouse integer and float families
+export type Float32 = number & ClickHouseFloat<"float32">;
+export type Float64 = number & ClickHouseFloat<"float64">;
+
+export type Int8 = number & ClickHouseInt<"int8">;
+export type Int16 = number & ClickHouseInt<"int16">;
+export type Int32 = number & ClickHouseInt<"int32">;
+export type Int64 = number & ClickHouseInt<"int64">;
+
+export type UInt8 = number & ClickHouseInt<"uint8">;
+export type UInt16 = number & ClickHouseInt<"uint16">;
+export type UInt32 = number & ClickHouseInt<"uint32">;
+export type UInt64 = number & ClickHouseInt<"uint64">;
+
+// Decimal(P, S) annotation
+export type Decimal<P extends number, S extends number> = string &
+  ClickHouseDecimal<P, S>;
+
+export type ClickHouseFloat<Value extends "float32" | "float64"> = tags.Type<
+  Value extends "float32" ? "float" : "double"
+>;
+
 export type ClickHouseInt<
   Value extends
     | "int8"

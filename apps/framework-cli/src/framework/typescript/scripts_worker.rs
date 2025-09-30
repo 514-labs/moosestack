@@ -18,7 +18,7 @@ pub enum WorkerProcessError {
 
 const SCRIPTS_BIN: &str = "scripts";
 
-pub async fn start_worker(project: &Project) -> Result<Child, WorkerProcessError> {
+pub fn start_worker(project: &Project) -> Result<Child, WorkerProcessError> {
     let project_path = project.project_location.clone();
     let temporal_url = project.temporal_config.temporal_url();
     let temporal_namespace = project.temporal_config.get_temporal_namespace();

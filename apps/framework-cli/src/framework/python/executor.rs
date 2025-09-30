@@ -88,7 +88,7 @@ pub fn run_python_command(
     command: PythonCommand,
 ) -> Result<Child, std::io::Error> {
     let (get_args, library_module) = match command {
-        PythonCommand::DmV2Serializer => (Vec::<String>::new(), "moose_lib.dmv2-serializer"),
+        PythonCommand::DmV2Serializer => (Vec::<String>::new(), "moose_lib.dmv2_serializer"),
         PythonCommand::StreamingFunctionRunner { args } => {
             (args, "moose_lib.streaming.streaming_function_runner")
         }

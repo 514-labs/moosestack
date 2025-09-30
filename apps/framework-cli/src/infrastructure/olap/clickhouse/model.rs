@@ -438,7 +438,7 @@ impl ClickHouseRecord {
     }
 
     pub fn insert(&mut self, column: String, value: ClickHouseValue) {
-        self.values.insert(sanitize_column_name(column), value);
+        self.values.insert(column, value);
     }
 
     pub fn get(&self, column: &str) -> Option<&ClickHouseValue> {
@@ -483,7 +483,10 @@ pub struct ClickHouseTable {
     pub version: Option<Version>,
     pub columns: Vec<ClickHouseColumn>,
     pub order_by: Vec<String>,
+    pub partition_by: Option<String>,
     pub engine: ClickhouseEngine,
+    /// Table-level settings that can be modified with ALTER TABLE MODIFY SETTING
+    pub table_settings: Option<std::collections::HashMap<String, String>>,
 }
 
 impl ClickHouseTable {
@@ -507,10 +510,6 @@ impl ClickHouseTable {
             })
             .collect()
     }
-}
-
-pub fn sanitize_column_name(name: String) -> String {
-    name.replace([' ', '-'], "_")
 }
 
 /// Wraps a column name in backticks for safe use in ClickHouse SQL queries

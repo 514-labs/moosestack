@@ -58,7 +58,7 @@ pub async fn execute_changes(
     project: &Project,
     changes: &[OlapChange],
 ) -> Result<(), OlapChangesError> {
-    // Order changes based on dependencies
+    // Order changes based on dependencies, including database context for SQL resources
     let (teardown_plan, setup_plan) = ddl_ordering::order_olap_changes(changes)?;
 
     // Execute the ordered changes

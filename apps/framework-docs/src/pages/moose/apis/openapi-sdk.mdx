@@ -12,318 +12,91 @@ Moose automatically generates OpenAPI specifications for all your APIs, enabling
 
 ## Overview
 
-When you run `moose dev`, Moose automatically generates an OpenAPI specification file at `.moose/openapi.yaml` that includes:
+While `moose dev` is running, Moose emits an OpenAPI spec at `.moose/openapi.yaml` covering:
 
-- **All ingestion endpoints** with request/response schemas
-- **All analytics APIs** with query parameters and response types
-- **Example data** for testing and documentation
-- **Type definitions** for all data models
+- **Ingestion endpoints** with request/response schemas
+- **Analytics APIs** with query parameters and response types
 
-## Generating SDKs
+Every time you make a change to your Moose APIs, the OpenAPI spec is updated automatically.
 
-### Prerequisites
+## Generating Typed SDKs from OpenAPI
 
-1. **Install OpenAPI Generator CLI:**
-   ```bash
-   npm install -g @openapitools/openapi-generator-cli
-   ```
+You can use your preferred generator to create a client from that spec. Below are minimal, tool-agnostic examples you can copy into your project scripts.
 
-2. **Start your Moose dev server:**
-   ```bash
-   moose dev
-   ```
+### Setup
 
-3. **Locate your OpenAPI spec:**
-   The specification is automatically generated at `.moose/openapi.yaml`
+<TypeScript>
+The following example uses Kubb to generate the SDK. Kubb can be installed into your project without any dependencies on the Java runtime (unlike the OpenAPI Generator which requires Java).
 
-### TypeScript SDK Generation
+Follow the setup instructions for Kubb [here](https://kubb.dev/docs/getting-started/installation).
 
-Generate a TypeScript SDK using the fetch client:
+Then, in your project's package.json, add the following script:
+```json filename="package.json" copy
+{
+  "scripts": {
+    "generate-sdk": "kubb generate"
+  }
+}
+```
+Finally, configure the `on_reload_complete_script` hook in your `moose.config.toml`:
 
-```bash
-openapi-generator-cli generate \
-  -i .moose/openapi.yaml \
-  -g typescript-fetch \
-  -o ./generated-client
+```toml filename="moose.config.toml" copy
+[http_server_config]
+on_reload_complete_script = "npm run generate-sdk"
 ```
 
-### Python SDK Generation
+This will trigger the generation CLI command after each reload.
+</TypeScript>
 
-Generate a Python SDK:
+<Python>
+The following example uses `openapi-python-client` to generate the SDK. Follow the setup instructions here: [openapi-python-client on PyPI](https://pypi.org/project/openapi-python-client/).
 
-```bash
-openapi-generator-cli generate \
-  -i .moose/openapi.yaml \
-  -g python \
-  -o ./generated-client
+Add a generation script in your repository:
+```bash filename="scripts/generate_python_sdk.sh" copy
+#!/usr/bin/env bash
+set -euo pipefail
+openapi-python-client generate --path .moose/openapi.yaml --output ./generated/python --overwrite
 ```
 
-### JavaScript SDK Generation
-
-Generate a JavaScript SDK:
-
-```bash
-openapi-generator-cli generate \
-  -i .moose/openapi.yaml \
-  -g javascript \
-  -o ./generated-client
+Then configure Moose to run it after each dev reload:
+```toml filename="moose.config.toml" copy
+[http_server_config]
+on_reload_complete_script = "bash scripts/generate_python_sdk.sh"
 ```
 
-## Integration Examples
+This will regenerate the Python client from the live spec on every reload.
+</Python>
 
-### TypeScript Integration
+### Hooks for automatic SDK generation
+The `on_reload_complete_script` hook is available in your `moose.config.toml` file. It runs after each dev server reload when code/infra changes have been fully applied. This allows you to keep your SDKs continuously up to date as you make changes to your Moose APIs.
 
-<ToggleBlock openText="Show TypeScript Setup" closeText="Hide Details">
-```typescript filename="lib/moose-client.ts" copy
-import { DefaultApi, Configuration } from "./generated-client";
+Notes:
+- The script runs in your project root using your `$SHELL` (falls back to `/bin/sh`).
+- Paths like `.moose/openapi.yaml` and `./generated/...` are relative to the project root.
+- You can combine multiple generators with `&&` (as shown) or split into a shell script if preferred.
 
-const apiConfig = new Configuration({
-  basePath: "http://localhost:4000",
-});
-
-const mooseClient = new DefaultApi(apiConfig);
-
-export { mooseClient };
-```
-</ToggleBlock>
-
-<ToggleBlock openText="Show TypeScript Usage" closeText="Hide Details">
-```typescript filename="components/data-fetching.tsx" copy
-import { mooseClient } from "../lib/moose-client";
-
-// Type-safe API calls with full IntelliSense
-const fetchUserEvents = async () => {
-  const response = await mooseClient.ingestUserEventsPost({
-    id: "event1",
-    userId: "user1", 
-    timestamp: new Date().toISOString(),
-    action: "page_view"
-  });
-  
-  return response;
-};
-
-// Analytics API with query parameters
-const fetchAnalytics = async () => {
-  const response = await mooseClient.consumptionUserEventsGet({
-    startDate: "2024-01-01",
-    endDate: "2024-01-31",
-    limit: 100
-  });
-  
-  return response;
-};
-```
-</ToggleBlock>
-
-### Python Integration
-
-<ToggleBlock openText="Show Python Setup" closeText="Hide Details">
-```python filename="moose_client.py" copy
-from generated_client import DefaultApi, Configuration
-
-api_config = Configuration(
-    host="http://localhost:4000"
-)
-
-moose_client = DefaultApi(api_config)
-```
-</ToggleBlock>
-
-<ToggleBlock openText="Show Python Usage" closeText="Hide Details">
-```python filename="data_processing.py" copy
-from moose_client import moose_client
-from datetime import datetime
-
-# Type-safe ingestion
-def send_user_event():
-    event_data = {
-        "id": "event1",
-        "userId": "user1",
-        "timestamp": datetime.now().isoformat(),
-        "action": "page_view"
-    }
-    
-    response = moose_client.ingest_user_events_post(event_data)
-    return response
-
-# Type-safe Analytics
-def fetch_analytics():
-    response = moose_client.consumption_user_events_get(
-        start_date="2024-01-01",
-        end_date="2024-01-31", 
-        limit=100
-    )
-    return response
-```
-</ToggleBlock>
-
-## Available Generators
-
-OpenAPI Generator supports 50+ languages and frameworks. Popular options include:
-
-<Tabs items={["TypeScript", "Python", "JavaScript", "Java", "C#", "Go", "Rust"]}>
-<Tabs.Tab>
-**TypeScript**
-```bash
-openapi-generator-cli generate \
-  -i .moose/openapi.yaml \
-  -g typescript-fetch \
-  -o ./generated-client
-```
-</Tabs.Tab>
-<Tabs.Tab>
-**Python**
-```bash
-openapi-generator-cli generate \
-  -i .moose/openapi.yaml \
-  -g python \
-  -o ./generated-client
-```
-</Tabs.Tab>
-<Tabs.Tab>
-**JavaScript**
-```bash
-openapi-generator-cli generate \
-  -i .moose/openapi.yaml \
-  -g javascript \
-  -o ./generated-client
-```
-</Tabs.Tab>
-<Tabs.Tab>
-**Java**
-```bash
-openapi-generator-cli generate \
-  -i .moose/openapi.yaml \
-  -g java \
-  -o ./generated-client
-```
-</Tabs.Tab>
-<Tabs.Tab>
-**C#**
-```bash
-openapi-generator-cli generate \
-  -i .moose/openapi.yaml \
-  -g csharp \
-  -o ./generated-client
-```
-</Tabs.Tab>
-<Tabs.Tab>
-**Go**
-```bash
-openapi-generator-cli generate \
-  -i .moose/openapi.yaml \
-  -g go \
-  -o ./generated-client
-```
-</Tabs.Tab>
-<Tabs.Tab>
-**Rust**
-```bash
-openapi-generator-cli generate \
-  -i .moose/openapi.yaml \
-  -g rust \
-  -o ./generated-client
-```
-</Tabs.Tab>
-</Tabs>
-
-## When to Regenerate
-
-<Callout type="warning" title="Regenerate SDKs When:">
-- **Update data models** - Changes to your TypeScript interfaces or Python models
-- **Modify ingestion pipelines** - Adding/removing fields or changing validation rules
-- **Update analytics APIs** - Changing query parameters or response schemas
-- **Add new endpoints** - New ingestion or analytics APIs
-- **Change API configuration** - Modifying authentication, rate limiting, etc.
+<Callout type="info">
+These hooks only affect local development (`moose dev`). The reload hook runs after Moose finishes applying your changes, ensuring `.moose/openapi.yaml` is fresh before regeneration.
 </Callout>
 
+## Integration
 
-## Advanced Configuration
+Import from the output path your generator writes to (see your chosen example repo). The Moose side is unchanged: the spec lives at `.moose/openapi.yaml` during `moose dev`.
 
-### Custom Generator Options
+## Generators
 
-You can customize the generated SDK with additional options:
+Use any OpenAPI-compatible generator:
 
-```bash
-openapi-generator-cli generate \
-  -i .moose/openapi.yaml \
-  -g typescript-fetch \
-  -o ./generated-client \
-  --additional-properties=supportsES6=true,npmName=@myorg/moose-client,npmVersion=1.0.0
-```
+### TypeScript projects
+- [OpenAPI Generator (typescript-fetch)](https://github.com/OpenAPITools/openapi-generator) — mature, broad options; generates Fetch-based client
+- [Kubb](https://github.com/kubb-project/kubb) — generates types + fetch client with simple config
+- [Orval](https://orval.dev/) — flexible output (client + schemas), good DX
+- [openapi-typescript](https://github.com/openapi-ts/openapi-typescript) — generates types only (pair with your own client)
+- [swagger-typescript-api](https://github.com/acacode/swagger-typescript-api) — codegen for TS clients from OpenAPI
+- [openapi-typescript-codegen](https://github.com/ferdikoomen/openapi-typescript-codegen) — TS client + models
+- [oazapfts](https://github.com/oazapfts/oazapfts) — minimal TS client based on fetch
+- [openapi-zod-client](https://github.com/astahmer/openapi-zod-client) — Zod schema-first client generation
 
-### Multiple SDKs
-
-Generate SDKs for multiple languages in one project:
-
-```bash
-# TypeScript for frontend
-openapi-generator-cli generate \
-  -i .moose/openapi.yaml \
-  -g typescript-fetch \
-  -o ./frontend/generated-client
-
-# Python for backend services
-openapi-generator-cli generate \
-  -i .moose/openapi.yaml \
-  -g python \
-  -o ./backend/generated-client
-
-# Go for microservices
-openapi-generator-cli generate \
-  -i .moose/openapi.yaml \
-  -g go \
-  -o ./services/generated-client
-```
-
-### CI/CD Integration
-
-Automate SDK generation in your CI/CD pipeline:
-
-```yaml filename=".github/workflows/generate-sdk.yml" copy
-name: Generate SDK
-on:
-  push:
-    branches: [main]
-    paths: ['app/**', 'moose.config.toml']
-
-jobs:
-  generate-sdk:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-node@v3
-        with:
-          node-version: '18'
-      - run: npm install -g @openapitools/openapi-generator-cli
-      - run: moose dev &
-      - run: sleep 10  # Wait for server to start
-      - run: openapi-generator-cli generate -i .moose/openapi.yaml -g typescript-fetch -o ./generated-client
-      - run: git add generated-client
-      - run: git commit -m "Update generated SDK" || echo "No changes"
-      - run: git push
-```
-
-## Troubleshooting
-
-### Common Issues
-
-<Callout type="info" title="SDK Generation Issues">
-- **Server not running**: Ensure `moose dev` is running before generating SDKs
-- **Outdated spec**: Regenerate the OpenAPI spec by restarting the dev server
-- **Type conflicts**: Clear generated client directory before regenerating
-- **Network errors**: Check that the Moose server is accessible at the configured URL
-</Callout>
-
-### Validation
-
-Verify your OpenAPI spec is valid:
-
-```bash
-# Validate the OpenAPI spec
-openapi-generator-cli validate -i .moose/openapi.yaml
-
-# View the generated spec
-cat .moose/openapi.yaml
-```
+### Python projects
+- [openapi-python-client](https://pypi.org/project/openapi-python-client/) — modern typed client for OpenAPI 3.0/3.1
+- [OpenAPI Generator (python)](https://github.com/OpenAPITools/openapi-generator) — multiple Python generators (python, python-nextgen)

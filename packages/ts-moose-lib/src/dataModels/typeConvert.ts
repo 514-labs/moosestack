@@ -56,6 +56,22 @@ const throwIndexTypeError = (t: ts.Type, checker: TypeChecker): never => {
   throw new IndexType(interfaceName, signatures);
 };
 
+/** Recursively search for a property on a type, traversing intersections */
+const getPropertyDeep = (t: ts.Type, name: string): ts.Symbol | undefined => {
+  const direct = t.getProperty(name);
+  if (direct !== undefined) return direct;
+  // Intersection constituents may carry the marker symbols
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const types = (t as any).types as ts.Type[] | undefined;
+  if (Array.isArray(types)) {
+    for (const sub of types) {
+      const found = getPropertyDeep(sub, name);
+      if (found) return found;
+    }
+  }
+  return undefined;
+};
+
 const toArrayType = ([elementNullable, _, elementType]: [
   boolean,
   [string, any][],
@@ -103,7 +119,9 @@ const handleAggregated = (
 
 /** Detect ClickHouse default annotation on a type and return raw sql */
 const handleDefault = (t: ts.Type, checker: TypeChecker): string | null => {
-  const defaultSymbol = t.getProperty("_clickhouse_default");
+  // Ensure we check the non-nullable part so optionals still surface defaults
+  const nonNull = t.getNonNullableType();
+  const defaultSymbol = nonNull.getProperty("_clickhouse_default");
   if (defaultSymbol === undefined) return null;
   const defaultType = checker.getNonNullableType(
     checker.getTypeOfSymbol(defaultSymbol),
@@ -121,6 +139,24 @@ const handleNumberType = (
   checker: TypeChecker,
   fieldName: string,
 ): string => {
+  // Detect Decimal(P, S) annotation on number via ClickHouseDecimal
+  const decimalPrecisionSymbol = getPropertyDeep(t, "_clickhouse_precision");
+  const decimalScaleSymbol = getPropertyDeep(t, "_clickhouse_scale");
+  if (
+    decimalPrecisionSymbol !== undefined &&
+    decimalScaleSymbol !== undefined
+  ) {
+    const precisionType = checker.getNonNullableType(
+      checker.getTypeOfSymbol(decimalPrecisionSymbol),
+    );
+    const scaleType = checker.getNonNullableType(
+      checker.getTypeOfSymbol(decimalScaleSymbol),
+    );
+    if (precisionType.isNumberLiteral() && scaleType.isNumberLiteral()) {
+      return `Decimal(${precisionType.value}, ${scaleType.value})`;
+    }
+  }
+
   const tagSymbol = t.getProperty("typia.tag");
   if (tagSymbol === undefined) {
     return "Float";
@@ -139,6 +175,7 @@ const handleNumberType = (
         const valueTypeLiteral = checker.getTypeOfSymbol(valueSymbol);
         const numberTypeMappings = {
           float: "Float32",
+          double: "Float64",
           int8: "Int8",
           int16: "Int16",
           int32: "Int32",
@@ -185,9 +222,14 @@ const handleStringType = (
   t: ts.Type,
   checker: TypeChecker,
   fieldName: string,
+  annotations: [string, any][],
 ): string => {
   const tagSymbol = t.getProperty("typia.tag");
   if (tagSymbol === undefined) {
+    if (t.isUnion() && t.types.every((v) => v.isStringLiteral())) {
+      annotations.push(["LowCardinality", true]);
+    }
+
     return "String";
   } else {
     const typiaProps = checker.getNonNullableType(
@@ -302,6 +344,20 @@ const isRecordType = (t: ts.Type, checker: ts.TypeChecker): boolean => {
 };
 
 /**
+ * Detects a tag-like object type that only carries metadata, e.g. { _tag: ... }
+ */
+const isSingleUnderscoreMetaObject = (
+  t: ts.Type,
+  checker: ts.TypeChecker,
+): boolean => {
+  const props = checker.getPropertiesOfType(t);
+  if (props.length !== 1) return false;
+  const onlyProp = props[0];
+  const name = onlyProp.name;
+  return typeof name === "string" && name.startsWith("_");
+};
+
+/**
  * Handle Record<K, V> types and convert them to Map types
  */
 const handleRecordType = (
@@ -356,6 +412,29 @@ const isNamedTuple = (t: ts.Type, checker: ts.TypeChecker) => {
   );
 };
 
+const checkColumnHasNoDefault = (c: Column) => {
+  if (c.default !== null) {
+    throw new UnsupportedFeature(
+      "Default in inner field. Put ClickHouseDefault in top level field.",
+    );
+  }
+};
+
+const handleNested = (
+  t: ts.Type,
+  checker: ts.TypeChecker,
+  fieldName: string,
+  jwt: boolean,
+): Nested => {
+  const columns = toColumns(t, checker);
+  columns.forEach(checkColumnHasNoDefault);
+  return {
+    name: getNestedName(t, fieldName),
+    columns,
+    jwt,
+  };
+};
+
 const handleNamedTuple = (
   t: ts.Type,
   checker: ts.TypeChecker,
@@ -363,6 +442,8 @@ const handleNamedTuple = (
   return {
     fields: toColumns(t, checker).flatMap((c) => {
       if (c.name === "_clickhouse_mapped_type") return [];
+
+      checkColumnHasNoDefault(c);
       const t = c.required ? c.data_type : { nullable: c.data_type };
       return [[c.name, t]];
     }),
@@ -375,22 +456,81 @@ const tsTypeToDataType = (
   fieldName: string,
   typeName: string,
   isJwt: boolean,
+  typeNode?: ts.TypeNode,
 ): [boolean, [string, any][], DataType] => {
   const nonNull = t.getNonNullableType();
   const nullable = nonNull != t;
 
   const aggregationFunction = handleAggregated(t, checker, fieldName, typeName);
 
+  let withoutTags = nonNull;
+  // clean up intersection type tags
+  if (nonNull.isIntersection()) {
+    const nonTagTypes = nonNull.types.filter(
+      (candidate) => !isSingleUnderscoreMetaObject(candidate, checker),
+    );
+
+    if (nonTagTypes.length == 1) {
+      withoutTags = nonTagTypes[0];
+    }
+  }
+
+  // Recognize Date aliases (DateTime, DateTime64<P>) as DateTime-like
+  let datePrecisionFromNode: number | undefined = undefined;
+  if (typeNode && isTypeReferenceNode(typeNode)) {
+    const tn = typeNode.typeName;
+    const name = isIdentifier(tn) ? tn.text : tn.right.text;
+    if (name === "DateTime64") {
+      const arg = typeNode.typeArguments?.[0];
+      if (
+        arg &&
+        ts.isLiteralTypeNode(arg) &&
+        ts.isNumericLiteral(arg.literal)
+      ) {
+        datePrecisionFromNode = Number(arg.literal.text);
+      }
+    } else if (name === "DateTime") {
+      datePrecisionFromNode = undefined; // DateTime without explicit precision
+    }
+  }
+
+  const annotations: [string, any][] = [];
+
+  const typeSymbolName = nonNull.symbol?.name || t.symbol?.name;
+  const isDateLike =
+    typeSymbolName === "DateTime" ||
+    typeSymbolName === "DateTime64" ||
+    checker.isTypeAssignableTo(nonNull, dateType(checker));
+
   const dataType: DataType =
     isEnum(nonNull) ? enumConvert(nonNull)
     : isStringAnyRecord(nonNull, checker) ? "Json"
+    : isDateLike ?
+      (() => {
+        // Prefer precision from AST (DateTime64<P>) if available
+        if (datePrecisionFromNode !== undefined) {
+          return `DateTime(${datePrecisionFromNode})` as DataType;
+        }
+        // Add precision support for Date via ClickHousePrecision<P>
+        const precisionSymbol =
+          getPropertyDeep(nonNull, "_clickhouse_precision") ||
+          getPropertyDeep(t, "_clickhouse_precision");
+        if (precisionSymbol !== undefined) {
+          const precisionType = checker.getNonNullableType(
+            checker.getTypeOfSymbol(precisionSymbol),
+          );
+          if (precisionType.isNumberLiteral()) {
+            return `DateTime(${precisionType.value})` as DataType;
+          }
+        }
+        return "DateTime" as DataType;
+      })()
     : checker.isTypeAssignableTo(nonNull, checker.getStringType()) ?
-      handleStringType(nonNull, checker, fieldName)
+      handleStringType(nonNull, checker, fieldName, annotations)
     : isNumberType(nonNull, checker) ?
       handleNumberType(nonNull, checker, fieldName)
     : checker.isTypeAssignableTo(nonNull, checker.getBooleanType()) ? "Boolean"
-    : checker.isTypeAssignableTo(nonNull, dateType(checker)) ? "DateTime"
-    : checker.isArrayType(nonNull) ?
+    : checker.isArrayType(withoutTags) ?
       toArrayType(
         tsTypeToDataType(
           nonNull.getNumberIndexType()!,
@@ -398,20 +538,19 @@ const tsTypeToDataType = (
           fieldName,
           typeName,
           isJwt,
+          undefined,
         ),
       )
     : isNamedTuple(nonNull, checker) ? handleNamedTuple(nonNull, checker)
     : isRecordType(nonNull, checker) ?
       handleRecordType(nonNull, checker, fieldName, typeName, isJwt)
-    : nonNull.isClassOrInterface() || (nonNull.flags & TypeFlags.Object) !== 0 ?
-      {
-        name: getNestedName(nonNull, fieldName),
-        columns: toColumns(nonNull, checker),
-        jwt: isJwt,
-      }
+    : (
+      withoutTags.isClassOrInterface() ||
+      (withoutTags.flags & TypeFlags.Object) !== 0
+    ) ?
+      handleNested(withoutTags, checker, fieldName, isJwt)
     : nonNull == checker.getNeverType() ? throwNullType(fieldName, typeName)
     : throwUnknownType(t, fieldName, typeName);
-  const annotations: [string, any][] = [];
   if (aggregationFunction !== undefined) {
     annotations.push(["aggregationFunction", aggregationFunction]);
   }
@@ -497,6 +636,7 @@ export const toColumns = (t: ts.Type, checker: TypeChecker): Column[] => {
       prop.name,
       t.symbol?.name || "inline_type",
       isJwt,
+      node.type,
     );
 
     return {

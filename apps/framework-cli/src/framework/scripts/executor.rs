@@ -1,5 +1,6 @@
 use anyhow::Result;
 use log::info;
+use serde::Serialize;
 use sha2::{Digest, Sha256};
 use std::collections::{HashMap, HashSet};
 
@@ -12,7 +13,7 @@ use crate::infrastructure::orchestration::temporal::TemporalConfig;
 use crate::infrastructure::orchestration::temporal_client::TemporalClientManager;
 use crate::project::Project;
 use crate::utilities::constants::{
-    MOOSE_CLI_IDENTITY, PYTHON_TASK_QUEUE, TYPESCRIPT_TASK_QUEUE, WORKFLOW_TYPE,
+    MOOSE_CLI_NAME, PYTHON_TASK_QUEUE, TYPESCRIPT_TASK_QUEUE, WORKFLOW_TYPE,
 };
 use temporal_sdk_core::protos::temporal::api::common::v1::{
     Payload, Payloads, RetryPolicy, WorkflowType,
@@ -42,6 +43,13 @@ struct WorkflowExecutionParams<'a> {
     task_queue_name: &'a str,
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkflowStartInfo {
+    pub workflow_id: String,
+    pub run_id: String,
+}
+
 /// Execute a specific script
 pub(crate) async fn execute_workflow(
     temporal_config: &TemporalConfig,
@@ -49,7 +57,7 @@ pub(crate) async fn execute_workflow(
     workflow_id: &str,
     config: &WorkflowConfig,
     input: Option<String>,
-) -> Result<String, WorkflowExecutionError> {
+) -> Result<WorkflowStartInfo, WorkflowExecutionError> {
     match language {
         SupportedLanguages::Python => {
             let params = WorkflowExecutionParams {
@@ -59,8 +67,8 @@ pub(crate) async fn execute_workflow(
                 input,
                 task_queue_name: PYTHON_TASK_QUEUE,
             };
-            let run_id = execute_workflow_for_language(params, temporal_config).await?;
-            Ok(run_id)
+            let info = execute_workflow_for_language(params, temporal_config).await?;
+            Ok(info)
         }
         SupportedLanguages::Typescript => {
             let params = WorkflowExecutionParams {
@@ -70,8 +78,8 @@ pub(crate) async fn execute_workflow(
                 input,
                 task_queue_name: TYPESCRIPT_TASK_QUEUE,
             };
-            let run_id = execute_workflow_for_language(params, temporal_config).await?;
-            Ok(run_id)
+            let info = execute_workflow_for_language(params, temporal_config).await?;
+            Ok(info)
         }
     }
 }
@@ -79,7 +87,7 @@ pub(crate) async fn execute_workflow(
 async fn execute_workflow_for_language(
     params: WorkflowExecutionParams<'_>,
     temporal_config: &TemporalConfig,
-) -> Result<String, TemporalExecutionError> {
+) -> Result<WorkflowStartInfo, TemporalExecutionError> {
     let client_manager = TemporalClientManager::new_validate(params.temporal_config, true)
         .map_err(|e| TemporalExecutionError::TemporalClientError(e.to_string()))?;
 
@@ -87,9 +95,11 @@ async fn execute_workflow_for_language(
 
     info!("Using namespace: {}", namespace);
 
-    client_manager
+    let request = create_workflow_execution_request(namespace, &params)?;
+    let workflow_id = request.workflow_id.clone();
+
+    let run_id = client_manager
         .execute(|mut client| async move {
-            let request = create_workflow_execution_request(namespace, &params)?;
             info!("Starting workflow execution: {:?}", request);
             client
                 .start_workflow_execution(request)
@@ -97,7 +107,12 @@ async fn execute_workflow_for_language(
                 .map_err(|e| anyhow::Error::msg(e.to_string()))
         })
         .await
-        .map_err(|e| TemporalExecutionError::TemporalClientError(e.to_string()))
+        .map_err(|e| TemporalExecutionError::TemporalClientError(e.to_string()))?;
+
+    Ok(WorkflowStartInfo {
+        workflow_id,
+        run_id,
+    })
 }
 
 /// Automatically starts all workflows that have a schedule configured.
@@ -252,7 +267,7 @@ fn create_workflow_execution_request(
                 })
             }
         },
-        identity: MOOSE_CLI_IDENTITY.to_string(),
+        identity: MOOSE_CLI_NAME.to_string(),
         request_id: uuid::Uuid::new_v4().to_string(),
         // Allow duplicate doesn't actually allow concurrent runs of the same workflow ID
         // It allows reuse of that workflow ID after the previous run has completed

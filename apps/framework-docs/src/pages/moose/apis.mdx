@@ -127,9 +127,9 @@ class ResultData(BaseModel):
     email: str
 
 def query_function(client: MooseClient, params: QueryParams) -> list[UserData]:
-    # Query external service or custom logic
-    sql = f"SELECT * FROM user_data WHERE user_id = {params.user_id} LIMIT {params.limit}"
-    return client.query.execute(sql)
+    # Query external service or custom logic using parameter binding
+    query = "SELECT * FROM user_data WHERE user_id = {user_id} LIMIT {limit}"
+    return client.query.execute(query, {"user_id": params.user_id, "limit": params.limit})
 
 user_data_api = Api[Params, ResultData]("get-data", query_function)
 

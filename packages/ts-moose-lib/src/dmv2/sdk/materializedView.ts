@@ -2,10 +2,9 @@ import {
   ClickHouseEngines,
   createMaterializedView,
   dropView,
-  populateTable,
 } from "../../blocks/helpers";
 import { Sql, toStaticQuery } from "../../sqlHelpers";
-import { OlapTable } from "./olapTable";
+import { OlapConfig, OlapTable } from "./olapTable";
 import { SqlResource } from "./sqlResource";
 import { View } from "./view";
 import { IJsonSchemaCollection } from "typia";
@@ -108,8 +107,11 @@ export class MaterializedView<TargetTable> extends SqlResource {
           {
             orderByFields:
               options.targetTable?.orderByFields ?? options.orderByFields,
-            engine: options.targetTable?.engine ?? options.engine,
-          },
+            engine:
+              options.targetTable?.engine ??
+              options.engine ??
+              ClickHouseEngines.MergeTree,
+          } as OlapConfig<TargetTable>,
           targetSchema,
           targetColumns,
         );
@@ -128,10 +130,8 @@ export class MaterializedView<TargetTable> extends SqlResource {
           destinationTable: targetTable.name,
           select: selectStatement,
         }),
-        populateTable({
-          destinationTable: targetTable.name,
-          select: selectStatement,
-        }),
+        // Population is now handled automatically by Rust infrastructure
+        // based on table engine type and whether this is a new or updated view
       ],
       [dropView(options.materializedViewName)],
       {

@@ -2,17 +2,19 @@ use anyhow::{Error, Result};
 use log::info;
 use temporal_sdk_core_protos::temporal::api::workflowservice::v1::workflow_service_client::WorkflowServiceClient;
 use temporal_sdk_core_protos::temporal::api::workflowservice::v1::{
-    DescribeWorkflowExecutionRequest, DescribeWorkflowExecutionResponse,
-    GetWorkflowExecutionHistoryRequest, GetWorkflowExecutionHistoryResponse,
-    ListWorkflowExecutionsRequest, ListWorkflowExecutionsResponse,
-    RequestCancelWorkflowExecutionRequest, RequestCancelWorkflowExecutionResponse,
-    SignalWorkflowExecutionRequest, SignalWorkflowExecutionResponse, StartWorkflowExecutionRequest,
+    DescribeNamespaceRequest, DescribeNamespaceResponse, DescribeWorkflowExecutionRequest,
+    DescribeWorkflowExecutionResponse, GetWorkflowExecutionHistoryRequest,
+    GetWorkflowExecutionHistoryResponse, ListWorkflowExecutionsRequest,
+    ListWorkflowExecutionsResponse, RequestCancelWorkflowExecutionRequest,
+    RequestCancelWorkflowExecutionResponse, SignalWorkflowExecutionRequest,
+    SignalWorkflowExecutionResponse, StartWorkflowExecutionRequest,
     TerminateWorkflowExecutionRequest, TerminateWorkflowExecutionResponse,
 };
 use tonic::service::interceptor::InterceptedService;
 use tonic::transport::{Channel, Uri};
 
 use crate::infrastructure::orchestration::temporal::{InvalidTemporalSchemeError, TemporalConfig};
+use crate::project::Project;
 
 pub struct TemporalClientManager {
     config: TemporalConfig,
@@ -152,15 +154,21 @@ Is the Moose development server running? Start it with `moose dev`."#
             std::fs::read(ca_cert_path).map_err(|e| Error::msg(e.to_string()))?,
         );
 
-        let endpoint =
-            tonic::transport::Channel::from_shared("https://us-west1.gcp.api.temporal.io:7233")
-                .map_err(|e| Error::msg(e.to_string()))?
-                .tls_config(
-                    tonic::transport::ClientTlsConfig::new()
-                        .domain_name("us-west1.gcp.api.temporal.io")
-                        .ca_certificate(ca_certificate),
-                )
-                .map_err(|e| Error::msg(e.to_string()))?;
+        let regional_endpoint = self.config.get_temporal_api_key_endpoint();
+        let domain_name = self.config.get_temporal_api_key_domain();
+        info!(
+            "Temporal API key mode: namespace='{}', endpoint='{}'",
+            namespace, regional_endpoint
+        );
+
+        let endpoint = tonic::transport::Channel::from_shared(regional_endpoint)
+            .map_err(|e| Error::msg(e.to_string()))?
+            .tls_config(
+                tonic::transport::ClientTlsConfig::new()
+                    .domain_name(domain_name)
+                    .ca_certificate(ca_certificate),
+            )
+            .map_err(|e| Error::msg(e.to_string()))?;
 
         let interceptor = ApiKeyInterceptor {
             api_key: api_key.to_string(),
@@ -171,6 +179,56 @@ Is the Moose development server running? Start it with `moose dev`."#
 
         Ok(client)
     }
+}
+
+/// Convenience constructor to create a TemporalClientManager from a Project if workflows are enabled.
+/// Returns None when workflows are disabled or config is invalid.
+pub fn manager_from_project_if_enabled(project: &Project) -> Option<TemporalClientManager> {
+    if !project.features.workflows {
+        return None;
+    }
+    TemporalClientManager::new_validate(&project.temporal_config, true).ok()
+}
+
+/// Perform a lightweight probe against Temporal to establish/validate readiness.
+/// The `label` is embedded in the query to allow distinguishing warmup vs ready calls.
+pub async fn probe_temporal(
+    manager: &TemporalClientManager,
+    namespace: String,
+    label: &str,
+) -> Result<()> {
+    let query = format!("WorkflowType!='__{}__'", label);
+    manager
+        .execute(move |mut c| async move {
+            c.list_workflow_executions(ListWorkflowExecutionsRequest {
+                namespace,
+                query,
+                page_size: 1,
+                ..Default::default()
+            })
+            .await
+            .map(|_| ())
+        })
+        .await
+}
+
+/// Probe Temporal readiness by calling DescribeNamespace, which requires only
+/// namespace-level permissions and works with namespace-scoped API keys.
+pub async fn probe_temporal_namespace(
+    manager: &TemporalClientManager,
+    namespace: String,
+) -> Result<()> {
+    info!("Probing Temporal namespace: '{}'", namespace);
+    manager
+        .execute(move |mut c| async move {
+            c.describe_namespace(DescribeNamespaceRequest {
+                namespace,
+                ..Default::default()
+            })
+            .await
+            .map(|_| ())
+        })
+        .await
 }
 
 impl TemporalClient {
@@ -305,6 +363,22 @@ impl TemporalClient {
                 .map_err(Error::from),
             TemporalClient::WithInterceptor(client) => client
                 .get_workflow_execution_history(request)
+                .await
+                .map_err(Error::from),
+        }
+    }
+
+    pub async fn describe_namespace(
+        &mut self,
+        request: DescribeNamespaceRequest,
+    ) -> Result<tonic::Response<DescribeNamespaceResponse>> {
+        match self {
+            TemporalClient::Standard(client) => client
+                .describe_namespace(request)
+                .await
+                .map_err(Error::from),
+            TemporalClient::WithInterceptor(client) => client
+                .describe_namespace(request)
                 .await
                 .map_err(Error::from),
         }

@@ -229,7 +229,10 @@ async fn watch(
                     .await;
                     match result {
                         Ok(()) => {
-                            project.http_server_config.run_dev_ready_script().await;
+                            project
+                                .http_server_config
+                                .run_after_dev_server_reload_script()
+                                .await;
                         }
                         Err(e) => {
                             show_message!(MessageType::Error, {

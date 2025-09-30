@@ -75,11 +75,14 @@ You can also publish to streams from external applications using Kafka/Redpanda 
 See the [Kafka.js documentation](https://kafka.js.org/docs/getting-started) for more information on how to use the Kafka.js client to publish to streams.
 
 ```typescript filename="ExternalPublish.ts"
-import { Kafka } from 'kafkajs';
+import { KafkaJS } from '@confluentinc/kafka-javascript';
+const { Kafka } = KafkaJS;
 
 const kafka = new Kafka({
-  clientId: 'my-app',
-  brokers: ['localhost:19092']
+  kafkaJS: {
+    clientId: 'my-app',
+    brokers: ['localhost:19092']
+  }
 });
 
 const producer = kafka.producer();

@@ -57,25 +57,32 @@ class User(BaseModel):
 
 <TypeScript>
 ```typescript
-import { ClickHouseInt } from "@514labs/moose-lib";
+import { Int8, Int16, Int32, Int64, UInt8, UInt16, UInt32, UInt64 } from "@514labs/moose-lib";
 
 interface Metrics {
+  user_id: Int32;           // Int32
+  count: UInt64;            // UInt64
+  small_value: Int8;        // Int8
+}
+
+// Alternative: You can still use the verbose syntax if preferred
+interface MetricsVerbose {
   user_id: number & ClickHouseInt<"int32">;
   count: number & ClickHouseInt<"uint64">;
   small_value: number & ClickHouseInt<"int8">;
 }
 ```
 
-| ClickHouse Type | TypeScript | Description |
-|------|------------|--------|
-| `Int8` | `number & ClickHouseInt<"int8">` | -128 to 127 |
-| `Int16` | `number & ClickHouseInt<"int16">` | -32,768 to 32,767 |
-| `Int32` | `number & ClickHouseInt<"int32">` | -2,147,483,648 to 2,147,483,647 |
-| `Int64` | `number & ClickHouseInt<"int64">` | -9,223,372,036,854,775,808 to 9,223,372,036,854,775,807 |
-| `UInt8` | `number & ClickHouseInt<"uint8">` | 0 to 255 |
-| `UInt16` | `number & ClickHouseInt<"uint16">` | 0 to 65,535 |
-| `UInt32` | `number & ClickHouseInt<"uint32">` | 0 to 4,294,967,295 |
-| `UInt64` | `number & ClickHouseInt<"uint64">` | 0 to 18,446,744,073,709,551,615 |
+| ClickHouse Type | TypeScript (New Helper) | TypeScript (Verbose) | Description |
+|------|------------|------------|--------|
+| `Int8` | `Int8` | `number & ClickHouseInt<"int8">` | -128 to 127 |
+| `Int16` | `Int16` | `number & ClickHouseInt<"int16">` | -32,768 to 32,767 |
+| `Int32` | `Int32` | `number & ClickHouseInt<"int32">` | -2,147,483,648 to 2,147,483,647 |
+| `Int64` | `Int64` | `number & ClickHouseInt<"int64">` | -9,223,372,036,854,775,808 to 9,223,372,036,854,775,807 |
+| `UInt8` | `UInt8` | `number & ClickHouseInt<"uint8">` | 0 to 255 |
+| `UInt16` | `UInt16` | `number & ClickHouseInt<"uint16">` | 0 to 65,535 |
+| `UInt32` | `UInt32` | `number & ClickHouseInt<"uint32">` | 0 to 4,294,967,295 |
+| `UInt64` | `UInt64` | `number & ClickHouseInt<"uint64">` | 0 to 18,446,744,073,709,551,615 |
 </TypeScript>
 
 <Python>
@@ -104,14 +111,25 @@ class Metrics(BaseModel):
 
 <TypeScript>
 ```typescript
+import { Float32, Float64 } from "@514labs/moose-lib";
+import { tags } from "typia";
+
 interface SensorData {
+  temperature: Float32;                     // Float32
+  humidity: Float64;                        // Float64
+  pressure: number;                         // Default Float64
+}
+
+// Alternative: You can still use the verbose syntax if preferred
+interface SensorDataVerbose {
   temperature: number & tags.Type<"float">; // Float32
-  humidity: number;     // Float64
+  humidity: number;                         // Float64
 }
 ```
-| ClickHouse Type | TypeScript | Description |
-|-----------------|------------|---------------------|
-| `Float64`       | `number` | floating point number |
+| ClickHouse Type | TypeScript (New Helper) | TypeScript (Verbose) | Description |
+|-----------------|------------|------------|---------------------|
+| `Float32`       | `Float32` | `number & tags.Type<"float">` | 32-bit floating point |
+| `Float64`       | `Float64` or `number` | `number` | 64-bit floating point (default) |
 </TypeScript>
 
 <Python>
@@ -135,17 +153,24 @@ class SensorData(BaseModel):
 
 <TypeScript>
 ```typescript
-import { ClickHouseDecimal } from "@514labs/moose-lib";
+import { Decimal, ClickHouseDecimal } from "@514labs/moose-lib";
 
 interface FinancialData {
+  amount: Decimal<10, 2>;                     // Decimal(10,2)
+  rate: Decimal<5, 4>;                        // Decimal(5,4)
+  fee: Decimal<8, 3>;                         // Decimal(8,3)
+}
+
+// Alternative: You can still use the verbose syntax if preferred
+interface FinancialDataVerbose {
   amount: string & ClickHouseDecimal<10, 2>;  // Decimal(10,2)
   rate: string & ClickHouseDecimal<5, 4>;     // Decimal(5,4)
 }
 ```
 
-| ClickHouse Type | TypeScript | Description |
-|------|------------|---------------------|
-| `Decimal(P,S)` | `string & ClickHouseDecimal<P,S>` | Fixed-point decimal |
+| ClickHouse Type | TypeScript (New Helper) | TypeScript (Verbose) | Description |
+|------|------------|------------|---------------------|
+| `Decimal(P,S)` | `Decimal<P,S>` | `string & ClickHouseDecimal<P,S>` | Fixed-point decimal with P total digits, S decimal places |
 </TypeScript>
 
 <Python>
@@ -194,21 +219,29 @@ class User(BaseModel):
 
 <TypeScript>
 ```typescript
-import { ClickHousePrecision } from "@514labs/moose-lib";
+import { DateTime, DateTime64, ClickHousePrecision } from "@514labs/moose-lib";
 
 interface Event {
-  created_at: Date;                                    // DateTime
-  updated_at: Date & ClickHousePrecision<3>;          // DateTime(3)
-  birth_date: Date;                                    // Date
+  created_at: DateTime;                               // DateTime
+  updated_at: DateTime64<3>;                         // DateTime(3)
+  logged_at: DateTime64<6>;                          // DateTime(6) - microsecond precision
+  birth_date: Date;                                   // Date
+}
+
+// Alternative: You can still use the verbose syntax if preferred
+interface EventVerbose {
+  created_at: Date;                                   // DateTime
+  updated_at: Date & ClickHousePrecision<3>;         // DateTime(3)
+  birth_date: Date;                                   // Date
 }
 ```
 
-| ClickHouse Type | TypeScript | Description |
-|-----------------|------------|-------------|
-| `Date`          | `Date`     | Date only   |
-| `Date16`        | `Date`     | Compact date format |
-| `DateTime`      | `Date`     | Date and time |
-| `DateTime(P)`   | `Date & ClickHousePrecision<P>` | DateTime with precision |
+| ClickHouse Type | TypeScript (New Helper) | TypeScript (Verbose) | Description |
+|-----------------|------------|------------|-------------|
+| `Date`          | `Date`     | `Date`     | Date only   |
+| `Date16`        | `Date`     | `Date`     | Compact date format |
+| `DateTime`      | `DateTime` | `Date`     | Date and time |
+| `DateTime(P)`   | `DateTime64<P>` | `Date & ClickHousePrecision<P>` | DateTime with precision (P=0-9) |
 </TypeScript>
 
 <Python>
@@ -466,6 +499,20 @@ class User(BaseModel):
     age: Optional[int] = None    # Nullable
 ```
 </Python>
+
+<Callout type="info" title="ClickHouse defaults with optional fields">
+If a field is optional in your app model but you provide a ClickHouse default, Moose infers a non-nullable ClickHouse column with a DEFAULT clause.
+
+<TypeScript>
+  - Optional without default (e.g., `field?: number`) → ClickHouse Nullable type.
+  - Optional with default (e.g., `field?: number & ClickHouseDefault<"18">` or `WithDefault<number, "18">`) → non-nullable column with default `18`.
+</TypeScript>
+<Python>
+  - Optional without default → ClickHouse Nullable type.
+  - Optional with default (using `clickhouse_default("18")` in annotations) → non-nullable column with default `18`.
+</Python>
+This lets you keep optional fields at the application layer while avoiding Nullable columns in ClickHouse when a server-side default exists.
+</Callout>
 ## Table Engines
 
 Moose supports all common ClickHouse table engines:
