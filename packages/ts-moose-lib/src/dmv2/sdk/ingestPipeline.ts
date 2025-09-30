@@ -288,9 +288,9 @@ export class IngestPipeline<T> extends TypedBase<T, IngestPipelineConfig<T>> {
     }
 
     // Create ingest API if configured, requiring a stream as destination
-    const shouldCreateIngestAPI =
-      config.ingestAPI || (config.ingest && !config.ingestAPI);
-    if (shouldCreateIngestAPI) {
+    const effectiveIngestAPI =
+      config.ingestAPI !== undefined ? config.ingestAPI : config.ingest;
+    if (effectiveIngestAPI) {
       if (!this.stream) {
         throw new Error("Ingest API needs a stream to write to.");
       }
@@ -298,8 +298,8 @@ export class IngestPipeline<T> extends TypedBase<T, IngestPipelineConfig<T>> {
       const ingestConfig = {
         destination: this.stream,
         deadLetterQueue: this.deadLetterQueue,
-        ...(typeof (config.ingestAPI || config.ingest) === "object" ?
-          ((config.ingestAPI || config.ingest) as object)
+        ...(typeof effectiveIngestAPI === "object" ?
+          (effectiveIngestAPI as object)
         : {}),
         ...(config.version && { version: config.version }),
         ...(config.path && { path: config.path }),
