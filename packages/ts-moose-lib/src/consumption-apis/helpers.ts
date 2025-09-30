@@ -1,4 +1,4 @@
-import { ClickHouseClient, ResultSet } from "@clickhouse/client";
+import { ClickHouseClient, CommandResult, ResultSet } from "@clickhouse/client";
 import {
   Client as TemporalClient,
   Connection,
@@ -59,6 +59,21 @@ export class QueryClient {
     });
     const elapsedMs = performance.now() - start;
     console.log(`[QueryClient] | Query completed: ${prettyMs(elapsedMs)}`);
+    return result;
+  }
+
+  async command(sql: Sql): Promise<CommandResult> {
+    const [query, query_params] = toQuery(sql);
+
+    console.log(`[QueryClient] | Command: ${toQueryPreview(sql)}`);
+    const start = performance.now();
+    const result = await this.client.command({
+      query,
+      query_params,
+      query_id: this.query_id_prefix + randomUUID(),
+    });
+    const elapsedMs = performance.now() - start;
+    console.log(`[QueryClient] | Command completed: ${prettyMs(elapsedMs)}`);
     return result;
   }
 }
