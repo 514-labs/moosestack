@@ -1,0 +1,861 @@
+---
+authors: Dave Seleno <dave@fiveonefour.com>
+title: Bring Your Own Framework (BYOF) for Consumption APIs
+state: discussion
+---
+
+## Objective
+
+Enable MooseStack library consumers to use their own HTTP server frameworks
+(Express, Fastify, Koa, etc.) for Consumption APIs instead of being
+constrained to the built-in Node.js HTTP server. This refactor addresses the
+inflexibility of the current approach where the `Api` class (formerly
+`ConsumptionApi`) automatically instantiates and manages a Node.js HTTP
+server, limiting users to an inferior implementation rather than leveraging
+mature, battle-tested frameworks.
+
+### Goals
+
+- Provide a flexible, opt-in approach for users to bring their own HTTP framework
+- Maintain backward compatibility with the existing "batteries-included" `Api` class
+- Expose MooseStack utilities (`client`, `sql`, Temporal workflows) for use in
+  custom handlers
+- Preserve type validation capabilities in the BYOF approach
+- Focus on TypeScript implementation (Python parity to be addressed separately)
+
+### Non-Goals
+
+- Replacing or deprecating the existing `Api` class approach
+- Refactoring IngestApi in this RFD (requires separate consideration due to
+  Rust proxy complexity)
+- Addressing production deployment implications (to be revisited if needed)
+- Modifying type validation or OpenAPI generation mechanisms
+
+## User Benefit
+
+**Headline**: "Use Express, Fastify, or any HTTP framework you want with MooseStack"
+
+Users gain:
+
+1. **Freedom of choice**: Use familiar, production-ready HTTP frameworks with
+   robust ecosystems
+2. **Advanced features**: Access middleware, plugins, and features unavailable
+   in the basic built-in server
+3. **Consistency**: Integrate MooseStack into existing applications using
+   their current HTTP stack
+4. **Control**: Manage routing, authentication, error handling, and
+   observability according to their needs
+5. **No vendor lock-in**: Standard HTTP frameworks mean easier migration and
+   no proprietary server implementation
+
+## Current State Analysis
+
+### How Consumption APIs Work Today
+
+The current `Api` class
+(packages/ts-moose-lib/src/dmv2/sdk/consumptionApi.ts:40) creates consumption
+endpoints through a tightly coupled system:
+
+1. User defines an `Api` instance with a handler:
+        ```typescript
+        export const consumptionApi = new Api<QueryParams, DataModel[]>(
+          "get-api-route",
+          async ({limit = 10}: QueryParams, {client, sql}) => {
+            const result = await client.query.execute(
+              sql`SELECT * FROM ${clickhouseTable} LIMIT ${limit}`
+            );
+            return await result.json();
+          }
+        );
+        ```
+2. The CLI runs `moose-runner consumption-apis` (packages/ts-moose-lib/src/moose-runner.ts:114)
+3. `runApis()` function
+   (packages/ts-moose-lib/src/consumption-apis/runner.ts:254) instantiates:
+   - ClickHouse client
+   - Temporal client (optional)
+   - JWT public key (optional)
+   - Node.js HTTP server on port 4001 (configurable)
+4. The HTTP server:
+   - Routes requests by URL path to user-defined handlers
+   - Handles JWT authentication
+   - Parses query parameters
+   - Invokes user handlers with `ApiUtil` containing `client` and `sql`
+   - Manages module caching and hot reloading
+   - Returns JSON responses
+
+### Problems with Current Approach
+
+1. **Reinventing the wheel**: Custom HTTP routing, parameter parsing, error handling
+2. **Limited features**: No middleware, no plugin ecosystem, no advanced HTTP features
+3. **Inflexibility**: Cannot customize server behavior without modifying moose-lib
+4. **Integration friction**: Difficult to add MooseStack to existing
+   Express/Fastify apps
+5. **Authentication constraints**: JWT handling is opinionated and not customizable
+6. **Observability gaps**: Limited logging, metrics, and tracing compared to
+   mature frameworks
+
+## Design Proposal
+
+### Core Concept: Export Utilities, Not Servers
+
+Instead of MooseStack managing the HTTP server, provide utilities that users
+can call within their own framework's handlers:
+
+```typescript
+// New approach - user's Express app
+import express from 'express';
+import { getMooseClients, sql } from '@514labs/moose-lib';
+
+const app = express();
+const { clickhouse, temporal } = await getMooseClients();
+
+app.get('/api/my-data', async (req, res) => {
+  const limit = parseInt(req.query.limit as string) || 10;
+  
+  const result = await clickhouse.query.execute(
+    sql`SELECT * FROM MyTable LIMIT ${limit}`
+  );
+  
+  res.json(await result.json());
+});
+
+app.listen(3000);
+```
+
+### Proposed API Design
+
+#### 1. Client Initialization Function
+
+Export a function to initialize MooseStack clients from configuration:
+
+```typescript
+// packages/ts-moose-lib/src/clients/index.ts
+
+export interface MooseClientsConfig {
+  clickhouse: {
+    database: string;
+    host: string;
+    port: number;
+    username: string;
+    password: string;
+    useSSL?: boolean;
+  };
+  temporal?: {
+    url: string;
+    namespace: string;
+    clientCert?: string;
+    clientKey?: string;
+    apiKey?: string;
+  };
+  redis?: {
+    host?: string;
+    port?: number;
+  };
+}
+
+export interface MooseClients {
+  clickhouse: QueryClient;
+  temporal?: WorkflowClient;
+  cache?: MooseCache;
+}
+
+export async function getMooseClients(
+  config?: MooseClientsConfig
+): Promise<MooseClients> {
+  // If no config provided, read from environment or moose.config
+  const finalConfig = config ?? await loadMooseConfig();
+  
+  const clickhouseClient = getClickhouseClient(finalConfig.clickhouse);
+  const queryClient = new QueryClient(clickhouseClient, 'custom-server');
+  
+  let temporalClient;
+  if (finalConfig.temporal) {
+    temporalClient = await getTemporalClient(
+      finalConfig.temporal.url,
+      finalConfig.temporal.namespace,
+      finalConfig.temporal.clientCert,
+      finalConfig.temporal.clientKey,
+      finalConfig.temporal.apiKey,
+    );
+  }
+  
+  let cache;
+  if (finalConfig.redis) {
+    cache = await MooseCache.get(finalConfig.redis);
+  }
+  
+  return {
+    clickhouse: queryClient,
+    temporal: temporalClient ? new WorkflowClient(temporalClient) : undefined,
+    cache,
+  };
+}
+```
+
+#### 2. Preserve Existing Utilities
+
+Keep `sql`, `MooseCache`, and other utilities exportable:
+
+```typescript
+// Already exported in packages/ts-moose-lib/src/index.ts
+export { sql } from './sqlHelpers';
+export { MooseCache } from './clients/redisClient';
+export { QueryClient, WorkflowClient } from './consumption-apis/helpers';
+```
+
+#### 3. Optional Framework Helpers
+
+Provide optional middleware/helpers for popular frameworks:
+
+```typescript
+// packages/ts-moose-lib/src/frameworks/express.ts
+import { Request, Response, NextFunction } from 'express';
+import { MooseClients } from '../clients';
+
+export function mooseMiddleware(clients: MooseClients) {
+  return (req: Request, res: Response, next: NextFunction) => {
+    req.moose = {
+      client: {
+        query: clients.clickhouse,
+        workflow: clients.temporal,
+      },
+      sql,
+      cache: clients.cache,
+    };
+    next();
+  };
+}
+
+// Usage:
+// app.use(mooseMiddleware(await getMooseClients()));
+```
+
+```typescript
+// packages/ts-moose-lib/src/frameworks/fastify.ts
+import { FastifyPluginCallback } from 'fastify';
+import { MooseClients } from '../clients';
+
+export const moosePlugin: FastifyPluginCallback<{ clients: MooseClients }> = 
+  (fastify, options, done) => {
+    fastify.decorateRequest('moose', {
+      client: {
+        query: options.clients.clickhouse,
+        workflow: options.clients.temporal,
+      },
+      sql,
+      cache: options.clients.cache,
+    });
+    done();
+  };
+
+// Usage:
+// await fastify.register(moosePlugin, { clients: await getMooseClients() });
+```
+
+### Configuration Approach
+
+Users pass configuration directly, or inherit from/refer to `moose dev` configuration:
+
+```typescript
+const clients = await getMooseClients({
+  clickhouse: {
+    database: 'mydb',
+    host: 'localhost',
+    port: 9000,
+    username: 'default',
+    password: 'password',
+  },
+});
+```
+
+### Lifecycle Management with `moose dev`
+
+When users choose BYOF:
+
+1. **`moose dev` behavior**:
+   - Starts infrastructure (ClickHouse, Redpanda, Temporal, Redis)
+   - Does NOT start the consumption API server
+   - Prints message: "Run your own HTTP server to serve Consumption APIs"
+
+2. **User responsibility**:
+   - User runs their own server: `node server.js` etc.
+   - Server can run on any port (not constrained to 4001)
+
+### Backward Compatibility
+
+The existing `Api` class continues to work unchanged:
+
+```typescript
+// Old approach - still works
+export const myApi = new Api<QueryParams, ResponseData>(
+  "my-endpoint",
+  async (params, { client, sql }) => {
+    // handler logic
+  }
+);
+```
+
+The `runApis()` function in `consumption-apis/runner.ts` remains operational
+for users who prefer the batteries-included approach.
+
+### Migration Path for Users
+
+Users can incrementally adopt BYOF:
+
+**Step 1**: Keep using `Api` class (no changes)
+
+**Step 2**: Experiment with BYOF for new endpoints
+
+```typescript
+// Some endpoints use Api class
+export const legacyApi = new Api(...);
+
+// New endpoints use custom framework
+// In separate server.js file
+```
+
+**Step 3**: Fully migrate to BYOF when ready
+
+```typescript
+// Convert all Api handlers to Express/Fastify routes
+// Disable built-in server
+```
+
+### OpenAPI Documentation Considerations
+
+The current system generates OpenAPI specs from `Api` definitions. With BYOF:
+
+**Challenge**: MooseStack cannot automatically discover custom routes.
+
+**Solution Options**:
+
+1. **User provides OpenAPI spec**: Users generate their own OpenAPI docs using
+   framework tools
+2. **Hybrid approach**: Continue generating specs for `Api`-defined endpoints;
+   users supplement with their custom routes
+3. **Decorator approach**: Provide decorators/annotations users can add to
+   custom handlers for auto-doc generation
+
+```typescript
+// Example decorator approach (future work)
+import { mooseApi } from '@514labs/moose-lib';
+
+@mooseApi({
+  method: 'GET',
+  path: '/api/data',
+  params: QueryParams,
+  response: ResponseData[],
+})
+app.get('/api/data', async (req, res) => {
+  // handler
+});
+```
+
+**Recommendation for RFD**: OpenAPI generation for BYOF endpoints is deferred
+to future work. Users relying on auto-generated docs should continue using the
+`Api` class.
+
+### IngestApi Considerations
+
+IngestApi is intentionally excluded from this refactor because:
+
+1. **Rust proxy complexity**: IngestApi routes through the Rust framework-cli
+   HTTP server (port 4000) which proxies to Redpanda
+2. **Different concerns**: Ingestion involves authentication, rate limiting,
+   and streaming that are handled at the Rust layer
+3. **Tighter coupling**: The ingestion flow is more tightly integrated with
+   MooseStack infrastructure
+
+**Future work**: A separate RFD should address IngestApi BYOF capabilities,
+ensuring the ingestion and consumption patterns remain coherent and easy to
+configure together.
+
+**Important**: The configuration approach for BYOF Consumption APIs should be
+designed with awareness that IngestApi may follow a similar pattern, enabling
+users to configure both in a unified way.
+
+### Example: Full Express Integration
+
+```typescript
+// server.ts
+import express from 'express';
+import { getMooseClients, sql } from '@514labs/moose-lib';
+import { clickhouseTable } from './tables/myTable';
+
+const app = express();
+const clients = await getMooseClients();
+
+// Custom middleware for auth
+app.use(async (req, res, next) => {
+  const token = req.headers.authorization?.split(' ')[1];
+  if (!token) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  // Your custom auth logic
+  req.user = await verifyToken(token);
+  next();
+});
+
+// Custom middleware for logging
+app.use((req, res, next) => {
+  console.log(`${req.method} ${req.url}`);
+  next();
+});
+
+// Consumption endpoint using MooseStack
+app.get('/api/data', async (req, res) => {
+  try {
+    const limit = parseInt(req.query.limit as string) || 10;
+    
+    const result = await clients.clickhouse.execute(
+      sql`SELECT * FROM ${clickhouseTable} LIMIT ${limit}`
+    );
+    
+    const data = await result.json();
+    res.json(data);
+  } catch (error) {
+    console.error('Query error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Workflow trigger endpoint
+app.post('/api/workflows/:name', async (req, res) => {
+  if (!clients.temporal) {
+    return res.status(503).json({ error: 'Workflows not available' });
+  }
+  
+  const result = await clients.temporal.execute(
+    req.params.name,
+    req.body
+  );
+  
+  res.status(result.status).json(result.body);
+});
+
+app.listen(3000, () => {
+  console.log('Server running on port 3000');
+});
+```
+
+### Example: Full Fastify Integration
+
+```typescript
+// server.ts
+import Fastify from 'fastify';
+import { getMooseClients, sql } from '@514labs/moose-lib';
+import { clickhouseTable } from './tables/myTable';
+
+const fastify = Fastify({ logger: true });
+const clients = await getMooseClients();
+
+// Register custom auth plugin
+await fastify.register(import('./plugins/auth'));
+
+// Consumption endpoint
+fastify.get('/api/data', {
+  schema: {
+    querystring: {
+      type: 'object',
+      properties: {
+        limit: { type: 'number' }
+      }
+    }
+  }
+}, async (request, reply) => {
+  const limit = request.query.limit || 10;
+  
+  const result = await clients.clickhouse.execute(
+    sql`SELECT * FROM ${clickhouseTable} LIMIT ${limit}`
+  );
+  
+  return await result.json();
+});
+
+await fastify.listen({ port: 3000 });
+```
+
+## Alternatives Considered
+
+### Alternative 1: Improve Built-in Server
+
+**Approach**: Enhance the existing Node.js HTTP server with middleware
+support, better routing, etc.
+
+**Pros**:
+
+- No API changes needed
+- Maintains simplicity for basic use cases
+- Users don't need to choose/learn a framework
+
+**Cons**:
+
+- Still reinventing the wheel
+- Cannot match feature parity with mature frameworks
+- Ongoing maintenance burden
+- Doesn't solve integration with existing applications
+
+**Verdict**: Rejected. The maintenance cost and feature gap make this unsustainable.
+
+### Alternative 2: Framework Adapters Only
+
+**Approach**: Only provide framework-specific adapters, deprecate the built-in
+server entirely.
+
+**Pros**:
+
+- Forces users to battle-tested frameworks
+- Reduces maintenance burden completely
+- Clear direction
+
+**Cons**:
+
+- Breaking change for all users
+- Removes "batteries-included" simplicity
+- Steeper learning curve for newcomers
+
+**Verdict**: Rejected. Breaking backward compatibility contradicts goal of
+opt-in flexibility.
+
+## Performance Implications
+
+### Expected Improvements
+
+1. **Similar latency**: Mature frameworks like Fastify are on par with
+   the native Node.js HTTP server
+2. **Better throughput**: Optimized routing and parsing in production frameworks
+3. **Mature ecosystems**: Existing and custom middlewares improve code
+   maintainability and security
+
+### Neutral Impact
+
+1. **Client initialization**: `getMooseClients()` has same overhead as current approach
+2. **ClickHouse queries**: Query performance unchanged
+3. **Type validation**: Same typia-based validation
+
+### Negative Impact
+
+1. **Runtime Validation**: Validation with typia is not automatic in BYOF
+2. **Configuration**: Complexity of configuration and associated logic
+   increases with BYOF
+
+## Dependencies
+
+### New Dependencies
+
+**None required**. The proposal uses:
+
+- Existing ClickHouse client
+- Existing Temporal client
+- Existing validation libraries
+
+### Dependent Projects
+
+**Affected**:
+
+- `packages/ts-moose-lib`: Core changes for client export
+- `apps/framework-cli`: May need coordination for lifecycle management
+- Templates (`templates/typescript/*`): Should add BYOF examples
+- Documentation (`apps/framework-docs`): New guides needed
+
+**Not Affected**:
+
+- `packages/py-moose-lib`: Python implementation separate (future parity)
+- IngestApi: Deliberately excluded
+- Rust core: No changes to framework-cli server
+
+## Engineering Impact
+
+### Time
+
+- **Startup time**: Slightly faster if users skip built-in server initialization
+- **Test times**: Additional tests for BYOF client initialization
+
+### Maintenance
+
+- **New code**: `getMooseClients()` function and framework helpers
+- **API surface**: Small - one main function + utility exports
+
+### Testing Strategy
+
+End-to-end tests in `apps/framework-cli-e2e`:
+
+- Create Express app using `getMooseClients()`
+- Start app alongside `moose dev`
+- Query custom endpoints
+- Verify data retrieval from ClickHouse
+
+## Environments
+
+### Execution Environments
+
+- **Local development**: Primary use case, works with `moose dev`
+- **Docker**: Users containerize their own Express/Fastify apps
+- **Cloud deployment**: Users deploy to their preferred platform (AWS, GCP,
+  Azure, Vercel, etc.)
+- **Serverless**: Potentially compatible with serverless frameworks (future exploration)
+
+### Production Deployment Considerations
+
+**Deferred**: This RFD focuses on API design and local development. Production
+deployment implications (containerization, process management, configuration
+management) will be addressed separately if needed.
+
+**Initial guidance**: Users deploying BYOF should:
+
+1. Use standard containerization for their framework of choice
+2. Configure clients via environment variables
+3. Ensure ClickHouse/Temporal connectivity from their deployment environment
+
+## Best Practices
+
+### Changes to Best Practices
+
+**Current best practice**: Define `Api` instances in `app/apis/` directory
+
+**New best practice** (optional):
+
+- Define `Api` instances for simple use cases and quick prototyping
+- Create custom server file (e.g., `server.ts`) for complex applications
+- Use `getMooseClients()` in custom HTTP handlers
+- Leverage framework-specific best practices for routing, middleware, error handling
+
+### Communication
+
+- **Documentation**: New guide "Using Custom HTTP Frameworks"
+- **Examples**: Add template showing Express and Fastify integration
+- **Migration guide**: Document how to convert `Api` handlers to custom routes
+
+### Enforcement
+
+No enforcement needed - this is an opt-in feature. The `Api` class remains the
+default and recommended approach for new users.
+
+## Tutorials and Examples
+
+### Example 1: Migrating an Api Handler to Express
+
+**Before** (using `Api` class):
+
+```typescript
+// app/apis/getUsers.ts
+import { Api } from '@514labs/moose-lib';
+import { UsersTable } from '../tables/users';
+
+interface QueryParams {
+  limit?: number;
+  active?: boolean;
+}
+
+export const getUsersApi = new Api<QueryParams, User[]>(
+  'get-users',
+  async ({ limit = 10, active }, { client, sql }) => {
+    const result = await client.query.execute(
+      sql`
+        SELECT * FROM ${UsersTable}
+        ${active !== undefined ? sql`WHERE active = ${active}` : sql``}
+        LIMIT ${limit}
+      `
+    );
+    return await result.json();
+  }
+);
+```
+
+**After** (using Express):
+
+```typescript
+// server.ts
+import express from 'express';
+import { getMooseClients, sql } from '@514labs/moose-lib';
+import { UsersTable } from './tables/users';
+
+const app = express();
+const { clickhouse } = await getMooseClients();
+
+app.get('/api/get-users', async (req, res) => {
+  try {
+    const limit = parseInt(req.query.limit as string) || 10;
+    const active = req.query.active === 'true' ? true : 
+                   req.query.active === 'false' ? false : undefined;
+    
+    const result = await clickhouse.execute(
+      sql`
+        SELECT * FROM ${UsersTable}
+        ${active !== undefined ? sql`WHERE active = ${active}` : sql``}
+        LIMIT ${limit}
+      `
+    );
+    
+    res.json(await result.json());
+  } catch (error) {
+    console.error('Error fetching users:', error);
+    res.status(500).json({ error: 'Failed to fetch users' });
+  }
+});
+
+app.listen(3000);
+```
+
+### Example 2: Using with Existing Express App
+
+```typescript
+// Integrating MooseStack into an existing app
+import express from 'express';
+import { getMooseClients, sql } from '@514labs/moose-lib';
+import existingRoutes from './routes'; // Your existing routes
+
+const app = express();
+const mooseClients = await getMooseClients();
+
+// Existing routes
+app.use('/api/v1', existingRoutes);
+
+// Add MooseStack routes
+app.get('/api/analytics/users', async (req, res) => {
+  const result = await mooseClients.clickhouse.execute(
+    sql`SELECT COUNT(*) as count FROM Users`
+  );
+  res.json(await result.json());
+});
+
+app.get('/api/analytics/events', async (req, res) => {
+  const { startDate, endDate } = req.query;
+  const result = await mooseClients.clickhouse.execute(
+    sql`
+      SELECT * FROM Events 
+      WHERE timestamp BETWEEN ${startDate} AND ${endDate}
+    `
+  );
+  res.json(await result.json());
+});
+
+// Trigger workflow endpoint
+app.post('/api/workflows/:name', async (req, res) => {
+  if (!mooseClients.temporal) {
+    return res.status(503).json({ error: 'Workflows not configured' });
+  }
+  
+  const result = await mooseClients.temporal.execute(
+    req.params.name,
+    req.body
+  );
+  
+  res.status(result.status).json(result.body);
+});
+
+app.listen(3000);
+```
+
+## User Impact
+
+### User-Facing Changes
+
+**For existing users**: No changes required. The `Api` class continues to work
+exactly as before.
+
+**For users adopting BYOF**:
+
+1. New function: `getMooseClients(config?)` exported from `@514labs/moose-lib`
+2. Optional framework helpers: `mooseMiddleware()` for Express, `moosePlugin`
+   for Fastify
+3. Documentation: New guides and examples in docs
+4. Templates: New templates showing Express/Fastify integration
+
+### Rollout Plan
+
+**Phase 1: Core Implementation**
+
+- Implement `getMooseClients()` function
+- Add tests
+- Update exports in `index.ts`
+
+**Phase 2: Framework Helpers**
+
+- Create Express middleware
+- Create Fastify plugin
+- Add framework helper tests
+
+**Phase 3: Documentation & Examples**
+
+- Write "Using Custom HTTP Frameworks" guide
+- Create Express template in `templates/typescript-express/`
+- Create Fastify template in `templates/typescript-fastify/`
+- Update main README with BYOF section
+
+**Phase 4: Python Parity** (Future)
+
+- Implement similar pattern in `py-moose-lib`
+- Flask and FastAPI helpers
+
+## Questions and Discussion Topics
+
+### Open Questions
+
+1. **Configuration Precedence**: Should explicit config always override
+   environment variables, or should there be a merge strategy? For example, if
+   user provides explicit ClickHouse config but not Temporal, should we still try
+   to load Temporal from environment?
+2. **OpenAPI Generation**: Should we invest in decorator-based OpenAPI
+   generation for BYOF, or is it acceptable to only support auto-docs for
+   `Api` class? What's the user demand?
+3. **Framework Support Priority**: Which frameworks should we prioritize for
+   official helpers?
+   - Express (most popular)
+   - Fastify (high performance)
+   - Koa?
+   - Hono?
+   - NestJS?
+4. **Python Parity Timeline**: When should we implement BYOF for Python?
+   Should we wait for TypeScript feedback, or develop in parallel?
+5. **IngestApi Coordination**: Even though IngestApi refactor is separate,
+   should this RFD propose a unified configuration structure that both can
+   use? For example:
+        ```typescript
+        // moose.config.ts
+        export default {
+          servers: {
+            consumption: {
+              framework: 'express', // or 'fastify', 'custom', 'builtin'
+              port: 3000,
+            },
+            ingestion: {
+              framework: 'builtin', // for now
+              port: 4000,
+            },
+          },
+          clients: {
+            // ... client configs
+          },
+        };
+        ```
+
+### Discussion Topics for Review
+
+- **Default behavior**: Should `getMooseClients()` with no arguments fail or
+  succeed with defaults? Current proposal succeeds with environment variables,
+  but should we be more explicit?
+- **Framework helpers**: Are Express and Fastify middleware/plugins the right
+  approach, or should we provide more generic helpers?
+
+---
+
+## Implementation Checklist
+
+Once this RFD is approved, implementation will follow this checklist:
+
+- [ ] Implement `getMooseClients()` core function
+- [ ] Add configuration loading logic (env vars, moose.config.ts)
+- [ ] Create unit tests for client initialization
+- [ ] Implement Express middleware helper
+- [ ] Implement Fastify plugin helper
+- [ ] Add integration tests (Express + MooseStack)
+- [ ] Add integration tests (Fastify + MooseStack)
+- [ ] Create Express template in `templates/`
+- [ ] Create Fastify template in `templates/`
+- [ ] Write documentation guide
+- [ ] Update main README
+- [ ] Add migration guide from `Api` class to BYOF
+- [ ] Add end-to-end tests in `framework-cli-e2e`
+- [ ] Plan Python parity implementation
+
