@@ -21,7 +21,7 @@ import type {
   ConfigurationRegistry,
 } from "../../config/runtime";
 import { createHash } from "node:crypto";
-import { Logger } from "../../commons";
+import { Logger, Producer } from "../../commons";
 
 /**
  * Represents zero, one, or many values of type T.
@@ -189,7 +189,7 @@ export interface StreamConfig<T> {
 export class Stream<T> extends TypedBase<T, StreamConfig<T>> {
   defaultDeadLetterQueue?: DeadLetterQueue<T>;
   /** @internal Memoized KafkaJS producer for reusing connections across sends */
-  private _memoizedProducer?: any;
+  private _memoizedProducer?: Producer;
   /** @internal Hash of the configuration used to create the memoized Kafka producer */
   private _kafkaConfigHash?: string;
 
@@ -302,7 +302,7 @@ export class Stream<T> extends TypedBase<T, StreamConfig<T>> {
    * Gets or creates a memoized KafkaJS producer using runtime configuration.
    */
   private async getMemoizedProducer(): Promise<{
-    producer: any;
+    producer: Producer;
     kafkaConfig: RuntimeKafkaConfig;
   }> {
     // dynamic import to keep Stream objects browser compatible

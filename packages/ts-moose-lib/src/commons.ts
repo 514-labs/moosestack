@@ -5,7 +5,7 @@ import { SASLOptions } from "@confluentinc/kafka-javascript/types/kafkajs";
 const { Kafka } = KafkaJS;
 type Kafka = KafkaJS.Kafka;
 type Consumer = KafkaJS.Consumer;
-type Producer = KafkaJS.Producer;
+export type Producer = KafkaJS.Producer;
 
 /**
  * Utility function for compiler-related logging that can be disabled via environment variable.
