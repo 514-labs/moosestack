@@ -123,7 +123,7 @@ const productAnalytics = new IngestPipeline<ProductEvent>("product_analytics", {
   stream: {
     parallelism: 4,
   },
-  ingest: true,
+  ingestApi: true,
   // automatically applied to the table and stream
   lifeCycle: LifeCycle.DELETION_PROTECTED
 });
@@ -150,7 +150,7 @@ product_analytics = IngestPipeline[ProductEvent]("product_analytics", IngestPipe
     stream=StreamConfig(
         parallelism=4,
     ),
-    ingest=True,
+    ingest_api=True,
   # automatically applied to the table and stream
   life_cycle=LifeCycle.DELETION_PROTECTED
 ))

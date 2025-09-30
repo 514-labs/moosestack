@@ -179,9 +179,9 @@ const eventsPipeline = new IngestPipeline<Event>("user_events", {
 
 <Python>
 ```py filename="IngestPipeline.py" copy
-from moose_lib import IngestPipeline, IngestConfig
+from moose_lib import IngestPipeline, IngestPipelineConfig
 
-ingest_pipeline = IngestPipeline[Event]("user_events", IngestConfig(
+ingest_pipeline = IngestPipeline[Event]("user_events", IngestPipelineConfig(
     ingest_api=True,
     stream=True,
     table=True,
