@@ -193,7 +193,7 @@ interface ExampleModel {
 }
 
 const examplePipeline = new IngestPipeline<ExampleModel>("example-name", {
-  ingest: true, // Creates a REST API endpoint
+  ingestApi: true, // Creates a REST API endpoint
   stream: true, // Connects to a stream
   table: true
 });
@@ -213,7 +213,7 @@ class ExampleSchema(BaseModel):
 example_pipeline = IngestPipeline[ExampleSchema](
     name="example-name",
     config=IngestPipelineConfig(
-        ingest=True,
+        ingest_api=True,
         stream=True,
         table=True
     )
@@ -281,7 +281,7 @@ Configuration options for both high-level and low-level ingestion APIs are provi
 interface IngestPipelineConfig<T> {
   table?: boolean | OlapConfig<T>;
   stream?: boolean | Omit<StreamConfig<T>, "destination">;
-  ingest?: boolean | Omit<IngestConfig<T>, "destination">;
+  ingestApi?: boolean | Omit<IngestConfig<T>, "destination">;
   deadLetterQueue?: boolean | Omit<StreamConfig<T>, "destination">;
   version?: string;
   metadata?: {
@@ -296,7 +296,7 @@ interface IngestPipelineConfig<T> {
 class IngestPipelineConfig(BaseModel):
     table: bool | OlapConfig = True
     stream: bool | StreamConfig = True
-    ingest: bool | IngestConfig = True
+    ingest_api: bool | IngestConfig = True
     dead_letter_queue: bool | StreamConfig = True
     version: Optional[str] = None
     metadata: Optional[dict] = None
