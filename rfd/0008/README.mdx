@@ -28,7 +28,6 @@ mature, battle-tested frameworks.
 - Replacing or deprecating the existing `Api` class approach
 - Refactoring IngestApi in this RFD (requires separate consideration due to
   Rust proxy complexity)
-- Addressing production deployment implications (to be revisited if needed)
 - Modifying type validation or OpenAPI generation mechanisms
 
 ## User Benefit
@@ -576,9 +575,9 @@ End-to-end tests in `apps/framework-cli-e2e`:
 
 ### Production Deployment Considerations
 
-**Deferred**: This RFD focuses on API design and local development. Production
-deployment implications (containerization, process management, configuration
-management) will be addressed separately if needed.
+This RFD focuses on API design, local development and deployments to Boreal.
+Since deploying to Boreal uses the same path OSS users of moosestack will use,
+all current paths to production should be covered.
 
 **Initial guidance**: Users deploying BYOF should:
 
@@ -837,5 +836,7 @@ Once this RFD is approved, implementation will follow this checklist:
 - [ ] Update main README
 - [ ] Add migration guide from `Api` class to BYOF
 - [ ] Add end-to-end tests in `framework-cli-e2e`
+- [ ] `moose dev` compatibility
+- [ ] Boreal/OSS deployment compatibility
 - [ ] Plan Python parity implementation
 
