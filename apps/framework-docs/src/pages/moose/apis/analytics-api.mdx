@@ -75,11 +75,11 @@ interface SourceSchema {
   value: number;
 }
 
-export const SourcePipeline = new IngestPipeline<SourceSchema>("Source" {
-  ingest: false,
+export const SourcePipeline = new IngestPipeline<SourceSchema>("Source", {
+  ingestApi: false,
   stream: true,
   table: true,
-})
+});
 ```
 </ToggleBlock>
 

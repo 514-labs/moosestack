@@ -4,8 +4,9 @@ Ingestion Pipeline definitions for Moose Data Model v2 (dmv2).
 This module provides classes for defining and configuring complete ingestion pipelines,
 which combine tables, streams, and ingestion APIs into a single cohesive unit.
 """
+import warnings
 from typing import Any, Optional, Generic, TypeVar
-from pydantic import BaseModel
+from pydantic import BaseModel, model_validator
 
 from .types import TypedMooseResource, T
 from .olap_table import OlapTable, OlapConfig
@@ -23,7 +24,7 @@ class IngestPipelineConfig(BaseModel):
     Attributes:
         table: Configuration for the OLAP table component.
         stream: Configuration for the stream component.
-        ingest: Configuration for the ingest API component.
+        ingest_api: Configuration for the ingest API component.
         dead_letter_queue: Configuration for the dead letter queue.
         version: Optional version string applied to all created components.
         path: Optional custom path for the ingestion API endpoint.
@@ -32,12 +33,34 @@ class IngestPipelineConfig(BaseModel):
     """
     table: bool | OlapConfig = True
     stream: bool | StreamConfig = True
-    ingest: bool | IngestConfig = True
+    ingest_api: bool | IngestConfig = True
     dead_letter_queue: bool | StreamConfig = True
     version: Optional[str] = None
     path: Optional[str] = None
     metadata: Optional[dict] = None
     life_cycle: Optional[LifeCycle] = None
+    
+    # Legacy support - will be removed in future version
+    ingest: Optional[bool | IngestConfig] = None
+    
+    @model_validator(mode='before')
+    @classmethod
+    def handle_legacy_ingest_param(cls, data):
+        """Handle backwards compatibility for the deprecated 'ingest' parameter."""
+        if isinstance(data, dict) and 'ingest' in data:
+            warnings.warn(
+                "The 'ingest' parameter is deprecated and will be removed in a future version. "
+                "Please use 'ingest_api' instead.",
+                DeprecationWarning,
+                stacklevel=3
+            )
+            # If ingest_api is not explicitly set, use the ingest value
+            if 'ingest_api' not in data:
+                data['ingest_api'] = data['ingest']
+            # Remove the legacy parameter
+            data = data.copy()
+            del data['ingest']
+        return data
 
 class IngestPipeline(TypedMooseResource, Generic[T]):
     """Creates and configures a linked Table, Stream, and Ingest API pipeline.
@@ -150,11 +173,11 @@ class IngestPipeline(TypedMooseResource, Generic[T]):
                 stream_config.version = config.version
             stream_config.metadata = stream_metadata
             self.stream = Stream(name, stream_config, t=self._t)
-        if config.ingest:
+        if config.ingest_api:
             if self.stream is None:
                 raise ValueError("Ingest API needs a stream to write to.")
             ingest_config_dict = (
-                IngestConfig() if config.ingest is True else config.ingest
+                IngestConfig() if config.ingest_api is True else config.ingest_api
             ).model_dump()
             ingest_config_dict["destination"] = self.stream
             if config.version:

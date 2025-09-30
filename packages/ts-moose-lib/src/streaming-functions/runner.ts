@@ -2,7 +2,6 @@ import { Readable } from "node:stream";
 import { KafkaJS } from "@confluentinc/kafka-javascript";
 const { Kafka } = KafkaJS;
 
-// Type definitions from @confluentinc/kafka-javascript
 type Consumer = KafkaJS.Consumer;
 type Producer = KafkaJS.Producer;
 
@@ -23,7 +22,16 @@ type SASLOptions = {
 import { Buffer } from "node:buffer";
 import * as process from "node:process";
 import * as http from "node:http";
-import { cliLog } from "../commons";
+import {
+  cliLog,
+  getKafkaClient,
+  RETRY_FACTOR_PRODUCER,
+  MAX_RETRIES_PRODUCER,
+  MAX_RETRY_TIME_MS,
+  ACKs,
+  Logger,
+  logError,
+} from "../commons";
 import { Cluster } from "../cluster-utils";
 import { getStreamingFunctions } from "../dmv2/internal";
 import type { ConsumerConfig, TransformConfig } from "../dmv2";
@@ -32,36 +40,14 @@ import { jsonDateReviver } from "../utilities/json";
 const HOSTNAME = process.env.HOSTNAME;
 const AUTO_COMMIT_INTERVAL_MS = 5000;
 const PARTITIONS_CONSUMED_CONCURRENTLY = 3;
-const MAX_RETRIES = 150;
-const MAX_RETRY_TIME_MS = 1000;
-const MAX_RETRIES_PRODUCER = 150;
 const MAX_RETRIES_CONSUMER = 150;
 const SESSION_TIMEOUT_CONSUMER = 30000;
 const HEARTBEAT_INTERVAL_CONSUMER = 3000;
 const DEFAULT_MAX_STREAMING_CONCURRENCY = 100;
-const RETRY_INITIAL_TIME_MS = 100;
-// Means all replicas need to acknowledge the message
-const ACKs = -1;
 // https://github.com/apache/kafka/blob/trunk/clients/src/main/java/org/apache/kafka/common/record/AbstractRecords.java#L124
 // According to the above, the overhead should be 12 + 22 bytes - 34 bytes.
 // We put 500 to be safe.
 const KAFKAJS_BYTE_MESSAGE_OVERHEAD = 500;
-
-/**
- * Parses a comma-separated broker string into an array of valid broker addresses.
- * Handles whitespace trimming and filters out empty elements.
- *
- * @param brokerString - Comma-separated broker addresses (e.g., "broker1:9092, broker2:9092, , broker3:9092")
- * @returns Array of trimmed, non-empty broker addresses
- */
-const parseBrokerString = (brokerString: string): string[] => {
-  return brokerString
-    .split(",")
-    .map((broker) => broker.trim())
-    .filter((broker) => broker.length > 0);
-};
-
-//Dummy change
 
 /**
  * Checks if an error is a MESSAGE_TOO_LARGE error from Kafka
@@ -251,53 +237,12 @@ export interface StreamingFunctionArgs {
 }
 
 /**
- * Interface for logging functionality
- */
-interface Logger {
-  logPrefix: string;
-  log: (message: string) => void;
-  error: (message: string) => void;
-  warn: (message: string) => void;
-}
-
-const logError = (logger: Logger, e: Error): void => {
-  logger.error(e.message);
-  const stack = e.stack;
-  if (stack) {
-    logger.error(stack);
-  }
-};
-
-/**
  * Maximum number of concurrent streaming operations, configurable via environment
  */
 const MAX_STREAMING_CONCURRENCY =
   process.env.MAX_STREAMING_CONCURRENCY ?
     parseInt(process.env.MAX_STREAMING_CONCURRENCY, 10)
   : DEFAULT_MAX_STREAMING_CONCURRENCY;
-
-/**
- * Builds SASL configuration for Kafka client authentication
- */
-const buildSaslConfig = (
-  logger: Logger,
-  args: StreamingFunctionArgs,
-): SASLOptions | undefined => {
-  const mechanism = args.saslMechanism ? args.saslMechanism.toLowerCase() : "";
-  switch (mechanism) {
-    case "plain":
-    case "scram-sha-256":
-    case "scram-sha-512":
-      return {
-        mechanism: mechanism,
-        username: args.saslUsername || "",
-        password: args.saslPassword || "",
-      };
-    default:
-      logger.warn(`Unsupported SASL mechanism: ${args.saslMechanism}`);
-      return undefined;
-  }
-};
 
 /**
  * Logs metrics data to HTTP endpoint
@@ -835,9 +780,10 @@ const startConsumer = async (
  * ```
  */
 const buildLogger = (args: StreamingFunctionArgs, workerId: number): Logger => {
-  const targetLabel = args.targetTopic?.name ? ` -> ${args.targetTopic.name}` : " (consumer)";
+  const targetLabel =
+    args.targetTopic?.name ? ` -> ${args.targetTopic.name}` : " (consumer)";
   const logPrefix = `${args.sourceTopic.name}${targetLabel} (worker ${workerId})`;
-  const logger: Logger = {
+  return {
     logPrefix: logPrefix,
     log: (message: string): void => {
       console.log(`${logPrefix}: ${message}`);
@@ -849,7 +795,6 @@ const buildLogger = (args: StreamingFunctionArgs, workerId: number): Logger => {
       console.warn(`${logPrefix}: ${message}`);
     },
   };
-  return logger;
 };
 
 /**
@@ -976,31 +921,17 @@ export const runStreamingFunctions = async (
       const clientIdPrefix = HOSTNAME ? `${HOSTNAME}-` : "";
       const processId = `${clientIdPrefix}${streamingFuncId}-ts-${worker.id}`;
 
-      const brokers = parseBrokerString(args.broker);
-      if (brokers.length === 0) {
-        throw new Error(`No valid broker addresses found in: "${args.broker}"`);
-      }
-
-      const saslConfig = buildSaslConfig(logger, args);
-      const kafkaConfig = {
-        kafkaJS: {
+      const kafka = await getKafkaClient(
+        {
           clientId: processId,
-          brokers: brokers,
-          ssl: args.securityProtocol === "SASL_SSL",
-          ...(saslConfig && { sasl: saslConfig }),
-          retry: {
-            initialRetryTime: RETRY_INITIAL_TIME_MS,
-            maxRetryTime: MAX_RETRY_TIME_MS,
-            retries: MAX_RETRIES,
-          },
+          broker: args.broker,
+          securityProtocol: args.securityProtocol,
+          saslUsername: args.saslUsername,
+          saslPassword: args.saslPassword,
+          saslMechanism: args.saslMechanism,
         },
-      };
-
-      logger.log(`Creating Kafka client with brokers: ${brokers.join(", ")}`);
-      logger.log(`Security protocol: ${args.securityProtocol || "plaintext"}`);
-      logger.log(`Client ID: ${processId}`);
-
-      const kafka = new Kafka(kafkaConfig);
+        logger,
+      );
 
       const consumer: Consumer = kafka.consumer({
         kafkaJS: {

@@ -29,14 +29,14 @@ class Bar(BaseModel):
 
 
 fooModel = IngestPipeline[Foo]("Foo", IngestPipelineConfig(
-    ingest=True,
+    ingest_api=True,
     stream=True,
     table=False,
     dead_letter_queue=True
 ))
 
 barModel = IngestPipeline[Bar]("Bar", IngestPipelineConfig(
-    ingest=False,
+    ingest_api=False,
     stream=True,
     table=True,
     dead_letter_queue=True
@@ -219,49 +219,49 @@ class EdgeCases(BaseModel):
 # =======Pipeline Configurations for Test Models=========
 
 basic_types_model = IngestPipeline[BasicTypes]("BasicTypes", IngestPipelineConfig(
-    ingest=True,
+    ingest_api=True,
     stream=True,
     table=True,
     dead_letter_queue=True
 ))
 
 simple_arrays_model = IngestPipeline[SimpleArrays]("SimpleArrays", IngestPipelineConfig(
-    ingest=True,
+    ingest_api=True,
     stream=True,
     table=True,
     dead_letter_queue=True
 ))
 
 nested_objects_model = IngestPipeline[NestedObjects]("NestedObjects", IngestPipelineConfig(
-    ingest=True,
+    ingest_api=True,
     stream=True,
     table=True,
     dead_letter_queue=True
 ))
 
 arrays_of_objects_model = IngestPipeline[ArraysOfObjects]("ArraysOfObjects", IngestPipelineConfig(
-    ingest=True,
+    ingest_api=True,
     stream=True,
     table=True,
     dead_letter_queue=True
 ))
 
 deeply_nested_arrays_model = IngestPipeline[DeeplyNestedArrays]("DeeplyNestedArrays", IngestPipelineConfig(
-    ingest=True,
+    ingest_api=True,
     stream=True,
     table=True,
     dead_letter_queue=True
 ))
 
 mixed_complex_types_model = IngestPipeline[MixedComplexTypes]("MixedComplexTypes", IngestPipelineConfig(
-    ingest=True,
+    ingest_api=True,
     stream=True,
     table=True,
     dead_letter_queue=True
 ))
 
 edge_cases_model = IngestPipeline[EdgeCases]("EdgeCases", IngestPipelineConfig(
-    ingest=True,
+    ingest_api=True,
     stream=True,
     table=True,
     dead_letter_queue=True
@@ -281,7 +281,7 @@ class OptionalNestedTest(BaseModel):
     other: Optional[Annotated[str, clickhouse_default("''")]] = None
 
 optional_nested_test_model = IngestPipeline[OptionalNestedTest]("OptionalNestedTest", IngestPipelineConfig(
-    ingest=True,
+    ingest_api=True,
     stream=True,
     table=True,
     dead_letter_queue=True

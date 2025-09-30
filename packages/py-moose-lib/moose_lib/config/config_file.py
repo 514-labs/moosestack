@@ -9,6 +9,7 @@ import tomllib
 from dataclasses import dataclass
 from typing import Optional
 
+
 @dataclass
 class ClickHouseConfig:
     """ClickHouse configuration settings from moose.config.toml."""
@@ -20,11 +21,26 @@ class ClickHouseConfig:
     use_ssl: bool = False
     native_port: Optional[int] = None
 
+
+@dataclass
+class KafkaConfig:
+    """Redpanda/Kafka configuration settings from moose.config.toml."""
+    broker: str
+    message_timeout_ms: int
+    sasl_username: Optional[str] = None
+    sasl_password: Optional[str] = None
+    sasl_mechanism: Optional[str] = None
+    security_protocol: Optional[str] = None
+    namespace: Optional[str] = None
+
+
 @dataclass
 class ProjectConfig:
     """Project configuration from moose.config.toml."""
     language: str
     clickhouse_config: ClickHouseConfig
+    kafka_config: Optional[KafkaConfig] = None
+
 
 def find_config_file(start_dir: str = os.getcwd()) -> Optional[str]:
     """Find moose.config.toml by walking up directory tree.
@@ -47,6 +63,7 @@ def find_config_file(start_dir: str = os.getcwd()) -> Optional[str]:
             break
         current_dir = parent_dir
     return None
+
 
 def read_project_config() -> ProjectConfig:
     """Read and parse moose.config.toml.
@@ -74,9 +91,28 @@ def read_project_config() -> ProjectConfig:
             native_port=config_data["clickhouse_config"].get("native_port")
         )
 
+        def _parse_kafka(section_name: str) -> Optional[KafkaConfig]:
+            sec = config_data.get(section_name)
+            if sec is None:
+                return None
+            return KafkaConfig(
+                broker=sec["broker"],
+                message_timeout_ms=sec.get("message_timeout_ms", 1000),
+                sasl_username=sec.get("sasl_username"),
+                sasl_password=sec.get("sasl_password"),
+                sasl_mechanism=sec.get("sasl_mechanism"),
+                security_protocol=sec.get("security_protocol"),
+                namespace=sec.get("namespace"),
+            )
+
+        kafka_cfg = _parse_kafka("kafka_config")
+        if kafka_cfg is None:
+            kafka_cfg = _parse_kafka("redpanda_config")
+
         return ProjectConfig(
             language=config_data["language"],
-            clickhouse_config=clickhouse_config
+            clickhouse_config=clickhouse_config,
+            kafka_config=kafka_cfg,
         )
     except Exception as e:
         raise RuntimeError(f"Failed to parse moose.config.toml: {e}")
