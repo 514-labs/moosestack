@@ -14,14 +14,14 @@ import {
 
 // Pipeline to receive raw events from the Github API
 export const GhEvent = new IngestPipeline<IGhEvent>("GhEvent", {
-  ingestAPI: true,
+  ingestApi: true,
   table: true,
   stream: true,
 });
 
 // Pipeline to receive transformed events from the GhEvent pipeline
 export const RepoStarEvent = new IngestPipeline<IRepoStarEvent>("RepoStar", {
-  ingestAPI: false,
+  ingestApi: false,
   stream: true,
   table: true,
 });

@@ -38,7 +38,7 @@ export const deadLetterTable = new OlapTable<DeadLetterModel>("FooDeadLetter", {
 export const FooPipeline = new IngestPipeline<Foo>("Foo", {
   table: false, // No table; only stream raw records
   stream: true, // Buffer ingested records
-  ingestAPI: true, // POST /ingest/Foo
+  ingestApi: true, // POST /ingest/Foo
   deadLetterQueue: {
     destination: deadLetterTable,
   },
@@ -48,5 +48,5 @@ export const FooPipeline = new IngestPipeline<Foo>("Foo", {
 export const BarPipeline = new IngestPipeline<Bar>("Bar", {
   table: true, // Persist in ClickHouse table "Bar"
   stream: true, // Buffer processed records
-  ingestAPI: false, // No API; only derive from processed Foo records
+  ingestApi: false, // No API; only derive from processed Foo records
 });

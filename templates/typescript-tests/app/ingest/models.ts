@@ -39,7 +39,7 @@ export const deadLetterTable = new OlapTable<DeadLetterModel>("FooDeadLetter", {
 export const FooPipeline = new IngestPipeline<Foo>("Foo", {
   table: false, // No table; only stream raw records
   stream: true, // Buffer ingested records
-  ingestAPI: true, // POST /ingest/Foo
+  ingestApi: true, // POST /ingest/Foo
   deadLetterQueue: {
     destination: deadLetterTable,
   },
@@ -49,7 +49,7 @@ export const FooPipeline = new IngestPipeline<Foo>("Foo", {
 export const BarPipeline = new IngestPipeline<Bar>("Bar", {
   table: true, // Persist in ClickHouse table "Bar"
   stream: true, // Buffer processed records
-  ingestAPI: false, // No API; only derive from processed Foo records
+  ingestApi: false, // No API; only derive from processed Foo records
 });
 
 /** =======Comprehensive Type Testing Data Models========= */
@@ -212,7 +212,7 @@ export interface EdgeCases {
 export const BasicTypesPipeline = new IngestPipeline<BasicTypes>("BasicTypes", {
   table: true,
   stream: true,
-  ingestAPI: true,
+  ingestApi: true,
 });
 
 export const SimpleArraysPipeline = new IngestPipeline<SimpleArrays>(
@@ -220,7 +220,7 @@ export const SimpleArraysPipeline = new IngestPipeline<SimpleArrays>(
   {
     table: true,
     stream: true,
-    ingestAPI: true,
+    ingestApi: true,
   },
 );
 
@@ -229,7 +229,7 @@ export const NestedObjectsPipeline = new IngestPipeline<NestedObjects>(
   {
     table: true,
     stream: true,
-    ingestAPI: true,
+    ingestApi: true,
   },
 );
 
@@ -238,7 +238,7 @@ export const ArraysOfObjectsPipeline = new IngestPipeline<ArraysOfObjects>(
   {
     table: true,
     stream: true,
-    ingestAPI: true,
+    ingestApi: true,
   },
 );
 
@@ -246,7 +246,7 @@ export const DeeplyNestedArraysPipeline =
   new IngestPipeline<DeeplyNestedArrays>("DeeplyNestedArrays", {
     table: true,
     stream: true,
-    ingestAPI: true,
+    ingestApi: true,
   });
 
 export const MixedComplexTypesPipeline = new IngestPipeline<MixedComplexTypes>(
@@ -254,14 +254,14 @@ export const MixedComplexTypesPipeline = new IngestPipeline<MixedComplexTypes>(
   {
     table: true,
     stream: true,
-    ingestAPI: true,
+    ingestApi: true,
   },
 );
 
 export const EdgeCasesPipeline = new IngestPipeline<EdgeCases>("EdgeCases", {
   table: true,
   stream: true,
-  ingestAPI: true,
+  ingestApi: true,
 });
 
 /** =======Optional Nested Fields with ClickHouse Defaults Test========= */
@@ -283,5 +283,5 @@ export const OptionalNestedTestPipeline =
   new IngestPipeline<OptionalNestedTest>("OptionalNestedTest", {
     table: true,
     stream: true,
-    ingestAPI: true,
+    ingestApi: true,
   });

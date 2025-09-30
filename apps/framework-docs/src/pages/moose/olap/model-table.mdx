@@ -153,7 +153,7 @@ interface UserEvent {
 
 // Create a complete ingestion pipeline with a table
 const eventsPipeline = new IngestPipeline<UserEvent>("user_events", {
-  ingestAPI: true,    // Creates a REST API endpoint at POST localhost:4000/ingest/user_events
+  ingestApi: true,    // Creates a REST API endpoint at POST localhost:4000/ingest/user_events
   stream: true,    // Creates Kafka/Redpanda topic
   table: {         // Creates and configures the table named "user_events"
     orderByFields: ["id", "timestamp"]

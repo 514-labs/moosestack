@@ -56,7 +56,7 @@ interface RawData {
 }
 
 export const rawIngestionStream = new IngestPipeline<RawData>("raw_data", {
-  ingestAPI: true, // Creates an ingestion API endpoint at `POST /ingest/raw_data`
+  ingestApi: true, // Creates an ingestion API endpoint at `POST /ingest/raw_data`
   stream: true, // Buffers data between the ingestion API and the database table
   table: true // Creates an OLAP table named `raw_data`
 });
@@ -171,14 +171,14 @@ interface TransformedData {
 
 // Configure components for raw data ingestion & buffering
 const rawData = new IngestPipeline<RawData>("raw_data", {
-  ingestAPI: true,
+  ingestApi: true,
   stream: true, // Buffers data between the ingestion API and the database table
   table: false // Don't create a table for the raw data
 });
 
 // Create a table for the transformed data
 const transformedData = new IngestPipeline<TransformedData>("transformed_data", {
-  ingestAPI: false, // Don't create an ingestion API for the transformed data
+  ingestApi: false, // Don't create an ingestion API for the transformed data
   stream: true, // Create destination stream for the transformed data
   table: true // Create a table for the transformed data
 });
@@ -353,7 +353,7 @@ interface FinalData {
 // Create the first pipeline for raw data ingestion
 // Only create an API and a stream (no table) since we're ingesting the raw data
 const rawData = new IngestPipeline<RawData>("raw_data", {
-  ingestAPI: true,   // Enable HTTP ingestion endpoint
+  ingestApi: true,   // Enable HTTP ingestion endpoint
   stream: true,   // Create a stream to buffer data
   table: false    // Don't store raw data in a table
 });
@@ -370,7 +370,7 @@ rawData.stream.addTransform(intermediateStream, (record) => ({
 
 // Create the final pipeline that will store the fully transformed data
 const finalData = new IngestPipeline<FinalData>("final_stream", {
-  ingestAPI: false,  // No direct ingestion to this pipeline
+  ingestApi: false,  // No direct ingestion to this pipeline
   stream: true,   // Create a stream for processing
   table: true     // Store final results in a table
 });
