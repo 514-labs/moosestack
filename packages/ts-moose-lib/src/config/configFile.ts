@@ -44,11 +44,12 @@ export interface KafkaConfig {
 export interface ProjectConfig {
   language: string;
   clickhouse_config: ClickHouseConfig;
+  redpanda_config?: KafkaConfig;
   /**
-   * Redpanda/Kafka configuration. Historically named `kafka_config` in some places.
+   * Redpanda/Kafka configuration. Previously named `redpanda_config` in some places.
    * Prefer `kafka_config` but support both for backward compatibility.
    */
-  redpanda_config?: KafkaConfig;
+
   kafka_config?: KafkaConfig;
 }
 

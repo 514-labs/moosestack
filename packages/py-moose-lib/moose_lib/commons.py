@@ -104,11 +104,11 @@ class EnhancedJSONEncoder(json.JSONEncoder):
 
 
 def _build_kafka_kwargs(
-    broker: Union[str, list[str]],
-    sasl_username: Optional[str] = None,
-    sasl_password: Optional[str] = None,
-    sasl_mechanism: Optional[str] = None,
-    security_protocol: Optional[str] = None,
+        broker: Union[str, list[str]],
+        sasl_username: Optional[str] = None,
+        sasl_password: Optional[str] = None,
+        sasl_mechanism: Optional[str] = None,
+        security_protocol: Optional[str] = None,
 ) -> dict[str, Any]:
     """Builds common Kafka client kwargs from provided parameters."""
     kwargs: dict[str, Any] = {
@@ -126,16 +126,16 @@ def _build_kafka_kwargs(
 
 
 def get_kafka_consumer(
-    *,
-    broker: Union[str, list[str]],
-    client_id: str,
-    group_id: str,
-    sasl_username: Optional[str] = None,
-    sasl_password: Optional[str] = None,
-    sasl_mechanism: Optional[str] = None,
-    security_protocol: Optional[str] = None,
-    value_deserializer=lambda m: json.loads(m.decode("utf-8")),
-    **extra_kwargs: Any,
+        *,
+        broker: Union[str, list[str]],
+        client_id: str,
+        group_id: str,
+        sasl_username: Optional[str] = None,
+        sasl_password: Optional[str] = None,
+        sasl_mechanism: Optional[str] = None,
+        security_protocol: Optional[str] = None,
+        value_deserializer=lambda m: json.loads(m.decode("utf-8")),
+        **extra_kwargs: Any,
 ) -> KafkaConsumer:
     """Creates a configured KafkaConsumer with optional SASL/security settings."""
     kwargs = _build_kafka_kwargs(
@@ -155,21 +155,17 @@ def get_kafka_consumer(
 
 
 def get_kafka_producer(
-    *,
-    broker: Union[str, list[str]],
-    sasl_username: Optional[str] = None,
-    sasl_password: Optional[str] = None,
-    sasl_mechanism: Optional[str] = None,
-    security_protocol: Optional[str] = None,
-    max_request_size: Optional[int] = None,
-    set_no_sasl_defaults: bool = True,
-    value_serializer: Optional[Callable[[Any], bytes]] = None,
-    **extra_kwargs: Any,
+        *,
+        broker: Union[str, list[str]],
+        sasl_username: Optional[str] = None,
+        sasl_password: Optional[str] = None,
+        sasl_mechanism: Optional[str] = None,
+        security_protocol: Optional[str] = None,
+        max_request_size: Optional[int] = None,
+        value_serializer: Optional[Callable[[Any], bytes]] = None,
+        **extra_kwargs: Any,
 ) -> KafkaProducer:
     """Creates a configured KafkaProducer with optional SASL/security settings.
-
-    If no SASL is configured and set_no_sasl_defaults is True, sets
-    max_in_flight_requests_per_connection=1 for safer ordering.
     """
     kwargs = _build_kafka_kwargs(
         broker,
@@ -180,8 +176,7 @@ def get_kafka_producer(
     )
     if max_request_size is not None:
         kwargs["max_request_size"] = max_request_size
-    if not sasl_mechanism and set_no_sasl_defaults:
-        kwargs["max_in_flight_requests_per_connection"] = 1
+    kwargs["max_in_flight_requests_per_connection"] = 1
     if value_serializer is not None:
         kwargs["value_serializer"] = value_serializer
     # Allow callers to pass through additional Kafka configs like linger_ms, acks, retries, etc.
