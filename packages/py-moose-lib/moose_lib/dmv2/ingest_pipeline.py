@@ -54,11 +54,12 @@ class IngestPipelineConfig(BaseModel):
                 DeprecationWarning,
                 stacklevel=3
             )
+            # Make a copy first to avoid mutating the original dictionary
+            data = data.copy()
             # If ingest_api is not explicitly set, use the ingest value
             if 'ingest_api' not in data:
                 data['ingest_api'] = data['ingest']
             # Remove the legacy parameter
-            data = data.copy()
             del data['ingest']
         return data
 
