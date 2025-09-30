@@ -20,9 +20,9 @@ The most common way to publish data is through Moose's built-in ingestion APIs. 
 
 <TypeScript>
 ```typescript filename="PublishViaAPI.ts"
-// When you create an IngestPipeline with ingest: true, Moose automatically creates an API endpoint
+// When you create an IngestPipeline with ingestApi: true, Moose automatically creates an API endpoint
 const rawData = new IngestPipeline<RawData>("raw_data", {
-  ingest: true, // Creates POST /ingest/raw_data endpoint
+  ingestApi: true, // Creates POST /ingest/raw_data endpoint
   stream: true,
   table: true
 });
@@ -44,13 +44,14 @@ const response = await fetch('/ingest/raw_data', {
 <Python>
 ```py filename="PublishViaAPI.py" copy
 import requests
+from moose_lib import IngestPipeline, IngestPipelineConfig
 
-# When you create an IngestPipeline with ingest: True, Moose automatically creates an API endpoint
-raw_data = IngestPipeline[RawData]("raw_data", {
-  ingest: True, # Creates POST /ingest/raw_data endpoint
-  stream: True,
-  table: True
-})
+# When you create an IngestPipeline with ingest_api: True, Moose automatically creates an API endpoint
+raw_data = IngestPipeline[RawData]("raw_data", IngestPipelineConfig(
+  ingest_api=True, # Creates POST /ingest/raw_data endpoint
+  stream=True,
+  table=True
+))
 
 # You can then publish data via HTTP POST requests
 response = requests.post('/ingest/raw_data', json={
@@ -64,85 +65,9 @@ response = requests.post('/ingest/raw_data', json={
 See the [OpenAPI documentation](/stack/open-api) to learn more about how to generate type-safe client SDKs in your language of choice for all of your Moose APIs.
 </Callout>
 
-### Direct Stream Publishing
+### Direct Stream Publishing (Coming Soon)
 
-You can publish directly to a stream from your Moose code using the stream's `send` method.
-This is useful when emitting events from workflows or other backend logic.
-`send` accepts a single record or an array of records.
-
-<Tabs items={["TypeScript", "Python"]}>
-<Tabs.Tab>
-<TypeScript>
-```ts filename="DirectPublish.ts" copy
-import { Stream, Key } from "@514labs/moose-lib";
-
-interface UserEvent {
-  id: Key<string>;
-  userId: string;
-  timestamp: Date;
-  eventType: string;
-}
-
-// Create a stream (optionally configure destination to sync to a table)
-const events = new Stream<UserEvent>("user-events");
-
-// Publish a single record
-await events.send({
-  id: "evt_1",
-  userId: "user_123",
-  timestamp: new Date(),
-  eventType: "click",
-});
-
-// Publish multiple records
-await events.send([
-  { id: "evt_2", userId: "user_456", timestamp: new Date(), eventType: "view" },
-  { id: "evt_3", userId: "user_789", timestamp: new Date(), eventType: "signup" },
-]);
-```
-</TypeScript>
-</Tabs.Tab>
-
-<Tabs.Tab>
-<Python>
-```py filename="DirectPublish.py" copy
-from moose_lib import Stream, StreamConfig, Key
-from pydantic import BaseModel
-from datetime import datetime
-
-class UserEvent(BaseModel):
-    id: Key[str]
-    user_id: str
-    timestamp: datetime
-    event_type: str
-
-# Create a stream (optionally pass StreamConfig with destination/table settings)
-events = Stream[UserEvent]("user_events", StreamConfig())
-
-# Publish a single record
-events.send(UserEvent(
-    id="evt_1",
-    user_id="user_123",
-    timestamp=datetime.now(),
-    event_type="click"
-))
-
-# Publish multiple records
-events.send([
-    UserEvent(id="evt_2", user_id="user_456", timestamp=datetime.now(), event_type="view"),
-    UserEvent(id="evt_3", user_id="user_789", timestamp=datetime.now(), event_type="signup"),
-])
-```
-</Python>
-</Tabs.Tab>
-</Tabs>
-
-<Callout type="info" title="Topic naming and versions">
-Moose builds the Kafka topic name from your stream name,
-optional namespace, and optional version (dots become underscores).
-For example, a stream named `events` with version `1.2.0` becomes `events_1_2_0`
-(or `my_ns.events_1_2_0` when the namespace is `"my_ns"`).
-</Callout>
+Soon, you will be able to publish directly to streams using the stream's publish method. This is an efficient way to publish data to streams from within other parts of your Moose backend--in particular, from your workflows.
 
 ### Using the Kafka/Redpanda Client from External Applications
 You can also publish to streams from external applications using Kafka/Redpanda clients:
