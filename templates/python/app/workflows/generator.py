@@ -42,5 +42,11 @@ ingest_task = Task[None, None](
 
 ingest_workflow = Workflow(
     name="generator",
-    config=WorkflowConfig(starting_task=ingest_task, retries=3, timeout="30s") ## add schedule="@every 5s" if you want to run it automatically on a schedule
+    config=WorkflowConfig(
+        starting_task=ingest_task,
+        retries=3,
+        timeout="30s",
+        # uncomment if you want to run it automatically on a schedule
+        # schedule="@every 5s",
+    )
 )
