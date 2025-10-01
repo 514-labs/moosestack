@@ -40,8 +40,6 @@ import {
   waitForDBWrite,
   waitForMaterializedViewUpdate,
   verifyClickhouseData,
-  verifyDateAggregationData,
-  verifyDateAggregationSummary,
   withRetries,
   verifyConsumptionApi,
   verifyVersionedConsumptionApi,
@@ -51,8 +49,6 @@ import {
   cleanupLeftoverTestDirectories,
   setupTypeScriptProject,
   setupPythonProject,
-  validateMultipleTableSchemas,
-  printSchemaValidationResults,
   getExpectedSchemas,
   validateSchemasWithDebugging,
 } from "./utils";
