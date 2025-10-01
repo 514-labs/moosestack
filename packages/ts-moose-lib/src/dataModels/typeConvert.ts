@@ -109,20 +109,6 @@ const handleAggregated = (
   if (functionStringLiteral.isStringLiteral() && checker.isTupleType(types)) {
     const argumentTypes = ((types as TupleType).typeArguments || []).map(
       (argT) => {
-        const nonNullArg = argT.getNonNullableType();
-        const argSymbolName = nonNullArg.symbol?.name || argT.symbol?.name;
-
-        // Normalize JS Date to DateTime inside AggregateFunction parameters for consistency
-        // Keep explicit DateTime/DateTime64 aliases as-is
-        if (
-          argSymbolName !== "DateTime" &&
-          argSymbolName !== "DateTime64" &&
-          argSymbolName !== undefined &&
-          checker.isTypeAssignableTo(nonNullArg, dateType(checker))
-        ) {
-          return "DateTime" as DataType;
-        }
-
         return tsTypeToDataType(argT, checker, fieldName, typeName, false)[2];
       },
     );
