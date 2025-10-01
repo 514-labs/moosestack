@@ -31,7 +31,7 @@ export const DateAggregationPipeline = new IngestPipeline<DateAggregationTest>(
   {
     table: true, // Persist in ClickHouse table
     stream: true, // Buffer records
-    ingest: true, // POST /ingest/DateAggregationTest
+    ingestApi: true, // POST /ingest/DateAggregationTest
   },
 );
 
