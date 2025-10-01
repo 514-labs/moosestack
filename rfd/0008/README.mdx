@@ -127,6 +127,14 @@ app.listen(3000);
 
 #### 1. Client Initialization Function
 
+The configuration will be compiled by the `getMooseClients()` function. It's
+logic will follow:
+
+1. read configuration object passed to it
+2. if any fields are missing, look for them in `moose.config.toml`
+3. if any fields are missing, look for them, in the environment variables
+4. if configuration is invalid, throw an error
+
 Export a function to initialize MooseStack clients from configuration:
 
 ```typescript
@@ -839,4 +847,3 @@ Once this RFD is approved, implementation will follow this checklist:
 - [ ] `moose dev` compatibility
 - [ ] Boreal/OSS deployment compatibility
 - [ ] Plan Python parity implementation
-
