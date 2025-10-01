@@ -36,22 +36,6 @@ export const cleanupClickhouseData = async (): Promise<void> => {
             console.log(`Failed to truncate ${table}:`, error);
           }
         }
-
-        // Clean up Date aggregation tables
-        const dateAggTables = [
-          "DateAggregationTest",
-          "DateAggregationWorkflow",
-        ];
-        for (const table of dateAggTables) {
-          try {
-            await client.command({
-              query: `TRUNCATE TABLE IF EXISTS ${table}`,
-            });
-            console.log(`Truncated ${table} table`);
-          } catch (error) {
-            console.log(`Failed to truncate ${table}:`, error);
-          }
-        }
       } finally {
         await client.close();
       }

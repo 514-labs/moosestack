@@ -9,6 +9,11 @@ type HasFunctionField<T> =
     : true
   : false;
 
+/**
+ * `Date & ...` is considered "nonsensible intersection" by typia,
+ * causing JSON schema to fail.
+ * This helper type recursively cleans up the intersection type tagging.
+ */
 export type StripDateIntersection<T> =
   T extends Date ?
     Date extends T ?
@@ -19,7 +24,7 @@ export type StripDateIntersection<T> =
       ReadonlyArray<StripDateIntersection<U>>
     : Array<StripDateIntersection<U>>
   : T extends Array<infer U> ? Array<StripDateIntersection<U>>
-  : true extends HasFunctionField<T> ?
-    T // do not touch other classes
+  : // do not touch other classes
+  true extends HasFunctionField<T> ? T
   : T extends object ? { [K in keyof T]: StripDateIntersection<T[K]> }
   : T;
