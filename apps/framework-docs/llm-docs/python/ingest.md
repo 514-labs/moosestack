@@ -45,7 +45,7 @@ For `IngestPipeline`, configuration must be provided as keyword arguments:
 # Correct pipeline creation with keyword arguments
 brain_data_pipeline = IngestPipeline[BrainData](
     "brain_data",    # Required: Pipeline name
-    ingest=True,     # Required: Enable ingestion
+    ingest_api=True,     # Required: Enable ingestion
     stream=True,     # Required: Enable streaming
     table=True       # Required: Enable table storage
 )
@@ -141,7 +141,7 @@ When creating an ingest pipeline, you must ensure that:
 
 1. Configuration is provided as keyword arguments
 2. Required flags are set:
-   - `ingest=True` to enable ingestion
+   - `ingest_api=True` to enable ingestion
    - `stream=True` to enable streaming
    - `table=True` to enable table storage
 3. The pipeline name is provided as the first argument
@@ -150,7 +150,7 @@ When creating an ingest pipeline, you must ensure that:
 # Correct - Using keyword arguments
 pipeline = IngestPipeline[MyModel](
     "my_pipeline",
-    ingest=True,
+    ingest_api=True,
     stream=True,
     table=True
 )

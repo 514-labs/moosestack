@@ -20,9 +20,9 @@ The most common way to publish data is through Moose's built-in ingestion APIs. 
 
 <TypeScript>
 ```typescript filename="PublishViaAPI.ts"
-// When you create an IngestPipeline with ingest: true, Moose automatically creates an API endpoint
+// When you create an IngestPipeline with ingestApi: true, Moose automatically creates an API endpoint
 const rawData = new IngestPipeline<RawData>("raw_data", {
-  ingest: true, // Creates POST /ingest/raw_data endpoint
+  ingestApi: true, // Creates POST /ingest/raw_data endpoint
   stream: true,
   table: true
 });
@@ -44,13 +44,14 @@ const response = await fetch('/ingest/raw_data', {
 <Python>
 ```py filename="PublishViaAPI.py" copy
 import requests
+from moose_lib import IngestPipeline, IngestPipelineConfig
 
-# When you create an IngestPipeline with ingest: True, Moose automatically creates an API endpoint
-raw_data = IngestPipeline[RawData]("raw_data", {
-  ingest: True, # Creates POST /ingest/raw_data endpoint
-  stream: True,
-  table: True
-})
+# When you create an IngestPipeline with ingest_api: True, Moose automatically creates an API endpoint
+raw_data = IngestPipeline[RawData]("raw_data", IngestPipelineConfig(
+  ingest_api=True, # Creates POST /ingest/raw_data endpoint
+  stream=True,
+  table=True
+))
 
 # You can then publish data via HTTP POST requests
 response = requests.post('/ingest/raw_data', json={

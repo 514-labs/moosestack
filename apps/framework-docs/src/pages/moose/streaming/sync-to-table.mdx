@@ -94,7 +94,7 @@ interface Event {
 
 // Creates stream, table, API, and automatic sync
 const eventsPipeline = new IngestPipeline<Event>("events", {
-  ingest: true,   // Creates HTTP endpoint at POST /ingest/events
+  ingestApi: true,   // Creates HTTP endpoint at POST /ingest/events
   stream: true,   // Creates buffering stream
   table: true     // Creates destination table + auto-sync process
 });
@@ -115,7 +115,7 @@ class Event(BaseModel):
 
 # Creates stream, table, API, and automatic sync
 events_pipeline = IngestPipeline[Event]("events", IngestPipelineConfig(
-    ingest=True,   
+    ingest_api=True,   
     stream=True,   # Creates stream  
     table=True     # Creates destination table + auto-sync process
 ))

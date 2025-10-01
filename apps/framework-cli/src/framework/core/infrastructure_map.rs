@@ -2085,7 +2085,23 @@ impl InfrastructureMap {
         } else {
             load_main_py(project, &project.project_location).await?
         };
-        Ok(partial.into_infra_map(project.language, &project.main_file()))
+        let infra_map = partial.into_infra_map(project.language, &project.main_file());
+
+        // Provide explicit feedback when streams are defined but streaming engine is disabled
+        if !project.features.streaming_engine && !infra_map.topics.is_empty() {
+            show_message_wrapper(
+                MessageType::Error,
+                Message {
+                    action: "Disabled".to_string(),
+                    details: format!(
+                        "Streaming is disabled but {} stream(s) found. Enable it by setting [features].streaming_engine = true in moose.config.toml",
+                        infra_map.topics.len()
+                    ),
+                },
+            );
+        }
+
+        Ok(infra_map)
     }
 
     /// Gets a topic by its ID
