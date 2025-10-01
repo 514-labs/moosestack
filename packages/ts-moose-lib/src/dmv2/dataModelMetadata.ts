@@ -3,6 +3,7 @@ import {
   avoidTypiaNameClash,
   isMooseFile,
   typiaJsonSchemas,
+  sanitizeTypeParameter,
 } from "../compilerPluginHelper";
 import { toColumns } from "../dataModels/typeConvert";
 import { IJsonSchemaCollection } from "typia/src/schemas/json/IJsonSchemaCollection";
@@ -68,7 +69,7 @@ const typiaTypeGuard = (node: ts.NewExpression) => {
       factory.createIdentifier(avoidTypiaNameClash),
       factory.createIdentifier("createAssert"),
     ),
-    [typeNode],
+    [sanitizeTypeParameter(typeNode)],
     [],
   );
 };
@@ -148,7 +149,7 @@ export const createTypiaValidator = (typeNode: ts.TypeNode) => {
       factory.createIdentifier(avoidTypiaNameClash),
       factory.createIdentifier("createValidate"),
     ),
-    [typeNode],
+    [sanitizeTypeParameter(typeNode)],
     [],
   );
 
@@ -258,7 +259,7 @@ export const createTypiaAssert = (typeNode: ts.TypeNode) =>
       factory.createIdentifier(avoidTypiaNameClash),
       factory.createIdentifier("createAssert"),
     ),
-    [typeNode],
+    [sanitizeTypeParameter(typeNode)],
     [],
   );
 
@@ -272,6 +273,6 @@ export const createTypiaIs = (typeNode: ts.TypeNode) =>
       factory.createIdentifier(avoidTypiaNameClash),
       factory.createIdentifier("createIs"),
     ),
-    [typeNode],
+    [sanitizeTypeParameter(typeNode)],
     [],
   );

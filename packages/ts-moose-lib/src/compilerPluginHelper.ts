@@ -114,6 +114,18 @@ export const replaceProgram =
 
 export const avoidTypiaNameClash = "____moose____typia";
 
+// Wraps a type parameter with import("@514labs/moose-lib").StripDateIntersection<>
+export const sanitizeTypeParameter = (typeNode: TypeNode): ts.ImportTypeNode =>
+  factory.createImportTypeNode(
+    factory.createLiteralTypeNode(
+      factory.createStringLiteral("@514labs/moose-lib"),
+    ),
+    undefined,
+    factory.createIdentifier("StripDateIntersection"),
+    [typeNode],
+    false,
+  );
+
 export const typiaJsonSchemas = (typeNode: TypeNode) =>
   factory.createCallExpression(
     factory.createPropertyAccessExpression(
@@ -123,6 +135,6 @@ export const typiaJsonSchemas = (typeNode: TypeNode) =>
       ),
       factory.createIdentifier("schemas"),
     ),
-    [factory.createTupleTypeNode([typeNode])],
+    [factory.createTupleTypeNode([sanitizeTypeParameter(typeNode)])],
     [],
   );
