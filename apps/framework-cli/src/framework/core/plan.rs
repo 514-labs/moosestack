@@ -52,6 +52,10 @@ pub enum PlanningError {
     #[error("OLAP feature is disabled, but your project requires database operations. Please enable OLAP in your project configuration by setting 'olap = true' in your project features.")]
     OlapDisabledButRequired,
 
+    /// Streaming Engine is disabled but streaming changes are required
+    #[error("Streaming engine feature is disabled, but your project defines stream resources. Please enable the streaming engine in your project configuration by setting 'streaming_engine = true' under the [features] section of moose.config.toml.")]
+    StreamingDisabledButRequired,
+
     /// Other unspecified errors
     #[error("Unknown error")]
     Other(#[from] anyhow::Error),
@@ -292,6 +296,15 @@ pub async fn plan_changes(
             plan.changes.olap_changes.len()
         );
         return Err(PlanningError::OlapDisabledButRequired);
+    }
+
+    // Validate that Streaming Engine is enabled if streaming changes are required
+    if !project.features.streaming_engine && !plan.changes.streaming_engine_changes.is_empty() {
+        error!(
+            "Streaming engine is disabled but {} streaming change(s) are required. Enable streaming_engine in project configuration.",
+            plan.changes.streaming_engine_changes.len()
+        );
+        return Err(PlanningError::StreamingDisabledButRequired);
     }
 
     debug!(
