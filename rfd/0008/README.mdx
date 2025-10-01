@@ -131,8 +131,8 @@ The configuration will be compiled by the `getMooseClients()` function. It's
 logic will follow:
 
 1. read configuration object passed to it
-2. if any fields are missing, look for them in `moose.config.toml`
-3. if any fields are missing, look for them, in the environment variables
+2. if any fields are missing, look for them, in the environment variables
+3. if any fields are missing, look for them in `moose.config.toml`
 4. if configuration is invalid, throw an error
 
 Export a function to initialize MooseStack clients from configuration:
