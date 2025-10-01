@@ -110,14 +110,14 @@ Combines ingest API, stream, and table creation in a single component.
 ```ts
 // Basic usage
 export const pipeline = new IngestPipeline<UserEvent>("user_pipeline", {
-  ingest: true,
+  ingestApi: true,
   stream: true,
   table: true
 });
 
 // With advanced configuration
 export const advancedPipeline = new IngestPipeline<UserEvent>("advanced_pipeline", {
-  ingest: true,
+  ingestApi: true,
   stream: { parallelism: 3 },
   table: { 
     orderByFields: ["id", "timestamp"]
