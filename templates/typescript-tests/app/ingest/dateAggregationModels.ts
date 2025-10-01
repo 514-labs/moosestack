@@ -1,4 +1,4 @@
-import { IngestPipeline, Key, Aggregated } from "@514labs/moose-lib";
+import { IngestPipeline, Key, Aggregated, OlapTable } from "@514labs/moose-lib";
 
 /**
  * Data model for testing Date & Aggregated type combination
@@ -35,6 +35,6 @@ export const DateAggregationPipeline = new IngestPipeline<DateAggregationTest>(
   },
 );
 
-// Type-only test - this should compile without errors
-// This tests that the Date & Aggregated type combination works in TypeScript
-export const _typeTest: DateAggregatedTypeTest = null as any;
+/** Pipeline for testing Date aggregation functionality */
+export const DateAggregatedTypeTestTable =
+  new OlapTable<DateAggregatedTypeTest>("DateAggregatedTypeTest");
