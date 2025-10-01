@@ -1,15 +1,4 @@
-import { IngestPipeline, Key, Aggregated, OlapTable } from "@514labs/moose-lib";
-
-/**
- * Data model for testing Date & Aggregated type combination
- * This tests the fix for ENG-845: Date & Aggregated<"argMax", [Date, Date]> type combination
- */
-export interface DateAggregationTest {
-  id: Key<string>;
-  lastUpdated: Date;
-  value: number;
-  category: string;
-}
+import { Aggregated, Key, OlapTable } from "@514labs/moose-lib";
 
 /**
  * Type-only interface to test Date & Aggregated compilation
@@ -24,16 +13,6 @@ export interface DateAggregatedTypeTest {
   value: number;
   category: string;
 }
-
-/** Pipeline for testing Date aggregation functionality */
-export const DateAggregationPipeline = new IngestPipeline<DateAggregationTest>(
-  "DateAggregationTest",
-  {
-    table: true, // Persist in ClickHouse table
-    stream: true, // Buffer records
-    ingestApi: true, // POST /ingest/DateAggregationTest
-  },
-);
 
 /** Pipeline for testing Date aggregation functionality */
 export const DateAggregatedTypeTestTable =
