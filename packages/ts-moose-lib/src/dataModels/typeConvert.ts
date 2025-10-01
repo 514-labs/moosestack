@@ -108,7 +108,9 @@ const handleAggregated = (
 
   if (functionStringLiteral.isStringLiteral() && checker.isTupleType(types)) {
     const argumentTypes = ((types as TupleType).typeArguments || []).map(
-      (t) => tsTypeToDataType(t, checker, fieldName, typeName, false)[2],
+      (argT) => {
+        return tsTypeToDataType(argT, checker, fieldName, typeName, false)[2];
+      },
     );
     return { functionName: functionStringLiteral.value, argumentTypes };
   } else {

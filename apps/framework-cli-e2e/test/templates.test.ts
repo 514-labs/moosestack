@@ -49,8 +49,6 @@ import {
   cleanupLeftoverTestDirectories,
   setupTypeScriptProject,
   setupPythonProject,
-  validateMultipleTableSchemas,
-  printSchemaValidationResults,
   getExpectedSchemas,
   validateSchemasWithDebugging,
 } from "./utils";

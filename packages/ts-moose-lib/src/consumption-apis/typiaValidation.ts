@@ -3,6 +3,7 @@ import {
   avoidTypiaNameClash,
   isMooseFile,
   typiaJsonSchemas,
+  sanitizeTypeParameter,
 } from "../compilerPluginHelper";
 import { toColumns } from "../dataModels/typeConvert";
 import { parseAsAny } from "../dmv2/dataModelMetadata";
@@ -227,7 +228,7 @@ export const transformLegacyApi = (
                 ),
                 factory.createIdentifier("createAssertQuery"),
               ),
-              [paramType],
+              [sanitizeTypeParameter(paramType)],
               [],
             ),
           ),
@@ -311,8 +312,10 @@ export const transformLegacyApi = (
           ),
           [
             factory.createTupleTypeNode([
-              queryResultType ||
-                factory.createKeywordTypeNode(ts.SyntaxKind.AnyKeyword),
+              sanitizeTypeParameter(
+                queryResultType ||
+                  factory.createKeywordTypeNode(ts.SyntaxKind.AnyKeyword),
+              ),
             ]),
           ],
           [],
