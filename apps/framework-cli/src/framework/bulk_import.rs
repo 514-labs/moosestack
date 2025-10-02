@@ -2,7 +2,6 @@ use crate::framework::core::infrastructure::api_endpoint::APIType;
 use crate::framework::core::infrastructure::table::ColumnType;
 use anyhow::bail;
 use itertools::Itertools;
-use serde::__private::from_utf8_lossy;
 use serde_json::json;
 use std::collections::HashMap;
 use std::path::Path;
@@ -105,7 +104,7 @@ pub async fn import_csv_file(
         let status = res.status();
         if status != 200 {
             let body = match res.bytes().await {
-                Ok(bytes) => from_utf8_lossy(&bytes).to_string(),
+                Ok(bytes) => String::from_utf8_lossy(&bytes).to_string(),
                 Err(e) => format!("Getting body failed: {e}"),
             };
             bail!("Import failure with status {}: {}", status, body)
