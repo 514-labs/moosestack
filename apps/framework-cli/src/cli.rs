@@ -1174,19 +1174,12 @@ pub async fn top_command_handler(
                 schema_registry,
             } => {
                 let project = load_project()?;
-                let path = path.as_deref().unwrap_or_else(|| match project.language {
+                let path = path.as_deref().unwrap_or(match project.language {
                     SupportedLanguages::Typescript => "app/external-topics",
                     SupportedLanguages::Python => "app/external_topics",
                 });
-                write_external_topics(
-                    &project,
-                    bootstrap,
-                    &path,
-                    include,
-                    exclude,
-                    schema_registry,
-                )
-                .await?;
+                write_external_topics(&project, bootstrap, path, include, exclude, schema_registry)
+                    .await?;
                 Ok(RoutineSuccess::success(Message::new(
                     "Kafka".to_string(),
                     "external topics written".to_string(),
