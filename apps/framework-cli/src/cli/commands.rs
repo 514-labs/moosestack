@@ -356,7 +356,7 @@ pub enum DbCommands {
 #[command(arg_required_else_help = true)]
 pub struct KafkaArgs {
     #[command(subcommand)]
-    pub command: Option<KafkaCommands>,
+    pub command: KafkaCommands,
 }
 
 #[derive(Debug, Subcommand)]
@@ -368,15 +368,15 @@ pub enum KafkaCommands {
 
         /// Output path for schemas
         #[arg(long, value_name = "PATH")]
-        path: String,
+        path: Option<String>,
 
         /// Include pattern (glob). Defaults to '*'
         #[arg(long, default_value = "*")]
         include: String,
 
-        /// Exclude pattern (glob)
-        #[arg(long)]
-        exclude: Option<String>,
+        /// Exclude pattern (glob). Defaults to '{__consumer_offsets,_schemas}'
+        #[arg(long, default_value = "{__consumer_offsets,_schemas}")]
+        exclude: String,
 
         /// Schema Registry base URL (e.g. http://localhost:8081)
         #[arg(long, value_name = "URL")]

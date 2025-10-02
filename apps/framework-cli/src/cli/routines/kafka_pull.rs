@@ -4,7 +4,7 @@ use crate::framework::languages::SupportedLanguages;
 use crate::infrastructure::stream::kafka::client::fetch_topics;
 use crate::project::Project;
 use convert_case::{Case, Casing};
-use globset::Glob;
+use globset::{Glob, GlobMatcher};
 use log::{info, warn};
 use schema_registry_client::rest::apis::Error as SchemaRegistryError;
 use schema_registry_client::rest::schema_registry_client::{
@@ -14,29 +14,19 @@ use std::fs;
 use std::io::Write;
 use std::path::Path;
 
-fn build_matchers(
-    include: &str,
-    exclude: &Option<String>,
-) -> Result<(globset::GlobMatcher, Option<globset::GlobMatcher>), RoutineFailure> {
-    let inc = Glob::new(include).map_err(|e| {
-        RoutineFailure::new(
-            Message::new("Kafka".to_string(), format!("invalid include glob: {e}")),
-            e,
-        )
-    })?;
-    let inc_matcher = inc.compile_matcher();
-
-    let exc_matcher = match exclude {
-        Some(pat) => match Glob::new(pat) {
-            Ok(g) => Some(g.compile_matcher()),
-            Err(e) => {
-                warn!("Ignoring invalid exclude glob '{}': {:?}", pat, e);
-                None
-            }
-        },
-        None => None,
-    };
-    Ok((inc_matcher, exc_matcher))
+fn build_matcher(s: &str) -> Result<GlobMatcher, RoutineFailure> {
+    let matcher = Glob::new(s)
+        .map_err(|e| {
+            RoutineFailure::new(
+                Message::new(
+                    "Kafka".to_string(),
+                    "invalid include glob for include".to_string(),
+                ),
+                e,
+            )
+        })?
+        .compile_matcher();
+    Ok(matcher)
 }
 
 pub async fn write_external_topics(
@@ -44,7 +34,7 @@ pub async fn write_external_topics(
     bootstrap: &str,
     path: &str,
     include: &str,
-    exclude: Option<String>,
+    exclude: &str,
     schema_registry: &Option<String>,
 ) -> Result<(), RoutineFailure> {
     info!(
@@ -54,8 +44,8 @@ pub async fn write_external_topics(
 
     let mut kafka_cfg = project.redpanda_config.clone();
     kafka_cfg.broker = bootstrap.to_string();
-
-    let (inc, exc) = build_matchers(include, &exclude)?;
+    let inc = build_matcher(include)?;
+    let exc = build_matcher(exclude)?;
 
     let topics = fetch_topics(&kafka_cfg).await.map_err(|e| {
         RoutineFailure::new(
@@ -67,7 +57,7 @@ pub async fn write_external_topics(
     let mut names: Vec<String> = topics
         .into_iter()
         .map(|t| t.name)
-        .filter(|n| inc.is_match(n) && exc.as_ref().map(|m| !m.is_match(n)).unwrap_or(true))
+        .filter(|n| inc.is_match(n) && !exc.is_match(n))
         .collect();
     names.sort();
 
@@ -234,17 +224,25 @@ fn render_python_streams(
     out.push_str("# AUTO-GENERATED FILE. DO NOT EDIT.\n");
     out.push_str("# This file will be replaced when you run `moose kafka pull`.\n\n");
     out.push_str("from moose_lib import Stream\n");
+    let needs_empty = topics.iter().any(|t| !type_map.contains_key(t));
+    if needs_empty {
+        out.push_str("from pydantic import BaseModel\n");
+    }
     for (_topic, (class_name, module_stem)) in type_map.iter() {
         out.push_str(&format!("from .{module_stem} import {class_name}\n"));
     }
     out.push_str("\n");
+    if needs_empty {
+        out.push_str("class EmptyModel(BaseModel):\n");
+        out.push_str("    pass\n\n");
+    }
 
     for t in topics {
         let var_name = sanitize_py_ident(t);
         if let Some((class_name, _)) = type_map.get(t) {
             out.push_str(&format!("{var_name} = Stream[{class_name}](\"{t}\")\n"));
         } else {
-            out.push_str(&format!("{var_name} = Stream(\"{t}\")\n"));
+            out.push_str(&format!("{var_name} = Stream[EmptyModel](\"{t}\")\n"));
         }
     }
     out

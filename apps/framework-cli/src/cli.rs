@@ -65,6 +65,7 @@ use crate::cli::routines::code_generation::{db_pull, db_to_dmv2, prompt_user_for
 use crate::cli::routines::ls::ls_dmv2;
 use crate::cli::routines::templates::create_project_from_template;
 use crate::framework::core::migration_plan::MIGRATION_SCHEMA;
+use crate::framework::languages::SupportedLanguages;
 use crate::utilities::clickhouse_url::convert_http_to_clickhouse;
 use anyhow::Result;
 use std::time::Duration;
@@ -1164,21 +1165,25 @@ pub async fn top_command_handler(
             let project = load_project()?;
             routines::truncate_table::truncate_tables(&project, tables.clone(), *all, *rows).await
         }
-        Commands::Kafka(KafkaArgs { command }) => match command.as_ref() {
-            Some(KafkaCommands::Pull {
+        Commands::Kafka(KafkaArgs { command }) => match command {
+            KafkaCommands::Pull {
                 bootstrap,
                 path,
                 include,
                 exclude,
                 schema_registry,
-            }) => {
+            } => {
                 let project = load_project()?;
+                let path = path.as_deref().unwrap_or_else(|| match project.language {
+                    SupportedLanguages::Typescript => "app/external-topics",
+                    SupportedLanguages::Python => "app/external_topics",
+                });
                 write_external_topics(
                     &project,
                     bootstrap,
-                    path,
+                    &path,
                     include,
-                    exclude.clone(),
+                    exclude,
                     schema_registry,
                 )
                 .await?;
@@ -1187,10 +1192,6 @@ pub async fn top_command_handler(
                     "external topics written".to_string(),
                 )))
             }
-            None => Err(RoutineFailure::error(Message::new(
-                "Kafka".to_string(),
-                "Please provide a subcommand".to_string(),
-            ))),
         },
     }
 }
