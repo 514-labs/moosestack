@@ -193,7 +193,7 @@ fn render_typescript_streams(
     let mut out = String::new();
     out.push_str("// AUTO-GENERATED FILE. DO NOT EDIT.\n");
     out.push_str("// This file will be replaced when you run `moose kafka pull`.\n\n");
-    out.push_str("import { Stream } from \"@514labs/moose-lib\";\n");
+    out.push_str("import { Stream, LifeCycle } from \"@514labs/moose-lib\";\n");
     for (_topic, (type_name, file_stem)) in type_map.iter() {
         out.push_str(&format!(
             "import type {{ {type_name} }} from \"./{file_stem}\";\n"
@@ -205,11 +205,11 @@ fn render_typescript_streams(
         let var_name = sanitize_ts_ident(t);
         if let Some((type_name, _)) = type_map.get(t) {
             out.push_str(&format!(
-                "export const {var_name} = new Stream<{type_name}>(\"{t}\");\n"
+                "export const {var_name} = new Stream<{type_name}>(\"{t}\", {{ lifeCycle: LifeCycle.EXTERNALLY_MANAGED }});\n"
             ));
         } else {
             out.push_str(&format!(
-                "export const {var_name} = new Stream<{{}}>(\"{t}\");\n"
+                "export const {var_name} = new Stream<{{}}>(\"{t}\", {{ lifeCycle: LifeCycle.EXTERNALLY_MANAGED }});\n"
             ));
         }
     }
@@ -223,7 +223,7 @@ fn render_python_streams(
     let mut out = String::new();
     out.push_str("# AUTO-GENERATED FILE. DO NOT EDIT.\n");
     out.push_str("# This file will be replaced when you run `moose kafka pull`.\n\n");
-    out.push_str("from moose_lib import Stream\n");
+    out.push_str("from moose_lib import Stream, StreamConfig, LifeCycle\n");
     let needs_empty = topics.iter().any(|t| !type_map.contains_key(t));
     if needs_empty {
         out.push_str("from pydantic import BaseModel\n");
@@ -240,9 +240,9 @@ fn render_python_streams(
     for t in topics {
         let var_name = sanitize_py_ident(t);
         if let Some((class_name, _)) = type_map.get(t) {
-            out.push_str(&format!("{var_name} = Stream[{class_name}](\"{t}\")\n"));
+            out.push_str(&format!("{var_name} = Stream[{class_name}](\"{t}\", StreamConfig(life_cycle=LifeCycle.EXTERNALLY_MANAGED))\n"));
         } else {
-            out.push_str(&format!("{var_name} = Stream[EmptyModel](\"{t}\")\n"));
+            out.push_str(&format!("{var_name} = Stream[EmptyModel](\"{t}\", StreamConfig(life_cycle=LifeCycle.EXTERNALLY_MANAGED))\n"));
         }
     }
     out
