@@ -2088,10 +2088,7 @@ impl InfrastructureMap {
         let infra_map = partial.into_infra_map(project.language, &project.main_file());
 
         // Provide explicit feedback when streams are defined but streaming engine is disabled
-        if !project.features.streaming_engine
-            && !infra_map.topics.is_empty()
-            && infra_map.uses_streaming()
-        {
+        if !project.features.streaming_engine && infra_map.uses_streaming() {
             show_message_wrapper(
                 MessageType::Error,
                 Message {
