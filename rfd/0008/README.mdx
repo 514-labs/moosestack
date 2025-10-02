@@ -360,6 +360,16 @@ configure together.
 designed with awareness that IngestApi may follow a similar pattern, enabling
 users to configure both in a unified way.
 
+### Compiler Considerations
+
+Moose typically runs a compiler which generates type definitions and optimizes
+code for production and a great IDE experience. To make this seamless in a
+moose project, `moose init` modifies the project's `tsconfig.json` to include
+the Moose compiler plugin, and generates a `moose.config.toml` file. In a BYOF
+approach, where `moose init` is not necessarily run, we will need to provide
+documentation to the user on how to set up their configuration for the same
+effects.
+
 ### Example: Full Express Integration
 
 ```typescript
