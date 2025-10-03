@@ -2122,13 +2122,12 @@ impl InfrastructureMap {
                 .filter(|endpoint| matches!(endpoint.api_type, APIType::EGRESS { .. }))
                 .count();
 
-            log::error!("OLAP disabled. Consumption APIs are disabled.");
             show_message_wrapper(
                 MessageType::Error,
                 Message {
                     action: "Disabled".to_string(),
                     details: format!(
-                        "OLAP is disabled but {} consumption API(s) found.",
+                        "OLAP is disabled but {} consumption API(s) found. Enable it by setting [features].olap = true in moose.config.toml",
                         consumption_api_count
                     ),
                 },
