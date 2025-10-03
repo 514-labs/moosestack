@@ -17,10 +17,7 @@ fn build_matcher(s: &str) -> Result<GlobMatcher, RoutineFailure> {
     let matcher = Glob::new(s)
         .map_err(|e| {
             RoutineFailure::new(
-                Message::new(
-                    "Kafka".to_string(),
-                    "invalid include glob for include".to_string(),
-                ),
+                Message::new("Kafka".to_string(), format!("invalid glob pattern: {s}")),
                 e,
             )
         })?
@@ -98,11 +95,9 @@ pub async fn write_external_topics(
                     }
                 },
                 Ok(None) => {
-                    println!("No such schema found for {}", topic);
-                    // No JSON schema for this subject
+                    info!("No JSON schema found for subject {}", subject);
                 }
                 Err(e) => {
-                    println!("Failed to fetch schema for {}: {:?}", subject, e);
                     warn!("Failed to fetch schema for {}: {:?}", subject, e);
                 }
             }
@@ -258,7 +253,7 @@ fn render_python_streams(
     out
 }
 
-/// returns None if the
+/// Returns None if the subject does not exist or schema type is not JSON.
 async fn fetch_latest_json_schema(
     client: &SchemaRegistryClient,
     subject: &str,

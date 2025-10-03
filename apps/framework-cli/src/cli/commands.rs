@@ -361,7 +361,9 @@ pub struct KafkaArgs {
 
 #[derive(Debug, Subcommand)]
 pub enum KafkaCommands {
-    /// Pull schemas from Kafka (dummy implementation)
+    /// Discover topics and generate external stream declarations;
+    /// optionally fetch JSON Schemas (Avro support coming soon)
+    /// from Schema Registry to emit typed models.
     Pull {
         /// Kafka bootstrap servers, e.g. localhost:9092
         bootstrap: String,
