@@ -121,6 +121,7 @@ WORKDIR /monorepo
 # Copy workspace configuration files
 COPY pnpm-workspace.yaml ./
 COPY package.json ./
+COPY .npmrc ./
 {}
 
 # Copy workspace package directories (will be replaced with actual patterns)
@@ -415,7 +416,29 @@ pub fn create_dockerfile(
                 };
 
                 let deploy_install_command = format!(
-                    "RUN pnpm --filter \"./{}\" deploy /temp-deploy --legacy",
+                    r#"
+# Use package manager to install only production dependencies
+RUN pnpm --filter "./{}" deploy /temp-deploy --legacy
+
+# Fix: pnpm deploy --legacy doesn't copy native bindings, so rebuild them from source
+# Generic solution: Find and rebuild all packages with native bindings (those with binding.gyp)
+RUN echo "=== Rebuilding native modules ===" && \
+    cd /temp-deploy && \
+    found_native=0 && \
+    for dir in $(find node_modules -name "binding.gyp" -type f 2>/dev/null | xargs -r dirname); do \
+        found_native=1; \
+        package_name=$(basename $(dirname "$dir")); \
+        echo "Found native module: $package_name in $dir"; \
+        if (cd "$dir" && npm rebuild 2>&1); then \
+            echo "✓ Successfully rebuilt $package_name"; \
+        else \
+            echo "⚠ Warning: Failed to rebuild $package_name (may be optional)"; \
+        fi; \
+    done && \
+    if [ $found_native -eq 0 ]; then \
+        echo "No native modules found (this is normal if your deps don't have native bindings)"; \
+    fi && \
+    echo "=== Native modules rebuild complete ===""#,
                     relative_project_path.to_string_lossy()
                 );
 
