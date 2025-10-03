@@ -27,6 +27,12 @@ from moose_lib.dmv2 import (
 from pydantic.alias_generators import to_camel
 from pydantic.json_schema import JsonSchemaValue
 
+try:
+    # Import for type hints without creating runtime cycles
+    from moose_lib.dmv2.stream import KafkaSchema as _KafkaSchema
+except Exception:
+    _KafkaSchema = Any  # fallback for type checker/runtime if import cycle
+
 model_config = ConfigDict(alias_generator=AliasGenerator(
     serialization_alias=to_camel,
 ))
@@ -163,6 +169,8 @@ class TopicConfig(BaseModel):
     consumers: List[Consumer]
     metadata: Optional[dict] = None
     life_cycle: Optional[str] = None
+    # Optional minimal Schema Registry config; typed to KafkaSchema
+    schema_registry: Optional[_KafkaSchema] = None
 
 
 class IngestApiConfig(BaseModel):
@@ -477,6 +485,7 @@ def to_infra_map() -> dict:
             consumers=consumers,
             metadata=getattr(stream, "metadata", None),
             life_cycle=stream.config.life_cycle.value if stream.config.life_cycle else None,
+            schema_registry=getattr(stream.config, "schema_registry", None),
         )
 
     for name, api in get_ingest_apis().items():

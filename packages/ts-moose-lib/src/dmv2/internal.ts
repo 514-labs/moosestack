@@ -127,6 +127,16 @@ interface Consumer {
 /**
  * JSON representation of a Stream/Topic configuration.
  */
+type SchemaRegistryReferenceJson =
+  | { Id: number }
+  | { Latest: { subject_name: string } }
+  | { SubjectVersion: { name: string; version: number } };
+
+interface SchemaRegistryJson {
+  kind: "JSON" | "AVRO" | "PROTOBUF";
+  reference: SchemaRegistryReferenceJson;
+}
+
 interface StreamJson {
   /** The name of the stream/topic. */
   name: string;
@@ -152,6 +162,8 @@ interface StreamJson {
   metadata?: { description?: string };
   /** Lifecycle management setting for the stream. */
   lifeCycle?: string;
+  /** Optional minimal Schema Registry config */
+  schemaRegistry?: SchemaRegistryJson;
 }
 /**
  * JSON representation of an Ingest API configuration.
@@ -383,6 +395,7 @@ export const toInfraMap = (registry: typeof moose_internal) => {
       consumers,
       metadata,
       lifeCycle: stream.config.lifeCycle,
+      schemaRegistry: (stream.config as any).schemaRegistry,
     };
   });
 

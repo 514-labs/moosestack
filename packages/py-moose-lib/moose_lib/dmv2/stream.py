@@ -8,6 +8,36 @@ import dataclasses
 import datetime
 import json
 from typing import Any, Optional, Callable, Union, Literal, Generic
+class LatestRef(BaseModel):
+    subject_name: str
+
+
+class SubjectVersionRef(BaseModel):
+    name: str
+    version: int
+
+
+class SchemaRegistryReference(BaseModel):
+    Id: Optional[int] = None
+    Latest: Optional[LatestRef] = None
+    SubjectVersion: Optional[SubjectVersionRef] = None
+
+    def model_post_init(self, __context: Any) -> None:
+        present = sum(
+            1
+            for v in (self.Id, self.Latest, self.SubjectVersion)
+            if v is not None
+        )
+        if present != 1:
+            raise ValueError(
+                "Exactly one of Id, Latest, SubjectVersion must be provided"
+            )
+
+
+class KafkaSchema(BaseModel):
+    kind: Literal["JSON", "AVRO", "PROTOBUF"]
+    reference: SchemaRegistryReference
+
 from pydantic import BaseModel, ConfigDict, AliasGenerator
 from pydantic.alias_generators import to_camel
 from kafka import KafkaProducer
@@ -41,6 +71,9 @@ class StreamConfig(BaseModel):
     default_dead_letter_queue: "Optional[DeadLetterQueue]" = None
     # allow DeadLetterQueue
     model_config = ConfigDict(arbitrary_types_allowed=True)
+    # Optional minimal Schema Registry configuration
+    # Matches Rust shape
+    schema_registry: Optional[KafkaSchema] = None
 
 
 class TransformConfig(BaseModel):

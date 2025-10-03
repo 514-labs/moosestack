@@ -127,6 +127,19 @@ export interface ConsumerConfig<T> {
   deadLetterQueue?: DeadLetterQueue<T> | null;
 }
 
+// Minimal Schema Registry configuration
+export type SchemaRegistryEncoding = "JSON" | "AVRO" | "PROTOBUF";
+
+export type SchemaRegistryReference =
+  | { Id: number }
+  | { Latest: { subject_name: string } }
+  | { SubjectVersion: { name: string; version: number } };
+
+export interface SchemaRegistryConfig {
+  kind: SchemaRegistryEncoding;
+  reference: SchemaRegistryReference;
+}
+
 /**
  * Represents a message routed to a specific destination stream.
  * Used internally by the multi-transform functionality to specify
@@ -178,6 +191,9 @@ export interface StreamConfig<T> {
   lifeCycle?: LifeCycle;
 
   defaultDeadLetterQueue?: DeadLetterQueue<T>;
+
+  /** Optional Schema Registry configuration for this stream */
+  schemaRegistry?: SchemaRegistryConfig;
 }
 
 /**

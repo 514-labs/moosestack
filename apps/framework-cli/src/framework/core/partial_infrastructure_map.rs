@@ -60,7 +60,7 @@ use super::{
         orchestration_worker::OrchestrationWorker,
         sql_resource::SqlResource,
         table::{Column, Metadata, Table},
-        topic::{Topic, DEFAULT_MAX_MESSAGE_BYTES},
+        topic::{KafkaSchema, Topic, DEFAULT_MAX_MESSAGE_BYTES},
         topic_sync_process::{TopicToTableSyncProcess, TopicToTopicSyncProcess},
         view::View,
     },
@@ -179,6 +179,9 @@ struct PartialTopic {
     pub consumers: Vec<Consumer>,
     pub metadata: Option<Metadata>,
     pub life_cycle: Option<LifeCycle>,
+    /// Optional minimal Schema Registry config passthrough from TS/Py
+    #[serde(default)]
+    pub schema_registry: Option<KafkaSchema>,
 }
 
 /// Specifies the type of destination for write operations.
@@ -605,6 +608,7 @@ impl PartialInfrastructureMap {
                     },
                     metadata: partial_topic.metadata.clone(),
                     life_cycle: partial_topic.life_cycle.unwrap_or(LifeCycle::FullyManaged),
+                    schema_registry: partial_topic.schema_registry.clone(),
                 };
                 (topic.id(), topic)
             })
