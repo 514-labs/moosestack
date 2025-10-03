@@ -22,5 +22,8 @@ export { MooseCache } from "./clients/redisClient";
 
 export { ApiUtil, ConsumptionUtil } from "./consumption-apis/helpers";
 
+export { getMooseClients } from "./consumption-apis/standalone";
+export { sql } from "./sqlHelpers";
+
 export * from "./utilities";
 export * from "./connectors/dataSource";
