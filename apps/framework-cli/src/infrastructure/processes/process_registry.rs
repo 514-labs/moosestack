@@ -26,7 +26,7 @@ pub struct ProcessRegistries {
     pub blocks: Option<BlocksProcessRegistry>,
 
     /// Registry for consumption processes that provide API access to data
-    pub consumption: ConsumptionProcessRegistry,
+    pub consumption: Option<ConsumptionProcessRegistry>,
 
     /// Registry for orchestration worker processes that handle workflow execution
     pub orchestration_workers: OrchestrationWorkersRegistry,
@@ -75,15 +75,19 @@ impl ProcessRegistries {
             ))
         };
 
-        let consumption = ConsumptionProcessRegistry::new(
-            project.language,
-            project.clickhouse_config.clone(),
-            project.jwt.clone(),
-            project.consumption_dir(),
-            project.project_location.clone(),
-            project.clone(),
-            None, // proxy_port: will use project.http_server_config.proxy_port
-        );
+        let consumption = if project.features.olap {
+            Some(ConsumptionProcessRegistry::new(
+                project.language,
+                project.clickhouse_config.clone(),
+                project.jwt.clone(),
+                project.consumption_dir(),
+                project.project_location.clone(),
+                project.clone(),
+                None, // proxy_port: will use project.http_server_config.proxy_port
+            ))
+        } else {
+            None
+        };
 
         let orchestration_workers = OrchestrationWorkersRegistry::new(project, settings);
 
@@ -104,7 +108,9 @@ impl ProcessRegistries {
     /// * `Result<(), ProcessRegistryError>` - Ok if all processes stopped successfully, Error otherwise
     pub async fn stop(&mut self) -> Result<(), ProcessRegistryError> {
         self.functions.stop_all().await;
-        self.consumption.stop().await?;
+        if let Some(consumption) = &mut self.consumption {
+            consumption.stop().await?;
+        }
         self.orchestration_workers.stop_all().await?;
         Ok(())
     }

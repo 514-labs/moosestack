@@ -176,19 +176,27 @@ pub async fn execute_changes(
             }) => {}
             ProcessChange::ConsumptionApiWebServer(Change::Added(_)) => {
                 log::info!("Starting analytics api webserver process");
-                process_registry.consumption.start()?;
+                if let Some(consumption) = &mut process_registry.consumption {
+                    consumption.start()?;
+                } else {
+                    log::warn!("Consumption API requested but OLAP is disabled - skipping");
+                }
             }
             ProcessChange::ConsumptionApiWebServer(Change::Removed(_)) => {
                 log::info!("Stopping analytics api webserver process");
-                process_registry.consumption.stop().await?;
+                if let Some(consumption) = &mut process_registry.consumption {
+                    consumption.stop().await?;
+                }
             }
             ProcessChange::ConsumptionApiWebServer(Change::Updated {
                 before: _,
                 after: _,
             }) => {
                 log::info!("Re-Starting analytics api webserver process");
-                process_registry.consumption.stop().await?;
-                process_registry.consumption.start()?;
+                if let Some(consumption) = &mut process_registry.consumption {
+                    consumption.stop().await?;
+                    consumption.start()?;
+                }
             }
             ProcessChange::OrchestrationWorker(Change::Added(new_orchestration_worker)) => {
                 log::info!("Starting Orchestration worker process");
