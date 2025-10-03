@@ -188,7 +188,7 @@ fn kafka_schema_to_proto(s: &KafkaSchema) -> ProtoSchemaRegistry {
         "PROTOBUF" => crate::proto::infrastructure_map::schema_registry::Encoding::PROTOBUF.into(),
         _ => crate::proto::infrastructure_map::schema_registry::Encoding::JSON.into(),
     };
-    use crate::proto::infrastructure_map::schema_registry::SchemaRef as ProtoSchemaRef;
+    use crate::proto::infrastructure_map::schema_registry::Schema_ref as ProtoSchemaRef;
     sr.schema_ref = Some(match &s.reference {
         SchemaResgistryReference::Id(id) => ProtoSchemaRef::SchemaId(*id as u32),
         SchemaResgistryReference::Latest { subject_name } => {
@@ -215,13 +215,13 @@ fn proto_to_kafka_schema(sr: ProtoSchemaRegistry) -> Option<KafkaSchema> {
 
     let r = sr.schema_ref?;
     let reference = match r {
-        crate::proto::infrastructure_map::schema_registry::SchemaRef::SchemaId(id) => {
+        crate::proto::infrastructure_map::schema_registry::Schema_ref::SchemaId(id) => {
             SchemaResgistryReference::Id(id as u8)
         }
-        crate::proto::infrastructure_map::schema_registry::SchemaRef::Subject(s) => {
+        crate::proto::infrastructure_map::schema_registry::Schema_ref::Subject(s) => {
             SchemaResgistryReference::Latest { subject_name: s }
         }
-        crate::proto::infrastructure_map::schema_registry::SchemaRef::SubjectVersion(sv) => {
+        crate::proto::infrastructure_map::schema_registry::Schema_ref::SubjectVersion(sv) => {
             SchemaResgistryReference::SubjectVersion {
                 name: sv.subject,
                 version: sv.version as u8,

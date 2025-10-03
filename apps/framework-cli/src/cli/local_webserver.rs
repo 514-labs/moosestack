@@ -42,6 +42,7 @@ use crate::utilities::auth::{get_claims, validate_jwt};
 use crate::infrastructure::stream::kafka;
 use crate::infrastructure::stream::kafka::models::ConfiguredProducer;
 
+use crate::framework::core::infrastructure::topic::{KafkaSchema, SchemaResgistryReference, Topic};
 use crate::framework::typescript::bin::CliMessage;
 use crate::project::{JwtConfig, Project};
 use crate::utilities::docker::DockerClient;
@@ -65,6 +66,9 @@ use rdkafka::error::KafkaError;
 use rdkafka::producer::future_producer::OwnedDeliveryResult;
 use rdkafka::producer::{DeliveryFuture, FutureProducer, FutureRecord};
 use reqwest::Client;
+use schema_registry_client::rest::client_config::ClientConfig as SrClientConfig;
+use schema_registry_client::rest::schema_registry_client::Client as SrClient;
+use schema_registry_client::rest::schema_registry_client::SchemaRegistryClient;
 use serde::Serialize;
 use serde::{Deserialize, Deserializer};
 use serde_json::{json, Deserializer as JsonDeserializer, Value};
@@ -75,6 +79,7 @@ use crate::utilities::validate_passthrough::{DataModelArrayVisitor, DataModelVis
 use hyper_util::server::graceful::GracefulShutdown;
 use lazy_static::lazy_static;
 use log::Level::{Debug, Trace};
+use num_traits::ToPrimitive;
 use std::collections::{HashMap, HashSet};
 use std::env;
 use std::env::VarError;
@@ -124,6 +129,63 @@ pub struct RouteMeta {
     pub dead_letter_queue: Option<String>,
     /// The version of the the api
     pub version: Option<Version>,
+    /// Optional resolved Schema Registry schema ID for this route's topic (currently JSON only)
+    #[serde(default)]
+    pub schema_registry_schema_id: Option<i32>,
+}
+
+async fn resolve_schema_id_for_topic(
+    project: &Project,
+    topic: &crate::framework::core::infrastructure::topic::Topic,
+) -> Result<Option<i32>, schema_registry_client::rest::apis::Error> {
+    let sr = match &topic.schema_registry {
+        Some(sr) if sr.kind.eq_ignore_ascii_case("JSON") => sr,
+        None => return Ok(None),
+        _ => panic!("Only JSON schema allowed"),
+    };
+
+    // Determine subject and resolution strategy
+    let (subject, explicit_id, explicit_version): (Option<String>, Option<i32>, Option<i32>) =
+        match &sr.reference {
+            SchemaResgistryReference::Id(id) => (None, Some(*id as i32), None),
+            SchemaResgistryReference::Latest { subject_name } => {
+                (Some(subject_name.clone()), None, None)
+            }
+            SchemaResgistryReference::SubjectVersion { name, version } => {
+                (Some(name.clone()), None, Some(*version as i32))
+            }
+        };
+
+    if let Some(id) = explicit_id {
+        return Ok(explicit_id);
+    }
+
+    let sr_url = std::env::var("SCHEMA_REGISTRY_URL").ok();
+    let sr_url = sr_url.as_deref().unwrap_or("http://localhost:8081");
+
+    let client = SchemaRegistryClient::new(SrClientConfig {
+        base_urls: vec![sr_url.to_string()],
+        ..Default::default()
+    });
+    let subject = subject.unwrap_or_else(|| format!("{}-value", topic.id()));
+
+    let version = match explicit_version {
+        None => client
+            .get_all_versions(&subject)
+            .await?
+            .into_iter()
+            .max()
+            .unwrap(),
+        Some(v) => v.to_i32().unwrap(),
+    };
+
+    Ok(Some(
+        client
+            .get_version(&subject, version, false, None)
+            .await?
+            .id
+            .unwrap(),
+    ))
 }
 
 /// Configuration for the local webserver.
@@ -1131,6 +1193,7 @@ async fn handle_json_array_body(
     req: Request<Incoming>,
     jwt_config: &Option<JwtConfig>,
     max_request_body_size: usize,
+    schema_registry_schema_id: Option<i32>,
 ) -> Response<Full<Bytes>> {
     let auth_header = req.headers().get(hyper::header::AUTHORIZATION);
     let jwt_claims = get_claims(auth_header, jwt_config);
@@ -1222,10 +1285,25 @@ async fn handle_json_array_body(
         );
         return bad_json_response(e);
     }
+    let mut records = parsed.ok().unwrap();
+    if let Some(id) = schema_registry_schema_id {
+        let id_bytes = id.to_be_bytes();
+        records = records
+            .into_iter()
+            .map(|payload| {
+                let mut out = Vec::with_capacity(1 + 4 + payload.len());
+                out.push(0x00);
+                out.extend_from_slice(&id_bytes);
+                out.extend_from_slice(&payload);
+                out
+            })
+            .collect();
+    }
+
     let res_arr = send_to_kafka(
         &configured_producer.producer,
         topic_name,
-        parsed.ok().unwrap().into_iter(),
+        records.into_iter(),
     )
     .await;
 
@@ -1333,6 +1411,7 @@ async fn ingest_route(
             req,
             &jwt_config,
             max_request_body_size,
+            route_meta.schema_registry_schema_id,
         )
         .await),
         None => {
@@ -1912,15 +1991,32 @@ impl Webserver {
                                 let kafka_topic =
                                     KafkaStreamConfig::from_topic(&project.redpanda_config, topic);
 
-                                route_table.insert(
-                                    api_endpoint.path.clone(),
-                                    RouteMeta {
-                                        data_model: *data_model.unwrap(),
-                                        dead_letter_queue,
-                                        kafka_topic_name: kafka_topic.name,
-                                        version: api_endpoint.version,
-                                    },
-                                );
+                                match resolve_schema_id_for_topic(&project, &topic).await {
+                                    Ok(schema_id) => {
+                                        route_table.insert(
+                                            api_endpoint.path.clone(),
+                                            RouteMeta {
+                                                data_model: *data_model.unwrap(),
+                                                dead_letter_queue,
+                                                kafka_topic_name: kafka_topic.name,
+                                                version: api_endpoint.version,
+                                                schema_registry_schema_id: schema_id,
+                                            },
+                                        );
+                                    }
+                                    Err(e) => {
+                                        show_message!(MessageType::Error, {
+                                            Message {
+                                                action: "\nFailed".to_string(),
+                                                details: format!(
+                                                    "Resolving Schema Registry ID for topic {} failed:\n{e:?}",
+                                                    topic.name
+                                                ),
+                                            }
+                                        });
+                                        // Do not insert the route when schema resolution fails
+                                    }
+                                }
                             }
                             APIType::EGRESS { .. } => {
                                 consumption_apis
@@ -1962,15 +2058,32 @@ impl Webserver {
                                     KafkaStreamConfig::from_topic(&project.redpanda_config, topic);
 
                                 route_table.remove(&before.path);
-                                route_table.insert(
-                                    after.path.clone(),
-                                    RouteMeta {
-                                        data_model: *data_model.as_ref().unwrap().clone(),
-                                        dead_letter_queue: dead_letter_queue.clone(),
-                                        kafka_topic_name: kafka_topic.name,
-                                        version: after.version,
-                                    },
-                                );
+                                match resolve_schema_id_for_topic(&project, &topic).await {
+                                    Ok(schema_id) => {
+                                        route_table.insert(
+                                            after.path.clone(),
+                                            RouteMeta {
+                                                data_model: *data_model.as_ref().unwrap().clone(),
+                                                dead_letter_queue: dead_letter_queue.clone(),
+                                                kafka_topic_name: kafka_topic.name,
+                                                version: after.version,
+                                                schema_registry_schema_id: schema_id,
+                                            },
+                                        );
+                                    }
+                                    Err(e) => {
+                                        show_message!(MessageType::Error, {
+                                            Message {
+                                                action: "\nFailed".to_string(),
+                                                details: format!(
+                                                    "Resolving Schema Registry ID for topic {} failed:\n{e:?}",
+                                                    topic.name
+                                                ),
+                                            }
+                                        });
+                                        // Do not insert the route when schema resolution fails
+                                    }
+                                }
                             }
                             APIType::EGRESS { .. } => {
                                 // Nothing to do, we don't need to update the route table
