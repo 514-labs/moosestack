@@ -43,6 +43,7 @@ import {
   withRetries,
   verifyConsumptionApi,
   verifyVersionedConsumptionApi,
+  verifyByofApi,
   verifyConsumerLogs,
   removeTestProject,
   createTempTestDirectory,
@@ -320,6 +321,13 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
           await verifyConsumerLogs(TEST_PROJECT_DIR, [
             "from_http",
             "from_send",
+          ]);
+
+          // Test BYOF (Bring Your Own Framework) API
+          await verifyByofApi("byof", { minId: "0", limit: "5" }, [
+            "id",
+            "count",
+            "has_text",
           ]);
         }
       });
