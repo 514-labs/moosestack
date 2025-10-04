@@ -30,6 +30,7 @@ class RuntimeKafkaConfig:
     sasl_mechanism: Optional[str]
     security_protocol: Optional[str]
     namespace: Optional[str]
+    schema_registry_url: Optional[str]
 
 
 class ConfigurationRegistry:
@@ -160,6 +161,9 @@ class ConfigurationRegistry:
                                 _env("MOOSE_KAFKA_CONFIG__SECURITY_PROTOCOL")
             namespace = _env("MOOSE_REDPANDA_CONFIG__NAMESPACE") or \
                         _env("MOOSE_KAFKA_CONFIG__NAMESPACE")
+            schema_registry_url = _env("MOOSE_REDPANDA_CONFIG__SCHEMA_REGISTRY_URL") or \
+                                  _env("MOOSE_KAFKA_CONFIG__SCHEMA_REGISTRY_URL") or \
+                                  _env("SCHEMA_REGISTRY_URL")
 
             file_kafka = config.kafka_config
 
@@ -181,6 +185,8 @@ class ConfigurationRegistry:
                 security_protocol=security_protocol if security_protocol is not None else (
                     file_kafka.security_protocol if file_kafka else None),
                 namespace=namespace if namespace is not None else (file_kafka.namespace if file_kafka else None),
+                schema_registry_url=schema_registry_url if schema_registry_url is not None else (
+                    file_kafka.schema_registry_url if file_kafka else None),
             )
         except Exception as e:
             raise RuntimeError(f"Failed to get Kafka configuration: {e}")

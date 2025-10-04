@@ -408,6 +408,64 @@ export class Stream<T> extends TypedBase<T, StreamConfig<T>> {
     const { producer, kafkaConfig } = await this.getMemoizedProducer();
     const topic = this.buildFullTopicName(kafkaConfig.namespace);
 
+    // Use Schema Registry JSON envelope if configured
+    const sr = this.config.schemaRegistry;
+    if (sr && sr.kind === "JSON") {
+      const schemaRegistryUrl = kafkaConfig.schemaRegistryUrl;
+      if (!schemaRegistryUrl)
+        throw new Error("Schema Registry URL not configured");
+
+      // Resolve reference into either a concrete ID or a (subject, version?) pair
+      let schemaId: number | undefined;
+      let subject: string | undefined;
+      let version: number | undefined;
+      const ref: any = sr.reference as any;
+      if (ref && typeof ref === "object" && "Id" in ref && ref.Id != null) {
+        schemaId = Number(ref.Id);
+      } else if (
+        ref &&
+        typeof ref === "object" &&
+        "Latest" in ref &&
+        ref.Latest?.subject_name
+      ) {
+        subject = String(ref.Latest.subject_name);
+      } else if (
+        ref &&
+        typeof ref === "object" &&
+        "SubjectVersion" in ref &&
+        ref.SubjectVersion
+      ) {
+        subject = String(ref.SubjectVersion.name);
+        version = Number(ref.SubjectVersion.version);
+      }
+
+      const {
+        default: { SchemaRegistry },
+      } = await import("@kafkajs/confluent-schema-registry");
+      const registry = new SchemaRegistry({ host: schemaRegistryUrl });
+
+      if (schemaId === undefined) {
+        if (version !== undefined) {
+          throw new Error(
+            "SubjectVersion is not supported in TS send; use Latest or Id",
+          );
+        } else {
+          schemaId = await registry.getLatestSchemaId(subject!);
+        }
+      }
+
+      const encoded = await Promise.all(
+        flat.map((v) =>
+          registry.encode(schemaId!, v as unknown as Record<string, unknown>),
+        ),
+      );
+      await producer.send({
+        topic,
+        messages: encoded.map((value) => ({ value })),
+      });
+      return;
+    }
+
     await producer.send({
       topic,
       messages: flat.map((v) => ({ value: JSON.stringify(v) })),

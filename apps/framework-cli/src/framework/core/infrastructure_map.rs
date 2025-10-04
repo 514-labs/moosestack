@@ -3584,6 +3584,7 @@ mod diff_topic_tests {
             }],
             metadata: None,
             life_cycle: LifeCycle::FullyManaged,
+            schema_registry: None,
         }
     }
 

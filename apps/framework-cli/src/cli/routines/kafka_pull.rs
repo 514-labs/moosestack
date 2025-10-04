@@ -209,8 +209,10 @@ fn render_typescript_streams(
     for t in topics {
         let var_name = sanitize_ts_ident(t);
         if let Some((type_name, _)) = type_map.get(t) {
+            // Include schema registry config (Latest subject) for topics with discovered JSON schema
+            let subject = format!("{}-value", t);
             out.push_str(&format!(
-                "export const {var_name} = new Stream<{type_name}>(\"{t}\", {{ lifeCycle: LifeCycle.EXTERNALLY_MANAGED }});\n"
+                "export const {var_name} = new Stream<{type_name}>(\"{t}\", {{ lifeCycle: LifeCycle.EXTERNALLY_MANAGED, schemaRegistry: {{ kind: \"JSON\", reference: {{ Latest: {{ subject_name: \"{subject}\" }} }} }} }});\n"
             ));
         } else {
             out.push_str(&format!(
@@ -245,7 +247,9 @@ fn render_python_streams(
     for t in topics {
         let var_name = sanitize_py_ident(t);
         if let Some((class_name, _)) = type_map.get(t) {
-            out.push_str(&format!("{var_name} = Stream[{class_name}](\"{t}\", StreamConfig(life_cycle=LifeCycle.EXTERNALLY_MANAGED))\n"));
+            // Include schema registry config (Latest subject) for topics with discovered JSON schema
+            let subject = format!("{}-value", t);
+            out.push_str(&format!("{var_name} = Stream[{class_name}](\"{t}\", StreamConfig(life_cycle=LifeCycle.EXTERNALLY_MANAGED, schema_registry={{\"kind\": \"JSON\", \"reference\": {{\"Latest\": {{\"subject_name\": \"{subject}\"}}}}}}))\n"));
         } else {
             out.push_str(&format!("{var_name} = Stream[EmptyModel](\"{t}\", StreamConfig(life_cycle=LifeCycle.EXTERNALLY_MANAGED))\n"));
         }

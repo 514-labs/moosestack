@@ -42,7 +42,7 @@ use crate::utilities::auth::{get_claims, validate_jwt};
 use crate::infrastructure::stream::kafka;
 use crate::infrastructure::stream::kafka::models::ConfiguredProducer;
 
-use crate::framework::core::infrastructure::topic::{KafkaSchema, SchemaResgistryReference, Topic};
+use crate::framework::core::infrastructure::topic::SchemaResgistryReference;
 use crate::framework::typescript::bin::CliMessage;
 use crate::project::{JwtConfig, Project};
 use crate::utilities::docker::DockerClient;
@@ -144,34 +144,27 @@ async fn resolve_schema_id_for_topic(
         _ => panic!("Only JSON schema allowed"),
     };
 
-    // Determine subject and resolution strategy
-    let (subject, explicit_id, explicit_version): (Option<String>, Option<i32>, Option<i32>) =
-        match &sr.reference {
-            SchemaResgistryReference::Id(id) => (None, Some(*id as i32), None),
-            SchemaResgistryReference::Latest { subject_name } => {
-                (Some(subject_name.clone()), None, None)
-            }
-            SchemaResgistryReference::SubjectVersion { name, version } => {
-                (Some(name.clone()), None, Some(*version as i32))
-            }
-        };
+    let (subject, explicit_version): (&str, Option<i32>) = match &sr.reference {
+        SchemaResgistryReference::Id(id) => return Ok(Some(*id)),
+        SchemaResgistryReference::Latest { subject_name } => (subject_name, None),
+        SchemaResgistryReference::SubjectVersion { name, version } => (name, Some(*version)),
+    };
 
-    if let Some(id) = explicit_id {
-        return Ok(explicit_id);
-    }
-
-    let sr_url = std::env::var("SCHEMA_REGISTRY_URL").ok();
-    let sr_url = sr_url.as_deref().unwrap_or("http://localhost:8081");
+    let sr_url = project
+        .redpanda_config
+        .schema_registry_url
+        .as_deref()
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| "http://localhost:8081".to_string());
 
     let client = SchemaRegistryClient::new(SrClientConfig {
         base_urls: vec![sr_url.to_string()],
         ..Default::default()
     });
-    let subject = subject.unwrap_or_else(|| format!("{}-value", topic.id()));
 
     let version = match explicit_version {
         None => client
-            .get_all_versions(&subject)
+            .get_all_versions(subject)
             .await?
             .into_iter()
             .max()
@@ -181,7 +174,7 @@ async fn resolve_schema_id_for_topic(
 
     Ok(Some(
         client
-            .get_version(&subject, version, false, None)
+            .get_version(subject, version, false, None)
             .await?
             .id
             .unwrap(),
@@ -1185,6 +1178,7 @@ async fn send_to_kafka<T: Iterator<Item = Vec<u8>>>(
     res_arr
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn handle_json_array_body(
     configured_producer: &ConfiguredProducer,
     topic_name: &str,
@@ -1991,7 +1985,7 @@ impl Webserver {
                                 let kafka_topic =
                                     KafkaStreamConfig::from_topic(&project.redpanda_config, topic);
 
-                                match resolve_schema_id_for_topic(&project, &topic).await {
+                                match resolve_schema_id_for_topic(&project, topic).await {
                                     Ok(schema_id) => {
                                         route_table.insert(
                                             api_endpoint.path.clone(),
@@ -2058,7 +2052,7 @@ impl Webserver {
                                     KafkaStreamConfig::from_topic(&project.redpanda_config, topic);
 
                                 route_table.remove(&before.path);
-                                match resolve_schema_id_for_topic(&project, &topic).await {
+                                match resolve_schema_id_for_topic(&project, topic).await {
                                     Ok(schema_id) => {
                                         route_table.insert(
                                             after.path.clone(),

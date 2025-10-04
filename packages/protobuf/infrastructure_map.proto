@@ -52,7 +52,7 @@ message SchemaRegistry {
   Encoding encoding = 1;
   oneof schema_ref {
     // Use a concrete schema ID
-    uint32 schema_id = 2;
+    int32 schema_id = 2;
     // Use subject name (latest version)
     string subject = 3;
     // Use subject name with explicit version
@@ -62,7 +62,7 @@ message SchemaRegistry {
 
 message SubjectVersion {
   string subject = 1;
-  uint32 version = 2;
+  int32 version = 2;
 }
 
 message ApiEndpoint {

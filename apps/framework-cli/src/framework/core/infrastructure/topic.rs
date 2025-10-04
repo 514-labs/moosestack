@@ -52,9 +52,9 @@ pub struct KafkaSchema {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum SchemaResgistryReference {
-    Id(u8),
+    Id(i32),
     Latest { subject_name: String },
-    SubjectVersion { name: String, version: u8 },
+    SubjectVersion { name: String, version: i32 },
 }
 
 impl Topic {
@@ -190,14 +190,14 @@ fn kafka_schema_to_proto(s: &KafkaSchema) -> ProtoSchemaRegistry {
     };
     use crate::proto::infrastructure_map::schema_registry::Schema_ref as ProtoSchemaRef;
     sr.schema_ref = Some(match &s.reference {
-        SchemaResgistryReference::Id(id) => ProtoSchemaRef::SchemaId(*id as u32),
+        SchemaResgistryReference::Id(id) => ProtoSchemaRef::SchemaId(*id),
         SchemaResgistryReference::Latest { subject_name } => {
             ProtoSchemaRef::Subject(subject_name.clone())
         }
         SchemaResgistryReference::SubjectVersion { name, version } => {
             let mut sv = ProtoSubjectVersion::new();
             sv.subject = name.clone();
-            sv.version = *version as u32;
+            sv.version = *version;
             ProtoSchemaRef::SubjectVersion(sv)
         }
     });
@@ -216,7 +216,7 @@ fn proto_to_kafka_schema(sr: ProtoSchemaRegistry) -> Option<KafkaSchema> {
     let r = sr.schema_ref?;
     let reference = match r {
         crate::proto::infrastructure_map::schema_registry::Schema_ref::SchemaId(id) => {
-            SchemaResgistryReference::Id(id as u8)
+            SchemaResgistryReference::Id(id)
         }
         crate::proto::infrastructure_map::schema_registry::Schema_ref::Subject(s) => {
             SchemaResgistryReference::Latest { subject_name: s }
@@ -224,7 +224,7 @@ fn proto_to_kafka_schema(sr: ProtoSchemaRegistry) -> Option<KafkaSchema> {
         crate::proto::infrastructure_map::schema_registry::Schema_ref::SubjectVersion(sv) => {
             SchemaResgistryReference::SubjectVersion {
                 name: sv.subject,
-                version: sv.version as u8,
+                version: sv.version,
             }
         }
     };
