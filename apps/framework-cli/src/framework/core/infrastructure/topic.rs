@@ -37,14 +37,13 @@ pub struct Topic {
     #[serde(default = "LifeCycle::default_for_deserialization")]
     pub life_cycle: LifeCycle,
 
-    /// Optional minimal Schema Registry configuration.
     #[serde(default)]
     pub schema_registry: Option<KafkaSchema>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct KafkaSchema {
-    /// Encoding/wire format (e.g. "JSON", "AVRO", "PROTOBUF")
+    /// Schema type (only "JSON" supported currently)
     pub kind: String,
     /// Reference sum type
     pub reference: SchemaResgistryReference,

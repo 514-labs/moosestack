@@ -79,7 +79,6 @@ use crate::utilities::validate_passthrough::{DataModelArrayVisitor, DataModelVis
 use hyper_util::server::graceful::GracefulShutdown;
 use lazy_static::lazy_static;
 use log::Level::{Debug, Trace};
-use num_traits::ToPrimitive;
 use std::collections::{HashMap, HashSet};
 use std::env;
 use std::env::VarError;
@@ -169,7 +168,7 @@ async fn resolve_schema_id_for_topic(
             .into_iter()
             .max()
             .unwrap(),
-        Some(v) => v.to_i32().unwrap(),
+        Some(v) => v,
     };
 
     Ok(Some(

@@ -179,7 +179,6 @@ struct PartialTopic {
     pub consumers: Vec<Consumer>,
     pub metadata: Option<Metadata>,
     pub life_cycle: Option<LifeCycle>,
-    /// Optional minimal Schema Registry config passthrough from TS/Py
     #[serde(default)]
     pub schema_registry: Option<KafkaSchema>,
 }
