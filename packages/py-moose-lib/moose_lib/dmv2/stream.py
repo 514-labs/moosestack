@@ -8,6 +8,36 @@ import dataclasses
 import datetime
 import json
 from typing import Any, Optional, Callable, Union, Literal, Generic
+class LatestRef(BaseModel):
+    subject_name: str
+
+
+class SubjectVersionRef(BaseModel):
+    name: str
+    version: int
+
+
+class SchemaRegistryReference(BaseModel):
+    Id: Optional[int] = None
+    Latest: Optional[LatestRef] = None
+    SubjectVersion: Optional[SubjectVersionRef] = None
+
+    def model_post_init(self, __context: Any) -> None:
+        present = sum(
+            1
+            for v in (self.Id, self.Latest, self.SubjectVersion)
+            if v is not None
+        )
+        if present != 1:
+            raise ValueError(
+                "Exactly one of Id, Latest, SubjectVersion must be provided"
+            )
+
+
+class KafkaSchema(BaseModel):
+    kind: Literal["JSON", "AVRO", "PROTOBUF"]
+    reference: SchemaRegistryReference
+
 from pydantic import BaseModel, ConfigDict, AliasGenerator
 from pydantic.alias_generators import to_camel
 from kafka import KafkaProducer
@@ -41,6 +71,9 @@ class StreamConfig(BaseModel):
     default_dead_letter_queue: "Optional[DeadLetterQueue]" = None
     # allow DeadLetterQueue
     model_config = ConfigDict(arbitrary_types_allowed=True)
+    # Optional minimal Schema Registry configuration
+    # Matches Rust shape
+    schema_registry: Optional[KafkaSchema] = None
 
 
 class TransformConfig(BaseModel):
@@ -300,7 +333,9 @@ class Stream(TypedMooseResource, Generic[T]):
     def send(self, values: ZeroOrMany[T]) -> None:
         """Send one or more records to this stream's Kafka topic.
 
-        Values are JSON-serialized using EnhancedJSONEncoder.
+        If `schema_registry` (JSON) is configured, resolve schema id and
+        send using Confluent wire format (0x00 + 4-byte schema id + JSON bytes).
+        Otherwise, values are JSON-serialized.
         """
         # Normalize inputs to a flat list of records
         filtered: list[T] = []
@@ -327,6 +362,52 @@ class Stream(TypedMooseResource, Generic[T]):
 
         producer, cfg = self._get_memoized_producer()
         topic = self._build_full_topic_name(getattr(cfg, "namespace", None))
+
+        sr = getattr(self.config, "schema_registry", None)
+        if sr and sr.kind == "JSON":
+            # Use Confluent JSONSerializer to encode envelope in one call
+            try:
+                from confluent_kafka.schema_registry import SchemaRegistryClient
+                from confluent_kafka.schema_registry.json_schema import JSONSerializer
+            except Exception as e:
+                raise RuntimeError(
+                    "confluent-kafka[json,protobuf,avro] is required for Schema Registry JSON"
+                ) from e
+
+            sr_url = getattr(cfg, "schema_registry_url", None)
+            if not sr_url:
+                raise RuntimeError("Schema Registry URL not configured")
+            client = SchemaRegistryClient({"url": sr_url})
+
+            ref = sr.reference
+            subject: Optional[str] = None
+            schema_id: Optional[int] = None
+            version: Optional[int] = None
+            if ref.Id is not None:
+                schema_id = int(ref.Id)
+            elif ref.Latest is not None:
+                subject = ref.Latest.subject_name
+            elif ref.SubjectVersion is not None:
+                subject = ref.SubjectVersion.name
+                version = int(ref.SubjectVersion.version)
+
+            if schema_id is None:
+                if version is not None:
+                    meta = client.get_schema(subject, version=version)
+                    schema_id = meta[0]
+                else:
+                    meta = client.get_latest_version(subject)
+                    schema_id = meta.schema_id
+
+            # Build JSONSerializer bound to the resolved schema id
+            # Note: JSONSerializer uses the registered schema and envelopes per Confluent wire format
+            serializer = JSONSerializer(client, schema_id=schema_id)
+
+            for rec in filtered:
+                value_bytes = serializer(rec.model_dump())
+                producer.send(topic, value=value_bytes)
+            producer.flush()
+            return
 
         for rec in filtered:
             producer.send(topic, value=rec)

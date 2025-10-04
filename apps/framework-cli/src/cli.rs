@@ -11,7 +11,10 @@ mod watcher;
 use super::metrics::Metrics;
 use crate::utilities::docker::DockerClient;
 use clap::Parser;
-use commands::{Commands, DbCommands, GenerateCommand, TemplateSubCommands, WorkflowCommands};
+use commands::{
+    Commands, DbCommands, GenerateCommand, KafkaArgs, KafkaCommands, TemplateSubCommands,
+    WorkflowCommands,
+};
 use config::ConfigError;
 use display::with_spinner_completion;
 use log::{debug, info, warn};
@@ -20,6 +23,7 @@ use routines::auth::generate_hash_token;
 use routines::build::build_package;
 use routines::clean::clean_project;
 use routines::docker_packager::{build_dockerfile, create_dockerfile};
+use routines::kafka_pull::write_external_topics;
 use routines::metrics_console::run_console;
 use routines::peek::peek;
 use routines::ps::show_processes;
@@ -61,6 +65,7 @@ use crate::cli::routines::code_generation::{db_pull, db_to_dmv2, prompt_user_for
 use crate::cli::routines::ls::ls_dmv2;
 use crate::cli::routines::templates::create_project_from_template;
 use crate::framework::core::migration_plan::MIGRATION_SCHEMA;
+use crate::framework::languages::SupportedLanguages;
 use crate::utilities::clickhouse_url::convert_http_to_clickhouse;
 use anyhow::Result;
 use std::time::Duration;
@@ -1160,6 +1165,27 @@ pub async fn top_command_handler(
             let project = load_project()?;
             routines::truncate_table::truncate_tables(&project, tables.clone(), *all, *rows).await
         }
+        Commands::Kafka(KafkaArgs { command }) => match command {
+            KafkaCommands::Pull {
+                bootstrap,
+                path,
+                include,
+                exclude,
+                schema_registry,
+            } => {
+                let project = load_project()?;
+                let path = path.as_deref().unwrap_or(match project.language {
+                    SupportedLanguages::Typescript => "app/external-topics",
+                    SupportedLanguages::Python => "app/external_topics",
+                });
+                write_external_topics(&project, bootstrap, path, include, exclude, schema_registry)
+                    .await?;
+                Ok(RoutineSuccess::success(Message::new(
+                    "Kafka".to_string(),
+                    "external topics written".to_string(),
+                )))
+            }
+        },
     }
 }
 

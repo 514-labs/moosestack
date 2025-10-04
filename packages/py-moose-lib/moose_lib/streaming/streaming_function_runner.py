@@ -299,11 +299,19 @@ def create_consumer() -> KafkaConsumer:
     Returns:
         Configured KafkaConsumer instance
     """
+    def _sr_json_deserializer(m: bytes):
+        if m is None:
+            return None
+        # Schema Registry JSON envelope: 0x00 + 4-byte schema ID (big-endian) + JSON
+        if len(m) >= 5 and m[0] == 0x00:
+            m = m[5:]
+        return json.loads(m.decode("utf-8"))
+
     kwargs = dict(
         broker=broker,
         client_id="python_streaming_function_consumer",
         group_id=streaming_function_id,
-        value_deserializer=lambda m: json.loads(m.decode("utf-8")),
+        value_deserializer=_sr_json_deserializer,
         sasl_username=sasl_config.get("username"),
         sasl_password=sasl_config.get("password"),
         sasl_mechanism=sasl_config.get("mechanism"),

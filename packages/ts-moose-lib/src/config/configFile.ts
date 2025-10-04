@@ -36,6 +36,8 @@ export interface KafkaConfig {
   security_protocol?: string;
   /** Optional namespace used as a prefix for topics */
   namespace?: string;
+  /** Optional Confluent Schema Registry URL */
+  schema_registry_url?: string;
 }
 
 /**

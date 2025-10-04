@@ -22,7 +22,6 @@ use futures::StreamExt;
 use itertools::{Either, Itertools};
 use log::{info, warn};
 use serde::Serialize;
-use serde::__private::from_utf8_lossy;
 use serde_json::{json, Map, Value};
 
 use crate::framework::core::infrastructure::table::EnumValue;
@@ -96,7 +95,7 @@ fn value_to_json(
         ValueRef::Int64(v) => json!(v),
         // TODO: base64 encode if type is Bytes (probably Uint8Array in TS)
         // In clickhouse the String type means arbitrary bytes
-        ValueRef::String(v) => json!(from_utf8_lossy(v)),
+        ValueRef::String(v) => json!(String::from_utf8_lossy(v)),
         ValueRef::Float32(v) => json!(v),
         ValueRef::Float64(v) => json!(v),
         ValueRef::Date(v) => {

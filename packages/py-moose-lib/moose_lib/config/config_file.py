@@ -32,6 +32,7 @@ class KafkaConfig:
     sasl_mechanism: Optional[str] = None
     security_protocol: Optional[str] = None
     namespace: Optional[str] = None
+    schema_registry_url: Optional[str] = None
 
 
 @dataclass
@@ -103,6 +104,7 @@ def read_project_config() -> ProjectConfig:
                 sasl_mechanism=sec.get("sasl_mechanism"),
                 security_protocol=sec.get("security_protocol"),
                 namespace=sec.get("namespace"),
+                schema_registry_url=sec.get("schema_registry_url"),
             )
 
         kafka_cfg = _parse_kafka("kafka_config")

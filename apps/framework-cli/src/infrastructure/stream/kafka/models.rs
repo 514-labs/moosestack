@@ -128,6 +128,9 @@ impl KafkaStreamConfig {
 pub struct KafkaConfig {
     /// Broker connection string in format "host:port"
     pub broker: String,
+    /// Optional Schema Registry base URL (e.g., http://localhost:8081)
+    #[serde(default)]
+    pub schema_registry_url: Option<String>,
     /// Message timeout in milliseconds
     pub message_timeout_ms: i32,
     /// Default retention period in milliseconds
@@ -299,6 +302,7 @@ impl Default for KafkaConfig {
     fn default() -> Self {
         Self {
             broker: "localhost:19092".to_string(),
+            schema_registry_url: None,
             message_timeout_ms: 1000,
             retention_ms: 30000,
             replication_factor: 1,

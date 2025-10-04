@@ -4,9 +4,9 @@ use itertools::Either;
 use regex::Regex;
 use serde::de::{DeserializeSeed, Error, MapAccess, SeqAccess, Visitor};
 use serde::ser::{SerializeMap, SerializeSeq};
-use serde::{Deserializer, Serialize, Serializer};
-use serde_json::Serializer as JsonSerializer;
+use serde::{forward_to_deserialize_any, Deserializer, Serialize, Serializer};
 use serde_json::Value;
+use serde_json::{Number, Serializer as JsonSerializer};
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fmt::{Display, Formatter, Write};
@@ -507,8 +507,50 @@ impl<'de, S: SerializeValue> Visitor<'de> for &mut ValueVisitor<'_, S> {
                     })
                     .map_err(A::Error::custom)
             }
-            _ => Err(A::Error::invalid_type(serde::de::Unexpected::Map, &self)),
+            t => {
+                if matches!(t, ColumnType::Float(_)) {
+                    use serde::Deserialize;
+                    let arbitrary_precision = Number::deserialize(MapAccessWrapper {
+                        map,
+                        _phantom_data: &PHANTOM_DATA,
+                    });
+                    match arbitrary_precision {
+                        Ok(number) => {
+                            return self
+                                .write_to
+                                .serialize_value(&number)
+                                .map_err(Error::custom)
+                        }
+                        Err(_) => {
+                            // nothing to do. fall through to normal error
+                        }
+                    }
+                }
+                Err(A::Error::invalid_type(serde::de::Unexpected::Map, &self))
+            }
         }
+    }
+}
+
+struct MapAccessWrapper<'de, A: MapAccess<'de>> {
+    map: A,
+    _phantom_data: &'de PhantomData<()>,
+}
+
+impl<'de, A: MapAccess<'de>> Deserializer<'de> for MapAccessWrapper<'de, A> {
+    type Error = A::Error;
+
+    fn deserialize_any<V>(self, visitor: V) -> Result<V::Value, Self::Error>
+    where
+        V: Visitor<'de>,
+    {
+        visitor.visit_map(self.map)
+    }
+
+    forward_to_deserialize_any! {
+        bool char str string bytes byte_buf option unit unit_struct
+        newtype_struct seq tuple tuple_struct map struct enum identifier
+        ignored_any i8 i16 i32 i64 i128 u8 u16 u32 u64 u128 f32 f64
     }
 }
 
