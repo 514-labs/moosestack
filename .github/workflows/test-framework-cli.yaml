@@ -301,12 +301,19 @@ jobs:
           repository: ${{ github.event.pull_request.head.repo.full_name }}
           ref: ${{ github.event.pull_request.head.sha }}
 
-      - name: Setup pnpm (if needed)
-        if: startsWith(matrix.package-manager, 'pnpm')
+      # For npm tests: use monorepo's pnpm (from package.json) for monorepo operations
+      # Test templates will use npm from Node.js
+      - name: Setup pnpm
         uses: pnpm/action-setup@v4
+        if: ${{ !startsWith(matrix.package-manager, 'pnpm') }}
+
+      # For pnpm tests: use matrix-specified pnpm version for both monorepo and test templates
+      # This allows testing with different pnpm versions (9.x and 10.x)
+      - name: Setup pnpm (test version)
+        uses: pnpm/action-setup@v4
+        if: startsWith(matrix.package-manager, 'pnpm')
         with:
           version: ${{ matrix.pm-version }}
-          run_install: false
 
       - name: Install node
         uses: actions/setup-node@v4
