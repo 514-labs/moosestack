@@ -94,6 +94,72 @@ class ConfigurationRegistry {
     };
   }
 
+  async getStandaloneClickhouseConfig(
+    overrides?: Partial<RuntimeClickHouseConfig>,
+  ): Promise<RuntimeClickHouseConfig> {
+    if (this.clickhouseConfig) {
+      return { ...this.clickhouseConfig, ...overrides };
+    }
+
+    const envHost = this._env("MOOSE_CLICKHOUSE_CONFIG__HOST");
+    const envPort = this._env("MOOSE_CLICKHOUSE_CONFIG__HOST_PORT");
+    const envUser = this._env("MOOSE_CLICKHOUSE_CONFIG__USER");
+    const envPassword = this._env("MOOSE_CLICKHOUSE_CONFIG__PASSWORD");
+    const envDb = this._env("MOOSE_CLICKHOUSE_CONFIG__DB_NAME");
+    const envUseSSL = this._parseBool(
+      this._env("MOOSE_CLICKHOUSE_CONFIG__USE_SSL"),
+    );
+
+    let projectConfig;
+    try {
+      projectConfig = await readProjectConfig();
+    } catch (error) {
+      projectConfig = null;
+    }
+
+    const defaults = {
+      host: "localhost",
+      port: "18123",
+      username: "default",
+      password: "",
+      database: "local",
+      useSSL: false,
+    };
+
+    return {
+      host:
+        overrides?.host ??
+        envHost ??
+        projectConfig?.clickhouse_config.host ??
+        defaults.host,
+      port:
+        overrides?.port ??
+        envPort ??
+        projectConfig?.clickhouse_config.host_port.toString() ??
+        defaults.port,
+      username:
+        overrides?.username ??
+        envUser ??
+        projectConfig?.clickhouse_config.user ??
+        defaults.username,
+      password:
+        overrides?.password ??
+        envPassword ??
+        projectConfig?.clickhouse_config.password ??
+        defaults.password,
+      database:
+        overrides?.database ??
+        envDb ??
+        projectConfig?.clickhouse_config.db_name ??
+        defaults.database,
+      useSSL:
+        overrides?.useSSL ??
+        envUseSSL ??
+        projectConfig?.clickhouse_config.use_ssl ??
+        defaults.useSSL,
+    };
+  }
+
   async getKafkaConfig(): Promise<RuntimeKafkaConfig> {
     if (this.kafkaConfig) {
       return this.kafkaConfig;
