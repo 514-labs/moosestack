@@ -14,5 +14,10 @@
   "devDependencies": {
     "@types/node": "^20.12.12",
     "@514labs/moose-cli": "latest"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "@confluentinc/kafka-javascript"
+    ]
   }
 }
