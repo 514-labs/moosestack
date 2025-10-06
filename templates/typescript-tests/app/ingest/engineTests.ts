@@ -28,37 +28,148 @@ export const MergeTreeTable = new OlapTable<EngineTestData>("MergeTreeTest", {
 });
 
 // Test ReplacingMergeTree engine with basic deduplication
-export const ReplacingMergeTreeBasicTable = new OlapTable<EngineTestData>("ReplacingMergeTreeBasic", {
-  engine: ClickHouseEngines.ReplacingMergeTree,
-  orderByFields: ["id"],
-});
+export const ReplacingMergeTreeBasicTable = new OlapTable<EngineTestData>(
+  "ReplacingMergeTreeBasic",
+  {
+    engine: ClickHouseEngines.ReplacingMergeTree,
+    orderByFields: ["id"],
+  },
+);
 
 // Test ReplacingMergeTree engine with version column
-export const ReplacingMergeTreeVersionTable = new OlapTable<EngineTestData>("ReplacingMergeTreeVersion", {
-  engine: ClickHouseEngines.ReplacingMergeTree,
-  orderByFields: ["id"],
-  ver: "version",
-});
+export const ReplacingMergeTreeVersionTable = new OlapTable<EngineTestData>(
+  "ReplacingMergeTreeVersion",
+  {
+    engine: ClickHouseEngines.ReplacingMergeTree,
+    orderByFields: ["id"],
+    ver: "version",
+  },
+);
 
 // Test ReplacingMergeTree engine with version and soft delete
-export const ReplacingMergeTreeSoftDeleteTable = new OlapTable<EngineTestData>("ReplacingMergeTreeSoftDelete", {
-  engine: ClickHouseEngines.ReplacingMergeTree,
-  orderByFields: ["id"],
-  ver: "version",
-  isDeleted: "isDeleted",
-});
+export const ReplacingMergeTreeSoftDeleteTable = new OlapTable<EngineTestData>(
+  "ReplacingMergeTreeSoftDelete",
+  {
+    engine: ClickHouseEngines.ReplacingMergeTree,
+    orderByFields: ["id"],
+    ver: "version",
+    isDeleted: "isDeleted",
+  },
+);
 
 // Test SummingMergeTree engine
-export const SummingMergeTreeTable = new OlapTable<EngineTestData>("SummingMergeTreeTest", {
-  engine: ClickHouseEngines.SummingMergeTree,
-  orderByFields: ["id", "category"],
-});
+export const SummingMergeTreeTable = new OlapTable<EngineTestData>(
+  "SummingMergeTreeTest",
+  {
+    engine: ClickHouseEngines.SummingMergeTree,
+    orderByFields: ["id", "category"],
+  },
+);
 
-// Test AggregatingMergeTree engine  
-export const AggregatingMergeTreeTable = new OlapTable<EngineTestData>("AggregatingMergeTreeTest", {
-  engine: ClickHouseEngines.AggregatingMergeTree,
-  orderByFields: ["id", "category"],
-});
+// Test AggregatingMergeTree engine
+export const AggregatingMergeTreeTable = new OlapTable<EngineTestData>(
+  "AggregatingMergeTreeTest",
+  {
+    engine: ClickHouseEngines.AggregatingMergeTree,
+    orderByFields: ["id", "category"],
+  },
+);
+
+// Test SummingMergeTree engine with columns
+export const SummingMergeTreeWithColumnsTable = new OlapTable<EngineTestData>(
+  "SummingMergeTreeWithColumnsTest",
+  {
+    engine: ClickHouseEngines.SummingMergeTree,
+    orderByFields: ["id", "category"],
+    columns: ["value"],
+  },
+);
+
+// Test ReplicatedMergeTree engine (with explicit keeper params - for self-hosted)
+export const ReplicatedMergeTreeTable = new OlapTable<EngineTestData>(
+  "ReplicatedMergeTreeTest",
+  {
+    engine: {
+      engine: ClickHouseEngines.ReplicatedMergeTree,
+      keeperPath:
+        "/clickhouse/tables/{database}/{shard}/replicated_merge_tree_test",
+      replicaName: "{replica}",
+    },
+    orderByFields: ["id", "timestamp"],
+  },
+);
+
+// Test ReplicatedMergeTree engine (Cloud-compatible - no keeper params)
+// In dev mode, Moose automatically injects default parameters
+// In production, ClickHouse uses its automatic configuration
+export const ReplicatedMergeTreeCloudTable = new OlapTable<EngineTestData>(
+  "ReplicatedMergeTreeCloudTest",
+  {
+    engine: {
+      engine: ClickHouseEngines.ReplicatedMergeTree,
+      // No keeperPath or replicaName - uses server defaults (Cloud compatible)
+    },
+    orderByFields: ["id", "timestamp"],
+  },
+);
+
+// Test ReplicatedReplacingMergeTree engine with version column
+export const ReplicatedReplacingMergeTreeTable = new OlapTable<EngineTestData>(
+  "ReplicatedReplacingMergeTreeTest",
+  {
+    engine: {
+      engine: ClickHouseEngines.ReplicatedReplacingMergeTree,
+      keeperPath:
+        "/clickhouse/tables/{database}/{shard}/replicated_replacing_test",
+      replicaName: "{replica}",
+      ver: "version",
+    },
+    orderByFields: ["id"],
+  },
+);
+
+// Test ReplicatedReplacingMergeTree with soft delete
+export const ReplicatedReplacingSoftDeleteTable = new OlapTable<EngineTestData>(
+  "ReplicatedReplacingSoftDeleteTest",
+  {
+    engine: {
+      engine: ClickHouseEngines.ReplicatedReplacingMergeTree,
+      keeperPath:
+        "/clickhouse/tables/{database}/{shard}/replicated_replacing_sd_test",
+      replicaName: "{replica}",
+      ver: "version",
+      isDeleted: "isDeleted",
+    },
+    orderByFields: ["id"],
+  },
+);
+
+// Test ReplicatedAggregatingMergeTree engine
+export const ReplicatedAggregatingMergeTreeTable =
+  new OlapTable<EngineTestData>("ReplicatedAggregatingMergeTreeTest", {
+    engine: {
+      engine: ClickHouseEngines.ReplicatedAggregatingMergeTree,
+      keeperPath:
+        "/clickhouse/tables/{database}/{shard}/replicated_aggregating_test",
+      replicaName: "{replica}",
+    },
+    orderByFields: ["id", "category"],
+  });
+
+// Test ReplicatedSummingMergeTree engine
+export const ReplicatedSummingMergeTreeTable = new OlapTable<EngineTestData>(
+  "ReplicatedSummingMergeTreeTest",
+  {
+    engine: {
+      engine: ClickHouseEngines.ReplicatedSummingMergeTree,
+      keeperPath:
+        "/clickhouse/tables/{database}/{shard}/replicated_summing_test",
+      replicaName: "{replica}",
+      columns: ["value"],
+    },
+    orderByFields: ["id", "category"],
+  },
+);
 
 // Note: S3Queue engine testing is more complex as it requires S3 configuration
 // and external dependencies, so it's not included in this basic engine test suite.
@@ -74,5 +185,12 @@ export const allEngineTestTables = [
   ReplacingMergeTreeVersionTable,
   ReplacingMergeTreeSoftDeleteTable,
   SummingMergeTreeTable,
+  SummingMergeTreeWithColumnsTable,
   AggregatingMergeTreeTable,
+  ReplicatedMergeTreeTable,
+  ReplicatedMergeTreeCloudTable,
+  ReplicatedReplacingMergeTreeTable,
+  ReplicatedReplacingSoftDeleteTable,
+  ReplicatedAggregatingMergeTreeTable,
+  ReplicatedSummingMergeTreeTable,
 ];

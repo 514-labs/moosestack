@@ -324,8 +324,62 @@ pub fn tables_to_typescript(tables: &[Table], life_cycle: Option<LifeCycle>) -> 
                 crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine::AggregatingMergeTree => {
                     writeln!(output, "    engine: ClickHouseEngines.AggregatingMergeTree,").unwrap();
                 }
-                crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine::SummingMergeTree => {
+                crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine::SummingMergeTree { columns } => {
                     writeln!(output, "    engine: ClickHouseEngines.SummingMergeTree,").unwrap();
+                    if let Some(cols) = columns {
+                        if !cols.is_empty() {
+                            let col_list = cols.iter().map(|c| format!("{:?}", c)).collect::<Vec<_>>().join(", ");
+                            writeln!(output, "    columns: [{}],", col_list).unwrap();
+                        }
+                    }
+                }
+                crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine::ReplicatedMergeTree { keeper_path, replica_name } => {
+                    writeln!(output, "    engine: {{").unwrap();
+                    writeln!(output, "      engine: ClickHouseEngines.ReplicatedMergeTree,").unwrap();
+                    if let (Some(path), Some(name)) = (keeper_path, replica_name) {
+                        writeln!(output, "      keeperPath: {:?},", path).unwrap();
+                        writeln!(output, "      replicaName: {:?}", name).unwrap();
+                    }
+                    writeln!(output, "    }},").unwrap();
+                }
+                crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine::ReplicatedReplacingMergeTree { keeper_path, replica_name, ver, is_deleted } => {
+                    writeln!(output, "    engine: {{").unwrap();
+                    writeln!(output, "      engine: ClickHouseEngines.ReplicatedReplacingMergeTree,").unwrap();
+                    if let (Some(path), Some(name)) = (keeper_path, replica_name) {
+                        writeln!(output, "      keeperPath: {:?},", path).unwrap();
+                        writeln!(output, "      replicaName: {:?},", name).unwrap();
+                    }
+                    if let Some(ver_col) = ver {
+                        writeln!(output, "      ver: {:?},", ver_col).unwrap();
+                    }
+                    if let Some(is_deleted_col) = is_deleted {
+                        writeln!(output, "      isDeleted: {:?},", is_deleted_col).unwrap();
+                    }
+                    writeln!(output, "    }},").unwrap();
+                }
+                crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine::ReplicatedAggregatingMergeTree { keeper_path, replica_name } => {
+                    writeln!(output, "    engine: {{").unwrap();
+                    writeln!(output, "      engine: ClickHouseEngines.ReplicatedAggregatingMergeTree,").unwrap();
+                    if let (Some(path), Some(name)) = (keeper_path, replica_name) {
+                        writeln!(output, "      keeperPath: {:?},", path).unwrap();
+                        writeln!(output, "      replicaName: {:?}", name).unwrap();
+                    }
+                    writeln!(output, "    }},").unwrap();
+                }
+                crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine::ReplicatedSummingMergeTree { keeper_path, replica_name, columns } => {
+                    writeln!(output, "    engine: {{").unwrap();
+                    writeln!(output, "      engine: ClickHouseEngines.ReplicatedSummingMergeTree,").unwrap();
+                    if let (Some(path), Some(name)) = (keeper_path, replica_name) {
+                        writeln!(output, "      keeperPath: {:?},", path).unwrap();
+                        writeln!(output, "      replicaName: {:?},", name).unwrap();
+                    }
+                    if let Some(cols) = columns {
+                        if !cols.is_empty() {
+                            let col_list = cols.iter().map(|c| format!("{:?}", c)).collect::<Vec<_>>().join(", ");
+                            writeln!(output, "      columns: [{}],", col_list).unwrap();
+                        }
+                    }
+                    writeln!(output, "    }},").unwrap();
                 }
             }
         }

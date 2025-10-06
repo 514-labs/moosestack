@@ -210,6 +210,74 @@ export type AggregatingMergeTreeConfig<T> = BaseOlapConfig<T> & {
  */
 export type SummingMergeTreeConfig<T> = BaseOlapConfig<T> & {
   engine: ClickHouseEngines.SummingMergeTree;
+  columns?: string[];
+};
+
+/**
+ * Configuration for ReplicatedMergeTree engine
+ * @template T The data type of the records stored in the table.
+ *
+ * Note: keeperPath and replicaName are optional. Omit them for ClickHouse Cloud,
+ * which manages replication automatically. For self-hosted with ClickHouse Keeper,
+ * provide both parameters or neither (to use server defaults).
+ */
+export type ReplicatedMergeTreeConfig<T> = BaseOlapConfig<T> & {
+  engine: {
+    engine: ClickHouseEngines.ReplicatedMergeTree;
+    keeperPath?: string;
+    replicaName?: string;
+  };
+};
+
+/**
+ * Configuration for ReplicatedReplacingMergeTree engine
+ * @template T The data type of the records stored in the table.
+ *
+ * Note: keeperPath and replicaName are optional. Omit them for ClickHouse Cloud,
+ * which manages replication automatically. For self-hosted with ClickHouse Keeper,
+ * provide both parameters or neither (to use server defaults).
+ */
+export type ReplicatedReplacingMergeTreeConfig<T> = BaseOlapConfig<T> & {
+  engine: {
+    engine: ClickHouseEngines.ReplicatedReplacingMergeTree;
+    keeperPath?: string;
+    replicaName?: string;
+    ver?: keyof T & string;
+    isDeleted?: keyof T & string;
+  };
+};
+
+/**
+ * Configuration for ReplicatedAggregatingMergeTree engine
+ * @template T The data type of the records stored in the table.
+ *
+ * Note: keeperPath and replicaName are optional. Omit them for ClickHouse Cloud,
+ * which manages replication automatically. For self-hosted with ClickHouse Keeper,
+ * provide both parameters or neither (to use server defaults).
+ */
+export type ReplicatedAggregatingMergeTreeConfig<T> = BaseOlapConfig<T> & {
+  engine: {
+    engine: ClickHouseEngines.ReplicatedAggregatingMergeTree;
+    keeperPath?: string;
+    replicaName?: string;
+  };
+};
+
+/**
+ * Configuration for ReplicatedSummingMergeTree engine
+ * @template T The data type of the records stored in the table.
+ *
+ * Note: keeperPath and replicaName are optional. Omit them for ClickHouse Cloud,
+ * which manages replication automatically. For self-hosted with ClickHouse Keeper,
+ * provide both parameters or neither (to use server defaults).
+ */
+export type ReplicatedSummingMergeTreeConfig<T> = BaseOlapConfig<T> & {
+  engine: {
+    engine: ClickHouseEngines.ReplicatedSummingMergeTree;
+    keeperPath?: string;
+    replicaName?: string;
+    columns?: string[];
+  };
 };
 
 /**
@@ -250,6 +318,10 @@ type EngineConfig<T> =
   | ReplacingMergeTreeConfig<T>
   | AggregatingMergeTreeConfig<T>
   | SummingMergeTreeConfig<T>
+  | ReplicatedMergeTreeConfig<T>
+  | ReplicatedReplacingMergeTreeConfig<T>
+  | ReplicatedAggregatingMergeTreeConfig<T>
+  | ReplicatedSummingMergeTreeConfig<T>
   | S3QueueConfig<T>;
 
 /**

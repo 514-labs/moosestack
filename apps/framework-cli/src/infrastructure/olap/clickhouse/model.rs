@@ -491,7 +491,9 @@ pub struct ClickHouseTable {
 
 impl ClickHouseTable {
     pub fn create_data_table_query(&self, db_name: &str) -> Result<String, ClickhouseError> {
-        create_table_query(db_name, self.clone())
+        // Default to production mode (is_dev = false) for backward compatibility
+        // This method is deprecated - use create_table_query directly with the proper is_dev flag
+        create_table_query(db_name, self.clone(), false)
     }
 
     pub fn drop_data_table_query(&self, db_name: &str) -> Result<String, ClickhouseError> {

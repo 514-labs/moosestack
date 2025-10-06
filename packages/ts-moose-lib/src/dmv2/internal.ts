@@ -62,6 +62,34 @@ interface AggregatingMergeTreeEngineConfig {
 
 interface SummingMergeTreeEngineConfig {
   engine: "SummingMergeTree";
+  columns?: string[];
+}
+
+interface ReplicatedMergeTreeEngineConfig {
+  engine: "ReplicatedMergeTree";
+  keeperPath?: string;
+  replicaName?: string;
+}
+
+interface ReplicatedReplacingMergeTreeEngineConfig {
+  engine: "ReplicatedReplacingMergeTree";
+  keeperPath?: string;
+  replicaName?: string;
+  ver?: string;
+  isDeleted?: string;
+}
+
+interface ReplicatedAggregatingMergeTreeEngineConfig {
+  engine: "ReplicatedAggregatingMergeTree";
+  keeperPath?: string;
+  replicaName?: string;
+}
+
+interface ReplicatedSummingMergeTreeEngineConfig {
+  engine: "ReplicatedSummingMergeTree";
+  keeperPath?: string;
+  replicaName?: string;
+  columns?: string[];
 }
 
 interface S3QueueEngineConfig {
@@ -82,6 +110,10 @@ type EngineConfig =
   | ReplacingMergeTreeEngineConfig
   | AggregatingMergeTreeEngineConfig
   | SummingMergeTreeEngineConfig
+  | ReplicatedMergeTreeEngineConfig
+  | ReplicatedReplacingMergeTreeEngineConfig
+  | ReplicatedAggregatingMergeTreeEngineConfig
+  | ReplicatedSummingMergeTreeEngineConfig
   | S3QueueEngineConfig;
 
 /**
@@ -249,6 +281,137 @@ interface SqlResourceJson {
  * @param registry The internal Moose resource registry (`moose_internal`).
  * @returns An object containing dictionaries of tables, topics, ingest APIs, APIs, and SQL resources, formatted according to the `*Json` interfaces.
  */
+/**
+ * Extract engine value from table config, handling both legacy and new formats
+ */
+function extractEngineValue(config: any) {
+  const engineValue =
+    "engine" in config ? config.engine : ClickHouseEngines.MergeTree;
+
+  // For replicated engines, the engine is nested inside an object
+  // Extract the actual engine type if it's an object
+  return (
+      typeof engineValue === "object" &&
+        engineValue !== null &&
+        "engine" in engineValue
+    ) ?
+      engineValue.engine
+    : engineValue;
+}
+
+/**
+ * Convert engine config for basic MergeTree engines
+ */
+function convertBasicEngineConfig(
+  engine: ClickHouseEngines,
+  config: any,
+): EngineConfig | undefined {
+  switch (engine) {
+    case ClickHouseEngines.MergeTree:
+      return { engine: "MergeTree" };
+    case ClickHouseEngines.AggregatingMergeTree:
+      return { engine: "AggregatingMergeTree" };
+    case ClickHouseEngines.ReplacingMergeTree:
+      return {
+        engine: "ReplacingMergeTree",
+        ver: config.ver,
+        isDeleted: config.isDeleted,
+      };
+    case ClickHouseEngines.SummingMergeTree:
+      return {
+        engine: "SummingMergeTree",
+        columns: config.columns,
+      };
+    default:
+      return undefined;
+  }
+}
+
+/**
+ * Convert engine config for replicated MergeTree engines
+ */
+function convertReplicatedEngineConfig(
+  engine: ClickHouseEngines,
+  config: any,
+): EngineConfig | undefined {
+  const engineCfg = config.engine;
+
+  switch (engine) {
+    case ClickHouseEngines.ReplicatedMergeTree:
+      return {
+        engine: "ReplicatedMergeTree",
+        keeperPath: engineCfg.keeperPath,
+        replicaName: engineCfg.replicaName,
+      };
+    case ClickHouseEngines.ReplicatedReplacingMergeTree:
+      return {
+        engine: "ReplicatedReplacingMergeTree",
+        keeperPath: engineCfg.keeperPath,
+        replicaName: engineCfg.replicaName,
+        ver: engineCfg.ver,
+        isDeleted: engineCfg.isDeleted,
+      };
+    case ClickHouseEngines.ReplicatedAggregatingMergeTree:
+      return {
+        engine: "ReplicatedAggregatingMergeTree",
+        keeperPath: engineCfg.keeperPath,
+        replicaName: engineCfg.replicaName,
+      };
+    case ClickHouseEngines.ReplicatedSummingMergeTree:
+      return {
+        engine: "ReplicatedSummingMergeTree",
+        keeperPath: engineCfg.keeperPath,
+        replicaName: engineCfg.replicaName,
+        columns: engineCfg.columns,
+      };
+    default:
+      return undefined;
+  }
+}
+
+/**
+ * Convert S3Queue engine config
+ */
+function convertS3QueueEngineConfig(config: any): EngineConfig {
+  return {
+    engine: "S3Queue",
+    s3Path: config.s3Path,
+    format: config.format,
+    awsAccessKeyId: config.awsAccessKeyId,
+    awsSecretAccessKey: config.awsSecretAccessKey,
+    compression: config.compression,
+    headers: config.headers,
+  };
+}
+
+/**
+ * Convert table configuration to engine config
+ */
+function convertTableConfigToEngineConfig(
+  config: any,
+): EngineConfig | undefined {
+  const engine = extractEngineValue(config);
+
+  // Try basic engines first
+  const basicConfig = convertBasicEngineConfig(engine, config);
+  if (basicConfig) {
+    return basicConfig;
+  }
+
+  // Try replicated engines
+  const replicatedConfig = convertReplicatedEngineConfig(engine, config);
+  if (replicatedConfig) {
+    return replicatedConfig;
+  }
+
+  // Handle S3Queue
+  if (engine === ClickHouseEngines.S3Queue) {
+    return convertS3QueueEngineConfig(config);
+  }
+
+  return undefined;
+}
+
 export const toInfraMap = (registry: typeof moose_internal) => {
   const tables: { [key: string]: TableJson } = {};
   const topics: { [key: string]: StreamJson } = {};
@@ -264,48 +427,8 @@ export const toInfraMap = (registry: typeof moose_internal) => {
       metadata = (table as any).pipelineParent.metadata;
     }
     // Create type-safe engine configuration
-    const engineConfig: EngineConfig | undefined = (() => {
-      // Handle legacy configuration by checking if engine property exists
-      const engine =
-        "engine" in table.config ?
-          table.config.engine
-        : ClickHouseEngines.MergeTree;
-      switch (engine) {
-        case ClickHouseEngines.MergeTree:
-          return { engine: "MergeTree" };
-
-        case ClickHouseEngines.ReplacingMergeTree:
-          const replConfig = table.config as any; // Cast to access specific properties
-          return {
-            engine: "ReplacingMergeTree",
-            ver: replConfig.ver,
-            isDeleted: replConfig.isDeleted,
-          };
-
-        case ClickHouseEngines.AggregatingMergeTree:
-          return { engine: "AggregatingMergeTree" };
-
-        case ClickHouseEngines.SummingMergeTree:
-          return { engine: "SummingMergeTree" };
-
-        case ClickHouseEngines.S3Queue: {
-          const s3Config = table.config as any; // Cast to access S3Queue-specific properties
-
-          return {
-            engine: "S3Queue",
-            s3Path: s3Config.s3Path,
-            format: s3Config.format,
-            awsAccessKeyId: s3Config.awsAccessKeyId,
-            awsSecretAccessKey: s3Config.awsSecretAccessKey,
-            compression: s3Config.compression,
-            headers: s3Config.headers,
-          };
-        }
-
-        default:
-          return undefined;
-      }
-    })();
+    const engineConfig: EngineConfig | undefined =
+      convertTableConfigToEngineConfig(table.config);
 
     // Get table settings, applying defaults for S3Queue
     let tableSettings: { [key: string]: string } | undefined = undefined;

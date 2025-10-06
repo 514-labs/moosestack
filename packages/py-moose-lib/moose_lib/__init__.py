@@ -19,6 +19,10 @@ from .blocks import (
     ReplacingMergeTreeEngine, 
     AggregatingMergeTreeEngine,
     SummingMergeTreeEngine,
+    ReplicatedMergeTreeEngine,
+    ReplicatedReplacingMergeTreeEngine,
+    ReplicatedAggregatingMergeTreeEngine,
+    ReplicatedSummingMergeTreeEngine,
     S3QueueEngine,
     EngineConfig,
     # Legacy enum (already exported via .blocks import, but explicit for clarity)

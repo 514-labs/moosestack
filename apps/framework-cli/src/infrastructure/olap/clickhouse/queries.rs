@@ -143,7 +143,48 @@ pub enum ClickhouseEngine {
         is_deleted: Option<String>,
     },
     AggregatingMergeTree,
-    SummingMergeTree,
+    SummingMergeTree {
+        // Optional list of columns to sum
+        columns: Option<Vec<String>>,
+    },
+    ReplicatedMergeTree {
+        // Keeper path for replication (ZooKeeper or ClickHouse Keeper)
+        // Optional: omit for ClickHouse Cloud which manages replication automatically
+        keeper_path: Option<String>,
+        // Replica name
+        // Optional: omit for ClickHouse Cloud which manages replication automatically
+        replica_name: Option<String>,
+    },
+    ReplicatedReplacingMergeTree {
+        // Keeper path for replication (ZooKeeper or ClickHouse Keeper)
+        // Optional: omit for ClickHouse Cloud which manages replication automatically
+        keeper_path: Option<String>,
+        // Replica name
+        // Optional: omit for ClickHouse Cloud which manages replication automatically
+        replica_name: Option<String>,
+        // Optional version column for deduplication
+        ver: Option<String>,
+        // Optional is_deleted column for soft deletes (requires ver)
+        is_deleted: Option<String>,
+    },
+    ReplicatedAggregatingMergeTree {
+        // Keeper path for replication (ZooKeeper or ClickHouse Keeper)
+        // Optional: omit for ClickHouse Cloud which manages replication automatically
+        keeper_path: Option<String>,
+        // Replica name
+        // Optional: omit for ClickHouse Cloud which manages replication automatically
+        replica_name: Option<String>,
+    },
+    ReplicatedSummingMergeTree {
+        // Keeper path for replication (ZooKeeper or ClickHouse Keeper)
+        // Optional: omit for ClickHouse Cloud which manages replication automatically
+        keeper_path: Option<String>,
+        // Replica name
+        // Optional: omit for ClickHouse Cloud which manages replication automatically
+        replica_name: Option<String>,
+        // Optional list of columns to sum
+        columns: Option<Vec<String>>,
+    },
     S3Queue {
         // Non-alterable constructor parameters - required for table creation
         s3_path: String,
@@ -167,7 +208,35 @@ impl Into<String> for ClickhouseEngine {
                 Self::serialize_replacing_merge_tree(&ver, &is_deleted)
             }
             ClickhouseEngine::AggregatingMergeTree => "AggregatingMergeTree".to_string(),
-            ClickhouseEngine::SummingMergeTree => "SummingMergeTree".to_string(),
+            ClickhouseEngine::SummingMergeTree { columns } => {
+                Self::serialize_summing_merge_tree(&columns)
+            }
+            ClickhouseEngine::ReplicatedMergeTree {
+                keeper_path,
+                replica_name,
+            } => Self::serialize_replicated_merge_tree(&keeper_path, &replica_name),
+            ClickhouseEngine::ReplicatedReplacingMergeTree {
+                keeper_path,
+                replica_name,
+                ver,
+                is_deleted,
+            } => Self::serialize_replicated_replacing_merge_tree(
+                &keeper_path,
+                &replica_name,
+                &ver,
+                &is_deleted,
+            ),
+            ClickhouseEngine::ReplicatedAggregatingMergeTree {
+                keeper_path,
+                replica_name,
+            } => Self::serialize_replicated_aggregating_merge_tree(&keeper_path, &replica_name),
+            ClickhouseEngine::ReplicatedSummingMergeTree {
+                keeper_path,
+                replica_name,
+                columns,
+            } => {
+                Self::serialize_replicated_summing_merge_tree(&keeper_path, &replica_name, &columns)
+            }
             ClickhouseEngine::S3Queue {
                 s3_path,
                 format,
@@ -236,7 +305,7 @@ impl ClickhouseEngine {
     }
 
     /// Parse SharedReplacingMergeTree or ReplicatedReplacingMergeTree
-    /// Format: (path, replica [, ver [, is_deleted]])
+    /// Format: (path, replica [, ver [, is_deleted]]) or () for automatic configuration
     fn parse_distributed_replacing_merge_tree(value: &str) -> Result<Self, &str> {
         let content = Self::extract_engine_content(
             value,
@@ -245,36 +314,118 @@ impl ClickhouseEngine {
 
         let params = parse_quoted_csv(content);
 
-        // Require at least 2 params (path, replica)
-        if params.len() < 2 {
-            return Err(value);
+        // Check if this is a Replicated variant (not Shared)
+        let is_replicated = value.starts_with("ReplicatedReplacingMergeTree(");
+
+        if is_replicated {
+            // Handle empty parameters (automatic configuration)
+            if params.is_empty() {
+                return Ok(ClickhouseEngine::ReplicatedReplacingMergeTree {
+                    keeper_path: None,
+                    replica_name: None,
+                    ver: None,
+                    is_deleted: None,
+                });
+            }
+
+            // Require at least 2 params if any are provided
+            if params.len() < 2 {
+                return Err(value);
+            }
+
+            // First two params are keeper_path and replica_name
+            let keeper_path = params.first().cloned();
+            let replica_name = params.get(1).cloned();
+
+            // Normalize defaults back to None
+            let (keeper_path, replica_name) =
+                Self::normalize_replication_params(keeper_path, replica_name);
+
+            // Optional 3rd param is ver, optional 4th is is_deleted
+            let ver = params.get(2).cloned();
+            let is_deleted = params.get(3).cloned();
+
+            Ok(ClickhouseEngine::ReplicatedReplacingMergeTree {
+                keeper_path,
+                replica_name,
+                ver,
+                is_deleted,
+            })
+        } else {
+            // For SharedReplacingMergeTree, the first params might be ver/is_deleted
+            // not keeper_path/replica_name if there are fewer than 2 params
+            let ver = params.first().cloned();
+            let is_deleted = params.get(1).cloned();
+
+            // SharedReplacingMergeTree normalizes to ReplacingMergeTree
+            Ok(ClickhouseEngine::ReplacingMergeTree { ver, is_deleted })
         }
+    }
 
-        // Optional 3rd param is ver, optional 4th is is_deleted
-        let ver = params.get(2).cloned();
-        let is_deleted = params.get(3).cloned();
+    /// Normalize replication parameters - convert defaults back to None
+    /// This ensures that user code without explicit paths matches tables created with defaults
+    fn normalize_replication_params(
+        keeper_path: Option<String>,
+        replica_name: Option<String>,
+    ) -> (Option<String>, Option<String>) {
+        const DEFAULT_KEEPER_PATH: &str = "/clickhouse/tables/{uuid}/{shard}";
+        const DEFAULT_REPLICA_NAME: &str = "{replica}";
 
-        Ok(ClickhouseEngine::ReplacingMergeTree { ver, is_deleted })
+        match (keeper_path, replica_name) {
+            (Some(path), Some(name))
+                if path == DEFAULT_KEEPER_PATH && name == DEFAULT_REPLICA_NAME =>
+            {
+                (None, None)
+            }
+            (path, name) => (path, name),
+        }
     }
 
     /// Parse SharedMergeTree or ReplicatedMergeTree
-    /// Format: (path, replica)
+    /// Format: (path, replica) or () for automatic configuration
     fn parse_distributed_merge_tree(value: &str) -> Result<Self, &str> {
         let content =
             Self::extract_engine_content(value, &["SharedMergeTree(", "ReplicatedMergeTree("])?;
 
         let params = parse_quoted_csv(content);
 
-        // Require at least 2 params (path, replica)
-        if params.len() >= 2 {
-            Ok(ClickhouseEngine::MergeTree)
+        // Check if this is a Replicated variant (not Shared)
+        let is_replicated = value.starts_with("ReplicatedMergeTree(");
+
+        if is_replicated {
+            // Handle empty parameters (automatic configuration)
+            if params.is_empty() {
+                return Ok(ClickhouseEngine::ReplicatedMergeTree {
+                    keeper_path: None,
+                    replica_name: None,
+                });
+            }
+
+            // Require exactly 2 params if any are provided
+            if params.len() < 2 {
+                return Err(value);
+            }
+
+            // First two params are keeper_path and replica_name
+            let keeper_path = params.first().cloned();
+            let replica_name = params.get(1).cloned();
+
+            // Normalize defaults back to None
+            let (keeper_path, replica_name) =
+                Self::normalize_replication_params(keeper_path, replica_name);
+
+            Ok(ClickhouseEngine::ReplicatedMergeTree {
+                keeper_path,
+                replica_name,
+            })
         } else {
-            Err(value)
+            // SharedMergeTree normalizes to MergeTree
+            Ok(ClickhouseEngine::MergeTree)
         }
     }
 
     /// Parse SharedAggregatingMergeTree or ReplicatedAggregatingMergeTree
-    /// Format: (path, replica)
+    /// Format: (path, replica) or () for automatic configuration
     fn parse_distributed_aggregating_merge_tree(value: &str) -> Result<Self, &str> {
         let content = Self::extract_engine_content(
             value,
@@ -286,16 +437,43 @@ impl ClickhouseEngine {
 
         let params = parse_quoted_csv(content);
 
-        // Require at least 2 params (path, replica)
-        if params.len() >= 2 {
-            Ok(ClickhouseEngine::AggregatingMergeTree)
+        // Check if this is a Replicated variant (not Shared)
+        let is_replicated = value.starts_with("ReplicatedAggregatingMergeTree(");
+
+        if is_replicated {
+            // Handle empty parameters (automatic configuration)
+            if params.is_empty() {
+                return Ok(ClickhouseEngine::ReplicatedAggregatingMergeTree {
+                    keeper_path: None,
+                    replica_name: None,
+                });
+            }
+
+            // Require exactly 2 params if any are provided
+            if params.len() < 2 {
+                return Err(value);
+            }
+
+            // First two params are keeper_path and replica_name
+            let keeper_path = params.first().cloned();
+            let replica_name = params.get(1).cloned();
+
+            // Normalize defaults back to None
+            let (keeper_path, replica_name) =
+                Self::normalize_replication_params(keeper_path, replica_name);
+
+            Ok(ClickhouseEngine::ReplicatedAggregatingMergeTree {
+                keeper_path,
+                replica_name,
+            })
         } else {
-            Err(value)
+            // SharedAggregatingMergeTree normalizes to AggregatingMergeTree
+            Ok(ClickhouseEngine::AggregatingMergeTree)
         }
     }
 
     /// Parse SharedSummingMergeTree or ReplicatedSummingMergeTree
-    /// Format: (path, replica [, columns...])
+    /// Format: (path, replica [, columns...]) or () for automatic configuration
     fn parse_distributed_summing_merge_tree(value: &str) -> Result<Self, &str> {
         let content = Self::extract_engine_content(
             value,
@@ -304,12 +482,53 @@ impl ClickhouseEngine {
 
         let params = parse_quoted_csv(content);
 
-        // Require at least 2 params (path, replica)
-        // Note: SummingMergeTree can have additional column parameters after path/replica
-        if params.len() >= 2 {
-            Ok(ClickhouseEngine::SummingMergeTree)
+        // Check if this is a Replicated variant (not Shared)
+        let is_replicated = value.starts_with("ReplicatedSummingMergeTree(");
+
+        if is_replicated {
+            // Handle empty parameters (automatic configuration)
+            if params.is_empty() {
+                return Ok(ClickhouseEngine::ReplicatedSummingMergeTree {
+                    keeper_path: None,
+                    replica_name: None,
+                    columns: None,
+                });
+            }
+
+            // Require at least 2 params if any are provided
+            if params.len() < 2 {
+                return Err(value);
+            }
+
+            // First two params are keeper_path and replica_name
+            let keeper_path = params.first().cloned();
+            let replica_name = params.get(1).cloned();
+
+            // Normalize defaults back to None
+            let (keeper_path, replica_name) =
+                Self::normalize_replication_params(keeper_path, replica_name);
+
+            // Additional params are column names (if any)
+            let columns = if params.len() > 2 {
+                Some(params[2..].to_vec())
+            } else {
+                None
+            };
+
+            Ok(ClickhouseEngine::ReplicatedSummingMergeTree {
+                keeper_path,
+                replica_name,
+                columns,
+            })
         } else {
-            Err(value)
+            // SharedSummingMergeTree normalizes to SummingMergeTree
+            // All params are column names for SharedSummingMergeTree
+            let columns = if !params.is_empty() {
+                Some(params)
+            } else {
+                None
+            };
+            Ok(ClickhouseEngine::SummingMergeTree { columns })
         }
     }
 
@@ -327,13 +546,46 @@ impl ClickhouseEngine {
         Err(value)
     }
 
+    /// Parse replicated engine without parameters (ClickHouse Cloud mode)
+    fn parse_replicated_engine_no_params(value: &str) -> Option<Self> {
+        match value {
+            "ReplicatedMergeTree" => Some(ClickhouseEngine::ReplicatedMergeTree {
+                keeper_path: None,
+                replica_name: None,
+            }),
+            "ReplicatedReplacingMergeTree" => {
+                Some(ClickhouseEngine::ReplicatedReplacingMergeTree {
+                    keeper_path: None,
+                    replica_name: None,
+                    ver: None,
+                    is_deleted: None,
+                })
+            }
+            "ReplicatedAggregatingMergeTree" => {
+                Some(ClickhouseEngine::ReplicatedAggregatingMergeTree {
+                    keeper_path: None,
+                    replica_name: None,
+                })
+            }
+            "ReplicatedSummingMergeTree" => Some(ClickhouseEngine::ReplicatedSummingMergeTree {
+                keeper_path: None,
+                replica_name: None,
+                columns: None,
+            }),
+            _ => None,
+        }
+    }
+
     /// Parse regular engines (including those with Shared/Replicated prefix but no parameters)
     fn parse_regular_engine(value: &str) -> Result<Self, &str> {
-        // Strip Shared or Replicated prefix if present (for engines without parameters)
-        let engine_name = value
-            .strip_prefix("Shared")
-            .or_else(|| value.strip_prefix("Replicated"))
-            .unwrap_or(value);
+        // Check for Replicated engines without parameters first
+        if let Some(engine) = Self::parse_replicated_engine_no_params(value) {
+            return Ok(engine);
+        }
+
+        // Strip Shared prefix if present (for engines without parameters)
+        // Shared engines normalize to their base engine
+        let engine_name = value.strip_prefix("Shared").unwrap_or(value);
 
         match engine_name {
             "MergeTree" => Ok(ClickhouseEngine::MergeTree),
@@ -345,7 +597,10 @@ impl ClickhouseEngine {
                 Self::parse_regular_replacing_merge_tree(s, value)
             }
             "AggregatingMergeTree" => Ok(ClickhouseEngine::AggregatingMergeTree),
-            "SummingMergeTree" => Ok(ClickhouseEngine::SummingMergeTree),
+            "SummingMergeTree" => Ok(ClickhouseEngine::SummingMergeTree { columns: None }),
+            s if s.starts_with("SummingMergeTree(") => {
+                Self::parse_regular_summing_merge_tree(s, value)
+            }
             s if s.starts_with("S3Queue(") => Self::parse_regular_s3queue(s, value),
             _ => Err(value),
         }
@@ -376,6 +631,21 @@ impl ClickhouseEngine {
             .and_then(|s| s.strip_suffix(")"))
         {
             Self::parse_s3queue(content).map_err(|_| original_value)
+        } else {
+            Err(original_value)
+        }
+    }
+
+    /// Parse regular SummingMergeTree with parameters
+    fn parse_regular_summing_merge_tree<'a>(
+        engine_name: &str,
+        original_value: &'a str,
+    ) -> Result<Self, &'a str> {
+        if let Some(content) = engine_name
+            .strip_prefix("SummingMergeTree(")
+            .and_then(|s| s.strip_suffix(")"))
+        {
+            Self::parse_summing_merge_tree(content).map_err(|_| original_value)
         } else {
             Err(original_value)
         }
@@ -447,7 +717,11 @@ impl ClickhouseEngine {
             ClickhouseEngine::MergeTree
                 | ClickhouseEngine::ReplacingMergeTree { .. }
                 | ClickhouseEngine::AggregatingMergeTree
-                | ClickhouseEngine::SummingMergeTree
+                | ClickhouseEngine::SummingMergeTree { .. }
+                | ClickhouseEngine::ReplicatedMergeTree { .. }
+                | ClickhouseEngine::ReplicatedReplacingMergeTree { .. }
+                | ClickhouseEngine::ReplicatedAggregatingMergeTree { .. }
+                | ClickhouseEngine::ReplicatedSummingMergeTree { .. }
         )
     }
 
@@ -459,7 +733,33 @@ impl ClickhouseEngine {
                 Self::serialize_replacing_merge_tree(ver, is_deleted)
             }
             ClickhouseEngine::AggregatingMergeTree => "AggregatingMergeTree".to_string(),
-            ClickhouseEngine::SummingMergeTree => "SummingMergeTree".to_string(),
+            ClickhouseEngine::SummingMergeTree { columns } => {
+                Self::serialize_summing_merge_tree(columns)
+            }
+            ClickhouseEngine::ReplicatedMergeTree {
+                keeper_path,
+                replica_name,
+            } => Self::serialize_replicated_merge_tree(keeper_path, replica_name),
+            ClickhouseEngine::ReplicatedReplacingMergeTree {
+                keeper_path,
+                replica_name,
+                ver,
+                is_deleted,
+            } => Self::serialize_replicated_replacing_merge_tree(
+                keeper_path,
+                replica_name,
+                ver,
+                is_deleted,
+            ),
+            ClickhouseEngine::ReplicatedAggregatingMergeTree {
+                keeper_path,
+                replica_name,
+            } => Self::serialize_replicated_aggregating_merge_tree(keeper_path, replica_name),
+            ClickhouseEngine::ReplicatedSummingMergeTree {
+                keeper_path,
+                replica_name,
+                columns,
+            } => Self::serialize_replicated_summing_merge_tree(keeper_path, replica_name, columns),
             ClickhouseEngine::S3Queue {
                 s3_path,
                 format,
@@ -575,6 +875,112 @@ impl ClickhouseEngine {
         result
     }
 
+    /// Serialize SummingMergeTree engine to string format
+    /// Format: SummingMergeTree | SummingMergeTree('col1', 'col2', ...)
+    fn serialize_summing_merge_tree(columns: &Option<Vec<String>>) -> String {
+        if let Some(cols) = columns {
+            if !cols.is_empty() {
+                let col_list = cols
+                    .iter()
+                    .map(|c| format!("'{}'", c))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                return format!("SummingMergeTree({})", col_list);
+            }
+        }
+        "SummingMergeTree".to_string()
+    }
+
+    /// Serialize ReplicatedMergeTree engine to string format
+    /// Format: ReplicatedMergeTree('keeper_path', 'replica_name') or ReplicatedMergeTree() for cloud
+    fn serialize_replicated_merge_tree(
+        keeper_path: &Option<String>,
+        replica_name: &Option<String>,
+    ) -> String {
+        match (keeper_path, replica_name) {
+            (Some(path), Some(name)) => format!("ReplicatedMergeTree('{}', '{}')", path, name),
+            _ => "ReplicatedMergeTree()".to_string(),
+        }
+    }
+
+    /// Serialize ReplicatedReplacingMergeTree engine to string format
+    /// Format: ReplicatedReplacingMergeTree('keeper_path', 'replica_name'[, 'ver'[, 'is_deleted']])
+    fn serialize_replicated_replacing_merge_tree(
+        keeper_path: &Option<String>,
+        replica_name: &Option<String>,
+        ver: &Option<String>,
+        is_deleted: &Option<String>,
+    ) -> String {
+        let mut params = vec![];
+
+        if let (Some(path), Some(name)) = (keeper_path, replica_name) {
+            params.push(format!("'{}'", path));
+            params.push(format!("'{}'", name));
+        }
+
+        if let Some(v) = ver {
+            params.push(format!("'{}'", v));
+        }
+
+        if let Some(d) = is_deleted {
+            if ver.is_some() {
+                params.push(format!("'{}'", d));
+            }
+        }
+
+        if params.is_empty() {
+            "ReplicatedReplacingMergeTree()".to_string()
+        } else {
+            format!("ReplicatedReplacingMergeTree({})", params.join(", "))
+        }
+    }
+
+    /// Serialize ReplicatedAggregatingMergeTree engine to string format
+    /// Format: ReplicatedAggregatingMergeTree('keeper_path', 'replica_name') or ReplicatedAggregatingMergeTree() for cloud
+    fn serialize_replicated_aggregating_merge_tree(
+        keeper_path: &Option<String>,
+        replica_name: &Option<String>,
+    ) -> String {
+        match (keeper_path, replica_name) {
+            (Some(path), Some(name)) => {
+                format!("ReplicatedAggregatingMergeTree('{}', '{}')", path, name)
+            }
+            _ => "ReplicatedAggregatingMergeTree()".to_string(),
+        }
+    }
+
+    /// Serialize ReplicatedSummingMergeTree engine to string format
+    /// Format: ReplicatedSummingMergeTree('keeper_path', 'replica_name'[, ('col1', 'col2', ...)])
+    fn serialize_replicated_summing_merge_tree(
+        keeper_path: &Option<String>,
+        replica_name: &Option<String>,
+        columns: &Option<Vec<String>>,
+    ) -> String {
+        let mut params = vec![];
+
+        if let (Some(path), Some(name)) = (keeper_path, replica_name) {
+            params.push(format!("'{}'", path));
+            params.push(format!("'{}'", name));
+        }
+
+        if let Some(cols) = columns {
+            if !cols.is_empty() {
+                let col_list = cols
+                    .iter()
+                    .map(|c| format!("'{}'", c))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                params.push(format!("({})", col_list));
+            }
+        }
+
+        if params.is_empty() {
+            "ReplicatedSummingMergeTree()".to_string()
+        } else {
+            format!("ReplicatedSummingMergeTree({})", params.join(", "))
+        }
+    }
+
     /// Parse ReplacingMergeTree engine from serialized string format
     /// Expected format: ReplacingMergeTree('ver'[, 'is_deleted'])
     fn parse_replacing_merge_tree(content: &str) -> Result<ClickhouseEngine, &str> {
@@ -593,6 +999,20 @@ impl ClickhouseEngine {
         };
 
         Ok(ClickhouseEngine::ReplacingMergeTree { ver, is_deleted })
+    }
+
+    /// Parse SummingMergeTree engine from serialized string format
+    /// Expected format: SummingMergeTree('col1', 'col2', ...) or SummingMergeTree
+    fn parse_summing_merge_tree(content: &str) -> Result<ClickhouseEngine, &str> {
+        let parts = parse_quoted_csv(content);
+
+        let columns = if !parts.is_empty() && parts.iter().any(|p| p != "null") {
+            Some(parts.into_iter().filter(|p| p != "null").collect())
+        } else {
+            None
+        };
+
+        Ok(ClickhouseEngine::SummingMergeTree { columns })
     }
 
     /// Parse S3Queue engine from serialized string format
@@ -685,6 +1105,13 @@ impl ClickhouseEngine {
     pub fn non_alterable_params_hash(&self) -> String {
         let mut hasher = Sha256::new();
 
+        // Note: We explicitly hash "null" for None values instead of skipping them.
+        // This ensures positional consistency and prevents hash collisions between different
+        // configurations. For example:
+        // - keeper_path=Some("abc"), replica_name=None -> hash("..." + "abc" + "null")
+        // - keeper_path=None, replica_name=Some("abc") -> hash("..." + "null" + "abc")
+        // Without hashing "null", both would produce identical hashes.
+
         match self {
             ClickhouseEngine::MergeTree => {
                 hasher.update("MergeTree".as_bytes());
@@ -706,8 +1133,99 @@ impl ClickhouseEngine {
             ClickhouseEngine::AggregatingMergeTree => {
                 hasher.update("AggregatingMergeTree".as_bytes());
             }
-            ClickhouseEngine::SummingMergeTree => {
+            ClickhouseEngine::SummingMergeTree { columns } => {
                 hasher.update("SummingMergeTree".as_bytes());
+                if let Some(cols) = columns {
+                    for col in cols {
+                        hasher.update(col.as_bytes());
+                    }
+                } else {
+                    hasher.update("null".as_bytes());
+                }
+            }
+            ClickhouseEngine::ReplicatedMergeTree {
+                keeper_path,
+                replica_name,
+            } => {
+                hasher.update("ReplicatedMergeTree".as_bytes());
+                if let Some(path) = keeper_path {
+                    hasher.update(path.as_bytes());
+                } else {
+                    hasher.update("null".as_bytes());
+                }
+                if let Some(name) = replica_name {
+                    hasher.update(name.as_bytes());
+                } else {
+                    hasher.update("null".as_bytes());
+                }
+            }
+            ClickhouseEngine::ReplicatedReplacingMergeTree {
+                keeper_path,
+                replica_name,
+                ver,
+                is_deleted,
+            } => {
+                hasher.update("ReplicatedReplacingMergeTree".as_bytes());
+                if let Some(path) = keeper_path {
+                    hasher.update(path.as_bytes());
+                } else {
+                    hasher.update("null".as_bytes());
+                }
+                if let Some(name) = replica_name {
+                    hasher.update(name.as_bytes());
+                } else {
+                    hasher.update("null".as_bytes());
+                }
+                if let Some(v) = ver {
+                    hasher.update(v.as_bytes());
+                } else {
+                    hasher.update("null".as_bytes());
+                }
+                if let Some(d) = is_deleted {
+                    hasher.update(d.as_bytes());
+                } else {
+                    hasher.update("null".as_bytes());
+                }
+            }
+            ClickhouseEngine::ReplicatedAggregatingMergeTree {
+                keeper_path,
+                replica_name,
+            } => {
+                hasher.update("ReplicatedAggregatingMergeTree".as_bytes());
+                if let Some(path) = keeper_path {
+                    hasher.update(path.as_bytes());
+                } else {
+                    hasher.update("null".as_bytes());
+                }
+                if let Some(name) = replica_name {
+                    hasher.update(name.as_bytes());
+                } else {
+                    hasher.update("null".as_bytes());
+                }
+            }
+            ClickhouseEngine::ReplicatedSummingMergeTree {
+                keeper_path,
+                replica_name,
+                columns,
+            } => {
+                hasher.update("ReplicatedSummingMergeTree".as_bytes());
+                if let Some(path) = keeper_path {
+                    hasher.update(path.as_bytes());
+                } else {
+                    hasher.update("null".as_bytes());
+                }
+                if let Some(name) = replica_name {
+                    hasher.update(name.as_bytes());
+                } else {
+                    hasher.update("null".as_bytes());
+                }
+                if let Some(cols) = columns {
+                    for col in cols {
+                        hasher.update(col.as_bytes());
+                    }
+                } else {
+                    hasher.update("null".as_bytes());
+                }
             }
             ClickhouseEngine::S3Queue {
                 s3_path,
@@ -767,9 +1285,197 @@ impl ClickhouseEngine {
     }
 }
 
+/// Generate DDL for ReplacingMergeTree engine
+fn build_replacing_merge_tree_ddl(
+    ver: &Option<String>,
+    is_deleted: &Option<String>,
+    order_by_empty: bool,
+) -> Result<String, ClickhouseError> {
+    if order_by_empty {
+        return Err(ClickhouseError::InvalidParameters {
+            message: "ReplacingMergeTree requires an order by clause".to_string(),
+        });
+    }
+
+    // Validate that is_deleted requires ver
+    if is_deleted.is_some() && ver.is_none() {
+        return Err(ClickhouseError::InvalidParameters {
+            message: "is_deleted parameter requires ver to be specified".to_string(),
+        });
+    }
+
+    let mut params = vec![];
+    if let Some(ver_col) = ver {
+        params.push(format!("`{}`", ver_col));
+    }
+    if let Some(is_deleted_col) = is_deleted {
+        params.push(format!("`{}`", is_deleted_col));
+    }
+
+    Ok(if params.is_empty() {
+        "ReplacingMergeTree".to_string()
+    } else {
+        format!("ReplacingMergeTree({})", params.join(", "))
+    })
+}
+
+/// Generate DDL for SummingMergeTree engine
+fn build_summing_merge_tree_ddl(columns: &Option<Vec<String>>) -> String {
+    if let Some(cols) = columns {
+        if !cols.is_empty() {
+            let col_list = cols
+                .iter()
+                .map(|c| format!("`{}`", c))
+                .collect::<Vec<_>>()
+                .join(", ");
+            return format!("SummingMergeTree(({}))", col_list);
+        }
+    }
+    "SummingMergeTree".to_string()
+}
+
+/// Build replication parameters for replicated engines
+///
+/// When keeper_path and replica_name are None:
+/// - In dev mode: Injects default parameters for local development
+/// - In production: Returns empty parameters to let ClickHouse use automatic configuration
+///   (ClickHouse Cloud or server-configured defaults)
+fn build_replication_params(
+    keeper_path: &Option<String>,
+    replica_name: &Option<String>,
+    engine_name: &str,
+    is_dev: bool,
+) -> Result<Vec<String>, ClickhouseError> {
+    match (keeper_path, replica_name) {
+        (Some(path), Some(name)) if !path.is_empty() && !name.is_empty() => {
+            Ok(vec![format!("'{}'", path), format!("'{}'", name)])
+        }
+        (None, None) => {
+            if is_dev {
+                // In dev mode, inject default parameters for local ClickHouse
+                // This allows the same code to work in both dev and production
+                Ok(vec![
+                    "'/clickhouse/tables/{database}/{shard}/{uuid}'".to_string(),
+                    "'{replica}'".to_string(),
+                ])
+            } else {
+                // In production, return empty parameters - let ClickHouse handle defaults
+                // This works for ClickHouse Cloud and properly configured servers
+                Ok(vec![])
+            }
+        }
+        _ => Err(ClickhouseError::InvalidParameters {
+            message: format!(
+                "{} requires both keeper_path and replica_name, or neither",
+                engine_name
+            ),
+        }),
+    }
+}
+
+/// Generate DDL for ReplicatedMergeTree engine
+fn build_replicated_merge_tree_ddl(
+    keeper_path: &Option<String>,
+    replica_name: &Option<String>,
+    is_dev: bool,
+) -> Result<String, ClickhouseError> {
+    let params =
+        build_replication_params(keeper_path, replica_name, "ReplicatedMergeTree", is_dev)?;
+    Ok(format!("ReplicatedMergeTree({})", params.join(", ")))
+}
+
+/// Generate DDL for ReplicatedReplacingMergeTree engine
+fn build_replicated_replacing_merge_tree_ddl(
+    keeper_path: &Option<String>,
+    replica_name: &Option<String>,
+    ver: &Option<String>,
+    is_deleted: &Option<String>,
+    order_by_empty: bool,
+    is_dev: bool,
+) -> Result<String, ClickhouseError> {
+    if order_by_empty {
+        return Err(ClickhouseError::InvalidParameters {
+            message: "ReplicatedReplacingMergeTree requires an order by clause".to_string(),
+        });
+    }
+
+    // Validate that is_deleted requires ver
+    if is_deleted.is_some() && ver.is_none() {
+        return Err(ClickhouseError::InvalidParameters {
+            message: "is_deleted parameter requires ver to be specified".to_string(),
+        });
+    }
+
+    let mut params = build_replication_params(
+        keeper_path,
+        replica_name,
+        "ReplicatedReplacingMergeTree",
+        is_dev,
+    )?;
+
+    if let Some(ver_col) = ver {
+        params.push(format!("`{}`", ver_col));
+    }
+    if let Some(is_deleted_col) = is_deleted {
+        params.push(format!("`{}`", is_deleted_col));
+    }
+
+    Ok(format!(
+        "ReplicatedReplacingMergeTree({})",
+        params.join(", ")
+    ))
+}
+
+/// Generate DDL for ReplicatedAggregatingMergeTree engine
+fn build_replicated_aggregating_merge_tree_ddl(
+    keeper_path: &Option<String>,
+    replica_name: &Option<String>,
+    is_dev: bool,
+) -> Result<String, ClickhouseError> {
+    let params = build_replication_params(
+        keeper_path,
+        replica_name,
+        "ReplicatedAggregatingMergeTree",
+        is_dev,
+    )?;
+    Ok(format!(
+        "ReplicatedAggregatingMergeTree({})",
+        params.join(", ")
+    ))
+}
+
+/// Generate DDL for ReplicatedSummingMergeTree engine
+fn build_replicated_summing_merge_tree_ddl(
+    keeper_path: &Option<String>,
+    replica_name: &Option<String>,
+    columns: &Option<Vec<String>>,
+    is_dev: bool,
+) -> Result<String, ClickhouseError> {
+    let mut params = build_replication_params(
+        keeper_path,
+        replica_name,
+        "ReplicatedSummingMergeTree",
+        is_dev,
+    )?;
+
+    if let Some(cols) = columns {
+        if !cols.is_empty() {
+            let col_list = cols
+                .iter()
+                .map(|c| format!("`{}`", c))
+                .collect::<Vec<_>>()
+                .join(", ");
+            params.push(format!("({})", col_list));
+        }
+    }
+
+    Ok(format!("ReplicatedSummingMergeTree({})", params.join(", ")))
+}
+
 pub fn create_table_query(
     db_name: &str,
     table: ClickHouseTable,
+    is_dev: bool,
 ) -> Result<String, ClickhouseError> {
     let mut reg = Handlebars::new();
     reg.register_escape_fn(no_escape);
@@ -777,43 +1483,36 @@ pub fn create_table_query(
     let engine = match &table.engine {
         ClickhouseEngine::MergeTree => "MergeTree".to_string(),
         ClickhouseEngine::ReplacingMergeTree { ver, is_deleted } => {
-            if table.order_by.is_empty() {
-                return Err(ClickhouseError::InvalidParameters {
-                    message: "ReplacingMergeTree requires an order by clause".to_string(),
-                });
-            }
-
-            // Validate that is_deleted requires ver
-            if is_deleted.is_some() && ver.is_none() {
-                return Err(ClickhouseError::InvalidParameters {
-                    message: "is_deleted parameter requires ver to be specified".to_string(),
-                });
-            }
-
-            let mut engine_str = "ReplacingMergeTree".to_string();
-
-            // Add parameters if present
-            if ver.is_some() || is_deleted.is_some() {
-                let mut params = vec![];
-
-                if let Some(ver_col) = ver {
-                    // Wrap column name in backticks for safety
-                    params.push(format!("`{}`", ver_col));
-                }
-
-                if let Some(is_deleted_col) = is_deleted {
-                    params.push(format!("`{}`", is_deleted_col));
-                }
-
-                if !params.is_empty() {
-                    engine_str = format!("ReplacingMergeTree({})", params.join(", "));
-                }
-            }
-
-            engine_str
+            build_replacing_merge_tree_ddl(ver, is_deleted, table.order_by.is_empty())?
         }
         ClickhouseEngine::AggregatingMergeTree => "AggregatingMergeTree".to_string(),
-        ClickhouseEngine::SummingMergeTree => "SummingMergeTree".to_string(),
+        ClickhouseEngine::SummingMergeTree { columns } => build_summing_merge_tree_ddl(columns),
+        ClickhouseEngine::ReplicatedMergeTree {
+            keeper_path,
+            replica_name,
+        } => build_replicated_merge_tree_ddl(keeper_path, replica_name, is_dev)?,
+        ClickhouseEngine::ReplicatedReplacingMergeTree {
+            keeper_path,
+            replica_name,
+            ver,
+            is_deleted,
+        } => build_replicated_replacing_merge_tree_ddl(
+            keeper_path,
+            replica_name,
+            ver,
+            is_deleted,
+            table.order_by.is_empty(),
+            is_dev,
+        )?,
+        ClickhouseEngine::ReplicatedAggregatingMergeTree {
+            keeper_path,
+            replica_name,
+        } => build_replicated_aggregating_merge_tree_ddl(keeper_path, replica_name, is_dev)?,
+        ClickhouseEngine::ReplicatedSummingMergeTree {
+            keeper_path,
+            replica_name,
+            columns,
+        } => build_replicated_summing_merge_tree_ddl(keeper_path, replica_name, columns, is_dev)?,
         ClickhouseEngine::S3Queue {
             s3_path,
             format,
@@ -2307,8 +3006,8 @@ PRIMARY KEY (`id`)"#;
 
     #[test]
     fn test_replicated_replacing_merge_tree_parsing() {
-        // Test ReplicatedReplacingMergeTree parsing
-        let test_cases = vec![
+        // Test ReplicatedReplacingMergeTree with default parameters - should normalize to None
+        let test_cases_default = vec![
             (
                 "ReplicatedReplacingMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}')",
                 None,
@@ -2326,10 +3025,25 @@ PRIMARY KEY (`id`)"#;
             ),
         ];
 
-        for (input, expected_ver, expected_is_deleted) in test_cases {
+        for (input, expected_ver, expected_is_deleted) in test_cases_default {
             let engine: ClickhouseEngine = input.try_into().unwrap();
             match engine {
-                ClickhouseEngine::ReplacingMergeTree { ver, is_deleted } => {
+                ClickhouseEngine::ReplicatedReplacingMergeTree {
+                    keeper_path,
+                    replica_name,
+                    ver,
+                    is_deleted,
+                } => {
+                    assert_eq!(
+                        keeper_path, None,
+                        "Default paths should be normalized to None for input: {}",
+                        input
+                    );
+                    assert_eq!(
+                        replica_name, None,
+                        "Default paths should be normalized to None for input: {}",
+                        input
+                    );
                     assert_eq!(ver.as_deref(), expected_ver, "Failed for input: {}", input);
                     assert_eq!(
                         is_deleted.as_deref(),
@@ -2338,7 +3052,7 @@ PRIMARY KEY (`id`)"#;
                         input
                     );
                 }
-                _ => panic!("Expected ReplacingMergeTree for input: {}", input),
+                _ => panic!("Expected ReplicatedReplacingMergeTree for input: {}", input),
             }
         }
     }
@@ -2393,7 +3107,7 @@ PRIMARY KEY (`id`)"#;
     fn test_shared_summing_merge_tree_engine_parsing() {
         // Test SharedSummingMergeTree without parameters
         let engine = ClickhouseEngine::try_from("SharedSummingMergeTree").unwrap();
-        assert_eq!(engine, ClickhouseEngine::SummingMergeTree);
+        assert_eq!(engine, ClickhouseEngine::SummingMergeTree { columns: None });
 
         // Test SharedSummingMergeTree with parameters - should normalize to SummingMergeTree
         let test_cases = vec![
@@ -2405,7 +3119,7 @@ PRIMARY KEY (`id`)"#;
             let engine = ClickhouseEngine::try_from(input).unwrap();
             assert_eq!(
                 engine,
-                ClickhouseEngine::SummingMergeTree,
+                ClickhouseEngine::SummingMergeTree { columns: None },
                 "Failed for input: {}",
                 input
             );
@@ -2414,70 +3128,153 @@ PRIMARY KEY (`id`)"#;
 
     #[test]
     fn test_replicated_merge_tree_engine_parsing() {
-        // Test ReplicatedMergeTree without parameters
+        // Test ReplicatedMergeTree without parameters - should return ReplicatedMergeTree with None parameters
         let engine = ClickhouseEngine::try_from("ReplicatedMergeTree").unwrap();
-        assert_eq!(engine, ClickhouseEngine::MergeTree);
+        assert_eq!(
+            engine,
+            ClickhouseEngine::ReplicatedMergeTree {
+                keeper_path: None,
+                replica_name: None
+            }
+        );
 
-        // Test ReplicatedMergeTree with parameters - should normalize to MergeTree
-        let test_cases = vec![
+        // Test ReplicatedMergeTree with default parameters - should normalize back to None
+        let engine = ClickhouseEngine::try_from(
             "ReplicatedMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}')",
-            "ReplicatedMergeTree('/clickhouse/prod/tables/{database}', 'replica-{num}')",
-        ];
+        )
+        .unwrap();
+        assert_eq!(
+            engine,
+            ClickhouseEngine::ReplicatedMergeTree {
+                keeper_path: None,
+                replica_name: None
+            },
+            "Default paths should be normalized to None"
+        );
 
-        for input in test_cases {
+        // Test ReplicatedMergeTree with custom parameters - should preserve replication config
+        let test_cases = vec![(
+            "ReplicatedMergeTree('/clickhouse/prod/tables/{database}', 'replica-{num}')",
+            "/clickhouse/prod/tables/{database}",
+            "replica-{num}",
+        )];
+
+        for (input, expected_path, expected_replica) in test_cases {
             let engine = ClickhouseEngine::try_from(input).unwrap();
-            assert_eq!(
-                engine,
-                ClickhouseEngine::MergeTree,
-                "Failed for input: {}",
-                input
-            );
+            match engine {
+                ClickhouseEngine::ReplicatedMergeTree {
+                    keeper_path,
+                    replica_name,
+                } => {
+                    assert_eq!(keeper_path, Some(expected_path.to_string()));
+                    assert_eq!(replica_name, Some(expected_replica.to_string()));
+                }
+                _ => panic!("Expected ReplicatedMergeTree for input: {}", input),
+            }
         }
     }
 
     #[test]
     fn test_replicated_aggregating_merge_tree_engine_parsing() {
-        // Test ReplicatedAggregatingMergeTree without parameters
+        // Test ReplicatedAggregatingMergeTree without parameters - should return ReplicatedAggregatingMergeTree with None parameters
         let engine = ClickhouseEngine::try_from("ReplicatedAggregatingMergeTree").unwrap();
-        assert_eq!(engine, ClickhouseEngine::AggregatingMergeTree);
+        assert_eq!(
+            engine,
+            ClickhouseEngine::ReplicatedAggregatingMergeTree {
+                keeper_path: None,
+                replica_name: None
+            }
+        );
 
-        // Test ReplicatedAggregatingMergeTree with parameters - should normalize to AggregatingMergeTree
-        let test_cases = vec![
+        // Test ReplicatedAggregatingMergeTree with default parameters - should normalize back to None
+        let engine = ClickhouseEngine::try_from(
             "ReplicatedAggregatingMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}')",
-            "ReplicatedAggregatingMergeTree('/clickhouse/tables/{uuid}', 'replica-1')",
-        ];
+        )
+        .unwrap();
+        assert_eq!(
+            engine,
+            ClickhouseEngine::ReplicatedAggregatingMergeTree {
+                keeper_path: None,
+                replica_name: None
+            },
+            "Default paths should be normalized to None"
+        );
 
-        for input in test_cases {
+        // Test ReplicatedAggregatingMergeTree with custom parameters - should preserve replication config
+        let test_cases = vec![(
+            "ReplicatedAggregatingMergeTree('/clickhouse/tables/{uuid}', 'replica-1')",
+            "/clickhouse/tables/{uuid}",
+            "replica-1",
+        )];
+
+        for (input, expected_path, expected_replica) in test_cases {
             let engine = ClickhouseEngine::try_from(input).unwrap();
-            assert_eq!(
-                engine,
-                ClickhouseEngine::AggregatingMergeTree,
-                "Failed for input: {}",
-                input
-            );
+            match engine {
+                ClickhouseEngine::ReplicatedAggregatingMergeTree {
+                    keeper_path,
+                    replica_name,
+                } => {
+                    assert_eq!(keeper_path, Some(expected_path.to_string()));
+                    assert_eq!(replica_name, Some(expected_replica.to_string()));
+                }
+                _ => panic!(
+                    "Expected ReplicatedAggregatingMergeTree for input: {}",
+                    input
+                ),
+            }
         }
     }
 
     #[test]
     fn test_replicated_summing_merge_tree_engine_parsing() {
-        // Test ReplicatedSummingMergeTree without parameters
+        // Test ReplicatedSummingMergeTree without parameters - should return ReplicatedSummingMergeTree with None parameters
         let engine = ClickhouseEngine::try_from("ReplicatedSummingMergeTree").unwrap();
-        assert_eq!(engine, ClickhouseEngine::SummingMergeTree);
+        assert_eq!(
+            engine,
+            ClickhouseEngine::ReplicatedSummingMergeTree {
+                keeper_path: None,
+                replica_name: None,
+                columns: None
+            }
+        );
 
-        // Test ReplicatedSummingMergeTree with parameters - should normalize to SummingMergeTree
-        let test_cases = vec![
+        // Test ReplicatedSummingMergeTree with default parameters - should normalize back to None
+        let engine = ClickhouseEngine::try_from(
             "ReplicatedSummingMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}')",
-            "ReplicatedSummingMergeTree('/clickhouse/tables/{uuid}', 'replica-1')",
-        ];
+        )
+        .unwrap();
+        assert_eq!(
+            engine,
+            ClickhouseEngine::ReplicatedSummingMergeTree {
+                keeper_path: None,
+                replica_name: None,
+                columns: None
+            },
+            "Default paths should be normalized to None"
+        );
 
-        for input in test_cases {
+        // Test ReplicatedSummingMergeTree with custom parameters - should preserve replication config
+        let test_cases = vec![(
+            "ReplicatedSummingMergeTree('/clickhouse/tables/{uuid}', 'replica-1')",
+            "/clickhouse/tables/{uuid}",
+            "replica-1",
+            None,
+        )];
+
+        for (input, expected_path, expected_replica, expected_columns) in test_cases {
             let engine = ClickhouseEngine::try_from(input).unwrap();
-            assert_eq!(
-                engine,
-                ClickhouseEngine::SummingMergeTree,
-                "Failed for input: {}",
-                input
-            );
+            match engine {
+                ClickhouseEngine::ReplicatedSummingMergeTree {
+                    keeper_path,
+                    replica_name,
+                    columns,
+                } => {
+                    assert_eq!(keeper_path, Some(expected_path.to_string()));
+                    assert_eq!(replica_name, Some(expected_replica.to_string()));
+                    assert_eq!(columns, expected_columns);
+                }
+                _ => panic!("Expected ReplicatedSummingMergeTree for input: {}", input),
+            }
         }
     }
 
@@ -2574,7 +3371,7 @@ PRIMARY KEY (`id`)"#;
 
     #[test]
     fn test_engine_normalization_consistency() {
-        // Test that both Shared and Replicated variants normalize to the same base engine
+        // Test that Shared normalizes to base engine and Replicated with default paths normalizes to None
         let shared_input =
             "SharedReplacingMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}', version)";
         let replicated_input = "ReplicatedReplacingMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}', version)";
@@ -2582,15 +3379,40 @@ PRIMARY KEY (`id`)"#;
         let shared_engine = ClickhouseEngine::try_from(shared_input).unwrap();
         let replicated_engine = ClickhouseEngine::try_from(replicated_input).unwrap();
 
-        // Both should normalize to the same ReplacingMergeTree with version
-        assert_eq!(shared_engine, replicated_engine);
-        match shared_engine {
+        // Shared should normalize to ReplacingMergeTree (without keeper_path/replica_name)
+        match &shared_engine {
             ClickhouseEngine::ReplacingMergeTree { ver, is_deleted } => {
-                assert_eq!(ver, Some("version".to_string()));
-                assert_eq!(is_deleted, None);
+                assert_eq!(ver, &Some("version".to_string()));
+                assert_eq!(is_deleted, &None);
             }
-            _ => panic!("Expected ReplacingMergeTree"),
+            _ => panic!("Expected ReplacingMergeTree for Shared variant"),
         }
+
+        // Replicated with default paths should also normalize paths to None for cross-environment compatibility
+        match &replicated_engine {
+            ClickhouseEngine::ReplicatedReplacingMergeTree {
+                keeper_path,
+                replica_name,
+                ver,
+                is_deleted,
+            } => {
+                assert_eq!(keeper_path, &None, "Default paths should normalize to None");
+                assert_eq!(
+                    replica_name, &None,
+                    "Default replica should normalize to None"
+                );
+                assert_eq!(ver, &Some("version".to_string()));
+                assert_eq!(is_deleted, &None);
+            }
+            _ => panic!("Expected ReplicatedReplacingMergeTree for Replicated variant"),
+        }
+
+        // They should be different engine types
+        assert_ne!(
+            format!("{:?}", shared_engine),
+            format!("{:?}", replicated_engine),
+            "Shared and Replicated variants should be different engine types"
+        );
     }
 
     #[test]
