@@ -240,6 +240,58 @@ export type S3QueueConfig<T> = Omit<BaseOlapConfig<T>, "settings"> & {
 };
 
 /**
+ * Configuration for ReplicatedMergeTree engine (for HA clusters)
+ * @template T The data type of the records stored in the table.
+ */
+export type ReplicatedMergeTreeConfig<T> = BaseOlapConfig<T> & {
+  engine: ClickHouseEngines.ReplicatedMergeTree;
+  /** ZooKeeper path for replication (e.g., '/clickhouse/tables/{database}/{shard}/table_name') */
+  zooPath: string;
+  /** Replica name (e.g., '{replica}') */
+  replicaName: string;
+};
+
+/**
+ * Configuration for ReplicatedReplacingMergeTree engine (deduplication + replication)
+ * @template T The data type of the records stored in the table.
+ */
+export type ReplicatedReplacingMergeTreeConfig<T> = BaseOlapConfig<T> & {
+  engine: ClickHouseEngines.ReplicatedReplacingMergeTree;
+  /** ZooKeeper path for replication (e.g., '/clickhouse/tables/{database}/{shard}/table_name') */
+  zooPath: string;
+  /** Replica name (e.g., '{replica}') */
+  replicaName: string;
+  /** Optional version column for deduplication */
+  ver?: keyof T & string;
+  /** Optional is_deleted column for soft deletes (requires ver) */
+  isDeleted?: keyof T & string;
+};
+
+/**
+ * Configuration for ReplicatedAggregatingMergeTree engine (aggregation + replication)
+ * @template T The data type of the records stored in the table.
+ */
+export type ReplicatedAggregatingMergeTreeConfig<T> = BaseOlapConfig<T> & {
+  engine: ClickHouseEngines.ReplicatedAggregatingMergeTree;
+  /** ZooKeeper path for replication (e.g., '/clickhouse/tables/{database}/{shard}/table_name') */
+  zooPath: string;
+  /** Replica name (e.g., '{replica}') */
+  replicaName: string;
+};
+
+/**
+ * Configuration for ReplicatedSummingMergeTree engine (summing + replication)
+ * @template T The data type of the records stored in the table.
+ */
+export type ReplicatedSummingMergeTreeConfig<T> = BaseOlapConfig<T> & {
+  engine: ClickHouseEngines.ReplicatedSummingMergeTree;
+  /** ZooKeeper path for replication (e.g., '/clickhouse/tables/{database}/{shard}/table_name') */
+  zooPath: string;
+  /** Replica name (e.g., '{replica}') */
+  replicaName: string;
+};
+
+/**
  * Legacy configuration (backward compatibility) - defaults to MergeTree engine
  * @template T The data type of the records stored in the table.
  */
@@ -250,7 +302,11 @@ type EngineConfig<T> =
   | ReplacingMergeTreeConfig<T>
   | AggregatingMergeTreeConfig<T>
   | SummingMergeTreeConfig<T>
-  | S3QueueConfig<T>;
+  | S3QueueConfig<T>
+  | ReplicatedMergeTreeConfig<T>
+  | ReplicatedReplacingMergeTreeConfig<T>
+  | ReplicatedAggregatingMergeTreeConfig<T>
+  | ReplicatedSummingMergeTreeConfig<T>;
 
 /**
  * Union of all engine-specific configurations (new API)

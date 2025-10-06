@@ -140,6 +140,42 @@ enum EngineConfig {
 
     #[serde(rename = "S3Queue")]
     S3Queue(Box<S3QueueConfig>),
+
+    #[serde(rename = "ReplicatedMergeTree")]
+    ReplicatedMergeTree {
+        #[serde(alias = "zooPath")]
+        zoo_path: String,
+        #[serde(alias = "replicaName")]
+        replica_name: String,
+    },
+
+    #[serde(rename = "ReplicatedReplacingMergeTree")]
+    ReplicatedReplacingMergeTree {
+        #[serde(alias = "zooPath")]
+        zoo_path: String,
+        #[serde(alias = "replicaName")]
+        replica_name: String,
+        #[serde(default)]
+        ver: Option<String>,
+        #[serde(alias = "isDeleted", default)]
+        is_deleted: Option<String>,
+    },
+
+    #[serde(rename = "ReplicatedAggregatingMergeTree")]
+    ReplicatedAggregatingMergeTree {
+        #[serde(alias = "zooPath")]
+        zoo_path: String,
+        #[serde(alias = "replicaName")]
+        replica_name: String,
+    },
+
+    #[serde(rename = "ReplicatedSummingMergeTree")]
+    ReplicatedSummingMergeTree {
+        #[serde(alias = "zooPath")]
+        zoo_path: String,
+        #[serde(alias = "replicaName")]
+        replica_name: String,
+    },
 }
 
 #[derive(Debug, Deserialize)]
@@ -572,6 +608,36 @@ impl PartialInfrastructureMap {
                     headers: config.headers.clone(),
                     aws_access_key_id: config.aws_access_key_id.clone(),
                     aws_secret_access_key: config.aws_secret_access_key.clone(),
+                })
+            }
+
+            Some(EngineConfig::ReplicatedMergeTree { zoo_path, replica_name }) => {
+                Some(ClickhouseEngine::ReplicatedMergeTree {
+                    zoo_path: zoo_path.clone(),
+                    replica_name: replica_name.clone(),
+                })
+            }
+
+            Some(EngineConfig::ReplicatedReplacingMergeTree { zoo_path, replica_name, ver, is_deleted }) => {
+                Some(ClickhouseEngine::ReplicatedReplacingMergeTree {
+                    zoo_path: zoo_path.clone(),
+                    replica_name: replica_name.clone(),
+                    ver: ver.clone(),
+                    is_deleted: is_deleted.clone(),
+                })
+            }
+
+            Some(EngineConfig::ReplicatedAggregatingMergeTree { zoo_path, replica_name }) => {
+                Some(ClickhouseEngine::ReplicatedAggregatingMergeTree {
+                    zoo_path: zoo_path.clone(),
+                    replica_name: replica_name.clone(),
+                })
+            }
+
+            Some(EngineConfig::ReplicatedSummingMergeTree { zoo_path, replica_name }) => {
+                Some(ClickhouseEngine::ReplicatedSummingMergeTree {
+                    zoo_path: zoo_path.clone(),
+                    replica_name: replica_name.clone(),
                 })
             }
 

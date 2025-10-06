@@ -154,6 +154,34 @@ pub enum ClickhouseEngine {
         aws_access_key_id: Option<String>,
         aws_secret_access_key: Option<String>,
     },
+    ReplicatedMergeTree {
+        // ZooKeeper path for replication (e.g., '/clickhouse/tables/{database}/{shard}/table_name')
+        zoo_path: String,
+        // Replica name (e.g., '{replica}')
+        replica_name: String,
+    },
+    ReplicatedReplacingMergeTree {
+        // ZooKeeper path for replication
+        zoo_path: String,
+        // Replica name
+        replica_name: String,
+        // Optional version column for deduplication
+        ver: Option<String>,
+        // Optional is_deleted column for soft deletes (requires ver)
+        is_deleted: Option<String>,
+    },
+    ReplicatedAggregatingMergeTree {
+        // ZooKeeper path for replication
+        zoo_path: String,
+        // Replica name
+        replica_name: String,
+    },
+    ReplicatedSummingMergeTree {
+        // ZooKeeper path for replication
+        zoo_path: String,
+        // Replica name
+        replica_name: String,
+    },
 }
 
 // The implementation is not symetric between TryFrom and Into so we
@@ -184,6 +212,18 @@ impl Into<String> for ClickhouseEngine {
                 &aws_access_key_id,
                 &aws_secret_access_key,
             ),
+            ClickhouseEngine::ReplicatedMergeTree { zoo_path, replica_name } => {
+                Self::serialize_replicated_merge_tree(&zoo_path, &replica_name)
+            }
+            ClickhouseEngine::ReplicatedReplacingMergeTree { zoo_path, replica_name, ver, is_deleted } => {
+                Self::serialize_replicated_replacing_merge_tree(&zoo_path, &replica_name, &ver, &is_deleted)
+            }
+            ClickhouseEngine::ReplicatedAggregatingMergeTree { zoo_path, replica_name } => {
+                Self::serialize_replicated_aggregating_merge_tree(&zoo_path, &replica_name)
+            }
+            ClickhouseEngine::ReplicatedSummingMergeTree { zoo_path, replica_name } => {
+                Self::serialize_replicated_summing_merge_tree(&zoo_path, &replica_name)
+            }
         }
     }
 }
@@ -238,6 +278,7 @@ impl ClickhouseEngine {
     /// Parse SharedReplacingMergeTree or ReplicatedReplacingMergeTree
     /// Format: (path, replica [, ver [, is_deleted]])
     fn parse_distributed_replacing_merge_tree(value: &str) -> Result<Self, &str> {
+        let is_replicated = value.starts_with("ReplicatedReplacingMergeTree(");
         let content = Self::extract_engine_content(
             value,
             &["SharedReplacingMergeTree(", "ReplicatedReplacingMergeTree("],
@@ -250,32 +291,61 @@ impl ClickhouseEngine {
             return Err(value);
         }
 
-        // Optional 3rd param is ver, optional 4th is is_deleted
-        let ver = params.get(2).cloned();
-        let is_deleted = params.get(3).cloned();
+        // For Shared* or when parsing existing tables, normalize to base engine
+        // For Replicated*, preserve the full engine with replication parameters
+        if is_replicated {
+            // Extract zoo_path and replica_name (first two params)
+            let zoo_path = params.get(0).cloned().ok_or(value)?;
+            let replica_name = params.get(1).cloned().ok_or(value)?;
+            // Optional 3rd param is ver, optional 4th is is_deleted
+            let ver = params.get(2).cloned();
+            let is_deleted = params.get(3).cloned();
 
-        Ok(ClickhouseEngine::ReplacingMergeTree { ver, is_deleted })
+            Ok(ClickhouseEngine::ReplicatedReplacingMergeTree {
+                zoo_path,
+                replica_name,
+                ver,
+                is_deleted,
+            })
+        } else {
+            // Shared* or other cases: normalize to base engine, discarding replication params
+            let ver = params.get(2).cloned();
+            let is_deleted = params.get(3).cloned();
+            Ok(ClickhouseEngine::ReplacingMergeTree { ver, is_deleted })
+        }
     }
 
     /// Parse SharedMergeTree or ReplicatedMergeTree
     /// Format: (path, replica)
     fn parse_distributed_merge_tree(value: &str) -> Result<Self, &str> {
+        let is_replicated = value.starts_with("ReplicatedMergeTree(");
         let content =
             Self::extract_engine_content(value, &["SharedMergeTree(", "ReplicatedMergeTree("])?;
 
         let params = parse_quoted_csv(content);
 
         // Require at least 2 params (path, replica)
-        if params.len() >= 2 {
-            Ok(ClickhouseEngine::MergeTree)
+        if params.len() < 2 {
+            return Err(value);
+        }
+
+        if is_replicated {
+            let zoo_path = params.get(0).cloned().ok_or(value)?;
+            let replica_name = params.get(1).cloned().ok_or(value)?;
+            Ok(ClickhouseEngine::ReplicatedMergeTree {
+                zoo_path,
+                replica_name,
+            })
         } else {
-            Err(value)
+            // Shared* or other cases: normalize to base engine
+            Ok(ClickhouseEngine::MergeTree)
         }
     }
 
     /// Parse SharedAggregatingMergeTree or ReplicatedAggregatingMergeTree
     /// Format: (path, replica)
     fn parse_distributed_aggregating_merge_tree(value: &str) -> Result<Self, &str> {
+        let is_replicated = value.starts_with("ReplicatedAggregatingMergeTree(");
         let content = Self::extract_engine_content(
             value,
             &[
@@ -287,16 +357,27 @@ impl ClickhouseEngine {
         let params = parse_quoted_csv(content);
 
         // Require at least 2 params (path, replica)
-        if params.len() >= 2 {
-            Ok(ClickhouseEngine::AggregatingMergeTree)
+        if params.len() < 2 {
+            return Err(value);
+        }
+
+        if is_replicated {
+            let zoo_path = params.get(0).cloned().ok_or(value)?;
+            let replica_name = params.get(1).cloned().ok_or(value)?;
+            Ok(ClickhouseEngine::ReplicatedAggregatingMergeTree {
+                zoo_path,
+                replica_name,
+            })
         } else {
-            Err(value)
+            // Shared* or other cases: normalize to base engine
+            Ok(ClickhouseEngine::AggregatingMergeTree)
         }
     }
 
     /// Parse SharedSummingMergeTree or ReplicatedSummingMergeTree
     /// Format: (path, replica [, columns...])
     fn parse_distributed_summing_merge_tree(value: &str) -> Result<Self, &str> {
+        let is_replicated = value.starts_with("ReplicatedSummingMergeTree(");
         let content = Self::extract_engine_content(
             value,
             &["SharedSummingMergeTree(", "ReplicatedSummingMergeTree("],
@@ -306,10 +387,20 @@ impl ClickhouseEngine {
 
         // Require at least 2 params (path, replica)
         // Note: SummingMergeTree can have additional column parameters after path/replica
-        if params.len() >= 2 {
-            Ok(ClickhouseEngine::SummingMergeTree)
+        if params.len() < 2 {
+            return Err(value);
+        }
+
+        if is_replicated {
+            let zoo_path = params.get(0).cloned().ok_or(value)?;
+            let replica_name = params.get(1).cloned().ok_or(value)?;
+            Ok(ClickhouseEngine::ReplicatedSummingMergeTree {
+                zoo_path,
+                replica_name,
+            })
         } else {
-            Err(value)
+            // Shared* or other cases: normalize to base engine
+            Ok(ClickhouseEngine::SummingMergeTree)
         }
     }
 
@@ -575,6 +666,50 @@ impl ClickhouseEngine {
         result
     }
 
+    /// Serialize ReplicatedMergeTree engine to string format
+    /// Format: ReplicatedMergeTree('zoo_path', 'replica_name')
+    fn serialize_replicated_merge_tree(zoo_path: &str, replica_name: &str) -> String {
+        format!("ReplicatedMergeTree('{}', '{}')", zoo_path, replica_name)
+    }
+
+    /// Serialize ReplicatedReplacingMergeTree engine to string format
+    /// Format: ReplicatedReplacingMergeTree('zoo_path', 'replica_name'[, 'ver'][, 'is_deleted'])
+    fn serialize_replicated_replacing_merge_tree(
+        zoo_path: &str,
+        replica_name: &str,
+        ver: &Option<String>,
+        is_deleted: &Option<String>,
+    ) -> String {
+        let mut params = vec![
+            format!("'{}'", zoo_path),
+            format!("'{}'", replica_name),
+        ];
+
+        if let Some(v) = ver {
+            params.push(format!("'{}'", v));
+        }
+
+        if let Some(d) = is_deleted {
+            if ver.is_some() {
+                params.push(format!("'{}'", d));
+            }
+        }
+
+        format!("ReplicatedReplacingMergeTree({})", params.join(", "))
+    }
+
+    /// Serialize ReplicatedAggregatingMergeTree engine to string format
+    /// Format: ReplicatedAggregatingMergeTree('zoo_path', 'replica_name')
+    fn serialize_replicated_aggregating_merge_tree(zoo_path: &str, replica_name: &str) -> String {
+        format!("ReplicatedAggregatingMergeTree('{}', '{}')", zoo_path, replica_name)
+    }
+
+    /// Serialize ReplicatedSummingMergeTree engine to string format
+    /// Format: ReplicatedSummingMergeTree('zoo_path', 'replica_name')
+    fn serialize_replicated_summing_merge_tree(zoo_path: &str, replica_name: &str) -> String {
+        format!("ReplicatedSummingMergeTree('{}', '{}')", zoo_path, replica_name)
+    }
+
     /// Parse ReplacingMergeTree engine from serialized string format
     /// Expected format: ReplacingMergeTree('ver'[, 'is_deleted'])
     fn parse_replacing_merge_tree(content: &str) -> Result<ClickhouseEngine, &str> {
@@ -761,6 +896,36 @@ impl ClickhouseEngine {
 
                 // Note: settings are NOT included as they are alterable
             }
+            ClickhouseEngine::ReplicatedMergeTree { zoo_path, replica_name } => {
+                hasher.update("ReplicatedMergeTree".as_bytes());
+                hasher.update(zoo_path.as_bytes());
+                hasher.update(replica_name.as_bytes());
+            }
+            ClickhouseEngine::ReplicatedReplacingMergeTree { zoo_path, replica_name, ver, is_deleted } => {
+                hasher.update("ReplicatedReplacingMergeTree".as_bytes());
+                hasher.update(zoo_path.as_bytes());
+                hasher.update(replica_name.as_bytes());
+                if let Some(v) = ver {
+                    hasher.update(v.as_bytes());
+                } else {
+                    hasher.update("null".as_bytes());
+                }
+                if let Some(d) = is_deleted {
+                    hasher.update(d.as_bytes());
+                } else {
+                    hasher.update("null".as_bytes());
+                }
+            }
+            ClickhouseEngine::ReplicatedAggregatingMergeTree { zoo_path, replica_name } => {
+                hasher.update("ReplicatedAggregatingMergeTree".as_bytes());
+                hasher.update(zoo_path.as_bytes());
+                hasher.update(replica_name.as_bytes());
+            }
+            ClickhouseEngine::ReplicatedSummingMergeTree { zoo_path, replica_name } => {
+                hasher.update("ReplicatedSummingMergeTree".as_bytes());
+                hasher.update(zoo_path.as_bytes());
+                hasher.update(replica_name.as_bytes());
+            }
         }
 
         format!("{:x}", hasher.finalize())
@@ -843,6 +1008,59 @@ pub fn create_table_query(
             }
 
             format!("S3Queue({})", engine_parts.join(", "))
+        }
+        ClickhouseEngine::ReplicatedMergeTree { zoo_path, replica_name } => {
+            if table.order_by.is_empty() {
+                return Err(ClickhouseError::InvalidParameters {
+                    message: "ReplicatedMergeTree requires an order by clause".to_string(),
+                });
+            }
+            format!("ReplicatedMergeTree('{}', '{}')", zoo_path, replica_name)
+        }
+        ClickhouseEngine::ReplicatedReplacingMergeTree { zoo_path, replica_name, ver, is_deleted } => {
+            if table.order_by.is_empty() {
+                return Err(ClickhouseError::InvalidParameters {
+                    message: "ReplicatedReplacingMergeTree requires an order by clause".to_string(),
+                });
+            }
+
+            // Validate that is_deleted requires ver
+            if is_deleted.is_some() && ver.is_none() {
+                return Err(ClickhouseError::InvalidParameters {
+                    message: "is_deleted parameter requires ver to be specified".to_string(),
+                });
+            }
+
+            let mut params = vec![
+                format!("'{}'", zoo_path),
+                format!("'{}'", replica_name),
+            ];
+
+            if let Some(ver_col) = ver {
+                params.push(format!("`{}`", ver_col));
+            }
+
+            if let Some(is_deleted_col) = is_deleted {
+                params.push(format!("`{}`", is_deleted_col));
+            }
+
+            format!("ReplicatedReplacingMergeTree({})", params.join(", "))
+        }
+        ClickhouseEngine::ReplicatedAggregatingMergeTree { zoo_path, replica_name } => {
+            if table.order_by.is_empty() {
+                return Err(ClickhouseError::InvalidParameters {
+                    message: "ReplicatedAggregatingMergeTree requires an order by clause".to_string(),
+                });
+            }
+            format!("ReplicatedAggregatingMergeTree('{}', '{}')", zoo_path, replica_name)
+        }
+        ClickhouseEngine::ReplicatedSummingMergeTree { zoo_path, replica_name } => {
+            if table.order_by.is_empty() {
+                return Err(ClickhouseError::InvalidParameters {
+                    message: "ReplicatedSummingMergeTree requires an order by clause".to_string(),
+                });
+            }
+            format!("ReplicatedSummingMergeTree('{}', '{}')", zoo_path, replica_name)
         }
     };
 
@@ -2574,7 +2792,7 @@ PRIMARY KEY (`id`)"#;
 
     #[test]
     fn test_engine_normalization_consistency() {
-        // Test that both Shared and Replicated variants normalize to the same base engine
+        // Test that Shared* variants normalize to base engine, while Replicated* preserve replication params
         let shared_input =
             "SharedReplacingMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}', version)";
         let replicated_input = "ReplicatedReplacingMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}', version)";
@@ -2582,15 +2800,132 @@ PRIMARY KEY (`id`)"#;
         let shared_engine = ClickhouseEngine::try_from(shared_input).unwrap();
         let replicated_engine = ClickhouseEngine::try_from(replicated_input).unwrap();
 
-        // Both should normalize to the same ReplacingMergeTree with version
-        assert_eq!(shared_engine, replicated_engine);
+        // Shared should normalize to base engine without replication params
         match shared_engine {
             ClickhouseEngine::ReplacingMergeTree { ver, is_deleted } => {
                 assert_eq!(ver, Some("version".to_string()));
                 assert_eq!(is_deleted, None);
             }
-            _ => panic!("Expected ReplacingMergeTree"),
+            _ => panic!("Expected ReplacingMergeTree for Shared"),
         }
+
+        // Replicated should preserve all parameters
+        match replicated_engine {
+            ClickhouseEngine::ReplicatedReplacingMergeTree { zoo_path, replica_name, ver, is_deleted } => {
+                assert_eq!(zoo_path, "/clickhouse/tables/{uuid}/{shard}");
+                assert_eq!(replica_name, "{replica}");
+                assert_eq!(ver, Some("version".to_string()));
+                assert_eq!(is_deleted, None);
+            }
+            _ => panic!("Expected ReplicatedReplacingMergeTree"),
+        }
+    }
+
+    #[test]
+    fn test_create_table_query_replicated_merge_tree() {
+        let table = ClickHouseTable {
+            version: Some(Version::from_string("1".to_string())),
+            name: "test_table".to_string(),
+            columns: vec![
+                ClickHouseColumn {
+                    name: "id".to_string(),
+                    column_type: ClickHouseColumnType::ClickhouseInt(ClickHouseInt::Int64),
+                    required: true,
+                    unique: false,
+                    primary_key: true,
+                    default: None,
+                    comment: None,
+                },
+            ],
+            order_by: vec!["id".to_string()],
+            partition_by: None,
+            engine: ClickhouseEngine::ReplicatedMergeTree {
+                zoo_path: "/clickhouse/tables/{database}/{shard}/test_table".to_string(),
+                replica_name: "{replica}".to_string(),
+            },
+            table_settings: None,
+        };
+
+        let query = create_table_query("test_db", table).unwrap();
+
+        assert!(query.contains("ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/{shard}/test_table', '{replica}')"));
+    }
+
+    #[test]
+    fn test_create_table_query_replicated_replacing_merge_tree() {
+        let table = ClickHouseTable {
+            version: Some(Version::from_string("1".to_string())),
+            name: "test_table".to_string(),
+            columns: vec![
+                ClickHouseColumn {
+                    name: "id".to_string(),
+                    column_type: ClickHouseColumnType::ClickhouseInt(ClickHouseInt::Int64),
+                    required: true,
+                    unique: false,
+                    primary_key: true,
+                    default: None,
+                    comment: None,
+                },
+                ClickHouseColumn {
+                    name: "version".to_string(),
+                    column_type: ClickHouseColumnType::DateTime,
+                    required: true,
+                    unique: false,
+                    primary_key: false,
+                    default: None,
+                    comment: None,
+                },
+            ],
+            order_by: vec!["id".to_string()],
+            partition_by: None,
+            engine: ClickhouseEngine::ReplicatedReplacingMergeTree {
+                zoo_path: "/clickhouse/tables/{database}/{shard}/test_table".to_string(),
+                replica_name: "{replica}".to_string(),
+                ver: Some("version".to_string()),
+                is_deleted: None,
+            },
+            table_settings: None,
+        };
+
+        let query = create_table_query("test_db", table).unwrap();
+
+        assert!(query.contains("ENGINE = ReplicatedReplacingMergeTree('/clickhouse/tables/{database}/{shard}/test_table', '{replica}', `version`)"));
+    }
+
+    #[test]
+    fn test_replicated_engine_serialization_round_trip() {
+        // Test ReplicatedMergeTree
+        let engine1 = ClickhouseEngine::ReplicatedMergeTree {
+            zoo_path: "/clickhouse/tables/{database}/{shard}/test".to_string(),
+            replica_name: "{replica}".to_string(),
+        };
+        let serialized1: String = engine1.clone().into();
+        assert_eq!(serialized1, "ReplicatedMergeTree('/clickhouse/tables/{database}/{shard}/test', '{replica}')");
+
+        // Test ReplicatedReplacingMergeTree with ver
+        let engine2 = ClickhouseEngine::ReplicatedReplacingMergeTree {
+            zoo_path: "/clickhouse/tables/{database}/{shard}/test".to_string(),
+            replica_name: "{replica}".to_string(),
+            ver: Some("version".to_string()),
+            is_deleted: None,
+        };
+        let serialized2: String = engine2.clone().into();
+        assert!(serialized2.contains("ReplicatedReplacingMergeTree"));
+        assert!(serialized2.contains("'/clickhouse/tables/{database}/{shard}/test'"));
+        assert!(serialized2.contains("'{replica}'"));
+        assert!(serialized2.contains("'version'"));
+
+        // Test ReplicatedReplacingMergeTree with ver and is_deleted
+        let engine3 = ClickhouseEngine::ReplicatedReplacingMergeTree {
+            zoo_path: "/clickhouse/tables/{database}/{shard}/test".to_string(),
+            replica_name: "{replica}".to_string(),
+            ver: Some("version".to_string()),
+            is_deleted: Some("is_deleted".to_string()),
+        };
+        let serialized3: String = engine3.clone().into();
+        assert!(serialized3.contains("ReplicatedReplacingMergeTree"));
+        assert!(serialized3.contains("'version'"));
+        assert!(serialized3.contains("'is_deleted'"));
     }
 
     #[test]

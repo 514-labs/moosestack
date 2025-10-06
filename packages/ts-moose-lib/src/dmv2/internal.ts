@@ -69,6 +69,32 @@ interface S3QueueEngineConfig {
   headers?: { [key: string]: string };
 }
 
+interface ReplicatedMergeTreeEngineConfig {
+  engine: "ReplicatedMergeTree";
+  zooPath: string;
+  replicaName: string;
+}
+
+interface ReplicatedReplacingMergeTreeEngineConfig {
+  engine: "ReplicatedReplacingMergeTree";
+  zooPath: string;
+  replicaName: string;
+  ver?: string;
+  isDeleted?: string;
+}
+
+interface ReplicatedAggregatingMergeTreeEngineConfig {
+  engine: "ReplicatedAggregatingMergeTree";
+  zooPath: string;
+  replicaName: string;
+}
+
+interface ReplicatedSummingMergeTreeEngineConfig {
+  engine: "ReplicatedSummingMergeTree";
+  zooPath: string;
+  replicaName: string;
+}
+
 /**
  * Union type for all supported engine configurations
  */
@@ -77,7 +103,11 @@ type EngineConfig =
   | ReplacingMergeTreeEngineConfig
   | AggregatingMergeTreeEngineConfig
   | SummingMergeTreeEngineConfig
-  | S3QueueEngineConfig;
+  | S3QueueEngineConfig
+  | ReplicatedMergeTreeEngineConfig
+  | ReplicatedReplacingMergeTreeEngineConfig
+  | ReplicatedAggregatingMergeTreeEngineConfig
+  | ReplicatedSummingMergeTreeEngineConfig;
 
 /**
  * JSON representation of an OLAP table configuration.
@@ -292,6 +322,44 @@ export const toInfraMap = (registry: typeof moose_internal) => {
             awsSecretAccessKey: s3Config.awsSecretAccessKey,
             compression: s3Config.compression,
             headers: s3Config.headers,
+          };
+        }
+
+        case ClickHouseEngines.ReplicatedMergeTree: {
+          const replicatedConfig = table.config as any;
+          return {
+            engine: "ReplicatedMergeTree",
+            zooPath: replicatedConfig.zooPath,
+            replicaName: replicatedConfig.replicaName,
+          };
+        }
+
+        case ClickHouseEngines.ReplicatedReplacingMergeTree: {
+          const replicatedReplConfig = table.config as any;
+          return {
+            engine: "ReplicatedReplacingMergeTree",
+            zooPath: replicatedReplConfig.zooPath,
+            replicaName: replicatedReplConfig.replicaName,
+            ver: replicatedReplConfig.ver,
+            isDeleted: replicatedReplConfig.isDeleted,
+          };
+        }
+
+        case ClickHouseEngines.ReplicatedAggregatingMergeTree: {
+          const replicatedAggConfig = table.config as any;
+          return {
+            engine: "ReplicatedAggregatingMergeTree",
+            zooPath: replicatedAggConfig.zooPath,
+            replicaName: replicatedAggConfig.replicaName,
+          };
+        }
+
+        case ClickHouseEngines.ReplicatedSummingMergeTree: {
+          const replicatedSumConfig = table.config as any;
+          return {
+            engine: "ReplicatedSummingMergeTree",
+            zooPath: replicatedSumConfig.zooPath,
+            replicaName: replicatedSumConfig.replicaName,
           };
         }
 

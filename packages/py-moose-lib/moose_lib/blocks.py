@@ -14,6 +14,11 @@ class ClickHouseEngines(Enum):
     VersionedCollapsingMergeTree = "VersionedCollapsingMergeTree"
     GraphiteMergeTree = "GraphiteMergeTree"
     S3Queue = "S3Queue"
+    # Replicated engine variants for high-availability clusters
+    ReplicatedMergeTree = "ReplicatedMergeTree"
+    ReplicatedReplacingMergeTree = "ReplicatedReplacingMergeTree"
+    ReplicatedAggregatingMergeTree = "ReplicatedAggregatingMergeTree"
+    ReplicatedSummingMergeTree = "ReplicatedSummingMergeTree"
 
 # ==========================
 # New Engine Configuration Classes
@@ -80,6 +85,58 @@ class S3QueueEngine(EngineConfig):
             raise ValueError("S3Queue engine requires 's3_path'")
         if not self.format:
             raise ValueError("S3Queue engine requires 'format'")
+
+@dataclass
+class ReplicatedMergeTreeEngine(EngineConfig):
+    """Configuration for ReplicatedMergeTree engine (for HA clusters)
+    
+    Args:
+        zoo_path: ZooKeeper path for replication (e.g., '/clickhouse/tables/{database}/{shard}/table_name')
+        replica_name: Replica name (e.g., '{replica}')
+    """
+    zoo_path: str
+    replica_name: str
+
+@dataclass
+class ReplicatedReplacingMergeTreeEngine(EngineConfig):
+    """Configuration for ReplicatedReplacingMergeTree engine (deduplication + replication)
+    
+    Args:
+        zoo_path: ZooKeeper path for replication
+        replica_name: Replica name
+        ver: Optional column name for version tracking
+        is_deleted: Optional column name for deletion marking (requires ver)
+    """
+    zoo_path: str
+    replica_name: str
+    ver: Optional[str] = None
+    is_deleted: Optional[str] = None
+    
+    def __post_init__(self):
+        if self.is_deleted and not self.ver:
+            raise ValueError("is_deleted requires ver to be specified")
+
+@dataclass
+class ReplicatedAggregatingMergeTreeEngine(EngineConfig):
+    """Configuration for ReplicatedAggregatingMergeTree engine (aggregation + replication)
+    
+    Args:
+        zoo_path: ZooKeeper path for replication
+        replica_name: Replica name
+    """
+    zoo_path: str
+    replica_name: str
+
+@dataclass
+class ReplicatedSummingMergeTreeEngine(EngineConfig):
+    """Configuration for ReplicatedSummingMergeTree engine (summing + replication)
+    
+    Args:
+        zoo_path: ZooKeeper path for replication
+        replica_name: Replica name
+    """
+    zoo_path: str
+    replica_name: str
 
 # ==========================
 # New Table Configuration (Recommended API)

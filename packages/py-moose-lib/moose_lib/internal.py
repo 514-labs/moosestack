@@ -95,13 +95,47 @@ class S3QueueConfigDict(BaseEngineConfigDict):
     headers: Optional[Dict[str, str]] = None
 
 
+class ReplicatedMergeTreeConfigDict(BaseEngineConfigDict):
+    """Configuration for ReplicatedMergeTree engine."""
+    engine: Literal["ReplicatedMergeTree"] = "ReplicatedMergeTree"
+    zoo_path: str
+    replica_name: str
+
+
+class ReplicatedReplacingMergeTreeConfigDict(BaseEngineConfigDict):
+    """Configuration for ReplicatedReplacingMergeTree engine."""
+    engine: Literal["ReplicatedReplacingMergeTree"] = "ReplicatedReplacingMergeTree"
+    zoo_path: str
+    replica_name: str
+    ver: Optional[str] = None
+    is_deleted: Optional[str] = None
+
+
+class ReplicatedAggregatingMergeTreeConfigDict(BaseEngineConfigDict):
+    """Configuration for ReplicatedAggregatingMergeTree engine."""
+    engine: Literal["ReplicatedAggregatingMergeTree"] = "ReplicatedAggregatingMergeTree"
+    zoo_path: str
+    replica_name: str
+
+
+class ReplicatedSummingMergeTreeConfigDict(BaseEngineConfigDict):
+    """Configuration for ReplicatedSummingMergeTree engine."""
+    engine: Literal["ReplicatedSummingMergeTree"] = "ReplicatedSummingMergeTree"
+    zoo_path: str
+    replica_name: str
+
+
 # Discriminated union of all engine configurations
 EngineConfigDict = Union[
     MergeTreeConfigDict,
     ReplacingMergeTreeConfigDict,
     AggregatingMergeTreeConfigDict,
     SummingMergeTreeConfigDict,
-    S3QueueConfigDict
+    S3QueueConfigDict,
+    ReplicatedMergeTreeConfigDict,
+    ReplicatedReplacingMergeTreeConfigDict,
+    ReplicatedAggregatingMergeTreeConfigDict,
+    ReplicatedSummingMergeTreeConfigDict
 ]
 
 
@@ -331,7 +365,9 @@ def _convert_engine_to_config_dict(engine: Union[ClickHouseEngines, EngineConfig
     from moose_lib.blocks import (
         EngineConfig, S3QueueEngine, MergeTreeEngine,
         ReplacingMergeTreeEngine, AggregatingMergeTreeEngine,
-        SummingMergeTreeEngine
+        SummingMergeTreeEngine, ReplicatedMergeTreeEngine,
+        ReplicatedReplacingMergeTreeEngine, ReplicatedAggregatingMergeTreeEngine,
+        ReplicatedSummingMergeTreeEngine
     )
     from moose_lib.commons import Logger
 
@@ -357,6 +393,28 @@ def _convert_engine_to_config_dict(engine: Union[ClickHouseEngines, EngineConfig
             return SummingMergeTreeConfigDict()
         elif isinstance(engine, MergeTreeEngine):
             return MergeTreeConfigDict()
+        elif isinstance(engine, ReplicatedMergeTreeEngine):
+            return ReplicatedMergeTreeConfigDict(
+                zoo_path=engine.zoo_path,
+                replica_name=engine.replica_name
+            )
+        elif isinstance(engine, ReplicatedReplacingMergeTreeEngine):
+            return ReplicatedReplacingMergeTreeConfigDict(
+                zoo_path=engine.zoo_path,
+                replica_name=engine.replica_name,
+                ver=engine.ver,
+                is_deleted=engine.is_deleted
+            )
+        elif isinstance(engine, ReplicatedAggregatingMergeTreeEngine):
+            return ReplicatedAggregatingMergeTreeConfigDict(
+                zoo_path=engine.zoo_path,
+                replica_name=engine.replica_name
+            )
+        elif isinstance(engine, ReplicatedSummingMergeTreeEngine):
+            return ReplicatedSummingMergeTreeConfigDict(
+                zoo_path=engine.zoo_path,
+                replica_name=engine.replica_name
+            )
         else:
             # Fallback for any other EngineConfig subclass - use base class
             return BaseEngineConfigDict(engine=engine.__class__.__name__.replace("Engine", ""))
