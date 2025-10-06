@@ -301,20 +301,19 @@ jobs:
           repository: ${{ github.event.pull_request.head.repo.full_name }}
           ref: ${{ github.event.pull_request.head.sha }}
 
-      # Remove packageManager field to allow version override in matrix tests
-      - name: Remove packageManager constraint
+      # Update packageManager field to match matrix version for testing
+      - name: Update pnpm version in package.json
+        if: startsWith(matrix.package-manager, 'pnpm')
         working-directory: .
         run: |
-          jq 'del(.packageManager)' package.json > package.json.tmp
+          jq '.packageManager = "pnpm@${{ matrix.pm-version }}"' package.json > package.json.tmp
           mv package.json.tmp package.json
 
-      # Setup pnpm with matrix-specified version (9.9.0 for npm/pnpm-9, 10.15.0 for pnpm-10)
-      # For npm tests: pnpm is only used for monorepo operations, templates use npm
-      # For pnpm tests: same pnpm version is used for both monorepo and test templates
+      # Setup pnpm (uses version from package.json)
+      # For npm tests: uses monorepo's default (9.9.0)
+      # For pnpm tests: uses matrix version (9.9.0 or 10.15.0)
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
-        with:
-          version: ${{ matrix.pm-version }}
 
       - name: Install node
         uses: actions/setup-node@v4
