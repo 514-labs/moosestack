@@ -508,8 +508,16 @@ impl<'de, S: SerializeValue> Visitor<'de> for &mut ValueVisitor<'_, S> {
                     .map_err(A::Error::custom)
             }
             t => {
-                if matches!(t, ColumnType::Float(_)) {
+                if matches!(
+                    t,
+                    ColumnType::Float(_)
+                        | ColumnType::Decimal { .. }
+                        | ColumnType::Int(_)
+                        | ColumnType::BigInt
+                ) {
                     use serde::Deserialize;
+                    // arbitrary precision number is passed to deserializing visitors
+                    // as a map with single string field "$serde_json::private::Number"
                     let arbitrary_precision = Number::deserialize(MapAccessWrapper {
                         map,
                         _phantom_data: &PHANTOM_DATA,
