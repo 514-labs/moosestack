@@ -8,6 +8,9 @@ import dataclasses
 import datetime
 import json
 from typing import Any, Optional, Callable, Union, Literal, Generic
+from pydantic import BaseModel
+
+
 class LatestRef(BaseModel):
     subject_name: str
 
@@ -37,6 +40,7 @@ class SchemaRegistryReference(BaseModel):
 class KafkaSchema(BaseModel):
     kind: Literal["JSON", "AVRO", "PROTOBUF"]
     reference: SchemaRegistryReference
+
 
 from pydantic import BaseModel, ConfigDict, AliasGenerator
 from pydantic.alias_generators import to_camel
