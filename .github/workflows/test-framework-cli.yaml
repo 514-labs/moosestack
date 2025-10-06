@@ -303,6 +303,7 @@ jobs:
 
       # Remove packageManager field to allow version override in matrix tests
       - name: Remove packageManager constraint
+        working-directory: .
         run: |
           jq 'del(.packageManager)' package.json > package.json.tmp
           mv package.json.tmp package.json
