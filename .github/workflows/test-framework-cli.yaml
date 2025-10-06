@@ -281,7 +281,7 @@ jobs:
         include:
           - package-manager: npm
             pm-name: npm
-            pm-version: bundled
+            pm-version: "9.9.0"
           - package-manager: pnpm-9
             pm-name: pnpm
             pm-version: "9.9.0"
@@ -301,17 +301,17 @@ jobs:
           repository: ${{ github.event.pull_request.head.repo.full_name }}
           ref: ${{ github.event.pull_request.head.sha }}
 
-      # For npm tests: use monorepo's pnpm (from package.json) for monorepo operations
-      # Test templates will use npm from Node.js
+      # Remove packageManager field to allow version override in matrix tests
+      - name: Remove packageManager constraint
+        run: |
+          jq 'del(.packageManager)' package.json > package.json.tmp
+          mv package.json.tmp package.json
+
+      # Setup pnpm with matrix-specified version (9.9.0 for npm/pnpm-9, 10.15.0 for pnpm-10)
+      # For npm tests: pnpm is only used for monorepo operations, templates use npm
+      # For pnpm tests: same pnpm version is used for both monorepo and test templates
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
-        if: ${{ !startsWith(matrix.package-manager, 'pnpm') }}
-
-      # For pnpm tests: use matrix-specified pnpm version for both monorepo and test templates
-      # This allows testing with different pnpm versions (9.x and 10.x)
-      - name: Setup pnpm (test version)
-        uses: pnpm/action-setup@v4
-        if: startsWith(matrix.package-manager, 'pnpm')
         with:
           version: ${{ matrix.pm-version }}
 
