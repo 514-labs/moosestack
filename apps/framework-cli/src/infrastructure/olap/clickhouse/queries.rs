@@ -1974,7 +1974,7 @@ mod tests {
             table_settings: None,
         };
 
-        let query = create_table_query("test_db", table).unwrap();
+        let query = create_table_query("test_db", table, false).unwrap();
         let expected = r#"
 CREATE TABLE IF NOT EXISTS `test_db`.`test_table`
 (
@@ -2007,7 +2007,7 @@ PRIMARY KEY (`id`)
             table_settings: None,
         };
 
-        let query = create_table_query("test_db", table).unwrap();
+        let query = create_table_query("test_db", table, false).unwrap();
         // DEFAULT should appear after nullable marker
         let expected = r#"
 CREATE TABLE IF NOT EXISTS `test_db`.`test_table`
@@ -2039,7 +2039,7 @@ ENGINE = MergeTree
             table_settings: None,
         };
 
-        let query = create_table_query("test_db", table).unwrap();
+        let query = create_table_query("test_db", table, false).unwrap();
         let expected = r#"
 CREATE TABLE IF NOT EXISTS `test_db`.`test_table`
 (
@@ -2073,7 +2073,7 @@ ENGINE = MergeTree
             table_settings: None,
         };
 
-        let query = create_table_query("test_db", table).unwrap();
+        let query = create_table_query("test_db", table, false).unwrap();
         let expected = r#"
 CREATE TABLE IF NOT EXISTS `test_db`.`test_table`
 (
@@ -2108,7 +2108,7 @@ ORDER BY (`id`) "#;
             table_settings: None,
         };
 
-        let result = create_table_query("test_db", table);
+        let result = create_table_query("test_db", table, false);
         assert!(matches!(
             result,
             Err(ClickhouseError::InvalidParameters { message }) if message == "ReplacingMergeTree requires an order by clause"
@@ -2149,7 +2149,7 @@ ORDER BY (`id`) "#;
             table_settings: None,
         };
 
-        let query = create_table_query("test_db", table).unwrap();
+        let query = create_table_query("test_db", table, false).unwrap();
         let expected = r#"
 CREATE TABLE IF NOT EXISTS `test_db`.`test_table`
 (
@@ -2205,7 +2205,7 @@ ORDER BY (`id`) "#;
             table_settings: None,
         };
 
-        let query = create_table_query("test_db", table).unwrap();
+        let query = create_table_query("test_db", table, false).unwrap();
         let expected = r#"
 CREATE TABLE IF NOT EXISTS `test_db`.`test_table`
 (
@@ -2242,7 +2242,7 @@ ORDER BY (`id`) "#;
             table_settings: None,
         };
 
-        let result = create_table_query("test_db", table);
+        let result = create_table_query("test_db", table, false);
         assert!(matches!(
             result,
             Err(ClickhouseError::InvalidParameters { message }) if message == "is_deleted parameter requires ver to be specified"
@@ -2389,7 +2389,7 @@ ORDER BY (`id`) "#;
             table_settings: None,
         };
 
-        let query = create_table_query("test_db", table).unwrap();
+        let query = create_table_query("test_db", table, false).unwrap();
         let expected = r#"
 CREATE TABLE IF NOT EXISTS `test_db`.`test_table`
 (
@@ -2449,7 +2449,7 @@ ORDER BY (`id`) "#;
             table_settings: Some(settings),
         };
 
-        let query = create_table_query("test_db", table).unwrap();
+        let query = create_table_query("test_db", table, false).unwrap();
         let expected = r#"
 CREATE TABLE IF NOT EXISTS `test_db`.`test_table`
 (
@@ -2918,7 +2918,7 @@ SETTINGS keeper_path = '/clickhouse/s3queue/test_table', mode = 'unordered', s3q
             table_settings: None,
         };
 
-        let query = create_table_query("test_db", table).unwrap();
+        let query = create_table_query("test_db", table, false).unwrap();
         let expected = r#"
 CREATE TABLE IF NOT EXISTS `test_db`.`test_table`
 (
