@@ -14,6 +14,7 @@ export const setupTypeScriptProject = async (
   cliPath: string,
   mooseLibPath: string,
   appName: string,
+  packageManager: "npm" | "pnpm" = "npm",
 ): Promise<void> => {
   // Initialize project
   console.log(
@@ -42,17 +43,19 @@ export const setupTypeScriptProject = async (
   fs.writeFileSync(packageJsonPath, JSON.stringify(packageJson, null, 2));
 
   // Install dependencies
-  console.log("Installing dependencies...");
+  console.log(`Installing dependencies with ${packageManager}...`);
   await new Promise<void>((resolve, reject) => {
-    const npmInstall = spawn("npm", ["install"], {
+    const installCmd = spawn(packageManager, ["install"], {
       stdio: "inherit",
       cwd: projectDir,
     });
-    npmInstall.on("close", (code) => {
-      console.log(`npm install exited with code ${code}`);
-      code === 0 ? resolve() : (
-        reject(new Error(`npm install failed with code ${code}`))
-      );
+    installCmd.on("close", (code) => {
+      console.log(`${packageManager} install exited with code ${code}`);
+      if (code === 0) {
+        resolve();
+      } else {
+        reject(new Error(`${packageManager} install failed with code ${code}`));
+      }
     });
   });
 };
