@@ -369,10 +369,10 @@ const tableWithOrderByFieldsOnly = new OlapTable<SchemaWithoutPrimaryKey>("table
 </TypeScript>
 
 <Python>
-Leverage the `OlapTableConfig` class to configure your table:
+Leverage the `OlapConfig` class to configure your table:
 
 ```py filename="OrderByFieldsOnly.py" copy
-from moose_lib import Key, OlapTable, OlapTableConfig
+from moose_lib import Key, OlapTable, OlapConfig
 from pydantic import BaseModel
 from datetime import datetime
 
@@ -381,8 +381,8 @@ class SchemaWithoutPrimaryKey(BaseModel):
     field2: int
     field3: datetime
 
-table2 = OlapTable[SchemaWithoutPrimaryKey]("table2", OlapTableConfig(
-  orderByFields=["field1", "field2"] # Specify ordering without primary key
+table2 = OlapTable[SchemaWithoutPrimaryKey]("table2", OlapConfig(
+  order_by_fields=["field1", "field2"] # Specify ordering without primary key
 ))
 ```
 </Python>
@@ -406,7 +406,7 @@ const tableWithKeyAndOrderByFields = new OlapTable<SchemaWithKey>("table3", {
 
 <Python>
 ```py filename="ComboKeyAndOrderByFields.py" copy
-from moose_lib import Key, OlapTable, OlapTableConfig
+from moose_lib import Key, OlapTable, OlapConfig
 from pydantic import BaseModel
 
 class SchemaWithKey(BaseModel):
@@ -414,8 +414,8 @@ class SchemaWithKey(BaseModel):
     field1: str
     field2: int
 
-table3 = OlapTable[SchemaWithKey]("table3", OlapTableConfig(
-  orderByFields=["id", "field1"] # Primary key must be first
+table3 = OlapTable[SchemaWithKey]("table3", OlapConfig(
+  order_by_fields=["id", "field1"] # Primary key must be first
 ))
 ```
 </Python>
@@ -438,7 +438,7 @@ const multiKeyTable = new OlapTable<MultiKeyRecord>("multi_key_table", {
 
 <Python>
 ```py filename="MultiKeyTable.py" copy
-from moose_lib import Key, OlapTable, OlapTableConfig
+from moose_lib import Key, OlapTable, OlapConfig
 from pydantic import BaseModel
 
 class MultiKeyRecord(BaseModel):
@@ -446,8 +446,8 @@ class MultiKeyRecord(BaseModel):
     key2: Key[int]
     field1: str
 
-multi_key_table = OlapTable[MultiKeyRecord]("multi_key_table", OlapTableConfig(
-  orderByFields=["key1", "key2", "field1"] # Multiple keys must come first
+multi_key_table = OlapTable[MultiKeyRecord]("multi_key_table", OlapConfig(
+  order_by_fields=["key1", "key2", "field1"] # Multiple keys must come first
 ))
 ```
 </Python>
@@ -704,7 +704,7 @@ const badTable3 = new OlapTable<BadRecord3>("bad_table3", {
 
 <Python>
 ```py filename="InvalidConfig.py" copy
-from moose_lib import Key, OlapTable, OlapTableConfig
+from moose_lib import Key, OlapTable, OlapConfig
 from typing import Optional
 
 class BadRecord1(BaseModel):
@@ -717,8 +717,8 @@ class BadRecord2(BaseModel):
     id: Key[str]
     field1: str
 
-bad_table2 = OlapTable[BadRecord2]("bad_table2", OlapTableConfig(
-  orderByFields=["field1", "id"] # Wrong order - primary key must be first
+bad_table2 = OlapTable[BadRecord2]("bad_table2", OlapConfig(
+  order_by_fields=["field1", "id"] # Wrong order - primary key must be first
 ))
 
 class BadRecord3(BaseModel):
@@ -726,8 +726,8 @@ class BadRecord3(BaseModel):
     field1: str
     field2: Optional[int]
 
-bad_table3 = OlapTable[BadRecord3]("bad_table3", OlapTableConfig(
-  orderByFields=["id", "field2"] # Can't have nullable field in orderByFields
+bad_table3 = OlapTable[BadRecord3]("bad_table3", OlapConfig(
+  order_by_fields=["id", "field2"] # Can't have nullable field in orderByFields
 ))
 ```
 </Python>
