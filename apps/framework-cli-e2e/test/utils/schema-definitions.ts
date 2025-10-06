@@ -151,6 +151,56 @@ export const PYTHON_BASIC_SCHEMAS: ExpectedTableSchema[] = [
 export const PYTHON_TEST_SCHEMAS: ExpectedTableSchema[] = [
   ...PYTHON_BASIC_SCHEMAS,
   {
+    tableName: "AllTypes",
+    columns: [
+      { name: "id", type: "String" },
+      { name: "ts", type: /DateTime\('UTC'\)/ },
+
+      // Signed
+      { name: "int8_col", type: "Int8" },
+      { name: "int16_col", type: "Int16" },
+      { name: "int32_col", type: "Int32" },
+      { name: "int64_col", type: "Int64" },
+
+      // Unsigned
+      { name: "uint8_col", type: "UInt8" },
+      { name: "uint16_col", type: "UInt16" },
+      { name: "uint32_col", type: "UInt32" },
+      { name: "uint64_col", type: "UInt64" },
+
+      // Float and Decimal
+      { name: "float32_col", type: "Float32" },
+      { name: "decimal_col", type: /Decimal\(10, 2\)/ },
+
+      // LowCardinality
+      { name: "lowcard_col", type: /LowCardinality\(String\)/ },
+
+      // UUID
+      { name: "uuid_col", type: "UUID" },
+
+      // Date and DateTime64
+      { name: "date_col", type: "Date32" },
+      { name: "dt64_col", type: /DateTime64\(3\)/ },
+
+      // IP
+      { name: "ipv4_col", type: "IPv4" },
+      { name: "ipv6_col", type: "IPv6" },
+
+      // Map
+      { name: "map_col", type: /Map\(String, Int32\)/ },
+
+      // Named Tuple
+      { name: "named_tuple_col", type: /Tuple\(lat Float64, lng Float64\)/ },
+
+      // JSON
+      { name: "json_col", type: "JSON" },
+
+      // Nullable
+      { name: "optional_uint32", type: "Nullable(UInt32)", nullable: true },
+      { name: "optional_str_with_default", type: "Nullable(String)", nullable: true },
+    ],
+  },
+  {
     tableName: "BasicTypes",
     columns: [
       { name: "id", type: "String" },
