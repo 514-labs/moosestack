@@ -3,8 +3,11 @@
 When you are changing MooseStack functionality (either in the language specific libraries or in the Rust core) ALWAYS run the
 end-to-end tests to make sure you did not break anything.
 
-When you change user facing functionality for the moose, always add end to end tests for the python-tests and typescript-tests
-templates and ALWAYS audit for the documentation for update needs.
+When you change user facing functionality for moose, always add end-to-end tests for the `python-tests` and `typescript-tests`
+templates and ALWAYS audit for the documentation for update needs. Those projects are Moose project that should be using Moose code.
+The checks if the moose code works as expected should be inside `apps/framework-cli-e2e`. 
+
+You can find the logs for moose if you need to troublehoot into `~/.moose/*-cli.log`
 
 ## Commands
 
@@ -18,7 +21,7 @@ templates and ALWAYS audit for the documentation for update needs.
 ### Rust Components
 - **Build Rust**: `cargo build`
 - **Run Rust tests**: `cargo test`
-- **Lint Rust code**: `cargo clippy`
+- **Lint Rust code**: `cargo clippy -D warnings` (no warnings allowed)
 - **Format Rust code**: `rustfmt --edition 2021 <file.rs>`
 
 ### Testing
@@ -64,7 +67,7 @@ This is a multi-language monorepo using:
 
 ### Pre-commit Requirements
 - **TypeScript/JavaScript**: Must pass linting and code formating checks (`npx lint-staged`)
-- **Rust**: Must pass `cargo clippy` 
+- **Rust**: Must pass `cargo clippy -D warnings` (no warnings permitted)
 - **All components**: Tests must pass before PR submission
 
 ### Error Handling (Rust)
@@ -77,7 +80,7 @@ This is a multi-language monorepo using:
 - **Constants**: Use `const` in Rust, place in `constants.rs` at appropriate module level
 - **Newtypes**: Use tuple structs with validation constructors
 - **Documentation**: All public APIs must be documented
-- **Linting**: Always run `cargo clippy` for Rust code
+- **Linting**: Always run `cargo clippy -D warnings` for Rust code
 - Follow existing patterns and conventions in each language
 
 ### Templates

@@ -49,7 +49,10 @@ import {
   cleanupLeftoverTestDirectories,
   setupTypeScriptProject,
   setupPythonProject,
+  getExpectedSchemas,
+  validateSchemasWithDebugging,
 } from "./utils";
+import { triggerWorkflow } from "./utils/workflow-utils";
 
 const execAsync = promisify(require("child_process").exec);
 const setTimeoutAsync = (ms: number) =>
@@ -215,6 +218,34 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
       }
     });
 
+    // Schema validation test - runs for all templates
+    it("should create tables with correct schema structure", async function () {
+      this.timeout(TIMEOUTS.SCHEMA_VALIDATION_MS);
+
+      console.log(`Validating schema for ${config.displayName}...`);
+
+      // Get expected schemas for this template
+      const expectedSchemas = getExpectedSchemas(
+        config.language,
+        config.isTestsVariant,
+      );
+
+      // Validate all table schemas with debugging
+      const validationResult =
+        await validateSchemasWithDebugging(expectedSchemas);
+
+      // Assert that all schemas are valid
+      if (!validationResult.valid) {
+        const failedTables = validationResult.results
+          .filter((r) => !r.valid)
+          .map((r) => r.tableName)
+          .join(", ");
+        throw new Error(`Schema validation failed for tables: ${failedTables}`);
+      }
+
+      console.log(`✅ Schema validation passed for ${config.displayName}`);
+    });
+
     // Create test case based on language
     if (config.language === "typescript") {
       it("should successfully ingest data and verify through consumption API (DateTime support)", async function () {
@@ -243,6 +274,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
           );
         }
 
+        await triggerWorkflow("generator");
         await waitForDBWrite(devProcess!, "Bar", recordsToSend);
         await verifyClickhouseData("Bar", eventId, "primaryKey");
         await waitForMaterializedViewUpdate("BarAggregated", 1);
@@ -283,6 +315,13 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
           `Primary Key: ${eventId}`,
           "Optional Text: Hello world",
         ]);
+
+        if (config.isTestsVariant) {
+          await verifyConsumerLogs(TEST_PROJECT_DIR, [
+            "from_http",
+            "from_send",
+          ]);
+        }
       });
     } else {
       it("should successfully ingest data and verify through consumption API", async function () {
@@ -306,7 +345,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
           },
           { attempts: 5, delayMs: 500 },
         );
-
+        await triggerWorkflow("generator");
         await waitForDBWrite(devProcess!, "Bar", 1);
         await verifyClickhouseData("Bar", eventId, "primary_key");
         await waitForMaterializedViewUpdate("bar_aggregated", 1);
@@ -352,6 +391,13 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
           `Primary Key: ${eventId}`,
           "Optional Text: Hello from Python",
         ]);
+
+        if (config.isTestsVariant) {
+          await verifyConsumerLogs(TEST_PROJECT_DIR, [
+            "from_http",
+            "from_send",
+          ]);
+        }
       });
     }
   });

@@ -33,7 +33,7 @@
 //!
 //! This module is essential for maintaining consistency between the defined infrastructure
 //! and the actual deployed components.
-use super::infrastructure::api_endpoint::ApiEndpoint;
+use super::infrastructure::api_endpoint::{APIType, ApiEndpoint};
 use super::infrastructure::consumption_webserver::ConsumptionApiWebServer;
 use super::infrastructure::function_process::FunctionProcess;
 use super::infrastructure::olap_process::OlapProcess;
@@ -2085,7 +2085,23 @@ impl InfrastructureMap {
         } else {
             load_main_py(project, &project.project_location).await?
         };
-        Ok(partial.into_infra_map(project.language, &project.main_file()))
+        let infra_map = partial.into_infra_map(project.language, &project.main_file());
+
+        // Provide explicit feedback when streams are defined but streaming engine is disabled
+        if !project.features.streaming_engine && infra_map.uses_streaming() {
+            show_message_wrapper(
+                MessageType::Error,
+                Message {
+                    action: "Disabled".to_string(),
+                    details: format!(
+                        "Streaming is disabled but {} stream(s) found. Enable it by setting [features].streaming_engine = true in moose.config.toml",
+                        infra_map.topics.len()
+                    ),
+                },
+            );
+        }
+
+        Ok(infra_map)
     }
 
     /// Gets a topic by its ID
@@ -2162,6 +2178,24 @@ impl InfrastructureMap {
     /// An Option containing a reference to the topic if found
     pub fn find_topic_by_name(&self, name: &str) -> Option<&Topic> {
         self.topics.values().find(|topic| topic.name == name)
+    }
+
+    pub fn uses_olap(&self) -> bool {
+        !self.tables.is_empty()
+            || !self.views.is_empty()
+            || !self.topic_to_table_sync_processes.is_empty()
+            || !self.sql_resources.is_empty()
+    }
+
+    pub fn uses_streaming(&self) -> bool {
+        !self.topics.is_empty()
+            || !self.topic_to_table_sync_processes.is_empty()
+            || !self.topic_to_topic_sync_processes.is_empty()
+            || !self.function_processes.is_empty()
+            || self
+                .api_endpoints
+                .iter()
+                .any(|(_, api)| matches!(&api.api_type, APIType::INGRESS { .. }))
     }
 }
 

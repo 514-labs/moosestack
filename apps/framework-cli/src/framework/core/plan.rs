@@ -286,7 +286,10 @@ pub async fn plan_changes(
     };
 
     // Validate that OLAP is enabled if OLAP changes are required
-    if !project.features.olap && !plan.changes.olap_changes.is_empty() {
+    if !project.features.olap
+        && !plan.changes.olap_changes.is_empty()
+        && plan.target_infra_map.uses_olap()
+    {
         error!(
             "OLAP is disabled but {} OLAP changes are required. Enable OLAP in project configuration.",
             plan.changes.olap_changes.len()

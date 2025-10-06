@@ -153,7 +153,7 @@ interface UserEvent {
 
 // Create a complete ingestion pipeline with a table
 const eventsPipeline = new IngestPipeline<UserEvent>("user_events", {
-  ingest: true,    // Creates a REST API endpoint at POST localhost:4000/ingest/user_events
+  ingestApi: true,    // Creates a REST API endpoint at POST localhost:4000/ingest/user_events
   stream: true,    // Creates Kafka/Redpanda topic
   table: {         // Creates and configures the table named "user_events"
     orderByFields: ["id", "timestamp"]
@@ -180,7 +180,7 @@ from moose_lib import IngestPipeline, IngestPipelineConfig, OlapConfig
 from moose_lib.blocks import ReplacingMergeTreeEngine
 
 events_pipeline = IngestPipeline[UserEvent]("user_events", IngestPipelineConfig(
-  ingest=True, # Creates a REST API endpoint at POST localhost:4000/ingest/user_events
+  ingest_api=True, # Creates a REST API endpoint at POST localhost:4000/ingest/user_events
   stream=True, # Creates a Kafka/Redpanda topic
   table=OlapConfig(      # Creates and configures the table named "user_events"
     order_by_fields=["id", "timestamp"],
@@ -454,7 +454,7 @@ multi_key_table = OlapTable[MultiKeyRecord]("multi_key_table", OlapConfig(
 
 
 ### Table engines
-By default, Moose will create tables with the `MergeTree` engine. You can use different engines through factory methods or engine configuration classes.
+By default, Moose will create tables with the `MergeTree` engine. You can use different engines by setting the `engine` in the table configuration.
 
 <TypeScript>
 ```ts filename="TableEngine.ts" copy
@@ -465,8 +465,9 @@ const table = new OlapTable<Record>("table", {
   orderByFields: ["id"]
 });
 
-// Use factory methods for other engines
-const dedupTable = OlapTable.withReplacingMergeTree<Record>("table", {
+// Use engine configuration for other engines
+const dedupTable = new OlapTable<Record>("table", {
+  engine: ClickHouseEngines.ReplacingMergeTree,
   orderByFields: ["id"],
   ver: "version",  // Optional: keeps row with highest version
   isDeleted: "deleted"  // Optional: soft delete when deleted=1
@@ -498,18 +499,21 @@ Use the `ReplacingMergeTree` engine to keep only the latest record for your desi
 <TypeScript>
 ```ts filename="DeduplicatedTable.ts" copy
 // Basic deduplication
-const table = OlapTable.withReplacingMergeTree<Record>("table", {
+const table = new OlapTable<Record>("table", {
+  engine: ClickHouseEngines.ReplacingMergeTree,
   orderByFields: ["id"]
 });
 
 // With version column (keeps record with highest version)
-const versionedTable = OlapTable.withReplacingMergeTree<Record>("table", {
+const versionedTable = new OlapTable<Record>("table", {
+  engine: ClickHouseEngines.ReplacingMergeTree,
   orderByFields: ["id"],
   ver: "updated_at"  // Column that determines which version to keep
 });
 
 // With soft deletes (requires ver parameter)
-const softDeleteTable = OlapTable.withReplacingMergeTree<Record>("table", {
+const softDeleteTable = new OlapTable<Record>("table", {
+  engine: ClickHouseEngines.ReplacingMergeTree,
   orderByFields: ["id"],
   ver: "updated_at",
   isDeleted: "deleted"  // UInt8 column: 1 marks row for deletion
@@ -565,23 +569,22 @@ Use the `S3Queue` engine to automatically ingest data from S3 buckets as files a
 
 <TypeScript>
 ```ts filename="S3StreamingTable.ts" copy
-import { OlapTable } from '@514labs/moose-lib';
+import { OlapTable, ClickHouseEngines } from '@514labs/moose-lib';
 
-// Modern API using factory method
-export const s3Events = OlapTable.withS3Queue<S3Event>(
-  "s3_events",
-  "s3://my-bucket/data/*.json",
-  "JSONEachRow",
-  {
-    awsAccessKeyId: "AKIA...",
-    awsSecretAccessKey: "secret...",
-    settings: {
-      mode: "unordered",
-      keeper_path: "/clickhouse/s3queue/events"
-    }
+// Use direct configuration (S3Queue does not support orderByFields)
+export const s3Events = new OlapTable<S3Event>("s3_events", {
+  engine: ClickHouseEngines.S3Queue,
+  s3Path: "s3://my-bucket/data/*.json",
+  format: "JSONEachRow",
+  settings: {
+    mode: "unordered",
+    keeper_path: "/clickhouse/s3queue/events"
   }
-);
+});
 ```
+<Callout type="warning" title="S3Queue ORDER BY not supported">
+S3Queue is a streaming engine and does not support `orderByFields` or ORDER BY clauses. Configure only engine-specific parameters like `s3Path`, `format`, and `settings`.
+</Callout>
 </TypeScript>
 
 <Python>

@@ -14,26 +14,26 @@ from app.functions.bluetooth_to_unified_packet import bluetoothHRPacket__UNIFIED
 
 # Initalize Ingest Pipeline Infrastructure
 rawAntHRPipeline = IngestPipeline[RawAntHRPacket]("raw_ant_hr_packet", IngestPipelineConfig(
-    ingest=True,
+    ingest_api=True,
     stream=True,
     table=True
 ))
 
 
 processedAntHRPipeline = IngestPipeline[ProcessedAntHRPacket]("processed_ant_hr_packet", IngestPipelineConfig(
-    ingest=True,
+    ingest_api=True,
     stream=True,
     table=True
 ))
 
 unifiedHRPipeline = IngestPipeline[UnifiedHRPacket]("unified_hr_packet", IngestPipelineConfig(
-    ingest=True,
+    ingest_api=True,
     stream=True,
     table=True
 ))
 
 bluetoothHRPipeline = IngestPipeline[BluetoothHRPacket]("bluetooth_hr_packet", IngestPipelineConfig(
-    ingest=True,
+    ingest_api=True,
     stream=True,
     table=True
 ))

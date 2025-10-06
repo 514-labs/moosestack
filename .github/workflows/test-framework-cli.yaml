@@ -71,7 +71,7 @@ jobs:
           # Check if any relevant files were changed
           if grep -q -E "${GREP_PATTERN}" changes.txt; then
             echo "::notice title=✅ Running Tests::Detected relevant changes in the codebase. Tests will run."
-            echo "should_run=true" >> $GITHUB_OUTPUT 
+            echo "should_run=true" >> $GITHUB_OUTPUT
           else
             echo "::notice title=⏭️ Skipping Tests::No relevant changes detected. Tests will be skipped."
             echo "should_run=false" >> $GITHUB_OUTPUT
@@ -81,6 +81,8 @@ jobs:
     needs: detect-changes
     if: needs.detect-changes.outputs.should_run == 'true'
     name: Check
+    # This is doing both checks and compilation hence why there is a
+    # Bigger machine
     runs-on: ubuntu-22-8-core
     # Add explicit read-only permissions
     permissions:
@@ -98,7 +100,20 @@ jobs:
           repository: ${{ github.event.pull_request.head.repo.full_name }}
           ref: ${{ github.event.pull_request.head.sha }}
 
+      - name: Get system info
+        id: system
+        run: |
+          echo "version=$(lsb_release -rs)" >> $GITHUB_OUTPUT
+          echo "distro=$(lsb_release -is)" >> $GITHUB_OUTPUT
+
       - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+          cache: true
+          cache-shared-key: ${{ runner.os }}-${{ steps.system.outputs.distro }}-${{ steps.system.outputs.version }}-${{ runner.arch }}-rust
+          cache-on-failure: true
+          cache-all-crates: true
+          cache-workspace-crates: true
 
       - name: Run cargo check
         run: cargo check
@@ -144,9 +159,28 @@ jobs:
           node-version: 20
           cache: "pnpm"
 
+      - name: Get system info (Linux)
+        id: system-linux
+        if: runner.os == 'Linux'
+        run: |
+          echo "version=$(lsb_release -rs)" >> $GITHUB_OUTPUT
+          echo "distro=$(lsb_release -is)" >> $GITHUB_OUTPUT
+
+      - name: Get system info (macOS)
+        id: system-macos
+        if: runner.os == 'macOS'
+        run: |
+          echo "version=$(sw_vers -productVersion)" >> $GITHUB_OUTPUT
+          echo "distro=macOS" >> $GITHUB_OUTPUT
+
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: stable
+          cache: true
+          cache-shared-key: ${{ runner.os }}-${{ steps.system-linux.outputs.distro || steps.system-macos.outputs.distro }}-${{ steps.system-linux.outputs.version || steps.system-macos.outputs.version }}-${{ runner.arch }}-rust
+          cache-on-failure: true
+          cache-all-crates: true
+          cache-workspace-crates: true
 
       - name: Run pnpm install
         run: pnpm install --filter=@repo/scripts # for package-templates.js
@@ -264,9 +298,20 @@ jobs:
           node-version: ${{ matrix.node-version }}
           cache: "pnpm"
 
+      - name: Get system info
+        id: system
+        run: |
+          echo "version=$(lsb_release -rs)" >> $GITHUB_OUTPUT
+          echo "distro=$(lsb_release -is)" >> $GITHUB_OUTPUT
+
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: stable
+          cache: true
+          cache-shared-key: ${{ runner.os }}-${{ steps.system.outputs.distro }}-${{ steps.system.outputs.version }}-${{ runner.arch }}-rust
+          cache-on-failure: true
+          cache-all-crates: true
+          cache-workspace-crates: true
 
       - name: Run TypeScript E2E Tests (Default Template)
         run: pnpm install --frozen-lockfile && pnpm --filter=framework-cli-e2e run test -- --grep "typescript template default"
@@ -314,9 +359,20 @@ jobs:
           node-version: ${{ matrix.node-version }}
           cache: "pnpm"
 
+      - name: Get system info
+        id: system
+        run: |
+          echo "version=$(lsb_release -rs)" >> $GITHUB_OUTPUT
+          echo "distro=$(lsb_release -is)" >> $GITHUB_OUTPUT
+
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: stable
+          cache: true
+          cache-shared-key: ${{ runner.os }}-${{ steps.system.outputs.distro }}-${{ steps.system.outputs.version }}-${{ runner.arch }}-rust
+          cache-on-failure: true
+          cache-all-crates: true
+          cache-workspace-crates: true
 
       - name: Run TypeScript E2E Tests (Tests Template)
         run: pnpm install --frozen-lockfile && pnpm --filter=framework-cli-e2e run test -- --grep "typescript template tests"
@@ -364,9 +420,20 @@ jobs:
           node-version: 20
           cache: "pnpm"
 
+      - name: Get system info
+        id: system
+        run: |
+          echo "version=$(lsb_release -rs)" >> $GITHUB_OUTPUT
+          echo "distro=$(lsb_release -is)" >> $GITHUB_OUTPUT
+
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: stable
+          cache: true
+          cache-shared-key: ${{ runner.os }}-${{ steps.system.outputs.distro }}-${{ steps.system.outputs.version }}-${{ runner.arch }}-rust
+          cache-on-failure: true
+          cache-all-crates: true
+          cache-workspace-crates: true
 
       - name: Setup Python ${{ matrix.python-version }} for E2E tests
         uses: actions/setup-python@v4
@@ -422,9 +489,20 @@ jobs:
           node-version: 20
           cache: "pnpm"
 
+      - name: Get system info
+        id: system
+        run: |
+          echo "version=$(lsb_release -rs)" >> $GITHUB_OUTPUT
+          echo "distro=$(lsb_release -is)" >> $GITHUB_OUTPUT
+
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: stable
+          cache: true
+          cache-shared-key: ${{ runner.os }}-${{ steps.system.outputs.distro }}-${{ steps.system.outputs.version }}-${{ runner.arch }}-rust
+          cache-on-failure: true
+          cache-all-crates: true
+          cache-workspace-crates: true
 
       - name: Setup Python ${{ matrix.python-version }} for E2E tests
         uses: actions/setup-python@v4
@@ -465,9 +543,20 @@ jobs:
           repository: ${{ github.event.pull_request.head.repo.full_name }}
           ref: ${{ github.event.pull_request.head.sha }}
 
+      - name: Get system info
+        id: system
+        run: |
+          echo "version=$(lsb_release -rs)" >> $GITHUB_OUTPUT
+          echo "distro=$(lsb_release -is)" >> $GITHUB_OUTPUT
+
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           components: rustfmt, clippy
+          cache: true
+          cache-shared-key: ${{ runner.os }}-${{ steps.system.outputs.distro }}-${{ steps.system.outputs.version }}-${{ runner.arch }}-rust
+          cache-on-failure: true
+          cache-all-crates: true
+          cache-workspace-crates: true
 
       # to trigger code gen
       - name: Run cargo build

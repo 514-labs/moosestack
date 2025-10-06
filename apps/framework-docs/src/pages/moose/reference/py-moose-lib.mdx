@@ -113,7 +113,7 @@ Configuration for creating a complete data pipeline.
 class IngestPipelineConfig(BaseModel):
     table: bool | OlapConfig = True
     stream: bool | StreamConfig = True
-    ingest: bool | IngestConfig = True
+    ingest_api: bool | IngestConfig = True
 ```
 
 ## Infrastructure Components
@@ -189,14 +189,14 @@ from moose_lib.blocks import ReplacingMergeTreeEngine
 
 # Basic usage
 pipeline = IngestPipeline[UserEvent]("user_pipeline", IngestPipelineConfig(
-    ingest=True,
+    ingest_api=True,
     stream=True,
     table=True
 ))
 
 # With advanced configuration
 pipeline = IngestPipeline[UserEvent]("user_pipeline", IngestPipelineConfig(
-    ingest=True,
+    ingest_api=True,
     stream=StreamConfig(parallelism=3),
     table=OlapConfig(
         order_by_fields=["id", "timestamp"],

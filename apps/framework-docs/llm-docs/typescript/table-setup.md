@@ -37,7 +37,6 @@ type OlapConfig<T> =
       awsSecretAccessKey?: string;
       compression?: string;
       headers?: { [key: string]: string };
-      orderByFields?: (keyof T & string)[];
       settings?: { [key: string]: string };  // Table-level settings including S3Queue-specific ones
     };
 ```
@@ -159,7 +158,7 @@ interface S3EventSchema {
   data: any;
 }
 
-// Option 1: Direct configuration with new API
+// Direct configuration with new API
 export const S3Events = new OlapTable("S3Events", {
   engine: ClickHouseEngines.S3Queue,
   s3Path: "s3://my-bucket/events/*.json",
@@ -177,39 +176,18 @@ export const S3Events = new OlapTable("S3Events", {
     processing_threads_num: "4",
     // Additional settings as needed
   },
-  orderByFields: ["id", "timestamp"]
 });
 
-// Option 2: Using factory method (cleanest approach)
-export const S3EventsFactory = OlapTable.withS3Queue<S3EventSchema>(
-  "S3Events",
-  "s3://my-bucket/events/*.json",
-  "JSONEachRow",
-  {
-    awsAccessKeyId: "AKIA...",
-    awsSecretAccessKey: "secret...",
-    compression: "gzip",
-    settings: {
-      mode: "unordered",
-      keeper_path: "/clickhouse/s3queue/s3_events"
-    },
-    orderByFields: ["id", "timestamp"]
-  }
-);
-
 // Public S3 bucket example (no credentials needed)
-export const PublicS3Data = OlapTable.withS3Queue<any>(
-  "PublicS3Data",
-  "s3://public-bucket/data/*.csv",
-  "CSV",
-  {
-    // No AWS credentials for public buckets
-    settings: {
-      mode: "ordered",
-      keeper_path: "/clickhouse/s3queue/public_data"
-    }
+export const PublicS3Data = new OlapTable<any>("PublicS3Data", {
+  engine: ClickHouseEngines.S3Queue,
+  s3Path: "s3://public-bucket/data/*.csv",
+  format: "CSV",
+  settings: {
+    mode: "ordered",
+    keeper_path: "/clickhouse/s3queue/public_data"
   }
-);
+});
 ```
 
 #### Legacy API (Still Supported)
