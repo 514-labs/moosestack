@@ -133,14 +133,26 @@ pub struct RouteMeta {
     pub schema_registry_schema_id: Option<i32>,
 }
 
+#[derive(Debug, thiserror::Error)]
+pub enum KafkaSchemaError {
+    #[error("Error from schema_registry_client: {0}")]
+    SchemaRegistryError(#[from] schema_registry_client::rest::apis::Error),
+
+    #[error("Unsupported schema type: {0}")]
+    UnsupportedSchemaType(String),
+
+    #[error("Subject not found: {0}")]
+    NotFound(String),
+}
+
 async fn resolve_schema_id_for_topic(
     project: &Project,
     topic: &crate::framework::core::infrastructure::topic::Topic,
-) -> Result<Option<i32>, schema_registry_client::rest::apis::Error> {
+) -> Result<Option<i32>, KafkaSchemaError> {
     let sr = match &topic.schema_config {
         Some(sr) if sr.kind.eq_ignore_ascii_case("JSON") => sr,
         None => return Ok(None),
-        _ => panic!("Only JSON schema allowed"),
+        Some(sr) => return Err(KafkaSchemaError::UnsupportedSchemaType(sr.kind.clone())),
     };
 
     let (subject, explicit_version): (&str, Option<i32>) = match &sr.reference {
@@ -167,7 +179,7 @@ async fn resolve_schema_id_for_topic(
             .await?
             .into_iter()
             .max()
-            .unwrap(),
+            .ok_or_else(|| KafkaSchemaError::NotFound(subject.to_string()))?,
         Some(v) => v,
     };
 
@@ -176,7 +188,7 @@ async fn resolve_schema_id_for_topic(
             .get_version(subject, version, false, None)
             .await?
             .id
-            .unwrap(),
+            .ok_or_else(|| KafkaSchemaError::NotFound(subject.to_string()))?,
     ))
 }
 
