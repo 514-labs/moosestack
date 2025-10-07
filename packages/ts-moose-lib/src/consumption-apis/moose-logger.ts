@@ -24,8 +24,7 @@ export function mooseLogger(req: any, res: any, next: any): void {
   // Override res.end to log when the response is sent
   res.end = function (this: any, ...args: any[]): any {
     // Log the request and response
-    const duration = Date.now() - startTime;
-    console.log(`${req.method} ${req.url} ${res.statusCode} - ${duration}ms`);
+    console.log(`${req.method} ${req.url} ${res.statusCode}`);
 
     // Call the original end method
     return originalEnd.apply(this, args);
