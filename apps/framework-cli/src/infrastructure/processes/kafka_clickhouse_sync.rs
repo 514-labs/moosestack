@@ -321,46 +321,38 @@ async fn sync_kafka_to_kafka(
             }
 
             Ok(message) => match message.payload() {
-                Some(payload) => {
-                    // Strip Schema Registry JSON envelope if present: 0x00 + 4-byte schema ID
-                    let payload = if payload.len() >= 5 && payload[0] == 0x00 {
-                        &payload[5..]
-                    } else {
-                        payload
-                    };
-                    match std::str::from_utf8(payload) {
-                        Ok(payload_str) => {
-                            log::trace!(
-                                "Received message from {}: {}",
-                                source_topic_name,
-                                payload_str
-                            );
-                            metrics
-                                .send_metric_event(MetricEvent::TopicToOLAPEvent {
-                                    timestamp: chrono::Utc::now(),
-                                    count: 1,
-                                    bytes: payload.len() as u64,
-                                    consumer_group: "clickhouse sync".to_string(),
-                                    topic_name: source_topic_name.clone(),
-                                })
-                                .await;
-
-                            send_with_back_pressure(
-                                &mut queue,
-                                &producer.producer,
-                                target_topic_name,
-                                payload_str.to_string(),
-                            )
+                Some(payload) => match std::str::from_utf8(payload) {
+                    Ok(payload_str) => {
+                        log::trace!(
+                            "Received message from {}: {}",
+                            source_topic_name,
+                            payload_str
+                        );
+                        metrics
+                            .send_metric_event(MetricEvent::TopicToOLAPEvent {
+                                timestamp: chrono::Utc::now(),
+                                count: 1,
+                                bytes: payload.len() as u64,
+                                consumer_group: "clickhouse sync".to_string(),
+                                topic_name: source_topic_name.clone(),
+                            })
                             .await;
-                        }
-                        Err(_) => {
-                            error!(
-                                "Received message from {} with invalid UTF-8",
-                                source_topic_name
-                            );
-                        }
+
+                        send_with_back_pressure(
+                            &mut queue,
+                            &producer.producer,
+                            target_topic_name,
+                            payload_str.to_string(),
+                        )
+                        .await;
                     }
-                }
+                    Err(_) => {
+                        error!(
+                            "Received message from {} with invalid UTF-8",
+                            source_topic_name
+                        );
+                    }
+                },
                 None => {
                     debug!(
                         "Received message from {} with no payload",
