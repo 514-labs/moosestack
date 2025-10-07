@@ -288,7 +288,7 @@ class Stream(TypedMooseResource, Generic[T]):
 
         brokers = self._parse_brokers(cfg.broker)
         if not brokers:
-            raise RuntimeError(f"No valid broker addresses found in: '{getattr(cfg, 'broker', '')}'")
+            raise RuntimeError(f"No valid broker addresses found in: '{cfg.broker}'")
 
         producer = get_kafka_producer(
             broker=brokers,
@@ -371,7 +371,7 @@ class Stream(TypedMooseResource, Generic[T]):
             elif isinstance(sr.reference, SubjectLatest):
                 schema = client.get_latest_version(sr.reference.name).schema
             else:
-                schema = client.get_version(sr.reference.name, sr.reference.version).schema
+                schema = client.get_version(sr.reference.subject, sr.reference.version).schema
 
             serializer = JSONSerializer(schema, client)
 
