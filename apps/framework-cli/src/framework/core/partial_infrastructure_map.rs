@@ -180,7 +180,7 @@ struct PartialTopic {
     pub metadata: Option<Metadata>,
     pub life_cycle: Option<LifeCycle>,
     #[serde(default)]
-    pub schema_registry: Option<KafkaSchema>,
+    pub schema_config: Option<KafkaSchema>,
 }
 
 /// Specifies the type of destination for write operations.
@@ -607,7 +607,7 @@ impl PartialInfrastructureMap {
                     },
                     metadata: partial_topic.metadata.clone(),
                     life_cycle: partial_topic.life_cycle.unwrap_or(LifeCycle::FullyManaged),
-                    schema_registry: partial_topic.schema_registry.clone(),
+                    schema_config: partial_topic.schema_config.clone(),
                 };
                 (topic.id(), topic)
             })

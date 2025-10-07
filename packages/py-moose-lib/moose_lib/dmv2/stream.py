@@ -8,41 +8,7 @@ import dataclasses
 import datetime
 import json
 from typing import Any, Optional, Callable, Union, Literal, Generic
-from pydantic import BaseModel
-
-
-class LatestRef(BaseModel):
-    subject_name: str
-
-
-class SubjectVersionRef(BaseModel):
-    name: str
-    version: int
-
-
-class SchemaRegistryReference(BaseModel):
-    Id: Optional[int] = None
-    Latest: Optional[LatestRef] = None
-    SubjectVersion: Optional[SubjectVersionRef] = None
-
-    def model_post_init(self, __context: Any) -> None:
-        present = sum(
-            1
-            for v in (self.Id, self.Latest, self.SubjectVersion)
-            if v is not None
-        )
-        if present != 1:
-            raise ValueError(
-                "Exactly one of Id, Latest, SubjectVersion must be provided"
-            )
-
-
-class KafkaSchema(BaseModel):
-    kind: Literal["JSON", "AVRO", "PROTOBUF"]
-    reference: SchemaRegistryReference
-
-
-from pydantic import BaseModel, ConfigDict, AliasGenerator
+from pydantic import BaseModel, ConfigDict, AliasGenerator, Field
 from pydantic.alias_generators import to_camel
 from kafka import KafkaProducer
 
@@ -52,6 +18,24 @@ from ._registry import _streams
 from .life_cycle import LifeCycle
 from ..config.runtime import config_registry, RuntimeKafkaConfig
 from ..commons import get_kafka_producer
+
+
+class SubjectLatest(BaseModel):
+    name: str = Field(serialization_alias="subjectLatest")
+
+
+class SubjectVersion(BaseModel):
+    subject: str
+    version: int
+
+
+class SchemaById(BaseModel):
+    id: int
+
+
+class KafkaSchemaConfig(BaseModel):
+    kind: Literal["JSON", "AVRO", "PROTOBUF"]
+    reference: Union[SubjectLatest, SubjectVersion, SchemaById]
 
 
 class StreamConfig(BaseModel):
@@ -75,9 +59,7 @@ class StreamConfig(BaseModel):
     default_dead_letter_queue: "Optional[DeadLetterQueue]" = None
     # allow DeadLetterQueue
     model_config = ConfigDict(arbitrary_types_allowed=True)
-    # Optional minimal Schema Registry configuration
-    # Matches Rust shape
-    schema_registry: Optional[KafkaSchema] = None
+    schema_registry: Optional[KafkaSchemaConfig] = None
 
 
 class TransformConfig(BaseModel):
@@ -286,9 +268,9 @@ class Stream(TypedMooseResource, Generic[T]):
             return []
         return [b.strip() for b in broker_string.split(",") if b.strip()]
 
-    def _get_memoized_producer(self) -> tuple[KafkaProducer, Any]:
+    def _get_memoized_producer(self) -> tuple[KafkaProducer, RuntimeKafkaConfig]:
         """Create or reuse a KafkaProducer using runtime configuration."""
-        cfg = config_registry.get_kafka_config()
+        cfg: RuntimeKafkaConfig = config_registry.get_kafka_config()
         current_hash = self._create_kafka_config_hash(cfg)
 
         if self._memoized_producer is not None and self._kafka_config_hash == current_hash:
@@ -304,16 +286,16 @@ class Stream(TypedMooseResource, Generic[T]):
             finally:
                 self._memoized_producer = None
 
-        brokers = self._parse_brokers(getattr(cfg, "broker", "localhost:19092"))
+        brokers = self._parse_brokers(cfg.broker)
         if not brokers:
             raise RuntimeError(f"No valid broker addresses found in: '{getattr(cfg, 'broker', '')}'")
 
         producer = get_kafka_producer(
             broker=brokers,
-            sasl_username=getattr(cfg, "sasl_username", None),
-            sasl_password=getattr(cfg, "sasl_password", None),
-            sasl_mechanism=getattr(cfg, "sasl_mechanism", None),
-            security_protocol=getattr(cfg, "security_protocol", None),
+            sasl_username=cfg.sasl_username,
+            sasl_password=cfg.sasl_password,
+            sasl_mechanism=cfg.sasl_mechanism,
+            security_protocol=cfg.security_protocol,
             value_serializer=lambda v: v.model_dump_json().encode('utf-8'),
             acks="all",
         )
@@ -365,57 +347,42 @@ class Stream(TypedMooseResource, Generic[T]):
                 )
 
         producer, cfg = self._get_memoized_producer()
-        topic = self._build_full_topic_name(getattr(cfg, "namespace", None))
+        topic = self._build_full_topic_name(cfg.namespace)
 
-        sr = getattr(self.config, "schema_registry", None)
-        if sr and sr.kind == "JSON":
-            # Use Confluent JSONSerializer to encode envelope in one call
+        sr = self.config.schema_registry
+        if sr is not None:
+            if sr.kind != "JSON":
+                raise NotImplementedError("Currently JSON Schema is supported.")
             try:
                 from confluent_kafka.schema_registry import SchemaRegistryClient
                 from confluent_kafka.schema_registry.json_schema import JSONSerializer
             except Exception as e:
                 raise RuntimeError(
-                    "confluent-kafka[json,protobuf,avro] is required for Schema Registry JSON"
+                    "confluent-kafka[json,schemaregistry] is required for Schema Registry JSON"
                 ) from e
 
-            sr_url = getattr(cfg, "schema_registry_url", None)
+            sr_url = cfg.schema_registry_url
             if not sr_url:
                 raise RuntimeError("Schema Registry URL not configured")
             client = SchemaRegistryClient({"url": sr_url})
 
-            ref = sr.reference
-            subject: Optional[str] = None
-            schema_id: Optional[int] = None
-            version: Optional[int] = None
-            if ref.Id is not None:
-                schema_id = int(ref.Id)
-            elif ref.Latest is not None:
-                subject = ref.Latest.subject_name
-            elif ref.SubjectVersion is not None:
-                subject = ref.SubjectVersion.name
-                version = int(ref.SubjectVersion.version)
+            if isinstance(sr.reference, SchemaById):
+                schema = client.get_schema(sr.reference.id)
+            elif isinstance(sr.reference, SubjectLatest):
+                schema = client.get_latest_version(sr.reference.name).schema
+            else:
+                schema = client.get_version(sr.reference.name, sr.reference.version).schema
 
-            if schema_id is None:
-                if version is not None:
-                    meta = client.get_schema(subject, version=version)
-                    schema_id = meta[0]
-                else:
-                    meta = client.get_latest_version(subject)
-                    schema_id = meta.schema_id
-
-            # Build JSONSerializer bound to the resolved schema id
-            # Note: JSONSerializer uses the registered schema and envelopes per Confluent wire format
-            serializer = JSONSerializer(client, schema_id=schema_id)
+            serializer = JSONSerializer(schema, client)
 
             for rec in filtered:
                 value_bytes = serializer(rec.model_dump())
                 producer.send(topic, value=value_bytes)
             producer.flush()
-            return
-
-        for rec in filtered:
-            producer.send(topic, value=rec)
-        producer.flush()
+        else:
+            for rec in filtered:
+                producer.send(topic, value=rec)
+            producer.flush()
 
 
 class DeadLetterModel(BaseModel, Generic[T]):

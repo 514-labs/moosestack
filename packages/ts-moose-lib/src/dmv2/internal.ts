@@ -163,7 +163,7 @@ interface StreamJson {
   /** Lifecycle management setting for the stream. */
   lifeCycle?: string;
   /** Optional minimal Schema Registry config */
-  schemaRegistry?: SchemaRegistryJson;
+  schema_config?: SchemaRegistryJson;
 }
 /**
  * JSON representation of an Ingest API configuration.
@@ -395,7 +395,7 @@ export const toInfraMap = (registry: typeof moose_internal) => {
       consumers,
       metadata,
       lifeCycle: stream.config.lifeCycle,
-      schemaRegistry: (stream.config as any).schemaRegistry,
+      schemaConfig: stream.config.schemaConfig,
     };
   });
 

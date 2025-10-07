@@ -42,7 +42,7 @@ use crate::utilities::auth::{get_claims, validate_jwt};
 use crate::infrastructure::stream::kafka;
 use crate::infrastructure::stream::kafka::models::ConfiguredProducer;
 
-use crate::framework::core::infrastructure::topic::SchemaResgistryReference;
+use crate::framework::core::infrastructure::topic::SchemaRegistryReference;
 use crate::framework::typescript::bin::CliMessage;
 use crate::project::{JwtConfig, Project};
 use crate::utilities::docker::DockerClient;
@@ -137,16 +137,16 @@ async fn resolve_schema_id_for_topic(
     project: &Project,
     topic: &crate::framework::core::infrastructure::topic::Topic,
 ) -> Result<Option<i32>, schema_registry_client::rest::apis::Error> {
-    let sr = match &topic.schema_registry {
+    let sr = match &topic.schema_config {
         Some(sr) if sr.kind.eq_ignore_ascii_case("JSON") => sr,
         None => return Ok(None),
         _ => panic!("Only JSON schema allowed"),
     };
 
     let (subject, explicit_version): (&str, Option<i32>) = match &sr.reference {
-        SchemaResgistryReference::Id(id) => return Ok(Some(*id)),
-        SchemaResgistryReference::Latest { subject_name } => (subject_name, None),
-        SchemaResgistryReference::SubjectVersion { name, version } => (name, Some(*version)),
+        SchemaRegistryReference::Id { id } => return Ok(Some(*id)),
+        SchemaRegistryReference::SubjectLatest { subject_latest } => (subject_latest, None),
+        SchemaRegistryReference::SubjectVersion { subject, version } => (subject, Some(*version)),
     };
 
     let sr_url = project

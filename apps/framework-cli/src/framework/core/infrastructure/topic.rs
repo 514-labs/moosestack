@@ -38,22 +38,30 @@ pub struct Topic {
     pub life_cycle: LifeCycle,
 
     #[serde(default)]
-    pub schema_registry: Option<KafkaSchema>,
+    pub schema_config: Option<KafkaSchema>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct KafkaSchema {
     /// Schema type (only "JSON" supported currently)
     pub kind: String,
-    /// Reference sum type
-    pub reference: SchemaResgistryReference,
+    pub reference: SchemaRegistryReference,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub enum SchemaResgistryReference {
-    Id(i32),
-    Latest { subject_name: String },
-    SubjectVersion { name: String, version: i32 },
+#[serde(untagged)]
+pub enum SchemaRegistryReference {
+    Id {
+        id: i32,
+    },
+    SubjectLatest {
+        #[serde(alias = "subjectLatest")]
+        subject_latest: String,
+    },
+    SubjectVersion {
+        subject: String,
+        version: i32,
+    },
 }
 
 impl Topic {
@@ -72,7 +80,7 @@ impl Topic {
             },
             metadata: None,
             life_cycle: LifeCycle::FullyManaged,
-            schema_registry: None,
+            schema_config: None,
         }
     }
 
@@ -135,7 +143,7 @@ impl Topic {
                 LifeCycle::ExternallyManaged => ProtoLifeCycle::EXTERNALLY_MANAGED.into(),
             },
             schema_registry: self
-                .schema_registry
+                .schema_config
                 .as_ref()
                 .map(kafka_schema_to_proto)
                 .into(),
@@ -171,7 +179,7 @@ impl Topic {
                 ProtoLifeCycle::DELETION_PROTECTED => LifeCycle::DeletionProtected,
                 ProtoLifeCycle::EXTERNALLY_MANAGED => LifeCycle::ExternallyManaged,
             },
-            schema_registry: proto
+            schema_config: proto
                 .schema_registry
                 .into_option()
                 .and_then(proto_to_kafka_schema),
@@ -189,13 +197,13 @@ fn kafka_schema_to_proto(s: &KafkaSchema) -> ProtoSchemaRegistry {
     };
     use crate::proto::infrastructure_map::schema_registry::Schema_ref as ProtoSchemaRef;
     sr.schema_ref = Some(match &s.reference {
-        SchemaResgistryReference::Id(id) => ProtoSchemaRef::SchemaId(*id),
-        SchemaResgistryReference::Latest { subject_name } => {
-            ProtoSchemaRef::Subject(subject_name.clone())
+        SchemaRegistryReference::Id { id } => ProtoSchemaRef::SchemaId(*id),
+        SchemaRegistryReference::SubjectLatest { subject_latest } => {
+            ProtoSchemaRef::Subject(subject_latest.clone())
         }
-        SchemaResgistryReference::SubjectVersion { name, version } => {
+        SchemaRegistryReference::SubjectVersion { subject, version } => {
             let mut sv = ProtoSubjectVersion::new();
-            sv.subject = name.clone();
+            sv.subject = subject.clone();
             sv.version = *version;
             ProtoSchemaRef::SubjectVersion(sv)
         }
@@ -215,14 +223,14 @@ fn proto_to_kafka_schema(sr: ProtoSchemaRegistry) -> Option<KafkaSchema> {
     let r = sr.schema_ref?;
     let reference = match r {
         crate::proto::infrastructure_map::schema_registry::Schema_ref::SchemaId(id) => {
-            SchemaResgistryReference::Id(id)
+            SchemaRegistryReference::Id { id }
         }
         crate::proto::infrastructure_map::schema_registry::Schema_ref::Subject(s) => {
-            SchemaResgistryReference::Latest { subject_name: s }
+            SchemaRegistryReference::SubjectLatest { subject_latest: s }
         }
         crate::proto::infrastructure_map::schema_registry::Schema_ref::SubjectVersion(sv) => {
-            SchemaResgistryReference::SubjectVersion {
-                name: sv.subject,
+            SchemaRegistryReference::SubjectVersion {
+                subject: sv.subject,
                 version: sv.version,
             }
         }
