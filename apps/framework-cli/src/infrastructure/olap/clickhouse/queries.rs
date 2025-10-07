@@ -1363,13 +1363,14 @@ fn build_summing_merge_tree_ddl(columns: &Option<Vec<String>>) -> String {
 /// Build replication parameters for replicated engines
 ///
 /// When keeper_path and replica_name are None:
-/// - In dev mode: Injects default parameters for local development
+/// - In dev mode: Injects default parameters for local development using a static table name hash
 /// - In production: Returns empty parameters to let ClickHouse use automatic configuration
 ///   (ClickHouse Cloud or server-configured defaults)
 fn build_replication_params(
     keeper_path: &Option<String>,
     replica_name: &Option<String>,
     engine_name: &str,
+    table_name: &str,
     is_dev: bool,
 ) -> Result<Vec<String>, ClickhouseError> {
     match (keeper_path, replica_name) {
@@ -1379,9 +1380,11 @@ fn build_replication_params(
         (None, None) => {
             if is_dev {
                 // In dev mode, inject default parameters for local ClickHouse
-                // This allows the same code to work in both dev and production
+                // Use table name to ensure unique paths per table, avoiding conflicts
+                // {shard}, {replica}, and {database} macros are configured in docker-compose
+                // Note: {uuid} macro only works with ON CLUSTER queries, so we use table name instead
                 Ok(vec![
-                    "'/clickhouse/tables/{database}/{shard}/{uuid}'".to_string(),
+                    format!("'/clickhouse/tables/{{database}}/{{shard}}/{}'", table_name),
                     "'{replica}'".to_string(),
                 ])
             } else {
@@ -1403,10 +1406,16 @@ fn build_replication_params(
 fn build_replicated_merge_tree_ddl(
     keeper_path: &Option<String>,
     replica_name: &Option<String>,
+    table_name: &str,
     is_dev: bool,
 ) -> Result<String, ClickhouseError> {
-    let params =
-        build_replication_params(keeper_path, replica_name, "ReplicatedMergeTree", is_dev)?;
+    let params = build_replication_params(
+        keeper_path,
+        replica_name,
+        "ReplicatedMergeTree",
+        table_name,
+        is_dev,
+    )?;
     Ok(format!("ReplicatedMergeTree({})", params.join(", ")))
 }
 
@@ -1417,6 +1426,7 @@ fn build_replicated_replacing_merge_tree_ddl(
     ver: &Option<String>,
     is_deleted: &Option<String>,
     order_by_empty: bool,
+    table_name: &str,
     is_dev: bool,
 ) -> Result<String, ClickhouseError> {
     if order_by_empty {
@@ -1436,6 +1446,7 @@ fn build_replicated_replacing_merge_tree_ddl(
         keeper_path,
         replica_name,
         "ReplicatedReplacingMergeTree",
+        table_name,
         is_dev,
     )?;
 
@@ -1456,12 +1467,14 @@ fn build_replicated_replacing_merge_tree_ddl(
 fn build_replicated_aggregating_merge_tree_ddl(
     keeper_path: &Option<String>,
     replica_name: &Option<String>,
+    table_name: &str,
     is_dev: bool,
 ) -> Result<String, ClickhouseError> {
     let params = build_replication_params(
         keeper_path,
         replica_name,
         "ReplicatedAggregatingMergeTree",
+        table_name,
         is_dev,
     )?;
     Ok(format!(
@@ -1475,12 +1488,14 @@ fn build_replicated_summing_merge_tree_ddl(
     keeper_path: &Option<String>,
     replica_name: &Option<String>,
     columns: &Option<Vec<String>>,
+    table_name: &str,
     is_dev: bool,
 ) -> Result<String, ClickhouseError> {
     let mut params = build_replication_params(
         keeper_path,
         replica_name,
         "ReplicatedSummingMergeTree",
+        table_name,
         is_dev,
     )?;
 
@@ -1516,7 +1531,7 @@ pub fn create_table_query(
         ClickhouseEngine::ReplicatedMergeTree {
             keeper_path,
             replica_name,
-        } => build_replicated_merge_tree_ddl(keeper_path, replica_name, is_dev)?,
+        } => build_replicated_merge_tree_ddl(keeper_path, replica_name, &table.name, is_dev)?,
         ClickhouseEngine::ReplicatedReplacingMergeTree {
             keeper_path,
             replica_name,
@@ -1528,17 +1543,29 @@ pub fn create_table_query(
             ver,
             is_deleted,
             table.order_by.is_empty(),
+            &table.name,
             is_dev,
         )?,
         ClickhouseEngine::ReplicatedAggregatingMergeTree {
             keeper_path,
             replica_name,
-        } => build_replicated_aggregating_merge_tree_ddl(keeper_path, replica_name, is_dev)?,
+        } => build_replicated_aggregating_merge_tree_ddl(
+            keeper_path,
+            replica_name,
+            &table.name,
+            is_dev,
+        )?,
         ClickhouseEngine::ReplicatedSummingMergeTree {
             keeper_path,
             replica_name,
             columns,
-        } => build_replicated_summing_merge_tree_ddl(keeper_path, replica_name, columns, is_dev)?,
+        } => build_replicated_summing_merge_tree_ddl(
+            keeper_path,
+            replica_name,
+            columns,
+            &table.name,
+            is_dev,
+        )?,
         ClickhouseEngine::S3Queue {
             s3_path,
             format,
