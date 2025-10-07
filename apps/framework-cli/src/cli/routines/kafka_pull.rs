@@ -243,7 +243,9 @@ fn render_python_streams(
     let mut out = String::new();
     out.push_str("# AUTO-GENERATED FILE. DO NOT EDIT.\n");
     out.push_str("# This file will be replaced when you run `moose kafka pull`.\n\n");
-    out.push_str("from moose_lib import Stream, StreamConfig, LifeCycle\n");
+    out.push_str(
+        "from moose_lib import Stream, StreamConfig, LifeCycle, KafkaSchemaConfig, SubjectLatest\n",
+    );
     let needs_empty = topics.iter().any(|t| !type_map.contains_key(t));
     if needs_empty {
         out.push_str("from pydantic import BaseModel\n");

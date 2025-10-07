@@ -28,6 +28,10 @@ from .stream import (
     Stream,
     DeadLetterModel,
     DeadLetterQueue,
+    SubjectLatest,
+    SubjectVersion,
+    SchemaById,
+    KafkaSchemaConfig,
 )
 
 from .ingest_api import (
@@ -117,6 +121,11 @@ __all__ = [
     'Stream',
     'DeadLetterModel',
     'DeadLetterQueue',
+    'SubjectLatest',
+    'SubjectVersion',
+    'SchemaById',
+    'KafkaSchemaConfig',
+    'KafkaSchemaConfig',
 
     # Ingestion
     'IngestConfig',
