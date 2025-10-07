@@ -7,11 +7,27 @@ import {
 import { StringValue } from "@temporalio/common";
 import { createHash, randomUUID } from "node:crypto";
 import { performance } from "perf_hooks";
-import prettyMs from "pretty-ms";
 import * as fs from "fs";
 import { getWorkflows } from "../dmv2/internal";
 import { JWTPayload } from "jose";
 import { Sql, sql, RawValue, toQuery, toQueryPreview } from "../sqlHelpers";
+
+/**
+ * Format elapsed milliseconds into a human-readable string.
+ * Matches Python's format_timespan behavior.
+ */
+function formatElapsedTime(ms: number): string {
+  if (ms < 1000) {
+    return `${Math.round(ms)} ms`;
+  }
+  const seconds = ms / 1000;
+  if (seconds < 60) {
+    return `${seconds.toFixed(2)} seconds`;
+  }
+  const minutes = Math.floor(seconds / 60);
+  const remainingSeconds = seconds % 60;
+  return `${minutes} minutes and ${remainingSeconds.toFixed(2)} seconds`;
+}
 
 export interface ApiUtil {
   client: MooseClient;
@@ -58,7 +74,9 @@ export class QueryClient {
       // where response buffering would harm streaming performance and concurrency
     });
     const elapsedMs = performance.now() - start;
-    console.log(`[QueryClient] | Query completed: ${prettyMs(elapsedMs)}`);
+    console.log(
+      `[QueryClient] | Query completed: ${formatElapsedTime(elapsedMs)}`,
+    );
     return result;
   }
 
@@ -73,7 +91,9 @@ export class QueryClient {
       query_id: this.query_id_prefix + randomUUID(),
     });
     const elapsedMs = performance.now() - start;
-    console.log(`[QueryClient] | Command completed: ${prettyMs(elapsedMs)}`);
+    console.log(
+      `[QueryClient] | Command completed: ${formatElapsedTime(elapsedMs)}`,
+    );
     return result;
   }
 }

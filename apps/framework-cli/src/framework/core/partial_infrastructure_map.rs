@@ -212,6 +212,7 @@ struct PartialIngestApi {
     /// If not specified, defaults to "ingest/{name}/{version}"
     #[serde(default)]
     pub path: Option<String>,
+    #[serde(default)]
     pub schema: serde_json::Map<String, serde_json::Value>,
 }
 
