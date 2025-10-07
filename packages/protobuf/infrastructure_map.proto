@@ -37,7 +37,7 @@ message Topic {
   optional int32 max_message_bytes = 7;
   Metadata metadata = 8;
   LifeCycle life_cycle = 9;
-  // Optional minimal Schema Registry configuration
+  // Optional Schema Registry configuration
   optional SchemaRegistry schema_registry = 10;
 }
 

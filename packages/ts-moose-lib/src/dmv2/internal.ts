@@ -129,6 +129,9 @@ interface Consumer {
   version?: string;
 }
 
+/**
+ * JSON representation of a Stream/Topic configuration.
+ */
 interface StreamJson {
   /** The name of the stream/topic. */
   name: string;
@@ -154,7 +157,7 @@ interface StreamJson {
   metadata?: { description?: string };
   /** Lifecycle management setting for the stream. */
   lifeCycle?: string;
-  /** Optional minimal Schema Registry config */
+  /** Optional Schema Registry config */
   schemaConfig?: KafkaSchemaConfig;
 }
 /**
