@@ -17,7 +17,12 @@ import { IJsonSchemaCollection } from "typia/src/schemas/json/IJsonSchemaCollect
 import { Column } from "../dataModels/dataModelTypes";
 import { ClickHouseEngines, ApiUtil } from "../index";
 import { OlapTable } from "./sdk/olapTable";
-import { ConsumerConfig, Stream, TransformConfig } from "./sdk/stream";
+import {
+  ConsumerConfig,
+  KafkaSchemaConfig,
+  Stream,
+  TransformConfig,
+} from "./sdk/stream";
 import { compilerLog } from "../commons";
 
 /**
@@ -152,6 +157,8 @@ interface StreamJson {
   metadata?: { description?: string };
   /** Lifecycle management setting for the stream. */
   lifeCycle?: string;
+  /** Optional Schema Registry config */
+  schemaConfig?: KafkaSchemaConfig;
 }
 /**
  * JSON representation of an Ingest API configuration.
@@ -383,6 +390,7 @@ export const toInfraMap = (registry: typeof moose_internal) => {
       consumers,
       metadata,
       lifeCycle: stream.config.lifeCycle,
+      schemaConfig: stream.config.schemaConfig,
     };
   });
 

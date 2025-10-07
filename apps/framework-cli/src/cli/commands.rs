@@ -170,6 +170,8 @@ pub enum Commands {
         #[arg(long)]
         rows: Option<u64>,
     },
+    /// Manage Kafka-related operations
+    Kafka(KafkaArgs),
 }
 
 #[derive(Debug, Args)]
@@ -347,5 +349,39 @@ pub enum DbCommands {
         /// File storing the EXTERNALLY_MANAGED table definitions, defaults to app/external_models.py or app/externalModels.ts
         #[arg(long)]
         file_path: Option<String>,
+    },
+}
+
+#[derive(Debug, Args)]
+#[command(arg_required_else_help = true)]
+pub struct KafkaArgs {
+    #[command(subcommand)]
+    pub command: KafkaCommands,
+}
+
+#[derive(Debug, Subcommand)]
+pub enum KafkaCommands {
+    /// Discover topics and generate external stream declarations;
+    /// optionally fetch JSON Schemas (Avro support coming soon)
+    /// from Schema Registry to emit typed models.
+    Pull {
+        /// Kafka bootstrap servers, e.g. localhost:9092
+        bootstrap: String,
+
+        /// Output path for schemas
+        #[arg(long, value_name = "PATH")]
+        path: Option<String>,
+
+        /// Include pattern (glob). Defaults to '*'
+        #[arg(long, default_value = "*")]
+        include: String,
+
+        /// Exclude pattern (glob). Defaults to '{__consumer_offsets,_schemas}'
+        #[arg(long, default_value = "{__consumer_offsets,_schemas}")]
+        exclude: String,
+
+        /// Schema Registry base URL (e.g. http://localhost:8081)
+        #[arg(long, value_name = "URL")]
+        schema_registry: Option<String>,
     },
 }

@@ -384,7 +384,16 @@ const handleMessage = async (
   }
 
   try {
-    const parsedData = JSON.parse(message.value.toString(), jsonDateReviver);
+    // Detect Schema Registry JSON envelope: 0x00 + 4-byte schema ID (big-endian) + JSON bytes
+    let payloadBuffer = message.value as Buffer;
+    if (
+      payloadBuffer &&
+      payloadBuffer.length >= 5 &&
+      payloadBuffer[0] === 0x00
+    ) {
+      payloadBuffer = payloadBuffer.subarray(5);
+    }
+    const parsedData = JSON.parse(payloadBuffer.toString(), jsonDateReviver);
     const transformedData = await Promise.all(
       streamingFunctionWithConfigList.map(async ([fn, config]) => {
         try {

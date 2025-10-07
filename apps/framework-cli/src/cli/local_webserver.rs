@@ -42,6 +42,7 @@ use crate::utilities::auth::{get_claims, validate_jwt};
 use crate::infrastructure::stream::kafka;
 use crate::infrastructure::stream::kafka::models::ConfiguredProducer;
 
+use crate::framework::core::infrastructure::topic::{KafkaSchemaKind, SchemaRegistryReference};
 use crate::framework::typescript::bin::CliMessage;
 use crate::project::{JwtConfig, Project};
 use crate::utilities::docker::DockerClient;
@@ -65,6 +66,9 @@ use rdkafka::error::KafkaError;
 use rdkafka::producer::future_producer::OwnedDeliveryResult;
 use rdkafka::producer::{DeliveryFuture, FutureProducer, FutureRecord};
 use reqwest::Client;
+use schema_registry_client::rest::client_config::ClientConfig as SrClientConfig;
+use schema_registry_client::rest::schema_registry_client::Client as SrClient;
+use schema_registry_client::rest::schema_registry_client::SchemaRegistryClient;
 use serde::Serialize;
 use serde::{Deserialize, Deserializer};
 use serde_json::{json, Deserializer as JsonDeserializer, Value};
@@ -124,6 +128,68 @@ pub struct RouteMeta {
     pub dead_letter_queue: Option<String>,
     /// The version of the the api
     pub version: Option<Version>,
+    /// Optional resolved Schema Registry schema ID for this route's topic (currently JSON only)
+    #[serde(default)]
+    pub schema_registry_schema_id: Option<i32>,
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum KafkaSchemaError {
+    #[error("Error from schema_registry_client: {0}")]
+    SchemaRegistryError(#[from] schema_registry_client::rest::apis::Error),
+
+    #[error("Unsupported schema type: {0:?}")]
+    UnsupportedSchemaType(KafkaSchemaKind),
+
+    #[error("Subject not found: {0}")]
+    NotFound(String),
+}
+
+async fn resolve_schema_id_for_topic(
+    project: &Project,
+    topic: &crate::framework::core::infrastructure::topic::Topic,
+) -> Result<Option<i32>, KafkaSchemaError> {
+    let sr = match &topic.schema_config {
+        Some(sr) if sr.kind == KafkaSchemaKind::Json => sr,
+        None => return Ok(None),
+        Some(sr) => return Err(KafkaSchemaError::UnsupportedSchemaType(sr.kind)),
+    };
+
+    let (subject, explicit_version): (&str, Option<i32>) = match &sr.reference {
+        SchemaRegistryReference::Id { id } => return Ok(Some(*id)),
+        SchemaRegistryReference::SubjectLatest { subject_latest } => (subject_latest, None),
+        SchemaRegistryReference::SubjectVersion { subject, version } => (subject, Some(*version)),
+    };
+
+    let sr_url = project
+        .redpanda_config
+        .schema_registry_url
+        .as_deref()
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| "http://localhost:8081".to_string());
+
+    let client = SchemaRegistryClient::new(SrClientConfig {
+        base_urls: vec![sr_url.to_string()],
+        ..Default::default()
+    });
+
+    let version = match explicit_version {
+        None => client
+            .get_all_versions(subject)
+            .await?
+            .into_iter()
+            .max()
+            .ok_or_else(|| KafkaSchemaError::NotFound(subject.to_string()))?,
+        Some(v) => v,
+    };
+
+    Ok(Some(
+        client
+            .get_version(subject, version, false, None)
+            .await?
+            .id
+            .ok_or_else(|| KafkaSchemaError::NotFound(subject.to_string()))?,
+    ))
 }
 
 /// Configuration for the local webserver.
@@ -1123,6 +1189,7 @@ async fn send_to_kafka<T: Iterator<Item = Vec<u8>>>(
     res_arr
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn handle_json_array_body(
     configured_producer: &ConfiguredProducer,
     topic_name: &str,
@@ -1131,6 +1198,7 @@ async fn handle_json_array_body(
     req: Request<Incoming>,
     jwt_config: &Option<JwtConfig>,
     max_request_body_size: usize,
+    schema_registry_schema_id: Option<i32>,
 ) -> Response<Full<Bytes>> {
     let auth_header = req.headers().get(hyper::header::AUTHORIZATION);
     let jwt_claims = get_claims(auth_header, jwt_config);
@@ -1179,53 +1247,70 @@ async fn handle_json_array_body(
 
     debug!("parsed json array for {}", topic_name);
 
-    if let Err(e) = parsed {
-        if let Some(dlq) = dead_letter_queue {
-            let objects = match serde_json::from_slice::<Value>(&body) {
-                Ok(Value::Array(values)) => values
-                    .into_iter()
-                    .filter_map(|v| match v {
-                        Value::Object(o) => Some(o),
-                        _ => None,
-                    })
-                    .collect::<Vec<_>>(),
-                Ok(Value::Object(value)) => vec![value],
-                _ => {
-                    info!(
+    let mut records = match parsed {
+        Err(e) => {
+            if let Some(dlq) = dead_letter_queue {
+                let objects = match serde_json::from_slice::<Value>(&body) {
+                    Ok(Value::Array(values)) => values
+                        .into_iter()
+                        .filter_map(|v| match v {
+                            Value::Object(o) => Some(o),
+                            _ => None,
+                        })
+                        .collect::<Vec<_>>(),
+                    Ok(Value::Object(value)) => vec![value],
+                    _ => {
+                        info!(
                         "Received payload for {} is not valid JSON objects or arrays. Not sending them to DLQ.",
                         topic_name
                     );
-                    vec![]
-                }
-            };
-            send_to_kafka(
-                &configured_producer.producer,
-                dlq,
-                objects.into_iter().map(|original_record| {
-                    serde_json::to_vec(&json!({
-                        "originalRecord": original_record,
-                        "errorMessage": e.to_string(),
-                        "errorType": "ValidationError",
-                        "failedAt": chrono::Utc::now().to_rfc3339(),
-                        "source": "api",
-                        "requestBody": String::from_utf8_lossy(&body),
-                        "topic": topic_name,
-                    }))
-                    .unwrap()
-                }),
-            )
-            .await;
+                        vec![]
+                    }
+                };
+                send_to_kafka(
+                    &configured_producer.producer,
+                    dlq,
+                    objects.into_iter().map(|original_record| {
+                        serde_json::to_vec(&json!({
+                            "originalRecord": original_record,
+                            "errorMessage": e.to_string(),
+                            "errorType": "ValidationError",
+                            "failedAt": chrono::Utc::now().to_rfc3339(),
+                            "source": "api",
+                            "requestBody": String::from_utf8_lossy(&body),
+                            "topic": topic_name,
+                        }))
+                        .unwrap()
+                    }),
+                )
+                .await;
+            }
+            warn!(
+                "Bad JSON in request to topic {}: {}. Body: {:?}",
+                topic_name, e, body
+            );
+            return bad_json_response(e);
         }
-        warn!(
-            "Bad JSON in request to topic {}: {}. Body: {:?}",
-            topic_name, e, body
-        );
-        return bad_json_response(e);
+        Ok(records) => records,
+    };
+    if let Some(id) = schema_registry_schema_id {
+        let id_bytes = id.to_be_bytes();
+        records = records
+            .into_iter()
+            .map(|payload| {
+                let mut out = Vec::with_capacity(1 + 4 + payload.len());
+                out.push(0x00);
+                out.extend_from_slice(&id_bytes);
+                out.extend_from_slice(&payload);
+                out
+            })
+            .collect();
     }
+
     let res_arr = send_to_kafka(
         &configured_producer.producer,
         topic_name,
-        parsed.ok().unwrap().into_iter(),
+        records.into_iter(),
     )
     .await;
 
@@ -1333,6 +1418,7 @@ async fn ingest_route(
             req,
             &jwt_config,
             max_request_body_size,
+            route_meta.schema_registry_schema_id,
         )
         .await),
         None => {
@@ -1912,15 +1998,32 @@ impl Webserver {
                                 let kafka_topic =
                                     KafkaStreamConfig::from_topic(&project.redpanda_config, topic);
 
-                                route_table.insert(
-                                    api_endpoint.path.clone(),
-                                    RouteMeta {
-                                        data_model: *data_model.unwrap(),
-                                        dead_letter_queue,
-                                        kafka_topic_name: kafka_topic.name,
-                                        version: api_endpoint.version,
-                                    },
-                                );
+                                match resolve_schema_id_for_topic(&project, topic).await {
+                                    Ok(schema_id) => {
+                                        route_table.insert(
+                                            api_endpoint.path.clone(),
+                                            RouteMeta {
+                                                data_model: *data_model.unwrap(),
+                                                dead_letter_queue,
+                                                kafka_topic_name: kafka_topic.name,
+                                                version: api_endpoint.version,
+                                                schema_registry_schema_id: schema_id,
+                                            },
+                                        );
+                                    }
+                                    Err(e) => {
+                                        show_message!(MessageType::Error, {
+                                            Message {
+                                                action: "\nFailed".to_string(),
+                                                details: format!(
+                                                    "Resolving Schema Registry ID for topic {} failed:\n{e:?}",
+                                                    topic.name
+                                                ),
+                                            }
+                                        });
+                                        // Do not insert the route when schema resolution fails
+                                    }
+                                }
                             }
                             APIType::EGRESS { .. } => {
                                 consumption_apis
@@ -1962,15 +2065,32 @@ impl Webserver {
                                     KafkaStreamConfig::from_topic(&project.redpanda_config, topic);
 
                                 route_table.remove(&before.path);
-                                route_table.insert(
-                                    after.path.clone(),
-                                    RouteMeta {
-                                        data_model: *data_model.as_ref().unwrap().clone(),
-                                        dead_letter_queue: dead_letter_queue.clone(),
-                                        kafka_topic_name: kafka_topic.name,
-                                        version: after.version,
-                                    },
-                                );
+                                match resolve_schema_id_for_topic(&project, topic).await {
+                                    Ok(schema_id) => {
+                                        route_table.insert(
+                                            after.path.clone(),
+                                            RouteMeta {
+                                                data_model: *data_model.as_ref().unwrap().clone(),
+                                                dead_letter_queue: dead_letter_queue.clone(),
+                                                kafka_topic_name: kafka_topic.name,
+                                                version: after.version,
+                                                schema_registry_schema_id: schema_id,
+                                            },
+                                        );
+                                    }
+                                    Err(e) => {
+                                        show_message!(MessageType::Error, {
+                                            Message {
+                                                action: "\nFailed".to_string(),
+                                                details: format!(
+                                                    "Resolving Schema Registry ID for topic {} failed:\n{e:?}",
+                                                    topic.name
+                                                ),
+                                            }
+                                        });
+                                        // Do not insert the route when schema resolution fails
+                                    }
+                                }
                             }
                             APIType::EGRESS { .. } => {
                                 // Nothing to do, we don't need to update the route table

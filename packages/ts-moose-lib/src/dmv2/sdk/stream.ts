@@ -127,6 +127,18 @@ export interface ConsumerConfig<T> {
   deadLetterQueue?: DeadLetterQueue<T> | null;
 }
 
+export type SchemaRegistryEncoding = "JSON" | "AVRO" | "PROTOBUF";
+
+export type SchemaRegistryReference =
+  | { id: number }
+  | { subjectLatest: string }
+  | { subject: string; version: number };
+
+export interface KafkaSchemaConfig {
+  kind: SchemaRegistryEncoding;
+  reference: SchemaRegistryReference;
+}
+
 /**
  * Represents a message routed to a specific destination stream.
  * Used internally by the multi-transform functionality to specify
@@ -165,7 +177,7 @@ export interface StreamConfig<T> {
   /**
    * Specifies the data retention period for the stream in seconds. Messages older than this may be deleted.
    */
-  retentionPeriod?: number; // seconds
+  retentionPeriod?: number;
   /**
    * An optional destination OLAP table where messages from this stream should be automatically ingested.
    */
@@ -178,6 +190,9 @@ export interface StreamConfig<T> {
   lifeCycle?: LifeCycle;
 
   defaultDeadLetterQueue?: DeadLetterQueue<T>;
+
+  /** Optional Schema Registry configuration for this stream */
+  schemaConfig?: KafkaSchemaConfig;
 }
 
 /**
@@ -285,20 +300,6 @@ export class Stream<T> extends TypedBase<T, StreamConfig<T>> {
   }
 
   /**
-   * Builds SASL options if configured.
-   */
-  private buildSaslConfig(kafkaConfig: any): any | undefined {
-    if (!kafkaConfig?.saslUsername || !kafkaConfig?.saslPassword)
-      return undefined;
-    const mechanism = (kafkaConfig.saslMechanism || "plain").toLowerCase();
-    return {
-      mechanism: mechanism as any,
-      username: kafkaConfig.saslUsername,
-      password: kafkaConfig.saslPassword,
-    } as any;
-  }
-
-  /**
    * Gets or creates a memoized KafkaJS producer using runtime configuration.
    */
   private async getMemoizedProducer(): Promise<{
@@ -391,6 +392,50 @@ export class Stream<T> extends TypedBase<T, StreamConfig<T>> {
 
     const { producer, kafkaConfig } = await this.getMemoizedProducer();
     const topic = this.buildFullTopicName(kafkaConfig.namespace);
+
+    // Use Schema Registry JSON envelope if configured
+    const sr = this.config.schemaConfig;
+    if (sr && sr.kind === "JSON") {
+      const schemaRegistryUrl = kafkaConfig.schemaRegistryUrl;
+      if (!schemaRegistryUrl) {
+        throw new Error("Schema Registry URL not configured");
+      }
+
+      const {
+        default: { SchemaRegistry },
+      } = await import("@kafkajs/confluent-schema-registry");
+      const registry = new SchemaRegistry({ host: schemaRegistryUrl });
+
+      let schemaId: undefined | number = undefined;
+
+      if ("id" in sr.reference) {
+        schemaId = sr.reference.id;
+      } else if ("subjectLatest" in sr.reference) {
+        schemaId = await registry.getLatestSchemaId(sr.reference.subjectLatest);
+      } else if ("subject" in sr.reference) {
+        schemaId = await registry.getRegistryId(
+          sr.reference.subject,
+          sr.reference.version,
+        );
+      }
+
+      if (schemaId === undefined) {
+        throw new Error("Malformed schema reference.");
+      }
+
+      const encoded = await Promise.all(
+        flat.map((v) =>
+          registry.encode(schemaId, v as unknown as Record<string, unknown>),
+        ),
+      );
+      await producer.send({
+        topic,
+        messages: encoded.map((value) => ({ value })),
+      });
+      return;
+    } else if (sr !== undefined) {
+      throw new Error("Currently only JSON Schema is supported.");
+    }
 
     await producer.send({
       topic,
