@@ -125,7 +125,6 @@ __all__ = [
     'SubjectVersion',
     'SchemaById',
     'KafkaSchemaConfig',
-    'KafkaSchemaConfig',
 
     # Ingestion
     'IngestConfig',
