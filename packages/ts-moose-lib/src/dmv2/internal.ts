@@ -17,7 +17,12 @@ import { IJsonSchemaCollection } from "typia/src/schemas/json/IJsonSchemaCollect
 import { Column } from "../dataModels/dataModelTypes";
 import { ClickHouseEngines, ApiUtil } from "../index";
 import { OlapTable } from "./sdk/olapTable";
-import { ConsumerConfig, Stream, TransformConfig } from "./sdk/stream";
+import {
+  ConsumerConfig,
+  KafkaSchemaConfig,
+  Stream,
+  TransformConfig,
+} from "./sdk/stream";
 import { compilerLog } from "../commons";
 
 /**
@@ -124,19 +129,6 @@ interface Consumer {
   version?: string;
 }
 
-/**
- * JSON representation of a Stream/Topic configuration.
- */
-type SchemaRegistryReferenceJson =
-  | { Id: number }
-  | { Latest: { subject_name: string } }
-  | { SubjectVersion: { name: string; version: number } };
-
-interface SchemaRegistryJson {
-  kind: "JSON" | "AVRO" | "PROTOBUF";
-  reference: SchemaRegistryReferenceJson;
-}
-
 interface StreamJson {
   /** The name of the stream/topic. */
   name: string;
@@ -163,7 +155,7 @@ interface StreamJson {
   /** Lifecycle management setting for the stream. */
   lifeCycle?: string;
   /** Optional minimal Schema Registry config */
-  schema_config?: SchemaRegistryJson;
+  schemaConfig?: KafkaSchemaConfig;
 }
 /**
  * JSON representation of an Ingest API configuration.
