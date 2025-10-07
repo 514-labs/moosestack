@@ -41,10 +41,18 @@ pub struct Topic {
     pub schema_config: Option<KafkaSchema>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum KafkaSchemaKind {
+    Json,
+    Avro,
+    Protobuf,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct KafkaSchema {
-    /// Schema type (only "JSON" supported currently)
-    pub kind: String,
+    /// Schema type (only JSON supported currently)
+    pub kind: KafkaSchemaKind,
     pub reference: SchemaRegistryReference,
 }
 
@@ -189,11 +197,12 @@ impl Topic {
 
 fn kafka_schema_to_proto(s: &KafkaSchema) -> ProtoSchemaRegistry {
     let mut sr = ProtoSchemaRegistry::new();
-    sr.encoding = match s.kind.as_str() {
-        "JSON" => crate::proto::infrastructure_map::schema_registry::Encoding::JSON.into(),
-        "AVRO" => crate::proto::infrastructure_map::schema_registry::Encoding::AVRO.into(),
-        "PROTOBUF" => crate::proto::infrastructure_map::schema_registry::Encoding::PROTOBUF.into(),
-        _ => crate::proto::infrastructure_map::schema_registry::Encoding::JSON.into(),
+    sr.encoding = match s.kind {
+        KafkaSchemaKind::Json => proto::infrastructure_map::schema_registry::Encoding::JSON.into(),
+        KafkaSchemaKind::Avro => proto::infrastructure_map::schema_registry::Encoding::AVRO.into(),
+        KafkaSchemaKind::Protobuf => {
+            proto::infrastructure_map::schema_registry::Encoding::PROTOBUF.into()
+        }
     };
     use crate::proto::infrastructure_map::schema_registry::Schema_ref as ProtoSchemaRef;
     sr.schema_ref = Some(match &s.reference {
@@ -214,11 +223,10 @@ fn kafka_schema_to_proto(s: &KafkaSchema) -> ProtoSchemaRegistry {
 fn proto_to_kafka_schema(sr: ProtoSchemaRegistry) -> Option<KafkaSchema> {
     use crate::proto::infrastructure_map::schema_registry::Encoding as ProtoEncoding;
     let kind = match sr.encoding.enum_value_or_default() {
-        ProtoEncoding::JSON => "JSON",
-        ProtoEncoding::AVRO => "AVRO",
-        ProtoEncoding::PROTOBUF => "PROTOBUF",
-    }
-    .to_string();
+        ProtoEncoding::JSON => KafkaSchemaKind::Json,
+        ProtoEncoding::AVRO => KafkaSchemaKind::Avro,
+        ProtoEncoding::PROTOBUF => KafkaSchemaKind::Protobuf,
+    };
 
     let r = sr.schema_ref?;
     let reference = match r {

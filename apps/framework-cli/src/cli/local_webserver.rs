@@ -42,7 +42,7 @@ use crate::utilities::auth::{get_claims, validate_jwt};
 use crate::infrastructure::stream::kafka;
 use crate::infrastructure::stream::kafka::models::ConfiguredProducer;
 
-use crate::framework::core::infrastructure::topic::SchemaRegistryReference;
+use crate::framework::core::infrastructure::topic::{KafkaSchemaKind, SchemaRegistryReference};
 use crate::framework::typescript::bin::CliMessage;
 use crate::project::{JwtConfig, Project};
 use crate::utilities::docker::DockerClient;
@@ -138,8 +138,8 @@ pub enum KafkaSchemaError {
     #[error("Error from schema_registry_client: {0}")]
     SchemaRegistryError(#[from] schema_registry_client::rest::apis::Error),
 
-    #[error("Unsupported schema type: {0}")]
-    UnsupportedSchemaType(String),
+    #[error("Unsupported schema type: {0:?}")]
+    UnsupportedSchemaType(KafkaSchemaKind),
 
     #[error("Subject not found: {0}")]
     NotFound(String),
@@ -150,9 +150,9 @@ async fn resolve_schema_id_for_topic(
     topic: &crate::framework::core::infrastructure::topic::Topic,
 ) -> Result<Option<i32>, KafkaSchemaError> {
     let sr = match &topic.schema_config {
-        Some(sr) if sr.kind.eq_ignore_ascii_case("JSON") => sr,
+        Some(sr) if sr.kind == KafkaSchemaKind::Json => sr,
         None => return Ok(None),
-        Some(sr) => return Err(KafkaSchemaError::UnsupportedSchemaType(sr.kind.clone())),
+        Some(sr) => return Err(KafkaSchemaError::UnsupportedSchemaType(sr.kind)),
     };
 
     let (subject, explicit_version): (&str, Option<i32>) = match &sr.reference {
