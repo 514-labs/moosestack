@@ -7,6 +7,7 @@ volumes:
   clickhouse-0-logs: null
   clickhouse-0-users: null
   clickhouse-keeper-data: null
+  clickhouse-keeper-lib: null
   {{/if}}
   redis-data:
   {{#if scripts_feature}}
@@ -68,6 +69,7 @@ services:
     image: docker.io/clickhouse/clickhouse-keeper:${CLICKHOUSE_VERSION:-25.6}
     volumes:
       - clickhouse-keeper-data:/var/lib/clickhouse-keeper
+      - clickhouse-keeper-lib:/var/lib/clickhouse
     environment:
       - KEEPER_SERVER_ID=1
     expose:
