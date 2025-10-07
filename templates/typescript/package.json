@@ -7,7 +7,7 @@
     "moose": "moose-cli",
     "build": "moose-cli build --docker",
     "dev": "moose-cli dev",
-    "exports": "./node_modules/.bin/tspc app/index.ts"
+    "generate-runtime": "tspc app/index.ts"
   },
   "dependencies": {
     "@514labs/moose-lib": "latest",
