@@ -8,6 +8,8 @@ import { ApiUtil } from "../index";
 import { sql } from "../sqlHelpers";
 import { Client as TemporalClient } from "@temporalio/client";
 import { getApis } from "../dmv2/internal";
+import { loadByofApps, logCollisions, type ByofAppInfo } from "./byof-loader";
+import type { FrameworkAdapter } from "./byof-adapter";
 
 interface ClickhouseConfig {
   database: string;
@@ -251,6 +253,92 @@ const apiHandler = async (
   };
 };
 
+/**
+ * Creates a combined request handler that tries Api routes first, then BYOF apps.
+ * This ensures Api instances take precedence over custom framework routes.
+ */
+const createCombinedHandler = async (
+  publicKey: jose.KeyLike | undefined,
+  clickhouseClient: ClickHouseClient,
+  temporalClient: TemporalClient | undefined,
+  apisDir: string,
+  enforceAuth: boolean,
+  isDmv2: boolean,
+  jwtConfig: JwtConfig | undefined,
+  byofApps: ByofAppInfo[],
+): Promise<
+  (req: http.IncomingMessage, res: http.ServerResponse) => Promise<void>
+> => {
+  // Get the standard Api handler
+  const standardApiHandler = await apiHandler(
+    publicKey,
+    clickhouseClient,
+    temporalClient,
+    apisDir,
+    enforceAuth,
+    isDmv2,
+    jwtConfig,
+  );
+
+  return async (req: http.IncomingMessage, res: http.ServerResponse) => {
+    // Track if response was sent
+    let responseSent = false;
+
+    // Create a wrapper response to detect when Api handler sends response
+    const originalEnd = res.end.bind(res);
+    const originalWriteHead = res.writeHead.bind(res);
+
+    res.end = ((...args: any[]) => {
+      responseSent = true;
+      return (originalEnd as any)(...args);
+    }) as any;
+
+    res.writeHead = ((...args: any[]) => {
+      responseSent = true;
+      return (originalWriteHead as any)(...args);
+    }) as any;
+
+    // Try Api handler first
+    try {
+      await standardApiHandler(req, res);
+
+      // If Api handler responded, we're done
+      if (responseSent) {
+        return;
+      }
+
+      // Api handler didn't respond (404), try BYOF apps
+      if (byofApps.length > 0) {
+        for (const byofApp of byofApps) {
+          const handled = await byofApp.adapter.handleRequest(req, res);
+          if (handled) {
+            return;
+          }
+        }
+      }
+
+      // Nothing handled the request, send 404
+      if (!responseSent) {
+        res.writeHead(404, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: "Not Found" }));
+        httpLogger(req, res);
+      }
+    } catch (error) {
+      if (!responseSent) {
+        console.error("Error in combined handler:", error);
+        res.writeHead(500, { "Content-Type": "application/json" });
+        res.end(
+          JSON.stringify({
+            error:
+              error instanceof Error ? error.message : "Internal Server Error",
+          }),
+        );
+        httpLogger(req, res);
+      }
+    }
+  };
+};
+
 export const runApis = async (config: ApisConfig) => {
   const apisCluster = new Cluster({
     workerStart: async () => {
@@ -273,17 +361,39 @@ export const runApis = async (config: ApisConfig) => {
         publicKey = await jose.importSPKI(config.jwtConfig.secret, "RS256");
       }
 
-      const server = http.createServer(
-        await apiHandler(
-          publicKey,
-          clickhouseClient,
-          temporalClient,
-          config.apisDir,
-          config.enforceAuth,
-          config.isDmv2,
-          config.jwtConfig,
-        ),
+      // Load BYOF (Bring Your Own Framework) apps
+      let byofApps: ByofAppInfo[] = [];
+      try {
+        const { apps, collisions } = await loadByofApps(config.apisDir);
+        byofApps = apps;
+
+        if (apps.length > 0) {
+          console.log(`[BYOF] Loaded ${apps.length} custom framework app(s)`);
+        }
+
+        // Log any route collisions
+        if (collisions.length > 0) {
+          logCollisions(collisions);
+        }
+      } catch (error) {
+        console.warn(
+          `[BYOF] Warning: Failed to load BYOF apps: ${error instanceof Error ? error.message : error}`,
+        );
+      }
+
+      // Create combined handler that tries Api routes first, then BYOF apps
+      const combinedHandler = await createCombinedHandler(
+        publicKey,
+        clickhouseClient,
+        temporalClient,
+        config.apisDir,
+        config.enforceAuth,
+        config.isDmv2,
+        config.jwtConfig,
+        byofApps,
       );
+
+      const server = http.createServer(combinedHandler);
       // port is now passed via config.proxyPort or defaults to 4001
       const port = config.proxyPort !== undefined ? config.proxyPort : 4001;
       server.listen(port, "localhost", () => {
