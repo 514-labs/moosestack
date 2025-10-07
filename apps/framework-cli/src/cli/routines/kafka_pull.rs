@@ -10,8 +10,10 @@ use schema_registry_client::rest::apis::Error as SchemaRegistryError;
 use schema_registry_client::rest::schema_registry_client::{
     Client as SrClientTrait, SchemaRegistryClient,
 };
+use serde_json::Value;
 use std::fs;
 use std::path::Path;
+use std::str::FromStr;
 
 fn build_matcher(s: &str) -> Result<GlobMatcher, RoutineFailure> {
     let matcher = Glob::new(s)
@@ -65,11 +67,9 @@ pub async fn write_external_topics(
     })?;
 
     // Build type maps by fetching schemas first (if configured)
-    let mut ts_type_map: std::collections::HashMap<String, (String, String)> = Default::default();
-    let mut py_type_map: std::collections::HashMap<String, (String, String)> = Default::default();
+    let mut type_map: std::collections::HashMap<String, (String, String)> = Default::default();
     // Accumulate schemas to generate single-file outputs
-    let mut ts_schema_items: Vec<(String, String)> = Vec::new(); // (type_name, schema_json)
-    let mut py_schema_items: Vec<(String, String)> = Vec::new(); // (class_name, schema_json)
+    let mut schema_items: Vec<(String, String)> = Vec::new(); // (type_name, schema_json)
     if let Some(sr_url) = schema_registry {
         let config = schema_registry_client::rest::client_config::ClientConfig {
             base_urls: vec![sr_url.to_string()],
@@ -79,21 +79,29 @@ pub async fn write_external_topics(
         for topic in &names {
             let subject = format!("{}-value", topic);
             match fetch_latest_json_schema(&sr_client, &subject).await {
-                Ok(Some(schema_json)) => match project.language {
-                    SupportedLanguages::Typescript => {
-                        let type_name = sanitize_ts_ident(topic);
-                        ts_schema_items.push((type_name.clone(), schema_json));
-                        // All types will be emitted into a single file `externalTypes.ts`
-                        ts_type_map.insert(topic.clone(), (type_name, "externalTypes".to_string()));
+                Ok(Some(schema_json)) => {
+                    let type_name = Value::from_str(&schema_json)
+                        .ok()
+                        .and_then(|j| {
+                            j.get("title")
+                                .and_then(|title| title.as_str().map(|s| s.to_string()))
+                        })
+                        .unwrap_or_else(|| sanitize_pascal_ident(topic));
+                    match project.language {
+                        SupportedLanguages::Typescript => {
+                            schema_items.push((type_name.clone(), schema_json));
+                            // All types will be emitted into a single file `externalTypes.ts`
+                            type_map
+                                .insert(topic.clone(), (type_name, "externalTypes".to_string()));
+                        }
+                        SupportedLanguages::Python => {
+                            schema_items.push((type_name.clone(), schema_json));
+                            // All classes will be emitted into a single file `external_models.py`
+                            type_map
+                                .insert(topic.clone(), (type_name, "external_models".to_string()));
+                        }
                     }
-                    SupportedLanguages::Python => {
-                        let class_name = sanitize_ts_ident(topic); // PascalCase class name
-                        py_schema_items.push((class_name.clone(), schema_json));
-                        // All classes will be emitted into a single file `external_models.py`
-                        py_type_map
-                            .insert(topic.clone(), (class_name, "external_models".to_string()));
-                    }
-                },
+                }
                 Ok(None) => {
                     info!("No JSON schema found for subject {}", subject);
                 }
@@ -105,9 +113,9 @@ pub async fn write_external_topics(
         // After collecting all schemas, write single-file outputs per language
         match project.language {
             SupportedLanguages::Typescript => {
-                if !ts_schema_items.is_empty() {
+                if !schema_items.is_empty() {
                     let out = Path::new(path).join("externalTypes.ts");
-                    if let Err(e) = generate_typescript_bundle(&ts_schema_items, &out) {
+                    if let Err(e) = generate_typescript_bundle(&schema_items, &out) {
                         warn!("Failed to generate bundled TS types: {:?}", e);
                     }
                 }
@@ -118,9 +126,9 @@ pub async fn write_external_topics(
                 if !init_py.exists() {
                     let _ = fs::write(&init_py, b"");
                 }
-                if !py_schema_items.is_empty() {
+                if !schema_items.is_empty() {
                     let out = Path::new(path).join("external_models.py");
-                    if let Err(e) = generate_python_bundle(&py_schema_items, &out) {
+                    if let Err(e) = generate_python_bundle(&schema_items, &out) {
                         warn!("Failed to generate bundled Python models: {:?}", e);
                     }
                 }
@@ -132,7 +140,7 @@ pub async fn write_external_topics(
     match project.language {
         SupportedLanguages::Typescript => {
             let file_path = Path::new(path).join("externalTopics.ts");
-            let contents = render_typescript_streams(&names, &ts_type_map);
+            let contents = render_typescript_streams(&names, &type_map);
             fs::write(&file_path, contents.as_bytes()).map_err(|e| {
                 RoutineFailure::new(
                     Message::new(
@@ -152,7 +160,7 @@ pub async fn write_external_topics(
         }
         SupportedLanguages::Python => {
             let file_path = Path::new(path).join("external_topics.py");
-            let contents = render_python_streams(&names, &py_type_map);
+            let contents = render_python_streams(&names, &type_map);
             fs::write(&file_path, contents.as_bytes()).map_err(|e| {
                 RoutineFailure::new(
                     Message::new(
@@ -175,7 +183,7 @@ pub async fn write_external_topics(
     Ok(())
 }
 
-fn sanitize_ts_ident(topic: &str) -> String {
+fn sanitize_pascal_ident(topic: &str) -> String {
     let mut ident = topic.to_case(Case::Pascal);
     if ident.is_empty() || !ident.chars().next().unwrap().is_ascii_alphabetic() {
         ident.insert(0, '_');
@@ -207,13 +215,18 @@ fn render_typescript_streams(
     out.push('\n');
 
     for t in topics {
-        let var_name = sanitize_ts_ident(t);
+        let var_name = sanitize_pascal_ident(t);
         if let Some((type_name, _)) = type_map.get(t) {
             // Include schema registry config (Latest subject) for topics with discovered JSON schema
             let subject = format!("{}-value", t);
             out.push_str(&format!(
-                "export const {var_name} = new Stream<{type_name}>(\"{t}\", {{ lifeCycle: LifeCycle.EXTERNALLY_MANAGED, schemaRegistry: {{ kind: \"JSON\", reference: {{ Latest: {{ subject_name: \"{subject}\" }} }} }} }});\n"
+                "export const {var_name} = new Stream<{type_name}>(\"{t}\", {{\n"
             ));
+            out.push_str("    lifeCycle: LifeCycle.EXTERNALLY_MANAGED,\n");
+            out.push_str(&format!(
+                "    schemaConfig: {{ kind: \"JSON\", reference: {{ subjectLatest: \"{subject}\" }} }}\n"
+            ));
+            out.push_str("});\n");
         } else {
             out.push_str(&format!(
                 "export const {var_name} = new Stream<{{}}>(\"{t}\", {{ lifeCycle: LifeCycle.EXTERNALLY_MANAGED }});\n"
@@ -249,7 +262,11 @@ fn render_python_streams(
         if let Some((class_name, _)) = type_map.get(t) {
             // Include schema registry config (Latest subject) for topics with discovered JSON schema
             let subject = format!("{}-value", t);
-            out.push_str(&format!("{var_name} = Stream[{class_name}](\"{t}\", StreamConfig(life_cycle=LifeCycle.EXTERNALLY_MANAGED, schema_registry={{\"kind\": \"JSON\", \"reference\": {{\"Latest\": {{\"subject_name\": \"{subject}\"}}}}}}))\n"));
+            out.push_str(&format!(
+                "{var_name} = Stream[{class_name}](\"{t}\", StreamConfig(\n"
+            ));
+            out.push_str("    life_cycle=LifeCycle.EXTERNALLY_MANAGED,\n");
+            out.push_str(&format!("    schema_config=KafkaSchemaConfig(kind=\"JSON\", reference=SubjectLatest(name=\"{subject}\"))))\n"));
         } else {
             out.push_str(&format!("{var_name} = Stream[EmptyModel](\"{t}\", StreamConfig(life_cycle=LifeCycle.EXTERNALLY_MANAGED))\n"));
         }

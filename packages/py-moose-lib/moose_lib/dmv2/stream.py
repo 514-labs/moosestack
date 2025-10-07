@@ -59,7 +59,7 @@ class StreamConfig(BaseModel):
     default_dead_letter_queue: "Optional[DeadLetterQueue]" = None
     # allow DeadLetterQueue
     model_config = ConfigDict(arbitrary_types_allowed=True)
-    schema_registry: Optional[KafkaSchemaConfig] = None
+    schema_config: Optional[KafkaSchemaConfig] = None
 
 
 class TransformConfig(BaseModel):
