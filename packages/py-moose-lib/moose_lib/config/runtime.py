@@ -162,8 +162,7 @@ class ConfigurationRegistry:
             namespace = _env("MOOSE_REDPANDA_CONFIG__NAMESPACE") or \
                         _env("MOOSE_KAFKA_CONFIG__NAMESPACE")
             schema_registry_url = _env("MOOSE_REDPANDA_CONFIG__SCHEMA_REGISTRY_URL") or \
-                                  _env("MOOSE_KAFKA_CONFIG__SCHEMA_REGISTRY_URL") or \
-                                  _env("SCHEMA_REGISTRY_URL")
+                                  _env("MOOSE_KAFKA_CONFIG__SCHEMA_REGISTRY_URL")
 
             file_kafka = config.kafka_config
 

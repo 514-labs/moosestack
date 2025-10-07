@@ -41,7 +41,7 @@ message Topic {
   optional SchemaRegistry schema_registry = 10;
 }
 
-// Encodes minimal schema reference used for Schema Registry integration
+// Encodes schema reference used for Schema Registry integration
 message SchemaRegistry {
   enum Encoding {
     JSON = 0;

@@ -190,8 +190,7 @@ class ConfigurationRegistry {
       this._env("MOOSE_KAFKA_CONFIG__NAMESPACE");
     const envSchemaRegistryUrl =
       this._env("MOOSE_REDPANDA_CONFIG__SCHEMA_REGISTRY_URL") ??
-      this._env("MOOSE_KAFKA_CONFIG__SCHEMA_REGISTRY_URL") ??
-      this._env("SCHEMA_REGISTRY_URL");
+      this._env("MOOSE_KAFKA_CONFIG__SCHEMA_REGISTRY_URL");
 
     const fileKafka =
       projectConfig.kafka_config ?? projectConfig.redpanda_config;
