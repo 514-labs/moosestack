@@ -352,10 +352,17 @@ impl ClickhouseEngine {
                 is_deleted,
             })
         } else {
-            // For SharedReplacingMergeTree, the first params might be ver/is_deleted
-            // not keeper_path/replica_name if there are fewer than 2 params
-            let ver = params.first().cloned();
-            let is_deleted = params.get(1).cloned();
+            // For SharedReplacingMergeTree with parentheses, keeper_path and replica_name are required
+            // The 3rd and 4th params (if present) are ver and is_deleted.
+            // Require exactly 2 or more params (can't be empty with parentheses)
+            if params.len() < 2 {
+                return Err(value);
+            }
+
+            // Skip the first two params (keeper_path and replica_name) for Shared engines
+            // Optional 3rd param is ver, optional 4th is is_deleted
+            let ver = params.get(2).cloned();
+            let is_deleted = params.get(3).cloned();
 
             // SharedReplacingMergeTree normalizes to ReplacingMergeTree
             Ok(ClickhouseEngine::ReplacingMergeTree { ver, is_deleted })
@@ -419,6 +426,11 @@ impl ClickhouseEngine {
                 replica_name,
             })
         } else {
+            // SharedMergeTree with parentheses requires exactly 2 params (keeper_path and replica_name)
+            if params.len() < 2 {
+                return Err(value);
+            }
+
             // SharedMergeTree normalizes to MergeTree
             Ok(ClickhouseEngine::MergeTree)
         }
@@ -467,6 +479,11 @@ impl ClickhouseEngine {
                 replica_name,
             })
         } else {
+            // SharedAggregatingMergeTree with parentheses requires exactly 2 params (keeper_path and replica_name)
+            if params.len() < 2 {
+                return Err(value);
+            }
+
             // SharedAggregatingMergeTree normalizes to AggregatingMergeTree
             Ok(ClickhouseEngine::AggregatingMergeTree)
         }
@@ -521,13 +538,22 @@ impl ClickhouseEngine {
                 columns,
             })
         } else {
-            // SharedSummingMergeTree normalizes to SummingMergeTree
-            // All params are column names for SharedSummingMergeTree
-            let columns = if !params.is_empty() {
-                Some(params)
+            // For SharedSummingMergeTree with parentheses, keeper_path and replica_name are required
+            // Additional params (if any) are column names.
+            // Require at least 2 params (can't be empty with parentheses)
+            if params.len() < 2 {
+                return Err(value);
+            }
+
+            // Skip the first two params (keeper_path and replica_name) for Shared engines
+            // Additional params are column names (if any)
+            let columns = if params.len() > 2 {
+                Some(params[2..].to_vec())
             } else {
                 None
             };
+
+            // SharedSummingMergeTree normalizes to SummingMergeTree
             Ok(ClickhouseEngine::SummingMergeTree { columns })
         }
     }
