@@ -213,6 +213,11 @@ export type SummingMergeTreeConfig<T> = BaseOlapConfig<T> & {
   columns?: string[];
 };
 
+interface ReplicatedEngineProperties {
+  keeperPath?: string;
+  replicaName?: string;
+}
+
 /**
  * Configuration for ReplicatedMergeTree engine
  * @template T The data type of the records stored in the table.
@@ -221,13 +226,12 @@ export type SummingMergeTreeConfig<T> = BaseOlapConfig<T> & {
  * which manages replication automatically. For self-hosted with ClickHouse Keeper,
  * provide both parameters or neither (to use server defaults).
  */
-export type ReplicatedMergeTreeConfig<T> = BaseOlapConfig<T> & {
-  engine: {
-    engine: ClickHouseEngines.ReplicatedMergeTree;
-    keeperPath?: string;
-    replicaName?: string;
+export type ReplicatedMergeTreeConfig<T> = MergeTreeConfig<T> &
+  ReplicatedEngineProperties & {
+    engine: {
+      engine: ClickHouseEngines.ReplicatedMergeTree;
+    };
   };
-};
 
 /**
  * Configuration for ReplicatedReplacingMergeTree engine
@@ -237,15 +241,13 @@ export type ReplicatedMergeTreeConfig<T> = BaseOlapConfig<T> & {
  * which manages replication automatically. For self-hosted with ClickHouse Keeper,
  * provide both parameters or neither (to use server defaults).
  */
-export type ReplicatedReplacingMergeTreeConfig<T> = BaseOlapConfig<T> & {
-  engine: {
-    engine: ClickHouseEngines.ReplicatedReplacingMergeTree;
-    keeperPath?: string;
-    replicaName?: string;
-    ver?: keyof T & string;
-    isDeleted?: keyof T & string;
-  };
-};
+export type ReplicatedReplacingMergeTreeConfig<T> =
+  ReplacingMergeTreeConfig<T> &
+    ReplicatedEngineProperties & {
+      engine: {
+        engine: ClickHouseEngines.ReplicatedReplacingMergeTree;
+      };
+    };
 
 /**
  * Configuration for ReplicatedAggregatingMergeTree engine
@@ -255,13 +257,13 @@ export type ReplicatedReplacingMergeTreeConfig<T> = BaseOlapConfig<T> & {
  * which manages replication automatically. For self-hosted with ClickHouse Keeper,
  * provide both parameters or neither (to use server defaults).
  */
-export type ReplicatedAggregatingMergeTreeConfig<T> = BaseOlapConfig<T> & {
-  engine: {
-    engine: ClickHouseEngines.ReplicatedAggregatingMergeTree;
-    keeperPath?: string;
-    replicaName?: string;
-  };
-};
+export type ReplicatedAggregatingMergeTreeConfig<T> =
+  AggregatingMergeTreeConfig<T> &
+    ReplicatedEngineProperties & {
+      engine: {
+        engine: ClickHouseEngines.ReplicatedAggregatingMergeTree;
+      };
+    };
 
 /**
  * Configuration for ReplicatedSummingMergeTree engine
@@ -271,14 +273,12 @@ export type ReplicatedAggregatingMergeTreeConfig<T> = BaseOlapConfig<T> & {
  * which manages replication automatically. For self-hosted with ClickHouse Keeper,
  * provide both parameters or neither (to use server defaults).
  */
-export type ReplicatedSummingMergeTreeConfig<T> = BaseOlapConfig<T> & {
-  engine: {
-    engine: ClickHouseEngines.ReplicatedSummingMergeTree;
-    keeperPath?: string;
-    replicaName?: string;
-    columns?: string[];
+export type ReplicatedSummingMergeTreeConfig<T> = SummingMergeTreeConfig<T> &
+  ReplicatedEngineProperties & {
+    engine: {
+      engine: ClickHouseEngines.ReplicatedSummingMergeTree;
+    };
   };
-};
 
 /**
  * Configuration for S3Queue engine - only non-alterable constructor parameters.
