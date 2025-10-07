@@ -425,7 +425,7 @@ export class Stream<T> extends TypedBase<T, StreamConfig<T>> {
 
       const encoded = await Promise.all(
         flat.map((v) =>
-          registry.encode(schemaId!, v as unknown as Record<string, unknown>),
+          registry.encode(schemaId, v as unknown as Record<string, unknown>),
         ),
       );
       await producer.send({
