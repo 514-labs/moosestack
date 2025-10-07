@@ -349,7 +349,7 @@ class Stream(TypedMooseResource, Generic[T]):
         producer, cfg = self._get_memoized_producer()
         topic = self._build_full_topic_name(cfg.namespace)
 
-        sr = self.config.schema_registry
+        sr = self.config.schema_config
         if sr is not None:
             if sr.kind != "JSON":
                 raise NotImplementedError("Currently JSON Schema is supported.")

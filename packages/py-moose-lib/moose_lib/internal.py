@@ -164,7 +164,7 @@ class TopicConfig(BaseModel):
     consumers: List[Consumer]
     metadata: Optional[dict] = None
     life_cycle: Optional[str] = None
-    schema_registry: Optional[KafkaSchemaConfig] = None
+    schema_config: Optional[KafkaSchemaConfig] = None
 
 
 class IngestApiConfig(BaseModel):
@@ -479,7 +479,7 @@ def to_infra_map() -> dict:
             consumers=consumers,
             metadata=getattr(stream, "metadata", None),
             life_cycle=stream.config.life_cycle.value if stream.config.life_cycle else None,
-            schema_registry=stream.config.schema_config,
+            schema_config=stream.config.schema_config,
         )
 
     for name, api in get_ingest_apis().items():
