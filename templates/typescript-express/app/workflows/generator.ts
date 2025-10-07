@@ -40,9 +40,10 @@ export const ingest = new Task<null, void>("ingest", {
           ]);
         }
       } catch (error) {
-        console.log(`Error ingesting record ${i}: ${error}`);
+        const errorMsg = error instanceof Error ? error.message : String(error);
+        console.log(`Error ingesting record ${i}: ${errorMsg}`);
         workflowTable.insert([
-          { id: "1", success: false, message: error.message },
+          { id: "1", success: false, message: errorMsg },
         ]);
       }
 
