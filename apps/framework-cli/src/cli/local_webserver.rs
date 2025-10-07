@@ -1247,50 +1247,52 @@ async fn handle_json_array_body(
 
     debug!("parsed json array for {}", topic_name);
 
-    if let Err(e) = parsed {
-        if let Some(dlq) = dead_letter_queue {
-            let objects = match serde_json::from_slice::<Value>(&body) {
-                Ok(Value::Array(values)) => values
-                    .into_iter()
-                    .filter_map(|v| match v {
-                        Value::Object(o) => Some(o),
-                        _ => None,
-                    })
-                    .collect::<Vec<_>>(),
-                Ok(Value::Object(value)) => vec![value],
-                _ => {
-                    info!(
+    let mut records = match parsed {
+        Err(e) => {
+            if let Some(dlq) = dead_letter_queue {
+                let objects = match serde_json::from_slice::<Value>(&body) {
+                    Ok(Value::Array(values)) => values
+                        .into_iter()
+                        .filter_map(|v| match v {
+                            Value::Object(o) => Some(o),
+                            _ => None,
+                        })
+                        .collect::<Vec<_>>(),
+                    Ok(Value::Object(value)) => vec![value],
+                    _ => {
+                        info!(
                         "Received payload for {} is not valid JSON objects or arrays. Not sending them to DLQ.",
                         topic_name
                     );
-                    vec![]
-                }
-            };
-            send_to_kafka(
-                &configured_producer.producer,
-                dlq,
-                objects.into_iter().map(|original_record| {
-                    serde_json::to_vec(&json!({
-                        "originalRecord": original_record,
-                        "errorMessage": e.to_string(),
-                        "errorType": "ValidationError",
-                        "failedAt": chrono::Utc::now().to_rfc3339(),
-                        "source": "api",
-                        "requestBody": String::from_utf8_lossy(&body),
-                        "topic": topic_name,
-                    }))
-                    .unwrap()
-                }),
-            )
-            .await;
+                        vec![]
+                    }
+                };
+                send_to_kafka(
+                    &configured_producer.producer,
+                    dlq,
+                    objects.into_iter().map(|original_record| {
+                        serde_json::to_vec(&json!({
+                            "originalRecord": original_record,
+                            "errorMessage": e.to_string(),
+                            "errorType": "ValidationError",
+                            "failedAt": chrono::Utc::now().to_rfc3339(),
+                            "source": "api",
+                            "requestBody": String::from_utf8_lossy(&body),
+                            "topic": topic_name,
+                        }))
+                        .unwrap()
+                    }),
+                )
+                .await;
+            }
+            warn!(
+                "Bad JSON in request to topic {}: {}. Body: {:?}",
+                topic_name, e, body
+            );
+            return bad_json_response(e);
         }
-        warn!(
-            "Bad JSON in request to topic {}: {}. Body: {:?}",
-            topic_name, e, body
-        );
-        return bad_json_response(e);
-    }
-    let mut records = parsed.ok().unwrap();
+        Ok(records) => records,
+    };
     if let Some(id) = schema_registry_schema_id {
         let id_bytes = id.to_be_bytes();
         records = records
