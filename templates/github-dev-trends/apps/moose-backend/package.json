@@ -22,5 +22,10 @@
   },
   "files": [
     "dist"
-  ]
+  ],
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "@confluentinc/kafka-javascript"
+    ]
+  }
 }
