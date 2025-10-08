@@ -221,8 +221,8 @@ class MooseModelGenerator:
         # Generate field name by replacing non-alphanumeric characters with underscores
         field_name = self._sanitize_field_name(field.name)
         
-        # Check if field name needs an alias (contains non-alphanumeric characters)
-        needs_alias = not field.name.replace('_', '').isalnum()
+        # Check if field name needs an alias (contains non-alphanumeric characters) or starts with a non-alphanumeric character
+        needs_alias = not field.name.replace('_', '').isalnum() or not field.name[0].isalnum()
         
         # Handle primary key fields
         if field.is_primary_key or field.name.lower() in self.config.primary_key_field_names:
