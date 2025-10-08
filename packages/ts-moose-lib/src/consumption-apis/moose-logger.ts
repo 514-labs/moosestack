@@ -15,9 +15,6 @@
  * ```
  */
 export function mooseLogger(req: any, res: any, next: any): void {
-  // Capture the start time
-  const startTime = Date.now();
-
   // Store the original res.end to intercept it
   const originalEnd = res.end;
 
