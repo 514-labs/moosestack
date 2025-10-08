@@ -508,7 +508,6 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
       if (config.isTestsVariant) {
         it("should ingest geometry types into a single GeoTypes table (PY)", async function () {
           const id = randomUUID();
-          const ts = TEST_DATA.TIMESTAMP;
           await withRetries(
             async () => {
               const response = await fetch(
@@ -518,7 +517,9 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
                   headers: { "Content-Type": "application/json" },
                   body: JSON.stringify({
                     id,
-                    timestamp: ts,
+                    timestamp: new Date(
+                      TEST_DATA.TIMESTAMP * 1000,
+                    ).toISOString(),
                     point: [10, 20],
                     ring: [
                       [10, 20],
