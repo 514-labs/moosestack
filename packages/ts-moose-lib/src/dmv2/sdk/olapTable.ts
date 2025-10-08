@@ -387,7 +387,7 @@ export class OlapTable<T> extends TypedBase<T, OlapConfig<T>> {
       this.config.version ? `${name}_${this.config.version}` : name;
     if (tables.has(registryKey)) {
       throw new Error(
-        `OlapTable with name ${name} and version ${this.config.version ?? "unversioned"} already exists`,
+        `OlapTable with name ${name} and version ${config?.version ?? "unversioned"} already exists`,
       );
     }
     tables.set(registryKey, this);

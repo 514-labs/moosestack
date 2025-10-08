@@ -152,7 +152,7 @@ class OlapTable(TypedMooseResource, Generic[T]):
         registry_key = f"{name}_{config.version}" if config.version else name
         if registry_key in _tables:
             raise ValueError(
-                f"OlapTable with name {name} and version {self.config.version or 'unversioned'} already exists"
+                f"OlapTable with name {name} and version {config.version or 'unversioned'} already exists"
             )
         _tables[registry_key] = self
         
