@@ -1044,15 +1044,13 @@ async fn metrics_route(metrics: Arc<Metrics>) -> Result<Response<Full<Bytes>>, h
 async fn mcp_route(req: Request<Incoming>) -> Result<Response<Full<Bytes>>, hyper::http::Error> {
     use crate::mcp::create_mcp_http_service;
     use crate::utilities::constants::CLI_VERSION;
-    use tower_service::Service as TowerService;
     use http_body_util::BodyExt;
-    
+    use tower_service::Service as TowerService;
+
     // Create MCP service for this request
-    let mut mcp_service = create_mcp_http_service(
-        "moose-mcp-server".to_string(),
-        CLI_VERSION.to_string(),
-    );
-    
+    let mut mcp_service =
+        create_mcp_http_service("moose-mcp-server".to_string(), CLI_VERSION.to_string());
+
     // Convert the request to work with the MCP service
     let (parts, body) = req.into_parts();
     let body_bytes = match body.collect().await {
@@ -1064,12 +1062,12 @@ async fn mcp_route(req: Request<Incoming>) -> Result<Response<Full<Bytes>>, hype
                 .unwrap());
         }
     };
-    
+
     let mcp_req = Request::from_parts(parts, Full::new(body_bytes));
-    
+
     // Call the MCP service (it returns Infallible error, so unwrap is safe)
     let mcp_response = mcp_service.call(mcp_req).await.unwrap();
-    
+
     // Convert the MCP response to our response type
     let (parts, body) = mcp_response.into_parts();
     let body_bytes = match body.collect().await {
@@ -1081,7 +1079,7 @@ async fn mcp_route(req: Request<Incoming>) -> Result<Response<Full<Bytes>>, hype
                 .unwrap());
         }
     };
-    
+
     let response = Response::from_parts(parts, Full::new(body_bytes));
     Ok(response)
 }

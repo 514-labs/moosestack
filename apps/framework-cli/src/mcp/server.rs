@@ -55,7 +55,10 @@ pub fn create_mcp_http_service(
     server_name: String,
     server_version: String,
 ) -> StreamableHttpService<MooseMcpHandler, LocalSessionManager> {
-    info!("[MCP] Creating MCP HTTP service: {} v{}", server_name, server_version);
+    info!(
+        "[MCP] Creating MCP HTTP service: {} v{}",
+        server_name, server_version
+    );
 
     let session_manager = Arc::new(LocalSessionManager::default());
     let config = StreamableHttpServerConfig {
@@ -64,7 +67,12 @@ pub fn create_mcp_http_service(
     };
 
     StreamableHttpService::new(
-        move || Ok(MooseMcpHandler::new(server_name.clone(), server_version.clone())),
+        move || {
+            Ok(MooseMcpHandler::new(
+                server_name.clone(),
+                server_version.clone(),
+            ))
+        },
         session_manager,
         config,
     )

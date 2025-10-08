@@ -558,14 +558,20 @@ pub async fn top_command_handler(
             let arc_metrics = Arc::new(metrics);
             arc_metrics.start_listening_to_metrics(rx_events).await;
 
-            routines::start_development_mode(project_arc, arc_metrics, redis_client, &settings, *mcp)
-                .await
-                .map_err(|e| {
-                    RoutineFailure::error(Message {
-                        action: "Dev".to_string(),
-                        details: format!("Failed to start development mode: {e:?}"),
-                    })
-                })?;
+            routines::start_development_mode(
+                project_arc,
+                arc_metrics,
+                redis_client,
+                &settings,
+                *mcp,
+            )
+            .await
+            .map_err(|e| {
+                RoutineFailure::error(Message {
+                    action: "Dev".to_string(),
+                    details: format!("Failed to start development mode: {e:?}"),
+                })
+            })?;
 
             wait_for_usage_capture(capture_handle).await;
 

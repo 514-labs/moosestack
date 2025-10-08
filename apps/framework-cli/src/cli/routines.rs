@@ -565,8 +565,10 @@ pub async fn start_development_mode(
             MessageType::Success,
             Message {
                 action: "MCP".to_string(),
-                details: format!("Model Context Protocol server available at http://{}:{}/mcp", 
-                    server_config.host, server_config.port),
+                details: format!(
+                    "Model Context Protocol server available at http://{}:{}/mcp",
+                    server_config.host, server_config.port
+                ),
             },
         );
         info!("[MCP] MCP endpoint enabled at /mcp");
