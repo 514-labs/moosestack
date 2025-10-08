@@ -1354,7 +1354,7 @@ fn build_summing_merge_tree_ddl(columns: &Option<Vec<String>>) -> String {
                 .map(|c| format!("`{}`", c))
                 .collect::<Vec<_>>()
                 .join(", ");
-            return format!("SummingMergeTree(({}))", col_list);
+            return format!("SummingMergeTree({})", col_list);
         }
     }
     "SummingMergeTree".to_string()
