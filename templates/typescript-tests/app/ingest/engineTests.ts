@@ -89,12 +89,10 @@ export const SummingMergeTreeWithColumnsTable = new OlapTable<EngineTestData>(
 export const ReplicatedMergeTreeTable = new OlapTable<EngineTestData>(
   "ReplicatedMergeTreeTest",
   {
-    engine: {
-      engine: ClickHouseEngines.ReplicatedMergeTree,
-      keeperPath:
-        "/clickhouse/tables/{database}/{shard}/replicated_merge_tree_test",
-      replicaName: "{replica}",
-    },
+    engine: ClickHouseEngines.ReplicatedMergeTree,
+    keeperPath:
+      "/clickhouse/tables/{database}/{shard}/replicated_merge_tree_test",
+    replicaName: "{replica}",
     orderByFields: ["id", "timestamp"],
   },
 );
@@ -105,10 +103,7 @@ export const ReplicatedMergeTreeTable = new OlapTable<EngineTestData>(
 export const ReplicatedMergeTreeCloudTable = new OlapTable<EngineTestData>(
   "ReplicatedMergeTreeCloudTest",
   {
-    engine: {
-      engine: ClickHouseEngines.ReplicatedMergeTree,
-      // No keeperPath or replicaName - uses server defaults (Cloud compatible)
-    },
+    engine: ClickHouseEngines.ReplicatedMergeTree,
     orderByFields: ["id", "timestamp"],
   },
 );
@@ -117,13 +112,11 @@ export const ReplicatedMergeTreeCloudTable = new OlapTable<EngineTestData>(
 export const ReplicatedReplacingMergeTreeTable = new OlapTable<EngineTestData>(
   "ReplicatedReplacingMergeTreeTest",
   {
-    engine: {
-      engine: ClickHouseEngines.ReplicatedReplacingMergeTree,
-      keeperPath:
-        "/clickhouse/tables/{database}/{shard}/replicated_replacing_test",
-      replicaName: "{replica}",
-      ver: "version",
-    },
+    engine: ClickHouseEngines.ReplicatedReplacingMergeTree,
+    keeperPath:
+      "/clickhouse/tables/{database}/{shard}/replicated_replacing_test",
+    replicaName: "{replica}",
+    ver: "version",
     orderByFields: ["id"],
   },
 );
@@ -132,14 +125,12 @@ export const ReplicatedReplacingMergeTreeTable = new OlapTable<EngineTestData>(
 export const ReplicatedReplacingSoftDeleteTable = new OlapTable<EngineTestData>(
   "ReplicatedReplacingSoftDeleteTest",
   {
-    engine: {
-      engine: ClickHouseEngines.ReplicatedReplacingMergeTree,
-      keeperPath:
-        "/clickhouse/tables/{database}/{shard}/replicated_replacing_sd_test",
-      replicaName: "{replica}",
-      ver: "version",
-      isDeleted: "isDeleted",
-    },
+    engine: ClickHouseEngines.ReplicatedReplacingMergeTree,
+    keeperPath:
+      "/clickhouse/tables/{database}/{shard}/replicated_replacing_sd_test",
+    replicaName: "{replica}",
+    ver: "version",
+    isDeleted: "isDeleted",
     orderByFields: ["id"],
   },
 );
@@ -147,12 +138,10 @@ export const ReplicatedReplacingSoftDeleteTable = new OlapTable<EngineTestData>(
 // Test ReplicatedAggregatingMergeTree engine
 export const ReplicatedAggregatingMergeTreeTable =
   new OlapTable<EngineTestData>("ReplicatedAggregatingMergeTreeTest", {
-    engine: {
-      engine: ClickHouseEngines.ReplicatedAggregatingMergeTree,
-      keeperPath:
-        "/clickhouse/tables/{database}/{shard}/replicated_aggregating_test",
-      replicaName: "{replica}",
-    },
+    engine: ClickHouseEngines.ReplicatedAggregatingMergeTree,
+    keeperPath:
+      "/clickhouse/tables/{database}/{shard}/replicated_aggregating_test",
+    replicaName: "{replica}",
     orderByFields: ["id", "category"],
   });
 
@@ -160,13 +149,10 @@ export const ReplicatedAggregatingMergeTreeTable =
 export const ReplicatedSummingMergeTreeTable = new OlapTable<EngineTestData>(
   "ReplicatedSummingMergeTreeTest",
   {
-    engine: {
-      engine: ClickHouseEngines.ReplicatedSummingMergeTree,
-      keeperPath:
-        "/clickhouse/tables/{database}/{shard}/replicated_summing_test",
-      replicaName: "{replica}",
-      columns: ["value"],
-    },
+    engine: ClickHouseEngines.ReplicatedSummingMergeTree,
+    keeperPath: "/clickhouse/tables/{database}/{shard}/replicated_summing_test",
+    replicaName: "{replica}",
+    columns: ["value"],
     orderByFields: ["id", "category"],
   },
 );

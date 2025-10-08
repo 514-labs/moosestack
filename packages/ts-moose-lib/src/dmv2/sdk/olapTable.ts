@@ -226,11 +226,9 @@ interface ReplicatedEngineProperties {
  * which manages replication automatically. For self-hosted with ClickHouse Keeper,
  * provide both parameters or neither (to use server defaults).
  */
-export type ReplicatedMergeTreeConfig<T> = MergeTreeConfig<T> &
+export type ReplicatedMergeTreeConfig<T> = Omit<MergeTreeConfig<T>, "engine"> &
   ReplicatedEngineProperties & {
-    engine: {
-      engine: ClickHouseEngines.ReplicatedMergeTree;
-    };
+    engine: ClickHouseEngines.ReplicatedMergeTree;
   };
 
 /**
@@ -241,13 +239,13 @@ export type ReplicatedMergeTreeConfig<T> = MergeTreeConfig<T> &
  * which manages replication automatically. For self-hosted with ClickHouse Keeper,
  * provide both parameters or neither (to use server defaults).
  */
-export type ReplicatedReplacingMergeTreeConfig<T> =
-  ReplacingMergeTreeConfig<T> &
-    ReplicatedEngineProperties & {
-      engine: {
-        engine: ClickHouseEngines.ReplicatedReplacingMergeTree;
-      };
-    };
+export type ReplicatedReplacingMergeTreeConfig<T> = Omit<
+  ReplacingMergeTreeConfig<T>,
+  "engine"
+> &
+  ReplicatedEngineProperties & {
+    engine: ClickHouseEngines.ReplicatedReplacingMergeTree;
+  };
 
 /**
  * Configuration for ReplicatedAggregatingMergeTree engine
@@ -257,13 +255,13 @@ export type ReplicatedReplacingMergeTreeConfig<T> =
  * which manages replication automatically. For self-hosted with ClickHouse Keeper,
  * provide both parameters or neither (to use server defaults).
  */
-export type ReplicatedAggregatingMergeTreeConfig<T> =
-  AggregatingMergeTreeConfig<T> &
-    ReplicatedEngineProperties & {
-      engine: {
-        engine: ClickHouseEngines.ReplicatedAggregatingMergeTree;
-      };
-    };
+export type ReplicatedAggregatingMergeTreeConfig<T> = Omit<
+  AggregatingMergeTreeConfig<T>,
+  "engine"
+> &
+  ReplicatedEngineProperties & {
+    engine: ClickHouseEngines.ReplicatedAggregatingMergeTree;
+  };
 
 /**
  * Configuration for ReplicatedSummingMergeTree engine
@@ -273,11 +271,12 @@ export type ReplicatedAggregatingMergeTreeConfig<T> =
  * which manages replication automatically. For self-hosted with ClickHouse Keeper,
  * provide both parameters or neither (to use server defaults).
  */
-export type ReplicatedSummingMergeTreeConfig<T> = SummingMergeTreeConfig<T> &
+export type ReplicatedSummingMergeTreeConfig<T> = Omit<
+  SummingMergeTreeConfig<T>,
+  "engine"
+> &
   ReplicatedEngineProperties & {
-    engine: {
-      engine: ClickHouseEngines.ReplicatedSummingMergeTree;
-    };
+    engine: ClickHouseEngines.ReplicatedSummingMergeTree;
   };
 
 /**

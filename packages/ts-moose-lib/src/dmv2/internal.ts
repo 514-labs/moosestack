@@ -285,28 +285,6 @@ interface SqlResourceJson {
 }
 
 /**
- * Type guard: Check if config is ReplacingMergeTreeConfig
- */
-function isReplacingMergeTreeConfig(
-  config: OlapConfig<any>,
-): config is ReplacingMergeTreeConfig<any> {
-  return (
-    "engine" in config && config.engine === ClickHouseEngines.ReplacingMergeTree
-  );
-}
-
-/**
- * Type guard: Check if config is SummingMergeTreeConfig
- */
-function isSummingMergeTreeConfig(
-  config: OlapConfig<any>,
-): config is SummingMergeTreeConfig<any> {
-  return (
-    "engine" in config && config.engine === ClickHouseEngines.SummingMergeTree
-  );
-}
-
-/**
  * Type guard: Check if config is S3QueueConfig
  */
 function isS3QueueConfig(
@@ -316,8 +294,8 @@ function isS3QueueConfig(
 }
 
 /**
- * Type guard: Check if config has a replicated engine (engine is nested in an object)
- * Helper to check if a value looks like a replicated engine config
+ * Type guard: Check if config has a replicated engine
+ * Checks if the engine value is one of the replicated engine types
  */
 function hasReplicatedEngine(
   config: OlapConfig<any>,
@@ -330,38 +308,18 @@ function hasReplicatedEngine(
     return false;
   }
 
-  const engine = config.engine;
-  // Check if engine property is an object with nested engine property
-  return engine !== null && typeof engine === "object" && "engine" in engine;
-}
-
-/**
- * Type guard: Check if config is ReplicatedReplacingMergeTreeConfig
- */
-function isReplicatedReplacingMergeTreeConfig(
-  config: OlapConfig<any>,
-): config is ReplicatedReplacingMergeTreeConfig<any> {
+  const engine = config.engine as ClickHouseEngines;
+  // Check if engine is one of the replicated engine types
   return (
-    hasReplicatedEngine(config) &&
-    config.engine.engine === ClickHouseEngines.ReplicatedReplacingMergeTree
-  );
-}
-
-/**
- * Type guard: Check if config is ReplicatedSummingMergeTreeConfig
- */
-function isReplicatedSummingMergeTreeConfig(
-  config: OlapConfig<any>,
-): config is ReplicatedSummingMergeTreeConfig<any> {
-  return (
-    hasReplicatedEngine(config) &&
-    config.engine.engine === ClickHouseEngines.ReplicatedSummingMergeTree
+    engine === ClickHouseEngines.ReplicatedMergeTree ||
+    engine === ClickHouseEngines.ReplicatedReplacingMergeTree ||
+    engine === ClickHouseEngines.ReplicatedAggregatingMergeTree ||
+    engine === ClickHouseEngines.ReplicatedSummingMergeTree
   );
 }
 
 /**
  * Extract engine value from table config, handling both legacy and new formats
- * Uses type guards to properly narrow replicated engine types
  */
 function extractEngineValue(config: OlapConfig<any>): ClickHouseEngines {
   // Legacy config without engine property defaults to MergeTree
@@ -369,20 +327,12 @@ function extractEngineValue(config: OlapConfig<any>): ClickHouseEngines {
     return ClickHouseEngines.MergeTree;
   }
 
-  const engineValue = config.engine;
-
-  // For replicated engines, the engine is nested inside an object
-  if (hasReplicatedEngine(config)) {
-    return config.engine.engine;
-  }
-
-  // Non-replicated engines have engine as direct value
-  return engineValue as ClickHouseEngines;
+  // All engines (replicated and non-replicated) have engine as direct value
+  return config.engine as ClickHouseEngines;
 }
 
 /**
  * Convert engine config for basic MergeTree engines
- * Uses type guards for fully type-safe property access
  */
 function convertBasicEngineConfig(
   engine: ClickHouseEngines,
@@ -395,24 +345,22 @@ function convertBasicEngineConfig(
     case ClickHouseEngines.AggregatingMergeTree:
       return { engine: "AggregatingMergeTree" };
 
-    case ClickHouseEngines.ReplacingMergeTree:
-      if (isReplacingMergeTreeConfig(config)) {
-        return {
-          engine: "ReplacingMergeTree",
-          ver: config.ver,
-          isDeleted: config.isDeleted,
-        };
-      }
-      return { engine: "ReplacingMergeTree" };
+    case ClickHouseEngines.ReplacingMergeTree: {
+      const replacingConfig = config as ReplacingMergeTreeConfig<any>;
+      return {
+        engine: "ReplacingMergeTree",
+        ver: replacingConfig.ver,
+        isDeleted: replacingConfig.isDeleted,
+      };
+    }
 
-    case ClickHouseEngines.SummingMergeTree:
-      if (isSummingMergeTreeConfig(config)) {
-        return {
-          engine: "SummingMergeTree",
-          columns: config.columns,
-        };
-      }
-      return { engine: "SummingMergeTree" };
+    case ClickHouseEngines.SummingMergeTree: {
+      const summingConfig = config as SummingMergeTreeConfig<any>;
+      return {
+        engine: "SummingMergeTree",
+        columns: summingConfig.columns,
+      };
+    }
 
     default:
       return undefined;
@@ -421,7 +369,6 @@ function convertBasicEngineConfig(
 
 /**
  * Convert engine config for replicated MergeTree engines
- * Uses type guards for fully type-safe property access
  */
 function convertReplicatedEngineConfig(
   engine: ClickHouseEngines,
@@ -433,50 +380,46 @@ function convertReplicatedEngineConfig(
   }
 
   switch (engine) {
-    case ClickHouseEngines.ReplicatedMergeTree:
+    case ClickHouseEngines.ReplicatedMergeTree: {
+      const replicatedConfig = config as ReplicatedMergeTreeConfig<any>;
       return {
         engine: "ReplicatedMergeTree",
-        keeperPath: config.keeperPath,
-        replicaName: config.replicaName,
+        keeperPath: replicatedConfig.keeperPath,
+        replicaName: replicatedConfig.replicaName,
       };
+    }
 
-    case ClickHouseEngines.ReplicatedReplacingMergeTree:
-      if (isReplicatedReplacingMergeTreeConfig(config)) {
-        return {
-          engine: "ReplicatedReplacingMergeTree",
-          keeperPath: config.keeperPath,
-          replicaName: config.replicaName,
-          ver: config.ver,
-          isDeleted: config.isDeleted,
-        };
-      }
+    case ClickHouseEngines.ReplicatedReplacingMergeTree: {
+      const replicatedConfig =
+        config as ReplicatedReplacingMergeTreeConfig<any>;
       return {
         engine: "ReplicatedReplacingMergeTree",
-        keeperPath: config.keeperPath,
-        replicaName: config.replicaName,
+        keeperPath: replicatedConfig.keeperPath,
+        replicaName: replicatedConfig.replicaName,
+        ver: replicatedConfig.ver,
+        isDeleted: replicatedConfig.isDeleted,
       };
+    }
 
-    case ClickHouseEngines.ReplicatedAggregatingMergeTree:
+    case ClickHouseEngines.ReplicatedAggregatingMergeTree: {
+      const replicatedConfig =
+        config as ReplicatedAggregatingMergeTreeConfig<any>;
       return {
         engine: "ReplicatedAggregatingMergeTree",
-        keeperPath: config.keeperPath,
-        replicaName: config.replicaName,
+        keeperPath: replicatedConfig.keeperPath,
+        replicaName: replicatedConfig.replicaName,
       };
+    }
 
-    case ClickHouseEngines.ReplicatedSummingMergeTree:
-      if (isReplicatedSummingMergeTreeConfig(config)) {
-        return {
-          engine: "ReplicatedSummingMergeTree",
-          keeperPath: config.keeperPath,
-          replicaName: config.replicaName,
-          columns: config.columns,
-        };
-      }
+    case ClickHouseEngines.ReplicatedSummingMergeTree: {
+      const replicatedConfig = config as ReplicatedSummingMergeTreeConfig<any>;
       return {
         engine: "ReplicatedSummingMergeTree",
-        keeperPath: config.keeperPath,
-        replicaName: config.replicaName,
+        keeperPath: replicatedConfig.keeperPath,
+        replicaName: replicatedConfig.replicaName,
+        columns: replicatedConfig.columns,
       };
+    }
 
     default:
       return undefined;
