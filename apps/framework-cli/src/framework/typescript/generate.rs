@@ -334,52 +334,44 @@ pub fn tables_to_typescript(tables: &[Table], life_cycle: Option<LifeCycle>) -> 
                     }
                 }
                 crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine::ReplicatedMergeTree { keeper_path, replica_name } => {
-                    writeln!(output, "    engine: {{").unwrap();
-                    writeln!(output, "      engine: ClickHouseEngines.ReplicatedMergeTree,").unwrap();
+                    writeln!(output, "    engine: ClickHouseEngines.ReplicatedMergeTree,").unwrap();
                     if let (Some(path), Some(name)) = (keeper_path, replica_name) {
-                        writeln!(output, "      keeperPath: {:?},", path).unwrap();
-                        writeln!(output, "      replicaName: {:?}", name).unwrap();
+                        writeln!(output, "    keeperPath: {:?},", path).unwrap();
+                        writeln!(output, "    replicaName: {:?},", name).unwrap();
                     }
-                    writeln!(output, "    }},").unwrap();
                 }
                 crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine::ReplicatedReplacingMergeTree { keeper_path, replica_name, ver, is_deleted } => {
-                    writeln!(output, "    engine: {{").unwrap();
-                    writeln!(output, "      engine: ClickHouseEngines.ReplicatedReplacingMergeTree,").unwrap();
+                    writeln!(output, "    engine: ClickHouseEngines.ReplicatedReplacingMergeTree,").unwrap();
                     if let (Some(path), Some(name)) = (keeper_path, replica_name) {
-                        writeln!(output, "      keeperPath: {:?},", path).unwrap();
-                        writeln!(output, "      replicaName: {:?},", name).unwrap();
+                        writeln!(output, "    keeperPath: {:?},", path).unwrap();
+                        writeln!(output, "    replicaName: {:?},", name).unwrap();
                     }
                     if let Some(ver_col) = ver {
-                        writeln!(output, "      ver: {:?},", ver_col).unwrap();
+                        writeln!(output, "    ver: {:?},", ver_col).unwrap();
                     }
                     if let Some(is_deleted_col) = is_deleted {
-                        writeln!(output, "      isDeleted: {:?},", is_deleted_col).unwrap();
+                        writeln!(output, "    isDeleted: {:?},", is_deleted_col).unwrap();
                     }
-                    writeln!(output, "    }},").unwrap();
                 }
                 crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine::ReplicatedAggregatingMergeTree { keeper_path, replica_name } => {
-                    writeln!(output, "    engine: {{").unwrap();
-                    writeln!(output, "      engine: ClickHouseEngines.ReplicatedAggregatingMergeTree,").unwrap();
+                    writeln!(output, "    engine: ClickHouseEngines.ReplicatedAggregatingMergeTree,").unwrap();
                     if let (Some(path), Some(name)) = (keeper_path, replica_name) {
-                        writeln!(output, "      keeperPath: {:?},", path).unwrap();
-                        writeln!(output, "      replicaName: {:?}", name).unwrap();
+                        writeln!(output, "    keeperPath: {:?},", path).unwrap();
+                        writeln!(output, "    replicaName: {:?},", name).unwrap();
                     }
-                    writeln!(output, "    }},").unwrap();
                 }
                 crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine::ReplicatedSummingMergeTree { keeper_path, replica_name, columns } => {
-                    writeln!(output, "    engine: {{").unwrap();
-                    writeln!(output, "      engine: ClickHouseEngines.ReplicatedSummingMergeTree,").unwrap();
+                    writeln!(output, "    engine: ClickHouseEngines.ReplicatedSummingMergeTree,").unwrap();
                     if let (Some(path), Some(name)) = (keeper_path, replica_name) {
-                        writeln!(output, "      keeperPath: {:?},", path).unwrap();
-                        writeln!(output, "      replicaName: {:?},", name).unwrap();
+                        writeln!(output, "    keeperPath: {:?},", path).unwrap();
+                        writeln!(output, "    replicaName: {:?},", name).unwrap();
                     }
                     if let Some(cols) = columns {
                         if !cols.is_empty() {
                             let col_list = cols.iter().map(|c| format!("{:?}", c)).collect::<Vec<_>>().join(", ");
-                            writeln!(output, "      columns: [{}],", col_list).unwrap();
+                            writeln!(output, "    columns: [{}],", col_list).unwrap();
                         }
                     }
-                    writeln!(output, "    }},").unwrap();
                 }
             }
         }
@@ -697,6 +689,120 @@ export const UserTable = new OlapTable<User>("User", {
         assert!(result.contains("engine: ClickHouseEngines.ReplacingMergeTree,"));
         assert!(result.contains("ver: \"version\","));
         assert!(result.contains("isDeleted: \"is_deleted\","));
+    }
+
+    #[test]
+    fn test_replicated_merge_tree_flat_structure() {
+        let tables = vec![Table {
+            name: "UserData".to_string(),
+            columns: vec![Column {
+                name: "id".to_string(),
+                data_type: ColumnType::String,
+                required: true,
+                unique: false,
+                primary_key: true,
+                default: None,
+                annotations: vec![],
+                comment: None,
+            }],
+            order_by: vec!["id".to_string()],
+            partition_by: None,
+            engine: Some(ClickhouseEngine::ReplicatedMergeTree {
+                keeper_path: Some("/clickhouse/tables/{shard}/user_data".to_string()),
+                replica_name: Some("{replica}".to_string()),
+            }),
+            version: None,
+            source_primitive: PrimitiveSignature {
+                name: "UserData".to_string(),
+                primitive_type: PrimitiveTypes::DataModel,
+            },
+            metadata: None,
+            life_cycle: LifeCycle::FullyManaged,
+            engine_params_hash: None,
+            table_settings: None,
+        }];
+
+        let result = tables_to_typescript(&tables, None);
+        println!("{result}");
+
+        // Ensure flat structure is generated (NOT nested engine: { engine: ... })
+        assert!(result.contains("engine: ClickHouseEngines.ReplicatedMergeTree,"));
+        assert!(result.contains("keeperPath: \"/clickhouse/tables/{shard}/user_data\","));
+        assert!(result.contains("replicaName: \"{replica}\","));
+
+        // Ensure it doesn't contain the incorrect nested structure
+        assert!(!result.contains("engine: {"));
+        assert!(!result.contains("engine: ClickHouseEngines.ReplicatedMergeTree,\n    }"));
+    }
+
+    #[test]
+    fn test_replicated_replacing_merge_tree_flat_structure() {
+        use crate::framework::core::infrastructure::table::IntType;
+        let tables = vec![Table {
+            name: "UserData".to_string(),
+            columns: vec![
+                Column {
+                    name: "id".to_string(),
+                    data_type: ColumnType::String,
+                    required: true,
+                    unique: false,
+                    primary_key: true,
+                    default: None,
+                    annotations: vec![],
+                    comment: None,
+                },
+                Column {
+                    name: "version".to_string(),
+                    data_type: ColumnType::DateTime { precision: None },
+                    required: true,
+                    unique: false,
+                    primary_key: false,
+                    default: None,
+                    annotations: vec![],
+                    comment: None,
+                },
+                Column {
+                    name: "is_deleted".to_string(),
+                    data_type: ColumnType::Int(IntType::UInt8),
+                    required: true,
+                    unique: false,
+                    primary_key: false,
+                    default: None,
+                    annotations: vec![],
+                    comment: None,
+                },
+            ],
+            order_by: vec!["id".to_string()],
+            partition_by: None,
+            engine: Some(ClickhouseEngine::ReplicatedReplacingMergeTree {
+                keeper_path: Some("/clickhouse/tables/{shard}/user_data".to_string()),
+                replica_name: Some("{replica}".to_string()),
+                ver: Some("version".to_string()),
+                is_deleted: Some("is_deleted".to_string()),
+            }),
+            version: None,
+            source_primitive: PrimitiveSignature {
+                name: "UserData".to_string(),
+                primitive_type: PrimitiveTypes::DataModel,
+            },
+            metadata: None,
+            life_cycle: LifeCycle::FullyManaged,
+            engine_params_hash: None,
+            table_settings: None,
+        }];
+
+        let result = tables_to_typescript(&tables, None);
+        println!("{result}");
+
+        // Ensure flat structure with all parameters
+        assert!(result.contains("engine: ClickHouseEngines.ReplicatedReplacingMergeTree,"));
+        assert!(result.contains("keeperPath: \"/clickhouse/tables/{shard}/user_data\","));
+        assert!(result.contains("replicaName: \"{replica}\","));
+        assert!(result.contains("ver: \"version\","));
+        assert!(result.contains("isDeleted: \"is_deleted\","));
+
+        // Ensure it doesn't contain the incorrect nested structure
+        assert!(!result.contains("engine: {"));
     }
 
     #[test]
