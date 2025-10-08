@@ -493,17 +493,6 @@ struct RouteService {
     http_client: Arc<Client>,
     project: Arc<Project>,
     redis_client: Arc<RedisClient>,
-    enable_mcp: bool,
-    mcp_service: Option<
-        Arc<
-            RwLock<
-                crate::mcp::StreamableHttpService<
-                    crate::mcp::MooseMcpHandler,
-                    crate::mcp::LocalSessionManager,
-                >,
-            >,
-        >,
-    >,
 }
 
 #[derive(Clone)]
@@ -514,6 +503,70 @@ struct ManagementService<I: InfraMapProvider + Clone> {
     infra_map: I,
     openapi_path: Option<PathBuf>,
     max_request_body_size: usize,
+}
+
+/// ApiService delegates requests to either the MCP service or the RouteService
+/// based on the request path. This provides clean separation between MCP and
+/// regular API routes without nesting MCP handling inside the main router.
+#[derive(Clone)]
+struct ApiService {
+    route_service: RouteService,
+    mcp_service: Option<
+        hyper_util::service::TowerToHyperService<
+            crate::mcp::StreamableHttpService<
+                crate::mcp::MooseMcpHandler,
+                crate::mcp::LocalSessionManager,
+            >,
+        >,
+    >,
+}
+
+impl Service<Request<Incoming>> for ApiService {
+    type Response = Response<Full<Bytes>>;
+    type Error = hyper::http::Error;
+    type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send>>;
+
+    fn call(&self, req: Request<Incoming>) -> Self::Future {
+        let path = req.uri().path();
+
+        // Route to MCP service if path starts with /mcp and MCP is enabled
+        if path.starts_with("/mcp") {
+            if let Some(mcp) = self.mcp_service.clone() {
+                return Box::pin(async move {
+                    use http_body_util::BodyExt;
+
+                    // Call the MCP service - TowerToHyperService handles the conversion
+                    let mcp_response = match mcp.call(req).await {
+                        Ok(response) => response,
+                        Err(_) => {
+                            // Since the MCP service returns Infallible, this should never happen
+                            error!("Unexpected error from MCP service");
+                            return Response::builder()
+                                .status(StatusCode::INTERNAL_SERVER_ERROR)
+                                .body(Full::new(Bytes::from("MCP service error")));
+                        }
+                    };
+
+                    // Convert the MCP response body to Full<Bytes>
+                    let (parts, body) = mcp_response.into_parts();
+                    let body_bytes = match body.collect().await {
+                        Ok(collected) => collected.to_bytes(),
+                        Err(e) => {
+                            error!("Failed to read MCP response body: {}", e);
+                            return Response::builder()
+                                .status(StatusCode::INTERNAL_SERVER_ERROR)
+                                .body(Full::new(Bytes::from("Failed to read MCP response body")));
+                        }
+                    };
+
+                    Ok(Response::from_parts(parts, Full::new(body_bytes)))
+                });
+            }
+        }
+
+        // Otherwise, use the regular route service
+        self.route_service.call(req)
+    }
 }
 
 impl Service<Request<Incoming>> for RouteService {
@@ -538,8 +591,6 @@ impl Service<Request<Incoming>> for RouteService {
             },
             self.project.clone(),
             self.redis_client.clone(),
-            self.enable_mcp,
-            self.mcp_service.clone(),
         ))
     }
 }
@@ -1054,66 +1105,6 @@ async fn metrics_route(metrics: Arc<Metrics>) -> Result<Response<Full<Bytes>>, h
     Ok(response)
 }
 
-async fn mcp_route(
-    req: Request<Incoming>,
-    mcp_service: Arc<
-        RwLock<
-            crate::mcp::StreamableHttpService<
-                crate::mcp::MooseMcpHandler,
-                crate::mcp::LocalSessionManager,
-            >,
-        >,
-    >,
-) -> Result<Response<Full<Bytes>>, hyper::http::Error> {
-    use http_body_util::BodyExt;
-    use tower_service::Service as TowerService;
-
-    // Convert the request to work with the MCP service
-    let (parts, body) = req.into_parts();
-    let body_bytes = match body.collect().await {
-        Ok(collected) => collected.to_bytes(),
-        Err(e) => {
-            error!("Failed to read MCP request body: {}", e);
-            return Response::builder()
-                .status(StatusCode::BAD_REQUEST)
-                .body(Full::new(Bytes::from("Failed to read request body")));
-        }
-    };
-
-    let mcp_req = Request::from_parts(parts, Full::new(body_bytes));
-
-    // Call the MCP service using the shared instance
-    let mcp_response = {
-        let mut service = mcp_service.write().await;
-        match service.call(mcp_req).await {
-            Ok(response) => response,
-            Err(_) => {
-                // Since the MCP service returns Infallible, this branch should never execute
-                // but we handle it defensively
-                error!("Unexpected error from MCP service");
-                return Response::builder()
-                    .status(StatusCode::INTERNAL_SERVER_ERROR)
-                    .body(Full::new(Bytes::from("MCP service error")));
-            }
-        }
-    };
-
-    // Convert the MCP response to our response type
-    let (parts, body) = mcp_response.into_parts();
-    let body_bytes = match body.collect().await {
-        Ok(collected) => collected.to_bytes(),
-        Err(e) => {
-            error!("Failed to read MCP response body: {}", e);
-            return Response::builder()
-                .status(StatusCode::INTERNAL_SERVER_ERROR)
-                .body(Full::new(Bytes::from("Failed to read MCP response body")));
-        }
-    };
-
-    let response = Response::from_parts(parts, Full::new(body_bytes));
-    Ok(response)
-}
-
 async fn openapi_route(
     is_prod: bool,
     openapi_path: Option<PathBuf>,
@@ -1538,17 +1529,6 @@ async fn router(
     request: RouterRequest,
     project: Arc<Project>,
     redis_client: Arc<RedisClient>,
-    enable_mcp: bool,
-    mcp_service: Option<
-        Arc<
-            RwLock<
-                crate::mcp::StreamableHttpService<
-                    crate::mcp::MooseMcpHandler,
-                    crate::mcp::LocalSessionManager,
-                >,
-            >,
-        >,
-    >,
 ) -> Result<Response<Full<Bytes>>, hyper::http::Error> {
     let now = Instant::now();
 
@@ -1735,19 +1715,6 @@ async fn router(
             workflows_terminate_route(req, is_prod, project.clone(), name.to_string()).await
         }
         (_, &hyper::Method::OPTIONS, _) => options_route(),
-        // MCP (Model Context Protocol) endpoint - only available in development mode when enabled
-        (_, _, ["mcp"]) | (_, _, ["mcp", ..]) if enable_mcp && !is_prod => {
-            // Forward to MCP handler
-            match mcp_service {
-                Some(service) => mcp_route(req, service).await,
-                None => {
-                    error!("MCP endpoint called but MCP service is not initialized");
-                    Response::builder()
-                        .status(StatusCode::SERVICE_UNAVAILABLE)
-                        .body(Full::new(Bytes::from("MCP service not available")))
-                }
-            }
-        }
         _ => route_not_found_response(),
     };
 
@@ -2305,11 +2272,13 @@ impl Webserver {
         let mcp_service = if enable_mcp && !project.is_production {
             use crate::mcp::create_mcp_http_service;
             use crate::utilities::constants::CLI_VERSION;
+            use hyper_util::service::TowerToHyperService;
 
             info!("[MCP] Initializing MCP service for Model Context Protocol support");
-            let service =
+            let tower_service =
                 create_mcp_http_service("moose-mcp-server".to_string(), CLI_VERSION.to_string());
-            Some(Arc::new(RwLock::new(service)))
+            // Wrap the Tower service to make it compatible with Hyper
+            Some(TowerToHyperService::new(tower_service))
         } else {
             None
         };
@@ -2327,7 +2296,11 @@ impl Webserver {
             metrics: metrics.clone(),
             project: project.clone(),
             redis_client: Arc::new(redis_client),
-            enable_mcp,
+        };
+
+        // Wrap route_service with ApiService to handle MCP routing at the top level
+        let api_service = ApiService {
+            route_service,
             mcp_service,
         };
 
@@ -2358,19 +2331,19 @@ impl Webserver {
                     let (stream, _) = listener_result.unwrap();
                     let io = TokioIo::new(stream);
 
-                    // Create a clone of route_service for each connection
+                    // Create a clone of api_service for each connection
                     // since hyper needs to own the service (it can't just borrow it)
-                    let route_service = route_service.clone();
+                    let api_service = api_service.clone();
                     let conn = conn_builder.serve_connection(
                         io,
-                        route_service.clone(),
+                        api_service.clone(),
                     );
                     let watched = graceful.watch(conn);
                     // Set server_label to "API" for the main API server. This label is used in error logging below.
                     let server_label = "API";
                     let port = socket.port();
-                    let project_name = route_service.project.name().to_string();
-                    let version = route_service.current_version.clone();
+                    let project_name = api_service.route_service.project.name().to_string();
+                    let version = api_service.route_service.current_version.clone();
                     tokio::task::spawn(async move {
                         if let Err(e) = watched.await {
                             error!("server error on {} server (port {}): {} [project: {}, version: {}]", server_label, port, e, project_name, version);

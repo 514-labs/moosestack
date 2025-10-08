@@ -41,7 +41,7 @@ serde_urlencoded = "0.7"
 semver = "1.0"
 base64 = "0.22.0"
 async-recursion = "1.1.0"
-hyper-util = { version = "0.1.3", features = ["full"] }
+hyper-util = { version = "0.1.17", features = ["full"] }
 http-body-util = "0.1"
 lazy_static = "1.4.0"
 anyhow = "1.0"
