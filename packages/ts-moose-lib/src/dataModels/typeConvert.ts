@@ -414,6 +414,31 @@ const isNamedTuple = (t: ts.Type, checker: ts.TypeChecker) => {
   );
 };
 
+/** Detect geometry mapping via _clickhouse_mapped_type string literal */
+const getGeometryMappedType = (
+  t: ts.Type,
+  checker: ts.TypeChecker,
+): string | null => {
+  const mappingSymbol = t.getProperty("_clickhouse_mapped_type");
+  if (mappingSymbol === undefined) return null;
+  const mapped = checker.getNonNullableType(
+    checker.getTypeOfSymbol(mappingSymbol),
+  );
+  if (mapped.isStringLiteral()) {
+    const v = mapped.value;
+    switch (v) {
+      case "Point":
+      case "Ring":
+      case "LineString":
+      case "MultiLineString":
+      case "Polygon":
+      case "MultiPolygon":
+        return v;
+    }
+  }
+  return null;
+};
+
 const checkColumnHasNoDefault = (c: Column) => {
   if (c.default !== null) {
     throw new UnsupportedFeature(
@@ -532,6 +557,8 @@ const tsTypeToDataType = (
     : isNumberType(nonNull, checker) ?
       handleNumberType(nonNull, checker, fieldName)
     : checker.isTypeAssignableTo(nonNull, checker.getBooleanType()) ? "Boolean"
+    : getGeometryMappedType(nonNull, checker) !== null ?
+      getGeometryMappedType(nonNull, checker)!
     : checker.isArrayType(withoutTags) ?
       toArrayType(
         tsTypeToDataType(

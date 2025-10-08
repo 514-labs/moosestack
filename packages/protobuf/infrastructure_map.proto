@@ -210,6 +210,14 @@ enum SimpleColumnType {
   UUID_TYPE = 13;
   JSON_COLUMN = 14;
   BYTES = 15;
+
+  // Geometry types
+  POINT = 16;
+  RING = 17;
+  LINE_STRING = 18;
+  MULTI_LINE_STRING = 19;
+  POLYGON = 20;
+  MULTI_POLYGON = 21;
 }
 
 enum IntType {

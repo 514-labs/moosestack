@@ -48,6 +48,14 @@ def clickhouse_datetime64(precision: int) -> Type[datetime]:
     return Annotated[datetime, ClickhousePrecision(precision=precision)]
 
 
+type Point = Annotated[tuple[float, float], "Point"]
+type Ring = Annotated[list[tuple[float, float]], "Ring"]
+type LineString = Annotated[list[tuple[float, float]], "LineString"]
+type MultiLineString = Annotated[list[list[tuple[float, float]]], "MultiLineString"]
+type Polygon = Annotated[list[list[tuple[float, float]]], "Polygon"]
+type MultiPolygon = Annotated[list[list[list[tuple[float, float]]]], "MultiPolygon"]
+
+
 def aggregated[T](
         result_type: Type[T],
         agg_func: str,
@@ -248,6 +256,22 @@ def py_type_to_column_type(t: type, mds: list[Any]) -> Tuple[bool, list[Any], Da
                     column.data_type
                 ) for column in columns],
             )
+        elif any(md in [
+            "Point",
+            "Ring",
+            "LineString",
+            "MultiLineString",
+            "Polygon",
+            "MultiPolygon",
+        ] for md in mds):
+            data_type = next(md for md in mds if md in [
+                "Point",
+                "Ring",
+                "LineString",
+                "MultiLineString",
+                "Polygon",
+                "MultiPolygon",
+            ])
         else:
             data_type = Nested(
                 name=t.__name__,

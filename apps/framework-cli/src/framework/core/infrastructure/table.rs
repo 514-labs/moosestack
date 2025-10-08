@@ -333,6 +333,13 @@ pub enum ColumnType {
     Uuid,
     IpV4,
     IpV6,
+    // Geometry types
+    Point,
+    Ring,
+    LineString,
+    MultiLineString,
+    Polygon,
+    MultiPolygon,
 }
 
 impl fmt::Display for ColumnType {
@@ -375,6 +382,12 @@ impl fmt::Display for ColumnType {
                 key_type,
                 value_type,
             } => write!(f, "Map<{key_type}, {value_type}>"),
+            ColumnType::Point => write!(f, "Point"),
+            ColumnType::Ring => write!(f, "Ring"),
+            ColumnType::LineString => write!(f, "LineString"),
+            ColumnType::MultiLineString => write!(f, "MultiLineString"),
+            ColumnType::Polygon => write!(f, "Polygon"),
+            ColumnType::MultiPolygon => write!(f, "MultiPolygon"),
         }
     }
 }
@@ -442,6 +455,12 @@ impl Serialize for ColumnType {
                 state.serialize_field("valueType", value_type)?;
                 state.end()
             }
+            ColumnType::Point => serializer.serialize_str("Point"),
+            ColumnType::Ring => serializer.serialize_str("Ring"),
+            ColumnType::LineString => serializer.serialize_str("LineString"),
+            ColumnType::MultiLineString => serializer.serialize_str("MultiLineString"),
+            ColumnType::Polygon => serializer.serialize_str("Polygon"),
+            ColumnType::MultiPolygon => serializer.serialize_str("MultiPolygon"),
         }
     }
 }
@@ -572,6 +591,18 @@ impl<'de> Visitor<'de> for ColumnTypeVisitor {
             ColumnType::IpV4
         } else if v == "IPv6" {
             ColumnType::IpV6
+        } else if v == "Point" {
+            ColumnType::Point
+        } else if v == "Ring" {
+            ColumnType::Ring
+        } else if v == "LineString" {
+            ColumnType::LineString
+        } else if v == "MultiLineString" {
+            ColumnType::MultiLineString
+        } else if v == "Polygon" {
+            ColumnType::Polygon
+        } else if v == "MultiPolygon" {
+            ColumnType::MultiPolygon
         } else {
             return Err(E::custom(format!("Unknown column type {v}.")));
         };
@@ -800,6 +831,12 @@ impl ColumnType {
                 value_type: MessageField::some(value_type.to_proto()),
                 special_fields: Default::default(),
             }),
+            ColumnType::Point => T::Simple(SimpleColumnType::POINT.into()),
+            ColumnType::Ring => T::Simple(SimpleColumnType::RING.into()),
+            ColumnType::LineString => T::Simple(SimpleColumnType::LINE_STRING.into()),
+            ColumnType::MultiLineString => T::Simple(SimpleColumnType::MULTI_LINE_STRING.into()),
+            ColumnType::Polygon => T::Simple(SimpleColumnType::POLYGON.into()),
+            ColumnType::MultiPolygon => T::Simple(SimpleColumnType::MULTI_POLYGON.into()),
         };
         ProtoColumnType {
             t: Some(t),
@@ -828,6 +865,12 @@ impl ColumnType {
                     SimpleColumnType::DATE16 => ColumnType::Date16,
                     SimpleColumnType::IPV4 => ColumnType::IpV4,
                     SimpleColumnType::IPV6 => ColumnType::IpV6,
+                    SimpleColumnType::POINT => ColumnType::Point,
+                    SimpleColumnType::RING => ColumnType::Ring,
+                    SimpleColumnType::LINE_STRING => ColumnType::LineString,
+                    SimpleColumnType::MULTI_LINE_STRING => ColumnType::MultiLineString,
+                    SimpleColumnType::POLYGON => ColumnType::Polygon,
+                    SimpleColumnType::MULTI_POLYGON => ColumnType::MultiPolygon,
                 }
             }
             column_type::T::Enum(data_enum) => ColumnType::Enum(DataEnum::from_proto(data_enum)),

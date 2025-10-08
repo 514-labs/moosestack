@@ -75,6 +75,12 @@ fn map_column_type_to_python(
             let inner_type = map_column_type_to_python(inner, enums, nested, named_tuples);
             format!("Optional[{inner_type}]")
         }
+        ColumnType::Point => "Point".to_string(),
+        ColumnType::Ring => "Ring".to_string(),
+        ColumnType::LineString => "LineString".to_string(),
+        ColumnType::MultiLineString => "MultiLineString".to_string(),
+        ColumnType::Polygon => "Polygon".to_string(),
+        ColumnType::MultiPolygon => "MultiPolygon".to_string(),
         ColumnType::Map {
             key_type,
             value_type,
@@ -279,6 +285,11 @@ pub fn tables_to_python(tables: &[Table], life_cycle: Option<LifeCycle>) -> Stri
     writeln!(
         output,
         "from moose_lib import Key, IngestPipeline, IngestPipelineConfig, OlapTable, OlapConfig, clickhouse_datetime64, clickhouse_decimal, ClickhouseSize, StringToEnumMixin"
+    )
+        .unwrap();
+    writeln!(
+        output,
+        "from moose_lib import Point, Ring, LineString, MultiLineString, Polygon, MultiPolygon"
     )
     .unwrap();
     writeln!(

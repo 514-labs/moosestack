@@ -239,6 +239,84 @@ fn std_field_type_to_typescript_field_mapper(
         ColumnType::Date16 => Ok(InterfaceFieldType::String),
         ColumnType::IpV4 => Ok(InterfaceFieldType::String),
         ColumnType::IpV6 => Ok(InterfaceFieldType::String),
+        ColumnType::Point => Ok(InterfaceFieldType::Object(Box::new(TypescriptInterface {
+            name: "Point".to_string(),
+            fields: vec![
+                InterfaceField {
+                    name: "0".to_string(),
+                    comment: None,
+                    is_optional: false,
+                    field_type: InterfaceFieldType::Number,
+                },
+                InterfaceField {
+                    name: "1".to_string(),
+                    comment: None,
+                    is_optional: false,
+                    field_type: InterfaceFieldType::Number,
+                },
+            ],
+        }))),
+        ColumnType::Ring | ColumnType::LineString => Ok(InterfaceFieldType::Array(Box::new(
+            InterfaceFieldType::Object(Box::new(TypescriptInterface {
+                name: "Point".to_string(),
+                fields: vec![
+                    InterfaceField {
+                        name: "0".to_string(),
+                        comment: None,
+                        is_optional: false,
+                        field_type: InterfaceFieldType::Number,
+                    },
+                    InterfaceField {
+                        name: "1".to_string(),
+                        comment: None,
+                        is_optional: false,
+                        field_type: InterfaceFieldType::Number,
+                    },
+                ],
+            })),
+        ))),
+        ColumnType::MultiLineString | ColumnType::Polygon => Ok(InterfaceFieldType::Array(
+            Box::new(InterfaceFieldType::Array(Box::new(
+                InterfaceFieldType::Object(Box::new(TypescriptInterface {
+                    name: "Point".to_string(),
+                    fields: vec![
+                        InterfaceField {
+                            name: "0".to_string(),
+                            comment: None,
+                            is_optional: false,
+                            field_type: InterfaceFieldType::Number,
+                        },
+                        InterfaceField {
+                            name: "1".to_string(),
+                            comment: None,
+                            is_optional: false,
+                            field_type: InterfaceFieldType::Number,
+                        },
+                    ],
+                })),
+            ))),
+        )),
+        ColumnType::MultiPolygon => Ok(InterfaceFieldType::Array(Box::new(
+            InterfaceFieldType::Array(Box::new(InterfaceFieldType::Array(Box::new(
+                InterfaceFieldType::Object(Box::new(TypescriptInterface {
+                    name: "Point".to_string(),
+                    fields: vec![
+                        InterfaceField {
+                            name: "0".to_string(),
+                            comment: None,
+                            is_optional: false,
+                            field_type: InterfaceFieldType::Number,
+                        },
+                        InterfaceField {
+                            name: "1".to_string(),
+                            comment: None,
+                            is_optional: false,
+                            field_type: InterfaceFieldType::Number,
+                        },
+                    ],
+                })),
+            )))),
+        ))),
         ColumnType::Nullable(inner) => {
             // For nullable types, just return the inner type - nullability is handled by is_optional
             std_field_type_to_typescript_field_mapper(*inner)
