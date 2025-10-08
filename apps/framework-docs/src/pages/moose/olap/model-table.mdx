@@ -631,31 +631,25 @@ import { OlapTable, ClickHouseEngines } from "@514labs/moose-lib";
 
 // Basic replicated table with explicit paths
 const replicatedTable = new OlapTable<Record>("records", {
-  engine: {
-    engine: ClickHouseEngines.ReplicatedMergeTree,
-    keeperPath: "/clickhouse/tables/{database}/{shard}/records",
-    replicaName: "{replica}"
-  },
+  engine: ClickHouseEngines.ReplicatedMergeTree,
+  keeperPath: "/clickhouse/tables/{database}/{shard}/records",
+  replicaName: "{replica}",
   orderByFields: ["id"]
 });
 
 // Replicated with deduplication
 const replicatedDedup = new OlapTable<Record>("dedup_records", {
-  engine: {
-    engine: ClickHouseEngines.ReplicatedReplacingMergeTree,
-    keeperPath: "/clickhouse/tables/{database}/{shard}/dedup_records",
-    replicaName: "{replica}",
-    ver: "updated_at",
-    isDeleted: "deleted"
-  },
+  engine: ClickHouseEngines.ReplicatedReplacingMergeTree,
+  keeperPath: "/clickhouse/tables/{database}/{shard}/dedup_records",
+  replicaName: "{replica}",
+  ver: "updated_at",
+  isDeleted: "deleted",
   orderByFields: ["id"]
 });
 
 // For ClickHouse Cloud or Boreal (no parameters needed)
 const cloudReplicated = new OlapTable<Record>("cloud_records", {
-  engine: {
-    engine: ClickHouseEngines.ReplicatedMergeTree
-  },
+  engine: ClickHouseEngines.ReplicatedMergeTree,
   orderByFields: ["id"]
 });
 ```

@@ -200,47 +200,39 @@ Configuration for replicated table engines:
 ```ts
 // ReplicatedMergeTree
 type ReplicatedMergeTreeConfig<T> = {
-  engine: {
-    engine: ClickHouseEngines.ReplicatedMergeTree;
-    keeperPath?: string;  // Optional: ZooKeeper/Keeper path (omit for Cloud)
-    replicaName?: string; // Optional: replica name (omit for Cloud)
-  };
+  engine: ClickHouseEngines.ReplicatedMergeTree;
+  keeperPath?: string;  // Optional: ZooKeeper/Keeper path (omit for Cloud)
+  replicaName?: string; // Optional: replica name (omit for Cloud)
   orderByFields?: (keyof T & string)[];
   settings?: { [key: string]: string };
 }
 
 // ReplicatedReplacingMergeTree
 type ReplicatedReplacingMergeTreeConfig<T> = {
-  engine: {
-    engine: ClickHouseEngines.ReplicatedReplacingMergeTree;
-    keeperPath?: string;  // Optional: ZooKeeper/Keeper path (omit for Cloud)
-    replicaName?: string; // Optional: replica name (omit for Cloud)
-    ver?: keyof T & string;  // Optional: version column
-    isDeleted?: keyof T & string;  // Optional: soft delete marker
-  };
+  engine: ClickHouseEngines.ReplicatedReplacingMergeTree;
+  keeperPath?: string;  // Optional: ZooKeeper/Keeper path (omit for Cloud)
+  replicaName?: string; // Optional: replica name (omit for Cloud)
+  ver?: keyof T & string;  // Optional: version column
+  isDeleted?: keyof T & string;  // Optional: soft delete marker
   orderByFields?: (keyof T & string)[];
   settings?: { [key: string]: string };
 }
 
 // ReplicatedAggregatingMergeTree
 type ReplicatedAggregatingMergeTreeConfig<T> = {
-  engine: {
-    engine: ClickHouseEngines.ReplicatedAggregatingMergeTree;
-    keeperPath?: string;  // Optional: ZooKeeper/Keeper path (omit for Cloud)
-    replicaName?: string; // Optional: replica name (omit for Cloud)
-  };
+  engine: ClickHouseEngines.ReplicatedAggregatingMergeTree;
+  keeperPath?: string;  // Optional: ZooKeeper/Keeper path (omit for Cloud)
+  replicaName?: string; // Optional: replica name (omit for Cloud)
   orderByFields?: (keyof T & string)[];
   settings?: { [key: string]: string };
 }
 
 // ReplicatedSummingMergeTree
 type ReplicatedSummingMergeTreeConfig<T> = {
-  engine: {
-    engine: ClickHouseEngines.ReplicatedSummingMergeTree;
-    keeperPath?: string;  // Optional: ZooKeeper/Keeper path (omit for Cloud)
-    replicaName?: string; // Optional: replica name (omit for Cloud)
-    columns?: string[];   // Optional: columns to sum
-  };
+  engine: ClickHouseEngines.ReplicatedSummingMergeTree;
+  keeperPath?: string;  // Optional: ZooKeeper/Keeper path (omit for Cloud)
+  replicaName?: string; // Optional: replica name (omit for Cloud)
+  columns?: string[];   // Optional: columns to sum
   orderByFields?: (keyof T & string)[];
   settings?: { [key: string]: string };
 }

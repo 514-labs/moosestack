@@ -30,22 +30,18 @@ type OlapConfig<T> =
       settings?: { [key: string]: string }; 
     }
   | { 
-      engine: {
-        engine: ClickHouseEngines.ReplicatedMergeTree;
-        keeperPath?: string;   // Optional: ZooKeeper/Keeper path (omit for ClickHouse Cloud/Boreal)
-        replicaName?: string;  // Optional: replica name (omit for ClickHouse Cloud/Boreal)
-      };
+      engine: ClickHouseEngines.ReplicatedMergeTree;
+      keeperPath?: string;   // Optional: ZooKeeper/Keeper path (omit for ClickHouse Cloud/Boreal)
+      replicaName?: string;  // Optional: replica name (omit for ClickHouse Cloud/Boreal)
       orderByFields?: (keyof T & string)[]; 
       settings?: { [key: string]: string }; 
     }
   | { 
-      engine: {
-        engine: ClickHouseEngines.ReplicatedReplacingMergeTree;
-        keeperPath?: string;   // Optional: ZooKeeper/Keeper path (omit for ClickHouse Cloud/Boreal)
-        replicaName?: string;  // Optional: replica name (omit for ClickHouse Cloud/Boreal)
-        ver?: keyof T & string;        // Optional: version column
-        isDeleted?: keyof T & string;   // Optional: soft delete marker
-      };
+      engine: ClickHouseEngines.ReplicatedReplacingMergeTree;
+      keeperPath?: string;   // Optional: ZooKeeper/Keeper path (omit for ClickHouse Cloud/Boreal)
+      replicaName?: string;  // Optional: replica name (omit for ClickHouse Cloud/Boreal)
+      ver?: keyof T & string;        // Optional: version column
+      isDeleted?: keyof T & string;   // Optional: soft delete marker
       orderByFields?: (keyof T & string)[]; 
       settings?: { [key: string]: string }; 
     }
@@ -176,32 +172,26 @@ interface ReplicatedSchema {
 
 // Recommended: Omit parameters for automatic defaults (works in both Cloud and self-managed)
 export const ReplicatedTable = new OlapTable<ReplicatedSchema>("ReplicatedTable", {
-  engine: {
-    engine: ClickHouseEngines.ReplicatedMergeTree
-    // No keeperPath or replicaName - uses smart defaults: /clickhouse/tables/{uuid}/{shard} and {replica}
-  },
+  engine: ClickHouseEngines.ReplicatedMergeTree,
+  // No keeperPath or replicaName - uses smart defaults: /clickhouse/tables/{uuid}/{shard} and {replica}
   orderByFields: ["id", "timestamp"]
 });
 
 // Optional: Explicit paths for custom configurations
 export const CustomReplicatedTable = new OlapTable<ReplicatedSchema>("CustomReplicatedTable", {
-  engine: {
-    engine: ClickHouseEngines.ReplicatedMergeTree,
-    keeperPath: "/clickhouse/tables/{database}/{shard}/custom_table",
-    replicaName: "{replica}"
-  },
+  engine: ClickHouseEngines.ReplicatedMergeTree,
+  keeperPath: "/clickhouse/tables/{database}/{shard}/custom_table",
+  replicaName: "{replica}",
   orderByFields: ["id"]
 });
 
 // Replicated with deduplication
 export const ReplicatedDedup = new OlapTable<ReplicatedSchema>("ReplicatedDedup", {
-  engine: {
-    engine: ClickHouseEngines.ReplicatedReplacingMergeTree,
-    keeperPath: "/clickhouse/tables/{database}/{shard}/replicated_dedup",
-    replicaName: "{replica}",
-    ver: "timestamp",
-    isDeleted: "deleted"
-  },
+  engine: ClickHouseEngines.ReplicatedReplacingMergeTree,
+  keeperPath: "/clickhouse/tables/{database}/{shard}/replicated_dedup",
+  replicaName: "{replica}",
+  ver: "timestamp",
+  isDeleted: "deleted",
   orderByFields: ["id"]
 });
 ```
