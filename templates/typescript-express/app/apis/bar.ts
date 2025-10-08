@@ -10,6 +10,7 @@ import {
   sql,
   getMooseClients,
   mooseLogger,
+  registerApp,
   type MooseClient,
 } from "@514labs/moose-lib";
 import { BarPipeline } from "../ingest/models";
@@ -28,11 +29,13 @@ interface ResultItem {
   textLength: number;
 }
 
+const SourceTable = BarPipeline.table!;
+const cols = SourceTable.columns;
+
 /**
- * This function is called by Moose to create your Express app.
- * It should return a configured Express application.
+ * Initialize and register the Express app with Moose.
  */
-export async function createApp() {
+async function setupExpressApp() {
   const app = express();
   const { client } = await getMooseClients();
 
@@ -48,8 +51,6 @@ export async function createApp() {
   // Example: Custom endpoint that queries ClickHouse
   app.get("/moose", async (req: RequestWithClient, res: Response) => {
     const { client } = req;
-    const SourceTable = BarPipeline.table!;
-    const cols = SourceTable.columns;
 
     const query = sql` SELECT ${cols.primaryKey}, ${cols.textLength} FROM ${SourceTable} LIMIT ${req.query.maxResults || 10}`;
 
@@ -61,5 +62,9 @@ export async function createApp() {
     res.send(data);
   });
 
-  return app;
+  // Register the Express app with Moose
+  registerApp(app);
 }
+
+// Initialize the app
+setupExpressApp();

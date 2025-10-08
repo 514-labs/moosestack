@@ -25,6 +25,7 @@ export { ApiUtil, ConsumptionUtil } from "./consumption-apis/helpers";
 export { getMooseClients } from "./consumption-apis/standalone";
 export { sql } from "./sqlHelpers";
 export { mooseLogger } from "./consumption-apis/moose-logger";
+export { registerApp } from "./consumption-apis/byof-registry";
 
 export * from "./utilities";
 export * from "./connectors/dataSource";

@@ -1,14 +1,11 @@
-import * as fs from "fs";
-import * as path from "path";
-import { createFrameworkAdapter, type FrameworkAdapter } from "./byof-adapter";
+import { type FrameworkAdapter } from "./byof-adapter";
 import { getMooseInternal } from "../dmv2/internal";
+import { getRegisteredByofApp, type RegisteredByofApp } from "./byof-registry";
 
 /**
  * Information about a loaded BYOF (Bring Your Own Framework) application
  */
 export interface ByofAppInfo {
-  /** The file path where this app was loaded from */
-  filePath: string;
   /** The framework adapter for this app */
   adapter: FrameworkAdapter;
   /** Routes defined by this app */
@@ -31,76 +28,35 @@ export interface ByofLoadResult {
 export interface RouteCollision {
   /** The route path that collides */
   route: string;
-  /** The BYOF app file that defines this route */
-  byofFile: string;
   /** The Api instance name that also uses this route */
   apiName: string;
 }
 
 /**
- * Scans a directory for BYOF application files and loads them.
+ * Loads the registered BYOF application and checks for route collisions.
  *
- * A BYOF file must export an async function called `createApp` that returns
- * a framework application (currently only Express is supported).
- *
- * @param apisDir - The directory to scan for API files
- * @returns Promise<ByofLoadResult> - The loaded apps and any detected collisions
+ * @returns Promise<ByofLoadResult> - The loaded app and any detected collisions
  */
-export async function loadByofApps(apisDir: string): Promise<ByofLoadResult> {
+export async function loadByofApps(): Promise<ByofLoadResult> {
   const apps: ByofAppInfo[] = [];
   const collisions: RouteCollision[] = [];
 
-  // Check if directory exists
-  if (!fs.existsSync(apisDir)) {
+  // Get the registered BYOF app from the registry
+  const registeredApp = getRegisteredByofApp();
+
+  if (!registeredApp) {
+    // No BYOF app registered, return empty result
     return { apps, collisions };
   }
 
-  // Get all .ts and .js files recursively
-  const files = getAllFiles(apisDir);
-
-  // Try to load each file
-  for (const file of files) {
-    try {
-      const module = require(file);
-
-      // Check if the module exports a createApp function
-      if (typeof module.createApp === "function") {
-        console.log(`[BYOF] Found BYOF app in ${file}`);
-
-        // Call createApp to get the framework app instance
-        const app = await module.createApp();
-
-        // Create an adapter for the app
-        const adapter = createFrameworkAdapter(app);
-
-        // Get routes from the adapter
-        const routes = adapter.getRoutes();
-
-        console.log(
-          `[BYOF] Loaded ${adapter.frameworkName} app with ${routes.length} routes`,
-        );
-
-        apps.push({
-          filePath: file,
-          adapter,
-          routes,
-        });
-      }
-    } catch (error) {
-      // If the file can't be loaded or doesn't export createApp, skip it silently
-      // This allows regular Api files to coexist in the same directory
-      if (error instanceof Error && !error.message.includes("Cannot find")) {
-        console.warn(
-          `[BYOF] Warning: Failed to load ${file}: ${error.message}`,
-        );
-      }
-    }
-  }
+  // Add the registered app to the list
+  apps.push({
+    adapter: registeredApp.adapter,
+    routes: registeredApp.routes,
+  });
 
   // Detect collisions with Api instances
-  if (apps.length > 0) {
-    collisions.push(...(await detectCollisions(apps)));
-  }
+  collisions.push(...(await detectCollisions(apps)));
 
   return { apps, collisions };
 }
@@ -164,7 +120,6 @@ async function detectCollisions(
         if (routesCollide(routePath, apiRoute)) {
           collisions.push({
             route: routePath,
-            byofFile: app.filePath,
             apiName,
           });
         }
@@ -219,36 +174,6 @@ function routesCollide(route1: string, route2: string): boolean {
 }
 
 /**
- * Recursively gets all .ts and .js files in a directory.
- *
- * @param dirPath - Directory path to scan
- * @param arrayOfFiles - Accumulator for recursive calls
- * @returns string[] - Array of file paths
- */
-function getAllFiles(dirPath: string, arrayOfFiles: string[] = []): string[] {
-  const files = fs.readdirSync(dirPath);
-
-  for (const file of files) {
-    const filePath = path.join(dirPath, file);
-    const stat = fs.statSync(filePath);
-
-    if (stat.isDirectory()) {
-      // Skip node_modules and hidden directories
-      if (!file.startsWith(".") && file !== "node_modules") {
-        getAllFiles(filePath, arrayOfFiles);
-      }
-    } else if (file.endsWith(".ts") || file.endsWith(".js")) {
-      // Skip test and type definition files
-      if (!file.endsWith(".test.ts") && !file.endsWith(".d.ts")) {
-        arrayOfFiles.push(filePath);
-      }
-    }
-  }
-
-  return arrayOfFiles;
-}
-
-/**
  * Logs route collisions to the console with appropriate warnings.
  *
  * @param collisions - Array of route collisions to log
@@ -263,7 +188,7 @@ export function logCollisions(collisions: RouteCollision[]): void {
 
   for (const collision of collisions) {
     console.warn(
-      `\n  Route: ${collision.route}\n  - BYOF app: ${collision.byofFile}\n  - Api instance: ${collision.apiName}\n  → Api instance takes precedence`,
+      `\n  Route: ${collision.route}\n  - Api instance: ${collision.apiName}\n  → Api instance takes precedence`,
     );
   }
 

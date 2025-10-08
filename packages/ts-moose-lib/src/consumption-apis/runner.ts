@@ -361,15 +361,11 @@ export const runApis = async (config: ApisConfig) => {
         publicKey = await jose.importSPKI(config.jwtConfig.secret, "RS256");
       }
 
-      // Load BYOF (Bring Your Own Framework) apps
+      // Load registered BYOF (Bring Your Own Framework) app
       let byofApps: ByofAppInfo[] = [];
       try {
-        const { apps, collisions } = await loadByofApps(config.apisDir);
+        const { apps, collisions } = await loadByofApps();
         byofApps = apps;
-
-        if (apps.length > 0) {
-          console.log(`[BYOF] Loaded ${apps.length} custom framework app(s)`);
-        }
 
         // Log any route collisions
         if (collisions.length > 0) {
@@ -377,7 +373,7 @@ export const runApis = async (config: ApisConfig) => {
         }
       } catch (error) {
         console.warn(
-          `[BYOF] Warning: Failed to load BYOF apps: ${error instanceof Error ? error.message : error}`,
+          `[BYOF] Warning: Failed to load BYOF app: ${error instanceof Error ? error.message : error}`,
         );
       }
 
