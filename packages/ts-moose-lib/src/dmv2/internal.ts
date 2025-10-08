@@ -16,7 +16,17 @@ import { Api, IngestApi, SqlResource, Task, Workflow } from "./index";
 import { IJsonSchemaCollection } from "typia/src/schemas/json/IJsonSchemaCollection";
 import { Column } from "../dataModels/dataModelTypes";
 import { ClickHouseEngines, ApiUtil } from "../index";
-import { OlapTable } from "./sdk/olapTable";
+import {
+  OlapTable,
+  OlapConfig,
+  ReplacingMergeTreeConfig,
+  SummingMergeTreeConfig,
+  ReplicatedMergeTreeConfig,
+  ReplicatedReplacingMergeTreeConfig,
+  ReplicatedAggregatingMergeTreeConfig,
+  ReplicatedSummingMergeTreeConfig,
+  S3QueueConfig,
+} from "./sdk/olapTable";
 import {
   ConsumerConfig,
   KafkaSchemaConfig,
@@ -275,53 +285,135 @@ interface SqlResourceJson {
 }
 
 /**
- * Converts the internal resource registry into a structured infrastructure map.
- * This map is serialized to JSON and used by the Moose infrastructure system.
- *
- * @param registry The internal Moose resource registry (`moose_internal`).
- * @returns An object containing dictionaries of tables, topics, ingest APIs, APIs, and SQL resources, formatted according to the `*Json` interfaces.
+ * Type guard: Check if config is ReplacingMergeTreeConfig
  */
+function isReplacingMergeTreeConfig(
+  config: OlapConfig<any>,
+): config is ReplacingMergeTreeConfig<any> {
+  return (
+    "engine" in config && config.engine === ClickHouseEngines.ReplacingMergeTree
+  );
+}
+
+/**
+ * Type guard: Check if config is SummingMergeTreeConfig
+ */
+function isSummingMergeTreeConfig(
+  config: OlapConfig<any>,
+): config is SummingMergeTreeConfig<any> {
+  return (
+    "engine" in config && config.engine === ClickHouseEngines.SummingMergeTree
+  );
+}
+
+/**
+ * Type guard: Check if config is S3QueueConfig
+ */
+function isS3QueueConfig(
+  config: OlapConfig<any>,
+): config is S3QueueConfig<any> {
+  return "engine" in config && config.engine === ClickHouseEngines.S3Queue;
+}
+
+/**
+ * Type guard: Check if config has a replicated engine (engine is nested in an object)
+ * Helper to check if a value looks like a replicated engine config
+ */
+function hasReplicatedEngine(
+  config: OlapConfig<any>,
+): config is
+  | ReplicatedMergeTreeConfig<any>
+  | ReplicatedReplacingMergeTreeConfig<any>
+  | ReplicatedAggregatingMergeTreeConfig<any>
+  | ReplicatedSummingMergeTreeConfig<any> {
+  if (!("engine" in config)) {
+    return false;
+  }
+
+  const engine = config.engine;
+  // Check if engine property is an object with nested engine property
+  return engine !== null && typeof engine === "object" && "engine" in engine;
+}
+
+/**
+ * Type guard: Check if config is ReplicatedReplacingMergeTreeConfig
+ */
+function isReplicatedReplacingMergeTreeConfig(
+  config: OlapConfig<any>,
+): config is ReplicatedReplacingMergeTreeConfig<any> {
+  return (
+    hasReplicatedEngine(config) &&
+    config.engine.engine === ClickHouseEngines.ReplicatedReplacingMergeTree
+  );
+}
+
+/**
+ * Type guard: Check if config is ReplicatedSummingMergeTreeConfig
+ */
+function isReplicatedSummingMergeTreeConfig(
+  config: OlapConfig<any>,
+): config is ReplicatedSummingMergeTreeConfig<any> {
+  return (
+    hasReplicatedEngine(config) &&
+    config.engine.engine === ClickHouseEngines.ReplicatedSummingMergeTree
+  );
+}
+
 /**
  * Extract engine value from table config, handling both legacy and new formats
+ * Uses type guards to properly narrow replicated engine types
  */
-function extractEngineValue(config: any) {
-  const engineValue =
-    "engine" in config ? config.engine : ClickHouseEngines.MergeTree;
+function extractEngineValue(config: OlapConfig<any>): ClickHouseEngines {
+  // Legacy config without engine property defaults to MergeTree
+  if (!("engine" in config)) {
+    return ClickHouseEngines.MergeTree;
+  }
+
+  const engineValue = config.engine;
 
   // For replicated engines, the engine is nested inside an object
-  // Extract the actual engine type if it's an object
-  return (
-      typeof engineValue === "object" &&
-        engineValue !== null &&
-        "engine" in engineValue
-    ) ?
-      engineValue.engine
-    : engineValue;
+  if (hasReplicatedEngine(config)) {
+    return config.engine.engine;
+  }
+
+  // Non-replicated engines have engine as direct value
+  return engineValue as ClickHouseEngines;
 }
 
 /**
  * Convert engine config for basic MergeTree engines
+ * Uses type guards for fully type-safe property access
  */
 function convertBasicEngineConfig(
   engine: ClickHouseEngines,
-  config: any,
+  config: OlapConfig<any>,
 ): EngineConfig | undefined {
   switch (engine) {
     case ClickHouseEngines.MergeTree:
       return { engine: "MergeTree" };
+
     case ClickHouseEngines.AggregatingMergeTree:
       return { engine: "AggregatingMergeTree" };
+
     case ClickHouseEngines.ReplacingMergeTree:
-      return {
-        engine: "ReplacingMergeTree",
-        ver: config.ver,
-        isDeleted: config.isDeleted,
-      };
+      if (isReplacingMergeTreeConfig(config)) {
+        return {
+          engine: "ReplacingMergeTree",
+          ver: config.ver,
+          isDeleted: config.isDeleted,
+        };
+      }
+      return { engine: "ReplacingMergeTree" };
+
     case ClickHouseEngines.SummingMergeTree:
-      return {
-        engine: "SummingMergeTree",
-        columns: config.columns,
-      };
+      if (isSummingMergeTreeConfig(config)) {
+        return {
+          engine: "SummingMergeTree",
+          columns: config.columns,
+        };
+      }
+      return { engine: "SummingMergeTree" };
+
     default:
       return undefined;
   }
@@ -329,41 +421,63 @@ function convertBasicEngineConfig(
 
 /**
  * Convert engine config for replicated MergeTree engines
+ * Uses type guards for fully type-safe property access
  */
 function convertReplicatedEngineConfig(
   engine: ClickHouseEngines,
-  config: any,
+  config: OlapConfig<any>,
 ): EngineConfig | undefined {
-  const engineCfg = config.engine;
+  // First check if this is a replicated engine config
+  if (!hasReplicatedEngine(config)) {
+    return undefined;
+  }
 
   switch (engine) {
     case ClickHouseEngines.ReplicatedMergeTree:
       return {
         engine: "ReplicatedMergeTree",
-        keeperPath: engineCfg.keeperPath,
-        replicaName: engineCfg.replicaName,
+        keeperPath: config.keeperPath,
+        replicaName: config.replicaName,
       };
+
     case ClickHouseEngines.ReplicatedReplacingMergeTree:
+      if (isReplicatedReplacingMergeTreeConfig(config)) {
+        return {
+          engine: "ReplicatedReplacingMergeTree",
+          keeperPath: config.keeperPath,
+          replicaName: config.replicaName,
+          ver: config.ver,
+          isDeleted: config.isDeleted,
+        };
+      }
       return {
         engine: "ReplicatedReplacingMergeTree",
-        keeperPath: engineCfg.keeperPath,
-        replicaName: engineCfg.replicaName,
-        ver: engineCfg.ver,
-        isDeleted: engineCfg.isDeleted,
+        keeperPath: config.keeperPath,
+        replicaName: config.replicaName,
       };
+
     case ClickHouseEngines.ReplicatedAggregatingMergeTree:
       return {
         engine: "ReplicatedAggregatingMergeTree",
-        keeperPath: engineCfg.keeperPath,
-        replicaName: engineCfg.replicaName,
+        keeperPath: config.keeperPath,
+        replicaName: config.replicaName,
       };
+
     case ClickHouseEngines.ReplicatedSummingMergeTree:
+      if (isReplicatedSummingMergeTreeConfig(config)) {
+        return {
+          engine: "ReplicatedSummingMergeTree",
+          keeperPath: config.keeperPath,
+          replicaName: config.replicaName,
+          columns: config.columns,
+        };
+      }
       return {
         engine: "ReplicatedSummingMergeTree",
-        keeperPath: engineCfg.keeperPath,
-        replicaName: engineCfg.replicaName,
-        columns: engineCfg.columns,
+        keeperPath: config.keeperPath,
+        replicaName: config.replicaName,
       };
+
     default:
       return undefined;
   }
@@ -371,8 +485,15 @@ function convertReplicatedEngineConfig(
 
 /**
  * Convert S3Queue engine config
+ * Uses type guard for fully type-safe property access
  */
-function convertS3QueueEngineConfig(config: any): EngineConfig {
+function convertS3QueueEngineConfig(
+  config: OlapConfig<any>,
+): EngineConfig | undefined {
+  if (!isS3QueueConfig(config)) {
+    return undefined;
+  }
+
   return {
     engine: "S3Queue",
     s3Path: config.s3Path,
@@ -388,7 +509,7 @@ function convertS3QueueEngineConfig(config: any): EngineConfig {
  * Convert table configuration to engine config
  */
 function convertTableConfigToEngineConfig(
-  config: any,
+  config: OlapConfig<any>,
 ): EngineConfig | undefined {
   const engine = extractEngineValue(config);
 
