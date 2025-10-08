@@ -493,6 +493,7 @@ struct RouteService {
     http_client: Arc<Client>,
     project: Arc<Project>,
     redis_client: Arc<RedisClient>,
+    enable_mcp: bool,
 }
 
 #[derive(Clone)]
@@ -527,6 +528,7 @@ impl Service<Request<Incoming>> for RouteService {
             },
             self.project.clone(),
             self.redis_client.clone(),
+            self.enable_mcp,
         ))
     }
 }
@@ -1508,6 +1510,7 @@ async fn router(
     request: RouterRequest,
     project: Arc<Project>,
     redis_client: Arc<RedisClient>,
+    enable_mcp: bool,
 ) -> Result<Response<Full<Bytes>>, hyper::http::Error> {
     let now = Instant::now();
 
@@ -1694,8 +1697,8 @@ async fn router(
             workflows_terminate_route(req, is_prod, project.clone(), name.to_string()).await
         }
         (_, &hyper::Method::OPTIONS, _) => options_route(),
-        // MCP (Model Context Protocol) endpoint
-        (_, _, ["mcp"]) | (_, _, ["mcp", ..]) => {
+        // MCP (Model Context Protocol) endpoint - only available in development mode when enabled
+        (_, _, ["mcp"]) | (_, _, ["mcp", ..]) if enable_mcp && !is_prod => {
             // Forward to MCP handler
             mcp_route(req).await
         }
@@ -2173,6 +2176,7 @@ impl Webserver {
         metrics: Arc<Metrics>,
         openapi_path: Option<PathBuf>,
         process_registry: Arc<RwLock<ProcessRegistries>>,
+        enable_mcp: bool,
     ) {
         //! Starts the local webserver
         let socket = self.socket().await;
@@ -2264,6 +2268,7 @@ impl Webserver {
             metrics: metrics.clone(),
             project: project.clone(),
             redis_client: Arc::new(redis_client),
+            enable_mcp,
         };
 
         let management_service = ManagementService {

@@ -587,6 +587,7 @@ pub async fn start_development_mode(
             metrics,
             Some(openapi_file),
             process_registry,
+            enable_mcp,
         )
         .await;
 
@@ -732,6 +733,7 @@ pub async fn start_production_mode(
             metrics,
             None,
             Arc::new(RwLock::new(process_registry)),
+            false, // MCP is disabled in production mode
         )
         .await;
 
