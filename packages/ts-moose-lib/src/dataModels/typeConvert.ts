@@ -427,6 +427,9 @@ const getGeometryMappedType = (
 
   // Helper: exact tuple [number, number]
   const isPointTuple = (candidate: ts.Type): boolean => {
+    if (candidate.isIntersection()) {
+      return candidate.types.some(isPointTuple);
+    }
     if (!checker.isTupleType(candidate)) return false;
     const tuple = candidate as TupleType;
     const args = tuple.typeArguments || [];
@@ -439,6 +442,9 @@ const getGeometryMappedType = (
     arrType: ts.Type,
     elementPredicate: (elType: ts.Type) => boolean,
   ): boolean => {
+    if (arrType.isIntersection()) {
+      return arrType.types.some((t) => isArrayOf(t, elementPredicate));
+    }
     if (!checker.isArrayType(arrType)) return false;
     const elementType = arrType.getNumberIndexType();
     if (!elementType) return false;

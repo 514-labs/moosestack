@@ -221,6 +221,23 @@ def py_type_to_column_type(t: type, mds: list[Any]) -> Tuple[bool, list[Any], Da
         data_type = "IPv4"
     elif t is ipaddress.IPv6Address:
         data_type = "IPv6"
+    elif any(md in [ # this check has to happen before t is matched against tuple/list
+        "Point",
+        "Ring",
+        "LineString",
+        "MultiLineString",
+        "Polygon",
+        "MultiPolygon",
+    ] for md in mds):
+        # TODO: check the t is the tuple/array type
+        data_type = next(md for md in mds if md in [
+            "Point",
+            "Ring",
+            "LineString",
+            "MultiLineString",
+            "Polygon",
+            "MultiPolygon",
+        ])
     elif get_origin(t) is list:
         inner_optional, _, inner_type = py_type_to_column_type(get_args(t)[0], [])
         data_type = ArrayType(element_type=inner_type, element_nullable=inner_optional)
@@ -240,23 +257,6 @@ def py_type_to_column_type(t: type, mds: list[Any]) -> Tuple[bool, list[Any], Da
     elif get_origin(t) is Literal and all(isinstance(arg, str) for arg in get_args(t)):
         data_type = "String"
         mds.append("LowCardinality")
-    elif any(md in [
-        "Point",
-        "Ring",
-        "LineString",
-        "MultiLineString",
-        "Polygon",
-        "MultiPolygon",
-    ] for md in mds):
-        # TODO: check the t is the tuple/array type
-        data_type = next(md for md in mds if md in [
-            "Point",
-            "Ring",
-            "LineString",
-            "MultiLineString",
-            "Polygon",
-            "MultiPolygon",
-        ])
     elif not isclass(t):
         raise ValueError(f"Unknown type {t}")
     elif issubclass(t, BaseModel):
