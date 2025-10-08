@@ -1,5 +1,3 @@
-use super::errors::ClickhouseError;
-use super::queries::{create_table_query, drop_table_query};
 use crate::framework::core::infrastructure::table::DataEnum;
 use crate::framework::versions::Version;
 use crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine;
@@ -490,14 +488,6 @@ pub struct ClickHouseTable {
 }
 
 impl ClickHouseTable {
-    pub fn create_data_table_query(&self, db_name: &str) -> Result<String, ClickhouseError> {
-        create_table_query(db_name, self.clone())
-    }
-
-    pub fn drop_data_table_query(&self, db_name: &str) -> Result<String, ClickhouseError> {
-        drop_table_query(db_name, &self.name)
-    }
-
     pub fn primary_key_columns(&self) -> Vec<&str> {
         self.columns
             .iter()

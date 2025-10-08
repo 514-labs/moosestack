@@ -175,6 +175,10 @@ enum ClickHouseEngines {
   ReplacingMergeTree = "ReplacingMergeTree",
   AggregatingMergeTree = "AggregatingMergeTree",
   SummingMergeTree = "SummingMergeTree",
+  ReplicatedMergeTree = "ReplicatedMergeTree",
+  ReplicatedReplacingMergeTree = "ReplicatedReplacingMergeTree",
+  ReplicatedAggregatingMergeTree = "ReplicatedAggregatingMergeTree",
+  ReplicatedSummingMergeTree = "ReplicatedSummingMergeTree",
   S3Queue = "S3Queue"
 }
 ```
@@ -190,6 +194,51 @@ type ReplacingMergeTreeConfig<T> = {
   settings?: { [key: string]: string };
 }
 ```
+
+#### Replicated Engine Configurations
+Configuration for replicated table engines:
+```ts
+// ReplicatedMergeTree
+type ReplicatedMergeTreeConfig<T> = {
+  engine: ClickHouseEngines.ReplicatedMergeTree;
+  keeperPath?: string;  // Optional: ZooKeeper/Keeper path (omit for Cloud)
+  replicaName?: string; // Optional: replica name (omit for Cloud)
+  orderByFields?: (keyof T & string)[];
+  settings?: { [key: string]: string };
+}
+
+// ReplicatedReplacingMergeTree
+type ReplicatedReplacingMergeTreeConfig<T> = {
+  engine: ClickHouseEngines.ReplicatedReplacingMergeTree;
+  keeperPath?: string;  // Optional: ZooKeeper/Keeper path (omit for Cloud)
+  replicaName?: string; // Optional: replica name (omit for Cloud)
+  ver?: keyof T & string;  // Optional: version column
+  isDeleted?: keyof T & string;  // Optional: soft delete marker
+  orderByFields?: (keyof T & string)[];
+  settings?: { [key: string]: string };
+}
+
+// ReplicatedAggregatingMergeTree
+type ReplicatedAggregatingMergeTreeConfig<T> = {
+  engine: ClickHouseEngines.ReplicatedAggregatingMergeTree;
+  keeperPath?: string;  // Optional: ZooKeeper/Keeper path (omit for Cloud)
+  replicaName?: string; // Optional: replica name (omit for Cloud)
+  orderByFields?: (keyof T & string)[];
+  settings?: { [key: string]: string };
+}
+
+// ReplicatedSummingMergeTree
+type ReplicatedSummingMergeTreeConfig<T> = {
+  engine: ClickHouseEngines.ReplicatedSummingMergeTree;
+  keeperPath?: string;  // Optional: ZooKeeper/Keeper path (omit for Cloud)
+  replicaName?: string; // Optional: replica name (omit for Cloud)
+  columns?: string[];   // Optional: columns to sum
+  orderByFields?: (keyof T & string)[];
+  settings?: { [key: string]: string };
+}
+```
+
+**Note**: The `keeperPath` and `replicaName` parameters are optional. When omitted, Moose uses smart defaults that work in both ClickHouse Cloud and self-managed environments (default path: `/clickhouse/tables/{uuid}/{shard}` with replica `{replica}`). You can still provide both parameters explicitly if you need custom replication paths.
 
 ### `S3QueueTableSettings`
 Type-safe interface for S3Queue-specific table settings (ClickHouse 24.7+).

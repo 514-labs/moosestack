@@ -30,6 +30,22 @@ type OlapConfig<T> =
       settings?: { [key: string]: string }; 
     }
   | { 
+      engine: ClickHouseEngines.ReplicatedMergeTree;
+      keeperPath?: string;   // Optional: ZooKeeper/Keeper path (omit for ClickHouse Cloud/Boreal)
+      replicaName?: string;  // Optional: replica name (omit for ClickHouse Cloud/Boreal)
+      orderByFields?: (keyof T & string)[]; 
+      settings?: { [key: string]: string }; 
+    }
+  | { 
+      engine: ClickHouseEngines.ReplicatedReplacingMergeTree;
+      keeperPath?: string;   // Optional: ZooKeeper/Keeper path (omit for ClickHouse Cloud/Boreal)
+      replicaName?: string;  // Optional: replica name (omit for ClickHouse Cloud/Boreal)
+      ver?: keyof T & string;        // Optional: version column
+      isDeleted?: keyof T & string;   // Optional: soft delete marker
+      orderByFields?: (keyof T & string)[]; 
+      settings?: { [key: string]: string }; 
+    }
+  | { 
       engine: ClickHouseEngines.S3Queue;
       s3Path: string;        // S3 bucket path
       format: string;        // Data format
@@ -139,6 +155,50 @@ export const Versioned = new OlapTable("Versioned", {
   ver: "updatedAt",  // Optional: keeps row with max updatedAt value
   isDeleted: "deleted"  // Optional: soft delete when deleted=1 (requires ver)
 });
+```
+
+### Replicated Engine Tables
+
+Replicated engines provide high availability and data replication across multiple ClickHouse nodes.
+
+```typescript
+import { OlapTable, ClickHouseEngines, Key } from '@514labs/moose-lib';
+
+interface ReplicatedSchema {
+  id: Key<string>;
+  data: string;
+  timestamp: Date;
+}
+
+// Recommended: Omit parameters for automatic defaults (works in both Cloud and self-managed)
+export const ReplicatedTable = new OlapTable<ReplicatedSchema>("ReplicatedTable", {
+  engine: ClickHouseEngines.ReplicatedMergeTree,
+  // No keeperPath or replicaName - uses smart defaults: /clickhouse/tables/{uuid}/{shard} and {replica}
+  orderByFields: ["id", "timestamp"]
+});
+
+// Optional: Explicit paths for custom configurations
+export const CustomReplicatedTable = new OlapTable<ReplicatedSchema>("CustomReplicatedTable", {
+  engine: ClickHouseEngines.ReplicatedMergeTree,
+  keeperPath: "/clickhouse/tables/{database}/{shard}/custom_table",
+  replicaName: "{replica}",
+  orderByFields: ["id"]
+});
+
+// Replicated with deduplication
+export const ReplicatedDedup = new OlapTable<ReplicatedSchema>("ReplicatedDedup", {
+  engine: ClickHouseEngines.ReplicatedReplacingMergeTree,
+  keeperPath: "/clickhouse/tables/{database}/{shard}/replicated_dedup",
+  replicaName: "{replica}",
+  ver: "timestamp",
+  isDeleted: "deleted",
+  orderByFields: ["id"]
+});
+```
+
+**Note**: The `keeperPath` and `replicaName` parameters are optional:
+- **Self-managed ClickHouse**: Both parameters are required for configuring ZooKeeper/ClickHouse Keeper paths
+- **ClickHouse Cloud / Boreal**: Omit both parameters - the platform manages replication automatically
 ```
 
 ### S3Queue Engine Tables

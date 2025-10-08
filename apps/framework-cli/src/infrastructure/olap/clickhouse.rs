@@ -212,7 +212,8 @@ pub async fn execute_changes(
     debug!("Ordered Teardown plan: {:?}", teardown_plan);
     for op in teardown_plan {
         debug!("Teardown operation: {:?}", op);
-        execute_atomic_operation(db_name, &op.to_minimal(), &client).await?;
+        execute_atomic_operation(db_name, &op.to_minimal(), &client, !project.is_production)
+            .await?;
     }
 
     // Execute Setup Plan
@@ -223,7 +224,8 @@ pub async fn execute_changes(
     debug!("Ordered Setup plan: {:?}", setup_plan);
     for op in setup_plan {
         debug!("Setup operation: {:?}", op);
-        execute_atomic_operation(db_name, &op.to_minimal(), &client).await?;
+        execute_atomic_operation(db_name, &op.to_minimal(), &client, !project.is_production)
+            .await?;
     }
 
     info!("OLAP Change execution complete");
@@ -235,10 +237,11 @@ pub async fn execute_atomic_operation(
     db_name: &str,
     operation: &SerializableOlapOperation,
     client: &ConfiguredDBClient,
+    is_dev: bool,
 ) -> Result<(), ClickhouseChangesError> {
     match operation {
         SerializableOlapOperation::CreateTable { table } => {
-            execute_create_table(db_name, table, client).await?;
+            execute_create_table(db_name, table, client, is_dev).await?;
         }
         SerializableOlapOperation::DropTable { table, .. } => {
             execute_drop_table(db_name, table, client).await?;
@@ -296,10 +299,11 @@ async fn execute_create_table(
     db_name: &str,
     table: &Table,
     client: &ConfiguredDBClient,
+    is_dev: bool,
 ) -> Result<(), ClickhouseChangesError> {
     log::info!("Executing CreateTable: {:?}", table.id());
     let clickhouse_table = std_table_to_clickhouse_table(table)?;
-    let create_data_table_query = create_table_query(db_name, clickhouse_table)?;
+    let create_data_table_query = create_table_query(db_name, clickhouse_table, is_dev)?;
     run_query(&create_data_table_query, client)
         .await
         .map_err(|e| ClickhouseChangesError::ClickhouseClient {

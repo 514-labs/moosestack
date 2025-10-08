@@ -617,6 +617,99 @@ s3_events = OlapTable[S3Event]("s3_events", OlapConfig(
 S3Queue requires ClickHouse 24.7+ and proper ZooKeeper/ClickHouse Keeper configuration for coordination between replicas. Files are processed exactly once across all replicas.
 </Callout>
 
+#### Replicated Engines
+Replicated engines provide high availability and data replication across multiple ClickHouse nodes. Moose supports all standard replicated MergeTree variants:
+
+- `ReplicatedMergeTree` - Replicated version of MergeTree
+- `ReplicatedReplacingMergeTree` - Replicated with deduplication
+- `ReplicatedAggregatingMergeTree` - Replicated with aggregation
+- `ReplicatedSummingMergeTree` - Replicated with summation
+
+<TypeScript>
+```ts filename="ReplicatedEngines.ts" copy
+import { OlapTable, ClickHouseEngines } from "@514labs/moose-lib";
+
+// Basic replicated table with explicit paths
+const replicatedTable = new OlapTable<Record>("records", {
+  engine: ClickHouseEngines.ReplicatedMergeTree,
+  keeperPath: "/clickhouse/tables/{database}/{shard}/records",
+  replicaName: "{replica}",
+  orderByFields: ["id"]
+});
+
+// Replicated with deduplication
+const replicatedDedup = new OlapTable<Record>("dedup_records", {
+  engine: ClickHouseEngines.ReplicatedReplacingMergeTree,
+  keeperPath: "/clickhouse/tables/{database}/{shard}/dedup_records",
+  replicaName: "{replica}",
+  ver: "updated_at",
+  isDeleted: "deleted",
+  orderByFields: ["id"]
+});
+
+// For ClickHouse Cloud or Boreal (no parameters needed)
+const cloudReplicated = new OlapTable<Record>("cloud_records", {
+  engine: ClickHouseEngines.ReplicatedMergeTree,
+  orderByFields: ["id"]
+});
+```
+</TypeScript>
+
+<Python>
+```py filename="ReplicatedEngines.py" copy
+from moose_lib import OlapTable, OlapConfig
+from moose_lib.blocks import (
+    ReplicatedMergeTreeEngine,
+    ReplicatedReplacingMergeTreeEngine,
+    ReplicatedAggregatingMergeTreeEngine,
+    ReplicatedSummingMergeTreeEngine
+)
+
+class Record(BaseModel):
+    id: Key[str]
+    updated_at: datetime
+    deleted: int = 0
+
+# Basic replicated table with explicit paths
+replicated_table = OlapTable[Record]("records", OlapConfig(
+    order_by_fields=["id"],
+    engine=ReplicatedMergeTreeEngine(
+        keeper_path="/clickhouse/tables/{database}/{shard}/records",
+        replica_name="{replica}"
+    )
+))
+
+# Replicated with deduplication
+replicated_dedup = OlapTable[Record]("dedup_records", OlapConfig(
+    order_by_fields=["id"],
+    engine=ReplicatedReplacingMergeTreeEngine(
+        keeper_path="/clickhouse/tables/{database}/{shard}/dedup_records",
+        replica_name="{replica}",
+        ver="updated_at",
+        is_deleted="deleted"
+    )
+))
+
+# For ClickHouse Cloud or Boreal (no parameters needed)
+cloud_replicated = OlapTable[Record]("cloud_records", OlapConfig(
+    order_by_fields=["id"],
+    engine=ReplicatedMergeTreeEngine()
+))
+```
+</Python>
+
+<Callout type="info" title="Replication Parameters">
+The `keeper_path` and `replica_name` parameters are **optional** for replicated engines:
+
+- **Omit both parameters** (recommended): Moose uses smart defaults that work in both ClickHouse Cloud and self-managed environments. The default path pattern `/clickhouse/tables/{uuid}/{shard}` with replica `{replica}` works automatically with Atomic databases (default in modern ClickHouse).
+  
+- **Provide custom paths**: You can still specify both parameters explicitly if you need custom replication paths for your self-managed cluster.
+
+**Note**: Both parameters must be provided together, or both omitted. The `{uuid}`, `{shard}`, and `{replica}` macros are automatically substituted by ClickHouse at runtime.
+
+For more details, see the [ClickHouse documentation on data replication](https://clickhouse.com/docs/en/engines/table-engines/mergetree-family/replication).
+</Callout>
+
 <Python>
 ### Irregular column names and Python Aliases
 

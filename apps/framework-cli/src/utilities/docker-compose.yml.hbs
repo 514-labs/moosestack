@@ -172,6 +172,13 @@ services:
           <distributed_ddl>
             <path>/clickhouse/task_queue/ddl</path>
           </distributed_ddl>
+          <macros>
+            <shard>01</shard>
+            <replica>replica_1</replica>
+            <database>local</database>
+          </macros>
+          <!-- Macros are used for ReplicatedMergeTree default paths -->
+          <!-- Default path: /clickhouse/tables/{uuid}/{shard} works with Atomic database (default) -->
         </clickhouse>
         EOF
         exec /entrypoint.sh

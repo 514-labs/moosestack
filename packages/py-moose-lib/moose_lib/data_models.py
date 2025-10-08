@@ -16,17 +16,17 @@ type Key[T: (str, int)] = T
 type JWT[T] = T
 
 
-@dataclasses.dataclass  # a BaseModel in the annotations will confuse pydantic
+@dataclasses.dataclass(frozen=True)  # a BaseModel in the annotations will confuse pydantic
 class ClickhousePrecision:
     precision: int
 
 
-@dataclasses.dataclass
+@dataclasses.dataclass(frozen=True)
 class ClickhouseSize:
     size: int
 
 
-@dataclasses.dataclass
+@dataclasses.dataclass(frozen=True)
 class ClickhouseDefault:
     expression: str
 
@@ -53,13 +53,13 @@ def aggregated[T](
         agg_func: str,
         param_types: list[type | GenericAlias | _BaseGenericAlias]
 ) -> Type[T]:
-    return Annotated[result_type, AggregateFunction(agg_func=agg_func, param_types=param_types)]
+    return Annotated[result_type, AggregateFunction(agg_func=agg_func, param_types=tuple(param_types))]
 
 
-@dataclasses.dataclass
+@dataclasses.dataclass(frozen=True)
 class AggregateFunction:
     agg_func: str
-    param_types: list[type | GenericAlias | _BaseGenericAlias]
+    param_types: tuple[type | GenericAlias | _BaseGenericAlias, ...]
 
     def to_dict(self):
         return {

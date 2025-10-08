@@ -33,6 +33,151 @@ export const TYPESCRIPT_BASIC_SCHEMAS: ExpectedTableSchema[] = [
  */
 export const TYPESCRIPT_TEST_SCHEMAS: ExpectedTableSchema[] = [
   ...TYPESCRIPT_BASIC_SCHEMAS,
+  // Engine test tables
+  {
+    tableName: "MergeTreeTest",
+    columns: [
+      { name: "id", type: "String" },
+      { name: "timestamp", type: /DateTime\('UTC'\)/ },
+      { name: "value", type: "Float64" },
+      { name: "category", type: "String" },
+      { name: "version", type: "Float64" },
+      { name: "isDeleted", type: "Bool" },
+    ],
+  },
+  {
+    tableName: "ReplacingMergeTreeBasic",
+    columns: [
+      { name: "id", type: "String" },
+      { name: "timestamp", type: /DateTime\('UTC'\)/ },
+      { name: "value", type: "Float64" },
+      { name: "category", type: "String" },
+      { name: "version", type: "Float64" },
+      { name: "isDeleted", type: "Bool" },
+    ],
+  },
+  {
+    tableName: "ReplacingMergeTreeVersion",
+    columns: [
+      { name: "id", type: "String" },
+      { name: "timestamp", type: /DateTime\('UTC'\)/ },
+      { name: "value", type: "Float64" },
+      { name: "category", type: "String" },
+      { name: "version", type: "Float64" },
+      { name: "isDeleted", type: "Bool" },
+    ],
+  },
+  {
+    tableName: "ReplacingMergeTreeSoftDelete",
+    columns: [
+      { name: "id", type: "String" },
+      { name: "timestamp", type: /DateTime\('UTC'\)/ },
+      { name: "value", type: "Float64" },
+      { name: "category", type: "String" },
+      { name: "version", type: "Float64" },
+      { name: "isDeleted", type: "Bool" },
+    ],
+  },
+  {
+    tableName: "SummingMergeTreeTest",
+    columns: [
+      { name: "id", type: "String" },
+      { name: "timestamp", type: /DateTime\('UTC'\)/ },
+      { name: "value", type: "Float64" },
+      { name: "category", type: "String" },
+      { name: "version", type: "Float64" },
+      { name: "isDeleted", type: "Bool" },
+    ],
+  },
+  {
+    tableName: "SummingMergeTreeWithColumnsTest",
+    columns: [
+      { name: "id", type: "String" },
+      { name: "timestamp", type: /DateTime\('UTC'\)/ },
+      { name: "value", type: "Float64" },
+      { name: "category", type: "String" },
+      { name: "version", type: "Float64" },
+      { name: "isDeleted", type: "Bool" },
+    ],
+  },
+  {
+    tableName: "AggregatingMergeTreeTest",
+    columns: [
+      { name: "id", type: "String" },
+      { name: "timestamp", type: /DateTime\('UTC'\)/ },
+      { name: "value", type: "Float64" },
+      { name: "category", type: "String" },
+      { name: "version", type: "Float64" },
+      { name: "isDeleted", type: "Bool" },
+    ],
+  },
+  {
+    tableName: "ReplicatedMergeTreeTest",
+    columns: [
+      { name: "id", type: "String" },
+      { name: "timestamp", type: /DateTime\('UTC'\)/ },
+      { name: "value", type: "Float64" },
+      { name: "category", type: "String" },
+      { name: "version", type: "Float64" },
+      { name: "isDeleted", type: "Bool" },
+    ],
+  },
+  {
+    tableName: "ReplicatedMergeTreeCloudTest",
+    columns: [
+      { name: "id", type: "String" },
+      { name: "timestamp", type: /DateTime\('UTC'\)/ },
+      { name: "value", type: "Float64" },
+      { name: "category", type: "String" },
+      { name: "version", type: "Float64" },
+      { name: "isDeleted", type: "Bool" },
+    ],
+  },
+  {
+    tableName: "ReplicatedReplacingMergeTreeTest",
+    columns: [
+      { name: "id", type: "String" },
+      { name: "timestamp", type: /DateTime\('UTC'\)/ },
+      { name: "value", type: "Float64" },
+      { name: "category", type: "String" },
+      { name: "version", type: "Float64" },
+      { name: "isDeleted", type: "Bool" },
+    ],
+  },
+  {
+    tableName: "ReplicatedReplacingSoftDeleteTest",
+    columns: [
+      { name: "id", type: "String" },
+      { name: "timestamp", type: /DateTime\('UTC'\)/ },
+      { name: "value", type: "Float64" },
+      { name: "category", type: "String" },
+      { name: "version", type: "Float64" },
+      { name: "isDeleted", type: "Bool" },
+    ],
+  },
+  {
+    tableName: "ReplicatedAggregatingMergeTreeTest",
+    columns: [
+      { name: "id", type: "String" },
+      { name: "timestamp", type: /DateTime\('UTC'\)/ },
+      { name: "value", type: "Float64" },
+      { name: "category", type: "String" },
+      { name: "version", type: "Float64" },
+      { name: "isDeleted", type: "Bool" },
+    ],
+  },
+  {
+    tableName: "ReplicatedSummingMergeTreeTest",
+    columns: [
+      { name: "id", type: "String" },
+      { name: "timestamp", type: /DateTime\('UTC'\)/ },
+      { name: "value", type: "Float64" },
+      { name: "category", type: "String" },
+      { name: "version", type: "Float64" },
+      { name: "isDeleted", type: "Bool" },
+    ],
+  },
+  // Type test tables
   {
     tableName: "BasicTypes",
     columns: [
@@ -150,6 +295,140 @@ export const PYTHON_BASIC_SCHEMAS: ExpectedTableSchema[] = [
  */
 export const PYTHON_TEST_SCHEMAS: ExpectedTableSchema[] = [
   ...PYTHON_BASIC_SCHEMAS,
+  // Engine test tables
+  {
+    tableName: "MergeTreeTest",
+    columns: [
+      { name: "id", type: "String" },
+      { name: "timestamp", type: /DateTime\('UTC'\)/ },
+      { name: "value", type: "Int64" },
+      { name: "category", type: "String" },
+      { name: "version", type: "Int64" },
+      { name: "is_deleted", type: "Bool" },
+    ],
+  },
+  {
+    tableName: "ReplacingMergeTreeBasic",
+    columns: [
+      { name: "id", type: "String" },
+      { name: "timestamp", type: /DateTime\('UTC'\)/ },
+      { name: "value", type: "Int64" },
+      { name: "category", type: "String" },
+      { name: "version", type: "Int64" },
+      { name: "is_deleted", type: "Bool" },
+    ],
+  },
+  {
+    tableName: "ReplacingMergeTreeVersion",
+    columns: [
+      { name: "id", type: "String" },
+      { name: "timestamp", type: /DateTime\('UTC'\)/ },
+      { name: "value", type: "Int64" },
+      { name: "category", type: "String" },
+      { name: "version", type: "Int64" },
+      { name: "is_deleted", type: "Bool" },
+    ],
+  },
+  {
+    tableName: "ReplacingMergeTreeSoftDelete",
+    columns: [
+      { name: "id", type: "String" },
+      { name: "timestamp", type: /DateTime\('UTC'\)/ },
+      { name: "value", type: "Int64" },
+      { name: "category", type: "String" },
+      { name: "version", type: "Int64" },
+      { name: "is_deleted", type: "Bool" },
+    ],
+  },
+  {
+    tableName: "SummingMergeTreeTest",
+    columns: [
+      { name: "id", type: "String" },
+      { name: "timestamp", type: /DateTime\('UTC'\)/ },
+      { name: "value", type: "Int64" },
+      { name: "category", type: "String" },
+      { name: "version", type: "Int64" },
+      { name: "is_deleted", type: "Bool" },
+    ],
+  },
+  {
+    tableName: "AggregatingMergeTreeTest",
+    columns: [
+      { name: "id", type: "String" },
+      { name: "timestamp", type: /DateTime\('UTC'\)/ },
+      { name: "value", type: "Int64" },
+      { name: "category", type: "String" },
+      { name: "version", type: "Int64" },
+      { name: "is_deleted", type: "Bool" },
+    ],
+  },
+  {
+    tableName: "ReplicatedMergeTreeTest",
+    columns: [
+      { name: "id", type: "String" },
+      { name: "timestamp", type: /DateTime\('UTC'\)/ },
+      { name: "value", type: "Int64" },
+      { name: "category", type: "String" },
+      { name: "version", type: "Int64" },
+      { name: "is_deleted", type: "Bool" },
+    ],
+  },
+  {
+    tableName: "ReplicatedMergeTreeCloudTest",
+    columns: [
+      { name: "id", type: "String" },
+      { name: "timestamp", type: /DateTime\('UTC'\)/ },
+      { name: "value", type: "Int64" },
+      { name: "category", type: "String" },
+      { name: "version", type: "Int64" },
+      { name: "is_deleted", type: "Bool" },
+    ],
+  },
+  {
+    tableName: "ReplicatedReplacingMergeTreeTest",
+    columns: [
+      { name: "id", type: "String" },
+      { name: "timestamp", type: /DateTime\('UTC'\)/ },
+      { name: "value", type: "Int64" },
+      { name: "category", type: "String" },
+      { name: "version", type: "Int64" },
+      { name: "is_deleted", type: "Bool" },
+    ],
+  },
+  {
+    tableName: "ReplicatedReplacingSoftDeleteTest",
+    columns: [
+      { name: "id", type: "String" },
+      { name: "timestamp", type: /DateTime\('UTC'\)/ },
+      { name: "value", type: "Int64" },
+      { name: "category", type: "String" },
+      { name: "version", type: "Int64" },
+      { name: "is_deleted", type: "Bool" },
+    ],
+  },
+  {
+    tableName: "ReplicatedAggregatingMergeTreeTest",
+    columns: [
+      { name: "id", type: "String" },
+      { name: "timestamp", type: /DateTime\('UTC'\)/ },
+      { name: "value", type: "Int64" },
+      { name: "category", type: "String" },
+      { name: "version", type: "Int64" },
+      { name: "is_deleted", type: "Bool" },
+    ],
+  },
+  {
+    tableName: "ReplicatedSummingMergeTreeTest",
+    columns: [
+      { name: "id", type: "String" },
+      { name: "timestamp", type: /DateTime\('UTC'\)/ },
+      { name: "value", type: "Int64" },
+      { name: "category", type: "String" },
+      { name: "version", type: "Int64" },
+      { name: "is_deleted", type: "Bool" },
+    ],
+  },
+  // Type test tables
   {
     tableName: "BasicTypes",
     columns: [

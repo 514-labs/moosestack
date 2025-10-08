@@ -664,11 +664,13 @@ pub async fn start_production_mode(
 
                 let client = create_client(project.clickhouse_config.clone());
                 check_ready(&client).await?;
+                let is_dev = !project.is_production;
                 for operation in migration_plan.operations.iter() {
                     crate::infrastructure::olap::clickhouse::execute_atomic_operation(
                         &client.config.db_name,
                         operation,
                         &client,
+                        is_dev,
                     )
                     .await?;
                 }
