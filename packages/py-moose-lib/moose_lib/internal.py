@@ -539,7 +539,7 @@ def to_infra_map() -> dict:
     sql_resources = {}
     workflows = {}
 
-    for name, table in get_tables().items():
+    for _registry_key, table in get_tables().items():
         # Convert engine configuration to new format
         engine_config = None
         if table.config.engine:
@@ -554,8 +554,12 @@ def to_infra_map() -> dict:
             if "mode" not in table_settings:
                 table_settings["mode"] = "unordered"
 
-        tables[name] = TableConfig(
-            name=name,
+        id_key = (
+            f"{table.name}_{table.config.version}" if table.config.version else table.name
+        )
+
+        tables[id_key] = TableConfig(
+            name=table.name,
             columns=table._column_list,
             order_by=table.config.order_by_fields,
             partition_by=table.config.partition_by,
