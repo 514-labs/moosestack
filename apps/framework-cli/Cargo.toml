@@ -113,6 +113,7 @@ globset = "0.4"
 schema-registry-client = "0.4.1"
 
 keyring = { version = "3.6", features = ["apple-native", "linux-native"] }
+rmcp = { version = "0.8.0", features = ["server", "transport-io"] }
 
 [dev-dependencies]
 clickhouse = { version = "0.11.5", features = ["uuid", "test-util"] }

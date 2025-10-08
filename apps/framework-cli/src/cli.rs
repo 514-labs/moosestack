@@ -498,7 +498,7 @@ pub async fn top_command_handler(
                 )))
             }
         }
-        Commands::Dev { no_infra } => {
+        Commands::Dev { no_infra, mcp } => {
             info!("Running dev command");
             info!("Moose Version: {}", CLI_VERSION);
 
@@ -558,7 +558,7 @@ pub async fn top_command_handler(
             let arc_metrics = Arc::new(metrics);
             arc_metrics.start_listening_to_metrics(rx_events).await;
 
-            routines::start_development_mode(project_arc, arc_metrics, redis_client, &settings)
+            routines::start_development_mode(project_arc, arc_metrics, redis_client, &settings, *mcp)
                 .await
                 .map_err(|e| {
                     RoutineFailure::error(Message {

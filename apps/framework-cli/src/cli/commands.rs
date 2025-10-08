@@ -95,6 +95,10 @@ pub enum Commands {
         /// Skip starting docker containers for infrastructure
         #[arg(long)]
         no_infra: bool,
+
+        /// Enable or disable the MCP (Model Context Protocol) server
+        #[arg(long, default_value = "true")]
+        mcp: bool,
     },
     /// Start a remote environment for use in cloud deployments
     Prod {
