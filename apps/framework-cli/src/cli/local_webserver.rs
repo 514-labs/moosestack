@@ -1632,10 +1632,10 @@ async fn router(
             )
             .await
         }
-        (_, &hyper::Method::GET, ["workflows", "history"]) => {
+        (_, &hyper::Method::GET, ["workflows", "history"]) if project.features.workflows => {
             workflows_history_route(req, is_prod, project.clone()).await
         }
-        (_, &hyper::Method::POST, ["workflows", name, "trigger"]) => {
+        (_, &hyper::Method::POST, ["workflows", name, "trigger"]) if project.features.workflows => {
             workflows_trigger_route(
                 req,
                 is_prod,
@@ -1645,7 +1645,9 @@ async fn router(
             )
             .await
         }
-        (_, &hyper::Method::POST, ["workflows", name, "terminate"]) => {
+        (_, &hyper::Method::POST, ["workflows", name, "terminate"])
+            if project.features.workflows =>
+        {
             workflows_terminate_route(req, is_prod, project.clone(), name.to_string()).await
         }
         (_, &hyper::Method::OPTIONS, _) => options_route(),
@@ -1830,22 +1832,28 @@ async fn print_available_routes(
             "/ready".to_string(),
             "Readiness check endpoint".to_string(),
         ),
-        (
-            "GET",
-            "/workflows/history".to_string(),
-            "Workflow history".to_string(),
-        ),
-        (
-            "POST",
-            "/workflows/name/trigger".to_string(),
-            "Trigger a workflow".to_string(),
-        ),
-        (
-            "POST",
-            "/workflows/name/terminate".to_string(),
-            "Terminate a workflow".to_string(),
-        ),
     ];
+
+    // Collect workflow routes
+    if project.features.workflows {
+        static_routes.extend_from_slice(&[
+            (
+                "GET",
+                "/workflows/history".to_string(),
+                "Workflow history".to_string(),
+            ),
+            (
+                "POST",
+                "/workflows/name/trigger".to_string(),
+                "Trigger a workflow".to_string(),
+            ),
+            (
+                "POST",
+                "/workflows/name/terminate".to_string(),
+                "Terminate a workflow".to_string(),
+            ),
+        ]);
+    }
 
     // Collect ingestion routes
     let mut ingest_routes = Vec::new();
