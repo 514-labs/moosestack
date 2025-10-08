@@ -1041,6 +1041,51 @@ async fn metrics_route(metrics: Arc<Metrics>) -> Result<Response<Full<Bytes>>, h
     Ok(response)
 }
 
+async fn mcp_route(req: Request<Incoming>) -> Result<Response<Full<Bytes>>, hyper::http::Error> {
+    use crate::mcp::create_mcp_http_service;
+    use crate::utilities::constants::CLI_VERSION;
+    use tower_service::Service as TowerService;
+    use http_body_util::BodyExt;
+    
+    // Create MCP service for this request
+    let mut mcp_service = create_mcp_http_service(
+        "moose-mcp-server".to_string(),
+        CLI_VERSION.to_string(),
+    );
+    
+    // Convert the request to work with the MCP service
+    let (parts, body) = req.into_parts();
+    let body_bytes = match body.collect().await {
+        Ok(collected) => collected.to_bytes(),
+        Err(_) => {
+            return Ok(Response::builder()
+                .status(StatusCode::BAD_REQUEST)
+                .body(Full::new(Bytes::from("Failed to read request body")))
+                .unwrap());
+        }
+    };
+    
+    let mcp_req = Request::from_parts(parts, Full::new(body_bytes));
+    
+    // Call the MCP service (it returns Infallible error, so unwrap is safe)
+    let mcp_response = mcp_service.call(mcp_req).await.unwrap();
+    
+    // Convert the MCP response to our response type
+    let (parts, body) = mcp_response.into_parts();
+    let body_bytes = match body.collect().await {
+        Ok(collected) => collected.to_bytes(),
+        Err(_) => {
+            return Ok(Response::builder()
+                .status(StatusCode::INTERNAL_SERVER_ERROR)
+                .body(Full::new(Bytes::from("Failed to read MCP response body")))
+                .unwrap());
+        }
+    };
+    
+    let response = Response::from_parts(parts, Full::new(body_bytes));
+    Ok(response)
+}
+
 async fn openapi_route(
     is_prod: bool,
     openapi_path: Option<PathBuf>,
@@ -1651,6 +1696,11 @@ async fn router(
             workflows_terminate_route(req, is_prod, project.clone(), name.to_string()).await
         }
         (_, &hyper::Method::OPTIONS, _) => options_route(),
+        // MCP (Model Context Protocol) endpoint
+        (_, _, ["mcp"]) | (_, _, ["mcp", ..]) => {
+            // Forward to MCP handler
+            mcp_route(req).await
+        }
         _ => route_not_found_response(),
     };
 

@@ -559,39 +559,20 @@ pub async fn start_development_mode(
         settings.clone(),
     )?;
 
-    // Start MCP server if enabled
-    let _mcp_handle = if enable_mcp {
-        match crate::mcp::start_mcp_server(
-            "moose-mcp-server".to_string(),
-            crate::utilities::constants::CLI_VERSION.to_string(),
-        ) {
-            Ok(handle) => {
-                display::show_message_wrapper(
-                    MessageType::Success,
-                    Message {
-                        action: "MCP".to_string(),
-                        details: "Model Context Protocol server started on stdio".to_string(),
-                    },
-                );
-                info!("[MCP] Server started successfully");
-                Some(handle)
-            }
-            Err(e) => {
-                display::show_message_wrapper(
-                    MessageType::Error,
-                    Message {
-                        action: "MCP".to_string(),
-                        details: format!("Failed to start MCP server: {}", e),
-                    },
-                );
-                log::error!("[MCP] Failed to start server: {}", e);
-                None
-            }
-        }
+    // Log MCP server status
+    if enable_mcp {
+        display::show_message_wrapper(
+            MessageType::Success,
+            Message {
+                action: "MCP".to_string(),
+                details: format!("Model Context Protocol server available at http://{}:{}/mcp", 
+                    server_config.host, server_config.port),
+            },
+        );
+        info!("[MCP] MCP endpoint enabled at /mcp");
     } else {
         info!("[MCP] MCP server disabled via --mcp false flag");
-        None
-    };
+    }
 
     info!("Starting web server...");
     web_server

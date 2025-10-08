@@ -1,10 +1,12 @@
-use anyhow::Result;
 use log::info;
 use rmcp::{
     model::{Implementation, ProtocolVersion, ServerCapabilities, ServerInfo},
+    transport::streamable_http_server::{
+        session::local::LocalSessionManager, StreamableHttpServerConfig, StreamableHttpService,
+    },
     ServerHandler,
 };
-use tokio::task::JoinHandle;
+use std::sync::Arc;
 
 /// Handler for the MCP server that implements the Model Context Protocol
 /// Currently implements zero tools as per the initial requirements
@@ -41,57 +43,31 @@ impl ServerHandler for MooseMcpHandler {
     }
 }
 
-/// Handle for managing the MCP server lifecycle
-pub struct McpServerHandle {
-    join_handle: JoinHandle<Result<()>>,
-}
-
-impl McpServerHandle {
-    /// Wait for the MCP server to complete
-    pub async fn wait(self) -> Result<()> {
-        match self.join_handle.await {
-            Ok(Ok(())) => Ok(()),
-            Ok(Err(e)) => {
-                log::error!("[MCP] Server error: {}", e);
-                Err(e)
-            }
-            Err(e) => {
-                log::error!("[MCP] Server task panicked: {}", e);
-                Err(anyhow::anyhow!("MCP server task panicked: {}", e))
-            }
-        }
-    }
-}
-
-/// Start the MCP server with stdio transport
+/// Create an MCP HTTP service that can be integrated with the existing web server
 ///
 /// # Arguments
 /// * `server_name` - Name of the MCP server
 /// * `server_version` - Version of the MCP server
 ///
 /// # Returns
-/// * `Result<McpServerHandle>` - Handle to the running server
-pub fn start_mcp_server(server_name: String, server_version: String) -> Result<McpServerHandle> {
-    info!("[MCP] Starting MCP server: {} v{}", server_name, server_version);
+/// * `StreamableHttpService` - HTTP service that can handle MCP requests
+pub fn create_mcp_http_service(
+    server_name: String,
+    server_version: String,
+) -> StreamableHttpService<MooseMcpHandler, LocalSessionManager> {
+    info!("[MCP] Creating MCP HTTP service: {} v{}", server_name, server_version);
 
-    let handler = MooseMcpHandler::new(server_name, server_version);
+    let session_manager = Arc::new(LocalSessionManager::default());
+    let config = StreamableHttpServerConfig {
+        sse_keep_alive: Some(std::time::Duration::from_secs(15)),
+        stateful_mode: true,
+    };
 
-    // Spawn the server in a separate task
-    let join_handle = tokio::spawn(async move {
-        use rmcp::{ServiceExt, transport::stdio};
-        
-        info!("[MCP] Initializing stdio transport");
-        let transport = stdio();
-        
-        info!("[MCP] Starting server loop");
-        let _running = handler.serve(transport).await
-            .map_err(|e| anyhow::anyhow!("Failed to serve MCP: {:?}", e))?;
-        
-        info!("[MCP] Server stopped");
-        Ok(())
-    });
-
-    Ok(McpServerHandle { join_handle })
+    StreamableHttpService::new(
+        move || Ok(MooseMcpHandler::new(server_name.clone(), server_version.clone())),
+        session_manager,
+        config,
+    )
 }
 
 #[cfg(test)]

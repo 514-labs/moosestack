@@ -4,6 +4,8 @@
 
 This document describes the implementation of the MCP (Model Context Protocol) server in the Moose dev server, completed as per Linear issue ENG-946.
 
+**Note**: The implementation uses HTTP transport on the main web server (port 4000) at the `/mcp` endpoint, not stdio transport.
+
 ## Implementation Details
 
 ### Files Created/Modified
@@ -14,12 +16,13 @@ This document describes the implementation of the MCP (Model Context Protocol) s
 
 2. **Created: `apps/framework-cli/src/mcp/server.rs`**
    - `MooseMcpHandler`: Implements `ServerHandler` trait from rmcp
-   - `McpServerHandle`: Manages MCP server lifecycle
-   - `start_mcp_server()`: Starts the MCP server with stdio transport
+   - `create_mcp_http_service()`: Creates an HTTP service for MCP requests
    - Unit tests for handler functionality
 
 3. **Modified: `apps/framework-cli/Cargo.toml`**
-   - Added dependency: `rmcp = { version = "0.8.0", features = ["server", "transport-io"] }`
+   - Added dependencies:
+     - `rmcp = { version = "0.8.0", features = ["server", "transport-streamable-http-server"] }`
+     - `tower-service = "0.3"`
 
 4. **Modified: `apps/framework-cli/src/main.rs`**
    - Added `pub mod mcp;` to expose the MCP module
@@ -32,16 +35,20 @@ This document describes the implementation of the MCP (Model Context Protocol) s
 
 7. **Modified: `apps/framework-cli/src/cli/routines.rs`**
    - Updated `start_development_mode()` signature to accept `enable_mcp: bool`
-   - Added MCP server initialization logic
-   - Added startup messages showing MCP server status
+   - Added startup messages showing MCP server status and endpoint URL
+
+8. **Modified: `apps/framework-cli/src/cli/local_webserver.rs`**
+   - Added `mcp_route()` function to handle MCP HTTP requests
+   - Integrated MCP endpoint into the main router at `/mcp`
 
 ## Features
 
 ### ✅ Success Criteria Met
 
 1. **`moose dev` starts an MCP server by default**
-   - The MCP server is automatically started when running `moose dev`
-   - Uses stdio transport (stdin/stdout) as per MCP specification
+   - The MCP server endpoint is automatically available when running `moose dev`
+   - Accessible via HTTP at `http://localhost:4000/mcp`
+   - Uses streamable HTTP transport for MCP protocol communication
 
 2. **`moose dev --mcp false` runs without the MCP server**
    - The `--mcp` flag allows disabling the MCP server
@@ -126,10 +133,7 @@ moose dev
 
 Output includes:
 ```
-[MCP] Starting MCP server: moose-mcp-server v0.0.1
-[MCP] Initializing stdio transport
-[MCP] Starting server loop
-✓ MCP | Model Context Protocol server started on stdio
+✓ MCP | Model Context Protocol server available at http://localhost:4000/mcp
 ```
 
 ### Starting without MCP Server
@@ -138,20 +142,42 @@ Output includes:
 moose dev --mcp false
 ```
 
-The MCP server will not start, and you'll see:
+The MCP server will not be advertised, and you'll see:
 ```
 [MCP] MCP server disabled via --mcp false flag
 ```
 
+Note: The `/mcp` endpoint is still available but not advertised in the startup message.
+
 ### Connecting MCP Clients
 
-MCP clients (like Claude Desktop or VS Code extensions) can connect to the server via stdio transport. The server responds to standard MCP protocol messages including:
+MCP clients (like Claude Desktop or VS Code extensions) can connect to the server via HTTP at `http://localhost:4000/mcp`. The server supports:
+
+- **POST /mcp**: Send MCP requests (initialize, list_tools, call_tool, etc.)
+- **GET /mcp**: Server-Sent Events (SSE) stream for stateful connections
+- **DELETE /mcp**: Close session
+
+The server responds to standard MCP protocol messages including:
 
 - `initialize`: Returns server capabilities and info
 - `ping`: Health check
 - `list_tools`: Returns empty list (zero tools)
 - `list_prompts`: Returns empty list
 - `list_resources`: Returns empty list
+
+### Example MCP Client Configuration
+
+For Claude Desktop, add to your configuration:
+
+```json
+{
+  "mcpServers": {
+    "moose": {
+      "url": "http://localhost:4000/mcp"
+    }
+  }
+}
+```
 
 ## Testing
 
@@ -213,10 +239,10 @@ The MCP server implementation successfully meets all success criteria from Linea
 
 - ✅ Starts automatically with `moose dev`
 - ✅ Can be disabled with `--mcp false`
-- ✅ Communicates over stdio transport
+- ✅ Communicates over HTTP transport on port 4000 at `/mcp`
 - ✅ Implements zero tools initially
 - ✅ Has clean startup/shutdown
 - ✅ Uses small, testable functions
 - ✅ Includes unit tests
 
-The implementation provides a solid foundation for future MCP tool development while maintaining clean separation from existing dev server functionality.
+The implementation provides a solid foundation for future MCP tool development while maintaining clean integration with the existing web server on port 4000.
