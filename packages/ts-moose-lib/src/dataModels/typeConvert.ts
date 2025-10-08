@@ -414,26 +414,67 @@ const isNamedTuple = (t: ts.Type, checker: ts.TypeChecker) => {
   );
 };
 
-/** Detect geometry mapping via _clickhouse_mapped_type string literal */
+// Validate that the underlying TS type matches the mapped geometry shape
 const getGeometryMappedType = (
   t: ts.Type,
   checker: ts.TypeChecker,
 ): string | null => {
-  const mappingSymbol = t.getProperty("_clickhouse_mapped_type");
+  const mappingSymbol = getPropertyDeep(t, "_clickhouse_mapped_type");
   if (mappingSymbol === undefined) return null;
   const mapped = checker.getNonNullableType(
     checker.getTypeOfSymbol(mappingSymbol),
   );
+
+  // Helper: exact tuple [number, number]
+  const isPointTuple = (candidate: ts.Type): boolean => {
+    if (!checker.isTupleType(candidate)) return false;
+    const tuple = candidate as TupleType;
+    const args = tuple.typeArguments || [];
+    if (args.length !== 2) return false;
+    return isNumberType(args[0], checker) && isNumberType(args[1], checker);
+  };
+
+  // Helper: Array<T> predicate
+  const isArrayOf = (
+    arrType: ts.Type,
+    elementPredicate: (elType: ts.Type) => boolean,
+  ): boolean => {
+    if (!checker.isArrayType(arrType)) return false;
+    const elementType = arrType.getNumberIndexType();
+    if (!elementType) return false;
+    return elementPredicate(elementType);
+  };
+
+  const expectAndValidate = (shapeName: string, validator: () => boolean) => {
+    if (!validator()) {
+      throw new UnsupportedFeature(
+        `Type annotated as ${shapeName} must be assignable to the expected geometry shape`,
+      );
+    }
+    return shapeName;
+  };
+
   if (mapped.isStringLiteral()) {
     const v = mapped.value;
     switch (v) {
       case "Point":
+        return expectAndValidate("Point", () => isPointTuple(t));
       case "Ring":
       case "LineString":
+        return expectAndValidate(v, () =>
+          isArrayOf(t, (el) => isPointTuple(el)),
+        );
       case "MultiLineString":
       case "Polygon":
+        return expectAndValidate(v, () =>
+          isArrayOf(t, (el) => isArrayOf(el, (inner) => isPointTuple(inner))),
+        );
       case "MultiPolygon":
-        return v;
+        return expectAndValidate(v, () =>
+          isArrayOf(t, (el) =>
+            isArrayOf(el, (inner) => isArrayOf(inner, isPointTuple)),
+          ),
+        );
     }
   }
   return null;

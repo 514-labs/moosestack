@@ -240,6 +240,23 @@ def py_type_to_column_type(t: type, mds: list[Any]) -> Tuple[bool, list[Any], Da
     elif get_origin(t) is Literal and all(isinstance(arg, str) for arg in get_args(t)):
         data_type = "String"
         mds.append("LowCardinality")
+    elif any(md in [
+        "Point",
+        "Ring",
+        "LineString",
+        "MultiLineString",
+        "Polygon",
+        "MultiPolygon",
+    ] for md in mds):
+        # TODO: check the t is the tuple/array type
+        data_type = next(md for md in mds if md in [
+            "Point",
+            "Ring",
+            "LineString",
+            "MultiLineString",
+            "Polygon",
+            "MultiPolygon",
+        ])
     elif not isclass(t):
         raise ValueError(f"Unknown type {t}")
     elif issubclass(t, BaseModel):
@@ -256,22 +273,6 @@ def py_type_to_column_type(t: type, mds: list[Any]) -> Tuple[bool, list[Any], Da
                     column.data_type
                 ) for column in columns],
             )
-        elif any(md in [
-            "Point",
-            "Ring",
-            "LineString",
-            "MultiLineString",
-            "Polygon",
-            "MultiPolygon",
-        ] for md in mds):
-            data_type = next(md for md in mds if md in [
-                "Point",
-                "Ring",
-                "LineString",
-                "MultiLineString",
-                "Polygon",
-                "MultiPolygon",
-            ])
         else:
             data_type = Nested(
                 name=t.__name__,
