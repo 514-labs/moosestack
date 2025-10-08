@@ -125,6 +125,26 @@ export const TYPESCRIPT_TEST_SCHEMAS: ExpectedTableSchema[] = [
       { name: "other", type: "Nullable(String)", nullable: true },
     ],
   },
+  // Geometry tables
+  {
+    tableName: "GeoTypes",
+    columns: [
+      { name: "id", type: "String" },
+      { name: "timestamp", type: /DateTime\('UTC'\)/ },
+      { name: "point", type: "Point" },
+      { name: "ring", type: /(Ring|Array\(Point\))/ },
+      { name: "lineString", type: /(LineString|Array\(Point\))/ },
+      {
+        name: "multiLineString",
+        type: /(MultiLineString|Array\(Array\(Point\)\))/,
+      },
+      { name: "polygon", type: /(Polygon|Array\(Array\(Point\)\))/ },
+      {
+        name: "multiPolygon",
+        type: /(MultiPolygon|Array\(Array\(Array\(Point\)\)\))/,
+      },
+    ],
+  },
 ];
 
 // ============ PYTHON TEMPLATE SCHEMA DEFINITIONS ============
@@ -242,6 +262,26 @@ export const PYTHON_TEST_SCHEMAS: ExpectedTableSchema[] = [
       },
       // Optional field with ClickHouse default - should have default value
       { name: "other", type: "Nullable(String)", nullable: true },
+    ],
+  },
+  // Geometry tables
+  {
+    tableName: "GeoTypes",
+    columns: [
+      { name: "id", type: "String" },
+      { name: "timestamp", type: /DateTime\('UTC'\)/ },
+      { name: "point", type: "Point" },
+      { name: "ring", type: /(Ring|Array\(Point\))/ },
+      { name: "line_string", type: /(LineString|Array\(Point\))/ },
+      {
+        name: "multi_line_string",
+        type: /(MultiLineString|Array\(Array\(Point\)\))/,
+      },
+      { name: "polygon", type: /(Polygon|Array\(Array\(Point\)\))/ },
+      {
+        name: "multi_polygon",
+        type: /(MultiPolygon|Array\(Array\(Array\(Point\)\)\))/,
+      },
     ],
   },
 ];

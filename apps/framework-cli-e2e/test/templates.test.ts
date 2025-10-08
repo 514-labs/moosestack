@@ -323,6 +323,84 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
           ]);
         }
       });
+      if (config.isTestsVariant) {
+        it("should ingest geometry types into a single GeoTypes table (TS)", async function () {
+          const isoTs = new Date(TEST_DATA.TIMESTAMP * 1000).toISOString();
+          const id = randomUUID();
+          await withRetries(
+            async () => {
+              const response = await fetch(
+                `${SERVER_CONFIG.url}/ingest/GeoTypes`,
+                {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    id,
+                    timestamp: isoTs,
+                    point: [10, 20],
+                    ring: [
+                      [10, 20],
+                      [11, 21],
+                      [12, 22],
+                    ],
+                    lineString: [
+                      [0, 0],
+                      [1, 1],
+                      [2, 3],
+                    ],
+                    multiLineString: [
+                      [
+                        [0, 0],
+                        [1, 1],
+                      ],
+                      [
+                        [2, 2],
+                        [3, 3],
+                      ],
+                    ],
+                    polygon: [
+                      [
+                        [0, 0],
+                        [1, 0],
+                        [1, 1],
+                        [0, 1],
+                        [0, 0],
+                      ],
+                    ],
+                    multiPolygon: [
+                      [
+                        [
+                          [0, 0],
+                          [1, 0],
+                          [1, 1],
+                          [0, 1],
+                          [0, 0],
+                        ],
+                      ],
+                      [
+                        [
+                          [2, 2],
+                          [3, 2],
+                          [3, 3],
+                          [2, 3],
+                          [2, 2],
+                        ],
+                      ],
+                    ],
+                  }),
+                },
+              );
+              if (!response.ok) {
+                const text = await response.text();
+                throw new Error(`${response.status}: ${text}`);
+              }
+            },
+            { attempts: 5, delayMs: 500 },
+          );
+          await waitForDBWrite(devProcess!, "GeoTypes", 1);
+          await verifyClickhouseData("GeoTypes", id, "id");
+        });
+      }
     } else {
       it("should successfully ingest data and verify through consumption API", async function () {
         const eventId = randomUUID();
@@ -399,6 +477,84 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
           ]);
         }
       });
+      if (config.isTestsVariant) {
+        it("should ingest geometry types into a single GeoTypes table (PY)", async function () {
+          const id = randomUUID();
+          const ts = TEST_DATA.TIMESTAMP;
+          await withRetries(
+            async () => {
+              const response = await fetch(
+                `${SERVER_CONFIG.url}/ingest/geotypes`,
+                {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    id,
+                    timestamp: ts,
+                    point: [10, 20],
+                    ring: [
+                      [10, 20],
+                      [11, 21],
+                      [12, 22],
+                    ],
+                    line_string: [
+                      [0, 0],
+                      [1, 1],
+                      [2, 3],
+                    ],
+                    multi_line_string: [
+                      [
+                        [0, 0],
+                        [1, 1],
+                      ],
+                      [
+                        [2, 2],
+                        [3, 3],
+                      ],
+                    ],
+                    polygon: [
+                      [
+                        [0, 0],
+                        [1, 0],
+                        [1, 1],
+                        [0, 1],
+                        [0, 0],
+                      ],
+                    ],
+                    multi_polygon: [
+                      [
+                        [
+                          [0, 0],
+                          [1, 0],
+                          [1, 1],
+                          [0, 1],
+                          [0, 0],
+                        ],
+                      ],
+                      [
+                        [
+                          [2, 2],
+                          [3, 2],
+                          [3, 3],
+                          [2, 3],
+                          [2, 2],
+                        ],
+                      ],
+                    ],
+                  }),
+                },
+              );
+              if (!response.ok) {
+                const text = await response.text();
+                throw new Error(`${response.status}: ${text}`);
+              }
+            },
+            { attempts: 5, delayMs: 500 },
+          );
+          await waitForDBWrite(devProcess!, "GeoTypes", 1);
+          await verifyClickhouseData("GeoTypes", id, "id");
+        });
+      }
     }
   });
 };

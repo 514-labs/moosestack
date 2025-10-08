@@ -5,6 +5,12 @@ import {
   DeadLetterModel,
   DateTime,
   ClickHouseDefault,
+  ClickHousePoint,
+  ClickHouseRing,
+  ClickHouseLineString,
+  ClickHouseMultiLineString,
+  ClickHousePolygon,
+  ClickHouseMultiPolygon,
 } from "@514labs/moose-lib";
 
 /**
@@ -285,3 +291,22 @@ export const OptionalNestedTestPipeline =
     stream: true,
     ingestApi: true,
   });
+
+/** =======Geometry Types Tests (Single Model)========= */
+
+export interface GeoTypes {
+  id: Key<string>;
+  timestamp: DateTime;
+  point: ClickHousePoint;
+  ring: ClickHouseRing;
+  lineString: ClickHouseLineString;
+  multiLineString: ClickHouseMultiLineString;
+  polygon: ClickHousePolygon;
+  multiPolygon: ClickHouseMultiPolygon;
+}
+
+export const GeoTypesPipeline = new IngestPipeline<GeoTypes>("GeoTypes", {
+  table: true,
+  stream: true,
+  ingestApi: true,
+});
