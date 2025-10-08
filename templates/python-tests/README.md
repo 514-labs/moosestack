@@ -25,6 +25,15 @@ This is a Python-based Moose template that provides a foundation for building da
 
 You are ready to go! You can start editing the app by modifying primitives in the `app` subdirectory.
 
+## OlapTable Versioning Demo
+
+This template demonstrates OlapTable versioning functionality by including two versions of the same table:
+
+- `UserEvents` v1.0 - Basic structure with MergeTree engine
+- `UserEvents` v2.0 - Enhanced with session tracking and ReplacingMergeTree engine
+
+The versioned tables are defined in `app/ingest/models.py` and showcase how multiple versions of the same table can coexist, supporting blue/green migration scenarios.
+
 ## Learn More
 
 To learn more about Moose, take a look at the following resources:

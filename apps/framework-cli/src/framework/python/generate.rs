@@ -299,7 +299,7 @@ pub fn tables_to_python(tables: &[Table], life_cycle: Option<LifeCycle>) -> Stri
     .unwrap();
     writeln!(
         output,
-        "from moose_lib.blocks import MergeTreeEngine, ReplacingMergeTreeEngine, AggregatingMergeTreeEngine, SummingMergeTreeEngine, S3QueueEngine"
+        "from moose_lib.blocks import MergeTreeEngine, ReplacingMergeTreeEngine, AggregatingMergeTreeEngine, SummingMergeTreeEngine, S3QueueEngine, ReplicatedMergeTreeEngine, ReplicatedReplacingMergeTreeEngine, ReplicatedAggregatingMergeTreeEngine, ReplicatedSummingMergeTreeEngine"
     )
     .unwrap();
     writeln!(output).unwrap();
@@ -483,8 +483,72 @@ pub fn tables_to_python(tables: &[Table], life_cycle: Option<LifeCycle>) -> Stri
                 crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine::AggregatingMergeTree => {
                     writeln!(output, "    engine=AggregatingMergeTreeEngine(),").unwrap();
                 }
-                crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine::SummingMergeTree => {
-                    writeln!(output, "    engine=SummingMergeTreeEngine(),").unwrap();
+                crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine::SummingMergeTree { columns } => {
+                    write!(output, "    engine=SummingMergeTreeEngine(").unwrap();
+                    if let Some(cols) = columns {
+                        if !cols.is_empty() {
+                            write!(output, "columns={:?}", cols).unwrap();
+                        }
+                    }
+                    writeln!(output, "),").unwrap();
+                }
+                crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine::ReplicatedMergeTree {
+                    keeper_path,
+                    replica_name,
+                } => {
+                    write!(output, "    engine=ReplicatedMergeTreeEngine(").unwrap();
+                    if let (Some(path), Some(name)) = (keeper_path, replica_name) {
+                        write!(output, "keeper_path={:?}, replica_name={:?}", path, name).unwrap();
+                    }
+                    writeln!(output, "),").unwrap();
+                }
+                crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine::ReplicatedReplacingMergeTree {
+                    keeper_path,
+                    replica_name,
+                    ver,
+                    is_deleted,
+                } => {
+                    write!(output, "    engine=ReplicatedReplacingMergeTreeEngine(").unwrap();
+                    let mut params = vec![];
+                    if let (Some(path), Some(name)) = (keeper_path, replica_name) {
+                        params.push(format!("keeper_path={:?}, replica_name={:?}", path, name));
+                    }
+                    if let Some(v) = ver {
+                        params.push(format!("ver={:?}", v));
+                    }
+                    if let Some(d) = is_deleted {
+                        params.push(format!("is_deleted={:?}", d));
+                    }
+                    write!(output, "{}", params.join(", ")).unwrap();
+                    writeln!(output, "),").unwrap();
+                }
+                crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine::ReplicatedAggregatingMergeTree {
+                    keeper_path,
+                    replica_name,
+                } => {
+                    write!(output, "    engine=ReplicatedAggregatingMergeTreeEngine(").unwrap();
+                    if let (Some(path), Some(name)) = (keeper_path, replica_name) {
+                        write!(output, "keeper_path={:?}, replica_name={:?}", path, name).unwrap();
+                    }
+                    writeln!(output, "),").unwrap();
+                }
+                crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine::ReplicatedSummingMergeTree {
+                    keeper_path,
+                    replica_name,
+                    columns,
+                } => {
+                    write!(output, "    engine=ReplicatedSummingMergeTreeEngine(").unwrap();
+                    let mut params = vec![];
+                    if let (Some(path), Some(name)) = (keeper_path, replica_name) {
+                        params.push(format!("keeper_path={:?}, replica_name={:?}", path, name));
+                    }
+                    if let Some(cols) = columns {
+                        if !cols.is_empty() {
+                            params.push(format!("columns={:?}", cols));
+                        }
+                    }
+                    write!(output, "{}", params.join(", ")).unwrap();
+                    writeln!(output, "),").unwrap();
                 }
             }
         }
@@ -578,7 +642,7 @@ from enum import IntEnum, Enum
 from moose_lib import Key, IngestPipeline, IngestPipelineConfig, OlapTable, OlapConfig, clickhouse_datetime64, clickhouse_decimal, ClickhouseSize, StringToEnumMixin
 from moose_lib import Point, Ring, LineString, MultiLineString, Polygon, MultiPolygon
 from moose_lib import clickhouse_default, LifeCycle
-from moose_lib.blocks import MergeTreeEngine, ReplacingMergeTreeEngine, AggregatingMergeTreeEngine, SummingMergeTreeEngine, S3QueueEngine
+from moose_lib.blocks import MergeTreeEngine, ReplacingMergeTreeEngine, AggregatingMergeTreeEngine, SummingMergeTreeEngine, S3QueueEngine, ReplicatedMergeTreeEngine, ReplicatedReplacingMergeTreeEngine, ReplicatedAggregatingMergeTreeEngine, ReplicatedSummingMergeTreeEngine
 
 class Foo(BaseModel):
     primary_key: Key[str]

@@ -83,6 +83,38 @@ class AggregatingMergeTreeConfigDict(BaseEngineConfigDict):
 class SummingMergeTreeConfigDict(BaseEngineConfigDict):
     """Configuration for SummingMergeTree engine."""
     engine: Literal["SummingMergeTree"] = "SummingMergeTree"
+    columns: Optional[List[str]] = None
+
+
+class ReplicatedMergeTreeConfigDict(BaseEngineConfigDict):
+    """Configuration for ReplicatedMergeTree engine."""
+    engine: Literal["ReplicatedMergeTree"] = "ReplicatedMergeTree"
+    keeper_path: Optional[str] = None
+    replica_name: Optional[str] = None
+
+
+class ReplicatedReplacingMergeTreeConfigDict(BaseEngineConfigDict):
+    """Configuration for ReplicatedReplacingMergeTree engine."""
+    engine: Literal["ReplicatedReplacingMergeTree"] = "ReplicatedReplacingMergeTree"
+    keeper_path: Optional[str] = None
+    replica_name: Optional[str] = None
+    ver: Optional[str] = None
+    is_deleted: Optional[str] = None
+
+
+class ReplicatedAggregatingMergeTreeConfigDict(BaseEngineConfigDict):
+    """Configuration for ReplicatedAggregatingMergeTree engine."""
+    engine: Literal["ReplicatedAggregatingMergeTree"] = "ReplicatedAggregatingMergeTree"
+    keeper_path: Optional[str] = None
+    replica_name: Optional[str] = None
+
+
+class ReplicatedSummingMergeTreeConfigDict(BaseEngineConfigDict):
+    """Configuration for ReplicatedSummingMergeTree engine."""
+    engine: Literal["ReplicatedSummingMergeTree"] = "ReplicatedSummingMergeTree"
+    keeper_path: Optional[str] = None
+    replica_name: Optional[str] = None
+    columns: Optional[List[str]] = None
 
 
 class S3QueueConfigDict(BaseEngineConfigDict):
@@ -102,6 +134,10 @@ EngineConfigDict = Union[
     ReplacingMergeTreeConfigDict,
     AggregatingMergeTreeConfigDict,
     SummingMergeTreeConfigDict,
+    ReplicatedMergeTreeConfigDict,
+    ReplicatedReplacingMergeTreeConfigDict,
+    ReplicatedAggregatingMergeTreeConfigDict,
+    ReplicatedSummingMergeTreeConfigDict,
     S3QueueConfigDict
 ]
 
@@ -318,6 +354,110 @@ def _map_sql_resource_ref(r: Any) -> InfrastructureSignatureJson:
         raise TypeError(f"Object {r} lacks a 'kind' attribute for dependency mapping.")
 
 
+def _convert_basic_engine_instance(engine: "EngineConfig") -> Optional[EngineConfigDict]:
+    """Convert basic MergeTree engine instances to config dict.
+    
+    Args:
+        engine: An EngineConfig instance
+        
+    Returns:
+        EngineConfigDict if matched, None otherwise
+    """
+    from moose_lib.blocks import (
+        MergeTreeEngine, ReplacingMergeTreeEngine,
+        AggregatingMergeTreeEngine, SummingMergeTreeEngine
+    )
+    
+    if isinstance(engine, MergeTreeEngine):
+        return MergeTreeConfigDict()
+    elif isinstance(engine, ReplacingMergeTreeEngine):
+        return ReplacingMergeTreeConfigDict(
+            ver=engine.ver,
+            is_deleted=engine.is_deleted
+        )
+    elif isinstance(engine, AggregatingMergeTreeEngine):
+        return AggregatingMergeTreeConfigDict()
+    elif isinstance(engine, SummingMergeTreeEngine):
+        return SummingMergeTreeConfigDict(columns=engine.columns)
+    return None
+
+
+def _convert_replicated_engine_instance(engine: "EngineConfig") -> Optional[EngineConfigDict]:
+    """Convert replicated MergeTree engine instances to config dict.
+    
+    Args:
+        engine: An EngineConfig instance
+        
+    Returns:
+        EngineConfigDict if matched, None otherwise
+    """
+    from moose_lib.blocks import (
+        ReplicatedMergeTreeEngine, ReplicatedReplacingMergeTreeEngine,
+        ReplicatedAggregatingMergeTreeEngine, ReplicatedSummingMergeTreeEngine
+    )
+    
+    if isinstance(engine, ReplicatedMergeTreeEngine):
+        return ReplicatedMergeTreeConfigDict(
+            keeper_path=engine.keeper_path,
+            replica_name=engine.replica_name
+        )
+    elif isinstance(engine, ReplicatedReplacingMergeTreeEngine):
+        return ReplicatedReplacingMergeTreeConfigDict(
+            keeper_path=engine.keeper_path,
+            replica_name=engine.replica_name,
+            ver=engine.ver,
+            is_deleted=engine.is_deleted
+        )
+    elif isinstance(engine, ReplicatedAggregatingMergeTreeEngine):
+        return ReplicatedAggregatingMergeTreeConfigDict(
+            keeper_path=engine.keeper_path,
+            replica_name=engine.replica_name
+        )
+    elif isinstance(engine, ReplicatedSummingMergeTreeEngine):
+        return ReplicatedSummingMergeTreeConfigDict(
+            keeper_path=engine.keeper_path,
+            replica_name=engine.replica_name,
+            columns=engine.columns
+        )
+    return None
+
+
+def _convert_engine_instance_to_config_dict(engine: "EngineConfig") -> EngineConfigDict:
+    """Convert an EngineConfig instance to config dict format.
+    
+    Args:
+        engine: An EngineConfig instance
+        
+    Returns:
+        EngineConfigDict with engine-specific configuration
+    """
+    from moose_lib.blocks import S3QueueEngine
+    
+    # Try S3Queue first
+    if isinstance(engine, S3QueueEngine):
+        return S3QueueConfigDict(
+            s3_path=engine.s3_path,
+            format=engine.format,
+            aws_access_key_id=engine.aws_access_key_id,
+            aws_secret_access_key=engine.aws_secret_access_key,
+            compression=engine.compression,
+            headers=engine.headers
+        )
+    
+    # Try basic engines
+    basic_config = _convert_basic_engine_instance(engine)
+    if basic_config:
+        return basic_config
+    
+    # Try replicated engines
+    replicated_config = _convert_replicated_engine_instance(engine)
+    if replicated_config:
+        return replicated_config
+    
+    # Fallback for any other EngineConfig subclass
+    return BaseEngineConfigDict(engine=engine.__class__.__name__.replace("Engine", ""))
+
+
 def _convert_engine_to_config_dict(engine: Union[ClickHouseEngines, EngineConfig],
                                    table: OlapTable) -> EngineConfigDict:
     """Convert engine enum or EngineConfig instance to new engine config format.
@@ -330,38 +470,12 @@ def _convert_engine_to_config_dict(engine: Union[ClickHouseEngines, EngineConfig
         EngineConfigDict with engine-specific configuration
     """
     from moose_lib import ClickHouseEngines
-    from moose_lib.blocks import (
-        EngineConfig, S3QueueEngine, MergeTreeEngine,
-        ReplacingMergeTreeEngine, AggregatingMergeTreeEngine,
-        SummingMergeTreeEngine
-    )
+    from moose_lib.blocks import EngineConfig
     from moose_lib.commons import Logger
 
     # Check if engine is an EngineConfig instance (new API)
     if isinstance(engine, EngineConfig):
-        if isinstance(engine, S3QueueEngine):
-            return S3QueueConfigDict(
-                s3_path=engine.s3_path,
-                format=engine.format,
-                aws_access_key_id=engine.aws_access_key_id,
-                aws_secret_access_key=engine.aws_secret_access_key,
-                compression=engine.compression,
-                headers=engine.headers
-            )
-        elif isinstance(engine, ReplacingMergeTreeEngine):
-            return ReplacingMergeTreeConfigDict(
-                ver=engine.ver,
-                is_deleted=engine.is_deleted
-            )
-        elif isinstance(engine, AggregatingMergeTreeEngine):
-            return AggregatingMergeTreeConfigDict()
-        elif isinstance(engine, SummingMergeTreeEngine):
-            return SummingMergeTreeConfigDict()
-        elif isinstance(engine, MergeTreeEngine):
-            return MergeTreeConfigDict()
-        else:
-            # Fallback for any other EngineConfig subclass - use base class
-            return BaseEngineConfigDict(engine=engine.__class__.__name__.replace("Engine", ""))
+        return _convert_engine_instance_to_config_dict(engine)
 
     # Handle legacy enum-based engine configuration
     if isinstance(engine, ClickHouseEngines):
@@ -393,6 +507,10 @@ def _convert_engine_to_config_dict(engine: Union[ClickHouseEngines, EngineConfig
         "ReplacingMergeTree": ReplacingMergeTreeConfigDict,
         "AggregatingMergeTree": AggregatingMergeTreeConfigDict,
         "SummingMergeTree": SummingMergeTreeConfigDict,
+        "ReplicatedMergeTree": ReplicatedMergeTreeConfigDict,
+        "ReplicatedReplacingMergeTree": ReplicatedReplacingMergeTreeConfigDict,
+        "ReplicatedAggregatingMergeTree": ReplicatedAggregatingMergeTreeConfigDict,
+        "ReplicatedSummingMergeTree": ReplicatedSummingMergeTreeConfigDict,
     }
 
     config_class = engine_map.get(engine_name)
@@ -421,7 +539,7 @@ def to_infra_map() -> dict:
     sql_resources = {}
     workflows = {}
 
-    for name, table in get_tables().items():
+    for _registry_key, table in get_tables().items():
         # Convert engine configuration to new format
         engine_config = None
         if table.config.engine:
@@ -436,8 +554,12 @@ def to_infra_map() -> dict:
             if "mode" not in table_settings:
                 table_settings["mode"] = "unordered"
 
-        tables[name] = TableConfig(
-            name=name,
+        id_key = (
+            f"{table.name}_{table.config.version}" if table.config.version else table.name
+        )
+
+        tables[id_key] = TableConfig(
+            name=table.name,
             columns=table._column_list,
             order_by=table.config.order_by_fields,
             partition_by=table.config.partition_by,

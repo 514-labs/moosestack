@@ -136,7 +136,48 @@ enum EngineConfig {
     AggregatingMergeTree {},
 
     #[serde(rename = "SummingMergeTree")]
-    SummingMergeTree {},
+    SummingMergeTree {
+        #[serde(default)]
+        columns: Option<Vec<String>>,
+    },
+
+    #[serde(rename = "ReplicatedMergeTree")]
+    ReplicatedMergeTree {
+        #[serde(alias = "keeperPath", default)]
+        keeper_path: Option<String>,
+        #[serde(alias = "replicaName", default)]
+        replica_name: Option<String>,
+    },
+
+    #[serde(rename = "ReplicatedReplacingMergeTree")]
+    ReplicatedReplacingMergeTree {
+        #[serde(alias = "keeperPath", default)]
+        keeper_path: Option<String>,
+        #[serde(alias = "replicaName", default)]
+        replica_name: Option<String>,
+        #[serde(default)]
+        ver: Option<String>,
+        #[serde(alias = "isDeleted", default)]
+        is_deleted: Option<String>,
+    },
+
+    #[serde(rename = "ReplicatedAggregatingMergeTree")]
+    ReplicatedAggregatingMergeTree {
+        #[serde(alias = "keeperPath", default)]
+        keeper_path: Option<String>,
+        #[serde(alias = "replicaName", default)]
+        replica_name: Option<String>,
+    },
+
+    #[serde(rename = "ReplicatedSummingMergeTree")]
+    ReplicatedSummingMergeTree {
+        #[serde(alias = "keeperPath", default)]
+        keeper_path: Option<String>,
+        #[serde(alias = "replicaName", default)]
+        replica_name: Option<String>,
+        #[serde(default)]
+        columns: Option<Vec<String>>,
+    },
 
     #[serde(rename = "S3Queue")]
     S3Queue(Box<S3QueueConfig>),
@@ -564,7 +605,49 @@ impl PartialInfrastructureMap {
                 Some(ClickhouseEngine::AggregatingMergeTree)
             }
 
-            Some(EngineConfig::SummingMergeTree {}) => Some(ClickhouseEngine::SummingMergeTree),
+            Some(EngineConfig::SummingMergeTree { columns }) => {
+                Some(ClickhouseEngine::SummingMergeTree {
+                    columns: columns.clone(),
+                })
+            }
+
+            Some(EngineConfig::ReplicatedMergeTree {
+                keeper_path,
+                replica_name,
+            }) => Some(ClickhouseEngine::ReplicatedMergeTree {
+                keeper_path: keeper_path.clone(),
+                replica_name: replica_name.clone(),
+            }),
+
+            Some(EngineConfig::ReplicatedReplacingMergeTree {
+                keeper_path,
+                replica_name,
+                ver,
+                is_deleted,
+            }) => Some(ClickhouseEngine::ReplicatedReplacingMergeTree {
+                keeper_path: keeper_path.clone(),
+                replica_name: replica_name.clone(),
+                ver: ver.clone(),
+                is_deleted: is_deleted.clone(),
+            }),
+
+            Some(EngineConfig::ReplicatedAggregatingMergeTree {
+                keeper_path,
+                replica_name,
+            }) => Some(ClickhouseEngine::ReplicatedAggregatingMergeTree {
+                keeper_path: keeper_path.clone(),
+                replica_name: replica_name.clone(),
+            }),
+
+            Some(EngineConfig::ReplicatedSummingMergeTree {
+                keeper_path,
+                replica_name,
+                columns,
+            }) => Some(ClickhouseEngine::ReplicatedSummingMergeTree {
+                keeper_path: keeper_path.clone(),
+                replica_name: replica_name.clone(),
+                columns: columns.clone(),
+            }),
 
             Some(EngineConfig::S3Queue(config)) => {
                 // S3Queue settings are handled in table_settings, not in the engine
