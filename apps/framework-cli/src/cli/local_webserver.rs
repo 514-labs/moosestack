@@ -494,6 +494,16 @@ struct RouteService {
     project: Arc<Project>,
     redis_client: Arc<RedisClient>,
     enable_mcp: bool,
+    mcp_service: Option<
+        Arc<
+            RwLock<
+                crate::mcp::StreamableHttpService<
+                    crate::mcp::MooseMcpHandler,
+                    crate::mcp::LocalSessionManager,
+                >,
+            >,
+        >,
+    >,
 }
 
 #[derive(Clone)]
@@ -529,6 +539,7 @@ impl Service<Request<Incoming>> for RouteService {
             self.project.clone(),
             self.redis_client.clone(),
             self.enable_mcp,
+            self.mcp_service.clone(),
         ))
     }
 }
@@ -1043,42 +1054,59 @@ async fn metrics_route(metrics: Arc<Metrics>) -> Result<Response<Full<Bytes>>, h
     Ok(response)
 }
 
-async fn mcp_route(req: Request<Incoming>) -> Result<Response<Full<Bytes>>, hyper::http::Error> {
-    use crate::mcp::create_mcp_http_service;
-    use crate::utilities::constants::CLI_VERSION;
+async fn mcp_route(
+    req: Request<Incoming>,
+    mcp_service: Arc<
+        RwLock<
+            crate::mcp::StreamableHttpService<
+                crate::mcp::MooseMcpHandler,
+                crate::mcp::LocalSessionManager,
+            >,
+        >,
+    >,
+) -> Result<Response<Full<Bytes>>, hyper::http::Error> {
     use http_body_util::BodyExt;
     use tower_service::Service as TowerService;
-
-    // Create MCP service for this request
-    let mut mcp_service =
-        create_mcp_http_service("moose-mcp-server".to_string(), CLI_VERSION.to_string());
 
     // Convert the request to work with the MCP service
     let (parts, body) = req.into_parts();
     let body_bytes = match body.collect().await {
         Ok(collected) => collected.to_bytes(),
-        Err(_) => {
-            return Ok(Response::builder()
+        Err(e) => {
+            error!("Failed to read MCP request body: {}", e);
+            return Response::builder()
                 .status(StatusCode::BAD_REQUEST)
-                .body(Full::new(Bytes::from("Failed to read request body")))
-                .unwrap());
+                .body(Full::new(Bytes::from("Failed to read request body")));
         }
     };
 
     let mcp_req = Request::from_parts(parts, Full::new(body_bytes));
 
-    // Call the MCP service (it returns Infallible error, so unwrap is safe)
-    let mcp_response = mcp_service.call(mcp_req).await.unwrap();
+    // Call the MCP service using the shared instance
+    let mcp_response = {
+        let mut service = mcp_service.write().await;
+        match service.call(mcp_req).await {
+            Ok(response) => response,
+            Err(_) => {
+                // Since the MCP service returns Infallible, this branch should never execute
+                // but we handle it defensively
+                error!("Unexpected error from MCP service");
+                return Response::builder()
+                    .status(StatusCode::INTERNAL_SERVER_ERROR)
+                    .body(Full::new(Bytes::from("MCP service error")));
+            }
+        }
+    };
 
     // Convert the MCP response to our response type
     let (parts, body) = mcp_response.into_parts();
     let body_bytes = match body.collect().await {
         Ok(collected) => collected.to_bytes(),
-        Err(_) => {
-            return Ok(Response::builder()
+        Err(e) => {
+            error!("Failed to read MCP response body: {}", e);
+            return Response::builder()
                 .status(StatusCode::INTERNAL_SERVER_ERROR)
-                .body(Full::new(Bytes::from("Failed to read MCP response body")))
-                .unwrap());
+                .body(Full::new(Bytes::from("Failed to read MCP response body")));
         }
     };
 
@@ -1511,6 +1539,16 @@ async fn router(
     project: Arc<Project>,
     redis_client: Arc<RedisClient>,
     enable_mcp: bool,
+    mcp_service: Option<
+        Arc<
+            RwLock<
+                crate::mcp::StreamableHttpService<
+                    crate::mcp::MooseMcpHandler,
+                    crate::mcp::LocalSessionManager,
+                >,
+            >,
+        >,
+    >,
 ) -> Result<Response<Full<Bytes>>, hyper::http::Error> {
     let now = Instant::now();
 
@@ -1700,7 +1738,15 @@ async fn router(
         // MCP (Model Context Protocol) endpoint - only available in development mode when enabled
         (_, _, ["mcp"]) | (_, _, ["mcp", ..]) if enable_mcp && !is_prod => {
             // Forward to MCP handler
-            mcp_route(req).await
+            match mcp_service {
+                Some(service) => mcp_route(req, service).await,
+                None => {
+                    error!("MCP endpoint called but MCP service is not initialized");
+                    Response::builder()
+                        .status(StatusCode::SERVICE_UNAVAILABLE)
+                        .body(Full::new(Bytes::from("MCP service not available")))
+                }
+            }
         }
         _ => route_not_found_response(),
     };
@@ -2255,6 +2301,19 @@ impl Webserver {
             .await
             .expect("Failed to initialize Redis client");
 
+        // Create MCP service once if enabled and not in production
+        let mcp_service = if enable_mcp && !project.is_production {
+            use crate::mcp::create_mcp_http_service;
+            use crate::utilities::constants::CLI_VERSION;
+
+            info!("[MCP] Initializing MCP service for Model Context Protocol support");
+            let service =
+                create_mcp_http_service("moose-mcp-server".to_string(), CLI_VERSION.to_string());
+            Some(Arc::new(RwLock::new(service)))
+        } else {
+            None
+        };
+
         let route_service = RouteService {
             host: self.host.clone(),
             path_prefix: project.http_server_config.normalized_path_prefix(),
@@ -2269,6 +2328,7 @@ impl Webserver {
             project: project.clone(),
             redis_client: Arc::new(redis_client),
             enable_mcp,
+            mcp_service,
         };
 
         let management_service = ManagementService {
