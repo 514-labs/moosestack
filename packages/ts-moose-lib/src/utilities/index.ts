@@ -34,8 +34,123 @@ export type StripDateIntersection<T> =
   : T extends object ? { [K in keyof T]: StripDateIntersection<T[K]> }
   : T;
 
+// infer fails in a recursive definition if an intersection type tag is present
 type StripDateFromTuple<T extends readonly any[]> =
-  T extends [] ? []
-  : T extends [infer F, ...infer Rest extends readonly any[]] ?
-    [StripDateIntersection<F>, ...StripDateFromTuple<Rest>]
+  T extends (
+    [
+      infer T1,
+      infer T2,
+      infer T3,
+      infer T4,
+      infer T5,
+      infer T6,
+      infer T7,
+      infer T8,
+      infer T9,
+      infer T10,
+    ]
+  ) ?
+    [
+      StripDateIntersection<T1>,
+      StripDateIntersection<T2>,
+      StripDateIntersection<T3>,
+      StripDateIntersection<T4>,
+      StripDateIntersection<T5>,
+      StripDateIntersection<T6>,
+      StripDateIntersection<T7>,
+      StripDateIntersection<T8>,
+      StripDateIntersection<T9>,
+      StripDateIntersection<T10>,
+    ]
+  : T extends (
+    [
+      infer T1,
+      infer T2,
+      infer T3,
+      infer T4,
+      infer T5,
+      infer T6,
+      infer T7,
+      infer T8,
+      infer T9,
+    ]
+  ) ?
+    [
+      StripDateIntersection<T1>,
+      StripDateIntersection<T2>,
+      StripDateIntersection<T3>,
+      StripDateIntersection<T4>,
+      StripDateIntersection<T5>,
+      StripDateIntersection<T6>,
+      StripDateIntersection<T7>,
+      StripDateIntersection<T8>,
+      StripDateIntersection<T9>,
+    ]
+  : T extends (
+    [
+      infer T1,
+      infer T2,
+      infer T3,
+      infer T4,
+      infer T5,
+      infer T6,
+      infer T7,
+      infer T8,
+    ]
+  ) ?
+    [
+      StripDateIntersection<T1>,
+      StripDateIntersection<T2>,
+      StripDateIntersection<T3>,
+      StripDateIntersection<T4>,
+      StripDateIntersection<T5>,
+      StripDateIntersection<T6>,
+      StripDateIntersection<T7>,
+      StripDateIntersection<T8>,
+    ]
+  : T extends (
+    [infer T1, infer T2, infer T3, infer T4, infer T5, infer T6, infer T7]
+  ) ?
+    [
+      StripDateIntersection<T1>,
+      StripDateIntersection<T2>,
+      StripDateIntersection<T3>,
+      StripDateIntersection<T4>,
+      StripDateIntersection<T5>,
+      StripDateIntersection<T6>,
+      StripDateIntersection<T7>,
+    ]
+  : T extends [infer T1, infer T2, infer T3, infer T4, infer T5, infer T6] ?
+    [
+      StripDateIntersection<T1>,
+      StripDateIntersection<T2>,
+      StripDateIntersection<T3>,
+      StripDateIntersection<T4>,
+      StripDateIntersection<T5>,
+      StripDateIntersection<T6>,
+    ]
+  : T extends [infer T1, infer T2, infer T3, infer T4, infer T5] ?
+    [
+      StripDateIntersection<T1>,
+      StripDateIntersection<T2>,
+      StripDateIntersection<T3>,
+      StripDateIntersection<T4>,
+      StripDateIntersection<T5>,
+    ]
+  : T extends [infer T1, infer T2, infer T3, infer T4] ?
+    [
+      StripDateIntersection<T1>,
+      StripDateIntersection<T2>,
+      StripDateIntersection<T3>,
+      StripDateIntersection<T4>,
+    ]
+  : T extends [infer T1, infer T2, infer T3] ?
+    [
+      StripDateIntersection<T1>,
+      StripDateIntersection<T2>,
+      StripDateIntersection<T3>,
+    ]
+  : T extends [infer T1, infer T2] ?
+    [StripDateIntersection<T1>, StripDateIntersection<T2>]
+  : T extends [infer T1] ? [StripDateIntersection<T1>]
   : [];
