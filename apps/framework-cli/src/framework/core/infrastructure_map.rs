@@ -617,14 +617,14 @@ impl InfrastructureMap {
 
         // consumption api endpoints
         let consumption_api_web_server = ConsumptionApiWebServer {};
-        if !project.features.olap && !primitive_map.consumption.endpoint_files.is_empty() {
-            log::error!("OLAP disabled. Consumption APIs are disabled.");
+        if !project.features.apis && !primitive_map.consumption.endpoint_files.is_empty() {
+            log::error!("Analytics APIs disabled. API endpoints will not be available.");
             show_message_wrapper(
                 MessageType::Error,
                 Message {
                     action: "Disabled".to_string(),
                     details: format!(
-                        "OLAP is disabled but {} consumption API(s) found.",
+                        "Analytics APIs feature is disabled but {} API endpoint(s) found. Enable 'apis = true' in moose.config.toml.",
                         primitive_map.consumption.endpoint_files.len()
                     ),
                 },
@@ -778,6 +778,10 @@ impl InfrastructureMap {
             process_changes.push(ProcessChange::OlapProcess(Change::<OlapProcess>::Added(
                 Box::new(OlapProcess {}),
             )));
+        }
+
+        // Only add Analytics API server if apis feature is enabled
+        if project.features.apis {
             process_changes.push(ProcessChange::ConsumptionApiWebServer(Change::<
                 ConsumptionApiWebServer,
             >::Added(
@@ -2114,8 +2118,8 @@ impl InfrastructureMap {
             );
         }
 
-        // Provide explicit feedback when consumption APIs are defined but OLAP is disabled
-        if !project.features.olap && infra_map.has_consumption_apis() {
+        // Provide explicit feedback when consumption APIs are defined but APIs feature is disabled
+        if !project.features.apis && infra_map.has_consumption_apis() {
             let consumption_api_count = infra_map
                 .api_endpoints
                 .values()
@@ -2127,7 +2131,7 @@ impl InfrastructureMap {
                 Message {
                     action: "Disabled".to_string(),
                     details: format!(
-                        "OLAP is disabled but {} consumption API(s) found. Enable it by setting [features].olap = true in moose.config.toml",
+                        "Analytics APIs feature is disabled but {} API endpoint(s) found. Enable it by setting [features].apis = true in moose.config.toml",
                         consumption_api_count
                     ),
                 },
