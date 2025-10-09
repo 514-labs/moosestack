@@ -19,6 +19,7 @@ use serde::de::{Error, IgnoredAny, MapAccess, Visitor};
 use serde::ser::SerializeStruct;
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value;
+use std::borrow::Cow;
 use std::fmt;
 use std::fmt::Debug;
 
@@ -78,14 +79,29 @@ pub enum EnumValueMetadata {
     String(String),
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum OrderBy {
     Fields(Vec<String>),
     SingleExpr(String),
 }
 
+impl PartialEq for OrderBy {
+    fn eq(&self, other: &Self) -> bool {
+        self.to_expr() == other.to_expr()
+    }
+}
+
 impl OrderBy {
+    pub fn to_expr(&self) -> Cow<'_, str> {
+        match self {
+            OrderBy::Fields(v) if v.is_empty() => "tuple()".into(),
+            OrderBy::Fields(v) if v.len() == 1 => (&v[0]).into(),
+            OrderBy::Fields(v) => format!("({})", v.join(", ")).into(),
+            OrderBy::SingleExpr(expr) => expr.as_str().into(),
+        }
+    }
+
     pub fn is_empty(&self) -> bool {
         matches!(self, OrderBy::Fields(v) if v.is_empty())
     }
