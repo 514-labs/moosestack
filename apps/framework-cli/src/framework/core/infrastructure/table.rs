@@ -101,12 +101,6 @@ impl std::fmt::Display for OrderBy {
     }
 }
 
-impl From<Vec<String>> for OrderBy {
-    fn from(v: Vec<String>) -> Self {
-        OrderBy::Fields(v)
-    }
-}
-
 /// TODO: This struct is supposed to be a database agnostic abstraction but it is clearly not.
 /// The inclusion of ClickHouse-specific engine types makes this leaky.
 /// This needs to be fixed in a subsequent PR to properly separate database-specific

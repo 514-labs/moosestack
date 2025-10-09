@@ -1571,7 +1571,7 @@ impl InfrastructureMap {
                             && !(target_table.order_by.is_empty()
                                 && matches!(
                                     &table.order_by,
-                                    crate::framework::core::infrastructure::table::OrderBy::Fields(v)
+                                    OrderBy::Fields(v)
                                         if *v == order_by_from_primary_key(target_table)
                                 ));
 
@@ -2377,7 +2377,7 @@ mod tests {
     use crate::framework::core::infrastructure::table::IntType;
     use crate::framework::core::infrastructure_map::DefaultTableDiffStrategy;
     use crate::framework::core::infrastructure_map::{
-        Change, InfrastructureMap, OlapChange, StreamingChange, TableChange,
+        Change, InfrastructureMap, OlapChange, OrderBy, StreamingChange, TableChange,
     };
     use crate::framework::core::{
         infrastructure::table::{Column, ColumnType, Table},
