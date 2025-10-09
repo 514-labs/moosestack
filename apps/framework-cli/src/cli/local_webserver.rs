@@ -222,6 +222,11 @@ pub struct LocalWebserverConfig {
     /// Script to run once when the dev server first starts (never repeats in this process)
     #[serde(default, alias = "post_dev_server_start_script")]
     pub on_first_start_script: Option<String>,
+    /// Number of workers for consumption API cluster (TypeScript only)
+    /// None = auto-calculated (70% of CPU cores for TypeScript, 1 for Python)
+    /// Python always uses 1 worker regardless of this setting
+    #[serde(default)]
+    pub api_workers: Option<usize>,
 }
 
 pub fn default_proxy_port() -> u16 {
@@ -382,6 +387,7 @@ impl Default for LocalWebserverConfig {
             max_request_body_size: default_max_request_body_size(),
             on_reload_complete_script: None,
             on_first_start_script: None,
+            api_workers: None,
         }
     }
 }
