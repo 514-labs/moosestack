@@ -1292,6 +1292,8 @@ impl OlapOperations for ConfiguredDBClient {
                 life_cycle: LifeCycle::ExternallyManaged,
                 engine_params_hash,
                 table_settings,
+                table_ttl_expression: None,
+                column_ttls: None,
             };
             debug!("Created table object: {:?}", table);
 

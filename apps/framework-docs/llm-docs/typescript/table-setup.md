@@ -304,6 +304,16 @@ interface S3QueueSettings {
   tracked_file_ttl_sec?: string;                  // TTL for tracked files in seconds
   polling_min_timeout_ms?: string;                // Min polling timeout
   polling_max_timeout_ms?: string;                // Max polling timeout
+  
+  // TTL support (ClickHouse)
+  // Define table and column TTL rules via OlapTable config
+  // const table = new OlapTable<Events>("events", {
+  //   orderByFields: ["timestamp", "user_id"],
+  //   ttl: {
+  //     expression: "timestamp + INTERVAL 90 DAY DELETE",
+  //     columns: { email: "timestamp + INTERVAL 30 DAY DELETE" }
+  //   }
+  // });
   polling_backoff_ms?: string;                    // Polling backoff
   cleanup_interval_min_ms?: string;               // Minimum cleanup interval
   cleanup_interval_max_ms?: string;               // Maximum cleanup interval

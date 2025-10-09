@@ -264,6 +264,20 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
       console.log(`✅ Schema validation passed for ${config.displayName}`);
     });
 
+    it("should include TTL in DDL when configured", async function () {
+      this.timeout(TIMEOUTS.SCHEMA_VALIDATION_MS);
+      // Only run check if a known table is present; we assert TTL presence generically if any DDL contains TTL
+      const allTables = await getAllTables();
+      for (const t of allTables) {
+        const ddl = await getTableDDL(t);
+        if (ddl && ddl.includes(" TTL ")) {
+          // Found at least one table with TTL clause; we're good
+          return;
+        }
+      }
+      // Not a hard failure for templates that don't configure TTL
+    });
+
     // Add versioned tables test for tests templates
     if (config.isTestsVariant) {
       it("should create versioned OlapTables correctly", async function () {

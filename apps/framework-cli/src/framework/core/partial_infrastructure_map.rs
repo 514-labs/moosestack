@@ -185,6 +185,17 @@ enum EngineConfig {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+struct PartialTTLConfig {
+    /// Table-level TTL expression (ClickHouse expression, without leading 'TTL')
+    #[serde(default)]
+    pub expression: Option<String>,
+    /// Column-level TTL expressions keyed by column name (values are ClickHouse expressions without leading 'TTL')
+    #[serde(default)]
+    pub columns: Option<std::collections::HashMap<String, String>>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct PartialTable {
     pub name: String,
     pub columns: Vec<Column>,
@@ -200,6 +211,9 @@ struct PartialTable {
     pub life_cycle: Option<LifeCycle>,
     #[serde(alias = "table_settings")]
     pub table_settings: Option<std::collections::HashMap<String, String>>,
+    /// Optional TTL configuration for table and columns
+    #[serde(alias = "ttl")]
+    pub ttl: Option<PartialTTLConfig>,
 }
 
 /// Represents a topic definition from user code before it's converted into a complete [`Topic`].
@@ -559,6 +573,13 @@ impl PartialInfrastructureMap {
                     // Because they are modifiable and won't cause issues if not set
                 }
 
+                // Extract TTL from typed partial config
+                let (table_ttl_expression, column_ttls) = if let Some(ttl) = &partial_table.ttl {
+                    (ttl.expression.clone(), ttl.columns.clone())
+                } else {
+                    (None, None)
+                };
+
                 let table = Table {
                     name: version
                         .as_ref()
@@ -582,6 +603,8 @@ impl PartialInfrastructureMap {
                     } else {
                         Some(table_settings)
                     },
+                    table_ttl_expression,
+                    column_ttls,
                 };
                 (table.id(), table)
             })

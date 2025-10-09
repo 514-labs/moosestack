@@ -148,6 +148,11 @@ interface TableJson {
   lifeCycle?: string;
   /** Optional table-level settings that can be modified with ALTER TABLE MODIFY SETTING. */
   tableSettings?: { [key: string]: string };
+  /** Optional TTL configuration for table and columns. */
+  ttl?: {
+    expression?: string;
+    columns?: { [key: string]: string };
+  };
 }
 /**
  * Represents a target destination for data flow, typically a stream.
@@ -485,7 +490,10 @@ export const toInfraMap = (registry: typeof moose_internal) => {
   const workflows: { [key: string]: WorkflowJson } = {};
 
   registry.tables.forEach((table) => {
-    const id = table.config.version ? `${table.name}_${table.config.version}` : table.name;
+    const id =
+      table.config.version ?
+        `${table.name}_${table.config.version}`
+      : table.name;
     // If the table is part of an IngestPipeline, inherit metadata if not set
     let metadata = (table as any).metadata;
     if (!metadata && table.config && (table as any).pipelineParent) {
@@ -535,6 +543,13 @@ export const toInfraMap = (registry: typeof moose_internal) => {
       tableSettings:
         tableSettings && Object.keys(tableSettings).length > 0 ?
           tableSettings
+        : undefined,
+      ttl:
+        table.config.ttl ?
+          {
+            expression: table.config.ttl.expression,
+            columns: table.config.ttl.columns as any,
+          }
         : undefined,
     };
   });

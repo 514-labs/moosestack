@@ -104,6 +104,12 @@ pub struct Table {
     /// These are separate from engine constructor parameters
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub table_settings: Option<std::collections::HashMap<String, String>>,
+    /// Table-level TTL expression (without leading 'TTL')
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub table_ttl_expression: Option<String>,
+    /// Per-column TTL expressions (without leading 'TTL')
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub column_ttls: Option<std::collections::HashMap<String, String>>,
 }
 
 impl Table {
@@ -194,6 +200,8 @@ impl Table {
                 .clone()
                 .or_else(|| self.engine.as_ref().map(|e| e.non_alterable_params_hash())),
             table_settings: self.table_settings.clone().unwrap_or_default(),
+            table_ttl_expression: self.table_ttl_expression.clone(),
+            column_ttls: self.column_ttls.clone().unwrap_or_default(),
             metadata: MessageField::from_option(self.metadata.as_ref().map(|m| {
                 infrastructure_map::Metadata {
                     description: m.description.clone().unwrap_or_default(),
@@ -252,6 +260,12 @@ impl Table {
             // Load table settings from proto
             table_settings: if !proto.table_settings.is_empty() {
                 Some(proto.table_settings)
+            } else {
+                None
+            },
+            table_ttl_expression: proto.table_ttl_expression,
+            column_ttls: if !proto.column_ttls.is_empty() {
+                Some(proto.column_ttls)
             } else {
                 None
             },

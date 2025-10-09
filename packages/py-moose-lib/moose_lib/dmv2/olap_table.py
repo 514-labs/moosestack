@@ -118,6 +118,8 @@ class OlapConfig(BaseModel):
     metadata: Optional[dict] = None
     life_cycle: Optional[LifeCycle] = None
     settings: Optional[dict[str, str]] = None
+    # Optional TTL configuration: table-level expression and per-column expressions
+    ttl: Optional[dict[str, Any]] = None
 
 class OlapTable(TypedMooseResource, Generic[T]):
     """Represents an OLAP table (e.g., a ClickHouse table) typed with a Pydantic model.

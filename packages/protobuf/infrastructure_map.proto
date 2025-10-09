@@ -127,6 +127,10 @@ message Table {
   map<string, string> table_settings = 11;
   // Optional PARTITION BY expression for ClickHouse tables
   optional string partition_by = 12;
+  // Optional TTL expression at table level (without leading 'TTL')
+  optional string table_ttl_expression = 13;
+  // Optional per-column TTL expressions (without leading 'TTL')
+  map<string, string> column_ttls = 14;
 }
 
 message View {

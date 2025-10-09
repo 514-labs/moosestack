@@ -156,8 +156,18 @@ class TimeSeriesData(BaseModel):
     timestamp: str
     value: float
 
-# Note: Partitioning and TTL are typically configured at the infrastructure level
-# or through table settings, not directly in the OlapTable API
+# TTL support
+# Moose now supports defining ClickHouse TTL at table and column level via `OlapConfig.ttl`.
+# Example:
+# OlapConfig(
+#   order_by_fields=["id", "timestamp"],
+#   ttl={
+#     "expression": "timestamp + INTERVAL 90 DAY DELETE",
+#     "columns": {
+#       "email": "timestamp + INTERVAL 30 DAY DELETE"
+#     }
+#   }
+# )
 time_series_table = OlapTable[TimeSeriesData](
     "TimeSeriesTable",
     OlapConfig(
