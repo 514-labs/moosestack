@@ -167,6 +167,10 @@ pub struct ProjectFeatures {
     /// Execute planned DDL file unless MOOSE_AUTO_APPROVE_MIGRATIONS=true
     #[serde(default)]
     pub ddl_plan: bool,
+
+    /// Whether Analytics APIs server is enabled
+    #[serde(default = "_true")]
+    pub apis: bool,
 }
 
 impl Default for ProjectFeatures {
@@ -177,6 +181,7 @@ impl Default for ProjectFeatures {
             data_model_v2: false,
             olap: true,
             ddl_plan: false,
+            apis: true,
         }
     }
 }

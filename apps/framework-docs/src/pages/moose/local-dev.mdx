@@ -29,6 +29,7 @@ Development mode automatically manages Docker containers for your infrastructure
 - **ClickHouse** (when `olap` feature is enabled)
 - **Redpanda** (when `streaming_engine` feature is enabled)
 - **Temporal** (when `workflows` feature is enabled)
+- **Analytics APIs Server** (when `apis` feature is enabled)
 - **Redis** (always enabled)
 
 ### Container Configuration
@@ -41,6 +42,7 @@ Control which containers start with feature flags:
 olap = true              # Enables ClickHouse
 streaming_engine = true  # Enables Redpanda
 workflows = false        # Controls Temporal startup
+apis = true              # Enables Analytics APIs server
 ```
 
 ## Hot Reloading Development

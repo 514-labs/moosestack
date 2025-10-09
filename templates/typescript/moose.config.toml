@@ -53,3 +53,4 @@ postgresql_version = "13"
 streaming_engine = true
 workflows = true
 data_model_v2 = true
+apis = true

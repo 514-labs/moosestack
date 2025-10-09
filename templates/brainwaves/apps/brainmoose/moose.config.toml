@@ -33,3 +33,4 @@ main_branch_name = "main"
 streaming_engine = true
 workflows = true
 data_model_v2 = true
+apis = true
