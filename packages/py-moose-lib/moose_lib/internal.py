@@ -160,7 +160,7 @@ class TableConfig(BaseModel):
 
     name: str
     columns: List[Column]
-    order_by: List[str]
+    order_by: List[str] | str
     partition_by: Optional[str]
     engine_config: Optional[EngineConfigDict] = Field(None, discriminator='engine')
     version: Optional[str] = None
@@ -367,7 +367,7 @@ def _convert_basic_engine_instance(engine: "EngineConfig") -> Optional[EngineCon
         MergeTreeEngine, ReplacingMergeTreeEngine,
         AggregatingMergeTreeEngine, SummingMergeTreeEngine
     )
-    
+
     if isinstance(engine, MergeTreeEngine):
         return MergeTreeConfigDict()
     elif isinstance(engine, ReplacingMergeTreeEngine):
@@ -395,7 +395,7 @@ def _convert_replicated_engine_instance(engine: "EngineConfig") -> Optional[Engi
         ReplicatedMergeTreeEngine, ReplicatedReplacingMergeTreeEngine,
         ReplicatedAggregatingMergeTreeEngine, ReplicatedSummingMergeTreeEngine
     )
-    
+
     if isinstance(engine, ReplicatedMergeTreeEngine):
         return ReplicatedMergeTreeConfigDict(
             keeper_path=engine.keeper_path,
@@ -432,7 +432,7 @@ def _convert_engine_instance_to_config_dict(engine: "EngineConfig") -> EngineCon
         EngineConfigDict with engine-specific configuration
     """
     from moose_lib.blocks import S3QueueEngine
-    
+
     # Try S3Queue first
     if isinstance(engine, S3QueueEngine):
         return S3QueueConfigDict(
@@ -443,17 +443,17 @@ def _convert_engine_instance_to_config_dict(engine: "EngineConfig") -> EngineCon
             compression=engine.compression,
             headers=engine.headers
         )
-    
+
     # Try basic engines
     basic_config = _convert_basic_engine_instance(engine)
     if basic_config:
         return basic_config
-    
+
     # Try replicated engines
     replicated_config = _convert_replicated_engine_instance(engine)
     if replicated_config:
         return replicated_config
-    
+
     # Fallback for any other EngineConfig subclass
     return BaseEngineConfigDict(engine=engine.__class__.__name__.replace("Engine", ""))
 
@@ -560,7 +560,7 @@ def to_infra_map() -> dict:
 
         # Determine ORDER BY: list of fields or single expression
         has_fields = bool(table.config.order_by_fields)
-        has_expr = isinstance(getattr(table.config, "order_by_expression", None), str) and len(getattr(table.config, "order_by_expression")) > 0
+        has_expr = table.config.order_by_expression is not None
         if has_fields and has_expr:
             raise ValueError(f"Table {table.name}: Provide either order_by_fields or order_by_expression, not both.")
 
