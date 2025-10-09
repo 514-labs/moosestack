@@ -310,10 +310,11 @@ pub enum ColumnType {
     DateTime {
         precision: Option<u8>,
     },
-    // most databases use 4 bytes or more for a date
-    // in clickhouse that's `Date32`
+    // Framework's standard date type - maps to ClickHouse `Date32` (4 bytes)
+    // Most databases use 4+ bytes for dates, this provides full date range
     Date,
-    // `Date` in clickhouse is 2 bytes
+    // Memory-optimized date type - maps to ClickHouse `Date` (2 bytes)
+    // Use when storage efficiency is critical and date range 1900-2299 is sufficient
     Date16,
     Enum(DataEnum),
     Array {

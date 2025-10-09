@@ -71,7 +71,7 @@ const explicitTable = new OlapTable<UserData>("users", {
 
 <Python>
 ```py filename="FullyManagedExample.py" copy
-from moose_lib import OlapTable, OlapTableConfig, LifeCycle
+from moose_lib import OlapTable, OlapConfig, LifeCycle
 from pydantic import BaseModel
 
 class UserData(BaseModel):
@@ -83,7 +83,7 @@ class UserData(BaseModel):
 user_table = OlapTable[UserData]("users")
 
 # Explicit fully managed configuration
-explicit_table = OlapTable[UserData]("users", OlapTableConfig(
+explicit_table = OlapTable[UserData]("users", OlapConfig(
     order_by_fields=["id"],
     life_cycle=LifeCycle.FULLY_MANAGED
 ))
@@ -123,7 +123,7 @@ const productAnalytics = new IngestPipeline<ProductEvent>("product_analytics", {
   stream: {
     parallelism: 4,
   },
-  ingest: true,
+  ingestApi: true,
   // automatically applied to the table and stream
   lifeCycle: LifeCycle.DELETION_PROTECTED
 });
@@ -150,7 +150,7 @@ product_analytics = IngestPipeline[ProductEvent]("product_analytics", IngestPipe
     stream=StreamConfig(
         parallelism=4,
     ),
-    ingest=True,
+    ingest_api=True,
   # automatically applied to the table and stream
   life_cycle=LifeCycle.DELETION_PROTECTED
 ))

@@ -108,7 +108,9 @@ const handleAggregated = (
 
   if (functionStringLiteral.isStringLiteral() && checker.isTupleType(types)) {
     const argumentTypes = ((types as TupleType).typeArguments || []).map(
-      (t) => tsTypeToDataType(t, checker, fieldName, typeName, false)[2],
+      (argT) => {
+        return tsTypeToDataType(argT, checker, fieldName, typeName, false)[2];
+      },
     );
     return { functionName: functionStringLiteral.value, argumentTypes };
   } else {
@@ -412,6 +414,29 @@ const isNamedTuple = (t: ts.Type, checker: ts.TypeChecker) => {
   );
 };
 
+const checkColumnHasNoDefault = (c: Column) => {
+  if (c.default !== null) {
+    throw new UnsupportedFeature(
+      "Default in inner field. Put ClickHouseDefault in top level field.",
+    );
+  }
+};
+
+const handleNested = (
+  t: ts.Type,
+  checker: ts.TypeChecker,
+  fieldName: string,
+  jwt: boolean,
+): Nested => {
+  const columns = toColumns(t, checker);
+  columns.forEach(checkColumnHasNoDefault);
+  return {
+    name: getNestedName(t, fieldName),
+    columns,
+    jwt,
+  };
+};
+
 const handleNamedTuple = (
   t: ts.Type,
   checker: ts.TypeChecker,
@@ -419,6 +444,8 @@ const handleNamedTuple = (
   return {
     fields: toColumns(t, checker).flatMap((c) => {
       if (c.name === "_clickhouse_mapped_type") return [];
+
+      checkColumnHasNoDefault(c);
       const t = c.required ? c.data_type : { nullable: c.data_type };
       return [[c.name, t]];
     }),
@@ -523,11 +550,7 @@ const tsTypeToDataType = (
       withoutTags.isClassOrInterface() ||
       (withoutTags.flags & TypeFlags.Object) !== 0
     ) ?
-      {
-        name: getNestedName(withoutTags, fieldName),
-        columns: toColumns(withoutTags, checker),
-        jwt: isJwt,
-      }
+      handleNested(withoutTags, checker, fieldName, isJwt)
     : nonNull == checker.getNeverType() ? throwNullType(fieldName, typeName)
     : throwUnknownType(t, fieldName, typeName);
   if (aggregationFunction !== undefined) {

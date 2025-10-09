@@ -33,7 +33,7 @@
 //!
 //! This module is essential for maintaining consistency between the defined infrastructure
 //! and the actual deployed components.
-use super::infrastructure::api_endpoint::ApiEndpoint;
+use super::infrastructure::api_endpoint::{APIType, ApiEndpoint};
 use super::infrastructure::consumption_webserver::ConsumptionApiWebServer;
 use super::infrastructure::function_process::FunctionProcess;
 use super::infrastructure::olap_process::OlapProcess;
@@ -617,9 +617,23 @@ impl InfrastructureMap {
 
         // consumption api endpoints
         let consumption_api_web_server = ConsumptionApiWebServer {};
-        for api_endpoint in primitive_map.consumption.endpoint_files {
-            let api_endpoint_infra = ApiEndpoint::from(api_endpoint);
-            api_endpoints.insert(api_endpoint_infra.id(), api_endpoint_infra);
+        if !project.features.olap && !primitive_map.consumption.endpoint_files.is_empty() {
+            log::error!("OLAP disabled. Consumption APIs are disabled.");
+            show_message_wrapper(
+                MessageType::Error,
+                Message {
+                    action: "Disabled".to_string(),
+                    details: format!(
+                        "OLAP is disabled but {} consumption API(s) found.",
+                        primitive_map.consumption.endpoint_files.len()
+                    ),
+                },
+            );
+        } else {
+            for api_endpoint in primitive_map.consumption.endpoint_files {
+                let api_endpoint_infra = ApiEndpoint::from(api_endpoint);
+                api_endpoints.insert(api_endpoint_infra.id(), api_endpoint_infra);
+            }
         }
 
         // Orchestration workers
@@ -764,13 +778,12 @@ impl InfrastructureMap {
             process_changes.push(ProcessChange::OlapProcess(Change::<OlapProcess>::Added(
                 Box::new(OlapProcess {}),
             )));
+            process_changes.push(ProcessChange::ConsumptionApiWebServer(Change::<
+                ConsumptionApiWebServer,
+            >::Added(
+                Box::new(ConsumptionApiWebServer {}),
+            )));
         }
-
-        process_changes.push(ProcessChange::ConsumptionApiWebServer(Change::<
-            ConsumptionApiWebServer,
-        >::Added(
-            Box::new(ConsumptionApiWebServer {}),
-        )));
 
         process_changes.push(ProcessChange::OrchestrationWorker(Change::<
             OrchestrationWorker,
@@ -2085,7 +2098,43 @@ impl InfrastructureMap {
         } else {
             load_main_py(project, &project.project_location).await?
         };
-        Ok(partial.into_infra_map(project.language, &project.main_file()))
+        let infra_map = partial.into_infra_map(project.language, &project.main_file());
+
+        // Provide explicit feedback when streams are defined but streaming engine is disabled
+        if !project.features.streaming_engine && infra_map.uses_streaming() {
+            show_message_wrapper(
+                MessageType::Error,
+                Message {
+                    action: "Disabled".to_string(),
+                    details: format!(
+                        "Streaming is disabled but {} stream(s) found. Enable it by setting [features].streaming_engine = true in moose.config.toml",
+                        infra_map.topics.len()
+                    ),
+                },
+            );
+        }
+
+        // Provide explicit feedback when consumption APIs are defined but OLAP is disabled
+        if !project.features.olap && infra_map.has_consumption_apis() {
+            let consumption_api_count = infra_map
+                .api_endpoints
+                .values()
+                .filter(|endpoint| matches!(endpoint.api_type, APIType::EGRESS { .. }))
+                .count();
+
+            show_message_wrapper(
+                MessageType::Error,
+                Message {
+                    action: "Disabled".to_string(),
+                    details: format!(
+                        "OLAP is disabled but {} consumption API(s) found. Enable it by setting [features].olap = true in moose.config.toml",
+                        consumption_api_count
+                    ),
+                },
+            );
+        }
+
+        Ok(infra_map)
     }
 
     /// Gets a topic by its ID
@@ -2162,6 +2211,30 @@ impl InfrastructureMap {
     /// An Option containing a reference to the topic if found
     pub fn find_topic_by_name(&self, name: &str) -> Option<&Topic> {
         self.topics.values().find(|topic| topic.name == name)
+    }
+
+    pub fn uses_olap(&self) -> bool {
+        !self.tables.is_empty()
+            || !self.views.is_empty()
+            || !self.topic_to_table_sync_processes.is_empty()
+            || !self.sql_resources.is_empty()
+    }
+
+    pub fn uses_streaming(&self) -> bool {
+        !self.topics.is_empty()
+            || !self.topic_to_table_sync_processes.is_empty()
+            || !self.topic_to_topic_sync_processes.is_empty()
+            || !self.function_processes.is_empty()
+            || self
+                .api_endpoints
+                .iter()
+                .any(|(_, api)| matches!(&api.api_type, APIType::INGRESS { .. }))
+    }
+
+    pub fn has_consumption_apis(&self) -> bool {
+        self.api_endpoints
+            .values()
+            .any(|endpoint| matches!(endpoint.api_type, APIType::EGRESS { .. }))
     }
 }
 
@@ -3568,6 +3641,7 @@ mod diff_topic_tests {
             }],
             metadata: None,
             life_cycle: LifeCycle::FullyManaged,
+            schema_config: None,
         }
     }
 

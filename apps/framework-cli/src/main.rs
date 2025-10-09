@@ -2,6 +2,7 @@
 mod cli;
 pub mod framework;
 pub mod infrastructure;
+pub mod mcp;
 pub mod metrics;
 pub mod metrics_inserter;
 pub mod project;

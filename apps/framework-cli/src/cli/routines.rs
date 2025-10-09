@@ -163,6 +163,7 @@ pub mod clean;
 pub mod code_generation;
 pub mod dev;
 pub mod docker_packager;
+pub mod kafka_pull;
 pub mod logs;
 pub mod ls;
 pub mod metrics_console;
@@ -366,6 +367,7 @@ pub async fn start_development_mode(
     metrics: Arc<Metrics>,
     redis_client: Arc<RedisClient>,
     settings: &Settings,
+    enable_mcp: bool,
 ) -> anyhow::Result<()> {
     display::show_message_wrapper(
         MessageType::Info,
@@ -557,6 +559,23 @@ pub async fn start_development_mode(
         settings.clone(),
     )?;
 
+    // Log MCP server status
+    if enable_mcp {
+        display::show_message_wrapper(
+            MessageType::Success,
+            Message {
+                action: "MCP".to_string(),
+                details: format!(
+                    "Model Context Protocol server available at http://{}:{}/mcp",
+                    server_config.host, server_config.port
+                ),
+            },
+        );
+        info!("[MCP] MCP endpoint enabled at /mcp");
+    } else {
+        info!("[MCP] MCP server disabled via --mcp false flag");
+    }
+
     info!("Starting web server...");
     web_server
         .start(
@@ -568,6 +587,7 @@ pub async fn start_development_mode(
             metrics,
             Some(openapi_file),
             process_registry,
+            enable_mcp,
         )
         .await;
 
@@ -663,11 +683,13 @@ pub async fn start_production_mode(
 
                 let client = create_client(project.clickhouse_config.clone());
                 check_ready(&client).await?;
+                let is_dev = !project.is_production;
                 for operation in migration_plan.operations.iter() {
                     crate::infrastructure::olap::clickhouse::execute_atomic_operation(
                         &client.config.db_name,
                         operation,
                         &client,
+                        is_dev,
                     )
                     .await?;
                 }
@@ -711,6 +733,7 @@ pub async fn start_production_mode(
             metrics,
             None,
             Arc::new(RwLock::new(process_registry)),
+            false, // MCP is disabled in production mode
         )
         .await;
 

@@ -25,6 +25,15 @@ This is a Python-based Moose template that provides a foundation for building da
 
 You are ready to go! You can start editing the app by modifying primitives in the `app` subdirectory.
 
+## OlapTable Versioning Demo
+
+This template demonstrates OlapTable versioning functionality by including two versions of the same table:
+
+- `UserEvents` v1.0 - Basic structure with MergeTree engine
+- `UserEvents` v2.0 - Enhanced with session tracking and ReplacingMergeTree engine
+
+The versioned tables are defined in `app/ingest/models.py` and showcase how multiple versions of the same table can coexist, supporting blue/green migration scenarios.
+
 ## Learn More
 
 To learn more about Moose, take a look at the following resources:
@@ -35,6 +44,17 @@ To learn more about Moose, take a look at the following resources:
 ## Community
 
 You can join the Moose community [on Slack](https://join.slack.com/t/moose-community/shared_invite/zt-2fjh5n3wz-cnOmM9Xe9DYAgQrNu8xKxg). Check out the [MooseStack repo on GitHub](https://github.com/514-labs/moosestack).
+
+# Engine Testing
+
+This template includes comprehensive tests for all supported ClickHouse engines in `app/ingest/engine_tests.py`:
+
+- **MergeTree**: Default engine for general-purpose tables
+- **ReplacingMergeTree**: Deduplication engine with support for version columns and soft deletes
+- **SummingMergeTree**: Automatic summation of numeric columns  
+- **AggregatingMergeTree**: Advanced aggregation capabilities
+
+The engine test file demonstrates proper configuration for each engine type using the new engine configuration classes to ensure compatibility and correct table creation.
 
 ## Deploy on Boreal
 

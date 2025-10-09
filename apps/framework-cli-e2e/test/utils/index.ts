@@ -7,3 +7,4 @@ export * from "./api-utils";
 export * from "./log-utils";
 export * from "./file-utils";
 export * from "./project-setup";
+export * from "./schema-definitions";

@@ -44,8 +44,9 @@ function createProgramWithSource(tempDir: string, sourceText: string) {
   return { checker, type };
 }
 
-describe("typeConvert mappings for helper types", () => {
-  it("maps DateTime, DateTime64, numeric aliases, Decimal and LowCardinality", () => {
+describe("typeConvert mappings for helper types", function () {
+  this.timeout(20000); // Increase timeout for TypeScript compilation
+  it("maps DateTime, DateTime64, numeric aliases, Decimal and LowCardinality", function () {
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "moose-typeconv-"));
 
     const source = `
@@ -81,5 +82,66 @@ describe("typeConvert mappings for helper types", () => {
 
     expect(byName.status.data_type).to.equal("String");
     expect(byName.status.annotations).to.deep.include(["LowCardinality", true]);
+  });
+
+  it('maps Date & Aggregated<"argMax", [Date, Date]> to AggregateFunction(argMax, DateTime, DateTime)', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "moose-typeconv-"));
+
+    const source = `
+      import { Aggregated } from "@514labs/moose-lib";
+
+      export interface TestModel {
+        // return type is Date, but AggregateFunction argument types should be DateTime, DateTime
+        created: Date & Aggregated<"argMax", [Date, Date]>;
+      }
+    `;
+
+    const { checker, type } = createProgramWithSource(tempDir, source);
+    const columns = toColumns(type, checker);
+    expect(columns).to.have.length(1);
+    const col = columns[0];
+
+    // Column data type for Date should remain DateTime (framework default)
+    expect(col.data_type).to.equal("DateTime");
+
+    // Aggregation annotation should be present and use DateTime for arguments
+    const agg = col.annotations.find(([k]) => k === "aggregationFunction");
+    expect(agg).to.not.be.undefined;
+    const aggPayload = (agg as any)[1];
+
+    expect(aggPayload.functionName).to.equal("argMax");
+    expect(aggPayload.argumentTypes).to.deep.equal(["DateTime", "DateTime"]);
+  });
+
+  it('maps DateTime64<3> & Aggregated<"argMax", [DateTime64<3>, DateTime64<6>]> to preserve precision', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "moose-typeconv-"));
+
+    const source = `
+      import { Aggregated, DateTime64 } from "@514labs/moose-lib";
+
+      export interface TestModel {
+        // Test that DateTime64 with precision is preserved in aggregation arguments
+        created: DateTime64<3> & Aggregated<"argMax", [DateTime64<3>, DateTime64<6>]>;
+      }
+    `;
+
+    const { checker, type } = createProgramWithSource(tempDir, source);
+    const columns = toColumns(type, checker);
+    expect(columns).to.have.length(1);
+    const col = columns[0];
+
+    // Column data type should be DateTime(3) for DateTime64<3>
+    expect(col.data_type).to.equal("DateTime(3)");
+
+    // Aggregation annotation should preserve the DateTime64 precisions
+    const agg = col.annotations.find(([k]) => k === "aggregationFunction");
+    expect(agg).to.not.be.undefined;
+    const aggPayload = (agg as any)[1];
+
+    expect(aggPayload.functionName).to.equal("argMax");
+    expect(aggPayload.argumentTypes).to.deep.equal([
+      "DateTime(3)",
+      "DateTime(6)",
+    ]);
   });
 });

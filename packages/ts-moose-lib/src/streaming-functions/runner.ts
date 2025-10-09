@@ -1,65 +1,79 @@
 import { Readable } from "node:stream";
-import {
-  Consumer,
-  Kafka,
-  KafkaMessage,
-  Producer,
-  SASLOptions,
-  KafkaJSError,
-  KafkaJSProtocolError,
-} from "kafkajs";
+import { KafkaJS } from "@confluentinc/kafka-javascript";
+const { Kafka } = KafkaJS;
+
+type Consumer = KafkaJS.Consumer;
+type Producer = KafkaJS.Producer;
+
+type KafkaMessage = {
+  value: Buffer | string | null;
+  key?: Buffer | string | null;
+  partition?: number;
+  offset?: string;
+  timestamp?: string;
+  headers?: Record<string, Buffer | string | undefined>;
+};
+
+type SASLOptions = {
+  mechanism: "plain" | "scram-sha-256" | "scram-sha-512";
+  username: string;
+  password: string;
+};
 import { Buffer } from "node:buffer";
-import process from "node:process";
-import http from "http";
-import { cliLog } from "../commons";
+import * as process from "node:process";
+import * as http from "node:http";
+import {
+  cliLog,
+  getKafkaClient,
+  RETRY_FACTOR_PRODUCER,
+  MAX_RETRIES_PRODUCER,
+  MAX_RETRY_TIME_MS,
+  ACKs,
+  Logger,
+  logError,
+} from "../commons";
 import { Cluster } from "../cluster-utils";
 import { getStreamingFunctions } from "../dmv2/internal";
-import { ConsumerConfig, TransformConfig } from "../dmv2";
+import type { ConsumerConfig, TransformConfig } from "../dmv2";
 import { jsonDateReviver } from "../utilities/json";
 
 const HOSTNAME = process.env.HOSTNAME;
 const AUTO_COMMIT_INTERVAL_MS = 5000;
 const PARTITIONS_CONSUMED_CONCURRENTLY = 3;
-const MAX_RETRIES = 150;
-const MAX_RETRY_TIME_MS = 1000;
-const MAX_RETRIES_PRODUCER = 150;
 const MAX_RETRIES_CONSUMER = 150;
 const SESSION_TIMEOUT_CONSUMER = 30000;
 const HEARTBEAT_INTERVAL_CONSUMER = 3000;
-const RETRY_FACTOR_PRODUCER = 0.2;
 const DEFAULT_MAX_STREAMING_CONCURRENCY = 100;
-const RETRY_INITIAL_TIME_MS = 100;
 // https://github.com/apache/kafka/blob/trunk/clients/src/main/java/org/apache/kafka/common/record/AbstractRecords.java#L124
 // According to the above, the overhead should be 12 + 22 bytes - 34 bytes.
 // We put 500 to be safe.
 const KAFKAJS_BYTE_MESSAGE_OVERHEAD = 500;
 
 /**
- * Parses a comma-separated broker string into an array of valid broker addresses.
- * Handles whitespace trimming and filters out empty elements.
- *
- * @param brokerString - Comma-separated broker addresses (e.g., "broker1:9092, broker2:9092, , broker3:9092")
- * @returns Array of trimmed, non-empty broker addresses
- */
-const parseBrokerString = (brokerString: string): string[] => {
-  return brokerString
-    .split(",")
-    .map((broker) => broker.trim())
-    .filter((broker) => broker.length > 0);
-};
-
-//Dummy change
-
-/**
  * Checks if an error is a MESSAGE_TOO_LARGE error from Kafka
  */
-const isMessageTooLargeError = (error: any): boolean => {
-  return (
-    error instanceof KafkaJSError &&
-    ((error instanceof KafkaJSProtocolError &&
-      error.type === "MESSAGE_TOO_LARGE") ||
-      (error.cause !== undefined && isMessageTooLargeError(error.cause)))
-  );
+const isMessageTooLargeError = (error: unknown): boolean => {
+  // Check if it's a KafkaJS error first
+  if (KafkaJS.isKafkaJSError && KafkaJS.isKafkaJSError(error)) {
+    return (
+      (error as any).type === "ERR_MSG_SIZE_TOO_LARGE" ||
+      (error as any).code === 10 ||
+      ((error as any).cause !== undefined &&
+        isMessageTooLargeError((error as any).cause))
+    );
+  }
+
+  // Fallback for other error types that might have these properties
+  if (error && typeof error === "object") {
+    const err = error as any;
+    return (
+      err.type === "ERR_MSG_SIZE_TOO_LARGE" ||
+      err.code === 10 ||
+      (err.cause !== undefined && isMessageTooLargeError(err.cause))
+    );
+  }
+
+  return false;
 };
 
 /**
@@ -112,7 +126,7 @@ const sendChunkWithRetry = async (
   currentMaxSize: number,
   maxRetries: number = 3,
 ): Promise<void> => {
-  let currentMessages = messages;
+  const currentMessages = messages;
   let attempts = 0;
 
   while (attempts < maxRetries) {
@@ -223,60 +237,19 @@ export interface StreamingFunctionArgs {
 }
 
 /**
- * Interface for logging functionality
- */
-interface Logger {
-  logPrefix: string;
-  log: (message: string) => void;
-  error: (message: string) => void;
-  warn: (message: string) => void;
-}
-
-const logError = (logger: Logger, e: Error): void => {
-  logger.error(e.message);
-  const stack = e.stack;
-  if (stack) {
-    logger.error(stack);
-  }
-};
-
-/**
  * Maximum number of concurrent streaming operations, configurable via environment
  */
 const MAX_STREAMING_CONCURRENCY =
   process.env.MAX_STREAMING_CONCURRENCY ?
-    parseInt(process.env.MAX_STREAMING_CONCURRENCY)
+    parseInt(process.env.MAX_STREAMING_CONCURRENCY, 10)
   : DEFAULT_MAX_STREAMING_CONCURRENCY;
-
-/**
- * Builds SASL configuration for Kafka client authentication
- */
-const buildSaslConfig = (
-  logger: Logger,
-  args: StreamingFunctionArgs,
-): SASLOptions | undefined => {
-  const mechanism = args.saslMechanism ? args.saslMechanism.toLowerCase() : "";
-  switch (mechanism) {
-    case "plain":
-    case "scram-sha-256":
-    case "scram-sha-512":
-      return {
-        mechanism: mechanism,
-        username: args.saslUsername || "",
-        password: args.saslPassword || "",
-      };
-    default:
-      logger.warn(`Unsupported SASL mechanism: ${args.saslMechanism}`);
-      return undefined;
-  }
-};
 
 /**
  * Logs metrics data to HTTP endpoint
  */
 export const metricsLog: (log: MetricsData) => void = (log) => {
   const req = http.request({
-    port: parseInt(process.env.MOOSE_MANAGEMENT_PORT ?? "5001"),
+    port: parseInt(process.env.MOOSE_MANAGEMENT_PORT ?? "5001", 10),
     method: "POST",
     path: "/metrics-logs",
   });
@@ -299,8 +272,17 @@ const startProducer = async (
   logger: Logger,
   producer: Producer,
 ): Promise<void> => {
-  await producer.connect();
-  logger.log("Producer is running...");
+  try {
+    logger.log("Connecting producer...");
+    await producer.connect();
+    logger.log("Producer is running...");
+  } catch (error) {
+    logger.error("Failed to connect producer:");
+    if (error instanceof Error) {
+      logError(logger, error);
+    }
+    throw error;
+  }
 };
 
 /**
@@ -323,22 +305,52 @@ const stopProducer = async (
 };
 
 /**
- * Disconnects a Kafka consumer and logs the shutdown
+ * Gracefully stops a Kafka consumer by pausing all partitions and then disconnecting
  *
  * @param logger - Logger instance for outputting consumer status
  * @param consumer - KafkaJS Consumer instance to disconnect
+ * @param sourceTopic - Topic configuration containing name and partition count
  * @returns Promise that resolves when consumer is disconnected
  * @example
  * ```ts
- * await stopConsumer(logger, consumer); // Disconnects consumer and logs shutdown
+ * await stopConsumer(logger, consumer, sourceTopic); // Pauses all partitions and disconnects consumer
  * ```
  */
 const stopConsumer = async (
   logger: Logger,
   consumer: Consumer,
+  sourceTopic: TopicConfig,
 ): Promise<void> => {
-  await consumer.disconnect();
-  logger.log("Consumer is shutting down...");
+  try {
+    // Try to pause the consumer first if the method exists
+    logger.log("Pausing consumer...");
+
+    // Generate partition numbers array based on the topic's partition count
+    const partitionNumbers = Array.from(
+      { length: sourceTopic.partitions },
+      (_, i) => i,
+    );
+
+    await consumer.pause([
+      {
+        topic: sourceTopic.name,
+        partitions: partitionNumbers,
+      },
+    ]);
+
+    logger.log("Disconnecting consumer...");
+    await consumer.disconnect();
+    logger.log("Consumer is shutting down...");
+  } catch (error) {
+    logger.error(`Error during consumer shutdown: ${error}`);
+    // Continue with disconnect even if pause fails
+    try {
+      await consumer.disconnect();
+      logger.log("Consumer disconnected after error");
+    } catch (disconnectError) {
+      logger.error(`Failed to disconnect consumer: ${disconnectError}`);
+    }
+  }
 };
 
 /**
@@ -360,6 +372,8 @@ const stopConsumer = async (
  */
 const handleMessage = async (
   logger: Logger,
+  // Note: TransformConfig<any> is intentionally generic here as it handles
+  // various data model types that are determined at runtime
   streamingFunctionWithConfigList: [StreamingFunction, TransformConfig<any>][],
   message: KafkaMessage,
   producer: Producer,
@@ -370,7 +384,16 @@ const handleMessage = async (
   }
 
   try {
-    const parsedData = JSON.parse(message.value.toString(), jsonDateReviver);
+    // Detect Schema Registry JSON envelope: 0x00 + 4-byte schema ID (big-endian) + JSON bytes
+    let payloadBuffer = message.value as Buffer;
+    if (
+      payloadBuffer &&
+      payloadBuffer.length >= 5 &&
+      payloadBuffer[0] === 0x00
+    ) {
+      payloadBuffer = payloadBuffer.subarray(5);
+    }
+    const parsedData = JSON.parse(payloadBuffer.toString(), jsonDateReviver);
     const transformedData = await Promise.all(
       streamingFunctionWithConfigList.map(async ([fn, config]) => {
         try {
@@ -393,7 +416,7 @@ const handleMessage = async (
               action: "DeadLetter",
               message: `Sending message to DLQ ${deadLetterQueue.name}: ${e instanceof Error ? e.message : String(e)}`,
               message_type: "Error",
-            } as any);
+            });
             // Send to the DLQ
             try {
               await producer.send({
@@ -409,7 +432,7 @@ const handleMessage = async (
               action: "Function",
               message: `Error processing message (no DLQ configured): ${e instanceof Error ? e.message : String(e)}`,
               message_type: "Error",
-            } as any);
+            });
           }
 
           // rethrow for the outside error handling
@@ -495,10 +518,7 @@ const sendMessages = async (
       } else {
         // Add the new message to the current chunk
         chunk.push(message);
-        chunk.forEach(
-          (message) =>
-            (metrics.bytes += Buffer.byteLength(message.value, "utf8")),
-        );
+        metrics.bytes += Buffer.byteLength(message.value, "utf8");
         chunkSize += messageSize;
       }
     }
@@ -572,7 +592,7 @@ const sendMessageMetrics = (logger: Logger, metrics: Metrics) => {
  * ```
  */
 function loadStreamingFunction(functionFilePath: string) {
-  let streamingFunctionImport;
+  let streamingFunctionImport: { default: StreamingFunction };
   try {
     streamingFunctionImport = require(
       functionFilePath.substring(0, functionFilePath.length - 3),
@@ -632,7 +652,7 @@ const startConsumer = async (
   args: StreamingFunctionArgs,
   logger: Logger,
   metrics: Metrics,
-  parallelism: number,
+  _parallelism: number,
   consumer: Consumer,
   producer: Producer,
   streamingFuncId: string,
@@ -643,13 +663,25 @@ const startConsumer = async (
     validateTopicConfig(args.targetTopic);
   }
 
-  await consumer.connect();
+  try {
+    logger.log("Connecting consumer...");
+    await consumer.connect();
+    logger.log("Consumer connected successfully");
+  } catch (error) {
+    logger.error("Failed to connect consumer:");
+    if (error instanceof Error) {
+      logError(logger, error);
+    }
+    throw error;
+  }
 
   logger.log(
     `Starting consumer group '${streamingFuncId}' with source topic: ${args.sourceTopic.name} and target topic: ${args.targetTopic?.name || "none"}`,
   );
 
   // We preload the function to not have to load it for each message
+  // Note: Config types use 'any' as generics because they handle various
+  // data model types determined at runtime, not compile time
   const streamingFunctions: [
     StreamingFunction,
     TransformConfig<any> | ConsumerConfig<any>,
@@ -660,15 +692,16 @@ const startConsumer = async (
 
   await consumer.subscribe({
     topics: [args.sourceTopic.name], // Use full topic name for Kafka operations
-    fromBeginning: true,
   });
 
   await consumer.run({
-    autoCommitInterval: AUTO_COMMIT_INTERVAL_MS,
     eachBatchAutoResolve: true,
     // Enable parallel processing of partitions
     partitionsConsumedConcurrently: PARTITIONS_CONSUMED_CONCURRENTLY, // To be adjusted
-    eachBatch: async ({ batch, heartbeat, isRunning, isStale }) => {
+    // Note: Kafka client batch handler parameters are typed as 'any' because
+    // @confluentinc/kafka-javascript doesn't export proper TypeScript interfaces
+    // for these callback parameters
+    eachBatch: async ({ batch, heartbeat, isRunning, isStale }: any) => {
       if (!isRunning() || isStale()) {
         return;
       }
@@ -682,8 +715,20 @@ const startConsumer = async (
       logger.log(`Received ${batch.messages.length} message(s)`);
 
       let index = 0;
+      // Node.js 16.5.0+ added .map() and .toArray() methods to Readable streams,
+      // but TypeScript definitions may not include them yet. We extend the type
+      // to provide proper typing without using 'any'.
+      const readableStream = Readable.from(batch.messages) as Readable & {
+        map<T>(
+          // Note: 'any' used here because batch.messages can contain various
+          // Kafka message formats depending on the source topic structure
+          fn: (message: any) => Promise<T>,
+          options: { concurrency: number },
+        ): Readable & { toArray(): Promise<T[]> };
+      };
+
       const processedMessages: (SlimKafkaMessage[] | undefined)[] =
-        await Readable.from(batch.messages)
+        await readableStream
           .map(
             async (message) => {
               index++;
@@ -744,8 +789,10 @@ const startConsumer = async (
  * ```
  */
 const buildLogger = (args: StreamingFunctionArgs, workerId: number): Logger => {
-  const logPrefix = `${args.sourceTopic.name} -> ${args.targetTopic?.name || "void"} - ${workerId}`;
-  const logger: Logger = {
+  const targetLabel =
+    args.targetTopic?.name ? ` -> ${args.targetTopic.name}` : " (consumer)";
+  const logPrefix = `${args.sourceTopic.name}${targetLabel} (worker ${workerId})`;
+  return {
     logPrefix: logPrefix,
     log: (message: string): void => {
       console.log(`${logPrefix}: ${message}`);
@@ -757,7 +804,6 @@ const buildLogger = (args: StreamingFunctionArgs, workerId: number): Logger => {
       console.warn(`${logPrefix}: ${message}`);
     },
   };
-  return logger;
 };
 
 /**
@@ -873,7 +919,7 @@ export const runStreamingFunctions = async (
     workerStart: async (worker, parallelism) => {
       const logger = buildLogger(args, worker.id);
 
-      let metrics = {
+      const metrics = {
         count_in: 0,
         count_out: 0,
         bytes: 0,
@@ -882,53 +928,51 @@ export const runStreamingFunctions = async (
       setTimeout(() => sendMessageMetrics(logger, metrics), 1000);
 
       const clientIdPrefix = HOSTNAME ? `${HOSTNAME}-` : "";
-      const processId = clientIdPrefix + streamingFuncId + "-ts-" + worker.id;
+      const processId = `${clientIdPrefix}${streamingFuncId}-ts-${worker.id}`;
 
-      const brokers = parseBrokerString(args.broker);
-      if (brokers.length === 0) {
-        throw new Error(`No valid broker addresses found in: "${args.broker}"`);
-      }
-
-      const kafka = new Kafka({
-        clientId: processId,
-        brokers: brokers,
-        ssl: args.securityProtocol === "SASL_SSL",
-        sasl: buildSaslConfig(logger, args),
-        retry: {
-          initialRetryTime: RETRY_INITIAL_TIME_MS,
-          maxRetryTime: MAX_RETRY_TIME_MS,
-          retries: MAX_RETRIES,
+      const kafka = await getKafkaClient(
+        {
+          clientId: processId,
+          broker: args.broker,
+          securityProtocol: args.securityProtocol,
+          saslUsername: args.saslUsername,
+          saslPassword: args.saslPassword,
+          saslMechanism: args.saslMechanism,
         },
-      });
+        logger,
+      );
 
       const consumer: Consumer = kafka.consumer({
-        groupId: streamingFuncId,
-        sessionTimeout: SESSION_TIMEOUT_CONSUMER,
-        heartbeatInterval: HEARTBEAT_INTERVAL_CONSUMER,
-        retry: {
-          retries: MAX_RETRIES_CONSUMER,
+        kafkaJS: {
+          groupId: streamingFuncId,
+          sessionTimeout: SESSION_TIMEOUT_CONSUMER,
+          heartbeatInterval: HEARTBEAT_INTERVAL_CONSUMER,
+          retry: {
+            retries: MAX_RETRIES_CONSUMER,
+          },
+          autoCommit: true,
+          autoCommitInterval: AUTO_COMMIT_INTERVAL_MS,
+          fromBeginning: true,
         },
       });
 
       const producer: Producer = kafka.producer({
-        transactionalId: processId,
-        idempotent: true,
-        retry: {
-          retries: MAX_RETRIES_PRODUCER,
-          factor: RETRY_FACTOR_PRODUCER,
-          maxRetryTime: MAX_RETRY_TIME_MS,
+        kafkaJS: {
+          idempotent: true,
+          acks: ACKs,
+          retry: {
+            retries: MAX_RETRIES_PRODUCER,
+            maxRetryTime: MAX_RETRY_TIME_MS,
+          },
         },
       });
 
       try {
-        producer.on(producer.events.REQUEST, (event) => {
-          logger.log(`Sending message size with ${event.payload.size}`);
-        });
-
-        // always start producer because DLQ may need it
+        logger.log("Starting producer...");
         await startProducer(logger, producer);
 
         try {
+          logger.log("Starting consumer...");
           await startConsumer(
             args,
             logger,
@@ -943,23 +987,36 @@ export const runStreamingFunctions = async (
           if (e instanceof Error) {
             logError(logger, e);
           }
+          // Re-throw to ensure proper error handling
+          throw e;
         }
       } catch (e) {
         logger.error("Failed to start kafka producer: ");
         if (e instanceof Error) {
           logError(logger, e);
         }
+        // Re-throw to ensure proper error handling
+        throw e;
       }
 
       return [logger, producer, consumer] as [Logger, Producer, Consumer];
     },
     workerStop: async ([logger, producer, consumer]) => {
-      logger.log(`Received SIGTERM, shutting down ...`);
-      await consumer.stop(); // Stop consuming new messages
-      // Wait for in-flight messages to complete
-      await new Promise((resolve) => setTimeout(resolve, 5000));
+      logger.log(`Received SIGTERM, shutting down gracefully...`);
+
+      // First stop the consumer to prevent new messages
+      logger.log("Stopping consumer first...");
+      await stopConsumer(logger, consumer, args.sourceTopic);
+
+      // Wait a bit for in-flight messages to complete processing
+      logger.log("Waiting for in-flight messages to complete...");
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+
+      // Then stop the producer
+      logger.log("Stopping producer...");
       await stopProducer(logger, producer);
-      await stopConsumer(logger, consumer);
+
+      logger.log("Graceful shutdown completed");
     },
   });
 

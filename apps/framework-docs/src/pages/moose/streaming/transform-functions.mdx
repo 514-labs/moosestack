@@ -493,13 +493,13 @@ interface ProcessedEvent {
 
 // Create pipelines
 const rawEvents = new IngestPipeline<UserEvent>("raw_events", {
-  ingest: true,
+  ingestApi: true,
   stream: true,
   table: false
 });
 
 const processedEvents = new IngestPipeline<ProcessedEvent>("processed_events", {
-  ingest: false,
+  ingestApi: false,
   stream: true,
   table: true
 });
@@ -542,7 +542,7 @@ eventDLQ.addConsumer((deadLetter) => {
 
 <Python>
 ```py filename="DeadLetterQueue.py" copy
-from moose_lib import DeadLetterQueue, IngestPipeline, TransformConfig, DeadLetterModel
+from moose_lib import DeadLetterQueue, IngestPipeline, IngestPipelineConfig, TransformConfig, DeadLetterModel
 from pydantic import BaseModel
 from datetime import datetime
 
@@ -558,17 +558,17 @@ class ProcessedEvent(BaseModel):
     is_valid: bool
 
 # Create pipelines
-raw_events = IngestPipeline[UserEvent]("raw_events", {
-    "ingest": True,
-    "stream": True,
-    "table": False
-})
+raw_events = IngestPipeline[UserEvent]("raw_events", IngestPipelineConfig(
+    ingest_api=True,
+    stream=True,
+    table=False
+))
 
-processed_events = IngestPipeline[ProcessedEvent]("processed_events", {
-    "ingest": False,
-    "stream": True,
-    "table": True
-})
+processed_events = IngestPipeline[ProcessedEvent]("processed_events", IngestPipelineConfig(
+    ingest_api=False,
+    stream=True,
+    table=True
+))
 
 # Create dead letter queue for failed transformations
 event_dlq = DeadLetterQueue[UserEvent](name="EventDLQ")

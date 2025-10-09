@@ -16,17 +16,17 @@ type Key[T: (str, int)] = T
 type JWT[T] = T
 
 
-@dataclasses.dataclass  # a BaseModel in the annotations will confuse pydantic
+@dataclasses.dataclass(frozen=True)  # a BaseModel in the annotations will confuse pydantic
 class ClickhousePrecision:
     precision: int
 
 
-@dataclasses.dataclass
+@dataclasses.dataclass(frozen=True)
 class ClickhouseSize:
     size: int
 
 
-@dataclasses.dataclass
+@dataclasses.dataclass(frozen=True)
 class ClickhouseDefault:
     expression: str
 
@@ -53,13 +53,13 @@ def aggregated[T](
         agg_func: str,
         param_types: list[type | GenericAlias | _BaseGenericAlias]
 ) -> Type[T]:
-    return Annotated[result_type, AggregateFunction(agg_func=agg_func, param_types=param_types)]
+    return Annotated[result_type, AggregateFunction(agg_func=agg_func, param_types=tuple(param_types))]
 
 
-@dataclasses.dataclass
+@dataclasses.dataclass(frozen=True)
 class AggregateFunction:
     agg_func: str
-    param_types: list[type | GenericAlias | _BaseGenericAlias]
+    param_types: tuple[type | GenericAlias | _BaseGenericAlias, ...]
 
     def to_dict(self):
         return {
@@ -235,17 +235,23 @@ def py_type_to_column_type(t: type, mds: list[Any]) -> Tuple[bool, list[Any], Da
     elif not isclass(t):
         raise ValueError(f"Unknown type {t}")
     elif issubclass(t, BaseModel):
+        columns = _to_columns(t)
+        for c in columns:
+            if c.default is not None:
+                raise ValueError(
+                    "Default in inner field. Put ClickHouseDefault in top level field."
+                )
         if any(md == "ClickHouseNamedTuple" for md in mds):
             data_type = NamedTupleType(
                 fields=[(
                     column.name,
                     column.data_type
-                ) for column in _to_columns(t)],
+                ) for column in columns],
             )
         else:
             data_type = Nested(
                 name=t.__name__,
-                columns=_to_columns(t),
+                columns=columns,
             )
     elif issubclass(t, Enum):
         values = [EnumValue(name=member.name, value=member.value) for member in t]

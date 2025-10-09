@@ -37,6 +37,32 @@ message Topic {
   optional int32 max_message_bytes = 7;
   Metadata metadata = 8;
   LifeCycle life_cycle = 9;
+  // Optional Schema Registry configuration
+  optional SchemaRegistry schema_registry = 10;
+}
+
+// Encodes schema reference used for Schema Registry integration
+message SchemaRegistry {
+  enum Encoding {
+    JSON = 0;
+    AVRO = 1;
+    PROTOBUF = 2;
+  }
+  // Encoding/wire format; avoid reserved names in generators
+  Encoding encoding = 1;
+  oneof schema_ref {
+    // Use a concrete schema ID
+    int32 schema_id = 2;
+    // Use subject name (latest version)
+    string subject = 3;
+    // Use subject name with explicit version
+    SubjectVersion subject_version = 4;
+  }
+}
+
+message SubjectVersion {
+  string subject = 1;
+  int32 version = 2;
 }
 
 message ApiEndpoint {
@@ -174,7 +200,9 @@ enum SimpleColumnType {
   // in clickhouse, this is the 32-bit date
   // otherwise, see DateType where the precision can be specified
   DATETIME = 6;
+  // Framework Date (standard) -> ClickHouse Date32 (4 bytes)
   DATE = 7;
+  // Framework Date16 (memory-optimized) -> ClickHouse Date (2 bytes)
   DATE16 = 8;
   IPV4 = 9;
   IPV6 = 10;

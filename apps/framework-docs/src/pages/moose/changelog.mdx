@@ -76,6 +76,35 @@ Changes that require user action or may break existing usage.
     *[#2676](https://github.com/514-labs/moosestack/pull/2676) by [camelCasedAditya](https://github.com/camelCasedAditya)*
 </BreakingChanges>
 
+---
+
+## 2025-08-20
+
+<ReleaseHighlights>
+  - **Improved IngestPipeline API Clarity** — The confusing `ingest` parameter has been renamed to `ingestApi` (TypeScript) and `ingest_api` (Python) for better clarity. The old parameter names are still supported with deprecation warnings.
+</ReleaseHighlights>
+
+<Changed>
+  - **IngestPipeline Parameter Renamed** — The `ingest` parameter in IngestPipeline configurations has been renamed for clarity:
+    - **TypeScript**: `ingest: true` → `ingestApi: true`
+    - **Python**: `ingest=True` → `ingest_api=True`
+    
+    The old parameter names continue to work with deprecation warnings to ensure backwards compatibility. *[Current PR]*
+</Changed>
+
+<Deprecated>
+  - **IngestPipeline `ingest` parameter** — The `ingest` parameter in IngestPipeline configurations is deprecated:
+    - **TypeScript**: Use `ingestApi` instead of `ingest`
+    - **Python**: Use `ingest_api` instead of `ingest`
+    
+    The old parameter will be removed in a future major version. Please update your code to use the new parameter names. *[Current PR]*
+</Deprecated>
+
+<BreakingChanges>
+  None - Full backwards compatibility maintained
+</BreakingChanges>
+
+---
 ## 2025-06-12
 
 <ReleaseHighlights>

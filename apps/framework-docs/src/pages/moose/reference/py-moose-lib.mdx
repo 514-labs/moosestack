@@ -85,7 +85,27 @@ class AggregatingMergeTreeEngine(EngineConfig):
     pass
     
 class SummingMergeTreeEngine(EngineConfig):
-    pass
+    columns: Optional[List[str]] = None  # Columns to sum
+
+# Replicated engines
+class ReplicatedMergeTreeEngine(EngineConfig):
+    keeper_path: Optional[str] = None  # ZooKeeper/Keeper path (optional for Cloud)
+    replica_name: Optional[str] = None  # Replica name (optional for Cloud)
+
+class ReplicatedReplacingMergeTreeEngine(EngineConfig):
+    keeper_path: Optional[str] = None  # ZooKeeper/Keeper path (optional for Cloud)
+    replica_name: Optional[str] = None  # Replica name (optional for Cloud)
+    ver: Optional[str] = None  # Version column for keeping latest
+    is_deleted: Optional[str] = None  # Soft delete marker (requires ver)
+
+class ReplicatedAggregatingMergeTreeEngine(EngineConfig):
+    keeper_path: Optional[str] = None  # ZooKeeper/Keeper path (optional for Cloud)
+    replica_name: Optional[str] = None  # Replica name (optional for Cloud)
+
+class ReplicatedSummingMergeTreeEngine(EngineConfig):
+    keeper_path: Optional[str] = None  # ZooKeeper/Keeper path (optional for Cloud)
+    replica_name: Optional[str] = None  # Replica name (optional for Cloud)
+    columns: Optional[List[str]] = None  # Columns to sum
 ```
 
 ### `StreamConfig`
@@ -113,7 +133,7 @@ Configuration for creating a complete data pipeline.
 class IngestPipelineConfig(BaseModel):
     table: bool | OlapConfig = True
     stream: bool | StreamConfig = True
-    ingest: bool | IngestConfig = True
+    ingest_api: bool | IngestConfig = True
 ```
 
 ## Infrastructure Components
@@ -189,14 +209,14 @@ from moose_lib.blocks import ReplacingMergeTreeEngine
 
 # Basic usage
 pipeline = IngestPipeline[UserEvent]("user_pipeline", IngestPipelineConfig(
-    ingest=True,
+    ingest_api=True,
     stream=True,
     table=True
 ))
 
 # With advanced configuration
 pipeline = IngestPipeline[UserEvent]("user_pipeline", IngestPipelineConfig(
-    ingest=True,
+    ingest_api=True,
     stream=StreamConfig(parallelism=3),
     table=OlapConfig(
         order_by_fields=["id", "timestamp"],
@@ -229,6 +249,10 @@ from moose_lib.blocks import (
     ReplacingMergeTreeEngine,
     AggregatingMergeTreeEngine,
     SummingMergeTreeEngine,
+    ReplicatedMergeTreeEngine,
+    ReplicatedReplacingMergeTreeEngine,
+    ReplicatedAggregatingMergeTreeEngine,
+    ReplicatedSummingMergeTreeEngine,
     S3QueueEngine
 )
 
@@ -237,6 +261,23 @@ dedup_engine = ReplacingMergeTreeEngine(
     ver="updated_at",  # Optional: version column for keeping latest
     is_deleted="deleted"  # Optional: soft delete marker (requires ver)
 )
+
+# ReplicatedMergeTree with explicit keeper paths (self-managed ClickHouse)
+replicated_engine = ReplicatedMergeTreeEngine(
+    keeper_path="/clickhouse/tables/{database}/{shard}/my_table",
+    replica_name="{replica}"
+)
+
+# ReplicatedReplacingMergeTree with deduplication
+replicated_dedup_engine = ReplicatedReplacingMergeTreeEngine(
+    keeper_path="/clickhouse/tables/{database}/{shard}/my_dedup_table",
+    replica_name="{replica}",
+    ver="updated_at",
+    is_deleted="deleted"
+)
+
+# For ClickHouse Cloud or Boreal - omit keeper parameters
+cloud_replicated = ReplicatedMergeTreeEngine()  # No parameters needed
 
 # S3Queue configuration for streaming from S3
 s3_engine = S3QueueEngine(

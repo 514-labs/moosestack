@@ -30,6 +30,22 @@ type OlapConfig<T> =
       settings?: { [key: string]: string }; 
     }
   | { 
+      engine: ClickHouseEngines.ReplicatedMergeTree;
+      keeperPath?: string;   // Optional: ZooKeeper/Keeper path (omit for ClickHouse Cloud/Boreal)
+      replicaName?: string;  // Optional: replica name (omit for ClickHouse Cloud/Boreal)
+      orderByFields?: (keyof T & string)[]; 
+      settings?: { [key: string]: string }; 
+    }
+  | { 
+      engine: ClickHouseEngines.ReplicatedReplacingMergeTree;
+      keeperPath?: string;   // Optional: ZooKeeper/Keeper path (omit for ClickHouse Cloud/Boreal)
+      replicaName?: string;  // Optional: replica name (omit for ClickHouse Cloud/Boreal)
+      ver?: keyof T & string;        // Optional: version column
+      isDeleted?: keyof T & string;   // Optional: soft delete marker
+      orderByFields?: (keyof T & string)[]; 
+      settings?: { [key: string]: string }; 
+    }
+  | { 
       engine: ClickHouseEngines.S3Queue;
       s3Path: string;        // S3 bucket path
       format: string;        // Data format
@@ -37,7 +53,6 @@ type OlapConfig<T> =
       awsSecretAccessKey?: string;
       compression?: string;
       headers?: { [key: string]: string };
-      orderByFields?: (keyof T & string)[];
       settings?: { [key: string]: string };  // Table-level settings including S3Queue-specific ones
     };
 ```
@@ -142,6 +157,50 @@ export const Versioned = new OlapTable("Versioned", {
 });
 ```
 
+### Replicated Engine Tables
+
+Replicated engines provide high availability and data replication across multiple ClickHouse nodes.
+
+```typescript
+import { OlapTable, ClickHouseEngines, Key } from '@514labs/moose-lib';
+
+interface ReplicatedSchema {
+  id: Key<string>;
+  data: string;
+  timestamp: Date;
+}
+
+// Recommended: Omit parameters for automatic defaults (works in both Cloud and self-managed)
+export const ReplicatedTable = new OlapTable<ReplicatedSchema>("ReplicatedTable", {
+  engine: ClickHouseEngines.ReplicatedMergeTree,
+  // No keeperPath or replicaName - uses smart defaults: /clickhouse/tables/{uuid}/{shard} and {replica}
+  orderByFields: ["id", "timestamp"]
+});
+
+// Optional: Explicit paths for custom configurations
+export const CustomReplicatedTable = new OlapTable<ReplicatedSchema>("CustomReplicatedTable", {
+  engine: ClickHouseEngines.ReplicatedMergeTree,
+  keeperPath: "/clickhouse/tables/{database}/{shard}/custom_table",
+  replicaName: "{replica}",
+  orderByFields: ["id"]
+});
+
+// Replicated with deduplication
+export const ReplicatedDedup = new OlapTable<ReplicatedSchema>("ReplicatedDedup", {
+  engine: ClickHouseEngines.ReplicatedReplacingMergeTree,
+  keeperPath: "/clickhouse/tables/{database}/{shard}/replicated_dedup",
+  replicaName: "{replica}",
+  ver: "timestamp",
+  isDeleted: "deleted",
+  orderByFields: ["id"]
+});
+```
+
+**Note**: The `keeperPath` and `replicaName` parameters are optional:
+- **Self-managed ClickHouse**: Both parameters are required for configuring ZooKeeper/ClickHouse Keeper paths
+- **ClickHouse Cloud / Boreal**: Omit both parameters - the platform manages replication automatically
+```
+
 ### S3Queue Engine Tables
 
 The S3Queue engine allows you to automatically process files from S3 buckets as they arrive.
@@ -159,7 +218,7 @@ interface S3EventSchema {
   data: any;
 }
 
-// Option 1: Direct configuration with new API
+// Direct configuration with new API
 export const S3Events = new OlapTable("S3Events", {
   engine: ClickHouseEngines.S3Queue,
   s3Path: "s3://my-bucket/events/*.json",
@@ -177,39 +236,18 @@ export const S3Events = new OlapTable("S3Events", {
     processing_threads_num: "4",
     // Additional settings as needed
   },
-  orderByFields: ["id", "timestamp"]
 });
 
-// Option 2: Using factory method (cleanest approach)
-export const S3EventsFactory = OlapTable.withS3Queue<S3EventSchema>(
-  "S3Events",
-  "s3://my-bucket/events/*.json",
-  "JSONEachRow",
-  {
-    awsAccessKeyId: "AKIA...",
-    awsSecretAccessKey: "secret...",
-    compression: "gzip",
-    settings: {
-      mode: "unordered",
-      keeper_path: "/clickhouse/s3queue/s3_events"
-    },
-    orderByFields: ["id", "timestamp"]
-  }
-);
-
 // Public S3 bucket example (no credentials needed)
-export const PublicS3Data = OlapTable.withS3Queue<any>(
-  "PublicS3Data",
-  "s3://public-bucket/data/*.csv",
-  "CSV",
-  {
-    // No AWS credentials for public buckets
-    settings: {
-      mode: "ordered",
-      keeper_path: "/clickhouse/s3queue/public_data"
-    }
+export const PublicS3Data = new OlapTable<any>("PublicS3Data", {
+  engine: ClickHouseEngines.S3Queue,
+  s3Path: "s3://public-bucket/data/*.csv",
+  format: "CSV",
+  settings: {
+    mode: "ordered",
+    keeper_path: "/clickhouse/s3queue/public_data"
   }
-);
+});
 ```
 
 #### Legacy API (Still Supported)

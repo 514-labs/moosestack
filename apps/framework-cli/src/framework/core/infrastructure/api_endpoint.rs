@@ -29,6 +29,7 @@ pub enum APIType {
         // that's a different level of abstraction
         data_model: Option<Box<DataModel>>,
         dead_letter_queue: Option<String>,
+        #[serde(default)]
         schema: serde_json::Map<String, Value>,
     },
     EGRESS {

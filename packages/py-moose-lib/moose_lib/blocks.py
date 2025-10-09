@@ -14,6 +14,10 @@ class ClickHouseEngines(Enum):
     VersionedCollapsingMergeTree = "VersionedCollapsingMergeTree"
     GraphiteMergeTree = "GraphiteMergeTree"
     S3Queue = "S3Queue"
+    ReplicatedMergeTree = "ReplicatedMergeTree"
+    ReplicatedReplacingMergeTree = "ReplicatedReplacingMergeTree"
+    ReplicatedAggregatingMergeTree = "ReplicatedAggregatingMergeTree"
+    ReplicatedSummingMergeTree = "ReplicatedSummingMergeTree"
 
 # ==========================
 # New Engine Configuration Classes
@@ -51,8 +55,100 @@ class AggregatingMergeTreeEngine(EngineConfig):
 
 @dataclass
 class SummingMergeTreeEngine(EngineConfig):
-    """Configuration for SummingMergeTree engine"""
-    pass
+    """Configuration for SummingMergeTree engine
+    
+    Args:
+        columns: Optional list of column names to sum
+    """
+    columns: Optional[List[str]] = None
+
+@dataclass
+class ReplicatedMergeTreeEngine(EngineConfig):
+    """Configuration for ReplicatedMergeTree engine (replicated version of MergeTree)
+    
+    Args:
+        keeper_path: Keeper path for replication (e.g., '/clickhouse/tables/{database}/{shard}/table_name')
+                     Optional: omit for ClickHouse Cloud which manages replication automatically
+        replica_name: Replica name (e.g., '{replica}')
+                      Optional: omit for ClickHouse Cloud which manages replication automatically
+    
+    Note: Both keeper_path and replica_name must be provided together, or both omitted.
+    """
+    keeper_path: Optional[str] = None
+    replica_name: Optional[str] = None
+    
+    def __post_init__(self):
+        # Both must be provided or both must be None
+        if (self.keeper_path is None) != (self.replica_name is None):
+            raise ValueError("keeper_path and replica_name must both be provided or both be None")
+
+@dataclass
+class ReplicatedReplacingMergeTreeEngine(EngineConfig):
+    """Configuration for ReplicatedReplacingMergeTree engine (replicated version with deduplication)
+    
+    Args:
+        keeper_path: Keeper path for replication (e.g., '/clickhouse/tables/{database}/{shard}/table_name')
+                     Optional: omit for ClickHouse Cloud which manages replication automatically
+        replica_name: Replica name (e.g., '{replica}')
+                      Optional: omit for ClickHouse Cloud which manages replication automatically
+        ver: Optional column name for version tracking
+        is_deleted: Optional column name for deletion marking (requires ver)
+    
+    Note: Both keeper_path and replica_name must be provided together, or both omitted.
+    """
+    keeper_path: Optional[str] = None
+    replica_name: Optional[str] = None
+    ver: Optional[str] = None
+    is_deleted: Optional[str] = None
+    
+    def __post_init__(self):
+        # Both must be provided or both must be None
+        if (self.keeper_path is None) != (self.replica_name is None):
+            raise ValueError("keeper_path and replica_name must both be provided or both be None")
+        if self.is_deleted and not self.ver:
+            raise ValueError("is_deleted requires ver to be specified")
+
+@dataclass
+class ReplicatedAggregatingMergeTreeEngine(EngineConfig):
+    """Configuration for ReplicatedAggregatingMergeTree engine (replicated version for aggregations)
+    
+    Args:
+        keeper_path: Keeper path for replication (e.g., '/clickhouse/tables/{database}/{shard}/table_name')
+                     Optional: omit for ClickHouse Cloud which manages replication automatically
+        replica_name: Replica name (e.g., '{replica}')
+                      Optional: omit for ClickHouse Cloud which manages replication automatically
+    
+    Note: Both keeper_path and replica_name must be provided together, or both omitted.
+    """
+    keeper_path: Optional[str] = None
+    replica_name: Optional[str] = None
+    
+    def __post_init__(self):
+        # Both must be provided or both must be None
+        if (self.keeper_path is None) != (self.replica_name is None):
+            raise ValueError("keeper_path and replica_name must both be provided or both be None")
+
+@dataclass
+class ReplicatedSummingMergeTreeEngine(EngineConfig):
+    """Configuration for ReplicatedSummingMergeTree engine (replicated version for summation)
+    
+    Args:
+        keeper_path: Keeper path for replication (e.g., '/clickhouse/tables/{database}/{shard}/table_name')
+                     Optional: omit for ClickHouse Cloud which manages replication automatically
+        replica_name: Replica name (e.g., '{replica}')
+                      Optional: omit for ClickHouse Cloud which manages replication automatically
+        columns: Optional list of column names to sum
+    
+    Note: Both keeper_path and replica_name must be provided together, or both omitted.
+    """
+    keeper_path: Optional[str] = None
+    replica_name: Optional[str] = None
+    columns: Optional[List[str]] = None
+    
+    def __post_init__(self):
+        # Both must be provided or both must be None
+        if (self.keeper_path is None) != (self.replica_name is None):
+            raise ValueError("keeper_path and replica_name must both be provided or both be None")
 
 @dataclass
 class S3QueueEngine(EngineConfig):
@@ -97,61 +193,10 @@ class TableConfig:
     columns: Dict[str, str]
     order_by: Optional[str] = None
     
-    @classmethod
-    def with_s3_queue(cls,
-                      name: str,
-                      columns: Dict[str, str],
-                      s3_path: str,
-                      format: str,
-                      order_by: Optional[str] = None,
-                      **kwargs) -> 'TableConfig':
-        """Create a table with S3Queue engine"""
-        return cls(
-            name=name,
-            columns=columns,
-            engine=S3QueueEngine(s3_path=s3_path, format=format, **kwargs),
-            order_by=order_by
-        )
-    
-    @classmethod
-    def with_merge_tree(cls,
-                        name: str,
-                        columns: Dict[str, str],
-                        order_by: Optional[str] = None,
-                        deduplicate: bool = False,
-                        **kwargs) -> 'TableConfig':
-        """Create a table with MergeTree or ReplacingMergeTree engine"""
-        engine = ReplacingMergeTreeEngine() if deduplicate else MergeTreeEngine()
-        return cls(
-            name=name,
-            columns=columns,
-            engine=engine,
-            order_by=order_by
-        )
-    
-    @classmethod
-    def with_replacing_merge_tree(cls,
-                                  name: str,
-                                  columns: Dict[str, str],
-                                  order_by: Optional[str] = None,
-                                  ver: Optional[str] = None,
-                                  is_deleted: Optional[str] = None,
-                                  **kwargs) -> 'TableConfig':
-        """Create a table with ReplacingMergeTree engine
-        
-        Args:
-            name: Table name
-            columns: Column definitions
-            order_by: Order by clause
-            ver: Optional version column name
-            is_deleted: Optional is_deleted column name (requires ver)
-        """
-        return cls(
-            name=name,
-            columns=columns,
-            engine=ReplacingMergeTreeEngine(ver=ver, is_deleted=is_deleted),
-            order_by=order_by
-        )
+    # Note: Factory methods (with_s3_queue, with_merge_tree, with_replacing_merge_tree)
+    # were removed in ENG-856. Use direct configuration instead, e.g.:
+    # TableConfig(name="table", columns={...}, engine=S3QueueEngine(s3_path="...", format="..."))
+    # TableConfig(name="table", columns={...}, engine=ReplacingMergeTreeEngine(ver="updated_at"))
 
 # ==========================
 # Legacy API Support (Deprecated)
@@ -204,8 +249,8 @@ def migrate_legacy_config(legacy: TableCreateOptions) -> TableConfig:
     # Show deprecation warning
     warnings.warn(
         "Using deprecated TableCreateOptions. Please migrate to TableConfig:\n"
-        "- For S3Queue: Use TableConfig.with_s3_queue()\n"
-        "- For deduplication: Use engine=ReplacingMergeTreeEngine()\n"
+        "- For S3Queue: Use TableConfig(name='table', columns={...}, engine=S3QueueEngine(s3_path='...', format='...'))\n"
+        "- For deduplication: Use TableConfig(name='table', columns={...}, engine=ReplacingMergeTreeEngine())\n"
         "See documentation for examples.",
         DeprecationWarning,
         stacklevel=2

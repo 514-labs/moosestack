@@ -16,6 +16,12 @@ import { Column } from "../../dataModels/dataModelTypes";
 import { dlqColumns, dlqSchema, getMooseInternal } from "../internal";
 import { OlapTable } from "./olapTable";
 import { LifeCycle } from "./lifeCycle";
+import type {
+  RuntimeKafkaConfig,
+  ConfigurationRegistry,
+} from "../../config/runtime";
+import { createHash } from "node:crypto";
+import { Logger, Producer } from "../../commons";
 
 /**
  * Represents zero, one, or many values of type T.
@@ -121,6 +127,18 @@ export interface ConsumerConfig<T> {
   deadLetterQueue?: DeadLetterQueue<T> | null;
 }
 
+export type SchemaRegistryEncoding = "JSON" | "AVRO" | "PROTOBUF";
+
+export type SchemaRegistryReference =
+  | { id: number }
+  | { subjectLatest: string }
+  | { subject: string; version: number };
+
+export interface KafkaSchemaConfig {
+  kind: SchemaRegistryEncoding;
+  reference: SchemaRegistryReference;
+}
+
 /**
  * Represents a message routed to a specific destination stream.
  * Used internally by the multi-transform functionality to specify
@@ -159,7 +177,7 @@ export interface StreamConfig<T> {
   /**
    * Specifies the data retention period for the stream in seconds. Messages older than this may be deleted.
    */
-  retentionPeriod?: number; // seconds
+  retentionPeriod?: number;
   /**
    * An optional destination OLAP table where messages from this stream should be automatically ingested.
    */
@@ -172,6 +190,9 @@ export interface StreamConfig<T> {
   lifeCycle?: LifeCycle;
 
   defaultDeadLetterQueue?: DeadLetterQueue<T>;
+
+  /** Optional Schema Registry configuration for this stream */
+  schemaConfig?: KafkaSchemaConfig;
 }
 
 /**
@@ -182,6 +203,10 @@ export interface StreamConfig<T> {
  */
 export class Stream<T> extends TypedBase<T, StreamConfig<T>> {
   defaultDeadLetterQueue?: DeadLetterQueue<T>;
+  /** @internal Memoized KafkaJS producer for reusing connections across sends */
+  private _memoizedProducer?: Producer;
+  /** @internal Hash of the configuration used to create the memoized Kafka producer */
+  private _kafkaConfigHash?: string;
 
   /**
    * Creates a new Stream instance.
@@ -241,6 +266,182 @@ export class Stream<T> extends TypedBase<T, StreamConfig<T>> {
     consumer: Consumer<T>;
     config: ConsumerConfig<T>;
   }>();
+
+  /**
+   * Builds the full Kafka topic name including optional namespace and version suffix.
+   * Version suffix is appended as _x_y_z where dots in version are replaced with underscores.
+   */
+  private buildFullTopicName(namespace?: string): string {
+    const versionSuffix =
+      this.config.version ? `_${this.config.version.replace(/\./g, "_")}` : "";
+    const base = `${this.name}${versionSuffix}`;
+    return namespace !== undefined && namespace.length > 0 ?
+        `${namespace}.${base}`
+      : base;
+  }
+
+  /**
+   * Creates a fast hash string from relevant Kafka configuration fields.
+   */
+  private createConfigHash(kafkaConfig: RuntimeKafkaConfig): string {
+    const configString = [
+      kafkaConfig.broker,
+      kafkaConfig.messageTimeoutMs,
+      kafkaConfig.saslUsername,
+      kafkaConfig.saslPassword,
+      kafkaConfig.saslMechanism,
+      kafkaConfig.securityProtocol,
+      kafkaConfig.namespace,
+    ].join(":");
+    return createHash("sha256")
+      .update(configString)
+      .digest("hex")
+      .substring(0, 16);
+  }
+
+  /**
+   * Gets or creates a memoized KafkaJS producer using runtime configuration.
+   */
+  private async getMemoizedProducer(): Promise<{
+    producer: Producer;
+    kafkaConfig: RuntimeKafkaConfig;
+  }> {
+    // dynamic import to keep Stream objects browser compatible
+    await import("../../config/runtime");
+    const configRegistry = (globalThis as any)
+      ._mooseConfigRegistry as ConfigurationRegistry;
+    const { getKafkaProducer } = await import("../../commons");
+
+    const kafkaConfig = await (configRegistry as any).getKafkaConfig();
+    const currentHash = this.createConfigHash(kafkaConfig);
+
+    if (this._memoizedProducer && this._kafkaConfigHash === currentHash) {
+      return { producer: this._memoizedProducer, kafkaConfig };
+    }
+
+    // Close existing producer if config changed
+    if (this._memoizedProducer && this._kafkaConfigHash !== currentHash) {
+      try {
+        await this._memoizedProducer.disconnect();
+      } catch {
+        // ignore
+      }
+      this._memoizedProducer = undefined;
+    }
+
+    const clientId = `moose-sdk-stream-${this.name}`;
+    const logger: Logger = {
+      logPrefix: clientId,
+      log: (message: string): void => {
+        console.log(`${clientId}: ${message}`);
+      },
+      error: (message: string): void => {
+        console.error(`${clientId}: ${message}`);
+      },
+      warn: (message: string): void => {
+        console.warn(`${clientId}: ${message}`);
+      },
+    };
+
+    const producer = await getKafkaProducer(
+      {
+        clientId,
+        broker: kafkaConfig.broker,
+        securityProtocol: kafkaConfig.securityProtocol,
+        saslUsername: kafkaConfig.saslUsername,
+        saslPassword: kafkaConfig.saslPassword,
+        saslMechanism: kafkaConfig.saslMechanism,
+      },
+      logger,
+    );
+
+    this._memoizedProducer = producer;
+    this._kafkaConfigHash = currentHash;
+
+    return { producer, kafkaConfig };
+  }
+
+  /**
+   * Closes the memoized Kafka producer if it exists.
+   */
+  async closeProducer(): Promise<void> {
+    if (this._memoizedProducer) {
+      try {
+        await this._memoizedProducer.disconnect();
+      } catch {
+        // ignore
+      } finally {
+        this._memoizedProducer = undefined;
+        this._kafkaConfigHash = undefined;
+      }
+    }
+  }
+
+  /**
+   * Sends one or more records to this stream's Kafka topic.
+   * Values are JSON-serialized as message values.
+   */
+  async send(values: ZeroOrMany<T>): Promise<void> {
+    // Normalize to flat array of records
+    const flat: T[] =
+      Array.isArray(values) ? values
+      : values !== undefined && values !== null ? [values as T]
+      : [];
+
+    if (flat.length === 0) return;
+
+    const { producer, kafkaConfig } = await this.getMemoizedProducer();
+    const topic = this.buildFullTopicName(kafkaConfig.namespace);
+
+    // Use Schema Registry JSON envelope if configured
+    const sr = this.config.schemaConfig;
+    if (sr && sr.kind === "JSON") {
+      const schemaRegistryUrl = kafkaConfig.schemaRegistryUrl;
+      if (!schemaRegistryUrl) {
+        throw new Error("Schema Registry URL not configured");
+      }
+
+      const {
+        default: { SchemaRegistry },
+      } = await import("@kafkajs/confluent-schema-registry");
+      const registry = new SchemaRegistry({ host: schemaRegistryUrl });
+
+      let schemaId: undefined | number = undefined;
+
+      if ("id" in sr.reference) {
+        schemaId = sr.reference.id;
+      } else if ("subjectLatest" in sr.reference) {
+        schemaId = await registry.getLatestSchemaId(sr.reference.subjectLatest);
+      } else if ("subject" in sr.reference) {
+        schemaId = await registry.getRegistryId(
+          sr.reference.subject,
+          sr.reference.version,
+        );
+      }
+
+      if (schemaId === undefined) {
+        throw new Error("Malformed schema reference.");
+      }
+
+      const encoded = await Promise.all(
+        flat.map((v) =>
+          registry.encode(schemaId, v as unknown as Record<string, unknown>),
+        ),
+      );
+      await producer.send({
+        topic,
+        messages: encoded.map((value) => ({ value })),
+      });
+      return;
+    } else if (sr !== undefined) {
+      throw new Error("Currently only JSON Schema is supported.");
+    }
+
+    await producer.send({
+      topic,
+      messages: flat.map((v) => ({ value: JSON.stringify(v) })),
+    });
+  }
 
   /**
    * Adds a transformation step that processes messages from this stream and sends the results to a destination stream.

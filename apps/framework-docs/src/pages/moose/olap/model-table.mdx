@@ -153,7 +153,7 @@ interface UserEvent {
 
 // Create a complete ingestion pipeline with a table
 const eventsPipeline = new IngestPipeline<UserEvent>("user_events", {
-  ingest: true,    // Creates a REST API endpoint at POST localhost:4000/ingest/user_events
+  ingestApi: true,    // Creates a REST API endpoint at POST localhost:4000/ingest/user_events
   stream: true,    // Creates Kafka/Redpanda topic
   table: {         // Creates and configures the table named "user_events"
     orderByFields: ["id", "timestamp"]
@@ -180,7 +180,7 @@ from moose_lib import IngestPipeline, IngestPipelineConfig, OlapConfig
 from moose_lib.blocks import ReplacingMergeTreeEngine
 
 events_pipeline = IngestPipeline[UserEvent]("user_events", IngestPipelineConfig(
-  ingest=True, # Creates a REST API endpoint at POST localhost:4000/ingest/user_events
+  ingest_api=True, # Creates a REST API endpoint at POST localhost:4000/ingest/user_events
   stream=True, # Creates a Kafka/Redpanda topic
   table=OlapConfig(      # Creates and configures the table named "user_events"
     order_by_fields=["id", "timestamp"],
@@ -369,10 +369,10 @@ const tableWithOrderByFieldsOnly = new OlapTable<SchemaWithoutPrimaryKey>("table
 </TypeScript>
 
 <Python>
-Leverage the `OlapTableConfig` class to configure your table:
+Leverage the `OlapConfig` class to configure your table:
 
 ```py filename="OrderByFieldsOnly.py" copy
-from moose_lib import Key, OlapTable, OlapTableConfig
+from moose_lib import Key, OlapTable, OlapConfig
 from pydantic import BaseModel
 from datetime import datetime
 
@@ -381,8 +381,8 @@ class SchemaWithoutPrimaryKey(BaseModel):
     field2: int
     field3: datetime
 
-table2 = OlapTable[SchemaWithoutPrimaryKey]("table2", OlapTableConfig(
-  orderByFields=["field1", "field2"] # Specify ordering without primary key
+table2 = OlapTable[SchemaWithoutPrimaryKey]("table2", OlapConfig(
+  order_by_fields=["field1", "field2"] # Specify ordering without primary key
 ))
 ```
 </Python>
@@ -406,7 +406,7 @@ const tableWithKeyAndOrderByFields = new OlapTable<SchemaWithKey>("table3", {
 
 <Python>
 ```py filename="ComboKeyAndOrderByFields.py" copy
-from moose_lib import Key, OlapTable, OlapTableConfig
+from moose_lib import Key, OlapTable, OlapConfig
 from pydantic import BaseModel
 
 class SchemaWithKey(BaseModel):
@@ -414,8 +414,8 @@ class SchemaWithKey(BaseModel):
     field1: str
     field2: int
 
-table3 = OlapTable[SchemaWithKey]("table3", OlapTableConfig(
-  orderByFields=["id", "field1"] # Primary key must be first
+table3 = OlapTable[SchemaWithKey]("table3", OlapConfig(
+  order_by_fields=["id", "field1"] # Primary key must be first
 ))
 ```
 </Python>
@@ -438,7 +438,7 @@ const multiKeyTable = new OlapTable<MultiKeyRecord>("multi_key_table", {
 
 <Python>
 ```py filename="MultiKeyTable.py" copy
-from moose_lib import Key, OlapTable, OlapTableConfig
+from moose_lib import Key, OlapTable, OlapConfig
 from pydantic import BaseModel
 
 class MultiKeyRecord(BaseModel):
@@ -446,15 +446,15 @@ class MultiKeyRecord(BaseModel):
     key2: Key[int]
     field1: str
 
-multi_key_table = OlapTable[MultiKeyRecord]("multi_key_table", OlapTableConfig(
-  orderByFields=["key1", "key2", "field1"] # Multiple keys must come first
+multi_key_table = OlapTable[MultiKeyRecord]("multi_key_table", OlapConfig(
+  order_by_fields=["key1", "key2", "field1"] # Multiple keys must come first
 ))
 ```
 </Python>
 
 
 ### Table engines
-By default, Moose will create tables with the `MergeTree` engine. You can use different engines through factory methods or engine configuration classes.
+By default, Moose will create tables with the `MergeTree` engine. You can use different engines by setting the `engine` in the table configuration.
 
 <TypeScript>
 ```ts filename="TableEngine.ts" copy
@@ -465,8 +465,9 @@ const table = new OlapTable<Record>("table", {
   orderByFields: ["id"]
 });
 
-// Use factory methods for other engines
-const dedupTable = OlapTable.withReplacingMergeTree<Record>("table", {
+// Use engine configuration for other engines
+const dedupTable = new OlapTable<Record>("table", {
+  engine: ClickHouseEngines.ReplacingMergeTree,
   orderByFields: ["id"],
   ver: "version",  // Optional: keeps row with highest version
   isDeleted: "deleted"  // Optional: soft delete when deleted=1
@@ -498,18 +499,21 @@ Use the `ReplacingMergeTree` engine to keep only the latest record for your desi
 <TypeScript>
 ```ts filename="DeduplicatedTable.ts" copy
 // Basic deduplication
-const table = OlapTable.withReplacingMergeTree<Record>("table", {
+const table = new OlapTable<Record>("table", {
+  engine: ClickHouseEngines.ReplacingMergeTree,
   orderByFields: ["id"]
 });
 
 // With version column (keeps record with highest version)
-const versionedTable = OlapTable.withReplacingMergeTree<Record>("table", {
+const versionedTable = new OlapTable<Record>("table", {
+  engine: ClickHouseEngines.ReplacingMergeTree,
   orderByFields: ["id"],
   ver: "updated_at"  // Column that determines which version to keep
 });
 
 // With soft deletes (requires ver parameter)
-const softDeleteTable = OlapTable.withReplacingMergeTree<Record>("table", {
+const softDeleteTable = new OlapTable<Record>("table", {
+  engine: ClickHouseEngines.ReplacingMergeTree,
   orderByFields: ["id"],
   ver: "updated_at",
   isDeleted: "deleted"  // UInt8 column: 1 marks row for deletion
@@ -565,23 +569,22 @@ Use the `S3Queue` engine to automatically ingest data from S3 buckets as files a
 
 <TypeScript>
 ```ts filename="S3StreamingTable.ts" copy
-import { OlapTable } from '@514labs/moose-lib';
+import { OlapTable, ClickHouseEngines } from '@514labs/moose-lib';
 
-// Modern API using factory method
-export const s3Events = OlapTable.withS3Queue<S3Event>(
-  "s3_events",
-  "s3://my-bucket/data/*.json",
-  "JSONEachRow",
-  {
-    awsAccessKeyId: "AKIA...",
-    awsSecretAccessKey: "secret...",
-    settings: {
-      mode: "unordered",
-      keeper_path: "/clickhouse/s3queue/events"
-    }
+// Use direct configuration (S3Queue does not support orderByFields)
+export const s3Events = new OlapTable<S3Event>("s3_events", {
+  engine: ClickHouseEngines.S3Queue,
+  s3Path: "s3://my-bucket/data/*.json",
+  format: "JSONEachRow",
+  settings: {
+    mode: "unordered",
+    keeper_path: "/clickhouse/s3queue/events"
   }
-);
+});
 ```
+<Callout type="warning" title="S3Queue ORDER BY not supported">
+S3Queue is a streaming engine and does not support `orderByFields` or ORDER BY clauses. Configure only engine-specific parameters like `s3Path`, `format`, and `settings`.
+</Callout>
 </TypeScript>
 
 <Python>
@@ -612,6 +615,99 @@ s3_events = OlapTable[S3Event]("s3_events", OlapConfig(
 
 <Callout type="info" title="S3Queue Requirements">
 S3Queue requires ClickHouse 24.7+ and proper ZooKeeper/ClickHouse Keeper configuration for coordination between replicas. Files are processed exactly once across all replicas.
+</Callout>
+
+#### Replicated Engines
+Replicated engines provide high availability and data replication across multiple ClickHouse nodes. Moose supports all standard replicated MergeTree variants:
+
+- `ReplicatedMergeTree` - Replicated version of MergeTree
+- `ReplicatedReplacingMergeTree` - Replicated with deduplication
+- `ReplicatedAggregatingMergeTree` - Replicated with aggregation
+- `ReplicatedSummingMergeTree` - Replicated with summation
+
+<TypeScript>
+```ts filename="ReplicatedEngines.ts" copy
+import { OlapTable, ClickHouseEngines } from "@514labs/moose-lib";
+
+// Basic replicated table with explicit paths
+const replicatedTable = new OlapTable<Record>("records", {
+  engine: ClickHouseEngines.ReplicatedMergeTree,
+  keeperPath: "/clickhouse/tables/{database}/{shard}/records",
+  replicaName: "{replica}",
+  orderByFields: ["id"]
+});
+
+// Replicated with deduplication
+const replicatedDedup = new OlapTable<Record>("dedup_records", {
+  engine: ClickHouseEngines.ReplicatedReplacingMergeTree,
+  keeperPath: "/clickhouse/tables/{database}/{shard}/dedup_records",
+  replicaName: "{replica}",
+  ver: "updated_at",
+  isDeleted: "deleted",
+  orderByFields: ["id"]
+});
+
+// For ClickHouse Cloud or Boreal (no parameters needed)
+const cloudReplicated = new OlapTable<Record>("cloud_records", {
+  engine: ClickHouseEngines.ReplicatedMergeTree,
+  orderByFields: ["id"]
+});
+```
+</TypeScript>
+
+<Python>
+```py filename="ReplicatedEngines.py" copy
+from moose_lib import OlapTable, OlapConfig
+from moose_lib.blocks import (
+    ReplicatedMergeTreeEngine,
+    ReplicatedReplacingMergeTreeEngine,
+    ReplicatedAggregatingMergeTreeEngine,
+    ReplicatedSummingMergeTreeEngine
+)
+
+class Record(BaseModel):
+    id: Key[str]
+    updated_at: datetime
+    deleted: int = 0
+
+# Basic replicated table with explicit paths
+replicated_table = OlapTable[Record]("records", OlapConfig(
+    order_by_fields=["id"],
+    engine=ReplicatedMergeTreeEngine(
+        keeper_path="/clickhouse/tables/{database}/{shard}/records",
+        replica_name="{replica}"
+    )
+))
+
+# Replicated with deduplication
+replicated_dedup = OlapTable[Record]("dedup_records", OlapConfig(
+    order_by_fields=["id"],
+    engine=ReplicatedReplacingMergeTreeEngine(
+        keeper_path="/clickhouse/tables/{database}/{shard}/dedup_records",
+        replica_name="{replica}",
+        ver="updated_at",
+        is_deleted="deleted"
+    )
+))
+
+# For ClickHouse Cloud or Boreal (no parameters needed)
+cloud_replicated = OlapTable[Record]("cloud_records", OlapConfig(
+    order_by_fields=["id"],
+    engine=ReplicatedMergeTreeEngine()
+))
+```
+</Python>
+
+<Callout type="info" title="Replication Parameters">
+The `keeper_path` and `replica_name` parameters are **optional** for replicated engines:
+
+- **Omit both parameters** (recommended): Moose uses smart defaults that work in both ClickHouse Cloud and self-managed environments. The default path pattern `/clickhouse/tables/{uuid}/{shard}` with replica `{replica}` works automatically with Atomic databases (default in modern ClickHouse).
+  
+- **Provide custom paths**: You can still specify both parameters explicitly if you need custom replication paths for your self-managed cluster.
+
+**Note**: Both parameters must be provided together, or both omitted. The `{uuid}`, `{shard}`, and `{replica}` macros are automatically substituted by ClickHouse at runtime.
+
+For more details, see the [ClickHouse documentation on data replication](https://clickhouse.com/docs/en/engines/table-engines/mergetree-family/replication).
 </Callout>
 
 <Python>
@@ -701,7 +797,7 @@ const badTable3 = new OlapTable<BadRecord3>("bad_table3", {
 
 <Python>
 ```py filename="InvalidConfig.py" copy
-from moose_lib import Key, OlapTable, OlapTableConfig
+from moose_lib import Key, OlapTable, OlapConfig
 from typing import Optional
 
 class BadRecord1(BaseModel):
@@ -714,8 +810,8 @@ class BadRecord2(BaseModel):
     id: Key[str]
     field1: str
 
-bad_table2 = OlapTable[BadRecord2]("bad_table2", OlapTableConfig(
-  orderByFields=["field1", "id"] # Wrong order - primary key must be first
+bad_table2 = OlapTable[BadRecord2]("bad_table2", OlapConfig(
+  order_by_fields=["field1", "id"] # Wrong order - primary key must be first
 ))
 
 class BadRecord3(BaseModel):
@@ -723,8 +819,8 @@ class BadRecord3(BaseModel):
     field1: str
     field2: Optional[int]
 
-bad_table3 = OlapTable[BadRecord3]("bad_table3", OlapTableConfig(
-  orderByFields=["id", "field2"] # Can't have nullable field in orderByFields
+bad_table3 = OlapTable[BadRecord3]("bad_table3", OlapConfig(
+  order_by_fields=["id", "field2"] # Can't have nullable field in orderByFields
 ))
 ```
 </Python>
