@@ -246,10 +246,14 @@ fn process_component_summary<T>(
 }
 
 /// Format API type for display
-fn format_api_type(api_type: &crate::framework::core::infrastructure::api_endpoint::APIType) -> String {
+fn format_api_type(
+    api_type: &crate::framework::core::infrastructure::api_endpoint::APIType,
+) -> String {
     use crate::framework::core::infrastructure::api_endpoint::APIType;
     match api_type {
-        APIType::INGRESS { target_topic_id, .. } => {
+        APIType::INGRESS {
+            target_topic_id, ..
+        } => {
             format!("INGRESS -> topic: {}", target_topic_id)
         }
         APIType::EGRESS { query_params, .. } => {
@@ -283,7 +287,11 @@ fn process_api_endpoints_summary(
     output.push_str(&format!("## API Endpoints ({})\n", filtered.len()));
     for name in &filtered {
         if let Some(endpoint) = api_endpoints.get(name) {
-            output.push_str(&format!("- {} ({})\n", name, format_api_type(&endpoint.api_type)));
+            output.push_str(&format!(
+                "- {} ({})\n",
+                name,
+                format_api_type(&endpoint.api_type)
+            ));
         }
     }
     output.push('\n');
