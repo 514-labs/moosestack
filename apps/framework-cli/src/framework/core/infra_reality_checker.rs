@@ -467,8 +467,13 @@ mod tests {
         infra_table.columns.push(timestamp_col);
 
         // Set different order_by in actual vs infra
-        actual_table.order_by = vec!["id".to_string(), "timestamp".to_string()];
-        infra_table.order_by = vec!["id".to_string()];
+        actual_table.order_by =
+            crate::framework::core::infrastructure::table::OrderBy::Fields(vec![
+                "id".to_string(),
+                "timestamp".to_string(),
+            ]);
+        infra_table.order_by =
+            crate::framework::core::infrastructure::table::OrderBy::Fields(vec!["id".to_string()]);
 
         let mock_client = MockOlapClient {
             tables: vec![actual_table],
@@ -509,9 +514,17 @@ mod tests {
             }) => {
                 assert_eq!(
                     order_by_change.before,
-                    vec!["id".to_string(), "timestamp".to_string()]
+                    crate::framework::core::infrastructure::table::OrderBy::Fields(vec![
+                        "id".to_string(),
+                        "timestamp".to_string(),
+                    ])
                 );
-                assert_eq!(order_by_change.after, vec!["id".to_string()]);
+                assert_eq!(
+                    order_by_change.after,
+                    crate::framework::core::infrastructure::table::OrderBy::Fields(vec![
+                        "id".to_string(),
+                    ])
+                );
             }
             _ => panic!("Expected TableChange::Updated variant"),
         }

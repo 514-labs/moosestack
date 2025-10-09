@@ -2431,7 +2431,9 @@ mod tests {
                     comment: None,
                 },
             ],
-            order_by: vec!["id".to_string()],
+            order_by: crate::framework::core::infrastructure::table::OrderBy::Fields(vec![
+                "id".to_string()
+            ]),
             partition_by: None,
             version: Some(Version::from_string("1.0".to_string())),
             source_primitive: PrimitiveSignature {
@@ -2479,7 +2481,10 @@ mod tests {
                     comment: None,
                 },
             ],
-            order_by: vec!["id".to_string(), "name".to_string()], // Changed order_by
+            order_by: crate::framework::core::infrastructure::table::OrderBy::Fields(vec![
+                "id".to_string(),
+                "name".to_string(),
+            ]), // Changed order_by
             partition_by: None,
             version: Some(Version::from_string("1.1".to_string())),
             source_primitive: PrimitiveSignature {
@@ -2645,7 +2650,7 @@ mod diff_tests {
             name: name.to_string(),
             engine: None,
             columns: vec![],
-            order_by: vec![],
+            order_by: crate::framework::core::infrastructure::table::OrderBy::Fields(vec![]),
             partition_by: None,
             version: Some(Version::from_string(version.to_string())),
             source_primitive: PrimitiveSignature {
@@ -2885,8 +2890,12 @@ mod diff_tests {
         let mut before = create_test_table("test", "1.0");
         let mut after = create_test_table("test", "1.0");
 
-        before.order_by = vec!["id".to_string()];
-        after.order_by = vec!["id".to_string(), "name".to_string()];
+        before.order_by =
+            crate::framework::core::infrastructure::table::OrderBy::Fields(vec!["id".to_string()]);
+        after.order_by = crate::framework::core::infrastructure::table::OrderBy::Fields(vec![
+            "id".to_string(),
+            "name".to_string(),
+        ]);
 
         let mut changes = Vec::new();
         InfrastructureMap::diff_tables(
@@ -2901,8 +2910,19 @@ mod diff_tests {
             OlapChange::Table(TableChange::Updated {
                 order_by_change, ..
             }) => {
-                assert_eq!(order_by_change.before, vec!["id"]);
-                assert_eq!(order_by_change.after, vec!["id", "name"]);
+                assert_eq!(
+                    order_by_change.before,
+                    crate::framework::core::infrastructure::table::OrderBy::Fields(vec![
+                        "id".to_string(),
+                    ])
+                );
+                assert_eq!(
+                    order_by_change.after,
+                    crate::framework::core::infrastructure::table::OrderBy::Fields(vec![
+                        "id".to_string(),
+                        "name".to_string(),
+                    ])
+                );
             }
             _ => panic!("Expected Updated change with order_by modification"),
         }

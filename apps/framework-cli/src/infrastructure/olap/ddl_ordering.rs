@@ -1060,7 +1060,6 @@ mod tests {
         // Create a test table
         let table = Table {
             name: "test_table".to_string(),
-            // Include minimal required fields
             columns: vec![],
             order_by: crate::framework::core::infrastructure::table::OrderBy::Fields(vec![]),
             partition_by: None,
@@ -2341,7 +2340,7 @@ mod tests {
         let table = Table {
             name: "test_table".to_string(),
             columns: vec![],
-            order_by: vec![],
+            order_by: crate::framework::core::infrastructure::table::OrderBy::Fields(vec![]),
             partition_by: None,
             engine: None,
             version: None,
@@ -2441,7 +2440,7 @@ mod tests {
         let table = Table {
             name: "test_table".to_string(),
             columns: vec![],
-            order_by: vec![],
+            order_by: crate::framework::core::infrastructure::table::OrderBy::Fields(vec![]),
             partition_by: None,
             engine: None,
             version: None,

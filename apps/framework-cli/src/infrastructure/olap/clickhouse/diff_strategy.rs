@@ -424,7 +424,7 @@ mod tests {
                     comment: None,
                 },
             ],
-            order_by,
+            order_by: crate::framework::core::infrastructure::table::OrderBy::Fields(order_by),
             partition_by: None,
             engine: deduplicate.then_some(ClickhouseEngine::ReplacingMergeTree {
                 ver: None,
@@ -454,8 +454,13 @@ mod tests {
         );
 
         let order_by_change = OrderByChange {
-            before: vec!["id".to_string()],
-            after: vec!["id".to_string(), "timestamp".to_string()],
+            before: crate::framework::core::infrastructure::table::OrderBy::Fields(vec![
+                "id".to_string()
+            ]),
+            after: crate::framework::core::infrastructure::table::OrderBy::Fields(vec![
+                "id".to_string(),
+                "timestamp".to_string(),
+            ]),
         };
 
         let changes = strategy.diff_table_update(&before, &after, vec![], order_by_change);
@@ -562,8 +567,14 @@ mod tests {
         }];
 
         let order_by_change = OrderByChange {
-            before: vec!["id".to_string(), "timestamp".to_string()],
-            after: vec!["id".to_string(), "timestamp".to_string()],
+            before: crate::framework::core::infrastructure::table::OrderBy::Fields(vec![
+                "id".to_string(),
+                "timestamp".to_string(),
+            ]),
+            after: crate::framework::core::infrastructure::table::OrderBy::Fields(vec![
+                "id".to_string(),
+                "timestamp".to_string(),
+            ]),
         };
 
         let changes = strategy.diff_table_update(&before, &after, column_changes, order_by_change);
@@ -595,8 +606,14 @@ mod tests {
         let column_changes = vec![];
 
         let order_by_change = OrderByChange {
-            before: vec!["id".to_string(), "timestamp".to_string()],
-            after: vec!["id".to_string(), "timestamp".to_string()],
+            before: crate::framework::core::infrastructure::table::OrderBy::Fields(vec![
+                "id".to_string(),
+                "timestamp".to_string(),
+            ]),
+            after: crate::framework::core::infrastructure::table::OrderBy::Fields(vec![
+                "id".to_string(),
+                "timestamp".to_string(),
+            ]),
         };
 
         let changes = strategy.diff_table_update(&before, &after, column_changes, order_by_change);
@@ -615,8 +632,12 @@ mod tests {
         // No column changes, but ORDER BY changes
         let column_changes = vec![];
         let order_by_change = OrderByChange {
-            before: vec!["id".to_string()],
-            after: vec!["timestamp".to_string()],
+            before: crate::framework::core::infrastructure::table::OrderBy::Fields(vec![
+                "id".to_string()
+            ]),
+            after: crate::framework::core::infrastructure::table::OrderBy::Fields(vec![
+                "timestamp".to_string(),
+            ]),
         };
 
         let changes = strategy.diff_table_update(&before, &after, column_changes, order_by_change);
