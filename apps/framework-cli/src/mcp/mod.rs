@@ -1,4 +1,5 @@
 mod server;
+mod tools;
 
 pub use rmcp::transport::streamable_http_server::{
     session::local::LocalSessionManager, StreamableHttpService,

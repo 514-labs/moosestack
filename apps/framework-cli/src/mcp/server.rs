@@ -3,7 +3,7 @@ use rmcp::{
     model::{
         Annotated, CallToolRequestParam, CallToolResult, Implementation, ListToolsResult,
         PaginatedRequestParam, ProtocolVersion, RawContent, RawTextContent, ServerCapabilities,
-        ServerInfo, Tool,
+        ServerInfo,
     },
     service::RequestContext,
     transport::streamable_http_server::{
@@ -11,11 +11,11 @@ use rmcp::{
     },
     ErrorData, RoleServer, ServerHandler,
 };
-use serde_json::json;
 use std::sync::Arc;
 
+use super::tools::logs;
+
 /// Handler for the MCP server that implements the Model Context Protocol
-/// Includes a dummy "echo" tool for testing and verification purposes
 #[derive(Clone)]
 pub struct MooseMcpHandler {
     server_name: String,
@@ -48,7 +48,8 @@ impl ServerHandler for MooseMcpHandler {
                 website_url: None,
             },
             instructions: Some(
-                "Moose MCP Server - Use the echo tool to test the connection".to_string(),
+                "Moose MCP Server - Access dev server logs for debugging and monitoring"
+                    .to_string(),
             ),
         }
     }
@@ -58,29 +59,8 @@ impl ServerHandler for MooseMcpHandler {
         _pagination: Option<PaginatedRequestParam>,
         _context: RequestContext<RoleServer>,
     ) -> Result<ListToolsResult, ErrorData> {
-        let schema = json!({
-            "type": "object",
-            "properties": {
-                "message": {
-                    "type": "string",
-                    "description": "The message to echo back"
-                }
-            },
-            "required": ["message"]
-        });
-
-        let schema_map = schema.as_object().unwrap().clone();
-
         Ok(ListToolsResult {
-            tools: vec![Tool {
-                name: "echo".into(),
-                description: Some("A simple echo tool that returns whatever message you send it. Useful for testing the MCP connection.".into()),
-                input_schema: Arc::new(schema_map),
-                annotations: None,
-                icons: None,
-                output_schema: None,
-                title: None,
-            }],
+            tools: vec![logs::tool_definition()],
             next_cursor: None,
         })
     }
@@ -91,27 +71,7 @@ impl ServerHandler for MooseMcpHandler {
         _context: RequestContext<RoleServer>,
     ) -> Result<CallToolResult, ErrorData> {
         match param.name.as_ref() {
-            "echo" => {
-                let message = param
-                    .arguments
-                    .as_ref()
-                    .and_then(|v| v.get("message"))
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("No message provided");
-
-                Ok(CallToolResult {
-                    content: vec![Annotated {
-                        raw: RawContent::Text(RawTextContent {
-                            text: format!("Echo: {}", message),
-                            meta: None,
-                        }),
-                        annotations: None,
-                    }],
-                    is_error: Some(false),
-                    meta: None,
-                    structured_content: None,
-                })
-            }
+            "get_logs" => Ok(logs::handle_call(param.arguments.as_ref())),
             _ => Ok(CallToolResult {
                 content: vec![Annotated {
                     raw: RawContent::Text(RawTextContent {
