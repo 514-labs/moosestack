@@ -48,9 +48,20 @@ Creates a ClickHouse table with the schema of type T.
 // Basic usage with MergeTree (default)
 export const myTable = new OlapTable<UserProfile>("user_profiles");
 
-// With sorting configuration
+// With sorting configuration (fields)
 export const myConfiguredTable = new OlapTable<UserProfile>("user_profiles", {
   orderByFields: ["id", "timestamp"]
+});
+
+// With sorting configuration (expression)
+export const myConfiguredTableExpr = new OlapTable<UserProfile>("user_profiles_expr", {
+  // Equivalent to orderByFields: ["id", "timestamp"]
+  orderByExpression: "(id, timestamp)"
+});
+
+// Disable sorting entirely
+export const myUnsortedTable = new OlapTable<UserProfile>("user_profiles_unsorted", {
+  orderByExpression: "tuple()"
 });
 
 // For deduplication, explicitly set the ReplacingMergeTree engine

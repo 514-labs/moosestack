@@ -3156,7 +3156,9 @@ async fn admin_inframap_route(
 mod tests {
     use super::*;
 
-    use crate::framework::core::infrastructure::table::{Column, ColumnType, IntType, Table};
+    use crate::framework::core::infrastructure::table::{
+        Column, ColumnType, IntType, OrderBy, Table,
+    };
     use crate::framework::core::infrastructure_map::{
         OlapChange, PrimitiveSignature, PrimitiveTypes, TableChange,
     };
@@ -3176,7 +3178,7 @@ mod tests {
                 annotations: vec![],
                 comment: None,
             }],
-            order_by: vec!["id".to_string()],
+            order_by: OrderBy::Fields(vec!["id".to_string()]),
             partition_by: None,
             engine: None,
             version: Some(Version::from_string("1.0.0".to_string())),

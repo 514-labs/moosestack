@@ -37,6 +37,15 @@ merge_tree_table = OlapTable[EngineTestData](
     )
 )
 
+# Test MergeTree with order_by_expression (equivalent to fields)
+merge_tree_table_expr = OlapTable[EngineTestData](
+    "MergeTreeTestExpr",
+    OlapConfig(
+        engine=MergeTreeEngine(),
+        order_by_expression="(id, timestamp)",
+    )
+)
+
 # Test ReplacingMergeTree engine with basic deduplication
 replacing_merge_tree_basic_table = OlapTable[EngineTestData](
     "ReplacingMergeTreeBasic", 
@@ -165,6 +174,7 @@ replicated_summing_merge_tree_table = OlapTable[EngineTestData](
 # can be properly instantiated and don't throw errors during table creation
 all_engine_test_tables = [
     merge_tree_table,
+    merge_tree_table_expr,
     replacing_merge_tree_basic_table,
     replacing_merge_tree_version_table,
     replacing_merge_tree_soft_delete_table,

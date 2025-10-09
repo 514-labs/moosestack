@@ -24,7 +24,7 @@ use log::{info, warn};
 use serde::Serialize;
 use serde_json::{json, Map, Value};
 
-use crate::framework::core::infrastructure::table::EnumValue;
+use crate::framework::core::infrastructure::table::{EnumValue, OrderBy};
 use crate::infrastructure::olap::clickhouse::config::ClickHouseConfig;
 use crate::infrastructure::olap::clickhouse::model::{
     wrap_and_join_column_names, ClickHouseColumnType, ClickHouseTable,
@@ -293,27 +293,27 @@ async fn select_as_json<'a>(
         .map(|c| column_type_to_enum_mapping(&c.column_type))
         .collect();
 
-    let order_by = if !table.order_by.is_empty() {
-        // Use explicit order_by fields if they exist
-        format!(
-            "ORDER BY {}",
-            wrap_and_join_column_names(&table.order_by, ", ")
-        )
-    } else {
-        // Fall back to primary key columns only if no explicit order_by is specified
-        let key_columns: Vec<String> = table
-            .primary_key_columns()
-            .iter()
-            .map(|s| s.to_string())
-            .collect();
+    let order_by = match &table.order_by {
+        OrderBy::Fields(v) if !v.is_empty() => {
+            format!("ORDER BY {}", wrap_and_join_column_names(v, ", "))
+        }
+        OrderBy::SingleExpr(expr) => format!("ORDER BY {expr}"),
+        _ => {
+            // Fall back to primary key columns only if no explicit order_by is specified
+            let key_columns: Vec<String> = table
+                .primary_key_columns()
+                .iter()
+                .map(|s| s.to_string())
+                .collect();
 
-        if key_columns.is_empty() {
-            "".to_string()
-        } else {
-            format!(
-                "ORDER BY {}",
-                wrap_and_join_column_names(&key_columns, ", ")
-            )
+            if key_columns.is_empty() {
+                "".to_string()
+            } else {
+                format!(
+                    "ORDER BY {}",
+                    wrap_and_join_column_names(&key_columns, ", ")
+                )
+            }
         }
     };
 

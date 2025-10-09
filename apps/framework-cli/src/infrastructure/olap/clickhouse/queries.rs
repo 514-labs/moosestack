@@ -6,7 +6,7 @@ use sha2::{Digest, Sha256};
 
 use super::errors::ClickhouseError;
 use super::model::ClickHouseColumn;
-use crate::framework::core::infrastructure::table::EnumValue;
+use crate::framework::core::infrastructure::table::{EnumValue, OrderBy};
 use crate::infrastructure::olap::clickhouse::model::{
     wrap_and_join_column_names, AggregationFunction, ClickHouseColumnType, ClickHouseFloat,
     ClickHouseInt, ClickHouseTable,
@@ -1523,9 +1523,11 @@ pub fn create_table_query(
 
     let engine = match &table.engine {
         ClickhouseEngine::MergeTree => "MergeTree".to_string(),
-        ClickhouseEngine::ReplacingMergeTree { ver, is_deleted } => {
-            build_replacing_merge_tree_ddl(ver, is_deleted, table.order_by.is_empty())?
-        }
+        ClickhouseEngine::ReplacingMergeTree { ver, is_deleted } => build_replacing_merge_tree_ddl(
+            ver,
+            is_deleted,
+            matches!(table.order_by, OrderBy::Fields(ref v) if v.is_empty()),
+        )?,
         ClickhouseEngine::AggregatingMergeTree => "AggregatingMergeTree".to_string(),
         ClickhouseEngine::SummingMergeTree { columns } => build_summing_merge_tree_ddl(columns),
         ClickhouseEngine::ReplicatedMergeTree {
@@ -1634,12 +1636,11 @@ pub fn create_table_query(
         } else {
             None
         },
-        "order_by_string": if table.order_by.len() == 1 && table.order_by[0] == "tuple()" {
-            Some(table.order_by[0].to_string())
-        } else if !table.order_by.is_empty() {
-            Some(wrap_and_join_column_names(&table.order_by, ","))
-        } else {
-            None
+        "order_by_string": match &table.order_by {
+            crate::framework::core::infrastructure::table::OrderBy::Fields(v) if v.len() == 1 && v[0] == "tuple()" => Some("tuple()".to_string()),
+            crate::framework::core::infrastructure::table::OrderBy::Fields(v) if !v.is_empty() => Some(wrap_and_join_column_names(v, ",")),
+            crate::framework::core::infrastructure::table::OrderBy::SingleExpr(expr) => Some(expr.clone()),
+            _ => None,
         },
         "partition_by": table.partition_by.as_deref(),
         "engine": engine,
@@ -2021,7 +2022,7 @@ mod tests {
                     comment: None,
                 },
             ],
-            order_by: vec![],
+            order_by: OrderBy::Fields(vec![]),
             partition_by: None,
             engine: ClickhouseEngine::MergeTree,
             table_settings: None,
@@ -2054,7 +2055,7 @@ PRIMARY KEY (`id`)
                 default: Some("'abc'".to_string()),
                 comment: None,
             }],
-            order_by: vec![],
+            order_by: OrderBy::Fields(vec![]),
             partition_by: None,
             engine: ClickhouseEngine::MergeTree,
             table_settings: None,
@@ -2086,7 +2087,7 @@ ENGINE = MergeTree
                 default: Some("42".to_string()),
                 comment: None,
             }],
-            order_by: vec![],
+            order_by: OrderBy::Fields(vec![]),
             partition_by: None,
             engine: ClickhouseEngine::MergeTree,
             table_settings: None,
@@ -2117,7 +2118,7 @@ ENGINE = MergeTree
                 default: None,
                 comment: None,
             }],
-            order_by: vec!["id".to_string()],
+            order_by: OrderBy::Fields(vec!["id".to_string()]),
             partition_by: None,
             engine: ClickhouseEngine::ReplacingMergeTree {
                 ver: None,
@@ -2156,7 +2157,7 @@ ORDER BY (`id`) "#;
                 ver: None,
                 is_deleted: None,
             },
-            order_by: vec![],
+            order_by: OrderBy::Fields(vec![]),
             partition_by: None,
             table_settings: None,
         };
@@ -2193,7 +2194,7 @@ ORDER BY (`id`) "#;
                     comment: None,
                 },
             ],
-            order_by: vec!["id".to_string()],
+            order_by: OrderBy::Fields(vec!["id".to_string()]),
             partition_by: None,
             engine: ClickhouseEngine::ReplacingMergeTree {
                 ver: Some("version".to_string()),
@@ -2249,7 +2250,7 @@ ORDER BY (`id`) "#;
                     comment: None,
                 },
             ],
-            order_by: vec!["id".to_string()],
+            order_by: OrderBy::Fields(vec!["id".to_string()]),
             partition_by: None,
             engine: ClickhouseEngine::ReplacingMergeTree {
                 ver: Some("version".to_string()),
@@ -2286,7 +2287,7 @@ ORDER BY (`id`) "#;
                 default: None,
                 comment: None,
             }],
-            order_by: vec!["id".to_string()],
+            order_by: OrderBy::Fields(vec!["id".to_string()]),
             partition_by: None,
             engine: ClickhouseEngine::ReplacingMergeTree {
                 ver: None,
@@ -2437,7 +2438,7 @@ ORDER BY (`id`) "#;
                 },
             ],
             engine: ClickhouseEngine::MergeTree,
-            order_by: vec!["id".to_string()],
+            order_by: OrderBy::Fields(vec!["id".to_string()]),
             partition_by: None,
             table_settings: None,
         };
@@ -2489,7 +2490,7 @@ ORDER BY (`id`) "#;
                     comment: None,
                 },
             ],
-            order_by: vec![],
+            order_by: OrderBy::Fields(vec![]),
             partition_by: None,
             engine: ClickhouseEngine::S3Queue {
                 s3_path: "s3://my-bucket/data/*.json".to_string(),
@@ -2958,7 +2959,7 @@ SETTINGS keeper_path = '/clickhouse/s3queue/test_table', mode = 'unordered', s3q
                 default: None,
                 comment: None,
             }],
-            order_by: vec![],
+            order_by: OrderBy::Fields(vec![]),
             partition_by: None,
             engine: ClickhouseEngine::S3Queue {
                 s3_path: "s3://my-bucket/data/*.csv".to_string(),
