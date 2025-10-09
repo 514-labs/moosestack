@@ -25,7 +25,7 @@ def read_requirements():
 setup(
     name="moose-lib-extras",
     version="0.1.0",
-    python_requires=">=3.12",
+    python_requires=">=3.8",
     description="A collection of extra utilities and extensions for the Moose library",
     long_description=read_readme(),
     long_description_content_type="text/markdown",
