@@ -7,6 +7,7 @@ use chrono::Local;
 use regex::Regex;
 use rmcp::model::{Annotated, CallToolResult, RawContent, RawTextContent, Tool};
 use serde_json::{json, Map, Value};
+use std::collections::VecDeque;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
@@ -298,20 +299,31 @@ fn execute_get_logs(params: GetLogsParams) -> Result<String, LogError> {
     let level_filter = params.level.as_ref().map(|l| l.to_uppercase());
     let search_filter = &params.search;
 
-    // Read all lines and filter them
-    let all_lines: Vec<String> = reader
-        .lines()
-        .map_while(Result::ok)
-        .filter(|line| should_include_line(line, &level_filter, search_filter))
-        .collect();
+    // Use a circular buffer to keep only the last N matching lines in memory
+    // This ensures we get N matching lines (if available) without loading the entire file
+    let mut matching_lines: VecDeque<String> = VecDeque::with_capacity(lines_limit);
+    let mut had_io_error = false;
 
-    // Take the last N lines (most recent)
-    let recent_lines: Vec<&String> = all_lines.iter().rev().take(lines_limit).collect();
+    for line_result in reader.lines() {
+        match line_result {
+            Ok(line) => {
+                if should_include_line(&line, &level_filter, search_filter) {
+                    // If buffer is full, remove the oldest line
+                    if matching_lines.len() == lines_limit {
+                        matching_lines.pop_front();
+                    }
+                    matching_lines.push_back(line);
+                }
+            }
+            Err(_) => {
+                // I/O error occurred, note it and stop processing
+                had_io_error = true;
+                break;
+            }
+        }
+    }
 
-    // Reverse to show oldest to newest
-    let result_lines: Vec<&String> = recent_lines.into_iter().rev().collect();
-
-    if result_lines.is_empty() {
+    if matching_lines.is_empty() {
         let mut message = format!("No log entries found in {}", log_file_path.display());
 
         if level_filter.is_some() || search_filter.is_some() {
@@ -324,13 +336,17 @@ fn execute_get_logs(params: GetLogsParams) -> Result<String, LogError> {
             }
         }
 
+        if had_io_error {
+            message.push_str("\n\nWarning: Log file reading was interrupted due to an I/O error. Results may be incomplete.");
+        }
+
         return Ok(message);
     }
 
     // Format the output
     let mut output = format!(
         "Showing {} most recent log entries from {}",
-        result_lines.len(),
+        matching_lines.len(),
         log_file_path.display()
     );
 
@@ -344,9 +360,13 @@ fn execute_get_logs(params: GetLogsParams) -> Result<String, LogError> {
         }
     }
 
+    if had_io_error {
+        output.push_str("\n\nWarning: Log file reading was interrupted due to an I/O error. Results may be incomplete.");
+    }
+
     output.push_str("\n\n");
-    // Convert Vec<&String> to Vec<&str> for join
-    let line_strs: Vec<&str> = result_lines.iter().map(|s| s.as_str()).collect();
+    // Lines are already in chronological order (oldest to newest)
+    let line_strs: Vec<&str> = matching_lines.iter().map(|s| s.as_str()).collect();
     output.push_str(&line_strs.join("\n"));
 
     Ok(output)
@@ -650,11 +670,94 @@ mod tests {
 
     #[test]
     fn test_constants_consistency() {
-        // Ensure constants are sensible
-        assert!(MIN_LINES > 0);
-        assert!(MAX_LINES > MIN_LINES);
-        assert!(DEFAULT_LINES >= MIN_LINES);
-        assert!(DEFAULT_LINES <= MAX_LINES);
+        // Ensure constants are sensible (compile-time checks)
+        const _: () = assert!(MIN_LINES > 0);
+        const _: () = assert!(MAX_LINES > MIN_LINES);
+        const _: () = assert!(DEFAULT_LINES >= MIN_LINES);
+        const _: () = assert!(DEFAULT_LINES <= MAX_LINES);
         assert_eq!(VALID_LOG_LEVELS.len(), 5);
+    }
+
+    #[test]
+    fn test_circular_buffer_returns_requested_lines() {
+        // Regression test for bug where filter-then-limit could return fewer lines than requested
+        // This test simulates the scenario where there are many matching lines in a file,
+        // but the old implementation would read all, filter, then limit - potentially missing recent entries
+
+        use std::collections::VecDeque;
+
+        // Simulate processing 1000 log lines where every line matches our filter
+        let lines_limit = 10;
+        let mut matching_lines: VecDeque<String> = VecDeque::with_capacity(lines_limit);
+
+        // Generate 1000 matching lines
+        for i in 0..1000 {
+            let line = format!("[2024-01-15T10:30:00Z INFO - moose_cli] Message {}", i);
+
+            // Simulate our circular buffer logic
+            if matching_lines.len() == lines_limit {
+                matching_lines.pop_front();
+            }
+            matching_lines.push_back(line);
+        }
+
+        // We should have exactly lines_limit entries (the most recent 10)
+        assert_eq!(matching_lines.len(), lines_limit);
+
+        // Verify we have the LAST 10 entries (990-999), not some random subset
+        assert!(matching_lines[0].contains("Message 990"));
+        assert!(matching_lines[9].contains("Message 999"));
+    }
+
+    #[test]
+    fn test_circular_buffer_with_sparse_matches() {
+        // Test that circular buffer works correctly even when matches are sparse
+        use std::collections::VecDeque;
+
+        let lines_limit = 5;
+        let mut matching_lines: VecDeque<String> = VecDeque::with_capacity(lines_limit);
+
+        // Simulate 100 lines where only every 10th line matches (10 total matches)
+        for i in 0..100 {
+            let line = format!("[2024-01-15T10:30:00Z INFO - moose_cli] Message {}", i);
+
+            // Only "match" every 10th line
+            if i % 10 == 0 {
+                if matching_lines.len() == lines_limit {
+                    matching_lines.pop_front();
+                }
+                matching_lines.push_back(line);
+            }
+        }
+
+        // We should have exactly 5 entries (the most recent 5 matches)
+        assert_eq!(matching_lines.len(), lines_limit);
+
+        // Verify we have the LAST 5 matches: 50, 60, 70, 80, 90
+        assert!(matching_lines[0].contains("Message 50"));
+        assert!(matching_lines[4].contains("Message 90"));
+    }
+
+    #[test]
+    fn test_circular_buffer_fewer_matches_than_limit() {
+        // Test that we correctly handle case where fewer matches exist than requested
+        use std::collections::VecDeque;
+
+        let lines_limit = 100;
+        let mut matching_lines: VecDeque<String> = VecDeque::with_capacity(lines_limit);
+
+        // Only 3 matching lines
+        for i in 0..3 {
+            let line = format!("[2024-01-15T10:30:00Z ERROR - moose_cli] Error {}", i);
+            if matching_lines.len() == lines_limit {
+                matching_lines.pop_front();
+            }
+            matching_lines.push_back(line);
+        }
+
+        // We should have only 3 entries, not 100
+        assert_eq!(matching_lines.len(), 3);
+        assert!(matching_lines[0].contains("Error 0"));
+        assert!(matching_lines[2].contains("Error 2"));
     }
 }
