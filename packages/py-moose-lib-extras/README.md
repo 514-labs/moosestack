@@ -15,8 +15,8 @@ pip install py-moose-lib-extras
 To install the package in development mode:
 
 ```bash
-git clone https://github.com/yourusername/py-moose-lib-extras.git
-cd py-moose-lib-extras
+git clone https://github.com/514-labs/moosestack.git
+cd moosestack/packages/py-moose-lib-extras
 pip install -e .
 ```
 

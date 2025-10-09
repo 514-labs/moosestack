@@ -18,8 +18,8 @@ sys.path.insert(0, os.path.abspath('..'))
 # -- Project information -----------------------------------------------------
 
 project = 'py-moose-lib-extras'
-copyright = '2024, Your Name'
-author = 'Your Name'
+copyright = '2024, 514 Labs'
+author = '514 Labs'
 
 # The full version, including alpha/beta/rc tags
 release = '0.1.0'

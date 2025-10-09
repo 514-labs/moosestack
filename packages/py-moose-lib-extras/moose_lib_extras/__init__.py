@@ -17,8 +17,8 @@ from .moose_model_generator import (
 )
 
 __version__ = "0.1.0"
-__author__ = "Your Name"
-__email__ = "your.email@example.com"
+__author__ = "514 Labs"
+__email__ = "info@514labs.com"
 __description__ = "A collection of extra utilities and extensions for the Moose library"
 
 __all__ = [

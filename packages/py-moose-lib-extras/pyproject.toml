@@ -9,10 +9,10 @@ description = "A collection of extra utilities and extensions for the Moose libr
 readme = "README.md"
 license = {text = "MIT"}
 authors = [
-    {name = "Your Name", email = "your.email@example.com"}
+    {name = "514 Labs", email = "info@514labs.com"}
 ]
 maintainers = [
-    {name = "Your Name", email = "your.email@example.com"}
+    {name = "514 Labs", email = "info@514labs.com"}
 ]
 keywords = ["moose", "utilities", "extensions", "python"]
 classifiers = [
@@ -48,10 +48,10 @@ test = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/yourusername/py-moose-lib-extras"
+Homepage = "https://github.com/514-labs/moosestack"
 Documentation = "https://py-moose-lib-extras.readthedocs.io/"
-Repository = "https://github.com/yourusername/py-moose-lib-extras"
-"Bug Tracker" = "https://github.com/yourusername/py-moose-lib-extras/issues"
+Repository = "https://github.com/514-labs/moosestack"
+"Bug Tracker" = "https://github.com/514-labs/moosestack/issues"
 
 [tool.setuptools.packages.find]
 where = ["."]
