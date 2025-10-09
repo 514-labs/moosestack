@@ -7,7 +7,7 @@ use itertools::Itertools;
 use serde_json::json;
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
-use std::fmt::{format, Write};
+use std::fmt::Write;
 
 fn map_column_type_to_typescript(
     column_type: &ColumnType,
