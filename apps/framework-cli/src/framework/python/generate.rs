@@ -355,10 +355,7 @@ pub fn tables_to_python(tables: &[Table], life_cycle: Option<LifeCycle>) -> Stri
                 }
             })
             .collect::<Vec<_>>();
-        let can_use_key_wrapping = match &table.order_by {
-            OrderBy::Fields(v) => v == &primary_key,
-            OrderBy::SingleExpr(expr) => expr == &format!("({})", primary_key.join(", ")),
-        };
+        let can_use_key_wrapping = table.order_by.starts_with_fields(&primary_key);
 
         for column in &table.columns {
             let type_str =

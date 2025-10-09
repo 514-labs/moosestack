@@ -220,14 +220,7 @@ pub fn tables_to_typescript(tables: &[Table], life_cycle: Option<LifeCycle>) -> 
                 }
             })
             .collect::<Vec<_>>();
-        let can_use_key_wrapping = match &table.order_by {
-            OrderBy::Fields(v) => v == &primary_key,
-            OrderBy::SingleExpr(expr) => {
-                // treat a single identifier equal to primary key tuple as equivalent
-                // conservative: require expr to exactly equal tuple string
-                expr == &format!("({})", primary_key.join(", "))
-            }
-        };
+        let can_use_key_wrapping = table.order_by.starts_with_fields(&primary_key);
 
         writeln!(output, "export interface {} {{", table.name).unwrap();
 

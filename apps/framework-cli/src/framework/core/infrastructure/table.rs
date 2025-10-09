@@ -105,6 +105,16 @@ impl OrderBy {
     pub fn is_empty(&self) -> bool {
         matches!(self, OrderBy::Fields(v) if v.is_empty())
     }
+
+    pub fn starts_with_fields(&self, field_names: &[String]) -> bool {
+        match self {
+            OrderBy::Fields(v) => v.starts_with(field_names),
+            OrderBy::SingleExpr(expr) => expr
+                .strip_prefix('(')
+                .unwrap_or_else(|| expr)
+                .starts_with(&field_names.join(", ")),
+        }
+    }
 }
 
 impl std::fmt::Display for OrderBy {
