@@ -564,5 +564,5 @@ user_table = OlapTable("users", {
 
 - **Order columns by cardinality** (low to high) for better compression
 - **Use `ReplacingMergeTree`** for tables with frequent updates
-- **Specify `orderByFields`** for optimal query performance
+- **Specify `orderByFields` or `orderByExpression`** for optimal query performance
 - **Consider `LowCardinality`** for string columns with < 10,000 unique values

@@ -387,6 +387,64 @@ table2 = OlapTable[SchemaWithoutPrimaryKey]("table2", OlapConfig(
 ```
 </Python>
 
+### Order By Expression
+
+Use a ClickHouse SQL expression to control ordering directly. This is useful for advanced patterns (functions, transformations) or when you want to disable sorting entirely.
+
+<TypeScript>
+```ts filename="OrderByExpression.ts" copy
+// Use a ClickHouse expression for ORDER BY
+interface Events {
+  userId: string;
+  createdAt: Date;
+  eventType: string;
+}
+
+const tableWithOrderByExpression = new OlapTable<Events>("events", {
+  // Equivalent to orderByFields: ["userId", "createdAt", "eventType"]
+  orderByExpression: "(userId, createdAt, eventType)",
+});
+
+// Advanced: functions inside expression
+const tableWithMonthBucketing = new OlapTable<Events>("events_by_month", {
+  orderByExpression: "(userId, toYYYYMM(createdAt))",
+});
+
+// No sorting (ClickHouse tuple() means empty ORDER BY)
+const unsortedTable = new OlapTable<Events>("events_unsorted", {
+  orderByExpression: "tuple()",
+});
+```
+</TypeScript>
+
+<Python>
+```py filename="OrderByExpression.py" copy
+from moose_lib import OlapTable, OlapConfig
+from pydantic import BaseModel
+from datetime import datetime
+
+class Events(BaseModel):
+    user_id: str
+    created_at: datetime
+    event_type: str
+
+# Equivalent to order_by_fields=["user_id", "created_at", "event_type"]
+events = OlapTable[Events]("events", OlapConfig(
+    order_by_expression="(user_id, created_at, event_type)",
+))
+
+# Advanced: functions inside expression
+events_by_month = OlapTable[Events]("events_by_month", OlapConfig(
+    order_by_expression="(user_id, toYYYYMM(created_at))",
+))
+
+# No sorting
+unsorted = OlapTable[Events]("events_unsorted", OlapConfig(
+    order_by_expression="tuple()",
+))
+```
+</Python>
+
 ### Using Both Primary Key and Order By Fields
 
 <TypeScript>
