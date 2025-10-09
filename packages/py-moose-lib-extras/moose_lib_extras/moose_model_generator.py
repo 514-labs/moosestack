@@ -134,7 +134,7 @@ class MooseModelGenerator:
             '',
             'from typing import Optional',
             'from datetime import datetime',
-            'from moose_lib import BaseModel, Key, IngestPipeline, IngestPipelineConfig, Field, OlapTable, OlapConfig',
+            'from moose_lib import BaseModel, Key, Field, OlapTable, OlapConfig',
             '',
         ]
         
