@@ -74,9 +74,9 @@ model_generator.generate_models(metadata_list, "custom_models.py")
 - **Moose Model Generator**: Automatically generate Python models and pipelines from database metadata
   - Converts SAP HANA data types to Python types
   - Generates BaseModel classes with proper type hints
-  - Creates IngestPipeline configurations
+  - Creates OlapTable instances
   - Handles primary keys, optional fields, and timestamps
-  - Customizable pipeline settings based on table patterns
+  - Customizable table model generation based on table patterns
 - **Type Safety**: Full type hints and dataclass support
 - **Error Handling**: Robust error handling with informative messages
 - **Flexible Usage**: Both class-based and function-based APIs
