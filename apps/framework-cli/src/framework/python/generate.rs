@@ -1,5 +1,5 @@
 use crate::framework::core::infrastructure::table::{
-    ColumnType, DataEnum, EnumValue, FloatType, IntType, Nested, Table,
+    ColumnType, DataEnum, EnumValue, FloatType, IntType, Nested, OrderBy, Table,
 };
 use crate::framework::core::partial_infrastructure_map::LifeCycle;
 use convert_case::{Case, Casing};
@@ -356,10 +356,8 @@ pub fn tables_to_python(tables: &[Table], life_cycle: Option<LifeCycle>) -> Stri
             })
             .collect::<Vec<_>>();
         let can_use_key_wrapping = match &table.order_by {
-            crate::framework::core::infrastructure::table::OrderBy::Fields(v) => v == &primary_key,
-            crate::framework::core::infrastructure::table::OrderBy::SingleExpr(expr) => {
-                expr == &format!("({})", primary_key.join(", "))
-            }
+            OrderBy::Fields(v) => v == &primary_key,
+            OrderBy::SingleExpr(expr) => expr == &format!("({})", primary_key.join(", ")),
         };
 
         for column in &table.columns {
@@ -394,16 +392,15 @@ pub fn tables_to_python(tables: &[Table], life_cycle: Option<LifeCycle>) -> Stri
 
     // Generate pipeline configurations
     for table in tables {
-        let order_by_fields = match &table.order_by {
-            crate::framework::core::infrastructure::table::OrderBy::Fields(v) if v.is_empty() => {
-                "\"tuple()\"".to_string()
+        let order_by_spec = match &table.order_by {
+            OrderBy::Fields(v) if v.is_empty() => "order_by_expression=\"tuple()\"".to_string(),
+            OrderBy::Fields(v) => {
+                format!(
+                    "order_by_fields=[{}]",
+                    v.iter().map(|name| format!("{:?}", name)).join(", ")
+                )
             }
-            crate::framework::core::infrastructure::table::OrderBy::Fields(v) => {
-                v.iter().map(|name| format!("{:?}", name)).join(", ")
-            }
-            crate::framework::core::infrastructure::table::OrderBy::SingleExpr(expr) => {
-                format!("{:?}", expr)
-            }
+            OrderBy::SingleExpr(expr) => format!("order_by_expression={:?}", expr),
         };
 
         writeln!(
@@ -414,7 +411,7 @@ pub fn tables_to_python(tables: &[Table], life_cycle: Option<LifeCycle>) -> Stri
             table.name
         )
         .unwrap();
-        writeln!(output, "    order_by_fields=[{order_by_fields}],").unwrap();
+        writeln!(output, "    {order_by_spec},").unwrap();
         if let Some(partition_by) = &table.partition_by {
             writeln!(output, "    partition_by={:?},", partition_by).unwrap();
         }

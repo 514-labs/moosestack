@@ -1,5 +1,5 @@
 use crate::framework::core::infrastructure::table::{
-    ColumnType, DataEnum, EnumValue, FloatType, Nested, Table,
+    ColumnType, DataEnum, EnumValue, FloatType, Nested, OrderBy, Table,
 };
 use crate::framework::core::partial_infrastructure_map::LifeCycle;
 use convert_case::{Case, Casing};
@@ -7,7 +7,7 @@ use itertools::Itertools;
 use serde_json::json;
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
-use std::fmt::Write;
+use std::fmt::{format, Write};
 
 fn map_column_type_to_typescript(
     column_type: &ColumnType,
@@ -221,8 +221,8 @@ pub fn tables_to_typescript(tables: &[Table], life_cycle: Option<LifeCycle>) -> 
             })
             .collect::<Vec<_>>();
         let can_use_key_wrapping = match &table.order_by {
-            crate::framework::core::infrastructure::table::OrderBy::Fields(v) => v == &primary_key,
-            crate::framework::core::infrastructure::table::OrderBy::SingleExpr(expr) => {
+            OrderBy::Fields(v) => v == &primary_key,
+            OrderBy::SingleExpr(expr) => {
                 // treat a single identifier equal to primary key tuple as equivalent
                 // conservative: require expr to exactly equal tuple string
                 expr == &format!("({})", primary_key.join(", "))
@@ -262,19 +262,15 @@ pub fn tables_to_typescript(tables: &[Table], life_cycle: Option<LifeCycle>) -> 
 
     // Generate table configurations
     for table in tables {
-        let order_by_fields = match &table.order_by {
-            crate::framework::core::infrastructure::table::OrderBy::Fields(v) if v.is_empty() => {
-                "\"tuple()\"".to_string()
+        let order_by_spec = match &table.order_by {
+            OrderBy::Fields(v) if v.is_empty() => "orderByExpression: \"tuple()\"".to_string(),
+            OrderBy::Fields(v) => {
+                format!(
+                    "orderByFields: [{}]",
+                    v.iter().map(|name| format!("{:?}", name)).join(", ")
+                )
             }
-            crate::framework::core::infrastructure::table::OrderBy::Fields(v) => {
-                v.iter().map(|name| format!("{:?}", name)).join(", ")
-            }
-            crate::framework::core::infrastructure::table::OrderBy::SingleExpr(expr) => {
-                // Emit expression via orderByExpression path in TS template; here keep fields empty
-                // We'll set orderByFields empty and docs-side will prefer expression
-                // For now, represent expression as string literal list with one element
-                format!("{:?}", expr)
-            }
+            OrderBy::SingleExpr(expr) => format!("orderByExpression: {:?}", expr),
         };
         writeln!(
             output,
@@ -284,7 +280,7 @@ pub fn tables_to_typescript(tables: &[Table], life_cycle: Option<LifeCycle>) -> 
             table.name
         )
         .unwrap();
-        writeln!(output, "    orderByFields: [{order_by_fields}],").unwrap();
+        writeln!(output, "    {order_by_spec},").unwrap();
         if let Some(partition_by) = &table.partition_by {
             writeln!(output, "    partitionBy: {:?},", partition_by).unwrap();
         }
