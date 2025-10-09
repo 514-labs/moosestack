@@ -1,6 +1,6 @@
 import { type FrameworkAdapter } from "./byof-adapter";
 import { getMooseInternal } from "../dmv2/internal";
-import { getRegisteredByofApp, type RegisteredByofApp } from "./byof-registry";
+import { getRegisteredByofApi } from "./byof-api";
 
 /**
  * Information about a loaded BYOF (Bring Your Own Framework) application
@@ -33,7 +33,7 @@ export interface RouteCollision {
 }
 
 /**
- * Loads the registered BYOF application and checks for route collisions.
+ * Loads the registered BYOF API and checks for route collisions.
  *
  * @returns Promise<ByofLoadResult> - The loaded app and any detected collisions
  */
@@ -41,18 +41,21 @@ export async function loadByofApps(): Promise<ByofLoadResult> {
   const apps: ByofAppInfo[] = [];
   const collisions: RouteCollision[] = [];
 
-  // Get the registered BYOF app from the registry
-  const registeredApp = getRegisteredByofApp();
+  // Get the registered ByofApi instance from the registry
+  const byofApi = getRegisteredByofApi();
 
-  if (!registeredApp) {
-    // No BYOF app registered, return empty result
+  if (!byofApi) {
+    // No BYOF API registered, return empty result
     return { apps, collisions };
   }
 
-  // Add the registered app to the list
+  // Initialize the ByofApi (creates the framework app and adapter)
+  await byofApi.initialize();
+
+  // Add the initialized app to the list
   apps.push({
-    adapter: registeredApp.adapter,
-    routes: registeredApp.routes,
+    adapter: byofApi.getAdapter(),
+    routes: byofApi.getRoutes(),
   });
 
   // Detect collisions with Api instances

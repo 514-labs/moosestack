@@ -2,7 +2,7 @@
  * Example BYOF (Bring Your Own Framework) Express app
  *
  * This file demonstrates how to use Express with MooseStack for consumption
- * APIs.
+ * APIs using the ByofApi class.
  */
 
 import express, { Request, Response, NextFunction } from "express";
@@ -10,7 +10,7 @@ import {
   sql,
   getMooseClients,
   mooseLogger,
-  registerApp,
+  ByofApi,
   type MooseClient,
 } from "@514labs/moose-lib";
 import { BarPipeline } from "../ingest/models";
@@ -29,13 +29,11 @@ interface ResultItem {
   textLength: number;
 }
 
-const SourceTable = BarPipeline.table!;
-const cols = SourceTable.columns;
-
 /**
- * Initialize and register the Express app with Moose.
+ * Creates and configures the Express app.
+ * This function is called by the ByofApi class when the app is initialized.
  */
-async function setupExpressApp() {
+async function createExpressApp() {
   const app = express();
   const { client } = await getMooseClients();
 
@@ -51,6 +49,8 @@ async function setupExpressApp() {
   // Example: Custom endpoint that queries ClickHouse
   app.get("/moose", async (req: RequestWithClient, res: Response) => {
     const { client } = req;
+    const SourceTable = BarPipeline.table!;
+    const cols = SourceTable.columns;
 
     const query = sql` SELECT ${cols.primaryKey}, ${cols.textLength} FROM ${SourceTable} LIMIT ${req.query.maxResults || 10}`;
 
@@ -62,9 +62,14 @@ async function setupExpressApp() {
     res.send(data);
   });
 
-  // Register the Express app with Moose
-  registerApp(app);
+  return app;
 }
 
-// Initialize the app
-setupExpressApp();
+/**
+ * Register the Express app with Moose using the ByofApi class.
+ * This follows the same pattern as Api and IngestApi classes.
+ */
+export const barByofApi = new ByofApi("bar-express-api", createExpressApp, {
+  version: "1.0",
+  metadata: { description: "Example Express app integrated with Moose" },
+});
