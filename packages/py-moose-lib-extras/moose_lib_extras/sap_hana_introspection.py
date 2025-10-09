@@ -238,5 +238,5 @@ def introspect_hana_database(
     Returns:
         List of TableMetadata objects
     """
-    instrospector = HanaIntrospector(connection)
-    return instrospector.get_table_metadata(table_names, schema_name)
+    introspector = HanaIntrospector(connection)
+    return introspector.get_table_metadata(table_names, schema_name)
