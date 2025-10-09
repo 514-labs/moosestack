@@ -1,9 +1,8 @@
 use log::info;
 use rmcp::{
     model::{
-        Annotated, CallToolRequestParam, CallToolResult, Implementation, ListToolsResult,
-        PaginatedRequestParam, ProtocolVersion, RawContent, RawTextContent, ServerCapabilities,
-        ServerInfo,
+        CallToolRequestParam, CallToolResult, Implementation, ListToolsResult,
+        PaginatedRequestParam, ProtocolVersion, ServerCapabilities, ServerInfo,
     },
     service::RequestContext,
     transport::streamable_http_server::{
@@ -13,7 +12,7 @@ use rmcp::{
 };
 use std::sync::Arc;
 
-use super::tools::{infra_map, logs};
+use super::tools::{create_error_result, infra_map, logs};
 use crate::infrastructure::redis::redis_client::RedisClient;
 
 /// Handler for the MCP server that implements the Model Context Protocol
@@ -84,18 +83,7 @@ impl ServerHandler for MooseMcpHandler {
                 self.redis_client.clone(),
             )
             .await),
-            _ => Ok(CallToolResult {
-                content: vec![Annotated {
-                    raw: RawContent::Text(RawTextContent {
-                        text: format!("Unknown tool: {}", param.name),
-                        meta: None,
-                    }),
-                    annotations: None,
-                }],
-                is_error: Some(true),
-                meta: None,
-                structured_content: None,
-            }),
+            _ => Ok(create_error_result(format!("Unknown tool: {}", param.name))),
         }
     }
 }

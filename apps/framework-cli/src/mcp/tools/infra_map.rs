@@ -4,15 +4,19 @@
 //! It provides functionality to retrieve, filter, and search through infrastructure components.
 
 use regex::Regex;
-use rmcp::model::{Annotated, CallToolResult, RawContent, RawTextContent, Tool};
+use rmcp::model::{CallToolResult, Tool};
 use serde_json::{json, Map, Value};
 use std::sync::Arc;
 
+use super::{create_error_result, create_success_result};
+use crate::framework::core::infrastructure::api_endpoint::ApiEndpoint;
 use crate::framework::core::infrastructure_map::InfrastructureMap;
 use crate::infrastructure::redis::redis_client::RedisClient;
 
 /// Valid component types for filtering
-const VALID_COMPONENT_TYPES: [&str; 12] = [
+/// Note: block_db_processes and consumption_api_web_server are single structs, not collections,
+/// so they are not included in this list yet. They can be added when they become HashMaps.
+const VALID_COMPONENT_TYPES: [&str; 10] = [
     "topics",
     "api_endpoints",
     "tables",
@@ -20,8 +24,6 @@ const VALID_COMPONENT_TYPES: [&str; 12] = [
     "topic_to_table_sync_processes",
     "topic_to_topic_sync_processes",
     "function_processes",
-    "block_db_processes",
-    "consumption_api_web_server",
     "orchestration_workers",
     "sql_resources",
     "workflows",
@@ -137,16 +139,20 @@ fn parse_params(arguments: Option<&Map<String, Value>>) -> Result<GetInfraMapPar
         .and_then(|v| v.as_str())
         .map(|s| s.to_string());
 
-    // Validate component_type if provided
-    if let Some(ref ct) = component_type {
-        if !is_valid_component_type(ct) {
+    // Validate and normalize component_type if provided
+    let component_type = if let Some(ct) = component_type {
+        if !is_valid_component_type(&ct) {
             return Err(InfraMapError::InvalidParameter(format!(
                 "component_type must be one of {}; got {}",
                 VALID_COMPONENT_TYPES.join(", "),
                 ct
             )));
         }
-    }
+        // Normalize to lowercase for consistent comparison
+        Some(ct.to_lowercase())
+    } else {
+        None
+    };
 
     // Parse and compile search regex if provided
     let search = if let Some(pattern) = arguments
@@ -187,47 +193,12 @@ pub async fn handle_call(
 ) -> CallToolResult {
     let params = match parse_params(arguments) {
         Ok(p) => p,
-        Err(e) => {
-            return CallToolResult {
-                content: vec![Annotated {
-                    raw: RawContent::Text(RawTextContent {
-                        text: format!("Parameter validation error: {}", e),
-                        meta: None,
-                    }),
-                    annotations: None,
-                }],
-                is_error: Some(true),
-                meta: None,
-                structured_content: None,
-            };
-        }
+        Err(e) => return create_error_result(format!("Parameter validation error: {}", e)),
     };
 
     match execute_get_infra_map(params, redis_client).await {
-        Ok(content) => CallToolResult {
-            content: vec![Annotated {
-                raw: RawContent::Text(RawTextContent {
-                    text: content,
-                    meta: None,
-                }),
-                annotations: None,
-            }],
-            is_error: Some(false),
-            meta: None,
-            structured_content: None,
-        },
-        Err(e) => CallToolResult {
-            content: vec![Annotated {
-                raw: RawContent::Text(RawTextContent {
-                    text: format!("Error retrieving infrastructure map: {}", e),
-                    meta: None,
-                }),
-                annotations: None,
-            }],
-            is_error: Some(true),
-            meta: None,
-            structured_content: None,
-        },
+        Ok(content) => create_success_result(content),
+        Err(e) => create_error_result(format!("Error retrieving infrastructure map: {}", e)),
     }
 }
 
@@ -244,6 +215,94 @@ fn filter_by_search<T>(
             .collect(),
         None => map.keys().cloned().collect(),
     }
+}
+
+/// Process a component type for summary output
+/// Returns the formatted string section if the component should be shown and has matches
+fn process_component_summary<T>(
+    component_name: &str,
+    display_name: &str,
+    map: &std::collections::HashMap<String, T>,
+    search: &Option<SearchFilter>,
+    component_type_filter: &Option<String>,
+    show_all: bool,
+) -> Option<String> {
+    // Check if we should process this component type
+    if !show_all && component_type_filter.as_deref() != Some(component_name) {
+        return None;
+    }
+
+    let filtered = filter_by_search(map, search);
+    if filtered.is_empty() {
+        return None;
+    }
+
+    let mut output = String::new();
+    output.push_str(&format!("## {} ({})\n", display_name, filtered.len()));
+    for name in &filtered {
+        output.push_str(&format!("- {}\n", name));
+    }
+    output.push('\n');
+
+    Some(output)
+}
+
+/// Process API endpoints for summary output (special case with api_type)
+fn process_api_endpoints_summary(
+    api_endpoints: &std::collections::HashMap<String, ApiEndpoint>,
+    search: &Option<SearchFilter>,
+    component_type_filter: &Option<String>,
+    show_all: bool,
+) -> Option<String> {
+    // Check if we should process this component type
+    if !show_all && component_type_filter.as_deref() != Some("api_endpoints") {
+        return None;
+    }
+
+    let filtered = filter_by_search(api_endpoints, search);
+    if filtered.is_empty() {
+        return None;
+    }
+
+    let mut output = String::new();
+    output.push_str(&format!("## API Endpoints ({})\n", filtered.len()));
+    for name in &filtered {
+        if let Some(endpoint) = api_endpoints.get(name) {
+            output.push_str(&format!("- {} ({:?})\n", name, endpoint.api_type));
+        }
+    }
+    output.push('\n');
+
+    Some(output)
+}
+
+/// Process a component type for detailed output
+/// Returns a JSON object with the filtered components if they should be shown and have matches
+fn process_component_detailed<T: serde::Serialize>(
+    component_name: &str,
+    map: &std::collections::HashMap<String, T>,
+    search: &Option<SearchFilter>,
+    component_type_filter: &Option<String>,
+    show_all: bool,
+) -> Result<Option<(String, Value)>, InfraMapError> {
+    // Check if we should process this component type
+    if !show_all && component_type_filter.as_deref() != Some(component_name) {
+        return Ok(None);
+    }
+
+    let filtered_keys = filter_by_search(map, search);
+    if filtered_keys.is_empty() {
+        return Ok(None);
+    }
+
+    let mut component_map = serde_json::Map::new();
+    for key in filtered_keys {
+        if let Some(value) = map.get(&key) {
+            component_map.insert(key, serde_json::to_value(value)?);
+        }
+    }
+
+    Ok(Some((component_name.to_string(), Value::Object(component_map))))
 }
 
 /// Main function to retrieve and filter infrastructure map
@@ -284,122 +343,91 @@ fn format_summary(
 
     let show_all = component_type_filter.is_none();
 
-    if show_all || component_type_filter.as_deref() == Some("topics") {
-        let filtered = filter_by_search(&infra_map.topics, search);
-        if !filtered.is_empty() {
-            output.push_str(&format!("## Topics ({})\n", filtered.len()));
-            for name in &filtered {
-                output.push_str(&format!("- {}\n", name));
-            }
-            output.push('\n');
-        }
-    }
+    // Process each component type using helper functions
+    let components = vec![
+        process_component_summary(
+            "topics",
+            "Topics",
+            &infra_map.topics,
+            search,
+            component_type_filter,
+            show_all,
+        ),
+        process_api_endpoints_summary(
+            &infra_map.api_endpoints,
+            search,
+            component_type_filter,
+            show_all,
+        ),
+        process_component_summary(
+            "tables",
+            "Tables",
+            &infra_map.tables,
+            search,
+            component_type_filter,
+            show_all,
+        ),
+        process_component_summary(
+            "views",
+            "Views",
+            &infra_map.views,
+            search,
+            component_type_filter,
+            show_all,
+        ),
+        process_component_summary(
+            "topic_to_table_sync_processes",
+            "Topic-to-Table Sync Processes",
+            &infra_map.topic_to_table_sync_processes,
+            search,
+            component_type_filter,
+            show_all,
+        ),
+        process_component_summary(
+            "topic_to_topic_sync_processes",
+            "Topic-to-Topic Sync Processes",
+            &infra_map.topic_to_topic_sync_processes,
+            search,
+            component_type_filter,
+            show_all,
+        ),
+        process_component_summary(
+            "function_processes",
+            "Function Processes",
+            &infra_map.function_processes,
+            search,
+            component_type_filter,
+            show_all,
+        ),
+        process_component_summary(
+            "orchestration_workers",
+            "Orchestration Workers",
+            &infra_map.orchestration_workers,
+            search,
+            component_type_filter,
+            show_all,
+        ),
+        process_component_summary(
+            "sql_resources",
+            "SQL Resources",
+            &infra_map.sql_resources,
+            search,
+            component_type_filter,
+            show_all,
+        ),
+        process_component_summary(
+            "workflows",
+            "Workflows",
+            &infra_map.workflows,
+            search,
+            component_type_filter,
+            show_all,
+        ),
+    ];
 
-    if show_all || component_type_filter.as_deref() == Some("api_endpoints") {
-        let filtered = filter_by_search(&infra_map.api_endpoints, search);
-        if !filtered.is_empty() {
-            output.push_str(&format!("## API Endpoints ({})\n", filtered.len()));
-            for name in &filtered {
-                if let Some(endpoint) = infra_map.api_endpoints.get(name) {
-                    output.push_str(&format!("- {} ({:?})\n", name, endpoint.api_type));
-                }
-            }
-            output.push('\n');
-        }
-    }
-
-    if show_all || component_type_filter.as_deref() == Some("tables") {
-        let filtered = filter_by_search(&infra_map.tables, search);
-        if !filtered.is_empty() {
-            output.push_str(&format!("## Tables ({})\n", filtered.len()));
-            for name in &filtered {
-                output.push_str(&format!("- {}\n", name));
-            }
-            output.push('\n');
-        }
-    }
-
-    if show_all || component_type_filter.as_deref() == Some("views") {
-        let filtered = filter_by_search(&infra_map.views, search);
-        if !filtered.is_empty() {
-            output.push_str(&format!("## Views ({})\n", filtered.len()));
-            for name in &filtered {
-                output.push_str(&format!("- {}\n", name));
-            }
-            output.push('\n');
-        }
-    }
-
-    if show_all || component_type_filter.as_deref() == Some("topic_to_table_sync_processes") {
-        let filtered = filter_by_search(&infra_map.topic_to_table_sync_processes, search);
-        if !filtered.is_empty() {
-            output.push_str(&format!(
-                "## Topic-to-Table Sync Processes ({})\n",
-                filtered.len()
-            ));
-            for name in &filtered {
-                output.push_str(&format!("- {}\n", name));
-            }
-            output.push('\n');
-        }
-    }
-
-    if show_all || component_type_filter.as_deref() == Some("topic_to_topic_sync_processes") {
-        let filtered = filter_by_search(&infra_map.topic_to_topic_sync_processes, search);
-        if !filtered.is_empty() {
-            output.push_str(&format!(
-                "## Topic-to-Topic Sync Processes ({})\n",
-                filtered.len()
-            ));
-            for name in &filtered {
-                output.push_str(&format!("- {}\n", name));
-            }
-            output.push('\n');
-        }
-    }
-
-    if show_all || component_type_filter.as_deref() == Some("function_processes") {
-        let filtered = filter_by_search(&infra_map.function_processes, search);
-        if !filtered.is_empty() {
-            output.push_str(&format!("## Function Processes ({})\n", filtered.len()));
-            for name in &filtered {
-                output.push_str(&format!("- {}\n", name));
-            }
-            output.push('\n');
-        }
-    }
-
-    if show_all || component_type_filter.as_deref() == Some("orchestration_workers") {
-        let filtered = filter_by_search(&infra_map.orchestration_workers, search);
-        if !filtered.is_empty() {
-            output.push_str(&format!("## Orchestration Workers ({})\n", filtered.len()));
-            for name in &filtered {
-                output.push_str(&format!("- {}\n", name));
-            }
-            output.push('\n');
-        }
-    }
-
-    if show_all || component_type_filter.as_deref() == Some("sql_resources") {
-        let filtered = filter_by_search(&infra_map.sql_resources, search);
-        if !filtered.is_empty() {
-            output.push_str(&format!("## SQL Resources ({})\n", filtered.len()));
-            for name in &filtered {
-                output.push_str(&format!("- {}\n", name));
-            }
-            output.push('\n');
-        }
-    }
-
-    if show_all || component_type_filter.as_deref() == Some("workflows") {
-        let filtered = filter_by_search(&infra_map.workflows, search);
-        if !filtered.is_empty() {
-            output.push_str(&format!("## Workflows ({})\n", filtered.len()));
-            for name in &filtered {
-                output.push_str(&format!("- {}\n", name));
-            }
-            output.push('\n');
-        }
+    // Append all non-empty component sections
+    for component in components.into_iter().flatten() {
+        output.push_str(&component);
     }
 
     // Add filters applied section if any filters were used
@@ -430,148 +458,26 @@ fn format_detailed(
 
     // Create a filtered version of the infrastructure map
     let filtered_json = if component_type_filter.is_some() || search.is_some() {
-        // Build a filtered JSON object
+        let show_all = component_type_filter.is_none();
         let mut filtered = serde_json::Map::new();
 
-        let show_all = component_type_filter.is_none();
+        // Process each component type using the helper function
+        let components = vec![
+            process_component_detailed("topics", &infra_map.topics, search, component_type_filter, show_all)?,
+            process_component_detailed("api_endpoints", &infra_map.api_endpoints, search, component_type_filter, show_all)?,
+            process_component_detailed("tables", &infra_map.tables, search, component_type_filter, show_all)?,
+            process_component_detailed("views", &infra_map.views, search, component_type_filter, show_all)?,
+            process_component_detailed("topic_to_table_sync_processes", &infra_map.topic_to_table_sync_processes, search, component_type_filter, show_all)?,
+            process_component_detailed("topic_to_topic_sync_processes", &infra_map.topic_to_topic_sync_processes, search, component_type_filter, show_all)?,
+            process_component_detailed("function_processes", &infra_map.function_processes, search, component_type_filter, show_all)?,
+            process_component_detailed("orchestration_workers", &infra_map.orchestration_workers, search, component_type_filter, show_all)?,
+            process_component_detailed("sql_resources", &infra_map.sql_resources, search, component_type_filter, show_all)?,
+            process_component_detailed("workflows", &infra_map.workflows, search, component_type_filter, show_all)?,
+        ];
 
-        if show_all || component_type_filter.as_deref() == Some("topics") {
-            let filtered_keys = filter_by_search(&infra_map.topics, search);
-            if !filtered_keys.is_empty() {
-                let mut topics_map = serde_json::Map::new();
-                for key in filtered_keys {
-                    if let Some(topic) = infra_map.topics.get(&key) {
-                        topics_map.insert(key, serde_json::to_value(topic)?);
-                    }
-                }
-                filtered.insert("topics".to_string(), Value::Object(topics_map));
-            }
-        }
-
-        if show_all || component_type_filter.as_deref() == Some("api_endpoints") {
-            let filtered_keys = filter_by_search(&infra_map.api_endpoints, search);
-            if !filtered_keys.is_empty() {
-                let mut api_map = serde_json::Map::new();
-                for key in filtered_keys {
-                    if let Some(api) = infra_map.api_endpoints.get(&key) {
-                        api_map.insert(key, serde_json::to_value(api)?);
-                    }
-                }
-                filtered.insert("api_endpoints".to_string(), Value::Object(api_map));
-            }
-        }
-
-        if show_all || component_type_filter.as_deref() == Some("tables") {
-            let filtered_keys = filter_by_search(&infra_map.tables, search);
-            if !filtered_keys.is_empty() {
-                let mut tables_map = serde_json::Map::new();
-                for key in filtered_keys {
-                    if let Some(table) = infra_map.tables.get(&key) {
-                        tables_map.insert(key, serde_json::to_value(table)?);
-                    }
-                }
-                filtered.insert("tables".to_string(), Value::Object(tables_map));
-            }
-        }
-
-        if show_all || component_type_filter.as_deref() == Some("views") {
-            let filtered_keys = filter_by_search(&infra_map.views, search);
-            if !filtered_keys.is_empty() {
-                let mut views_map = serde_json::Map::new();
-                for key in filtered_keys {
-                    if let Some(view) = infra_map.views.get(&key) {
-                        views_map.insert(key, serde_json::to_value(view)?);
-                    }
-                }
-                filtered.insert("views".to_string(), Value::Object(views_map));
-            }
-        }
-
-        if show_all || component_type_filter.as_deref() == Some("topic_to_table_sync_processes") {
-            let filtered_keys = filter_by_search(&infra_map.topic_to_table_sync_processes, search);
-            if !filtered_keys.is_empty() {
-                let mut sync_map = serde_json::Map::new();
-                for key in filtered_keys {
-                    if let Some(sync) = infra_map.topic_to_table_sync_processes.get(&key) {
-                        sync_map.insert(key, serde_json::to_value(sync)?);
-                    }
-                }
-                filtered.insert(
-                    "topic_to_table_sync_processes".to_string(),
-                    Value::Object(sync_map),
-                );
-            }
-        }
-
-        if show_all || component_type_filter.as_deref() == Some("topic_to_topic_sync_processes") {
-            let filtered_keys = filter_by_search(&infra_map.topic_to_topic_sync_processes, search);
-            if !filtered_keys.is_empty() {
-                let mut sync_map = serde_json::Map::new();
-                for key in filtered_keys {
-                    if let Some(sync) = infra_map.topic_to_topic_sync_processes.get(&key) {
-                        sync_map.insert(key, serde_json::to_value(sync)?);
-                    }
-                }
-                filtered.insert(
-                    "topic_to_topic_sync_processes".to_string(),
-                    Value::Object(sync_map),
-                );
-            }
-        }
-
-        if show_all || component_type_filter.as_deref() == Some("function_processes") {
-            let filtered_keys = filter_by_search(&infra_map.function_processes, search);
-            if !filtered_keys.is_empty() {
-                let mut func_map = serde_json::Map::new();
-                for key in filtered_keys {
-                    if let Some(func) = infra_map.function_processes.get(&key) {
-                        func_map.insert(key, serde_json::to_value(func)?);
-                    }
-                }
-                filtered.insert("function_processes".to_string(), Value::Object(func_map));
-            }
-        }
-
-        if show_all || component_type_filter.as_deref() == Some("orchestration_workers") {
-            let filtered_keys = filter_by_search(&infra_map.orchestration_workers, search);
-            if !filtered_keys.is_empty() {
-                let mut worker_map = serde_json::Map::new();
-                for key in filtered_keys {
-                    if let Some(worker) = infra_map.orchestration_workers.get(&key) {
-                        worker_map.insert(key, serde_json::to_value(worker)?);
-                    }
-                }
-                filtered.insert(
-                    "orchestration_workers".to_string(),
-                    Value::Object(worker_map),
-                );
-            }
-        }
-
-        if show_all || component_type_filter.as_deref() == Some("sql_resources") {
-            let filtered_keys = filter_by_search(&infra_map.sql_resources, search);
-            if !filtered_keys.is_empty() {
-                let mut sql_map = serde_json::Map::new();
-                for key in filtered_keys {
-                    if let Some(sql) = infra_map.sql_resources.get(&key) {
-                        sql_map.insert(key, serde_json::to_value(sql)?);
-                    }
-                }
-                filtered.insert("sql_resources".to_string(), Value::Object(sql_map));
-            }
-        }
-
-        if show_all || component_type_filter.as_deref() == Some("workflows") {
-            let filtered_keys = filter_by_search(&infra_map.workflows, search);
-            if !filtered_keys.is_empty() {
-                let mut workflow_map = serde_json::Map::new();
-                for key in filtered_keys {
-                    if let Some(workflow) = infra_map.workflows.get(&key) {
-                        workflow_map.insert(key, serde_json::to_value(workflow)?);
-                    }
-                }
-                filtered.insert("workflows".to_string(), Value::Object(workflow_map));
-            }
+        // Add all non-empty components to the filtered map
+        for component in components.into_iter().flatten() {
+            filtered.insert(component.0, component.1);
         }
 
         Value::Object(filtered)
@@ -689,5 +595,77 @@ mod tests {
         let map = args.as_object().unwrap();
         let result = parse_params(Some(map));
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_params_case_insensitive() {
+        // Test that component_type is normalized to lowercase
+        let args = json!({"component_type": "TOPICS"});
+        let map = args.as_object().unwrap();
+        let result = parse_params(Some(map));
+        assert!(result.is_ok());
+        let params = result.unwrap();
+        assert_eq!(params.component_type, Some("topics".to_string()));
+
+        let args = json!({"component_type": "Tables"});
+        let map = args.as_object().unwrap();
+        let result = parse_params(Some(map));
+        assert!(result.is_ok());
+        let params = result.unwrap();
+        assert_eq!(params.component_type, Some("tables".to_string()));
+    }
+
+    #[test]
+    fn test_filter_by_search_no_filter() {
+        use std::collections::HashMap;
+
+        let mut map = HashMap::new();
+        map.insert("user_table".to_string(), 1);
+        map.insert("order_table".to_string(), 2);
+        map.insert("product_table".to_string(), 3);
+
+        let result = filter_by_search(&map, &None);
+        assert_eq!(result.len(), 3);
+        assert!(result.contains(&"user_table".to_string()));
+        assert!(result.contains(&"order_table".to_string()));
+        assert!(result.contains(&"product_table".to_string()));
+    }
+
+    #[test]
+    fn test_filter_by_search_with_filter() {
+        use std::collections::HashMap;
+
+        let mut map = HashMap::new();
+        map.insert("user_table".to_string(), 1);
+        map.insert("order_table".to_string(), 2);
+        map.insert("product_table".to_string(), 3);
+
+        let filter = SearchFilter::new("user".to_string()).unwrap();
+        let result = filter_by_search(&map, &Some(filter));
+        assert_eq!(result.len(), 1);
+        assert!(result.contains(&"user_table".to_string()));
+
+        let filter = SearchFilter::new("table".to_string()).unwrap();
+        let result = filter_by_search(&map, &Some(filter));
+        assert_eq!(result.len(), 3);
+
+        let filter = SearchFilter::new("user|order".to_string()).unwrap();
+        let result = filter_by_search(&map, &Some(filter));
+        assert_eq!(result.len(), 2);
+        assert!(result.contains(&"user_table".to_string()));
+        assert!(result.contains(&"order_table".to_string()));
+    }
+
+    #[test]
+    fn test_filter_by_search_empty_result() {
+        use std::collections::HashMap;
+
+        let mut map = HashMap::new();
+        map.insert("user_table".to_string(), 1);
+        map.insert("order_table".to_string(), 2);
+
+        let filter = SearchFilter::new("product".to_string()).unwrap();
+        let result = filter_by_search(&map, &Some(filter));
+        assert_eq!(result.len(), 0);
     }
 }
