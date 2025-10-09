@@ -306,6 +306,18 @@ impl Table {
 
         // Engine settings are now handled via table_settings field
 
+        let fallback = || {
+            if proto.order_by.len() == 1 {
+                let s = proto.order_by[0].clone();
+                if s == "tuple()" {
+                    OrderBy::SingleExpr(s)
+                } else {
+                    OrderBy::Fields(vec![s])
+                }
+            } else {
+                OrderBy::Fields(proto.order_by.clone())
+            }
+        };
         let order_by = match proto.order_by2.into_option() {
             Some(ob2) => match ob2.t {
                 Some(crate::proto::infrastructure_map::order_by::T::Fields(f)) => {
@@ -314,35 +326,9 @@ impl Table {
                 Some(crate::proto::infrastructure_map::order_by::T::Expression(e)) => {
                     OrderBy::SingleExpr(e)
                 }
-                None => {
-                    if proto.order_by.len() == 1 {
-                        let s = proto.order_by[0].clone();
-                        if s == "tuple()"
-                            || s.starts_with('(')
-                            || s.contains(' ')
-                            || s.contains(',')
-                        {
-                            OrderBy::SingleExpr(s)
-                        } else {
-                            OrderBy::Fields(vec![s])
-                        }
-                    } else {
-                        OrderBy::Fields(proto.order_by.clone())
-                    }
-                }
+                None => fallback(),
             },
-            None => {
-                if proto.order_by.len() == 1 {
-                    let s = proto.order_by[0].clone();
-                    if s == "tuple()" || s.starts_with('(') || s.contains(' ') || s.contains(',') {
-                        OrderBy::SingleExpr(s)
-                    } else {
-                        OrderBy::Fields(vec![s])
-                    }
-                } else {
-                    OrderBy::Fields(proto.order_by.clone())
-                }
-            }
+            None => fallback(),
         };
 
         Table {
