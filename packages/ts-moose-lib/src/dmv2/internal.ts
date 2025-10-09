@@ -134,8 +134,8 @@ interface TableJson {
   name: string;
   /** Array defining the table's columns and their types. */
   columns: Column[];
-  /** List of column names used for the ORDER BY clause. */
-  orderBy: string[];
+  /** ORDER BY clause: either array of column names or a single ClickHouse expression. */
+  orderBy: string[] | string;
   /** The column name used for the PARTITION BY clause. */
   partitionBy?: string;
   /** Engine configuration with type-safe, engine-specific parameters */
@@ -485,7 +485,10 @@ export const toInfraMap = (registry: typeof moose_internal) => {
   const workflows: { [key: string]: WorkflowJson } = {};
 
   registry.tables.forEach((table) => {
-    const id = table.config.version ? `${table.name}_${table.config.version}` : table.name;
+    const id =
+      table.config.version ?
+        `${table.name}_${table.config.version}`
+      : table.name;
     // If the table is part of an IngestPipeline, inherit metadata if not set
     let metadata = (table as any).metadata;
     if (!metadata && table.config && (table as any).pipelineParent) {
@@ -522,10 +525,27 @@ export const toInfraMap = (registry: typeof moose_internal) => {
       }
     }
 
+    // Determine ORDER BY from config
+    const hasOrderByFields =
+      Array.isArray(table.config.orderByFields) &&
+      table.config.orderByFields.length > 0;
+    const hasOrderByExpression =
+      typeof table.config.orderByExpression === "string" &&
+      table.config.orderByExpression.length > 0;
+    if (hasOrderByFields && hasOrderByExpression) {
+      throw new Error(
+        `Table ${table.name}: Provide either orderByFields or orderByExpression, not both.`,
+      );
+    }
+    const orderBy: string[] | string =
+      hasOrderByExpression ?
+        (table.config.orderByExpression as string)
+      : (table.config.orderByFields ?? []);
+
     tables[id] = {
       name: table.name,
       columns: table.columnArray,
-      orderBy: table.config.orderByFields ?? [],
+      orderBy,
       partitionBy: table.config.partitionBy,
       engineConfig,
       version: table.config.version,

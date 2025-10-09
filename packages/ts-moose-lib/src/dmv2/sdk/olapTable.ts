@@ -156,25 +156,14 @@ export interface S3QueueTableSettings {
  * Base configuration shared by all table engines
  * @template T The data type of the records stored in the table.
  */
-type BaseOlapConfig<T> = {
-  /**
-   * Specifies the fields to use for ordering data within the ClickHouse table.
-   * This is crucial for optimizing query performance.
-   */
-  orderByFields?: (keyof T & string)[] | ["tuple()"];
-  /**
-   * Optional PARTITION BY expression (single ClickHouse SQL expression)
-   */
+export type BaseOlapConfig<T> = (
+  | { orderByFields: (keyof T & string)[]; orderByExpression?: never }
+  | { orderByFields?: undefined; orderByExpression: string }
+  | { orderByFields?: undefined; orderByExpression?: undefined }
+) & {
   partitionBy?: string;
-  /**
-   * An optional version string for this configuration.
-   */
   version?: string;
   lifeCycle?: LifeCycle;
-  /**
-   * Optional table-level settings that can be modified with ALTER TABLE MODIFY SETTING.
-   * These are alterable settings that can be changed without recreating the table.
-   */
   settings?: { [key: string]: string };
 };
 
@@ -378,6 +367,19 @@ export class OlapTable<T> extends TypedBase<T, OlapConfig<T>> {
           config
         : { ...config, engine: ClickHouseEngines.MergeTree }
       : { engine: ClickHouseEngines.MergeTree };
+
+    // Enforce mutual exclusivity at runtime as well
+    const hasFields =
+      Array.isArray((resolvedConfig as any).orderByFields) &&
+      (resolvedConfig as any).orderByFields.length > 0;
+    const hasExpr =
+      typeof (resolvedConfig as any).orderByExpression === "string" &&
+      (resolvedConfig as any).orderByExpression.length > 0;
+    if (hasFields && hasExpr) {
+      throw new Error(
+        `OlapTable ${name}: Provide either orderByFields or orderByExpression, not both.`,
+      );
+    }
 
     super(name, resolvedConfig, schema, columns, validators);
     this.name = name;

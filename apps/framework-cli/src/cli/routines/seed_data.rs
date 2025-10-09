@@ -140,14 +140,18 @@ fn build_order_by_clause(
                     format!("{table_name} not found."),
                 ))
             })?;
-            let fields = table
-                .order_by
-                .iter()
-                .map(|field| format!("`{field}` DESC"))
-                .collect::<Vec<_>>()
-                .join(", ");
-            if !fields.is_empty() {
-                Ok(format!("ORDER BY {fields}"))
+            let clause = match &table.order_by {
+                crate::framework::core::infrastructure::table::OrderBy::Fields(v) => v
+                    .iter()
+                    .map(|field| format!("`{field}` DESC"))
+                    .collect::<Vec<_>>()
+                    .join(", "),
+                crate::framework::core::infrastructure::table::OrderBy::SingleExpr(expr) => {
+                    format!("{expr} DESC")
+                }
+            };
+            if !clause.is_empty() {
+                Ok(format!("ORDER BY {clause}"))
             } else if total_rows <= batch_size {
                 Ok("".to_string())
             } else {

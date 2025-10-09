@@ -102,6 +102,8 @@ class OlapConfig(BaseModel):
     Attributes:
         order_by_fields: List of column names to use for the ORDER BY clause.
                        Crucial for `ReplacingMergeTree` and performance.
+        order_by_expression: An arbitrary ClickHouse expression for ORDER BY.
+                             Example: "(id, name)" or "tuple()" for no sorting.
         partition_by: Optional PARTITION BY expression (single ClickHouse SQL expression).
         engine: The ClickHouse table engine to use. Can be either a ClickHouseEngines enum value
                 (for backward compatibility) or an EngineConfig instance (recommended).
@@ -112,12 +114,19 @@ class OlapConfig(BaseModel):
                   These are alterable settings that can be changed without recreating the table.
     """
     order_by_fields: list[str] = []
+    order_by_expression: Optional[str] = None
     partition_by: Optional[str] = None
     engine: Optional[Union[ClickHouseEngines, EngineConfig]] = None
     version: Optional[str] = None
     metadata: Optional[dict] = None
     life_cycle: Optional[LifeCycle] = None
     settings: Optional[dict[str, str]] = None
+
+    def model_post_init(self, __context):
+        has_fields = bool(self.order_by_fields)
+        has_expr = isinstance(self.order_by_expression, str) and len(self.order_by_expression) > 0
+        if has_fields and has_expr:
+            raise ValueError("Provide either order_by_fields or order_by_expression, not both.")
 
 class OlapTable(TypedMooseResource, Generic[T]):
     """Represents an OLAP table (e.g., a ClickHouse table) typed with a Pydantic model.

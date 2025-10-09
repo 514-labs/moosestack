@@ -1,4 +1,4 @@
-use crate::framework::core::infrastructure::table::DataEnum;
+use crate::framework::core::infrastructure::table::{DataEnum, OrderBy};
 use crate::framework::versions::Version;
 use crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine;
 use chrono::{DateTime, FixedOffset};
@@ -480,7 +480,7 @@ pub struct ClickHouseTable {
     pub name: String,
     pub version: Option<Version>,
     pub columns: Vec<ClickHouseColumn>,
-    pub order_by: Vec<String>,
+    pub order_by: OrderBy,
     pub partition_by: Option<String>,
     pub engine: ClickhouseEngine,
     /// Table-level settings that can be modified with ALTER TABLE MODIFY SETTING

@@ -558,10 +558,18 @@ def to_infra_map() -> dict:
             f"{table.name}_{table.config.version}" if table.config.version else table.name
         )
 
+        # Determine ORDER BY: list of fields or single expression
+        has_fields = bool(table.config.order_by_fields)
+        has_expr = isinstance(getattr(table.config, "order_by_expression", None), str) and len(getattr(table.config, "order_by_expression")) > 0
+        if has_fields and has_expr:
+            raise ValueError(f"Table {table.name}: Provide either order_by_fields or order_by_expression, not both.")
+
+        order_by_value = table.config.order_by_expression if has_expr else table.config.order_by_fields
+
         tables[id_key] = TableConfig(
             name=table.name,
             columns=table._column_list,
-            order_by=table.config.order_by_fields,
+            order_by=order_by_value,
             partition_by=table.config.partition_by,
             engine_config=engine_config,
             version=table.config.version,

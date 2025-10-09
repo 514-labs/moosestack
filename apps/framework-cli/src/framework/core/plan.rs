@@ -348,7 +348,9 @@ mod tests {
                 annotations: vec![],
                 comment: None,
             }],
-            order_by: vec!["id".to_string()],
+            order_by: crate::framework::core::infrastructure::table::OrderBy::Fields(vec![
+                "id".to_string()
+            ]),
             partition_by: None,
             engine: None,
             version: Some(Version::from_string("1.0.0".to_string())),

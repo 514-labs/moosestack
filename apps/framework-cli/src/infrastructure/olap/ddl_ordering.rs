@@ -1062,7 +1062,7 @@ mod tests {
             name: "test_table".to_string(),
             // Include minimal required fields
             columns: vec![],
-            order_by: vec![],
+            order_by: crate::framework::core::infrastructure::table::OrderBy::Fields(vec![]),
             partition_by: None,
             engine: None,
             version: None,
@@ -1131,7 +1131,7 @@ mod tests {
         let table_a = Table {
             name: "table_a".to_string(),
             columns: vec![],
-            order_by: vec![],
+            order_by: crate::framework::core::infrastructure::table::OrderBy::Fields(vec![]),
             partition_by: None,
             engine: None,
             version: None,
@@ -1149,7 +1149,7 @@ mod tests {
         let table_b = Table {
             name: "table_b".to_string(),
             columns: vec![],
-            order_by: vec![],
+            order_by: crate::framework::core::infrastructure::table::OrderBy::Fields(vec![]),
             partition_by: None,
             engine: None,
             version: None,
@@ -1238,7 +1238,7 @@ mod tests {
         let table_a = Table {
             name: "table_a".to_string(),
             columns: vec![],
-            order_by: vec![],
+            order_by: crate::framework::core::infrastructure::table::OrderBy::Fields(vec![]),
             partition_by: None,
             engine: None,
             version: None,
@@ -1256,7 +1256,7 @@ mod tests {
         let table_b = Table {
             name: "table_b".to_string(),
             columns: vec![],
-            order_by: vec![],
+            order_by: crate::framework::core::infrastructure::table::OrderBy::Fields(vec![]),
             partition_by: None,
             engine: None,
             version: None,
@@ -1365,7 +1365,7 @@ mod tests {
         let table = Table {
             name: "test_table".to_string(),
             columns: vec![],
-            order_by: vec![],
+            order_by: crate::framework::core::infrastructure::table::OrderBy::Fields(vec![]),
             partition_by: None,
             engine: None,
             version: None,
@@ -1516,7 +1516,7 @@ mod tests {
         let table_a = Table {
             name: "table_a".to_string(),
             columns: vec![],
-            order_by: vec![],
+            order_by: crate::framework::core::infrastructure::table::OrderBy::Fields(vec![]),
             partition_by: None,
             engine: None,
             version: None,
@@ -1533,7 +1533,7 @@ mod tests {
         let table_b = Table {
             name: "table_b".to_string(),
             columns: vec![],
-            order_by: vec![],
+            order_by: crate::framework::core::infrastructure::table::OrderBy::Fields(vec![]),
             partition_by: None,
             engine: None,
             version: None,
@@ -1550,7 +1550,7 @@ mod tests {
         let table_c = Table {
             name: "table_c".to_string(),
             columns: vec![],
-            order_by: vec![],
+            order_by: crate::framework::core::infrastructure::table::OrderBy::Fields(vec![]),
             partition_by: None,
             engine: None,
             version: None,
@@ -1635,7 +1635,7 @@ mod tests {
         let table_a = Table {
             name: "table_a".to_string(),
             columns: vec![],
-            order_by: vec![],
+            order_by: crate::framework::core::infrastructure::table::OrderBy::Fields(vec![]),
             partition_by: None,
             engine: None,
             version: None,
@@ -1652,7 +1652,7 @@ mod tests {
         let table_b = Table {
             name: "table_b".to_string(),
             columns: vec![],
-            order_by: vec![],
+            order_by: crate::framework::core::infrastructure::table::OrderBy::Fields(vec![]),
             partition_by: None,
             engine: None,
             version: None,
@@ -1669,7 +1669,7 @@ mod tests {
         let table_c = Table {
             name: "table_c".to_string(),
             columns: vec![],
-            order_by: vec![],
+            order_by: crate::framework::core::infrastructure::table::OrderBy::Fields(vec![]),
             partition_by: None,
             engine: None,
             version: None,
@@ -1686,7 +1686,7 @@ mod tests {
         let table_d = Table {
             name: "table_d".to_string(),
             columns: vec![],
-            order_by: vec![],
+            order_by: crate::framework::core::infrastructure::table::OrderBy::Fields(vec![]),
             partition_by: None,
             engine: None,
             version: None,
@@ -1703,7 +1703,7 @@ mod tests {
         let table_e = Table {
             name: "table_e".to_string(),
             columns: vec![],
-            order_by: vec![],
+            order_by: crate::framework::core::infrastructure::table::OrderBy::Fields(vec![]),
             partition_by: None,
             engine: None,
             version: None,
@@ -1851,7 +1851,7 @@ mod tests {
         let table_a = Table {
             name: "table_a".to_string(),
             columns: vec![],
-            order_by: vec![],
+            order_by: crate::framework::core::infrastructure::table::OrderBy::Fields(vec![]),
             partition_by: None,
             engine: None,
             version: None,
@@ -1869,7 +1869,7 @@ mod tests {
         let table_b = Table {
             name: "table_b".to_string(),
             columns: vec![],
-            order_by: vec![],
+            order_by: crate::framework::core::infrastructure::table::OrderBy::Fields(vec![]),
             partition_by: None,
             engine: None,
             version: None,
@@ -1985,7 +1985,7 @@ mod tests {
         let table_a = Table {
             name: "table_a".to_string(),
             columns: vec![],
-            order_by: vec![],
+            order_by: crate::framework::core::infrastructure::table::OrderBy::Fields(vec![]),
             partition_by: None,
             engine: None,
             version: None,
@@ -2003,7 +2003,7 @@ mod tests {
         let table_b = Table {
             name: "table_b".to_string(),
             columns: vec![],
-            order_by: vec![],
+            order_by: crate::framework::core::infrastructure::table::OrderBy::Fields(vec![]),
             partition_by: None,
             engine: None,
             version: None,
@@ -2124,7 +2124,7 @@ mod tests {
         let table_a = Table {
             name: "table_a".to_string(),
             columns: vec![],
-            order_by: vec![],
+            order_by: crate::framework::core::infrastructure::table::OrderBy::Fields(vec![]),
             partition_by: None,
             engine: None,
             version: None,
@@ -2141,7 +2141,7 @@ mod tests {
         let table_b = Table {
             name: "table_b".to_string(),
             columns: vec![],
-            order_by: vec![],
+            order_by: crate::framework::core::infrastructure::table::OrderBy::Fields(vec![]),
             partition_by: None,
             engine: None,
             version: None,
@@ -2552,7 +2552,9 @@ mod tests {
                     comment: None,
                 },
             ],
-            order_by: vec!["id".to_string()],
+            order_by: crate::framework::core::infrastructure::table::OrderBy::Fields(vec![
+                "id".to_string()
+            ]),
             partition_by: None,
             engine: Some(ClickhouseEngine::MergeTree),
             version: None,
@@ -2590,7 +2592,9 @@ mod tests {
                     comment: None,
                 },
             ],
-            order_by: vec!["id".to_string()],
+            order_by: crate::framework::core::infrastructure::table::OrderBy::Fields(vec![
+                "id".to_string()
+            ]),
             partition_by: None,
             engine: Some(ClickhouseEngine::MergeTree),
             version: None,

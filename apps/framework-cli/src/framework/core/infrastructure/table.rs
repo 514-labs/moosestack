@@ -78,6 +78,35 @@ pub enum EnumValueMetadata {
     String(String),
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(untagged)]
+pub enum OrderBy {
+    Fields(Vec<String>),
+    SingleExpr(String),
+}
+
+impl OrderBy {
+    pub fn is_empty(&self) -> bool {
+        matches!(self, OrderBy::Fields(v) if v.is_empty())
+    }
+}
+
+impl std::fmt::Display for OrderBy {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            OrderBy::Fields(v) if v.is_empty() => write!(f, "tuple()"),
+            OrderBy::Fields(v) => write!(f, "{}", v.join(", ")),
+            OrderBy::SingleExpr(s) => write!(f, "{}", s),
+        }
+    }
+}
+
+impl From<Vec<String>> for OrderBy {
+    fn from(v: Vec<String>) -> Self {
+        OrderBy::Fields(v)
+    }
+}
+
 /// TODO: This struct is supposed to be a database agnostic abstraction but it is clearly not.
 /// The inclusion of ClickHouse-specific engine types makes this leaky.
 /// This needs to be fixed in a subsequent PR to properly separate database-specific
@@ -86,7 +115,7 @@ pub enum EnumValueMetadata {
 pub struct Table {
     pub name: String,
     pub columns: Vec<Column>,
-    pub order_by: Vec<String>,
+    pub order_by: OrderBy,
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub partition_by: Option<String>,
     #[serde(default)]
@@ -126,20 +155,20 @@ impl Table {
     }
 
     pub fn expanded_display(&self) -> String {
+        let columns_str = self
+            .columns
+            .iter()
+            .map(|c| format!("{}: {}", c.name, c.data_type))
+            .collect::<Vec<String>>()
+            .join(", ");
+        let engine_str = self
+            .engine
+            .as_ref()
+            .map(|e| format!(" - engine: {}", Into::<String>::into(e.clone())))
+            .unwrap_or_default();
         format!(
             "Table: {} Version {:?} - {} - {}{}",
-            self.name,
-            self.version,
-            self.columns
-                .iter()
-                .map(|c| format!("{}: {}", c.name, c.data_type))
-                .collect::<Vec<String>>()
-                .join(", "),
-            self.order_by.join(","),
-            self.engine
-                .as_ref()
-                .map(|e| format!(" - engine: {}", Into::<String>::into(e.clone())))
-                .unwrap_or_default()
+            self.name, self.version, columns_str, self.order_by, engine_str
         )
     }
 
@@ -169,14 +198,43 @@ impl Table {
         self.order_by == target.order_by
             // target may leave order_by unspecified,
             // but the implicit order_by from primary keys can be the same
-            || (target.order_by.is_empty() && self.order_by == target.primary_key_columns())
+            || (target.order_by.is_empty()
+                && matches!(
+                    &self.order_by,
+                    OrderBy::Fields(v) if v.iter().map(String::as_str).collect::<Vec<_>>() == target.primary_key_columns()
+                ))
     }
 
     pub fn to_proto(&self) -> ProtoTable {
+        let proto_order_by: Vec<String> = match &self.order_by {
+            OrderBy::Fields(v) => v.clone(),
+            OrderBy::SingleExpr(expr) => vec![expr.clone()],
+        };
+
+        // Build structured order_by2
+        let proto_order_by2 = {
+            let t = match &self.order_by {
+                OrderBy::Fields(v) => {
+                    let fields = crate::proto::infrastructure_map::OrderByFields {
+                        field: v.clone(),
+                        special_fields: Default::default(),
+                    };
+                    crate::proto::infrastructure_map::order_by::T::Fields(fields)
+                }
+                OrderBy::SingleExpr(expr) => {
+                    crate::proto::infrastructure_map::order_by::T::Expression(expr.clone())
+                }
+            };
+            crate::proto::infrastructure_map::OrderBy {
+                t: Some(t),
+                special_fields: Default::default(),
+            }
+        };
+
         ProtoTable {
             name: self.name.clone(),
             columns: self.columns.iter().map(|c| c.to_proto()).collect(),
-            order_by: self.order_by.clone(),
+            order_by: proto_order_by,
             partition_by: self.partition_by.clone(),
             version: self.version.as_ref().map(|v| v.to_string()),
             source_primitive: MessageField::some(self.source_primitive.to_proto()),
@@ -188,6 +246,7 @@ impl Table {
                 value: engine.clone().to_proto_string(),
                 special_fields: Default::default(),
             })),
+            order_by2: MessageField::some(proto_order_by2),
             // Store the hash for change detection (or calculate it if not present)
             engine_params_hash: self
                 .engine_params_hash
@@ -227,10 +286,49 @@ impl Table {
 
         // Engine settings are now handled via table_settings field
 
+        let order_by = match proto.order_by2.into_option() {
+            Some(ob2) => match ob2.t {
+                Some(crate::proto::infrastructure_map::order_by::T::Fields(f)) => {
+                    OrderBy::Fields(f.field)
+                }
+                Some(crate::proto::infrastructure_map::order_by::T::Expression(e)) => {
+                    OrderBy::SingleExpr(e)
+                }
+                None => {
+                    if proto.order_by.len() == 1 {
+                        let s = proto.order_by[0].clone();
+                        if s == "tuple()"
+                            || s.starts_with('(')
+                            || s.contains(' ')
+                            || s.contains(',')
+                        {
+                            OrderBy::SingleExpr(s)
+                        } else {
+                            OrderBy::Fields(vec![s])
+                        }
+                    } else {
+                        OrderBy::Fields(proto.order_by.clone())
+                    }
+                }
+            },
+            None => {
+                if proto.order_by.len() == 1 {
+                    let s = proto.order_by[0].clone();
+                    if s == "tuple()" || s.starts_with('(') || s.contains(' ') || s.contains(',') {
+                        OrderBy::SingleExpr(s)
+                    } else {
+                        OrderBy::Fields(vec![s])
+                    }
+                } else {
+                    OrderBy::Fields(proto.order_by.clone())
+                }
+            }
+        };
+
         Table {
             name: proto.name,
             columns: proto.columns.into_iter().map(Column::from_proto).collect(),
-            order_by: proto.order_by,
+            order_by,
             partition_by: proto.partition_by,
             version: proto.version.map(Version::from_string),
             source_primitive: PrimitiveSignature::from_proto(proto.source_primitive.unwrap()),

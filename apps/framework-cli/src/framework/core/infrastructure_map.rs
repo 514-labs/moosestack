@@ -261,10 +261,10 @@ pub enum ColumnChange {
 /// Tracks the before and after states of the ordering columns.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OrderByChange {
-    /// Previous ordering columns
-    pub before: Vec<String>,
-    /// New ordering columns
-    pub after: Vec<String>,
+    /// Previous ORDER BY configuration
+    pub before: crate::framework::core::infrastructure::table::OrderBy,
+    /// New ORDER BY configuration
+    pub after: crate::framework::core::infrastructure::table::OrderBy,
 }
 
 /// Represents a change to a database table
@@ -1569,7 +1569,11 @@ impl InfrastructureMap {
                             // target may leave order_by unspecified,
                             // but the implicit order_by from primary keys can be the same
                             && !(target_table.order_by.is_empty()
-                                && order_by_from_primary_key(target_table) == table.order_by);
+                                && matches!(
+                                    &table.order_by,
+                                    crate::framework::core::infrastructure::table::OrderBy::Fields(v)
+                                        if *v == order_by_from_primary_key(target_table)
+                                ));
 
                         // Detect engine change (e.g., MergeTree -> ReplacingMergeTree)
                         let engine_changed = table.engine != target_table.engine;
@@ -1581,8 +1585,14 @@ impl InfrastructureMap {
                             }
                         } else {
                             OrderByChange {
-                                before: vec![],
-                                after: vec![],
+                                before:
+                                    crate::framework::core::infrastructure::table::OrderBy::Fields(
+                                        vec![],
+                                    ),
+                                after:
+                                    crate::framework::core::infrastructure::table::OrderBy::Fields(
+                                        vec![],
+                                    ),
                             }
                         };
 
@@ -1711,8 +1721,8 @@ impl InfrastructureMap {
             }
         } else {
             OrderByChange {
-                before: vec![],
-                after: vec![],
+                before: crate::framework::core::infrastructure::table::OrderBy::Fields(vec![]),
+                after: crate::framework::core::infrastructure::table::OrderBy::Fields(vec![]),
             }
         };
 
@@ -1793,7 +1803,11 @@ impl InfrastructureMap {
             // target may leave order_by unspecified,
             // but the implicit order_by from primary keys can be the same
             && !(target_table.order_by.is_empty()
-                && order_by_from_primary_key(target_table) == table.order_by);
+                && matches!(
+                    &table.order_by,
+                    crate::framework::core::infrastructure::table::OrderBy::Fields(v)
+                        if *v == order_by_from_primary_key(target_table)
+                ));
 
         let order_by_change = if order_by_changed {
             OrderByChange {
@@ -1802,8 +1816,8 @@ impl InfrastructureMap {
             }
         } else {
             OrderByChange {
-                before: vec![],
-                after: vec![],
+                before: crate::framework::core::infrastructure::table::OrderBy::Fields(vec![]),
+                after: crate::framework::core::infrastructure::table::OrderBy::Fields(vec![]),
             }
         };
 

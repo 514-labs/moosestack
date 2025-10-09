@@ -355,7 +355,12 @@ pub fn tables_to_python(tables: &[Table], life_cycle: Option<LifeCycle>) -> Stri
                 }
             })
             .collect::<Vec<_>>();
-        let can_use_key_wrapping = table.order_by.starts_with(primary_key.as_slice());
+        let can_use_key_wrapping = match &table.order_by {
+            crate::framework::core::infrastructure::table::OrderBy::Fields(v) => v == &primary_key,
+            crate::framework::core::infrastructure::table::OrderBy::SingleExpr(expr) => {
+                expr == &format!("({})", primary_key.join(", "))
+            }
+        };
 
         for column in &table.columns {
             let type_str =
@@ -389,14 +394,16 @@ pub fn tables_to_python(tables: &[Table], life_cycle: Option<LifeCycle>) -> Stri
 
     // Generate pipeline configurations
     for table in tables {
-        let order_by_fields = if table.order_by.is_empty() {
-            "\"tuple()\"".to_string()
-        } else {
-            table
-                .order_by
-                .iter()
-                .map(|name| format!("{:?}", name))
-                .join(", ")
+        let order_by_fields = match &table.order_by {
+            crate::framework::core::infrastructure::table::OrderBy::Fields(v) if v.is_empty() => {
+                "\"tuple()\"".to_string()
+            }
+            crate::framework::core::infrastructure::table::OrderBy::Fields(v) => {
+                v.iter().map(|name| format!("{:?}", name)).join(", ")
+            }
+            crate::framework::core::infrastructure::table::OrderBy::SingleExpr(expr) => {
+                format!("{:?}", expr)
+            }
         };
 
         writeln!(
@@ -605,7 +612,9 @@ mod tests {
                     comment: None,
                 },
             ],
-            order_by: vec!["primary_key".to_string()],
+            order_by: crate::framework::core::infrastructure::table::OrderBy::Fields(vec![
+                "primary_key".to_string(),
+            ]),
             partition_by: None,
             engine: Some(ClickhouseEngine::MergeTree),
             version: None,
@@ -689,7 +698,9 @@ foo_table = OlapTable[Foo]("Foo", OlapConfig(
                     comment: None,
                 },
             ],
-            order_by: vec!["id".to_string()],
+            order_by: crate::framework::core::infrastructure::table::OrderBy::Fields(vec![
+                "id".to_string()
+            ]),
             partition_by: None,
             engine: Some(ClickhouseEngine::MergeTree),
             version: None,
@@ -793,7 +804,9 @@ nested_array_table = OlapTable[NestedArray]("NestedArray", OlapConfig(
                     comment: None,
                 },
             ],
-            order_by: vec!["id".to_string()],
+            order_by: crate::framework::core::infrastructure::table::OrderBy::Fields(vec![
+                "id".to_string()
+            ]),
             partition_by: None,
             engine: Some(ClickhouseEngine::MergeTree),
             version: None,
@@ -854,7 +867,9 @@ user_table = OlapTable[User]("User", OlapConfig(
                     comment: None,
                 },
             ],
-            order_by: vec!["id".to_string()],
+            order_by: crate::framework::core::infrastructure::table::OrderBy::Fields(vec![
+                "id".to_string()
+            ]),
             partition_by: None,
             engine: Some(ClickhouseEngine::S3Queue {
                 s3_path: "s3://bucket/path".to_string(),
@@ -904,7 +919,9 @@ user_table = OlapTable[User]("User", OlapConfig(
                 annotations: vec![],
                 comment: None,
             }],
-            order_by: vec!["id".to_string()],
+            order_by: crate::framework::core::infrastructure::table::OrderBy::Fields(vec![
+                "id".to_string()
+            ]),
             partition_by: None,
             engine: Some(ClickhouseEngine::ReplacingMergeTree {
                 ver: None,
@@ -975,7 +992,9 @@ user_table = OlapTable[User]("User", OlapConfig(
                     comment: None,
                 },
             ],
-            order_by: vec!["id".to_string()],
+            order_by: crate::framework::core::infrastructure::table::OrderBy::Fields(vec![
+                "id".to_string()
+            ]),
             partition_by: None,
             engine: Some(ClickhouseEngine::ReplacingMergeTree {
                 ver: Some("version".to_string()),
@@ -1042,7 +1061,9 @@ user_table = OlapTable[User]("User", OlapConfig(
                     comment: None,
                 },
             ],
-            order_by: vec!["id".to_string()],
+            order_by: crate::framework::core::infrastructure::table::OrderBy::Fields(vec![
+                "id".to_string()
+            ]),
             partition_by: None,
             engine: Some(ClickhouseEngine::MergeTree),
             version: None,

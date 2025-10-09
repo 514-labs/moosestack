@@ -892,7 +892,7 @@ mod tests {
         let s3_table = Table {
             name: "test_s3".to_string(),
             columns: vec![],
-            order_by: vec![],
+            order_by: crate::framework::core::infrastructure::table::OrderBy::Fields(vec![]),
             partition_by: None,
             engine: Some(ClickhouseEngine::S3Queue {
                 s3_path: "s3://bucket/path".to_string(),
