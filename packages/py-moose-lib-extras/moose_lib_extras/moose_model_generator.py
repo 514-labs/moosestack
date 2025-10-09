@@ -18,13 +18,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class MooseModelConfig:
     """Configuration for Moose model generation."""
-    
-    # Pipeline configuration defaults
-    default_ingest: bool = True
-    default_stream: bool = True
-    default_table: bool = False
-    default_dead_letter_queue: bool = True
-    
+        
     # Model generation options
     include_timestamp_fields: bool = True
     timestamp_field_names: Set[str] = None
@@ -280,25 +274,15 @@ class MooseModelGenerator:
                 return f'"{field.default_value}"'
         return 'None'
     
-    def _determine_pipeline_config(self, table: TableMetadata) -> Dict[str, bool]:
-        """Determine pipeline configuration based on table characteristics."""
-        table_name_lower = table.table_name.lower()
-        
-        # Default configuration
-        config = {
-            'ingest': self.config.default_ingest,
-            'stream': self.config.default_stream,
-            'table': self.config.default_table,
-            'dead_letter_queue': self.config.default_dead_letter_queue
-        }
-    
-        
-        return config
     
     def _to_pascal_case(self, name: str) -> str:
         """Convert string to PascalCase."""
         # Remove leading slashes and replace slashes with underscores
         cleaned_name = name.lstrip('/').replace('/', ' ')
+        
+        # Handle camelCase by inserting spaces before uppercase letters
+        import re
+        cleaned_name = re.sub(r'([a-z])([A-Z])', r'\1 \2', cleaned_name)
         
         # Handle common separators
         parts = cleaned_name.replace('_', ' ').replace('-', ' ').split()
