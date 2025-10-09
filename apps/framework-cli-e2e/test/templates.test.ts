@@ -51,6 +51,7 @@ import {
   setupPythonProject,
   getExpectedSchemas,
   validateSchemasWithDebugging,
+  verifyVersionedTables,
 } from "./utils";
 import { triggerWorkflow } from "./utils/workflow-utils";
 
@@ -67,6 +68,17 @@ const MOOSE_PY_LIB_PATH = path.resolve(
   __dirname,
   "../../../packages/py-moose-lib",
 );
+
+const TEST_PACKAGE_MANAGER = (process.env.TEST_PACKAGE_MANAGER || "npm") as
+  | "npm"
+  | "pnpm"
+  | "pip";
+
+if (process.env.TEST_PACKAGE_MANAGER) {
+  console.log(
+    `\n🧪 Testing templates with package manager: ${TEST_PACKAGE_MANAGER}\n`,
+  );
+}
 
 it("should return the dummy version in debug build", async () => {
   const { stdout } = await execAsync(`"${CLI_PATH}" --version`);
@@ -87,24 +99,27 @@ interface TemplateTestConfig {
   appName: string;
   language: "typescript" | "python";
   isTestsVariant: boolean;
+  packageManager: "npm" | "pnpm" | "pip";
 }
 
 const TEMPLATE_CONFIGS: TemplateTestConfig[] = [
   {
     templateName: TEMPLATE_NAMES.TYPESCRIPT_DEFAULT,
-    displayName: "TypeScript Default Template",
-    projectDirSuffix: "ts-default",
+    displayName: `TypeScript Default Template (${TEST_PACKAGE_MANAGER})`,
+    projectDirSuffix: `ts-default-${TEST_PACKAGE_MANAGER}`,
     appName: APP_NAMES.TYPESCRIPT_DEFAULT,
     language: "typescript",
     isTestsVariant: false,
+    packageManager: TEST_PACKAGE_MANAGER,
   },
   {
     templateName: TEMPLATE_NAMES.TYPESCRIPT_TESTS,
-    displayName: "TypeScript Tests Template",
-    projectDirSuffix: "ts-tests",
+    displayName: `TypeScript Tests Template (${TEST_PACKAGE_MANAGER})`,
+    projectDirSuffix: `ts-tests-${TEST_PACKAGE_MANAGER}`,
     appName: APP_NAMES.TYPESCRIPT_TESTS,
     language: "typescript",
     isTestsVariant: true,
+    packageManager: TEST_PACKAGE_MANAGER,
   },
   {
     templateName: TEMPLATE_NAMES.PYTHON_DEFAULT,
@@ -113,6 +128,7 @@ const TEMPLATE_CONFIGS: TemplateTestConfig[] = [
     appName: APP_NAMES.PYTHON_DEFAULT,
     language: "python",
     isTestsVariant: false,
+    packageManager: "pip",
   },
   {
     templateName: TEMPLATE_NAMES.PYTHON_TESTS,
@@ -121,6 +137,7 @@ const TEMPLATE_CONFIGS: TemplateTestConfig[] = [
     appName: APP_NAMES.PYTHON_TESTS,
     language: "python",
     isTestsVariant: true,
+    packageManager: "pip",
   },
 ];
 
@@ -156,6 +173,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
           CLI_PATH,
           MOOSE_LIB_PATH,
           config.appName,
+          config.packageManager as "npm" | "pnpm",
         );
       } else {
         await setupPythonProject(
@@ -245,6 +263,16 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
 
       console.log(`✅ Schema validation passed for ${config.displayName}`);
     });
+
+    // Add versioned tables test for tests templates
+    if (config.isTestsVariant) {
+      it("should create versioned OlapTables correctly", async function () {
+        this.timeout(TIMEOUTS.TEST_SETUP_MS);
+
+        // Verify that both versions of UserEvents tables are created
+        await verifyVersionedTables("UserEvents", ["1.0", "2.0"]);
+      });
+    }
 
     // Create test case based on language
     if (config.language === "typescript") {

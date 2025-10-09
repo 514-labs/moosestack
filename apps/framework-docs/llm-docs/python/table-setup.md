@@ -35,6 +35,12 @@ from moose_lib import OlapTable, OlapConfig
 from moose_lib.blocks import (
     MergeTreeEngine, 
     ReplacingMergeTreeEngine,
+    AggregatingMergeTreeEngine,
+    SummingMergeTreeEngine,
+    ReplicatedMergeTreeEngine,
+    ReplicatedReplacingMergeTreeEngine,
+    ReplicatedAggregatingMergeTreeEngine,
+    ReplicatedSummingMergeTreeEngine,
     S3QueueEngine
 )
 from pydantic import BaseModel
@@ -274,6 +280,69 @@ stats = await analytics_table.query({
     "order_by": ["count DESC"]
 })
 ```
+
+### Replicated Engine Tables
+
+Replicated engines provide high availability and data replication across multiple ClickHouse nodes.
+
+```python
+from moose_lib import OlapTable, OlapConfig, Key
+from moose_lib.blocks import (
+    ReplicatedMergeTreeEngine,
+    ReplicatedReplacingMergeTreeEngine
+)
+from pydantic import BaseModel
+
+class ReplicatedData(BaseModel):
+    id: Key[str]
+    data: str
+    timestamp: datetime
+    deleted: int = 0
+
+# For self-managed ClickHouse with explicit keeper paths
+replicated_table = OlapTable[ReplicatedData](
+    "ReplicatedTable",
+    OlapConfig(
+        order_by_fields=["id", "timestamp"],
+        engine=ReplicatedMergeTreeEngine(
+            keeper_path="/clickhouse/tables/{database}/{shard}/replicated_table",
+            replica_name="{replica}"
+        )
+    )
+)
+
+# For ClickHouse Cloud or Boreal (no parameters needed)
+cloud_replicated_table = OlapTable[ReplicatedData](
+    "CloudReplicatedTable",
+    OlapConfig(
+        order_by_fields=["id"],
+        engine=ReplicatedMergeTreeEngine()
+        # No keeper_path or replica_name - managed automatically by Cloud/Boreal
+    )
+)
+
+# Replicated with deduplication
+replicated_dedup_table = OlapTable[ReplicatedData](
+    "ReplicatedDedupTable",
+    OlapConfig(
+        order_by_fields=["id"],
+        engine=ReplicatedReplacingMergeTreeEngine(
+            keeper_path="/clickhouse/tables/{database}/{shard}/replicated_dedup",
+            replica_name="{replica}",
+            ver="timestamp",
+            is_deleted="deleted"
+        )
+    )
+)
+```
+
+**Note**: The `keeper_path` and `replica_name` parameters are optional. When omitted, Moose uses smart defaults (`/clickhouse/tables/{uuid}/{shard}` and `{replica}`) that work in both ClickHouse Cloud and self-managed environments with Atomic databases (default in modern ClickHouse). You can still provide both parameters explicitly if you need custom replication paths.
+
+Available replicated engines:
+- `ReplicatedMergeTreeEngine` - Replicated version of MergeTree
+- `ReplicatedReplacingMergeTreeEngine` - Replicated with deduplication
+- `ReplicatedAggregatingMergeTreeEngine` - Replicated with aggregation
+- `ReplicatedSummingMergeTreeEngine` - Replicated with summation
 
 ### S3Queue Engine Tables
 

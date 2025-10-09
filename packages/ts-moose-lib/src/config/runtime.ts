@@ -17,6 +17,7 @@ interface RuntimeKafkaConfig {
   saslMechanism?: string;
   securityProtocol?: string;
   namespace?: string;
+  schemaRegistryUrl?: string;
 }
 
 class ConfigurationRegistry {
@@ -187,6 +188,9 @@ class ConfigurationRegistry {
     const envNamespace =
       this._env("MOOSE_REDPANDA_CONFIG__NAMESPACE") ??
       this._env("MOOSE_KAFKA_CONFIG__NAMESPACE");
+    const envSchemaRegistryUrl =
+      this._env("MOOSE_REDPANDA_CONFIG__SCHEMA_REGISTRY_URL") ??
+      this._env("MOOSE_KAFKA_CONFIG__SCHEMA_REGISTRY_URL");
 
     const fileKafka =
       projectConfig.kafka_config ?? projectConfig.redpanda_config;
@@ -202,6 +206,7 @@ class ConfigurationRegistry {
       saslMechanism: envSaslMechanism ?? fileKafka?.sasl_mechanism,
       securityProtocol: envSecurityProtocol ?? fileKafka?.security_protocol,
       namespace: envNamespace ?? fileKafka?.namespace,
+      schemaRegistryUrl: envSchemaRegistryUrl ?? fileKafka?.schema_registry_url,
     };
   }
 

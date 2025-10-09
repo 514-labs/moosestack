@@ -23,7 +23,7 @@
     "gsap": "file:gsap-bonus.tgz",
     "lucide-react": "^0.359.0",
     "mixpanel": "^0.18.0",
-    "next": "14.2.30",
+    "next": "14.2.32",
     "next-themes": "^0.2.1",
     "react": "^18",
     "react-dom": "^18",

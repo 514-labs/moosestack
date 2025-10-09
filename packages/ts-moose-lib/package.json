@@ -43,7 +43,7 @@
     "fastq": "1.17.1",
     "jose": "5.9.2",
     "@confluentinc/kafka-javascript": "1.5.0",
-    "pretty-ms": "9.2.0",
+    "@kafkajs/confluent-schema-registry": "3.9.0",
     "redis": "^4.6.13",
     "toml": "3.0.0",
     "ts-node": "^10.9.1",

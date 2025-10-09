@@ -16,8 +16,23 @@ import { Api, IngestApi, SqlResource, Task, Workflow } from "./index";
 import { IJsonSchemaCollection } from "typia/src/schemas/json/IJsonSchemaCollection";
 import { Column } from "../dataModels/dataModelTypes";
 import { ClickHouseEngines, ApiUtil } from "../index";
-import { OlapTable } from "./sdk/olapTable";
-import { ConsumerConfig, Stream, TransformConfig } from "./sdk/stream";
+import {
+  OlapTable,
+  OlapConfig,
+  ReplacingMergeTreeConfig,
+  SummingMergeTreeConfig,
+  ReplicatedMergeTreeConfig,
+  ReplicatedReplacingMergeTreeConfig,
+  ReplicatedAggregatingMergeTreeConfig,
+  ReplicatedSummingMergeTreeConfig,
+  S3QueueConfig,
+} from "./sdk/olapTable";
+import {
+  ConsumerConfig,
+  KafkaSchemaConfig,
+  Stream,
+  TransformConfig,
+} from "./sdk/stream";
 import { compilerLog } from "../commons";
 
 /**
@@ -57,6 +72,34 @@ interface AggregatingMergeTreeEngineConfig {
 
 interface SummingMergeTreeEngineConfig {
   engine: "SummingMergeTree";
+  columns?: string[];
+}
+
+interface ReplicatedMergeTreeEngineConfig {
+  engine: "ReplicatedMergeTree";
+  keeperPath?: string;
+  replicaName?: string;
+}
+
+interface ReplicatedReplacingMergeTreeEngineConfig {
+  engine: "ReplicatedReplacingMergeTree";
+  keeperPath?: string;
+  replicaName?: string;
+  ver?: string;
+  isDeleted?: string;
+}
+
+interface ReplicatedAggregatingMergeTreeEngineConfig {
+  engine: "ReplicatedAggregatingMergeTree";
+  keeperPath?: string;
+  replicaName?: string;
+}
+
+interface ReplicatedSummingMergeTreeEngineConfig {
+  engine: "ReplicatedSummingMergeTree";
+  keeperPath?: string;
+  replicaName?: string;
+  columns?: string[];
 }
 
 interface S3QueueEngineConfig {
@@ -77,6 +120,10 @@ type EngineConfig =
   | ReplacingMergeTreeEngineConfig
   | AggregatingMergeTreeEngineConfig
   | SummingMergeTreeEngineConfig
+  | ReplicatedMergeTreeEngineConfig
+  | ReplicatedReplacingMergeTreeEngineConfig
+  | ReplicatedAggregatingMergeTreeEngineConfig
+  | ReplicatedSummingMergeTreeEngineConfig
   | S3QueueEngineConfig;
 
 /**
@@ -152,6 +199,8 @@ interface StreamJson {
   metadata?: { description?: string };
   /** Lifecycle management setting for the stream. */
   lifeCycle?: string;
+  /** Optional Schema Registry config */
+  schemaConfig?: KafkaSchemaConfig;
 }
 /**
  * JSON representation of an Ingest API configuration.
@@ -236,12 +285,197 @@ interface SqlResourceJson {
 }
 
 /**
- * Converts the internal resource registry into a structured infrastructure map.
- * This map is serialized to JSON and used by the Moose infrastructure system.
- *
- * @param registry The internal Moose resource registry (`moose_internal`).
- * @returns An object containing dictionaries of tables, topics, ingest APIs, APIs, and SQL resources, formatted according to the `*Json` interfaces.
+ * Type guard: Check if config is S3QueueConfig
  */
+function isS3QueueConfig(
+  config: OlapConfig<any>,
+): config is S3QueueConfig<any> {
+  return "engine" in config && config.engine === ClickHouseEngines.S3Queue;
+}
+
+/**
+ * Type guard: Check if config has a replicated engine
+ * Checks if the engine value is one of the replicated engine types
+ */
+function hasReplicatedEngine(
+  config: OlapConfig<any>,
+): config is
+  | ReplicatedMergeTreeConfig<any>
+  | ReplicatedReplacingMergeTreeConfig<any>
+  | ReplicatedAggregatingMergeTreeConfig<any>
+  | ReplicatedSummingMergeTreeConfig<any> {
+  if (!("engine" in config)) {
+    return false;
+  }
+
+  const engine = config.engine as ClickHouseEngines;
+  // Check if engine is one of the replicated engine types
+  return (
+    engine === ClickHouseEngines.ReplicatedMergeTree ||
+    engine === ClickHouseEngines.ReplicatedReplacingMergeTree ||
+    engine === ClickHouseEngines.ReplicatedAggregatingMergeTree ||
+    engine === ClickHouseEngines.ReplicatedSummingMergeTree
+  );
+}
+
+/**
+ * Extract engine value from table config, handling both legacy and new formats
+ */
+function extractEngineValue(config: OlapConfig<any>): ClickHouseEngines {
+  // Legacy config without engine property defaults to MergeTree
+  if (!("engine" in config)) {
+    return ClickHouseEngines.MergeTree;
+  }
+
+  // All engines (replicated and non-replicated) have engine as direct value
+  return config.engine as ClickHouseEngines;
+}
+
+/**
+ * Convert engine config for basic MergeTree engines
+ */
+function convertBasicEngineConfig(
+  engine: ClickHouseEngines,
+  config: OlapConfig<any>,
+): EngineConfig | undefined {
+  switch (engine) {
+    case ClickHouseEngines.MergeTree:
+      return { engine: "MergeTree" };
+
+    case ClickHouseEngines.AggregatingMergeTree:
+      return { engine: "AggregatingMergeTree" };
+
+    case ClickHouseEngines.ReplacingMergeTree: {
+      const replacingConfig = config as ReplacingMergeTreeConfig<any>;
+      return {
+        engine: "ReplacingMergeTree",
+        ver: replacingConfig.ver,
+        isDeleted: replacingConfig.isDeleted,
+      };
+    }
+
+    case ClickHouseEngines.SummingMergeTree: {
+      const summingConfig = config as SummingMergeTreeConfig<any>;
+      return {
+        engine: "SummingMergeTree",
+        columns: summingConfig.columns,
+      };
+    }
+
+    default:
+      return undefined;
+  }
+}
+
+/**
+ * Convert engine config for replicated MergeTree engines
+ */
+function convertReplicatedEngineConfig(
+  engine: ClickHouseEngines,
+  config: OlapConfig<any>,
+): EngineConfig | undefined {
+  // First check if this is a replicated engine config
+  if (!hasReplicatedEngine(config)) {
+    return undefined;
+  }
+
+  switch (engine) {
+    case ClickHouseEngines.ReplicatedMergeTree: {
+      const replicatedConfig = config as ReplicatedMergeTreeConfig<any>;
+      return {
+        engine: "ReplicatedMergeTree",
+        keeperPath: replicatedConfig.keeperPath,
+        replicaName: replicatedConfig.replicaName,
+      };
+    }
+
+    case ClickHouseEngines.ReplicatedReplacingMergeTree: {
+      const replicatedConfig =
+        config as ReplicatedReplacingMergeTreeConfig<any>;
+      return {
+        engine: "ReplicatedReplacingMergeTree",
+        keeperPath: replicatedConfig.keeperPath,
+        replicaName: replicatedConfig.replicaName,
+        ver: replicatedConfig.ver,
+        isDeleted: replicatedConfig.isDeleted,
+      };
+    }
+
+    case ClickHouseEngines.ReplicatedAggregatingMergeTree: {
+      const replicatedConfig =
+        config as ReplicatedAggregatingMergeTreeConfig<any>;
+      return {
+        engine: "ReplicatedAggregatingMergeTree",
+        keeperPath: replicatedConfig.keeperPath,
+        replicaName: replicatedConfig.replicaName,
+      };
+    }
+
+    case ClickHouseEngines.ReplicatedSummingMergeTree: {
+      const replicatedConfig = config as ReplicatedSummingMergeTreeConfig<any>;
+      return {
+        engine: "ReplicatedSummingMergeTree",
+        keeperPath: replicatedConfig.keeperPath,
+        replicaName: replicatedConfig.replicaName,
+        columns: replicatedConfig.columns,
+      };
+    }
+
+    default:
+      return undefined;
+  }
+}
+
+/**
+ * Convert S3Queue engine config
+ * Uses type guard for fully type-safe property access
+ */
+function convertS3QueueEngineConfig(
+  config: OlapConfig<any>,
+): EngineConfig | undefined {
+  if (!isS3QueueConfig(config)) {
+    return undefined;
+  }
+
+  return {
+    engine: "S3Queue",
+    s3Path: config.s3Path,
+    format: config.format,
+    awsAccessKeyId: config.awsAccessKeyId,
+    awsSecretAccessKey: config.awsSecretAccessKey,
+    compression: config.compression,
+    headers: config.headers,
+  };
+}
+
+/**
+ * Convert table configuration to engine config
+ */
+function convertTableConfigToEngineConfig(
+  config: OlapConfig<any>,
+): EngineConfig | undefined {
+  const engine = extractEngineValue(config);
+
+  // Try basic engines first
+  const basicConfig = convertBasicEngineConfig(engine, config);
+  if (basicConfig) {
+    return basicConfig;
+  }
+
+  // Try replicated engines
+  const replicatedConfig = convertReplicatedEngineConfig(engine, config);
+  if (replicatedConfig) {
+    return replicatedConfig;
+  }
+
+  // Handle S3Queue
+  if (engine === ClickHouseEngines.S3Queue) {
+    return convertS3QueueEngineConfig(config);
+  }
+
+  return undefined;
+}
+
 export const toInfraMap = (registry: typeof moose_internal) => {
   const tables: { [key: string]: TableJson } = {};
   const topics: { [key: string]: StreamJson } = {};
@@ -251,54 +485,15 @@ export const toInfraMap = (registry: typeof moose_internal) => {
   const workflows: { [key: string]: WorkflowJson } = {};
 
   registry.tables.forEach((table) => {
+    const id = table.config.version ? `${table.name}_${table.config.version}` : table.name;
     // If the table is part of an IngestPipeline, inherit metadata if not set
     let metadata = (table as any).metadata;
     if (!metadata && table.config && (table as any).pipelineParent) {
       metadata = (table as any).pipelineParent.metadata;
     }
     // Create type-safe engine configuration
-    const engineConfig: EngineConfig | undefined = (() => {
-      // Handle legacy configuration by checking if engine property exists
-      const engine =
-        "engine" in table.config ?
-          table.config.engine
-        : ClickHouseEngines.MergeTree;
-      switch (engine) {
-        case ClickHouseEngines.MergeTree:
-          return { engine: "MergeTree" };
-
-        case ClickHouseEngines.ReplacingMergeTree:
-          const replConfig = table.config as any; // Cast to access specific properties
-          return {
-            engine: "ReplacingMergeTree",
-            ver: replConfig.ver,
-            isDeleted: replConfig.isDeleted,
-          };
-
-        case ClickHouseEngines.AggregatingMergeTree:
-          return { engine: "AggregatingMergeTree" };
-
-        case ClickHouseEngines.SummingMergeTree:
-          return { engine: "SummingMergeTree" };
-
-        case ClickHouseEngines.S3Queue: {
-          const s3Config = table.config as any; // Cast to access S3Queue-specific properties
-
-          return {
-            engine: "S3Queue",
-            s3Path: s3Config.s3Path,
-            format: s3Config.format,
-            awsAccessKeyId: s3Config.awsAccessKeyId,
-            awsSecretAccessKey: s3Config.awsSecretAccessKey,
-            compression: s3Config.compression,
-            headers: s3Config.headers,
-          };
-        }
-
-        default:
-          return undefined;
-      }
-    })();
+    const engineConfig: EngineConfig | undefined =
+      convertTableConfigToEngineConfig(table.config);
 
     // Get table settings, applying defaults for S3Queue
     let tableSettings: { [key: string]: string } | undefined = undefined;
@@ -327,7 +522,7 @@ export const toInfraMap = (registry: typeof moose_internal) => {
       }
     }
 
-    tables[table.name] = {
+    tables[id] = {
       name: table.name,
       columns: table.columnArray,
       orderBy: table.config.orderByFields ?? [],
@@ -383,6 +578,7 @@ export const toInfraMap = (registry: typeof moose_internal) => {
       consumers,
       metadata,
       lifeCycle: stream.config.lifeCycle,
+      schemaConfig: stream.config.schemaConfig,
     };
   });
 

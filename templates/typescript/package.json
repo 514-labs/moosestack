@@ -1,10 +1,13 @@
 {
   "name": "ts",
   "version": "0.0",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
   "scripts": {
     "moose": "moose-cli",
     "build": "moose-cli build --docker",
-    "dev": "moose-cli dev"
+    "dev": "moose-cli dev",
+    "generate-runtime": "tspc app/index.ts"
   },
   "dependencies": {
     "@514labs/moose-lib": "latest",
@@ -16,5 +19,10 @@
     "@514labs/moose-cli": "latest",
     "@faker-js/faker": "^9.7.0",
     "@types/node": "^20.12.12"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "@confluentinc/kafka-javascript"
+    ]
   }
 }

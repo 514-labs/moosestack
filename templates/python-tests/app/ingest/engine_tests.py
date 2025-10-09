@@ -7,6 +7,10 @@ from moose_lib.blocks import (
     ReplacingMergeTreeEngine,
     SummingMergeTreeEngine,
     AggregatingMergeTreeEngine,
+    ReplicatedMergeTreeEngine,
+    ReplicatedReplacingMergeTreeEngine,
+    ReplicatedAggregatingMergeTreeEngine,
+    ReplicatedSummingMergeTreeEngine,
     # S3QueueEngine - requires S3 configuration, tested separately
 )
 from pydantic import BaseModel
@@ -78,6 +82,81 @@ aggregating_merge_tree_table = OlapTable[EngineTestData](
     )
 )
 
+# Test ReplicatedMergeTree engine (with explicit keeper params - for self-hosted)
+replicated_merge_tree_table = OlapTable[EngineTestData](
+    "ReplicatedMergeTreeTest",
+    OlapConfig(
+        engine=ReplicatedMergeTreeEngine(
+            keeper_path="/clickhouse/tables/{database}/{shard}/replicated_merge_tree_test",
+            replica_name="{replica}"
+        ),
+        order_by_fields=["id", "timestamp"]
+    )
+)
+
+# Test ReplicatedMergeTree engine (Cloud-compatible - no keeper params)
+# In dev mode, Moose automatically injects default parameters
+# In production, ClickHouse uses its automatic configuration
+replicated_merge_tree_cloud_table = OlapTable[EngineTestData](
+    "ReplicatedMergeTreeCloudTest",
+    OlapConfig(
+        engine=ReplicatedMergeTreeEngine(),  # No params - uses server defaults (Cloud compatible)
+        order_by_fields=["id", "timestamp"]
+    )
+)
+
+# Test ReplicatedReplacingMergeTree engine with version column
+replicated_replacing_merge_tree_table = OlapTable[EngineTestData](
+    "ReplicatedReplacingMergeTreeTest",
+    OlapConfig(
+        engine=ReplicatedReplacingMergeTreeEngine(
+            keeper_path="/clickhouse/tables/{database}/{shard}/replicated_replacing_test",
+            replica_name="{replica}",
+            ver="version"
+        ),
+        order_by_fields=["id"]
+    )
+)
+
+# Test ReplicatedReplacingMergeTree with soft delete
+replicated_replacing_soft_delete_table = OlapTable[EngineTestData](
+    "ReplicatedReplacingSoftDeleteTest",
+    OlapConfig(
+        engine=ReplicatedReplacingMergeTreeEngine(
+            keeper_path="/clickhouse/tables/{database}/{shard}/replicated_replacing_sd_test",
+            replica_name="{replica}",
+            ver="version",
+            is_deleted="is_deleted"
+        ),
+        order_by_fields=["id"]
+    )
+)
+
+# Test ReplicatedAggregatingMergeTree engine
+replicated_aggregating_merge_tree_table = OlapTable[EngineTestData](
+    "ReplicatedAggregatingMergeTreeTest",
+    OlapConfig(
+        engine=ReplicatedAggregatingMergeTreeEngine(
+            keeper_path="/clickhouse/tables/{database}/{shard}/replicated_aggregating_test",
+            replica_name="{replica}"
+        ),
+        order_by_fields=["id", "category"]
+    )
+)
+
+# Test ReplicatedSummingMergeTree engine
+replicated_summing_merge_tree_table = OlapTable[EngineTestData](
+    "ReplicatedSummingMergeTreeTest",
+    OlapConfig(
+        engine=ReplicatedSummingMergeTreeEngine(
+            keeper_path="/clickhouse/tables/{database}/{shard}/replicated_summing_test",
+            replica_name="{replica}",
+            columns=["value"]
+        ),
+        order_by_fields=["id", "category"]
+    )
+)
+
 # Note: S3Queue engine testing is more complex as it requires S3 configuration
 # and external dependencies, so it's not included in this basic engine test suite.
 # For S3Queue testing, see the dedicated S3 integration tests.
@@ -91,4 +170,10 @@ all_engine_test_tables = [
     replacing_merge_tree_soft_delete_table,
     summing_merge_tree_table,
     aggregating_merge_tree_table,
+    replicated_merge_tree_table,
+    replicated_merge_tree_cloud_table,
+    replicated_replacing_merge_tree_table,
+    replicated_replacing_soft_delete_table,
+    replicated_aggregating_merge_tree_table,
+    replicated_summing_merge_tree_table,
 ]

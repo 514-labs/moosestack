@@ -7,6 +7,8 @@ use crate::framework::{
 };
 use crate::proto;
 use crate::proto::infrastructure_map::LifeCycle as ProtoLifeCycle;
+use crate::proto::infrastructure_map::SchemaRegistry as ProtoSchemaRegistry;
+use crate::proto::infrastructure_map::SubjectVersion as ProtoSubjectVersion;
 use protobuf::MessageField;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
@@ -34,6 +36,40 @@ pub struct Topic {
 
     #[serde(default = "LifeCycle::default_for_deserialization")]
     pub life_cycle: LifeCycle,
+
+    #[serde(default)]
+    pub schema_config: Option<KafkaSchema>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum KafkaSchemaKind {
+    Json,
+    Avro,
+    Protobuf,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct KafkaSchema {
+    /// Schema type (only JSON supported currently)
+    pub kind: KafkaSchemaKind,
+    pub reference: SchemaRegistryReference,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum SchemaRegistryReference {
+    Id {
+        id: i32,
+    },
+    SubjectLatest {
+        #[serde(alias = "subjectLatest")]
+        subject_latest: String,
+    },
+    SubjectVersion {
+        subject: String,
+        version: i32,
+    },
 }
 
 impl Topic {
@@ -52,6 +88,7 @@ impl Topic {
             },
             metadata: None,
             life_cycle: LifeCycle::FullyManaged,
+            schema_config: None,
         }
     }
 
@@ -113,6 +150,11 @@ impl Topic {
                 LifeCycle::DeletionProtected => ProtoLifeCycle::DELETION_PROTECTED.into(),
                 LifeCycle::ExternallyManaged => ProtoLifeCycle::EXTERNALLY_MANAGED.into(),
             },
+            schema_registry: self
+                .schema_config
+                .as_ref()
+                .map(kafka_schema_to_proto)
+                .into(),
             special_fields: Default::default(),
         }
     }
@@ -145,6 +187,62 @@ impl Topic {
                 ProtoLifeCycle::DELETION_PROTECTED => LifeCycle::DeletionProtected,
                 ProtoLifeCycle::EXTERNALLY_MANAGED => LifeCycle::ExternallyManaged,
             },
+            schema_config: proto
+                .schema_registry
+                .into_option()
+                .and_then(proto_to_kafka_schema),
         }
     }
+}
+
+fn kafka_schema_to_proto(s: &KafkaSchema) -> ProtoSchemaRegistry {
+    let mut sr = ProtoSchemaRegistry::new();
+    sr.encoding = match s.kind {
+        KafkaSchemaKind::Json => proto::infrastructure_map::schema_registry::Encoding::JSON.into(),
+        KafkaSchemaKind::Avro => proto::infrastructure_map::schema_registry::Encoding::AVRO.into(),
+        KafkaSchemaKind::Protobuf => {
+            proto::infrastructure_map::schema_registry::Encoding::PROTOBUF.into()
+        }
+    };
+    use crate::proto::infrastructure_map::schema_registry::Schema_ref as ProtoSchemaRef;
+    sr.schema_ref = Some(match &s.reference {
+        SchemaRegistryReference::Id { id } => ProtoSchemaRef::SchemaId(*id),
+        SchemaRegistryReference::SubjectLatest { subject_latest } => {
+            ProtoSchemaRef::Subject(subject_latest.clone())
+        }
+        SchemaRegistryReference::SubjectVersion { subject, version } => {
+            let mut sv = ProtoSubjectVersion::new();
+            sv.subject = subject.clone();
+            sv.version = *version;
+            ProtoSchemaRef::SubjectVersion(sv)
+        }
+    });
+    sr
+}
+
+fn proto_to_kafka_schema(sr: ProtoSchemaRegistry) -> Option<KafkaSchema> {
+    use crate::proto::infrastructure_map::schema_registry::Encoding as ProtoEncoding;
+    let kind = match sr.encoding.enum_value_or_default() {
+        ProtoEncoding::JSON => KafkaSchemaKind::Json,
+        ProtoEncoding::AVRO => KafkaSchemaKind::Avro,
+        ProtoEncoding::PROTOBUF => KafkaSchemaKind::Protobuf,
+    };
+
+    let r = sr.schema_ref?;
+    let reference = match r {
+        crate::proto::infrastructure_map::schema_registry::Schema_ref::SchemaId(id) => {
+            SchemaRegistryReference::Id { id }
+        }
+        crate::proto::infrastructure_map::schema_registry::Schema_ref::Subject(s) => {
+            SchemaRegistryReference::SubjectLatest { subject_latest: s }
+        }
+        crate::proto::infrastructure_map::schema_registry::Schema_ref::SubjectVersion(sv) => {
+            SchemaRegistryReference::SubjectVersion {
+                subject: sv.subject,
+                version: sv.version,
+            }
+        }
+    };
+
+    Some(KafkaSchema { kind, reference })
 }

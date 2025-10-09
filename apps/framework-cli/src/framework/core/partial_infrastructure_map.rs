@@ -60,7 +60,7 @@ use super::{
         orchestration_worker::OrchestrationWorker,
         sql_resource::SqlResource,
         table::{Column, Metadata, Table},
-        topic::{Topic, DEFAULT_MAX_MESSAGE_BYTES},
+        topic::{KafkaSchema, Topic, DEFAULT_MAX_MESSAGE_BYTES},
         topic_sync_process::{TopicToTableSyncProcess, TopicToTopicSyncProcess},
         view::View,
     },
@@ -136,7 +136,48 @@ enum EngineConfig {
     AggregatingMergeTree {},
 
     #[serde(rename = "SummingMergeTree")]
-    SummingMergeTree {},
+    SummingMergeTree {
+        #[serde(default)]
+        columns: Option<Vec<String>>,
+    },
+
+    #[serde(rename = "ReplicatedMergeTree")]
+    ReplicatedMergeTree {
+        #[serde(alias = "keeperPath", default)]
+        keeper_path: Option<String>,
+        #[serde(alias = "replicaName", default)]
+        replica_name: Option<String>,
+    },
+
+    #[serde(rename = "ReplicatedReplacingMergeTree")]
+    ReplicatedReplacingMergeTree {
+        #[serde(alias = "keeperPath", default)]
+        keeper_path: Option<String>,
+        #[serde(alias = "replicaName", default)]
+        replica_name: Option<String>,
+        #[serde(default)]
+        ver: Option<String>,
+        #[serde(alias = "isDeleted", default)]
+        is_deleted: Option<String>,
+    },
+
+    #[serde(rename = "ReplicatedAggregatingMergeTree")]
+    ReplicatedAggregatingMergeTree {
+        #[serde(alias = "keeperPath", default)]
+        keeper_path: Option<String>,
+        #[serde(alias = "replicaName", default)]
+        replica_name: Option<String>,
+    },
+
+    #[serde(rename = "ReplicatedSummingMergeTree")]
+    ReplicatedSummingMergeTree {
+        #[serde(alias = "keeperPath", default)]
+        keeper_path: Option<String>,
+        #[serde(alias = "replicaName", default)]
+        replica_name: Option<String>,
+        #[serde(default)]
+        columns: Option<Vec<String>>,
+    },
 
     #[serde(rename = "S3Queue")]
     S3Queue(Box<S3QueueConfig>),
@@ -179,6 +220,8 @@ struct PartialTopic {
     pub consumers: Vec<Consumer>,
     pub metadata: Option<Metadata>,
     pub life_cycle: Option<LifeCycle>,
+    #[serde(default)]
+    pub schema_config: Option<KafkaSchema>,
 }
 
 /// Specifies the type of destination for write operations.
@@ -210,6 +253,7 @@ struct PartialIngestApi {
     /// If not specified, defaults to "ingest/{name}/{version}"
     #[serde(default)]
     pub path: Option<String>,
+    #[serde(default)]
     pub schema: serde_json::Map<String, serde_json::Value>,
 }
 
@@ -561,7 +605,49 @@ impl PartialInfrastructureMap {
                 Some(ClickhouseEngine::AggregatingMergeTree)
             }
 
-            Some(EngineConfig::SummingMergeTree {}) => Some(ClickhouseEngine::SummingMergeTree),
+            Some(EngineConfig::SummingMergeTree { columns }) => {
+                Some(ClickhouseEngine::SummingMergeTree {
+                    columns: columns.clone(),
+                })
+            }
+
+            Some(EngineConfig::ReplicatedMergeTree {
+                keeper_path,
+                replica_name,
+            }) => Some(ClickhouseEngine::ReplicatedMergeTree {
+                keeper_path: keeper_path.clone(),
+                replica_name: replica_name.clone(),
+            }),
+
+            Some(EngineConfig::ReplicatedReplacingMergeTree {
+                keeper_path,
+                replica_name,
+                ver,
+                is_deleted,
+            }) => Some(ClickhouseEngine::ReplicatedReplacingMergeTree {
+                keeper_path: keeper_path.clone(),
+                replica_name: replica_name.clone(),
+                ver: ver.clone(),
+                is_deleted: is_deleted.clone(),
+            }),
+
+            Some(EngineConfig::ReplicatedAggregatingMergeTree {
+                keeper_path,
+                replica_name,
+            }) => Some(ClickhouseEngine::ReplicatedAggregatingMergeTree {
+                keeper_path: keeper_path.clone(),
+                replica_name: replica_name.clone(),
+            }),
+
+            Some(EngineConfig::ReplicatedSummingMergeTree {
+                keeper_path,
+                replica_name,
+                columns,
+            }) => Some(ClickhouseEngine::ReplicatedSummingMergeTree {
+                keeper_path: keeper_path.clone(),
+                replica_name: replica_name.clone(),
+                columns: columns.clone(),
+            }),
 
             Some(EngineConfig::S3Queue(config)) => {
                 // S3Queue settings are handled in table_settings, not in the engine
@@ -605,6 +691,7 @@ impl PartialInfrastructureMap {
                     },
                     metadata: partial_topic.metadata.clone(),
                     life_cycle: partial_topic.life_cycle.unwrap_or(LifeCycle::FullyManaged),
+                    schema_config: partial_topic.schema_config.clone(),
                 };
                 (topic.id(), topic)
             })

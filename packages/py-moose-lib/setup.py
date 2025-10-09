@@ -33,5 +33,6 @@ setup(
         "clickhouse_connect>=0.7.16",
         "requests>=2.32.3",
         "sqlglot[rs]>=27.16.3",
+        "confluent-kafka[json,schemaregistry]>=2.11.1"
     ],
 )

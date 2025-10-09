@@ -266,7 +266,7 @@ jobs:
     needs:
       [detect-changes, check, test-cli, test-ts-moose-lib, test-py-moose-lib]
     if: needs.detect-changes.outputs.should_run == 'true'
-    name: Test E2E TypeScript Default Template (Node ${{ matrix.node-version }})
+    name: Test E2E TypeScript Default Template (Node ${{ matrix.node-version }}, ${{ matrix.package-manager }})
     runs-on: ubuntu-latest
     # Add explicit read-only permissions
     permissions:
@@ -277,6 +277,17 @@ jobs:
       fail-fast: false
       matrix:
         node-version: [20, 22, 24]
+        package-manager: [npm, pnpm-9, pnpm-10]
+        include:
+          - package-manager: npm
+            pm-name: npm
+            pm-version: "9.9.0"
+          - package-manager: pnpm-9
+            pm-name: pnpm
+            pm-version: "9.9.0"
+          - package-manager: pnpm-10
+            pm-name: pnpm
+            pm-version: "10.15.0"
     steps:
       - name: Install Protoc (Needed for Temporal)
         uses: arduino/setup-protoc@v3
@@ -290,7 +301,19 @@ jobs:
           repository: ${{ github.event.pull_request.head.repo.full_name }}
           ref: ${{ github.event.pull_request.head.sha }}
 
-      - uses: pnpm/action-setup@v4
+      # Update packageManager field to match matrix version for testing
+      - name: Update pnpm version in package.json
+        if: startsWith(matrix.package-manager, 'pnpm')
+        working-directory: .
+        run: |
+          jq '.packageManager = "pnpm@${{ matrix.pm-version }}"' package.json > package.json.tmp
+          mv package.json.tmp package.json
+
+      # Setup pnpm (uses version from package.json)
+      # For npm tests: uses monorepo's default (9.9.0)
+      # For pnpm tests: uses matrix version (9.9.0 or 10.15.0)
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
 
       - name: Install node
         uses: actions/setup-node@v4
@@ -317,6 +340,7 @@ jobs:
         run: pnpm install --frozen-lockfile && pnpm --filter=framework-cli-e2e run test -- --grep "typescript template default"
         env:
           MOOSE_TELEMETRY_ENABLED: false
+          TEST_PACKAGE_MANAGER: ${{ matrix.pm-name }}
 
       - name: Inspect Logs
         if: always()
@@ -327,7 +351,7 @@ jobs:
     needs:
       [detect-changes, check, test-cli, test-ts-moose-lib, test-py-moose-lib]
     if: needs.detect-changes.outputs.should_run == 'true'
-    name: Test E2E TypeScript Tests Template (Node ${{ matrix.node-version }})
+    name: Test E2E TypeScript Tests Template (Node ${{ matrix.node-version }}, ${{ matrix.package-manager }})
     runs-on: ubuntu-latest
     # Add explicit read-only permissions
     permissions:
@@ -338,6 +362,11 @@ jobs:
       fail-fast: false
       matrix:
         node-version: [20, 22, 24]
+        package-manager: [npm]
+        include:
+          - package-manager: npm
+            pm-name: npm
+            pm-version: bundled
     steps:
       - name: Install Protoc (Needed for Temporal)
         uses: arduino/setup-protoc@v3
@@ -378,6 +407,7 @@ jobs:
         run: pnpm install --frozen-lockfile && pnpm --filter=framework-cli-e2e run test -- --grep "typescript template tests"
         env:
           MOOSE_TELEMETRY_ENABLED: false
+          TEST_PACKAGE_MANAGER: ${{ matrix.pm-name }}
 
       - name: Inspect Logs
         if: always()
@@ -447,6 +477,7 @@ jobs:
         run: pnpm install --frozen-lockfile && pnpm --filter=framework-cli-e2e run test -- --grep "python template default"
         env:
           MOOSE_TELEMETRY_ENABLED: false
+          TEST_PACKAGE_MANAGER: pip
 
       - name: Inspect Logs
         if: always()
@@ -516,6 +547,7 @@ jobs:
         run: pnpm install --frozen-lockfile && pnpm --filter=framework-cli-e2e run test -- --grep "python template tests"
         env:
           MOOSE_TELEMETRY_ENABLED: false
+          TEST_PACKAGE_MANAGER: pip
 
       - name: Inspect Logs
         if: always()
