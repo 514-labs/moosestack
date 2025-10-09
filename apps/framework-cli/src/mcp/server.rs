@@ -1,15 +1,21 @@
 use log::info;
 use rmcp::{
-    model::{Implementation, ProtocolVersion, ServerCapabilities, ServerInfo},
+    model::{
+        Annotated, CallToolRequestParam, CallToolResult, Implementation, ListToolsResult,
+        PaginatedRequestParam, ProtocolVersion, RawContent, RawTextContent, ServerCapabilities,
+        ServerInfo, Tool,
+    },
+    service::RequestContext,
     transport::streamable_http_server::{
         session::local::LocalSessionManager, StreamableHttpServerConfig, StreamableHttpService,
     },
-    ServerHandler,
+    ErrorData, RoleServer, ServerHandler,
 };
+use serde_json::json;
 use std::sync::Arc;
 
 /// Handler for the MCP server that implements the Model Context Protocol
-/// Currently implements zero tools as per the initial requirements
+/// Includes a dummy "echo" tool for testing and verification purposes
 #[derive(Clone)]
 pub struct MooseMcpHandler {
     server_name: String,
@@ -30,15 +36,94 @@ impl ServerHandler for MooseMcpHandler {
     fn get_info(&self) -> ServerInfo {
         ServerInfo {
             protocol_version: ProtocolVersion::V_2024_11_05,
-            capabilities: ServerCapabilities::default(),
+            capabilities: ServerCapabilities {
+                tools: Some(Default::default()),
+                ..Default::default()
+            },
             server_info: Implementation {
                 name: self.server_name.clone(),
                 version: self.server_version.clone(),
-                title: None,
+                title: Some("Moose MCP Server".to_string()),
                 icons: None,
                 website_url: None,
             },
-            instructions: None,
+            instructions: Some(
+                "Moose MCP Server - Use the echo tool to test the connection".to_string(),
+            ),
+        }
+    }
+
+    async fn list_tools(
+        &self,
+        _pagination: Option<PaginatedRequestParam>,
+        _context: RequestContext<RoleServer>,
+    ) -> Result<ListToolsResult, ErrorData> {
+        let schema = json!({
+            "type": "object",
+            "properties": {
+                "message": {
+                    "type": "string",
+                    "description": "The message to echo back"
+                }
+            },
+            "required": ["message"]
+        });
+
+        let schema_map = schema.as_object().unwrap().clone();
+
+        Ok(ListToolsResult {
+            tools: vec![Tool {
+                name: "echo".into(),
+                description: Some("A simple echo tool that returns whatever message you send it. Useful for testing the MCP connection.".into()),
+                input_schema: Arc::new(schema_map),
+                annotations: None,
+                icons: None,
+                output_schema: None,
+                title: None,
+            }],
+            next_cursor: None,
+        })
+    }
+
+    async fn call_tool(
+        &self,
+        param: CallToolRequestParam,
+        _context: RequestContext<RoleServer>,
+    ) -> Result<CallToolResult, ErrorData> {
+        match param.name.as_ref() {
+            "echo" => {
+                let message = param
+                    .arguments
+                    .as_ref()
+                    .and_then(|v| v.get("message"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("No message provided");
+
+                Ok(CallToolResult {
+                    content: vec![Annotated {
+                        raw: RawContent::Text(RawTextContent {
+                            text: format!("Echo: {}", message),
+                            meta: None,
+                        }),
+                        annotations: None,
+                    }],
+                    is_error: Some(false),
+                    meta: None,
+                    structured_content: None,
+                })
+            }
+            _ => Ok(CallToolResult {
+                content: vec![Annotated {
+                    raw: RawContent::Text(RawTextContent {
+                        text: format!("Unknown tool: {}", param.name),
+                        meta: None,
+                    }),
+                    annotations: None,
+                }],
+                is_error: Some(true),
+                meta: None,
+                structured_content: None,
+            }),
         }
     }
 }
@@ -96,6 +181,8 @@ mod tests {
         assert_eq!(info.server_info.name, "test-server");
         assert_eq!(info.server_info.version, "0.0.1");
         assert_eq!(info.protocol_version, ProtocolVersion::V_2024_11_05);
+        assert!(info.capabilities.tools.is_some());
+        assert!(info.instructions.is_some());
     }
 
     #[test]
