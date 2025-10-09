@@ -26,10 +26,6 @@ class TestMooseModelConfig:
         """Test default configuration values."""
         config = MooseModelConfig()
         
-        assert config.default_ingest is True
-        assert config.default_stream is True
-        assert config.default_table is False
-        assert config.default_dead_letter_queue is True
         assert config.include_timestamp_fields is True
         assert 'timestamp' in config.timestamp_field_names
         assert 'id' in config.primary_key_field_names
@@ -37,15 +33,11 @@ class TestMooseModelConfig:
     def test_custom_config(self):
         """Test custom configuration values."""
         config = MooseModelConfig(
-            default_ingest=False,
-            default_stream=False,
             include_timestamp_fields=False,
             timestamp_field_names={'custom_time'},
             primary_key_field_names={'custom_id'}
         )
         
-        assert config.default_ingest is False
-        assert config.default_stream is False
         assert config.include_timestamp_fields is False
         assert config.timestamp_field_names == {'custom_time'}
         assert config.primary_key_field_names == {'custom_id'}
@@ -186,38 +178,14 @@ class TestMooseModelGenerator:
         assert false_lower_def == "is_disabled: Optional[bool] = False"
     
     def test_pipeline_config_determination(self):
-        """Test pipeline configuration determination."""
-        # Log table
-        log_table = TableMetadata("audit_log", "public", [])
-        log_config = self.generator._determine_pipeline_config(log_table)
-        assert log_config['ingest'] is False
-        assert log_config['stream'] is True
-        assert log_config['table'] is True
-        
-        # Staging table
-        staging_table = TableMetadata("staging_data", "public", [])
-        staging_config = self.generator._determine_pipeline_config(staging_table)
-        assert staging_config['ingest'] is True
-        assert staging_config['stream'] is False
-        assert staging_config['table'] is False
-        
-        # Dimension table
-        dim_table = TableMetadata("dim_customer", "public", [])
-        dim_config = self.generator._determine_pipeline_config(dim_table)
-        assert dim_config['ingest'] is False
-        assert dim_config['stream'] is False
-        assert dim_config['table'] is True
-        
-        # Regular table (default config)
-        regular_table = TableMetadata("users", "public", [])
-        regular_config = self.generator._determine_pipeline_config(regular_table)
-        assert regular_config['ingest'] is True
-        assert regular_config['stream'] is True
-        assert regular_config['table'] is False
+        """Test pipeline configuration determination - functionality removed."""
+        # This test is skipped because pipeline configuration functionality has been removed
+        pytest.skip("Pipeline configuration functionality has been removed from the generator")
     
     def test_model_generation(self):
         """Test model code generation."""
-        model_code = self.generator._generate_model_code(self.sample_table)
+        model_code_lines = self.generator._generate_model_code(self.sample_table)
+        model_code = '\n'.join(model_code_lines)
         
         assert "class Users(BaseModel):" in model_code
         assert "id: Key[int]" in model_code
@@ -226,15 +194,13 @@ class TestMooseModelGenerator:
         assert "is_active: bool" in model_code
         assert "score: Optional[float] = None" in model_code
     
-    def test_pipeline_generation(self):
-        """Test pipeline code generation."""
-        pipeline_code = self.generator._generate_pipeline_code(self.sample_table)
+    def test_olap_table_generation(self):
+        """Test OlapTable code generation."""
+        olap_table_code = self.generator._generate_olap_table_code(self.sample_table)
+        olap_code = '\n'.join(olap_table_code)
         
-        assert "usersModel = IngestPipeline[Users]" in pipeline_code
-        assert 'ingest=True' in pipeline_code
-        assert 'stream=True' in pipeline_code
-        assert 'table=False' in pipeline_code
-        assert 'dead_letter_queue=True' in pipeline_code
+        assert "users = OlapTable[Users]" in olap_code
+        assert '"users"' in olap_code
     
     def test_generate_models_file_creation(self):
         """Test that generate_models creates the output file."""
@@ -250,9 +216,9 @@ class TestMooseModelGenerator:
                 content = f.read()
             
             assert "Generated Moose models and pipelines" in content
-            assert "from moose_lib import BaseModel, Key, IngestPipeline, IngestPipelineConfig, Field" in content
+            assert "from moose_lib import BaseModel, Key, Field, OlapTable, OlapConfig" in content
             assert "class Users(BaseModel):" in content
-            assert "usersModel = IngestPipeline[Users]" in content
+            assert "users = OlapTable[Users]" in content
     
     def test_generate_models_empty_list(self):
         """Test generate_models with empty table list."""
@@ -285,8 +251,8 @@ class TestMooseModelGenerator:
             
             assert "class Users(BaseModel):" in content
             assert "class Orders(BaseModel):" in content
-            assert "usersModel = IngestPipeline[Users]" in content
-            assert "ordersModel = IngestPipeline[Orders]" in content
+            assert "users = OlapTable[Users]" in content
+            assert "orders = OlapTable[Orders]" in content
 
 
 class TestGenerateMooseModels:
@@ -310,7 +276,7 @@ class TestGenerateMooseModels:
                 content = f.read()
             
             assert "class TestTable(BaseModel):" in content
-            assert "testTableModel = IngestPipeline[TestTable]" in content
+            assert "test_table = OlapTable[TestTable]" in content
     
     def test_convenience_function_with_config(self):
         """Test the convenience function with custom config."""
@@ -319,7 +285,7 @@ class TestGenerateMooseModels:
             FieldMetadata("name", "VARCHAR", False, True)
         ])
         
-        config = MooseModelConfig(default_ingest=False)
+        config = MooseModelConfig(include_timestamp_fields=False)
         
         with tempfile.TemporaryDirectory() as temp_dir:
             output_path = os.path.join(temp_dir, "config_test.py")
@@ -329,4 +295,5 @@ class TestGenerateMooseModels:
             with open(output_path, 'r') as f:
                 content = f.read()
             
-            assert 'ingest=False' in content
+            assert "class TestTable(BaseModel):" in content
+            assert "test_table = OlapTable[TestTable]" in content
