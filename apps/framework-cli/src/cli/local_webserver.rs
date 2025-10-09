@@ -2268,6 +2268,8 @@ impl Webserver {
             .await
             .expect("Failed to initialize Redis client");
 
+        let redis_client_arc = Arc::new(redis_client);
+
         // Create MCP service once if enabled
         let mcp_service = if enable_mcp {
             use crate::mcp::create_mcp_http_service;
@@ -2275,8 +2277,11 @@ impl Webserver {
             use hyper_util::service::TowerToHyperService;
 
             info!("[MCP] Initializing MCP service for Model Context Protocol support");
-            let tower_service =
-                create_mcp_http_service("moose-mcp-server".to_string(), CLI_VERSION.to_string());
+            let tower_service = create_mcp_http_service(
+                "moose-mcp-server".to_string(),
+                CLI_VERSION.to_string(),
+                redis_client_arc.clone(),
+            );
             // Wrap the Tower service to make it compatible with Hyper
             Some(TowerToHyperService::new(tower_service))
         } else {
@@ -2295,7 +2300,7 @@ impl Webserver {
             http_client,
             metrics: metrics.clone(),
             project: project.clone(),
-            redis_client: Arc::new(redis_client),
+            redis_client: redis_client_arc.clone(),
         };
 
         // Wrap route_service with ApiService to handle MCP routing at the top level
