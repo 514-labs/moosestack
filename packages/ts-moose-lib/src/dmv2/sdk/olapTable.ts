@@ -157,8 +157,25 @@ export interface S3QueueTableSettings {
  * @template T The data type of the records stored in the table.
  */
 export type BaseOlapConfig<T> = (
-  | { orderByFields: (keyof T & string)[]; orderByExpression?: never }
-  | { orderByFields?: undefined; orderByExpression: string }
+  | {
+      /**
+       * Specifies the fields to use for ordering data within the ClickHouse table.
+       * This is crucial for optimizing query performance.
+       */
+      orderByFields: (keyof T & string)[];
+      orderByExpression?: undefined;
+    }
+  | {
+      orderByFields?: undefined;
+      /**
+       * An arbitrary ClickHouse SQL expression for the order by clause.
+       *
+       * `orderByExpression: "(id, name)"` is equivalent to `orderByFields: ["id", "name"]`
+       * `orderByExpression: "tuple()"` means no sorting
+       */
+      orderByExpression: string;
+    }
+  // specify either or leave both unspecified
   | { orderByFields?: undefined; orderByExpression?: undefined }
 ) & {
   partitionBy?: string;
