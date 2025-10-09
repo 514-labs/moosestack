@@ -63,8 +63,13 @@ struct QueryOlapParams {
     format: String,
 }
 
-/// Validates that a SQL query is read-only using AST analysis
-fn validate_query_is_read_only(sql: &str) -> Result<(), QueryError> {
+/// Validates that a SQL query is read-only and determines if it supports LIMIT.
+/// This function parses the SQL once and returns both pieces of information.
+///
+/// # Returns
+/// * `Ok(bool)` - Query is valid and read-only. The boolean indicates if LIMIT is supported.
+/// * `Err(QueryError)` - Query validation failed
+fn validate_and_analyze_query(sql: &str) -> Result<bool, QueryError> {
     let dialect = ClickHouseDialect {};
     let ast = Parser::parse_sql(&dialect, sql)?;
 
@@ -77,22 +82,20 @@ fn validate_query_is_read_only(sql: &str) -> Result<(), QueryError> {
         return Err(QueryError::MultipleStatements);
     }
 
-    // Check if the statement is read-only
+    // Check if the statement is read-only and determine if it supports LIMIT
     match &ast[0] {
-        // Allowed read-only statements
-        Statement::Query(_) => Ok(()), // SELECT, WITH, etc.
+        // These support LIMIT
+        Statement::Query(_) => Ok(true), // SELECT, WITH, etc.
+        Statement::ShowTables { .. } => Ok(true),
+        Statement::ShowDatabases { .. } => Ok(true),
+        Statement::ShowColumns { .. } => Ok(true),
+        Statement::ShowFunctions { .. } => Ok(true),
 
-        // SHOW statements
-        Statement::ShowTables { .. } => Ok(()),
-        Statement::ShowColumns { .. } => Ok(()),
-        Statement::ShowCreate { .. } => Ok(()),
-        Statement::ShowDatabases { .. } => Ok(()),
-        Statement::ShowVariables { .. } => Ok(()),
-        Statement::ShowFunctions { .. } => Ok(()),
-
-        // EXPLAIN statements
-        Statement::Explain { .. } => Ok(()),
-        Statement::ExplainTable { .. } => Ok(()),
+        // These do NOT support LIMIT (only FORMAT)
+        Statement::ExplainTable { .. } => Ok(false), // DESCRIBE
+        Statement::ShowCreate { .. } => Ok(false),   // SHOW CREATE TABLE
+        Statement::Explain { .. } => Ok(false),      // EXPLAIN
+        Statement::ShowVariables { .. } => Ok(false),
 
         // Block all write operations
         Statement::Insert { .. } => Err(QueryError::WriteOperation("INSERT")),
@@ -115,41 +118,18 @@ fn validate_query_is_read_only(sql: &str) -> Result<(), QueryError> {
     }
 }
 
-/// Determines if a query supports LIMIT clause
-fn supports_limit(query: &str) -> Result<bool, QueryError> {
-    let dialect = ClickHouseDialect {};
-    let ast = Parser::parse_sql(&dialect, query)?;
-
-    if ast.is_empty() {
-        return Ok(false);
-    }
-
-    // Check the statement type
-    match &ast[0] {
-        // These support LIMIT
-        Statement::Query(_) => Ok(true),
-        Statement::ShowTables { .. } => Ok(true),
-        Statement::ShowDatabases { .. } => Ok(true),
-        Statement::ShowColumns { .. } => Ok(true),
-        Statement::ShowFunctions { .. } => Ok(true),
-
-        // These do NOT support LIMIT (only FORMAT)
-        Statement::ExplainTable { .. } => Ok(false), // DESCRIBE
-        Statement::ShowCreate { .. } => Ok(false),   // SHOW CREATE TABLE
-        Statement::Explain { .. } => Ok(false),      // EXPLAIN
-
-        _ => Ok(false),
-    }
-}
-
 /// Applies a LIMIT clause to the query if the query type supports it
-fn apply_limit_to_query(query: &str, max_rows: u32) -> Result<String, QueryError> {
+///
+/// # Parameters
+/// * `query` - The SQL query to modify
+/// * `max_rows` - Maximum number of rows to return
+/// * `supports_limit` - Whether this query type supports LIMIT clause
+fn apply_limit_to_query(query: &str, max_rows: u32, supports_limit: bool) -> String {
     let trimmed = query.trim();
 
-    // Check if this query type supports LIMIT
-    if !supports_limit(trimmed)? {
-        // Don't add LIMIT for queries that don't support it
-        return Ok(trimmed.to_string());
+    // Don't add LIMIT for queries that don't support it
+    if !supports_limit {
+        return trimmed.to_string();
     }
 
     let query_upper = trimmed.to_uppercase();
@@ -157,10 +137,10 @@ fn apply_limit_to_query(query: &str, max_rows: u32) -> Result<String, QueryError
     // Check if query already has a LIMIT clause
     if query_upper.contains(" LIMIT ") {
         // Query already has LIMIT, wrap it with a subquery to enforce max
-        Ok(format!("SELECT * FROM ({}) LIMIT {}", trimmed, max_rows))
+        format!("SELECT * FROM ({}) LIMIT {}", trimmed, max_rows)
     } else {
         // No LIMIT, append one
-        Ok(format!("{} LIMIT {}", trimmed, max_rows))
+        format!("{} LIMIT {}", trimmed, max_rows)
     }
 }
 
@@ -338,13 +318,14 @@ async fn execute_query(
     config: &ClickHouseConfig,
     query: &str,
     limit: u32,
+    supports_limit: bool,
 ) -> Result<String, QueryError> {
     // Create ClickHouse client
     let client = ClickHouseClient::new(config)
         .map_err(|e| QueryError::ExecutionError(format!("Failed to create client: {}", e)))?;
 
     // Apply limit to query (if query type supports it)
-    let limited_query = apply_limit_to_query(query, limit)?;
+    let limited_query = apply_limit_to_query(query, limit, supports_limit);
 
     debug!(
         "Executing query with limit {} in database '{}': {}",
@@ -377,11 +358,11 @@ async fn execute_query_olap(
     );
     debug!("Query: {}", params.query);
 
-    // Validate query is read-only
-    validate_query_is_read_only(&params.query)?;
+    // Validate query is read-only and determine if it supports LIMIT (single parse)
+    let supports_limit = validate_and_analyze_query(&params.query)?;
 
     // Execute query
-    let raw_result = execute_query(config, &params.query, params.limit).await?;
+    let raw_result = execute_query(config, &params.query, params.limit, supports_limit).await?;
 
     // Parse the ClickHouse JSON format response
     // ClickHouse returns JSON in format: {"meta": [...], "data": [...], "rows": n, ...}
@@ -478,83 +459,102 @@ mod tests {
     #[test]
     fn test_validate_select_query() {
         let query = "SELECT * FROM users LIMIT 10";
-        assert!(validate_query_is_read_only(query).is_ok());
+        let result = validate_and_analyze_query(query);
+        assert!(result.is_ok());
+        assert!(result.unwrap()); // SELECT supports LIMIT
     }
 
     #[test]
     fn test_validate_with_subquery() {
         let query = "SELECT id, name FROM (SELECT * FROM users WHERE active = true)";
-        assert!(validate_query_is_read_only(query).is_ok());
+        assert!(validate_and_analyze_query(query).is_ok());
     }
 
     #[test]
     fn test_validate_show_tables() {
         let query = "SHOW TABLES";
-        assert!(validate_query_is_read_only(query).is_ok());
+        let result = validate_and_analyze_query(query);
+        assert!(result.is_ok());
+        assert!(result.unwrap()); // SHOW TABLES supports LIMIT
     }
 
     #[test]
     fn test_validate_describe_table() {
         let query = "DESCRIBE TABLE users";
-        assert!(validate_query_is_read_only(query).is_ok());
+        let result = validate_and_analyze_query(query);
+        assert!(result.is_ok());
+        assert!(!result.unwrap()); // DESCRIBE does not support LIMIT
     }
 
     #[test]
     fn test_validate_describe() {
         let query = "DESCRIBE users";
-        assert!(validate_query_is_read_only(query).is_ok());
+        let result = validate_and_analyze_query(query);
+        assert!(result.is_ok());
+        assert!(!result.unwrap()); // DESCRIBE does not support LIMIT
     }
 
     #[test]
     fn test_validate_desc() {
         let query = "DESC users";
-        assert!(validate_query_is_read_only(query).is_ok());
+        let result = validate_and_analyze_query(query);
+        assert!(result.is_ok());
+        assert!(!result.unwrap()); // DESC does not support LIMIT
     }
 
     #[test]
     fn test_validate_show_databases() {
         let query = "SHOW DATABASES";
-        assert!(validate_query_is_read_only(query).is_ok());
+        let result = validate_and_analyze_query(query);
+        assert!(result.is_ok());
+        assert!(result.unwrap()); // SHOW DATABASES supports LIMIT
     }
 
     #[test]
     fn test_validate_show_functions() {
         let query = "SHOW FUNCTIONS";
-        assert!(validate_query_is_read_only(query).is_ok());
+        let result = validate_and_analyze_query(query);
+        assert!(result.is_ok());
+        assert!(result.unwrap()); // SHOW FUNCTIONS supports LIMIT
     }
 
     #[test]
     fn test_validate_show_columns() {
         let query = "SHOW COLUMNS FROM users";
-        let result = validate_query_is_read_only(query);
+        let result = validate_and_analyze_query(query);
         if result.is_err() {
             println!("SHOW COLUMNS error: {:?}", result);
         }
         assert!(result.is_ok());
+        assert!(result.unwrap()); // SHOW COLUMNS supports LIMIT
     }
 
     #[test]
     fn test_validate_show_create_table() {
         let query = "SHOW CREATE TABLE users";
-        assert!(validate_query_is_read_only(query).is_ok());
+        let result = validate_and_analyze_query(query);
+        assert!(result.is_ok());
+        assert!(!result.unwrap()); // SHOW CREATE does not support LIMIT
     }
 
     #[test]
     fn test_validate_explain() {
         let query = "EXPLAIN SELECT * FROM users";
-        assert!(validate_query_is_read_only(query).is_ok());
+        let result = validate_and_analyze_query(query);
+        assert!(result.is_ok());
+        assert!(!result.unwrap()); // EXPLAIN does not support LIMIT
     }
 
     #[test]
     fn test_validate_system_tables() {
         let query = "SELECT * FROM system.tables";
-        assert!(validate_query_is_read_only(query).is_ok());
+        assert!(validate_and_analyze_query(query).is_ok());
     }
 
     #[test]
     fn test_reject_insert() {
         let query = "INSERT INTO users VALUES (1, 'test')";
-        let result = validate_query_is_read_only(query);
+        let result = validate_and_analyze_query(query);
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("INSERT"));
     }
@@ -562,7 +562,7 @@ mod tests {
     #[test]
     fn test_reject_update() {
         let query = "UPDATE users SET name = 'test' WHERE id = 1";
-        let result = validate_query_is_read_only(query);
+        let result = validate_and_analyze_query(query);
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("UPDATE"));
     }
@@ -570,7 +570,7 @@ mod tests {
     #[test]
     fn test_reject_delete() {
         let query = "DELETE FROM users WHERE id = 1";
-        let result = validate_query_is_read_only(query);
+        let result = validate_and_analyze_query(query);
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("DELETE"));
     }
@@ -578,7 +578,7 @@ mod tests {
     #[test]
     fn test_reject_create_table() {
         let query = "CREATE TABLE test (id INT)";
-        let result = validate_query_is_read_only(query);
+        let result = validate_and_analyze_query(query);
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("CREATE TABLE"));
     }
@@ -586,7 +586,7 @@ mod tests {
     #[test]
     fn test_reject_drop() {
         let query = "DROP TABLE users";
-        let result = validate_query_is_read_only(query);
+        let result = validate_and_analyze_query(query);
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("DROP"));
     }
@@ -594,7 +594,7 @@ mod tests {
     #[test]
     fn test_reject_alter_table() {
         let query = "ALTER TABLE users ADD COLUMN email VARCHAR(255)";
-        let result = validate_query_is_read_only(query);
+        let result = validate_and_analyze_query(query);
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("ALTER TABLE"));
     }
@@ -602,7 +602,7 @@ mod tests {
     #[test]
     fn test_reject_truncate() {
         let query = "TRUNCATE TABLE users";
-        let result = validate_query_is_read_only(query);
+        let result = validate_and_analyze_query(query);
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("TRUNCATE"));
     }
@@ -610,7 +610,7 @@ mod tests {
     #[test]
     fn test_reject_multiple_statements() {
         let query = "SELECT * FROM users; SELECT * FROM orders";
-        let result = validate_query_is_read_only(query);
+        let result = validate_and_analyze_query(query);
         assert!(result.is_err());
         assert!(result
             .unwrap_err()
@@ -621,7 +621,7 @@ mod tests {
     #[test]
     fn test_reject_empty_query() {
         let query = "";
-        let result = validate_query_is_read_only(query);
+        let result = validate_and_analyze_query(query);
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("Empty query"));
     }
@@ -629,14 +629,14 @@ mod tests {
     #[test]
     fn test_apply_limit_without_existing_limit() {
         let query = "SELECT * FROM users";
-        let result = apply_limit_to_query(query, 100).unwrap();
+        let result = apply_limit_to_query(query, 100, true);
         assert_eq!(result, "SELECT * FROM users LIMIT 100");
     }
 
     #[test]
     fn test_apply_limit_with_existing_limit() {
         let query = "SELECT * FROM users LIMIT 500";
-        let result = apply_limit_to_query(query, 100).unwrap();
+        let result = apply_limit_to_query(query, 100, true);
         assert_eq!(
             result,
             "SELECT * FROM (SELECT * FROM users LIMIT 500) LIMIT 100"
@@ -646,7 +646,7 @@ mod tests {
     #[test]
     fn test_describe_no_limit() {
         let query = "DESCRIBE TABLE users";
-        let result = apply_limit_to_query(query, 100).unwrap();
+        let result = apply_limit_to_query(query, 100, false);
         // DESCRIBE should not have LIMIT added
         assert_eq!(result, "DESCRIBE TABLE users");
     }
@@ -654,7 +654,7 @@ mod tests {
     #[test]
     fn test_show_create_no_limit() {
         let query = "SHOW CREATE TABLE users";
-        let result = apply_limit_to_query(query, 100).unwrap();
+        let result = apply_limit_to_query(query, 100, false);
         // SHOW CREATE should not have LIMIT added
         assert_eq!(result, "SHOW CREATE TABLE users");
     }
@@ -662,7 +662,7 @@ mod tests {
     #[test]
     fn test_explain_no_limit() {
         let query = "EXPLAIN SELECT * FROM users";
-        let result = apply_limit_to_query(query, 100).unwrap();
+        let result = apply_limit_to_query(query, 100, false);
         // EXPLAIN should not have LIMIT added
         assert_eq!(result, "EXPLAIN SELECT * FROM users");
     }
@@ -670,7 +670,7 @@ mod tests {
     #[test]
     fn test_show_tables_with_limit() {
         let query = "SHOW TABLES";
-        let result = apply_limit_to_query(query, 100).unwrap();
+        let result = apply_limit_to_query(query, 100, true);
         // SHOW TABLES should support LIMIT
         assert_eq!(result, "SHOW TABLES LIMIT 100");
     }
@@ -678,7 +678,7 @@ mod tests {
     #[test]
     fn test_show_databases_with_limit() {
         let query = "SHOW DATABASES";
-        let result = apply_limit_to_query(query, 100).unwrap();
+        let result = apply_limit_to_query(query, 100, true);
         // SHOW DATABASES should support LIMIT
         assert_eq!(result, "SHOW DATABASES LIMIT 100");
     }
