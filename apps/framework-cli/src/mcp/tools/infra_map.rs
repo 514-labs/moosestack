@@ -245,6 +245,23 @@ fn process_component_summary<T>(
     Some(output)
 }
 
+/// Format API type for display
+fn format_api_type(api_type: &crate::framework::core::infrastructure::api_endpoint::APIType) -> String {
+    use crate::framework::core::infrastructure::api_endpoint::APIType;
+    match api_type {
+        APIType::INGRESS { target_topic_id, .. } => {
+            format!("INGRESS -> topic: {}", target_topic_id)
+        }
+        APIType::EGRESS { query_params, .. } => {
+            if query_params.is_empty() {
+                "EGRESS".to_string()
+            } else {
+                format!("EGRESS ({} params)", query_params.len())
+            }
+        }
+    }
+}
+
 /// Process API endpoints for summary output (special case with api_type)
 fn process_api_endpoints_summary(
     api_endpoints: &std::collections::HashMap<String, ApiEndpoint>,
@@ -266,7 +283,7 @@ fn process_api_endpoints_summary(
     output.push_str(&format!("## API Endpoints ({})\n", filtered.len()));
     for name in &filtered {
         if let Some(endpoint) = api_endpoints.get(name) {
-            output.push_str(&format!("- {} ({:?})\n", name, endpoint.api_type));
+            output.push_str(&format!("- {} ({})\n", name, format_api_type(&endpoint.api_type)));
         }
     }
     output.push('\n');
@@ -728,5 +745,28 @@ mod tests {
         let filter = SearchFilter::new("product".to_string()).unwrap();
         let result = filter_by_search(&map, &Some(filter));
         assert_eq!(result.len(), 0);
+    }
+
+    #[test]
+    fn test_format_api_type() {
+        use crate::framework::core::infrastructure::api_endpoint::APIType;
+
+        // Test INGRESS type
+        let ingress = APIType::INGRESS {
+            target_topic_id: "user_events".to_string(),
+            data_model: None,
+            dead_letter_queue: None,
+            schema: serde_json::Map::default(),
+        };
+        let result = format_api_type(&ingress);
+        assert_eq!(result, "INGRESS -> topic: user_events");
+
+        // Test EGRESS type with no params
+        let egress_no_params = APIType::EGRESS {
+            query_params: vec![],
+            output_schema: serde_json::Value::Null,
+        };
+        let result = format_api_type(&egress_no_params);
+        assert_eq!(result, "EGRESS");
     }
 }
