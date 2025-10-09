@@ -1,3 +1,5 @@
+import { IsTuple } from "typia/lib/typings/IsTuple";
+
 export * from "./dataParser";
 
 type HasFunctionField<T> =
@@ -19,15 +21,21 @@ export type StripDateIntersection<T> =
     Date extends T ?
       Date
     : T
-  : T extends readonly any[] ?
-    // Distinguish tuple vs array by checking the length property
-    number extends T["length"] ?
-      // Array case: preserve readonly vs mutable
-      T extends any[] ?
-        Array<StripDateIntersection<T[number]>>
-      : ReadonlyArray<StripDateIntersection<T[number]>>
-    : { [K in keyof T]: StripDateIntersection<T[K]> }
+  : T extends ReadonlyArray<unknown> ?
+    IsTuple<T> extends true ? StripDateFromTuple<T>
+    : T extends ReadonlyArray<infer U> ?
+      ReadonlyArray<U> extends T ?
+        ReadonlyArray<StripDateIntersection<U>>
+      : Array<StripDateIntersection<U>>
+    : T extends Array<infer U> ? Array<StripDateIntersection<U>>
+    : T // this catchall should be unreachable
   : // do not touch other classes
   true extends HasFunctionField<T> ? T
   : T extends object ? { [K in keyof T]: StripDateIntersection<T[K]> }
   : T;
+
+type StripDateFromTuple<T extends readonly any[]> =
+  T extends [] ? []
+  : T extends [infer F, ...infer Rest extends readonly any[]] ?
+    [StripDateIntersection<F>, ...StripDateFromTuple<Rest>]
+  : [];
