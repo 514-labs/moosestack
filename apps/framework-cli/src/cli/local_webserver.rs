@@ -2268,8 +2268,8 @@ impl Webserver {
             .await
             .expect("Failed to initialize Redis client");
 
-        // Create MCP service once if enabled and not in production
-        let mcp_service = if enable_mcp && !project.is_production {
+        // Create MCP service once if enabled
+        let mcp_service = if enable_mcp {
             use crate::mcp::create_mcp_http_service;
             use crate::utilities::constants::CLI_VERSION;
             use hyper_util::service::TowerToHyperService;
