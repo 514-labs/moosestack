@@ -133,7 +133,9 @@ pub fn tool_definition() -> Tool {
 }
 
 /// Parse and validate parameters from MCP arguments
-fn parse_params(arguments: Option<&Map<String, Value>>) -> Result<GetInfraMapParams, InfraMapError> {
+fn parse_params(
+    arguments: Option<&Map<String, Value>>,
+) -> Result<GetInfraMapParams, InfraMapError> {
     let component_type = arguments
         .and_then(|v| v.get("component_type"))
         .and_then(|v| v.as_str())
@@ -208,11 +210,7 @@ fn filter_by_search<T>(
     search: &Option<SearchFilter>,
 ) -> Vec<String> {
     match search {
-        Some(filter) => map
-            .keys()
-            .filter(|k| filter.is_match(k))
-            .cloned()
-            .collect(),
+        Some(filter) => map.keys().filter(|k| filter.is_match(k)).cloned().collect(),
         None => map.keys().cloned().collect(),
     }
 }
@@ -302,7 +300,10 @@ fn process_component_detailed<T: serde::Serialize>(
         }
     }
 
-    Ok(Some((component_name.to_string(), Value::Object(component_map))))
+    Ok(Some((
+        component_name.to_string(),
+        Value::Object(component_map),
+    )))
 }
 
 /// Main function to retrieve and filter infrastructure map
@@ -463,16 +464,76 @@ fn format_detailed(
 
         // Process each component type using the helper function
         let components = vec![
-            process_component_detailed("topics", &infra_map.topics, search, component_type_filter, show_all)?,
-            process_component_detailed("api_endpoints", &infra_map.api_endpoints, search, component_type_filter, show_all)?,
-            process_component_detailed("tables", &infra_map.tables, search, component_type_filter, show_all)?,
-            process_component_detailed("views", &infra_map.views, search, component_type_filter, show_all)?,
-            process_component_detailed("topic_to_table_sync_processes", &infra_map.topic_to_table_sync_processes, search, component_type_filter, show_all)?,
-            process_component_detailed("topic_to_topic_sync_processes", &infra_map.topic_to_topic_sync_processes, search, component_type_filter, show_all)?,
-            process_component_detailed("function_processes", &infra_map.function_processes, search, component_type_filter, show_all)?,
-            process_component_detailed("orchestration_workers", &infra_map.orchestration_workers, search, component_type_filter, show_all)?,
-            process_component_detailed("sql_resources", &infra_map.sql_resources, search, component_type_filter, show_all)?,
-            process_component_detailed("workflows", &infra_map.workflows, search, component_type_filter, show_all)?,
+            process_component_detailed(
+                "topics",
+                &infra_map.topics,
+                search,
+                component_type_filter,
+                show_all,
+            )?,
+            process_component_detailed(
+                "api_endpoints",
+                &infra_map.api_endpoints,
+                search,
+                component_type_filter,
+                show_all,
+            )?,
+            process_component_detailed(
+                "tables",
+                &infra_map.tables,
+                search,
+                component_type_filter,
+                show_all,
+            )?,
+            process_component_detailed(
+                "views",
+                &infra_map.views,
+                search,
+                component_type_filter,
+                show_all,
+            )?,
+            process_component_detailed(
+                "topic_to_table_sync_processes",
+                &infra_map.topic_to_table_sync_processes,
+                search,
+                component_type_filter,
+                show_all,
+            )?,
+            process_component_detailed(
+                "topic_to_topic_sync_processes",
+                &infra_map.topic_to_topic_sync_processes,
+                search,
+                component_type_filter,
+                show_all,
+            )?,
+            process_component_detailed(
+                "function_processes",
+                &infra_map.function_processes,
+                search,
+                component_type_filter,
+                show_all,
+            )?,
+            process_component_detailed(
+                "orchestration_workers",
+                &infra_map.orchestration_workers,
+                search,
+                component_type_filter,
+                show_all,
+            )?,
+            process_component_detailed(
+                "sql_resources",
+                &infra_map.sql_resources,
+                search,
+                component_type_filter,
+                show_all,
+            )?,
+            process_component_detailed(
+                "workflows",
+                &infra_map.workflows,
+                search,
+                component_type_filter,
+                show_all,
+            )?,
         ];
 
         // Add all non-empty components to the filtered map
