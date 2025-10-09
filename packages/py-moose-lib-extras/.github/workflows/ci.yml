@@ -28,19 +28,19 @@ jobs:
     
     - name: Lint with flake8
       run: |
-        flake8 py_moose_lib_extras tests
+        flake8 moose_lib_extras tests
     
     - name: Type check with mypy
       run: |
-        mypy py_moose_lib_extras
+        mypy moose_lib_extras
     
     - name: Format check with black
       run: |
-        black --check py_moose_lib_extras tests
+        black --check moose_lib_extras tests
     
     - name: Test with pytest
       run: |
-        pytest --cov=py_moose_lib_extras --cov-report=xml
+        pytest --cov=moose_lib_extras --cov-report=xml
     
     - name: Upload coverage to Codecov
       uses: codecov/codecov-action@v3
