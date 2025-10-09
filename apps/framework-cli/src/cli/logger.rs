@@ -52,7 +52,8 @@ use crate::utilities::decode_object;
 
 use super::settings::user_directory;
 
-const DEFAULT_LOG_FILE_FORMAT: &str = "%Y-%m-%d-cli.log";
+/// Default date format for log file names: YYYY-MM-DD-cli.log
+pub const DEFAULT_LOG_FILE_FORMAT: &str = "%Y-%m-%d-cli.log";
 
 #[derive(Deserialize, Debug, Clone)]
 pub enum LoggerLevel {

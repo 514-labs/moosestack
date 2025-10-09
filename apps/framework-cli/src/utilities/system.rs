@@ -86,11 +86,11 @@ impl RestartingProcess {
                 let mut delay_ms: u64 = INITIAL_DELAY_MS;
                 let mut process_start_time = Instant::now();
 
-                loop {
+                'monitor: loop {
                     select! {
                         _ = &mut receiver => {
                             info!("Received kill signal, stopping process monitor for {}", process_id);
-                            break;
+                            break 'monitor;
                         }
                         exit_status_result = child.wait() => {
                             let process_runtime = process_start_time.elapsed();
@@ -117,7 +117,17 @@ impl RestartingProcess {
 
                             'restart: loop {
                                 debug!("Delaying {}ms before restarting {}", delay_ms, process_id);
-                                sleep(Duration::from_millis(delay_ms)).await;
+
+                                // Wait for the delay or kill signal, whichever comes first
+                                select! {
+                                    _ = &mut receiver => {
+                                        info!("Received kill signal during restart delay for {}", process_id);
+                                        break 'monitor; // Exit both loops to avoid re-polling consumed receiver
+                                    }
+                                    _ = sleep(Duration::from_millis(delay_ms)) => {
+                                        // Delay completed, proceed with restart attempt
+                                    }
+                                }
 
                                 info!("Attempting to restart process {}...", process_id);
                                 match start() {

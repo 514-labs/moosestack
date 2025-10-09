@@ -2399,13 +2399,21 @@ async fn shutdown(
     // First, initiate the graceful shutdown of HTTP connections
     let shutdown_future = graceful.shutdown();
 
-    // Wait for connections to close with a timeout
+    // Use different timeouts for dev vs production:
+    // - Dev: 1 second (MCP SSE connections may keep connections alive, fast shutdown for better DX)
+    // - Production: 10 seconds (allow load balancers time to drain connections during rolling deployments)
+    let shutdown_timeout = if project.is_production {
+        std::time::Duration::from_secs(10)
+    } else {
+        std::time::Duration::from_secs(1)
+    };
+
     tokio::select! {
         _ = shutdown_future => {
             info!("all connections gracefully closed");
         },
-        _ = tokio::time::sleep(std::time::Duration::from_secs(10)) => {
-            warn!("timed out wait for all connections to close");
+        _ = tokio::time::sleep(shutdown_timeout) => {
+            warn!("timed out waiting for connections to close ({}s), proceeding with shutdown", shutdown_timeout.as_secs());
         }
     }
 
