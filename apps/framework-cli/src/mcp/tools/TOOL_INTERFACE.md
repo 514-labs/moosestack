@@ -50,6 +50,11 @@ Handles the actual tool invocation:
 - Executes the tool's logic
 - Returns a properly formatted result
 
+**Note on Search Patterns:**
+- If your tool includes search/filter functionality, be explicit about what's supported
+- Simple substring matching is often sufficient and performs well
+- If regex is needed, use the `regex` crate and document it clearly in the schema
+
 **Example:**
 ```rust
 pub fn handle_call(arguments: Option<&Map<String, Value>>) -> CallToolResult {

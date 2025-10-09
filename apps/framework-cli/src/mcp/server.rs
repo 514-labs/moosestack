@@ -107,7 +107,9 @@ pub fn create_mcp_http_service(
 
     let session_manager = Arc::new(LocalSessionManager::default());
     let config = StreamableHttpServerConfig {
-        sse_keep_alive: Some(std::time::Duration::from_secs(5)),
+        // keep alive low so that we can shut down the server when we're done
+        // and that it doesn't hang around forever
+        sse_keep_alive: Some(std::time::Duration::from_secs(1)),
         stateful_mode: true,
     };
 
