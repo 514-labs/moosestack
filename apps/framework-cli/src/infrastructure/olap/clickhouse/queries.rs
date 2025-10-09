@@ -2022,7 +2022,7 @@ mod tests {
                     comment: None,
                 },
             ],
-            order_by: crate::framework::core::infrastructure::table::OrderBy::Fields(vec![]),
+            order_by: OrderBy::Fields(vec![]),
             partition_by: None,
             engine: ClickhouseEngine::MergeTree,
             table_settings: None,
@@ -2055,7 +2055,7 @@ PRIMARY KEY (`id`)
                 default: Some("'abc'".to_string()),
                 comment: None,
             }],
-            order_by: crate::framework::core::infrastructure::table::OrderBy::Fields(vec![]),
+            order_by: OrderBy::Fields(vec![]),
             partition_by: None,
             engine: ClickhouseEngine::MergeTree,
             table_settings: None,
@@ -2087,7 +2087,7 @@ ENGINE = MergeTree
                 default: Some("42".to_string()),
                 comment: None,
             }],
-            order_by: crate::framework::core::infrastructure::table::OrderBy::Fields(vec![]),
+            order_by: OrderBy::Fields(vec![]),
             partition_by: None,
             engine: ClickhouseEngine::MergeTree,
             table_settings: None,
@@ -2118,9 +2118,7 @@ ENGINE = MergeTree
                 default: None,
                 comment: None,
             }],
-            order_by: crate::framework::core::infrastructure::table::OrderBy::Fields(vec![
-                "id".to_string()
-            ]),
+            order_by: OrderBy::Fields(vec!["id".to_string()]),
             partition_by: None,
             engine: ClickhouseEngine::ReplacingMergeTree {
                 ver: None,
@@ -2159,7 +2157,7 @@ ORDER BY (`id`) "#;
                 ver: None,
                 is_deleted: None,
             },
-            order_by: crate::framework::core::infrastructure::table::OrderBy::Fields(vec![]),
+            order_by: OrderBy::Fields(vec![]),
             partition_by: None,
             table_settings: None,
         };
@@ -2196,9 +2194,7 @@ ORDER BY (`id`) "#;
                     comment: None,
                 },
             ],
-            order_by: crate::framework::core::infrastructure::table::OrderBy::Fields(vec![
-                "id".to_string()
-            ]),
+            order_by: OrderBy::Fields(vec!["id".to_string()]),
             partition_by: None,
             engine: ClickhouseEngine::ReplacingMergeTree {
                 ver: Some("version".to_string()),
@@ -2254,9 +2250,7 @@ ORDER BY (`id`) "#;
                     comment: None,
                 },
             ],
-            order_by: crate::framework::core::infrastructure::table::OrderBy::Fields(vec![
-                "id".to_string()
-            ]),
+            order_by: OrderBy::Fields(vec!["id".to_string()]),
             partition_by: None,
             engine: ClickhouseEngine::ReplacingMergeTree {
                 ver: Some("version".to_string()),
@@ -2293,9 +2287,7 @@ ORDER BY (`id`) "#;
                 default: None,
                 comment: None,
             }],
-            order_by: crate::framework::core::infrastructure::table::OrderBy::Fields(vec![
-                "id".to_string()
-            ]),
+            order_by: OrderBy::Fields(vec!["id".to_string()]),
             partition_by: None,
             engine: ClickhouseEngine::ReplacingMergeTree {
                 ver: None,
@@ -2446,9 +2438,7 @@ ORDER BY (`id`) "#;
                 },
             ],
             engine: ClickhouseEngine::MergeTree,
-            order_by: crate::framework::core::infrastructure::table::OrderBy::Fields(vec![
-                "id".to_string()
-            ]),
+            order_by: OrderBy::Fields(vec!["id".to_string()]),
             partition_by: None,
             table_settings: None,
         };
@@ -2500,7 +2490,7 @@ ORDER BY (`id`) "#;
                     comment: None,
                 },
             ],
-            order_by: crate::framework::core::infrastructure::table::OrderBy::Fields(vec![]),
+            order_by: OrderBy::Fields(vec![]),
             partition_by: None,
             engine: ClickhouseEngine::S3Queue {
                 s3_path: "s3://my-bucket/data/*.json".to_string(),
@@ -2969,7 +2959,7 @@ SETTINGS keeper_path = '/clickhouse/s3queue/test_table', mode = 'unordered', s3q
                 default: None,
                 comment: None,
             }],
-            order_by: crate::framework::core::infrastructure::table::OrderBy::Fields(vec![]),
+            order_by: OrderBy::Fields(vec![]),
             partition_by: None,
             engine: ClickhouseEngine::S3Queue {
                 s3_path: "s3://my-bucket/data/*.csv".to_string(),

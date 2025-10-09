@@ -39,7 +39,7 @@ use super::infrastructure::function_process::FunctionProcess;
 use super::infrastructure::olap_process::OlapProcess;
 use super::infrastructure::orchestration_worker::OrchestrationWorker;
 use super::infrastructure::sql_resource::SqlResource;
-use super::infrastructure::table::{Column, Table};
+use super::infrastructure::table::{Column, OrderBy, Table};
 use super::infrastructure::topic::Topic;
 use super::infrastructure::topic_sync_process::{TopicToTableSyncProcess, TopicToTopicSyncProcess};
 use super::infrastructure::view::View;
@@ -262,9 +262,9 @@ pub enum ColumnChange {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OrderByChange {
     /// Previous ORDER BY configuration
-    pub before: crate::framework::core::infrastructure::table::OrderBy,
+    pub before: OrderBy,
     /// New ORDER BY configuration
-    pub after: crate::framework::core::infrastructure::table::OrderBy,
+    pub after: OrderBy,
 }
 
 /// Represents a change to a database table
@@ -1585,14 +1585,8 @@ impl InfrastructureMap {
                             }
                         } else {
                             OrderByChange {
-                                before:
-                                    crate::framework::core::infrastructure::table::OrderBy::Fields(
-                                        vec![],
-                                    ),
-                                after:
-                                    crate::framework::core::infrastructure::table::OrderBy::Fields(
-                                        vec![],
-                                    ),
+                                before: OrderBy::Fields(vec![]),
+                                after: OrderBy::Fields(vec![]),
                             }
                         };
 
@@ -1721,8 +1715,8 @@ impl InfrastructureMap {
             }
         } else {
             OrderByChange {
-                before: crate::framework::core::infrastructure::table::OrderBy::Fields(vec![]),
-                after: crate::framework::core::infrastructure::table::OrderBy::Fields(vec![]),
+                before: OrderBy::Fields(vec![]),
+                after: OrderBy::Fields(vec![]),
             }
         };
 
@@ -1816,8 +1810,8 @@ impl InfrastructureMap {
             }
         } else {
             OrderByChange {
-                before: crate::framework::core::infrastructure::table::OrderBy::Fields(vec![]),
-                after: crate::framework::core::infrastructure::table::OrderBy::Fields(vec![]),
+                before: OrderBy::Fields(vec![]),
+                after: OrderBy::Fields(vec![]),
             }
         };
 
@@ -2431,9 +2425,7 @@ mod tests {
                     comment: None,
                 },
             ],
-            order_by: crate::framework::core::infrastructure::table::OrderBy::Fields(vec![
-                "id".to_string()
-            ]),
+            order_by: OrderBy::Fields(vec!["id".to_string()]),
             partition_by: None,
             version: Some(Version::from_string("1.0".to_string())),
             source_primitive: PrimitiveSignature {
@@ -2481,10 +2473,7 @@ mod tests {
                     comment: None,
                 },
             ],
-            order_by: crate::framework::core::infrastructure::table::OrderBy::Fields(vec![
-                "id".to_string(),
-                "name".to_string(),
-            ]), // Changed order_by
+            order_by: OrderBy::Fields(vec!["id".to_string(), "name".to_string()]), // Changed order_by
             partition_by: None,
             version: Some(Version::from_string("1.1".to_string())),
             source_primitive: PrimitiveSignature {
@@ -2650,7 +2639,7 @@ mod diff_tests {
             name: name.to_string(),
             engine: None,
             columns: vec![],
-            order_by: crate::framework::core::infrastructure::table::OrderBy::Fields(vec![]),
+            order_by: OrderBy::Fields(vec![]),
             partition_by: None,
             version: Some(Version::from_string(version.to_string())),
             source_primitive: PrimitiveSignature {
@@ -2890,12 +2879,8 @@ mod diff_tests {
         let mut before = create_test_table("test", "1.0");
         let mut after = create_test_table("test", "1.0");
 
-        before.order_by =
-            crate::framework::core::infrastructure::table::OrderBy::Fields(vec!["id".to_string()]);
-        after.order_by = crate::framework::core::infrastructure::table::OrderBy::Fields(vec![
-            "id".to_string(),
-            "name".to_string(),
-        ]);
+        before.order_by = OrderBy::Fields(vec!["id".to_string()]);
+        after.order_by = OrderBy::Fields(vec!["id".to_string(), "name".to_string()]);
 
         let mut changes = Vec::new();
         InfrastructureMap::diff_tables(
@@ -2912,16 +2897,11 @@ mod diff_tests {
             }) => {
                 assert_eq!(
                     order_by_change.before,
-                    crate::framework::core::infrastructure::table::OrderBy::Fields(vec![
-                        "id".to_string(),
-                    ])
+                    OrderBy::Fields(vec!["id".to_string(),])
                 );
                 assert_eq!(
                     order_by_change.after,
-                    crate::framework::core::infrastructure::table::OrderBy::Fields(vec![
-                        "id".to_string(),
-                        "name".to_string(),
-                    ])
+                    OrderBy::Fields(vec!["id".to_string(), "name".to_string(),])
                 );
             }
             _ => panic!("Expected Updated change with order_by modification"),
