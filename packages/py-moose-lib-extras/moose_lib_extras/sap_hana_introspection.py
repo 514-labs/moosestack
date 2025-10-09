@@ -12,7 +12,7 @@ import logging
 try:
     import hdbcli.dbapi as hdb
 except ImportError:
-        raise ValueError("hdbcli is required but not installed. Install with: pip install hdbcli")
+        raise ImportError("hdbcli is required but not installed. Install with: pip install hdbcli")
 
 logger = logging.getLogger(__name__)
 
