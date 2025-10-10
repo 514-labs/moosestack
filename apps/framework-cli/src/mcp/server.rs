@@ -12,7 +12,7 @@ use rmcp::{
 };
 use std::sync::Arc;
 
-use super::tools::{create_error_result, infra_map, logs};
+use super::tools::{create_error_result, get_source, infra_map, logs};
 use crate::infrastructure::redis::redis_client::RedisClient;
 
 /// Handler for the MCP server that implements the Model Context Protocol
@@ -66,7 +66,11 @@ impl ServerHandler for MooseMcpHandler {
         _context: RequestContext<RoleServer>,
     ) -> Result<ListToolsResult, ErrorData> {
         Ok(ListToolsResult {
-            tools: vec![logs::tool_definition(), infra_map::tool_definition()],
+            tools: vec![
+                logs::tool_definition(),
+                infra_map::tool_definition(),
+                get_source::tool_definition(),
+            ],
             next_cursor: None,
         })
     }
@@ -79,6 +83,11 @@ impl ServerHandler for MooseMcpHandler {
         match param.name.as_ref() {
             "get_logs" => Ok(logs::handle_call(param.arguments.as_ref())),
             "get_infra_map" => Ok(infra_map::handle_call(
+                param.arguments.as_ref(),
+                self.redis_client.clone(),
+            )
+            .await),
+            "get_source" => Ok(get_source::handle_call(
                 param.arguments.as_ref(),
                 self.redis_client.clone(),
             )
