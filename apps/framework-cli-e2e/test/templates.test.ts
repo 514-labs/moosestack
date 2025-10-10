@@ -505,3 +505,167 @@ after(async function () {
     console.warn("Error during global cleanup:", error);
   }
 });
+
+// Serverless mode test for OLAP-only projects
+describe("typescript template tests - serverless OLAP-only", () => {
+  let TEST_PROJECT_DIR: string;
+
+  before(async function () {
+    this.timeout(TIMEOUTS.TEST_SETUP_MS);
+
+    // Verify CLI exists
+    try {
+      await fs.promises.access(CLI_PATH, fs.constants.F_OK);
+    } catch (err) {
+      console.error(
+        `CLI not found at ${CLI_PATH}. It should be built in the pretest step.`,
+      );
+      throw err;
+    }
+
+    // Create temporary directory for serverless test
+    TEST_PROJECT_DIR = createTempTestDirectory("ts-olap-only-serverless");
+
+    // Setup TypeScript OLAP-only project
+    await setupTypeScriptProject(
+      TEST_PROJECT_DIR,
+      "typescript-olap-only",
+      CLI_PATH,
+      MOOSE_LIB_PATH,
+      "ts-olap",
+      "npm",
+    );
+
+    console.log(`Serverless test project created at: ${TEST_PROJECT_DIR}`);
+  });
+
+  after(async function () {
+    this.timeout(TIMEOUTS.CLEANUP_MS);
+    console.log("Cleaning up serverless test...");
+
+    try {
+      // Kill any remaining processes
+      await killRemainingProcesses();
+
+      // Clean up Docker containers
+      await cleanupDocker(TEST_PROJECT_DIR, "ts-olap");
+
+      // Wait a moment for cleanup
+      await setTimeoutAsync(2000);
+
+      // Remove project directory
+      removeTestProject(TEST_PROJECT_DIR);
+
+      console.log("Serverless test cleanup completed");
+    } catch (error) {
+      console.warn("Error during serverless test cleanup:", error);
+    }
+  });
+
+  it("should exit quickly after applying migrations in serverless mode", async function () {
+    this.timeout(TIMEOUTS.SERVER_STARTUP_MS);
+
+    console.log("Starting serverless mode test...");
+
+    // Start moose dev --serverless
+    const startTime = Date.now();
+
+    return new Promise<void>((resolve, reject) => {
+      const devProcess = spawn(CLI_PATH, ["dev", "--serverless"], {
+        cwd: TEST_PROJECT_DIR,
+        stdio: ["ignore", "pipe", "pipe"],
+        env: { ...process.env },
+      });
+
+      let stdout = "";
+      let stderr = "";
+
+      devProcess.stdout?.on("data", (data) => {
+        stdout += data.toString();
+        console.log(`[SERVERLESS] ${data.toString().trim()}`);
+      });
+
+      devProcess.stderr?.on("data", (data) => {
+        stderr += data.toString();
+        console.error(`[SERVERLESS ERR] ${data.toString().trim()}`);
+      });
+
+      devProcess.on("close", async (code) => {
+        const duration = Date.now() - startTime;
+        console.log(`Process exited with code ${code} after ${duration}ms`);
+
+        try {
+          // Verify exit code is 0
+          expect(code).to.equal(0, "Process should exit with code 0");
+
+          // Verify it exited quickly (within 30 seconds)
+          expect(duration).to.be.lessThan(
+            30000,
+            "Serverless mode should exit quickly",
+          );
+
+          // Verify success message in output
+          expect(stdout).to.match(
+            /Serverless Complete|Infrastructure changes applied/i,
+            "Should show serverless completion message",
+          );
+
+          // Verify no moose-cli processes are still running
+          const { stdout: psOutput } = await execAsync(
+            "ps aux | grep moose-cli | grep -v grep || true",
+          );
+          const mooseProcesses = psOutput
+            .trim()
+            .split("\n")
+            .filter((line: string) => {
+              return (
+                line.includes("moose-cli") &&
+                line.includes(TEST_PROJECT_DIR) &&
+                !line.includes("grep")
+              );
+            });
+          expect(
+            mooseProcesses.length,
+            `Expected no moose-cli processes, found: ${psOutput}`,
+          ).to.equal(0);
+
+          // Verify Docker containers are still running (not cleaned up)
+          const { stdout: dockerOutput } = await execAsync(
+            "docker ps --filter name=ts-olap --format '{{.Names}}'",
+          );
+          const runningContainers = dockerOutput
+            .trim()
+            .split("\n")
+            .filter((name: string) => name.length > 0);
+          expect(
+            runningContainers.length,
+            "Docker containers should still be running after serverless exit",
+          ).to.be.greaterThan(0);
+          console.log(
+            `✓ Docker containers still running: ${runningContainers.join(", ")}`,
+          );
+
+          console.log("✓ Serverless mode test passed");
+          resolve();
+        } catch (error) {
+          reject(error);
+        }
+      });
+
+      devProcess.on("error", (error) => {
+        console.error("Error starting serverless mode:", error);
+        reject(error);
+      });
+
+      // If process doesn't exit within timeout, kill it and fail
+      setTimeout(() => {
+        devProcess.kill("SIGTERM");
+        reject(
+          new Error(
+            "Serverless mode did not exit within timeout - may be running as normal server",
+          ),
+        );
+      }, 45000);
+    });
+  });
+});
