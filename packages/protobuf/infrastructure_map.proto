@@ -24,8 +24,13 @@ message InfrastructureMap {
   map<string, WebApp> web_apps = 13;
 }
 
+message SourceLocation {
+  string file = 1;
+}
+
 message Metadata {
   string description = 1;
+  optional SourceLocation source = 2;
 }
 
 message Topic {

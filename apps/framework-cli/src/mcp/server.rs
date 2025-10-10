@@ -12,7 +12,7 @@ use rmcp::{
 };
 use std::sync::Arc;
 
-use super::tools::{create_error_result, infra_map, logs, query_olap, sample_stream};
+use super::tools::{create_error_result, get_source, infra_map, logs, query_olap, sample_stream};
 use crate::infrastructure::olap::clickhouse::config::ClickHouseConfig;
 use crate::infrastructure::redis::redis_client::RedisClient;
 use crate::infrastructure::stream::kafka::models::KafkaConfig;
@@ -79,6 +79,7 @@ impl ServerHandler for MooseMcpHandler {
                 infra_map::tool_definition(),
                 query_olap::tool_definition(),
                 sample_stream::tool_definition(),
+                get_source::tool_definition(),
             ],
             next_cursor: None,
         })
@@ -105,6 +106,11 @@ impl ServerHandler for MooseMcpHandler {
                 param.arguments.as_ref(),
                 self.redis_client.clone(),
                 self.kafka_config.clone(),
+            )
+            .await),
+            "get_source" => Ok(get_source::handle_call(
+                param.arguments.as_ref(),
+                self.redis_client.clone(),
             )
             .await),
             _ => Ok(create_error_result(format!("Unknown tool: {}", param.name))),
