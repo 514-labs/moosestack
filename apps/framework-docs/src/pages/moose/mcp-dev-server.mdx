@@ -44,6 +44,10 @@ claude mcp add --transport http moose-dev http://localhost:4000/mcp
 That's it! Claude Code will automatically connect to your Moose dev server.
 
 <Callout type="info">
+**Scope**: This command adds the MCP server to Claude Code's global configuration (`~/.claude/config.json`), making it available across all your projects when using Claude Code. Other AI clients (Cursor, Windsurf, etc.) require separate configuration - see the tabs below.
+</Callout>
+
+<Callout type="info">
 Make sure `moose dev` is running before adding the server. The CLI will verify the connection.
 </Callout>
 
@@ -181,16 +185,41 @@ The Moose MCP server provides four tools for interacting with your local develop
 
 Retrieve and filter Moose development server logs for debugging and monitoring.
 
-**Parameters:**
-- `lines` (optional): Number of recent log lines to retrieve (1-10000, default: 100)
-- `level` (optional): Filter by log level: ERROR, WARN, INFO, DEBUG, TRACE
-- `search` (optional): Regex pattern to search log entries
+**What you can ask for:**
+- Filter by log level (ERROR, WARN, INFO, DEBUG, TRACE)
+- Limit the number of log lines returned
+- Search for specific text patterns in logs
 
 **Example prompts:**
-- *"Show me the last 50 ERROR logs"*
-- *"What happened in the logs in the past minute?"*
-- *"Search logs for 'ClickHouse connection' errors"*
-- *"Show me all WARN level logs"*
+
+*"Show me the last 10 ERROR logs"*
+
+```
+Showing 10 most recent log entries from /Users/user/.moose/2025-10-10-cli.log
+Filters applied:
+  - Level: ERROR
+
+[2025-10-10T17:44:42Z ERROR] Foo -> Bar (worker 1): Unsupported SASL mechanism: undefined
+[2025-10-10T17:44:43Z ERROR] FooDeadLetterQueue (consumer) (worker 1): Unsupported SASL mechanism
+[2025-10-10T17:51:48Z ERROR] server error on API server (port 4000): connection closed
+...
+```
+
+*"What WARN level logs do I have?"*
+
+```
+Showing 6 most recent log entries
+Filters applied:
+  - Level: WARN
+
+[2025-10-10T16:45:04Z WARN] PostHog client not configured - missing POSTHOG_API_KEY
+[2025-10-10T16:50:05Z WARN] PostHog client not configured - missing POSTHOG_API_KEY
+...
+```
+
+<Callout type="tip">
+Combine filters for better results. For example: "Show me ERROR logs with 'ClickHouse' in them" combines level filtering with search.
+</Callout>
 
 **Use cases:**
 - Debugging application errors
@@ -204,17 +233,67 @@ Retrieve and filter Moose development server logs for debugging and monitoring.
 
 Retrieve and explore the infrastructure map showing all components in your Moose project.
 
-**Parameters:**
-- `component_type` (optional): Filter by type: topics, tables, api_endpoints, views, topic_to_table_sync_processes, topic_to_topic_sync_processes, function_processes, orchestration_workers, sql_resources, workflows
-- `search` (optional): Regex pattern to search component names
-- `format` (optional): Output format: summary (default) or detailed
+**What you can ask for:**
+- List specific component types (tables, topics, API endpoints, workflows, etc.)
+- Get a complete overview of all infrastructure
+- Search for components by name
+- See detailed configuration or just a summary
 
 **Example prompts:**
-- *"What tables exist in my project?"*
-- *"Show me all API endpoints"*
-- *"List all streaming topics"*
-- *"Show detailed information about workflows"*
-- *"Find all components with 'user' in the name"*
+
+*"What tables exist in my project?"*
+
+```
+# Moose Infrastructure Map (Summary)
+
+## Tables (28)
+- MergeTreeTest
+- ReplacingMergeTreeVersion
+- Bar
+- BasicTypes
+- UserEvents_1_0
+- UserEvents_2_0
+- FooDeadLetter
+- BarAggregated
+- FooWorkflow
+...
+```
+
+*"Give me an overview of my Moose infrastructure"*
+
+```
+# Moose Infrastructure Map (Summary)
+
+## Topics (11)
+- Bar, BasicTypes, Foo, FooDeadLetterQueue, SimpleArrays...
+
+## API Endpoints (11)
+- INGRESS_Foo (INGRESS -> topic: Foo)
+- INGRESS_BasicTypes (INGRESS -> topic: BasicTypes)
+- EGRESS_bar (EGRESS (4 params))
+...
+
+## Tables (28)
+- MixedComplexTypes, Bar, UserEvents_1_0...
+
+## Topic-to-Table Sync Processes (10)
+- Bar_Bar, BasicTypes_BasicTypes...
+
+## Function Processes (3)
+- Foo__Bar_Foo_Bar, Foo_Foo...
+```
+
+*"Find all components with 'User' in the name"*
+
+```
+## Tables (2)
+- UserEvents_1_0
+- UserEvents_2_0
+```
+
+<Callout type="tip">
+Search is case-sensitive by default. Use capital letters to match your component names, or ask the AI to search case-insensitively.
+</Callout>
 
 **Use cases:**
 - Understanding project structure
@@ -228,17 +307,57 @@ Retrieve and explore the infrastructure map showing all components in your Moose
 
 Execute read-only SQL queries against your local ClickHouse database.
 
-**Parameters:**
-- `query` (required): SQL query to execute (SELECT, SHOW, DESCRIBE, EXPLAIN only)
-- `limit` (optional): Maximum rows to return (1-1000, default: 100)
-- `format` (optional): Output format: json (default) or table
+**What you can ask for:**
+- Query table data with filters, sorting, and aggregations
+- Inspect table schemas and column information
+- Count rows and calculate statistics
+- List all tables in your database
+- Results in table or JSON format
 
 **Example prompts:**
-- *"Show me sample data from the users table"*
-- *"What columns are in the events table?"*
-- *"Count the number of rows in user_activity"*
-- *"Show me the schema of all tables"*
-- *"Query the last 10 records from page_views ordered by timestamp"*
+
+*"What columns are in the UserEvents_1_0 table?"*
+
+```
+Query executed successfully. Rows returned: 4
+
+| name      | type              | default_type | default_expression | comment | ...
+|-----------|-------------------|--------------|-------------------|---------|
+| userId    | String            |              |                   |         |
+| eventType | String            |              |                   |         |
+| timestamp | Float64           |              |                   |         |
+| metadata  | Nullable(String)  |              |                   |         |
+```
+
+*"List all tables and their engines"*
+
+```
+Query executed successfully. Rows returned: 29
+
+| name                        | engine                       |
+|-----------------------------|------------------------------|
+| Bar                         | MergeTree                    |
+| BasicTypes                  | MergeTree                    |
+| UserEvents_1_0              | MergeTree                    |
+| UserEvents_2_0              | ReplacingMergeTree           |
+| ReplicatedMergeTreeTest     | ReplicatedMergeTree          |
+| BarAggregated_MV            | MaterializedView             |
+...
+```
+
+*"Count the number of rows in Bar"*
+
+```
+Query executed successfully. Rows returned: 1
+
+| total_rows |
+|------------|
+| 0          |
+```
+
+<Callout type="tip">
+Ask the AI to discover table names first using "What tables exist in my project?" before querying them. Table names are case-sensitive in ClickHouse.
+</Callout>
 
 **Use cases:**
 - Exploring data during development
@@ -256,16 +375,69 @@ Only read-only operations are permitted (SELECT, SHOW, DESCRIBE, EXPLAIN). Write
 
 Sample recent messages from Kafka/Redpanda streaming topics.
 
-**Parameters:**
-- `stream_name` (required): Name of the stream/topic to sample
-- `limit` (optional): Number of messages to retrieve (1-100, default: 10)
-- `format` (optional): Output format: json (default) or pretty
+**What you can ask for:**
+- View recent messages from any stream/topic
+- Specify how many messages to sample
+- Get results in JSON or pretty-printed format
+- Inspect message structure and content
 
 **Example prompts:**
-- *"Show me recent messages from the user_events stream"*
-- *"Sample 20 messages from the orders topic"*
-- *"What data is flowing through the analytics_events stream?"*
-- *"Show me messages in the dead letter queue"*
+
+*"Sample 5 messages from the Bar topic"*
+
+```json
+{
+  "stream_name": "Bar",
+  "message_count": 5,
+  "partition_count": 1,
+  "messages": [
+    {
+      "primaryKey": "e90c93be-d28b-47d6-b783-5725655c044f",
+      "utcTimestamp": "+057480-11-24T20:39:59.000Z",
+      "hasText": true,
+      "textLength": 107
+    },
+    {
+      "primaryKey": "b974f830-f28a-4a95-b61c-f65bfc607795",
+      "utcTimestamp": "+057370-11-04T17:11:51.000Z",
+      "hasText": true,
+      "textLength": 166
+    },
+    ...
+  ]
+}
+```
+
+*"What data is flowing through the BasicTypes stream?"* (pretty format)
+
+```markdown
+# Stream Sample: BasicTypes
+
+Retrieved 3 message(s) from 1 partition(s)
+
+## Message 1
+{
+  "id": "bt-001",
+  "timestamp": "2024-10-09T12:00:00Z",
+  "stringField": "hello world",
+  "numberField": 42,
+  "booleanField": true
+}
+
+## Message 2
+{
+  "id": "bt-002",
+  "timestamp": "2024-10-09T12:05:00Z",
+  "stringField": "test",
+  "numberField": 100,
+  "booleanField": false
+}
+...
+```
+
+<Callout type="tip">
+Use "List all streaming topics" first to discover available streams in your project.
+</Callout>
 
 **Use cases:**
 - Debugging data flow issues

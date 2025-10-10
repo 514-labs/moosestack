@@ -31,6 +31,7 @@ Development mode automatically manages Docker containers for your infrastructure
 - **Temporal** (when `workflows` feature is enabled)
 - **Analytics APIs Server** (when `apis` feature is enabled)
 - **Redis** (always enabled)
+- **MCP Server** (always enabled) - Enables AI-assisted development. [Learn more](/moose/mcp-dev-server)
 
 ### Container Configuration
 
@@ -273,9 +274,10 @@ The MCP server runs automatically at `http://localhost:4000/mcp`. Configure your
 ```
 
 **Example prompts:**
-- *"Show me sample data from the users table"*
 - *"What errors are in the logs?"*
-- *"List all streaming topics in my project"*
+- *"What tables exist in my project?"*
+- *"Show me the schema of all tables"*
+- *"Sample 5 messages from the Foo stream"*
 
 <Callout type="info" title="Full MCP Documentation" href="/moose/mcp-server" ctaLabel="Learn more">
 See the complete guide for all available tools, detailed configuration for each AI client, and example workflows.
