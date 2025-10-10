@@ -508,7 +508,10 @@ mod tests {
         let map = args.as_object().unwrap();
         let result = parse_params(Some(map));
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("between 1 and 100"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("between 1 and 100"));
     }
 
     #[test]
@@ -550,10 +553,7 @@ mod tests {
         let map = args.as_object().unwrap();
         let result = parse_params(Some(map));
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("positive integer"));
+        assert!(result.unwrap_err().to_string().contains("positive integer"));
     }
 
     #[test]
