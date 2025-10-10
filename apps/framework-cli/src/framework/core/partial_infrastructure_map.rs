@@ -484,10 +484,12 @@ impl PartialInfrastructureMap {
         let function_processes = self.create_function_processes(main_file, language, &topics);
         let workflows = self.convert_workflows(language);
 
-        // Why does dmv1 InfrastructureMap::new do this?
+        // Only create orchestration workers if there are actual workflows to orchestrate
         let mut orchestration_workers = HashMap::new();
-        let orchestration_worker = OrchestrationWorker::new(language);
-        orchestration_workers.insert(orchestration_worker.id(), orchestration_worker);
+        if !workflows.is_empty() {
+            let orchestration_worker = OrchestrationWorker::new(language);
+            orchestration_workers.insert(orchestration_worker.id(), orchestration_worker);
+        }
 
         InfrastructureMap {
             topics,
