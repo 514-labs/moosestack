@@ -1073,6 +1073,8 @@ mod tests {
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
             table_settings: None,
+            table_ttl_expression: None,
+            column_ttls: None,
         };
 
         // Create some atomic operations
@@ -1142,6 +1144,8 @@ mod tests {
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
             table_settings: None,
+            table_ttl_expression: None,
+            column_ttls: None,
         };
 
         // Create table B - depends on table A
@@ -1160,6 +1164,8 @@ mod tests {
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
             table_settings: None,
+            table_ttl_expression: None,
+            column_ttls: None,
         };
 
         // Create view C - depends on table B
@@ -1249,6 +1255,8 @@ mod tests {
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
             table_settings: None,
+            table_ttl_expression: None,
+            column_ttls: None,
         };
 
         // Create table B - target for materialized view
@@ -1267,6 +1275,8 @@ mod tests {
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
             table_settings: None,
+            table_ttl_expression: None,
+            column_ttls: None,
         };
 
         // Create view C - depends on table B
@@ -1376,6 +1386,8 @@ mod tests {
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
             table_settings: None,
+            table_ttl_expression: None,
+            column_ttls: None,
         };
 
         let view = View {
@@ -1527,6 +1539,8 @@ mod tests {
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
             table_settings: None,
+            table_ttl_expression: None,
+            column_ttls: None,
         };
 
         let table_b = Table {
@@ -1544,6 +1558,8 @@ mod tests {
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
             table_settings: None,
+            table_ttl_expression: None,
+            column_ttls: None,
         };
 
         let table_c = Table {
@@ -1561,6 +1577,8 @@ mod tests {
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
             table_settings: None,
+            table_ttl_expression: None,
+            column_ttls: None,
         };
 
         // Test operations
@@ -1646,6 +1664,8 @@ mod tests {
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
             table_settings: None,
+            table_ttl_expression: None,
+            column_ttls: None,
         };
 
         let table_b = Table {
@@ -1663,6 +1683,8 @@ mod tests {
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
             table_settings: None,
+            table_ttl_expression: None,
+            column_ttls: None,
         };
 
         let table_c = Table {
@@ -1680,6 +1702,8 @@ mod tests {
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
             table_settings: None,
+            table_ttl_expression: None,
+            column_ttls: None,
         };
 
         let table_d = Table {
@@ -1697,6 +1721,8 @@ mod tests {
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
             table_settings: None,
+            table_ttl_expression: None,
+            column_ttls: None,
         };
 
         let table_e = Table {
@@ -1714,6 +1740,8 @@ mod tests {
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
             table_settings: None,
+            table_ttl_expression: None,
+            column_ttls: None,
         };
 
         let op_create_a = AtomicOlapOperation::CreateTable {
@@ -1862,6 +1890,8 @@ mod tests {
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
             table_settings: None,
+            table_ttl_expression: None,
+            column_ttls: None,
         };
 
         // Create table B - target for materialized view
@@ -1880,6 +1910,8 @@ mod tests {
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
             table_settings: None,
+            table_ttl_expression: None,
+            column_ttls: None,
         };
 
         // Create SQL resource for a materialized view
@@ -1996,6 +2028,8 @@ mod tests {
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
             table_settings: None,
+            table_ttl_expression: None,
+            column_ttls: None,
         };
 
         // Create table B - target for materialized view
@@ -2014,6 +2048,8 @@ mod tests {
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
             table_settings: None,
+            table_ttl_expression: None,
+            column_ttls: None,
         };
 
         // Create SQL resource for a materialized view
@@ -2135,6 +2171,8 @@ mod tests {
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
             table_settings: None,
+            table_ttl_expression: None,
+            column_ttls: None,
         };
 
         let table_b = Table {
@@ -2152,6 +2190,8 @@ mod tests {
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
             table_settings: None,
+            table_ttl_expression: None,
+            column_ttls: None,
         };
 
         // Create SQL resource for materialized view
@@ -2352,6 +2392,8 @@ mod tests {
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
             table_settings: None,
+            table_ttl_expression: None,
+            column_ttls: None,
         };
 
         // Create a column
@@ -2452,6 +2494,8 @@ mod tests {
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
             table_settings: None,
+            table_ttl_expression: None,
+            column_ttls: None,
         };
 
         // Create operations with signatures that work with the current implementation
@@ -2563,6 +2607,8 @@ mod tests {
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
             table_settings: None,
+            table_ttl_expression: None,
+            column_ttls: None,
         };
 
         let after_table = Table {
@@ -2601,6 +2647,8 @@ mod tests {
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
             table_settings: None,
+            table_ttl_expression: None,
+            column_ttls: None,
         };
 
         // Create column changes (remove old_column, add new_column)
