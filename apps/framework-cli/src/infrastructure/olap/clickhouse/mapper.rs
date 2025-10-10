@@ -83,6 +83,7 @@ pub fn std_column_to_clickhouse_column(
         primary_key: column.primary_key,
         default: column.default.clone(),
         comment,
+        ttl: column.ttl.clone(),
     };
 
     Ok(clickhouse_column)
@@ -296,7 +297,6 @@ pub fn std_table_to_clickhouse_table(table: &Table) -> Result<ClickHouseTable, C
         engine: clickhouse_engine,
         table_settings: table.table_settings.clone(),
         table_ttl_expression: table.table_ttl_expression.clone(),
-        column_ttls: table.column_ttls.clone(),
     })
 }
 

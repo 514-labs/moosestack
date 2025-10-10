@@ -156,9 +156,6 @@ pub struct Table {
     /// Table-level TTL expression (without leading 'TTL')
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub table_ttl_expression: Option<String>,
-    /// Per-column TTL expressions (without leading 'TTL')
-    #[serde(skip_serializing_if = "Option::is_none", default)]
-    pub column_ttls: Option<std::collections::HashMap<String, String>>,
 }
 
 impl Table {
@@ -280,7 +277,7 @@ impl Table {
                 .or_else(|| self.engine.as_ref().map(|e| e.non_alterable_params_hash())),
             table_settings: self.table_settings.clone().unwrap_or_default(),
             table_ttl_expression: self.table_ttl_expression.clone(),
-            column_ttls: self.column_ttls.clone().unwrap_or_default(),
+            column_ttls: std::collections::HashMap::new(),
             metadata: MessageField::from_option(self.metadata.as_ref().map(|m| {
                 infrastructure_map::Metadata {
                     description: m.description.clone().unwrap_or_default(),
@@ -368,11 +365,6 @@ impl Table {
                 None
             },
             table_ttl_expression: proto.table_ttl_expression,
-            column_ttls: if !proto.column_ttls.is_empty() {
-                Some(proto.column_ttls)
-            } else {
-                None
-            },
         }
     }
 }

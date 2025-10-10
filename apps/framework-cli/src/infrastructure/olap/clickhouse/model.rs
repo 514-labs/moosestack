@@ -488,8 +488,6 @@ pub struct ClickHouseTable {
     pub table_settings: Option<std::collections::HashMap<String, String>>,
     /// Optional TTL expression at table level (without leading 'TTL')
     pub table_ttl_expression: Option<String>,
-    /// Optional per-column TTL expressions (without leading 'TTL')
-    pub column_ttls: Option<std::collections::HashMap<String, String>>,
 }
 
 impl ClickHouseTable {

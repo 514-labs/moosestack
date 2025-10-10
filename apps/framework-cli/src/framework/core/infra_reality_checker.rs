@@ -223,9 +223,18 @@ impl<T: OlapOperations> InfraRealityChecker<T> {
                     }));
                 }
 
-                // TTL: column-level diffs
-                let actual_cols = actual_table.column_ttls.clone().unwrap_or_default();
-                let desired_cols = mapped_table.column_ttls.clone().unwrap_or_default();
+                // TTL: column-level diffs (compare per-column ttl directly on columns)
+                let collect_ttls = |t: &crate::framework::core::infrastructure::table::Table| {
+                    let mut m = std::collections::HashMap::new();
+                    for c in &t.columns {
+                        if let Some(ttl) = &c.ttl {
+                            m.insert(c.name.clone(), ttl.clone());
+                        }
+                    }
+                    m
+                };
+                let actual_cols = collect_ttls(actual_table);
+                let desired_cols = collect_ttls(&mapped_table);
                 use std::collections::HashSet;
                 let keys: HashSet<_> = actual_cols
                     .keys()
@@ -366,7 +375,6 @@ mod tests {
             engine_params_hash: None,
             table_settings: None,
             table_ttl_expression: None,
-            column_ttls: None,
         }
     }
 

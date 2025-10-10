@@ -3,7 +3,6 @@ import {
   ClickHouseEngines,
   Key,
   DateTime,
-  ClickHouseTTL,
 } from "@514labs/moose-lib";
 
 /**
@@ -26,13 +25,16 @@ export interface EngineTestData {
 export interface TTLTestData {
   id: Key<string>;
   timestamp: DateTime;
-  email: string & ClickHouseTTL<"timestamp + INTERVAL 30 DAY">;
+  email: string;
 }
 
 export const TTLTable = new OlapTable<TTLTestData>("TTLTable", {
   engine: ClickHouseEngines.MergeTree,
   orderByFields: ["id", "timestamp"],
-  ttl: "timestamp + INTERVAL 90 DAY DELETE",
+  ttl: {
+    expression: "timestamp + INTERVAL 90 DAY DELETE",
+    columns: { email: "timestamp + INTERVAL 30 DAY" },
+  },
 });
 
 // Test MergeTree engine (default)

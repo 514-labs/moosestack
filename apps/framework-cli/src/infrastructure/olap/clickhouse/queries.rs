@@ -1646,7 +1646,7 @@ pub fn create_table_query(
     let template_context = json!({
         "db_name": db_name,
         "table_name": table.name,
-        "fields":  builds_field_context(&table.columns, table.column_ttls.as_ref())?,
+        "fields":  builds_field_context(&table.columns)?,
         "primary_key_string": if !primary_key.is_empty() {
             Some(wrap_and_join_column_names(&primary_key, ","))
         } else {
@@ -1887,10 +1887,7 @@ pub fn basic_field_type_to_string(
     }
 }
 
-fn builds_field_context(
-    columns: &[ClickHouseColumn],
-    column_ttls: Option<&std::collections::HashMap<String, String>>,
-) -> Result<Vec<Value>, ClickhouseError> {
+fn builds_field_context(columns: &[ClickHouseColumn]) -> Result<Vec<Value>, ClickhouseError> {
     columns
         .iter()
         .map(|column| {
@@ -1899,7 +1896,7 @@ fn builds_field_context(
             // Escape single quotes in comments for SQL safety
             let escaped_comment = column.comment.as_ref().map(|c| c.replace('\'', "''"));
 
-            let field_ttl = column_ttls.and_then(|m| m.get(&column.name));
+            let field_ttl = column.ttl.as_ref();
 
             Ok(json!({
                 "field_name": column.name,
@@ -2050,7 +2047,6 @@ mod tests {
             engine: ClickhouseEngine::MergeTree,
             table_settings: None,
             table_ttl_expression: None,
-            column_ttls: None,
         };
 
         let query = create_table_query("test_db", table, false).unwrap();
@@ -2085,7 +2081,6 @@ PRIMARY KEY (`id`)
             engine: ClickhouseEngine::MergeTree,
             table_settings: None,
             table_ttl_expression: None,
-            column_ttls: None,
         };
 
         let query = create_table_query("test_db", table, false).unwrap();
@@ -2119,7 +2114,6 @@ ENGINE = MergeTree
             engine: ClickhouseEngine::MergeTree,
             table_settings: None,
             table_ttl_expression: None,
-            column_ttls: None,
         };
 
         let query = create_table_query("test_db", table, false).unwrap();
@@ -2155,7 +2149,6 @@ ENGINE = MergeTree
             },
             table_settings: None,
             table_ttl_expression: None,
-            column_ttls: None,
         };
 
         let query = create_table_query("test_db", table, false).unwrap();
@@ -2192,7 +2185,6 @@ ORDER BY (`id`) "#;
             partition_by: None,
             table_settings: None,
             table_ttl_expression: None,
-            column_ttls: None,
         };
 
         let result = create_table_query("test_db", table, false);
@@ -2235,7 +2227,6 @@ ORDER BY (`id`) "#;
             },
             table_settings: None,
             table_ttl_expression: None,
-            column_ttls: None,
         };
 
         let query = create_table_query("test_db", table, false).unwrap();
@@ -2293,7 +2284,6 @@ ORDER BY (`id`) "#;
             },
             table_settings: None,
             table_ttl_expression: None,
-            column_ttls: None,
         };
 
         let query = create_table_query("test_db", table, false).unwrap();
@@ -2332,7 +2322,6 @@ ORDER BY (`id`) "#;
             },
             table_settings: None,
             table_ttl_expression: None,
-            column_ttls: None,
         };
 
         let result = create_table_query("test_db", table, false);
@@ -2481,7 +2470,6 @@ ORDER BY (`id`) "#;
             partition_by: None,
             table_settings: None,
             table_ttl_expression: None,
-            column_ttls: None,
         };
 
         let query = create_table_query("test_db", table, false).unwrap();
@@ -2543,7 +2531,6 @@ ORDER BY (`id`) "#;
             },
             table_settings: Some(settings),
             table_ttl_expression: None,
-            column_ttls: None,
         };
 
         let query = create_table_query("test_db", table, false).unwrap();
@@ -3014,7 +3001,6 @@ SETTINGS keeper_path = '/clickhouse/s3queue/test_table', mode = 'unordered', s3q
             },
             table_settings: None,
             table_ttl_expression: None,
-            column_ttls: None,
         };
 
         let query = create_table_query("test_db", table, false).unwrap();

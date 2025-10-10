@@ -30,14 +30,17 @@ class EngineTestData(BaseModel):
 class TTLTestData(BaseModel):
     id: Key[str]
     timestamp: datetime
-    email: Annotated[str, ClickHouseTtl("timestamp + INTERVAL 30 DAY")]
+    email: str
 
 ttl_table = OlapTable[TTLTestData](
     "TTLTable",
     OlapConfig(
         engine=MergeTreeEngine(),
         order_by_fields=["id", "timestamp"],
-        ttl="timestamp + INTERVAL 90 DAY DELETE",
+        ttl={
+            "expression": "timestamp + INTERVAL 90 DAY DELETE",
+            "columns": {"email": "timestamp + INTERVAL 30 DAY"},
+        },
     ),
 )
 

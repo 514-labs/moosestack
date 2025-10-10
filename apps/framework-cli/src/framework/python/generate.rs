@@ -619,7 +619,6 @@ mod tests {
             engine_params_hash: None,
             table_settings: None,
             table_ttl_expression: None,
-            column_ttls: None,
         }];
 
         let result = tables_to_python(&tables, None);
@@ -705,7 +704,6 @@ foo_table = OlapTable[Foo]("Foo", OlapConfig(
             engine_params_hash: None,
             table_settings: None,
             table_ttl_expression: None,
-            column_ttls: None,
         }];
 
         let result = tables_to_python(&tables, None);
@@ -811,7 +809,6 @@ nested_array_table = OlapTable[NestedArray]("NestedArray", OlapConfig(
             engine_params_hash: None,
             table_settings: None,
             table_ttl_expression: None,
-            column_ttls: None,
         }];
 
         let result = tables_to_python(&tables, None);
@@ -885,7 +882,6 @@ user_table = OlapTable[User]("User", OlapConfig(
                     .collect(),
             ),
             table_ttl_expression: None,
-            column_ttls: None,
         }];
 
         let result = tables_to_python(&tables, None);
@@ -939,7 +935,6 @@ user_table = OlapTable[User]("User", OlapConfig(
                 .collect(),
             ),
             table_ttl_expression: None,
-            column_ttls: None,
         }];
 
         let result = tables_to_python(&tables, None);
@@ -1002,7 +997,6 @@ user_table = OlapTable[User]("User", OlapConfig(
             engine_params_hash: None,
             table_settings: None,
             table_ttl_expression: None,
-            column_ttls: None,
         }];
 
         let result = tables_to_python(&tables, None);
@@ -1068,7 +1062,6 @@ user_table = OlapTable[User]("User", OlapConfig(
             engine_params_hash: None,
             table_settings: None,
             table_ttl_expression: None,
-            column_ttls: None,
         }];
 
         let result = tables_to_python(&tables, None);

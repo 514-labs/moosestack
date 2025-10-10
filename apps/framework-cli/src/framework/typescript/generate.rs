@@ -503,7 +503,6 @@ mod tests {
             engine_params_hash: None,
             table_settings: None,
             table_ttl_expression: None,
-            column_ttls: None,
         }];
 
         let result = tables_to_typescript(&tables, None);
@@ -580,7 +579,6 @@ export const UserTable = new OlapTable<User>("User", {
                     .collect(),
             ),
             table_ttl_expression: None,
-            column_ttls: None,
         }];
 
         let result = tables_to_typescript(&tables, None);
@@ -627,7 +625,6 @@ export const UserTable = new OlapTable<User>("User", {
                 .collect(),
             ),
             table_ttl_expression: None,
-            column_ttls: None,
         }];
 
         let result = tables_to_typescript(&tables, None);
@@ -691,7 +688,6 @@ export const UserTable = new OlapTable<User>("User", {
             engine_params_hash: None,
             table_settings: None,
             table_ttl_expression: None,
-            column_ttls: None,
         }];
 
         let result = tables_to_typescript(&tables, None);
@@ -732,7 +728,6 @@ export const UserTable = new OlapTable<User>("User", {
             engine_params_hash: None,
             table_settings: None,
             table_ttl_expression: None,
-            column_ttls: None,
         }];
 
         let result = tables_to_typescript(&tables, None);
@@ -803,7 +798,6 @@ export const UserTable = new OlapTable<User>("User", {
             engine_params_hash: None,
             table_settings: None,
             table_ttl_expression: None,
-            column_ttls: None,
         }];
 
         let result = tables_to_typescript(&tables, None);
@@ -873,7 +867,6 @@ export const UserTable = new OlapTable<User>("User", {
             engine_params_hash: None,
             table_settings: None,
             table_ttl_expression: None,
-            column_ttls: None,
         }];
 
         let result = tables_to_typescript(&tables, None);

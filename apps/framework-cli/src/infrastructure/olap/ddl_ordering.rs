@@ -1161,7 +1161,6 @@ mod tests {
             engine_params_hash: None,
             table_settings: None,
             table_ttl_expression: None,
-            column_ttls: None,
         };
 
         // Create some atomic operations
@@ -1232,7 +1231,6 @@ mod tests {
             engine_params_hash: None,
             table_settings: None,
             table_ttl_expression: None,
-            column_ttls: None,
         };
 
         // Create table B - depends on table A
@@ -1252,7 +1250,6 @@ mod tests {
             engine_params_hash: None,
             table_settings: None,
             table_ttl_expression: None,
-            column_ttls: None,
         };
 
         // Create view C - depends on table B
@@ -1343,7 +1340,6 @@ mod tests {
             engine_params_hash: None,
             table_settings: None,
             table_ttl_expression: None,
-            column_ttls: None,
         };
 
         // Create table B - target for materialized view
@@ -1363,7 +1359,6 @@ mod tests {
             engine_params_hash: None,
             table_settings: None,
             table_ttl_expression: None,
-            column_ttls: None,
         };
 
         // Create view C - depends on table B
@@ -1474,7 +1469,6 @@ mod tests {
             engine_params_hash: None,
             table_settings: None,
             table_ttl_expression: None,
-            column_ttls: None,
         };
 
         let view = View {
@@ -1627,7 +1621,6 @@ mod tests {
             engine_params_hash: None,
             table_settings: None,
             table_ttl_expression: None,
-            column_ttls: None,
         };
 
         let table_b = Table {
@@ -1646,7 +1639,6 @@ mod tests {
             engine_params_hash: None,
             table_settings: None,
             table_ttl_expression: None,
-            column_ttls: None,
         };
 
         let table_c = Table {
@@ -1665,7 +1657,6 @@ mod tests {
             engine_params_hash: None,
             table_settings: None,
             table_ttl_expression: None,
-            column_ttls: None,
         };
 
         // Test operations
@@ -1752,7 +1743,6 @@ mod tests {
             engine_params_hash: None,
             table_settings: None,
             table_ttl_expression: None,
-            column_ttls: None,
         };
 
         let table_b = Table {
@@ -1771,7 +1761,6 @@ mod tests {
             engine_params_hash: None,
             table_settings: None,
             table_ttl_expression: None,
-            column_ttls: None,
         };
 
         let table_c = Table {
@@ -1790,7 +1779,6 @@ mod tests {
             engine_params_hash: None,
             table_settings: None,
             table_ttl_expression: None,
-            column_ttls: None,
         };
 
         let table_d = Table {
@@ -1809,7 +1797,6 @@ mod tests {
             engine_params_hash: None,
             table_settings: None,
             table_ttl_expression: None,
-            column_ttls: None,
         };
 
         let table_e = Table {
@@ -1828,7 +1815,6 @@ mod tests {
             engine_params_hash: None,
             table_settings: None,
             table_ttl_expression: None,
-            column_ttls: None,
         };
 
         let op_create_a = AtomicOlapOperation::CreateTable {
@@ -1978,7 +1964,6 @@ mod tests {
             engine_params_hash: None,
             table_settings: None,
             table_ttl_expression: None,
-            column_ttls: None,
         };
 
         // Create table B - target for materialized view
@@ -1998,7 +1983,6 @@ mod tests {
             engine_params_hash: None,
             table_settings: None,
             table_ttl_expression: None,
-            column_ttls: None,
         };
 
         // Create SQL resource for a materialized view

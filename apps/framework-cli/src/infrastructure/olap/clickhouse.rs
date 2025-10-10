@@ -1337,7 +1337,7 @@ impl OlapOperations for ConfiguredDBClient {
 
             // Extract TTLs from CREATE TABLE
             let table_ttl_expression = extract_table_ttl_from_create_query(&create_query);
-            let column_ttls = extract_column_ttls_from_create_query(&create_query);
+            let _column_ttls = extract_column_ttls_from_create_query(&create_query);
 
             let table = Table {
                 name: table_name, // Keep the original table name with version
@@ -1356,7 +1356,6 @@ impl OlapOperations for ConfiguredDBClient {
                 engine_params_hash,
                 table_settings,
                 table_ttl_expression,
-                column_ttls,
             };
             debug!("Created table object: {:?}", table);
 

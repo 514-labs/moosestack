@@ -2456,7 +2456,6 @@ mod tests {
             engine_params_hash: None,
             table_settings: None,
             table_ttl_expression: None,
-            column_ttls: None,
         };
 
         let after = Table {
@@ -2506,7 +2505,6 @@ mod tests {
             engine_params_hash: None,
             table_settings: None,
             table_ttl_expression: None,
-            column_ttls: None,
         };
 
         let diff = compute_table_columns_diff(&before, &after);
@@ -2674,7 +2672,6 @@ mod diff_tests {
             engine_params_hash: None,
             table_settings: None,
             table_ttl_expression: None,
-            column_ttls: None,
         }
     }
 

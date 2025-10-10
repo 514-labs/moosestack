@@ -67,7 +67,6 @@ impl DataModel {
             engine_params_hash,
             table_settings: None, // TODO: Parse table_settings from data model config
             table_ttl_expression: None,
-            column_ttls: None,
         }
     }
 
