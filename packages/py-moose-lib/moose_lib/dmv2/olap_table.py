@@ -140,8 +140,8 @@ class OlapConfig(BaseModel):
     metadata: Optional[dict] = None
     life_cycle: Optional[LifeCycle] = None
     settings: Optional[dict[str, str]] = None
-    # Optional TTL configuration: table-level expression and per-column expressions
-    ttl: Optional[TTLConfig] = None
+    # Optional table-level TTL expression (without leading 'TTL')
+    ttl: Optional[str] = None
 
     def model_post_init(self, __context):
         has_fields = bool(self.order_by_fields)

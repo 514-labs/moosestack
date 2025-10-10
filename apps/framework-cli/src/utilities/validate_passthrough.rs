@@ -411,6 +411,7 @@ impl<'de, S: SerializeValue> Visitor<'de> for &mut ValueVisitor<'_, S> {
                             default: None,
                             annotations: vec![],
                             comment: None,
+                            ttl: None,
                         }
                     })
                     .collect();

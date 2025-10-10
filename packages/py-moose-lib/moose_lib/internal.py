@@ -169,8 +169,8 @@ class TableConfig(BaseModel):
     metadata: Optional[dict] = None
     life_cycle: Optional[str] = None
     table_settings: Optional[Dict[str, str]] = None
-    # Optional TTL configuration
-    ttl: Optional[TTLConfig] = None
+    # Optional table-level TTL expression
+    ttl: Optional[str] = None
 
 
 class TopicConfig(BaseModel):

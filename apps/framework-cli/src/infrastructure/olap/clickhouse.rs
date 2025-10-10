@@ -1296,6 +1296,7 @@ impl OlapOperations for ConfiguredDBClient {
                     default,
                     annotations: Default::default(),
                     comment: column_comment,
+                    ttl: None,
                 };
 
                 columns.push(column);

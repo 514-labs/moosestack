@@ -278,6 +278,7 @@ pub struct ClickHouseColumn {
     pub primary_key: bool,
     pub default: Option<String>,
     pub comment: Option<String>, // Column comment for metadata storage
+    pub ttl: Option<String>,
 }
 
 impl ClickHouseColumn {

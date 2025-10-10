@@ -183,17 +183,12 @@ export type BaseOlapConfig<T> = (
   lifeCycle?: LifeCycle;
   settings?: { [key: string]: string };
   /**
-   * Optional TTL configuration for automatic data lifecycle management.
-   * - `expression` adds a table-level TTL clause (e.g., "timestamp + INTERVAL 90 DAY DELETE").
-   * - `columns` configures per-column TTLs keyed by column name; values are the TTL expressions tail
-   *   (e.g., "timestamp + INTERVAL 30 DAY" or "timestamp + INTERVAL 30 DAY DELETE").
+   * Optional TTL configuration for the table.
+   * e.g., "TTL timestamp + INTERVAL 90 DAY DELETE"
+   *
+   * Use the {@link ClickHouseTTL} type to configure column level TTL
    */
-  ttl?: {
-    /** Table-level TTL expression (without the leading 'TTL' keyword). */
-    expression?: string;
-    /** Column-level TTL expressions by column name (without the leading 'TTL' keyword). */
-    columns?: Partial<Record<keyof T & string, string>>;
-  };
+  ttl?: string;
 };
 
 /**

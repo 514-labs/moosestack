@@ -212,6 +212,8 @@ message Column {
 
   map<string, string> annotations = 7;
   optional string comment = 8; // Column comment for metadata storage
+  // Optional column-level TTL expression (without leading 'TTL')
+  optional string ttl = 10;
 }
 
 enum SimpleColumnType {
