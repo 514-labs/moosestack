@@ -499,6 +499,8 @@ mod tests {
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
             table_settings: None,
+            table_ttl_expression: None,
+            column_ttls: None,
         }];
 
         let result = tables_to_typescript(&tables, None);
@@ -574,6 +576,8 @@ export const UserTable = new OlapTable<User>("User", {
                     .into_iter()
                     .collect(),
             ),
+            table_ttl_expression: None,
+            column_ttls: None,
         }];
 
         let result = tables_to_typescript(&tables, None);
@@ -619,6 +623,8 @@ export const UserTable = new OlapTable<User>("User", {
                 .into_iter()
                 .collect(),
             ),
+            table_ttl_expression: None,
+            column_ttls: None,
         }];
 
         let result = tables_to_typescript(&tables, None);
@@ -681,6 +687,8 @@ export const UserTable = new OlapTable<User>("User", {
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
             table_settings: None,
+            table_ttl_expression: None,
+            column_ttls: None,
         }];
 
         let result = tables_to_typescript(&tables, None);
@@ -720,6 +728,8 @@ export const UserTable = new OlapTable<User>("User", {
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
             table_settings: None,
+            table_ttl_expression: None,
+            column_ttls: None,
         }];
 
         let result = tables_to_typescript(&tables, None);
@@ -789,6 +799,8 @@ export const UserTable = new OlapTable<User>("User", {
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
             table_settings: None,
+            table_ttl_expression: None,
+            column_ttls: None,
         }];
 
         let result = tables_to_typescript(&tables, None);
@@ -857,6 +869,8 @@ export const UserTable = new OlapTable<User>("User", {
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
             table_settings: None,
+            table_ttl_expression: None,
+            column_ttls: None,
         }];
 
         let result = tables_to_typescript(&tables, None);
