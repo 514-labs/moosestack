@@ -17,7 +17,7 @@
 use crate::{
     framework::core::{
         infrastructure::table::Table,
-        infrastructure_map::{InfrastructureMap, OlapChange},
+        infrastructure_map::{InfrastructureMap, OlapChange, TableChange},
     },
     infrastructure::olap::{OlapChangesError, OlapOperations},
     project::Project,
@@ -176,7 +176,7 @@ impl<T: OlapOperations> InfraRealityChecker<T> {
             missing_tables
         );
 
-        // Find structural differences in tables that exist in both
+        // Find structural and TTL differences in tables that exist in both
         let mut mismatched_tables = Vec::new();
         for (name, mapped_table) in mapped_table_map {
             if let Some(actual_table) = actual_table_map.get(&name) {
@@ -211,6 +211,39 @@ impl<T: OlapOperations> InfraRealityChecker<T> {
                     mismatched_tables.extend(changes);
                 } else {
                     debug!("Table {} matches infrastructure map", name);
+                }
+
+                // TTL: table-level diff
+                if actual_table.table_ttl_expression != mapped_table.table_ttl_expression {
+                    mismatched_tables.push(OlapChange::Table(TableChange::TtlChanged {
+                        name: name.clone(),
+                        before: actual_table.table_ttl_expression.clone(),
+                        after: mapped_table.table_ttl_expression.clone(),
+                        table: mapped_table.clone(),
+                    }));
+                }
+
+                // TTL: column-level diffs
+                let actual_cols = actual_table.column_ttls.clone().unwrap_or_default();
+                let desired_cols = mapped_table.column_ttls.clone().unwrap_or_default();
+                use std::collections::HashSet;
+                let keys: HashSet<_> = actual_cols
+                    .keys()
+                    .chain(desired_cols.keys())
+                    .cloned()
+                    .collect();
+                for col in keys {
+                    let a = actual_cols.get(&col).cloned();
+                    let b = desired_cols.get(&col).cloned();
+                    if a != b {
+                        mismatched_tables.push(OlapChange::Table(TableChange::ColumnTtlChanged {
+                            name: name.clone(),
+                            column: col.clone(),
+                            before: a,
+                            after: b,
+                            table: mapped_table.clone(),
+                        }));
+                    }
                 }
             }
         }

@@ -123,7 +123,7 @@ pub fn create_alias_for_table(
 static CREATE_TABLE_TEMPLATE: &str = r#"
 CREATE TABLE IF NOT EXISTS `{{db_name}}`.`{{table_name}}`
 (
-{{#each fields}} `{{field_name}}` {{{field_type}}} {{field_nullable}}{{#if field_ttl}} TTL {{{field_ttl}}}{{/if}}{{#if field_default}} DEFAULT {{{field_default}}}{{/if}}{{#if field_comment}} COMMENT '{{{field_comment}}}'{{/if}}{{#unless @last}},{{/unless}}
+{{#each fields}} `{{field_name}}` {{{field_type}}} {{field_nullable}}{{#if field_default}} DEFAULT {{{field_default}}}{{/if}}{{#if field_ttl}} TTL {{{field_ttl}}}{{/if}}{{#if field_comment}} COMMENT '{{{field_comment}}}'{{/if}}{{#unless @last}},{{/unless}}
 {{/each}}
 )
 ENGINE = {{engine}}{{#if primary_key_string}}

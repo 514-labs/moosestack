@@ -88,6 +88,21 @@ pub enum AtomicOlapOperation {
         /// Dependency information
         dependency_info: DependencyInfo,
     },
+    /// Modify or remove table-level TTL
+    ModifyTableTtl {
+        table: Table,
+        before: Option<String>,
+        after: Option<String>,
+        dependency_info: DependencyInfo,
+    },
+    /// Modify or remove column-level TTL
+    ModifyColumnTtl {
+        table: Table,
+        column: String,
+        before: Option<String>,
+        after: Option<String>,
+        dependency_info: DependencyInfo,
+    },
     /// Populate a materialized view with initial data
     PopulateMaterializedView {
         /// Name of the materialized view
@@ -184,6 +199,28 @@ impl AtomicOlapOperation {
                 before_settings: before_settings.clone(),
                 after_settings: after_settings.clone(),
             },
+            AtomicOlapOperation::ModifyTableTtl {
+                table,
+                before,
+                after,
+                ..
+            } => SerializableOlapOperation::ModifyTableTtl {
+                table: table.name.clone(),
+                before: before.clone(),
+                after: after.clone(),
+            },
+            AtomicOlapOperation::ModifyColumnTtl {
+                table,
+                column,
+                before,
+                after,
+                ..
+            } => SerializableOlapOperation::ModifyColumnTtl {
+                table: table.name.clone(),
+                column: column.clone(),
+                before: before.clone(),
+                after: after.clone(),
+            },
             AtomicOlapOperation::PopulateMaterializedView {
                 view_name: _,
                 target_table,
@@ -268,6 +305,12 @@ impl AtomicOlapOperation {
             AtomicOlapOperation::ModifyTableSettings { table, .. } => {
                 InfrastructureSignature::Table { id: table.id() }
             }
+            AtomicOlapOperation::ModifyTableTtl { table, .. } => {
+                InfrastructureSignature::Table { id: table.id() }
+            }
+            AtomicOlapOperation::ModifyColumnTtl { table, .. } => {
+                InfrastructureSignature::Table { id: table.id() }
+            }
             AtomicOlapOperation::PopulateMaterializedView { view_name, .. } => {
                 InfrastructureSignature::SqlResource {
                     id: view_name.clone(),
@@ -311,6 +354,12 @@ impl AtomicOlapOperation {
                 dependency_info, ..
             }
             | AtomicOlapOperation::ModifyTableSettings {
+                dependency_info, ..
+            }
+            | AtomicOlapOperation::ModifyTableTtl {
+                dependency_info, ..
+            }
+            | AtomicOlapOperation::ModifyColumnTtl {
                 dependency_info, ..
             }
             | AtomicOlapOperation::PopulateMaterializedView {
@@ -813,6 +862,12 @@ pub fn order_olap_changes(
                 TableChange::SettingsChanged { table, .. } => {
                     tables.insert(table.name.clone(), table.clone());
                 }
+                TableChange::TtlChanged { table, .. } => {
+                    tables.insert(table.name.clone(), table.clone());
+                }
+                TableChange::ColumnTtlChanged { table, .. } => {
+                    tables.insert(table.name.clone(), table.clone());
+                }
             }
         } else if let OlapChange::PopulateMaterializedView { .. } = change {
             // No table to track for population operations
@@ -843,6 +898,38 @@ pub fn order_olap_changes(
                 before_settings.clone(),
                 after_settings.clone(),
             ),
+            OlapChange::Table(TableChange::TtlChanged {
+                table,
+                before,
+                after,
+                ..
+            }) => {
+                let mut plan = OperationPlan::new();
+                plan.setup_ops.push(AtomicOlapOperation::ModifyTableTtl {
+                    table: table.clone(),
+                    before: before.clone(),
+                    after: after.clone(),
+                    dependency_info: create_empty_dependency_info(),
+                });
+                plan
+            }
+            OlapChange::Table(TableChange::ColumnTtlChanged {
+                table,
+                column,
+                before,
+                after,
+                ..
+            }) => {
+                let mut plan = OperationPlan::new();
+                plan.setup_ops.push(AtomicOlapOperation::ModifyColumnTtl {
+                    table: table.clone(),
+                    column: column.clone(),
+                    before: before.clone(),
+                    after: after.clone(),
+                    dependency_info: create_empty_dependency_info(),
+                });
+                plan
+            }
             OlapChange::PopulateMaterializedView {
                 view_name,
                 target_table,

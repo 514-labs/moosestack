@@ -302,6 +302,21 @@ pub enum TableChange {
         /// Complete table representation for context
         table: Table,
     },
+    /// Table-level TTL changed
+    TtlChanged {
+        name: String,
+        before: Option<String>,
+        after: Option<String>,
+        table: Table,
+    },
+    /// Column-level TTL changed
+    ColumnTtlChanged {
+        name: String,
+        column: String,
+        before: Option<String>,
+        after: Option<String>,
+        table: Table,
+    },
 }
 
 /// Generic representation of a change to any infrastructure component
