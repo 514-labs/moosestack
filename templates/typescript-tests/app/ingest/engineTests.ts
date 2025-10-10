@@ -25,16 +25,13 @@ export interface EngineTestData {
 export interface TTLTestData {
   id: Key<string>;
   timestamp: DateTime;
-  email: string;
+  email: string & ClickHouseTTL<"timestamp + INTERVAL 30 DAY">;
 }
 
 export const TTLTable = new OlapTable<TTLTestData>("TTLTable", {
   engine: ClickHouseEngines.MergeTree,
   orderByFields: ["id", "timestamp"],
-  ttl: {
-    expression: "timestamp + INTERVAL 90 DAY DELETE",
-    columns: { email: "timestamp + INTERVAL 30 DAY" },
-  },
+  ttl: "timestamp + INTERVAL 90 DAY DELETE",
 });
 
 // Test MergeTree engine (default)
