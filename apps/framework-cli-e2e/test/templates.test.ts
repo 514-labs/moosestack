@@ -269,7 +269,12 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
     it("should include TTL in DDL when configured", async function () {
       if (config.isTestsVariant) {
         const ddl = await getTableDDL("TTLTable");
-        if (!ddl.includes("TTL timestamp + INTERVAL 90 DAY DELETE")) {
+        if (!ddl.includes("TTL timestamp + toIntervalDay(90)")) {
+          throw new Error(
+            `Schema validation failed for tables TTLTable: ${ddl}`,
+          );
+        }
+        if (!ddl.includes("`email` String TTL timestamp + toIntervalDay(30)")) {
           throw new Error(
             `Schema validation failed for tables TTLTable: ${ddl}`,
           );

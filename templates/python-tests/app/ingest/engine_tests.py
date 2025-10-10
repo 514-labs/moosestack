@@ -39,7 +39,7 @@ ttl_table = OlapTable[TTLTestData](
         order_by_fields=["id", "timestamp"],
         ttl={
             "expression": "timestamp + INTERVAL 90 DAY DELETE",
-            "columns": {"email": "timestamp + INTERVAL 30 DAY DELETE"},
+            "columns": {"email": "timestamp + INTERVAL 30 DAY"},
         },
     ),
 )

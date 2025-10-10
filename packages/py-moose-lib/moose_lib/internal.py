@@ -165,7 +165,7 @@ class TableConfig(BaseModel):
 
     name: str
     columns: List[Column]
-        order_by: List[str] | str
+    order_by: List[str] | str
     partition_by: Optional[str]
     engine_config: Optional[EngineConfigDict] = Field(None, discriminator='engine')
     version: Optional[str] = None

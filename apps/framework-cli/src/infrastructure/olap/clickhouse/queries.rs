@@ -123,7 +123,7 @@ pub fn create_alias_for_table(
 static CREATE_TABLE_TEMPLATE: &str = r#"
 CREATE TABLE IF NOT EXISTS `{{db_name}}`.`{{table_name}}`
 (
-{{#each fields}} `{{field_name}}` {{{field_type}}} {{field_nullable}}{{#if field_default}} DEFAULT {{{field_default}}}{{/if}}{{#if field_comment}} COMMENT '{{{field_comment}}}'{{/if}}{{#unless @last}},{{/unless}}
+{{#each fields}} `{{field_name}}` {{{field_type}}} {{field_nullable}}{{#if field_ttl}} TTL {{{field_ttl}}}{{/if}}{{#if field_default}} DEFAULT {{{field_default}}}{{/if}}{{#if field_comment}} COMMENT '{{{field_comment}}}'{{/if}}{{#unless @last}},{{/unless}}
 {{/each}}
 )
 ENGINE = {{engine}}{{#if primary_key_string}}
@@ -1653,7 +1653,7 @@ pub fn create_table_query(
     let template_context = json!({
         "db_name": db_name,
         "table_name": table.name,
-        "fields":  builds_field_context(&table.columns)?,
+        "fields":  builds_field_context(&table.columns, table.column_ttls.as_ref())?,
         "primary_key_string": if !primary_key.is_empty() {
             Some(wrap_and_join_column_names(&primary_key, ","))
         } else {
@@ -1894,7 +1894,10 @@ pub fn basic_field_type_to_string(
     }
 }
 
-fn builds_field_context(columns: &[ClickHouseColumn]) -> Result<Vec<Value>, ClickhouseError> {
+fn builds_field_context(
+    columns: &[ClickHouseColumn],
+    column_ttls: Option<&std::collections::HashMap<String, String>>,
+) -> Result<Vec<Value>, ClickhouseError> {
     columns
         .iter()
         .map(|column| {
@@ -1903,9 +1906,12 @@ fn builds_field_context(columns: &[ClickHouseColumn]) -> Result<Vec<Value>, Clic
             // Escape single quotes in comments for SQL safety
             let escaped_comment = column.comment.as_ref().map(|c| c.replace('\'', "''"));
 
+            let field_ttl = column_ttls.and_then(|m| m.get(&column.name));
+
             Ok(json!({
                 "field_name": column.name,
                 "field_type": field_type,
+                "field_ttl": field_ttl,
                 "field_default": column.default,
                 "field_nullable": if let ClickHouseColumnType::Nullable(_) = column.column_type {
                     // if type is Nullable, do not add extra specifier

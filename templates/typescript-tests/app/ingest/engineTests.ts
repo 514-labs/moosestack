@@ -33,7 +33,7 @@ export const TTLTable = new OlapTable<TTLTestData>("TTLTable", {
   orderByFields: ["id", "timestamp"],
   ttl: {
     expression: "timestamp + INTERVAL 90 DAY DELETE",
-    columns: { email: "timestamp + INTERVAL 30 DAY DELETE" },
+    columns: { email: "timestamp + INTERVAL 30 DAY" },
   },
 });
 
