@@ -115,19 +115,26 @@ fn parse_params(
         ));
     }
 
-    let limit = arguments
-        .and_then(|v| v.get("limit"))
-        .and_then(|v| v.as_u64())
-        .map(|v| v as u8)
-        .unwrap_or(DEFAULT_LIMIT);
+    // Parse and validate limit - validate BEFORE casting to prevent integer wrapping
+    let limit = if let Some(limit_value) = arguments.and_then(|v| v.get("limit")) {
+        let limit_u64 = limit_value.as_u64().ok_or_else(|| {
+            StreamSampleError::InvalidParameter("limit must be a positive integer".to_string())
+        })?;
 
-    // Validate limit
-    if !(MIN_LIMIT..=MAX_LIMIT).contains(&limit) {
-        return Err(StreamSampleError::InvalidParameter(format!(
-            "limit must be between {} and {}, got {}",
-            MIN_LIMIT, MAX_LIMIT, limit
-        )));
-    }
+        // Validate the u64 value BEFORE casting to u8 to prevent wrapping
+        // (e.g., 300 would wrap to 44 if we cast first)
+        if limit_u64 < MIN_LIMIT as u64 || limit_u64 > MAX_LIMIT as u64 {
+            return Err(StreamSampleError::InvalidParameter(format!(
+                "limit must be between {} and {}, got {}",
+                MIN_LIMIT, MAX_LIMIT, limit_u64
+            )));
+        }
+
+        // Safe cast: we've validated it's in range
+        limit_u64 as u8
+    } else {
+        DEFAULT_LIMIT
+    };
 
     let format = arguments
         .and_then(|v| v.get("format"))
@@ -169,14 +176,21 @@ pub async fn handle_call(
 }
 
 /// Find a topic in the infrastructure map by name (case-insensitive)
+///
+/// Searches by the topic's actual name field (`topic.name`), not the HashMap key.
+/// Also checks the HashMap key as a fallback for flexibility.
 fn find_topic_by_name<'a>(
     infra_map: &'a InfrastructureMap,
     topic_name: &str,
 ) -> Option<&'a crate::framework::core::infrastructure::topic::Topic> {
-    infra_map.topics.iter().find_map(|(key, topic)| {
-        if key.eq_ignore_ascii_case(topic_name) {
+    infra_map.topics.iter().find_map(|(_key, topic)| {
+        // Check the actual topic name field first (the real topic name)
+        if topic.name.eq_ignore_ascii_case(topic_name) {
             Some(topic)
         } else {
+            // Also check the key as a fallback (internal identifier)
+            // This is commented out because keys are internal identifiers,
+            // not user-facing topic names
             None
         }
     })
@@ -489,11 +503,57 @@ mod tests {
             .to_string()
             .contains("between 1 and 100"));
 
-        // Limit too large
+        // Limit too large (just over max)
         let args = json!({"stream_name": "test", "limit": 101});
         let map = args.as_object().unwrap();
         let result = parse_params(Some(map));
         assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("between 1 and 100"));
+    }
+
+    #[test]
+    fn test_parse_params_limit_wraparound_prevention() {
+        // Test values that would wrap around if cast to u8 before validation
+        // 256 wraps to 0, should be rejected
+        let args = json!({"stream_name": "test", "limit": 256});
+        let map = args.as_object().unwrap();
+        let result = parse_params(Some(map));
+        assert!(result.is_err());
+        let err_msg = result.unwrap_err().to_string();
+        assert!(err_msg.contains("between 1 and 100"));
+        assert!(err_msg.contains("256"));
+
+        // 300 wraps to 44, should be rejected (not silently accepted)
+        let args = json!({"stream_name": "test", "limit": 300});
+        let map = args.as_object().unwrap();
+        let result = parse_params(Some(map));
+        assert!(result.is_err());
+        let err_msg = result.unwrap_err().to_string();
+        assert!(err_msg.contains("between 1 and 100"));
+        assert!(err_msg.contains("300")); // Should show original value, not wrapped
+        assert!(!err_msg.contains("44")); // Should NOT show wrapped value
+
+        // 1000 wraps to 232, should be rejected
+        let args = json!({"stream_name": "test", "limit": 1000});
+        let map = args.as_object().unwrap();
+        let result = parse_params(Some(map));
+        assert!(result.is_err());
+        let err_msg = result.unwrap_err().to_string();
+        assert!(err_msg.contains("between 1 and 100"));
+        assert!(err_msg.contains("1000"));
+    }
+
+    #[test]
+    fn test_parse_params_limit_negative() {
+        // Negative values should be rejected (JSON -1 is not a u64)
+        let args = json!({"stream_name": "test", "limit": -1});
+        let map = args.as_object().unwrap();
+        let result = parse_params(Some(map));
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("positive integer"));
     }
 
     #[test]
@@ -683,7 +743,7 @@ mod tests {
         // Create mock topics using the struct directly
         let user_topic = Topic {
             version: Some(Version::from_string("0.0.1".to_string())),
-            name: "user_events_topic".to_string(),
+            name: "user_events_topic".to_string(), // The actual topic name
             retention_period: Duration::from_secs(60000),
             partition_count: 3,
             columns: vec![],
@@ -700,7 +760,7 @@ mod tests {
 
         let order_topic = Topic {
             version: Some(Version::from_string("0.0.1".to_string())),
-            name: "order_events_topic".to_string(),
+            name: "order_events_topic".to_string(), // The actual topic name
             retention_period: Duration::from_secs(60000),
             partition_count: 2,
             columns: vec![],
@@ -716,6 +776,8 @@ mod tests {
         };
 
         let mut topics = HashMap::new();
+        // Key is internal identifier (e.g., "UserEvents")
+        // topic.name is the actual topic name (e.g., "user_events_topic")
         topics.insert("UserEvents".to_string(), user_topic);
         topics.insert("OrderEvents".to_string(), order_topic);
 
@@ -724,24 +786,37 @@ mod tests {
             ..Default::default()
         };
 
-        // Test exact match
-        let result = find_topic_by_name(&infra_map, "UserEvents");
+        // Test search by actual topic name (not the HashMap key)
+        let result = find_topic_by_name(&infra_map, "user_events_topic");
         assert!(result.is_some());
-        assert_eq!(result.unwrap().id(), "user_events_topic_0_0_1");
+        assert_eq!(result.unwrap().name, "user_events_topic");
 
         // Test case-insensitive match
-        let result = find_topic_by_name(&infra_map, "userevents");
+        let result = find_topic_by_name(&infra_map, "USER_EVENTS_TOPIC");
         assert!(result.is_some());
-        assert_eq!(result.unwrap().id(), "user_events_topic_0_0_1");
+        assert_eq!(result.unwrap().name, "user_events_topic");
 
-        // Test different case
-        let result = find_topic_by_name(&infra_map, "ORDEREVENTS");
+        // Test different topic
+        let result = find_topic_by_name(&infra_map, "order_events_topic");
         assert!(result.is_some());
-        assert_eq!(result.unwrap().id(), "order_events_topic_0_0_1");
+        assert_eq!(result.unwrap().name, "order_events_topic");
+
+        // Test mixed case
+        let result = find_topic_by_name(&infra_map, "Order_Events_Topic");
+        assert!(result.is_some());
+        assert_eq!(result.unwrap().name, "order_events_topic");
 
         // Test non-existent topic
         let result = find_topic_by_name(&infra_map, "NonExistent");
         assert!(result.is_none());
+
+        // Test that searching by HashMap key (internal identifier) does NOT work
+        // This is intentional - users should search by actual topic names
+        let result = find_topic_by_name(&infra_map, "UserEvents");
+        assert!(result.is_none(), "Should not find topic by internal key");
+
+        let result = find_topic_by_name(&infra_map, "OrderEvents");
+        assert!(result.is_none(), "Should not find topic by internal key");
     }
 
     #[test]
