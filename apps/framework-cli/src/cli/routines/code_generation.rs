@@ -116,10 +116,12 @@ pub async fn create_client_and_db(
         }
     };
     if !url_username.is_empty() {
-        client = client.with_user(url_username)
+        client = client
+            .with_user(percent_encoding::percent_decode_str(&url_username).decode_utf8_lossy())
     }
     if let Some(password) = url.password() {
-        client = client.with_password(password);
+        client = client
+            .with_password(percent_encoding::percent_decode_str(password).decode_utf8_lossy());
     }
 
     let url_db = url
