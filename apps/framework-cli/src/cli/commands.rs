@@ -99,12 +99,21 @@ pub enum Commands {
         /// Enable or disable the MCP (Model Context Protocol) server
         #[arg(long, default_value = "true")]
         mcp: bool,
+
+        /// Apply migrations and exit (for OLAP-only projects).
+        /// Docker containers remain running. Use `moose clean` to stop them.
+        #[arg(long)]
+        serverless: bool,
     },
     /// Start a remote environment for use in cloud deployments
     Prod {
         /// Include and manage dependencies (ClickHouse, Redpanda, etc.) using Docker containers
         #[arg(long)]
         start_include_dependencies: bool,
+
+        /// Apply migrations and exit (for OLAP-only projects)
+        #[arg(long)]
+        serverless: bool,
     },
     /// Generates helpers for your data models (i.e. sdk, api tokens)
     Generate(GenerateArgs),
