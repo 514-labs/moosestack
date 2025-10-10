@@ -2272,18 +2272,15 @@ impl InfrastructureMap {
         let has_consumption = self.has_consumption_apis();
         let uses_streaming = self.uses_streaming();
         let has_workflows = !self.workflows.is_empty();
-        let has_orchestration = !self.orchestration_workers.is_empty();
 
-        let is_olap_only =
-            !has_consumption && !uses_streaming && !has_workflows && !has_orchestration;
+        let is_olap_only = !has_consumption && !uses_streaming && !has_workflows;
 
         log::info!(
-            "OLAP-only check: {} (consumption={}, streaming={}, workflows={}, orchestration={})",
+            "OLAP-only check: {} (consumption={}, streaming={}, workflows={})",
             is_olap_only,
             has_consumption,
             uses_streaming,
             has_workflows,
-            has_orchestration
         );
 
         is_olap_only
