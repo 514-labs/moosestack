@@ -22,6 +22,14 @@ user_event_table = OlapTable[UserEvent](
         order_by_fields=["id", "timestamp"]
     )
 )
+
+# Alternatively, you can provide an ORDER BY expression
+user_event_table_expr = OlapTable[UserEvent](
+    "UserEventTableExpr",
+    OlapConfig(
+        order_by_expression="(id, timestamp)"
+    )
+)
 ```
 
 ## Table Configuration

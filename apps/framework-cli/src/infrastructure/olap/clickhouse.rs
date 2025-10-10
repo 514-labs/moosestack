@@ -49,8 +49,8 @@ use std::ops::Deref;
 
 use self::model::ClickHouseSystemTable;
 use crate::framework::core::infrastructure::table::{
-    Column, ColumnMetadata, ColumnType, DataEnum, EnumMember, EnumValue, EnumValueMetadata, Table,
-    METADATA_PREFIX,
+    Column, ColumnMetadata, ColumnType, DataEnum, EnumMember, EnumValue, EnumValueMetadata,
+    OrderBy, Table, METADATA_PREFIX,
 };
 use crate::framework::core::infrastructure_map::{PrimitiveSignature, PrimitiveTypes};
 use crate::framework::core::partial_infrastructure_map::LifeCycle;
@@ -1279,7 +1279,7 @@ impl OlapOperations for ConfiguredDBClient {
             let table = Table {
                 name: table_name, // Keep the original table name with version
                 columns,
-                order_by: order_by_cols, // Use the extracted ORDER BY columns
+                order_by: OrderBy::Fields(order_by_cols), // Use the extracted ORDER BY columns
                 partition_by: {
                     let p = partition_key.trim();
                     (!p.is_empty()).then(|| p.to_string())

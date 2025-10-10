@@ -1044,7 +1044,7 @@ fn path_exists(graph: &DiGraph<usize, ()>, start: NodeIndex, end: NodeIndex) -> 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::framework::core::infrastructure::table::ColumnType;
+    use crate::framework::core::infrastructure::table::{ColumnType, OrderBy};
     use crate::framework::core::partial_infrastructure_map::LifeCycle;
     use crate::framework::{
         core::infrastructure_map::{PrimitiveSignature, PrimitiveTypes},
@@ -1060,9 +1060,8 @@ mod tests {
         // Create a test table
         let table = Table {
             name: "test_table".to_string(),
-            // Include minimal required fields
             columns: vec![],
-            order_by: vec![],
+            order_by: OrderBy::Fields(vec![]),
             partition_by: None,
             engine: None,
             version: None,
@@ -1131,7 +1130,7 @@ mod tests {
         let table_a = Table {
             name: "table_a".to_string(),
             columns: vec![],
-            order_by: vec![],
+            order_by: OrderBy::Fields(vec![]),
             partition_by: None,
             engine: None,
             version: None,
@@ -1149,7 +1148,7 @@ mod tests {
         let table_b = Table {
             name: "table_b".to_string(),
             columns: vec![],
-            order_by: vec![],
+            order_by: OrderBy::Fields(vec![]),
             partition_by: None,
             engine: None,
             version: None,
@@ -1238,7 +1237,7 @@ mod tests {
         let table_a = Table {
             name: "table_a".to_string(),
             columns: vec![],
-            order_by: vec![],
+            order_by: OrderBy::Fields(vec![]),
             partition_by: None,
             engine: None,
             version: None,
@@ -1256,7 +1255,7 @@ mod tests {
         let table_b = Table {
             name: "table_b".to_string(),
             columns: vec![],
-            order_by: vec![],
+            order_by: OrderBy::Fields(vec![]),
             partition_by: None,
             engine: None,
             version: None,
@@ -1365,7 +1364,7 @@ mod tests {
         let table = Table {
             name: "test_table".to_string(),
             columns: vec![],
-            order_by: vec![],
+            order_by: OrderBy::Fields(vec![]),
             partition_by: None,
             engine: None,
             version: None,
@@ -1516,7 +1515,7 @@ mod tests {
         let table_a = Table {
             name: "table_a".to_string(),
             columns: vec![],
-            order_by: vec![],
+            order_by: OrderBy::Fields(vec![]),
             partition_by: None,
             engine: None,
             version: None,
@@ -1533,7 +1532,7 @@ mod tests {
         let table_b = Table {
             name: "table_b".to_string(),
             columns: vec![],
-            order_by: vec![],
+            order_by: OrderBy::Fields(vec![]),
             partition_by: None,
             engine: None,
             version: None,
@@ -1550,7 +1549,7 @@ mod tests {
         let table_c = Table {
             name: "table_c".to_string(),
             columns: vec![],
-            order_by: vec![],
+            order_by: OrderBy::Fields(vec![]),
             partition_by: None,
             engine: None,
             version: None,
@@ -1635,7 +1634,7 @@ mod tests {
         let table_a = Table {
             name: "table_a".to_string(),
             columns: vec![],
-            order_by: vec![],
+            order_by: OrderBy::Fields(vec![]),
             partition_by: None,
             engine: None,
             version: None,
@@ -1652,7 +1651,7 @@ mod tests {
         let table_b = Table {
             name: "table_b".to_string(),
             columns: vec![],
-            order_by: vec![],
+            order_by: OrderBy::Fields(vec![]),
             partition_by: None,
             engine: None,
             version: None,
@@ -1669,7 +1668,7 @@ mod tests {
         let table_c = Table {
             name: "table_c".to_string(),
             columns: vec![],
-            order_by: vec![],
+            order_by: OrderBy::Fields(vec![]),
             partition_by: None,
             engine: None,
             version: None,
@@ -1686,7 +1685,7 @@ mod tests {
         let table_d = Table {
             name: "table_d".to_string(),
             columns: vec![],
-            order_by: vec![],
+            order_by: OrderBy::Fields(vec![]),
             partition_by: None,
             engine: None,
             version: None,
@@ -1703,7 +1702,7 @@ mod tests {
         let table_e = Table {
             name: "table_e".to_string(),
             columns: vec![],
-            order_by: vec![],
+            order_by: OrderBy::Fields(vec![]),
             partition_by: None,
             engine: None,
             version: None,
@@ -1851,7 +1850,7 @@ mod tests {
         let table_a = Table {
             name: "table_a".to_string(),
             columns: vec![],
-            order_by: vec![],
+            order_by: OrderBy::Fields(vec![]),
             partition_by: None,
             engine: None,
             version: None,
@@ -1869,7 +1868,7 @@ mod tests {
         let table_b = Table {
             name: "table_b".to_string(),
             columns: vec![],
-            order_by: vec![],
+            order_by: OrderBy::Fields(vec![]),
             partition_by: None,
             engine: None,
             version: None,
@@ -1985,7 +1984,7 @@ mod tests {
         let table_a = Table {
             name: "table_a".to_string(),
             columns: vec![],
-            order_by: vec![],
+            order_by: OrderBy::Fields(vec![]),
             partition_by: None,
             engine: None,
             version: None,
@@ -2003,7 +2002,7 @@ mod tests {
         let table_b = Table {
             name: "table_b".to_string(),
             columns: vec![],
-            order_by: vec![],
+            order_by: OrderBy::Fields(vec![]),
             partition_by: None,
             engine: None,
             version: None,
@@ -2124,7 +2123,7 @@ mod tests {
         let table_a = Table {
             name: "table_a".to_string(),
             columns: vec![],
-            order_by: vec![],
+            order_by: OrderBy::Fields(vec![]),
             partition_by: None,
             engine: None,
             version: None,
@@ -2141,7 +2140,7 @@ mod tests {
         let table_b = Table {
             name: "table_b".to_string(),
             columns: vec![],
-            order_by: vec![],
+            order_by: OrderBy::Fields(vec![]),
             partition_by: None,
             engine: None,
             version: None,
@@ -2341,7 +2340,7 @@ mod tests {
         let table = Table {
             name: "test_table".to_string(),
             columns: vec![],
-            order_by: vec![],
+            order_by: OrderBy::Fields(vec![]),
             partition_by: None,
             engine: None,
             version: None,
@@ -2441,7 +2440,7 @@ mod tests {
         let table = Table {
             name: "test_table".to_string(),
             columns: vec![],
-            order_by: vec![],
+            order_by: OrderBy::Fields(vec![]),
             partition_by: None,
             engine: None,
             version: None,
@@ -2552,7 +2551,7 @@ mod tests {
                     comment: None,
                 },
             ],
-            order_by: vec!["id".to_string()],
+            order_by: OrderBy::Fields(vec!["id".to_string()]),
             partition_by: None,
             engine: Some(ClickhouseEngine::MergeTree),
             version: None,
@@ -2590,7 +2589,7 @@ mod tests {
                     comment: None,
                 },
             ],
-            order_by: vec!["id".to_string()],
+            order_by: OrderBy::Fields(vec!["id".to_string()]),
             partition_by: None,
             engine: Some(ClickhouseEngine::MergeTree),
             version: None,

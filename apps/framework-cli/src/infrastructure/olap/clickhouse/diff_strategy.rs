@@ -393,7 +393,7 @@ impl TableDiffStrategy for ClickHouseTableDiffStrategy {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::framework::core::infrastructure::table::{Column, ColumnType, EnumMember};
+    use crate::framework::core::infrastructure::table::{Column, ColumnType, EnumMember, OrderBy};
     use crate::framework::core::infrastructure_map::{PrimitiveSignature, PrimitiveTypes};
     use crate::framework::core::partial_infrastructure_map::LifeCycle;
     use crate::framework::versions::Version;
@@ -424,7 +424,7 @@ mod tests {
                     comment: None,
                 },
             ],
-            order_by,
+            order_by: OrderBy::Fields(order_by),
             partition_by: None,
             engine: deduplicate.then_some(ClickhouseEngine::ReplacingMergeTree {
                 ver: None,
@@ -456,8 +456,8 @@ mod tests {
         );
 
         let order_by_change = OrderByChange {
-            before: vec!["id".to_string()],
-            after: vec!["id".to_string(), "timestamp".to_string()],
+            before: OrderBy::Fields(vec!["id".to_string()]),
+            after: OrderBy::Fields(vec!["id".to_string(), "timestamp".to_string()]),
         };
 
         let changes = strategy.diff_table_update(&before, &after, vec![], order_by_change);
@@ -564,8 +564,8 @@ mod tests {
         }];
 
         let order_by_change = OrderByChange {
-            before: vec!["id".to_string(), "timestamp".to_string()],
-            after: vec!["id".to_string(), "timestamp".to_string()],
+            before: OrderBy::Fields(vec!["id".to_string(), "timestamp".to_string()]),
+            after: OrderBy::Fields(vec!["id".to_string(), "timestamp".to_string()]),
         };
 
         let changes = strategy.diff_table_update(&before, &after, column_changes, order_by_change);
@@ -597,8 +597,8 @@ mod tests {
         let column_changes = vec![];
 
         let order_by_change = OrderByChange {
-            before: vec!["id".to_string(), "timestamp".to_string()],
-            after: vec!["id".to_string(), "timestamp".to_string()],
+            before: OrderBy::Fields(vec!["id".to_string(), "timestamp".to_string()]),
+            after: OrderBy::Fields(vec!["id".to_string(), "timestamp".to_string()]),
         };
 
         let changes = strategy.diff_table_update(&before, &after, column_changes, order_by_change);
@@ -617,8 +617,8 @@ mod tests {
         // No column changes, but ORDER BY changes
         let column_changes = vec![];
         let order_by_change = OrderByChange {
-            before: vec!["id".to_string()],
-            after: vec!["timestamp".to_string()],
+            before: OrderBy::Fields(vec!["id".to_string()]),
+            after: OrderBy::Fields(vec!["timestamp".to_string()]),
         };
 
         let changes = strategy.diff_table_update(&before, &after, column_changes, order_by_change);
@@ -894,7 +894,7 @@ mod tests {
         let s3_table = Table {
             name: "test_s3".to_string(),
             columns: vec![],
-            order_by: vec![],
+            order_by: OrderBy::Fields(vec![]),
             partition_by: None,
             engine: Some(ClickhouseEngine::S3Queue {
                 s3_path: "s3://bucket/path".to_string(),

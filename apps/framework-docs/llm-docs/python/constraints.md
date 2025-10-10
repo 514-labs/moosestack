@@ -9,12 +9,15 @@ Configuration constraints in Moose provide a way to enforce rules and limitation
 ### Key Requirements
 
 - Schema must have `Key[type]` on a top level field passed into IngestPipeline or OlapTable
-- `Key[type]` must be the first field in `order_by_fields` when specified
+- If using `order_by_fields`, the first field must be the primary key (`Key[type]`) when present
+- If using `order_by_expression`, ensure your expression starts with the primary key column when a primary key exists (e.g., `(id, created_at, ...)`)
 
-### OrderByFields Requirements
+### ORDER BY Requirements
 
 - Fields used in `order_by_fields` must exist on the top level schema
 - No Optional fields in `order_by_fields` (fields with `Optional` or `None` default)
+- When using `order_by_expression`, the expression should reference only top-level, non-optional columns from the schema
+- To disable sorting entirely, set `order_by_expression="tuple()"`
 
 ## Schema Design Constraints
 

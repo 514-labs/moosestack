@@ -365,7 +365,7 @@ user_events_table = OlapTable[UserEvent]("user_events", {
 
 ### Choose columns that you will use in WHERE and GROUP BY clauses
 
-Optimize your `orderByFields` for your most common query patterns.
+Optimize your `orderByFields` (or `orderByExpression`) for your most common query patterns.
 
 <TypeScript>
 ```ts filename="OrderByOptimization.ts"
@@ -419,7 +419,7 @@ user_events_table = OlapTable[UserEvent]("user_events", {
 
 ### `ORDER BY` should prioritize LowCardinality columns first
 
-Place `LowCardinality` columns first in your <Python inline>`order_by_fields`</Python><TypeScript inline>`orderByFields`</TypeScript> for better compression and query performance.
+Place `LowCardinality` columns first in your <Python inline>`order_by_fields`</Python><TypeScript inline>`orderByFields`</TypeScript> (or reflect this priority in your <Python inline>`order_by_expression`</Python><TypeScript inline>`orderByExpression`</TypeScript>) for better compression and query performance.
 
 <TypeScript>
 ```ts filename="LowCardinalityOrdering.ts"

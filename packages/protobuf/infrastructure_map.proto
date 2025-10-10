@@ -127,10 +127,30 @@ message Table {
   map<string, string> table_settings = 11;
   // Optional PARTITION BY expression for ClickHouse tables
   optional string partition_by = 12;
+
+  // Next-version ORDER BY representation to match Rust enum
+  // Non-breaking: keeps legacy order_by (field 3) while adding a structured variant
+  optional OrderBy order_by2 = 13;
+  
   // Optional TTL expression at table level (without leading 'TTL')
-  optional string table_ttl_expression = 13;
+  optional string table_ttl_expression = 14;
   // Optional per-column TTL expressions (without leading 'TTL')
-  map<string, string> column_ttls = 14;
+  map<string, string> column_ttls = 15;
+}
+
+// Structured representation of ORDER BY to support either explicit fields
+// or an arbitrary ClickHouse SQL expression.
+message OrderBy {
+  oneof t {
+    // Explicit ordered list of fields
+    OrderByFields fields = 1;
+    // Arbitrary ClickHouse expression, e.g. "tuple()" or "(id, name)"
+    string expression = 2;
+  }
+}
+
+message OrderByFields {
+  repeated string field = 1;
 }
 
 message View {
