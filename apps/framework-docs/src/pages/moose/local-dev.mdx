@@ -260,18 +260,13 @@ Development mode includes a built-in Model Context Protocol (MCP) server that le
 
 **Quick setup:**
 
-The MCP server runs automatically at `http://localhost:4000/mcp`. Configure your AI client (Cursor, Claude Desktop, VS Code, Windsurf) to connect:
+The MCP server runs automatically at `http://localhost:4000/mcp`. For Claude Code, just run:
 
-```json copy
-{
-  "mcpServers": {
-    "moose-dev": {
-      "command": "node",
-      "args": ["-e", "const http = require('http'); const options = { hostname: 'localhost', port: 4000, path: '/mcp', method: 'POST', headers: { 'Content-Type': 'application/json' } }; process.stdin.pipe(http.request(options, (res) => { res.pipe(process.stdout); }));"]
-    }
-  }
-}
+```bash copy
+claude mcp add --transport http moose-dev http://localhost:4000/mcp
 ```
+
+For other AI clients (Windsurf, VS Code, Cursor, Claude Desktop), see the [full setup guide](/moose/mcp-dev-server).
 
 **Example prompts:**
 - *"What errors are in the logs?"*
@@ -279,7 +274,7 @@ The MCP server runs automatically at `http://localhost:4000/mcp`. Configure your
 - *"Show me the schema of all tables"*
 - *"Sample 5 messages from the Foo stream"*
 
-<Callout type="info" title="Full MCP Documentation" href="/moose/mcp-server" ctaLabel="Learn more">
+<Callout type="info" title="Full MCP Documentation" href="/moose/mcp-dev-server" ctaLabel="Learn more">
 See the complete guide for all available tools, detailed configuration for each AI client, and example workflows.
 </Callout>
 
