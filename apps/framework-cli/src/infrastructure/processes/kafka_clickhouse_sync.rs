@@ -53,6 +53,9 @@ const VERSION_SYNC_GROUP_ID: &str = "version_sync_flow_sync";
 const MAX_FLUSH_INTERVAL_SECONDS: u64 = 1;
 /// Maximum batch size for ClickHouse inserts
 const MAX_BATCH_SIZE: usize = 100000;
+/// Grace period in seconds for sync processes to complete graceful shutdown
+/// This timeout allows streaming sync tasks to flush pending work and close connections cleanly
+const SYNC_PROCESS_GRACE_PERIOD_SECS: u64 = 5;
 
 /// Registry that manages all synchronization processes
 ///
@@ -262,7 +265,7 @@ impl SyncingProcessesRegistry {
         }
 
         // Wait for all tasks to complete gracefully with a timeout
-        let grace_period = std::time::Duration::from_secs(5);
+        let grace_period = std::time::Duration::from_secs(SYNC_PROCESS_GRACE_PERIOD_SECS);
         debug!(
             "Waiting up to {} seconds for all {} table sync and {} topic sync processes to complete",
             grace_period.as_secs(),

@@ -115,6 +115,15 @@ fn default_management_port() -> u16 {
     5001
 }
 
+/// Timeout in milliseconds for waiting for Kafka clients to be destroyed during shutdown.
+/// This timeout ensures we wait for librdkafka to complete its internal cleanup before
+/// shutting down Docker containers to avoid connection errors.
+const KAFKA_CLIENT_DESTROY_TIMEOUT_MS: i32 = 3000;
+
+/// Grace period in seconds after stopping managed processes to allow for full cleanup.
+/// This gives streaming functions additional time to close Kafka consumers and Redis connections.
+const PROCESS_CLEANUP_GRACE_PERIOD_SECS: u64 = 2;
+
 /// Metadata for an API route.
 /// This struct contains information about the route, including the topic name,
 /// format, and data model.
@@ -2423,12 +2432,12 @@ impl Webserver {
         info!("Waiting for HTTP connections to close...");
 
         // Use different timeouts for dev vs production:
-        // - Dev: 1 second (MCP SSE connections may keep connections alive, fast shutdown for better DX)
+        // - Dev: 2 seconds (balance between fast shutdown and allowing in-flight requests to complete)
         // - Production: 10 seconds (allow load balancers time to drain connections during rolling deployments)
         let shutdown_timeout = if project.is_production {
             std::time::Duration::from_secs(10)
         } else {
-            std::time::Duration::from_secs(1)
+            std::time::Duration::from_secs(2)
         };
 
         let shutdown_future = graceful.shutdown();
@@ -2445,6 +2454,15 @@ impl Webserver {
         drop(api_service);
         drop(management_service);
         info!("Dropped api_service and management_service");
+
+        // Small grace period to ensure all connection handler tasks have fully completed
+        // This gives async task cleanup time to finish before we check producer Arc count
+        const HTTP_CLEANUP_GRACE_MS: u64 = 300;
+        tokio::time::sleep(std::time::Duration::from_millis(HTTP_CLEANUP_GRACE_MS)).await;
+        info!(
+            "Waited {}ms for connection handler tasks to complete",
+            HTTP_CLEANUP_GRACE_MS
+        );
 
         // Producer Arc count should now be 1 (only producer_for_shutdown remains)
 
@@ -2474,6 +2492,7 @@ async fn shutdown(
     // Note: Producer is already flushed before calling this function
 
     // Step 1: Stop all managed processes (functions, syncing, consumption, orchestration workers)
+    // This sends termination signals and waits with timeouts for all processes to exit
     let stop_result = with_spinner_completion_async(
         "Stopping managed processes (functions, syncing, consumption, workers)",
         "Managed processes stopped",
@@ -2490,21 +2509,43 @@ async fn shutdown(
             info!("Successfully stopped all managed processes");
         }
         Err(e) => {
-            error!("Failed to stop some managed processes: {}", e);
+            // Error stopping processes - this is rare but could happen if:
+            // - Process fails to respond to termination signal
+            // - Timeout is exceeded
+            // - System resource issues
+            // We log the error and continue with shutdown, as the producer has already been flushed
+            // and we want to ensure infrastructure cleanup happens
+            error!(
+                "Failed to stop some managed processes: {}. Continuing with shutdown...",
+                e
+            );
             super::display::show_message_wrapper(
                 MessageType::Error,
                 Message {
                     action: "Shutdown".to_string(),
-                    details: format!("Failed to stop all processes: {e}"),
+                    details: format!(
+                        "Some processes did not stop cleanly: {e}. Proceeding with infrastructure cleanup."
+                    ),
                 },
             );
         }
     }
 
-    // Add a grace period to ensure all processes have fully cleaned up
-    // This gives streaming functions additional time to close Kafka consumers and Redis connections
-    info!("Waiting for process cleanup to complete...");
-    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+    // Grace period to ensure child processes have fully cleaned up their resources
+    // After receiving stop signals, streaming functions need time to:
+    // - Commit Kafka consumer offsets
+    // - Close Redis connections gracefully
+    // - Flush any pending work
+    // Note: process_registry.stop() already waits with timeouts for processes to exit,
+    // but this additional grace period ensures OS-level resource cleanup completes
+    info!(
+        "Grace period: allowing {}s for process resource cleanup...",
+        PROCESS_CLEANUP_GRACE_PERIOD_SECS
+    );
+    tokio::time::sleep(std::time::Duration::from_secs(
+        PROCESS_CLEANUP_GRACE_PERIOD_SECS,
+    ))
+    .await;
 
     // Step 2: Shutdown workflows (if enabled)
     if !project.is_production && project.features.workflows {
@@ -2534,21 +2575,57 @@ async fn shutdown(
     // Step 3: Drop producer and wait for Kafka clients to fully destroy
     // This must happen BEFORE shutting down containers to avoid connection errors
     if let Some(producer) = producer {
-        // Diagnostic: Check Arc strong count (should be 1 since route_service was dropped)
-        let strong_count = Arc::strong_count(&producer);
+        // Wait for all references to the producer to be dropped
+        // After HTTP shutdown, all connection handlers should be complete
+        let mut strong_count = Arc::strong_count(&producer);
         info!(
-            "Producer Arc strong count: {} (should be 1 after route_service dropped)",
+            "Initial producer Arc strong count: {} (should be 1 after route_service dropped)",
             strong_count
         );
+
+        // If count > 1, wait for outstanding references to be dropped
+        if strong_count > 1 {
+            warn!(
+                "Producer still has {} outstanding references, waiting for cleanup...",
+                strong_count - 1
+            );
+
+            const MAX_WAIT_MS: u64 = 2000; // 2 seconds total
+            const POLL_INTERVAL_MS: u64 = 100; // Check every 100ms
+            let max_iterations = MAX_WAIT_MS / POLL_INTERVAL_MS;
+
+            for iteration in 0..max_iterations {
+                tokio::time::sleep(std::time::Duration::from_millis(POLL_INTERVAL_MS)).await;
+                strong_count = Arc::strong_count(&producer);
+
+                if strong_count <= 1 {
+                    info!(
+                        "Producer Arc count reached 1 after {}ms",
+                        (iteration + 1) * POLL_INTERVAL_MS
+                    );
+                    break;
+                }
+            }
+
+            // Final check after timeout
+            if strong_count > 1 {
+                error!(
+                    "Producer still has {} outstanding references after {}ms timeout. \
+                     This may indicate connection handler tasks are still running. \
+                     Proceeding with shutdown anyway (producer already flushed).",
+                    strong_count - 1,
+                    MAX_WAIT_MS
+                );
+            }
+        }
 
         // Explicitly drop the producer to trigger cleanup
         drop(producer);
         info!("Producer dropped, waiting for Kafka clients to destroy...");
 
         // Wait for librdkafka to complete cleanup
-        const TIMEOUT_MS: i32 = 3000;
         let result = tokio::task::spawn_blocking(move || unsafe {
-            rdkafka_sys::rd_kafka_wait_destroyed(TIMEOUT_MS)
+            rdkafka_sys::rd_kafka_wait_destroyed(KAFKA_CLIENT_DESTROY_TIMEOUT_MS)
         })
         .await;
 
@@ -2559,7 +2636,7 @@ async fn shutdown(
             Ok(n) => {
                 warn!(
                     "⚠️ {} Kafka client(s) still not fully destroyed after {}ms timeout",
-                    n, TIMEOUT_MS
+                    n, KAFKA_CLIENT_DESTROY_TIMEOUT_MS
                 );
             }
             Err(e) => {
