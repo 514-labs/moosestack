@@ -1,5 +1,5 @@
 use crate::framework::core::infrastructure::table::{
-    ColumnType, DataEnum, EnumValue, FloatType, Nested, Table,
+    ColumnType, DataEnum, EnumValue, FloatType, Nested, OrderBy, Table,
 };
 use crate::framework::core::partial_infrastructure_map::LifeCycle;
 use convert_case::{Case, Casing};
@@ -232,7 +232,7 @@ pub fn tables_to_typescript(tables: &[Table], life_cycle: Option<LifeCycle>) -> 
                 }
             })
             .collect::<Vec<_>>();
-        let can_use_key_wrapping = table.order_by.starts_with(primary_key.as_slice());
+        let can_use_key_wrapping = table.order_by.starts_with_fields(&primary_key);
 
         writeln!(output, "export interface {} {{", table.name).unwrap();
 
@@ -267,14 +267,15 @@ pub fn tables_to_typescript(tables: &[Table], life_cycle: Option<LifeCycle>) -> 
 
     // Generate table configurations
     for table in tables {
-        let order_by_fields = if table.order_by.is_empty() {
-            "\"tuple()\"".to_string()
-        } else {
-            table
-                .order_by
-                .iter()
-                .map(|name| format!("{:?}", name))
-                .join(", ")
+        let order_by_spec = match &table.order_by {
+            OrderBy::Fields(v) if v.is_empty() => "orderByExpression: \"tuple()\"".to_string(),
+            OrderBy::Fields(v) => {
+                format!(
+                    "orderByFields: [{}]",
+                    v.iter().map(|name| format!("{:?}", name)).join(", ")
+                )
+            }
+            OrderBy::SingleExpr(expr) => format!("orderByExpression: {:?}", expr),
         };
         writeln!(
             output,
@@ -284,7 +285,7 @@ pub fn tables_to_typescript(tables: &[Table], life_cycle: Option<LifeCycle>) -> 
             table.name
         )
         .unwrap();
-        writeln!(output, "    orderByFields: [{order_by_fields}],").unwrap();
+        writeln!(output, "    {order_by_spec},").unwrap();
         if let Some(partition_by) = &table.partition_by {
             writeln!(output, "    partitionBy: {:?},", partition_by).unwrap();
         }
@@ -418,7 +419,9 @@ pub fn tables_to_typescript(tables: &[Table], life_cycle: Option<LifeCycle>) -> 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::framework::core::infrastructure::table::{Column, ColumnType, EnumMember, Nested};
+    use crate::framework::core::infrastructure::table::{
+        Column, ColumnType, EnumMember, Nested, OrderBy,
+    };
     use crate::framework::core::infrastructure_map::{PrimitiveSignature, PrimitiveTypes};
     use crate::framework::core::partial_infrastructure_map::LifeCycle;
     use crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine;
@@ -499,7 +502,7 @@ mod tests {
                     comment: None,
                 },
             ],
-            order_by: vec!["id".to_string()],
+            order_by: OrderBy::Fields(vec!["id".to_string()]),
             partition_by: None,
             engine: Some(ClickhouseEngine::MergeTree),
             version: None,
@@ -563,7 +566,7 @@ export const UserTable = new OlapTable<User>("User", {
                     comment: None,
                 },
             ],
-            order_by: vec!["id".to_string()],
+            order_by: OrderBy::Fields(vec!["id".to_string()]),
             partition_by: None,
             engine: Some(ClickhouseEngine::S3Queue {
                 s3_path: "s3://bucket/path".to_string(),
@@ -612,7 +615,7 @@ export const UserTable = new OlapTable<User>("User", {
                 annotations: vec![],
                 comment: None,
             }],
-            order_by: vec!["id".to_string()],
+            order_by: OrderBy::Fields(vec!["id".to_string()]),
             partition_by: None,
             engine: Some(ClickhouseEngine::MergeTree),
             version: None,
@@ -678,7 +681,7 @@ export const UserTable = new OlapTable<User>("User", {
                     comment: None,
                 },
             ],
-            order_by: vec!["id".to_string()],
+            order_by: OrderBy::Fields(vec!["id".to_string()]),
             partition_by: None,
             engine: Some(ClickhouseEngine::ReplacingMergeTree {
                 ver: Some("version".to_string()),
@@ -717,7 +720,7 @@ export const UserTable = new OlapTable<User>("User", {
                 annotations: vec![],
                 comment: None,
             }],
-            order_by: vec!["id".to_string()],
+            order_by: OrderBy::Fields(vec!["id".to_string()]),
             partition_by: None,
             engine: Some(ClickhouseEngine::ReplicatedMergeTree {
                 keeper_path: Some("/clickhouse/tables/{shard}/user_data".to_string()),
@@ -784,7 +787,7 @@ export const UserTable = new OlapTable<User>("User", {
                     comment: None,
                 },
             ],
-            order_by: vec!["id".to_string()],
+            order_by: OrderBy::Fields(vec!["id".to_string()]),
             partition_by: None,
             engine: Some(ClickhouseEngine::ReplicatedReplacingMergeTree {
                 keeper_path: Some("/clickhouse/tables/{shard}/user_data".to_string()),
@@ -857,7 +860,7 @@ export const UserTable = new OlapTable<User>("User", {
                     comment: None,
                 },
             ],
-            order_by: vec!["id".to_string()],
+            order_by: OrderBy::Fields(vec!["id".to_string()]),
             partition_by: None,
             engine: Some(ClickhouseEngine::MergeTree),
             version: None,

@@ -242,7 +242,9 @@ mod tests {
     use crate::cli::local_webserver::LocalWebserverConfig;
     use crate::framework::core::infrastructure::consumption_webserver::ConsumptionApiWebServer;
     use crate::framework::core::infrastructure::olap_process::OlapProcess;
-    use crate::framework::core::infrastructure::table::{Column, ColumnType, IntType, Table};
+    use crate::framework::core::infrastructure::table::{
+        Column, ColumnType, IntType, OrderBy, Table,
+    };
     use crate::framework::core::infrastructure_map::{
         PrimitiveSignature, PrimitiveTypes, TableChange,
     };
@@ -318,7 +320,7 @@ mod tests {
                 annotations: vec![],
                 comment: None,
             }],
-            order_by: vec!["id".to_string()],
+            order_by: OrderBy::Fields(vec!["id".to_string()]),
             partition_by: None,
             engine: None,
             version: Some(Version::from_string("1.0.0".to_string())),
@@ -465,8 +467,8 @@ mod tests {
         infra_table.columns.push(timestamp_col);
 
         // Set different order_by in actual vs infra
-        actual_table.order_by = vec!["id".to_string(), "timestamp".to_string()];
-        infra_table.order_by = vec!["id".to_string()];
+        actual_table.order_by = OrderBy::Fields(vec!["id".to_string(), "timestamp".to_string()]);
+        infra_table.order_by = OrderBy::Fields(vec!["id".to_string()]);
 
         let mock_client = MockOlapClient {
             tables: vec![actual_table],
@@ -507,9 +509,12 @@ mod tests {
             }) => {
                 assert_eq!(
                     order_by_change.before,
-                    vec!["id".to_string(), "timestamp".to_string()]
+                    OrderBy::Fields(vec!["id".to_string(), "timestamp".to_string(),])
                 );
-                assert_eq!(order_by_change.after, vec!["id".to_string()]);
+                assert_eq!(
+                    order_by_change.after,
+                    OrderBy::Fields(vec!["id".to_string(),])
+                );
             }
             _ => panic!("Expected TableChange::Updated variant"),
         }

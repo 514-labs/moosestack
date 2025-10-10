@@ -27,6 +27,15 @@ export const MergeTreeTable = new OlapTable<EngineTestData>("MergeTreeTest", {
   orderByFields: ["id", "timestamp"],
 });
 
+// Test MergeTree with orderByExpression (equivalent to fields)
+export const MergeTreeTableExpr = new OlapTable<EngineTestData>(
+  "MergeTreeTestExpr",
+  {
+    engine: ClickHouseEngines.MergeTree,
+    orderByExpression: "(id, timestamp)",
+  },
+);
+
 // Test ReplacingMergeTree engine with basic deduplication
 export const ReplacingMergeTreeBasicTable = new OlapTable<EngineTestData>(
   "ReplacingMergeTreeBasic",
@@ -167,6 +176,7 @@ export const ReplicatedSummingMergeTreeTable = new OlapTable<EngineTestData>(
  */
 export const allEngineTestTables = [
   MergeTreeTable,
+  MergeTreeTableExpr,
   ReplacingMergeTreeBasicTable,
   ReplacingMergeTreeVersionTable,
   ReplacingMergeTreeSoftDeleteTable,

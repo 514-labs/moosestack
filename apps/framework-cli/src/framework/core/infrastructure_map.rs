@@ -39,7 +39,7 @@ use super::infrastructure::function_process::FunctionProcess;
 use super::infrastructure::olap_process::OlapProcess;
 use super::infrastructure::orchestration_worker::OrchestrationWorker;
 use super::infrastructure::sql_resource::SqlResource;
-use super::infrastructure::table::{Column, Table};
+use super::infrastructure::table::{Column, OrderBy, Table};
 use super::infrastructure::topic::Topic;
 use super::infrastructure::topic_sync_process::{TopicToTableSyncProcess, TopicToTopicSyncProcess};
 use super::infrastructure::view::View;
@@ -261,10 +261,10 @@ pub enum ColumnChange {
 /// Tracks the before and after states of the ordering columns.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OrderByChange {
-    /// Previous ordering columns
-    pub before: Vec<String>,
-    /// New ordering columns
-    pub after: Vec<String>,
+    /// Previous ORDER BY configuration
+    pub before: OrderBy,
+    /// New ORDER BY configuration
+    pub after: OrderBy,
 }
 
 /// Represents a change to a database table
@@ -617,14 +617,14 @@ impl InfrastructureMap {
 
         // consumption api endpoints
         let consumption_api_web_server = ConsumptionApiWebServer {};
-        if !project.features.olap && !primitive_map.consumption.endpoint_files.is_empty() {
-            log::error!("OLAP disabled. Consumption APIs are disabled.");
+        if !project.features.apis && !primitive_map.consumption.endpoint_files.is_empty() {
+            log::error!("Analytics APIs disabled. API endpoints will not be available.");
             show_message_wrapper(
                 MessageType::Error,
                 Message {
                     action: "Disabled".to_string(),
                     details: format!(
-                        "OLAP is disabled but {} consumption API(s) found.",
+                        "Analytics APIs feature is disabled but {} API endpoint(s) found. Enable 'apis = true' in moose.config.toml.",
                         primitive_map.consumption.endpoint_files.len()
                     ),
                 },
@@ -778,6 +778,10 @@ impl InfrastructureMap {
             process_changes.push(ProcessChange::OlapProcess(Change::<OlapProcess>::Added(
                 Box::new(OlapProcess {}),
             )));
+        }
+
+        // Only add Analytics API server if apis feature is enabled
+        if project.features.apis {
             process_changes.push(ProcessChange::ConsumptionApiWebServer(Change::<
                 ConsumptionApiWebServer,
             >::Added(
@@ -1569,7 +1573,11 @@ impl InfrastructureMap {
                             // target may leave order_by unspecified,
                             // but the implicit order_by from primary keys can be the same
                             && !(target_table.order_by.is_empty()
-                                && order_by_from_primary_key(target_table) == table.order_by);
+                                && matches!(
+                                    &table.order_by,
+                                    OrderBy::Fields(v)
+                                        if *v == order_by_from_primary_key(target_table)
+                                ));
 
                         // Detect engine change (e.g., MergeTree -> ReplacingMergeTree)
                         let engine_changed = table.engine != target_table.engine;
@@ -1581,8 +1589,8 @@ impl InfrastructureMap {
                             }
                         } else {
                             OrderByChange {
-                                before: vec![],
-                                after: vec![],
+                                before: OrderBy::Fields(vec![]),
+                                after: OrderBy::Fields(vec![]),
                             }
                         };
 
@@ -1711,8 +1719,8 @@ impl InfrastructureMap {
             }
         } else {
             OrderByChange {
-                before: vec![],
-                after: vec![],
+                before: OrderBy::Fields(vec![]),
+                after: OrderBy::Fields(vec![]),
             }
         };
 
@@ -1793,7 +1801,11 @@ impl InfrastructureMap {
             // target may leave order_by unspecified,
             // but the implicit order_by from primary keys can be the same
             && !(target_table.order_by.is_empty()
-                && order_by_from_primary_key(target_table) == table.order_by);
+                && matches!(
+                    &table.order_by,
+                    crate::framework::core::infrastructure::table::OrderBy::Fields(v)
+                        if *v == order_by_from_primary_key(target_table)
+                ));
 
         let order_by_change = if order_by_changed {
             OrderByChange {
@@ -1802,8 +1814,8 @@ impl InfrastructureMap {
             }
         } else {
             OrderByChange {
-                before: vec![],
-                after: vec![],
+                before: OrderBy::Fields(vec![]),
+                after: OrderBy::Fields(vec![]),
             }
         };
 
@@ -2114,8 +2126,8 @@ impl InfrastructureMap {
             );
         }
 
-        // Provide explicit feedback when consumption APIs are defined but OLAP is disabled
-        if !project.features.olap && infra_map.has_consumption_apis() {
+        // Provide explicit feedback when consumption APIs are defined but APIs feature is disabled
+        if !project.features.apis && infra_map.has_consumption_apis() {
             let consumption_api_count = infra_map
                 .api_endpoints
                 .values()
@@ -2127,7 +2139,7 @@ impl InfrastructureMap {
                 Message {
                     action: "Disabled".to_string(),
                     details: format!(
-                        "OLAP is disabled but {} consumption API(s) found. Enable it by setting [features].olap = true in moose.config.toml",
+                        "Analytics APIs feature is disabled but {} API endpoint(s) found. Enable it by setting [features].apis = true in moose.config.toml",
                         consumption_api_count
                     ),
                 },
@@ -2369,7 +2381,7 @@ mod tests {
     use crate::framework::core::infrastructure::table::IntType;
     use crate::framework::core::infrastructure_map::DefaultTableDiffStrategy;
     use crate::framework::core::infrastructure_map::{
-        Change, InfrastructureMap, OlapChange, StreamingChange, TableChange,
+        Change, InfrastructureMap, OlapChange, OrderBy, StreamingChange, TableChange,
     };
     use crate::framework::core::{
         infrastructure::table::{Column, ColumnType, Table},
@@ -2417,7 +2429,7 @@ mod tests {
                     comment: None,
                 },
             ],
-            order_by: vec!["id".to_string()],
+            order_by: OrderBy::Fields(vec!["id".to_string()]),
             partition_by: None,
             version: Some(Version::from_string("1.0".to_string())),
             source_primitive: PrimitiveSignature {
@@ -2465,7 +2477,7 @@ mod tests {
                     comment: None,
                 },
             ],
-            order_by: vec!["id".to_string(), "name".to_string()], // Changed order_by
+            order_by: OrderBy::Fields(vec!["id".to_string(), "name".to_string()]), // Changed order_by
             partition_by: None,
             version: Some(Version::from_string("1.1".to_string())),
             source_primitive: PrimitiveSignature {
@@ -2631,7 +2643,7 @@ mod diff_tests {
             name: name.to_string(),
             engine: None,
             columns: vec![],
-            order_by: vec![],
+            order_by: OrderBy::Fields(vec![]),
             partition_by: None,
             version: Some(Version::from_string(version.to_string())),
             source_primitive: PrimitiveSignature {
@@ -2871,8 +2883,8 @@ mod diff_tests {
         let mut before = create_test_table("test", "1.0");
         let mut after = create_test_table("test", "1.0");
 
-        before.order_by = vec!["id".to_string()];
-        after.order_by = vec!["id".to_string(), "name".to_string()];
+        before.order_by = OrderBy::Fields(vec!["id".to_string()]);
+        after.order_by = OrderBy::Fields(vec!["id".to_string(), "name".to_string()]);
 
         let mut changes = Vec::new();
         InfrastructureMap::diff_tables(
@@ -2887,8 +2899,14 @@ mod diff_tests {
             OlapChange::Table(TableChange::Updated {
                 order_by_change, ..
             }) => {
-                assert_eq!(order_by_change.before, vec!["id"]);
-                assert_eq!(order_by_change.after, vec!["id", "name"]);
+                assert_eq!(
+                    order_by_change.before,
+                    OrderBy::Fields(vec!["id".to_string(),])
+                );
+                assert_eq!(
+                    order_by_change.after,
+                    OrderBy::Fields(vec!["id".to_string(), "name".to_string(),])
+                );
             }
             _ => panic!("Expected Updated change with order_by modification"),
         }

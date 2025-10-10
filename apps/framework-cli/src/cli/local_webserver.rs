@@ -505,6 +505,70 @@ struct ManagementService<I: InfraMapProvider + Clone> {
     max_request_body_size: usize,
 }
 
+/// ApiService delegates requests to either the MCP service or the RouteService
+/// based on the request path. This provides clean separation between MCP and
+/// regular API routes without nesting MCP handling inside the main router.
+#[derive(Clone)]
+struct ApiService {
+    route_service: RouteService,
+    mcp_service: Option<
+        hyper_util::service::TowerToHyperService<
+            crate::mcp::StreamableHttpService<
+                crate::mcp::MooseMcpHandler,
+                crate::mcp::LocalSessionManager,
+            >,
+        >,
+    >,
+}
+
+impl Service<Request<Incoming>> for ApiService {
+    type Response = Response<Full<Bytes>>;
+    type Error = hyper::http::Error;
+    type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send>>;
+
+    fn call(&self, req: Request<Incoming>) -> Self::Future {
+        let path = req.uri().path();
+
+        // Route to MCP service if path starts with /mcp and MCP is enabled
+        if path.starts_with("/mcp") {
+            if let Some(mcp) = self.mcp_service.clone() {
+                return Box::pin(async move {
+                    use http_body_util::BodyExt;
+
+                    // Call the MCP service - TowerToHyperService handles the conversion
+                    let mcp_response = match mcp.call(req).await {
+                        Ok(response) => response,
+                        Err(_) => {
+                            // Since the MCP service returns Infallible, this should never happen
+                            error!("Unexpected error from MCP service");
+                            return Response::builder()
+                                .status(StatusCode::INTERNAL_SERVER_ERROR)
+                                .body(Full::new(Bytes::from("MCP service error")));
+                        }
+                    };
+
+                    // Convert the MCP response body to Full<Bytes>
+                    let (parts, body) = mcp_response.into_parts();
+                    let body_bytes = match body.collect().await {
+                        Ok(collected) => collected.to_bytes(),
+                        Err(e) => {
+                            error!("Failed to read MCP response body: {}", e);
+                            return Response::builder()
+                                .status(StatusCode::INTERNAL_SERVER_ERROR)
+                                .body(Full::new(Bytes::from("Failed to read MCP response body")));
+                        }
+                    };
+
+                    Ok(Response::from_parts(parts, Full::new(body_bytes)))
+                });
+            }
+        }
+
+        // Otherwise, use the regular route service
+        self.route_service.call(req)
+    }
+}
+
 impl Service<Request<Incoming>> for RouteService {
     type Response = Response<Full<Bytes>>;
     type Error = hyper::http::Error;
@@ -2125,6 +2189,7 @@ impl Webserver {
         metrics: Arc<Metrics>,
         openapi_path: Option<PathBuf>,
         process_registry: Arc<RwLock<ProcessRegistries>>,
+        enable_mcp: bool,
     ) {
         //! Starts the local webserver
         let socket = self.socket().await;
@@ -2203,6 +2268,26 @@ impl Webserver {
             .await
             .expect("Failed to initialize Redis client");
 
+        let redis_client_arc = Arc::new(redis_client);
+
+        // Create MCP service once if enabled
+        let mcp_service = if enable_mcp {
+            use crate::mcp::create_mcp_http_service;
+            use crate::utilities::constants::CLI_VERSION;
+            use hyper_util::service::TowerToHyperService;
+
+            info!("[MCP] Initializing MCP service for Model Context Protocol support");
+            let tower_service = create_mcp_http_service(
+                "moose-mcp-server".to_string(),
+                CLI_VERSION.to_string(),
+                redis_client_arc.clone(),
+            );
+            // Wrap the Tower service to make it compatible with Hyper
+            Some(TowerToHyperService::new(tower_service))
+        } else {
+            None
+        };
+
         let route_service = RouteService {
             host: self.host.clone(),
             path_prefix: project.http_server_config.normalized_path_prefix(),
@@ -2215,7 +2300,13 @@ impl Webserver {
             http_client,
             metrics: metrics.clone(),
             project: project.clone(),
-            redis_client: Arc::new(redis_client),
+            redis_client: redis_client_arc.clone(),
+        };
+
+        // Wrap route_service with ApiService to handle MCP routing at the top level
+        let api_service = ApiService {
+            route_service,
+            mcp_service,
         };
 
         let management_service = ManagementService {
@@ -2245,19 +2336,19 @@ impl Webserver {
                     let (stream, _) = listener_result.unwrap();
                     let io = TokioIo::new(stream);
 
-                    // Create a clone of route_service for each connection
+                    // Create a clone of api_service for each connection
                     // since hyper needs to own the service (it can't just borrow it)
-                    let route_service = route_service.clone();
+                    let api_service = api_service.clone();
                     let conn = conn_builder.serve_connection(
                         io,
-                        route_service.clone(),
+                        api_service.clone(),
                     );
                     let watched = graceful.watch(conn);
                     // Set server_label to "API" for the main API server. This label is used in error logging below.
                     let server_label = "API";
                     let port = socket.port();
-                    let project_name = route_service.project.name().to_string();
-                    let version = route_service.current_version.clone();
+                    let project_name = api_service.route_service.project.name().to_string();
+                    let version = api_service.route_service.current_version.clone();
                     tokio::task::spawn(async move {
                         if let Err(e) = watched.await {
                             error!("server error on {} server (port {}): {} [project: {}, version: {}]", server_label, port, e, project_name, version);
@@ -2313,13 +2404,21 @@ async fn shutdown(
     // First, initiate the graceful shutdown of HTTP connections
     let shutdown_future = graceful.shutdown();
 
-    // Wait for connections to close with a timeout
+    // Use different timeouts for dev vs production:
+    // - Dev: 1 second (MCP SSE connections may keep connections alive, fast shutdown for better DX)
+    // - Production: 10 seconds (allow load balancers time to drain connections during rolling deployments)
+    let shutdown_timeout = if project.is_production {
+        std::time::Duration::from_secs(10)
+    } else {
+        std::time::Duration::from_secs(1)
+    };
+
     tokio::select! {
         _ = shutdown_future => {
             info!("all connections gracefully closed");
         },
-        _ = tokio::time::sleep(std::time::Duration::from_secs(10)) => {
-            warn!("timed out wait for all connections to close");
+        _ = tokio::time::sleep(shutdown_timeout) => {
+            warn!("timed out waiting for connections to close ({}s), proceeding with shutdown", shutdown_timeout.as_secs());
         }
     }
 
@@ -3057,7 +3156,9 @@ async fn admin_inframap_route(
 mod tests {
     use super::*;
 
-    use crate::framework::core::infrastructure::table::{Column, ColumnType, IntType, Table};
+    use crate::framework::core::infrastructure::table::{
+        Column, ColumnType, IntType, OrderBy, Table,
+    };
     use crate::framework::core::infrastructure_map::{
         OlapChange, PrimitiveSignature, PrimitiveTypes, TableChange,
     };
@@ -3077,7 +3178,7 @@ mod tests {
                 annotations: vec![],
                 comment: None,
             }],
-            order_by: vec!["id".to_string()],
+            order_by: OrderBy::Fields(vec!["id".to_string()]),
             partition_by: None,
             engine: None,
             version: Some(Version::from_string("1.0.0".to_string())),

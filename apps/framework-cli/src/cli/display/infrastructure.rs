@@ -233,7 +233,7 @@ fn format_table_display(
 
     // Order by section (if present)
     if !table.order_by.is_empty() {
-        details.push(format!("Order by: {}", table.order_by.join(", ")));
+        details.push(format!("Order by: {}", table.order_by));
     }
 
     // Engine section (if present)

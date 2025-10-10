@@ -367,6 +367,7 @@ pub async fn start_development_mode(
     metrics: Arc<Metrics>,
     redis_client: Arc<RedisClient>,
     settings: &Settings,
+    enable_mcp: bool,
 ) -> anyhow::Result<()> {
     display::show_message_wrapper(
         MessageType::Info,
@@ -558,6 +559,23 @@ pub async fn start_development_mode(
         settings.clone(),
     )?;
 
+    // Log MCP server status
+    if enable_mcp {
+        display::show_message_wrapper(
+            MessageType::Success,
+            Message {
+                action: "MCP".to_string(),
+                details: format!(
+                    "Model Context Protocol server available at http://{}:{}/mcp",
+                    server_config.host, server_config.port
+                ),
+            },
+        );
+        info!("[MCP] MCP endpoint enabled at /mcp");
+    } else {
+        info!("[MCP] MCP server disabled via --mcp false flag");
+    }
+
     info!("Starting web server...");
     web_server
         .start(
@@ -569,6 +587,7 @@ pub async fn start_development_mode(
             metrics,
             Some(openapi_file),
             process_registry,
+            enable_mcp,
         )
         .await;
 
@@ -714,6 +733,7 @@ pub async fn start_production_mode(
             metrics,
             None,
             Arc::new(RwLock::new(process_registry)),
+            false, // MCP is disabled in production mode
         )
         .await;
 
