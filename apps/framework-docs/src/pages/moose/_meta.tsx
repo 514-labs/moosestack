@@ -46,7 +46,7 @@ const rawMeta = {
     title: "Local Dev Environment",
     Icon: Laptop,
   },
-  "mcp-server": {
+  "mcp-dev-server": {
     title: "MCP - AI Assisted Dev",
     Icon: Sparkles,
   },
