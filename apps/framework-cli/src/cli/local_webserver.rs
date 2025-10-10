@@ -2288,6 +2288,7 @@ impl Webserver {
                 CLI_VERSION.to_string(),
                 redis_client_arc.clone(),
                 project.clickhouse_config.clone(),
+                Arc::new(project.redpanda_config.clone()),
             );
             // Wrap the Tower service to make it compatible with Hyper
             Some(TowerToHyperService::new(tower_service))
