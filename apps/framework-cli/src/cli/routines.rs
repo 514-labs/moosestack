@@ -133,7 +133,10 @@ use crate::utilities::keyring::{KeyringSecretRepository, SecretRepository};
 /// Checks if serverless mode should exit early for OLAP-only projects.
 /// Returns true if CLI should exit (apply migrations and exit).
 fn check_serverless_exit(serverless: bool, infra_map: &InfrastructureMap) -> bool {
-    if !serverless {
+    // Check both CLI flag and environment variable
+    let serverless_enabled = serverless || std::env::var("MOOSE_SERVERLESS").is_ok();
+
+    if !serverless_enabled {
         return false;
     }
 
