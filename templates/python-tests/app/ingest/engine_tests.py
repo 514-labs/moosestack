@@ -1,7 +1,7 @@
 # Test all supported ClickHouse engines to ensure proper configuration
 # These tables verify that all engine types can be created and configured correctly
 
-from moose_lib import OlapTable, OlapConfig, Key
+from moose_lib import OlapTable, OlapConfig, Key, ClickHouseTtl
 from moose_lib.blocks import (
     MergeTreeEngine,
     ReplacingMergeTreeEngine,
@@ -15,7 +15,7 @@ from moose_lib.blocks import (
 )
 from pydantic import BaseModel
 from datetime import datetime
-from typing import Optional
+from typing import Optional, Annotated
 
 
 class EngineTestData(BaseModel):
