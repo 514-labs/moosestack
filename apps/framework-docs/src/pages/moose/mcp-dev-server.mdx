@@ -1,0 +1,559 @@
+---
+title: MCP Server
+description: Built-in Model Context Protocol server for AI-assisted development
+---
+
+import { Callout } from "@/components";
+import { Tabs } from "nextra/components";
+
+# MCP Server for AI-Assisted Development
+
+The Moose development server includes a built-in Model Context Protocol (MCP) server that enables AI agents and IDEs to interact directly with your local development infrastructure. This allows you to use natural language to query data, inspect logs, explore infrastructure, and debug your Moose project.
+
+## What is MCP?
+
+[Model Context Protocol (MCP)](https://modelcontextprotocol.io) is an open protocol that standardizes how AI assistants communicate with development tools and services. Moose's MCP server exposes your local development environment—including ClickHouse, Redpanda, logs, and infrastructure state—through a set of tools that AI agents can use.
+
+## Quick Start
+
+The MCP server runs automatically when you start development mode:
+
+```bash
+moose dev
+```
+
+The MCP server is available at: `http://localhost:4000/mcp`
+
+<Callout type="info">
+The MCP server is enabled by default. To disable it, use `moose dev --mcp=false`.
+</Callout>
+
+## Configure Your AI Client
+
+Connect your AI assistant to the Moose MCP server. Most clients now support native HTTP transport for easier setup.
+
+<Tabs items={['Claude Code', 'Windsurf', 'VS Code', 'Cursor', 'Claude Desktop']}>
+<Tabs.Tab>
+
+**Setup**: Use the Claude Code CLI (easiest method)
+
+```bash copy
+claude mcp add --transport http moose-dev http://localhost:4000/mcp
+```
+
+That's it! Claude Code will automatically connect to your Moose dev server.
+
+<Callout type="info">
+**Scope**: This command adds the MCP server to Claude Code's project configuration, making it available to your project when using Claude Code. Other AI clients (Cursor, Windsurf, etc.) require separate configuration - see the tabs below.
+</Callout>
+
+<Callout type="info">
+Make sure `moose dev` is running before adding the server. The CLI will verify the connection.
+</Callout>
+
+**Alternative**: Manual configuration at `~/.claude/config.json`
+
+```json filename="config.json" copy
+{
+  "mcpServers": {
+    "moose-dev": {
+      "transport": "http",
+      "url": "http://localhost:4000/mcp"
+    }
+  }
+}
+```
+
+</Tabs.Tab>
+
+<Tabs.Tab>
+
+**Location**: `~/.codeium/windsurf/mcp_config.json`
+
+Windsurf supports native Streamable HTTP transport:
+
+```json filename="mcp_config.json" copy
+{
+  "mcpServers": {
+    "moose-dev": {
+      "serverUrl": "http://localhost:4000/mcp"
+    }
+  }
+}
+```
+
+</Tabs.Tab>
+
+<Tabs.Tab>
+
+**Prerequisites**:
+- VS Code 1.102+ (built-in MCP support)
+- Or install the [Cline extension](https://marketplace.visualstudio.com/items?itemName=saoudrizwan.claude-dev)
+
+**Option 1: Native HTTP Support (VS Code 1.102+)**
+
+Add to `.vscode/settings.json` or User Settings:
+
+```json filename=".vscode/settings.json" copy
+{
+  "mcp.servers": {
+    "moose-dev": {
+      "transport": "http",
+      "url": "http://localhost:4000/mcp"
+    }
+  }
+}
+```
+
+**Option 2: Cline Extension**
+
+Configure in Cline's MCP settings:
+
+```json copy
+{
+  "moose-dev": {
+    "transport": "sse",
+    "url": "http://localhost:4000/mcp"
+  }
+}
+```
+
+</Tabs.Tab>
+
+<Tabs.Tab>
+
+**Location**: `.cursor/mcp.json` (project-level) or `~/.cursor/settings/mcp.json` (global)
+
+<Callout type="info">
+Cursor currently uses stdio transport. Use `mcp-remote` to bridge to HTTP servers:
+</Callout>
+
+```json filename=".cursor/mcp.json" copy
+{
+  "mcpServers": {
+    "moose-dev": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "mcp-remote",
+        "http://localhost:4000/mcp"
+      ]
+    }
+  }
+}
+```
+
+</Tabs.Tab>
+
+<Tabs.Tab>
+
+**Location**: `~/Library/Application Support/Claude/claude_desktop_config.json`
+
+Access via: Claude > Settings > Developer > Edit Config
+
+```json filename="claude_desktop_config.json" copy
+{
+  "servers": {
+    "moose-dev": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "mcp-remote",
+        "http://localhost:4000/mcp"
+      ]
+    }
+  }
+}
+```
+
+<Callout type="info">
+The `-y` flag automatically installs `mcp-remote` if not already installed.
+</Callout>
+
+</Tabs.Tab>
+</Tabs>
+
+<Callout type="warning">
+Make sure `moose dev` is running before using the MCP tools. The AI client will connect to `http://localhost:4000/mcp`.
+</Callout>
+
+## Available Tools
+
+The Moose MCP server provides four tools for interacting with your local development environment:
+
+### `get_logs`
+
+Retrieve and filter Moose development server logs for debugging and monitoring.
+
+**What you can ask for:**
+- Filter by log level (ERROR, WARN, INFO, DEBUG, TRACE)
+- Limit the number of log lines returned
+- Search for specific text patterns in logs
+
+**Example prompts:**
+
+*"Show me the last 10 ERROR logs"*
+
+```
+Showing 10 most recent log entries from /Users/user/.moose/2025-10-10-cli.log
+Filters applied:
+  - Level: ERROR
+
+[2025-10-10T17:44:42Z ERROR] Foo -> Bar (worker 1): Unsupported SASL mechanism: undefined
+[2025-10-10T17:44:43Z ERROR] FooDeadLetterQueue (consumer) (worker 1): Unsupported SASL mechanism
+[2025-10-10T17:51:48Z ERROR] server error on API server (port 4000): connection closed
+...
+```
+
+*"What WARN level logs do I have?"*
+
+```
+Showing 6 most recent log entries
+Filters applied:
+  - Level: WARN
+
+[2025-10-10T16:45:04Z WARN] HTTP client not configured - missing API_KEY
+[2025-10-10T16:50:05Z WARN] HTTP client not configured - missing API_KEY
+...
+```
+
+<Callout type="info">
+**Tip**: Combine filters for better results. For example: "Show me ERROR logs with 'ClickHouse' in them" combines level filtering with search.
+</Callout>
+
+**Use cases:**
+- Debugging application errors
+- Monitoring infrastructure health
+- Tracking data processing issues
+- Finding specific events or patterns
+
+---
+
+### `get_infra_map`
+
+Retrieve and explore the infrastructure map showing all components in your Moose project.
+
+**What you can ask for:**
+- List specific component types (tables, topics, API endpoints, workflows, etc.)
+- Get a complete overview of all infrastructure
+- Search for components by name
+- See detailed configuration or just a summary
+
+**Example prompts:**
+
+*"What tables exist in my project?"*
+
+```
+# Moose Infrastructure Map (Summary)
+
+## Tables (28)
+- MergeTreeTest
+- ReplacingMergeTreeVersion
+- Bar
+- BasicTypes
+- UserEvents_1_0
+- UserEvents_2_0
+- FooDeadLetter
+- BarAggregated
+- FooWorkflow
+...
+```
+
+*"Give me an overview of my Moose infrastructure"*
+
+```
+# Moose Infrastructure Map (Summary)
+
+## Topics (11)
+- Bar, BasicTypes, Foo, FooDeadLetterQueue, SimpleArrays...
+
+## API Endpoints (11)
+- INGRESS_Foo (INGRESS -> topic: Foo)
+- INGRESS_BasicTypes (INGRESS -> topic: BasicTypes)
+- EGRESS_bar (EGRESS (4 params))
+...
+
+## Tables (28)
+- MixedComplexTypes, Bar, UserEvents_1_0...
+
+## Topic-to-Table Sync Processes (10)
+- Bar_Bar, BasicTypes_BasicTypes...
+
+## Function Processes (3)
+- Foo__Bar_Foo_Bar, Foo_Foo...
+```
+
+*"Find all components with 'User' in the name"*
+
+```
+## Tables (2)
+- UserEvents_1_0
+- UserEvents_2_0
+```
+
+<Callout type="info">
+**Tip**: Search is case-sensitive by default. Use capital letters to match your component names, or ask the AI to search case-insensitively.
+</Callout>
+
+**Use cases:**
+- Understanding project structure
+- Discovering available components
+- Debugging infrastructure issues
+- Documenting your data pipeline
+
+---
+
+### `query_olap`
+
+Execute read-only SQL queries against your local ClickHouse database.
+
+**What you can ask for:**
+- Query table data with filters, sorting, and aggregations
+- Inspect table schemas and column information
+- Count rows and calculate statistics
+- List all tables in your database
+- Results in table or JSON format
+
+**Example prompts:**
+
+*"What columns are in the UserEvents_1_0 table?"*
+
+```
+Query executed successfully. Rows returned: 4
+
+| name      | type              | default_type | default_expression | comment | ...
+|-----------|-------------------|--------------|-------------------|---------|
+| userId    | String            |              |                   |         |
+| eventType | String            |              |                   |         |
+| timestamp | Float64           |              |                   |         |
+| metadata  | Nullable(String)  |              |                   |         |
+```
+
+*"List all tables and their engines"*
+
+```
+Query executed successfully. Rows returned: 29
+
+| name                        | engine                       |
+|-----------------------------|------------------------------|
+| Bar                         | MergeTree                    |
+| BasicTypes                  | MergeTree                    |
+| UserEvents_1_0              | MergeTree                    |
+| UserEvents_2_0              | ReplacingMergeTree           |
+| ReplicatedMergeTreeTest     | ReplicatedMergeTree          |
+| BarAggregated_MV            | MaterializedView             |
+...
+```
+
+*"Count the number of rows in Bar"*
+
+```
+Query executed successfully. Rows returned: 1
+
+| total_rows |
+|------------|
+| 0          |
+```
+
+<Callout type="info">
+**Tip**: Ask the AI to discover table names first using "What tables exist in my project?" before querying them. Table names are case-sensitive in ClickHouse.
+</Callout>
+
+**Use cases:**
+- Exploring data during development
+- Validating data transformations
+- Checking table schemas
+- Debugging SQL queries
+- Analyzing data patterns
+
+**Safety:**
+Only read-only operations are permitted (SELECT, SHOW, DESCRIBE, EXPLAIN). Write operations (INSERT, UPDATE, DELETE) and DDL statements (CREATE, ALTER, DROP) are blocked.
+
+---
+
+### `get_stream_sample`
+
+Sample recent messages from Kafka/Redpanda streaming topics.
+
+**What you can ask for:**
+- View recent messages from any stream/topic
+- Specify how many messages to sample
+- Get results in JSON or pretty-printed format
+- Inspect message structure and content
+
+**Example prompts:**
+
+*"Sample 5 messages from the Bar topic"*
+
+```json
+{
+  "stream_name": "Bar",
+  "message_count": 5,
+  "partition_count": 1,
+  "messages": [
+    {
+      "primaryKey": "e90c93be-d28b-47d6-b783-5725655c044f",
+      "utcTimestamp": "+057480-11-24T20:39:59.000Z",
+      "hasText": true,
+      "textLength": 107
+    },
+    {
+      "primaryKey": "b974f830-f28a-4a95-b61c-f65bfc607795",
+      "utcTimestamp": "+057370-11-04T17:11:51.000Z",
+      "hasText": true,
+      "textLength": 166
+    },
+    ...
+  ]
+}
+```
+
+*"What data is flowing through the BasicTypes stream?"* (pretty format)
+
+```markdown
+# Stream Sample: BasicTypes
+
+Retrieved 3 message(s) from 1 partition(s)
+
+## Message 1
+{
+  "id": "bt-001",
+  "timestamp": "2024-10-09T12:00:00Z",
+  "stringField": "hello world",
+  "numberField": 42,
+  "booleanField": true
+}
+
+## Message 2
+{
+  "id": "bt-002",
+  "timestamp": "2024-10-09T12:05:00Z",
+  "stringField": "test",
+  "numberField": 100,
+  "booleanField": false
+}
+...
+```
+
+<Callout type="info">
+**Tip**: Use "List all streaming topics" first to discover available streams in your project.
+</Callout>
+
+**Use cases:**
+- Debugging data flow issues
+- Validating streaming transformations
+- Inspecting message formats
+- Troubleshooting pipeline failures
+
+---
+
+## Example Workflows
+
+### Debugging a Data Pipeline
+
+```
+You: "My users table is empty, can you help me debug?"
+
+AI: Let me check the infrastructure and data flow.
+[Uses get_infra_map to see the pipeline]
+[Uses get_logs to check for errors]
+[Uses query_olap to verify table is empty]
+[Uses get_stream_sample to check if data is in the source stream]
+
+AI: I found the issue - there are errors in the logs showing the streaming
+function is failing. The stream has data, but it's not reaching the table.
+```
+
+### Exploring a New Project
+
+```
+You: "Can you give me an overview of this Moose project?"
+
+AI: [Uses get_infra_map with format=summary]
+
+AI: This project has 3 tables (users, events, aggregated_metrics),
+2 streaming topics, 4 API endpoints, and 1 workflow. The data flow
+appears to be: raw events → transformation → aggregated metrics.
+```
+
+### Validating Data Transformations
+
+```
+You: "Did my streaming function correctly transform the user data?"
+
+AI: [Uses get_stream_sample on source stream]
+[Uses query_olap on destination table]
+
+AI: Yes, the transformation is working. I compared the source stream
+messages with the destination table records, and the enrichment
+fields are being added correctly.
+```
+
+## Advanced Configuration
+
+### Custom Port
+
+If you're running Moose on a non-default port, update the MCP configuration:
+
+```bash
+export MOOSE_HTTP_PORT=8080
+moose dev
+```
+
+Then update your MCP client configuration to use port 8080 instead of 4000.
+
+### Disabling the MCP Server
+
+To run development mode without the MCP server:
+
+```bash
+moose dev --mcp=false
+```
+
+### Production Considerations
+
+<Callout type="warning">
+The MCP server is designed for local development only. It provides direct access to your infrastructure and should **never** be exposed in production environments.
+</Callout>
+
+The MCP server:
+- Runs only in development mode (`moose dev`)
+- Does not run in production mode (`moose prod`)
+- Provides read-only access to sensitive infrastructure
+- Should not be exposed over networks or proxied externally
+
+## Troubleshooting
+
+### MCP Tools Not Appearing
+
+1. Verify `moose dev` is running: `curl http://localhost:4000/mcp`
+2. Check your AI client's MCP configuration is correct
+3. Restart your AI client after updating configuration
+4. Check the Moose logs for MCP-related errors: `moose logs --filter mcp`
+
+### Connection Errors
+
+If your AI client can't connect to the MCP server:
+
+```bash
+# Check if the dev server is running
+curl http://localhost:4000/health
+
+# Check MCP endpoint specifically
+curl -X POST http://localhost:4000/mcp \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"initialize"}'
+```
+
+### Empty Results
+
+If tools return no data:
+- Verify your dev server has been running long enough to generate data
+- Check that infrastructure has been created: `moose ls`
+- Try ingesting test data: `moose peek <table_name>`
+
+## Related Documentation
+
+- [Local Development](/moose/local-dev) - Development mode overview
+- [Moose CLI Reference](/moose/moose-cli) - CLI commands and flags
+- [Model Context Protocol](https://modelcontextprotocol.io) - MCP specification
