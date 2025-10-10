@@ -71,6 +71,9 @@ port = 4000
 management_port = 5001
 # Optional path prefix for all routes (Default: None)
 # path_prefix = "api"
+# Number of worker processes for consumption API cluster (TypeScript only) (Default: Auto-calculated - 70% of CPU cores)
+# Python projects always use 1 worker regardless of this setting
+# api_workers = 2
 
 # Redis configuration
 [redis_config]
