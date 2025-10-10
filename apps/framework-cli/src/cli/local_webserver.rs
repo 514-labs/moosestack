@@ -64,7 +64,7 @@ use log::{debug, log, trace};
 use log::{error, info, warn};
 use rdkafka::error::KafkaError;
 use rdkafka::producer::future_producer::OwnedDeliveryResult;
-use rdkafka::producer::{DeliveryFuture, FutureProducer, FutureRecord};
+use rdkafka::producer::{DeliveryFuture, FutureProducer, FutureRecord, Producer};
 use reqwest::Client;
 use schema_registry_client::rest::client_config::ClientConfig as SrClientConfig;
 use schema_registry_client::rest::schema_registry_client::Client as SrClient;
@@ -114,6 +114,15 @@ pub struct RouterRequest {
 fn default_management_port() -> u16 {
     5001
 }
+
+/// Timeout in milliseconds for waiting for Kafka clients to be destroyed during shutdown.
+/// This timeout ensures we wait for librdkafka to complete its internal cleanup before
+/// shutting down Docker containers to avoid connection errors.
+const KAFKA_CLIENT_DESTROY_TIMEOUT_MS: i32 = 3000;
+
+/// Grace period in seconds after stopping managed processes to allow for full cleanup.
+/// This gives streaming functions additional time to close Kafka consumers and Redis connections.
+const PROCESS_CLEANUP_GRACE_PERIOD_SECS: u64 = 2;
 
 /// Metadata for an API route.
 /// This struct contains information about the route, including the topic name,
@@ -2223,6 +2232,9 @@ impl Webserver {
             None
         };
 
+        // Keep a reference to the producer for shutdown
+        let producer_for_shutdown = producer.clone();
+
         show_message!(
             MessageType::Success,
             Message {
@@ -2334,10 +2346,26 @@ impl Webserver {
             tokio::select! {
                 _ = sigint.recv() => {
                     info!("SIGINT received, shutting down");
+                    // Immediately show feedback to the user
+                    super::display::show_message_wrapper(
+                        MessageType::Highlight,
+                        Message {
+                            action: "Shutdown".to_string(),
+                            details: "Received shutdown signal, gracefully stopping...".to_string(),
+                        },
+                    );
                     break; // break the loop and no more connections will be accepted
                 }
                 _ = sigterm.recv() => {
                     info!("SIGTERM received, shutting down");
+                    // Immediately show feedback to the user
+                    super::display::show_message_wrapper(
+                        MessageType::Highlight,
+                        Message {
+                            action: "Shutdown".to_string(),
+                            details: "Received shutdown signal, gracefully stopping...".to_string(),
+                        },
+                    );
                     break;
                 }
                 listener_result = listener.accept() => {
@@ -2388,7 +2416,58 @@ impl Webserver {
             }
         }
 
-        shutdown(settings, &project, graceful, process_registry).await;
+        // Flush producer before shutdown to ensure messages are sent
+        if let Some(ref producer) = producer_for_shutdown {
+            info!("Flushing Kafka producer before shutdown...");
+            use std::time::Duration;
+            if let Err(e) = producer.producer.flush(Duration::from_secs(5)) {
+                warn!("Failed to flush Kafka producer: {:?}", e);
+            } else {
+                info!("Kafka producer flushed successfully");
+            }
+        }
+
+        // Gracefully shutdown HTTP connections FIRST
+        // This ensures all spawned connection handler tasks (which hold clones of api_service) complete
+        info!("Waiting for HTTP connections to close...");
+
+        // Use different timeouts for dev vs production:
+        // - Dev: 2 seconds (balance between fast shutdown and allowing in-flight requests to complete)
+        // - Production: 10 seconds (allow load balancers time to drain connections during rolling deployments)
+        let shutdown_timeout = if project.is_production {
+            std::time::Duration::from_secs(10)
+        } else {
+            std::time::Duration::from_secs(2)
+        };
+
+        let shutdown_future = graceful.shutdown();
+        tokio::select! {
+            _ = shutdown_future => {
+                info!("All HTTP connections closed gracefully");
+            },
+            _ = tokio::time::sleep(shutdown_timeout) => {
+                warn!("Timed out waiting for HTTP connections to close ({}s), proceeding with shutdown", shutdown_timeout.as_secs());
+            }
+        }
+
+        // NOW explicitly drop services - all spawned tasks with clones should be done
+        drop(api_service);
+        drop(management_service);
+        info!("Dropped api_service and management_service");
+
+        // Small grace period to ensure all connection handler tasks have fully completed
+        // This gives async task cleanup time to finish before we check producer Arc count
+        const HTTP_CLEANUP_GRACE_MS: u64 = 300;
+        tokio::time::sleep(std::time::Duration::from_millis(HTTP_CLEANUP_GRACE_MS)).await;
+        info!(
+            "Waited {}ms for connection handler tasks to complete",
+            HTTP_CLEANUP_GRACE_MS
+        );
+
+        // Producer Arc count should now be 1 (only producer_for_shutdown remains)
+
+        // Now call shutdown to handle process cleanup and producer drop
+        shutdown(settings, &project, process_registry, producer_for_shutdown).await;
     }
 }
 
@@ -2406,126 +2485,137 @@ fn handle_listener_err(port: u16, e: std::io::Error) -> ! {
 async fn shutdown(
     settings: &Settings,
     project: &Project,
-    graceful: GracefulShutdown,
     process_registry: Arc<RwLock<ProcessRegistries>>,
+    producer: Option<ConfiguredProducer>,
 ) {
-    // First, initiate the graceful shutdown of HTTP connections
-    let shutdown_future = graceful.shutdown();
+    // Note: HTTP connections are already closed before calling this function
+    // Note: Producer is already flushed before calling this function
 
-    // Use different timeouts for dev vs production:
-    // - Dev: 1 second (MCP SSE connections may keep connections alive, fast shutdown for better DX)
-    // - Production: 10 seconds (allow load balancers time to drain connections during rolling deployments)
-    let shutdown_timeout = if project.is_production {
-        std::time::Duration::from_secs(10)
-    } else {
-        std::time::Duration::from_secs(1)
-    };
-
-    tokio::select! {
-        _ = shutdown_future => {
-            info!("all connections gracefully closed");
+    // Step 1: Stop all managed processes (functions, syncing, consumption, orchestration workers)
+    // This sends termination signals and waits with timeouts for all processes to exit
+    let stop_result = with_spinner_completion_async(
+        "Stopping managed processes (functions, syncing, consumption, workers)",
+        "Managed processes stopped",
+        async {
+            let mut process_registry = process_registry.write().await;
+            process_registry.stop().await
         },
-        _ = tokio::time::sleep(shutdown_timeout) => {
-            warn!("timed out waiting for connections to close ({}s), proceeding with shutdown", shutdown_timeout.as_secs());
-        }
-    }
+        !project.is_production,
+    )
+    .await;
 
-    // Stop all managed processes using the existing process registry
-    let mut process_registry = process_registry.write().await;
-    match process_registry.stop().await {
+    match stop_result {
         Ok(_) => {
             info!("Successfully stopped all managed processes");
-            super::display::show_message_wrapper(
-                MessageType::Success,
-                Message {
-                    action: "Shutdown".to_string(),
-                    details: "All processes stopped successfully".to_string(),
-                },
-            );
         }
         Err(e) => {
-            error!("Failed to stop some managed processes: {}", e);
+            // Error stopping processes - this is rare but could happen if:
+            // - Process fails to respond to termination signal
+            // - Timeout is exceeded
+            // - System resource issues
+            // We log the error and continue with shutdown, as the producer has already been flushed
+            // and we want to ensure infrastructure cleanup happens
+            error!(
+                "Failed to stop some managed processes: {}. Continuing with shutdown...",
+                e
+            );
             super::display::show_message_wrapper(
                 MessageType::Error,
                 Message {
                     action: "Shutdown".to_string(),
-                    details: format!("Failed to stop all processes: {e}"),
+                    details: format!(
+                        "Some processes did not stop cleanly: {e}. Proceeding with infrastructure cleanup."
+                    ),
                 },
             );
         }
     }
 
-    // Shutdown the Docker containers if needed
-    if !project.is_production {
-        if project.features.workflows {
-            super::display::show_message_wrapper(
-                MessageType::Highlight,
-                Message {
-                    action: "Shutdown".to_string(),
-                    details: "Stopping workflows...".to_string(),
-                },
-            );
+    // Grace period to ensure child processes have fully cleaned up their resources
+    // After receiving stop signals, streaming functions need time to:
+    // - Commit Kafka consumer offsets
+    // - Close Redis connections gracefully
+    // - Flush any pending work
+    // Note: process_registry.stop() already waits with timeouts for processes to exit,
+    // but this additional grace period ensures OS-level resource cleanup completes
+    info!(
+        "Grace period: allowing {}s for process resource cleanup...",
+        PROCESS_CLEANUP_GRACE_PERIOD_SECS
+    );
+    tokio::time::sleep(std::time::Duration::from_secs(
+        PROCESS_CLEANUP_GRACE_PERIOD_SECS,
+    ))
+    .await;
 
-            let termination_result = with_spinner_completion_async(
-                "Stopping all workflows",
-                "All workflows stopped successfully",
-                async { terminate_all_workflows(project).await },
-                true,
-            )
-            .await;
-            info!("Workflow termination result: {:?}", termination_result);
+    // Step 2: Shutdown workflows (if enabled)
+    if !project.is_production && project.features.workflows {
+        let termination_result = with_spinner_completion_async(
+            "Stopping workflows",
+            "Workflows stopped",
+            async { terminate_all_workflows(project).await },
+            true,
+        )
+        .await;
 
-            match termination_result {
-                Ok(_) => super::display::show_message_wrapper(
-                    MessageType::Success,
-                    Message {
-                        action: "Shutdown".to_string(),
-                        details: "All workflows stopped successfully".to_string(),
-                    },
-                ),
-                Err(_) => super::display::show_message_wrapper(
+        match termination_result {
+            Ok(_) => info!("Workflow termination completed successfully"),
+            Err(e) => {
+                error!("Failed to stop workflows: {:?}", e);
+                super::display::show_message_wrapper(
                     MessageType::Error,
                     Message {
                         action: "Shutdown".to_string(),
-                        details: "Failed to stop all workflows".to_string(),
+                        details: "Failed to stop workflows".to_string(),
                     },
-                ),
-            };
+                );
+            }
         }
+    }
 
-        // Use the centralized settings function to check if containers should be shutdown
+    // Step 3: Drop producer and wait for Kafka clients to fully destroy
+    // This must happen BEFORE shutting down containers to avoid connection errors
+    if let Some(producer) = producer {
+        // Explicitly drop the producer to trigger cleanup
+        drop(producer);
+        info!("Producer dropped, waiting for Kafka clients to destroy...");
+
+        // Wait for librdkafka to complete cleanup
+        let result = tokio::task::spawn_blocking(move || unsafe {
+            rdkafka_sys::rd_kafka_wait_destroyed(KAFKA_CLIENT_DESTROY_TIMEOUT_MS)
+        })
+        .await;
+
+        match result {
+            Ok(0) => {
+                info!("✅ All Kafka clients destroyed successfully");
+            }
+            Ok(n) => {
+                warn!(
+                    "⚠️ {} Kafka client(s) still not fully destroyed after {}ms timeout",
+                    n, KAFKA_CLIENT_DESTROY_TIMEOUT_MS
+                );
+            }
+            Err(e) => {
+                error!("Failed to wait for Kafka clients to destroy: {}", e);
+            }
+        }
+    }
+
+    // Step 4: Shutdown Docker containers (if needed)
+    if !project.is_production {
         let should_shutdown_containers = settings.should_shutdown_containers();
 
-        // Only shutdown containers if this instance is responsible for infra
         if should_shutdown_containers && project.should_load_infra() {
-            // Create docker client with a fresh settings reference
             let docker = DockerClient::new(settings);
             info!("Starting container shutdown process");
 
-            // First display a clear message to the user
-            super::display::show_message_wrapper(
-                MessageType::Highlight,
-                Message {
-                    action: "Shutdown".to_string(),
-                    details: "Stopping containers...".to_string(),
-                },
-            );
-
             with_spinner_completion(
-                "Stopping containers",
-                "Containers stopped successfully",
+                "Stopping Docker containers (ClickHouse, Redpanda, Redis)",
+                "Docker containers stopped",
                 || {
                     let _ = docker.stop_containers(project);
                 },
                 true,
-            );
-
-            super::display::show_message_wrapper(
-                MessageType::Success,
-                Message {
-                    action: "Shutdown".to_string(),
-                    details: "All containers stopped successfully".to_string(),
-                },
             );
 
             info!("Container shutdown complete");
@@ -2535,6 +2625,15 @@ async fn shutdown(
             info!("Skipping container shutdown due to settings configuration");
         }
     }
+
+    // Display final shutdown complete message
+    super::display::show_message_wrapper(
+        MessageType::Success,
+        Message {
+            action: "Shutdown".to_string(),
+            details: "Dev server shutdown complete".to_string(),
+        },
+    );
 
     // Final delay before exit to ensure any remaining tasks complete
     tokio::time::sleep(std::time::Duration::from_secs(1)).await;

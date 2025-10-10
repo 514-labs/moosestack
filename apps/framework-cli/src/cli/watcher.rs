@@ -33,7 +33,6 @@ use super::display::{self, with_spinner_completion_async, Message, MessageType};
 use super::settings::Settings;
 
 use crate::cli::routines::openapi::openapi;
-use crate::infrastructure::processes::kafka_clickhouse_sync::SyncingProcessesRegistry;
 use crate::infrastructure::processes::process_registry::ProcessRegistries;
 use crate::infrastructure::redis::redis_client::RedisClient;
 use crate::metrics::Metrics;
@@ -111,8 +110,7 @@ impl EventBuckets {
 /// * `project` - The project configuration
 /// * `route_update_channel` - Channel for sending API route updates
 /// * `infrastructure_map` - The current infrastructure map
-/// * `syncing_process_registry` - Registry for syncing processes
-/// * `project_registries` - Registry for project processes
+/// * `project_registries` - Registry for all processes including syncing processes
 /// * `metrics` - Metrics collection
 /// * `redis_client` - Redis client for state management
 /// * `settings` - CLI settings configuration
@@ -121,7 +119,6 @@ async fn watch(
     project: Arc<Project>,
     route_update_channel: tokio::sync::mpsc::Sender<(InfrastructureMap, ApiChange)>,
     infrastructure_map: &'static RwLock<InfrastructureMap>,
-    syncing_process_registry: &mut SyncingProcessesRegistry,
     project_registries: Arc<RwLock<ProcessRegistries>>,
     metrics: Arc<Metrics>,
     redis_client: Arc<RedisClient>,
@@ -178,7 +175,6 @@ async fn watch(
                                         &project,
                                         &plan_result,
                                         route_update_channel.clone(),
-                                        syncing_process_registry,
                                         &mut project_registries,
                                         metrics.clone(),
                                         &settings,
@@ -269,17 +265,16 @@ impl FileWatcher {
     /// * `project` - The project configuration
     /// * `route_update_channel` - Channel for sending API route updates
     /// * `infrastructure_map` - The current infrastructure map
-    /// * `syncing_process_registry` - Registry for syncing processes
-    /// * `project_registries` - Registry for project processes
+    /// * `project_registries` - Registry for all processes including syncing processes
     /// * `metrics` - Metrics collection
     /// * `redis_client` - Redis client for state management
+    /// * `settings` - CLI settings configuration
     #[allow(clippy::too_many_arguments)]
     pub fn start(
         &self,
         project: Arc<Project>,
         route_update_channel: tokio::sync::mpsc::Sender<(InfrastructureMap, ApiChange)>,
         infrastructure_map: &'static RwLock<InfrastructureMap>,
-        syncing_process_registry: SyncingProcessesRegistry,
         project_registries: Arc<RwLock<ProcessRegistries>>,
         metrics: Arc<Metrics>,
         redis_client: Arc<RedisClient>,
@@ -292,15 +287,12 @@ impl FileWatcher {
             }
         });
 
-        let mut syncing_process_registry = syncing_process_registry;
-
         // Move everything into the spawned task to avoid Send issues
         let watch_task = async move {
             watch(
                 project,
                 route_update_channel,
                 infrastructure_map,
-                &mut syncing_process_registry,
                 project_registries,
                 metrics,
                 redis_client,

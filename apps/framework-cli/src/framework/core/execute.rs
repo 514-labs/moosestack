@@ -80,7 +80,7 @@ pub enum ExecutionError {
 /// * `redis_client` - Redis client for state management and leadership checks
 ///
 /// # Returns
-/// * `Result<(SyncingProcessesRegistry, ProcessRegistries), ExecutionError>` - The initialized process registries or an error
+/// * `Result<ProcessRegistries, ExecutionError>` - The initialized process registries or an error
 pub async fn execute_initial_infra_change(
     project: &Project,
     settings: &Settings,
@@ -89,7 +89,7 @@ pub async fn execute_initial_infra_change(
     api_changes_channel: Sender<(InfrastructureMap, ApiChange)>,
     metrics: Arc<Metrics>,
     redis_client: &Arc<RedisClient>,
-) -> Result<(SyncingProcessesRegistry, ProcessRegistries), ExecutionError> {
+) -> Result<ProcessRegistries, ExecutionError> {
     // This probably can be parallelized through Tokio Spawn
     // Check if infrastructure execution is bypassed
     if settings.should_bypass_infrastructure_execution() {
@@ -115,18 +115,18 @@ pub async fn execute_initial_infra_change(
     .await
     .map_err(Box::new)?;
 
-    let mut syncing_processes_registry = SyncingProcessesRegistry::new(
+    let syncing_processes_registry = SyncingProcessesRegistry::new(
         project.redpanda_config.clone(),
         project.clickhouse_config.clone(),
     );
-    let mut process_registries = ProcessRegistries::new(project, settings);
+    let mut process_registries =
+        ProcessRegistries::new(project, settings, syncing_processes_registry);
 
     // Execute changes that are allowed on any instance
     let changes = plan.target_infra_map.init_processes(project);
     processes::execute_changes(
         &project.redpanda_config,
         &plan.target_infra_map,
-        &mut syncing_processes_registry,
         &mut process_registries,
         &changes,
         metrics,
@@ -148,7 +148,7 @@ pub async fn execute_initial_infra_change(
         log::info!("Skipping migration & olap process changes as this instance does not have the leadership lock");
     }
 
-    Ok((syncing_processes_registry, process_registries))
+    Ok(process_registries)
 }
 
 /// Executes infrastructure changes during runtime (after initial setup).
@@ -164,9 +164,9 @@ pub async fn execute_initial_infra_change(
 /// * `project` - The project configuration
 /// * `plan` - The infrastructure plan to execute
 /// * `api_changes_channel` - Channel for sending API changes
-/// * `sync_processes_registry` - Registry for syncing processes
-/// * `process_registries` - Registry for project processes
+/// * `process_registries` - Registry for all processes including syncing processes
 /// * `metrics` - Metrics collection
+/// * `settings` - Application settings
 ///
 /// # Returns
 /// * `Result<(), ExecutionError>` - Success or an error
@@ -174,7 +174,6 @@ pub async fn execute_online_change(
     project: &Project,
     plan: &InfraPlan,
     api_changes_channel: Sender<(InfrastructureMap, ApiChange)>,
-    sync_processes_registry: &mut SyncingProcessesRegistry,
     process_registries: &mut ProcessRegistries,
     metrics: Arc<Metrics>,
     settings: &Settings,
@@ -208,7 +207,6 @@ pub async fn execute_online_change(
     processes::execute_changes(
         &project.redpanda_config,
         &plan.target_infra_map,
-        sync_processes_registry,
         process_registries,
         &plan.changes.processes_changes,
         metrics,

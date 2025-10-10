@@ -53,33 +53,25 @@ const VERSION_SYNC_GROUP_ID: &str = "version_sync_flow_sync";
 const MAX_FLUSH_INTERVAL_SECONDS: u64 = 1;
 /// Maximum batch size for ClickHouse inserts
 const MAX_BATCH_SIZE: usize = 100000;
-
-/// Represents a Kafka to ClickHouse synchronization process
-struct TableSyncingProcess {
-    /// Async task handle for the sync process
-    process: JoinHandle<anyhow::Result<()>>,
-}
-
-/// Represents a Kafka to Kafka synchronization process
-struct TopicToTopicSyncingProcess {
-    /// Async task handle for the sync process
-    process: JoinHandle<()>,
-    /// Source Kafka topic name
-    #[allow(dead_code)]
-    from_topic: String,
-    /// Target Kafka topic name
-    to_topic: String,
-}
+/// Grace period in seconds for sync processes to complete graceful shutdown
+/// This timeout allows streaming sync tasks to flush pending work and close connections cleanly
+const SYNC_PROCESS_GRACE_PERIOD_SECS: u64 = 5;
 
 /// Registry that manages all synchronization processes
 ///
 /// TODO make this more type safe, ie the topic names should not be strings but rather a struct
 /// so that a name from Topic could not be passed in
 pub struct SyncingProcessesRegistry {
-    /// Map of topic-table processes by their combined key
-    to_table_registry: HashMap<String, JoinHandle<anyhow::Result<()>>>,
-    /// Map of topic-to-topic processes by their target topic name
-    to_topic_registry: HashMap<String, JoinHandle<()>>,
+    /// Map of topic-table processes by their combined key with cancellation senders
+    to_table_registry: HashMap<
+        String,
+        (
+            JoinHandle<anyhow::Result<()>>,
+            tokio::sync::oneshot::Sender<()>,
+        ),
+    >,
+    /// Map of topic-to-topic processes by their target topic name with cancellation senders
+    to_topic_registry: HashMap<String, (JoinHandle<()>, tokio::sync::oneshot::Sender<()>)>,
     /// Kafka configuration
     kafka_config: KafkaConfig,
     /// ClickHouse configuration
@@ -104,24 +96,38 @@ impl SyncingProcessesRegistry {
     /// Registers a topic-to-table synchronization process
     ///
     /// # Arguments
-    /// * `syncing_process` - The synchronization process to register
-    fn insert_table_sync(&mut self, sync_id: String, syncing_process: TableSyncingProcess) {
-        self.to_table_registry
-            .insert(sync_id, syncing_process.process);
+    /// * `sync_id` - Unique identifier for the sync process
+    /// * `process` - The JoinHandle for the sync task
+    /// * `cancel_tx` - The cancellation sender for graceful shutdown
+    fn insert_table_sync(
+        &mut self,
+        sync_id: String,
+        process: JoinHandle<anyhow::Result<()>>,
+        cancel_tx: tokio::sync::oneshot::Sender<()>,
+    ) {
+        self.to_table_registry.insert(sync_id, (process, cancel_tx));
     }
 
     /// Registers a topic-to-topic synchronization process
     ///
     /// # Arguments
-    /// * `syncing_process` - The synchronization process to register
-    fn insert_topic_sync(&mut self, syncing_process: TopicToTopicSyncingProcess) {
-        let key = syncing_process.to_topic; // the source input topic
-        self.to_topic_registry.insert(key, syncing_process.process);
+    /// * `to_topic` - Target topic name (used as key)
+    /// * `process` - The JoinHandle for the sync task
+    /// * `cancel_tx` - The cancellation sender for graceful shutdown
+    fn insert_topic_sync(
+        &mut self,
+        to_topic: String,
+        process: JoinHandle<()>,
+        cancel_tx: tokio::sync::oneshot::Sender<()>,
+    ) {
+        self.to_topic_registry
+            .insert(to_topic, (process, cancel_tx));
     }
 
     /// Starts a new synchronization process from a Kafka topic to a ClickHouse table
     ///
     /// # Arguments
+    /// * `sync_id` - Unique identifier for the sync process
     /// * `source_topic_name` - Source Kafka topic name
     /// * `source_topic_columns` - Schema definition of the source topic
     /// * `target_table_name` - Target ClickHouse table name
@@ -141,9 +147,13 @@ impl SyncingProcessesRegistry {
             source_topic_name, target_table_name
         );
         // the schema of the currently running process is outdated
-        if let Some(process) = self.to_table_registry.remove(&sync_id) {
+        if let Some((process, _cancel_tx)) = self.to_table_registry.remove(&sync_id) {
+            // Note: dropping cancel_tx here - the old process is immediately aborted
             process.abort();
         }
+
+        // Create a cancellation channel for graceful shutdown
+        let (cancel_tx, cancel_rx) = tokio::sync::oneshot::channel();
 
         let syncing_process = spawn_sync_process_core(
             self.kafka_config.clone(),
@@ -153,18 +163,19 @@ impl SyncingProcessesRegistry {
             target_table_name,
             target_table_columns,
             metrics,
+            cancel_rx,
         );
 
-        self.insert_table_sync(sync_id, syncing_process);
+        self.insert_table_sync(sync_id, syncing_process, cancel_tx);
     }
 
     /// Stops a topic-to-table synchronization process
     ///
     /// # Arguments
-    /// * `topic_name` - Source Kafka topic name
-    /// * `table_name` - Target ClickHouse table name
+    /// * `sync_id` - Unique identifier for the sync process
     pub fn stop_topic_to_table(&mut self, sync_id: &str) {
-        if let Some(process) = self.to_table_registry.remove(sync_id) {
+        if let Some((process, _cancel_tx)) = self.to_table_registry.remove(sync_id) {
+            // Note: dropping cancel_tx here - immediate abort without graceful shutdown
             process.abort();
         } else {
             warn!("Sync ID {} not found in to_table_registry", sync_id);
@@ -189,16 +200,23 @@ impl SyncingProcessesRegistry {
         );
         let key = target_topic_name.clone();
 
-        if let Some(process) = self.to_topic_registry.remove(&key) {
+        if let Some((process, _cancel_tx)) = self.to_topic_registry.remove(&key) {
+            // Note: dropping cancel_tx here - the old process is immediately aborted
             process.abort();
         }
 
-        self.insert_topic_sync(spawn_kafka_to_kafka_process(
+        // Create a cancellation channel for graceful shutdown
+        let (cancel_tx, cancel_rx) = tokio::sync::oneshot::channel();
+
+        let (to_topic, syncing_process) = spawn_kafka_to_kafka_process(
             self.kafka_config.clone(),
             source_topic_name,
             target_topic_name,
             metrics.clone(),
-        ));
+            cancel_rx,
+        );
+
+        self.insert_topic_sync(to_topic, syncing_process, cancel_tx);
     }
 
     /// Stops a topic-to-topic synchronization process
@@ -206,9 +224,106 @@ impl SyncingProcessesRegistry {
     /// # Arguments
     /// * `target_topic_name` - Target Kafka topic name
     pub fn stop_topic_to_topic(&mut self, target_topic_name: &str) {
-        if let Some(process) = self.to_topic_registry.remove(target_topic_name) {
+        if let Some((process, _cancel_tx)) = self.to_topic_registry.remove(target_topic_name) {
+            // Note: dropping cancel_tx here - immediate abort without graceful shutdown
             process.abort();
         }
+    }
+
+    /// Stops all synchronization processes with graceful shutdown
+    ///
+    /// This method sends cancellation signals to all running sync processes, waits for them
+    /// to complete gracefully (with a timeout), then aborts any remaining tasks.
+    /// This prevents connection errors after infrastructure shutdown.
+    pub async fn stop_all(&mut self) {
+        info!("Stopping all syncing processes with graceful shutdown");
+
+        // Collect all processes and send cancellation signals
+        let mut table_handles = Vec::new();
+        let mut topic_handles = Vec::new();
+
+        // Send cancellation signals to all topic-to-table sync processes
+        for (sync_id, (handle, cancel_tx)) in self.to_table_registry.drain() {
+            debug!(
+                "Sending cancellation signal to topic-to-table sync process: {}",
+                sync_id
+            );
+            // Send cancellation signal (ignore error if receiver already dropped)
+            let _ = cancel_tx.send(());
+            table_handles.push((sync_id, handle));
+        }
+
+        // Send cancellation signals to all topic-to-topic sync processes
+        for (topic, (handle, cancel_tx)) in self.to_topic_registry.drain() {
+            debug!(
+                "Sending cancellation signal to topic-to-topic sync process for topic: {}",
+                topic
+            );
+            // Send cancellation signal (ignore error if receiver already dropped)
+            let _ = cancel_tx.send(());
+            topic_handles.push((topic, handle));
+        }
+
+        // Wait for all tasks to complete gracefully with a timeout
+        let grace_period = std::time::Duration::from_secs(SYNC_PROCESS_GRACE_PERIOD_SECS);
+        debug!(
+            "Waiting up to {} seconds for all {} table sync and {} topic sync processes to complete",
+            grace_period.as_secs(),
+            table_handles.len(),
+            topic_handles.len()
+        );
+
+        // Create futures that wait for each task and wrap with timeout
+        let table_futures: Vec<_> = table_handles
+            .into_iter()
+            .map(|(sync_id, handle)| async move {
+                match tokio::time::timeout(grace_period, handle).await {
+                    Ok(Ok(Ok(()))) => {
+                        debug!("Topic-to-table sync process {} completed successfully", sync_id);
+                    }
+                    Ok(Ok(Err(e))) => {
+                        debug!("Topic-to-table sync process {} completed with error: {:?}", sync_id, e);
+                    }
+                    Ok(Err(join_err)) => {
+                        debug!("Topic-to-table sync process {} panicked: {:?}", sync_id, join_err);
+                    }
+                    Err(_) => {
+                        warn!(
+                            "Topic-to-table sync process {} did not complete within {}s (timed out)",
+                            sync_id,
+                            grace_period.as_secs()
+                        );
+                    }
+                }
+            })
+            .collect();
+
+        let topic_futures: Vec<_> = topic_handles
+            .into_iter()
+            .map(|(topic, handle)| async move {
+                match tokio::time::timeout(grace_period, handle).await {
+                    Ok(Ok(())) => {
+                        debug!("Topic-to-topic sync process for {} completed successfully", topic);
+                    }
+                    Ok(Err(join_err)) => {
+                        debug!("Topic-to-topic sync process for {} panicked: {:?}", topic, join_err);
+                    }
+                    Err(_) => {
+                        warn!(
+                            "Topic-to-topic sync process for {} did not complete within {}s (timed out)",
+                            topic,
+                            grace_period.as_secs()
+                        );
+                    }
+                }
+            })
+            .collect();
+
+        // Wait for ALL tasks concurrently using join_all
+        futures::future::join_all(table_futures).await;
+        futures::future::join_all(topic_futures).await;
+
+        info!("All syncing processes stopped");
     }
 }
 
@@ -222,9 +337,11 @@ impl SyncingProcessesRegistry {
 /// * `target_table_name` - Target ClickHouse table name
 /// * `target_table_columns` - Schema definition of the target table
 /// * `metrics` - Metrics collection service
+/// * `cancel_rx` - Cancellation receiver for graceful shutdown
 ///
 /// # Returns
-/// A TableSyncingProcess struct encapsulating the async task
+/// A JoinHandle for the async task
+#[allow(clippy::too_many_arguments)]
 fn spawn_sync_process_core(
     kafka_config: KafkaConfig,
     clickhouse_config: ClickHouseConfig,
@@ -233,10 +350,11 @@ fn spawn_sync_process_core(
     target_table_name: String,
     target_table_columns: Vec<ClickHouseColumn>,
     metrics: Arc<Metrics>,
-) -> TableSyncingProcess {
+    cancel_rx: tokio::sync::oneshot::Receiver<()>,
+) -> JoinHandle<anyhow::Result<()>> {
     let target_table_name_clone = target_table_name.clone();
 
-    let syncing_process = tokio::spawn(
+    tokio::spawn(
         sync_kafka_to_clickhouse(
             kafka_config,
             clickhouse_config,
@@ -245,6 +363,7 @@ fn spawn_sync_process_core(
             target_table_name.clone(),
             target_table_columns,
             metrics,
+            cancel_rx,
         )
         .inspect_err(move |e| {
             error!(
@@ -252,11 +371,7 @@ fn spawn_sync_process_core(
                 target_table_name_clone, e
             )
         }),
-    );
-
-    TableSyncingProcess {
-        process: syncing_process,
-    }
+    )
 }
 
 /// Spawns a new topic to topic sync process
@@ -266,27 +381,28 @@ fn spawn_sync_process_core(
 /// * `source_topic_name` - Source Kafka topic name
 /// * `target_topic_name` - Target Kafka topic name
 /// * `metrics` - Metrics collection service
+/// * `cancel_rx` - Cancellation receiver for graceful shutdown
 ///
 /// # Returns
-/// A TopicToTopicSyncingProcess struct encapsulating the async task
+/// A tuple of (target_topic_name, JoinHandle) for the async task
 fn spawn_kafka_to_kafka_process(
     kafka_config: KafkaConfig,
     source_topic_name: String,
     target_topic_name: String,
     metrics: Arc<Metrics>,
-) -> TopicToTopicSyncingProcess {
+    cancel_rx: tokio::sync::oneshot::Receiver<()>,
+) -> (String, JoinHandle<()>) {
+    let target_topic_clone = target_topic_name.clone();
+
     let syncing_process = tokio::spawn(sync_kafka_to_kafka(
         kafka_config,
-        source_topic_name.clone(),
-        target_topic_name.clone(),
+        source_topic_name,
+        target_topic_name,
         metrics,
+        cancel_rx,
     ));
 
-    TopicToTopicSyncingProcess {
-        process: syncing_process,
-        from_topic: source_topic_name,
-        to_topic: target_topic_name,
-    }
+    (target_topic_clone, syncing_process)
 }
 
 /// Continuously forwards messages from one Kafka topic to another
@@ -296,11 +412,13 @@ fn spawn_kafka_to_kafka_process(
 /// * `source_topic_name` - Source Kafka topic name
 /// * `target_topic_name` - Target Kafka topic name
 /// * `metrics` - Metrics collection service
+/// * `cancel_rx` - Cancellation receiver for graceful shutdown
 async fn sync_kafka_to_kafka(
     kafka_config: KafkaConfig,
     source_topic_name: String,
     target_topic_name: String,
     metrics: Arc<Metrics>,
+    mut cancel_rx: tokio::sync::oneshot::Receiver<()>,
 ) {
     let subscriber: Arc<StreamConsumer> = Arc::new(create_subscriber(
         &kafka_config,
@@ -313,7 +431,15 @@ async fn sync_kafka_to_kafka(
     let target_topic_name = &target_topic_name;
 
     loop {
-        match subscriber.recv().await {
+        select! {
+            // Check for cancellation signal
+            _ = &mut cancel_rx => {
+                info!("Received cancellation signal for topic-to-topic sync: {} -> {}", source_topic_name, target_topic_name);
+                break;
+            }
+            // Process messages from Kafka
+            message_result = subscriber.recv() => {
+                match message_result {
             Err(e) => {
                 // Escalated from `debug!` to `warn!` so operators notice message-receive errors that
                 // cause potential data loss or stalled sync loops.
@@ -361,6 +487,8 @@ async fn sync_kafka_to_kafka(
                 }
             },
         }
+            }
+        }
     }
 }
 
@@ -374,9 +502,11 @@ async fn sync_kafka_to_kafka(
 /// * `target_table_name` - Target ClickHouse table name
 /// * `target_table_columns` - Schema definition of the target table
 /// * `metrics` - Metrics collection service
+/// * `cancel_rx` - Cancellation receiver for graceful shutdown
 ///
 /// # Returns
 /// Result indicating success or failure
+#[allow(clippy::too_many_arguments)]
 async fn sync_kafka_to_clickhouse(
     kafka_config: KafkaConfig,
     clickhouse_config: ClickHouseConfig,
@@ -385,6 +515,7 @@ async fn sync_kafka_to_clickhouse(
     target_table_name: String,
     target_table_columns: Vec<ClickHouseColumn>,
     metrics: Arc<Metrics>,
+    mut cancel_rx: tokio::sync::oneshot::Receiver<()>,
 ) -> anyhow::Result<()> {
     info!(
         "Starting/resuming kafka-clickhouse sync for {}.",
@@ -404,6 +535,7 @@ async fn sync_kafka_to_clickhouse(
 
     let topic_clone = source_topic_name.clone();
     let subscriber_clone = subscriber.clone();
+    let table_clone = target_table_name.clone();
 
     let client = ClickHouseClient::new(&clickhouse_config).unwrap();
     let mut inserter = Inserter::<ClickHouseClient>::new(
@@ -434,6 +566,13 @@ async fn sync_kafka_to_clickhouse(
         }
 
         select! {
+            // Check for cancellation signal
+            _ = &mut cancel_rx => {
+                info!("Received cancellation signal for kafka-clickhouse sync: {} -> {}", source_topic_name, table_clone);
+                // Flush any remaining data before exiting
+                inserter.flush().await;
+                return Ok(());
+            }
             // This is here to ensure that if we don't have new messages to process, we still flush
             // the inserter at the end of the interval.
             _ = interval_clock.tick() => {
