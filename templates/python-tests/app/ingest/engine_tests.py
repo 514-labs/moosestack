@@ -26,6 +26,24 @@ class EngineTestData(BaseModel):
     category: str
     version: int
     is_deleted: bool  # For ReplacingMergeTree soft deletes (UInt8 in ClickHouse)
+# Table with TTL: delete rows older than 90 days, delete email after 30 days
+class TTLTestData(BaseModel):
+    id: Key[str]
+    timestamp: datetime
+    email: str
+
+ttl_table = OlapTable[TTLTestData](
+    "TTLTable",
+    OlapConfig(
+        engine=MergeTreeEngine(),
+        order_by_fields=["id", "timestamp"],
+        ttl={
+            "expression": "timestamp + INTERVAL 90 DAY DELETE",
+            "columns": {"email": "timestamp + INTERVAL 30 DAY DELETE"},
+        },
+    ),
+)
+
 
 
 # Test MergeTree engine (default)
@@ -186,4 +204,5 @@ all_engine_test_tables = [
     replicated_replacing_soft_delete_table,
     replicated_aggregating_merge_tree_table,
     replicated_summing_merge_tree_table,
+    ttl_table,
 ]

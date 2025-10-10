@@ -21,6 +21,22 @@ export interface EngineTestData {
   isDeleted: boolean; // For ReplacingMergeTree soft deletes (UInt8 in ClickHouse)
 }
 
+// Table with TTL: delete rows older than 90 days, delete email after 30 days
+export interface TTLTestData {
+  id: Key<string>;
+  timestamp: DateTime;
+  email: string;
+}
+
+export const TTLTable = new OlapTable<TTLTestData>("TTLTable", {
+  engine: ClickHouseEngines.MergeTree,
+  orderByFields: ["id", "timestamp"],
+  ttl: {
+    expression: "timestamp + INTERVAL 90 DAY DELETE",
+    columns: { email: "timestamp + INTERVAL 30 DAY DELETE" },
+  },
+});
+
 // Test MergeTree engine (default)
 export const MergeTreeTable = new OlapTable<EngineTestData>("MergeTreeTest", {
   engine: ClickHouseEngines.MergeTree,
@@ -189,4 +205,5 @@ export const allEngineTestTables = [
   ReplicatedReplacingSoftDeleteTable,
   ReplicatedAggregatingMergeTreeTable,
   ReplicatedSummingMergeTreeTable,
+  TTLTable,
 ];

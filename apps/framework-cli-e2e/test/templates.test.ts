@@ -52,6 +52,8 @@ import {
   getExpectedSchemas,
   validateSchemasWithDebugging,
   verifyVersionedTables,
+  getAllTables,
+  getTableDDL,
 } from "./utils";
 import { triggerWorkflow } from "./utils/workflow-utils";
 
@@ -265,17 +267,14 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
     });
 
     it("should include TTL in DDL when configured", async function () {
-      this.timeout(TIMEOUTS.SCHEMA_VALIDATION_MS);
-      // Only run check if a known table is present; we assert TTL presence generically if any DDL contains TTL
-      const allTables = await getAllTables();
-      for (const t of allTables) {
-        const ddl = await getTableDDL(t);
-        if (ddl && ddl.includes(" TTL ")) {
-          // Found at least one table with TTL clause; we're good
-          return;
+      if (config.isTestsVariant) {
+        const ddl = await getTableDDL("TTLTable");
+        if (!ddl.includes("TTL timestamp + INTERVAL 90 DAY DELETE")) {
+          throw new Error(
+            `Schema validation failed for tables TTLTable: ${ddl}`,
+          );
         }
       }
-      // Not a hard failure for templates that don't configure TTL
     });
 
     // Add versioned tables test for tests templates
