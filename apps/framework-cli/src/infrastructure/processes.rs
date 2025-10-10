@@ -1,7 +1,6 @@
 use std::sync::Arc;
 
 use consumption_registry::ConsumptionError;
-use kafka_clickhouse_sync::SyncingProcessesRegistry;
 use orchestration_workers_registry::OrchestrationWorkersRegistryError;
 use process_registry::ProcessRegistries;
 
@@ -51,7 +50,6 @@ pub enum SyncProcessChangesError {
 pub async fn execute_changes(
     kafka_config: &KafkaConfig,
     infra_map: &InfrastructureMap,
-    syncing_registry: &mut SyncingProcessesRegistry,
     process_registry: &mut ProcessRegistries,
     changes: &[ProcessChange],
     metrics: Arc<Metrics>,
@@ -68,7 +66,7 @@ pub async fn execute_changes(
 
                 let target_table = infra_map.get_table(&sync.target_table_id)?;
 
-                syncing_registry.start_topic_to_table(
+                process_registry.syncing.start_topic_to_table(
                     sync.id(),
                     source_kafka_topic.name.clone(),
                     source_topic.columns.clone(),
@@ -79,7 +77,7 @@ pub async fn execute_changes(
             }
             ProcessChange::TopicToTableSyncProcess(Change::Removed(sync)) => {
                 log::info!("Stopping sync process: {:?}", sync.id());
-                syncing_registry.stop_topic_to_table(&sync.id())
+                process_registry.syncing.stop_topic_to_table(&sync.id())
             }
             ProcessChange::TopicToTableSyncProcess(Change::Updated { before, after }) => {
                 log::info!("Replacing Sync process: {:?} by {:?}", before, after);
@@ -93,8 +91,8 @@ pub async fn execute_changes(
 
                 // Order of operations is important here. We don't want to stop the process if the mapping fails.
                 let target_table_columns = std_columns_to_clickhouse_columns(&after.columns)?;
-                syncing_registry.stop_topic_to_table(&before.id());
-                syncing_registry.start_topic_to_table(
+                process_registry.syncing.stop_topic_to_table(&before.id());
+                process_registry.syncing.start_topic_to_table(
                     after.id(),
                     after_kafka_source_topic.name.clone(),
                     after_source_topic.columns.clone(),
@@ -113,7 +111,7 @@ pub async fn execute_changes(
                 let target_topic = infra_map.get_topic(&sync.target_topic_id)?;
                 let target_kafka_topic = KafkaStreamConfig::from_topic(kafka_config, target_topic);
 
-                syncing_registry.start_topic_to_topic(
+                process_registry.syncing.start_topic_to_topic(
                     source_kafka_topic.name.clone(),
                     target_kafka_topic.name.clone(),
                     metrics.clone(),
@@ -126,7 +124,9 @@ pub async fn execute_changes(
                 let target_topic = infra_map.get_topic(&sync.target_topic_id)?;
                 let target_kafka_topic = KafkaStreamConfig::from_topic(kafka_config, target_topic);
 
-                syncing_registry.stop_topic_to_topic(&target_kafka_topic.name)
+                process_registry
+                    .syncing
+                    .stop_topic_to_topic(&target_kafka_topic.name)
             }
             // TopicToTopicSyncProcess Updated seems impossible
             ProcessChange::TopicToTopicSyncProcess(Change::Updated { before, after }) => {
@@ -145,8 +145,10 @@ pub async fn execute_changes(
                 let after_kafka_target_topic =
                     KafkaStreamConfig::from_topic(kafka_config, after_target_topic);
 
-                syncing_registry.stop_topic_to_topic(&before_kafka_target_topic.name);
-                syncing_registry.start_topic_to_topic(
+                process_registry
+                    .syncing
+                    .stop_topic_to_topic(&before_kafka_target_topic.name);
+                process_registry.syncing.start_topic_to_topic(
                     after_kafka_source_topic.name.clone(),
                     after_kafka_target_topic.name.clone(),
                     metrics.clone(),

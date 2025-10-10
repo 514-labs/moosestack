@@ -185,7 +185,14 @@ export class Cluster<C> {
         console.info(`${this.processStr} - worker shutdown successful`);
         exit(0);
       } else {
-        await this.workerStop(this.startOutput!);
+        // Only attempt to stop if the worker has finished starting
+        if (this.startOutput) {
+          await this.workerStop(this.startOutput);
+        } else {
+          console.info(
+            `${this.processStr} - shutdown before worker fully started`,
+          );
+        }
         console.info(`${this.processStr} shutdown successful`);
         this.hasCleanWorkerExit ? exit(0) : exit(1);
       }

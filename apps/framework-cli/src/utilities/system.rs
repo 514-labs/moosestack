@@ -41,12 +41,13 @@ pub fn file_name_contains(path: &Path, arbitry_string: &str) -> bool {
         .contains(arbitry_string)
 }
 
-pub async fn kill_child(child: &Child) -> Result<(), KillProcessError> {
+pub async fn kill_child(child: &mut Child) -> Result<(), KillProcessError> {
     let id = match child.id() {
         Some(id) => id,
         None => return Err(KillProcessError::ProcessNotFound),
     };
 
+    // Send SIGTERM
     let mut kill = tokio::process::Command::new("kill")
         .args(["-s", "SIGTERM", &id.to_string()])
         .stdout(std::process::Stdio::piped())
@@ -56,10 +57,50 @@ pub async fn kill_child(child: &Child) -> Result<(), KillProcessError> {
     let status = kill.wait().await?;
 
     if !status.success() {
-        log::warn!("Failed to kill process {}", id);
+        log::warn!("Failed to send SIGTERM to process {}", id);
     }
 
-    Ok(())
+    // Wait for the child process to exit with a timeout (10 seconds)
+    // This gives streaming functions time to gracefully close Kafka/Redis connections
+    let wait_result = tokio::time::timeout(Duration::from_secs(10), child.wait()).await;
+
+    match wait_result {
+        Ok(Ok(_exit_status)) => {
+            info!("Process {} exited gracefully after SIGTERM", id);
+            Ok(())
+        }
+        Ok(Err(e)) => {
+            error!("Error waiting for process {} to exit: {}", id, e);
+            Err(KillProcessError::Kill(e))
+        }
+        Err(_) => {
+            // Timeout occurred - force kill with SIGKILL
+            warn!(
+                "Process {} did not exit after 10 seconds, sending SIGKILL",
+                id
+            );
+
+            let mut force_kill = tokio::process::Command::new("kill")
+                .args(["-s", "SIGKILL", &id.to_string()])
+                .stdout(std::process::Stdio::piped())
+                .stderr(std::process::Stdio::piped())
+                .spawn()?;
+
+            force_kill.wait().await?;
+
+            // Wait one more second for SIGKILL to complete
+            match tokio::time::timeout(Duration::from_secs(1), child.wait()).await {
+                Ok(Ok(_)) => {
+                    warn!("Process {} killed with SIGKILL", id);
+                    Ok(())
+                }
+                _ => {
+                    error!("Process {} could not be killed even with SIGKILL", id);
+                    Err(KillProcessError::ProcessNotFound)
+                }
+            }
+        }
+    }
 }
 
 pub struct RestartingProcess {
@@ -146,15 +187,18 @@ impl RestartingProcess {
                         }
                     }
                 }
-                let _ = kill_child(&child).await;
+                let _ = kill_child(&mut child).await;
             }),
             kill: sender,
         })
     }
 
     pub async fn stop(self) {
+        // Signal the monitor task to stop
         let _ = self.kill.send(());
 
+        // Wait for the monitor task to complete
+        // The monitor task will call kill_child which now properly waits for the process to exit
         if let Err(e) = self.monitor_task.await {
             error!("Error waiting for monitor task to complete: {:?}", e)
         }

@@ -56,7 +56,6 @@ use super::models::{ConfiguredProducer, KafkaChange, KafkaConfig, KafkaStreamCon
 fn build_rdkafka_client_config(config: &KafkaConfig) -> ClientConfig {
     let mut client_config = ClientConfig::new();
 
-    // to prevent the wrapped library from writing to stderr
     client_config.log_level = RDKafkaLogLevel::Emerg;
 
     client_config.set(KAFKA_BOOSTRAP_SERVERS_CONFIG_KEY, config.clone().broker);
