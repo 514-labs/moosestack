@@ -212,13 +212,13 @@ Showing 6 most recent log entries
 Filters applied:
   - Level: WARN
 
-[2025-10-10T16:45:04Z WARN] PostHog client not configured - missing POSTHOG_API_KEY
-[2025-10-10T16:50:05Z WARN] PostHog client not configured - missing POSTHOG_API_KEY
+[2025-10-10T16:45:04Z WARN] HTTP client not configured - missing API_KEY
+[2025-10-10T16:50:05Z WARN] HTTP client not configured - missing API_KEY
 ...
 ```
 
-<Callout type="tip">
-Combine filters for better results. For example: "Show me ERROR logs with 'ClickHouse' in them" combines level filtering with search.
+<Callout type="info">
+**Tip**: Combine filters for better results. For example: "Show me ERROR logs with 'ClickHouse' in them" combines level filtering with search.
 </Callout>
 
 **Use cases:**
@@ -291,8 +291,8 @@ Retrieve and explore the infrastructure map showing all components in your Moose
 - UserEvents_2_0
 ```
 
-<Callout type="tip">
-Search is case-sensitive by default. Use capital letters to match your component names, or ask the AI to search case-insensitively.
+<Callout type="info">
+**Tip**: Search is case-sensitive by default. Use capital letters to match your component names, or ask the AI to search case-insensitively.
 </Callout>
 
 **Use cases:**
@@ -355,8 +355,8 @@ Query executed successfully. Rows returned: 1
 | 0          |
 ```
 
-<Callout type="tip">
-Ask the AI to discover table names first using "What tables exist in my project?" before querying them. Table names are case-sensitive in ClickHouse.
+<Callout type="info">
+**Tip**: Ask the AI to discover table names first using "What tables exist in my project?" before querying them. Table names are case-sensitive in ClickHouse.
 </Callout>
 
 **Use cases:**
@@ -435,8 +435,8 @@ Retrieved 3 message(s) from 1 partition(s)
 ...
 ```
 
-<Callout type="tip">
-Use "List all streaming topics" first to discover available streams in your project.
+<Callout type="info">
+**Tip**: Use "List all streaming topics" first to discover available streams in your project.
 </Callout>
 
 **Use cases:**
