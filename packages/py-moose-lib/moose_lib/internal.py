@@ -142,6 +142,11 @@ EngineConfigDict = Union[
 ]
 
 
+class TTLConfig(BaseModel):
+    expression: Optional[str] = None
+    columns: Optional[Dict[str, str]] = None
+
+
 class TableConfig(BaseModel):
     """Internal representation of an OLAP table configuration for serialization.
 
@@ -160,7 +165,7 @@ class TableConfig(BaseModel):
 
     name: str
     columns: List[Column]
-    order_by: List[str] | str
+        order_by: List[str] | str
     partition_by: Optional[str]
     engine_config: Optional[EngineConfigDict] = Field(None, discriminator='engine')
     version: Optional[str] = None
@@ -168,7 +173,7 @@ class TableConfig(BaseModel):
     life_cycle: Optional[str] = None
     table_settings: Optional[Dict[str, str]] = None
     # Optional TTL configuration
-    ttl: Optional[Dict[str, Any]] = None
+    ttl: Optional[TTLConfig] = None
 
 
 class TopicConfig(BaseModel):
