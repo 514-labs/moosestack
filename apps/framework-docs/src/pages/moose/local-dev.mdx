@@ -247,6 +247,40 @@ All containers run in an isolated Docker network with automatic service discover
 - Port mapping only for external access
 - Automatic DNS resolution between services
 
+### MCP Server for AI-Assisted Development
+
+Development mode includes a built-in Model Context Protocol (MCP) server that lets AI assistants interact with your local infrastructure through natural language.
+
+**What you can do:**
+- Query your ClickHouse database with natural language
+- Inspect streaming topics and messages
+- Search and filter development logs
+- Explore your infrastructure map
+
+**Quick setup:**
+
+The MCP server runs automatically at `http://localhost:4000/mcp`. Configure your AI client (Cursor, Claude Desktop, VS Code, Windsurf) to connect:
+
+```json copy
+{
+  "mcpServers": {
+    "moose-dev": {
+      "command": "node",
+      "args": ["-e", "const http = require('http'); const options = { hostname: 'localhost', port: 4000, path: '/mcp', method: 'POST', headers: { 'Content-Type': 'application/json' } }; process.stdin.pipe(http.request(options, (res) => { res.pipe(process.stdout); }));"]
+    }
+  }
+}
+```
+
+**Example prompts:**
+- *"Show me sample data from the users table"*
+- *"What errors are in the logs?"*
+- *"List all streaming topics in my project"*
+
+<Callout type="info" title="Full MCP Documentation" href="/moose/mcp-server" ctaLabel="Learn more">
+See the complete guide for all available tools, detailed configuration for each AI client, and example workflows.
+</Callout>
+
 ## Troubleshooting
 
 ### Common Issues

@@ -22,6 +22,7 @@ import {
   Cloud,
   UploadCloud,
   FileStack,
+  Sparkles,
 } from "lucide-react";
 
 // Raw meta object - more concise without repetitive rendering logic
@@ -44,6 +45,10 @@ const rawMeta = {
   "local-dev": {
     title: "Local Dev Environment",
     Icon: Laptop,
+  },
+  "mcp-server": {
+    title: "MCP - AI Assisted Dev",
+    Icon: Sparkles,
   },
   "data-modeling": {
     title: "Data Modeling",
