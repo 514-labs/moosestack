@@ -42,15 +42,6 @@ use log::debug;
 use serde::{Deserialize, Serialize};
 use tokio::process::Child;
 
-use crate::{
-    framework::{
-        consumption::model::ConsumptionQueryParam, languages::SupportedLanguages,
-        scripts::Workflow, versions::Version,
-    },
-    infrastructure::olap::clickhouse::queries::ClickhouseEngine,
-    utilities::constants,
-};
-
 use super::{
     infrastructure::{
         api_endpoint::{APIType, ApiEndpoint, Method},
@@ -65,6 +56,15 @@ use super::{
         view::View,
     },
     infrastructure_map::{InfrastructureMap, PrimitiveSignature, PrimitiveTypes},
+};
+use crate::framework::core::infrastructure::table::OrderBy;
+use crate::{
+    framework::{
+        consumption::model::ConsumptionQueryParam, languages::SupportedLanguages,
+        scripts::Workflow, versions::Version,
+    },
+    infrastructure::olap::clickhouse::queries::ClickhouseEngine,
+    utilities::constants,
 };
 
 /// Defines how Moose manages the lifecycle of database resources when code changes.
@@ -200,7 +200,7 @@ struct PartialTable {
     pub name: String,
     pub columns: Vec<Column>,
     #[serde(alias = "order_by")]
-    pub order_by: Vec<String>,
+    pub order_by: OrderBy,
     #[serde(default)]
     pub partition_by: Option<String>,
     #[serde(alias = "engine_config")]

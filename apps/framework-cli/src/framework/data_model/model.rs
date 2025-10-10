@@ -4,7 +4,7 @@ use sha2::{Digest, Sha256};
 use std::collections::{HashMap, VecDeque};
 use std::path::PathBuf;
 
-use crate::framework::core::infrastructure::table::{Column, Table};
+use crate::framework::core::infrastructure::table::{Column, OrderBy, Table};
 use crate::framework::core::infrastructure_map::{PrimitiveSignature, PrimitiveTypes};
 use crate::framework::core::partial_infrastructure_map::LifeCycle;
 use crate::framework::data_model::DuplicateModelError;
@@ -27,14 +27,13 @@ impl DataModel {
     // TODO this probably should be on the Table object itself which can be built from
     // multiple sources. The Aim will be to have DB Blocks provision some tables as well.
     pub fn to_table(&self) -> Table {
-        // Determine the order_by fields based on configuration and primary keys
-        let order_by = if !self.config.storage.order_by_fields.is_empty() {
-            // Use explicit order_by_fields if specified
-            self.config.storage.order_by_fields.clone()
+        // Determine the order_by based on configuration and primary keys
+        let order_by: OrderBy = if !self.config.storage.order_by_fields.is_empty() {
+            OrderBy::Fields(self.config.storage.order_by_fields.clone())
         } else {
             // Fall back to primary key columns if no explicit order_by_fields
             // This ensures ClickHouse's mandatory ORDER BY requirement is met
-            self.primary_key_columns()
+            OrderBy::Fields(self.primary_key_columns())
         };
 
         let engine =

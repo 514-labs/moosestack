@@ -148,10 +148,21 @@ from moose_lib.blocks import ReplacingMergeTreeEngine
 # Basic usage
 my_table = OlapTable[UserProfile]("user_profiles")
 
-# With configuration
+# With configuration (fields)
 my_table = OlapTable[UserProfile]("user_profiles", OlapConfig(
     order_by_fields=["id", "timestamp"],
     engine=ReplacingMergeTreeEngine(),
+))
+
+# With configuration (expression)
+my_table_expr = OlapTable[UserProfile]("user_profiles_expr", OlapConfig(
+    order_by_expression="(id, timestamp)",
+    engine=ReplacingMergeTreeEngine(),
+))
+
+# Disable sorting entirely
+my_table_unsorted = OlapTable[UserProfile]("user_profiles_unsorted", OlapConfig(
+    order_by_expression="tuple()",
 ))
 ```
 
