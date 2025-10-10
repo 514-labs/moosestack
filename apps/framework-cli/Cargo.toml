@@ -20,7 +20,7 @@ tokio = { version = "1", features = ["full"] }
 thiserror = "1.0.59"
 hyper = { version = "1", features = ["full"] }
 hyper-tls = "0.6.0"
-notify = { version = "6.1.1", default-features = false, features = [
+notify = { version = "8.2.0", default-features = false, features = [
     "macos_kqueue",
 ] }
 toml = "0.5.8"
