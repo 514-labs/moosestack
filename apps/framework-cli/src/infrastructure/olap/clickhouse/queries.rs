@@ -1636,13 +1636,6 @@ pub fn create_table_query(
                 parts.push(expr.trim().to_string());
             }
         }
-        if let Some(column_ttls) = table.column_ttls.as_ref() {
-            for (col, expr) in column_ttls.iter() {
-                if !expr.trim().is_empty() {
-                    parts.push(format!("`{}` TTL {}", col, expr.trim()));
-                }
-            }
-        }
         if parts.is_empty() {
             None
         } else {
