@@ -12,7 +12,8 @@ use rmcp::{
 };
 use std::sync::Arc;
 
-use super::tools::{create_error_result, infra_map, logs};
+use super::tools::{create_error_result, infra_map, logs, query_olap};
+use crate::infrastructure::olap::clickhouse::config::ClickHouseConfig;
 use crate::infrastructure::redis::redis_client::RedisClient;
 
 /// Handler for the MCP server that implements the Model Context Protocol
@@ -21,6 +22,7 @@ pub struct MooseMcpHandler {
     server_name: String,
     server_version: String,
     redis_client: Arc<RedisClient>,
+    clickhouse_config: ClickHouseConfig,
 }
 
 impl MooseMcpHandler {
@@ -29,11 +31,13 @@ impl MooseMcpHandler {
         server_name: String,
         server_version: String,
         redis_client: Arc<RedisClient>,
+        clickhouse_config: ClickHouseConfig,
     ) -> Self {
         Self {
             server_name,
             server_version,
             redis_client,
+            clickhouse_config,
         }
     }
 }
@@ -54,7 +58,7 @@ impl ServerHandler for MooseMcpHandler {
                 website_url: None,
             },
             instructions: Some(
-                "Moose MCP Server - Access dev server logs and infrastructure map for debugging and monitoring"
+                "Moose MCP Server - Access dev server logs, infrastructure map, and query the OLAP database for debugging, monitoring, and data exploration"
                     .to_string(),
             ),
         }
@@ -66,7 +70,11 @@ impl ServerHandler for MooseMcpHandler {
         _context: RequestContext<RoleServer>,
     ) -> Result<ListToolsResult, ErrorData> {
         Ok(ListToolsResult {
-            tools: vec![logs::tool_definition(), infra_map::tool_definition()],
+            tools: vec![
+                logs::tool_definition(),
+                infra_map::tool_definition(),
+                query_olap::tool_definition(),
+            ],
             next_cursor: None,
         })
     }
@@ -83,6 +91,11 @@ impl ServerHandler for MooseMcpHandler {
                 self.redis_client.clone(),
             )
             .await),
+            "query_olap" => Ok(query_olap::handle_call(
+                &self.clickhouse_config,
+                param.arguments.as_ref(),
+            )
+            .await),
             _ => Ok(create_error_result(format!("Unknown tool: {}", param.name))),
         }
     }
@@ -94,6 +107,7 @@ impl ServerHandler for MooseMcpHandler {
 /// * `server_name` - Name of the MCP server
 /// * `server_version` - Version of the MCP server
 /// * `redis_client` - Redis client for accessing infrastructure state
+/// * `clickhouse_config` - ClickHouse configuration for database access
 ///
 /// # Returns
 /// * `StreamableHttpService` - HTTP service that can handle MCP requests
@@ -101,6 +115,7 @@ pub fn create_mcp_http_service(
     server_name: String,
     server_version: String,
     redis_client: Arc<RedisClient>,
+    clickhouse_config: ClickHouseConfig,
 ) -> StreamableHttpService<MooseMcpHandler, LocalSessionManager> {
     info!(
         "[MCP] Creating MCP HTTP service: {} v{}",
@@ -121,6 +136,7 @@ pub fn create_mcp_http_service(
                 server_name.clone(),
                 server_version.clone(),
                 redis_client.clone(),
+                clickhouse_config.clone(),
             ))
         },
         session_manager,
