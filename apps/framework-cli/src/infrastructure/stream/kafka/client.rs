@@ -27,32 +27,7 @@ use rdkafka::{
     producer::FutureProducer,
 };
 use std::collections::{HashMap, VecDeque};
-use std::sync::atomic::{AtomicI32, Ordering};
 use std::time::Duration;
-
-// Diagnostic counter for in-flight fetch_topics calls
-static IN_FLIGHT_FETCH_TOPICS: AtomicI32 = AtomicI32::new(0);
-
-// Guard to ensure fetch_topics counter is decremented even on early returns
-struct FetchTopicsGuard;
-
-impl FetchTopicsGuard {
-    fn new() -> Self {
-        IN_FLIGHT_FETCH_TOPICS.fetch_add(1, Ordering::SeqCst);
-        Self
-    }
-}
-
-impl Drop for FetchTopicsGuard {
-    fn drop(&mut self) {
-        IN_FLIGHT_FETCH_TOPICS.fetch_sub(1, Ordering::SeqCst);
-    }
-}
-
-/// Returns the current number of in-flight fetch_topics calls
-pub fn in_flight_fetch_topics_count() -> i32 {
-    IN_FLIGHT_FETCH_TOPICS.load(Ordering::SeqCst)
-}
 
 use super::constants::{
     DEFAULT_RETENTION_MS, KAFKA_ACKS_CONFIG_KEY, KAFKA_AUTO_COMMIT_INTERVAL_MS_CONFIG_KEY,
@@ -593,9 +568,6 @@ pub async fn check_topic_size(topic: &str, config: &KafkaConfig) -> Result<i64, 
 pub async fn fetch_topics(
     config: &KafkaConfig,
 ) -> Result<Vec<KafkaStreamConfig>, rdkafka::error::KafkaError> {
-    // Track in-flight fetch_topics calls for diagnostics
-    let _guard = FetchTopicsGuard::new();
-
     let rdkafka_config = build_rdkafka_client_config(config);
     let client: BaseConsumer = rdkafka_config.create()?;
     let admin_client: AdminClient<_> = rdkafka_config.create()?;
@@ -659,7 +631,6 @@ pub async fn fetch_topics(
         }
     }
 
-    // Note: FetchTopicsGuard will automatically decrement counter when dropped
     Ok(topics)
 }
 
