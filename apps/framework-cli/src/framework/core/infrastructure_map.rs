@@ -638,8 +638,10 @@ impl InfrastructureMap {
 
         // Orchestration workers
         let mut orchestration_workers = HashMap::new();
-        let orchestration_worker = OrchestrationWorker::new(project.language);
-        orchestration_workers.insert(orchestration_worker.id(), orchestration_worker);
+        if project.features.workflows {
+            let orchestration_worker = OrchestrationWorker::new(project.language);
+            orchestration_workers.insert(orchestration_worker.id(), orchestration_worker);
+        }
 
         InfrastructureMap {
             // primitive_map,
@@ -2146,6 +2148,20 @@ impl InfrastructureMap {
             );
         }
 
+        // Provide explicit feedback when workflows are defined but workflows feature is disabled
+        if !project.features.workflows && !infra_map.workflows.is_empty() {
+            show_message_wrapper(
+                MessageType::Error,
+                Message {
+                    action: "Disabled".to_string(),
+                    details: format!(
+                        "Workflows feature is disabled but {} workflow(s) found. Enable it by setting [features].workflows = true in moose.config.toml",
+                        infra_map.workflows.len()
+                    ),
+                },
+            );
+        }
+
         Ok(infra_map)
     }
 
@@ -2247,6 +2263,30 @@ impl InfrastructureMap {
         self.api_endpoints
             .values()
             .any(|endpoint| matches!(endpoint.api_type, APIType::EGRESS { .. }))
+    }
+
+    /// Checks if this infrastructure map represents an OLAP-only project
+    /// This is useful for determining if a project can run as an ephemeral job
+    /// instead of a long-running service.
+    pub fn is_olap_only(&self) -> bool {
+        let has_consumption = self.has_consumption_apis();
+        let uses_streaming = self.uses_streaming();
+        let has_workflows = !self.workflows.is_empty();
+        let has_orchestration = !self.orchestration_workers.is_empty();
+
+        let is_olap_only =
+            !has_consumption && !uses_streaming && !has_workflows && !has_orchestration;
+
+        log::info!(
+            "OLAP-only check: {} (consumption={}, streaming={}, workflows={}, orchestration={})",
+            is_olap_only,
+            has_consumption,
+            uses_streaming,
+            has_workflows,
+            has_orchestration
+        );
+
+        is_olap_only
     }
 }
 
