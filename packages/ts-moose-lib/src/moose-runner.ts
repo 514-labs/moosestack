@@ -135,6 +135,11 @@ program
   .option("--api-key <key>", "API key for authentication")
   .option("--is-dmv2", "Whether this is a DMv2 consumption", false)
   .option("--proxy-port <port>", "Port to run the proxy server on", parseInt)
+  .option(
+    "--worker-count <count>",
+    "Number of worker processes for the consumption API cluster",
+    parseInt,
+  )
   .action(
     (
       apisDir,
@@ -170,6 +175,7 @@ program
         enforceAuth: options.enforceAuth,
         isDmv2: options.isDmv2,
         proxyPort: options.proxyPort,
+        workerCount: options.workerCount,
       });
     },
   );

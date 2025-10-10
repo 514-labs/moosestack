@@ -40,6 +40,7 @@ interface ApisConfig {
   enforceAuth: boolean;
   isDmv2: boolean;
   proxyPort?: number;
+  workerCount?: number;
 }
 
 // Convert our config to Clickhouse client config
@@ -253,6 +254,8 @@ const apiHandler = async (
 
 export const runApis = async (config: ApisConfig) => {
   const apisCluster = new Cluster({
+    maxWorkerCount:
+      (config.workerCount ?? 0) > 0 ? config.workerCount : undefined,
     workerStart: async () => {
       let temporalClient: TemporalClient | undefined;
       if (config.temporalConfig) {

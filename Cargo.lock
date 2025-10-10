@@ -2881,6 +2881,7 @@ dependencies = [
  "opentelemetry-semantic-conventions",
  "opentelemetry_sdk 0.29.0",
  "pbkdf2",
+ "percent-encoding",
  "petgraph 0.8.3",
  "posthog514client-rs",
  "predicates",

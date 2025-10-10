@@ -39,10 +39,18 @@ moose build [--docker] [--amd64] [--arm64]
 - `--arm64`: Build for ARM64 architecture
 
 ### Dev
-Starts a local development environment.
+Starts a local development environment with hot reload and automatic infrastructure management.
 ```bash
-moose dev
+moose dev [--mcp] [--docker]
 ```
+- `--mcp`: Enable or disable the MCP (Model Context Protocol) server (default: true). The MCP server provides AI-assisted development tools at `http://localhost:4000/mcp`. See [MCP Server documentation](/moose/mcp-server) for details.
+- `--docker`: Use Docker for infrastructure (default behavior in dev mode)
+
+The development server includes:
+- Hot reload for code changes
+- Automatic Docker container management (ClickHouse, Redpanda, Temporal, Redis)
+- Built-in MCP server for AI assistant integration
+- Health monitoring and metrics endpoints
 
 ### Prod
 Starts Moose in production mode for cloud deployments.
