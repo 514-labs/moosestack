@@ -23,8 +23,13 @@ message InfrastructureMap {
   map<string, SqlResource> sql_resources = 12;
 }
 
+message SourceLocation {
+  string file = 1;
+}
+
 message Metadata {
   string description = 1;
+  optional SourceLocation source = 2;
 }
 
 message Topic {

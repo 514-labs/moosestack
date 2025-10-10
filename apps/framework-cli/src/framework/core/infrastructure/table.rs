@@ -23,8 +23,15 @@ use std::fmt;
 use std::fmt::Debug;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Eq, Hash)]
+pub struct SourceLocation {
+    pub file: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Eq, Hash)]
 pub struct Metadata {
     pub description: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub source: Option<SourceLocation>,
 }
 
 /// Prefix for Moose-managed metadata in column comments.
@@ -197,6 +204,12 @@ impl Table {
             metadata: MessageField::from_option(self.metadata.as_ref().map(|m| {
                 infrastructure_map::Metadata {
                     description: m.description.clone().unwrap_or_default(),
+                    source: MessageField::from_option(m.source.as_ref().map(|s| {
+                        infrastructure_map::SourceLocation {
+                            file: s.file.clone(),
+                            special_fields: Default::default(),
+                        }
+                    })),
                     special_fields: Default::default(),
                 }
             })),
@@ -241,6 +254,10 @@ impl Table {
                 } else {
                     Some(m.description)
                 },
+                source: m
+                    .source
+                    .into_option()
+                    .map(|s| SourceLocation { file: s.file }),
             }),
             life_cycle: match proto.life_cycle.enum_value_or_default() {
                 ProtoLifeCycle::FULLY_MANAGED => LifeCycle::FullyManaged,
