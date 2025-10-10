@@ -1656,6 +1656,7 @@ mod tests {
             default: None,
             annotations: vec![],
             comment: Some("Old user comment".to_string()),
+            ttl: None,
         };
 
         let after_column = Column {
@@ -1673,6 +1674,7 @@ mod tests {
             default: None,
             annotations: vec![],
             comment: Some("New user comment".to_string()),
+            ttl: None,
         };
 
         // The execute_modify_table_column function should detect this as comment-only change
@@ -1697,6 +1699,7 @@ mod tests {
             default: Some("1".to_string()),
             annotations: vec![],
             comment: Some("Number of things".to_string()),
+            ttl: None,
         };
         let after_column = Column {
             default: Some("42".to_string()),
@@ -1726,6 +1729,7 @@ mod tests {
             default: Some("'open'".to_string()),
             annotations: vec![],
             comment: Some("old".to_string()),
+            ttl: None,
         };
 
         let after_column = Column {
@@ -1757,6 +1761,7 @@ mod tests {
             default: Some("'updated default'".to_string()),
             annotations: vec![],
             comment: Some("Updated description field".to_string()),
+            ttl: None,
         };
 
         let clickhouse_column = std_column_to_clickhouse_column(column).unwrap();
@@ -1832,6 +1837,7 @@ mod tests {
             default: Some("42".to_string()),
             annotations: vec![],
             comment: Some("Number of items".to_string()),
+            ttl: None,
         };
 
         let clickhouse_column = std_column_to_clickhouse_column(column).unwrap();
@@ -1877,6 +1883,7 @@ mod tests {
             default: Some("'default text'".to_string()),
             annotations: vec![],
             comment: None,
+            ttl: None,
         };
 
         let clickhouse_column = std_column_to_clickhouse_column(column).unwrap();

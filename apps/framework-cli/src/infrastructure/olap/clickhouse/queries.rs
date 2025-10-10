@@ -1938,6 +1938,7 @@ mod tests {
                 primary_key: false,
                 default: None,
                 comment: None,
+                ttl: None,
             },
             ClickHouseColumn {
                 name: "nested_field_2".to_string(),
@@ -1947,6 +1948,7 @@ mod tests {
                 primary_key: false,
                 default: None,
                 comment: None,
+                ttl: None,
             },
             ClickHouseColumn {
                 name: "nested_field_3".to_string(),
@@ -1956,6 +1958,7 @@ mod tests {
                 primary_key: false,
                 default: None,
                 comment: None,
+                ttl: None,
             },
             ClickHouseColumn {
                 name: "nested_field_4".to_string(),
@@ -1965,6 +1968,7 @@ mod tests {
                 primary_key: false,
                 default: None,
                 comment: None,
+                ttl: None,
             },
             ClickHouseColumn {
                 name: "nested_field_5".to_string(),
@@ -1974,6 +1978,7 @@ mod tests {
                 primary_key: false,
                 default: None,
                 comment: None,
+                ttl: None,
             },
             ClickHouseColumn {
                 name: "nested_field_6".to_string(),
@@ -1995,6 +2000,7 @@ mod tests {
                 primary_key: false,
                 default: None,
                 comment: None,
+                ttl: None,
             },
             ClickHouseColumn {
                 name: "nested_field_7".to_string(),
@@ -2004,6 +2010,7 @@ mod tests {
                 primary_key: false,
                 default: None,
                 comment: None,
+                ttl: None,
             },
         ]);
 
@@ -2031,6 +2038,7 @@ mod tests {
                     unique: false,
                     default: None,
                     comment: None,
+                    ttl: None,
                 },
                 ClickHouseColumn {
                     name: "name".to_string(),
@@ -2040,6 +2048,7 @@ mod tests {
                     unique: false,
                     default: None,
                     comment: None,
+                    ttl: None,
                 },
             ],
             order_by: OrderBy::Fields(vec![]),
@@ -2075,6 +2084,7 @@ PRIMARY KEY (`id`)
                 unique: false,
                 default: Some("'abc'".to_string()),
                 comment: None,
+                ttl: None,
             }],
             order_by: OrderBy::Fields(vec![]),
             partition_by: None,
@@ -2108,6 +2118,7 @@ ENGINE = MergeTree
                 unique: false,
                 default: Some("42".to_string()),
                 comment: None,
+                ttl: None,
             }],
             order_by: OrderBy::Fields(vec![]),
             partition_by: None,
@@ -2140,6 +2151,7 @@ ENGINE = MergeTree
                 unique: false,
                 default: None,
                 comment: None,
+                ttl: None,
             }],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
             partition_by: None,
@@ -2176,6 +2188,7 @@ ORDER BY (`id`) "#;
                 unique: false,
                 default: None,
                 comment: None,
+                ttl: None,
             }],
             engine: ClickhouseEngine::ReplacingMergeTree {
                 ver: None,
@@ -2208,6 +2221,7 @@ ORDER BY (`id`) "#;
                     unique: false,
                     default: None,
                     comment: None,
+                    ttl: None,
                 },
                 ClickHouseColumn {
                     name: "version".to_string(),
@@ -2217,6 +2231,7 @@ ORDER BY (`id`) "#;
                     unique: false,
                     default: None,
                     comment: None,
+                    ttl: None,
                 },
             ],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
@@ -2256,6 +2271,7 @@ ORDER BY (`id`) "#;
                     unique: false,
                     default: None,
                     comment: None,
+                    ttl: None,
                 },
                 ClickHouseColumn {
                     name: "version".to_string(),
@@ -2265,6 +2281,7 @@ ORDER BY (`id`) "#;
                     unique: false,
                     default: None,
                     comment: None,
+                    ttl: None,
                 },
                 ClickHouseColumn {
                     name: "is_deleted".to_string(),
@@ -2274,6 +2291,7 @@ ORDER BY (`id`) "#;
                     unique: false,
                     default: None,
                     comment: None,
+                    ttl: None,
                 },
             ],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
@@ -2313,6 +2331,7 @@ ORDER BY (`id`) "#;
                 unique: false,
                 default: None,
                 comment: None,
+                ttl: None,
             }],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
             partition_by: None,
@@ -2414,6 +2433,7 @@ ORDER BY (`id`) "#;
                     unique: false,
                     default: None,
                     comment: None,
+                    ttl: None,
                 },
                 ClickHouseColumn {
                     name: "nested_data".to_string(),
@@ -2426,6 +2446,7 @@ ORDER BY (`id`) "#;
                             unique: false,
                             default: None,
                             comment: None,
+                            ttl: None,
                         },
                         ClickHouseColumn {
                             name: "field2".to_string(),
@@ -2435,6 +2456,7 @@ ORDER BY (`id`) "#;
                             unique: false,
                             default: None,
                             comment: None,
+                            ttl: None,
                         },
                     ]),
                     required: true,
@@ -2442,6 +2464,7 @@ ORDER BY (`id`) "#;
                     unique: false,
                     default: None,
                     comment: None,
+                    ttl: None,
                 },
                 ClickHouseColumn {
                     name: "status".to_string(),
@@ -2463,6 +2486,7 @@ ORDER BY (`id`) "#;
                     unique: false,
                     default: None,
                     comment: None,
+                    ttl: None,
                 },
             ],
             engine: ClickhouseEngine::MergeTree,
@@ -2508,6 +2532,7 @@ ORDER BY (`id`) "#;
                     unique: false,
                     default: None,
                     comment: None,
+                    ttl: None,
                 },
                 ClickHouseColumn {
                     name: "data".to_string(),
@@ -2517,6 +2542,7 @@ ORDER BY (`id`) "#;
                     unique: false,
                     default: None,
                     comment: None,
+                    ttl: None,
                 },
             ],
             order_by: OrderBy::Fields(vec![]),
@@ -2988,6 +3014,7 @@ SETTINGS keeper_path = '/clickhouse/s3queue/test_table', mode = 'unordered', s3q
                 unique: false,
                 default: None,
                 comment: None,
+                ttl: None,
             }],
             order_by: OrderBy::Fields(vec![]),
             partition_by: None,

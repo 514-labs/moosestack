@@ -1189,6 +1189,7 @@ mod tests {
                 default: None,
                 annotations: vec![],
                 comment: None,
+                ttl: None,
             },
             after_column: None,
             dependency_info: DependencyInfo {
@@ -1488,6 +1489,7 @@ mod tests {
             default: None,
             annotations: vec![],
             comment: None,
+            ttl: None,
         };
 
         // Create operations with correct dependencies
@@ -2100,7 +2102,6 @@ mod tests {
             engine_params_hash: None,
             table_settings: None,
             table_ttl_expression: None,
-            column_ttls: None,
         };
 
         // Create table B - target for materialized view
@@ -2120,7 +2121,6 @@ mod tests {
             engine_params_hash: None,
             table_settings: None,
             table_ttl_expression: None,
-            column_ttls: None,
         };
 
         // Create SQL resource for a materialized view
@@ -2243,7 +2243,6 @@ mod tests {
             engine_params_hash: None,
             table_settings: None,
             table_ttl_expression: None,
-            column_ttls: None,
         };
 
         let table_b = Table {
@@ -2262,7 +2261,6 @@ mod tests {
             engine_params_hash: None,
             table_settings: None,
             table_ttl_expression: None,
-            column_ttls: None,
         };
 
         // Create SQL resource for materialized view
@@ -2464,7 +2462,6 @@ mod tests {
             engine_params_hash: None,
             table_settings: None,
             table_ttl_expression: None,
-            column_ttls: None,
         };
 
         // Create a column
@@ -2477,6 +2474,7 @@ mod tests {
             default: None,
             annotations: vec![],
             comment: None,
+            ttl: None,
         };
 
         // Create operations with signatures that work with the current implementation
@@ -2566,7 +2564,6 @@ mod tests {
             engine_params_hash: None,
             table_settings: None,
             table_ttl_expression: None,
-            column_ttls: None,
         };
 
         // Create operations with signatures that work with the current implementation
@@ -2654,6 +2651,7 @@ mod tests {
                     default: None,
                     annotations: vec![],
                     comment: None,
+                    ttl: None,
                 },
                 Column {
                     name: "old_column".to_string(),
@@ -2664,6 +2662,7 @@ mod tests {
                     default: None,
                     annotations: vec![],
                     comment: None,
+                    ttl: None,
                 },
             ],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
@@ -2679,7 +2678,6 @@ mod tests {
             engine_params_hash: None,
             table_settings: None,
             table_ttl_expression: None,
-            column_ttls: None,
         };
 
         let after_table = Table {
@@ -2694,6 +2692,7 @@ mod tests {
                     default: None,
                     annotations: vec![],
                     comment: None,
+                    ttl: None,
                 },
                 Column {
                     name: "new_column".to_string(),
@@ -2704,6 +2703,7 @@ mod tests {
                     default: None,
                     annotations: vec![],
                     comment: None,
+                    ttl: None,
                 },
             ],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
@@ -2719,7 +2719,6 @@ mod tests {
             engine_params_hash: None,
             table_settings: None,
             table_ttl_expression: None,
-            column_ttls: None,
         };
 
         // Create column changes (remove old_column, add new_column)
@@ -2733,6 +2732,7 @@ mod tests {
                 default: None,
                 annotations: vec![],
                 comment: None,
+                ttl: None,
             }),
             ColumnChange::Added {
                 column: Column {
@@ -2744,6 +2744,7 @@ mod tests {
                     default: None,
                     annotations: vec![],
                     comment: None,
+                    ttl: None,
                 },
                 position_after: Some("id".to_string()),
             },

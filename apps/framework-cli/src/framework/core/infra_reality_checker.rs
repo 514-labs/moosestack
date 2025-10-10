@@ -361,6 +361,7 @@ mod tests {
                 default: None,
                 annotations: vec![],
                 comment: None,
+                ttl: None,
             }],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
             partition_by: None,
@@ -443,6 +444,7 @@ mod tests {
             default: None,
             annotations: vec![],
             comment: None,
+            ttl: None,
         });
 
         let mock_client = MockOlapClient {
@@ -505,6 +507,7 @@ mod tests {
             default: None,
             annotations: vec![],
             comment: None,
+            ttl: None,
         };
         actual_table.columns.push(timestamp_col.clone());
         infra_table.columns.push(timestamp_col);

@@ -564,7 +564,6 @@ impl PartialInfrastructureMap {
 
                 // Extract table-level TTL from partial table
                 let table_ttl_expression = partial_table.ttl.clone();
-                let column_ttls: Option<std::collections::HashMap<String, String>> = None;
 
                 let table = Table {
                     name: version

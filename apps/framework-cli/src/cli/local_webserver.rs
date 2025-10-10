@@ -3185,6 +3185,7 @@ mod tests {
                 default: None,
                 annotations: vec![],
                 comment: None,
+                ttl: None,
             }],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
             partition_by: None,

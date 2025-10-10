@@ -1159,6 +1159,7 @@ mod tests {
             default: None,
             annotations: vec![],
             comment: None,
+            ttl: None,
         };
 
         let json = serde_json::to_string(&nested_column).unwrap();
@@ -1178,6 +1179,7 @@ mod tests {
             default: None,
             annotations: vec![],
             comment: Some("[MOOSE_METADATA:DO_NOT_MODIFY] {\"version\":1,\"enum\":{\"name\":\"TestEnum\",\"members\":[]}}".to_string()),
+            ttl: None,
         };
 
         // Convert to proto and back
@@ -1200,6 +1202,7 @@ mod tests {
             default: None,
             annotations: vec![],
             comment: None,
+            ttl: None,
         };
 
         let proto = column_without_comment.to_proto();

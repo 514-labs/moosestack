@@ -1,6 +1,6 @@
 /**
  * Tests for OlapTable versioning functionality.
- * 
+ *
  * This test module verifies that multiple versions of OlapTables with the same name
  * can coexist and that the infrastructure map generation handles versioned keys correctly.
  */
@@ -15,23 +15,33 @@ import { IJsonSchemaCollection } from "typia/src/schemas/json/IJsonSchemaCollect
 const createMockSchema = (): IJsonSchemaCollection.IV3_1 => ({
   version: "3.1",
   components: { schemas: {} },
-  schemas: [{ type: "object", properties: {} }]
+  schemas: [{ type: "object", properties: {} }],
 });
 
-const createMockColumns = (fields: string[]): Column[] => 
-  fields.map(field => ({
+const createMockColumns = (fields: string[]): Column[] =>
+  fields.map((field) => ({
     name: field as any,
     data_type: "String" as any,
     required: true,
     unique: false,
     primary_key: false,
     default: null,
-    annotations: []
+    ttl: null,
+    annotations: [],
   }));
 
 // Helper function to create OlapTable with mock schema for testing
-const createTestOlapTable = <T>(name: string, config: any, fields: string[] = ["userId", "eventType", "timestamp", "metadata"]) => {
-  return new OlapTable<T>(name, config, createMockSchema(), createMockColumns(fields));
+const createTestOlapTable = <T>(
+  name: string,
+  config: any,
+  fields: string[] = ["userId", "eventType", "timestamp", "metadata"],
+) => {
+  return new OlapTable<T>(
+    name,
+    config,
+    createMockSchema(),
+    createMockColumns(fields),
+  );
 };
 
 // Test data models
@@ -67,11 +77,22 @@ describe("OlapTable Versioning", () => {
       });
 
       // Create version 2.0 of the table with different configuration
-      const tableV2 = createTestOlapTable<UserEventV2>("UserEvents", {
-        version: "2.0",
-        engine: ClickHouseEngines.ReplacingMergeTree,
-        orderByFields: ["userId", "sessionId", "timestamp"],
-      }, ["userId", "eventType", "timestamp", "metadata", "sessionId", "userAgent"]);
+      const tableV2 = createTestOlapTable<UserEventV2>(
+        "UserEvents",
+        {
+          version: "2.0",
+          engine: ClickHouseEngines.ReplacingMergeTree,
+          orderByFields: ["userId", "sessionId", "timestamp"],
+        },
+        [
+          "userId",
+          "eventType",
+          "timestamp",
+          "metadata",
+          "sessionId",
+          "userAgent",
+        ],
+      );
 
       // Both tables should be registered successfully
       const tables = getMooseInternal().tables;
@@ -85,8 +106,12 @@ describe("OlapTable Versioning", () => {
       // Verify configurations are different
       expect(tableV1.config.version).to.equal("1.0");
       expect(tableV2.config.version).to.equal("2.0");
-      expect((tableV1.config as any).engine).to.equal(ClickHouseEngines.MergeTree);
-      expect((tableV2.config as any).engine).to.equal(ClickHouseEngines.ReplacingMergeTree);
+      expect((tableV1.config as any).engine).to.equal(
+        ClickHouseEngines.MergeTree,
+      );
+      expect((tableV2.config as any).engine).to.equal(
+        ClickHouseEngines.ReplacingMergeTree,
+      );
     });
 
     it("should allow unversioned and versioned tables with the same name to coexist", () => {
@@ -127,7 +152,9 @@ describe("OlapTable Versioning", () => {
           engine: ClickHouseEngines.MergeTree,
           orderByFields: ["userId"],
         });
-      }).to.throw("OlapTable with name DuplicateTest and version 1.0 already exists");
+      }).to.throw(
+        "OlapTable with name DuplicateTest and version 1.0 already exists",
+      );
     });
   });
 
@@ -146,10 +173,13 @@ describe("OlapTable Versioning", () => {
         orderByFields: ["userId", "timestamp"],
       });
 
-      const unversionedTable = createTestOlapTable<UserEvent>("UnversionedInfraTest", {
-        engine: ClickHouseEngines.MergeTree,
-        orderByFields: ["userId"],
-      });
+      const unversionedTable = createTestOlapTable<UserEvent>(
+        "UnversionedInfraTest",
+        {
+          engine: ClickHouseEngines.MergeTree,
+          orderByFields: ["userId"],
+        },
+      );
 
       // Generate infrastructure map
       const infraMap = toInfraMap(getMooseInternal());
@@ -210,7 +240,7 @@ describe("OlapTable Versioning", () => {
       // Note: This tests the internal table name generation logic
       const infraMap = toInfraMap(getMooseInternal());
       const tableConfig = infraMap.tables["TestTable_2.1.0"];
-      
+
       expect(tableConfig.name).to.equal("TestTable");
       expect(tableConfig.version).to.equal("2.1.0");
     });
@@ -223,7 +253,7 @@ describe("OlapTable Versioning", () => {
 
       const infraMap = toInfraMap(getMooseInternal());
       const tableConfig = infraMap.tables["UnversionedTable"];
-      
+
       expect(tableConfig.name).to.equal("UnversionedTable");
       expect(tableConfig.version).to.be.undefined;
     });
@@ -240,11 +270,22 @@ describe("OlapTable Versioning", () => {
       });
 
       // New version (green) - updated table with different engine
-      const greenTable = createTestOlapTable<UserEventV2>("UserActivity", {
-        version: "2.0",
-        engine: ClickHouseEngines.ReplacingMergeTree,
-        orderByFields: ["userId", "sessionId", "timestamp"],
-      }, ["userId", "eventType", "timestamp", "metadata", "sessionId", "userAgent"]);
+      const greenTable = createTestOlapTable<UserEventV2>(
+        "UserActivity",
+        {
+          version: "2.0",
+          engine: ClickHouseEngines.ReplacingMergeTree,
+          orderByFields: ["userId", "sessionId", "timestamp"],
+        },
+        [
+          "userId",
+          "eventType",
+          "timestamp",
+          "metadata",
+          "sessionId",
+          "userAgent",
+        ],
+      );
 
       // Both versions should coexist
       const tables = getMooseInternal().tables;
@@ -262,9 +303,13 @@ describe("OlapTable Versioning", () => {
 
       expect(blueConfig.engineConfig?.engine).to.equal("MergeTree");
       expect(greenConfig.engineConfig?.engine).to.equal("ReplacingMergeTree");
-      
+
       expect(blueConfig.orderBy).to.deep.equal(["userId", "timestamp"]);
-      expect(greenConfig.orderBy).to.deep.equal(["userId", "sessionId", "timestamp"]);
+      expect(greenConfig.orderBy).to.deep.equal([
+        "userId",
+        "sessionId",
+        "timestamp",
+      ]);
     });
   });
 });

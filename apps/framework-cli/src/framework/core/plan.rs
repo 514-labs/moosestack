@@ -349,6 +349,7 @@ mod tests {
                 default: None,
                 annotations: vec![],
                 comment: None,
+                ttl: None,
             }],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
             partition_by: None,
@@ -363,7 +364,6 @@ mod tests {
             engine_params_hash: None,
             table_settings: None,
             table_ttl_expression: None,
-            column_ttls: None,
         }
     }
 
@@ -528,6 +528,7 @@ mod tests {
             default: None,
             annotations: vec![],
             comment: None,
+            ttl: None,
         });
 
         // Create mock OLAP client with the actual table

@@ -959,6 +959,7 @@ mod tests {
                     default: None,
                     annotations: vec![],
                     comment: None,
+                    ttl: None,
                 },
                 Column {
                     name: "B".to_string(),
@@ -969,6 +970,7 @@ mod tests {
                     default: None,
                     annotations: vec![],
                     comment: None,
+                    ttl: None,
                 },
                 Column {
                     name: "C".to_string(),
@@ -985,6 +987,7 @@ mod tests {
                                 default: None,
                                 annotations: vec![],
                                 comment: None,
+                                ttl: None,
                             },
                             Column {
                                 name: "b".to_string(),
@@ -1001,6 +1004,7 @@ mod tests {
                                             default: None,
                                             annotations: vec![],
                                             comment: None,
+                                            ttl: None,
                                         },
                                         Column {
                                             name: "e".to_string(),
@@ -1011,6 +1015,7 @@ mod tests {
                                             default: None,
                                             annotations: vec![],
                                             comment: None,
+                                            ttl: None,
                                         },
                                         Column {
                                             name: "f".to_string(),
@@ -1021,6 +1026,7 @@ mod tests {
                                             default: None,
                                             annotations: vec![],
                                             comment: None,
+                                            ttl: None,
                                         },
                                     ],
                                 }),
@@ -1030,6 +1036,7 @@ mod tests {
                                 default: None,
                                 annotations: vec![],
                                 comment: None,
+                                ttl: None,
                             },
                             Column {
                                 name: "c".to_string(),
@@ -1040,6 +1047,7 @@ mod tests {
                                 default: None,
                                 annotations: vec![],
                                 comment: None,
+                                ttl: None,
                             },
                         ],
                     }),
@@ -1049,6 +1057,7 @@ mod tests {
                     default: None,
                     annotations: vec![],
                     comment: None,
+                    ttl: None,
                 },
                 Column {
                     name: "D".to_string(),
@@ -1059,6 +1068,7 @@ mod tests {
                     default: None,
                     annotations: vec![],
                     comment: None,
+                    ttl: None,
                 },
             ],
         };

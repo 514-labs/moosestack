@@ -428,6 +428,7 @@ mod tests {
                     default: None,
                     annotations: vec![],
                     comment: None,
+                    ttl: None,
                 },
                 Column {
                     name: "city".to_string(),
@@ -438,6 +439,7 @@ mod tests {
                     default: None,
                     annotations: vec![],
                     comment: None,
+                    ttl: None,
                 },
                 Column {
                     name: "zip_code".to_string(),
@@ -448,6 +450,7 @@ mod tests {
                     default: None,
                     annotations: vec![],
                     comment: None,
+                    ttl: None,
                 },
             ],
             jwt: false,
@@ -465,6 +468,7 @@ mod tests {
                     default: None,
                     annotations: vec![],
                     comment: None,
+                    ttl: None,
                 },
                 Column {
                     name: "address".to_string(),
@@ -475,6 +479,7 @@ mod tests {
                     default: None,
                     annotations: vec![],
                     comment: None,
+                    ttl: None,
                 },
                 Column {
                     name: "addresses".to_string(),
@@ -488,6 +493,7 @@ mod tests {
                     default: None,
                     annotations: vec![],
                     comment: None,
+                    ttl: None,
                 },
             ],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
@@ -543,6 +549,7 @@ export const UserTable = new OlapTable<User>("User", {
                     default: None,
                     annotations: vec![],
                     comment: None,
+                    ttl: None,
                 },
                 Column {
                     name: "data".to_string(),
@@ -553,6 +560,7 @@ export const UserTable = new OlapTable<User>("User", {
                     default: None,
                     annotations: vec![],
                     comment: None,
+                    ttl: None,
                 },
             ],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
@@ -604,6 +612,7 @@ export const UserTable = new OlapTable<User>("User", {
                 default: None,
                 annotations: vec![],
                 comment: None,
+                ttl: None,
             }],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
             partition_by: None,
@@ -650,6 +659,7 @@ export const UserTable = new OlapTable<User>("User", {
                     default: None,
                     annotations: vec![],
                     comment: None,
+                    ttl: None,
                 },
                 Column {
                     name: "version".to_string(),
@@ -660,6 +670,7 @@ export const UserTable = new OlapTable<User>("User", {
                     default: None,
                     annotations: vec![],
                     comment: None,
+                    ttl: None,
                 },
                 Column {
                     name: "is_deleted".to_string(),
@@ -670,6 +681,7 @@ export const UserTable = new OlapTable<User>("User", {
                     default: None,
                     annotations: vec![],
                     comment: None,
+                    ttl: None,
                 },
             ],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
@@ -711,6 +723,7 @@ export const UserTable = new OlapTable<User>("User", {
                 default: None,
                 annotations: vec![],
                 comment: None,
+                ttl: None,
             }],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
             partition_by: None,
@@ -758,6 +771,7 @@ export const UserTable = new OlapTable<User>("User", {
                     default: None,
                     annotations: vec![],
                     comment: None,
+                    ttl: None,
                 },
                 Column {
                     name: "version".to_string(),
@@ -768,6 +782,7 @@ export const UserTable = new OlapTable<User>("User", {
                     default: None,
                     annotations: vec![],
                     comment: None,
+                    ttl: None,
                 },
                 Column {
                     name: "is_deleted".to_string(),
@@ -778,6 +793,7 @@ export const UserTable = new OlapTable<User>("User", {
                     default: None,
                     annotations: vec![],
                     comment: None,
+                    ttl: None,
                 },
             ],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
@@ -842,6 +858,7 @@ export const UserTable = new OlapTable<User>("User", {
                     default: None,
                     annotations: vec![],
                     comment: None,
+                    ttl: None,
                 },
                 Column {
                     name: "status".to_string(),
@@ -852,6 +869,7 @@ export const UserTable = new OlapTable<User>("User", {
                     default: None,
                     annotations: vec![],
                     comment: None,
+                    ttl: None,
                 },
             ],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
