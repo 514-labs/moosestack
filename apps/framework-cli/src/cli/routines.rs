@@ -156,7 +156,7 @@ fn check_serverless_exit(serverless: bool, infra_map: &InfrastructureMap) -> boo
             },
         );
         info!("{}", msg);
-        return true;
+        true
     } else {
         let msg = "Project has features requiring a running server. Serverless mode only supports OLAP-only projects. Continuing as normal server.";
         display::show_message_wrapper(
@@ -167,7 +167,7 @@ fn check_serverless_exit(serverless: bool, infra_map: &InfrastructureMap) -> boo
             },
         );
         info!("{}", msg);
-        return false;
+        false
     }
 }
 
