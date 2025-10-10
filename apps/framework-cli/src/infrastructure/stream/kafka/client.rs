@@ -605,32 +605,6 @@ pub async fn fetch_topics(
         }
     }
 
-    // Explicitly drop the clients before returning
-    drop(admin_client);
-    drop(client);
-
-    // Wait for these specific clients to be fully destroyed before returning
-    // This ensures librdkafka's C threads complete cleanup and prevents dangling clients
-    let result = tokio::task::spawn_blocking(|| unsafe {
-        rdkafka_sys::rd_kafka_wait_destroyed(2000) // Wait up to 2 seconds
-    })
-    .await;
-
-    match result {
-        Ok(0) => {
-            log::debug!("fetch_topics: clients destroyed successfully");
-        }
-        Ok(remaining) => {
-            log::warn!(
-                "fetch_topics: {} client(s) not destroyed after 2s timeout",
-                remaining
-            );
-        }
-        Err(e) => {
-            log::error!("fetch_topics: failed to wait for client destruction: {}", e);
-        }
-    }
-
     Ok(topics)
 }
 
