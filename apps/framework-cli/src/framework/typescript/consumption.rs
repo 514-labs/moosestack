@@ -84,6 +84,11 @@ pub fn run(
         string_args.push(port.to_string());
     }
 
+    if let Some(worker_count) = project.http_server_config.api_workers {
+        string_args.push("--worker-count".to_string());
+        string_args.push(worker_count.to_string());
+    }
+
     let args: Vec<&str> = string_args.iter().map(|s| s.as_str()).collect();
     let mut consumption_process = bin::run(CONSUMPTION_RUNNER_BIN, project_path, &args, project)?;
 

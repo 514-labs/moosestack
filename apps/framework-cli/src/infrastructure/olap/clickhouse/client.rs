@@ -147,7 +147,7 @@ impl ClickHouseClient {
 
         debug!("Inserting into clickhouse: {}", insert_query);
 
-        let query: String = query_param(&insert_query)?;
+        let query: String = query_param(&insert_query, None)?;
         let uri = self.uri(format!("/?{query}"))?;
 
         let body = Self::build_body(columns, records);
@@ -186,8 +186,16 @@ impl ClickHouseClient {
     }
 
     /// Executes a SQL statement without a body (e.g., INSERT...SELECT, CREATE TABLE, etc.)
-    pub async fn execute_sql(&self, sql: &str) -> anyhow::Result<String> {
-        let query: String = query_param(sql)?;
+    ///
+    /// # Arguments
+    /// * `sql` - The SQL statement to execute
+    /// * `database` - Optional database to use as the default context for this query
+    pub async fn execute_sql_with_database(
+        &self,
+        sql: &str,
+        database: Option<&str>,
+    ) -> anyhow::Result<String> {
+        let query: String = query_param(sql, database)?;
         let uri = self.uri(format!("/?{query}"))?;
         let req = Request::builder()
             .method("POST")
@@ -209,12 +217,22 @@ impl ClickHouseClient {
             Ok(body_str.trim().to_string())
         }
     }
+
+    /// Executes a SQL statement without a body (e.g., INSERT...SELECT, CREATE TABLE, etc.)
+    pub async fn execute_sql(&self, sql: &str) -> anyhow::Result<String> {
+        self.execute_sql_with_database(sql, None).await
+    }
 }
 
 const DDL_COMMANDS: &[&str] = &["INSERT", "CREATE", "ALTER", "DROP", "TRUNCATE"];
 
-fn query_param(query: &str) -> anyhow::Result<String> {
+fn query_param(query: &str, database: Option<&str>) -> anyhow::Result<String> {
     let mut params = vec![("query", query), ("date_time_input_format", "best_effort")];
+
+    // Add database parameter if provided to set the default database context
+    if let Some(db) = database {
+        params.push(("database", db));
+    }
 
     // Only add wait_end_of_query for INSERT and DDL operations to ensure at least once delivery
     // This preserves SELECT query performance by avoiding response buffering
@@ -257,7 +275,7 @@ mod tests {
     #[test]
     fn test_query_param_insert_includes_wait_end_of_query() {
         let query = "INSERT INTO table VALUES (1, 'test')";
-        let result = query_param(query).unwrap();
+        let result = query_param(query, None).unwrap();
         assert!(
             result.contains("wait_end_of_query=1"),
             "INSERT query should include wait_end_of_query parameter"
@@ -271,7 +289,7 @@ mod tests {
     #[test]
     fn test_query_param_create_includes_wait_end_of_query() {
         let query = "CREATE TABLE test (id Int32, name String)";
-        let result = query_param(query).unwrap();
+        let result = query_param(query, None).unwrap();
         assert!(
             result.contains("wait_end_of_query=1"),
             "CREATE query should include wait_end_of_query parameter"
@@ -281,7 +299,7 @@ mod tests {
     #[test]
     fn test_query_param_alter_includes_wait_end_of_query() {
         let query = "ALTER TABLE test ADD COLUMN age Int32";
-        let result = query_param(query).unwrap();
+        let result = query_param(query, None).unwrap();
         assert!(
             result.contains("wait_end_of_query=1"),
             "ALTER query should include wait_end_of_query parameter"
@@ -291,7 +309,7 @@ mod tests {
     #[test]
     fn test_query_param_drop_includes_wait_end_of_query() {
         let query = "DROP TABLE test";
-        let result = query_param(query).unwrap();
+        let result = query_param(query, None).unwrap();
         assert!(
             result.contains("wait_end_of_query=1"),
             "DROP query should include wait_end_of_query parameter"
@@ -301,7 +319,7 @@ mod tests {
     #[test]
     fn test_query_param_truncate_includes_wait_end_of_query() {
         let query = "TRUNCATE TABLE test";
-        let result = query_param(query).unwrap();
+        let result = query_param(query, None).unwrap();
         assert!(
             result.contains("wait_end_of_query=1"),
             "TRUNCATE query should include wait_end_of_query parameter"
@@ -311,8 +329,8 @@ mod tests {
     #[test]
     fn test_query_param_select_excludes_wait_end_of_query() {
         let query = "SELECT * FROM table WHERE id = 1";
-        let result = query_param(query).unwrap();
-        assert!(!result.contains("wait_end_of_query"), 
+        let result = query_param(query, None).unwrap();
+        assert!(!result.contains("wait_end_of_query"),
                 "SELECT query should NOT include wait_end_of_query parameter to preserve streaming performance");
         assert!(
             result.contains("date_time_input_format=best_effort"),
@@ -323,7 +341,7 @@ mod tests {
     #[test]
     fn test_query_param_show_excludes_wait_end_of_query() {
         let query = "SHOW TABLES";
-        let result = query_param(query).unwrap();
+        let result = query_param(query, None).unwrap();
         assert!(
             !result.contains("wait_end_of_query"),
             "SHOW query should NOT include wait_end_of_query parameter"
@@ -333,7 +351,7 @@ mod tests {
     #[test]
     fn test_query_param_describe_excludes_wait_end_of_query() {
         let query = "DESCRIBE table";
-        let result = query_param(query).unwrap();
+        let result = query_param(query, None).unwrap();
         assert!(
             !result.contains("wait_end_of_query"),
             "DESCRIBE query should NOT include wait_end_of_query parameter"
@@ -343,7 +361,7 @@ mod tests {
     #[test]
     fn test_query_param_with_leading_whitespace() {
         let query = "   INSERT INTO table VALUES (1, 'test')";
-        let result = query_param(query).unwrap();
+        let result = query_param(query, None).unwrap();
         assert!(
             result.contains("wait_end_of_query=1"),
             "INSERT query with leading whitespace should include wait_end_of_query parameter"
@@ -353,10 +371,20 @@ mod tests {
     #[test]
     fn test_query_param_case_insensitive() {
         let query = "insert into table values (1, 'test')";
-        let result = query_param(query).unwrap();
+        let result = query_param(query, None).unwrap();
         assert!(
             result.contains("wait_end_of_query=1"),
             "Lowercase INSERT query should include wait_end_of_query parameter"
+        );
+    }
+
+    #[test]
+    fn test_query_param_with_database() {
+        let query = "SELECT * FROM table";
+        let result = query_param(query, Some("test_db")).unwrap();
+        assert!(
+            result.contains("database=test_db"),
+            "Should include database parameter when provided"
         );
     }
 }
