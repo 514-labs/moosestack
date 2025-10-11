@@ -1,7 +1,7 @@
 # Test all supported ClickHouse engines to ensure proper configuration
 # These tables verify that all engine types can be created and configured correctly
 
-from moose_lib import OlapTable, OlapConfig, Key, ClickHouseTtl
+from moose_lib import OlapTable, OlapConfig, Key, ClickHouseTTL
 from moose_lib.blocks import (
     MergeTreeEngine,
     ReplacingMergeTreeEngine,
@@ -30,7 +30,7 @@ class EngineTestData(BaseModel):
 class TTLTestData(BaseModel):
     id: Key[str]
     timestamp: datetime
-    email: Annotated[str, ClickHouseTtl("timestamp + INTERVAL 30 DAY")]
+    email: Annotated[str, ClickHouseTTL("timestamp + INTERVAL 30 DAY")]
 
 ttl_table = OlapTable[TTLTestData](
     "TTLTable",

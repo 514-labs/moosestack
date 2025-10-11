@@ -36,7 +36,7 @@ def clickhouse_default(expression: str) -> ClickhouseDefault:
 
 
 @dataclasses.dataclass(frozen=True)
-class ClickHouseTtl:
+class ClickHouseTTL:
     expression: str
 
 
@@ -301,7 +301,7 @@ def _to_columns(model: type[BaseModel]) -> list[Column]:
 
         # Extract TTL expression from metadata, if provided
         ttl_expr = next(
-            (md.expression for md in mds if isinstance(md, ClickHouseTtl)),
+            (md.expression for md in mds if isinstance(md, ClickHouseTTL)),
             None,
         )
 

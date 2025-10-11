@@ -38,6 +38,7 @@ export {
   LowCardinality,
   ClickHouseNamedTuple,
   ClickHouseDefault,
+  ClickHouseTTL,
   WithDefault,
   // Added friendly aliases and numeric helpers
   DateTime,
