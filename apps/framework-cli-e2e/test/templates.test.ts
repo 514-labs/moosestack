@@ -52,6 +52,8 @@ import {
   getExpectedSchemas,
   validateSchemasWithDebugging,
   verifyVersionedTables,
+  getAllTables,
+  getTableDDL,
 } from "./utils";
 import { triggerWorkflow } from "./utils/workflow-utils";
 
@@ -262,6 +264,22 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
       }
 
       console.log(`✅ Schema validation passed for ${config.displayName}`);
+    });
+
+    it("should include TTL in DDL when configured", async function () {
+      if (config.isTestsVariant) {
+        const ddl = await getTableDDL("TTLTable");
+        if (!ddl.includes("TTL timestamp + toIntervalDay(90)")) {
+          throw new Error(
+            `Schema validation failed for tables TTLTable: ${ddl}`,
+          );
+        }
+        if (!ddl.includes("`email` String TTL timestamp + toIntervalDay(30)")) {
+          throw new Error(
+            `Schema validation failed for tables TTLTable: ${ddl}`,
+          );
+        }
+      }
     });
 
     // Add versioned tables test for tests templates

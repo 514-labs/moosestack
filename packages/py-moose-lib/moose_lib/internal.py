@@ -28,6 +28,8 @@ from moose_lib.dmv2.stream import KafkaSchemaConfig
 from pydantic.alias_generators import to_camel
 from pydantic.json_schema import JsonSchemaValue
 
+from .dmv2.olap_table import TTLConfig
+
 model_config = ConfigDict(alias_generator=AliasGenerator(
     serialization_alias=to_camel,
 ))
@@ -167,6 +169,8 @@ class TableConfig(BaseModel):
     metadata: Optional[dict] = None
     life_cycle: Optional[str] = None
     table_settings: Optional[Dict[str, str]] = None
+    # Optional table-level TTL expression
+    ttl: Optional[str] = None
 
 
 class TopicConfig(BaseModel):
@@ -577,6 +581,7 @@ def to_infra_map() -> dict:
             life_cycle=table.config.life_cycle.value if table.config.life_cycle else None,
             # Map 'settings' to 'table_settings' for internal use
             table_settings=table_settings if table_settings else None,
+            ttl=table.config.ttl,
         )
 
     for name, stream in get_streams().items():

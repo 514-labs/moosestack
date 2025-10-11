@@ -200,6 +200,9 @@ struct PartialTable {
     pub life_cycle: Option<LifeCycle>,
     #[serde(alias = "table_settings")]
     pub table_settings: Option<std::collections::HashMap<String, String>>,
+    /// Optional table-level TTL expression (ClickHouse expression, without leading 'TTL')
+    #[serde(alias = "ttl")]
+    pub ttl: Option<String>,
 }
 
 /// Represents a topic definition from user code before it's converted into a complete [`Topic`].
@@ -559,6 +562,9 @@ impl PartialInfrastructureMap {
                     // Because they are modifiable and won't cause issues if not set
                 }
 
+                // Extract table-level TTL from partial table
+                let table_ttl_setting = partial_table.ttl.clone();
+
                 let table = Table {
                     name: version
                         .as_ref()
@@ -582,6 +588,7 @@ impl PartialInfrastructureMap {
                     } else {
                         Some(table_settings)
                     },
+                    table_ttl_setting,
                 };
                 (table.id(), table)
             })

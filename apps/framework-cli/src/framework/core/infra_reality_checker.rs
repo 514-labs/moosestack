@@ -17,7 +17,7 @@
 use crate::{
     framework::core::{
         infrastructure::table::Table,
-        infrastructure_map::{InfrastructureMap, OlapChange},
+        infrastructure_map::{InfrastructureMap, OlapChange, TableChange},
     },
     infrastructure::olap::{OlapChangesError, OlapOperations},
     project::Project,
@@ -176,7 +176,7 @@ impl<T: OlapOperations> InfraRealityChecker<T> {
             missing_tables
         );
 
-        // Find structural differences in tables that exist in both
+        // Find structural and TTL differences in tables that exist in both
         let mut mismatched_tables = Vec::new();
         for (name, mapped_table) in mapped_table_map {
             if let Some(actual_table) = actual_table_map.get(&name) {
@@ -211,6 +211,48 @@ impl<T: OlapOperations> InfraRealityChecker<T> {
                     mismatched_tables.extend(changes);
                 } else {
                     debug!("Table {} matches infrastructure map", name);
+                }
+
+                // TTL: table-level diff
+                if actual_table.table_ttl_setting != mapped_table.table_ttl_setting {
+                    mismatched_tables.push(OlapChange::Table(TableChange::TtlChanged {
+                        name: name.clone(),
+                        before: actual_table.table_ttl_setting.clone(),
+                        after: mapped_table.table_ttl_setting.clone(),
+                        table: mapped_table.clone(),
+                    }));
+                }
+
+                // TTL: column-level diffs (compare per-column ttl directly on columns)
+                let collect_ttls = |t: &crate::framework::core::infrastructure::table::Table| {
+                    let mut m = std::collections::HashMap::new();
+                    for c in &t.columns {
+                        if let Some(ttl) = &c.ttl {
+                            m.insert(c.name.clone(), ttl.clone());
+                        }
+                    }
+                    m
+                };
+                let actual_cols = collect_ttls(actual_table);
+                let desired_cols = collect_ttls(&mapped_table);
+                use std::collections::HashSet;
+                let keys: HashSet<_> = actual_cols
+                    .keys()
+                    .chain(desired_cols.keys())
+                    .cloned()
+                    .collect();
+                for col in keys {
+                    let a = actual_cols.get(&col).cloned();
+                    let b = desired_cols.get(&col).cloned();
+                    if a != b {
+                        mismatched_tables.push(OlapChange::Table(TableChange::ColumnTtlChanged {
+                            name: name.clone(),
+                            column: col.clone(),
+                            before: a,
+                            after: b,
+                            table: mapped_table.clone(),
+                        }));
+                    }
                 }
             }
         }
@@ -319,6 +361,7 @@ mod tests {
                 default: None,
                 annotations: vec![],
                 comment: None,
+                ttl: None,
             }],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
             partition_by: None,
@@ -332,6 +375,7 @@ mod tests {
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
             table_settings: None,
+            table_ttl_setting: None,
         }
     }
 
@@ -400,6 +444,7 @@ mod tests {
             default: None,
             annotations: vec![],
             comment: None,
+            ttl: None,
         });
 
         let mock_client = MockOlapClient {
@@ -462,6 +507,7 @@ mod tests {
             default: None,
             annotations: vec![],
             comment: None,
+            ttl: None,
         };
         actual_table.columns.push(timestamp_col.clone());
         infra_table.columns.push(timestamp_col);

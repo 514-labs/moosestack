@@ -153,6 +153,9 @@ pub struct Table {
     /// These are separate from engine constructor parameters
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub table_settings: Option<std::collections::HashMap<String, String>>,
+    /// Table-level TTL expression (without leading 'TTL')
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub table_ttl_setting: Option<String>,
 }
 
 impl Table {
@@ -273,6 +276,7 @@ impl Table {
                 .clone()
                 .or_else(|| self.engine.as_ref().map(|e| e.non_alterable_params_hash())),
             table_settings: self.table_settings.clone().unwrap_or_default(),
+            table_ttl_setting: self.table_ttl_setting.clone(),
             metadata: MessageField::from_option(self.metadata.as_ref().map(|m| {
                 infrastructure_map::Metadata {
                     description: m.description.clone().unwrap_or_default(),
@@ -359,6 +363,7 @@ impl Table {
             } else {
                 None
             },
+            table_ttl_setting: proto.table_ttl_setting,
         }
     }
 }
@@ -376,6 +381,8 @@ pub struct Column {
     pub annotations: Vec<(String, Value)>, // workaround for needing to Hash
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub comment: Option<String>, // Column comment for metadata storage
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub ttl: Option<String>,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
@@ -804,6 +811,7 @@ impl Column {
                 .map(|(k, v)| (k.to_string(), v.to_string()))
                 .collect(),
             comment: self.comment.clone(),
+            ttl: self.ttl.clone(),
             special_fields: Default::default(),
         }
     }
@@ -825,6 +833,7 @@ impl Column {
             default: proto.default_expr.into_option().map(|w| w.value),
             annotations,
             comment: proto.comment,
+            ttl: proto.ttl,
         }
     }
 }
@@ -1149,6 +1158,7 @@ mod tests {
             default: None,
             annotations: vec![],
             comment: None,
+            ttl: None,
         };
 
         let json = serde_json::to_string(&nested_column).unwrap();
@@ -1168,6 +1178,7 @@ mod tests {
             default: None,
             annotations: vec![],
             comment: Some("[MOOSE_METADATA:DO_NOT_MODIFY] {\"version\":1,\"enum\":{\"name\":\"TestEnum\",\"members\":[]}}".to_string()),
+            ttl: None,
         };
 
         // Convert to proto and back
@@ -1190,6 +1201,7 @@ mod tests {
             default: None,
             annotations: vec![],
             comment: None,
+            ttl: None,
         };
 
         let proto = column_without_comment.to_proto();

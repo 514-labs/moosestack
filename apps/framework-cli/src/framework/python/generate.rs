@@ -584,6 +584,7 @@ mod tests {
                     default: None,
                     annotations: vec![],
                     comment: None,
+                    ttl: None,
                 },
                 Column {
                     name: "timestamp".to_string(),
@@ -594,6 +595,7 @@ mod tests {
                     default: None,
                     annotations: vec![],
                     comment: None,
+                    ttl: None,
                 },
                 Column {
                     name: "optional_text".to_string(),
@@ -604,6 +606,7 @@ mod tests {
                     default: None,
                     annotations: vec![],
                     comment: None,
+                    ttl: None,
                 },
             ],
             order_by: OrderBy::Fields(vec!["primary_key".to_string()]),
@@ -618,6 +621,7 @@ mod tests {
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
             table_settings: None,
+            table_ttl_setting: None,
         }];
 
         let result = tables_to_python(&tables, None);
@@ -659,6 +663,7 @@ foo_table = OlapTable[Foo]("Foo", OlapConfig(
                     default: None,
                     annotations: vec![],
                     comment: None,
+                    ttl: None,
                 },
                 Column {
                     name: "numbers".to_string(),
@@ -672,6 +677,7 @@ foo_table = OlapTable[Foo]("Foo", OlapConfig(
                     default: None,
                     annotations: vec![],
                     comment: None,
+                    ttl: None,
                 },
                 Column {
                     name: "nested_numbers".to_string(),
@@ -688,6 +694,7 @@ foo_table = OlapTable[Foo]("Foo", OlapConfig(
                     default: None,
                     annotations: vec![],
                     comment: None,
+                    ttl: None,
                 },
             ],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
@@ -702,6 +709,7 @@ foo_table = OlapTable[Foo]("Foo", OlapConfig(
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
             table_settings: None,
+            table_ttl_setting: None,
         }];
 
         let result = tables_to_python(&tables, None);
@@ -732,6 +740,7 @@ nested_array_table = OlapTable[NestedArray]("NestedArray", OlapConfig(
                     default: None,
                     annotations: vec![],
                     comment: None,
+                    ttl: None,
                 },
                 Column {
                     name: "city".to_string(),
@@ -742,6 +751,7 @@ nested_array_table = OlapTable[NestedArray]("NestedArray", OlapConfig(
                     default: None,
                     annotations: vec![],
                     comment: None,
+                    ttl: None,
                 },
                 Column {
                     name: "zipCode".to_string(),
@@ -752,6 +762,7 @@ nested_array_table = OlapTable[NestedArray]("NestedArray", OlapConfig(
                     default: None,
                     annotations: vec![],
                     comment: None,
+                    ttl: None,
                 },
             ],
             jwt: false,
@@ -769,6 +780,7 @@ nested_array_table = OlapTable[NestedArray]("NestedArray", OlapConfig(
                     default: None,
                     annotations: vec![],
                     comment: None,
+                    ttl: None,
                 },
                 Column {
                     name: "address".to_string(),
@@ -779,6 +791,7 @@ nested_array_table = OlapTable[NestedArray]("NestedArray", OlapConfig(
                     default: None,
                     annotations: vec![],
                     comment: None,
+                    ttl: None,
                 },
                 Column {
                     name: "addresses".to_string(),
@@ -792,6 +805,7 @@ nested_array_table = OlapTable[NestedArray]("NestedArray", OlapConfig(
                     default: None,
                     annotations: vec![],
                     comment: None,
+                    ttl: None,
                 },
             ],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
@@ -806,6 +820,7 @@ nested_array_table = OlapTable[NestedArray]("NestedArray", OlapConfig(
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
             table_settings: None,
+            table_ttl_setting: None,
         }];
 
         let result = tables_to_python(&tables, None);
@@ -843,6 +858,7 @@ user_table = OlapTable[User]("User", OlapConfig(
                     default: None,
                     annotations: vec![],
                     comment: None,
+                    ttl: None,
                 },
                 Column {
                     name: "data".to_string(),
@@ -853,6 +869,7 @@ user_table = OlapTable[User]("User", OlapConfig(
                     default: None,
                     annotations: vec![],
                     comment: None,
+                    ttl: None,
                 },
             ],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
@@ -878,6 +895,7 @@ user_table = OlapTable[User]("User", OlapConfig(
                     .into_iter()
                     .collect(),
             ),
+            table_ttl_setting: None,
         }];
 
         let result = tables_to_python(&tables, None);
@@ -904,6 +922,7 @@ user_table = OlapTable[User]("User", OlapConfig(
                 default: None,
                 annotations: vec![],
                 comment: None,
+                ttl: None,
             }],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
             partition_by: None,
@@ -930,6 +949,7 @@ user_table = OlapTable[User]("User", OlapConfig(
                 .into_iter()
                 .collect(),
             ),
+            table_ttl_setting: None,
         }];
 
         let result = tables_to_python(&tables, None);
@@ -954,6 +974,7 @@ user_table = OlapTable[User]("User", OlapConfig(
                     default: None,
                     annotations: vec![],
                     comment: None,
+                    ttl: None,
                 },
                 Column {
                     name: "version".to_string(),
@@ -964,6 +985,7 @@ user_table = OlapTable[User]("User", OlapConfig(
                     default: None,
                     annotations: vec![],
                     comment: None,
+                    ttl: None,
                 },
                 Column {
                     name: "is_deleted".to_string(),
@@ -974,6 +996,7 @@ user_table = OlapTable[User]("User", OlapConfig(
                     default: None,
                     annotations: vec![],
                     comment: None,
+                    ttl: None,
                 },
             ],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
@@ -991,6 +1014,7 @@ user_table = OlapTable[User]("User", OlapConfig(
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
             table_settings: None,
+            table_ttl_setting: None,
         }];
 
         let result = tables_to_python(&tables, None);
@@ -1015,6 +1039,7 @@ user_table = OlapTable[User]("User", OlapConfig(
                     default: None,
                     annotations: vec![],
                     comment: None,
+                    ttl: None,
                 },
                 Column {
                     name: "coordinates".to_string(),
@@ -1028,6 +1053,7 @@ user_table = OlapTable[User]("User", OlapConfig(
                     default: None,
                     annotations: vec![],
                     comment: None,
+                    ttl: None,
                 },
                 Column {
                     name: "metadata".to_string(),
@@ -1041,6 +1067,7 @@ user_table = OlapTable[User]("User", OlapConfig(
                     default: None,
                     annotations: vec![],
                     comment: None,
+                    ttl: None,
                 },
             ],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
@@ -1055,6 +1082,7 @@ user_table = OlapTable[User]("User", OlapConfig(
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
             table_settings: None,
+            table_ttl_setting: None,
         }];
 
         let result = tables_to_python(&tables, None);

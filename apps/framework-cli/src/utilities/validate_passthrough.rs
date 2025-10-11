@@ -411,6 +411,7 @@ impl<'de, S: SerializeValue> Visitor<'de> for &mut ValueVisitor<'_, S> {
                             default: None,
                             annotations: vec![],
                             comment: None,
+                            ttl: None,
                         }
                     })
                     .collect();
@@ -900,6 +901,7 @@ mod tests {
                 default: None,
                 annotations: vec![],
                 comment: None,
+                ttl: None,
             },
             Column {
                 name: "int_col".to_string(),
@@ -910,6 +912,7 @@ mod tests {
                 default: None,
                 annotations: vec![],
                 comment: None,
+                ttl: None,
             },
             Column {
                 name: "float_col".to_string(),
@@ -920,6 +923,7 @@ mod tests {
                 default: None,
                 annotations: vec![],
                 comment: None,
+                ttl: None,
             },
             Column {
                 name: "bool_col".to_string(),
@@ -930,6 +934,7 @@ mod tests {
                 default: None,
                 annotations: vec![],
                 comment: None,
+                ttl: None,
             },
             Column {
                 name: "date_col".to_string(),
@@ -940,6 +945,7 @@ mod tests {
                 default: None,
                 annotations: vec![],
                 comment: None,
+                ttl: None,
             },
         ];
 
@@ -973,6 +979,7 @@ mod tests {
             default: None,
             annotations: vec![],
             comment: None,
+            ttl: None,
         }];
 
         let json = r#"
@@ -1006,6 +1013,7 @@ mod tests {
             default: None,
             annotations: vec![],
             comment: None,
+            ttl: None,
         }];
 
         let json = r#"
@@ -1046,6 +1054,7 @@ mod tests {
             default: None,
             annotations: vec![],
             comment: None,
+            ttl: None,
         }];
 
         // Test valid enum value
@@ -1094,6 +1103,7 @@ mod tests {
                 default: None,
                 annotations: vec![],
                 comment: None,
+                ttl: None,
             },
             Column {
                 name: "nested_int".to_string(),
@@ -1104,6 +1114,7 @@ mod tests {
                 default: None,
                 annotations: vec![],
                 comment: None,
+                ttl: None,
             },
         ];
 
@@ -1117,6 +1128,7 @@ mod tests {
                 default: None,
                 annotations: vec![],
                 comment: None,
+                ttl: None,
             },
             Column {
                 name: "nested_object".to_string(),
@@ -1131,6 +1143,7 @@ mod tests {
                 default: None,
                 annotations: vec![],
                 comment: None,
+                ttl: None,
             },
         ];
 
@@ -1188,6 +1201,7 @@ mod tests {
                 default: None,
                 annotations: vec![],
                 comment: None,
+                ttl: None,
             },
             Column {
                 name: "optional_field".to_string(),
@@ -1198,6 +1212,7 @@ mod tests {
                 default: None,
                 annotations: vec![],
                 comment: None,
+                ttl: None,
             },
         ];
 
@@ -1228,6 +1243,7 @@ mod tests {
                 default: None,
                 annotations: vec![],
                 comment: None,
+                ttl: None,
             },
             Column {
                 name: "aud".to_string(),
@@ -1238,6 +1254,7 @@ mod tests {
                 default: None,
                 annotations: vec![],
                 comment: None,
+                ttl: None,
             },
             Column {
                 name: "exp".to_string(),
@@ -1248,6 +1265,7 @@ mod tests {
                 default: None,
                 annotations: vec![],
                 comment: None,
+                ttl: None,
             },
         ];
 
@@ -1261,6 +1279,7 @@ mod tests {
                 default: None,
                 annotations: vec![],
                 comment: None,
+                ttl: None,
             },
             Column {
                 name: "jwt_object".to_string(),
@@ -1275,6 +1294,7 @@ mod tests {
                 default: None,
                 annotations: vec![],
                 comment: None,
+                ttl: None,
             },
         ];
 
@@ -1319,6 +1339,7 @@ mod tests {
             default: None,
             annotations: vec![],
             comment: None,
+            ttl: None,
         }];
 
         // Test valid map
@@ -1375,6 +1396,7 @@ mod tests {
             default: None,
             annotations: vec![],
             comment: None,
+            ttl: None,
         }];
 
         // Test valid map with numeric keys (as strings in JSON)
