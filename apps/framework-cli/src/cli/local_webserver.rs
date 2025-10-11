@@ -3199,7 +3199,7 @@ mod tests {
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
             table_settings: None,
-            table_ttl_expression: None,
+            table_ttl_setting: None,
         }
     }
 

@@ -563,7 +563,7 @@ impl PartialInfrastructureMap {
                 }
 
                 // Extract table-level TTL from partial table
-                let table_ttl_expression = partial_table.ttl.clone();
+                let table_ttl_setting = partial_table.ttl.clone();
 
                 let table = Table {
                     name: version
@@ -588,7 +588,7 @@ impl PartialInfrastructureMap {
                     } else {
                         Some(table_settings)
                     },
-                    table_ttl_expression,
+                    table_ttl_setting,
                 };
                 (table.id(), table)
             })

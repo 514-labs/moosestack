@@ -441,7 +441,7 @@ mod tests {
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
             table_settings: None,
-            table_ttl_expression: None,
+            table_ttl_setting: None,
         }
     }
 
@@ -916,7 +916,7 @@ mod tests {
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
             table_settings: Some(table_settings),
-            table_ttl_expression: None,
+            table_ttl_setting: None,
         };
 
         assert!(ClickHouseTableDiffStrategy::is_s3queue_table(&s3_table));

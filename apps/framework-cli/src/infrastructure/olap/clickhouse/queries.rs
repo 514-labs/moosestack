@@ -1631,7 +1631,7 @@ pub fn create_table_query(
     // Build TTL clause from table-level and column-level TTLs if present
     let ttl_clause: Option<String> = {
         let mut parts: Vec<String> = Vec::new();
-        if let Some(expr) = table.table_ttl_expression.as_ref() {
+        if let Some(expr) = table.table_ttl_setting.as_ref() {
             if !expr.trim().is_empty() {
                 parts.push(expr.trim().to_string());
             }
@@ -2055,7 +2055,7 @@ mod tests {
             partition_by: None,
             engine: ClickhouseEngine::MergeTree,
             table_settings: None,
-            table_ttl_expression: None,
+            table_ttl_setting: None,
         };
 
         let query = create_table_query("test_db", table, false).unwrap();
@@ -2090,7 +2090,7 @@ PRIMARY KEY (`id`)
             partition_by: None,
             engine: ClickhouseEngine::MergeTree,
             table_settings: None,
-            table_ttl_expression: None,
+            table_ttl_setting: None,
         };
 
         let query = create_table_query("test_db", table, false).unwrap();
@@ -2124,7 +2124,7 @@ ENGINE = MergeTree
             partition_by: None,
             engine: ClickhouseEngine::MergeTree,
             table_settings: None,
-            table_ttl_expression: None,
+            table_ttl_setting: None,
         };
 
         let query = create_table_query("test_db", table, false).unwrap();
@@ -2160,7 +2160,7 @@ ENGINE = MergeTree
                 is_deleted: None,
             },
             table_settings: None,
-            table_ttl_expression: None,
+            table_ttl_setting: None,
         };
 
         let query = create_table_query("test_db", table, false).unwrap();
@@ -2197,7 +2197,7 @@ ORDER BY (`id`) "#;
             order_by: OrderBy::Fields(vec![]),
             partition_by: None,
             table_settings: None,
-            table_ttl_expression: None,
+            table_ttl_setting: None,
         };
 
         let result = create_table_query("test_db", table, false);
@@ -2241,7 +2241,7 @@ ORDER BY (`id`) "#;
                 is_deleted: None,
             },
             table_settings: None,
-            table_ttl_expression: None,
+            table_ttl_setting: None,
         };
 
         let query = create_table_query("test_db", table, false).unwrap();
@@ -2301,7 +2301,7 @@ ORDER BY (`id`) "#;
                 is_deleted: Some("is_deleted".to_string()),
             },
             table_settings: None,
-            table_ttl_expression: None,
+            table_ttl_setting: None,
         };
 
         let query = create_table_query("test_db", table, false).unwrap();
@@ -2340,7 +2340,7 @@ ORDER BY (`id`) "#;
                 is_deleted: Some("is_deleted".to_string()),
             },
             table_settings: None,
-            table_ttl_expression: None,
+            table_ttl_setting: None,
         };
 
         let result = create_table_query("test_db", table, false);
@@ -2493,7 +2493,7 @@ ORDER BY (`id`) "#;
             order_by: OrderBy::Fields(vec!["id".to_string()]),
             partition_by: None,
             table_settings: None,
-            table_ttl_expression: None,
+            table_ttl_setting: None,
         };
 
         let query = create_table_query("test_db", table, false).unwrap();
@@ -2556,7 +2556,7 @@ ORDER BY (`id`) "#;
                 aws_secret_access_key: None,
             },
             table_settings: Some(settings),
-            table_ttl_expression: None,
+            table_ttl_setting: None,
         };
 
         let query = create_table_query("test_db", table, false).unwrap();
@@ -3027,7 +3027,7 @@ SETTINGS keeper_path = '/clickhouse/s3queue/test_table', mode = 'unordered', s3q
                 aws_secret_access_key: None,
             },
             table_settings: None,
-            table_ttl_expression: None,
+            table_ttl_setting: None,
         };
 
         let query = create_table_query("test_db", table, false).unwrap();

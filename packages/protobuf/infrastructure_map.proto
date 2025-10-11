@@ -133,9 +133,7 @@ message Table {
   optional OrderBy order_by2 = 13;
   
   // Optional TTL expression at table level (without leading 'TTL')
-  optional string table_ttl_expression = 14;
-  // Optional per-column TTL expressions (without leading 'TTL')
-  map<string, string> column_ttls = 15;
+  optional string table_ttl_setting = 14;
 }
 
 // Structured representation of ORDER BY to support either explicit fields

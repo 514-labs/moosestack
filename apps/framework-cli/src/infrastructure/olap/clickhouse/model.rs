@@ -487,7 +487,7 @@ pub struct ClickHouseTable {
     /// Table-level settings that can be modified with ALTER TABLE MODIFY SETTING
     pub table_settings: Option<std::collections::HashMap<String, String>>,
     /// Optional TTL expression at table level (without leading 'TTL')
-    pub table_ttl_expression: Option<String>,
+    pub table_ttl_setting: Option<String>,
 }
 
 impl ClickHouseTable {

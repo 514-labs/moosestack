@@ -214,11 +214,11 @@ impl<T: OlapOperations> InfraRealityChecker<T> {
                 }
 
                 // TTL: table-level diff
-                if actual_table.table_ttl_expression != mapped_table.table_ttl_expression {
+                if actual_table.table_ttl_setting != mapped_table.table_ttl_setting {
                     mismatched_tables.push(OlapChange::Table(TableChange::TtlChanged {
                         name: name.clone(),
-                        before: actual_table.table_ttl_expression.clone(),
-                        after: mapped_table.table_ttl_expression.clone(),
+                        before: actual_table.table_ttl_setting.clone(),
+                        after: mapped_table.table_ttl_setting.clone(),
                         table: mapped_table.clone(),
                     }));
                 }
@@ -375,7 +375,7 @@ mod tests {
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
             table_settings: None,
-            table_ttl_expression: None,
+            table_ttl_setting: None,
         }
     }
 

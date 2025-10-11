@@ -2458,7 +2458,7 @@ mod tests {
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
             table_settings: None,
-            table_ttl_expression: None,
+            table_ttl_setting: None,
         };
 
         let after = Table {
@@ -2510,7 +2510,7 @@ mod tests {
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
             table_settings: None,
-            table_ttl_expression: None,
+            table_ttl_setting: None,
         };
 
         let diff = compute_table_columns_diff(&before, &after);
@@ -2681,7 +2681,7 @@ mod diff_tests {
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
             table_settings: None,
-            table_ttl_expression: None,
+            table_ttl_setting: None,
         }
     }
 

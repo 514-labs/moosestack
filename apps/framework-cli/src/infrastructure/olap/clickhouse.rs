@@ -1336,7 +1336,7 @@ impl OlapOperations for ConfiguredDBClient {
             let table_settings = extract_table_settings_from_create_table(&create_query);
 
             // Extract TTLs from CREATE TABLE
-            let table_ttl_expression = extract_table_ttl_from_create_query(&create_query);
+            let table_ttl_setting = extract_table_ttl_from_create_query(&create_query);
             let _column_ttls = extract_column_ttls_from_create_query(&create_query);
 
             let table = Table {
@@ -1355,7 +1355,7 @@ impl OlapOperations for ConfiguredDBClient {
                 life_cycle: LifeCycle::ExternallyManaged,
                 engine_params_hash,
                 table_settings,
-                table_ttl_expression,
+                table_ttl_setting,
             };
             debug!("Created table object: {:?}", table);
 
