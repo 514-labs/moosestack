@@ -88,16 +88,18 @@ dedup_table = OlapTable[MyData](
 ### Legacy API (Still Supported)
 
 ```python
-from typing import TypedDict, Optional, List
-from moose_lib import ClickHouseEngines, S3QueueEngineConfig
+from dataclasses import dataclass
+from typing import Optional, Dict
+from moose_lib.blocks import ClickHouseEngines, S3QueueEngineConfig
 
-class TableCreateOptions(TypedDict):
-    name: str            # Required: Name of the table
-    order_by_fields: List[str]  # Required: Fields to order by
-    partition_by: Optional[str] = None  # Optional: Partition expression
-    ttl: Optional[int] = None   # Optional: Time-to-live in seconds
-    engine: Optional[ClickHouseEngines] = None  # Optional: Table engine (default: MergeTree)
-    s3_queue_engine_config: Optional[S3QueueEngineConfig] = None  # Required when engine is S3Queue
+# Legacy structure used by Blocks helpers (deprecated, prefer TableConfig + Engine classes)
+@dataclass
+class TableCreateOptions:
+    name: str
+    columns: Dict[str, str]
+    engine: Optional[ClickHouseEngines] = ClickHouseEngines.MergeTree
+    order_by: Optional[str] = None  # e.g., "(id, timestamp)"
+    s3_queue_engine_config: Optional[S3QueueEngineConfig] = None  # Required for S3Queue
 ```
 
 ## Table Operations
@@ -156,7 +158,8 @@ stats = await user_event_table.query({
 
 ### Partitioning and TTL
 ```python
-from moose_lib import OlapTable, OlapConfig
+from typing import Annotated
+from moose_lib import OlapTable, OlapConfig, ClickHouseTTL
 from pydantic import BaseModel
 
 class TimeSeriesData(BaseModel):
@@ -164,24 +167,19 @@ class TimeSeriesData(BaseModel):
     timestamp: str
     value: float
 
-# TTL support
-# Moose now supports defining ClickHouse TTL at table and column level via `OlapConfig.ttl`.
-# Example:
-# OlapConfig(
-#   order_by_fields=["id", "timestamp"],
-#   ttl={
-#     "expression": "timestamp + INTERVAL 90 DAY DELETE",
-#     "columns": {
-#       "email": "timestamp + INTERVAL 30 DAY DELETE"
-#     }
-#   }
-# )
+# Column-level TTL example (mask PII sooner than row expiry)
+class WithPii(BaseModel):
+    id: str
+    timestamp: str
+    email: Annotated[str, ClickHouseTTL("timestamp + INTERVAL 30 DAY")]
+
+# Table-level TTL example (expire rows after 90 days)
 time_series_table = OlapTable[TimeSeriesData](
     "TimeSeriesTable",
     OlapConfig(
         order_by_fields=["id", "timestamp"],
-        # Partitioning and TTL would be configured through settings
-        # or at the ClickHouse level
+        # Provide the ClickHouse TTL expression without the leading 'TTL'
+        ttl="timestamp + INTERVAL 90 DAY DELETE",
     )
 )
 ```
