@@ -87,6 +87,26 @@ export type ClickHouseNamedTuple = {
   _clickhouse_mapped_type?: "namedTuple";
 };
 
+// Geometry helper types
+export type ClickHousePoint = [number, number] & {
+  _clickhouse_mapped_type?: "Point";
+};
+export type ClickHouseRing = ClickHousePoint[] & {
+  _clickhouse_mapped_type?: "Ring";
+};
+export type ClickHouseLineString = ClickHousePoint[] & {
+  _clickhouse_mapped_type?: "LineString";
+};
+export type ClickHouseMultiLineString = ClickHouseLineString[] & {
+  _clickhouse_mapped_type?: "MultiLineString";
+};
+export type ClickHousePolygon = ClickHouseRing[] & {
+  _clickhouse_mapped_type?: "Polygon";
+};
+export type ClickHouseMultiPolygon = ClickHousePolygon[] & {
+  _clickhouse_mapped_type?: "MultiPolygon";
+};
+
 /**
  * typia may have trouble handling this type.
  * In which case, use {@link WithDefault} as a workaround

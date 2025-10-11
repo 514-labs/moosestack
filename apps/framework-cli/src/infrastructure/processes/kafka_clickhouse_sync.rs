@@ -918,6 +918,83 @@ fn map_json_value_to_clickhouse_value(
                 })
             }
         }
+        ColumnType::Point => {
+            if let Some(arr) = value.as_array() {
+                if arr.len() == 2 {
+                    let x = map_json_value_to_clickhouse_value(
+                        &ColumnType::Float(
+                            crate::framework::core::infrastructure::table::FloatType::Float64,
+                        ),
+                        &arr[0],
+                    )?;
+                    let y = map_json_value_to_clickhouse_value(
+                        &ColumnType::Float(
+                            crate::framework::core::infrastructure::table::FloatType::Float64,
+                        ),
+                        &arr[1],
+                    )?;
+                    Ok(ClickHouseValue::new_tuple(vec![x, y]))
+                } else {
+                    Err(MappingError::TypeMismatch {
+                        column_type: Box::new(column_type.clone()),
+                        value: value.clone(),
+                    })
+                }
+            } else {
+                Err(MappingError::TypeMismatch {
+                    column_type: Box::new(column_type.clone()),
+                    value: value.clone(),
+                })
+            }
+        }
+        ColumnType::Ring | ColumnType::LineString => {
+            if let Some(coords) = value.as_array() {
+                let mut points = Vec::new();
+                for p in coords {
+                    points.push(map_json_value_to_clickhouse_value(&ColumnType::Point, p)?);
+                }
+                Ok(ClickHouseValue::new_array(points))
+            } else {
+                Err(MappingError::TypeMismatch {
+                    column_type: Box::new(column_type.clone()),
+                    value: value.clone(),
+                })
+            }
+        }
+        ColumnType::MultiLineString | ColumnType::Polygon => {
+            if let Some(lines) = value.as_array() {
+                let mut arr = Vec::new();
+                for line in lines {
+                    arr.push(map_json_value_to_clickhouse_value(
+                        &ColumnType::LineString,
+                        line,
+                    )?);
+                }
+                Ok(ClickHouseValue::new_array(arr))
+            } else {
+                Err(MappingError::TypeMismatch {
+                    column_type: Box::new(column_type.clone()),
+                    value: value.clone(),
+                })
+            }
+        }
+        ColumnType::MultiPolygon => {
+            if let Some(polys) = value.as_array() {
+                let mut arr = Vec::new();
+                for poly in polys {
+                    arr.push(map_json_value_to_clickhouse_value(
+                        &ColumnType::Polygon,
+                        poly,
+                    )?);
+                }
+                Ok(ClickHouseValue::new_array(arr))
+            } else {
+                Err(MappingError::TypeMismatch {
+                    column_type: Box::new(column_type.clone()),
+                    value: value.clone(),
+                })
+            }
+        }
     }
 }
 

@@ -300,6 +300,68 @@ class NetworkEvent(BaseModel):
 
 ## Complex Types
 
+### Geometry Types
+
+Moose supports ClickHouse geometry types. Use the helpers in each language to get type-safe models and correct ClickHouse mappings.
+
+<TypeScript>
+```typescript
+import {
+  ClickHousePoint,
+  ClickHouseRing,
+  ClickHouseLineString,
+  ClickHouseMultiLineString,
+  ClickHousePolygon,
+  ClickHouseMultiPolygon,
+} from "@514labs/moose-lib";
+
+interface GeoTypes {
+  point: ClickHousePoint;                 // Point → [number, number]
+  ring: ClickHouseRing;                   // Ring → Array<[number, number]>
+  lineString: ClickHouseLineString;       // LineString → Array<[number, number]>
+  multiLineString: ClickHouseMultiLineString; // MultiLineString → Array<Array<[number, number]>>
+  polygon: ClickHousePolygon;             // Polygon → Array<Array<[number, number]>>
+  multiPolygon: ClickHouseMultiPolygon;   // MultiPolygon → Array<Array<Array<[number, number]>>>
+}
+```
+
+| ClickHouse Type | TypeScript |
+|------|------------|
+| `Point` | `ClickHousePoint` |
+| `Ring` | `ClickHouseRing` |
+| `LineString` | `ClickHouseLineString` |
+| `MultiLineString` | `ClickHouseMultiLineString` |
+| `Polygon` | `ClickHousePolygon` |
+| `MultiPolygon` | `ClickHouseMultiPolygon` |
+</TypeScript>
+
+<Python>
+```python
+from moose_lib import Point, Ring, LineString, MultiLineString, Polygon, MultiPolygon
+
+class GeoTypes(BaseModel):
+    point: Point                         # tuple[float, float]
+    ring: Ring                           # list[tuple[float, float]]
+    line_string: LineString              # list[tuple[float, float]]
+    multi_line_string: MultiLineString   # list[list[tuple[float, float]]]
+    polygon: Polygon                     # list[list[tuple[float, float]]]
+    multi_polygon: MultiPolygon          # list[list[list[tuple[float, float]]]]
+```
+
+| ClickHouse Type | Python |
+|------|------------|
+| `Point` | `Point` (tuple[float, float]) |
+| `Ring` | `Ring` (list[tuple[float, float]]) |
+| `LineString` | `LineString` (list[tuple[float, float]]) |
+| `MultiLineString` | `MultiLineString` (list[list[tuple[float, float]]]) |
+| `Polygon` | `Polygon` (list[list[tuple[float, float]]]) |
+| `MultiPolygon` | `MultiPolygon` (list[list[list[tuple[float, float]]]]) |
+</Python>
+
+<Callout type="info" title="Coordinate order">
+Geometry coordinates are represented as numeric pairs `[x, y]` (TypeScript) or `tuple[float, float]` (Python).
+</Callout>
+
 ### Array Types
 
 Arrays are supported for all basic types and some complex types.

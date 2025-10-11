@@ -184,6 +184,11 @@ fn get_default_value_for_type(column_type: &ColumnType, lang: SupportedLanguages
                 }
             }
         }
+        (ColumnType::Point, SupportedLanguages::Typescript) => "[0, 0]".to_string(),
+        (ColumnType::Point, SupportedLanguages::Python) => "(0.0, 0.0)".to_string(),
+        (ColumnType::Ring | ColumnType::LineString, _) => "[]".to_string(),
+        (ColumnType::MultiLineString | ColumnType::Polygon, _) => "[]".to_string(),
+        (ColumnType::MultiPolygon, _) => "[]".to_string(),
         (
             ColumnType::Map {
                 key_type,

@@ -71,6 +71,12 @@ fn map_column_type_to_typescript(
             }
             format!("{{ {} }} & ClickHouseNamedTuple", field_types.join("; "))
         }
+        ColumnType::Point => "ClickHousePoint".to_string(),
+        ColumnType::Ring => "ClickHouseRing".to_string(),
+        ColumnType::LineString => "ClickHouseLineString".to_string(),
+        ColumnType::MultiLineString => "ClickHouseMultiLineString".to_string(),
+        ColumnType::Polygon => "ClickHousePolygon".to_string(),
+        ColumnType::MultiPolygon => "ClickHouseMultiPolygon".to_string(),
         ColumnType::Map {
             key_type,
             value_type,
@@ -148,6 +154,12 @@ pub fn tables_to_typescript(tables: &[Table], life_cycle: Option<LifeCycle>) -> 
         "import {{ IngestPipeline, OlapTable, Key, ClickHouseInt, ClickHouseDecimal, ClickHousePrecision, ClickHouseByteSize, ClickHouseNamedTuple, ClickHouseEngines, ClickHouseDefault, WithDefault, LifeCycle }} from \"@514labs/moose-lib\";"
     )
     .unwrap();
+
+    writeln!(
+        output,
+        "import {{ ClickHousePoint, ClickHouseRing, ClickHouseLineString, ClickHouseMultiLineString, ClickHousePolygon, ClickHouseMultiPolygon }} from \"@514labs/moose-lib\";"
+    )
+        .unwrap();
     writeln!(output, "import typia from \"typia\";").unwrap();
     writeln!(output).unwrap();
 
