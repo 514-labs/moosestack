@@ -387,6 +387,13 @@ pub async fn start_development_mode(
     let consumption_apis: &'static RwLock<HashSet<String>> =
         Box::leak(Box::new(RwLock::new(HashSet::new())));
 
+    let web_apps: &'static RwLock<HashSet<String>> =
+        Box::leak(Box::new(RwLock::new(HashSet::new())));
+
+    // TODO: Populate web_apps from infrastructure map once web_apps are added to InfrastructureMap
+    // For now, add known mount paths for testing
+    web_apps.write().await.insert("/express".to_string());
+
     let route_table = HashMap::<PathBuf, RouteMeta>::new();
     let route_table: &'static RwLock<HashMap<PathBuf, RouteMeta>> =
         Box::leak(Box::new(RwLock::new(route_table)));
@@ -582,6 +589,7 @@ pub async fn start_development_mode(
             settings,
             route_table,
             consumption_apis,
+            web_apps,
             infra_map,
             project,
             metrics,
@@ -635,6 +643,14 @@ pub async fn start_production_mode(
     let consumption_apis: &'static RwLock<HashSet<String>> =
         Box::leak(Box::new(RwLock::new(HashSet::new())));
     info!("Analytics APIs initialized");
+
+    let web_apps: &'static RwLock<HashSet<String>> =
+        Box::leak(Box::new(RwLock::new(HashSet::new())));
+    info!("Web apps initialized");
+
+    // TODO: Populate web_apps from infrastructure map once web_apps are added to InfrastructureMap
+    // For now, add known mount paths for testing
+    web_apps.write().await.insert("/express".to_string());
 
     let route_table = HashMap::<PathBuf, RouteMeta>::new();
 
@@ -728,6 +744,7 @@ pub async fn start_production_mode(
             settings,
             route_table,
             consumption_apis,
+            web_apps,
             infra_map,
             project,
             metrics,

@@ -491,6 +491,7 @@ struct RouteService {
     path_prefix: Option<String>,
     route_table: &'static RwLock<HashMap<PathBuf, RouteMeta>>,
     consumption_apis: &'static RwLock<HashSet<String>>,
+    web_apps: &'static RwLock<HashSet<String>>,
     jwt_config: Option<JwtConfig>,
     configured_producer: Option<ConfiguredProducer>,
     current_version: String,
@@ -585,6 +586,7 @@ impl Service<Request<Incoming>> for RouteService {
             self.current_version.clone(),
             self.path_prefix.clone(),
             self.consumption_apis,
+            self.web_apps,
             self.jwt_config.clone(),
             self.configured_producer.clone(),
             self.host.clone(),
@@ -1526,6 +1528,7 @@ async fn router(
     current_version: String,
     path_prefix: Option<String>,
     consumption_apis: &RwLock<HashSet<String>>,
+    web_apps: &RwLock<HashSet<String>>,
     jwt_config: Option<JwtConfig>,
     configured_producer: Option<ConfiguredProducer>,
     host: String,
@@ -1721,6 +1724,47 @@ async fn router(
             workflows_terminate_route(req, is_prod, project.clone(), name.to_string()).await
         }
         (_, &hyper::Method::OPTIONS, _) => options_route(),
+        (_, &hyper::Method::GET, _) => {
+            // Check if this is a WebApp route by checking mount paths
+            let full_path = req.uri().path();
+            let web_apps_read = web_apps.read().await;
+            let is_web_app_route = web_apps_read
+                .iter()
+                .any(|mount_path| full_path.starts_with(mount_path));
+            drop(web_apps_read);
+
+            if is_web_app_route {
+                // Proxy to Node.js server without stripping prefix
+                let url = format!(
+                    "http://{}:{}{}{}",
+                    host,
+                    project.http_server_config.proxy_port,
+                    full_path,
+                    req.uri()
+                        .query()
+                        .map_or("".to_string(), |q| format!("?{q}"))
+                );
+
+                debug!("Proxying WebApp request to: {:?}", url);
+                match http_client.get(&url).send().await {
+                    Ok(response) => {
+                        let status = response.status();
+                        let body_bytes = response.bytes().await.unwrap_or_default();
+                        Response::builder()
+                            .status(status)
+                            .body(Full::new(body_bytes))
+                    }
+                    Err(e) => {
+                        debug!("WebApp proxy error: {:?}", e);
+                        Response::builder()
+                            .status(StatusCode::BAD_GATEWAY)
+                            .body(Full::new(Bytes::from("WebApp unavailable")))
+                    }
+                }
+            } else {
+                route_not_found_response()
+            }
+        }
         _ => route_not_found_response(),
     };
 
@@ -2190,6 +2234,7 @@ impl Webserver {
         settings: &Settings,
         route_table: &'static RwLock<HashMap<PathBuf, RouteMeta>>,
         consumption_apis: &'static RwLock<HashSet<String>>,
+        web_apps: &'static RwLock<HashSet<String>>,
         infra_map: I,
         project: Arc<Project>,
         metrics: Arc<Metrics>,
@@ -2230,6 +2275,10 @@ impl Webserver {
                 details: "Webserver.\n\n".to_string(),
             }
         );
+
+        // TODO: Load web apps from infrastructure map once it includes web_apps field
+        // For now, web_apps starts empty and will be populated when we add WebApp
+        // to the infrastructure map and change tracking system
 
         // Print available routes in table format
         print_available_routes(route_table, consumption_apis, &project).await;
@@ -2301,6 +2350,7 @@ impl Webserver {
             path_prefix: project.http_server_config.normalized_path_prefix(),
             route_table,
             consumption_apis,
+            web_apps,
             jwt_config: project.jwt.clone(),
             current_version: project.cur_version().to_string(),
             configured_producer: producer,
