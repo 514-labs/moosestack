@@ -27,3 +27,15 @@ export { sql } from "./sqlHelpers";
 
 export * from "./utilities";
 export * from "./connectors/dataSource";
+export {
+  ClickHouseByteSize,
+  ClickHouseInt,
+  LowCardinality,
+  ClickHouseNamedTuple,
+  ClickHousePoint,
+  ClickHouseRing,
+  ClickHouseLineString,
+  ClickHouseMultiLineString,
+  ClickHousePolygon,
+  ClickHouseMultiPolygon,
+} from "./dataModels/types";

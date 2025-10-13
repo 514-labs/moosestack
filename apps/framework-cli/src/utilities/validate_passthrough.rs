@@ -185,6 +185,12 @@ impl<'de, S: SerializeValue> Visitor<'de> for &mut ValueVisitor<'_, S> {
                     "a map with key type {key_type} and value type {value_type}"
                 )
             }
+            ColumnType::Point
+            | ColumnType::Ring
+            | ColumnType::LineString
+            | ColumnType::MultiLineString
+            | ColumnType::Polygon
+            | ColumnType::MultiPolygon => formatter.write_str("a value matching the column type"),
         }?;
         write!(formatter, " at {}", self.get_path())
     }
@@ -364,6 +370,64 @@ impl<'de, S: SerializeValue> Visitor<'de> for &mut ValueVisitor<'_, S> {
                     .serialize_value(&SeqAccessSerializer {
                         inner_type,
                         inner_required: *element_nullable,
+                        seq: RefCell::new(seq),
+                        _phantom_data: &PHANTOM_DATA,
+                        context: &self.context,
+                    })
+                    .map_err(A::Error::custom)?;
+                Ok(())
+            }
+            ColumnType::Point => {
+                let types = [
+                    ColumnType::Float(
+                        crate::framework::core::infrastructure::table::FloatType::Float64,
+                    ),
+                    ColumnType::Float(
+                        crate::framework::core::infrastructure::table::FloatType::Float64,
+                    ),
+                ];
+                self.write_to
+                    .serialize_value(&TupleSerializer {
+                        element_types: &types,
+                        seq: RefCell::new(seq),
+                        _phantom_data: &PHANTOM_DATA,
+                        context: &self.context,
+                    })
+                    .map_err(A::Error::custom)?;
+                Ok(())
+            }
+            ColumnType::Ring | ColumnType::LineString => {
+                let point = ColumnType::Point;
+                self.write_to
+                    .serialize_value(&SeqAccessSerializer {
+                        inner_type: &point,
+                        inner_required: true,
+                        seq: RefCell::new(seq),
+                        _phantom_data: &PHANTOM_DATA,
+                        context: &self.context,
+                    })
+                    .map_err(A::Error::custom)?;
+                Ok(())
+            }
+            ColumnType::MultiLineString | ColumnType::Polygon => {
+                let line = ColumnType::LineString;
+                self.write_to
+                    .serialize_value(&SeqAccessSerializer {
+                        inner_type: &line,
+                        inner_required: true,
+                        seq: RefCell::new(seq),
+                        _phantom_data: &PHANTOM_DATA,
+                        context: &self.context,
+                    })
+                    .map_err(A::Error::custom)?;
+                Ok(())
+            }
+            ColumnType::MultiPolygon => {
+                let poly = ColumnType::Polygon;
+                self.write_to
+                    .serialize_value(&SeqAccessSerializer {
+                        inner_type: &poly,
+                        inner_required: true,
                         seq: RefCell::new(seq),
                         _phantom_data: &PHANTOM_DATA,
                         context: &self.context,
@@ -686,6 +750,61 @@ struct MapAccessSerializer<'de, 'a, A: MapAccess<'de>> {
     inner: RefCell<DataModelVisitor<'a>>,
     map: RefCell<A>,
     _phantom_data: &'de PhantomData<()>,
+}
+
+struct TupleSerializer<'a, 'de, A: SeqAccess<'de>> {
+    element_types: &'a [ColumnType],
+    seq: RefCell<A>,
+    _phantom_data: &'de PhantomData<()>,
+    context: &'a ParentContext<'a>,
+}
+
+impl<'de, A: SeqAccess<'de>> Serialize for TupleSerializer<'_, 'de, A> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut write_to = serializer.serialize_seq(None)?;
+        let mut seq = self.seq.borrow_mut();
+
+        for (idx, expected_type) in self.element_types.iter().enumerate() {
+            let mut value_visitor = ValueVisitor {
+                t: expected_type,
+                required: true,
+                write_to: &mut DummyWrapper(&mut write_to),
+                context: ParentContext {
+                    parent: Some(self.context),
+                    field_name: Either::Right(idx),
+                },
+                jwt_claims: None,
+            };
+
+            match seq.next_element_seed(&mut value_visitor) {
+                Ok(Some(())) => { /* wrote validated element */ }
+                Ok(None) => {
+                    return Err(serde::ser::Error::custom(format!(
+                        "Invalid tuple length at {}: expected {} elements",
+                        self.context.get_path(),
+                        self.element_types.len()
+                    )));
+                }
+                Err(e) => return Err(serde::ser::Error::custom(e)),
+            }
+        }
+
+        // Ensure no extra items
+        if let Some(_extra) = seq
+            .next_element::<serde::de::IgnoredAny>()
+            .map_err(serde::ser::Error::custom)?
+        {
+            return Err(serde::ser::Error::custom(format!(
+                "Invalid tuple length at {}: unexpected extra element",
+                self.context.get_path()
+            )));
+        }
+
+        write_to.end()
+    }
 }
 
 impl<'de, A: MapAccess<'de>> Serialize for MapAccessSerializer<'de, '_, A> {

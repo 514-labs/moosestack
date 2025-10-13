@@ -54,6 +54,7 @@ import {
   verifyVersionedTables,
 } from "./utils";
 import { triggerWorkflow } from "./utils/workflow-utils";
+import { geoPayloadPy, geoPayloadTs } from "./utils/geo-payload";
 
 const execAsync = promisify(require("child_process").exec);
 const setTimeoutAsync = (ms: number) =>
@@ -351,6 +352,30 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
           ]);
         }
       });
+      if (config.isTestsVariant) {
+        it("should ingest geometry types into a single GeoTypes table (TS)", async function () {
+          const id = randomUUID();
+          await withRetries(
+            async () => {
+              const response = await fetch(
+                `${SERVER_CONFIG.url}/ingest/GeoTypes`,
+                {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify(geoPayloadTs(id)),
+                },
+              );
+              if (!response.ok) {
+                const text = await response.text();
+                throw new Error(`${response.status}: ${text}`);
+              }
+            },
+            { attempts: 5, delayMs: 500 },
+          );
+          await waitForDBWrite(devProcess!, "GeoTypes", 1);
+          await verifyClickhouseData("GeoTypes", id, "id");
+        });
+      }
     } else {
       it("should successfully ingest data and verify through consumption API", async function () {
         const eventId = randomUUID();
@@ -427,6 +452,30 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
           ]);
         }
       });
+      if (config.isTestsVariant) {
+        it("should ingest geometry types into a single GeoTypes table (PY)", async function () {
+          const id = randomUUID();
+          await withRetries(
+            async () => {
+              const response = await fetch(
+                `${SERVER_CONFIG.url}/ingest/geotypes`,
+                {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify(geoPayloadPy(id)),
+                },
+              );
+              if (!response.ok) {
+                const text = await response.text();
+                throw new Error(`${response.status}: ${text}`);
+              }
+            },
+            { attempts: 5, delayMs: 500 },
+          );
+          await waitForDBWrite(devProcess!, "GeoTypes", 1);
+          await verifyClickhouseData("GeoTypes", id, "id");
+        });
+      }
     }
   });
 };

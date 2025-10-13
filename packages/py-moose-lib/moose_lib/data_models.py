@@ -48,6 +48,14 @@ def clickhouse_datetime64(precision: int) -> Type[datetime]:
     return Annotated[datetime, ClickhousePrecision(precision=precision)]
 
 
+type Point = Annotated[tuple[float, float], "Point"]
+type Ring = Annotated[list[tuple[float, float]], "Ring"]
+type LineString = Annotated[list[tuple[float, float]], "LineString"]
+type MultiLineString = Annotated[list[list[tuple[float, float]]], "MultiLineString"]
+type Polygon = Annotated[list[list[tuple[float, float]]], "Polygon"]
+type MultiPolygon = Annotated[list[list[list[tuple[float, float]]]], "MultiPolygon"]
+
+
 def aggregated[T](
         result_type: Type[T],
         agg_func: str,
@@ -153,6 +161,53 @@ class Column(BaseModel):
         return ColumnRef(self)
 
 
+def _is_point_type(t: type) -> bool:
+    origin = get_origin(t)
+    if origin is tuple:
+        args = get_args(t)
+        return len(args) == 2 and all(arg is float for arg in args)
+    return False
+
+
+def _is_list_of(inner_check: Any, t: type) -> bool:
+    origin = get_origin(t)
+    if origin is list:
+        args = get_args(t)
+        return len(args) == 1 and inner_check(args[0])
+    return False
+
+
+def _validate_geometry_type(requested: str, t: type) -> None:
+    """
+    Validates that the provided Python type matches the expected structure
+    for the requested geometry annotation.
+    """
+    match requested:
+        case "Point":
+            if not _is_point_type(t):
+                raise ValueError("Point must be typed as tuple[float, float]")
+        case "Ring" | "LineString":
+            if not _is_list_of(_is_point_type, t):
+                raise ValueError(
+                    f"{requested} must be typed as list[tuple[float, float]]"
+                )
+        case "MultiLineString" | "Polygon":
+            if not _is_list_of(lambda x: _is_list_of(_is_point_type, x), t):
+                raise ValueError(
+                    f"{requested} must be typed as list[list[tuple[float, float]]]"
+                )
+        case "MultiPolygon":
+            if not _is_list_of(
+                lambda x: _is_list_of(lambda y: _is_list_of(_is_point_type, y), x),
+                t,
+            ):
+                raise ValueError(
+                    "MultiPolygon must be typed as list[list[list[tuple[float, float]]]]"
+                )
+        case _:
+            raise ValueError(f"Unknown geometry type annotation: {requested}")
+
+
 def py_type_to_column_type(t: type, mds: list[Any]) -> Tuple[bool, list[Any], DataType]:
     # handle Annotated[Optional[Annotated[...], ...]
     t, mds = handle_annotation(t, mds)
@@ -213,6 +268,23 @@ def py_type_to_column_type(t: type, mds: list[Any]) -> Tuple[bool, list[Any], Da
         data_type = "IPv4"
     elif t is ipaddress.IPv6Address:
         data_type = "IPv6"
+    elif any(md in [ # this check has to happen before t is matched against tuple/list
+        "Point",
+        "Ring",
+        "LineString",
+        "MultiLineString",
+        "Polygon",
+        "MultiPolygon",
+    ] for md in mds):
+        data_type = next(md for md in mds if md in [
+            "Point",
+            "Ring",
+            "LineString",
+            "MultiLineString",
+            "Polygon",
+            "MultiPolygon",
+        ])
+        _validate_geometry_type(data_type, t)
     elif get_origin(t) is list:
         inner_optional, _, inner_type = py_type_to_column_type(get_args(t)[0], [])
         data_type = ArrayType(element_type=inner_type, element_nullable=inner_optional)
