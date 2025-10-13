@@ -167,13 +167,7 @@ ENV LC_ALL=en_US.UTF-8
 ENV TZ=UTC
 ENV DOCKER_IMAGE=true
 
-# Install Moose
-ARG FRAMEWORK_VERSION="0.0.0"
-ARG DOWNLOAD_URL
-RUN echo "DOWNLOAD_URL: ${DOWNLOAD_URL}"
-RUN ldd --version
-RUN curl -Lo /usr/local/bin/moose ${DOWNLOAD_URL}
-RUN chmod +x /usr/local/bin/moose
+MOOSE_BINARY_INSTALL
 
 RUN moose --version
 
@@ -218,6 +212,30 @@ EXPOSE 4000
 CMD ["moose", "prod"]
 "#;
 
+/// Returns the appropriate Dockerfile common section based on whether using a local binary.
+///
+/// When `use_local_binary` is true, the Dockerfile will expect a `moose-cli` binary
+/// to be present in the build context and will copy it instead of downloading from GitHub.
+fn get_docker_common_section(use_local_binary: bool) -> String {
+    let moose_install_section = if use_local_binary {
+        r#"# Install Moose (LOCAL BUILD)
+ARG FRAMEWORK_VERSION="0.0.0"
+RUN ldd --version
+COPY moose-cli /usr/local/bin/moose
+RUN chmod +x /usr/local/bin/moose"#
+    } else {
+        r#"# Install Moose
+ARG FRAMEWORK_VERSION="0.0.0"
+ARG DOWNLOAD_URL
+RUN echo "DOWNLOAD_URL: ${DOWNLOAD_URL}"
+RUN ldd --version
+RUN curl -Lo /usr/local/bin/moose ${DOWNLOAD_URL}
+RUN chmod +x /usr/local/bin/moose"#
+    };
+
+    DOCKER_FILE_COMMON.replace("MOOSE_BINARY_INSTALL", moose_install_section)
+}
+
 /// Creates a Dockerfile for the given project, supporting both monorepo and standalone configurations.
 ///
 /// ## Monorepo Multi-Stage Docker Build Process
@@ -256,6 +274,7 @@ CMD ["moose", "prod"]
 pub fn create_dockerfile(
     project: &Project,
     docker_client: &DockerClient,
+    local_moose_repo: Option<&str>,
 ) -> Result<RoutineSuccess, RoutineFailure> {
     let internal_dir = project.internal_dir_with_routine_failure_err()?;
 
@@ -269,6 +288,8 @@ pub fn create_dockerfile(
             err,
         )
     })?;
+
+    let use_local_binary = local_moose_repo.is_some();
 
     let versions_file_path = internal_dir.join("packager/versions/.gitkeep");
 
@@ -339,6 +360,7 @@ pub fn create_dockerfile(
                             project,
                             &internal_dir,
                             &node_version_str,
+                            use_local_binary,
                         );
                     }
                 };
@@ -353,6 +375,7 @@ pub fn create_dockerfile(
                             project,
                             &internal_dir,
                             &node_version_str,
+                            use_local_binary,
                         );
                     }
                 };
@@ -390,7 +413,7 @@ pub fn create_dockerfile(
                 dockerfile = dockerfile.replace("MONOREPO_PACKAGE_COPIES", &package_copies);
 
                 // Add the common Docker sections
-                dockerfile.push_str(DOCKER_FILE_COMMON);
+                dockerfile.push_str(&get_docker_common_section(use_local_binary));
 
                 // Generate COPY commands for all workspace directories
                 let workspace_copies = workspace_config
@@ -511,11 +534,15 @@ WORKDIR /application"#,
                 dockerfile
             } else {
                 // Not a monorepo, use standard Dockerfile generation
-                create_standard_typescript_dockerfile_content(project, &node_version_str)?
+                create_standard_typescript_dockerfile_content(
+                    project,
+                    &node_version_str,
+                    use_local_binary,
+                )?
             }
         }
         SupportedLanguages::Python => {
-            let install = DOCKER_FILE_COMMON
+            let install = get_docker_common_section(use_local_binary)
                 .replace(
                     "COPY_PACKAGE_FILE",
                     r#"COPY --chown=moose:moose ./setup.py ./setup.py
@@ -554,6 +581,7 @@ pub fn build_dockerfile(
     docker_client: &DockerClient,
     is_amd64: bool,
     is_arm64: bool,
+    local_moose_repo: Option<&str>,
 ) -> Result<RoutineSuccess, RoutineFailure> {
     let internal_dir = project.internal_dir_with_routine_failure_err()?;
 
@@ -754,6 +782,29 @@ pub fn build_dockerfile(
         (internal_dir.join("packager"), file_path)
     };
 
+    // Build and copy local binary if --local-moose-repo flag is provided
+    let use_local_binary = if let Some(repo_path) = local_moose_repo {
+        info!("Building moose-cli binary for Linux...");
+        let binary_path = super::local_binary_builder::build_linux_binary(repo_path)?;
+
+        let dest_binary = build_context.join("moose-cli");
+        fs::copy(&binary_path, &dest_binary).map_err(|err| {
+            error!("Failed to copy local binary to build context: {}", err);
+            RoutineFailure::new(
+                Message::new(
+                    "Failed".to_string(),
+                    "to copy local binary to build context".to_string(),
+                ),
+                err,
+            )
+        })?;
+
+        info!("Local moose-cli binary ready for Docker build");
+        true
+    } else {
+        false
+    };
+
     let build_all = is_amd64 == is_arm64;
 
     if build_all || is_amd64 {
@@ -776,6 +827,7 @@ pub fn build_dockerfile(
                     cli_version,
                     "linux/amd64",
                     "x86_64-unknown-linux-gnu",
+                    use_local_binary,
                 )
             },
             !project.is_production,
@@ -814,6 +866,7 @@ pub fn build_dockerfile(
                     cli_version,
                     "linux/arm64",
                     "aarch64-unknown-linux-gnu",
+                    use_local_binary,
                 )
             },
             !project.is_production,
@@ -1170,6 +1223,7 @@ fn transform_tsconfig_for_docker(
 fn create_standard_typescript_dockerfile_content(
     project: &Project,
     node_version: &str,
+    use_local_binary: bool,
 ) -> Result<String, RoutineFailure> {
     let project_root = project.project_location.clone();
     let (install_command, lock_file_copy) =
@@ -1219,7 +1273,7 @@ fn create_standard_typescript_dockerfile_content(
 
     let copy_section = copy_commands.join("\n                    ");
 
-    let install = DOCKER_FILE_COMMON
+    let install = get_docker_common_section(use_local_binary)
         .replace(
             "COPY_PACKAGE_FILE",
             &format!("\n                    {copy_section}"),
@@ -1235,8 +1289,10 @@ fn create_standard_typescript_dockerfile(
     project: &Project,
     internal_dir: &Path,
     node_version: &str,
+    use_local_binary: bool,
 ) -> Result<RoutineSuccess, RoutineFailure> {
-    let dockerfile_content = create_standard_typescript_dockerfile_content(project, node_version)?;
+    let dockerfile_content =
+        create_standard_typescript_dockerfile_content(project, node_version, use_local_binary)?;
     let file_path = internal_dir.join("packager/Dockerfile");
 
     fs::write(&file_path, dockerfile_content).map_err(|err| {

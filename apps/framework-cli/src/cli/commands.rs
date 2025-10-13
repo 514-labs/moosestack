@@ -52,6 +52,9 @@ pub enum Commands {
         /// Build for arm64 architecture
         #[arg(long)]
         arm64: bool,
+        /// Path to moose repository for building local moose-cli binary (e.g., /Users/you/dev/moose)
+        #[arg(long, value_name = "PATH")]
+        local_moose_repo: Option<String>,
     },
     /// Checks the project for non-runtime errors
     Check {

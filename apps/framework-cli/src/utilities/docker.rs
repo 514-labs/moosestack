@@ -545,16 +545,19 @@ impl DockerClient {
         version: &str,
         architecture: &str,
         binarylabel: &str,
+        use_local_binary: bool,
     ) -> std::io::Result<Vec<String>> {
-        let child = self
-            .create_command()
-            .current_dir(directory)
-            .arg("buildx")
-            .arg("build")
-            .arg("--build-arg")
-            .arg(format!(
+        let mut cmd = self.create_command();
+        cmd.current_dir(directory).arg("buildx").arg("build");
+
+        // Only add DOWNLOAD_URL build arg if not using local binary
+        if !use_local_binary {
+            cmd.arg("--build-arg").arg(format!(
                 "DOWNLOAD_URL=https://github.com/514-labs/moose/releases/download/v{version}/moose-cli-{binarylabel}"
-            ))
+            ));
+        }
+
+        let child = cmd
             .arg("--platform")
             .arg(architecture)
             .arg("--load")
