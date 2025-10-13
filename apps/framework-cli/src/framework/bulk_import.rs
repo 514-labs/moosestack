@@ -78,7 +78,13 @@ pub async fn import_csv_file(
                             | ColumnType::Nested(_)
                             | ColumnType::Json
                             | ColumnType::Uuid
-                            | ColumnType::Bytes => {
+                            | ColumnType::Bytes
+                            | ColumnType::Point
+                            | ColumnType::Ring
+                            | ColumnType::LineString
+                            | ColumnType::MultiLineString
+                            | ColumnType::Polygon
+                            | ColumnType::MultiPolygon => {
                                 bail!("CSV importing does not support complex types");
                             }
                             ColumnType::Map { .. } => {

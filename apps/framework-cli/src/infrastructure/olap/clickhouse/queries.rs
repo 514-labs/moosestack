@@ -1869,6 +1869,14 @@ pub fn basic_field_type_to_string(
         )),
         ClickHouseColumnType::IpV4 => Ok("IPv4".to_string()),
         ClickHouseColumnType::IpV6 => Ok("IPv6".to_string()),
+        // Geometry types
+        ClickHouseColumnType::Point => Ok("Point".to_string()),
+        ClickHouseColumnType::Ring => Ok("Ring".to_string()),
+        ClickHouseColumnType::LineString => Ok("LineString".to_string()),
+        ClickHouseColumnType::MultiLineString => Ok("MultiLineString".to_string()),
+        ClickHouseColumnType::Polygon => Ok("Polygon".to_string()),
+        ClickHouseColumnType::MultiPolygon => Ok("MultiPolygon".to_string()),
+
         ClickHouseColumnType::NamedTuple(fields) => {
             let pairs = fields
                 .iter()

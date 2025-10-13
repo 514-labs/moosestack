@@ -5,6 +5,12 @@ import {
   DeadLetterModel,
   DateTime,
   ClickHouseDefault,
+  ClickHousePoint,
+  ClickHouseRing,
+  ClickHouseLineString,
+  ClickHouseMultiLineString,
+  ClickHousePolygon,
+  ClickHouseMultiPolygon,
   ClickHouseEngines,
 } from "@514labs/moose-lib";
 
@@ -286,6 +292,25 @@ export const OptionalNestedTestPipeline =
     stream: true,
     ingestApi: true,
   });
+
+/** =======Geometry Types========= */
+
+export interface GeoTypes {
+  id: Key<string>;
+  timestamp: DateTime;
+  point: ClickHousePoint;
+  ring: ClickHouseRing;
+  lineString: ClickHouseLineString;
+  multiLineString: ClickHouseMultiLineString;
+  polygon: ClickHousePolygon;
+  multiPolygon: ClickHouseMultiPolygon;
+}
+
+export const GeoTypesPipeline = new IngestPipeline<GeoTypes>("GeoTypes", {
+  table: true,
+  stream: true,
+  ingestApi: true,
+});
 
 /** =======Versioned OlapTables Test========= */
 // Test versioned OlapTables - same name, different versions

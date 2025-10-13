@@ -237,6 +237,12 @@ fn std_field_type_to_clickhouse_type_mapper(
         ColumnType::Date16 => Ok(ClickHouseColumnType::Date),
         ColumnType::IpV4 => Ok(ClickHouseColumnType::IpV4),
         ColumnType::IpV6 => Ok(ClickHouseColumnType::IpV6),
+        ColumnType::Point => Ok(ClickHouseColumnType::Point),
+        ColumnType::Ring => Ok(ClickHouseColumnType::Ring),
+        ColumnType::LineString => Ok(ClickHouseColumnType::LineString),
+        ColumnType::MultiLineString => Ok(ClickHouseColumnType::MultiLineString),
+        ColumnType::Polygon => Ok(ClickHouseColumnType::Polygon),
+        ColumnType::MultiPolygon => Ok(ClickHouseColumnType::MultiPolygon),
         ColumnType::Nullable(inner) => {
             let inner_type = std_field_type_to_clickhouse_type_mapper(*inner, &[])?;
             Ok(ClickHouseColumnType::Nullable(Box::new(inner_type)))

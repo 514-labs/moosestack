@@ -1341,9 +1341,22 @@ pub fn convert_ast_to_column_type(
             type_name: format!("Interval{interval_type}"),
         }),
 
-        ClickHouseTypeNode::Geo(geo_type) => Err(ConversionError::UnsupportedType {
-            type_name: geo_type.clone(),
-        }),
+        ClickHouseTypeNode::Geo(geo_type) => {
+            let ct = match geo_type.as_str() {
+                "Point" => ColumnType::Point,
+                "Ring" => ColumnType::Ring,
+                "LineString" => ColumnType::LineString,
+                "MultiLineString" => ColumnType::MultiLineString,
+                "Polygon" => ColumnType::Polygon,
+                "MultiPolygon" => ColumnType::MultiPolygon,
+                other => {
+                    return Err(ConversionError::UnsupportedType {
+                        type_name: other.to_string(),
+                    })
+                }
+            };
+            Ok((ct, false))
+        }
 
         ClickHouseTypeNode::Enum { bits, members } => {
             let enum_members = members
@@ -2321,8 +2334,6 @@ mod tests {
             "Object('schema')",
             "Variant(String, Int32)",
             "IntervalYear",
-            "Point",
-            "Polygon",
         ];
 
         for type_str in special_types {
@@ -2350,6 +2361,24 @@ mod tests {
         let json_conversion = convert_ast_to_column_type(&json_parsed);
         assert!(json_conversion.is_ok(), "JSON should be convertible");
         assert_eq!(json_conversion.unwrap().0, ColumnType::Json);
+    }
+
+    #[test]
+    fn test_convert_geo_types() {
+        let geo_types = vec![
+            ("Point", ColumnType::Point),
+            ("Ring", ColumnType::Ring),
+            ("LineString", ColumnType::LineString),
+            ("MultiLineString", ColumnType::MultiLineString),
+            ("Polygon", ColumnType::Polygon),
+            ("MultiPolygon", ColumnType::MultiPolygon),
+        ];
+
+        for (ch, expected) in geo_types {
+            let (actual, nullable) = convert_clickhouse_type_to_column_type(ch).unwrap();
+            assert_eq!(actual, expected);
+            assert!(!nullable);
+        }
     }
 
     #[test]

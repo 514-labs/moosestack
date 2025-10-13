@@ -252,6 +252,13 @@ fn column_type_to_enum_mapping(t: &ClickHouseColumnType) -> Option<Vec<&str>> {
             // Not entire sure I understand what this method does... do we just ignore the nested type?
             todo!("Implement the nested type mapper")
         }
+        // Geometry types have no enum mapping
+        ClickHouseColumnType::Point
+        | ClickHouseColumnType::Ring
+        | ClickHouseColumnType::LineString
+        | ClickHouseColumnType::MultiLineString
+        | ClickHouseColumnType::Polygon
+        | ClickHouseColumnType::MultiPolygon => None,
         ClickHouseColumnType::Enum(values) => values.values.first().and_then(|m| match m.value {
             EnumValue::Int(_) => None,
             EnumValue::String(_) => Some(

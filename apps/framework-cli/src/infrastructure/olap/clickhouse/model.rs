@@ -68,6 +68,13 @@ pub enum ClickHouseColumnType {
     LowCardinality(Box<ClickHouseColumnType>),
     IpV4,
     IpV6,
+    // Geometry types
+    Point,
+    Ring,
+    LineString,
+    MultiLineString,
+    Polygon,
+    MultiPolygon,
 }
 
 impl fmt::Display for ClickHouseColumnType {
@@ -134,6 +141,13 @@ impl ClickHouseColumnType {
             "Date" => Self::Date,
             "IPv4" => Self::IpV4,
             "IPv6" => Self::IpV6,
+            // Geometry types
+            "Point" => Self::Point,
+            "Ring" => Self::Ring,
+            "LineString" => Self::LineString,
+            "MultiLineString" => Self::MultiLineString,
+            "Polygon" => Self::Polygon,
+            "MultiPolygon" => Self::MultiPolygon,
             "DateTime" | "DateTime('UTC')" => Self::DateTime,
             "JSON" => Self::Json,
 

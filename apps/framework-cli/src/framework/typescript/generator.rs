@@ -1,12 +1,9 @@
 use convert_case::{Case, Casing};
 use serde::Serialize;
 use std::collections::HashSet;
-use std::fs;
 use std::hash::Hash;
-use std::path::Path;
 use std::{fmt, path::PathBuf};
 
-use crate::framework::core::primitive_map::PrimitiveMap;
 use crate::framework::typescript;
 use crate::{
     project::Project,
@@ -15,7 +12,6 @@ use crate::{
 
 use super::templates::TypescriptRenderingError;
 use crate::framework::core::infrastructure::table::{ColumnType, DataEnum, EnumValue, Table};
-use crate::utilities::constants::TSCONFIG_JSON;
 
 #[derive(Debug, thiserror::Error)]
 #[error("Failed to generate Typescript code")]
@@ -239,6 +235,84 @@ fn std_field_type_to_typescript_field_mapper(
         ColumnType::Date16 => Ok(InterfaceFieldType::String),
         ColumnType::IpV4 => Ok(InterfaceFieldType::String),
         ColumnType::IpV6 => Ok(InterfaceFieldType::String),
+        ColumnType::Point => Ok(InterfaceFieldType::Object(Box::new(TypescriptInterface {
+            name: "Point".to_string(),
+            fields: vec![
+                InterfaceField {
+                    name: "0".to_string(),
+                    comment: None,
+                    is_optional: false,
+                    field_type: InterfaceFieldType::Number,
+                },
+                InterfaceField {
+                    name: "1".to_string(),
+                    comment: None,
+                    is_optional: false,
+                    field_type: InterfaceFieldType::Number,
+                },
+            ],
+        }))),
+        ColumnType::Ring | ColumnType::LineString => Ok(InterfaceFieldType::Array(Box::new(
+            InterfaceFieldType::Object(Box::new(TypescriptInterface {
+                name: "Point".to_string(),
+                fields: vec![
+                    InterfaceField {
+                        name: "0".to_string(),
+                        comment: None,
+                        is_optional: false,
+                        field_type: InterfaceFieldType::Number,
+                    },
+                    InterfaceField {
+                        name: "1".to_string(),
+                        comment: None,
+                        is_optional: false,
+                        field_type: InterfaceFieldType::Number,
+                    },
+                ],
+            })),
+        ))),
+        ColumnType::MultiLineString | ColumnType::Polygon => Ok(InterfaceFieldType::Array(
+            Box::new(InterfaceFieldType::Array(Box::new(
+                InterfaceFieldType::Object(Box::new(TypescriptInterface {
+                    name: "Point".to_string(),
+                    fields: vec![
+                        InterfaceField {
+                            name: "0".to_string(),
+                            comment: None,
+                            is_optional: false,
+                            field_type: InterfaceFieldType::Number,
+                        },
+                        InterfaceField {
+                            name: "1".to_string(),
+                            comment: None,
+                            is_optional: false,
+                            field_type: InterfaceFieldType::Number,
+                        },
+                    ],
+                })),
+            ))),
+        )),
+        ColumnType::MultiPolygon => Ok(InterfaceFieldType::Array(Box::new(
+            InterfaceFieldType::Array(Box::new(InterfaceFieldType::Array(Box::new(
+                InterfaceFieldType::Object(Box::new(TypescriptInterface {
+                    name: "Point".to_string(),
+                    fields: vec![
+                        InterfaceField {
+                            name: "0".to_string(),
+                            comment: None,
+                            is_optional: false,
+                            field_type: InterfaceFieldType::Number,
+                        },
+                        InterfaceField {
+                            name: "1".to_string(),
+                            comment: None,
+                            is_optional: false,
+                            field_type: InterfaceFieldType::Number,
+                        },
+                    ],
+                })),
+            )))),
+        ))),
         ColumnType::Nullable(inner) => {
             // For nullable types, just return the inner type - nullability is handled by is_optional
             std_field_type_to_typescript_field_mapper(*inner)
@@ -322,96 +396,6 @@ pub fn std_table_to_typescript_interface(
         name: model_name.to_string(),
         fields,
     })
-}
-
-pub fn generate_sdk(
-    project: &Project,
-    primitive_map: &PrimitiveMap,
-    sdk_dir: &Path,
-    packaged: &bool,
-) -> Result<(), TypescriptGeneratorError> {
-    //! Generates a Typescript SDK for the given project and returns the path where the SDK was generated.
-    //!
-    //! # Arguments
-    //! - `project` - The project to generate the SDK for.
-    //! - `primitive_map` - The primitive map to generate the SDK for.
-    //! - `sdk_dir` - Where to write the generated SDK.
-    //! - `packaged` - Whether or not to generate a full fledged package or just the source files in the language of choice.
-    //!
-    //! # Returns
-    //! - `Result<(), TypescriptGeneratorError>` - A result indicating success or failure.
-
-    let current_version_ts_objects =
-        collect_ts_objects_from_primitive_map(primitive_map, project.cur_version().as_str())?;
-    let enums = collect_enums_from_primitive_map(primitive_map, project.cur_version().as_str());
-
-    std::fs::remove_dir_all(sdk_dir).or_else(|err| match err.kind() {
-        std::io::ErrorKind::NotFound => Ok(()),
-        _ => Err(err),
-    })?;
-    std::fs::create_dir_all(sdk_dir)?;
-
-    if *packaged {
-        let package = TypescriptPackage::from_project(project);
-        let package_json_code = typescript::templates::render_package_json(&package.name)?;
-        fs::write(sdk_dir.join("package.json"), package_json_code)?;
-        let ts_config_code = typescript::templates::render_ts_config()?;
-        fs::write(sdk_dir.join(TSCONFIG_JSON), ts_config_code)?;
-    }
-
-    let index_code = typescript::templates::render_ingest_client(
-        project.cur_version().as_str(),
-        &current_version_ts_objects,
-    )?;
-    fs::write(sdk_dir.join("index.ts"), index_code)?;
-
-    if !enums.is_empty() {
-        let current_enum_code = typescript::templates::render_enums(enums)?;
-        fs::write(sdk_dir.join("enums.ts"), current_enum_code)?;
-    }
-
-    for obj in current_version_ts_objects.iter() {
-        let interface_code = obj.interface.create_code()?;
-        fs::write(
-            sdk_dir.join(obj.interface.file_name_with_extension()),
-            interface_code,
-        )?;
-    }
-
-    Ok(())
-}
-
-fn collect_ts_objects_from_primitive_map(
-    primitive_map: &PrimitiveMap,
-    version: &str,
-) -> Result<Vec<TypescriptObjects>, TypescriptGeneratorError> {
-    primitive_map
-        .data_models_iter()
-        .filter(|model| model.version.as_str() == version)
-        .map(|model| {
-            std_table_to_typescript_interface(model.to_table(), &model.name)
-                .map(TypescriptObjects::new)
-        })
-        .collect()
-}
-
-fn collect_enums_from_primitive_map(
-    primitive_map: &PrimitiveMap,
-    version: &str,
-) -> HashSet<TSEnum> {
-    primitive_map
-        .data_models_iter()
-        .filter(|model| model.version.as_str() == version)
-        .flat_map(|model| {
-            model.columns.iter().filter_map(|column| {
-                if let ColumnType::Enum(enum_type) = &column.data_type {
-                    Some(map_std_enum_to_ts(enum_type.clone()))
-                } else {
-                    None
-                }
-            })
-        })
-        .collect()
 }
 
 pub fn move_to_npm_global_dir(sdk_location: &PathBuf) -> Result<PathBuf, std::io::Error> {
