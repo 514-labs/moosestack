@@ -70,7 +70,18 @@ impl DockerClient {
         command
             .arg("compose")
             .arg("-f")
-            .arg(project.internal_dir().unwrap().join("docker-compose.yml"))
+            .arg(project.internal_dir().unwrap().join("docker-compose.yml"));
+
+        // Add override file if it exists in project root
+        let override_file = project.project_location.join("docker-compose.dev.override.yaml");
+        if override_file.exists() {
+            info!(
+                "Found docker-compose.dev.override.yaml, applying custom infrastructure configuration"
+            );
+            command.arg("-f").arg(override_file);
+        }
+
+        command
             .arg("-p")
             .arg(project.name().to_lowercase());
         command
@@ -588,4 +599,74 @@ lazy_static! {
     pub static ref PORT_ALLOCATED_REGEX: Regex =
         Regex::new("Bind for \\d+.\\d+.\\d+.\\d+:(\\d+) failed: port is already allocated")
             .unwrap();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::framework::languages::SupportedLanguages;
+    use tempfile::TempDir;
+
+    fn create_test_docker_client() -> DockerClient {
+        // Create a test DockerClient with default docker CLI
+        DockerClient {
+            cli_command: "docker".to_string(),
+        }
+    }
+
+    #[test]
+    fn test_compose_command_without_override_file() {
+        let temp_dir = TempDir::new().unwrap();
+        let project = Project::new(
+            temp_dir.path(),
+            "test-project".to_string(),
+            SupportedLanguages::Typescript,
+        );
+
+        // Create internal directory
+        std::fs::create_dir_all(project.internal_dir().unwrap()).unwrap();
+
+        let docker_client = create_test_docker_client();
+
+        let command = docker_client.compose_command(&project);
+        let args: Vec<&std::ffi::OsStr> = command.get_args().collect();
+
+        // Should have compose, -f, path, -p, project-name
+        assert_eq!(args.len(), 5);
+        assert_eq!(args[0], "compose");
+        assert_eq!(args[1], "-f");
+        assert_eq!(args[3], "-p");
+        assert_eq!(args[4], "test-project");
+    }
+
+    #[test]
+    fn test_compose_command_with_override_file() {
+        let temp_dir = TempDir::new().unwrap();
+        let project = Project::new(
+            temp_dir.path(),
+            "test-project".to_string(),
+            SupportedLanguages::Typescript,
+        );
+
+        // Create internal directory
+        std::fs::create_dir_all(project.internal_dir().unwrap()).unwrap();
+
+        // Create override file in project root
+        let override_file = project.project_location.join("docker-compose.dev.override.yaml");
+        std::fs::write(&override_file, "services:\n  custom:\n    image: nginx\n").unwrap();
+
+        let docker_client = create_test_docker_client();
+
+        let command = docker_client.compose_command(&project);
+        let args: Vec<&std::ffi::OsStr> = command.get_args().collect();
+
+        // Should have compose, -f, path1, -f, path2, -p, project-name
+        assert_eq!(args.len(), 7);
+        assert_eq!(args[0], "compose");
+        assert_eq!(args[1], "-f");
+        assert_eq!(args[3], "-f");
+        assert_eq!(args[4], override_file.as_os_str());
+        assert_eq!(args[5], "-p");
+        assert_eq!(args[6], "test-project");
+    }
 }
