@@ -25,7 +25,9 @@ pub fn run_local_infrastructure(
     create_docker_compose_file(project, settings, docker_client)?.show();
 
     // Inform user if override file is present
-    let override_file = project.project_location.join("docker-compose.dev.override.yaml");
+    let override_file = project
+        .project_location
+        .join("docker-compose.dev.override.yaml");
     if override_file.exists() {
         println!("[moose] Using docker-compose.dev.override.yaml for custom infrastructure");
     }

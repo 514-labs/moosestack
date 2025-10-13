@@ -73,7 +73,9 @@ impl DockerClient {
             .arg(project.internal_dir().unwrap().join("docker-compose.yml"));
 
         // Add override file if it exists in project root
-        let override_file = project.project_location.join("docker-compose.dev.override.yaml");
+        let override_file = project
+            .project_location
+            .join("docker-compose.dev.override.yaml");
         if override_file.exists() {
             info!(
                 "Found docker-compose.dev.override.yaml, applying custom infrastructure configuration"
@@ -81,9 +83,7 @@ impl DockerClient {
             command.arg("-f").arg(override_file);
         }
 
-        command
-            .arg("-p")
-            .arg(project.name().to_lowercase());
+        command.arg("-p").arg(project.name().to_lowercase());
         command
     }
 
@@ -652,7 +652,9 @@ mod tests {
         std::fs::create_dir_all(project.internal_dir().unwrap()).unwrap();
 
         // Create override file in project root
-        let override_file = project.project_location.join("docker-compose.dev.override.yaml");
+        let override_file = project
+            .project_location
+            .join("docker-compose.dev.override.yaml");
         std::fs::write(&override_file, "services:\n  custom:\n    image: nginx\n").unwrap();
 
         let docker_client = create_test_docker_client();
