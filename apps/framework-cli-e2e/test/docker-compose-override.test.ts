@@ -140,10 +140,8 @@ services:
     // Verify nginx is accessible on the custom port
     try {
       const response = await fetch("http://localhost:18888");
-      expect(
-        response.ok,
-        "Nginx should be accessible on custom port 18888",
-      ).to.be.true;
+      expect(response.ok, "Nginx should be accessible on custom port 18888").to
+        .be.true;
     } catch (error) {
       throw new Error(
         `Failed to connect to custom nginx service: ${error instanceof Error ? error.message : String(error)}`,
