@@ -7,7 +7,8 @@ import { Cluster } from "../cluster-utils";
 import { ApiUtil } from "../index";
 import { sql } from "../sqlHelpers";
 import { Client as TemporalClient } from "@temporalio/client";
-import { getApis } from "../dmv2/internal";
+import { getApis, getWebApps } from "../dmv2/internal";
+import type { WebApp } from "../dmv2/sdk/webApp";
 
 interface ClickhouseConfig {
   database: string;
@@ -252,6 +253,107 @@ const apiHandler = async (
   };
 };
 
+const createMainRouter = async (
+  publicKey: jose.KeyLike | undefined,
+  clickhouseClient: ClickHouseClient,
+  temporalClient: TemporalClient | undefined,
+  apisDir: string,
+  enforceAuth: boolean,
+  isDmv2: boolean,
+  jwtConfig?: JwtConfig,
+) => {
+  const apiRequestHandler = await apiHandler(
+    publicKey,
+    clickhouseClient,
+    temporalClient,
+    apisDir,
+    enforceAuth,
+    isDmv2,
+    jwtConfig,
+  );
+
+  const webApps = isDmv2 ? await getWebApps() : new Map();
+
+  const sortedWebApps = Array.from(webApps.values()).sort((a, b) => {
+    const pathA = a.config.mountPath || "/";
+    const pathB = b.config.mountPath || "/";
+    return pathB.length - pathA.length;
+  });
+
+  return async (req: http.IncomingMessage, res: http.ServerResponse) => {
+    const url = new URL(req.url || "", "http://localhost");
+    const pathname = url.pathname;
+
+    let jwtPayload;
+    if (publicKey && jwtConfig) {
+      const jwt = req.headers.authorization?.split(" ")[1];
+      if (jwt) {
+        try {
+          const { payload } = await jose.jwtVerify(jwt, publicKey, {
+            issuer: jwtConfig.issuer,
+            audience: jwtConfig.audience,
+          });
+          jwtPayload = payload;
+        } catch (error) {
+          console.log("JWT verification failed for WebApp route");
+        }
+      }
+    }
+
+    for (const webApp of sortedWebApps) {
+      const mountPath = webApp.config.mountPath || "/";
+      const normalizedMount =
+        mountPath.endsWith("/") && mountPath !== "/" ?
+          mountPath.slice(0, -1)
+        : mountPath;
+
+      const matches =
+        pathname === normalizedMount ||
+        pathname.startsWith(normalizedMount + "/");
+
+      if (matches) {
+        if (webApp.config.injectMooseUtils !== false) {
+          const queryClient = new QueryClient(clickhouseClient, pathname);
+          (req as any).moose = {
+            client: new MooseClient(queryClient, temporalClient),
+            sql: sql,
+            jwt: jwtPayload,
+          };
+        }
+
+        const originalUrl = req.url;
+        if (normalizedMount !== "/") {
+          const pathWithoutMount =
+            pathname.substring(normalizedMount.length) || "/";
+          req.url = pathWithoutMount + url.search;
+        }
+
+        try {
+          await webApp.handler(req, res);
+          return;
+        } catch (error) {
+          console.error(`Error in WebApp ${webApp.name}:`, error);
+          if (!res.headersSent) {
+            res.writeHead(500, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ error: "Internal Server Error" }));
+          }
+          return;
+        } finally {
+          req.url = originalUrl;
+        }
+      }
+    }
+
+    if (pathname.startsWith("/api/")) {
+      return apiRequestHandler(req, res);
+    }
+
+    res.writeHead(404, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ error: "Not Found" }));
+    httpLogger(req, res);
+  };
+};
+
 export const runApis = async (config: ApisConfig) => {
   const apisCluster = new Cluster({
     maxWorkerCount:
@@ -277,7 +379,7 @@ export const runApis = async (config: ApisConfig) => {
       }
 
       const server = http.createServer(
-        await apiHandler(
+        await createMainRouter(
           publicKey,
           clickhouseClient,
           temporalClient,

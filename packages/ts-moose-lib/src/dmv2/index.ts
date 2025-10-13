@@ -51,3 +51,9 @@ export {
 export { SqlResource } from "./sdk/sqlResource";
 export { View } from "./sdk/view";
 export { LifeCycle } from "./sdk/lifeCycle";
+export {
+  WebApp,
+  WebAppConfig,
+  WebAppHandler,
+  FrameworkApp,
+} from "./sdk/webApp";

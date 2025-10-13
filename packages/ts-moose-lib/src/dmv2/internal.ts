@@ -34,6 +34,7 @@ import {
   TransformConfig,
 } from "./sdk/stream";
 import { compilerLog } from "../commons";
+import { WebApp } from "./sdk/webApp";
 
 /**
  * Internal registry holding all defined Moose dmv2 resources.
@@ -47,6 +48,7 @@ const moose_internal = {
   apis: new Map<string, Api<any>>(),
   sqlResources: new Map<string, SqlResource>(),
   workflows: new Map<string, Workflow>(),
+  webApps: new Map<string, WebApp>(),
 };
 /**
  * Default retention period for streams if not specified (7 days in seconds).
@@ -267,9 +269,12 @@ interface WorkflowJson {
   schedule?: string;
 }
 
-/**
- * JSON representation of a generic SQL resource (like View, MaterializedView).
- */
+interface WebAppJson {
+  name: string;
+  mountPath: string;
+  metadata?: { description?: string };
+}
+
 interface SqlResourceJson {
   /** The name of the SQL resource. */
   name: string;
@@ -483,6 +488,7 @@ export const toInfraMap = (registry: typeof moose_internal) => {
   const apis: { [key: string]: ApiJson } = {};
   const sqlResources: { [key: string]: SqlResourceJson } = {};
   const workflows: { [key: string]: WorkflowJson } = {};
+  const webApps: { [key: string]: WebAppJson } = {};
 
   registry.tables.forEach((table) => {
     const id =
@@ -696,6 +702,14 @@ export const toInfraMap = (registry: typeof moose_internal) => {
     };
   });
 
+  registry.webApps.forEach((webApp) => {
+    webApps[webApp.name] = {
+      name: webApp.name,
+      mountPath: webApp.config.mountPath || "/",
+      metadata: webApp.config.metadata,
+    };
+  });
+
   return {
     topics,
     tables,
@@ -703,6 +717,7 @@ export const toInfraMap = (registry: typeof moose_internal) => {
     apis,
     sqlResources,
     workflows,
+    webApps,
   };
 };
 
@@ -1002,4 +1017,9 @@ export const getTaskForWorkflow = async (
   }
 
   return task;
+};
+
+export const getWebApps = async () => {
+  loadIndex();
+  return getMooseInternal().webApps;
 };

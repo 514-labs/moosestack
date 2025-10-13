@@ -274,6 +274,14 @@ struct PartialApi {
     pub path: Option<String>,
 }
 
+#[derive(Debug, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct PartialWebApp {
+    pub name: String,
+    pub mount_path: String,
+    pub metadata: Option<Metadata>,
+}
+
 /// Specifies a write destination for data ingestion.
 ///
 /// Contains both the type of destination and its identifier.
@@ -379,6 +387,8 @@ pub struct PartialInfrastructureMap {
     consumption_api_web_server: Option<ConsumptionApiWebServer>,
     #[serde(default)]
     workflows: HashMap<String, PartialWorkflow>,
+    #[serde(default)]
+    web_apps: HashMap<String, PartialWebApp>,
 }
 
 impl PartialInfrastructureMap {
