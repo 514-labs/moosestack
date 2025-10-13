@@ -567,11 +567,11 @@ describe("typescript template tests - serverless OLAP-only", () => {
 
     console.log("Starting serverless mode test...");
 
-    // Start moose dev --serverless
+    // Start moose dev (serverless mode enabled in config)
     const startTime = Date.now();
 
     return new Promise<void>((resolve, reject) => {
-      const devProcess = spawn(CLI_PATH, ["dev", "--serverless"], {
+      const devProcess = spawn(CLI_PATH, ["dev"], {
         cwd: TEST_PROJECT_DIR,
         stdio: ["ignore", "pipe", "pipe"],
         env: { ...process.env },

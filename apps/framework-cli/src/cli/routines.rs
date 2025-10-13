@@ -132,11 +132,8 @@ use crate::utilities::keyring::{KeyringSecretRepository, SecretRepository};
 
 /// Checks if serverless mode should exit early for OLAP-only projects.
 /// Returns true if CLI should exit (apply migrations and exit).
-fn check_serverless_exit(serverless: bool, infra_map: &InfrastructureMap) -> bool {
-    // Check both CLI flag and environment variable
-    let serverless_enabled = serverless || std::env::var("MOOSE_SERVERLESS").is_ok();
-
-    if !serverless_enabled {
+fn check_serverless_exit(project: &Project, infra_map: &InfrastructureMap) -> bool {
+    if !project.features.serverless {
         return false;
     }
 
@@ -409,7 +406,6 @@ pub async fn start_development_mode(
     redis_client: Arc<RedisClient>,
     settings: &Settings,
     enable_mcp: bool,
-    serverless: bool,
 ) -> anyhow::Result<()> {
     display::show_message_wrapper(
         MessageType::Info,
@@ -587,7 +583,7 @@ pub async fn start_development_mode(
     plan.target_infra_map.store_in_redis(&redis_client).await?;
 
     // Check if serverless mode should exit early (after persisting state)
-    if check_serverless_exit(serverless, &plan.target_infra_map) {
+    if check_serverless_exit(&project, &plan.target_infra_map) {
         return Ok(());
     }
 
@@ -657,7 +653,6 @@ pub async fn start_production_mode(
     project: Arc<Project>,
     metrics: Arc<Metrics>,
     redis_client: Arc<RedisClient>,
-    serverless: bool,
 ) -> anyhow::Result<()> {
     display::show_message_wrapper(
         MessageType::Success,
@@ -770,7 +765,7 @@ pub async fn start_production_mode(
     plan.target_infra_map.store_in_redis(&redis_client).await?;
 
     // Check if serverless mode should exit early (after persisting state)
-    if check_serverless_exit(serverless, &plan.target_infra_map) {
+    if check_serverless_exit(&project, &plan.target_infra_map) {
         return Ok(());
     }
 

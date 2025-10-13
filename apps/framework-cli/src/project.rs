@@ -171,6 +171,10 @@ pub struct ProjectFeatures {
     /// Whether Analytics APIs server is enabled
     #[serde(default = "_true")]
     pub apis: bool,
+
+    /// Whether to run in serverless mode (apply migrations and exit)
+    #[serde(default)]
+    pub serverless: bool,
 }
 
 impl Default for ProjectFeatures {
@@ -182,6 +186,7 @@ impl Default for ProjectFeatures {
             olap: true,
             ddl_plan: false,
             apis: true,
+            serverless: false,
         }
     }
 }
