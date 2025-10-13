@@ -407,23 +407,32 @@ curl "http://localhost:4000/api/bar?limit=5&orderBy=totalRows"
 <TypeScript>
 ```ts filename="app/ingest/models.ts" {5} copy
 export interface Foo {
-  id: Key<string>;
-  timestamp: Date;
-  data: string;
+  primaryKey: Key<string>; // Unique ID
+  timestamp: number; // Unix timestamp
+  optionalText?: string; // Text to analyze
   newField?: string; // Add this new optional field
 }
 ```
 </TypeScript>
 
 <Python>
-```python filename="app/ingest/models.py" {8} copy
-from typing import Optional
+```python filename="app/ingest/models.py" {16} copy
+from moose_lib import Key, StringToEnumMixin
+from typing import Optional, Annotated
+from enum import IntEnum, auto
+from pydantic import BaseModel
+
+class Baz(StringToEnumMixin, IntEnum):
+    QUX = auto()
+    QUUX = auto()
+
 
 class Foo(BaseModel):
-    id: Key[str]
-    timestamp: datetime
-    data: str
-    new_field: Optional[str]  # Add this new optional field
+    primary_key: Key[str]
+    timestamp: float
+    baz: Baz
+    optional_text: Optional[str] = None
+    new_field: Optional[str] = None
 ```
 </Python>
 
