@@ -791,13 +791,17 @@ impl InfrastructureMap {
             )));
         }
 
-        process_changes.push(ProcessChange::OrchestrationWorker(Change::<
-            OrchestrationWorker,
-        >::Added(
-            Box::new(OrchestrationWorker {
-                supported_language: project.language,
-            }),
-        )));
+        // Only add orchestration worker if workflows are enabled
+        if project.features.workflows {
+            process_changes.push(ProcessChange::OrchestrationWorker(Change::<
+                OrchestrationWorker,
+            >::Added(
+                Box::new(OrchestrationWorker {
+                    supported_language: project.language,
+                }),
+            )));
+        }
+
         process_changes
     }
 

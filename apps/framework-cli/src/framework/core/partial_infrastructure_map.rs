@@ -48,7 +48,6 @@ use super::{
         consumption_webserver::ConsumptionApiWebServer,
         function_process::FunctionProcess,
         olap_process::OlapProcess,
-        orchestration_worker::OrchestrationWorker,
         sql_resource::SqlResource,
         table::{Column, Metadata, Table},
         topic::{KafkaSchema, Topic, DEFAULT_MAX_MESSAGE_BYTES},
@@ -484,12 +483,10 @@ impl PartialInfrastructureMap {
         let function_processes = self.create_function_processes(main_file, language, &topics);
         let workflows = self.convert_workflows(language);
 
-        // Only create orchestration workers if there are actual workflows to orchestrate
-        let mut orchestration_workers = HashMap::new();
-        if !workflows.is_empty() {
-            let orchestration_worker = OrchestrationWorker::new(language);
-            orchestration_workers.insert(orchestration_worker.id(), orchestration_worker);
-        }
+        // Orchestration workers - left empty in DMV2, populated based on feature flag in DMV1
+        // The HashMap is used for state tracking and diffing, but actual worker processes
+        // are conditionally created in init_processes() based on workflow existence
+        let orchestration_workers = HashMap::new();
 
         InfrastructureMap {
             topics,
