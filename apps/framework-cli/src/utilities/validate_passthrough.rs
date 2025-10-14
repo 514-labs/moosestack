@@ -1,4 +1,6 @@
-use crate::framework::core::infrastructure::table::{Column, ColumnType, DataEnum, EnumValue};
+use crate::framework::core::infrastructure::table::{
+    Column, ColumnType, DataEnum, EnumValue, IntType,
+};
 use crate::infrastructure::processes::kafka_clickhouse_sync::IPV4_PATTERN;
 use itertools::Either;
 use regex::Regex;
@@ -73,6 +75,147 @@ impl EnumInt for i64 {
     }
     fn from_usize(usize: usize) -> i64 {
         usize as i64
+    }
+}
+
+// Integer regex for arbitrary-precision comparisons
+static INTEGER_REGEX: LazyLock<Regex> =
+    std::sync::LazyLock::new(|| Regex::new(r"^-?\d+$").unwrap());
+
+fn check_int_number_in_range<E>(num: &Number, int_type: &IntType, path: &str) -> Result<(), E>
+where
+    E: serde::de::Error,
+{
+    let signed_bounds = |t: &IntType| -> (i128, i128) {
+        match t {
+            IntType::Int8 => (i8::MIN as i128, i8::MAX as i128),
+            IntType::Int16 => (i16::MIN as i128, i16::MAX as i128),
+            IntType::Int32 => (i32::MIN as i128, i32::MAX as i128),
+            IntType::Int64 => (i64::MIN as i128, i64::MAX as i128),
+            IntType::Int128 | IntType::Int256 => (i128::MIN, i128::MAX),
+            _ => (0, 0),
+        }
+    };
+    let unsigned_max = |t: &IntType| -> u128 {
+        match t {
+            IntType::UInt8 => u8::MAX as u128,
+            IntType::UInt16 => u16::MAX as u128,
+            IntType::UInt32 => u32::MAX as u128,
+            IntType::UInt64 => u64::MAX as u128,
+            IntType::UInt128 | IntType::UInt256 => u128::MAX,
+            _ => 0,
+        }
+    };
+
+    match int_type {
+        IntType::Int8
+        | IntType::Int16
+        | IntType::Int32
+        | IntType::Int64
+        | IntType::Int128
+        | IntType::Int256 => {
+            if let Some(v) = num.as_i64() {
+                let (min, max) = signed_bounds(int_type);
+                let v128 = v as i128;
+                if v128 < min || v128 > max {
+                    return Err(E::custom(format!(
+                        "Value {v} out of range for {int_type:?} at {path}"
+                    )));
+                }
+                return Ok(());
+            }
+            if let Some(u) = num.as_u64() {
+                let (_min, max) = signed_bounds(int_type);
+                let u128v = u as u128;
+                if u128v > (max as u128) {
+                    return Err(E::custom(format!(
+                        "Value {u} out of range for {int_type:?} at {path}"
+                    )));
+                }
+                return Ok(());
+            }
+            let s = num.to_string();
+            if !INTEGER_REGEX.is_match(&s) {
+                return Err(E::custom(format!(
+                    "Expected integer for {int_type:?} at {path}"
+                )));
+            }
+            if *int_type == IntType::Int256 {
+                return Ok(());
+            }
+            match s.parse::<i128>() {
+                Ok(v) => {
+                    let (min, max) = signed_bounds(int_type);
+                    if v < min || v > max {
+                        return Err(E::custom(format!(
+                            "Value {s} out of range for {int_type:?} at {path}"
+                        )));
+                    }
+                    Ok(())
+                }
+                Err(_) => Err(E::custom(format!(
+                    "Value {s} out of range for {int_type:?} at {path}"
+                ))),
+            }
+        }
+        IntType::UInt8
+        | IntType::UInt16
+        | IntType::UInt32
+        | IntType::UInt64
+        | IntType::UInt128
+        | IntType::UInt256 => {
+            if let Some(v) = num.as_i64() {
+                if v < 0 {
+                    return Err(E::custom(format!(
+                        "Negative value {v} is invalid for {int_type:?} at {path}"
+                    )));
+                }
+                let max = unsigned_max(int_type);
+                if (v as u128) > max {
+                    return Err(E::custom(format!(
+                        "Value {v} out of range for {int_type:?} at {path}"
+                    )));
+                }
+                return Ok(());
+            }
+            if let Some(u) = num.as_u64() {
+                let max = unsigned_max(int_type);
+                if (u as u128) > max {
+                    return Err(E::custom(format!(
+                        "Value {u} out of range for {int_type:?} at {path}"
+                    )));
+                }
+                return Ok(());
+            }
+            let s = num.to_string();
+            if !INTEGER_REGEX.is_match(&s) {
+                return Err(E::custom(format!(
+                    "Expected integer for {int_type:?} at {path}"
+                )));
+            }
+            if s.starts_with('-') {
+                return Err(E::custom(format!(
+                    "Negative value {s} is invalid for {int_type:?} at {path}"
+                )));
+            }
+            if *int_type == IntType::UInt256 {
+                return Ok(());
+            }
+            match s.parse::<u128>() {
+                Ok(v) => {
+                    let max = unsigned_max(int_type);
+                    if v > max {
+                        return Err(E::custom(format!(
+                            "Value {s} out of range for {int_type:?} at {path}"
+                        )));
+                    }
+                    Ok(())
+                }
+                Err(_) => Err(E::custom(format!(
+                    "Value {s} out of range for {int_type:?} at {path}"
+                ))),
+            }
+        }
     }
 }
 
@@ -209,7 +352,11 @@ impl<'de, S: SerializeValue> Visitor<'de> for &mut ValueVisitor<'_, S> {
         E: Error,
     {
         match self.t {
-            ColumnType::Int(_) => self.write_to.serialize_value(&v).map_err(Error::custom),
+            ColumnType::Int(int_t) => {
+                let num = Number::from(v);
+                check_int_number_in_range::<E>(&num, int_t, &self.get_path())?;
+                self.write_to.serialize_value(&v).map_err(Error::custom)
+            }
             ColumnType::Float(_) => self.write_to.serialize_value(&v).map_err(Error::custom),
             ColumnType::Decimal { .. } => self.write_to.serialize_value(&v).map_err(Error::custom),
             ColumnType::Enum(enum_def) => handle_enum_value(self.write_to, enum_def, v),
@@ -222,7 +369,11 @@ impl<'de, S: SerializeValue> Visitor<'de> for &mut ValueVisitor<'_, S> {
         E: Error,
     {
         match self.t {
-            ColumnType::Int(_) => self.write_to.serialize_value(&v).map_err(Error::custom),
+            ColumnType::Int(int_t) => {
+                let num = Number::from(v);
+                check_int_number_in_range::<E>(&num, int_t, &self.get_path())?;
+                self.write_to.serialize_value(&v).map_err(Error::custom)
+            }
             ColumnType::Float(_) => self.write_to.serialize_value(&v).map_err(Error::custom),
             ColumnType::Decimal { .. } => self.write_to.serialize_value(&v).map_err(Error::custom),
             ColumnType::Enum(enum_def) => handle_enum_value(self.write_to, enum_def, v),
@@ -588,10 +739,17 @@ impl<'de, S: SerializeValue> Visitor<'de> for &mut ValueVisitor<'_, S> {
                     });
                     match arbitrary_precision {
                         Ok(number) => {
+                            if let ColumnType::Int(int_t) = t {
+                                check_int_number_in_range::<A::Error>(
+                                    &number,
+                                    int_t,
+                                    &self.get_path(),
+                                )?;
+                            }
                             return self
                                 .write_to
                                 .serialize_value(&number)
-                                .map_err(Error::custom)
+                                .map_err(Error::custom);
                         }
                         Err(_) => {
                             // nothing to do. fall through to normal error
@@ -635,18 +793,94 @@ fn validate_map_key<E>(
 where
     E: serde::ser::Error,
 {
+    fn validate_int_key_str<E>(s: &str, int_t: &IntType, path: &str) -> Result<(), E>
+    where
+        E: serde::ser::Error,
+    {
+        match int_t {
+            IntType::Int8
+            | IntType::Int16
+            | IntType::Int32
+            | IntType::Int64
+            | IntType::Int128
+            | IntType::Int256 => {
+                if !INTEGER_REGEX.is_match(s) {
+                    return Err(E::custom(format!(
+                        "Invalid integer key '{}' for Map at {}",
+                        s, path
+                    )));
+                }
+                if *int_t == IntType::Int256 {
+                    return Ok(());
+                }
+                match s.parse::<i128>() {
+                    Ok(v) => {
+                        let (min, max) = match int_t {
+                            IntType::Int8 => (i8::MIN as i128, i8::MAX as i128),
+                            IntType::Int16 => (i16::MIN as i128, i16::MAX as i128),
+                            IntType::Int32 => (i32::MIN as i128, i32::MAX as i128),
+                            IntType::Int64 => (i64::MIN as i128, i64::MAX as i128),
+                            IntType::Int128 => (i128::MIN, i128::MAX),
+                            _ => (i128::MIN, i128::MAX),
+                        };
+                        if v < min || v > max {
+                            return Err(E::custom(format!(
+                                "Integer key '{}' out of range for {:?} at {}",
+                                s, int_t, path
+                            )));
+                        }
+                        Ok(())
+                    }
+                    Err(_) => Err(E::custom(format!(
+                        "Invalid integer key '{}' for Map at {}",
+                        s, path
+                    ))),
+                }
+            }
+            IntType::UInt8
+            | IntType::UInt16
+            | IntType::UInt32
+            | IntType::UInt64
+            | IntType::UInt128
+            | IntType::UInt256 => {
+                if !INTEGER_REGEX.is_match(s) || s.starts_with('-') {
+                    return Err(E::custom(format!(
+                        "Invalid unsigned integer key '{}' for Map at {}",
+                        s, path
+                    )));
+                }
+                if *int_t == IntType::UInt256 {
+                    return Ok(());
+                }
+                match s.parse::<u128>() {
+                    Ok(v) => {
+                        let max = match int_t {
+                            IntType::UInt8 => u8::MAX as u128,
+                            IntType::UInt16 => u16::MAX as u128,
+                            IntType::UInt32 => u32::MAX as u128,
+                            IntType::UInt64 => u64::MAX as u128,
+                            IntType::UInt128 => u128::MAX,
+                            _ => u128::MAX,
+                        };
+                        if v > max {
+                            return Err(E::custom(format!(
+                                "Unsigned integer key '{}' out of range for {:?} at {}",
+                                s, int_t, path
+                            )));
+                        }
+                        Ok(())
+                    }
+                    Err(_) => Err(E::custom(format!(
+                        "Invalid unsigned integer key '{}' for Map at {}",
+                        s, path
+                    ))),
+                }
+            }
+        }
+    }
     match key_type {
         ColumnType::String => Ok(()), // String keys are always valid
-        ColumnType::Int(_) => {
-            key_str.parse::<i64>().map_err(|_| {
-                E::custom(format!(
-                    "Invalid integer key '{}' for Map at {}",
-                    key_str,
-                    context.get_path()
-                ))
-            })?;
-            Ok(())
-        }
+        ColumnType::Int(int_t) => validate_int_key_str(key_str, int_t, &context.get_path()),
         ColumnType::Float(_) => {
             key_str.parse::<f64>().map_err(|_| {
                 E::custom(format!(
@@ -1534,5 +1768,128 @@ mod tests {
             .unwrap_err()
             .to_string()
             .contains("Invalid integer key"));
+    }
+
+    #[test]
+    fn test_uint8_range_boundaries() {
+        let columns = vec![Column {
+            name: "u8_col".to_string(),
+            data_type: ColumnType::Int(IntType::UInt8),
+            required: true,
+            unique: false,
+            primary_key: false,
+            default: None,
+            annotations: vec![],
+            comment: None,
+        }];
+
+        // Min boundary 0
+        let json = r#"{ "u8_col": 0 }"#;
+        let result = serde_json::Deserializer::from_str(json)
+            .deserialize_any(&mut DataModelVisitor::new(&columns, None));
+        assert!(result.is_ok(), "expected 0 to be valid UInt8");
+
+        // Max boundary 255
+        let json = r#"{ "u8_col": 255 }"#;
+        let result = serde_json::Deserializer::from_str(json)
+            .deserialize_any(&mut DataModelVisitor::new(&columns, None));
+        assert!(result.is_ok(), "expected 255 to be valid UInt8");
+
+        // Above max 256
+        let json = r#"{ "u8_col": 256 }"#;
+        let err = serde_json::Deserializer::from_str(json)
+            .deserialize_any(&mut DataModelVisitor::new(&columns, None))
+            .unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("out of range") && msg.contains("UInt8"));
+
+        // Negative value
+        let json = r#"{ "u8_col": -1 }"#;
+        let err = serde_json::Deserializer::from_str(json)
+            .deserialize_any(&mut DataModelVisitor::new(&columns, None))
+            .unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("Negative value") || msg.contains("invalid type"));
+    }
+
+    #[test]
+    fn test_int16_range_boundaries() {
+        let columns = vec![Column {
+            name: "i16_col".to_string(),
+            data_type: ColumnType::Int(IntType::Int16),
+            required: true,
+            unique: false,
+            primary_key: false,
+            default: None,
+            annotations: vec![],
+            comment: None,
+        }];
+
+        // Min boundary -32768
+        let json = r#"{ "i16_col": -32768 }"#;
+        let result = serde_json::Deserializer::from_str(json)
+            .deserialize_any(&mut DataModelVisitor::new(&columns, None));
+        assert!(result.is_ok(), "expected -32768 to be valid Int16");
+
+        // Max boundary 32767
+        let json = r#"{ "i16_col": 32767 }"#;
+        let result = serde_json::Deserializer::from_str(json)
+            .deserialize_any(&mut DataModelVisitor::new(&columns, None));
+        assert!(result.is_ok(), "expected 32767 to be valid Int16");
+
+        // Above max 32768
+        let json = r#"{ "i16_col": 32768 }"#;
+        let err = serde_json::Deserializer::from_str(json)
+            .deserialize_any(&mut DataModelVisitor::new(&columns, None))
+            .unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("out of range") && msg.contains("Int16"));
+
+        // Below min -32769
+        let json = r#"{ "i16_col": -32769 }"#;
+        let err = serde_json::Deserializer::from_str(json)
+            .deserialize_any(&mut DataModelVisitor::new(&columns, None))
+            .unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("out of range") && msg.contains("Int16"));
+    }
+
+    #[test]
+    fn test_map_key_uint8_range() {
+        let columns = vec![Column {
+            name: "map_col".to_string(),
+            data_type: ColumnType::Map {
+                key_type: Box::new(ColumnType::Int(IntType::UInt8)),
+                value_type: Box::new(ColumnType::String),
+            },
+            required: true,
+            unique: false,
+            primary_key: false,
+            default: None,
+            annotations: vec![],
+            comment: None,
+        }];
+
+        // Valid keys
+        let json = r#"{ "map_col": { "0": "a", "255": "b" } }"#;
+        let result = serde_json::Deserializer::from_str(json)
+            .deserialize_any(&mut DataModelVisitor::new(&columns, None));
+        assert!(result.is_ok());
+
+        // Out of range key 256
+        let json = r#"{ "map_col": { "256": "a" } }"#;
+        let err = serde_json::Deserializer::from_str(json)
+            .deserialize_any(&mut DataModelVisitor::new(&columns, None))
+            .unwrap_err();
+        assert!(err.to_string().contains("out of range"));
+
+        // Negative key -1
+        let json = r#"{ "map_col": { "-1": "a" } }"#;
+        let err = serde_json::Deserializer::from_str(json)
+            .deserialize_any(&mut DataModelVisitor::new(&columns, None))
+            .unwrap_err();
+        // It will fail to parse as u128 and produce an error
+        let msg = err.to_string();
+        assert!(msg.contains("Invalid unsigned integer key") || msg.contains("out of range"));
     }
 }
