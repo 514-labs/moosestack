@@ -359,6 +359,7 @@ mod tests {
             orchestration_workers: HashMap::new(),
             sql_resources: HashMap::new(),
             workflows: HashMap::new(),
+            web_apps: HashMap::new(),
         };
 
         // Create reality checker
@@ -419,6 +420,7 @@ mod tests {
             orchestration_workers: HashMap::new(),
             sql_resources: HashMap::new(),
             workflows: HashMap::new(),
+            web_apps: HashMap::new(),
         };
 
         infra_map
@@ -487,6 +489,7 @@ mod tests {
             orchestration_workers: HashMap::new(),
             sql_resources: HashMap::new(),
             workflows: HashMap::new(),
+            web_apps: HashMap::new(),
         };
 
         infra_map
@@ -549,6 +552,7 @@ mod tests {
             orchestration_workers: HashMap::new(),
             sql_resources: HashMap::new(),
             workflows: HashMap::new(),
+            web_apps: HashMap::new(),
         };
 
         infra_map
