@@ -282,7 +282,6 @@ const createMainRouter = async (
 
   return async (req: http.IncomingMessage, res: http.ServerResponse) => {
     const url = new URL(req.url || "", "http://localhost");
-    console.log("DEBUG========>", { url });
     const pathname = url.pathname;
 
     let jwtPayload;
@@ -303,17 +302,14 @@ const createMainRouter = async (
 
     for (const webApp of sortedWebApps) {
       const mountPath = webApp.config.mountPath || "/";
-      console.log("DEBUG========>", { mountPath });
       const normalizedMount =
         mountPath.endsWith("/") && mountPath !== "/" ?
           mountPath.slice(0, -1)
         : mountPath;
-      console.log("DEBUG========>", { normalizedMount });
 
       const matches =
         pathname === normalizedMount ||
         pathname.startsWith(normalizedMount + "/");
-      console.log("DEBUG========>", { matches });
 
       if (matches) {
         if (webApp.config.injectMooseUtils !== false) {
@@ -325,19 +321,21 @@ const createMainRouter = async (
           };
         }
 
-        const originalUrl = req.url;
-        console.log("DEBUG========>", { originalUrl });
+        let proxiedUrl = req.url;
         if (normalizedMount !== "/") {
           const pathWithoutMount =
             pathname.substring(normalizedMount.length) || "/";
-          console.log("DEBUG========>", { pathWithoutMount });
-          req.url = pathWithoutMount + url.search;
-          console.log("DEBUG========>", { reqUrl: req.url });
+          proxiedUrl = pathWithoutMount + url.search;
         }
 
         try {
-          console.log("DEBUG========> TRY");
-          await webApp.handler(req, res);
+          await webApp.handler(
+            {
+              ...req,
+              url: proxiedUrl,
+            },
+            res,
+          );
           return;
         } catch (error) {
           console.error(`Error in WebApp ${webApp.name}:`, error);
@@ -346,14 +344,33 @@ const createMainRouter = async (
             res.end(JSON.stringify({ error: "Internal Server Error" }));
           }
           return;
-        } finally {
-          req.url = originalUrl;
         }
       }
     }
 
+    // If no WebApp matched, check if it's an Api request
+    // Strip /api or /consumption prefix for Api routing
+    let apiPath = pathname;
     if (pathname.startsWith("/api/")) {
-      return apiRequestHandler(req, res);
+      apiPath = pathname.substring(4); // Remove "/api"
+    } else if (pathname.startsWith("/consumption/")) {
+      apiPath = pathname.substring(13); // Remove "/consumption"
+    }
+
+    // If we stripped a prefix, it's an Api request
+    if (apiPath !== pathname) {
+      console.log("DEBUG===============>", { pathname, apiPath });
+      console.log("DEBUG===============> apiRequestHandler()");
+      // Create a modified request with the rewritten URL for the apiHandler
+      // Note: apiHandler only reads basic properties (url, headers, method)
+      // If it needs stream methods in future, consider refactoring both
+      // Api and WebApp routing to avoid URL rewriting
+      const modifiedReq = {
+        ...req,
+        url: apiPath + url.search,
+      };
+      await apiRequestHandler(modifiedReq as http.IncomingMessage, res);
+      return;
     }
 
     res.writeHead(404, { "Content-Type": "application/json" });

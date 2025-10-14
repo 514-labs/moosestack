@@ -2,75 +2,153 @@
  * Example BYOF (Bring Your Own Framework) Express app
  *
  * This file demonstrates how to use Express with MooseStack for consumption
- * APIs using the ByofApi class.
+ * APIs using the WebApp class.
  */
 
-import express, { Request, Response, NextFunction } from "express";
-import {
-  sql,
-  getMooseClients,
-  ByofApi,
-  type MooseClient,
-} from "@514labs/moose-lib";
-import { BarPipeline } from "../ingest/models";
-import { Api, MooseCache } from "@514labs/moose-lib";
+import express from "express";
+import { WebApp, expressMiddleware, getMooseUtils } from "@514labs/moose-lib";
 import { BarAggregatedMV } from "../views/barAggregated";
+import { Api, MooseCache } from "@514labs/moose-lib";
 import { tags } from "typia";
 
-interface QueryParams {
-  maxResults: number;
-}
+const app = express();
 
-// Extend Express Request to include our client
-interface RequestWithClient extends Request<{}, {}, {}, QueryParams> {
-  client?: MooseClient;
-}
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
-interface ResultItem {
-  primaryKey: string;
-  textLength: number;
-}
+app.use(expressMiddleware());
 
-/**
- * Creates and configures the Express app.
- * This function is called by the ByofApi class when the app is initialized.
- */
-async function createExpressApp() {
-  const app = express();
-  const { client } = await getMooseClients();
+app.use((req, res, next) => {
+  console.log(`[bar-express.ts] ${req.method} ${req.url}`);
+  next();
+});
 
-  // Middleware to attach Moose client to requests
-  app.use((req: RequestWithClient, _res: Response, next: NextFunction) => {
-    req.client = client;
-    next();
+const requireAuth = (req: any, res: any, next: any) => {
+  const moose = getMooseUtils(req);
+  if (!moose?.jwt) {
+    return res.status(401).json({ error: "Unauthorized - JWT token required" });
+  }
+  next();
+};
+
+app.get("/health", (_req, res) => {
+  res.json({
+    status: "ok",
+    timestamp: new Date().toISOString(),
+    service: "bar-express-api",
   });
+});
 
-  // Example: Custom endpoint that queries ClickHouse
-  app.get("/moose", async (req: RequestWithClient, res: Response) => {
-    const { client } = req;
-    const SourceTable = BarPipeline.table!;
-    const cols = SourceTable.columns;
+app.get("/query", async (req, res) => {
+  const moose = getMooseUtils(req);
+  if (!moose) {
+    return res
+      .status(500)
+      .json({ error: "MooseStack utilities not available" });
+  }
 
-    const query = sql` SELECT ${cols.primaryKey}, ${cols.textLength} FROM ${SourceTable} LIMIT ${req.query.maxResults || 10}`;
+  const { client, sql } = moose;
+  const limit = parseInt(req.query.limit as string) || 10;
 
-    // Set the result type to the type of the each row in the result set
-    const resultSet = await client?.query.execute<ResultItem>(query);
+  try {
+    const query = sql`
+      SELECT 
+        ${BarAggregatedMV.targetTable.columns.dayOfMonth},
+        ${BarAggregatedMV.targetTable.columns.totalRows}
+      FROM ${BarAggregatedMV.targetTable}
+      ORDER BY ${BarAggregatedMV.targetTable.columns.totalRows} DESC
+      LIMIT ${limit}
+    `;
 
-    // Return the result set as an array of the result item type
-    const data = await resultSet?.json();
-    res.send(data);
+    const result = await client.query.execute(query);
+    const data = await result.json();
+
+    res.json({
+      success: true,
+      count: data.length,
+      data,
+    });
+  } catch (error) {
+    console.error("Query error:", error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+});
+
+app.get("/protected", requireAuth, async (req, res) => {
+  const moose = getMooseUtils(req);
+
+  res.json({
+    message: "You are authenticated",
+    user: moose?.jwt?.sub,
+    claims: moose?.jwt,
   });
+});
 
-  return app;
-}
+app.post("/data", async (req, res) => {
+  const moose = getMooseUtils(req);
+  if (!moose) {
+    return res
+      .status(500)
+      .json({ error: "MooseStack utilities not available" });
+  }
 
-/**
- * Register the Express app with Moose using the ByofApi class.
- * This follows the same pattern as Api and IngestApi classes.
- */
-export const barByofApi = new ByofApi("bar-express-api", createExpressApp, {
-  version: "1.0",
-  metadata: { description: "Example Express app integrated with Moose" },
+  const { client, sql } = moose;
+  const {
+    orderBy = "totalRows",
+    limit = 5,
+    startDay = 1,
+    endDay = 31,
+  } = req.body;
+
+  try {
+    const query = sql`
+      SELECT 
+        ${BarAggregatedMV.targetTable.columns.dayOfMonth},
+        ${BarAggregatedMV.targetTable.columns[orderBy]}
+      FROM ${BarAggregatedMV.targetTable}
+      WHERE 
+        dayOfMonth >= ${startDay} 
+        AND dayOfMonth <= ${endDay}
+      ORDER BY ${BarAggregatedMV.targetTable.columns[orderBy]} DESC
+      LIMIT ${limit}
+    `;
+
+    const result = await client.query.execute(query);
+    const data = await result.json();
+
+    res.json({
+      success: true,
+      params: { orderBy, limit, startDay, endDay },
+      count: data.length,
+      data,
+    });
+  } catch (error) {
+    console.error("Query error:", error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+});
+
+app.use((err: any, req: any, res: any, next: any) => {
+  console.error("Express error:", err);
+  if (!res.headersSent) {
+    res.status(500).json({
+      error: "Internal Server Error",
+      message: err.message,
+    });
+  }
+});
+
+export const barExpressApi = new WebApp("barExpress", app, {
+  mountPath: "/express",
+  metadata: {
+    description: "Express API with middleware demonstrating WebApp integration",
+  },
 });
 
 interface ApiQueryParams {

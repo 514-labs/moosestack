@@ -414,16 +414,12 @@ async fn get_consumption_api_res(
     }
 
     let full_path = req.uri().path();
-    let stripped_for_proxy = full_path
-        .strip_prefix("/api")
-        .or_else(|| full_path.strip_prefix("/consumption"))
-        .unwrap_or(full_path);
-
+    // Don't strip the prefix - let Node.js handle routing for both Api and WebApp
     let url = format!(
         "http://{}:{}{}{}",
         host,
         proxy_port,
-        stripped_for_proxy,
+        full_path,
         req.uri()
             .query()
             .map_or("".to_string(), |q| format!("?{q}"))
