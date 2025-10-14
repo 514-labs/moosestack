@@ -390,10 +390,6 @@ pub async fn start_development_mode(
     let web_apps: &'static RwLock<HashSet<String>> =
         Box::leak(Box::new(RwLock::new(HashSet::new())));
 
-    // TODO: Populate web_apps from infrastructure map once web_apps are added to InfrastructureMap
-    // For now, add known mount paths for testing
-    web_apps.write().await.insert("/express".to_string());
-
     let route_table = HashMap::<PathBuf, RouteMeta>::new();
     let route_table: &'static RwLock<HashMap<PathBuf, RouteMeta>> =
         Box::leak(Box::new(RwLock::new(route_table)));
@@ -401,6 +397,8 @@ pub async fn start_development_mode(
     let route_update_channel = web_server
         .spawn_api_update_listener(project.clone(), route_table, consumption_apis)
         .await;
+
+    let webapp_update_channel = web_server.spawn_webapp_update_listener(web_apps).await;
 
     let (_, plan) = plan_changes(&redis_client, &project).await?;
 
@@ -540,6 +538,7 @@ pub async fn start_development_mode(
         &plan,
         false,
         api_changes_channel,
+        webapp_update_channel,
         metrics.clone(),
         &redis_client,
     )
@@ -648,10 +647,6 @@ pub async fn start_production_mode(
         Box::leak(Box::new(RwLock::new(HashSet::new())));
     info!("Web apps initialized");
 
-    // TODO: Populate web_apps from infrastructure map once web_apps are added to InfrastructureMap
-    // For now, add known mount paths for testing
-    web_apps.write().await.insert("/express".to_string());
-
     let route_table = HashMap::<PathBuf, RouteMeta>::new();
 
     debug!("Route table: {:?}", route_table);
@@ -724,12 +719,15 @@ pub async fn start_production_mode(
         .spawn_api_update_listener(project.clone(), route_table, consumption_apis)
         .await;
 
+    let webapp_update_channel = web_server.spawn_webapp_update_listener(web_apps).await;
+
     let (_, process_registry) = execute_initial_infra_change(
         &project,
         settings,
         &plan,
         execute_migration_yaml,
         api_changes_channel,
+        webapp_update_channel,
         metrics.clone(),
         &redis_client,
     )

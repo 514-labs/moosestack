@@ -10,7 +10,7 @@ app.use(express.urlencoded({ extended: true }));
 app.use(expressMiddleware());
 
 app.use((req, res, next) => {
-  console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
+  console.log(`[bar-express.ts] ${req.method} ${req.url}`);
   next();
 });
 

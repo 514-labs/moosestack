@@ -330,6 +330,8 @@ pub enum InfraChange {
     Streaming(StreamingChange),
     /// Changes to API components
     Api(ApiChange),
+    /// Changes to WebApp components
+    WebApp(WebAppChange),
     /// Changes to process components
     Process(ProcessChange),
 }
@@ -378,6 +380,13 @@ pub enum ApiChange {
     ApiEndpoint(Change<ApiEndpoint>),
 }
 
+/// Changes to WebApp components
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum WebAppChange {
+    /// Change to a WebApp
+    WebApp(Change<super::infrastructure::web_app::WebApp>),
+}
+
 /// Changes to process components
 ///
 /// This includes various types of processes that operate on the infrastructure.
@@ -409,6 +418,8 @@ pub struct InfraChanges {
     pub processes_changes: Vec<ProcessChange>,
     /// Changes to API components
     pub api_changes: Vec<ApiChange>,
+    /// Changes to WebApp components
+    pub web_app_changes: Vec<WebAppChange>,
     /// Changes to streaming components
     pub streaming_engine_changes: Vec<StreamingChange>,
 }
@@ -421,6 +432,7 @@ impl InfraChanges {
         self.olap_changes.is_empty()
             && self.processes_changes.is_empty()
             && self.api_changes.is_empty()
+            && self.web_app_changes.is_empty()
             && self.streaming_engine_changes.is_empty()
     }
 }
@@ -481,6 +493,10 @@ pub struct InfrastructureMap {
     /// Collection of workflows indexed by workflow name
     #[serde(default)]
     pub workflows: HashMap<String, Workflow>,
+
+    /// Collection of web applications indexed by name
+    #[serde(default)]
+    pub web_apps: HashMap<String, super::infrastructure::web_app::WebApp>,
 }
 
 impl InfrastructureMap {
@@ -655,6 +671,7 @@ impl InfrastructureMap {
             orchestration_workers,
             sql_resources: Default::default(),
             workflows: Default::default(),
+            web_apps: Default::default(),
         }
     }
 
@@ -680,6 +697,7 @@ impl InfrastructureMap {
             processes_changes,
             api_changes,
             streaming_engine_changes,
+            web_app_changes: vec![],
         }
     }
 
@@ -707,6 +725,23 @@ impl InfrastructureMap {
             .values()
             .map(|api_endpoint| {
                 ApiChange::ApiEndpoint(Change::<ApiEndpoint>::Added(Box::new(api_endpoint.clone())))
+            })
+            .collect()
+    }
+
+    /// Creates changes for initial WebApp deployment
+    ///
+    /// Generates changes representing the creation of all WebApps in this map.
+    ///
+    /// # Returns
+    /// A vector of `WebAppChange` objects for WebApp creation
+    pub fn init_web_apps(&self) -> Vec<WebAppChange> {
+        self.web_apps
+            .values()
+            .map(|web_app| {
+                WebAppChange::WebApp(Change::<super::infrastructure::web_app::WebApp>::Added(
+                    Box::new(web_app.clone()),
+                ))
             })
             .collect()
     }
@@ -835,6 +870,13 @@ impl InfrastructureMap {
             &mut changes.api_changes,
         );
 
+        // WebApps
+        Self::diff_web_apps(
+            &self.web_apps,
+            &target_map.web_apps,
+            &mut changes.web_app_changes,
+        );
+
         // Tables (using custom strategy)
         log::info!("Analyzing changes in Tables...");
         let olap_changes_len_before = changes.olap_changes.len();
@@ -868,10 +910,11 @@ impl InfrastructureMap {
 
         // Summary
         log::info!(
-            "Total changes detected - OLAP: {}, Processes: {}, API: {}, Streaming: {}",
+            "Total changes detected - OLAP: {}, Processes: {}, API: {}, WebApps: {}, Streaming: {}",
             changes.olap_changes.len(),
             changes.processes_changes.len(),
             changes.api_changes.len(),
+            changes.web_app_changes.len(),
             changes.streaming_engine_changes.len()
         );
 
@@ -1033,6 +1076,67 @@ impl InfrastructureMap {
         );
 
         (endpoint_additions, endpoint_removals, endpoint_updates)
+    }
+
+    /// Compare WebApps between two infrastructure maps and compute the differences
+    ///
+    /// This method identifies added, removed, and updated WebApps by comparing
+    /// the source and target WebApp maps.
+    ///
+    /// # Arguments
+    /// * `self_web_apps` - HashMap of source WebApps to compare from
+    /// * `target_web_apps` - HashMap of target WebApps to compare against
+    /// * `web_app_changes` - Mutable vector to collect the identified changes
+    ///
+    /// # Returns
+    /// A tuple of (additions, removals, updates) counts
+    fn diff_web_apps(
+        self_web_apps: &HashMap<String, super::infrastructure::web_app::WebApp>,
+        target_web_apps: &HashMap<String, super::infrastructure::web_app::WebApp>,
+        web_app_changes: &mut Vec<WebAppChange>,
+    ) -> (usize, usize, usize) {
+        log::info!("Analyzing changes in WebApps...");
+        let mut webapp_updates = 0;
+        let mut webapp_removals = 0;
+        let mut webapp_additions = 0;
+
+        for (id, webapp) in self_web_apps {
+            if let Some(target_webapp) = target_web_apps.get(id) {
+                if webapp != target_webapp {
+                    log::debug!("WebApp updated: {}", id);
+                    webapp_updates += 1;
+                    web_app_changes.push(WebAppChange::WebApp(Change::Updated {
+                        before: Box::new(webapp.clone()),
+                        after: Box::new(target_webapp.clone()),
+                    }));
+                }
+            } else {
+                log::debug!("WebApp removed: {}", id);
+                webapp_removals += 1;
+                web_app_changes.push(WebAppChange::WebApp(Change::Removed(Box::new(
+                    webapp.clone(),
+                ))));
+            }
+        }
+
+        for (id, webapp) in target_web_apps {
+            if !self_web_apps.contains_key(id) {
+                log::debug!("WebApp added: {}", id);
+                webapp_additions += 1;
+                web_app_changes.push(WebAppChange::WebApp(Change::Added(Box::new(
+                    webapp.clone(),
+                ))));
+            }
+        }
+
+        log::info!(
+            "WebApp changes: {} added, {} removed, {} updated",
+            webapp_additions,
+            webapp_removals,
+            webapp_updates
+        );
+
+        (webapp_additions, webapp_removals, webapp_updates)
     }
 
     /// Compare views between two infrastructure maps and compute the differences
@@ -2062,6 +2166,7 @@ impl InfrastructureMap {
                 .collect(),
             // TODO: add proto
             workflows: HashMap::new(),
+            web_apps: HashMap::new(),
         })
     }
 
@@ -2372,6 +2477,7 @@ impl Default for InfrastructureMap {
             orchestration_workers: HashMap::new(),
             sql_resources: HashMap::new(),
             workflows: HashMap::new(),
+            web_apps: HashMap::new(),
         }
     }
 }

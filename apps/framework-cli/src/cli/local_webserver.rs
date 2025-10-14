@@ -1724,7 +1724,7 @@ async fn router(
             workflows_terminate_route(req, is_prod, project.clone(), name.to_string()).await
         }
         (_, &hyper::Method::OPTIONS, _) => options_route(),
-        (_, &hyper::Method::GET, _) => {
+        (_, _method, _) => {
             // Check if this is a WebApp route by checking mount paths
             let full_path = req.uri().path();
             let web_apps_read = web_apps.read().await;
@@ -1734,7 +1734,15 @@ async fn router(
             drop(web_apps_read);
 
             if is_web_app_route {
-                // Proxy to Node.js server without stripping prefix
+                // Capture method and headers before consuming the request
+                let method = req.method().clone();
+                let headers_to_copy: Vec<_> = req
+                    .headers()
+                    .iter()
+                    .map(|(k, v)| (k.clone(), v.clone()))
+                    .collect();
+
+                // Proxy to Node.js server with full path (Node.js server will strip mount path)
                 let url = format!(
                     "http://{}:{}{}{}",
                     host,
@@ -1745,8 +1753,41 @@ async fn router(
                         .map_or("".to_string(), |q| format!("?{q}"))
                 );
 
-                debug!("Proxying WebApp request to: {:?}", url);
-                match http_client.get(&url).send().await {
+                debug!("Proxying WebApp {} request to: {:?}", method, url);
+
+                // Read request body if present
+                let limited_body = Limited::new(
+                    req.into_body(),
+                    project.http_server_config.max_request_body_size,
+                );
+                let body_bytes = match limited_body.collect().await {
+                    Ok(collected) => collected.to_bytes(),
+                    Err(_) => Bytes::new(),
+                };
+
+                debug!(
+                    "WebApp proxy body size: {} bytes, headers: {:?}",
+                    body_bytes.len(),
+                    headers_to_copy
+                        .iter()
+                        .map(|(k, _)| k.as_str())
+                        .collect::<Vec<_>>()
+                );
+
+                // Build the request using RequestBuilder for proper body handling
+                let mut request_builder = http_client.request(method, &url);
+
+                // Copy all headers
+                for (key, value) in headers_to_copy {
+                    request_builder = request_builder.header(key, value);
+                }
+
+                // Add body if present
+                if !body_bytes.is_empty() {
+                    request_builder = request_builder.body(body_bytes);
+                }
+
+                match request_builder.send().await {
                     Ok(response) => {
                         let status = response.status();
                         let body_bytes = response.bytes().await.unwrap_or_default();
@@ -1765,7 +1806,6 @@ async fn router(
                 route_not_found_response()
             }
         }
-        _ => route_not_found_response(),
     };
 
     let res_bytes = res.as_ref().unwrap().body().size_hint().exact().unwrap();
@@ -1920,9 +1960,11 @@ async fn print_available_routes(
     route_table: &'static RwLock<HashMap<PathBuf, RouteMeta>>,
     consumption_apis: &'static RwLock<HashSet<String>>,
     project: &Project,
+    web_apps: &'static RwLock<HashSet<String>>,
 ) {
     let route_table_read = route_table.read().await;
     let consumption_apis_read = consumption_apis.read().await;
+    let web_apps_read = web_apps.read().await;
 
     // Collect routes by category
     let mut static_routes = vec![
@@ -1994,13 +2036,27 @@ async fn print_available_routes(
         consumption_routes.push((method, endpoint, description));
     }
 
+    // Collect WebApp routes
+    let mut webapp_routes = Vec::new();
+    for mount_path in web_apps_read.iter() {
+        let method = "*";
+        let endpoint = mount_path.clone();
+        let description = "Express WebApp endpoint".to_string();
+        webapp_routes.push((method, endpoint, description));
+    }
+
     // Sort each section alphabetically by endpoint
     static_routes.sort_by(|a, b| a.1.cmp(&b.1));
     ingest_routes.sort_by(|a, b| a.1.cmp(&b.1));
     consumption_routes.sort_by(|a, b| a.1.cmp(&b.1));
+    webapp_routes.sort_by(|a, b| a.1.cmp(&b.1));
 
     // Print the routes if any exist
-    if !static_routes.is_empty() || !ingest_routes.is_empty() || !consumption_routes.is_empty() {
+    if !static_routes.is_empty()
+        || !ingest_routes.is_empty()
+        || !consumption_routes.is_empty()
+        || !webapp_routes.is_empty()
+    {
         let base_url = project.http_server_config.url();
         println!("\n📍 Available Routes:");
         println!("  Base URL: {}\n", base_url);
@@ -2011,6 +2067,7 @@ async fn print_available_routes(
             .iter()
             .chain(ingest_routes.iter())
             .chain(consumption_routes.iter())
+            .chain(webapp_routes.iter())
             .collect();
         let endpoint_width = all_routes
             .iter()
@@ -2061,6 +2118,7 @@ async fn print_available_routes(
         print_section("Static Routes:", &static_routes);
         print_section("Ingestion Routes:", &ingest_routes);
         print_section("Consumption Routes:", &consumption_routes);
+        print_section("WebApp Routes:", &webapp_routes);
     }
 }
 
@@ -2226,6 +2284,51 @@ impl Webserver {
         tx
     }
 
+    pub async fn spawn_webapp_update_listener(
+        &self,
+        web_apps: &'static RwLock<HashSet<String>>,
+    ) -> mpsc::Sender<crate::framework::core::infrastructure_map::WebAppChange> {
+        log::info!("Spawning WebApp update listener");
+
+        let (tx, mut rx) =
+            mpsc::channel::<crate::framework::core::infrastructure_map::WebAppChange>(32);
+
+        tokio::spawn(async move {
+            while let Some(webapp_change) = rx.recv().await {
+                match webapp_change {
+                    crate::framework::core::infrastructure_map::WebAppChange::WebApp(
+                        crate::framework::core::infrastructure_map::Change::Added(webapp),
+                    ) => {
+                        log::info!("Adding WebApp mount path: {:?}", webapp.mount_path);
+                        web_apps.write().await.insert(webapp.mount_path.clone());
+                    }
+                    crate::framework::core::infrastructure_map::WebAppChange::WebApp(
+                        crate::framework::core::infrastructure_map::Change::Removed(webapp),
+                    ) => {
+                        log::info!("Removing WebApp mount path: {:?}", webapp.mount_path);
+                        web_apps.write().await.remove(&webapp.mount_path);
+                    }
+                    crate::framework::core::infrastructure_map::WebAppChange::WebApp(
+                        crate::framework::core::infrastructure_map::Change::Updated {
+                            before,
+                            after,
+                        },
+                    ) => {
+                        log::info!(
+                            "Updating WebApp mount path: {:?} to {:?}",
+                            before.mount_path,
+                            after.mount_path
+                        );
+                        web_apps.write().await.remove(&before.mount_path);
+                        web_apps.write().await.insert(after.mount_path.clone());
+                    }
+                }
+            }
+        });
+
+        tx
+    }
+
     // TODO - when we retire the the old core, we should remove routeTable from the start method and using only
     // the channel to update the routes
     #[allow(clippy::too_many_arguments)]
@@ -2276,12 +2379,8 @@ impl Webserver {
             }
         );
 
-        // TODO: Load web apps from infrastructure map once it includes web_apps field
-        // For now, web_apps starts empty and will be populated when we add WebApp
-        // to the infrastructure map and change tracking system
-
         // Print available routes in table format
-        print_available_routes(route_table, consumption_apis, &project).await;
+        print_available_routes(route_table, consumption_apis, &project, web_apps).await;
 
         if !project.is_production {
             // Fire once-only startup script as soon as server starts

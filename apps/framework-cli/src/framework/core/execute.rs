@@ -87,6 +87,7 @@ pub async fn execute_initial_infra_change(
     plan: &InfraPlan,
     skip_olap: bool,
     api_changes_channel: Sender<(InfrastructureMap, ApiChange)>,
+    webapp_changes_channel: Sender<super::infrastructure_map::WebAppChange>,
     metrics: Arc<Metrics>,
     redis_client: &Arc<RedisClient>,
 ) -> Result<(SyncingProcessesRegistry, ProcessRegistries), ExecutionError> {
@@ -114,6 +115,13 @@ pub async fn execute_initial_infra_change(
     )
     .await
     .map_err(Box::new)?;
+
+    // Send initial WebApp changes through the channel
+    for webapp_change in plan.target_infra_map.init_web_apps() {
+        if let Err(e) = webapp_changes_channel.send(webapp_change).await {
+            log::warn!("Failed to send webapp change: {}", e);
+        }
+    }
 
     let mut syncing_processes_registry = SyncingProcessesRegistry::new(
         project.redpanda_config.clone(),

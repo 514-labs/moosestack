@@ -282,6 +282,7 @@ const createMainRouter = async (
 
   return async (req: http.IncomingMessage, res: http.ServerResponse) => {
     const url = new URL(req.url || "", "http://localhost");
+    console.log("DEBUG========>", { url });
     const pathname = url.pathname;
 
     let jwtPayload;
@@ -302,14 +303,17 @@ const createMainRouter = async (
 
     for (const webApp of sortedWebApps) {
       const mountPath = webApp.config.mountPath || "/";
+      console.log("DEBUG========>", { mountPath });
       const normalizedMount =
         mountPath.endsWith("/") && mountPath !== "/" ?
           mountPath.slice(0, -1)
         : mountPath;
+      console.log("DEBUG========>", { normalizedMount });
 
       const matches =
         pathname === normalizedMount ||
         pathname.startsWith(normalizedMount + "/");
+      console.log("DEBUG========>", { matches });
 
       if (matches) {
         if (webApp.config.injectMooseUtils !== false) {
@@ -322,13 +326,17 @@ const createMainRouter = async (
         }
 
         const originalUrl = req.url;
+        console.log("DEBUG========>", { originalUrl });
         if (normalizedMount !== "/") {
           const pathWithoutMount =
             pathname.substring(normalizedMount.length) || "/";
+          console.log("DEBUG========>", { pathWithoutMount });
           req.url = pathWithoutMount + url.search;
+          console.log("DEBUG========>", { reqUrl: req.url });
         }
 
         try {
+          console.log("DEBUG========> TRY");
           await webApp.handler(req, res);
           return;
         } catch (error) {

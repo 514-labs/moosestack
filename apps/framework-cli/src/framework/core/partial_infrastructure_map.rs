@@ -493,6 +493,7 @@ impl PartialInfrastructureMap {
             self.create_topic_to_table_sync_processes(&tables, &topics);
         let function_processes = self.create_function_processes(main_file, language, &topics);
         let workflows = self.convert_workflows(language);
+        let web_apps = self.convert_web_apps();
 
         // Why does dmv1 InfrastructureMap::new do this?
         let mut orchestration_workers = HashMap::new();
@@ -514,6 +515,7 @@ impl PartialInfrastructureMap {
                 .unwrap_or(ConsumptionApiWebServer {}),
             orchestration_workers,
             workflows,
+            web_apps,
         }
     }
 
@@ -1045,6 +1047,27 @@ impl PartialInfrastructureMap {
                 )
                 .expect("Failed to create workflow from user code");
                 (partial_workflow.name.clone(), workflow)
+            })
+            .collect()
+    }
+
+    /// Converts partial WebApp definitions into complete [`WebApp`] instances.
+    fn convert_web_apps(
+        &self,
+    ) -> HashMap<String, crate::framework::core::infrastructure::web_app::WebApp> {
+        self.web_apps
+            .values()
+            .map(|partial_webapp| {
+                let webapp = crate::framework::core::infrastructure::web_app::WebApp {
+                    name: partial_webapp.name.clone(),
+                    mount_path: partial_webapp.mount_path.clone(),
+                    metadata: partial_webapp.metadata.as_ref().map(|m| {
+                        crate::framework::core::infrastructure::web_app::WebAppMetadata {
+                            description: m.description.clone(),
+                        }
+                    }),
+                };
+                (partial_webapp.name.clone(), webapp)
             })
             .collect()
     }
