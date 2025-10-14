@@ -22,6 +22,17 @@ export interface WebAppConfig {
   injectMooseUtils?: boolean;
 }
 
+const RESERVED_MOUNT_PATHS = [
+  "/admin",
+  "/health",
+  "/ready",
+  "/workflows",
+  "/ingest",
+  "/api",
+  "/consumption",
+  "/moose",
+] as const;
+
 export class WebApp {
   name: string;
   handler: WebAppHandler;
@@ -35,6 +46,27 @@ export class WebApp {
   ) {
     this.name = name;
     this.config = config ?? {};
+
+    // Validate mountPath
+    if (this.config.mountPath) {
+      const mountPath = this.config.mountPath;
+
+      // Check for trailing slash
+      if (mountPath.endsWith("/")) {
+        throw new Error(
+          `mountPath cannot end with a trailing slash. Remove the '/' from: "${mountPath}"`,
+        );
+      }
+
+      // Check for reserved path prefixes
+      for (const reserved of RESERVED_MOUNT_PATHS) {
+        if (mountPath === reserved || mountPath.startsWith(`${reserved}/`)) {
+          throw new Error(
+            `mountPath cannot begin with a reserved path: ${RESERVED_MOUNT_PATHS.join(", ")}. Got: "${mountPath}"`,
+          );
+        }
+      }
+    }
 
     this.handler = this.toHandler(appOrHandler);
     this._rawApp =
