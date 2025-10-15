@@ -24,13 +24,13 @@ export interface WebAppConfig {
 
 const RESERVED_MOUNT_PATHS = [
   "/admin",
-  "/health",
-  "/ready",
-  "/workflows",
-  "/ingest",
   "/api",
   "/consumption",
-  "/moose",
+  "/health",
+  "/ingest",
+  "/moose", // reserved for future use
+  "/ready",
+  "/workflows",
 ] as const;
 
 export class WebApp {
@@ -76,6 +76,18 @@ export class WebApp {
     if (webApps.has(name)) {
       throw new Error(`WebApp with name ${name} already exists`);
     }
+
+    // Check for duplicate mountPath
+    if (this.config.mountPath) {
+      for (const [existingName, existingApp] of webApps) {
+        if (existingApp.config.mountPath === this.config.mountPath) {
+          throw new Error(
+            `WebApp with mountPath "${this.config.mountPath}" already exists (used by WebApp "${existingName}")`,
+          );
+        }
+      }
+    }
+
     webApps.set(name, this);
   }
 
