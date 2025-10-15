@@ -13,7 +13,7 @@ use log::error;
 use log::info;
 use log::{debug, warn};
 use rdkafka::consumer::{Consumer, StreamConsumer};
-use rdkafka::producer::DeliveryFuture;
+use rdkafka::producer::{DeliveryFuture, Producer};
 use rdkafka::Message;
 use serde_json::Value;
 use std::collections::{HashMap, VecDeque};
@@ -464,6 +464,13 @@ async fn sync_kafka_to_kafka(
             // Check for cancellation signal
             _ = &mut cancel_rx => {
                 info!("Received cancellation signal for topic-to-topic sync: {} -> {}", source_topic_name, target_topic_name);
+                // Flush producer to ensure all queued messages are sent before shutdown
+                info!("Flushing Kafka producer before shutdown...");
+                if let Err(e) = producer.producer.flush(std::time::Duration::from_secs(5)) {
+                    warn!("Failed to flush Kafka producer: {:?}", e);
+                } else {
+                    info!("Kafka producer flushed successfully");
+                }
                 break;
             }
             // Process messages from Kafka
