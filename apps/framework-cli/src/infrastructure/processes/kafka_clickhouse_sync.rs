@@ -57,21 +57,31 @@ const MAX_BATCH_SIZE: usize = 100000;
 /// This timeout allows streaming sync tasks to flush pending work and close connections cleanly
 const SYNC_PROCESS_GRACE_PERIOD_SECS: u64 = 5;
 
+/// Represents a Kafka to ClickHouse synchronization process with its cancellation channel
+struct TableSyncProcess {
+    /// Async task handle for the sync process
+    handle: JoinHandle<anyhow::Result<()>>,
+    /// Cancellation sender for graceful shutdown
+    cancel_tx: tokio::sync::oneshot::Sender<()>,
+}
+
+/// Represents a Kafka to Kafka synchronization process with its cancellation channel
+struct TopicSyncProcess {
+    /// Async task handle for the sync process
+    handle: JoinHandle<()>,
+    /// Cancellation sender for graceful shutdown
+    cancel_tx: tokio::sync::oneshot::Sender<()>,
+}
+
 /// Registry that manages all synchronization processes
 ///
 /// TODO make this more type safe, ie the topic names should not be strings but rather a struct
 /// so that a name from Topic could not be passed in
 pub struct SyncingProcessesRegistry {
-    /// Map of topic-table processes by their combined key with cancellation senders
-    to_table_registry: HashMap<
-        String,
-        (
-            JoinHandle<anyhow::Result<()>>,
-            tokio::sync::oneshot::Sender<()>,
-        ),
-    >,
-    /// Map of topic-to-topic processes by their target topic name with cancellation senders
-    to_topic_registry: HashMap<String, (JoinHandle<()>, tokio::sync::oneshot::Sender<()>)>,
+    /// Map of topic-table processes by their combined key
+    to_table_registry: HashMap<String, TableSyncProcess>,
+    /// Map of topic-to-topic processes by their target topic name
+    to_topic_registry: HashMap<String, TopicSyncProcess>,
     /// Kafka configuration
     kafka_config: KafkaConfig,
     /// ClickHouse configuration
@@ -97,31 +107,32 @@ impl SyncingProcessesRegistry {
     ///
     /// # Arguments
     /// * `sync_id` - Unique identifier for the sync process
-    /// * `process` - The JoinHandle for the sync task
+    /// * `handle` - The JoinHandle for the sync task
     /// * `cancel_tx` - The cancellation sender for graceful shutdown
     fn insert_table_sync(
         &mut self,
         sync_id: String,
-        process: JoinHandle<anyhow::Result<()>>,
+        handle: JoinHandle<anyhow::Result<()>>,
         cancel_tx: tokio::sync::oneshot::Sender<()>,
     ) {
-        self.to_table_registry.insert(sync_id, (process, cancel_tx));
+        self.to_table_registry
+            .insert(sync_id, TableSyncProcess { handle, cancel_tx });
     }
 
     /// Registers a topic-to-topic synchronization process
     ///
     /// # Arguments
     /// * `to_topic` - Target topic name (used as key)
-    /// * `process` - The JoinHandle for the sync task
+    /// * `handle` - The JoinHandle for the sync task
     /// * `cancel_tx` - The cancellation sender for graceful shutdown
     fn insert_topic_sync(
         &mut self,
         to_topic: String,
-        process: JoinHandle<()>,
+        handle: JoinHandle<()>,
         cancel_tx: tokio::sync::oneshot::Sender<()>,
     ) {
         self.to_topic_registry
-            .insert(to_topic, (process, cancel_tx));
+            .insert(to_topic, TopicSyncProcess { handle, cancel_tx });
     }
 
     /// Starts a new synchronization process from a Kafka topic to a ClickHouse table
@@ -147,9 +158,13 @@ impl SyncingProcessesRegistry {
             source_topic_name, target_table_name
         );
         // the schema of the currently running process is outdated
-        if let Some((process, _cancel_tx)) = self.to_table_registry.remove(&sync_id) {
+        if let Some(TableSyncProcess {
+            handle,
+            cancel_tx: _cancel_tx,
+        }) = self.to_table_registry.remove(&sync_id)
+        {
             // Note: dropping cancel_tx here - the old process is immediately aborted
-            process.abort();
+            handle.abort();
         }
 
         // Create a cancellation channel for graceful shutdown
@@ -174,9 +189,13 @@ impl SyncingProcessesRegistry {
     /// # Arguments
     /// * `sync_id` - Unique identifier for the sync process
     pub fn stop_topic_to_table(&mut self, sync_id: &str) {
-        if let Some((process, _cancel_tx)) = self.to_table_registry.remove(sync_id) {
+        if let Some(TableSyncProcess {
+            handle,
+            cancel_tx: _cancel_tx,
+        }) = self.to_table_registry.remove(sync_id)
+        {
             // Note: dropping cancel_tx here - immediate abort without graceful shutdown
-            process.abort();
+            handle.abort();
         } else {
             warn!("Sync ID {} not found in to_table_registry", sync_id);
         }
@@ -200,9 +219,13 @@ impl SyncingProcessesRegistry {
         );
         let key = target_topic_name.clone();
 
-        if let Some((process, _cancel_tx)) = self.to_topic_registry.remove(&key) {
+        if let Some(TopicSyncProcess {
+            handle,
+            cancel_tx: _cancel_tx,
+        }) = self.to_topic_registry.remove(&key)
+        {
             // Note: dropping cancel_tx here - the old process is immediately aborted
-            process.abort();
+            handle.abort();
         }
 
         // Create a cancellation channel for graceful shutdown
@@ -224,9 +247,13 @@ impl SyncingProcessesRegistry {
     /// # Arguments
     /// * `target_topic_name` - Target Kafka topic name
     pub fn stop_topic_to_topic(&mut self, target_topic_name: &str) {
-        if let Some((process, _cancel_tx)) = self.to_topic_registry.remove(target_topic_name) {
+        if let Some(TopicSyncProcess {
+            handle,
+            cancel_tx: _cancel_tx,
+        }) = self.to_topic_registry.remove(target_topic_name)
+        {
             // Note: dropping cancel_tx here - immediate abort without graceful shutdown
-            process.abort();
+            handle.abort();
         }
     }
 
@@ -243,7 +270,7 @@ impl SyncingProcessesRegistry {
         let mut topic_handles = Vec::new();
 
         // Send cancellation signals to all topic-to-table sync processes
-        for (sync_id, (handle, cancel_tx)) in self.to_table_registry.drain() {
+        for (sync_id, TableSyncProcess { handle, cancel_tx }) in self.to_table_registry.drain() {
             debug!(
                 "Sending cancellation signal to topic-to-table sync process: {}",
                 sync_id
@@ -254,7 +281,7 @@ impl SyncingProcessesRegistry {
         }
 
         // Send cancellation signals to all topic-to-topic sync processes
-        for (topic, (handle, cancel_tx)) in self.to_topic_registry.drain() {
+        for (topic, TopicSyncProcess { handle, cancel_tx }) in self.to_topic_registry.drain() {
             debug!(
                 "Sending cancellation signal to topic-to-topic sync process for topic: {}",
                 topic
