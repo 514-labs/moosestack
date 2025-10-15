@@ -527,7 +527,7 @@ pub async fn start_development_mode(
         .spawn_api_update_listener(project.clone(), route_table, consumption_apis)
         .await;
 
-    let (syncing_registry, process_registry) = execute_initial_infra_change(
+    let process_registry = execute_initial_infra_change(
         &project,
         settings,
         &plan,
@@ -552,7 +552,6 @@ pub async fn start_development_mode(
         project.clone(),
         route_update_channel,
         infra_map,
-        syncing_registry,
         process_registry.clone(),
         metrics.clone(),
         redis_client.clone(),
@@ -708,7 +707,7 @@ pub async fn start_production_mode(
         .spawn_api_update_listener(project.clone(), route_table, consumption_apis)
         .await;
 
-    let (_, process_registry) = execute_initial_infra_change(
+    let process_registry = execute_initial_infra_change(
         &project,
         settings,
         &plan,

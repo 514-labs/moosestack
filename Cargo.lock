@@ -2894,6 +2894,7 @@ dependencies = [
  "protobuf-codegen",
  "ratatui",
  "rdkafka",
+ "rdkafka-sys",
  "redis",
  "regex",
  "reqwest 0.12.23",
