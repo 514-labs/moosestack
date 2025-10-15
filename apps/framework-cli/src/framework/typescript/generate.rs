@@ -2,6 +2,7 @@ use crate::framework::core::infrastructure::table::{
     ColumnType, DataEnum, EnumValue, FloatType, Nested, OrderBy, Table,
 };
 use crate::framework::core::partial_infrastructure_map::LifeCycle;
+use crate::utilities::identifiers as ident;
 use convert_case::{Case, Casing};
 use itertools::Itertools;
 use serde_json::json;
@@ -9,8 +10,12 @@ use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::fmt::Write;
 
+// Use shared, language-agnostic sanitization (underscores) from utilities
+pub use ident::sanitize_identifier;
+
+/// Map a string to a valid TypeScript PascalCase identifier (for types/classes/consts).
 pub fn sanitize_typescript_identifier(name: &str) -> String {
-    let preprocessed = name.replace([' ', '.', '-'], "_");
+    let preprocessed = sanitize_identifier(name);
     let mut ident = preprocessed.to_case(Case::Pascal);
     if ident.is_empty() || {
         let first = ident.chars().next().unwrap();
@@ -186,7 +191,7 @@ pub fn tables_to_typescript(tables: &[Table], life_cycle: Option<LifeCycle>) -> 
             match &column.data_type {
                 ColumnType::Enum(data_enum) => {
                     if !enums.contains_key(data_enum) {
-                        let name = column.name.to_case(Case::Pascal);
+                        let name = sanitize_typescript_identifier(&column.name);
                         let name = match extra_type_names.entry(name.clone()) {
                             Entry::Occupied(mut entry) => {
                                 *entry.get_mut() = entry.get() + 1;
@@ -202,7 +207,7 @@ pub fn tables_to_typescript(tables: &[Table], life_cycle: Option<LifeCycle>) -> 
                 }
                 ColumnType::Nested(nested) => {
                     if !nested_models.contains_key(nested) {
-                        let name = column.name.to_case(Case::Pascal);
+                        let name = sanitize_typescript_identifier(&column.name);
                         let name = match extra_type_names.entry(name.clone()) {
                             Entry::Occupied(mut entry) => {
                                 *entry.get_mut() = entry.get() + 1;

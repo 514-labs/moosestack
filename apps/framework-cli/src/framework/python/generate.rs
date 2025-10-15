@@ -2,6 +2,7 @@ use crate::framework::core::infrastructure::table::{
     ColumnType, DataEnum, EnumValue, FloatType, IntType, Nested, OrderBy, Table,
 };
 use crate::framework::core::partial_infrastructure_map::LifeCycle;
+use crate::utilities::identifiers as ident;
 use convert_case::{Case, Casing};
 use itertools::Itertools;
 use regex::Regex;
@@ -11,11 +12,34 @@ use std::collections::HashMap;
 use std::fmt::Write;
 use std::sync::LazyLock;
 
-pub fn sanitize_python_identifier(name: &str) -> String {
-    let preprocessed = name.replace([' ', '.', '-'], "_");
+/// Language-agnostic sanitization: replace common separators with spaces to create word boundaries.
+pub use ident::sanitize_identifier;
+
+/// Map a string to a valid Python snake_case identifier (for variables/constants).
+pub fn map_to_python_snake_identifier(name: &str) -> String {
+    let preprocessed = sanitize_identifier(name);
     let mut ident = preprocessed.to_case(Case::Snake);
     if ident.is_empty() {
         ident.insert(0, '_');
+    } else {
+        let first = ident.chars().next().unwrap();
+        if !(first.is_ascii_alphabetic() || first == '_') {
+            ident.insert(0, '_');
+        }
+    }
+    ident
+}
+
+/// Converts an arbitrary string into a valid Python class name.
+///
+/// This performs sanitization (replace separators with spaces/underscores) and
+/// applies case mapping to PascalCase, ensuring the resulting identifier starts
+/// with an alphabetic character or underscore.
+pub fn map_to_python_class_name(name: &str) -> String {
+    let preprocessed = sanitize_identifier(name);
+    let mut ident = preprocessed.to_case(Case::Pascal);
+    if ident.is_empty() {
+        ident.push('_');
     } else {
         let first = ident.chars().next().unwrap();
         if !(first.is_ascii_alphabetic() || first == '_') {
@@ -226,7 +250,7 @@ fn collect_types<'a>(
     match column_type {
         ColumnType::Enum(data_enum) => {
             if !enums.contains_key(data_enum) {
-                let name = name.to_case(Case::Pascal);
+                let name = map_to_python_class_name(name);
                 let name = match extra_class_names.entry(name.clone()) {
                     Entry::Occupied(mut entry) => {
                         *entry.get_mut() = entry.get() + 1;
@@ -242,7 +266,7 @@ fn collect_types<'a>(
         }
         ColumnType::Nested(nested) => {
             if !nested_models.contains_key(nested) {
-                let name = name.to_case(Case::Pascal);
+                let name = map_to_python_class_name(name);
                 let name = match extra_class_names.entry(name.clone()) {
                     Entry::Occupied(mut entry) => {
                         *entry.get_mut() = entry.get() + 1;
@@ -258,7 +282,7 @@ fn collect_types<'a>(
         }
         ColumnType::NamedTuple(fields) => {
             if !named_tuples.contains_key(fields) {
-                let name = format!("{}Tuple", name.to_case(Case::Pascal));
+                let name = format!("{}Tuple", map_to_python_class_name(name));
                 let name = match extra_class_names.entry(name.clone()) {
                     Entry::Occupied(mut entry) => {
                         *entry.get_mut() = entry.get() + 1;
@@ -426,7 +450,7 @@ pub fn tables_to_python(tables: &[Table], life_cycle: Option<LifeCycle>) -> Stri
             OrderBy::SingleExpr(expr) => format!("order_by_expression={:?}", expr),
         };
 
-        let var_name = sanitize_python_identifier(&table.name);
+        let var_name = map_to_python_snake_identifier(&table.name);
         writeln!(
             output,
             "{}_table = OlapTable[{}](\"{}\", OlapConfig(",
