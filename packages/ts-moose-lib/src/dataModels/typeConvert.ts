@@ -751,9 +751,9 @@ export const toColumns = (t: ts.Type, checker: TypeChecker): Column[] => {
   return checker.getPropertiesOfType(t).map((prop) => {
     let declarations = prop.getDeclarations();
     const node =
-      declarations !== undefined ?
-        (declarations[0] as ts.PropertyDeclaration)
-      : undefined;
+      declarations && declarations.length > 0
+        ? (declarations[0] as ts.PropertyDeclaration)
+        : undefined;
     const type =
       node !== undefined ?
         checker.getTypeOfSymbolAtLocation(prop, node)
