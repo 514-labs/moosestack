@@ -534,7 +534,7 @@ pub async fn start_development_mode(
 
     let webapp_changes_channel = web_server.spawn_webapp_update_listener(web_apps).await;
 
-    let (syncing_registry, process_registry) = execute_initial_infra_change(ExecutionContext {
+    let process_registry = execute_initial_infra_change(ExecutionContext {
         project: &project,
         settings,
         plan: &plan,
@@ -561,7 +561,6 @@ pub async fn start_development_mode(
         route_update_channel,
         webapp_update_channel,
         infra_map,
-        syncing_registry,
         process_registry.clone(),
         metrics.clone(),
         redis_client.clone(),
@@ -724,7 +723,7 @@ pub async fn start_production_mode(
 
     let webapp_update_channel = web_server.spawn_webapp_update_listener(web_apps).await;
 
-    let (_, process_registry) = execute_initial_infra_change(ExecutionContext {
+    let process_registry = execute_initial_infra_change(ExecutionContext {
         project: &project,
         settings,
         plan: &plan,

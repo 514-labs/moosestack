@@ -46,6 +46,93 @@ workflows = false        # Controls Temporal startup
 apis = true              # Enables Analytics APIs server
 ```
 
+### Extending Docker Infrastructure
+
+You can extend Moose's Docker Compose configuration with custom services by creating a `docker-compose.dev.override.yaml` file in your project root. This allows you to add additional infrastructure (databases, monitoring tools, etc.) that runs alongside your Moose development environment.
+
+**How it works:**
+
+When you run `moose dev`, Moose automatically detects and merges your override file with the generated Docker Compose configuration. The files are merged using Docker Compose's [standard merge behavior](https://docs.docker.com/compose/how-tos/multiple-compose-files/merge/).
+
+**Example: Adding PostgreSQL for Application Data**
+
+Create a `docker-compose.dev.override.yaml` file in your project root:
+
+```yaml copy filename="docker-compose.dev.override.yaml"
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: myapp
+      POSTGRES_PASSWORD: mypassword
+      POSTGRES_DB: myapp_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+
+volumes:
+  postgres-data:
+```
+
+Now when you run `moose dev`, PostgreSQL will start alongside your other infrastructure. You'll see a message confirming the override file is being used:
+
+```
+[moose] Using docker-compose.dev.override.yaml for custom infrastructure
+```
+
+**Common Use Cases:**
+
+- **Add databases**: PostgreSQL, MySQL, MongoDB for application data
+- **Add monitoring**: Grafana, Prometheus for metrics visualization
+- **Add custom services**: Redis alternatives, message queues
+- **Modify existing services**: Add volumes, environment variables, or override ports
+
+**Example: Modifying ClickHouse Configuration**
+
+```yaml copy filename="docker-compose.dev.override.yaml"
+services:
+  clickhousedb:
+    # Add a custom volume mount
+    volumes:
+      - ./clickhouse-config.xml:/etc/clickhouse-server/config.d/custom.xml
+    # Add environment variables
+    environment:
+      CLICKHOUSE_LOG_LEVEL: debug
+```
+
+**Example: Adding Grafana for Monitoring**
+
+```yaml copy filename="docker-compose.dev.override.yaml"
+services:
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "3001:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - grafana-data:/var/lib/grafana
+
+volumes:
+  grafana-data:
+```
+
+<Callout type="info" title="Docker Compose Merge Behavior">
+When merging files, Docker Compose follows these rules:
+- **Services**: Merged by name with values from the override file taking precedence
+- **Environment variables**: Appended (both files' values are used)
+- **Volumes**: Appended
+- **Ports**: Appended (use `!override` tag to replace instead of merge)
+
+See [Docker's merge documentation](https://docs.docker.com/reference/compose-file/merge/) for complete details.
+</Callout>
+
+<Callout type="warning" title="Production Deployments">
+The override file is only used in development mode (`moose dev`). For production deployments, configure your infrastructure separately using your deployment platform's tools.
+</Callout>
+
 ## Hot Reloading Development
 
 The development runtime includes a file watcher that provides near-instantaneous feedback when you save code changes.

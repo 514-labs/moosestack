@@ -90,10 +90,10 @@ pub struct ExecutionContext<'a> {
 /// * `ctx` - Execution context containing project, settings, plan, and channels
 ///
 /// # Returns
-/// * `Result<(SyncingProcessesRegistry, ProcessRegistries), ExecutionError>` - The initialized process registries or an error
+/// * `Result<ProcessRegistries, ExecutionError>` - The initialized process registries or an error
 pub async fn execute_initial_infra_change(
     ctx: ExecutionContext<'_>,
-) -> Result<(SyncingProcessesRegistry, ProcessRegistries), ExecutionError> {
+) -> Result<ProcessRegistries, ExecutionError> {
     // This probably can be parallelized through Tokio Spawn
     // Check if infrastructure execution is bypassed
     if ctx.settings.should_bypass_infrastructure_execution() {
@@ -127,18 +127,18 @@ pub async fn execute_initial_infra_change(
         }
     }
 
-    let mut syncing_processes_registry = SyncingProcessesRegistry::new(
+    let syncing_processes_registry = SyncingProcessesRegistry::new(
         ctx.project.redpanda_config.clone(),
         ctx.project.clickhouse_config.clone(),
     );
-    let mut process_registries = ProcessRegistries::new(ctx.project, ctx.settings);
+    let mut process_registries =
+        ProcessRegistries::new(ctx.project, ctx.settings, syncing_processes_registry);
 
     // Execute changes that are allowed on any instance
     let changes = ctx.plan.target_infra_map.init_processes(ctx.project);
     processes::execute_changes(
         &ctx.project.redpanda_config,
         &ctx.plan.target_infra_map,
-        &mut syncing_processes_registry,
         &mut process_registries,
         &changes,
         ctx.metrics,
@@ -161,7 +161,7 @@ pub async fn execute_initial_infra_change(
         log::info!("Skipping migration & olap process changes as this instance does not have the leadership lock");
     }
 
-    Ok((syncing_processes_registry, process_registries))
+    Ok(process_registries)
 }
 
 /// Executes infrastructure changes during runtime (after initial setup).
@@ -178,9 +178,9 @@ pub async fn execute_initial_infra_change(
 /// * `plan` - The infrastructure plan to execute
 /// * `api_changes_channel` - Channel for sending API changes
 /// * `webapp_changes_channel` - Channel for sending WebApp changes
-/// * `sync_processes_registry` - Registry for syncing processes
-/// * `process_registries` - Registry for project processes
+/// * `process_registries` - Registry for all processes including syncing processes
 /// * `metrics` - Metrics collection
+/// * `settings` - Application settings
 ///
 /// # Returns
 /// * `Result<(), ExecutionError>` - Success or an error
@@ -190,7 +190,6 @@ pub async fn execute_online_change(
     plan: &InfraPlan,
     api_changes_channel: Sender<(InfrastructureMap, ApiChange)>,
     webapp_changes_channel: Sender<super::infrastructure_map::WebAppChange>,
-    sync_processes_registry: &mut SyncingProcessesRegistry,
     process_registries: &mut ProcessRegistries,
     metrics: Arc<Metrics>,
     settings: &Settings,
@@ -236,7 +235,6 @@ pub async fn execute_online_change(
     processes::execute_changes(
         &project.redpanda_config,
         &plan.target_infra_map,
-        sync_processes_registry,
         process_registries,
         &plan.changes.processes_changes,
         metrics,
