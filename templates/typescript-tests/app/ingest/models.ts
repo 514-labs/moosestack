@@ -12,6 +12,7 @@ import {
   ClickHousePolygon,
   ClickHouseMultiPolygon,
   ClickHouseEngines,
+  SimpleAggregated,
 } from "@514labs/moose-lib";
 
 /**
@@ -347,3 +348,24 @@ export const userEventsV2 = new OlapTable<UserEventV2>("UserEvents", {
   engine: ClickHouseEngines.ReplacingMergeTree,
   orderByFields: ["userId", "sessionId", "timestamp"],
 });
+
+/** =======SimpleAggregateFunction Test========= */
+// Test SimpleAggregateFunction support for aggregated metrics
+// This demonstrates using SimpleAggregateFunction with AggregatingMergeTree
+
+export interface SimpleAggTest {
+  date_stamp: DateTime;
+  table_name: Key<string>;
+  row_count: number & SimpleAggregated<"sum", number>;
+  max_value: number & SimpleAggregated<"max", number>;
+  min_value: number & SimpleAggregated<"min", number>;
+  last_updated: DateTime & SimpleAggregated<"anyLast", DateTime>;
+}
+
+export const SimpleAggTestTable = new OlapTable<SimpleAggTest>(
+  "SimpleAggTest",
+  {
+    orderByFields: ["date_stamp", "table_name"],
+    engine: ClickHouseEngines.AggregatingMergeTree,
+  },
+);

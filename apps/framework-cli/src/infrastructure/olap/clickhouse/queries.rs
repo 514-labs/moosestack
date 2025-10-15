@@ -1842,6 +1842,15 @@ pub fn basic_field_type_to_string(
                 "AggregateFunction({function_name}, {inner_type_string})"
             ))
         }
+        ClickHouseColumnType::SimpleAggregateFunction {
+            function_name,
+            argument_type,
+        } => {
+            let arg_type_string = basic_field_type_to_string(argument_type)?;
+            Ok(format!(
+                "SimpleAggregateFunction({function_name}, {arg_type_string})"
+            ))
+        }
         ClickHouseColumnType::Uuid => Ok("UUID".to_string()),
         ClickHouseColumnType::Date32 => Ok("Date32".to_string()),
         ClickHouseColumnType::Date => Ok("Date".to_string()),
@@ -2004,6 +2013,43 @@ mod tests {
 
     #[test]
     fn test_nested_nested_generator() {}
+
+    #[test]
+    fn test_simple_aggregate_function_sql_generation() {
+        // Test SimpleAggregateFunction with UInt64
+        let col_type = ClickHouseColumnType::SimpleAggregateFunction {
+            function_name: "sum".to_string(),
+            argument_type: Box::new(ClickHouseColumnType::ClickhouseInt(ClickHouseInt::UInt64)),
+        };
+        let sql = basic_field_type_to_string(&col_type).unwrap();
+        assert_eq!(sql, "SimpleAggregateFunction(sum, UInt64)");
+
+        // Test SimpleAggregateFunction with max and Int32
+        let col_type2 = ClickHouseColumnType::SimpleAggregateFunction {
+            function_name: "max".to_string(),
+            argument_type: Box::new(ClickHouseColumnType::ClickhouseInt(ClickHouseInt::Int32)),
+        };
+        let sql2 = basic_field_type_to_string(&col_type2).unwrap();
+        assert_eq!(sql2, "SimpleAggregateFunction(max, Int32)");
+
+        // Test SimpleAggregateFunction with anyLast and String
+        let col_type3 = ClickHouseColumnType::SimpleAggregateFunction {
+            function_name: "anyLast".to_string(),
+            argument_type: Box::new(ClickHouseColumnType::String),
+        };
+        let sql3 = basic_field_type_to_string(&col_type3).unwrap();
+        assert_eq!(sql3, "SimpleAggregateFunction(anyLast, String)");
+
+        // Test SimpleAggregateFunction with nullable argument
+        let col_type4 = ClickHouseColumnType::SimpleAggregateFunction {
+            function_name: "any".to_string(),
+            argument_type: Box::new(ClickHouseColumnType::Nullable(Box::new(
+                ClickHouseColumnType::ClickhouseFloat(ClickHouseFloat::Float64),
+            ))),
+        };
+        let sql4 = basic_field_type_to_string(&col_type4).unwrap();
+        assert_eq!(sql4, "SimpleAggregateFunction(any, Nullable(Float64))");
+    }
 
     #[test]
     fn test_create_table_query_basic() {

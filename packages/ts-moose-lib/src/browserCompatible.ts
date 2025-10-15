@@ -4,6 +4,7 @@ export type JWT<T extends object> = T;
 
 export {
   Aggregated,
+  SimpleAggregated,
   OlapTable,
   OlapConfig,
   S3QueueTableSettings,
