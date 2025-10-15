@@ -578,7 +578,7 @@ This lets you keep optional fields at the application layer while avoiding Nulla
 
 ### SimpleAggregateFunction
 
-`SimpleAggregateFunction` stores pre-aggregated values for use with `AggregatingMergeTree` tables. It's optimized for simple aggregation functions like `sum`, `min`, `max`, and `anyLast`.
+`SimpleAggregateFunction` is designed for use with `AggregatingMergeTree` tables. It stores pre-aggregated values that are automatically merged when ClickHouse combines rows with the same primary key.
 
 <TypeScript>
 ```typescript
