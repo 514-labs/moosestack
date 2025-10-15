@@ -2416,17 +2416,6 @@ impl Webserver {
             }
         }
 
-        // Flush producer before shutdown to ensure messages are sent
-        if let Some(ref producer) = producer_for_shutdown {
-            info!("Flushing Kafka producer before shutdown...");
-            use std::time::Duration;
-            if let Err(e) = producer.producer.flush(Duration::from_secs(5)) {
-                warn!("Failed to flush Kafka producer: {:?}", e);
-            } else {
-                info!("Kafka producer flushed successfully");
-            }
-        }
-
         // Gracefully shutdown HTTP connections FIRST
         // This ensures all spawned connection handler tasks (which hold clones of api_service) complete
         info!("Waiting for HTTP connections to close...");
@@ -2447,6 +2436,18 @@ impl Webserver {
             },
             _ = tokio::time::sleep(shutdown_timeout) => {
                 warn!("Timed out waiting for HTTP connections to close ({}s), proceeding with shutdown", shutdown_timeout.as_secs());
+            }
+        }
+
+        // Flush producer AFTER HTTP shutdown to ensure all messages sent during the shutdown grace period are persisted
+        // This is critical because HTTP handlers may send Kafka messages during the 2-10s shutdown window above
+        if let Some(ref producer) = producer_for_shutdown {
+            info!("Flushing Kafka producer after HTTP shutdown...");
+            use std::time::Duration;
+            if let Err(e) = producer.producer.flush(Duration::from_secs(5)) {
+                warn!("Failed to flush Kafka producer: {:?}", e);
+            } else {
+                info!("Kafka producer flushed successfully");
             }
         }
 
