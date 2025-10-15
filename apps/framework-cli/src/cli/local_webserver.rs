@@ -2291,18 +2291,21 @@ impl Webserver {
 
         tokio::spawn(async move {
             while let Some(webapp_change) = rx.recv().await {
+                log::info!("🔔 Received WebApp change: {:?}", webapp_change);
                 match webapp_change {
                     crate::framework::core::infrastructure_map::WebAppChange::WebApp(
                         crate::framework::core::infrastructure_map::Change::Added(webapp),
                     ) => {
                         log::info!("Adding WebApp mount path: {:?}", webapp.mount_path);
                         web_apps.write().await.insert(webapp.mount_path.clone());
+                        log::info!("✅ Current web_apps: {:?}", *web_apps.read().await);
                     }
                     crate::framework::core::infrastructure_map::WebAppChange::WebApp(
                         crate::framework::core::infrastructure_map::Change::Removed(webapp),
                     ) => {
                         log::info!("Removing WebApp mount path: {:?}", webapp.mount_path);
                         web_apps.write().await.remove(&webapp.mount_path);
+                        log::info!("✅ Current web_apps: {:?}", *web_apps.read().await);
                     }
                     crate::framework::core::infrastructure_map::WebAppChange::WebApp(
                         crate::framework::core::infrastructure_map::Change::Updated {
@@ -2315,8 +2318,11 @@ impl Webserver {
                             before.mount_path,
                             after.mount_path
                         );
-                        web_apps.write().await.remove(&before.mount_path);
-                        web_apps.write().await.insert(after.mount_path.clone());
+                        let mut web_apps_guard = web_apps.write().await;
+                        web_apps_guard.remove(&before.mount_path);
+                        web_apps_guard.insert(after.mount_path.clone());
+                        drop(web_apps_guard);
+                        log::info!("✅ Current web_apps: {:?}", *web_apps.read().await);
                     }
                 }
             }

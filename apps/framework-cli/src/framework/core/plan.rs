@@ -201,12 +201,16 @@ pub struct InfraPlan {
 /// # Arguments
 /// * `client` - Redis client for loading the current infrastructure map
 /// * `project` - Project configuration for building the target infrastructure map
+/// * `current_web_apps_override` - Optional web_apps HashMap to use instead of loading from Redis (for hot reload)
 ///
 /// # Returns
 /// * `Result<(InfrastructureMap, InfraPlan), PlanningError>` - The current state and infrastructure plan, or an error
 pub async fn plan_changes(
     client: &RedisClient,
     project: &Project,
+    current_web_apps_override: Option<
+        std::collections::HashMap<String, crate::framework::core::infrastructure::web_app::WebApp>,
+    >,
 ) -> Result<(InfrastructureMap, InfraPlan), PlanningError> {
     let json_path = Path::new(".moose/infrastructure_map.json");
     let target_infra_map = if project.is_production && json_path.exists() {
@@ -232,7 +236,7 @@ pub async fn plan_changes(
             .unwrap_or("Could not serialize current infrastructure map".to_string())
     );
 
-    let current_map_or_empty = current_infra_map.unwrap_or_else(|| InfrastructureMap {
+    let mut current_map_or_empty = current_infra_map.unwrap_or_else(|| InfrastructureMap {
         topics: Default::default(),
         api_endpoints: Default::default(),
         tables: Default::default(),
@@ -247,6 +251,15 @@ pub async fn plan_changes(
         workflows: Default::default(),
         web_apps: Default::default(),
     });
+
+    // Use the provided web_apps override if available (for hot reload to preserve current state)
+    if let Some(web_apps_override) = current_web_apps_override {
+        log::debug!(
+            "Using provided web_apps override with {} web apps",
+            web_apps_override.len()
+        );
+        current_map_or_empty.web_apps = web_apps_override;
+    }
 
     // Reconcile the current map with reality before diffing, but only if OLAP is enabled
     let reconciled_map = if project.features.olap {

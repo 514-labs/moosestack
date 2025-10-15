@@ -110,6 +110,7 @@ impl EventBuckets {
 /// # Arguments
 /// * `project` - The project configuration
 /// * `route_update_channel` - Channel for sending API route updates
+/// * `webapp_update_channel` - Channel for sending WebApp updates
 /// * `infrastructure_map` - The current infrastructure map
 /// * `syncing_process_registry` - Registry for syncing processes
 /// * `project_registries` - Registry for project processes
@@ -120,6 +121,9 @@ impl EventBuckets {
 async fn watch(
     project: Arc<Project>,
     route_update_channel: tokio::sync::mpsc::Sender<(InfrastructureMap, ApiChange)>,
+    webapp_update_channel: tokio::sync::mpsc::Sender<
+        crate::framework::core::infrastructure_map::WebAppChange,
+    >,
     infrastructure_map: &'static RwLock<InfrastructureMap>,
     syncing_process_registry: &mut SyncingProcessesRegistry,
     project_registries: Arc<RwLock<ProcessRegistries>>,
@@ -164,8 +168,14 @@ async fn watch(
                         "Processing Infrastructure changes from file watcher",
                         "Infrastructure changes processed successfully",
                         async {
+                            // Get current web_apps from in-memory infrastructure_map for proper diffing
+                            let current_web_apps = {
+                                let infra_read = infrastructure_map.read().await;
+                                Some(infra_read.web_apps.clone())
+                            };
+
                             let plan_result =
-                                framework::core::plan::plan_changes(&redis_client, &project).await;
+                                framework::core::plan::plan_changes(&redis_client, &project, current_web_apps).await;
 
                             match plan_result {
                                 Ok((_, plan_result)) => {
@@ -178,6 +188,7 @@ async fn watch(
                                         &project,
                                         &plan_result,
                                         route_update_channel.clone(),
+                                        webapp_update_channel.clone(),
                                         syncing_process_registry,
                                         &mut project_registries,
                                         metrics.clone(),
@@ -268,6 +279,7 @@ impl FileWatcher {
     /// # Arguments
     /// * `project` - The project configuration
     /// * `route_update_channel` - Channel for sending API route updates
+    /// * `webapp_update_channel` - Channel for sending WebApp updates
     /// * `infrastructure_map` - The current infrastructure map
     /// * `syncing_process_registry` - Registry for syncing processes
     /// * `project_registries` - Registry for project processes
@@ -278,6 +290,9 @@ impl FileWatcher {
         &self,
         project: Arc<Project>,
         route_update_channel: tokio::sync::mpsc::Sender<(InfrastructureMap, ApiChange)>,
+        webapp_update_channel: tokio::sync::mpsc::Sender<
+            crate::framework::core::infrastructure_map::WebAppChange,
+        >,
         infrastructure_map: &'static RwLock<InfrastructureMap>,
         syncing_process_registry: SyncingProcessesRegistry,
         project_registries: Arc<RwLock<ProcessRegistries>>,
@@ -299,6 +314,7 @@ impl FileWatcher {
             watch(
                 project,
                 route_update_channel,
+                webapp_update_channel,
                 infrastructure_map,
                 &mut syncing_process_registry,
                 project_registries,

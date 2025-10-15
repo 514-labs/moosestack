@@ -755,6 +755,24 @@ export const dumpMooseInternal = async () => {
 };
 
 const loadIndex = () => {
+  // Clear the registry before loading to support hot reloading
+  const registry = getMooseInternal();
+  registry.tables.clear();
+  registry.streams.clear();
+  registry.ingestApis.clear();
+  registry.apis.clear();
+  registry.sqlResources.clear();
+  registry.workflows.clear();
+  registry.webApps.clear();
+
+  // Clear require cache for app directory to pick up changes
+  const appDir = `${process.cwd()}/app`;
+  Object.keys(require.cache).forEach((key) => {
+    if (key.startsWith(appDir)) {
+      delete require.cache[key];
+    }
+  });
+
   try {
     require(`${process.cwd()}/app/index.ts`);
   } catch (error) {

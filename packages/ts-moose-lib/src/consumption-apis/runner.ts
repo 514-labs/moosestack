@@ -8,7 +8,6 @@ import { ApiUtil } from "../index";
 import { sql } from "../sqlHelpers";
 import { Client as TemporalClient } from "@temporalio/client";
 import { getApis, getWebApps } from "../dmv2/internal";
-import type { WebApp } from "../dmv2/sdk/webApp";
 
 interface ClickhouseConfig {
   database: string;

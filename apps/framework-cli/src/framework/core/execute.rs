@@ -29,7 +29,7 @@ use crate::{
             self, kafka_clickhouse_sync::SyncingProcessesRegistry,
             process_registry::ProcessRegistries,
         },
-        stream,
+        stream, webapp,
     },
     metrics::Metrics,
     project::Project,
@@ -49,6 +49,10 @@ pub enum ExecutionError {
     /// Error occurred while applying changes to the API endpoints
     #[error("Failed to communicate with API")]
     ApiChange(#[from] Box<api::ApiChangeError>),
+
+    /// Error occurred while applying changes to WebApp endpoints
+    #[error("Failed to communicate with WebApp")]
+    WebAppChange(#[from] Box<webapp::WebAppChangeError>),
 
     /// Error occurred while applying changes to synchronization processes
     #[error("Failed to communicate with Sync Processes")]
@@ -173,16 +177,19 @@ pub async fn execute_initial_infra_change(
 /// * `project` - The project configuration
 /// * `plan` - The infrastructure plan to execute
 /// * `api_changes_channel` - Channel for sending API changes
+/// * `webapp_changes_channel` - Channel for sending WebApp changes
 /// * `sync_processes_registry` - Registry for syncing processes
 /// * `process_registries` - Registry for project processes
 /// * `metrics` - Metrics collection
 ///
 /// # Returns
 /// * `Result<(), ExecutionError>` - Success or an error
+#[allow(clippy::too_many_arguments)]
 pub async fn execute_online_change(
     project: &Project,
     plan: &InfraPlan,
     api_changes_channel: Sender<(InfrastructureMap, ApiChange)>,
+    webapp_changes_channel: Sender<super::infrastructure_map::WebAppChange>,
     sync_processes_registry: &mut SyncingProcessesRegistry,
     process_registries: &mut ProcessRegistries,
     metrics: Arc<Metrics>,
@@ -212,6 +219,18 @@ pub async fn execute_online_change(
     )
     .await
     .map_err(Box::new)?;
+
+    // Send WebApp changes through the channel
+    log::info!(
+        "🔄 Processing {} WebApp changes during online change",
+        plan.changes.web_app_changes.len()
+    );
+    for change in &plan.changes.web_app_changes {
+        log::info!("🔄 WebApp change in plan: {:?}", change);
+    }
+    webapp::execute_changes(&plan.changes.web_app_changes, webapp_changes_channel)
+        .await
+        .map_err(Box::new)?;
 
     processes::execute_leader_changes(process_registries, &plan.changes.processes_changes).await?;
     processes::execute_changes(

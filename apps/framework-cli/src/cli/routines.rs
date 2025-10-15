@@ -400,7 +400,7 @@ pub async fn start_development_mode(
 
     let webapp_update_channel = web_server.spawn_webapp_update_listener(web_apps).await;
 
-    let (_, plan) = plan_changes(&redis_client, &project).await?;
+    let (_, plan) = plan_changes(&redis_client, &project, None).await?;
 
     let externally_managed: Vec<_> = plan
         .target_infra_map
@@ -532,13 +532,15 @@ pub async fn start_development_mode(
         .spawn_api_update_listener(project.clone(), route_table, consumption_apis)
         .await;
 
+    let webapp_changes_channel = web_server.spawn_webapp_update_listener(web_apps).await;
+
     let (syncing_registry, process_registry) = execute_initial_infra_change(ExecutionContext {
         project: &project,
         settings,
         plan: &plan,
         skip_olap: false,
         api_changes_channel,
-        webapp_changes_channel: webapp_update_channel,
+        webapp_changes_channel,
         metrics: metrics.clone(),
         redis_client: &redis_client,
     })
@@ -557,6 +559,7 @@ pub async fn start_development_mode(
     file_watcher.start(
         project.clone(),
         route_update_channel,
+        webapp_update_channel,
         infra_map,
         syncing_registry,
         process_registry.clone(),
@@ -653,7 +656,7 @@ pub async fn start_production_mode(
     let route_table: &'static RwLock<HashMap<PathBuf, RouteMeta>> =
         Box::leak(Box::new(RwLock::new(route_table)));
 
-    let (current_state, plan) = plan_changes(&redis_client, &project).await?;
+    let (current_state, plan) = plan_changes(&redis_client, &project, None).await?;
     maybe_warmup_connections(&project, &redis_client).await;
 
     let execute_migration_yaml = project.features.ddl_plan && std::fs::exists(MIGRATION_FILE)?;
