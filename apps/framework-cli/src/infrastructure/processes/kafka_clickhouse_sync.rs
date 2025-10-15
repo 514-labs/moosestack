@@ -167,10 +167,7 @@ impl SyncingProcessesRegistry {
             handle.abort();
         }
 
-        // Create a cancellation channel for graceful shutdown
-        let (cancel_tx, cancel_rx) = tokio::sync::oneshot::channel();
-
-        let syncing_process = spawn_sync_process_core(
+        let TableSyncProcess { handle, cancel_tx } = spawn_sync_process_core(
             self.kafka_config.clone(),
             self.clickhouse_config.clone(),
             source_topic_name,
@@ -178,10 +175,9 @@ impl SyncingProcessesRegistry {
             target_table_name,
             target_table_columns,
             metrics,
-            cancel_rx,
         );
 
-        self.insert_table_sync(sync_id, syncing_process, cancel_tx);
+        self.insert_table_sync(sync_id, handle, cancel_tx);
     }
 
     /// Stops a topic-to-table synchronization process
@@ -228,18 +224,14 @@ impl SyncingProcessesRegistry {
             handle.abort();
         }
 
-        // Create a cancellation channel for graceful shutdown
-        let (cancel_tx, cancel_rx) = tokio::sync::oneshot::channel();
-
-        let (to_topic, syncing_process) = spawn_kafka_to_kafka_process(
+        let (to_topic, TopicSyncProcess { handle, cancel_tx }) = spawn_kafka_to_kafka_process(
             self.kafka_config.clone(),
             source_topic_name,
             target_topic_name,
             metrics.clone(),
-            cancel_rx,
         );
 
-        self.insert_topic_sync(to_topic, syncing_process, cancel_tx);
+        self.insert_topic_sync(to_topic, handle, cancel_tx);
     }
 
     /// Stops a topic-to-topic synchronization process
@@ -356,6 +348,9 @@ impl SyncingProcessesRegistry {
 
 /// Spawns a new Kafka to ClickHouse sync process
 ///
+/// Creates a cancellation channel internally and returns both the task handle and the sender
+/// for graceful shutdown control.
+///
 /// # Arguments
 /// * `kafka_config` - Kafka/Redpanda configuration
 /// * `clickhouse_config` - ClickHouse configuration
@@ -364,10 +359,9 @@ impl SyncingProcessesRegistry {
 /// * `target_table_name` - Target ClickHouse table name
 /// * `target_table_columns` - Schema definition of the target table
 /// * `metrics` - Metrics collection service
-/// * `cancel_rx` - Cancellation receiver for graceful shutdown
 ///
 /// # Returns
-/// A JoinHandle for the async task
+/// A TableSyncProcess containing the task handle and cancellation sender
 #[allow(clippy::too_many_arguments)]
 fn spawn_sync_process_core(
     kafka_config: KafkaConfig,
@@ -377,11 +371,13 @@ fn spawn_sync_process_core(
     target_table_name: String,
     target_table_columns: Vec<ClickHouseColumn>,
     metrics: Arc<Metrics>,
-    cancel_rx: tokio::sync::oneshot::Receiver<()>,
-) -> JoinHandle<anyhow::Result<()>> {
+) -> TableSyncProcess {
     let target_table_name_clone = target_table_name.clone();
 
-    tokio::spawn(
+    // Create a cancellation channel for graceful shutdown
+    let (cancel_tx, cancel_rx) = tokio::sync::oneshot::channel();
+
+    let handle = tokio::spawn(
         sync_kafka_to_clickhouse(
             kafka_config,
             clickhouse_config,
@@ -398,30 +394,36 @@ fn spawn_sync_process_core(
                 target_table_name_clone, e
             )
         }),
-    )
+    );
+
+    TableSyncProcess { handle, cancel_tx }
 }
 
 /// Spawns a new topic to topic sync process
+///
+/// Creates a cancellation channel internally and returns both the task handle and the sender
+/// for graceful shutdown control.
 ///
 /// # Arguments
 /// * `kafka_config` - Kafka/Redpanda configuration
 /// * `source_topic_name` - Source Kafka topic name
 /// * `target_topic_name` - Target Kafka topic name
 /// * `metrics` - Metrics collection service
-/// * `cancel_rx` - Cancellation receiver for graceful shutdown
 ///
 /// # Returns
-/// A tuple of (target_topic_name, JoinHandle) for the async task
+/// A tuple of (target_topic_name, TopicSyncProcess) containing the task handle and cancellation sender
 fn spawn_kafka_to_kafka_process(
     kafka_config: KafkaConfig,
     source_topic_name: String,
     target_topic_name: String,
     metrics: Arc<Metrics>,
-    cancel_rx: tokio::sync::oneshot::Receiver<()>,
-) -> (String, JoinHandle<()>) {
+) -> (String, TopicSyncProcess) {
     let target_topic_clone = target_topic_name.clone();
 
-    let syncing_process = tokio::spawn(sync_kafka_to_kafka(
+    // Create a cancellation channel for graceful shutdown
+    let (cancel_tx, cancel_rx) = tokio::sync::oneshot::channel();
+
+    let handle = tokio::spawn(sync_kafka_to_kafka(
         kafka_config,
         source_topic_name,
         target_topic_name,
@@ -429,7 +431,7 @@ fn spawn_kafka_to_kafka_process(
         cancel_rx,
     ));
 
-    (target_topic_clone, syncing_process)
+    (target_topic_clone, TopicSyncProcess { handle, cancel_tx })
 }
 
 /// Continuously forwards messages from one Kafka topic to another
