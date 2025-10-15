@@ -400,7 +400,7 @@ pub async fn start_development_mode(
 
     let webapp_update_channel = web_server.spawn_webapp_update_listener(web_apps).await;
 
-    let (_, plan) = plan_changes(&redis_client, &project, None).await?;
+    let (_, plan) = plan_changes(&redis_client, &project).await?;
 
     let externally_managed: Vec<_> = plan
         .target_infra_map
@@ -656,7 +656,7 @@ pub async fn start_production_mode(
     let route_table: &'static RwLock<HashMap<PathBuf, RouteMeta>> =
         Box::leak(Box::new(RwLock::new(route_table)));
 
-    let (current_state, plan) = plan_changes(&redis_client, &project, None).await?;
+    let (current_state, plan) = plan_changes(&redis_client, &project).await?;
     maybe_warmup_connections(&project, &redis_client).await;
 
     let execute_migration_yaml = project.features.ddl_plan && std::fs::exists(MIGRATION_FILE)?;

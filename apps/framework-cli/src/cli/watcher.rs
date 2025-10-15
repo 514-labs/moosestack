@@ -168,14 +168,8 @@ async fn watch(
                         "Processing Infrastructure changes from file watcher",
                         "Infrastructure changes processed successfully",
                         async {
-                            // Get current web_apps from in-memory infrastructure_map for proper diffing
-                            let current_web_apps = {
-                                let infra_read = infrastructure_map.read().await;
-                                Some(infra_read.web_apps.clone())
-                            };
-
                             let plan_result =
-                                framework::core::plan::plan_changes(&redis_client, &project, current_web_apps).await;
+                                framework::core::plan::plan_changes(&redis_client, &project).await;
 
                             match plan_result {
                                 Ok((_, plan_result)) => {

@@ -28,6 +28,38 @@ impl WebApp {
         self.metadata = Some(metadata);
         self
     }
+
+    pub fn to_proto(&self) -> crate::proto::infrastructure_map::WebApp {
+        crate::proto::infrastructure_map::WebApp {
+            name: self.name.clone(),
+            mount_path: self.mount_path.clone(),
+            metadata: self.metadata.as_ref().map(|m| m.to_proto()).into(),
+            special_fields: Default::default(),
+        }
+    }
+
+    pub fn from_proto(proto: &crate::proto::infrastructure_map::WebApp) -> Self {
+        Self {
+            name: proto.name.clone(),
+            mount_path: proto.mount_path.clone(),
+            metadata: proto.metadata.as_ref().map(WebAppMetadata::from_proto),
+        }
+    }
+}
+
+impl WebAppMetadata {
+    pub fn to_proto(&self) -> crate::proto::infrastructure_map::WebAppMetadata {
+        crate::proto::infrastructure_map::WebAppMetadata {
+            description: self.description.clone(),
+            special_fields: Default::default(),
+        }
+    }
+
+    pub fn from_proto(proto: &crate::proto::infrastructure_map::WebAppMetadata) -> Self {
+        Self {
+            description: proto.description.clone(),
+        }
+    }
 }
 
 pub fn diff_web_apps(

@@ -2094,6 +2094,11 @@ impl InfrastructureMap {
                 .iter()
                 .map(|(k, v)| (k.clone(), v.to_proto()))
                 .collect(),
+            web_apps: self
+                .web_apps
+                .iter()
+                .map(|(k, v)| (k.clone(), v.to_proto()))
+                .collect(),
             special_fields: Default::default(),
         }
     }
@@ -2166,7 +2171,11 @@ impl InfrastructureMap {
                 .collect(),
             // TODO: add proto
             workflows: HashMap::new(),
-            web_apps: HashMap::new(),
+            web_apps: proto
+                .web_apps
+                .into_iter()
+                .map(|(k, v)| (k, super::infrastructure::web_app::WebApp::from_proto(&v)))
+                .collect(),
         })
     }
 

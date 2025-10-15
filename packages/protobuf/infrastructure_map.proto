@@ -21,6 +21,7 @@ message InfrastructureMap {
   map<string, OrchestrationWorker> orchestration_workers = 11;
 
   map<string, SqlResource> sql_resources = 12;
+  map<string, WebApp> web_apps = 13;
 }
 
 message Metadata {
@@ -364,4 +365,14 @@ message InfrastructureSignature {
     string api_endpoint_id = 5;
     string topic_to_table_sync_process_id = 6;
   }
+}
+
+message WebApp {
+  string name = 1;
+  string mount_path = 2;
+  optional WebAppMetadata metadata = 3;
+}
+
+message WebAppMetadata {
+  optional string description = 1;
 }
