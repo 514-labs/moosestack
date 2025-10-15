@@ -483,11 +483,7 @@ impl PartialInfrastructureMap {
             self.create_topic_to_table_sync_processes(&tables, &topics);
         let function_processes = self.create_function_processes(main_file, language, &topics);
         let workflows = self.convert_workflows(language);
-
-        // Why does dmv1 InfrastructureMap::new do this?
-        let mut orchestration_workers = HashMap::new();
-        let orchestration_worker = OrchestrationWorker::new(language);
-        orchestration_workers.insert(orchestration_worker.id(), orchestration_worker);
+        let orchestration_workers = self.create_orchestration_workers(&workflows, language);
 
         InfrastructureMap {
             topics,
@@ -1037,5 +1033,24 @@ impl PartialInfrastructureMap {
                 (partial_workflow.name.clone(), workflow)
             })
             .collect()
+    }
+
+    /// Creates orchestration workers if workflows exist (DMV2 path).
+    ///
+    /// DMV1 populates orchestration workers based on feature flag,
+    /// DMV2 populates based on workflow existence.
+    /// The HashMap is used for state tracking/diffing during incremental updates.
+    /// init_processes() checks the feature flag to determine if workers should actually start.
+    fn create_orchestration_workers(
+        &self,
+        workflows: &HashMap<String, Workflow>,
+        language: SupportedLanguages,
+    ) -> HashMap<String, OrchestrationWorker> {
+        let mut orchestration_workers = HashMap::new();
+        if !workflows.is_empty() {
+            let orchestration_worker = OrchestrationWorker::new(language);
+            orchestration_workers.insert(orchestration_worker.id(), orchestration_worker);
+        }
+        orchestration_workers
     }
 }
