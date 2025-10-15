@@ -749,13 +749,20 @@ export const toColumns = (t: ts.Type, checker: TypeChecker): Column[] => {
   }
 
   return checker.getPropertiesOfType(t).map((prop) => {
-    const node = prop.getDeclarations()![0] as ts.PropertyDeclaration;
-    const type = checker.getTypeOfSymbolAtLocation(prop, node);
+    let declarations = prop.getDeclarations();
+    const node =
+      declarations !== undefined ?
+        (declarations[0] as ts.PropertyDeclaration)
+      : undefined;
+    const type =
+      node !== undefined ?
+        checker.getTypeOfSymbolAtLocation(prop, node)
+      : checker.getTypeOfSymbol(prop);
 
-    const isKey = hasKeyWrapping(node.type);
-    const isJwt = hasJwtWrapping(node.type);
+    const isKey = hasKeyWrapping(node?.type);
+    const isJwt = hasJwtWrapping(node?.type);
 
-    const defaultExpression = handleDefaultWrapping(node.type);
+    const defaultExpression = handleDefaultWrapping(node?.type);
 
     const [nullable, annotations, dataType] = tsTypeToDataType(
       type,
@@ -763,7 +770,7 @@ export const toColumns = (t: ts.Type, checker: TypeChecker): Column[] => {
       prop.name,
       t.symbol?.name || "inline_type",
       isJwt,
-      node.type,
+      node?.type,
     );
 
     return {
