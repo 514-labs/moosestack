@@ -301,10 +301,10 @@ impl SyncingProcessesRegistry {
                         debug!("Topic-to-table sync process {} completed successfully", sync_id);
                     }
                     Ok(Ok(Err(e))) => {
-                        debug!("Topic-to-table sync process {} completed with error: {:?}", sync_id, e);
+                        error!("Topic-to-table sync process {} completed with error: {:?}", sync_id, e);
                     }
                     Ok(Err(join_err)) => {
-                        debug!("Topic-to-table sync process {} panicked: {:?}", sync_id, join_err);
+                        error!("Topic-to-table sync process {} panicked: {:?}", sync_id, join_err);
                     }
                     Err(_) => {
                         warn!(
@@ -325,7 +325,7 @@ impl SyncingProcessesRegistry {
                         debug!("Topic-to-topic sync process for {} completed successfully", topic);
                     }
                     Ok(Err(join_err)) => {
-                        debug!("Topic-to-topic sync process for {} panicked: {:?}", topic, join_err);
+                        error!("Topic-to-topic sync process for {} panicked: {:?}", topic, join_err);
                     }
                     Err(_) => {
                         warn!(
