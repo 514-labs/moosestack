@@ -1,3 +1,4 @@
+import typia from "typia";
 import {
   IngestPipeline,
   Key,
@@ -13,6 +14,8 @@ import {
   ClickHouseMultiPolygon,
   ClickHouseEngines,
   SimpleAggregated,
+  UInt64,
+  ClickHouseByteSize,
 } from "@514labs/moose-lib";
 
 /**
@@ -354,9 +357,9 @@ export const userEventsV2 = new OlapTable<UserEventV2>("UserEvents", {
 // This demonstrates using SimpleAggregateFunction with AggregatingMergeTree
 
 export interface SimpleAggTest {
-  date_stamp: Date;
+  date_stamp: string & typia.tags.Format<"date"> & ClickHouseByteSize<2>;
   table_name: string;
-  row_count: number & SimpleAggregated<"sum", number>;
+  row_count: UInt64 & SimpleAggregated<"sum", UInt64>;
   max_value: number & SimpleAggregated<"max", number>;
   min_value: number & SimpleAggregated<"min", number>;
   last_updated: DateTime & SimpleAggregated<"anyLast", DateTime>;

@@ -145,14 +145,14 @@ describe("typeConvert mappings for helper types", function () {
     ]);
   });
 
-  it('maps number & SimpleAggregated<"sum", number> to SimpleAggregateFunction annotation', () => {
+  it('maps UInt64 & SimpleAggregated<"sum", UInt64> to SimpleAggregateFunction annotation', () => {
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "moose-typeconv-"));
 
     const source = `
-      import { SimpleAggregated } from "@514labs/moose-lib";
+      import { SimpleAggregated, UInt64 } from "@514labs/moose-lib";
 
       export interface TestModel {
-        row_count: number & SimpleAggregated<"sum", number>;
+        row_count: UInt64 & SimpleAggregated<"sum", UInt64>;
       }
     `;
 
@@ -162,7 +162,7 @@ describe("typeConvert mappings for helper types", function () {
     const col = columns[0];
 
     expect(col.name).to.equal("row_count");
-    expect(col.data_type).to.equal("Float");
+    expect(col.data_type).to.equal("UInt64");
 
     const simpleAgg = col.annotations.find(
       ([k]) => k === "simpleAggregationFunction",
@@ -170,7 +170,7 @@ describe("typeConvert mappings for helper types", function () {
     expect(simpleAgg).to.not.be.undefined;
     const simpleAggPayload = (simpleAgg as any)[1];
     expect(simpleAggPayload.functionName).to.equal("sum");
-    expect(simpleAggPayload.argumentType).to.equal("Float");
+    expect(simpleAggPayload.argumentType).to.equal("UInt64");
   });
 
   it("handles multiple SimpleAggregated fields with different functions", () => {

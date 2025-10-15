@@ -306,9 +306,9 @@ export const TYPESCRIPT_TEST_SCHEMAS: ExpectedTableSchema[] = [
   {
     tableName: "SimpleAggTest",
     columns: [
-      { name: "date_stamp", type: /DateTime/ },
+      { name: "date_stamp", type: "Date" },
       { name: "table_name", type: "String" },
-      { name: "row_count", type: /SimpleAggregateFunction\(sum, Float64\)/ },
+      { name: "row_count", type: /SimpleAggregateFunction\(sum, UInt64\)/ },
       { name: "max_value", type: /SimpleAggregateFunction\(max, Float64\)/ },
       { name: "min_value", type: /SimpleAggregateFunction\(min, Float64\)/ },
       {
@@ -606,9 +606,9 @@ export const PYTHON_TEST_SCHEMAS: ExpectedTableSchema[] = [
   {
     tableName: "SimpleAggTest",
     columns: [
-      { name: "date_stamp", type: /DateTime/ },
+      { name: "date_stamp", type: "Date" },
       { name: "table_name", type: "String" },
-      { name: "row_count", type: /SimpleAggregateFunction\(sum, Int64\)/ },
+      { name: "row_count", type: /SimpleAggregateFunction\(sum, UInt64\)/ },
       { name: "max_value", type: /SimpleAggregateFunction\(max, Int64\)/ },
       { name: "min_value", type: /SimpleAggregateFunction\(min, Int64\)/ },
       {
