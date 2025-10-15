@@ -575,6 +575,55 @@ If a field is optional in your app model but you provide a ClickHouse default, M
 </Python>
 This lets you keep optional fields at the application layer while avoiding Nullable columns in ClickHouse when a server-side default exists.
 </Callout>
+
+### SimpleAggregateFunction
+
+`SimpleAggregateFunction` stores pre-aggregated values for use with `AggregatingMergeTree` tables. It's optimized for simple aggregation functions like `sum`, `min`, `max`, and `anyLast`.
+
+<TypeScript>
+```typescript
+import { SimpleAggregated, OlapTable, ClickHouseEngines, Key, DateTime } from "@514labs/moose-lib";
+
+interface DailyStats {
+  date: DateTime;
+  userId: string;
+  totalViews: number & SimpleAggregated<"sum", number>;
+  maxScore: number & SimpleAggregated<"max", number>;
+  lastSeen: DateTime & SimpleAggregated<"anyLast", DateTime>;
+}
+
+const statsTable = new OlapTable<DailyStats>("daily_stats", {
+  engine: ClickHouseEngines.AggregatingMergeTree,
+  orderByFields: ["date", "userId"],
+});
+```
+</TypeScript>
+
+<Python>
+```python
+from moose_lib import simple_aggregated, Key, OlapTable, OlapConfig, AggregatingMergeTreeEngine
+from pydantic import BaseModel
+from datetime import datetime
+
+class DailyStats(BaseModel):
+    date: datetime
+    user_id: str
+    total_views: simple_aggregated('sum', int)
+    max_score: simple_aggregated('max', float)
+    last_seen: simple_aggregated('anyLast', datetime)
+
+stats_table = OlapTable[DailyStats](
+    "daily_stats",
+    OlapConfig(
+        engine=AggregatingMergeTreeEngine(),
+        order_by_fields=["date", "user_id"]
+    )
+)
+```
+</Python>
+
+See [ClickHouse docs](https://clickhouse.com/docs/en/sql-reference/data-types/simpleaggregatefunction) for the complete list of functions.
+
 ## Table Engines
 
 Moose supports all common ClickHouse table engines:
