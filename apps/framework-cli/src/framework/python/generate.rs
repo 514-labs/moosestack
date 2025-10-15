@@ -859,7 +859,6 @@ nested_array_table = OlapTable[NestedArray]("NestedArray", OlapConfig(
         }];
 
         let result = tables_to_python(&tables, None);
-        println!("{}", result);
         assert!(result.contains(
             r#"class Address(BaseModel):
     street: str
