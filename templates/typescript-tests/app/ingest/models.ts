@@ -354,8 +354,8 @@ export const userEventsV2 = new OlapTable<UserEventV2>("UserEvents", {
 // This demonstrates using SimpleAggregateFunction with AggregatingMergeTree
 
 export interface SimpleAggTest {
-  date_stamp: DateTime;
-  table_name: Key<string>;
+  date_stamp: Date;
+  table_name: string;
   row_count: number & SimpleAggregated<"sum", number>;
   max_value: number & SimpleAggregated<"max", number>;
   min_value: number & SimpleAggregated<"min", number>;
