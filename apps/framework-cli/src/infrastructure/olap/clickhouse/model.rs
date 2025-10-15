@@ -58,6 +58,10 @@ pub enum ClickHouseColumnType {
         // the return type of the aggregation function
         Box<ClickHouseColumnType>,
     ),
+    SimpleAggregateFunction {
+        function_name: String,
+        argument_type: Box<ClickHouseColumnType>,
+    },
     Map(Box<ClickHouseColumnType>, Box<ClickHouseColumnType>),
     Uuid,
     Date,
