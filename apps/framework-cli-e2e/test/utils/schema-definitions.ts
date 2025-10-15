@@ -313,7 +313,7 @@ export const TYPESCRIPT_TEST_SCHEMAS: ExpectedTableSchema[] = [
       { name: "min_value", type: /SimpleAggregateFunction\(min, Float64\)/ },
       {
         name: "last_updated",
-        type: /SimpleAggregateFunction\(anyLast, DateTime/,
+        type: /SimpleAggregateFunction\(anyLast, DateTime\('UTC'\)/,
       },
     ],
   },
@@ -613,7 +613,7 @@ export const PYTHON_TEST_SCHEMAS: ExpectedTableSchema[] = [
       { name: "min_value", type: /SimpleAggregateFunction\(min, Int64\)/ },
       {
         name: "last_updated",
-        type: /SimpleAggregateFunction\(anyLast, DateTime/,
+        type: /SimpleAggregateFunction\(anyLast, DateTime\('UTC'\)/,
       },
     ],
   },
