@@ -358,8 +358,6 @@ const createMainRouter = async (
 
     // If we stripped a prefix, it's an Api request
     if (apiPath !== pathname) {
-      console.log("DEBUG===============>", { pathname, apiPath });
-      console.log("DEBUG===============> apiRequestHandler()");
       // Create a modified request with the rewritten URL for the apiHandler
       // Note: apiHandler only reads basic properties (url, headers, method)
       // If it needs stream methods in future, consider refactoring both
