@@ -9,6 +9,18 @@ use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::fmt::Write;
 
+pub fn sanitize_typescript_identifier(name: &str) -> String {
+    let preprocessed = name.replace(['.', '-'], "_");
+    let mut ident = preprocessed.to_case(Case::Pascal);
+    if ident.is_empty() || {
+        let first = ident.chars().next().unwrap();
+        !(first.is_ascii_alphabetic() || first == '_' || first == '$')
+    } {
+        ident.insert(0, '_');
+    }
+    ident
+}
+
 fn map_column_type_to_typescript(
     column_type: &ColumnType,
     enums: &HashMap<&DataEnum, String>,
@@ -277,12 +289,11 @@ pub fn tables_to_typescript(tables: &[Table], life_cycle: Option<LifeCycle>) -> 
             }
             OrderBy::SingleExpr(expr) => format!("orderByExpression: {:?}", expr),
         };
+        let var_name = sanitize_typescript_identifier(&table.name);
         writeln!(
             output,
             "export const {}Table = new OlapTable<{}>(\"{}\", {{",
-            table.name.to_case(Case::Pascal),
-            table.name,
-            table.name
+            var_name, table.name, table.name
         )
         .unwrap();
         writeln!(output, "    {order_by_spec},").unwrap();

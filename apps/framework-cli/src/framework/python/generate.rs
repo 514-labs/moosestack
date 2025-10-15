@@ -11,6 +11,20 @@ use std::collections::HashMap;
 use std::fmt::Write;
 use std::sync::LazyLock;
 
+pub fn sanitize_python_identifier(name: &str) -> String {
+    let preprocessed = name.replace(['.', '-'], "_");
+    let mut ident = preprocessed.to_case(Case::Snake);
+    if ident.is_empty() {
+        ident.insert(0, '_');
+    } else {
+        let first = ident.chars().next().unwrap();
+        if !(first.is_ascii_alphabetic() || first == '_') {
+            ident.insert(0, '_');
+        }
+    }
+    ident
+}
+
 fn map_column_type_to_python(
     column_type: &ColumnType,
     enums: &HashMap<&DataEnum, String>,
@@ -147,7 +161,7 @@ fn sanitize_name(name: &str, required: bool) -> (String, String) {
         )
     } else {
         (
-            name.to_string(),
+            sanitize_python_identifier(name),
             (if required { "" } else { " = None" }).to_string(),
         )
     }
@@ -411,12 +425,11 @@ pub fn tables_to_python(tables: &[Table], life_cycle: Option<LifeCycle>) -> Stri
             OrderBy::SingleExpr(expr) => format!("order_by_expression={:?}", expr),
         };
 
+        let var_name = sanitize_python_identifier(&table.name);
         writeln!(
             output,
             "{}_table = OlapTable[{}](\"{}\", OlapConfig(",
-            table.name.to_case(Case::Snake),
-            table.name,
-            table.name
+            var_name, table.name, table.name
         )
         .unwrap();
         writeln!(output, "    {order_by_spec},").unwrap();

@@ -1,9 +1,10 @@
 use crate::cli::display::{Message, MessageType};
 use crate::cli::routines::RoutineFailure;
 use crate::framework::languages::SupportedLanguages;
+use crate::framework::python::generate::sanitize_python_identifier;
+use crate::framework::typescript::generate::sanitize_typescript_identifier;
 use crate::infrastructure::stream::kafka::client::fetch_topics;
 use crate::project::Project;
-use convert_case::{Case, Casing};
 use globset::{Glob, GlobMatcher};
 use log::{info, warn};
 use schema_registry_client::rest::apis::Error as SchemaRegistryError;
@@ -14,6 +15,10 @@ use serde_json::Value;
 use std::fs;
 use std::path::Path;
 use std::str::FromStr;
+
+fn sanitize_pascal_ident(topic: &str) -> String {
+    sanitize_typescript_identifier(topic)
+}
 
 fn build_matcher(s: &str) -> Result<GlobMatcher, RoutineFailure> {
     let matcher = Glob::new(s)
@@ -183,22 +188,6 @@ pub async fn write_external_topics(
     Ok(())
 }
 
-fn sanitize_pascal_ident(topic: &str) -> String {
-    let mut ident = topic.to_case(Case::Pascal);
-    if ident.is_empty() || !ident.chars().next().unwrap().is_ascii_alphabetic() {
-        ident.insert(0, '_');
-    }
-    ident
-}
-
-fn sanitize_py_ident(topic: &str) -> String {
-    let mut ident = topic.to_case(Case::Snake);
-    if ident.is_empty() || !ident.chars().next().unwrap().is_ascii_alphabetic() {
-        ident.insert(0, '_');
-    }
-    ident
-}
-
 fn render_typescript_streams(
     topics: &[String],
     type_map: &std::collections::HashMap<String, (String, String)>,
@@ -215,7 +204,7 @@ fn render_typescript_streams(
     out.push('\n');
 
     for t in topics {
-        let var_name = sanitize_pascal_ident(t);
+        let var_name = sanitize_typescript_identifier(t);
         if let Some((type_name, _)) = type_map.get(t) {
             // Include schema registry config (Latest subject) for topics with discovered JSON schema
             let subject = format!("{}-value", t);
@@ -260,7 +249,7 @@ fn render_python_streams(
     }
 
     for t in topics {
-        let var_name = sanitize_py_ident(t);
+        let var_name = sanitize_python_identifier(t);
         if let Some((class_name, _)) = type_map.get(t) {
             // Include schema registry config (Latest subject) for topics with discovered JSON schema
             let subject = format!("{}-value", t);
@@ -394,4 +383,34 @@ fn generate_python_bundle(
         let _ = std::fs::remove_file(&tmp_out_path);
     }
     fs::write(out_path, combined.as_bytes()).map_err(|e| e.into())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_ts_sanitize_with_dots_and_hyphens() {
+        assert_eq!(sanitize_pascal_ident("orders.events-v1"), "OrdersEventsV1");
+        assert_eq!(sanitize_pascal_ident("foo-bar.baz"), "FooBarBaz");
+    }
+
+    #[test]
+    fn test_py_sanitize_with_dots_and_hyphens() {
+        assert_eq!(
+            sanitize_python_identifier("orders.events-v1"),
+            "orders_events_v_1"
+        );
+        assert_eq!(sanitize_python_identifier("foo-bar.baz"), "foo_bar_baz");
+    }
+
+    #[test]
+    fn test_ts_sanitize_leading_digit() {
+        assert_eq!(sanitize_pascal_ident("1-topic.name"), "_1TopicName");
+    }
+
+    #[test]
+    fn test_py_sanitize_leading_digit() {
+        assert_eq!(sanitize_python_identifier("1-topic.name"), "_1_topic_name");
+    }
 }
