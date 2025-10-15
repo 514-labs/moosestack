@@ -1,5 +1,7 @@
 use crate::cli::display::{Message, MessageType};
 use crate::cli::routines::RoutineFailure;
+use crate::framework::core::infrastructure_map::InfrastructureMap;
+use crate::framework::core::partial_infrastructure_map::LifeCycle;
 use crate::framework::languages::SupportedLanguages;
 use crate::infrastructure::stream::kafka::client::fetch_topics;
 use crate::project::Project;
@@ -57,6 +59,24 @@ pub async fn write_external_topics(
         .map(|t| t.name)
         .filter(|n| inc.is_match(n) && !exc.is_match(n))
         .collect();
+
+    let infra_map = InfrastructureMap::load_from_user_code(project)
+        .await
+        .map_err(|e| {
+            RoutineFailure::error(Message::new(
+                "Kafka".to_string(),
+                format!("Failed to load InfrastructureMap: {e:?}"),
+            ))
+        })?;
+
+    // Remove topics that are known to Moose and NOT ExternallyManaged
+    let managed_by_moose: std::collections::HashSet<String> = infra_map
+        .topics
+        .values()
+        .filter(|t| t.life_cycle != LifeCycle::ExternallyManaged)
+        .map(|t| t.name.clone())
+        .collect();
+    names.retain(|n| !managed_by_moose.contains(n));
     names.sort();
 
     fs::create_dir_all(path).map_err(|e| {
