@@ -1,6 +1,5 @@
 import datetime
-from dataclasses import dataclass
-from typing import Annotated
+from pydantic import BaseModel
 
 from moose_lib import simple_aggregated, Key
 from moose_lib.data_models import SimpleAggregateFunction, _to_columns
@@ -27,7 +26,8 @@ def test_simple_aggregate_function_to_dict():
 
     assert result['functionName'] == 'sum'
     assert 'argumentType' in result
-    assert result['argumentType'] == 'Int64'
+    # Python int maps to "Int" by default (not "Int64")
+    assert result['argumentType'] == 'Int'
 
 
 def test_simple_aggregate_function_to_dict_with_different_types():
@@ -46,71 +46,67 @@ def test_simple_aggregate_function_to_dict_with_different_types():
 
 
 def test_dataclass_with_simple_aggregated():
-    """Test that dataclass with simple_aggregated field converts correctly"""
-    @dataclass
-    class TestModel:
-        date_stamp: Annotated[datetime.datetime, Key()]
-        table_name: Annotated[str, Key()]
+    """Test that BaseModel with simple_aggregated field converts correctly"""
+    class TestModel(BaseModel):
+        date_stamp: Key[datetime.datetime]
+        table_name: Key[str]
         row_count: simple_aggregated('sum', int)
 
-    columns, _ = _to_columns(TestModel)
+    columns = _to_columns(TestModel)
 
     # Find the row_count column
-    row_count_col = next(c for c in columns if c['name'] == 'row_count')
+    row_count_col = next(c for c in columns if c.name == 'row_count')
 
-    # Check basic type
-    assert row_count_col['data_type'] == 'Int64'
+    # Check basic type - Python int maps to "Int"
+    assert row_count_col.data_type == 'Int'
 
     # Check annotation
-    annotations = row_count_col.get('annotations', [])
     simple_agg_annotation = next(
-        (a for a in annotations if a[0] == 'simpleAggregationFunction'),
+        (a for a in row_count_col.annotations if a[0] == 'simpleAggregationFunction'),
         None
     )
     assert simple_agg_annotation is not None
     assert simple_agg_annotation[1]['functionName'] == 'sum'
-    assert simple_agg_annotation[1]['argumentType'] == 'Int64'
+    assert simple_agg_annotation[1]['argumentType'] == 'Int'
 
 
 def test_multiple_simple_aggregated_fields():
-    """Test dataclass with multiple SimpleAggregateFunction fields"""
-    @dataclass
-    class StatsModel:
-        timestamp: Annotated[datetime.datetime, Key()]
+    """Test BaseModel with multiple SimpleAggregateFunction fields"""
+    class StatsModel(BaseModel):
+        timestamp: Key[datetime.datetime]
         total_count: simple_aggregated('sum', int)
         max_value: simple_aggregated('max', int)
         min_value: simple_aggregated('min', int)
         last_seen: simple_aggregated('anyLast', datetime.datetime)
 
-    columns, _ = _to_columns(StatsModel)
+    columns = _to_columns(StatsModel)
 
     # Test sum
-    sum_col = next(c for c in columns if c['name'] == 'total_count')
+    sum_col = next(c for c in columns if c.name == 'total_count')
     sum_annotation = next(
-        a for a in sum_col['annotations'] if a[0] == 'simpleAggregationFunction'
+        a for a in sum_col.annotations if a[0] == 'simpleAggregationFunction'
     )
     assert sum_annotation[1]['functionName'] == 'sum'
 
     # Test max
-    max_col = next(c for c in columns if c['name'] == 'max_value')
+    max_col = next(c for c in columns if c.name == 'max_value')
     max_annotation = next(
-        a for a in max_col['annotations'] if a[0] == 'simpleAggregationFunction'
+        a for a in max_col.annotations if a[0] == 'simpleAggregationFunction'
     )
     assert max_annotation[1]['functionName'] == 'max'
 
     # Test min
-    min_col = next(c for c in columns if c['name'] == 'min_value')
+    min_col = next(c for c in columns if c.name == 'min_value')
     min_annotation = next(
-        a for a in min_col['annotations'] if a[0] == 'simpleAggregationFunction'
+        a for a in min_col.annotations if a[0] == 'simpleAggregationFunction'
     )
     assert min_annotation[1]['functionName'] == 'min'
 
     # Test anyLast with datetime
-    last_col = next(c for c in columns if c['name'] == 'last_seen')
-    assert last_col['data_type'] == 'DateTime'
+    last_col = next(c for c in columns if c.name == 'last_seen')
+    assert last_col.data_type == 'DateTime'
     last_annotation = next(
-        a for a in last_col['annotations'] if a[0] == 'simpleAggregationFunction'
+        a for a in last_col.annotations if a[0] == 'simpleAggregationFunction'
     )
     assert last_annotation[1]['functionName'] == 'anyLast'
     assert last_annotation[1]['argumentType'] == 'DateTime'
-

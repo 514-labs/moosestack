@@ -162,7 +162,7 @@ describe("typeConvert mappings for helper types", function () {
     const col = columns[0];
 
     expect(col.name).to.equal("row_count");
-    expect(col.data_type).to.equal("Int64");
+    expect(col.data_type).to.equal("Float64");
 
     const simpleAgg = col.annotations.find(
       ([k]) => k === "simpleAggregationFunction",
@@ -170,7 +170,7 @@ describe("typeConvert mappings for helper types", function () {
     expect(simpleAgg).to.not.be.undefined;
     const simpleAggPayload = (simpleAgg as any)[1];
     expect(simpleAggPayload.functionName).to.equal("sum");
-    expect(simpleAggPayload.argumentType).to.equal("Int64");
+    expect(simpleAggPayload.argumentType).to.equal("Float64");
   });
 
   it("handles multiple SimpleAggregated fields with different functions", () => {
