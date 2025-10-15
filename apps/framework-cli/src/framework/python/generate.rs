@@ -12,7 +12,7 @@ use std::fmt::Write;
 use std::sync::LazyLock;
 
 pub fn sanitize_python_identifier(name: &str) -> String {
-    let preprocessed = name.replace(['.', '-'], "_");
+    let preprocessed = name.replace([' ', '.', '-'], "_");
     let mut ident = preprocessed.to_case(Case::Snake);
     if ident.is_empty() {
         ident.insert(0, '_');
@@ -147,12 +147,12 @@ pub static PYTHON_IDENTIFIER_PATTERN: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(PYTHON_IDENTIFIER_REGEX).unwrap());
 
 fn sanitize_name(name: &str, required: bool) -> (String, String) {
-    if name.starts_with('_') || name.contains(' ') {
+    if name.starts_with('_') || name.contains([' ', '.', '-']) {
         (
             name.strip_prefix("_")
                 .map(|n| format!("UNDERSCORE_PREFIXED_{n}"))
                 .unwrap_or(name.to_string())
-                .replace(' ', "_"),
+                .replace([' ', '.', '-'], "_"),
             if !required {
                 format!(" = Field(default=None, alias=\"{name}\")")
             } else {
@@ -161,7 +161,8 @@ fn sanitize_name(name: &str, required: bool) -> (String, String) {
         )
     } else {
         (
-            sanitize_python_identifier(name),
+            // should NOT be case mapped as this name controls the column name
+            name.to_string(),
             (if required { "" } else { " = None" }).to_string(),
         )
     }
@@ -834,6 +835,7 @@ nested_array_table = OlapTable[NestedArray]("NestedArray", OlapConfig(
         }];
 
         let result = tables_to_python(&tables, None);
+        println!("{}", result);
         assert!(result.contains(
             r#"class Address(BaseModel):
     street: str

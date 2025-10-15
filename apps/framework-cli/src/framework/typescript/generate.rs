@@ -10,7 +10,7 @@ use std::collections::HashMap;
 use std::fmt::Write;
 
 pub fn sanitize_typescript_identifier(name: &str) -> String {
-    let preprocessed = name.replace(['.', '-'], "_");
+    let preprocessed = name.replace([' ', '.', '-'], "_");
     let mut ident = preprocessed.to_case(Case::Pascal);
     if ident.is_empty() || {
         let first = ident.chars().next().unwrap();
