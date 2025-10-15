@@ -2494,6 +2494,7 @@ async fn shutdown(
 
     // Step 1: Stop all managed processes (functions, syncing, consumption, orchestration workers)
     // This sends termination signals and waits with timeouts for all processes to exit
+    // Note: This happens in BOTH dev and production - workers must always be stopped gracefully
     let stop_result = with_spinner_completion_async(
         "Stopping managed processes (functions, syncing, consumption, workers)",
         "Managed processes stopped",
@@ -2501,7 +2502,7 @@ async fn shutdown(
             let mut process_registry = process_registry.write().await;
             process_registry.stop().await
         },
-        !project.is_production,
+        !project.is_production, // Show spinner in dev only
     )
     .await;
 
@@ -2549,12 +2550,17 @@ async fn shutdown(
     .await;
 
     // Step 2: Shutdown workflows (if enabled)
+    // Note: This only runs in development (!project.is_production) because:
+    // - In dev: We want a clean slate - terminate workflow executions so they don't resume on next start
+    // - In production: Workers are already stopped (Step 1), but workflow executions should continue
+    //   running so other workers or future restarts can pick them up. Terminating production workflows
+    //   should be an explicit operational decision, not automatic on every deployment.
     if !project.is_production && project.features.workflows {
         let termination_result = with_spinner_completion_async(
             "Stopping workflows",
             "Workflows stopped",
             async { terminate_all_workflows(project).await },
-            true,
+            true, // Always show spinner in dev (this code only runs in dev)
         )
         .await;
 
@@ -2632,7 +2638,11 @@ async fn shutdown(
         MessageType::Success,
         Message {
             action: "Shutdown".to_string(),
-            details: "Dev server shutdown complete".to_string(),
+            details: if project.is_production {
+                "Server shutdown complete".to_string()
+            } else {
+                "Dev server shutdown complete".to_string()
+            },
         },
     );
 
