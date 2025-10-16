@@ -21,6 +21,31 @@ export type Aggregated<
   _argTypes?: ArgTypes;
 };
 
+/**
+ * A helper type for SimpleAggregateFunction in ClickHouse.
+ * SimpleAggregateFunction stores the aggregated value directly instead of intermediate states,
+ * offering better performance for functions like sum, max, min, any, anyLast, etc.
+ *
+ * @template AggregationFunction The name of the simple aggregation function (e.g., 'sum', 'max', 'anyLast').
+ * @template ArgType The type of the argument (and result) of the aggregation function.
+ *
+ * @example
+ * ```typescript
+ * interface Stats {
+ *   rowCount: number & SimpleAggregated<'sum', number>;
+ *   maxValue: number & SimpleAggregated<'max', number>;
+ *   lastStatus: string & SimpleAggregated<'anyLast', string>;
+ * }
+ * ```
+ */
+export type SimpleAggregated<
+  AggregationFunction extends string,
+  ArgType = any,
+> = {
+  _simpleAggregationFunction?: AggregationFunction;
+  _argType?: ArgType;
+};
+
 export { OlapTable, OlapConfig, S3QueueTableSettings } from "./sdk/olapTable";
 export {
   Stream,
