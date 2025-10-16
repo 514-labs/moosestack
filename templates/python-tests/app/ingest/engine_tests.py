@@ -172,7 +172,7 @@ sample_by_table = OlapTable[EngineTestData](
     OlapConfig(
         engine=MergeTreeEngine(),
         order_by_fields=["id", "timestamp"],
-        sample_by="id"
+        sample_by_expression="id"
     )
 )
 

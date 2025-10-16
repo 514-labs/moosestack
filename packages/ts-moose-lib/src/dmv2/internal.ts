@@ -139,7 +139,7 @@ interface TableJson {
   /** The column name used for the PARTITION BY clause. */
   partitionBy?: string;
   /** SAMPLE BY expression for approximate query processing. */
-  sampleBy?: string;
+  sampleByExpression?: string;
   /** Engine configuration with type-safe, engine-specific parameters */
   engineConfig?: EngineConfig;
   /** Optional version string for the table configuration. */
@@ -549,7 +549,7 @@ export const toInfraMap = (registry: typeof moose_internal) => {
       columns: table.columnArray,
       orderBy,
       partitionBy: table.config.partitionBy,
-      sampleBy: table.config.sampleByExpression,
+      sampleByExpression: table.config.sampleByExpression,
       engineConfig,
       version: table.config.version,
       metadata,

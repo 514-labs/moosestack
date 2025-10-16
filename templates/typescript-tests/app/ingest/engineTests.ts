@@ -170,7 +170,7 @@ export const ReplicatedSummingMergeTreeTable = new OlapTable<EngineTestData>(
 export const SampleByTable = new OlapTable<EngineTestData>("SampleByTest", {
   engine: ClickHouseEngines.MergeTree,
   orderByFields: ["id", "timestamp"],
-  sampleBy: "id",
+  sampleByExpression: "id",
 });
 
 // Note: S3Queue engine testing is more complex as it requires S3 configuration

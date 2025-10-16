@@ -200,7 +200,7 @@ export const TYPESCRIPT_TEST_SCHEMAS: ExpectedTableSchema[] = [
       { name: "isDeleted", type: "Bool" },
     ],
     orderBy: ["id", "timestamp"],
-    sampleBy: "id",
+    sampleByExpression: "id",
   },
   // Type test tables
   {
@@ -496,7 +496,7 @@ export const PYTHON_TEST_SCHEMAS: ExpectedTableSchema[] = [
       { name: "is_deleted", type: "Bool" },
     ],
     orderBy: ["id", "timestamp"],
-    sampleBy: "id",
+    sampleByExpression: "id",
   },
   // Type test tables
   {

@@ -258,7 +258,7 @@ impl Table {
             columns: self.columns.iter().map(|c| c.to_proto()).collect(),
             order_by: proto_order_by,
             partition_by: self.partition_by.clone(),
-            sample_by: self.sample_by.clone(),
+            sample_by_expression: self.sample_by.clone(),
             version: self.version.as_ref().map(|v| v.to_string()),
             source_primitive: MessageField::some(self.source_primitive.to_proto()),
             deduplicate: self
@@ -339,7 +339,7 @@ impl Table {
             columns: proto.columns.into_iter().map(Column::from_proto).collect(),
             order_by,
             partition_by: proto.partition_by,
-            sample_by: proto.sample_by,
+            sample_by: proto.sample_by_expression,
             version: proto.version.map(Version::from_string),
             source_primitive: PrimitiveSignature::from_proto(proto.source_primitive.unwrap()),
             engine,
