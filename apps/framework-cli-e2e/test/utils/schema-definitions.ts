@@ -317,6 +317,14 @@ export const TYPESCRIPT_TEST_SCHEMAS: ExpectedTableSchema[] = [
       },
     ],
   },
+  // NonDeclaredType test table
+  {
+    tableName: "NonDeclaredType",
+    columns: [
+      { name: "id", type: "String" },
+      { name: "yes", type: "Bool" },
+    ],
+  },
 ];
 
 // ============ PYTHON TEMPLATE SCHEMA DEFINITIONS ============

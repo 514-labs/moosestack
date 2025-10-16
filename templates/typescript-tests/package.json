@@ -10,7 +10,8 @@
     "@514labs/moose-lib": "latest",
     "axios": "^1.7.7",
     "ts-patch": "^3.3.0",
-    "typia": "^9.6.1"
+    "typia": "^9.6.1",
+    "drizzle-orm": "latest"
   },
   "devDependencies": {
     "@514labs/moose-cli": "latest",
