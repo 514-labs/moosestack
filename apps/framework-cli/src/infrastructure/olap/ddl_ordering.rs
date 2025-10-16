@@ -1063,6 +1063,7 @@ mod tests {
             columns: vec![],
             order_by: OrderBy::Fields(vec![]),
             partition_by: None,
+            sample_by: None,
             engine: None,
             version: None,
             source_primitive: PrimitiveSignature {
@@ -1132,6 +1133,7 @@ mod tests {
             columns: vec![],
             order_by: OrderBy::Fields(vec![]),
             partition_by: None,
+            sample_by: None,
             engine: None,
             version: None,
             source_primitive: PrimitiveSignature {
@@ -1150,6 +1152,7 @@ mod tests {
             columns: vec![],
             order_by: OrderBy::Fields(vec![]),
             partition_by: None,
+            sample_by: None,
             engine: None,
             version: None,
             source_primitive: PrimitiveSignature {
@@ -1239,6 +1242,7 @@ mod tests {
             columns: vec![],
             order_by: OrderBy::Fields(vec![]),
             partition_by: None,
+            sample_by: None,
             engine: None,
             version: None,
             source_primitive: PrimitiveSignature {
@@ -1257,6 +1261,7 @@ mod tests {
             columns: vec![],
             order_by: OrderBy::Fields(vec![]),
             partition_by: None,
+            sample_by: None,
             engine: None,
             version: None,
             source_primitive: PrimitiveSignature {
@@ -1366,6 +1371,7 @@ mod tests {
             columns: vec![],
             order_by: OrderBy::Fields(vec![]),
             partition_by: None,
+            sample_by: None,
             engine: None,
             version: None,
             source_primitive: PrimitiveSignature {
@@ -1517,6 +1523,7 @@ mod tests {
             columns: vec![],
             order_by: OrderBy::Fields(vec![]),
             partition_by: None,
+            sample_by: None,
             engine: None,
             version: None,
             source_primitive: PrimitiveSignature {
@@ -1534,6 +1541,7 @@ mod tests {
             columns: vec![],
             order_by: OrderBy::Fields(vec![]),
             partition_by: None,
+            sample_by: None,
             engine: None,
             version: None,
             source_primitive: PrimitiveSignature {
@@ -1551,6 +1559,7 @@ mod tests {
             columns: vec![],
             order_by: OrderBy::Fields(vec![]),
             partition_by: None,
+            sample_by: None,
             engine: None,
             version: None,
             source_primitive: PrimitiveSignature {
@@ -1636,6 +1645,7 @@ mod tests {
             columns: vec![],
             order_by: OrderBy::Fields(vec![]),
             partition_by: None,
+            sample_by: None,
             engine: None,
             version: None,
             source_primitive: PrimitiveSignature {
@@ -1653,6 +1663,7 @@ mod tests {
             columns: vec![],
             order_by: OrderBy::Fields(vec![]),
             partition_by: None,
+            sample_by: None,
             engine: None,
             version: None,
             source_primitive: PrimitiveSignature {
@@ -1670,6 +1681,7 @@ mod tests {
             columns: vec![],
             order_by: OrderBy::Fields(vec![]),
             partition_by: None,
+            sample_by: None,
             engine: None,
             version: None,
             source_primitive: PrimitiveSignature {
@@ -1687,6 +1699,7 @@ mod tests {
             columns: vec![],
             order_by: OrderBy::Fields(vec![]),
             partition_by: None,
+            sample_by: None,
             engine: None,
             version: None,
             source_primitive: PrimitiveSignature {
@@ -1704,6 +1717,7 @@ mod tests {
             columns: vec![],
             order_by: OrderBy::Fields(vec![]),
             partition_by: None,
+            sample_by: None,
             engine: None,
             version: None,
             source_primitive: PrimitiveSignature {
@@ -1852,6 +1866,7 @@ mod tests {
             columns: vec![],
             order_by: OrderBy::Fields(vec![]),
             partition_by: None,
+            sample_by: None,
             engine: None,
             version: None,
             source_primitive: PrimitiveSignature {
@@ -1870,6 +1885,7 @@ mod tests {
             columns: vec![],
             order_by: OrderBy::Fields(vec![]),
             partition_by: None,
+            sample_by: None,
             engine: None,
             version: None,
             source_primitive: PrimitiveSignature {
@@ -1986,6 +2002,7 @@ mod tests {
             columns: vec![],
             order_by: OrderBy::Fields(vec![]),
             partition_by: None,
+            sample_by: None,
             engine: None,
             version: None,
             source_primitive: PrimitiveSignature {
@@ -2004,6 +2021,7 @@ mod tests {
             columns: vec![],
             order_by: OrderBy::Fields(vec![]),
             partition_by: None,
+            sample_by: None,
             engine: None,
             version: None,
             source_primitive: PrimitiveSignature {
@@ -2125,6 +2143,7 @@ mod tests {
             columns: vec![],
             order_by: OrderBy::Fields(vec![]),
             partition_by: None,
+            sample_by: None,
             engine: None,
             version: None,
             source_primitive: PrimitiveSignature {
@@ -2142,6 +2161,7 @@ mod tests {
             columns: vec![],
             order_by: OrderBy::Fields(vec![]),
             partition_by: None,
+            sample_by: None,
             engine: None,
             version: None,
             source_primitive: PrimitiveSignature {
@@ -2342,6 +2362,7 @@ mod tests {
             columns: vec![],
             order_by: OrderBy::Fields(vec![]),
             partition_by: None,
+            sample_by: None,
             engine: None,
             version: None,
             source_primitive: PrimitiveSignature {
@@ -2442,6 +2463,7 @@ mod tests {
             columns: vec![],
             order_by: OrderBy::Fields(vec![]),
             partition_by: None,
+            sample_by: None,
             engine: None,
             version: None,
             source_primitive: PrimitiveSignature {
@@ -2553,6 +2575,7 @@ mod tests {
             ],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
             partition_by: None,
+            sample_by: None,
             engine: Some(ClickhouseEngine::MergeTree),
             version: None,
             source_primitive: PrimitiveSignature {
@@ -2591,6 +2614,7 @@ mod tests {
             ],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
             partition_by: None,
+            sample_by: None,
             engine: Some(ClickhouseEngine::MergeTree),
             version: None,
             source_primitive: PrimitiveSignature {

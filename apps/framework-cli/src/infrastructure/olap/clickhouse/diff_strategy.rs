@@ -426,6 +426,7 @@ mod tests {
             ],
             order_by: OrderBy::Fields(order_by),
             partition_by: None,
+            sample_by: None,
             engine: deduplicate.then_some(ClickhouseEngine::ReplacingMergeTree {
                 ver: None,
                 is_deleted: None,
@@ -894,6 +895,7 @@ mod tests {
             columns: vec![],
             order_by: OrderBy::Fields(vec![]),
             partition_by: None,
+            sample_by: None,
             engine: Some(ClickhouseEngine::S3Queue {
                 s3_path: "s3://bucket/path".to_string(),
                 format: "JSONEachRow".to_string(),

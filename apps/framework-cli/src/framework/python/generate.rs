@@ -619,6 +619,7 @@ mod tests {
             ],
             order_by: OrderBy::Fields(vec!["primary_key".to_string()]),
             partition_by: None,
+            sample_by: None,
             engine: Some(ClickhouseEngine::MergeTree),
             version: None,
             source_primitive: PrimitiveSignature {
@@ -704,6 +705,7 @@ foo_table = OlapTable[Foo]("Foo", OlapConfig(
             ],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
             partition_by: None,
+            sample_by: None,
             engine: Some(ClickhouseEngine::MergeTree),
             version: None,
             source_primitive: PrimitiveSignature {
@@ -808,6 +810,7 @@ nested_array_table = OlapTable[NestedArray]("NestedArray", OlapConfig(
             ],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
             partition_by: None,
+            sample_by: None,
             engine: Some(ClickhouseEngine::MergeTree),
             version: None,
             source_primitive: PrimitiveSignature {
@@ -869,6 +872,7 @@ user_table = OlapTable[User]("User", OlapConfig(
             ],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
             partition_by: None,
+            sample_by: None,
             engine: Some(ClickhouseEngine::S3Queue {
                 s3_path: "s3://bucket/path".to_string(),
                 format: "JSONEachRow".to_string(),
@@ -919,6 +923,7 @@ user_table = OlapTable[User]("User", OlapConfig(
             }],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
             partition_by: None,
+            sample_by: None,
             engine: Some(ClickhouseEngine::ReplacingMergeTree {
                 ver: None,
                 is_deleted: None,
@@ -990,6 +995,7 @@ user_table = OlapTable[User]("User", OlapConfig(
             ],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
             partition_by: None,
+            sample_by: None,
             engine: Some(ClickhouseEngine::ReplacingMergeTree {
                 ver: Some("version".to_string()),
                 is_deleted: Some("is_deleted".to_string()),
@@ -1057,6 +1063,7 @@ user_table = OlapTable[User]("User", OlapConfig(
             ],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
             partition_by: None,
+            sample_by: None,
             engine: Some(ClickhouseEngine::MergeTree),
             version: None,
             source_primitive: PrimitiveSignature {
