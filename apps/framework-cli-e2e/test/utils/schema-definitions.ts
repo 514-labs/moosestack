@@ -192,15 +192,15 @@ export const TYPESCRIPT_TEST_SCHEMAS: ExpectedTableSchema[] = [
   {
     tableName: "SampleByTest",
     columns: [
-      { name: "id", type: "UInt64" },
+      { name: "id", type: "String" },
       { name: "timestamp", type: /DateTime\('UTC'\)/ },
       { name: "value", type: "Float64" },
       { name: "category", type: "String" },
       { name: "version", type: "Float64" },
       { name: "isDeleted", type: "Bool" },
     ],
-    orderBy: ["id", "timestamp"],
-    sampleByExpression: "id",
+    orderByExpression: "cityHash64(id)",
+    sampleByExpression: "cityHash64(id)",
   },
   // Type test tables
   {
@@ -488,15 +488,15 @@ export const PYTHON_TEST_SCHEMAS: ExpectedTableSchema[] = [
   {
     tableName: "SampleByTest",
     columns: [
-      { name: "id", type: "UInt64" },
+      { name: "id", type: "String" },
       { name: "timestamp", type: /DateTime\('UTC'\)/ },
       { name: "value", type: "Int64" },
       { name: "category", type: "String" },
       { name: "version", type: "Int64" },
       { name: "is_deleted", type: "Bool" },
     ],
-    orderBy: ["id", "timestamp"],
-    sampleByExpression: "id",
+    orderByExpression: "cityHash64(id)",
+    sampleByExpression: "cityHash64(id)",
   },
   // Type test tables
   {

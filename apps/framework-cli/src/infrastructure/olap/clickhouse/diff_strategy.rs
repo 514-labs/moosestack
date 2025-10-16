@@ -249,6 +249,18 @@ impl TableDiffStrategy for ClickHouseTableDiffStrategy {
             ];
         }
 
+        // Check if SAMPLE BY has changed
+        if before.sample_by != after.sample_by {
+            log::debug!(
+                "ClickHouse: SAMPLE BY changed for table '{}', requiring drop+create",
+                before.name
+            );
+            return vec![
+                OlapChange::Table(TableChange::Removed(before.clone())),
+                OlapChange::Table(TableChange::Added(after.clone())),
+            ];
+        }
+
         // Check if primary key structure has changed
         let before_primary_keys = before.primary_key_columns();
         let after_primary_keys = after.primary_key_columns();
@@ -623,6 +635,66 @@ mod tests {
         let changes = strategy.diff_table_update(&before, &after, column_changes, order_by_change);
 
         // Should still require drop+create even with no column changes
+        assert_eq!(changes.len(), 2);
+        assert!(matches!(
+            changes[0],
+            OlapChange::Table(TableChange::Removed(_))
+        ));
+        assert!(matches!(
+            changes[1],
+            OlapChange::Table(TableChange::Added(_))
+        ));
+    }
+
+    #[test]
+    fn test_sample_by_change_requires_drop_create() {
+        let strategy = ClickHouseTableDiffStrategy;
+
+        let mut before = create_test_table("test", vec!["id".to_string()], false);
+        let mut after = create_test_table("test", vec!["id".to_string()], false);
+
+        // Set different SAMPLE BY values
+        before.sample_by = None;
+        after.sample_by = Some("id".to_string());
+
+        let order_by_change = OrderByChange {
+            before: before.order_by.clone(),
+            after: after.order_by.clone(),
+        };
+
+        let changes = strategy.diff_table_update(&before, &after, vec![], order_by_change);
+
+        // SAMPLE BY change should require drop+create
+        assert_eq!(changes.len(), 2);
+        assert!(matches!(
+            changes[0],
+            OlapChange::Table(TableChange::Removed(_))
+        ));
+        assert!(matches!(
+            changes[1],
+            OlapChange::Table(TableChange::Added(_))
+        ));
+    }
+
+    #[test]
+    fn test_sample_by_modification_requires_drop_create() {
+        let strategy = ClickHouseTableDiffStrategy;
+
+        let mut before = create_test_table("test", vec!["id".to_string()], false);
+        let mut after = create_test_table("test", vec!["id".to_string()], false);
+
+        // Change SAMPLE BY from one column to another
+        before.sample_by = Some("id".to_string());
+        after.sample_by = Some("timestamp".to_string());
+
+        let order_by_change = OrderByChange {
+            before: before.order_by.clone(),
+            after: after.order_by.clone(),
+        };
+
+        let changes = strategy.diff_table_update(&before, &after, vec![], order_by_change);
+
+        // SAMPLE BY modification should require drop+create
         assert_eq!(changes.len(), 2);
         assert!(matches!(
             changes[0],

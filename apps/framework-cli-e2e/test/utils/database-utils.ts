@@ -196,6 +196,7 @@ export interface ExpectedTableSchema {
   columns: ExpectedColumn[];
   engine?: string;
   orderBy?: string[];
+  orderByExpression?: string;
   sampleByExpression?: string;
 }
 
@@ -359,6 +360,14 @@ export const validateTableSchema = async (
         if (!ddl.includes(`ORDER BY (${expectedOrderBy})`)) {
           errors.push(
             `Table '${expectedSchema.tableName}' ORDER BY mismatch: expected '(${expectedOrderBy})'`,
+          );
+        }
+      }
+
+      if (expectedSchema.orderByExpression) {
+        if (!ddl.includes(`ORDER BY ${expectedSchema.orderByExpression}`)) {
+          errors.push(
+            `Table '${expectedSchema.tableName}' ORDER BY mismatch: expected '${expectedSchema.orderByExpression}'`,
           );
         }
       }

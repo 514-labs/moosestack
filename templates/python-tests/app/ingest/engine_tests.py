@@ -26,6 +26,15 @@ class EngineTestData(BaseModel):
     category: str
     version: int
     is_deleted: bool  # For ReplacingMergeTree soft deletes (UInt8 in ClickHouse)
+    
+class EngineTestDataSample(BaseModel):
+    """Test data model for engine testing"""
+    id: str
+    timestamp: datetime
+    value: int
+    category: str
+    version: int
+    is_deleted: bool  # For ReplacingMergeTree soft deletes (UInt8 in ClickHouse)
 
 
 # Test MergeTree engine (default)
@@ -167,7 +176,7 @@ replicated_summing_merge_tree_table = OlapTable[EngineTestData](
 )
 
 # Test SAMPLE BY clause for data sampling
-sample_by_table = OlapTable[EngineTestData](
+sample_by_table = OlapTable[EngineTestDataSample](
     "SampleByTest",
     OlapConfig(
         engine=MergeTreeEngine(),
