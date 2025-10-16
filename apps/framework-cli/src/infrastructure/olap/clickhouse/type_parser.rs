@@ -1465,12 +1465,50 @@ pub fn convert_ast_to_column_type(
             })
         }
 
-        ClickHouseTypeNode::SimpleAggregateFunction { .. } => {
-            // Same as AggregateFunction
-            Err(ConversionError::UnsupportedType {
-                type_name: "SimpleAggregateFunction".to_string(),
-            })
+        ClickHouseTypeNode::SimpleAggregateFunction {
+            function_name: _,
+            argument_type,
+        } => {
+            // For SimpleAggregateFunction, we return the underlying argument type
+            // The aggregation function information will be stored as an annotation
+            convert_ast_to_column_type(argument_type)
         }
+    }
+}
+
+/// Extracts SimpleAggregateFunction information from a ClickHouse type string
+///
+/// # Arguments
+/// * `ch_type` - The ClickHouse type string to analyze
+///
+/// # Returns
+/// * `Option<(String, ColumnType)>` - If the type is a SimpleAggregateFunction, returns Some((function_name, argument_type))
+pub fn extract_simple_aggregate_function(
+    ch_type: &str,
+) -> Result<Option<(String, ColumnType)>, ClickHouseTypeError> {
+    let type_node = parse_clickhouse_type(ch_type).map_err(|e| ClickHouseTypeError::Parse {
+        input: ch_type.to_string(),
+        source: e,
+    })?;
+
+    match type_node {
+        ClickHouseTypeNode::SimpleAggregateFunction {
+            function_name,
+            argument_type,
+        } => {
+            let (arg_type, nullable) = convert_ast_to_column_type(&argument_type)
+                .map_err(|e| ClickHouseTypeError::Conversion { source: e })?;
+
+            // Wrap in Nullable if needed
+            let final_type = if nullable {
+                ColumnType::Nullable(Box::new(arg_type))
+            } else {
+                arg_type
+            };
+
+            Ok(Some((function_name, final_type)))
+        }
+        _ => Ok(None),
     }
 }
 
@@ -1840,18 +1878,20 @@ mod tests {
             panic!("Expected UnsupportedType error for AggregateFunction");
         }
 
-        // Test that SimpleAggregateFunction type conversion fails
+        // SimpleAggregateFunction now converts successfully - it returns the argument type
+        // The aggregation function information is stored separately as an annotation
         let simple_agg_type = parse_clickhouse_type("SimpleAggregateFunction(sum, Int32)").unwrap();
         let simple_agg_result = convert_ast_to_column_type(&simple_agg_type);
         assert!(
-            simple_agg_result.is_err(),
-            "SimpleAggregateFunction type should not be convertible"
+            simple_agg_result.is_ok(),
+            "SimpleAggregateFunction type should be convertible to its argument type"
         );
 
-        if let Err(ConversionError::UnsupportedType { type_name }) = simple_agg_result {
-            assert_eq!(type_name, "SimpleAggregateFunction");
+        if let Ok((column_type, nullable)) = simple_agg_result {
+            assert_eq!(column_type, ColumnType::Int(IntType::Int32));
+            assert!(!nullable);
         } else {
-            panic!("Expected UnsupportedType error for SimpleAggregateFunction");
+            panic!("Expected successful conversion for SimpleAggregateFunction");
         }
 
         // Test the full conversion function with the top level ClickHouseTypeError
@@ -1881,6 +1921,50 @@ mod tests {
         } else {
             panic!("Expected Parse error for invalid syntax");
         }
+    }
+
+    #[test]
+    fn test_extract_simple_aggregate_function() {
+        // Test successful extraction
+        let result = extract_simple_aggregate_function("SimpleAggregateFunction(sum, UInt64)");
+        assert!(result.is_ok());
+        let extracted = result.unwrap();
+        assert!(extracted.is_some());
+        let (func_name, arg_type) = extracted.unwrap();
+        assert_eq!(func_name, "sum");
+        assert_eq!(arg_type, ColumnType::Int(IntType::UInt64));
+
+        // Test with different function and type
+        let result2 = extract_simple_aggregate_function("SimpleAggregateFunction(max, Int32)");
+        assert!(result2.is_ok());
+        let extracted2 = result2.unwrap();
+        assert!(extracted2.is_some());
+        let (func_name2, arg_type2) = extracted2.unwrap();
+        assert_eq!(func_name2, "max");
+        assert_eq!(arg_type2, ColumnType::Int(IntType::Int32));
+
+        // Test with nullable argument type
+        let result3 =
+            extract_simple_aggregate_function("SimpleAggregateFunction(anyLast, Nullable(String))");
+        assert!(result3.is_ok());
+        let extracted3 = result3.unwrap();
+        assert!(extracted3.is_some());
+        let (func_name3, arg_type3) = extracted3.unwrap();
+        assert_eq!(func_name3, "anyLast");
+        assert_eq!(
+            arg_type3,
+            ColumnType::Nullable(Box::new(ColumnType::String))
+        );
+
+        // Test non-SimpleAggregateFunction type returns None
+        let result4 = extract_simple_aggregate_function("String");
+        assert!(result4.is_ok());
+        assert!(result4.unwrap().is_none());
+
+        // Test regular AggregateFunction returns None
+        let result5 = extract_simple_aggregate_function("AggregateFunction(sum, Int32)");
+        assert!(result5.is_ok());
+        assert!(result5.unwrap().is_none());
     }
 
     #[test]

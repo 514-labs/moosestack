@@ -246,6 +246,7 @@ fn column_type_to_enum_mapping(t: &ClickHouseColumnType) -> Option<Vec<&str>> {
         | ClickHouseColumnType::Json
         | ClickHouseColumnType::Uuid
         | ClickHouseColumnType::AggregateFunction { .. }
+        | ClickHouseColumnType::SimpleAggregateFunction { .. }
         | ClickHouseColumnType::Bytes => None,
         ClickHouseColumnType::Array(t) => column_type_to_enum_mapping(t.as_ref()),
         ClickHouseColumnType::NamedTuple(_) | ClickHouseColumnType::Nested(_) => {

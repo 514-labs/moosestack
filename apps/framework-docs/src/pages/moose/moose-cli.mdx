@@ -198,6 +198,24 @@ Notes:
 - The command writes a single external models file and overwrites the file on each run.
 - See the full guide: [/moose/olap/db-pull](/moose/olap/db-pull)
 
+### Kafka
+
+#### Pull external topics and schemas
+Discover topics from a Kafka/Redpanda cluster and optionally fetch JSON Schemas from Schema Registry to emit typed external models.
+
+```bash
+moose kafka pull <bootstrap> [--path <PATH>] [--include <glob>] [--exclude <glob>] [--schema-registry <URL>]
+```
+- `<bootstrap>`: Kafka bootstrap servers, e.g. `localhost:19092`
+- `--path`: Output directory for generated files. Defaults to `app/external-topics` (TS) or `app/external_topics` (Python).
+- `--include`: Include pattern (glob). Default: `*`
+- `--exclude`: Exclude pattern (glob). Default: `{__consumer_offsets,_schemas}`
+- `--schema-registry`: Base URL for Schema Registry, e.g. `http://localhost:8081`
+
+Notes:
+- JSON Schema is supported initially; Avro/Protobuf planned.
+- Generated files will be overwritten on subsequent runs.
+
 ## Workflow Management
 
 ### Workflow

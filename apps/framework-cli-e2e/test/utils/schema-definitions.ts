@@ -302,6 +302,29 @@ export const TYPESCRIPT_TEST_SCHEMAS: ExpectedTableSchema[] = [
       },
     ],
   },
+  // SimpleAggregateFunction test table
+  {
+    tableName: "SimpleAggTest",
+    columns: [
+      { name: "date_stamp", type: "Date" },
+      { name: "table_name", type: "String" },
+      { name: "row_count", type: /SimpleAggregateFunction\(sum, UInt64\)/ },
+      { name: "max_value", type: /SimpleAggregateFunction\(max, Float64\)/ },
+      { name: "min_value", type: /SimpleAggregateFunction\(min, Float64\)/ },
+      {
+        name: "last_updated",
+        type: /SimpleAggregateFunction\(anyLast, DateTime\('UTC'\)/,
+      },
+    ],
+  },
+  // NonDeclaredType test table
+  {
+    tableName: "NonDeclaredType",
+    columns: [
+      { name: "id", type: "String" },
+      { name: "yes", type: "Bool" },
+    ],
+  },
 ];
 
 // ============ PYTHON TEMPLATE SCHEMA DEFINITIONS ============
@@ -584,6 +607,21 @@ export const PYTHON_TEST_SCHEMAS: ExpectedTableSchema[] = [
       {
         name: "multi_polygon",
         type: /(MultiPolygon|Array\(Array\(Array\(Point\)\)\))/,
+      },
+    ],
+  },
+  // SimpleAggregateFunction test table
+  {
+    tableName: "SimpleAggTest",
+    columns: [
+      { name: "date_stamp", type: "Date" },
+      { name: "table_name", type: "String" },
+      { name: "row_count", type: /SimpleAggregateFunction\(sum, UInt64\)/ },
+      { name: "max_value", type: /SimpleAggregateFunction\(max, Int64\)/ },
+      { name: "min_value", type: /SimpleAggregateFunction\(min, Int64\)/ },
+      {
+        name: "last_updated",
+        type: /SimpleAggregateFunction\(anyLast, DateTime\('UTC'\)/,
       },
     ],
   },

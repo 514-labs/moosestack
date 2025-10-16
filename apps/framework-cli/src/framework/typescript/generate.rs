@@ -165,10 +165,39 @@ fn generate_interface(
 pub fn tables_to_typescript(tables: &[Table], life_cycle: Option<LifeCycle>) -> String {
     let mut output = String::new();
 
+    let uses_simple_aggregate = tables.iter().any(|table| {
+        table.columns.iter().any(|column| {
+            column
+                .annotations
+                .iter()
+                .any(|(k, _)| k == "simpleAggregationFunction")
+        })
+    });
+
     // Add imports
+    let mut base_imports = vec![
+        "IngestPipeline",
+        "OlapTable",
+        "Key",
+        "ClickHouseInt",
+        "ClickHouseDecimal",
+        "ClickHousePrecision",
+        "ClickHouseByteSize",
+        "ClickHouseNamedTuple",
+        "ClickHouseEngines",
+        "ClickHouseDefault",
+        "WithDefault",
+        "LifeCycle",
+    ];
+
+    if uses_simple_aggregate {
+        base_imports.push("SimpleAggregated");
+    }
+
     writeln!(
         output,
-        "import {{ IngestPipeline, OlapTable, Key, ClickHouseInt, ClickHouseDecimal, ClickHousePrecision, ClickHouseByteSize, ClickHouseNamedTuple, ClickHouseEngines, ClickHouseDefault, WithDefault, LifeCycle }} from \"@514labs/moose-lib\";"
+        "import {{ {} }} from \"@514labs/moose-lib\";",
+        base_imports.join(", ")
     )
     .unwrap();
 
@@ -254,7 +283,24 @@ pub fn tables_to_typescript(tables: &[Table], life_cycle: Option<LifeCycle>) -> 
         writeln!(output, "export interface {} {{", table.name).unwrap();
 
         for column in &table.columns {
-            let type_str = map_column_type_to_typescript(&column.data_type, &enums, &nested_models);
+            let mut type_str =
+                map_column_type_to_typescript(&column.data_type, &enums, &nested_models);
+
+            if let Some((_, simple_agg_func)) = column
+                .annotations
+                .iter()
+                .find(|(k, _)| k == "simpleAggregationFunction")
+            {
+                if let Some(function_name) =
+                    simple_agg_func.get("functionName").and_then(|v| v.as_str())
+                {
+                    type_str = format!(
+                        "{} & SimpleAggregated<{:?}, {}>",
+                        type_str, function_name, type_str
+                    );
+                }
+            }
+
             let type_str = match column.default {
                 None => type_str,
                 Some(ref default) if type_str == "Date" => {

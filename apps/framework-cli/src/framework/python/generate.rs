@@ -314,6 +314,15 @@ fn collect_types<'a>(
 pub fn tables_to_python(tables: &[Table], life_cycle: Option<LifeCycle>) -> String {
     let mut output = String::new();
 
+    let uses_simple_aggregate = tables.iter().any(|table| {
+        table.columns.iter().any(|column| {
+            column
+                .annotations
+                .iter()
+                .any(|(k, _)| k == "simpleAggregationFunction")
+        })
+    });
+
     // Add imports
     writeln!(output, "from pydantic import BaseModel, Field").unwrap();
     writeln!(output, "from typing import Optional, Any, Annotated").unwrap();
@@ -321,11 +330,29 @@ pub fn tables_to_python(tables: &[Table], life_cycle: Option<LifeCycle>) -> Stri
     writeln!(output, "import ipaddress").unwrap();
     writeln!(output, "from uuid import UUID").unwrap();
     writeln!(output, "from enum import IntEnum, Enum").unwrap();
+
+    let mut moose_lib_imports = vec![
+        "Key",
+        "IngestPipeline",
+        "IngestPipelineConfig",
+        "OlapTable",
+        "OlapConfig",
+        "clickhouse_datetime64",
+        "clickhouse_decimal",
+        "ClickhouseSize",
+        "StringToEnumMixin",
+    ];
+
+    if uses_simple_aggregate {
+        moose_lib_imports.push("simple_aggregated");
+    }
+
     writeln!(
         output,
-        "from moose_lib import Key, IngestPipeline, IngestPipelineConfig, OlapTable, OlapConfig, clickhouse_datetime64, clickhouse_decimal, ClickhouseSize, StringToEnumMixin"
+        "from moose_lib import {}",
+        moose_lib_imports.join(", ")
     )
-        .unwrap();
+    .unwrap();
     writeln!(
         output,
         "from moose_lib import Point, Ring, LineString, MultiLineString, Polygon, MultiPolygon"
@@ -416,6 +443,18 @@ pub fn tables_to_python(tables: &[Table], life_cycle: Option<LifeCycle>) -> Stri
             } else {
                 type_str
             };
+
+            if let Some((_, simple_agg_func)) = column
+                .annotations
+                .iter()
+                .find(|(k, _)| k == "simpleAggregationFunction")
+            {
+                if let Some(function_name) =
+                    simple_agg_func.get("functionName").and_then(|v| v.as_str())
+                {
+                    type_str = format!("simple_aggregated({:?}, {})", function_name, type_str);
+                }
+            }
 
             if let Some(ref default_expr) = column.default {
                 type_str = format!(
