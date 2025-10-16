@@ -225,7 +225,7 @@ fn render_typescript_streams(
     out.push('\n');
 
     for t in topics {
-        let var_name = sanitize_typescript_identifier(t);
+        let var_name = format!("{}Stream", sanitize_typescript_identifier(t));
         if let Some((type_name, _)) = type_map.get(t) {
             // Include schema registry config (Latest subject) for topics with discovered JSON schema
             let subject = format!("{}-value", t);
@@ -270,7 +270,7 @@ fn render_python_streams(
     }
 
     for t in topics {
-        let var_name = map_to_python_snake_identifier(t);
+        let var_name = format!("{}_stream", map_to_python_snake_identifier(t));
         if let Some((class_name, _)) = type_map.get(t) {
             // Include schema registry config (Latest subject) for topics with discovered JSON schema
             let subject = format!("{}-value", t);

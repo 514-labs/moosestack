@@ -171,25 +171,121 @@ pub static PYTHON_IDENTIFIER_PATTERN: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(PYTHON_IDENTIFIER_REGEX).unwrap());
 
 fn sanitize_name(name: &str, required: bool) -> (String, String) {
-    if name.starts_with('_') || name.contains([' ', '.', '-']) {
-        (
-            name.strip_prefix("_")
-                .map(|n| format!("UNDERSCORE_PREFIXED_{n}"))
-                .unwrap_or(name.to_string())
-                .replace([' ', '.', '-'], "_"),
-            if !required {
-                format!(" = Field(default=None, alias=\"{name}\")")
-            } else {
-                format!(" = Field(alias=\"{name}\")")
-            },
-        )
+    // Valid Python identifier: ^[A-Za-z_][A-Za-z0-9_]*$
+    // Alias anything that doesn't conform or collides with keywords/builtins
+    let mut chars = name.chars();
+    let first_ok = match chars.next() {
+        Some(c) => c.is_ascii_alphabetic() || c == '_',
+        None => false,
+    };
+    let rest_ok = first_ok
+        && name
+            .chars()
+            .skip(1)
+            .all(|c| c.is_ascii_alphanumeric() || c == '_');
+    let needs_alias = !rest_ok || is_python_keyword_or_builtin(name) || name.starts_with('_');
+    if needs_alias {
+        let mapped = name
+            .trim_start_matches('_')
+            .replace([' ', '.', '-', '/', ':', ';', ',', '\\'], "_");
+        let mapped = if mapped.is_empty() {
+            "field".to_string()
+        } else {
+            mapped
+        };
+        let default_suffix = if !required {
+            format!(" = Field(default=None, alias=\"{name}\")")
+        } else {
+            format!(" = Field(alias=\"{name}\")")
+        };
+        (mapped, default_suffix)
     } else {
         (
-            // should NOT be case mapped as this name controls the column name
             name.to_string(),
             (if required { "" } else { " = None" }).to_string(),
         )
     }
+}
+
+fn is_python_keyword_or_builtin(name: &str) -> bool {
+    // conservative list
+    const KEYWORDS: &[&str] = &[
+        "False", "None", "True", "and", "as", "assert", "async", "await", "break", "class",
+        "continue", "def", "del", "elif", "else", "except", "finally", "for", "from", "global",
+        "if", "import", "in", "is", "lambda", "nonlocal", "not", "or", "pass", "raise", "return",
+        "try", "while", "with", "yield",
+    ];
+    const BUILTINS: &[&str] = &[
+        "abs",
+        "all",
+        "any",
+        "ascii",
+        "bin",
+        "bool",
+        "bytearray",
+        "bytes",
+        "callable",
+        "chr",
+        "classmethod",
+        "compile",
+        "complex",
+        "dict",
+        "dir",
+        "divmod",
+        "enumerate",
+        "eval",
+        "exec",
+        "filter",
+        "float",
+        "format",
+        "frozenset",
+        "getattr",
+        "globals",
+        "hasattr",
+        "hash",
+        "help",
+        "hex",
+        "id",
+        "input",
+        "int",
+        "isinstance",
+        "issubclass",
+        "iter",
+        "len",
+        "list",
+        "locals",
+        "map",
+        "max",
+        "memoryview",
+        "min",
+        "next",
+        "object",
+        "oct",
+        "open",
+        "ord",
+        "pow",
+        "print",
+        "property",
+        "range",
+        "repr",
+        "reversed",
+        "round",
+        "set",
+        "setattr",
+        "slice",
+        "sorted",
+        "staticmethod",
+        "str",
+        "sum",
+        "super",
+        "tuple",
+        "type",
+        "vars",
+        "zip",
+        "__import__",
+    ];
+    KEYWORDS.binary_search_by(|k| k.cmp(&name)).is_ok()
+        || BUILTINS.binary_search_by(|b| b.cmp(&name)).is_ok()
 }
 
 // TODO: merge with table model generation logic

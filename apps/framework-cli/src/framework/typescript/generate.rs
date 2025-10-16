@@ -126,11 +126,93 @@ fn generate_enum(data_enum: &DataEnum, name: &str) -> String {
 }
 
 fn quote_name_if_needed(column_name: &str) -> String {
-    if column_name.contains(' ') {
+    // Valid TS identifier: /^[A-Za-z_$][A-Za-z0-9_$]*$/ and not a TS keyword
+    // We conservatively quote if it doesn't match identifier pattern or contains any non-identifier chars
+    let mut chars = column_name.chars();
+    let first_ok = match chars.next() {
+        Some(c) => c.is_ascii_alphabetic() || c == '_' || c == '$',
+        None => false,
+    };
+    let rest_ok = first_ok
+        && column_name
+            .chars()
+            .skip(1)
+            .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '$');
+    if !rest_ok || is_typescript_keyword(column_name) {
         format!("'{column_name}'")
     } else {
         column_name.to_string()
     }
+}
+
+fn is_typescript_keyword(name: &str) -> bool {
+    // Minimal set to avoid false negatives; quoting keywords is always safe
+    const KEYWORDS: &[&str] = &[
+        "break",
+        "case",
+        "catch",
+        "class",
+        "const",
+        "continue",
+        "debugger",
+        "default",
+        "delete",
+        "do",
+        "else",
+        "enum",
+        "export",
+        "extends",
+        "false",
+        "finally",
+        "for",
+        "function",
+        "if",
+        "import",
+        "in",
+        "instanceof",
+        "new",
+        "null",
+        "return",
+        "super",
+        "switch",
+        "this",
+        "throw",
+        "true",
+        "try",
+        "typeof",
+        "var",
+        "void",
+        "while",
+        "with",
+        "as",
+        "implements",
+        "interface",
+        "let",
+        "package",
+        "private",
+        "protected",
+        "public",
+        "static",
+        "yield",
+        "any",
+        "boolean",
+        "constructor",
+        "declare",
+        "get",
+        "module",
+        "require",
+        "number",
+        "set",
+        "string",
+        "symbol",
+        "type",
+        "from",
+        "of",
+        "readonly",
+        "unknown",
+        "never",
+    ];
+    KEYWORDS.binary_search_by(|k| k.cmp(&name)).is_ok()
 }
 
 fn generate_interface(
