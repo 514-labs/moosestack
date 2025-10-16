@@ -264,6 +264,48 @@ pub async fn execute_changes(
     Ok(())
 }
 
+/// Returns a human-readable description of an operation for logging/display
+pub fn describe_operation(operation: &SerializableOlapOperation) -> String {
+    match operation {
+        SerializableOlapOperation::CreateTable { table } => {
+            format!("Creating table '{}'", table.name)
+        }
+        SerializableOlapOperation::DropTable { table } => {
+            format!("Dropping table '{}'", table)
+        }
+        SerializableOlapOperation::AddTableColumn { table, column, .. } => {
+            format!("Adding column '{}' to table '{}'", column.name, table)
+        }
+        SerializableOlapOperation::DropTableColumn { table, column_name } => {
+            format!("Dropping column '{}' from table '{}'", column_name, table)
+        }
+        SerializableOlapOperation::ModifyTableColumn {
+            table,
+            after_column,
+            ..
+        } => {
+            format!(
+                "Modifying column '{}' in table '{}'",
+                after_column.name, table
+            )
+        }
+        SerializableOlapOperation::RenameTableColumn {
+            table,
+            before_column_name,
+            after_column_name,
+        } => {
+            format!(
+                "Renaming column '{}' to '{}' in table '{}'",
+                before_column_name, after_column_name, table
+            )
+        }
+        SerializableOlapOperation::ModifyTableSettings { table, .. } => {
+            format!("Modifying settings for table '{}'", table)
+        }
+        SerializableOlapOperation::RawSql { description, .. } => description.clone(),
+    }
+}
+
 /// Executes a single atomic OLAP operation.
 pub async fn execute_atomic_operation(
     db_name: &str,

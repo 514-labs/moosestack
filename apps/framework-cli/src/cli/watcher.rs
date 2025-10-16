@@ -34,8 +34,8 @@ use super::processing_coordinator::ProcessingCoordinator;
 use super::settings::Settings;
 
 use crate::cli::routines::openapi::openapi;
+use crate::framework::core::state_storage::StateStorage;
 use crate::infrastructure::processes::process_registry::ProcessRegistries;
-use crate::infrastructure::redis::redis_client::RedisClient;
 use crate::metrics::Metrics;
 use crate::project::Project;
 use crate::utilities::PathExt;
@@ -114,7 +114,7 @@ impl EventBuckets {
 /// * `infrastructure_map` - The current infrastructure map
 /// * `project_registries` - Registry for all processes including syncing processes
 /// * `metrics` - Metrics collection
-/// * `redis_client` - Redis client for state management
+/// * `state_storage` - State storage for managing infrastructure state
 /// * `settings` - CLI settings configuration
 /// * `processing_coordinator` - Coordinator for synchronizing with MCP tools
 #[allow(clippy::too_many_arguments)]
@@ -127,7 +127,7 @@ async fn watch(
     infrastructure_map: &'static RwLock<InfrastructureMap>,
     project_registries: Arc<RwLock<ProcessRegistries>>,
     metrics: Arc<Metrics>,
-    redis_client: Arc<RedisClient>,
+    state_storage: Arc<Box<dyn StateStorage>>,
     settings: Settings,
     processing_coordinator: ProcessingCoordinator,
 ) -> Result<(), anyhow::Error> {
@@ -172,7 +172,7 @@ async fn watch(
                         "Infrastructure changes processed successfully",
                         async {
                             let plan_result =
-                                framework::core::plan::plan_changes(&redis_client, &project).await;
+                                framework::core::plan::plan_changes(&**state_storage, &project).await;
 
                             match plan_result {
                                 Ok((_, plan_result)) => {
@@ -193,10 +193,7 @@ async fn watch(
                                     .await
                                     {
                                         Ok(_) => {
-                                            plan_result
-                                                .target_infra_map
-                                                .store_in_redis(&redis_client)
-                                                .await?;
+                                            state_storage.store_infrastructure_map(&plan_result.target_infra_map).await?;
 
                                             let _openapi_file =
                                                 openapi(&project, &plan_result.target_infra_map).await?;
@@ -279,7 +276,7 @@ impl FileWatcher {
     /// * `infrastructure_map` - The current infrastructure map
     /// * `project_registries` - Registry for all processes including syncing processes
     /// * `metrics` - Metrics collection
-    /// * `redis_client` - Redis client for state management
+    /// * `state_storage` - State storage for managing infrastructure state
     /// * `settings` - CLI settings configuration
     /// * `processing_coordinator` - Coordinator for synchronizing with MCP tools
     #[allow(clippy::too_many_arguments)]
@@ -293,7 +290,7 @@ impl FileWatcher {
         infrastructure_map: &'static RwLock<InfrastructureMap>,
         project_registries: Arc<RwLock<ProcessRegistries>>,
         metrics: Arc<Metrics>,
-        redis_client: Arc<RedisClient>,
+        state_storage: Arc<Box<dyn StateStorage>>,
         settings: Settings,
         processing_coordinator: ProcessingCoordinator,
     ) -> Result<(), Error> {
@@ -313,7 +310,7 @@ impl FileWatcher {
                 infrastructure_map,
                 project_registries,
                 metrics,
-                redis_client,
+                state_storage,
                 settings,
                 processing_coordinator,
             )

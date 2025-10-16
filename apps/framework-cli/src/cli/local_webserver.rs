@@ -3203,13 +3203,23 @@ async fn get_admin_reconciled_inframap(
     use crate::infrastructure::olap::clickhouse;
     use std::collections::HashSet;
 
-    // Load current map from Redis (these are the tables under Moose management)
-    let current_map = match InfrastructureMap::load_from_redis(redis_client).await {
+    // Create state storage based on project configuration
+    let state_storage =
+        crate::framework::core::state_storage::create_state_storage(project, redis_client)
+            .await
+            .map_err(|e| {
+                crate::framework::core::plan::PlanningError::Other(anyhow::anyhow!(
+                    "Failed to create state storage: {e}"
+                ))
+            })?;
+
+    // Load current map from state storage (these are the tables under Moose management)
+    let current_map = match state_storage.load_infrastructure_map().await {
         Ok(Some(infra_map)) => infra_map,
         Ok(None) => InfrastructureMap::default(),
         Err(e) => {
             return Err(crate::framework::core::plan::PlanningError::Other(
-                anyhow::anyhow!("Failed to load infrastructure map from Redis: {e}"),
+                anyhow::anyhow!("Failed to load infrastructure map from state storage: {e}"),
             ));
         }
     };
