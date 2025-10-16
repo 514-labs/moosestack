@@ -3,9 +3,12 @@ use crate::cli::routines::RoutineFailure;
 use crate::framework::core::infrastructure_map::InfrastructureMap;
 use crate::framework::core::partial_infrastructure_map::LifeCycle;
 use crate::framework::languages::SupportedLanguages;
+use crate::framework::python::generate::{
+    map_to_python_class_name, map_to_python_snake_identifier,
+};
+use crate::framework::typescript::generate::sanitize_typescript_identifier;
 use crate::infrastructure::stream::kafka::client::fetch_topics;
 use crate::project::Project;
-use convert_case::{Case, Casing};
 use globset::{Glob, GlobMatcher};
 use log::{info, warn};
 use schema_registry_client::rest::apis::Error as SchemaRegistryError;
@@ -100,25 +103,28 @@ pub async fn write_external_topics(
             let subject = format!("{}-value", topic);
             match fetch_latest_json_schema(&sr_client, &subject).await {
                 Ok(Some(schema_json)) => {
-                    let type_name = Value::from_str(&schema_json)
-                        .ok()
-                        .and_then(|j| {
-                            j.get("title")
-                                .and_then(|title| title.as_str().map(|s| s.to_string()))
-                        })
-                        .unwrap_or_else(|| sanitize_pascal_ident(topic));
+                    let schema_title = Value::from_str(&schema_json).ok().and_then(|j| {
+                        j.get("title")
+                            .and_then(|t| t.as_str().map(|s| s.to_string()))
+                    });
                     match project.language {
                         SupportedLanguages::Typescript => {
+                            let type_name = schema_title
+                                .as_deref()
+                                .map(sanitize_typescript_identifier)
+                                .unwrap_or_else(|| sanitize_typescript_identifier(topic));
                             schema_items.push((type_name.clone(), schema_json));
-                            // All types will be emitted into a single file `externalTypes.ts`
                             type_map
                                 .insert(topic.clone(), (type_name, "externalTypes".to_string()));
                         }
                         SupportedLanguages::Python => {
-                            schema_items.push((type_name.clone(), schema_json));
-                            // All classes will be emitted into a single file `external_models.py`
+                            let class_name = schema_title
+                                .as_deref()
+                                .map(map_to_python_class_name)
+                                .unwrap_or_else(|| map_to_python_class_name(topic));
+                            schema_items.push((class_name.clone(), schema_json));
                             type_map
-                                .insert(topic.clone(), (type_name, "external_models".to_string()));
+                                .insert(topic.clone(), (class_name, "external_models".to_string()));
                         }
                     }
                 }
@@ -203,22 +209,6 @@ pub async fn write_external_topics(
     Ok(())
 }
 
-fn sanitize_pascal_ident(topic: &str) -> String {
-    let mut ident = topic.to_case(Case::Pascal);
-    if ident.is_empty() || !ident.chars().next().unwrap().is_ascii_alphabetic() {
-        ident.insert(0, '_');
-    }
-    ident
-}
-
-fn sanitize_py_ident(topic: &str) -> String {
-    let mut ident = topic.to_case(Case::Snake);
-    if ident.is_empty() || !ident.chars().next().unwrap().is_ascii_alphabetic() {
-        ident.insert(0, '_');
-    }
-    ident
-}
-
 fn render_typescript_streams(
     topics: &[String],
     type_map: &std::collections::HashMap<String, (String, String)>,
@@ -235,7 +225,7 @@ fn render_typescript_streams(
     out.push('\n');
 
     for t in topics {
-        let var_name = sanitize_pascal_ident(t);
+        let var_name = format!("{}Stream", sanitize_typescript_identifier(t));
         if let Some((type_name, _)) = type_map.get(t) {
             // Include schema registry config (Latest subject) for topics with discovered JSON schema
             let subject = format!("{}-value", t);
@@ -280,7 +270,7 @@ fn render_python_streams(
     }
 
     for t in topics {
-        let var_name = sanitize_py_ident(t);
+        let var_name = format!("{}_stream", map_to_python_snake_identifier(t));
         if let Some((class_name, _)) = type_map.get(t) {
             // Include schema registry config (Latest subject) for topics with discovered JSON schema
             let subject = format!("{}-value", t);
@@ -414,4 +404,43 @@ fn generate_python_bundle(
         let _ = std::fs::remove_file(&tmp_out_path);
     }
     fs::write(out_path, combined.as_bytes()).map_err(|e| e.into())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_ts_sanitize_with_dots_and_hyphens() {
+        assert_eq!(
+            sanitize_typescript_identifier("orders.events-v1"),
+            "OrdersEventsV1"
+        );
+        assert_eq!(sanitize_typescript_identifier("foo-bar.baz"), "FooBarBaz");
+    }
+
+    #[test]
+    fn test_py_sanitize_with_dots_and_hyphens() {
+        assert_eq!(
+            map_to_python_snake_identifier("orders.events-v1"),
+            "orders_events_v_1"
+        );
+        assert_eq!(map_to_python_snake_identifier("foo-bar.baz"), "foo_bar_baz");
+    }
+
+    #[test]
+    fn test_ts_sanitize_leading_digit() {
+        assert_eq!(
+            sanitize_typescript_identifier("1-topic.name"),
+            "_1TopicName"
+        );
+    }
+
+    #[test]
+    fn test_py_sanitize_leading_digit() {
+        assert_eq!(
+            map_to_python_snake_identifier("1-topic.name"),
+            "_1_topic_name"
+        );
+    }
 }
