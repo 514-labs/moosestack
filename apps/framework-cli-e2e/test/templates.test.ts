@@ -52,6 +52,10 @@ import {
   getExpectedSchemas,
   validateSchemasWithDebugging,
   verifyVersionedTables,
+  verifyWebAppEndpoint,
+  verifyWebAppHealth,
+  verifyWebAppQuery,
+  verifyWebAppPostEndpoint,
 } from "./utils";
 import { triggerWorkflow } from "./utils/workflow-utils";
 import { geoPayloadPy, geoPayloadTs } from "./utils/geo-payload";
@@ -374,6 +378,54 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
           );
           await waitForDBWrite(devProcess!, "GeoTypes", 1);
           await verifyClickhouseData("GeoTypes", id, "id");
+        });
+
+        it("should serve WebApp at custom mountPath with Express framework", async function () {
+          this.timeout(TIMEOUTS.TEST_SETUP_MS);
+
+          // Test Express WebApp health endpoint
+          await verifyWebAppHealth("/express", "bar-express-api");
+
+          // Test Express WebApp query endpoint (GET)
+          await verifyWebAppQuery("/express/query", { limit: "5" });
+
+          // Test Express WebApp data endpoint (POST)
+          await verifyWebAppPostEndpoint(
+            "/express/data",
+            {
+              orderBy: "totalRows",
+              limit: 5,
+              startDay: 1,
+              endDay: 31,
+            },
+            200,
+            (json) => {
+              if (!json.success) {
+                throw new Error("Expected success to be true");
+              }
+              if (!Array.isArray(json.data)) {
+                throw new Error("Expected data to be an array");
+              }
+              if (json.params.orderBy !== "totalRows") {
+                throw new Error("Expected orderBy to be totalRows");
+              }
+            },
+          );
+        });
+
+        it("should handle multiple WebApp endpoints independently", async function () {
+          this.timeout(TIMEOUTS.TEST_SETUP_MS);
+
+          // Verify Express WebApp is accessible
+          await verifyWebAppEndpoint("/express/health", 200);
+
+          // Verify regular Api endpoint still works alongside WebApp
+          const apiResponse = await fetch(
+            `${SERVER_CONFIG.url}/api/bar?orderBy=totalRows&startDay=1&endDay=31&limit=5`,
+          );
+          expect(apiResponse.ok).to.be.true;
+          const apiData = await apiResponse.json();
+          expect(apiData).to.be.an("array");
         });
       }
     } else {

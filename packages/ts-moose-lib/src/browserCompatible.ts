@@ -28,6 +28,10 @@ export {
   ETLPipeline,
   ETLPipelineConfig,
   LifeCycle,
+  WebApp,
+  WebAppConfig,
+  WebAppHandler,
+  FrameworkApp,
 } from "./dmv2";
 
 export {

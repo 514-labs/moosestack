@@ -423,16 +423,12 @@ async fn get_consumption_api_res(
     }
 
     let full_path = req.uri().path();
-    let stripped_for_proxy = full_path
-        .strip_prefix("/api")
-        .or_else(|| full_path.strip_prefix("/consumption"))
-        .unwrap_or(full_path);
-
+    // Don't strip the prefix - let Node.js and python targets handle routing for both Api and WebApp
     let url = format!(
         "http://{}:{}{}{}",
         host,
         proxy_port,
-        stripped_for_proxy,
+        full_path,
         req.uri()
             .query()
             .map_or("".to_string(), |q| format!("?{q}"))
@@ -500,6 +496,7 @@ struct RouteService {
     path_prefix: Option<String>,
     route_table: &'static RwLock<HashMap<PathBuf, RouteMeta>>,
     consumption_apis: &'static RwLock<HashSet<String>>,
+    web_apps: &'static RwLock<HashSet<String>>,
     jwt_config: Option<JwtConfig>,
     configured_producer: Option<ConfiguredProducer>,
     current_version: String,
@@ -594,6 +591,7 @@ impl Service<Request<Incoming>> for RouteService {
             self.current_version.clone(),
             self.path_prefix.clone(),
             self.consumption_apis,
+            self.web_apps,
             self.jwt_config.clone(),
             self.configured_producer.clone(),
             self.host.clone(),
@@ -1535,6 +1533,7 @@ async fn router(
     current_version: String,
     path_prefix: Option<String>,
     consumption_apis: &RwLock<HashSet<String>>,
+    web_apps: &RwLock<HashSet<String>>,
     jwt_config: Option<JwtConfig>,
     configured_producer: Option<ConfiguredProducer>,
     host: String,
@@ -1730,7 +1729,88 @@ async fn router(
             workflows_terminate_route(req, is_prod, project.clone(), name.to_string()).await
         }
         (_, &hyper::Method::OPTIONS, _) => options_route(),
-        _ => route_not_found_response(),
+        (_, _method, _) => {
+            // Check if this is a WebApp route by checking mount paths
+            let full_path = req.uri().path();
+            let web_apps_read = web_apps.read().await;
+            let is_web_app_route = web_apps_read
+                .iter()
+                .any(|mount_path| full_path.starts_with(mount_path));
+            drop(web_apps_read);
+
+            if is_web_app_route {
+                // Capture method and headers before consuming the request
+                let method = req.method().clone();
+                let headers_to_copy: Vec<_> = req
+                    .headers()
+                    .iter()
+                    .map(|(k, v)| (k.clone(), v.clone()))
+                    .collect();
+
+                // Proxy to Node.js server with full path (Node.js server will strip mount path)
+                let url = format!(
+                    "http://{}:{}{}{}",
+                    host,
+                    project.http_server_config.proxy_port,
+                    full_path,
+                    req.uri()
+                        .query()
+                        .map_or("".to_string(), |q| format!("?{q}"))
+                );
+
+                debug!("Proxying WebApp {} request to: {:?}", method, url);
+
+                // Read request body if present
+                let limited_body = Limited::new(
+                    req.into_body(),
+                    project.http_server_config.max_request_body_size,
+                );
+                let body_bytes = match limited_body.collect().await {
+                    Ok(collected) => collected.to_bytes(),
+                    Err(_) => Bytes::new(),
+                };
+
+                debug!(
+                    "WebApp proxy body size: {} bytes, headers: {:?}",
+                    body_bytes.len(),
+                    headers_to_copy
+                        .iter()
+                        .map(|(k, _)| k.as_str())
+                        .collect::<Vec<_>>()
+                );
+
+                // Build the request using RequestBuilder for proper body handling
+                let mut request_builder = http_client.request(method, &url);
+
+                // Copy all headers
+                for (key, value) in headers_to_copy {
+                    request_builder = request_builder.header(key, value);
+                }
+
+                // Add body if present
+                if !body_bytes.is_empty() {
+                    request_builder = request_builder.body(body_bytes);
+                }
+
+                match request_builder.send().await {
+                    Ok(response) => {
+                        let status = response.status();
+                        let body_bytes = response.bytes().await.unwrap_or_default();
+                        Response::builder()
+                            .status(status)
+                            .body(Full::new(body_bytes))
+                    }
+                    Err(e) => {
+                        debug!("WebApp proxy error: {:?}", e);
+                        Response::builder()
+                            .status(StatusCode::BAD_GATEWAY)
+                            .body(Full::new(Bytes::from("WebApp unavailable")))
+                    }
+                }
+            } else {
+                route_not_found_response()
+            }
+        }
     };
 
     let res_bytes = res.as_ref().unwrap().body().size_hint().exact().unwrap();
@@ -1885,9 +1965,11 @@ async fn print_available_routes(
     route_table: &'static RwLock<HashMap<PathBuf, RouteMeta>>,
     consumption_apis: &'static RwLock<HashSet<String>>,
     project: &Project,
+    web_apps: &'static RwLock<HashSet<String>>,
 ) {
     let route_table_read = route_table.read().await;
     let consumption_apis_read = consumption_apis.read().await;
+    let web_apps_read = web_apps.read().await;
 
     // Collect routes by category
     let mut static_routes = vec![
@@ -1959,13 +2041,27 @@ async fn print_available_routes(
         consumption_routes.push((method, endpoint, description));
     }
 
+    // Collect WebApp routes
+    let mut webapp_routes = Vec::new();
+    for mount_path in web_apps_read.iter() {
+        let method = "*";
+        let endpoint = mount_path.clone();
+        let description = "Express WebApp endpoint".to_string();
+        webapp_routes.push((method, endpoint, description));
+    }
+
     // Sort each section alphabetically by endpoint
     static_routes.sort_by(|a, b| a.1.cmp(&b.1));
     ingest_routes.sort_by(|a, b| a.1.cmp(&b.1));
     consumption_routes.sort_by(|a, b| a.1.cmp(&b.1));
+    webapp_routes.sort_by(|a, b| a.1.cmp(&b.1));
 
     // Print the routes if any exist
-    if !static_routes.is_empty() || !ingest_routes.is_empty() || !consumption_routes.is_empty() {
+    if !static_routes.is_empty()
+        || !ingest_routes.is_empty()
+        || !consumption_routes.is_empty()
+        || !webapp_routes.is_empty()
+    {
         let base_url = project.http_server_config.url();
         println!("\n📍 Available Routes:");
         println!("  Base URL: {}\n", base_url);
@@ -1976,6 +2072,7 @@ async fn print_available_routes(
             .iter()
             .chain(ingest_routes.iter())
             .chain(consumption_routes.iter())
+            .chain(webapp_routes.iter())
             .collect();
         let endpoint_width = all_routes
             .iter()
@@ -2026,6 +2123,7 @@ async fn print_available_routes(
         print_section("Static Routes:", &static_routes);
         print_section("Ingestion Routes:", &ingest_routes);
         print_section("Consumption Routes:", &consumption_routes);
+        print_section("WebApp Routes:", &webapp_routes);
     }
 }
 
@@ -2191,6 +2289,57 @@ impl Webserver {
         tx
     }
 
+    pub async fn spawn_webapp_update_listener(
+        &self,
+        web_apps: &'static RwLock<HashSet<String>>,
+    ) -> mpsc::Sender<crate::framework::core::infrastructure_map::WebAppChange> {
+        log::info!("Spawning WebApp update listener");
+
+        let (tx, mut rx) =
+            mpsc::channel::<crate::framework::core::infrastructure_map::WebAppChange>(32);
+
+        tokio::spawn(async move {
+            while let Some(webapp_change) = rx.recv().await {
+                log::info!("🔔 Received WebApp change: {:?}", webapp_change);
+                match webapp_change {
+                    crate::framework::core::infrastructure_map::WebAppChange::WebApp(
+                        crate::framework::core::infrastructure_map::Change::Added(webapp),
+                    ) => {
+                        log::info!("Adding WebApp mount path: {:?}", webapp.mount_path);
+                        web_apps.write().await.insert(webapp.mount_path.clone());
+                        log::info!("✅ Current web_apps: {:?}", *web_apps.read().await);
+                    }
+                    crate::framework::core::infrastructure_map::WebAppChange::WebApp(
+                        crate::framework::core::infrastructure_map::Change::Removed(webapp),
+                    ) => {
+                        log::info!("Removing WebApp mount path: {:?}", webapp.mount_path);
+                        web_apps.write().await.remove(&webapp.mount_path);
+                        log::info!("✅ Current web_apps: {:?}", *web_apps.read().await);
+                    }
+                    crate::framework::core::infrastructure_map::WebAppChange::WebApp(
+                        crate::framework::core::infrastructure_map::Change::Updated {
+                            before,
+                            after,
+                        },
+                    ) => {
+                        log::info!(
+                            "Updating WebApp mount path: {:?} to {:?}",
+                            before.mount_path,
+                            after.mount_path
+                        );
+                        let mut web_apps_guard = web_apps.write().await;
+                        web_apps_guard.remove(&before.mount_path);
+                        web_apps_guard.insert(after.mount_path.clone());
+                        drop(web_apps_guard);
+                        log::info!("✅ Current web_apps: {:?}", *web_apps.read().await);
+                    }
+                }
+            }
+        });
+
+        tx
+    }
+
     // TODO - when we retire the the old core, we should remove routeTable from the start method and using only
     // the channel to update the routes
     #[allow(clippy::too_many_arguments)]
@@ -2199,6 +2348,7 @@ impl Webserver {
         settings: &Settings,
         route_table: &'static RwLock<HashMap<PathBuf, RouteMeta>>,
         consumption_apis: &'static RwLock<HashSet<String>>,
+        web_apps: &'static RwLock<HashSet<String>>,
         infra_map: I,
         project: Arc<Project>,
         metrics: Arc<Metrics>,
@@ -2244,7 +2394,7 @@ impl Webserver {
         );
 
         // Print available routes in table format
-        print_available_routes(route_table, consumption_apis, &project).await;
+        print_available_routes(route_table, consumption_apis, &project, web_apps).await;
 
         if !project.is_production {
             // Fire once-only startup script as soon as server starts
@@ -2313,6 +2463,7 @@ impl Webserver {
             path_prefix: project.http_server_config.normalized_path_prefix(),
             route_table,
             consumption_apis,
+            web_apps,
             jwt_config: project.jwt.clone(),
             current_version: project.cur_version().to_string(),
             configured_producer: producer,

@@ -89,7 +89,7 @@
 use crate::cli::local_webserver::{IntegrateChangesRequest, RouteMeta};
 use crate::cli::routines::code_generation::prompt_user_for_remote_ch_http;
 use crate::cli::routines::openapi::openapi;
-use crate::framework::core::execute::execute_initial_infra_change;
+use crate::framework::core::execute::{execute_initial_infra_change, ExecutionContext};
 use crate::framework::core::infra_reality_checker::InfraDiscrepancies;
 use crate::framework::core::infrastructure_map::{
     compute_table_columns_diff, InfrastructureMap, OlapChange, TableChange,
@@ -387,6 +387,9 @@ pub async fn start_development_mode(
     let consumption_apis: &'static RwLock<HashSet<String>> =
         Box::leak(Box::new(RwLock::new(HashSet::new())));
 
+    let web_apps: &'static RwLock<HashSet<String>> =
+        Box::leak(Box::new(RwLock::new(HashSet::new())));
+
     let route_table = HashMap::<PathBuf, RouteMeta>::new();
     let route_table: &'static RwLock<HashMap<PathBuf, RouteMeta>> =
         Box::leak(Box::new(RwLock::new(route_table)));
@@ -394,6 +397,8 @@ pub async fn start_development_mode(
     let route_update_channel = web_server
         .spawn_api_update_listener(project.clone(), route_table, consumption_apis)
         .await;
+
+    let webapp_update_channel = web_server.spawn_webapp_update_listener(web_apps).await;
 
     let (_, plan) = plan_changes(&redis_client, &project).await?;
 
@@ -527,15 +532,18 @@ pub async fn start_development_mode(
         .spawn_api_update_listener(project.clone(), route_table, consumption_apis)
         .await;
 
-    let process_registry = execute_initial_infra_change(
-        &project,
+    let webapp_changes_channel = web_server.spawn_webapp_update_listener(web_apps).await;
+
+    let process_registry = execute_initial_infra_change(ExecutionContext {
+        project: &project,
         settings,
-        &plan,
-        false,
+        plan: &plan,
+        skip_olap: false,
         api_changes_channel,
-        metrics.clone(),
-        &redis_client,
-    )
+        webapp_changes_channel,
+        metrics: metrics.clone(),
+        redis_client: &redis_client,
+    })
     .await?;
 
     let process_registry = Arc::new(RwLock::new(process_registry));
@@ -551,6 +559,7 @@ pub async fn start_development_mode(
     file_watcher.start(
         project.clone(),
         route_update_channel,
+        webapp_update_channel,
         infra_map,
         process_registry.clone(),
         metrics.clone(),
@@ -581,6 +590,7 @@ pub async fn start_development_mode(
             settings,
             route_table,
             consumption_apis,
+            web_apps,
             infra_map,
             project,
             metrics,
@@ -634,6 +644,10 @@ pub async fn start_production_mode(
     let consumption_apis: &'static RwLock<HashSet<String>> =
         Box::leak(Box::new(RwLock::new(HashSet::new())));
     info!("Analytics APIs initialized");
+
+    let web_apps: &'static RwLock<HashSet<String>> =
+        Box::leak(Box::new(RwLock::new(HashSet::new())));
+    info!("Web apps initialized");
 
     let route_table = HashMap::<PathBuf, RouteMeta>::new();
 
@@ -707,15 +721,18 @@ pub async fn start_production_mode(
         .spawn_api_update_listener(project.clone(), route_table, consumption_apis)
         .await;
 
-    let process_registry = execute_initial_infra_change(
-        &project,
+    let webapp_update_channel = web_server.spawn_webapp_update_listener(web_apps).await;
+
+    let process_registry = execute_initial_infra_change(ExecutionContext {
+        project: &project,
         settings,
-        &plan,
-        execute_migration_yaml,
+        plan: &plan,
+        skip_olap: execute_migration_yaml,
         api_changes_channel,
-        metrics.clone(),
-        &redis_client,
-    )
+        webapp_changes_channel: webapp_update_channel,
+        metrics: metrics.clone(),
+        redis_client: &redis_client,
+    })
     .await?;
 
     plan.target_infra_map.store_in_redis(&redis_client).await?;
@@ -727,6 +744,7 @@ pub async fn start_production_mode(
             settings,
             route_table,
             consumption_apis,
+            web_apps,
             infra_map,
             project,
             metrics,
