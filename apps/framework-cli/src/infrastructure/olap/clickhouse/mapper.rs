@@ -119,6 +119,29 @@ fn std_field_type_to_clickhouse_type_mapper(
     field_type: ColumnType,
     annotations: &[(String, Value)],
 ) -> Result<ClickHouseColumnType, ClickhouseError> {
+    if let Some((_, simple_agg_func)) = annotations
+        .iter()
+        .find(|(k, _)| k == "simpleAggregationFunction")
+    {
+        #[derive(serde::Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        struct SimpleAggFunctionAnnotation {
+            function_name: String,
+            argument_type: ColumnType,
+        }
+
+        let simple_agg =
+            serde_json::from_value::<SimpleAggFunctionAnnotation>(simple_agg_func.clone()).unwrap();
+
+        let argument_type =
+            std_field_type_to_clickhouse_type_mapper(simple_agg.argument_type, &[])?;
+
+        return Ok(ClickHouseColumnType::SimpleAggregateFunction {
+            function_name: simple_agg.function_name,
+            argument_type: Box::new(argument_type),
+        });
+    }
+
     if let Some((_, agg_func)) = annotations.iter().find(|(k, _)| k == "aggregationFunction") {
         let clickhouse_type = std_field_type_to_clickhouse_type_mapper(field_type, &[])?;
 

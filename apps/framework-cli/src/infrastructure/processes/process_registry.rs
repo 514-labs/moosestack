@@ -10,6 +10,7 @@ use crate::project::Project;
 use super::blocks_registry::BlocksProcessRegistry;
 use super::consumption_registry::{ConsumptionError, ConsumptionProcessRegistry};
 use super::functions_registry::{FunctionProcessRegistry, FunctionRegistryError};
+use super::kafka_clickhouse_sync::SyncingProcessesRegistry;
 use super::orchestration_workers_registry::{
     OrchestrationWorkersRegistry, OrchestrationWorkersRegistryError,
 };
@@ -30,6 +31,9 @@ pub struct ProcessRegistries {
 
     /// Registry for orchestration worker processes that handle workflow execution
     pub orchestration_workers: OrchestrationWorkersRegistry,
+
+    /// Registry for syncing processes that handle Kafka to ClickHouse and topic-to-topic synchronization
+    pub syncing: SyncingProcessesRegistry,
 }
 
 /// Errors that can occur when managing processes in the registry
@@ -57,10 +61,11 @@ impl ProcessRegistries {
     /// # Arguments
     /// * `project` - Project configuration containing paths and settings for processes
     /// * `settings` - Global application settings
+    /// * `syncing` - Syncing processes registry for Kafka to ClickHouse and topic-to-topic synchronization
     ///
     /// # Returns
     /// * `Self` - A new ProcessRegistries instance
-    pub fn new(project: &Project, settings: &Settings) -> Self {
+    pub fn new(project: &Project, settings: &Settings, syncing: SyncingProcessesRegistry) -> Self {
         let functions = FunctionProcessRegistry::new(project.clone());
 
         let blocks = if project.features.data_model_v2 || !project.features.olap {
@@ -92,6 +97,7 @@ impl ProcessRegistries {
             blocks,
             consumption,
             orchestration_workers,
+            syncing,
         }
     }
 
@@ -106,6 +112,7 @@ impl ProcessRegistries {
         self.functions.stop_all().await;
         self.consumption.stop().await?;
         self.orchestration_workers.stop_all().await?;
+        self.syncing.stop_all().await;
         Ok(())
     }
 }

@@ -30,6 +30,7 @@ pub mod table;
 pub mod topic;
 pub mod topic_sync_process;
 pub mod view;
+pub mod web_app;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Eq, Hash)]
 #[serde(tag = "kind")]

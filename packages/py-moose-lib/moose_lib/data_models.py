@@ -83,6 +83,46 @@ class AggregateFunction:
         }
 
 
+def simple_aggregated[T](
+        agg_func: str,
+        arg_type: Type[T]
+) -> Type[T]:
+    """Helper to create a SimpleAggregateFunction type annotation.
+
+    SimpleAggregateFunction is a ClickHouse type for storing aggregated values directly
+    instead of intermediate states. It's more efficient for functions like sum, max, min, etc.
+
+    Args:
+        agg_func: The aggregation function name (e.g., "sum", "max", "anyLast")
+        arg_type: The argument type for the function (also the result type)
+
+    Returns:
+        An Annotated type with SimpleAggregateFunction metadata
+
+    Example:
+        ```python
+        from moose_lib import simple_aggregated
+
+        row_count: simple_aggregated("sum", int)
+        max_value: simple_aggregated("max", float)
+        last_status: simple_aggregated("anyLast", str)
+        ```
+    """
+    return Annotated[arg_type, SimpleAggregateFunction(agg_func=agg_func, arg_type=arg_type)]
+
+
+@dataclasses.dataclass(frozen=True)
+class SimpleAggregateFunction:
+    agg_func: str
+    arg_type: type | GenericAlias | _BaseGenericAlias
+
+    def to_dict(self):
+        return {
+            "functionName": self.agg_func,
+            "argumentType": py_type_to_column_type(self.arg_type, [])[2]
+        }
+
+
 def enum_value_serializer(value: int | str):
     if isinstance(value, int):
         return {"Int": value}
@@ -357,6 +397,10 @@ def _to_columns(model: type[BaseModel]) -> list[Column]:
             if isinstance(md, AggregateFunction):
                 annotations.append(
                     ("aggregationFunction", md.to_dict())
+                )
+            if isinstance(md, SimpleAggregateFunction):
+                annotations.append(
+                    ("simpleAggregationFunction", md.to_dict())
                 )
             if md == "LowCardinality":
                 annotations.append(

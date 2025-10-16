@@ -1287,6 +1287,23 @@ impl OlapOperations for ConfiguredDBClient {
                     }
                 };
 
+                let mut annotations = Vec::new();
+                if let Ok(Some((function_name, arg_type))) =
+                    type_parser::extract_simple_aggregate_function(&col_type)
+                {
+                    debug!(
+                        "Detected SimpleAggregateFunction({}, {:?}) for column {}",
+                        function_name, arg_type, col_name
+                    );
+
+                    // Create the simpleAggregationFunction annotation
+                    let annotation_value = serde_json::json!({
+                        "functionName": function_name,
+                        "argumentType": arg_type
+                    });
+                    annotations.push(("simpleAggregationFunction".to_string(), annotation_value));
+                }
+
                 let column = Column {
                     name: col_name.clone(),
                     data_type,
@@ -1294,7 +1311,7 @@ impl OlapOperations for ConfiguredDBClient {
                     unique: false,
                     primary_key: is_actual_primary_key,
                     default,
-                    annotations: Default::default(),
+                    annotations,
                     comment: column_comment,
                     ttl: None,
                 };

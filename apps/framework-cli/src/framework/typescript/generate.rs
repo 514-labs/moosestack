@@ -2,12 +2,29 @@ use crate::framework::core::infrastructure::table::{
     ColumnType, DataEnum, EnumValue, FloatType, Nested, OrderBy, Table,
 };
 use crate::framework::core::partial_infrastructure_map::LifeCycle;
+use crate::utilities::identifiers as ident;
 use convert_case::{Case, Casing};
 use itertools::Itertools;
 use serde_json::json;
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::fmt::Write;
+
+// Use shared, language-agnostic sanitization (underscores) from utilities
+pub use ident::sanitize_identifier;
+
+/// Map a string to a valid TypeScript PascalCase identifier (for types/classes/consts).
+pub fn sanitize_typescript_identifier(name: &str) -> String {
+    let preprocessed = sanitize_identifier(name);
+    let mut ident = preprocessed.to_case(Case::Pascal);
+    if ident.is_empty() || {
+        let first = ident.chars().next().unwrap();
+        !(first.is_ascii_alphabetic() || first == '_' || first == '$')
+    } {
+        ident.insert(0, '_');
+    }
+    ident
+}
 
 fn map_column_type_to_typescript(
     column_type: &ColumnType,
@@ -109,11 +126,93 @@ fn generate_enum(data_enum: &DataEnum, name: &str) -> String {
 }
 
 fn quote_name_if_needed(column_name: &str) -> String {
-    if column_name.contains(' ') {
+    // Valid TS identifier: /^[A-Za-z_$][A-Za-z0-9_$]*$/ and not a TS keyword
+    // We conservatively quote if it doesn't match identifier pattern or contains any non-identifier chars
+    let mut chars = column_name.chars();
+    let first_ok = match chars.next() {
+        Some(c) => c.is_ascii_alphabetic() || c == '_' || c == '$',
+        None => false,
+    };
+    let rest_ok = first_ok
+        && column_name
+            .chars()
+            .skip(1)
+            .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '$');
+    if !rest_ok || is_typescript_keyword(column_name) {
         format!("'{column_name}'")
     } else {
         column_name.to_string()
     }
+}
+
+fn is_typescript_keyword(name: &str) -> bool {
+    // Minimal set to avoid false negatives; quoting keywords is always safe
+    const KEYWORDS: &[&str] = &[
+        "any",
+        "as",
+        "boolean",
+        "break",
+        "case",
+        "catch",
+        "class",
+        "const",
+        "constructor",
+        "continue",
+        "debugger",
+        "declare",
+        "default",
+        "delete",
+        "do",
+        "else",
+        "enum",
+        "export",
+        "extends",
+        "false",
+        "finally",
+        "for",
+        "from",
+        "function",
+        "get",
+        "if",
+        "implements",
+        "import",
+        "in",
+        "instanceof",
+        "interface",
+        "let",
+        "module",
+        "never",
+        "new",
+        "null",
+        "number",
+        "of",
+        "package",
+        "private",
+        "protected",
+        "public",
+        "readonly",
+        "require",
+        "return",
+        "set",
+        "static",
+        "string",
+        "super",
+        "switch",
+        "symbol",
+        "this",
+        "throw",
+        "true",
+        "try",
+        "type",
+        "typeof",
+        "unknown",
+        "var",
+        "void",
+        "while",
+        "with",
+        "yield",
+    ];
+    KEYWORDS.binary_search_by(|k| k.cmp(&name)).is_ok()
 }
 
 fn generate_interface(
@@ -148,10 +247,40 @@ fn generate_interface(
 pub fn tables_to_typescript(tables: &[Table], life_cycle: Option<LifeCycle>) -> String {
     let mut output = String::new();
 
+    let uses_simple_aggregate = tables.iter().any(|table| {
+        table.columns.iter().any(|column| {
+            column
+                .annotations
+                .iter()
+                .any(|(k, _)| k == "simpleAggregationFunction")
+        })
+    });
+
     // Add imports
+    let mut base_imports = vec![
+        "IngestPipeline",
+        "OlapTable",
+        "Key",
+        "ClickHouseInt",
+        "ClickHouseDecimal",
+        "ClickHousePrecision",
+        "ClickHouseByteSize",
+        "ClickHouseNamedTuple",
+        "ClickHouseEngines",
+        "ClickHouseDefault",
+        "WithDefault",
+        "LifeCycle",
+        "ClickHouseTTL",
+    ];
+
+    if uses_simple_aggregate {
+        base_imports.push("SimpleAggregated");
+    }
+
     writeln!(
         output,
-        "import {{ IngestPipeline, OlapTable, Key, ClickHouseInt, ClickHouseDecimal, ClickHousePrecision, ClickHouseByteSize, ClickHouseNamedTuple, ClickHouseEngines, ClickHouseDefault, WithDefault, LifeCycle, ClickHouseTTL }} from \"@514labs/moose-lib\";"
+        "import {{ {} }} from \"@514labs/moose-lib\";",
+        base_imports.join(", ")
     )
     .unwrap();
 
@@ -174,7 +303,7 @@ pub fn tables_to_typescript(tables: &[Table], life_cycle: Option<LifeCycle>) -> 
             match &column.data_type {
                 ColumnType::Enum(data_enum) => {
                     if !enums.contains_key(data_enum) {
-                        let name = column.name.to_case(Case::Pascal);
+                        let name = sanitize_typescript_identifier(&column.name);
                         let name = match extra_type_names.entry(name.clone()) {
                             Entry::Occupied(mut entry) => {
                                 *entry.get_mut() = entry.get() + 1;
@@ -190,7 +319,7 @@ pub fn tables_to_typescript(tables: &[Table], life_cycle: Option<LifeCycle>) -> 
                 }
                 ColumnType::Nested(nested) => {
                     if !nested_models.contains_key(nested) {
-                        let name = column.name.to_case(Case::Pascal);
+                        let name = sanitize_typescript_identifier(&column.name);
                         let name = match extra_type_names.entry(name.clone()) {
                             Entry::Occupied(mut entry) => {
                                 *entry.get_mut() = entry.get() + 1;
@@ -237,11 +366,28 @@ pub fn tables_to_typescript(tables: &[Table], life_cycle: Option<LifeCycle>) -> 
         writeln!(output, "export interface {} {{", table.name).unwrap();
 
         for column in &table.columns {
-            let type_str = map_column_type_to_typescript(&column.data_type, &enums, &nested_models);
-            let type_str = match &column.ttl {
-                Some(expr) => format!("{type_str} & ClickHouseTTL<\"{}\">", expr),
-                None => type_str,
-            };
+            let mut type_str =
+                map_column_type_to_typescript(&column.data_type, &enums, &nested_models);
+
+            if let Some((_, simple_agg_func)) = column
+                .annotations
+                .iter()
+                .find(|(k, _)| k == "simpleAggregationFunction")
+            {
+                if let Some(function_name) =
+                    simple_agg_func.get("functionName").and_then(|v| v.as_str())
+                {
+                    type_str = format!(
+                        "{} & SimpleAggregated<{:?}, {}>",
+                        type_str, function_name, type_str
+                    );
+                }
+            }
+
+            // Append ClickHouseTTL type tag if present on the column
+            if let Some(expr) = &column.ttl {
+                type_str = format!("{type_str} & ClickHouseTTL<\"{}\">", expr);
+            }
             let type_str = match column.default {
                 None => type_str,
                 Some(ref default) if type_str == "Date" => {
@@ -281,12 +427,11 @@ pub fn tables_to_typescript(tables: &[Table], life_cycle: Option<LifeCycle>) -> 
             }
             OrderBy::SingleExpr(expr) => format!("orderByExpression: {:?}", expr),
         };
+        let var_name = sanitize_typescript_identifier(&table.name);
         writeln!(
             output,
             "export const {}Table = new OlapTable<{}>(\"{}\", {{",
-            table.name.to_case(Case::Pascal),
-            table.name,
-            table.name
+            var_name, table.name, table.name
         )
         .unwrap();
         writeln!(output, "    {order_by_spec},").unwrap();

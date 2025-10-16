@@ -318,7 +318,7 @@ pub async fn top_command_handler(
             // Offer to store the connection string for future db pull convenience
             if let Some(ref connection_string) = normalized_url {
                 let save_choice = prompt_user(
-                    "Save this connection string to your system keychain for easy `moose db pull` later? [Y/n]",
+                    "\n  Would you like to save this connection string to your system keychain for easy `moose db pull` later? [Y/n]",
                     Some("Y"),
                     Some("You can always pass --connection-string explicitly to override."),
                 )?;
