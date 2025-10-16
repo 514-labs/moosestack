@@ -1,5 +1,5 @@
 import typia from "typia";
-import { MaterializedView, sql } from "@514labs/moose-lib";
+import { MaterializedView, View, sql } from "@514labs/moose-lib";
 import { BarPipeline } from "../ingest/models";
 
 interface BarAggregated {

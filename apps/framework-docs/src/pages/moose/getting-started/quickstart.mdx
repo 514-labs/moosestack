@@ -406,10 +406,12 @@ curl "http://localhost:4000/api/bar?limit=5&orderBy=totalRows"
 
 <TypeScript>
 ```ts filename="app/ingest/models.ts" {5} copy
-export interface Foo {
-  primaryKey: Key<string>; // Unique ID
-  timestamp: number; // Unix timestamp
-  optionalText?: string; // Text to analyze
+/** Analyzed text metrics derived from Foo */
+export interface Bar {
+  primaryKey: Key<string>; // From Foo.primaryKey
+  utcTimestamp: DateTime; // From Foo.timestamp
+  hasText: boolean; // From Foo.optionalText?
+  textLength: number; // From Foo.optionalText.length
   newField?: string; // Add this new optional field
 }
 ```
@@ -427,12 +429,13 @@ class Baz(StringToEnumMixin, IntEnum):
     QUUX = auto()
 
 
-class Foo(BaseModel):
+class Bar(BaseModel):
     primary_key: Key[str]
-    timestamp: float
+    utc_timestamp: datetime
     baz: Baz
-    optional_text: Optional[str] = None
-    new_field: Optional[str] = None
+    has_text: bool
+    text_length: int
+    new_field: Optional[str] = None # New field
 ```
 </Python>
 
@@ -443,7 +446,7 @@ You should see Moose automatically update your infrastructure:
 <TypeScript>
 ```txt
 ⠋ Processing Infrastructure changes from file watcher
-             ~  Table Foo:
+             ~  Table Bar:
                   Column changes:
                     + newField: String
 ```
@@ -452,7 +455,7 @@ You should see Moose automatically update your infrastructure:
 <Python>
 ```txt
 ⠋ Processing Infrastructure changes from file watcher
-             ~  Table Foo:
+             ~  Table Bar:
                   Column changes:
                     + new_field: String
 ```

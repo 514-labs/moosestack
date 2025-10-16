@@ -11,6 +11,9 @@ const rawMeta = {
   "model-materialized-view": {
     title: "Modeling Materialized Views",
   },
+  "model-view": {
+    title: "Modeling Views",
+  },
   "supported-types": {
     title: "Supported Types",
   },
