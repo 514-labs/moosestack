@@ -423,7 +423,7 @@ async fn get_consumption_api_res(
     }
 
     let full_path = req.uri().path();
-    // Don't strip the prefix - let Node.js handle routing for both Api and WebApp
+    // Don't strip the prefix - let Node.js and python targets handle routing for both Api and WebApp
     let url = format!(
         "http://{}:{}{}{}",
         host,
