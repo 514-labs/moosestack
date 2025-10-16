@@ -183,13 +183,15 @@ fn sanitize_name(name: &str, required: bool) -> (String, String) {
             .chars()
             .skip(1)
             .all(|c| c.is_ascii_alphanumeric() || c == '_');
-    let needs_alias = !rest_ok || is_python_keyword_or_builtin(name) || name.starts_with('_');
+    let needs_alias = !rest_ok || is_python_keyword(name) || name.starts_with('_');
     if needs_alias {
         let mapped = name
             .trim_start_matches('_')
             .replace([' ', '.', '-', '/', ':', ';', ',', '\\'], "_");
         let mapped = if mapped.is_empty() {
             "field".to_string()
+        } else if is_python_keyword(name) {
+            format!("field_{}", mapped)
         } else {
             mapped
         };
@@ -207,7 +209,7 @@ fn sanitize_name(name: &str, required: bool) -> (String, String) {
     }
 }
 
-fn is_python_keyword_or_builtin(name: &str) -> bool {
+fn is_python_keyword(name: &str) -> bool {
     // conservative list
     const KEYWORDS: &[&str] = &[
         "False", "None", "True", "and", "as", "assert", "async", "await", "break", "class",
@@ -215,77 +217,7 @@ fn is_python_keyword_or_builtin(name: &str) -> bool {
         "if", "import", "in", "is", "lambda", "nonlocal", "not", "or", "pass", "raise", "return",
         "try", "while", "with", "yield",
     ];
-    const BUILTINS: &[&str] = &[
-        "abs",
-        "all",
-        "any",
-        "ascii",
-        "bin",
-        "bool",
-        "bytearray",
-        "bytes",
-        "callable",
-        "chr",
-        "classmethod",
-        "compile",
-        "complex",
-        "dict",
-        "dir",
-        "divmod",
-        "enumerate",
-        "eval",
-        "exec",
-        "filter",
-        "float",
-        "format",
-        "frozenset",
-        "getattr",
-        "globals",
-        "hasattr",
-        "hash",
-        "help",
-        "hex",
-        "id",
-        "input",
-        "int",
-        "isinstance",
-        "issubclass",
-        "iter",
-        "len",
-        "list",
-        "locals",
-        "map",
-        "max",
-        "memoryview",
-        "min",
-        "next",
-        "object",
-        "oct",
-        "open",
-        "ord",
-        "pow",
-        "print",
-        "property",
-        "range",
-        "repr",
-        "reversed",
-        "round",
-        "set",
-        "setattr",
-        "slice",
-        "sorted",
-        "staticmethod",
-        "str",
-        "sum",
-        "super",
-        "tuple",
-        "type",
-        "vars",
-        "zip",
-        "__import__",
-    ];
     KEYWORDS.binary_search_by(|k| k.cmp(&name)).is_ok()
-        || BUILTINS.binary_search_by(|b| b.cmp(&name)).is_ok()
 }
 
 // TODO: merge with table model generation logic
@@ -890,7 +822,7 @@ foo_table = OlapTable[Foo]("Foo", OlapConfig(
         }];
 
         let result = tables_to_python(&tables, None);
-        assert!(result.contains(
+        let is_ok = result.contains(
             r#"class NestedArray(BaseModel):
     id: Key[str]
     numbers: list[Annotated[int, "int32"]]
@@ -899,8 +831,12 @@ foo_table = OlapTable[Foo]("Foo", OlapConfig(
 nested_array_table = OlapTable[NestedArray]("NestedArray", OlapConfig(
     order_by_fields=["id"],
     engine=MergeTreeEngine(),
-))"#
-        ));
+))"#,
+        );
+        if !is_ok {
+            println!("{}", result);
+        }
+        assert!(is_ok);
     }
 
     #[test]
