@@ -10,6 +10,10 @@ import { Tabs } from "nextra/components";
 
 <LanguageSwitcher />
 
+<Callout type="info" title="JSON Schema first">
+The first supported encoding is JSON Schema. Avro and Protobuf are planned.
+</Callout>
+
 ## Overview
 
 Moose can publish and consume Kafka/Redpanda messages using Confluent Schema Registry. The first supported encoding is JSON Schema; Avro and Protobuf are planned.
@@ -96,7 +100,8 @@ events.send(Event(id="e1", value=42))
 
 ## Consuming SR JSON in Runners
 
-Moose streaming runners automatically detect the Confluent JSON envelope when consuming and strip the header before parisng the JSON.
+Moose streaming runners automatically detect the Confluent JSON envelope
+when consuming and strip the header before parsing the JSON.
 Your transformation code continues to work unchanged.
 
 ## Ingestion APIs and SR
