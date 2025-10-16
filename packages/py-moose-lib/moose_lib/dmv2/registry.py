@@ -11,6 +11,7 @@ from .ingest_api import IngestApi
 from .consumption import Api
 from .sql_resource import SqlResource
 from .workflow import Workflow
+from .web_app import WebApp
 from ._registry import (
     _tables,
     _streams,
@@ -20,6 +21,7 @@ from ._registry import (
     _workflows,
     _api_name_aliases,
     _api_path_map,
+    _web_apps,
 )
 
 def get_tables() -> Dict[str, OlapTable]:
@@ -86,6 +88,14 @@ def get_workflows() -> Dict[str, Workflow]:
 def get_workflow(name: str) -> Optional[Workflow]:
     """Get a registered workflow by name."""
     return _workflows.get(name)
+
+def get_web_apps() -> Dict[str, WebApp]:
+    """Get all registered WebApps."""
+    return _web_apps
+
+def get_web_app(name: str) -> Optional[WebApp]:
+    """Get a registered WebApp by name."""
+    return _web_apps.get(name)
 
 
 # Backward compatibility aliases (deprecated)
