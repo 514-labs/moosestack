@@ -19,9 +19,10 @@ use crate::framework::core::infrastructure_map::{
     InfraChanges, InfrastructureMap, OlapChange, TableChange,
 };
 use crate::framework::core::primitive_map::PrimitiveMap;
+use crate::framework::core::state_storage::StateStorage;
+use crate::infrastructure::olap::clickhouse;
 use crate::infrastructure::olap::clickhouse::diff_strategy::ClickHouseTableDiffStrategy;
 use crate::infrastructure::olap::OlapOperations;
-use crate::infrastructure::{olap::clickhouse, redis::redis_client::RedisClient};
 use crate::project::Project;
 use log::{debug, error, info};
 use rdkafka::error::KafkaError;
@@ -193,19 +194,19 @@ pub struct InfraPlan {
 
 /// Plans infrastructure changes by comparing the current state with the target state.
 ///
-/// This function loads the current infrastructure map from Redis, reconciles it with the
-/// actual database state, and compares it with the target infrastructure map derived
+/// This function loads the current infrastructure map from state storage,
+/// reconciles it with the actual database state, and compares it with the target infrastructure map derived
 /// from the project configuration. It then generates a plan that describes the changes
 /// needed to transition from the current state to the target state.
 ///
 /// # Arguments
-/// * `client` - Redis client for loading the current infrastructure map
+/// * `state_storage` - State storage implementation for loading the current infrastructure map
 /// * `project` - Project configuration for building the target infrastructure map
 ///
 /// # Returns
 /// * `Result<(InfrastructureMap, InfraPlan), PlanningError>` - The current state and infrastructure plan, or an error
 pub async fn plan_changes(
-    client: &RedisClient,
+    state_storage: &dyn StateStorage,
     project: &Project,
 ) -> Result<(InfrastructureMap, InfraPlan), PlanningError> {
     let json_path = Path::new(".moose/infrastructure_map.json");
@@ -224,7 +225,7 @@ pub async fn plan_changes(
         }
     };
 
-    let current_infra_map = InfrastructureMap::load_from_last_redis_prefix(client).await?;
+    let current_infra_map = state_storage.load_infrastructure_map().await?;
 
     debug!(
         "Current infrastructure map: {}",
@@ -390,6 +391,7 @@ mod tests {
             git_config: crate::utilities::git::GitConfig::default(),
             temporal_config:
                 crate::infrastructure::orchestration::temporal::TemporalConfig::default(),
+            state_config: crate::project::StateConfig::default(),
             language_project_config: crate::project::LanguageProjectConfig::default(),
             project_location: std::path::PathBuf::new(),
             is_production: false,

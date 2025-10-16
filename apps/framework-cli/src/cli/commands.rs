@@ -71,6 +71,14 @@ pub enum Commands {
         token: Option<String>,
     },
 
+    /// Execute a migration plan against a remote ClickHouse database
+    Migrate {
+        /// ClickHouse connection URL (e.g., clickhouse://user:pass@host:port/database or https://user:pass@host:port/database)
+        /// Authentication credentials should be included in the URL
+        #[arg(long)]
+        clickhouse_url: String,
+    },
+
     /// View some data from a table or stream
     Peek {
         /// Name of the table or stream to peek
@@ -189,13 +197,24 @@ pub enum GenerateCommand {
     HashToken {},
     /// Generate migration files
     Migration {
-        /// URL of the remote Moose instance
-        #[arg(long)]
-        url: String,
+        /// URL of the remote Moose instance (use with --token)
+        #[arg(
+            long,
+            conflicts_with = "clickhouse_url",
+            required_unless_present = "clickhouse_url",
+            requires = "token"
+        )]
+        url: Option<String>,
+
         /// API token for authentication with the remote Moose instance
         /// This token will be sent as a Bearer token in the Authorization header
-        #[arg(long)]
+        #[arg(long, requires = "url")]
         token: Option<String>,
+
+        /// ClickHouse connection URL for serverless deployments
+        #[arg(long, conflicts_with = "url")]
+        clickhouse_url: Option<String>,
+
         /// Save the migration files in the migrations/ directory
         #[arg(long, default_value = "false")]
         save: bool,

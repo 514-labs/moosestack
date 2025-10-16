@@ -145,6 +145,28 @@ fn default_package_manager() -> String {
     "npm".to_string()
 }
 
+fn default_state_storage() -> String {
+    "redis".to_string()
+}
+
+/// State storage configuration
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct StateConfig {
+    /// Storage backend: "redis" (default) or "clickhouse"
+    /// - "redis": Traditional state storage using Redis (requires Redis service)
+    /// - "clickhouse": Store state in ClickHouse _MOOSE_STATE table (for serverless/CLI-only)
+    #[serde(default = "default_state_storage")]
+    pub storage: String,
+}
+
+impl Default for StateConfig {
+    fn default() -> Self {
+        StateConfig {
+            storage: default_state_storage(),
+        }
+    }
+}
+
 /// Feature flags for the project
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ProjectFeatures {
@@ -210,6 +232,9 @@ pub struct Project {
     /// Temporal workflow configuration
     #[serde(default)]
     pub temporal_config: TemporalConfig,
+    /// State storage configuration
+    #[serde(default)]
+    pub state_config: StateConfig,
     /// Language-specific project configuration (not serialized)
     #[serde(skip)]
     pub language_project_config: LanguageProjectConfig,
@@ -306,6 +331,7 @@ impl Project {
             redis_config: RedisConfig::default(),
             http_server_config: LocalWebserverConfig::default(),
             temporal_config: TemporalConfig::default(),
+            state_config: StateConfig::default(),
             language_project_config,
             supported_old_versions: HashMap::new(),
             git_config: GitConfig::default(),
