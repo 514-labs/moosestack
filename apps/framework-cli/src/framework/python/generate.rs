@@ -190,7 +190,7 @@ fn sanitize_name(name: &str, required: bool) -> (String, String) {
             .replace([' ', '.', '-', '/', ':', ';', ',', '\\'], "_");
         let mapped = if mapped.is_empty() {
             "field".to_string()
-        } else if is_python_keyword(name) {
+        } else if is_python_keyword(&mapped) {
             format!("field_{}", mapped)
         } else {
             mapped
