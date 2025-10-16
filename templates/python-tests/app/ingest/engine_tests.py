@@ -171,8 +171,8 @@ sample_by_table = OlapTable[EngineTestData](
     "SampleByTest",
     OlapConfig(
         engine=MergeTreeEngine(),
-        order_by_fields=["id", "timestamp"],
-        sample_by_expression="id"
+        order_by_expression="cityHash64(id)",
+        sample_by_expression="cityHash64(id)"
     )
 )
 

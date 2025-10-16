@@ -192,7 +192,7 @@ export const TYPESCRIPT_TEST_SCHEMAS: ExpectedTableSchema[] = [
   {
     tableName: "SampleByTest",
     columns: [
-      { name: "id", type: "String" },
+      { name: "id", type: "UInt64" },
       { name: "timestamp", type: /DateTime\('UTC'\)/ },
       { name: "value", type: "Float64" },
       { name: "category", type: "String" },
@@ -488,7 +488,7 @@ export const PYTHON_TEST_SCHEMAS: ExpectedTableSchema[] = [
   {
     tableName: "SampleByTest",
     columns: [
-      { name: "id", type: "String" },
+      { name: "id", type: "UInt64" },
       { name: "timestamp", type: /DateTime\('UTC'\)/ },
       { name: "value", type: "Int64" },
       { name: "category", type: "String" },
