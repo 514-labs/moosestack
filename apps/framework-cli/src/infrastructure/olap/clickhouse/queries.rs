@@ -128,7 +128,8 @@ CREATE TABLE IF NOT EXISTS `{{db_name}}`.`{{table_name}}`
 )
 ENGINE = {{engine}}{{#if primary_key_string}}
 PRIMARY KEY ({{primary_key_string}}){{/if}}{{#if partition_by}}
-PARTITION BY {{partition_by}}{{/if}}{{#if order_by_string}}
+PARTITION BY {{partition_by}}{{/if}}{{#if sample_by}}
+SAMPLE BY {{sample_by}}{{/if}}{{#if order_by_string}}
 ORDER BY ({{order_by_string}}){{/if}}{{#if settings}}
 SETTINGS {{settings}}{{/if}}"#;
 
@@ -1643,6 +1644,7 @@ pub fn create_table_query(
             _ => None,
         },
         "partition_by": table.partition_by.as_deref(),
+        "sample_by": table.sample_by.as_deref(),
         "engine": engine,
         "settings": settings
     });

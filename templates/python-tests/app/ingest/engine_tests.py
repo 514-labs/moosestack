@@ -166,6 +166,16 @@ replicated_summing_merge_tree_table = OlapTable[EngineTestData](
     )
 )
 
+# Test SAMPLE BY clause for data sampling
+sample_by_table = OlapTable[EngineTestData](
+    "SampleByTest",
+    OlapConfig(
+        engine=MergeTreeEngine(),
+        order_by_fields=["id", "timestamp"],
+        sample_by="id"
+    )
+)
+
 # Note: S3Queue engine testing is more complex as it requires S3 configuration
 # and external dependencies, so it's not included in this basic engine test suite.
 # For S3Queue testing, see the dedicated S3 integration tests.
@@ -186,4 +196,5 @@ all_engine_test_tables = [
     replicated_replacing_soft_delete_table,
     replicated_aggregating_merge_tree_table,
     replicated_summing_merge_tree_table,
+    sample_by_table,
 ]

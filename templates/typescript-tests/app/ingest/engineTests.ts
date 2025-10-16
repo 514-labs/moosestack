@@ -166,6 +166,13 @@ export const ReplicatedSummingMergeTreeTable = new OlapTable<EngineTestData>(
   },
 );
 
+// Test SAMPLE BY clause for data sampling
+export const SampleByTable = new OlapTable<EngineTestData>("SampleByTest", {
+  engine: ClickHouseEngines.MergeTree,
+  orderByFields: ["id", "timestamp"],
+  sampleBy: "id",
+});
+
 // Note: S3Queue engine testing is more complex as it requires S3 configuration
 // and external dependencies, so it's not included in this basic engine test suite.
 // For S3Queue testing, see the dedicated S3 integration tests.
@@ -189,4 +196,5 @@ export const allEngineTestTables = [
   ReplicatedReplacingSoftDeleteTable,
   ReplicatedAggregatingMergeTreeTable,
   ReplicatedSummingMergeTreeTable,
+  SampleByTable,
 ];

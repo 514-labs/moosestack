@@ -127,6 +127,8 @@ message Table {
   map<string, string> table_settings = 11;
   // Optional PARTITION BY expression for ClickHouse tables
   optional string partition_by = 12;
+  // Optional SAMPLE BY expression for ClickHouse tables
+  optional string sample_by = 14;
 
   // Next-version ORDER BY representation to match Rust enum
   // Non-breaking: keeps legacy order_by (field 3) while adding a structured variant

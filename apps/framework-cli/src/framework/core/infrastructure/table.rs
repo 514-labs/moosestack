@@ -138,6 +138,8 @@ pub struct Table {
     pub order_by: OrderBy,
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub partition_by: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub sample_by: Option<String>,
     #[serde(default)]
     pub engine: Option<ClickhouseEngine>,
     pub version: Option<Version>,
@@ -256,6 +258,7 @@ impl Table {
             columns: self.columns.iter().map(|c| c.to_proto()).collect(),
             order_by: proto_order_by,
             partition_by: self.partition_by.clone(),
+            sample_by: self.sample_by.clone(),
             version: self.version.as_ref().map(|v| v.to_string()),
             source_primitive: MessageField::some(self.source_primitive.to_proto()),
             deduplicate: self
@@ -336,6 +339,7 @@ impl Table {
             columns: proto.columns.into_iter().map(Column::from_proto).collect(),
             order_by,
             partition_by: proto.partition_by,
+            sample_by: proto.sample_by,
             version: proto.version.map(Version::from_string),
             source_primitive: PrimitiveSignature::from_proto(proto.source_primitive.unwrap()),
             engine,

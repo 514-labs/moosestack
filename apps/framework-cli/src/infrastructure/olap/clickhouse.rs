@@ -1284,6 +1284,7 @@ impl OlapOperations for ConfiguredDBClient {
                     let p = partition_key.trim();
                     (!p.is_empty()).then(|| p.to_string())
                 },
+                sample_by: None, // TODO: Extract SAMPLE BY from CREATE TABLE query
                 engine: engine_parsed,
                 version,
                 source_primitive,

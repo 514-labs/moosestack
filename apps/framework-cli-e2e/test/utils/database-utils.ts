@@ -196,6 +196,7 @@ export interface ExpectedTableSchema {
   columns: ExpectedColumn[];
   engine?: string;
   orderBy?: string[];
+  sampleBy?: string;
 }
 
 /**
@@ -337,7 +338,11 @@ export const validateTableSchema = async (
     }
 
     // Validate table engine and settings if specified
-    if (expectedSchema.engine || expectedSchema.orderBy) {
+    if (
+      expectedSchema.engine ||
+      expectedSchema.orderBy ||
+      expectedSchema.sampleBy
+    ) {
       const ddl = await getTableDDL(expectedSchema.tableName);
 
       if (
@@ -354,6 +359,14 @@ export const validateTableSchema = async (
         if (!ddl.includes(`ORDER BY (${expectedOrderBy})`)) {
           errors.push(
             `Table '${expectedSchema.tableName}' ORDER BY mismatch: expected '(${expectedOrderBy})'`,
+          );
+        }
+      }
+
+      if (expectedSchema.sampleBy) {
+        if (!ddl.includes(`SAMPLE BY ${expectedSchema.sampleBy}`)) {
+          errors.push(
+            `Table '${expectedSchema.tableName}' SAMPLE BY mismatch: expected '${expectedSchema.sampleBy}'`,
           );
         }
       }
