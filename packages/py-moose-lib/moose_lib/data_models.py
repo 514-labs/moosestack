@@ -35,6 +35,11 @@ def clickhouse_default(expression: str) -> ClickhouseDefault:
     return ClickhouseDefault(expression=expression)
 
 
+@dataclasses.dataclass(frozen=True)
+class ClickHouseTTL:
+    expression: str
+
+
 def clickhouse_decimal(precision: int, scale: int) -> Type[Decimal]:
     return Annotated[Decimal, Field(max_digits=precision, decimal_places=scale)]
 
@@ -194,6 +199,7 @@ class Column(BaseModel):
     primary_key: bool
     default: str | None = None
     annotations: list[Tuple[str, Any]] = []
+    ttl: str | None = None
 
     def to_expr(self):
         # Lazy import to avoid circular dependency at import time
@@ -409,6 +415,12 @@ def _to_columns(model: type[BaseModel]) -> list[Column]:
             None,
         )
 
+        # Extract TTL expression from metadata, if provided
+        ttl_expr = next(
+            (md.expression for md in mds if isinstance(md, ClickHouseTTL)),
+            None,
+        )
+
         columns.append(
             Column(
                 name=column_name,
@@ -418,6 +430,7 @@ def _to_columns(model: type[BaseModel]) -> list[Column]:
                 primary_key=primary_key,
                 default=default_expr,
                 annotations=annotations,
+                ttl=ttl_expr,
             )
         )
     return columns

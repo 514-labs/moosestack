@@ -100,6 +100,18 @@ class InsertResult(Generic[T]):
     failed_records: Optional[List[FailedRecord[T]]] = None
 
 
+class TTLConfig(BaseModel):
+    """TTL configuration for ClickHouse tables.
+
+    Attributes:
+        expression: Optional table-level TTL expression (without the leading 'TTL').
+        columns: Optional mapping of column name to column-level TTL expression
+                 (without the leading 'TTL').
+    """
+    expression: Optional[str] = None
+    columns: Optional[dict[str, str]] = None
+
+
 class OlapConfig(BaseModel):
     model_config = {"extra": "forbid"}  # Reject unknown fields for a clean API
 
@@ -128,6 +140,8 @@ class OlapConfig(BaseModel):
     metadata: Optional[dict] = None
     life_cycle: Optional[LifeCycle] = None
     settings: Optional[dict[str, str]] = None
+    # Optional table-level TTL expression (without leading 'TTL')
+    ttl: Optional[str] = None
 
     def model_post_init(self, __context):
         has_fields = bool(self.order_by_fields)

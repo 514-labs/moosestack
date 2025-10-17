@@ -412,6 +412,7 @@ mod tests {
                     default: None,
                     annotations: vec![],
                     comment: None,
+                    ttl: None,
                 },
                 Column {
                     name: "timestamp".to_string(),
@@ -422,6 +423,7 @@ mod tests {
                     default: None,
                     annotations: vec![],
                     comment: None,
+                    ttl: None,
                 },
             ],
             order_by: OrderBy::Fields(order_by),
@@ -439,6 +441,7 @@ mod tests {
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
             table_settings: None,
+            table_ttl_setting: None,
         }
     }
 
@@ -513,6 +516,7 @@ mod tests {
                 default: None,
                 annotations: vec![],
                 comment: None,
+                ttl: None,
             },
             position_after: Some("timestamp".to_string()),
         }];
@@ -557,6 +561,7 @@ mod tests {
                 default: None,
                 annotations: vec![],
                 comment: None,
+                ttl: None,
             },
             position_after: Some("timestamp".to_string()),
         }];
@@ -911,6 +916,7 @@ mod tests {
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
             table_settings: Some(table_settings),
+            table_ttl_setting: None,
         };
 
         assert!(ClickHouseTableDiffStrategy::is_s3queue_table(&s3_table));

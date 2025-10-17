@@ -17,6 +17,9 @@ const rawMeta = {
   "supported-types": {
     title: "Supported Types",
   },
+  ttl: {
+    title: "TTL (Time-to-Live)",
+  },
   "schema-optimization": {
     title: "Schema Optimization",
   },

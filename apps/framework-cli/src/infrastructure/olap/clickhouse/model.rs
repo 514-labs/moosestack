@@ -296,6 +296,7 @@ pub struct ClickHouseColumn {
     pub primary_key: bool,
     pub default: Option<String>,
     pub comment: Option<String>, // Column comment for metadata storage
+    pub ttl: Option<String>,
 }
 
 impl ClickHouseColumn {
@@ -503,6 +504,8 @@ pub struct ClickHouseTable {
     pub engine: ClickhouseEngine,
     /// Table-level settings that can be modified with ALTER TABLE MODIFY SETTING
     pub table_settings: Option<std::collections::HashMap<String, String>>,
+    /// Optional TTL expression at table level (without leading 'TTL')
+    pub table_ttl_setting: Option<String>,
 }
 
 impl ClickHouseTable {

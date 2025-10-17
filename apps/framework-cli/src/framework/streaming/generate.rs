@@ -514,6 +514,7 @@ my_function = StreamingFunction(
                 // Comment is None in test columns - metadata comments are only needed
                 // for actual ClickHouse table columns to preserve enum definitions
                 comment: None,
+                ttl: None,
             })
             .collect()
     }

@@ -150,6 +150,8 @@ interface TableJson {
   lifeCycle?: string;
   /** Optional table-level settings that can be modified with ALTER TABLE MODIFY SETTING. */
   tableSettings?: { [key: string]: string };
+  /** Optional table-level TTL expression (without leading 'TTL'). */
+  ttl?: string;
 }
 /**
  * Represents a target destination for data flow, typically a stream.
@@ -562,6 +564,7 @@ export const toInfraMap = (registry: typeof moose_internal) => {
         tableSettings && Object.keys(tableSettings).length > 0 ?
           tableSettings
         : undefined,
+      ttl: (table.config as any).ttl,
     };
   });
 
@@ -950,6 +953,7 @@ export const dlqColumns: Column[] = [
     unique: false,
     default: null,
     annotations: [],
+    ttl: null,
   },
   {
     name: "errorMessage",
@@ -959,6 +963,7 @@ export const dlqColumns: Column[] = [
     unique: false,
     default: null,
     annotations: [],
+    ttl: null,
   },
   {
     name: "errorType",
@@ -968,6 +973,7 @@ export const dlqColumns: Column[] = [
     unique: false,
     default: null,
     annotations: [],
+    ttl: null,
   },
   {
     name: "failedAt",
@@ -977,6 +983,7 @@ export const dlqColumns: Column[] = [
     unique: false,
     default: null,
     annotations: [],
+    ttl: null,
   },
   {
     name: "source",
@@ -986,6 +993,7 @@ export const dlqColumns: Column[] = [
     unique: false,
     default: null,
     annotations: [],
+    ttl: null,
   },
 ];
 

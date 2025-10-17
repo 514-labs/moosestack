@@ -6,11 +6,11 @@ This directory contains the main Rust CLI application for Moose. Follow these st
 ## Development Commands
 - **Build**: `cargo build`
 - **Test**: `cargo test`
-- **Lint**: `cargo clippy -D warnings` (required; zero warnings allowed)
+- **Lint**: `cargo clippy --all-targets -- -D warnings` (required; zero warnings allowed)
 - **Format**: `rustfmt --edition 2021 <file.rs>`
 
 ## Code Quality Requirements
-- **Always run `cargo clippy -D warnings`** before commits; fix all warnings
+- **Always run `cargo clippy --all-targets -- -D warnings`** before commits; fix all warnings
 - No Clippy warnings may remain (treat warnings as errors)
 - Use `rustfmt --edition 2021` for consistent formatting
 - Write meaningful names: functions, variables, types
