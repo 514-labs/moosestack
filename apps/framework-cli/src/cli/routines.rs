@@ -1095,7 +1095,7 @@ pub async fn remote_gen_migration(
                 },
             );
 
-            get_remote_inframap_from_clickhouse(project, url).await?
+            get_remote_inframap_from_clickhouse(url).await?
         }
     };
 
@@ -1118,14 +1118,11 @@ pub async fn remote_gen_migration(
 
 /// Get remote infrastructure map from ClickHouse directly (for serverless flow)
 async fn get_remote_inframap_from_clickhouse(
-    project: &Project,
     clickhouse_url: &str,
 ) -> anyhow::Result<InfrastructureMap> {
-    use crate::framework::core::plan::reconcile_with_reality;
     use crate::framework::core::state_storage::{ClickHouseStateStorage, StateStorage};
     use crate::infrastructure::olap::clickhouse::config::parse_clickhouse_connection_string;
     use crate::infrastructure::olap::clickhouse::{check_ready, create_client};
-    use std::collections::HashSet;
 
     let clickhouse_config = parse_clickhouse_connection_string(clickhouse_url)?;
     let client = create_client(clickhouse_config.clone());
@@ -1137,16 +1134,7 @@ async fn get_remote_inframap_from_clickhouse(
         .await?
         .unwrap_or_default();
 
-    // Reconcile with actual database state
-    if project.features.olap {
-        let target_table_names: HashSet<String> = remote_infra_map.tables.keys().cloned().collect();
-        let olap_client = create_client(clickhouse_config.clone());
-        reconcile_with_reality(project, &remote_infra_map, &target_table_names, olap_client)
-            .await
-            .map_err(|e| anyhow::anyhow!("Failed to reconcile with ClickHouse reality: {:?}", e))
-    } else {
-        Ok(remote_infra_map)
-    }
+    Ok(remote_infra_map)
 }
 
 pub async fn remote_refresh(
