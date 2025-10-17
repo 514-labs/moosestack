@@ -136,7 +136,7 @@ class OlapConfig(BaseModel):
         arguments: Optional[list[str]] = None
         granularity: int
 
-    indexes: Optional[list[TableIndex]] = None
+    indexes: list[TableIndex] = []
 
     def model_post_init(self, __context):
         has_fields = bool(self.order_by_fields)

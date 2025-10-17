@@ -570,7 +570,7 @@ export const toInfraMap = (registry: typeof moose_internal) => {
         tableSettings && Object.keys(tableSettings).length > 0 ?
           tableSettings
         : undefined,
-      indexes: (table.config as any).indexes,
+      indexes: table.config.indexes || [],
     };
   });
 

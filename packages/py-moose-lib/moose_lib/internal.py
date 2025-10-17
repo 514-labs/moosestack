@@ -617,7 +617,7 @@ def to_infra_map() -> dict:
                     "granularity": idx.granularity,
                 }
                 for idx in (table.config.indexes or [])
-            ] or None,
+            ],
         )
 
     for name, stream in get_streams().items():
