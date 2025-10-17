@@ -187,6 +187,7 @@ mod tests {
         let infra_tool = infra_map::tool_definition();
         let olap_tool = query_olap::tool_definition();
         let stream_tool = sample_stream::tool_definition();
+        let get_source_tool = get_source::tool_definition();
 
         // Ensure we have 4 tools
         let all_tools = vec![&logs_tool, &infra_tool, &olap_tool, &stream_tool];
@@ -208,16 +209,19 @@ mod tests {
             "get_infra_map",
             "query_olap",
             "get_stream_sample",
+            "get_source",
         ];
 
         let logs_tool = logs::tool_definition();
         let infra_tool = infra_map::tool_definition();
         let olap_tool = query_olap::tool_definition();
         let stream_tool = sample_stream::tool_definition();
+        let get_source_tool = get_source::tool_definition();
 
         assert_eq!(logs_tool.name, expected_tools[0]);
         assert_eq!(infra_tool.name, expected_tools[1]);
         assert_eq!(olap_tool.name, expected_tools[2]);
         assert_eq!(stream_tool.name, expected_tools[3]);
+        assert_eq!(get_source_tool.name, expected_tools[4]);
     }
 }
