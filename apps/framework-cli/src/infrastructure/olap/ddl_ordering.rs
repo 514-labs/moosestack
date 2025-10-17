@@ -637,11 +637,7 @@ fn handle_table_column_updates(
     // Modifications: same name but different definition => drop then add
     for after_idx in after_indexes {
         if let Some(before_idx) = before_indexes.iter().find(|b| b.name == after_idx.name) {
-            let changed = before_idx.expression != after_idx.expression
-                || before_idx.index_type != after_idx.index_type
-                || before_idx.granularity != after_idx.granularity
-                || before_idx.arguments != after_idx.arguments;
-            if changed {
+            if before_idx != after_idx {
                 plan.teardown_ops.push(AtomicOlapOperation::DropTableIndex {
                     table: before.clone(),
                     index_name: before_idx.name.clone(),
@@ -653,15 +649,10 @@ fn handle_table_column_updates(
                     dependency_info: create_empty_dependency_info(),
                 });
             }
-        }
-    }
-
-    // Additions
-    for idx in after_indexes {
-        if !before_indexes.iter().any(|b| b.name == idx.name) {
+        } else {
             plan.setup_ops.push(AtomicOlapOperation::AddTableIndex {
                 table: after.clone(),
-                index: idx.clone(),
+                index: after_idx.clone(),
                 dependency_info: create_empty_dependency_info(),
             });
         }

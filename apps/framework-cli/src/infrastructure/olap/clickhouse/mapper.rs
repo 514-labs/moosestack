@@ -330,7 +330,7 @@ pub fn std_table_to_clickhouse_table(table: &Table) -> Result<ClickHouseTable, C
             .map(|i| ClickHouseIndex {
                 name: i.name.clone(),
                 expression: i.expression.clone(),
-                r#type: i.index_type.clone(),
+                index_type: i.index_type.clone(),
                 arguments: i.arguments.clone(),
                 granularity: i.granularity,
             })

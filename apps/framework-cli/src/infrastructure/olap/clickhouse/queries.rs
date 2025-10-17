@@ -1640,7 +1640,7 @@ pub fn create_table_query(
             };
             items.push(format!(
                 "INDEX {} {} TYPE {}{} GRANULARITY {}",
-                idx.name, idx.expression, idx.r#type, args_part, idx.granularity
+                idx.name, idx.expression, idx.index_type, args_part, idx.granularity
             ));
         }
         (true, items)

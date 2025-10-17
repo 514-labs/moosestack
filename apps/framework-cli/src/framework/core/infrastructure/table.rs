@@ -187,7 +187,7 @@ pub struct Table {
     /// These are separate from engine constructor parameters
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub table_settings: Option<std::collections::HashMap<String, String>>,
-    /// Secondary or data-skipping indexes. DB-neutral representation of indexes.
+    /// Secondary indexes.
     #[serde(default)]
     pub indexes: Vec<TableIndex>,
 }

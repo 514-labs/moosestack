@@ -356,7 +356,7 @@ pub fn extract_indexes_from_create_table(sql: &str) -> Result<Vec<ClickHouseInde
         result.push(ClickHouseIndex {
             name,
             expression: expr,
-            r#type: type_name,
+            index_type: type_name,
             arguments: args,
             granularity,
         });
@@ -1329,7 +1329,7 @@ mod tests {
             ClickHouseIndex {
                 name: "idx1".to_string(),
                 expression: "u64".to_string(),
-                r#type: "bloom_filter".to_string(),
+                index_type: "bloom_filter".to_string(),
                 arguments: vec![],
                 granularity: 3,
             }
@@ -1339,7 +1339,7 @@ mod tests {
             ClickHouseIndex {
                 name: "idx2".to_string(),
                 expression: "u64 * i32".to_string(),
-                r#type: "minmax".to_string(),
+                index_type: "minmax".to_string(),
                 arguments: vec![],
                 granularity: 3,
             }
@@ -1349,7 +1349,7 @@ mod tests {
             ClickHouseIndex {
                 name: "idx3".to_string(),
                 expression: "u64 * length(s)".to_string(),
-                r#type: "set".to_string(),
+                index_type: "set".to_string(),
                 arguments: vec!["1000".to_string()],
                 granularity: 4,
             }
@@ -1359,7 +1359,7 @@ mod tests {
             ClickHouseIndex {
                 name: "idx4".to_string(),
                 expression: "(u64, i32)".to_string(),
-                r#type: "MinMax".to_string(),
+                index_type: "MinMax".to_string(),
                 arguments: vec![],
                 granularity: 1,
             }
@@ -1369,7 +1369,7 @@ mod tests {
             ClickHouseIndex {
                 name: "idx5".to_string(),
                 expression: "(u64, i32)".to_string(),
-                r#type: "minmax".to_string(),
+                index_type: "minmax".to_string(),
                 arguments: vec![],
                 granularity: 1,
             }
@@ -1379,7 +1379,7 @@ mod tests {
             ClickHouseIndex {
                 name: "idx6".to_string(),
                 expression: "toString(i32)".to_string(),
-                r#type: "ngrambf_v1".to_string(),
+                index_type: "ngrambf_v1".to_string(),
                 arguments: vec![
                     "2".to_string(),
                     "256".to_string(),
@@ -1394,7 +1394,7 @@ mod tests {
             ClickHouseIndex {
                 name: "idx7".to_string(),
                 expression: "s".to_string(),
-                r#type: "nGraMbf_v1".to_string(),
+                index_type: "nGraMbf_v1".to_string(),
                 arguments: vec![
                     "3".to_string(),
                     "256".to_string(),

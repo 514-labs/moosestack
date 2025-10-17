@@ -200,7 +200,6 @@ struct PartialTable {
     pub life_cycle: Option<LifeCycle>,
     #[serde(alias = "table_settings")]
     pub table_settings: Option<std::collections::HashMap<String, String>>,
-    /// Secondary or data-skipping indexes from user code
     #[serde(default)]
     pub indexes: Vec<TableIndex>,
 }

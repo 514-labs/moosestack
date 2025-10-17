@@ -497,7 +497,7 @@ pub struct ClickHouseSystemTable {
 pub struct ClickHouseIndex {
     pub name: String,
     pub expression: String,
-    pub r#type: String,
+    pub index_type: String,
     pub arguments: Vec<String>,
     pub granularity: u64,
 }

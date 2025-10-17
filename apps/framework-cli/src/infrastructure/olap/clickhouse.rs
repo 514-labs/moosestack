@@ -159,7 +159,7 @@ pub enum SerializableOlapOperation {
     },
     AddTableIndex {
         table: String,
-        index: crate::framework::core::infrastructure::table::TableIndex,
+        index: TableIndex,
     },
     DropTableIndex {
         table: String,
@@ -334,7 +334,7 @@ async fn execute_create_table(
 async fn execute_add_table_index(
     db_name: &str,
     table_name: &str,
-    index: &crate::framework::core::infrastructure::table::TableIndex,
+    index: &TableIndex,
     client: &ConfiguredDBClient,
 ) -> Result<(), ClickhouseChangesError> {
     let args = if index.arguments.is_empty() {
@@ -1364,7 +1364,7 @@ impl OlapOperations for ConfiguredDBClient {
                 .map(|i| TableIndex {
                     name: i.name,
                     expression: i.expression,
-                    index_type: i.r#type,
+                    index_type: i.index_type,
                     arguments: i.arguments,
                     granularity: i.granularity,
                 })
