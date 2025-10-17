@@ -80,6 +80,18 @@ from .life_cycle import (
     LifeCycle,
 )
 
+from .web_app import (
+    WebApp,
+    WebAppConfig,
+    WebAppMetadata,
+)
+
+from .web_app_helpers import (
+    ApiUtil,
+    get_moose_utils,
+    get_moose_dependency,
+)
+
 from .registry import (
     get_tables,
     get_table,
@@ -93,6 +105,8 @@ from .registry import (
     get_sql_resource,
     get_workflows,
     get_workflow,
+    get_web_apps,
+    get_web_app,
     # Backward compatibility aliases
     get_consumption_apis,
     get_consumption_api,
@@ -158,6 +172,14 @@ __all__ = [
     # Lifecycle
     'LifeCycle',
 
+    # WebApp
+    'WebApp',
+    'WebAppConfig',
+    'WebAppMetadata',
+    'ApiUtil',
+    'get_moose_utils',
+    'get_moose_dependency',
+
     # Registry
     'get_tables',
     'get_table',
@@ -171,6 +193,8 @@ __all__ = [
     'get_sql_resource',
     'get_workflows',
     'get_workflow',
+    'get_web_apps',
+    'get_web_app',
     # Backward compatibility aliases (deprecated)
     'get_consumption_apis',
     'get_consumption_api',
