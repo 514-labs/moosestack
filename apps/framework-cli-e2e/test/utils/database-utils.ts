@@ -22,18 +22,24 @@ export const cleanupClickhouseData = async (): Promise<void> => {
           tables.map((t) => t.name),
         );
 
-        await client.command({ query: "TRUNCATE TABLE IF EXISTS Bar" });
-        console.log("Truncated Bar table");
+        // Truncate all tables except system tables
+        for (const table of tables) {
+          const tableName = table.name;
+          // Skip system tables and internal tables
+          if (
+            tableName.startsWith("system") ||
+            tableName.startsWith(".inner")
+          ) {
+            continue;
+          }
 
-        const mvTables = ["BarAggregated", "bar_aggregated"];
-        for (const table of mvTables) {
           try {
             await client.command({
-              query: `TRUNCATE TABLE IF EXISTS ${table}`,
+              query: `TRUNCATE TABLE IF EXISTS \`${tableName}\``,
             });
-            console.log(`Truncated ${table} table`);
+            console.log(`Truncated ${tableName} table`);
           } catch (error) {
-            console.log(`Failed to truncate ${table}:`, error);
+            console.log(`Failed to truncate ${tableName}:`, error);
           }
         }
       } finally {
@@ -56,19 +62,24 @@ export const waitForDBWrite = async (
   tableName: string,
   expectedRecords: number,
   timeout: number = 60_000,
+  database?: string,
+  whereClause?: string,
 ): Promise<void> => {
   const attempts = Math.ceil(timeout / 1000); // Convert timeout to attempts (1 second per attempt)
+  const fullTableName =
+    database ? `\`${database}\`.\`${tableName}\`` : tableName;
+  const whereCondition = whereClause ? ` WHERE ${whereClause}` : "";
   await withRetries(
     async () => {
       const client = createClient(CLICKHOUSE_CONFIG);
       try {
         const result = await client.query({
-          query: `SELECT COUNT(*) as count FROM ${tableName}`,
+          query: `SELECT COUNT(*) as count FROM ${fullTableName}${whereCondition}`,
           format: "JSONEachRow",
         });
         const rows: any[] = await result.json();
         const count = parseInt(rows[0].count);
-        console.log(`Records in ${tableName}:`, count);
+        console.log(`Records in ${tableName}${whereCondition}:`, count);
         if (count >= expectedRecords) {
           return; // Success - exit retry loop
         }
@@ -90,15 +101,18 @@ export const waitForMaterializedViewUpdate = async (
   tableName: string,
   expectedRows: number,
   timeout: number = 60_000,
+  database?: string,
 ): Promise<void> => {
   console.log(`Waiting for materialized view ${tableName} to update...`);
   const attempts = Math.ceil(timeout / 1000); // Convert timeout to attempts (1 second per attempt)
+  const fullTableName =
+    database ? `\`${database}\`.\`${tableName}\`` : tableName;
   await withRetries(
     async () => {
       const client = createClient(CLICKHOUSE_CONFIG);
       try {
         const result = await client.query({
-          query: `SELECT COUNT(*) as count FROM ${tableName}`,
+          query: `SELECT COUNT(*) as count FROM ${fullTableName}`,
           format: "JSONEachRow",
         });
         const rows: any[] = await result.json();
@@ -129,13 +143,16 @@ export const verifyClickhouseData = async (
   tableName: string,
   eventId: string,
   primaryKeyField: string,
+  database?: string,
 ): Promise<void> => {
+  const fullTableName =
+    database ? `\`${database}\`.\`${tableName}\`` : tableName;
   await withRetries(
     async () => {
       const client = createClient(CLICKHOUSE_CONFIG);
       try {
         const result = await client.query({
-          query: `SELECT * FROM ${tableName} WHERE ${primaryKeyField} = '${eventId}'`,
+          query: `SELECT * FROM ${fullTableName} WHERE ${primaryKeyField} = '${eventId}'`,
           format: "JSONEachRow",
         });
         const rows: any[] = await result.json();
@@ -170,13 +187,16 @@ export const verifyRecordCount = async (
   tableName: string,
   whereClause: string,
   expectedCount: number,
+  database?: string,
 ): Promise<void> => {
+  const fullTableName =
+    database ? `\`${database}\`.\`${tableName}\`` : tableName;
   await withRetries(
     async () => {
       const client = createClient(CLICKHOUSE_CONFIG);
       try {
         const result = await client.query({
-          query: `SELECT COUNT(*) as count FROM ${tableName} WHERE ${whereClause}`,
+          query: `SELECT COUNT(*) as count FROM ${fullTableName} WHERE ${whereClause}`,
           format: "JSONEachRow",
         });
         const rows: any[] = await result.json();
@@ -240,11 +260,14 @@ export interface ExpectedTableSchema {
  */
 export const getTableSchema = async (
   tableName: string,
+  database?: string,
 ): Promise<ClickHouseColumn[]> => {
+  const fullTableName =
+    database ? `\`${database}\`.\`${tableName}\`` : tableName;
   const client = createClient(CLICKHOUSE_CONFIG);
   try {
     const result = await client.query({
-      query: `DESCRIBE TABLE ${tableName}`,
+      query: `DESCRIBE TABLE ${fullTableName}`,
       format: "JSONEachRow",
     });
     const columns: ClickHouseColumn[] = await result.json();
@@ -257,11 +280,16 @@ export const getTableSchema = async (
 /**
  * Gets table creation DDL to inspect engine and settings
  */
-export const getTableDDL = async (tableName: string): Promise<string> => {
+export const getTableDDL = async (
+  tableName: string,
+  database?: string,
+): Promise<string> => {
+  const fullTableName =
+    database ? `\`${database}\`.\`${tableName}\`` : tableName;
   const client = createClient(CLICKHOUSE_CONFIG);
   try {
     const result = await client.query({
-      query: `SHOW CREATE TABLE ${tableName}`,
+      query: `SHOW CREATE TABLE ${fullTableName}`,
       format: "JSONEachRow",
     });
     const rows: any[] = await result.json();
@@ -277,10 +305,11 @@ export const getTableDDL = async (tableName: string): Promise<string> => {
 export const verifyTableIndexes = async (
   tableName: string,
   expectedIndexNames: string[],
+  database?: string,
 ): Promise<void> => {
   await withRetries(
     async () => {
-      const ddl = await getTableDDL(tableName);
+      const ddl = await getTableDDL(tableName, database);
       const missing = expectedIndexNames.filter(
         (name) => !ddl.includes(`INDEX ${name}`),
       );
@@ -298,13 +327,14 @@ export const verifyTableIndexes = async (
 };
 
 /**
- * Lists all tables in the current database
+ * Lists all tables in the specified database (or current database if not specified)
  */
-export const getAllTables = async (): Promise<string[]> => {
+export const getAllTables = async (database?: string): Promise<string[]> => {
   const client = createClient(CLICKHOUSE_CONFIG);
   try {
+    const query = database ? `SHOW TABLES FROM \`${database}\`` : "SHOW TABLES";
     const result = await client.query({
-      query: "SHOW TABLES",
+      query,
       format: "JSONEachRow",
     });
     const tables: any[] = await result.json();
@@ -319,19 +349,23 @@ export const getAllTables = async (): Promise<string[]> => {
  */
 export const validateTableSchema = async (
   expectedSchema: ExpectedTableSchema,
+  database?: string,
 ): Promise<{ valid: boolean; errors: string[] }> => {
   const errors: string[] = [];
 
   try {
     // Check if table exists
-    const allTables = await getAllTables();
+    const allTables = await getAllTables(database);
     if (!allTables.includes(expectedSchema.tableName)) {
       errors.push(`Table '${expectedSchema.tableName}' does not exist`);
       return { valid: false, errors };
     }
 
     // Get actual schema
-    const actualColumns = await getTableSchema(expectedSchema.tableName);
+    const actualColumns = await getTableSchema(
+      expectedSchema.tableName,
+      database,
+    );
     const actualColumnMap = new Map(
       actualColumns.map((col) => [col.name, col]),
     );
@@ -405,7 +439,7 @@ export const validateTableSchema = async (
       expectedSchema.orderBy ||
       expectedSchema.sampleByExpression
     ) {
-      const ddl = await getTableDDL(expectedSchema.tableName);
+      const ddl = await getTableDDL(expectedSchema.tableName, database);
 
       if (
         expectedSchema.engine &&
@@ -455,6 +489,7 @@ export const validateTableSchema = async (
  */
 export const validateMultipleTableSchemas = async (
   expectedSchemas: ExpectedTableSchema[],
+  database?: string,
 ): Promise<{
   valid: boolean;
   results: Array<{ tableName: string; valid: boolean; errors: string[] }>;
@@ -463,7 +498,7 @@ export const validateMultipleTableSchemas = async (
   let allValid = true;
 
   for (const schema of expectedSchemas) {
-    const result = await validateTableSchema(schema);
+    const result = await validateTableSchema(schema, database);
     results.push({
       tableName: schema.tableName,
       valid: result.valid,
@@ -505,12 +540,13 @@ export const printSchemaValidationResults = (
  */
 export const printActualTableSchemas = async (
   tableNames: string[],
+  database?: string,
 ): Promise<void> => {
   console.log("\n=== Actual Table Schemas (for debugging) ===");
 
   for (const tableName of tableNames) {
     try {
-      const schema = await getTableSchema(tableName);
+      const schema = await getTableSchema(tableName, database);
       console.log(`\n📋 Table: ${tableName}`);
       console.log("Columns:");
       schema.forEach((col) => {
@@ -529,16 +565,20 @@ export const printActualTableSchemas = async (
  */
 export const validateSchemasWithDebugging = async (
   expectedSchemas: ExpectedTableSchema[],
+  database?: string,
 ): Promise<{
   valid: boolean;
   results: Array<{ tableName: string; valid: boolean; errors: string[] }>;
 }> => {
   // First, print all actual schemas for debugging
   const tableNames = expectedSchemas.map((s) => s.tableName);
-  await printActualTableSchemas(tableNames);
+  await printActualTableSchemas(tableNames, database);
 
   // Then run validation
-  const validationResult = await validateMultipleTableSchemas(expectedSchemas);
+  const validationResult = await validateMultipleTableSchemas(
+    expectedSchemas,
+    database,
+  );
   printSchemaValidationResults(validationResult.results);
 
   return validationResult;
@@ -550,14 +590,17 @@ export const validateSchemasWithDebugging = async (
 export const verifyVersionedTables = async (
   baseTableName: string,
   expectedVersions: string[],
+  database?: string,
 ): Promise<void> => {
   console.log(`Verifying versioned tables for ${baseTableName}...`);
   await withRetries(
     async () => {
       const client = createClient(CLICKHOUSE_CONFIG);
       try {
+        const query =
+          database ? `SHOW TABLES FROM \`${database}\`` : "SHOW TABLES";
         const result = await client.query({
-          query: "SHOW TABLES",
+          query,
           format: "JSONEachRow",
         });
         const tables: any[] = await result.json();
@@ -582,9 +625,11 @@ export const verifyVersionedTables = async (
         for (const version of expectedVersions) {
           const versionSuffix = version.replace(/\./g, "_");
           const tableName = `${baseTableName}_${versionSuffix}`;
+          const fullTableName =
+            database ? `\`${database}\`.\`${tableName}\`` : tableName;
 
           const descResult = await client.query({
-            query: `DESCRIBE TABLE ${tableName}`,
+            query: `DESCRIBE TABLE ${fullTableName}`,
             format: "JSONEachRow",
           });
           const columns: any[] = await descResult.json();

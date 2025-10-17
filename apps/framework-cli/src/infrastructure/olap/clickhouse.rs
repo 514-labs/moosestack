@@ -105,6 +105,7 @@ pub enum ClickhouseChangesError {
 /// Represents atomic DDL operations for OLAP resources.
 /// Object details are omitted, e.g. we need only the table name for DropTable
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[allow(clippy::large_enum_variant)]
 pub enum SerializableOlapOperation {
     /// Create a new table
     CreateTable {
@@ -115,6 +116,8 @@ pub enum SerializableOlapOperation {
     DropTable {
         /// The table to drop
         table: String,
+        /// The database containing the table (None means use global database)
+        database: Option<String>,
     },
     /// Add a column to a table
     AddTableColumn {
@@ -124,6 +127,8 @@ pub enum SerializableOlapOperation {
         column: Column,
         /// The column after which to add this column (None means adding as first column)
         after_column: Option<String>,
+        /// The database containing the table (None means use primary database)
+        database: Option<String>,
     },
     /// Drop a column from a table
     DropTableColumn {
@@ -131,6 +136,8 @@ pub enum SerializableOlapOperation {
         table: String,
         /// Name of the column to drop
         column_name: String,
+        /// The database containing the table (None means use primary database)
+        database: Option<String>,
     },
     /// Modify a column in a table
     ModifyTableColumn {
@@ -140,6 +147,8 @@ pub enum SerializableOlapOperation {
         before_column: Column,
         /// The column after modification
         after_column: Column,
+        /// The database containing the table (None means use primary database)
+        database: Option<String>,
     },
     RenameTableColumn {
         /// The table containing the column
@@ -148,6 +157,8 @@ pub enum SerializableOlapOperation {
         before_column_name: String,
         /// Name of the column after renaming
         after_column_name: String,
+        /// The database containing the table (None means use primary database)
+        database: Option<String>,
     },
     /// Modify table settings using ALTER TABLE MODIFY SETTING
     ModifyTableSettings {
@@ -157,12 +168,16 @@ pub enum SerializableOlapOperation {
         before_settings: Option<HashMap<String, String>>,
         /// The settings after modification
         after_settings: Option<HashMap<String, String>>,
+        /// The database containing the table (None means use primary database)
+        database: Option<String>,
     },
     /// Modify or remove table-level TTL
     ModifyTableTtl {
         table: String,
         before: Option<String>,
         after: Option<String>,
+        /// The database containing the table (None means use primary database)
+        database: Option<String>,
     },
     /// Modify or remove column-level TTL
     ModifyColumnTtl {
@@ -170,21 +185,31 @@ pub enum SerializableOlapOperation {
         column: String,
         before: Option<String>,
         after: Option<String>,
+        /// The database containing the table (None means use primary database)
+        database: Option<String>,
     },
     AddTableIndex {
         table: String,
         index: TableIndex,
+        /// The database containing the table (None means use primary database)
+        database: Option<String>,
     },
     DropTableIndex {
         table: String,
         index_name: String,
+        /// The database containing the table (None means use primary database)
+        database: Option<String>,
     },
     ModifySampleBy {
         table: String,
         expression: String,
+        /// The database containing the table (None means use primary database)
+        database: Option<String>,
     },
     RemoveSampleBy {
         table: String,
+        /// The database containing the table (None means use primary database)
+        database: Option<String>,
     },
     RawSql {
         /// The SQL statements to execute
@@ -259,6 +284,21 @@ pub async fn execute_changes(
 
     let db_name = &project.clickhouse_config.db_name;
 
+    // Create all configured databases
+    let mut all_databases = vec![db_name.clone()];
+    all_databases.extend(project.clickhouse_config.additional_databases.clone());
+
+    for database in &all_databases {
+        let create_db_query = format!("CREATE DATABASE IF NOT EXISTS `{}`", database);
+        info!("Creating database: {}", database);
+        run_query(&create_db_query, &client).await.map_err(|e| {
+            ClickhouseChangesError::ClickhouseClient {
+                error: e,
+                resource: Some(format!("database:{}", database)),
+            }
+        })?;
+    }
+
     // Execute Teardown Plan
     info!(
         "Executing OLAP Teardown Plan with {} operations",
@@ -293,13 +333,13 @@ pub fn describe_operation(operation: &SerializableOlapOperation) -> String {
         SerializableOlapOperation::CreateTable { table } => {
             format!("Creating table '{}'", table.name)
         }
-        SerializableOlapOperation::DropTable { table } => {
+        SerializableOlapOperation::DropTable { table, .. } => {
             format!("Dropping table '{}'", table)
         }
         SerializableOlapOperation::AddTableColumn { table, column, .. } => {
             format!("Adding column '{}' to table '{}'", column.name, table)
         }
-        SerializableOlapOperation::DropTableColumn { table, column_name } => {
+        SerializableOlapOperation::DropTableColumn { table, column_name, .. } => {
             format!("Dropping column '{}' from table '{}'", column_name, table)
         }
         SerializableOlapOperation::ModifyTableColumn {
@@ -316,6 +356,7 @@ pub fn describe_operation(operation: &SerializableOlapOperation) -> String {
             table,
             before_column_name,
             after_column_name,
+            ..
         } => {
             format!(
                 "Renaming column '{}' to '{}' in table '{}'",
@@ -325,19 +366,19 @@ pub fn describe_operation(operation: &SerializableOlapOperation) -> String {
         SerializableOlapOperation::ModifyTableSettings { table, .. } => {
             format!("Modifying settings for table '{}'", table)
         }
-        SerializableOlapOperation::AddTableIndex { table, index } => {
+        SerializableOlapOperation::AddTableIndex { table, index, .. } => {
             format!("Adding index '{}' to table '{}'", index.name, table)
         }
-        SerializableOlapOperation::DropTableIndex { table, index_name } => {
+        SerializableOlapOperation::DropTableIndex { table, index_name, .. } => {
             format!("Dropping index '{}' from table '{}'", index_name, table)
         }
-        SerializableOlapOperation::ModifySampleBy { table, expression } => {
+        SerializableOlapOperation::ModifySampleBy { table, expression, .. } => {
             format!(
                 "Modifying SAMPLE BY to '{}' for table '{}'",
                 expression, table
             )
         }
-        SerializableOlapOperation::RemoveSampleBy { table } => {
+        SerializableOlapOperation::RemoveSampleBy { table, .. } => {
             format!("Removing SAMPLE BY from table '{}'", table)
         }
         SerializableOlapOperation::ModifyTableTtl { table, after, .. } => {
@@ -374,36 +415,45 @@ pub async fn execute_atomic_operation(
         SerializableOlapOperation::CreateTable { table } => {
             execute_create_table(db_name, table, client, is_dev).await?;
         }
-        SerializableOlapOperation::DropTable { table, .. } => {
-            execute_drop_table(db_name, table, client).await?;
+        SerializableOlapOperation::DropTable { table, database } => {
+            execute_drop_table(db_name, table, database.as_deref(), client).await?;
         }
         SerializableOlapOperation::AddTableColumn {
             table,
             column,
             after_column,
+            database,
         } => {
-            execute_add_table_column(db_name, table, column, after_column, client).await?;
+            let target_db = database.as_deref().unwrap_or(db_name);
+            execute_add_table_column(target_db, table, column, after_column, client).await?;
         }
         SerializableOlapOperation::DropTableColumn {
-            table, column_name, ..
+            table,
+            column_name,
+            database,
         } => {
-            execute_drop_table_column(db_name, table, column_name, client).await?;
+            let target_db = database.as_deref().unwrap_or(db_name);
+            execute_drop_table_column(target_db, table, column_name, client).await?;
         }
         SerializableOlapOperation::ModifyTableColumn {
             table,
             before_column,
             after_column,
+            database,
         } => {
-            execute_modify_table_column(db_name, table, before_column, after_column, client)
+            let target_db = database.as_deref().unwrap_or(db_name);
+            execute_modify_table_column(target_db, table, before_column, after_column, client)
                 .await?;
         }
         SerializableOlapOperation::RenameTableColumn {
             table,
             before_column_name,
             after_column_name,
+            database,
         } => {
+            let target_db = database.as_deref().unwrap_or(db_name);
             execute_rename_table_column(
-                db_name,
+                target_db,
                 table,
                 before_column_name,
                 after_column_name,
@@ -415,20 +465,33 @@ pub async fn execute_atomic_operation(
             table,
             before_settings,
             after_settings,
+            database,
         } => {
-            execute_modify_table_settings(db_name, table, before_settings, after_settings, client)
-                .await?;
+            let target_db = database.as_deref().unwrap_or(db_name);
+            execute_modify_table_settings(
+                target_db,
+                table,
+                before_settings,
+                after_settings,
+                client,
+            )
+            .await?;
         }
         SerializableOlapOperation::ModifyTableTtl {
             table,
             before: _,
             after,
+            database,
         } => {
+            let target_db = database.as_deref().unwrap_or(db_name);
             // Build ALTER TABLE ... [REMOVE TTL | MODIFY TTL expr]
             let sql = if let Some(expr) = after {
-                format!("ALTER TABLE `{}`.`{}` MODIFY TTL {}", db_name, table, expr)
+                format!(
+                    "ALTER TABLE `{}`.`{}` MODIFY TTL {}",
+                    target_db, table, expr
+                )
             } else {
-                format!("ALTER TABLE `{}`.`{}` REMOVE TTL", db_name, table)
+                format!("ALTER TABLE `{}`.`{}` REMOVE TTL", target_db, table)
             };
             run_query(&sql, client).await.map_err(|e| {
                 ClickhouseChangesError::ClickhouseClient {
@@ -442,16 +505,18 @@ pub async fn execute_atomic_operation(
             column,
             before: _,
             after,
+            database,
         } => {
+            let target_db = database.as_deref().unwrap_or(db_name);
             let sql = if let Some(expr) = after {
                 format!(
                     "ALTER TABLE `{}`.`{}` MODIFY COLUMN `{}` TTL {}",
-                    db_name, table, column, expr
+                    target_db, table, column, expr
                 )
             } else {
                 format!(
                     "ALTER TABLE `{}`.`{}` MODIFY COLUMN `{}` REMOVE TTL",
-                    db_name, table, column
+                    target_db, table, column
                 )
             };
             run_query(&sql, client).await.map_err(|e| {
@@ -461,17 +526,33 @@ pub async fn execute_atomic_operation(
                 }
             })?;
         }
-        SerializableOlapOperation::AddTableIndex { table, index } => {
-            execute_add_table_index(db_name, table, index, client).await?;
+        SerializableOlapOperation::AddTableIndex {
+            table,
+            index,
+            database,
+        } => {
+            let target_db = database.as_deref().unwrap_or(db_name);
+            execute_add_table_index(target_db, table, index, client).await?;
         }
-        SerializableOlapOperation::DropTableIndex { table, index_name } => {
-            execute_drop_table_index(db_name, table, index_name, client).await?;
+        SerializableOlapOperation::DropTableIndex {
+            table,
+            index_name,
+            database,
+        } => {
+            let target_db = database.as_deref().unwrap_or(db_name);
+            execute_drop_table_index(target_db, table, index_name, client).await?;
         }
-        SerializableOlapOperation::ModifySampleBy { table, expression } => {
-            execute_modify_sample_by(db_name, table, expression, client).await?;
+        SerializableOlapOperation::ModifySampleBy {
+            table,
+            expression,
+            database,
+        } => {
+            let target_db = database.as_deref().unwrap_or(db_name);
+            execute_modify_sample_by(target_db, table, expression, client).await?;
         }
-        SerializableOlapOperation::RemoveSampleBy { table } => {
-            execute_remove_sample_by(db_name, table, client).await?;
+        SerializableOlapOperation::RemoveSampleBy { table, database } => {
+            let target_db = database.as_deref().unwrap_or(db_name);
+            execute_remove_sample_by(target_db, table, client).await?;
         }
         SerializableOlapOperation::RawSql { sql, description } => {
             execute_raw_sql(sql, description, client).await?;
@@ -488,7 +569,9 @@ async fn execute_create_table(
 ) -> Result<(), ClickhouseChangesError> {
     log::info!("Executing CreateTable: {:?}", table.id());
     let clickhouse_table = std_table_to_clickhouse_table(table)?;
-    let create_data_table_query = create_table_query(db_name, clickhouse_table, is_dev)?;
+    // Use table's database if specified, otherwise use global database
+    let target_database = table.database.as_deref().unwrap_or(db_name);
+    let create_data_table_query = create_table_query(target_database, clickhouse_table, is_dev)?;
     run_query(&create_data_table_query, client)
         .await
         .map_err(|e| ClickhouseChangesError::ClickhouseClient {
@@ -583,10 +666,13 @@ async fn execute_remove_sample_by(
 async fn execute_drop_table(
     db_name: &str,
     table_name: &str,
+    table_database: Option<&str>,
     client: &ConfiguredDBClient,
 ) -> Result<(), ClickhouseChangesError> {
     log::info!("Executing DropTable: {:?}", table_name);
-    let drop_query = drop_table_query(db_name, table_name)?;
+    // Use table's database if specified, otherwise use global database
+    let target_database = table_database.unwrap_or(db_name);
+    let drop_query = drop_table_query(target_database, table_name)?;
     run_query(&drop_query, client)
         .await
         .map_err(|e| ClickhouseChangesError::ClickhouseClient {
@@ -1315,6 +1401,7 @@ impl OlapOperations for ConfiguredDBClient {
             r#"
             SELECT
                 name,
+                database,
                 engine,
                 create_table_query,
                 partition_key
@@ -1331,7 +1418,7 @@ impl OlapOperations for ConfiguredDBClient {
         let mut cursor = self
             .client
             .query(&query)
-            .fetch::<(String, String, String, String)>()
+            .fetch::<(String, String, String, String, String)>()
             .map_err(|e| {
                 debug!("Error fetching tables: {}", e);
                 OlapChangesError::DatabaseError(e.to_string())
@@ -1340,10 +1427,11 @@ impl OlapOperations for ConfiguredDBClient {
         let mut tables = Vec::new();
         let mut unsupported_tables = Vec::new();
 
-        'table_loop: while let Some((table_name, engine, create_query, partition_key)) = cursor
-            .next()
-            .await
-            .map_err(|e| OlapChangesError::DatabaseError(e.to_string()))?
+        'table_loop: while let Some((table_name, database, engine, create_query, partition_key)) =
+            cursor
+                .next()
+                .await
+                .map_err(|e| OlapChangesError::DatabaseError(e.to_string()))?
         {
             debug!("Processing table: {}", table_name);
             debug!("Table engine: {}", engine);
@@ -1604,6 +1692,7 @@ impl OlapOperations for ConfiguredDBClient {
                 engine_params_hash,
                 table_settings,
                 indexes,
+                database: Some(database),
                 table_ttl_setting,
             };
             debug!("Created table object: {:?}", table);

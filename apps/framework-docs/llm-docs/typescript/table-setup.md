@@ -12,6 +12,34 @@ import { OlapTable, Key } from '@514labs/moose-lib';
 export const Example = new OlapTable("Example");
 ```
 
+## Multi-Database Support
+
+By default, tables are created in the global ClickHouse database configured in your Moose project. You can optionally specify a different database for any table using the `database` field:
+
+```typescript
+import { OlapTable, Key } from '@514labs/moose-lib';
+
+interface MyData {
+  id: Key<string>;
+  value: number;
+}
+
+// Table created in the default database
+export const DefaultTable = new OlapTable<MyData>("DefaultTable");
+
+// Table created in a specific database
+export const AnalyticsTable = new OlapTable<MyData>("AnalyticsTable", {
+  database: "analytics_db",
+  orderByFields: ["id"]
+});
+```
+
+**Notes**:
+- If `database` is not specified, the table is created in the global database from your Moose configuration
+- The database must exist in your ClickHouse cluster
+- All table operations (queries, writes) will target the specified database
+- **Changing the `database` field requires manual migration**: Create a new table with the target database, migrate your data, then delete the old table definition. This prevents accidental data loss.
+
 ## Table Configuration Options
 
 The `OlapTable` class supports both a modern discriminated union API and legacy configuration for backward compatibility.
@@ -20,14 +48,16 @@ The `OlapTable` class supports both a modern discriminated union API and legacy 
 
 ```typescript
 // Engine-specific configurations with type safety
-type OlapConfig<T> = 
-  | { engine: ClickHouseEngines.MergeTree; orderByFields?: (keyof T & string)[]; settings?: { [key: string]: string }; }
-  | { 
-      engine: ClickHouseEngines.ReplacingMergeTree; 
-      orderByFields?: (keyof T & string)[]; 
+// All configurations support an optional 'database' field
+type OlapConfig<T> =
+  | { engine: ClickHouseEngines.MergeTree; orderByFields?: (keyof T & string)[]; settings?: { [key: string]: string }; database?: string; }
+  | {
+      engine: ClickHouseEngines.ReplacingMergeTree;
+      orderByFields?: (keyof T & string)[];
       ver?: keyof T & string;        // Optional: version column for keeping latest
       isDeleted?: keyof T & string;   // Optional: soft delete marker (requires ver)
-      settings?: { [key: string]: string }; 
+      settings?: { [key: string]: string };
+      database?: string;              // Optional: target database
     }
   | { 
       engine: ClickHouseEngines.ReplicatedMergeTree;

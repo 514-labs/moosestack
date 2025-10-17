@@ -648,6 +648,9 @@ pub fn tables_to_python(tables: &[Table], life_cycle: Option<LifeCycle>) -> Stri
         if let Some(sample_by) = &table.sample_by {
             writeln!(output, "    sample_by_expression={:?},", sample_by).unwrap();
         }
+        if let Some(database) = &table.database {
+            writeln!(output, "    database={:?},", database).unwrap();
+        }
         if let Some(life_cycle) = life_cycle {
             writeln!(
                 output,
@@ -892,6 +895,7 @@ mod tests {
             engine_params_hash: None,
             table_settings: None,
             indexes: vec![],
+            database: None,
             table_ttl_setting: None,
         }];
 
@@ -984,6 +988,7 @@ foo_table = OlapTable[Foo]("Foo", OlapConfig(
             engine_params_hash: None,
             table_settings: None,
             indexes: vec![],
+            database: None,
             table_ttl_setting: None,
         }];
 
@@ -1101,6 +1106,7 @@ nested_array_table = OlapTable[NestedArray]("NestedArray", OlapConfig(
             engine_params_hash: None,
             table_settings: None,
             indexes: vec![],
+            database: None,
             table_ttl_setting: None,
         }];
 
@@ -1178,6 +1184,7 @@ user_table = OlapTable[User]("User", OlapConfig(
                     .collect(),
             ),
             indexes: vec![],
+            database: None,
             table_ttl_setting: None,
         }];
 
@@ -1234,6 +1241,7 @@ user_table = OlapTable[User]("User", OlapConfig(
                 .collect(),
             ),
             indexes: vec![],
+            database: None,
             table_ttl_setting: None,
         }];
 
@@ -1301,6 +1309,7 @@ user_table = OlapTable[User]("User", OlapConfig(
             engine_params_hash: None,
             table_settings: None,
             indexes: vec![],
+            database: None,
             table_ttl_setting: None,
         }];
 
@@ -1371,6 +1380,7 @@ user_table = OlapTable[User]("User", OlapConfig(
             engine_params_hash: None,
             table_settings: None,
             indexes: vec![],
+            database: None,
             table_ttl_setting: None,
         }];
 
@@ -1452,6 +1462,7 @@ user_table = OlapTable[User]("User", OlapConfig(
             engine_params_hash: None,
             table_settings: None,
             indexes: vec![],
+            database: None,
             table_ttl_setting: Some("timestamp + INTERVAL 90 DAY DELETE".to_string()),
         }];
 
@@ -1515,6 +1526,7 @@ user_table = OlapTable[User]("User", OlapConfig(
                     granularity: 1,
                 },
             ],
+            database: None,
             table_ttl_setting: None,
         }];
 
@@ -1599,5 +1611,42 @@ user_table = OlapTable[User]("User", OlapConfig(
         assert!(result.contains("max_dynamic_types=16"));
         assert!(result.contains("skip_paths=(\"skip.me\",)"));
         assert!(result.contains("skip_regexps=(r\"^tmp\\\\.\",)"));
+    }
+
+    #[test]
+    fn test_database_field_emission() {
+        let tables = vec![Table {
+            name: "ExternalData".to_string(),
+            columns: vec![Column {
+                name: "id".to_string(),
+                data_type: ColumnType::String,
+                required: true,
+                unique: false,
+                primary_key: true,
+                default: None,
+                annotations: vec![],
+                comment: None,
+                ttl: None,
+            }],
+            order_by: OrderBy::Fields(vec!["id".to_string()]),
+            partition_by: None,
+            sample_by: None,
+            engine: Some(ClickhouseEngine::MergeTree),
+            version: None,
+            source_primitive: PrimitiveSignature {
+                name: "ExternalData".to_string(),
+                primitive_type: PrimitiveTypes::DataModel,
+            },
+            metadata: None,
+            life_cycle: LifeCycle::FullyManaged,
+            engine_params_hash: None,
+            table_settings: None,
+            indexes: vec![],
+            database: Some("analytics_db".to_string()),
+            table_ttl_setting: None,
+        }];
+
+        let result = tables_to_python(&tables, None);
+        assert!(result.contains("database=\"analytics_db\""));
     }
 }

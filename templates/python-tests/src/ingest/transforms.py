@@ -23,7 +23,7 @@ def foo_to_bar(foo: Foo):
     cache_key = f"foo_to_bar:{foo.primary_key}"
 
     # Checked for cached transformation result
-    cached_result = cache.get(cache_key)
+    cached_result = cache.get(cache_key, type_hint=Bar)
     if cached_result:
         return cached_result
 

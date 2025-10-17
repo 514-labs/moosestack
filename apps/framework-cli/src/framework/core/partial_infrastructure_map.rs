@@ -607,6 +607,7 @@ impl PartialInfrastructureMap {
                     },
                     indexes: partial_table.indexes.clone(),
                     table_ttl_setting,
+                    database: None, // Database defaults to global config
                 };
                 (table.id(), table)
             })
