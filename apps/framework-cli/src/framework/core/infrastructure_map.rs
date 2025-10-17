@@ -2290,7 +2290,7 @@ impl InfrastructureMap {
             project.language,
             &project.main_file(),
             &project.clickhouse_config.db_name,
-        );
+        )?;
 
         // Provide explicit feedback when streams are defined but streaming engine is disabled
         if !project.features.streaming_engine && infra_map.uses_streaming() {

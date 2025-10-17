@@ -718,6 +718,7 @@ s3_events = OlapTable[S3Event]("s3_events", OlapConfig(
     engine=S3QueueEngine(
         s3_path="s3://my-bucket/data/*.json",
         format="JSONEachRow",
+        # ⚠️ WARNING: See security callout below about credentials
         aws_access_key_id="AKIA...",
         aws_secret_access_key="secret..."
     ),
@@ -728,6 +729,65 @@ s3_events = OlapTable[S3Event]("s3_events", OlapConfig(
 ))
 ```
 </Python>
+
+<Callout type="danger" title="⚠️ NEVER hardcode AWS credentials!">
+**Security Risk**: Hardcoding credentials in your code embeds them in Docker images and deployment artifacts, creating serious security vulnerabilities.
+
+**Solution**: Use `mooseRuntimeEnv` for runtime credential resolution:
+
+<TypeScript>
+```ts filename="SecureS3Streaming.ts" copy
+import { OlapTable, ClickHouseEngines, mooseRuntimeEnv } from '@514labs/moose-lib';
+
+// ✅ RECOMMENDED: Runtime environment variable resolution
+export const secureS3Events = new OlapTable<S3Event>("s3_events", {
+  engine: ClickHouseEngines.S3Queue,
+  s3Path: "s3://my-bucket/data/*.json",
+  format: "JSONEachRow",
+  awsAccessKeyId: mooseRuntimeEnv.get("AWS_ACCESS_KEY_ID"),
+  awsSecretAccessKey: mooseRuntimeEnv.get("AWS_SECRET_ACCESS_KEY"),
+  settings: {
+    mode: "unordered",
+    keeper_path: "/clickhouse/s3queue/events"
+  }
+});
+```
+</TypeScript>
+
+<Python>
+```py filename="SecureS3Streaming.py" copy
+from moose_lib import OlapTable, OlapConfig, moose_runtime_env
+from moose_lib.blocks import S3QueueEngine
+
+# ✅ RECOMMENDED: Runtime environment variable resolution
+secure_s3_events = OlapTable[S3Event]("s3_events", OlapConfig(
+    engine=S3QueueEngine(
+        s3_path="s3://my-bucket/data/*.json",
+        format="JSONEachRow",
+        aws_access_key_id=moose_runtime_env.get("AWS_ACCESS_KEY_ID"),
+        aws_secret_access_key=moose_runtime_env.get("AWS_SECRET_ACCESS_KEY")
+    ),
+    settings={
+        "mode": "unordered",
+        "keeper_path": "/clickhouse/s3queue/events"
+    }
+))
+```
+</Python>
+
+**Then set environment variables:**
+```bash filename="Terminal" copy
+export AWS_ACCESS_KEY_ID="AKIA..."
+export AWS_SECRET_ACCESS_KEY="your-secret-key"
+moose prod up
+```
+
+**Benefits:**
+- Credentials never embedded in Docker images
+- Supports credential rotation (changing passwords triggers table recreation)
+- Different credentials per environment (dev/staging/prod)
+- Clear error messages if environment variables are missing
+</Callout>
 
 <Callout type="info" title="S3Queue Requirements">
 S3Queue requires ClickHouse 24.7+ and proper ZooKeeper/ClickHouse Keeper configuration for coordination between replicas. Files are processed exactly once across all replicas.
