@@ -1358,8 +1358,7 @@ impl OlapOperations for ConfiguredDBClient {
             // Extract table settings from CREATE TABLE query
             let table_settings = extract_table_settings_from_create_table(&create_query);
 
-            // Extract indexes from CREATE TABLE query
-            let indexes_ch = extract_indexes_from_create_table(&create_query);
+            let indexes_ch = extract_indexes_from_create_table(&create_query)?;
             let indexes: Vec<TableIndex> = indexes_ch
                 .into_iter()
                 .map(|i| TableIndex {

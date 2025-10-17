@@ -77,6 +77,10 @@ pub enum SqlParseError {
     UnsupportedStatement,
     #[error("Not a create table statement")]
     NotCreateTable,
+    #[error("Invalid index definition: {0}")]
+    InvalidIndexDefinition(String),
+    #[error("Invalid granularity value: '{0}' (expected unsigned integer)")]
+    InvalidGranularity(String),
 }
 
 /// Extract engine definition from a CREATE TABLE statement
@@ -219,20 +223,14 @@ pub fn extract_engine_from_create_table(sql: &str) -> Option<String> {
 
 /// Extract index definitions from a CREATE TABLE statement
 /// Returns a vector of ClickHouseIndex with name, expression, type, arguments and granularity
-/// Example supported patterns:
-/// - INDEX idx1 u64 TYPE bloom_filter GRANULARITY 3
-/// - INDEX idx2 u64 * i32 TYPE minmax GRANULARITY 3
-/// - INDEX idx3 u64 * length(s) TYPE set(1000) GRANULARITY 4
-/// - INDEX idx4 (u64, i32) TYPE MinMax GRANULARITY 1
-/// - INDEX idx6 toString(i32) TYPE ngrambf_v1(2, 256, 1, 123) GRANULARITY 1
-pub fn extract_indexes_from_create_table(sql: &str) -> Vec<ClickHouseIndex> {
+pub fn extract_indexes_from_create_table(sql: &str) -> Result<Vec<ClickHouseIndex>, SqlParseError> {
     let mut result: Vec<ClickHouseIndex> = Vec::new();
     let upper = sql.to_uppercase();
     // Find opening '(' after CREATE TABLE ...
     let open_paren_pos = upper.find('(');
     let engine_pos = upper.find("\nENGINE").or_else(|| upper.find(" ENGINE"));
     if open_paren_pos.is_none() || engine_pos.is_none() {
-        return result;
+        return Ok(result);
     }
     let (start, end) = (open_paren_pos.unwrap() + 1, engine_pos.unwrap());
     let body = &sql[start..end];
@@ -292,7 +290,7 @@ pub fn extract_indexes_from_create_table(sql: &str) -> Vec<ClickHouseIndex> {
         let name = parts.next().unwrap_or("").trim().to_string();
         let after_name = parts.next().unwrap_or("").trim();
         if name.is_empty() || after_name.is_empty() {
-            continue;
+            return Err(SqlParseError::InvalidIndexDefinition(item));
         }
 
         // Find TYPE ... GRANULARITY ... boundaries while allowing parentheses in expression
@@ -300,12 +298,14 @@ pub fn extract_indexes_from_create_table(sql: &str) -> Vec<ClickHouseIndex> {
         let type_pos = after_upper.find(" TYPE ");
         let gran_pos = after_upper.rfind(" GRANULARITY ");
         if type_pos.is_none() || gran_pos.is_none() || type_pos.unwrap() >= gran_pos.unwrap() {
-            continue;
+            return Err(SqlParseError::InvalidIndexDefinition(item));
         }
         let expr = after_name[..type_pos.unwrap()].trim().to_string();
         let type_and_after = &after_name[type_pos.unwrap() + 6..];
         let type_upper = type_and_after.to_uppercase();
-        let gran_rel = type_upper.rfind(" GRANULARITY ").unwrap();
+        let gran_rel = type_upper
+            .rfind(" GRANULARITY ")
+            .ok_or_else(|| SqlParseError::InvalidIndexDefinition(item.clone()))?;
         let type_section = type_and_after[..gran_rel].trim();
         let gran_part = type_and_after[gran_rel + " GRANULARITY ".len()..].trim();
 
@@ -338,12 +338,20 @@ pub fn extract_indexes_from_create_table(sql: &str) -> Vec<ClickHouseIndex> {
             (type_section.to_string(), vec![])
         };
 
-        // Parse granularity as u64
-        let granularity: u64 = gran_part
-            .split_whitespace()
-            .next()
-            .and_then(|n| n.parse::<u64>().ok())
-            .unwrap_or(0);
+        // Parse granularity precisely: allow only digits, optionally a trailing ')'
+        let granularity: u64 = {
+            let trimmed = gran_part.trim();
+            let candidate = trimmed
+                .strip_suffix(')')
+                .map(|s| s.trim_end())
+                .unwrap_or(trimmed);
+            if !candidate.chars().all(|c| c.is_ascii_digit()) {
+                return Err(SqlParseError::InvalidGranularity(trimmed.to_string()));
+            }
+            candidate
+                .parse::<u64>()
+                .map_err(|_| SqlParseError::InvalidGranularity(trimmed.to_string()))?
+        };
 
         result.push(ClickHouseIndex {
             name,
@@ -354,7 +362,7 @@ pub fn extract_indexes_from_create_table(sql: &str) -> Vec<ClickHouseIndex> {
         });
     }
 
-    result
+    Ok(result)
 }
 
 pub fn parse_create_materialized_view(
@@ -1303,9 +1311,17 @@ mod tests {
 
     #[test]
     fn test_extract_indexes_from_create_table_multiple() {
-        let sql = r#"CREATE TABLE local.table_name (`u64` UInt64, `i32` Int32, `s` String, INDEX idx1 u64 TYPE bloom_filter GRANULARITY 3, INDEX idx2 u64 * i32 TYPE minmax GRANULARITY 3, INDEX idx3 u64 * length(s) TYPE set(1000) GRANULARITY 4, INDEX idx4 (u64, i32) TYPE MinMax GRANULARITY 1, INDEX idx5 (u64, i32) TYPE minmax GRANULARITY 1, INDEX idx6 toString(i32) TYPE ngrambf_v1(2, 256, 1, 123) GRANULARITY 1, INDEX idx7 s TYPE nGraMbf_v1(3, 256, 1, 123) GRANULARITY 1) ENGINE = MergeTree ORDER BY u64 SETTINGS index_granularity = 8192"#;
+        let sql = "CREATE TABLE local.table_name (`u64` UInt64, `i32` Int32, `s` String, \
+        INDEX idx1 u64 TYPE bloom_filter GRANULARITY 3, \
+        INDEX idx2 u64 * i32 TYPE minmax GRANULARITY 3, \
+        INDEX idx3 u64 * length(s) TYPE set(1000) GRANULARITY 4, \
+        INDEX idx4 (u64, i32) TYPE MinMax GRANULARITY 1, \
+        INDEX idx5 (u64, i32) TYPE minmax GRANULARITY 1, \
+        INDEX idx6 toString(i32) TYPE ngrambf_v1(2, 256, 1, 123) GRANULARITY 1, \
+        INDEX idx7 s TYPE nGraMbf_v1(3, 256, 1, 123) GRANULARITY 1\
+        ) ENGINE = MergeTree ORDER BY u64 SETTINGS index_granularity = 8192";
 
-        let indexes = extract_indexes_from_create_table(sql);
+        let indexes = extract_indexes_from_create_table(sql).unwrap();
         assert_eq!(indexes.len(), 7);
 
         assert_eq!(
