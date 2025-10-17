@@ -49,13 +49,18 @@ Planned migrations apply only to OLAP (ClickHouse) schema changes. Streaming, AP
 olap = true
 ddl_plan = true
 ```
-
 ## Generating a Plan
 
 Once done editing your code in your feature branch, you can generate a plan that diffs your local code against your live remote database:
 
+**For Moose server deployments:**
 ```bash filename="Terminal" copy
 moose generate migration --url https://<remote-env> --token <api-token> --save
+```
+
+**For serverless deployments:**
+```bash filename="Terminal" copy
+moose generate migration --clickhouse-url clickhouse://user:pass@host:port/db --save
 ```
 
 Outputs:
@@ -238,9 +243,46 @@ You can also override the the default behavior by using the `RawSql` operation t
     description: "Backfill created_at from created_at_ms"
 ```
 
-## Apply the plan when deploying to production
+## Deployment Flows
 
-When you deploy your code to production, Moose will first validate that the snapshot of your database that was taken when you generated the plan is still the same as the current database state. If it is not, Moose will abort the deployment. If it is, Moose will execute the plan in `plan.yaml` against your production database.
+### Moose Server Deployments
+
+For Moose server deployments (with `moose prod` running), migrations are applied automatically on startup. Generate plans using:
+
+```bash filename="Terminal" copy
+moose generate migration --url https://<remote-env> --token <api-token> --save
+```
+
+When you deploy, Moose validates the plan and executes it automatically.
+
+### Serverless Deployments
+
+For serverless deployments (no Moose server), you manage migrations manually using the ClickHouse connection directly:
+
+```toml file="moose.config.toml"
+[state_config]
+storage = "clickhouse"
+
+[features]
+olap = true
+ddl_plan = true
+```
+
+**Workflow:**
+
+1. **Generate the plan** from your ClickHouse database:
+```bash filename="Terminal" copy
+moose generate migration --clickhouse-url <url> --save
+```
+
+2. **Review** the generated `./migrations/` files in your PR
+
+3. **Execute the plan** against your ClickHouse with CI/CD or manually:
+```bash filename="Terminal" copy
+moose migrate --clickhouse-url <url>
+```
+
+Before applying the plan, Moose will first validate that the snapshot of your database that was taken when you generated the plan is still the same as the current database state. If it is not, Moose will abort the deployment. If it is, Moose will execute the plan in `plan.yaml` against your production database.
 
 Execution rules:
 - If current tables in your live production database differ from `remote_state.json`, Moose aborts (remote drift since planning).
@@ -252,5 +294,3 @@ Execution rules:
 - Plan rejected due to drift: Re-generate a plan against the current remote, review, and retry.
 - No execution: Ensure `ddl_plan = true` and `./migrations/plan.yaml` exists.
 - OLAP disabled: Ensure `[features].olap = true`.
-
-
