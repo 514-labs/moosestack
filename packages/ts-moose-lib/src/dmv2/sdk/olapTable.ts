@@ -17,6 +17,14 @@ import { LifeCycle } from "./lifeCycle";
 import { IdentifierBrandedString, quoteIdentifier } from "../../sqlHelpers";
 import type { NodeClickHouseClient } from "@clickhouse/client/dist/client";
 
+export interface TableIndex {
+  name: string;
+  expression: string;
+  type: string;
+  arguments?: string[];
+  granularity: number;
+}
+
 /**
  * Represents a failed record during insertion with error details
  */
@@ -182,6 +190,8 @@ export type BaseOlapConfig<T> = (
   version?: string;
   lifeCycle?: LifeCycle;
   settings?: { [key: string]: string };
+  /** Optional secondary/data-skipping indexes */
+  indexes?: TableIndex[];
 };
 
 /**

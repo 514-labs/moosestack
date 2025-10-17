@@ -132,6 +132,8 @@ message Table {
   // Next-version ORDER BY representation to match Rust enum
   // Non-breaking: keeps legacy order_by (field 3) while adding a structured variant
   optional OrderBy order_by2 = 13;
+  // Optional secondary/data-skipping indexes
+  repeated TableIndex indexes = 14;
 }
 
 // Structured representation of ORDER BY to support either explicit fields
@@ -147,6 +149,15 @@ message OrderBy {
 
 message OrderByFields {
   repeated string field = 1;
+}
+
+// DB-neutral representation of a table index
+message TableIndex {
+  string name = 1;
+  string expression = 2;
+  string type = 3;
+  repeated string arguments = 4;
+  uint64 granularity = 5;
 }
 
 message View {

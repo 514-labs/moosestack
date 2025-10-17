@@ -128,6 +128,15 @@ class OlapConfig(BaseModel):
     metadata: Optional[dict] = None
     life_cycle: Optional[LifeCycle] = None
     settings: Optional[dict[str, str]] = None
+    # Optional secondary/data-skipping indexes
+    class TableIndex(BaseModel):
+        name: str
+        expression: str
+        type: str
+        arguments: Optional[list[str]] = None
+        granularity: int
+
+    indexes: Optional[list[TableIndex]] = None
 
     def model_post_init(self, __context):
         has_fields = bool(self.order_by_fields)

@@ -59,6 +59,7 @@ import {
 } from "./utils";
 import { triggerWorkflow } from "./utils/workflow-utils";
 import { geoPayloadPy, geoPayloadTs } from "./utils/geo-payload";
+import { verifyTableIndexes, getTableDDL } from "./utils/database-utils";
 
 const execAsync = promisify(require("child_process").exec);
 const setTimeoutAsync = (ms: number) =>
@@ -276,6 +277,54 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
 
         // Verify that both versions of UserEvents tables are created
         await verifyVersionedTables("UserEvents", ["1.0", "2.0"]);
+      });
+
+      it("should create indexes defined in templates", async function () {
+        this.timeout(TIMEOUTS.TEST_SETUP_MS);
+
+        // TypeScript and Python tests both define an IndexTest / IndexTest table
+        // Verify that all seven test indexes are present in the DDL
+        await verifyTableIndexes("IndexTest", [
+          "idx1",
+          "idx2",
+          "idx3",
+          "idx4",
+          "idx5",
+          "idx6",
+          "idx7",
+        ]);
+      });
+
+      it("should plan/apply index modifications on existing tables", async function () {
+        this.timeout(TIMEOUTS.TEST_SETUP_MS);
+
+        // Modify a template file in place to change an index definition
+        const modelPath = path.join(
+          TEST_PROJECT_DIR,
+          "app",
+          "ingest",
+          config.language === "typescript" ? "models.ts" : "models.py",
+        );
+        let contents = await fs.promises.readFile(modelPath, "utf8");
+        // Change granularity of idx1 from 3 to 4
+        contents = contents
+          .replace("granularity: 3", "granularity: 4")
+          .replace("granularity=3", "granularity=4");
+        await fs.promises.writeFile(modelPath, contents, "utf8");
+
+        // Trigger generator to pick up the change
+        await triggerWorkflow("generator");
+
+        // Verify DDL reflects updated index
+        await withRetries(
+          async () => {
+            const ddl = await getTableDDL("IndexTest");
+            if (!ddl.includes("INDEX idx1") || !ddl.includes("GRANULARITY 4")) {
+              throw new Error(`idx1 not updated to GRANULARITY 4. DDL: ${ddl}`);
+            }
+          },
+          { attempts: 10, delayMs: 1000 },
+        );
       });
     }
 

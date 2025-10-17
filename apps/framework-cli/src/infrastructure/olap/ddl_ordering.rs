@@ -1,5 +1,5 @@
 use crate::framework::core::infrastructure::sql_resource::SqlResource;
-use crate::framework::core::infrastructure::table::{Column, Table};
+use crate::framework::core::infrastructure::table::{Column, Table, TableIndex};
 use crate::framework::core::infrastructure::view::{View, ViewType};
 use crate::framework::core::infrastructure::DataLineage;
 use crate::framework::core::infrastructure::InfrastructureSignature;
@@ -86,6 +86,18 @@ pub enum AtomicOlapOperation {
         /// The settings after modification
         after_settings: Option<std::collections::HashMap<String, String>>,
         /// Dependency information
+        dependency_info: DependencyInfo,
+    },
+    /// Add a secondary index to a table
+    AddTableIndex {
+        table: Table,
+        index: TableIndex,
+        dependency_info: DependencyInfo,
+    },
+    /// Drop a secondary index from a table
+    DropTableIndex {
+        table: Table,
+        index_name: String,
         dependency_info: DependencyInfo,
     },
     /// Populate a materialized view with initial data
@@ -184,6 +196,18 @@ impl AtomicOlapOperation {
                 before_settings: before_settings.clone(),
                 after_settings: after_settings.clone(),
             },
+            AtomicOlapOperation::AddTableIndex { table, index, .. } => {
+                SerializableOlapOperation::AddTableIndex {
+                    table: table.name.clone(),
+                    index: index.clone(),
+                }
+            }
+            AtomicOlapOperation::DropTableIndex {
+                table, index_name, ..
+            } => SerializableOlapOperation::DropTableIndex {
+                table: table.name.clone(),
+                index_name: index_name.clone(),
+            },
             AtomicOlapOperation::PopulateMaterializedView {
                 view_name: _,
                 target_table,
@@ -268,6 +292,12 @@ impl AtomicOlapOperation {
             AtomicOlapOperation::ModifyTableSettings { table, .. } => {
                 InfrastructureSignature::Table { id: table.id() }
             }
+            AtomicOlapOperation::AddTableIndex { table, .. } => {
+                InfrastructureSignature::Table { id: table.id() }
+            }
+            AtomicOlapOperation::DropTableIndex { table, .. } => {
+                InfrastructureSignature::Table { id: table.id() }
+            }
             AtomicOlapOperation::PopulateMaterializedView { view_name, .. } => {
                 InfrastructureSignature::SqlResource {
                     id: view_name.clone(),
@@ -311,6 +341,12 @@ impl AtomicOlapOperation {
                 dependency_info, ..
             }
             | AtomicOlapOperation::ModifyTableSettings {
+                dependency_info, ..
+            }
+            | AtomicOlapOperation::AddTableIndex {
+                dependency_info, ..
+            }
+            | AtomicOlapOperation::DropTableIndex {
                 dependency_info, ..
             }
             | AtomicOlapOperation::PopulateMaterializedView {
@@ -592,8 +628,57 @@ fn handle_table_column_updates(
     // changes, those should have been converted to separate Remove+Add operations
     // by the appropriate TableDiffStrategy.
 
-    // Process column changes as before
-    process_column_changes(before, after, column_changes)
+    let mut plan = process_column_changes(before, after, column_changes);
+
+    // Compute index additions and removals
+    let before_indexes = &before.indexes;
+    let after_indexes = &after.indexes;
+
+    // Modifications: same name but different definition => drop then add
+    for after_idx in after_indexes {
+        if let Some(before_idx) = before_indexes.iter().find(|b| b.name == after_idx.name) {
+            let changed = before_idx.expression != after_idx.expression
+                || before_idx.index_type != after_idx.index_type
+                || before_idx.granularity != after_idx.granularity
+                || before_idx.arguments != after_idx.arguments;
+            if changed {
+                plan.teardown_ops.push(AtomicOlapOperation::DropTableIndex {
+                    table: before.clone(),
+                    index_name: before_idx.name.clone(),
+                    dependency_info: create_empty_dependency_info(),
+                });
+                plan.setup_ops.push(AtomicOlapOperation::AddTableIndex {
+                    table: after.clone(),
+                    index: after_idx.clone(),
+                    dependency_info: create_empty_dependency_info(),
+                });
+            }
+        }
+    }
+
+    // Additions
+    for idx in after_indexes {
+        if !before_indexes.iter().any(|b| b.name == idx.name) {
+            plan.setup_ops.push(AtomicOlapOperation::AddTableIndex {
+                table: after.clone(),
+                index: idx.clone(),
+                dependency_info: create_empty_dependency_info(),
+            });
+        }
+    }
+
+    // Removals
+    for idx in before_indexes {
+        if !after_indexes.iter().any(|a| a.name == idx.name) {
+            plan.teardown_ops.push(AtomicOlapOperation::DropTableIndex {
+                table: before.clone(),
+                index_name: idx.name.clone(),
+                dependency_info: create_empty_dependency_info(),
+            });
+        }
+    }
+
+    plan
 }
 
 /// Process a column addition with position information
@@ -1073,6 +1158,7 @@ mod tests {
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
             table_settings: None,
+            indexes: vec![],
         };
 
         // Create some atomic operations
@@ -1142,6 +1228,7 @@ mod tests {
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
             table_settings: None,
+            indexes: vec![],
         };
 
         // Create table B - depends on table A
@@ -1160,6 +1247,7 @@ mod tests {
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
             table_settings: None,
+            indexes: vec![],
         };
 
         // Create view C - depends on table B
@@ -1249,6 +1337,7 @@ mod tests {
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
             table_settings: None,
+            indexes: vec![],
         };
 
         // Create table B - target for materialized view
@@ -1267,6 +1356,7 @@ mod tests {
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
             table_settings: None,
+            indexes: vec![],
         };
 
         // Create view C - depends on table B
@@ -1376,6 +1466,7 @@ mod tests {
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
             table_settings: None,
+            indexes: vec![],
         };
 
         let view = View {
@@ -1527,6 +1618,7 @@ mod tests {
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
             table_settings: None,
+            indexes: vec![],
         };
 
         let table_b = Table {
@@ -1544,6 +1636,7 @@ mod tests {
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
             table_settings: None,
+            indexes: vec![],
         };
 
         let table_c = Table {
@@ -1561,6 +1654,7 @@ mod tests {
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
             table_settings: None,
+            indexes: vec![],
         };
 
         // Test operations
@@ -1646,6 +1740,7 @@ mod tests {
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
             table_settings: None,
+            indexes: vec![],
         };
 
         let table_b = Table {
@@ -1663,6 +1758,7 @@ mod tests {
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
             table_settings: None,
+            indexes: vec![],
         };
 
         let table_c = Table {
@@ -1680,6 +1776,7 @@ mod tests {
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
             table_settings: None,
+            indexes: vec![],
         };
 
         let table_d = Table {
@@ -1697,6 +1794,7 @@ mod tests {
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
             table_settings: None,
+            indexes: vec![],
         };
 
         let table_e = Table {
@@ -1714,6 +1812,7 @@ mod tests {
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
             table_settings: None,
+            indexes: vec![],
         };
 
         let op_create_a = AtomicOlapOperation::CreateTable {
@@ -1862,6 +1961,7 @@ mod tests {
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
             table_settings: None,
+            indexes: vec![],
         };
 
         // Create table B - target for materialized view
@@ -1880,6 +1980,7 @@ mod tests {
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
             table_settings: None,
+            indexes: vec![],
         };
 
         // Create SQL resource for a materialized view
@@ -1996,6 +2097,7 @@ mod tests {
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
             table_settings: None,
+            indexes: vec![],
         };
 
         // Create table B - target for materialized view
@@ -2014,6 +2116,7 @@ mod tests {
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
             table_settings: None,
+            indexes: vec![],
         };
 
         // Create SQL resource for a materialized view
@@ -2135,6 +2238,7 @@ mod tests {
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
             table_settings: None,
+            indexes: vec![],
         };
 
         let table_b = Table {
@@ -2152,6 +2256,7 @@ mod tests {
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
             table_settings: None,
+            indexes: vec![],
         };
 
         // Create SQL resource for materialized view
@@ -2352,6 +2457,7 @@ mod tests {
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
             table_settings: None,
+            indexes: vec![],
         };
 
         // Create a column
@@ -2452,6 +2558,7 @@ mod tests {
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
             table_settings: None,
+            indexes: vec![],
         };
 
         // Create operations with signatures that work with the current implementation
@@ -2563,6 +2670,7 @@ mod tests {
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
             table_settings: None,
+            indexes: vec![],
         };
 
         let after_table = Table {
@@ -2601,6 +2709,7 @@ mod tests {
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
             table_settings: None,
+            indexes: vec![],
         };
 
         // Create column changes (remove old_column, add new_column)
@@ -2677,6 +2786,71 @@ mod tests {
                 );
             }
             _ => panic!("Expected AddTableColumn operation"),
+        }
+    }
+}
+
+#[allow(clippy::items_after_test_module)]
+impl From<&AtomicOlapOperation> for SerializableOlapOperation {
+    fn from(op: &AtomicOlapOperation) -> Self {
+        match op {
+            AtomicOlapOperation::CreateTable { table, .. } => {
+                SerializableOlapOperation::CreateTable {
+                    table: table.clone(),
+                }
+            }
+            AtomicOlapOperation::DropTable { table, .. } => SerializableOlapOperation::DropTable {
+                table: table.name.clone(),
+            },
+            AtomicOlapOperation::AddTableColumn {
+                table,
+                column,
+                after_column,
+                ..
+            } => SerializableOlapOperation::AddTableColumn {
+                table: table.name.clone(),
+                column: column.clone(),
+                after_column: after_column.clone(),
+            },
+            AtomicOlapOperation::DropTableColumn {
+                table, column_name, ..
+            } => SerializableOlapOperation::DropTableColumn {
+                table: table.name.clone(),
+                column_name: column_name.clone(),
+            },
+            AtomicOlapOperation::ModifyTableColumn {
+                table,
+                before_column,
+                after_column,
+                ..
+            } => SerializableOlapOperation::ModifyTableColumn {
+                table: table.name.clone(),
+                before_column: before_column.clone(),
+                after_column: after_column.clone(),
+            },
+            AtomicOlapOperation::ModifyTableSettings {
+                table,
+                before_settings,
+                after_settings,
+                ..
+            } => SerializableOlapOperation::ModifyTableSettings {
+                table: table.name.clone(),
+                before_settings: before_settings.clone(),
+                after_settings: after_settings.clone(),
+            },
+            AtomicOlapOperation::AddTableIndex { table, index, .. } => {
+                SerializableOlapOperation::AddTableIndex {
+                    table: table.name.clone(),
+                    index: index.clone(),
+                }
+            }
+            AtomicOlapOperation::DropTableIndex {
+                table, index_name, ..
+            } => SerializableOlapOperation::DropTableIndex {
+                table: table.name.clone(),
+                index_name: index_name.clone(),
+            },
+            _ => unreachable!(),
         }
     }
 }

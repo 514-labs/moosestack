@@ -594,6 +594,7 @@ impl PartialInfrastructureMap {
                     } else {
                         Some(table_settings)
                     },
+                    indexes: vec![],
                 };
                 (table.id(), table)
             })

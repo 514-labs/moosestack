@@ -167,6 +167,7 @@ class TableConfig(BaseModel):
     metadata: Optional[dict] = None
     life_cycle: Optional[str] = None
     table_settings: Optional[Dict[str, str]] = None
+    indexes: Optional[List[Dict[str, Any]]] = None
 
 
 class TopicConfig(BaseModel):
@@ -577,6 +578,16 @@ def to_infra_map() -> dict:
             life_cycle=table.config.life_cycle.value if table.config.life_cycle else None,
             # Map 'settings' to 'table_settings' for internal use
             table_settings=table_settings if table_settings else None,
+            indexes=[
+                {
+                    "name": idx.name,
+                    "expression": idx.expression,
+                    "type": idx.type,
+                    "arguments": idx.arguments,
+                    "granularity": idx.granularity,
+                }
+                for idx in (table.config.indexes or [])
+            ] or None,
         )
 
     for name, stream in get_streams().items():
