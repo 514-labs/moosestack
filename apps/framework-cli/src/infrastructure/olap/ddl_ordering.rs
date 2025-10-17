@@ -813,6 +813,10 @@ pub fn order_olap_changes(
                 TableChange::SettingsChanged { table, .. } => {
                     tables.insert(table.name.clone(), table.clone());
                 }
+                TableChange::ValidationError { .. } => {
+                    // Validation errors should be caught by plan validator
+                    // before reaching this code. Skip processing.
+                }
             }
         } else if let OlapChange::PopulateMaterializedView { .. } = change {
             // No table to track for population operations
@@ -843,6 +847,11 @@ pub fn order_olap_changes(
                 before_settings.clone(),
                 after_settings.clone(),
             ),
+            OlapChange::Table(TableChange::ValidationError { .. }) => {
+                // Validation errors should be caught by plan validator
+                // before reaching this code. Return empty plan.
+                OperationPlan::new()
+            }
             OlapChange::PopulateMaterializedView {
                 view_name,
                 target_table,

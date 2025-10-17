@@ -38,7 +38,7 @@ export const AnalyticsTable = new OlapTable<MyData>("AnalyticsTable", {
 - If `database` is not specified, the table is created in the global database from your Moose configuration
 - The database must exist in your ClickHouse cluster
 - All table operations (queries, writes) will target the specified database
-- Changing the `database` field on an existing table triggers a drop and recreate operation
+- **Changing the `database` field requires manual migration**: Create a new table with the target database, migrate your data, then delete the old table definition. This prevents accidental data loss.
 
 ## Table Configuration Options
 
