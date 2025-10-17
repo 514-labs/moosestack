@@ -237,6 +237,20 @@ impl TableDiffStrategy for ClickHouseTableDiffStrategy {
             ];
         }
 
+        // Check if database has changed
+        if before.database != after.database {
+            log::debug!(
+                "ClickHouse: Database changed for table '{}' (from {:?} to {:?}), requiring drop+create",
+                before.name,
+                before.database,
+                after.database
+            );
+            return vec![
+                OlapChange::Table(TableChange::Removed(before.clone())),
+                OlapChange::Table(TableChange::Added(after.clone())),
+            ];
+        }
+
         // Check if PARTITION BY has changed
         if before.partition_by != after.partition_by {
             log::debug!(
@@ -439,6 +453,7 @@ mod tests {
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
             table_settings: None,
+            database: None,
         }
     }
 
@@ -911,6 +926,7 @@ mod tests {
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
             table_settings: Some(table_settings),
+            database: None,
         };
 
         assert!(ClickHouseTableDiffStrategy::is_s3queue_table(&s3_table));

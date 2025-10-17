@@ -303,7 +303,9 @@ async fn execute_create_table(
 ) -> Result<(), ClickhouseChangesError> {
     log::info!("Executing CreateTable: {:?}", table.id());
     let clickhouse_table = std_table_to_clickhouse_table(table)?;
-    let create_data_table_query = create_table_query(db_name, clickhouse_table, is_dev)?;
+    // Use table's database if specified, otherwise use global database
+    let target_database = table.database.as_deref().unwrap_or(db_name);
+    let create_data_table_query = create_table_query(target_database, clickhouse_table, is_dev)?;
     run_query(&create_data_table_query, client)
         .await
         .map_err(|e| ClickhouseChangesError::ClickhouseClient {
@@ -319,6 +321,10 @@ async fn execute_drop_table(
     client: &ConfiguredDBClient,
 ) -> Result<(), ClickhouseChangesError> {
     log::info!("Executing DropTable: {:?}", table_name);
+    // TODO: Support custom database for DROP TABLE operations
+    // Currently uses global db_name. For tables created in custom databases,
+    // this will fail. Need to either encode database in table_name or
+    // extend SerializableOlapOperation to include database information.
     let drop_query = drop_table_query(db_name, table_name)?;
     run_query(&drop_query, client)
         .await
@@ -1309,6 +1315,7 @@ impl OlapOperations for ConfiguredDBClient {
                 life_cycle: LifeCycle::ExternallyManaged,
                 engine_params_hash,
                 table_settings,
+                database: None, // Database will be set from infrastructure map if specified
             };
             debug!("Created table object: {:?}", table);
 

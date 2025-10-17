@@ -182,6 +182,11 @@ export type BaseOlapConfig<T> = (
   version?: string;
   lifeCycle?: LifeCycle;
   settings?: { [key: string]: string };
+  /**
+   * Optional database name for multi-database support.
+   * When not specified, uses the global ClickHouse config database.
+   */
+  database?: string;
 };
 
 /**

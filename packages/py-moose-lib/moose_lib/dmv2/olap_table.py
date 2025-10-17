@@ -128,6 +128,7 @@ class OlapConfig(BaseModel):
     metadata: Optional[dict] = None
     life_cycle: Optional[LifeCycle] = None
     settings: Optional[dict[str, str]] = None
+    database: Optional[str] = None  # Optional database name for multi-database support
 
     def model_post_init(self, __context):
         has_fields = bool(self.order_by_fields)

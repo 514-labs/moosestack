@@ -44,9 +44,9 @@ impl DataModel {
                     ver: None,
                     is_deleted: None,
                 });
-        let engine_params_hash = engine.as_ref().map(|e| e.non_alterable_params_hash());
 
-        Table {
+        // Create the table first, then compute the combined hash that includes database
+        let mut table = Table {
             name: self
                 .config
                 .storage
@@ -64,9 +64,14 @@ impl DataModel {
             },
             metadata: None,
             life_cycle: LifeCycle::FullyManaged,
-            engine_params_hash,
-            table_settings: None, // TODO: Parse table_settings from data model config
-        }
+            engine_params_hash: None, // Will be computed below
+            table_settings: None,     // TODO: Parse table_settings from data model config
+            database: None,           // Database defaults to global config
+        };
+
+        // Compute hash that includes both engine params and database
+        table.engine_params_hash = table.compute_non_alterable_params_hash();
+        table
     }
 
     pub fn primary_key_columns(&self) -> Vec<String> {

@@ -734,6 +734,7 @@ mod tests {
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
             table_settings: None,
+            database: None,
         }];
 
         let result = tables_to_python(&tables, None);
@@ -819,6 +820,7 @@ foo_table = OlapTable[Foo]("Foo", OlapConfig(
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
             table_settings: None,
+            database: None,
         }];
 
         let result = tables_to_python(&tables, None);
@@ -927,6 +929,7 @@ nested_array_table = OlapTable[NestedArray]("NestedArray", OlapConfig(
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
             table_settings: None,
+            database: None,
         }];
 
         let result = tables_to_python(&tables, None);
@@ -999,6 +1002,7 @@ user_table = OlapTable[User]("User", OlapConfig(
                     .into_iter()
                     .collect(),
             ),
+            database: None,
         }];
 
         let result = tables_to_python(&tables, None);
@@ -1051,6 +1055,7 @@ user_table = OlapTable[User]("User", OlapConfig(
                 .into_iter()
                 .collect(),
             ),
+            database: None,
         }];
 
         let result = tables_to_python(&tables, None);
@@ -1112,6 +1117,7 @@ user_table = OlapTable[User]("User", OlapConfig(
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
             table_settings: None,
+            database: None,
         }];
 
         let result = tables_to_python(&tables, None);
@@ -1176,6 +1182,7 @@ user_table = OlapTable[User]("User", OlapConfig(
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
             table_settings: None,
+            database: None,
         }];
 
         let result = tables_to_python(&tables, None);

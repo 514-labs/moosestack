@@ -658,6 +658,7 @@ mod tests {
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
             table_settings: None,
+            database: None,
         }];
 
         let result = tables_to_typescript(&tables, None);
@@ -733,6 +734,7 @@ export const UserTable = new OlapTable<User>("User", {
                     .into_iter()
                     .collect(),
             ),
+            database: None,
         }];
 
         let result = tables_to_typescript(&tables, None);
@@ -778,6 +780,7 @@ export const UserTable = new OlapTable<User>("User", {
                 .into_iter()
                 .collect(),
             ),
+            database: None,
         }];
 
         let result = tables_to_typescript(&tables, None);
@@ -840,6 +843,7 @@ export const UserTable = new OlapTable<User>("User", {
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
             table_settings: None,
+            database: None,
         }];
 
         let result = tables_to_typescript(&tables, None);
@@ -879,6 +883,7 @@ export const UserTable = new OlapTable<User>("User", {
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
             table_settings: None,
+            database: None,
         }];
 
         let result = tables_to_typescript(&tables, None);
@@ -948,6 +953,7 @@ export const UserTable = new OlapTable<User>("User", {
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
             table_settings: None,
+            database: None,
         }];
 
         let result = tables_to_typescript(&tables, None);
@@ -1016,6 +1022,7 @@ export const UserTable = new OlapTable<User>("User", {
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
             table_settings: None,
+            database: None,
         }];
 
         let result = tables_to_typescript(&tables, None);
