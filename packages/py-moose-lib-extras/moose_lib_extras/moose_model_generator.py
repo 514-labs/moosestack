@@ -11,6 +11,35 @@ import logging
 from pathlib import Path
 
 from .sap_hana_introspection import TableMetadata, FieldMetadata
+from .sap_hana_validators import (
+    # Datetime types
+    SapDate, SapTime, SapSecondDate, SapTimestamp,
+    
+    # Numeric types
+    SapTinyInt, SapSmallInt, SapInteger, SapBigInt,
+    SapSmallDecimal, SapDecimal, SapReal, SapDouble,
+    
+    # Boolean type
+    SapBoolean,
+    
+    # Character string types
+    SapVarchar, SapNvarchar, SapAlphanum, SapShortText,
+    
+    # Binary types
+    SapVarbinary,
+    
+    # Large Object types
+    SapBlob, SapClob, SapNclob, SapText,
+    
+    # Multi-valued types
+    SapArray,
+    
+    # Spatial types
+    SapStGeometry, SapStPoint,
+    
+    # Utility functions
+    get_sap_hana_annotated_type,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +52,14 @@ class MooseModelConfig:
     include_timestamp_fields: bool = True
     timestamp_field_names: Set[str] = None
     primary_key_field_names: Set[str] = None
+    
+    # SAP HANA specific options
+    use_sap_hana_validators: bool = True
+    fallback_to_string_types: bool = True
+    include_field_comments: bool = True
+    
+    # Field nullability options
+    force_all_fields_nullable: bool = False
     
     def __post_init__(self):
         if self.timestamp_field_names is None:
@@ -40,8 +77,63 @@ class MooseModelConfig:
 class MooseModelGenerator:
     """Generator for Moose models and pipelines from database metadata."""
     
-    # Mapping from SAP HANA data types to Python types
-    TYPE_MAPPING = {
+    # Mapping from SAP HANA data types to SAP HANA annotated types
+    SAP_HANA_TYPE_MAPPING = {
+        # Integer types
+        'TINYINT': 'SapTinyInt',
+        'SMALLINT': 'SapSmallInt', 
+        'INTEGER': 'SapInteger',
+        'BIGINT': 'SapBigInt',
+        
+        # Decimal types
+        'SMALLDECIMAL': 'SapSmallDecimal',
+        'DECIMAL': 'SapDecimal',
+        'NUMERIC': 'SapDecimal',
+        'REAL': 'SapReal',
+        'FLOAT': 'SapReal',
+        'DOUBLE': 'SapDouble',
+        
+        # String types
+        'VARCHAR': 'SapVarchar',
+        'NVARCHAR': 'SapNvarchar',
+        'CHAR': 'SapVarchar',
+        'NCHAR': 'SapNvarchar',
+        'ALPHANUM': 'SapAlphanum',
+        'SHORTTEXT': 'SapShortText',
+        'TEXT': 'SapText',
+        'CLOB': 'SapClob',
+        'NCLOB': 'SapNclob',
+        
+        # Date/Time types
+        'DATE': 'SapDate',
+        'TIME': 'SapTime',
+        'TIMESTAMP': 'SapTimestamp',
+        'SECONDDATE': 'SapSecondDate',
+        
+        # Boolean types
+        'BOOLEAN': 'SapBoolean',
+        
+        # Binary types
+        'BLOB': 'SapBlob',
+        'VARBINARY': 'SapVarbinary',
+        'BINARY': 'SapVarbinary',
+        
+        # Multi-valued types
+        'ARRAY': 'SapArray',
+        
+        # Spatial types
+        'ST_GEOMETRY': 'SapStGeometry',
+        'ST_POINT': 'SapStPoint',
+        
+        # JSON types (fallback to dict)
+        'JSON': 'dict',
+        
+        # Default fallback
+        'DEFAULT': 'SapVarchar'
+    }
+    
+    # Fallback mapping for when SAP HANA validators are disabled
+    FALLBACK_TYPE_MAPPING = {
         # Integer types
         'TINYINT': 'int',
         'SMALLINT': 'int', 
@@ -49,6 +141,7 @@ class MooseModelGenerator:
         'BIGINT': 'int',
         
         # Decimal types
+        'SMALLDECIMAL': 'float',
         'DECIMAL': 'float',
         'NUMERIC': 'float',
         'REAL': 'float',
@@ -60,15 +153,17 @@ class MooseModelGenerator:
         'NVARCHAR': 'str',
         'CHAR': 'str',
         'NCHAR': 'str',
+        'ALPHANUM': 'str',
+        'SHORTTEXT': 'str',
         'TEXT': 'str',
         'CLOB': 'str',
         'NCLOB': 'str',
         
         # Date/Time types
-        'DATE': 'datetime',
-        'TIME': 'datetime',
-        'TIMESTAMP': 'datetime',
-        'SECONDDATE': 'datetime',
+        'DATE': 'str',
+        'TIME': 'str',
+        'TIMESTAMP': 'str',
+        'SECONDDATE': 'str',
         
         # Boolean types
         'BOOLEAN': 'bool',
@@ -77,6 +172,13 @@ class MooseModelGenerator:
         'BLOB': 'str',
         'VARBINARY': 'str',
         'BINARY': 'str',
+        
+        # Multi-valued types
+        'ARRAY': 'list',
+        
+        # Spatial types
+        'ST_GEOMETRY': 'str',
+        'ST_POINT': 'str',
         
         # JSON types
         'JSON': 'dict',
@@ -132,6 +234,41 @@ class MooseModelGenerator:
             '',
         ]
         
+        # Add SAP HANA validator imports if enabled
+        if self.config.use_sap_hana_validators:
+            lines.extend([
+                'from moose_lib_extras import (',
+                '    # Base model',
+                '    SapHanaBaseModel,',
+                '    ',
+                '    # Datetime types',
+                '    SapDate, SapTime, SapSecondDate, SapTimestamp,',
+                '    ',
+                '    # Numeric types',
+                '    SapTinyInt, SapSmallInt, SapInteger, SapBigInt,',
+                '    SapSmallDecimal, SapDecimal, SapReal, SapDouble,',
+                '    ',
+                '    # Boolean type',
+                '    SapBoolean,',
+                '    ',
+                '    # Character string types',
+                '    SapVarchar, SapNvarchar, SapAlphanum, SapShortText,',
+                '    ',
+                '    # Binary types',
+                '    SapVarbinary,',
+                '    ',
+                '    # Large Object types',
+                '    SapBlob, SapClob, SapNclob, SapText,',
+                '    ',
+                '    # Multi-valued types',
+                '    SapArray,',
+                '    ',
+                '    # Spatial types',
+                '    SapStGeometry, SapStPoint,',
+                ')',
+                '',
+            ])
+        
         # Generate models
         for table in tables:
             model_code = self._generate_model_code(table)
@@ -148,14 +285,31 @@ class MooseModelGenerator:
     def _generate_model_code(self, table: TableMetadata) -> List[str]:
         """Generate Python model code for a single table."""
         class_name = self._to_pascal_case(table.table_name)
+        
+        # Choose base class based on configuration
+        if self.config.use_sap_hana_validators:
+            base_class = 'SapHanaBaseModel'
+        else:
+            base_class = 'BaseModel'
+        
         lines = [
-            f'class {class_name}(BaseModel):',
+            f'class {class_name}({base_class}):',
         ]
+        
+        # Add class docstring if comments are enabled
+        if self.config.include_field_comments:
+            lines.extend([
+                '    """',
+                f'    Model for SAP HANA table: {table.table_name}',
+                f'    Schema: {table.schema_name}',
+                '    """',
+                '',
+            ])
         
         # Generate field definitions
         for field in table.fields:
-            field_def = self._generate_field_definition(field)
-            lines.append(f'    {field_def}')
+            field_def = self._generate_field_definition(field, table)
+            lines.append(field_def)
         
         return lines
     
@@ -208,7 +362,7 @@ class MooseModelGenerator:
         
         return order_fields
     
-    def _generate_field_definition(self, field: FieldMetadata) -> str:
+    def _generate_field_definition(self, field: FieldMetadata, table: TableMetadata) -> str:
         """Generate a single field definition for a model."""
         python_type = self._map_data_type(field.data_type)
         
@@ -222,31 +376,75 @@ class MooseModelGenerator:
         if field.is_primary_key or field.name.lower() in self.config.primary_key_field_names:
             python_type = f'Key[{python_type}]'
         
-        # Handle timestamp fields
-        if self._is_timestamp_field(field):
+        # Handle timestamp fields - only override if not using SAP HANA validators
+        if self._is_timestamp_field(field) and not self.config.use_sap_hana_validators:
             python_type = 'datetime'
         
+        # Build field definition
+        field_parts = []
+        
+        # Determine field characteristics
+        is_primary_key = field.is_primary_key or field.name.lower() in self.config.primary_key_field_names
+        is_order_by_field = self._is_order_by_field(field, table)
+        
+        # Add field comment if enabled
+        if self.config.include_field_comments:
+            comment_parts = []
+            if field.data_type:
+                comment_parts.append(f"SAP HANA type: {field.data_type}")
+            if field.is_primary_key:
+                comment_parts.append("Primary key")
+            if is_order_by_field:
+                comment_parts.append("Order by field")
+            if field.is_nullable:
+                comment_parts.append("Nullable")
+            elif self.config.force_all_fields_nullable and not field.is_primary_key and not is_order_by_field:
+                comment_parts.append("Forced nullable")
+            
+            if comment_parts:
+                comment = " | ".join(comment_parts)
+                field_parts.append(f'    # {comment}')
+        
         # Handle optional fields
-        if field.is_nullable and not field.is_primary_key:
+        # Make field optional if:
+        # 1. It's marked as nullable in the database, OR
+        # 2. force_all_fields_nullable is True AND it's not a primary key
+        # BUT NEVER make primary key fields or order-by fields optional
+        should_be_optional = (
+            not is_primary_key and 
+            not is_order_by_field and (
+                field.is_nullable or 
+                self.config.force_all_fields_nullable
+            )
+        )
+        
+        if should_be_optional:
             python_type = f'Optional[{python_type}]'
             default_value = self._get_default_value(field)
             
             if needs_alias:
-                return f'{field_name}: {python_type} = Field(alias="{field.name}", default={default_value})'
+                field_def = f'{field_name}: {python_type} = Field(alias="{field.name}", default={default_value})'
             else:
-                return f'{field_name}: {python_type} = {default_value}'
+                field_def = f'{field_name}: {python_type} = {default_value}'
         else:
             if needs_alias:
-                return f'{field_name}: {python_type} = Field(alias="{field.name}")'
+                field_def = f'{field_name}: {python_type} = Field(alias="{field.name}")'
             else:
-                return f'{field_name}: {python_type}'
+                field_def = f'{field_name}: {python_type}'
+        
+        field_parts.append(f'    {field_def}')
+        
+        return '\n'.join(field_parts)
     
     def _map_data_type(self, hana_type: str) -> str:
-        """Map SAP HANA data type to Python type."""
+        """Map SAP HANA data type to Python type or SAP HANA annotated type."""
         # Normalize the type name
         normalized_type = hana_type.upper().split('(')[0]  # Remove length/precision info
         
-        return self.TYPE_MAPPING.get(normalized_type, self.TYPE_MAPPING['DEFAULT'])
+        if self.config.use_sap_hana_validators:
+            return self.SAP_HANA_TYPE_MAPPING.get(normalized_type, self.SAP_HANA_TYPE_MAPPING['DEFAULT'])
+        else:
+            return self.FALLBACK_TYPE_MAPPING.get(normalized_type, self.FALLBACK_TYPE_MAPPING['DEFAULT'])
     
     def _is_timestamp_field(self, field: FieldMetadata) -> bool:
         """Check if a field should be treated as a timestamp."""
@@ -259,6 +457,12 @@ class MooseModelGenerator:
             'timestamp' in field_name_lower or
             'time' in field_name_lower
         )
+    
+    def _is_order_by_field(self, field: FieldMetadata, table: TableMetadata) -> bool:
+        """Check if a field is used for ordering in the OlapTable configuration."""
+        # Get the order by fields for this table
+        order_fields = self._get_order_by_fields(table)
+        return field.name in order_fields
     
     def _get_default_value(self, field: FieldMetadata) -> str:
         """Get the default value for an optional field."""
