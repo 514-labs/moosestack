@@ -341,8 +341,12 @@ pub enum DmV2LoadingError {
     JsonParsing(#[from] serde_json::Error),
 
     /// Secret resolution errors
-    #[error("Failed to resolve runtime secret for table '{table_name}': {error}")]
-    SecretResolution { table_name: String, error: String },
+    #[error("Failed to resolve runtime secret for table '{table_name}' field '{field}': {error}")]
+    SecretResolution {
+        table_name: String,
+        field: String,
+        error: String,
+    },
 
     /// Catch-all for other types of errors
     #[error("{message}")]
@@ -690,12 +694,14 @@ impl PartialInfrastructureMap {
                 let resolved_access_key = resolve_optional_secret(&config.aws_access_key_id)
                     .map_err(|e| DmV2LoadingError::SecretResolution {
                         table_name: partial_table.name.clone(),
+                        field: "awsAccessKeyId".to_string(),
                         error: e.to_string(),
                     })?;
 
                 let resolved_secret_key = resolve_optional_secret(&config.aws_secret_access_key)
                     .map_err(|e| DmV2LoadingError::SecretResolution {
                         table_name: partial_table.name.clone(),
+                        field: "awsSecretAccessKey".to_string(),
                         error: e.to_string(),
                     })?;
 
