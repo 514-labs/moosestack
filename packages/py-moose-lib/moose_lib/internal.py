@@ -167,8 +167,8 @@ class TableConfig(BaseModel):
     version: Optional[str] = None
     metadata: Optional[dict] = None
     life_cycle: Optional[str] = None
-    table_settings: Optional[Dict[str, str]] = None
-    indexes: Optional[List[Dict[str, Any]]] = None
+    table_settings: Optional[dict[str, str]] = None
+    indexes: list[dict[str, Any]] = []
 
 
 class TopicConfig(BaseModel):
