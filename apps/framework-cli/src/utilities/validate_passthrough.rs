@@ -1,6 +1,9 @@
-use crate::framework::core::infrastructure::table::{Column, ColumnType, DataEnum, EnumValue};
+use crate::framework::core::infrastructure::table::{
+    Column, ColumnType, DataEnum, EnumValue, IntType,
+};
 use crate::infrastructure::processes::kafka_clickhouse_sync::IPV4_PATTERN;
 use itertools::Either;
+use num_bigint::{BigInt, BigUint};
 use regex::Regex;
 use serde::de::{DeserializeSeed, Error, MapAccess, SeqAccess, Visitor};
 use serde::ser::{SerializeMap, SerializeSeq};
@@ -73,6 +76,174 @@ impl EnumInt for i64 {
     }
     fn from_usize(usize: usize) -> i64 {
         usize as i64
+    }
+}
+
+// Integer regex for arbitrary-precision comparisons
+static INTEGER_REGEX: LazyLock<Regex> =
+    std::sync::LazyLock::new(|| Regex::new(r"^-?\d+$").unwrap());
+
+static INT256_MIN: LazyLock<BigInt> = LazyLock::new(|| {
+    let mut value = BigInt::from(1u8);
+    value <<= 255usize;
+    -value
+});
+static INT256_MAX: LazyLock<BigInt> = LazyLock::new(|| {
+    let mut value = BigInt::from(1u8);
+    value <<= 255usize;
+    value - BigInt::from(1u8)
+});
+static UINT256_MAX: LazyLock<BigUint> = LazyLock::new(|| {
+    let mut value = BigUint::from(1u8);
+    value <<= 256usize;
+    value - BigUint::from(1u8)
+});
+
+fn parse_signed_number(num: &Number, int_type: &IntType, path: &str) -> Result<BigInt, String> {
+    if let Some(v) = num.as_i64() {
+        return Ok(BigInt::from(v));
+    }
+    if let Some(u) = num.as_u64() {
+        return Ok(BigInt::from(u));
+    }
+
+    let s = num.to_string();
+    if !INTEGER_REGEX.is_match(&s) {
+        return Err(format!("Expected integer for {int_type:?} at {path}"));
+    }
+
+    BigInt::from_str(&s).map_err(|_| format!("Value {s} out of range for {int_type:?} at {path}"))
+}
+
+fn parse_unsigned_number(num: &Number, int_type: &IntType, path: &str) -> Result<BigUint, String> {
+    if let Some(v) = num.as_i64() {
+        if v < 0 {
+            return Err(format!(
+                "Negative value {v} is invalid for {int_type:?} at {path}"
+            ));
+        }
+        let as_u64 = u64::try_from(v)
+            .map_err(|_| format!("Value {v} out of range for {int_type:?} at {path}"))?;
+        return Ok(BigUint::from(as_u64));
+    }
+    if let Some(u) = num.as_u64() {
+        return Ok(BigUint::from(u));
+    }
+
+    let s = num.to_string();
+    if !INTEGER_REGEX.is_match(&s) {
+        return Err(format!("Expected integer for {int_type:?} at {path}"));
+    }
+    if s.starts_with('-') {
+        return Err(format!(
+            "Negative value {s} is invalid for {int_type:?} at {path}"
+        ));
+    }
+
+    BigUint::from_str(&s).map_err(|_| format!("Value {s} out of range for {int_type:?} at {path}"))
+}
+
+fn check_signed_bounds(
+    value: &BigInt,
+    int_type: &IntType,
+    min: &BigInt,
+    max: &BigInt,
+    path: &str,
+) -> Result<(), String> {
+    if value < min || value > max {
+        Err(format!(
+            "Value {} out of range for {:?} at {}",
+            value, int_type, path
+        ))
+    } else {
+        Ok(())
+    }
+}
+
+fn check_unsigned_bounds(
+    value: &BigUint,
+    int_type: &IntType,
+    max: &BigUint,
+    path: &str,
+) -> Result<(), String> {
+    if value > max {
+        Err(format!(
+            "Value {} out of range for {:?} at {}",
+            value, int_type, path
+        ))
+    } else {
+        Ok(())
+    }
+}
+
+fn check_int_number_in_range<E>(num: &Number, int_type: &IntType, path: &str) -> Result<(), E>
+where
+    E: serde::de::Error,
+{
+    match int_type {
+        IntType::Int8 => {
+            let value = parse_signed_number(num, int_type, path).map_err(E::custom)?;
+            let min = BigInt::from(i8::MIN);
+            let max = BigInt::from(i8::MAX);
+            check_signed_bounds(&value, int_type, &min, &max, path).map_err(E::custom)
+        }
+        IntType::Int16 => {
+            let value = parse_signed_number(num, int_type, path).map_err(E::custom)?;
+            let min = BigInt::from(i16::MIN);
+            let max = BigInt::from(i16::MAX);
+            check_signed_bounds(&value, int_type, &min, &max, path).map_err(E::custom)
+        }
+        IntType::Int32 => {
+            let value = parse_signed_number(num, int_type, path).map_err(E::custom)?;
+            let min = BigInt::from(i32::MIN);
+            let max = BigInt::from(i32::MAX);
+            check_signed_bounds(&value, int_type, &min, &max, path).map_err(E::custom)
+        }
+        IntType::Int64 => {
+            let value = parse_signed_number(num, int_type, path).map_err(E::custom)?;
+            let min = BigInt::from(i64::MIN);
+            let max = BigInt::from(i64::MAX);
+            check_signed_bounds(&value, int_type, &min, &max, path).map_err(E::custom)
+        }
+        IntType::Int128 => {
+            let value = parse_signed_number(num, int_type, path).map_err(E::custom)?;
+            let min = BigInt::from(i128::MIN);
+            let max = BigInt::from(i128::MAX);
+            check_signed_bounds(&value, int_type, &min, &max, path).map_err(E::custom)
+        }
+        IntType::Int256 => {
+            let value = parse_signed_number(num, int_type, path).map_err(E::custom)?;
+            check_signed_bounds(&value, int_type, &*INT256_MIN, &*INT256_MAX, path)
+                .map_err(E::custom)
+        }
+        IntType::UInt8 => {
+            let value = parse_unsigned_number(num, int_type, path).map_err(E::custom)?;
+            let max = BigUint::from(u8::MAX);
+            check_unsigned_bounds(&value, int_type, &max, path).map_err(E::custom)
+        }
+        IntType::UInt16 => {
+            let value = parse_unsigned_number(num, int_type, path).map_err(E::custom)?;
+            let max = BigUint::from(u16::MAX);
+            check_unsigned_bounds(&value, int_type, &max, path).map_err(E::custom)
+        }
+        IntType::UInt32 => {
+            let value = parse_unsigned_number(num, int_type, path).map_err(E::custom)?;
+            let max = BigUint::from(u32::MAX);
+            check_unsigned_bounds(&value, int_type, &max, path).map_err(E::custom)
+        }
+        IntType::UInt64 => {
+            let value = parse_unsigned_number(num, int_type, path).map_err(E::custom)?;
+            let max = BigUint::from(u64::MAX);
+            check_unsigned_bounds(&value, int_type, &max, path).map_err(E::custom)
+        }
+        IntType::UInt128 => {
+            let value = parse_unsigned_number(num, int_type, path).map_err(E::custom)?;
+            let max = BigUint::from(u128::MAX);
+            check_unsigned_bounds(&value, int_type, &max, path).map_err(E::custom)
+        }
+        IntType::UInt256 => parse_unsigned_number(num, int_type, path)
+            .and_then(|value| check_unsigned_bounds(&value, int_type, &*UINT256_MAX, path))
+            .map_err(E::custom),
     }
 }
 
@@ -209,7 +380,11 @@ impl<'de, S: SerializeValue> Visitor<'de> for &mut ValueVisitor<'_, S> {
         E: Error,
     {
         match self.t {
-            ColumnType::Int(_) => self.write_to.serialize_value(&v).map_err(Error::custom),
+            ColumnType::Int(int_t) => {
+                let num = Number::from(v);
+                check_int_number_in_range::<E>(&num, int_t, &self.get_path())?;
+                self.write_to.serialize_value(&v).map_err(Error::custom)
+            }
             ColumnType::Float(_) => self.write_to.serialize_value(&v).map_err(Error::custom),
             ColumnType::Decimal { .. } => self.write_to.serialize_value(&v).map_err(Error::custom),
             ColumnType::Enum(enum_def) => handle_enum_value(self.write_to, enum_def, v),
@@ -222,7 +397,11 @@ impl<'de, S: SerializeValue> Visitor<'de> for &mut ValueVisitor<'_, S> {
         E: Error,
     {
         match self.t {
-            ColumnType::Int(_) => self.write_to.serialize_value(&v).map_err(Error::custom),
+            ColumnType::Int(int_t) => {
+                let num = Number::from(v);
+                check_int_number_in_range::<E>(&num, int_t, &self.get_path())?;
+                self.write_to.serialize_value(&v).map_err(Error::custom)
+            }
             ColumnType::Float(_) => self.write_to.serialize_value(&v).map_err(Error::custom),
             ColumnType::Decimal { .. } => self.write_to.serialize_value(&v).map_err(Error::custom),
             ColumnType::Enum(enum_def) => handle_enum_value(self.write_to, enum_def, v),
@@ -588,10 +767,17 @@ impl<'de, S: SerializeValue> Visitor<'de> for &mut ValueVisitor<'_, S> {
                     });
                     match arbitrary_precision {
                         Ok(number) => {
+                            if let ColumnType::Int(int_t) = t {
+                                check_int_number_in_range::<A::Error>(
+                                    &number,
+                                    int_t,
+                                    &self.get_path(),
+                                )?;
+                            }
                             return self
                                 .write_to
                                 .serialize_value(&number)
-                                .map_err(Error::custom)
+                                .map_err(Error::custom);
                         }
                         Err(_) => {
                             // nothing to do. fall through to normal error
@@ -635,18 +821,113 @@ fn validate_map_key<E>(
 where
     E: serde::ser::Error,
 {
+    fn validate_int_key_str<E>(s: &str, int_t: &IntType, path: &str) -> Result<(), E>
+    where
+        E: serde::ser::Error,
+    {
+        match int_t {
+            IntType::Int8
+            | IntType::Int16
+            | IntType::Int32
+            | IntType::Int64
+            | IntType::Int128
+            | IntType::Int256 => {
+                if !INTEGER_REGEX.is_match(s) {
+                    return Err(E::custom(format!(
+                        "Invalid integer key '{}' for Map at {}",
+                        s, path
+                    )));
+                }
+
+                let value = BigInt::from_str(s).map_err(|_| {
+                    E::custom(format!("Invalid integer key '{}' for Map at {}", s, path))
+                })?;
+
+                match int_t {
+                    IntType::Int8 => {
+                        let min = BigInt::from(i8::MIN);
+                        let max = BigInt::from(i8::MAX);
+                        check_signed_bounds(&value, int_t, &min, &max, path).map_err(E::custom)
+                    }
+                    IntType::Int16 => {
+                        let min = BigInt::from(i16::MIN);
+                        let max = BigInt::from(i16::MAX);
+                        check_signed_bounds(&value, int_t, &min, &max, path).map_err(E::custom)
+                    }
+                    IntType::Int32 => {
+                        let min = BigInt::from(i32::MIN);
+                        let max = BigInt::from(i32::MAX);
+                        check_signed_bounds(&value, int_t, &min, &max, path).map_err(E::custom)
+                    }
+                    IntType::Int64 => {
+                        let min = BigInt::from(i64::MIN);
+                        let max = BigInt::from(i64::MAX);
+                        check_signed_bounds(&value, int_t, &min, &max, path).map_err(E::custom)
+                    }
+                    IntType::Int128 => {
+                        let min = BigInt::from(i128::MIN);
+                        let max = BigInt::from(i128::MAX);
+                        check_signed_bounds(&value, int_t, &min, &max, path).map_err(E::custom)
+                    }
+                    IntType::Int256 => {
+                        check_signed_bounds(&value, int_t, &*INT256_MIN, &*INT256_MAX, path)
+                            .map_err(E::custom)
+                    }
+                    _ => unreachable!(),
+                }
+            }
+            IntType::UInt8
+            | IntType::UInt16
+            | IntType::UInt32
+            | IntType::UInt64
+            | IntType::UInt128
+            | IntType::UInt256 => {
+                if !INTEGER_REGEX.is_match(s) || s.starts_with('-') {
+                    return Err(E::custom(format!(
+                        "Invalid unsigned integer key '{}' for Map at {}",
+                        s, path
+                    )));
+                }
+
+                let value = BigUint::from_str(s).map_err(|_| {
+                    E::custom(format!(
+                        "Invalid unsigned integer key '{}' for Map at {}",
+                        s, path
+                    ))
+                })?;
+
+                match int_t {
+                    IntType::UInt8 => {
+                        let max = BigUint::from(u8::MAX);
+                        check_unsigned_bounds(&value, int_t, &max, path).map_err(E::custom)
+                    }
+                    IntType::UInt16 => {
+                        let max = BigUint::from(u16::MAX);
+                        check_unsigned_bounds(&value, int_t, &max, path).map_err(E::custom)
+                    }
+                    IntType::UInt32 => {
+                        let max = BigUint::from(u32::MAX);
+                        check_unsigned_bounds(&value, int_t, &max, path).map_err(E::custom)
+                    }
+                    IntType::UInt64 => {
+                        let max = BigUint::from(u64::MAX);
+                        check_unsigned_bounds(&value, int_t, &max, path).map_err(E::custom)
+                    }
+                    IntType::UInt128 => {
+                        let max = BigUint::from(u128::MAX);
+                        check_unsigned_bounds(&value, int_t, &max, path).map_err(E::custom)
+                    }
+                    IntType::UInt256 => {
+                        check_unsigned_bounds(&value, int_t, &*UINT256_MAX, path).map_err(E::custom)
+                    }
+                    _ => unreachable!(),
+                }
+            }
+        }
+    }
     match key_type {
         ColumnType::String => Ok(()), // String keys are always valid
-        ColumnType::Int(_) => {
-            key_str.parse::<i64>().map_err(|_| {
-                E::custom(format!(
-                    "Invalid integer key '{}' for Map at {}",
-                    key_str,
-                    context.get_path()
-                ))
-            })?;
-            Ok(())
-        }
+        ColumnType::Int(int_t) => validate_int_key_str(key_str, int_t, &context.get_path()),
         ColumnType::Float(_) => {
             key_str.parse::<f64>().map_err(|_| {
                 E::custom(format!(
@@ -1006,6 +1287,7 @@ mod tests {
     use crate::framework::core::infrastructure::table::{
         Column, ColumnType, DataEnum, EnumMember, EnumValue, FloatType, IntType, Nested,
     };
+    use num_bigint::{BigInt, BigUint};
 
     #[test]
     fn test_happy_path_all_types() {
@@ -1534,5 +1816,337 @@ mod tests {
             .unwrap_err()
             .to_string()
             .contains("Invalid integer key"));
+    }
+
+    #[test]
+    fn test_uint8_range_boundaries() {
+        let columns = vec![Column {
+            name: "u8_col".to_string(),
+            data_type: ColumnType::Int(IntType::UInt8),
+            required: true,
+            unique: false,
+            primary_key: false,
+            default: None,
+            annotations: vec![],
+            comment: None,
+        }];
+
+        // Min boundary 0
+        let json = r#"{ "u8_col": 0 }"#;
+        let result = serde_json::Deserializer::from_str(json)
+            .deserialize_any(&mut DataModelVisitor::new(&columns, None));
+        assert!(result.is_ok(), "expected 0 to be valid UInt8");
+
+        // Max boundary 255
+        let json = r#"{ "u8_col": 255 }"#;
+        let result = serde_json::Deserializer::from_str(json)
+            .deserialize_any(&mut DataModelVisitor::new(&columns, None));
+        assert!(result.is_ok(), "expected 255 to be valid UInt8");
+
+        // Above max 256
+        let json = r#"{ "u8_col": 256 }"#;
+        let err = serde_json::Deserializer::from_str(json)
+            .deserialize_any(&mut DataModelVisitor::new(&columns, None))
+            .unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("out of range") && msg.contains("UInt8"));
+
+        // Negative value
+        let json = r#"{ "u8_col": -1 }"#;
+        let err = serde_json::Deserializer::from_str(json)
+            .deserialize_any(&mut DataModelVisitor::new(&columns, None))
+            .unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("Negative value") || msg.contains("invalid type"));
+    }
+
+    #[test]
+    fn test_int16_range_boundaries() {
+        let columns = vec![Column {
+            name: "i16_col".to_string(),
+            data_type: ColumnType::Int(IntType::Int16),
+            required: true,
+            unique: false,
+            primary_key: false,
+            default: None,
+            annotations: vec![],
+            comment: None,
+        }];
+
+        // Min boundary -32768
+        let json = r#"{ "i16_col": -32768 }"#;
+        let result = serde_json::Deserializer::from_str(json)
+            .deserialize_any(&mut DataModelVisitor::new(&columns, None));
+        assert!(result.is_ok(), "expected -32768 to be valid Int16");
+
+        // Max boundary 32767
+        let json = r#"{ "i16_col": 32767 }"#;
+        let result = serde_json::Deserializer::from_str(json)
+            .deserialize_any(&mut DataModelVisitor::new(&columns, None));
+        assert!(result.is_ok(), "expected 32767 to be valid Int16");
+
+        // Above max 32768
+        let json = r#"{ "i16_col": 32768 }"#;
+        let err = serde_json::Deserializer::from_str(json)
+            .deserialize_any(&mut DataModelVisitor::new(&columns, None))
+            .unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("out of range") && msg.contains("Int16"));
+
+        // Below min -32769
+        let json = r#"{ "i16_col": -32769 }"#;
+        let err = serde_json::Deserializer::from_str(json)
+            .deserialize_any(&mut DataModelVisitor::new(&columns, None))
+            .unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("out of range") && msg.contains("Int16"));
+    }
+
+    #[test]
+    fn test_int128_range_boundaries() {
+        let columns = vec![Column {
+            name: "i128_col".to_string(),
+            data_type: ColumnType::Int(IntType::Int128),
+            required: true,
+            unique: false,
+            primary_key: false,
+            default: None,
+            annotations: vec![],
+            comment: None,
+        }];
+
+        let positive_limit: BigInt = BigInt::from(1u8) << 127usize;
+        let max = (positive_limit.clone() - BigInt::from(1u8)).to_string();
+        let min = (-positive_limit.clone()).to_string();
+        let max_plus_one = positive_limit.clone().to_string();
+        let min_minus_one = (-positive_limit.clone() - BigInt::from(1u8)).to_string();
+
+        let json = format!(r#"{{ "i128_col": {} }}"#, max);
+        let result = serde_json::Deserializer::from_str(&json)
+            .deserialize_any(&mut DataModelVisitor::new(&columns, None));
+        assert!(result.is_ok(), "expected max Int128 value to be valid");
+
+        let json = format!(r#"{{ "i128_col": {} }}"#, min);
+        let result = serde_json::Deserializer::from_str(&json)
+            .deserialize_any(&mut DataModelVisitor::new(&columns, None));
+        assert!(result.is_ok(), "expected min Int128 value to be valid");
+
+        let json = format!(r#"{{ "i128_col": {} }}"#, max_plus_one);
+        let err = serde_json::Deserializer::from_str(&json)
+            .deserialize_any(&mut DataModelVisitor::new(&columns, None))
+            .unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("out of range") && msg.contains("Int128"));
+
+        let json = format!(r#"{{ "i128_col": {} }}"#, min_minus_one);
+        let err = serde_json::Deserializer::from_str(&json)
+            .deserialize_any(&mut DataModelVisitor::new(&columns, None))
+            .unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("out of range") && msg.contains("Int128"));
+    }
+
+    #[test]
+    fn test_int256_range_boundaries() {
+        let columns = vec![Column {
+            name: "i256_col".to_string(),
+            data_type: ColumnType::Int(IntType::Int256),
+            required: true,
+            unique: false,
+            primary_key: false,
+            default: None,
+            annotations: vec![],
+            comment: None,
+        }];
+
+        let positive_limit: BigInt = BigInt::from(1u8) << 255usize;
+        let max = (positive_limit.clone() - BigInt::from(1u8)).to_string();
+        let min = (-positive_limit.clone()).to_string();
+        let max_plus_one = positive_limit.clone().to_string();
+        let min_minus_one = (-positive_limit.clone() - BigInt::from(1u8)).to_string();
+
+        let json = format!(r#"{{ "i256_col": {} }}"#, max);
+        let result = serde_json::Deserializer::from_str(&json)
+            .deserialize_any(&mut DataModelVisitor::new(&columns, None));
+        assert!(result.is_ok(), "expected max Int256 value to be valid");
+
+        let json = format!(r#"{{ "i256_col": {} }}"#, min);
+        let result = serde_json::Deserializer::from_str(&json)
+            .deserialize_any(&mut DataModelVisitor::new(&columns, None));
+        assert!(result.is_ok(), "expected min Int256 value to be valid");
+
+        let json = format!(r#"{{ "i256_col": {} }}"#, max_plus_one);
+        let err = serde_json::Deserializer::from_str(&json)
+            .deserialize_any(&mut DataModelVisitor::new(&columns, None))
+            .unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("out of range") && msg.contains("Int256"));
+
+        let json = format!(r#"{{ "i256_col": {} }}"#, min_minus_one);
+        let err = serde_json::Deserializer::from_str(&json)
+            .deserialize_any(&mut DataModelVisitor::new(&columns, None))
+            .unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("out of range") && msg.contains("Int256"));
+    }
+
+    #[test]
+    fn test_uint256_range_boundaries() {
+        let columns = vec![Column {
+            name: "u256_col".to_string(),
+            data_type: ColumnType::Int(IntType::UInt256),
+            required: true,
+            unique: false,
+            primary_key: false,
+            default: None,
+            annotations: vec![],
+            comment: None,
+        }];
+
+        let limit: BigUint = BigUint::from(1u8) << 256usize;
+        let max = (limit.clone() - BigUint::from(1u8)).to_string();
+        let max_plus_one = limit.to_string();
+
+        let json = r#"{ "u256_col": 0 }"#;
+        let result = serde_json::Deserializer::from_str(json)
+            .deserialize_any(&mut DataModelVisitor::new(&columns, None));
+        assert!(result.is_ok(), "expected 0 to be valid UInt256");
+
+        let json = format!(r#"{{ "u256_col": {} }}"#, max);
+        let result = serde_json::Deserializer::from_str(&json)
+            .deserialize_any(&mut DataModelVisitor::new(&columns, None));
+        assert!(result.is_ok(), "expected max UInt256 value to be valid");
+
+        let json = format!(r#"{{ "u256_col": {} }}"#, max_plus_one);
+        let err = serde_json::Deserializer::from_str(&json)
+            .deserialize_any(&mut DataModelVisitor::new(&columns, None))
+            .unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("out of range") && msg.contains("UInt256"));
+
+        let json = r#"{ "u256_col": -1 }"#;
+        let err = serde_json::Deserializer::from_str(json)
+            .deserialize_any(&mut DataModelVisitor::new(&columns, None))
+            .unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("Negative value") && msg.contains("UInt256"));
+    }
+
+    #[test]
+    fn test_map_key_uint8_range() {
+        let columns = vec![Column {
+            name: "map_col".to_string(),
+            data_type: ColumnType::Map {
+                key_type: Box::new(ColumnType::Int(IntType::UInt8)),
+                value_type: Box::new(ColumnType::String),
+            },
+            required: true,
+            unique: false,
+            primary_key: false,
+            default: None,
+            annotations: vec![],
+            comment: None,
+        }];
+
+        // Valid keys
+        let json = r#"{ "map_col": { "0": "a", "255": "b" } }"#;
+        let result = serde_json::Deserializer::from_str(json)
+            .deserialize_any(&mut DataModelVisitor::new(&columns, None));
+        assert!(result.is_ok());
+
+        // Out of range key 256
+        let json = r#"{ "map_col": { "256": "a" } }"#;
+        let err = serde_json::Deserializer::from_str(json)
+            .deserialize_any(&mut DataModelVisitor::new(&columns, None))
+            .unwrap_err();
+        assert!(err.to_string().contains("out of range"));
+
+        // Negative key -1
+        let json = r#"{ "map_col": { "-1": "a" } }"#;
+        let err = serde_json::Deserializer::from_str(json)
+            .deserialize_any(&mut DataModelVisitor::new(&columns, None))
+            .unwrap_err();
+        // It will fail to parse as u128 and produce an error
+        let msg = err.to_string();
+        assert!(msg.contains("Invalid unsigned integer key") || msg.contains("out of range"));
+    }
+
+    #[test]
+    fn test_map_key_int256_range() {
+        let columns = vec![Column {
+            name: "map_col".to_string(),
+            data_type: ColumnType::Map {
+                key_type: Box::new(ColumnType::Int(IntType::Int256)),
+                value_type: Box::new(ColumnType::String),
+            },
+            required: true,
+            unique: false,
+            primary_key: false,
+            default: None,
+            annotations: vec![],
+            comment: None,
+        }];
+
+        let positive_limit: BigInt = BigInt::from(1u8) << 255usize;
+        let min = (-positive_limit.clone()).to_string();
+        let max = (positive_limit.clone() - BigInt::from(1u8)).to_string();
+        let json = format!(r#"{{ "map_col": {{ "{}": "a", "{}": "b" }} }}"#, min, max);
+        let result = serde_json::Deserializer::from_str(&json)
+            .deserialize_any(&mut DataModelVisitor::new(&columns, None));
+        assert!(result.is_ok());
+
+        let max_plus_one = (BigInt::from(1u8) << 255usize).to_string();
+        let json = format!(r#"{{ "map_col": {{ "{}": "a" }} }}"#, max_plus_one);
+        let err = serde_json::Deserializer::from_str(&json)
+            .deserialize_any(&mut DataModelVisitor::new(&columns, None))
+            .unwrap_err();
+        assert!(err.to_string().contains("out of range") && err.to_string().contains("Int256"));
+
+        let min_minus_one = (-(BigInt::from(1u8) << 255usize) - BigInt::from(1u8)).to_string();
+        let json = format!(r#"{{ "map_col": {{ "{}": "a" }} }}"#, min_minus_one);
+        let err = serde_json::Deserializer::from_str(&json)
+            .deserialize_any(&mut DataModelVisitor::new(&columns, None))
+            .unwrap_err();
+        assert!(err.to_string().contains("out of range") && err.to_string().contains("Int256"));
+    }
+
+    #[test]
+    fn test_map_key_uint256_range() {
+        let columns = vec![Column {
+            name: "map_col".to_string(),
+            data_type: ColumnType::Map {
+                key_type: Box::new(ColumnType::Int(IntType::UInt256)),
+                value_type: Box::new(ColumnType::String),
+            },
+            required: true,
+            unique: false,
+            primary_key: false,
+            default: None,
+            annotations: vec![],
+            comment: None,
+        }];
+
+        let limit: BigUint = BigUint::from(1u8) << 256usize;
+        let max = (limit.clone() - BigUint::from(1u8)).to_string();
+        let json = format!(r#"{{ "map_col": {{ "0": "a", "{}": "b" }} }}"#, max);
+        let result = serde_json::Deserializer::from_str(&json)
+            .deserialize_any(&mut DataModelVisitor::new(&columns, None));
+        assert!(result.is_ok());
+
+        let max_plus_one = limit.to_string();
+        let json = format!(r#"{{ "map_col": {{ "{}": "a" }} }}"#, max_plus_one);
+        let err = serde_json::Deserializer::from_str(&json)
+            .deserialize_any(&mut DataModelVisitor::new(&columns, None))
+            .unwrap_err();
+        assert!(err.to_string().contains("out of range") && err.to_string().contains("UInt256"));
+
+        let json = r#"{ "map_col": { "-1": "a" } }"#;
+        let err = serde_json::Deserializer::from_str(json)
+            .deserialize_any(&mut DataModelVisitor::new(&columns, None))
+            .unwrap_err();
+        assert!(
+            err.to_string().contains("Invalid unsigned integer key")
+                || err.to_string().contains("Negative value")
+        );
     }
 }
