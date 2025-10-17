@@ -15,11 +15,11 @@ describe("WebApp", () => {
         res.end("OK");
       };
 
-      const webApp = new WebApp("testApp", handler);
+      const webApp = new WebApp("testApp", handler, { mountPath: "/test" });
 
       expect(webApp.name).to.equal("testApp");
       expect(webApp.handler).to.be.a("function");
-      expect(webApp.config).to.deep.equal({});
+      expect(webApp.config.mountPath).to.equal("/test");
       expect(webApp.getRawApp()).to.be.undefined;
     });
 
@@ -31,7 +31,9 @@ describe("WebApp", () => {
         },
       };
 
-      const webApp = new WebApp("expressApp", expressApp);
+      const webApp = new WebApp("expressApp", expressApp, {
+        mountPath: "/express",
+      });
 
       expect(webApp.name).to.equal("expressApp");
       expect(webApp.handler).to.be.a("function");
@@ -46,7 +48,7 @@ describe("WebApp", () => {
         },
       };
 
-      const webApp = new WebApp("koaApp", koaApp);
+      const webApp = new WebApp("koaApp", koaApp, { mountPath: "/koa" });
 
       expect(webApp.name).to.equal("koaApp");
       expect(webApp.handler).to.be.a("function");
@@ -63,23 +65,23 @@ describe("WebApp", () => {
         },
       };
 
-      const webApp = new WebApp("fastifyApp", fastifyApp);
+      const webApp = new WebApp("fastifyApp", fastifyApp, {
+        mountPath: "/fastify",
+      });
 
       expect(webApp.name).to.equal("fastifyApp");
       expect(webApp.handler).to.be.a("function");
       expect(webApp.getRawApp()).to.equal(fastifyApp);
     });
 
-    it("should create WebApp with minimal config (no mountPath)", () => {
+    it("should throw error when mountPath is not provided", () => {
       const handler: WebAppHandler = (req, res) => {
         res.end("OK");
       };
 
-      const webApp = new WebApp("minimalApp", handler);
-
-      expect(webApp.config.mountPath).to.be.undefined;
-      expect(webApp.config.metadata).to.be.undefined;
-      expect(webApp.config.injectMooseUtils).to.be.undefined;
+      expect(() => {
+        new WebApp("minimalApp", handler, {} as any);
+      }).to.throw("mountPath is required");
     });
 
     it("should create WebApp with full config", () => {
@@ -102,6 +104,18 @@ describe("WebApp", () => {
   });
 
   describe("Configuration Validation", () => {
+    it("should reject root mountPath '/'", () => {
+      const handler: WebAppHandler = (req, res) => {
+        res.end("OK");
+      };
+
+      expect(() => {
+        new WebApp("testApp", handler, { mountPath: "/" });
+      }).to.throw(
+        'mountPath cannot be "/" as it would allow routes to overlap with reserved paths',
+      );
+    });
+
     it("should reject mountPath with trailing slash", () => {
       const handler: WebAppHandler = (req, res) => {
         res.end("OK");
@@ -188,6 +202,7 @@ describe("WebApp", () => {
 
     it("should handle metadata configuration correctly", () => {
       const webApp = new WebApp("metadataApp", () => {}, {
+        mountPath: "/metadata",
         metadata: {
           description: "This is a test API with metadata",
         },
@@ -201,7 +216,9 @@ describe("WebApp", () => {
 
   describe("Registration Tests", () => {
     it("should register WebApp in moose internal upon creation", () => {
-      const webApp = new WebApp("registeredApp", () => {});
+      const webApp = new WebApp("registeredApp", () => {}, {
+        mountPath: "/registered",
+      });
 
       const internal = getMooseInternal();
       expect(internal.webApps.has("registeredApp")).to.be.true;
@@ -209,10 +226,10 @@ describe("WebApp", () => {
     });
 
     it("should throw error when creating WebApp with duplicate name", () => {
-      new WebApp("duplicateName", () => {});
+      new WebApp("duplicateName", () => {}, { mountPath: "/duplicate1" });
 
       expect(() => {
-        new WebApp("duplicateName", () => {});
+        new WebApp("duplicateName", () => {}, { mountPath: "/duplicate2" });
       }).to.throw("WebApp with name duplicateName already exists");
     });
 
@@ -229,7 +246,7 @@ describe("WebApp", () => {
     it("should allow multiple WebApps with different names and mountPaths", () => {
       const app1 = new WebApp("app1", () => {}, { mountPath: "/path1" });
       const app2 = new WebApp("app2", () => {}, { mountPath: "/path2" });
-      const app3 = new WebApp("app3", () => {}); // No mountPath
+      const app3 = new WebApp("app3", () => {}, { mountPath: "/path3" });
 
       const internal = getMooseInternal();
       expect(internal.webApps.size).to.equal(3);
@@ -238,9 +255,9 @@ describe("WebApp", () => {
       expect(internal.webApps.get("app3")).to.equal(app3);
     });
 
-    it("should allow multiple WebApps without mountPaths", () => {
-      const app1 = new WebApp("app1", () => {});
-      const app2 = new WebApp("app2", () => {});
+    it("should allow multiple WebApps with unique mountPaths", () => {
+      const app1 = new WebApp("app1", () => {}, { mountPath: "/multi1" });
+      const app2 = new WebApp("app2", () => {}, { mountPath: "/multi2" });
 
       const internal = getMooseInternal();
       expect(internal.webApps.size).to.equal(2);
@@ -260,7 +277,9 @@ describe("WebApp", () => {
         },
       };
 
-      const webApp = new WebApp("expressApp", expressApp);
+      const webApp = new WebApp("expressApp", expressApp, {
+        mountPath: "/express-test",
+      });
 
       // Create mock request/response
       const req = {} as http.IncomingMessage;
@@ -284,7 +303,9 @@ describe("WebApp", () => {
         },
       };
 
-      const webApp = new WebApp("expressApp", expressApp);
+      const webApp = new WebApp("expressApp", expressApp, {
+        mountPath: "/express-error",
+      });
 
       // Create mock request/response
       const req = {} as http.IncomingMessage;
@@ -312,7 +333,7 @@ describe("WebApp", () => {
         },
       };
 
-      const webApp = new WebApp("koaApp", koaApp);
+      const webApp = new WebApp("koaApp", koaApp, { mountPath: "/koa-test" });
 
       // Create mock request/response
       const req = {} as http.IncomingMessage;
@@ -337,7 +358,9 @@ describe("WebApp", () => {
         },
       };
 
-      const webApp = new WebApp("fastifyApp", fastifyApp);
+      const webApp = new WebApp("fastifyApp", fastifyApp, {
+        mountPath: "/fastify-test",
+      });
 
       // Create mock request/response
       const req = {} as http.IncomingMessage;
@@ -357,7 +380,7 @@ describe("WebApp", () => {
         res.end("Raw handler");
       };
 
-      const webApp = new WebApp("rawApp", handler);
+      const webApp = new WebApp("rawApp", handler, { mountPath: "/raw-test" });
 
       const req = {} as http.IncomingMessage;
       const res = {
@@ -374,7 +397,9 @@ describe("WebApp", () => {
       } as any;
 
       expect(() => {
-        new WebApp("unsupportedApp", unsupportedApp);
+        new WebApp("unsupportedApp", unsupportedApp, {
+          mountPath: "/unsupported",
+        });
       }).to.throw("Unable to convert app to handler");
     });
 
@@ -386,7 +411,9 @@ describe("WebApp", () => {
         },
       } as any;
 
-      const webApp = new WebApp("invalidFastify", invalidFastifyApp);
+      const webApp = new WebApp("invalidFastify", invalidFastifyApp, {
+        mountPath: "/invalid-fastify",
+      });
 
       const req = {} as http.IncomingMessage;
       const res = {} as any;
@@ -410,7 +437,9 @@ describe("WebApp", () => {
         handle: (req: any, res: any) => {},
       };
 
-      const webApp = new WebApp("expressApp", expressApp);
+      const webApp = new WebApp("expressApp", expressApp, {
+        mountPath: "/edge-express",
+      });
 
       expect(webApp.getRawApp()).to.equal(expressApp);
     });
@@ -420,7 +449,9 @@ describe("WebApp", () => {
         res.end("OK");
       };
 
-      const webApp = new WebApp("rawHandler", handler);
+      const webApp = new WebApp("rawHandler", handler, {
+        mountPath: "/edge-raw",
+      });
 
       expect(webApp.getRawApp()).to.be.undefined;
     });
@@ -433,7 +464,9 @@ describe("WebApp", () => {
         res.end("Async");
       };
 
-      const webApp = new WebApp("asyncApp", asyncHandler);
+      const webApp = new WebApp("asyncApp", asyncHandler, {
+        mountPath: "/async-test",
+      });
 
       const req = {} as http.IncomingMessage;
       const res = {
@@ -454,7 +487,9 @@ describe("WebApp", () => {
         },
       };
 
-      const webApp = new WebApp("expressApp", expressApp);
+      const webApp = new WebApp("expressApp", expressApp, {
+        mountPath: "/express-headers",
+      });
 
       const req = {} as http.IncomingMessage;
       const res = {
