@@ -50,7 +50,7 @@ use super::{
         olap_process::OlapProcess,
         orchestration_worker::OrchestrationWorker,
         sql_resource::SqlResource,
-        table::{Column, Metadata, Table},
+        table::{Column, Metadata, Table, TableIndex},
         topic::{KafkaSchema, Topic, DEFAULT_MAX_MESSAGE_BYTES},
         topic_sync_process::{TopicToTableSyncProcess, TopicToTopicSyncProcess},
         view::View,
@@ -200,6 +200,9 @@ struct PartialTable {
     pub life_cycle: Option<LifeCycle>,
     #[serde(alias = "table_settings")]
     pub table_settings: Option<std::collections::HashMap<String, String>>,
+    /// Secondary or data-skipping indexes from user code
+    #[serde(default)]
+    pub indexes: Vec<TableIndex>,
 }
 
 /// Represents a topic definition from user code before it's converted into a complete [`Topic`].
@@ -594,7 +597,7 @@ impl PartialInfrastructureMap {
                     } else {
                         Some(table_settings)
                     },
-                    indexes: vec![],
+                    indexes: partial_table.indexes.clone(),
                 };
                 (table.id(), table)
             })
