@@ -594,6 +594,7 @@ impl PartialInfrastructureMap {
                     } else {
                         Some(table_settings)
                     },
+                    database: None, // Database defaults to global config
                 };
                 (table.id(), table)
             })

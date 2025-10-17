@@ -32,6 +32,42 @@ user_event_table_expr = OlapTable[UserEvent](
 )
 ```
 
+## Multi-Database Support
+
+By default, tables are created in the global ClickHouse database configured in your Moose project. You can optionally specify a different database for any table using the `database` parameter:
+
+```python
+from moose_lib import OlapTable, OlapConfig
+from pydantic import BaseModel
+
+class MyData(BaseModel):
+    id: str
+    value: float
+
+# Table created in the default database
+default_table = OlapTable[MyData](
+    "DefaultTable",
+    OlapConfig(
+        order_by_fields=["id"]
+    )
+)
+
+# Table created in a specific database
+analytics_table = OlapTable[MyData](
+    "AnalyticsTable",
+    OlapConfig(
+        order_by_fields=["id"],
+        database="analytics_db"
+    )
+)
+```
+
+**Notes**:
+- If `database` is not specified, the table is created in the global database from your Moose configuration
+- The database must exist in your ClickHouse cluster
+- All table operations (queries, writes) will target the specified database
+- **Changing the `database` field requires manual migration**: Create a new table with the target database, migrate your data, then delete the old table definition. This prevents accidental data loss.
+
 ## Table Configuration
 
 The `OlapTable` class supports both a modern engine-specific API and legacy configuration for backward compatibility.

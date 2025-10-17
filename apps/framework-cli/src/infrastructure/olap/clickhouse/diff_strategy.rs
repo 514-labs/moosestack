@@ -237,6 +237,46 @@ impl TableDiffStrategy for ClickHouseTableDiffStrategy {
             ];
         }
 
+        // Check if database has changed
+        if before.database != after.database {
+            let before_db = before.database.as_deref().unwrap_or("<default>");
+            let after_db = after.database.as_deref().unwrap_or("<default>");
+
+            let error_message = format!(
+                "\n\n\
+                ╔════════════════════════════════════════════════════════════════════════════╗\n\
+                ║ ERROR: Database field change detected for table '{}'                      \n\
+                ╠════════════════════════════════════════════════════════════════════════════╣\n\
+                ║                                                                            ║\n\
+                ║ The database field changed from '{}' to '{}'                              \n\
+                ║                                                                            ║\n\
+                ║ Changing the database field is a destructive operation that requires      ║\n\
+                ║ manual intervention to ensure data safety.                                ║\n\
+                ║                                                                            ║\n\
+                ║ To migrate this table to a new database:                                  ║\n\
+                ║                                                                            ║\n\
+                ║   1. Create a new table definition with the target database               ║\n\
+                ║   2. Migrate your data (if needed):                                       ║\n\
+                ║      INSERT INTO {}.{} SELECT * FROM {}.{}     \n\
+                ║   3. Update your application to use the new table                         ║\n\
+                ║   4. Delete the old table definition from your code                       ║\n\
+                ║                                                                            ║\n\
+                ║ This ensures you maintain control over data migration and prevents        ║\n\
+                ║ accidental data loss.                                                     ║\n\
+                ╚════════════════════════════════════════════════════════════════════════════╝\n",
+                before.name, before_db, after_db, after_db, before.name, before_db, before.name
+            );
+
+            log::error!("{}", error_message);
+
+            return vec![OlapChange::Table(TableChange::ValidationError {
+                table_name: before.name.clone(),
+                message: error_message,
+                before: before.clone(),
+                after: after.clone(),
+            })];
+        }
+
         // Check if PARTITION BY has changed
         if before.partition_by != after.partition_by {
             log::debug!(
@@ -439,6 +479,7 @@ mod tests {
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
             table_settings: None,
+            database: None,
         }
     }
 
@@ -631,6 +672,77 @@ mod tests {
             changes[1],
             OlapChange::Table(TableChange::Added(_))
         ));
+    }
+
+    #[test]
+    fn test_database_change_triggers_validation_error() {
+        let strategy = ClickHouseTableDiffStrategy;
+
+        let mut before = create_test_table("test", vec!["id".to_string()], false);
+        let mut after = create_test_table("test", vec!["id".to_string()], false);
+
+        // Change the database field
+        before.database = Some("old_db".to_string());
+        after.database = Some("new_db".to_string());
+
+        let order_by_change = OrderByChange {
+            before: before.order_by.clone(),
+            after: after.order_by.clone(),
+        };
+
+        let changes = strategy.diff_table_update(&before, &after, vec![], order_by_change);
+
+        // Should return exactly one ValidationError
+        assert_eq!(changes.len(), 1);
+        assert!(matches!(
+            changes[0],
+            OlapChange::Table(TableChange::ValidationError { .. })
+        ));
+
+        // Check the error message contains expected information
+        if let OlapChange::Table(TableChange::ValidationError {
+            table_name,
+            message,
+            ..
+        }) = &changes[0]
+        {
+            assert_eq!(table_name, "test");
+            assert!(message.contains("old_db"));
+            assert!(message.contains("new_db"));
+            assert!(message.contains("Database field change detected"));
+        }
+    }
+
+    #[test]
+    fn test_database_change_from_none_to_some_triggers_validation_error() {
+        let strategy = ClickHouseTableDiffStrategy;
+
+        let mut before = create_test_table("test", vec!["id".to_string()], false);
+        let mut after = create_test_table("test", vec!["id".to_string()], false);
+
+        // Change from None (default db) to a specific database
+        before.database = None;
+        after.database = Some("new_db".to_string());
+
+        let order_by_change = OrderByChange {
+            before: before.order_by.clone(),
+            after: after.order_by.clone(),
+        };
+
+        let changes = strategy.diff_table_update(&before, &after, vec![], order_by_change);
+
+        // Should return exactly one ValidationError
+        assert_eq!(changes.len(), 1);
+        assert!(matches!(
+            changes[0],
+            OlapChange::Table(TableChange::ValidationError { .. })
+        ));
+
+        // Check the error message contains expected information
+        if let OlapChange::Table(TableChange::ValidationError { message, .. }) = &changes[0] {
+            assert!(message.contains("<default>"));
+            assert!(message.contains("new_db"));
+        }
     }
 
     #[test]
@@ -911,6 +1023,7 @@ mod tests {
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
             table_settings: Some(table_settings),
+            database: None,
         };
 
         assert!(ClickHouseTableDiffStrategy::is_s3queue_table(&s3_table));

@@ -160,15 +160,56 @@ pub struct Table {
     /// These are separate from engine constructor parameters
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub table_settings: Option<std::collections::HashMap<String, String>>,
+    /// Optional database name for multi-database support
+    /// When not specified, uses the global ClickHouse config database
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub database: Option<String>,
 }
 
 impl Table {
     // This is only to be used in the context of the new core
     // currently name includes the version, here we are separating that out.
     pub fn id(&self) -> String {
-        self.version.as_ref().map_or(self.name.clone(), |v| {
+        let base_id = self.version.as_ref().map_or(self.name.clone(), |v| {
             format!("{}_{}", self.name, v.as_suffix())
-        })
+        });
+
+        // Include database in the ID if specified
+        // Format: {database}_{table_name}_{version} or {table_name}_{version}
+        self.database
+            .as_ref()
+            .map_or(base_id.clone(), |db| format!("{}_{}", db, base_id))
+    }
+
+    /// Computes a hash of non-alterable parameters including engine params and database
+    /// This hash is used for change detection - if it changes, the table must be dropped and recreated
+    pub fn compute_non_alterable_params_hash(&self) -> Option<String> {
+        use sha2::{Digest, Sha256};
+
+        // Combine engine hash and database into a single hash
+        let engine_hash = self.engine.as_ref().map(|e| e.non_alterable_params_hash());
+
+        // If we have neither engine hash nor database, return None
+        if engine_hash.is_none() && self.database.is_none() {
+            return None;
+        }
+
+        // Create a combined hash that includes both engine params and database
+        let mut hasher = Sha256::new();
+
+        // Include engine params hash if it exists
+        if let Some(ref hash) = engine_hash {
+            hasher.update(hash.as_bytes());
+        }
+
+        // Include database field
+        if let Some(ref db) = self.database {
+            hasher.update(b"database:");
+            hasher.update(db.as_bytes());
+        }
+
+        // Convert to hex string
+        Some(format!("{:x}", hasher.finalize()))
     }
 
     pub fn matches(&self, target_table_name: &str, target_table_version: Option<&Version>) -> bool {
@@ -274,11 +315,11 @@ impl Table {
                 special_fields: Default::default(),
             })),
             order_by2: MessageField::some(proto_order_by2),
-            // Store the hash for change detection (or calculate it if not present)
+            // Store the hash for change detection, including database field
             engine_params_hash: self
                 .engine_params_hash
                 .clone()
-                .or_else(|| self.engine.as_ref().map(|e| e.non_alterable_params_hash())),
+                .or_else(|| self.compute_non_alterable_params_hash()),
             table_settings: self.table_settings.clone().unwrap_or_default(),
             metadata: MessageField::from_option(self.metadata.as_ref().map(|m| {
                 infrastructure_map::Metadata {
@@ -297,6 +338,7 @@ impl Table {
                 LifeCycle::DeletionProtected => ProtoLifeCycle::DELETION_PROTECTED.into(),
                 LifeCycle::ExternallyManaged => ProtoLifeCycle::EXTERNALLY_MANAGED.into(),
             },
+            database: self.database.clone(),
             special_fields: Default::default(),
         }
     }
@@ -376,6 +418,8 @@ impl Table {
             } else {
                 None
             },
+            // Load database from proto
+            database: proto.database,
         }
     }
 }

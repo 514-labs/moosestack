@@ -302,6 +302,17 @@ pub enum TableChange {
         /// Complete table representation for context
         table: Table,
     },
+    /// A validation error occurred - the requested change is not allowed
+    ValidationError {
+        /// Name of the table
+        table_name: String,
+        /// Error message explaining why the change is not allowed
+        message: String,
+        /// Complete representation of the table before the invalid change
+        before: Table,
+        /// Complete representation of the table after the invalid change
+        after: Table,
+    },
 }
 
 /// Generic representation of a change to any infrastructure component
@@ -2609,6 +2620,7 @@ mod tests {
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
             table_settings: None,
+            database: None,
         };
 
         let after = Table {
@@ -2657,6 +2669,7 @@ mod tests {
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
             table_settings: None,
+            database: None,
         };
 
         let diff = compute_table_columns_diff(&before, &after);
@@ -2823,6 +2836,7 @@ mod diff_tests {
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
             table_settings: None,
+            database: None,
         }
     }
 
