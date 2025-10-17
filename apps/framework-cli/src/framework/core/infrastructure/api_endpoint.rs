@@ -131,6 +131,12 @@ impl ApiEndpoint {
             metadata: MessageField::from_option(self.metadata.as_ref().map(|m| {
                 infrastructure_map::Metadata {
                     description: m.description.clone().unwrap_or_default(),
+                    source: MessageField::from_option(m.source.as_ref().map(|s| {
+                        infrastructure_map::SourceLocation {
+                            file: s.file.clone(),
+                            special_fields: Default::default(),
+                        }
+                    })),
                     special_fields: Default::default(),
                 }
             })),
@@ -157,6 +163,10 @@ impl ApiEndpoint {
                 } else {
                     Some(m.description)
                 },
+                source: m
+                    .source
+                    .into_option()
+                    .map(|s| super::table::SourceLocation { file: s.file }),
             }),
         }
     }
