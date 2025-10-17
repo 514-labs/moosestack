@@ -192,7 +192,7 @@ struct PartialTable {
     pub order_by: OrderBy,
     #[serde(default)]
     pub partition_by: Option<String>,
-    #[serde(default)]
+    #[serde(default, alias = "sampleByExpression")]
     pub sample_by: Option<String>,
     #[serde(alias = "engine_config")]
     pub engine_config: Option<EngineConfig>,

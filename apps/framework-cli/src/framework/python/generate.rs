@@ -423,6 +423,9 @@ pub fn tables_to_python(tables: &[Table], life_cycle: Option<LifeCycle>) -> Stri
         if let Some(partition_by) = &table.partition_by {
             writeln!(output, "    partition_by={:?},", partition_by).unwrap();
         }
+        if let Some(sample_by) = &table.sample_by {
+            writeln!(output, "    sample_by_expression={:?},", sample_by).unwrap();
+        }
         if let Some(life_cycle) = life_cycle {
             writeln!(
                 output,

@@ -309,7 +309,7 @@ impl Table {
 
         // Engine settings are now handled via table_settings field
 
-        let fallback = || {
+        let fallback = || -> OrderBy {
             if proto.order_by.len() == 1 {
                 let s = proto.order_by[0].clone();
                 if s == "tuple()" {

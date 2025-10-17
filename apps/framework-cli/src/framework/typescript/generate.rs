@@ -289,6 +289,9 @@ pub fn tables_to_typescript(tables: &[Table], life_cycle: Option<LifeCycle>) -> 
         if let Some(partition_by) = &table.partition_by {
             writeln!(output, "    partitionBy: {:?},", partition_by).unwrap();
         }
+        if let Some(sample_by) = &table.sample_by {
+            writeln!(output, "    sampleByExpression: {:?},", sample_by).unwrap();
+        }
         if let Some(engine) = &table.engine {
             match engine {
                 crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine::S3Queue {
