@@ -21,13 +21,14 @@ def clear_registry():
 
 
 def test_webapp_basic_creation():
-    """Test basic WebApp creation with default config."""
+    """Test basic WebApp creation with required mount_path."""
     app = MockFastAPIApp()
-    webapp = WebApp("test_app", app)
+    config = WebAppConfig(mount_path="/test")
+    webapp = WebApp("test_app", app, config)
 
     assert webapp.name == "test_app"
     assert webapp.app is app
-    assert webapp.config.mount_path is None
+    assert webapp.config.mount_path == "/test"
     assert webapp.config.inject_moose_utils is True
     assert "test_app" in _web_apps
 
@@ -63,10 +64,10 @@ def test_webapp_duplicate_name():
     app1 = MockFastAPIApp()
     app2 = MockFastAPIApp()
 
-    WebApp("test_app", app1)
+    WebApp("test_app", app1, WebAppConfig(mount_path="/test1"))
 
     with pytest.raises(ValueError, match="WebApp with name 'test_app' already exists"):
-        WebApp("test_app", app2)
+        WebApp("test_app", app2, WebAppConfig(mount_path="/test2"))
 
 
 def test_webapp_trailing_slash_validation():
@@ -78,13 +79,13 @@ def test_webapp_trailing_slash_validation():
         WebApp("test_app", app, config)
 
 
-def test_webapp_root_path_allowed():
-    """Test that root path '/' is allowed."""
+def test_webapp_root_path_rejected():
+    """Test that root path '/' is rejected to prevent overlap with reserved paths."""
     app = MockFastAPIApp()
     config = WebAppConfig(mount_path="/")
-    webapp = WebApp("test_app", app, config)
 
-    assert webapp.config.mount_path == "/"
+    with pytest.raises(ValueError, match='mountPath cannot be "/" as it would allow routes to overlap with reserved paths'):
+        WebApp("test_app", app, config)
 
 
 def test_webapp_reserved_paths():
@@ -144,7 +145,7 @@ def test_webapp_different_mount_paths():
 def test_webapp_inject_moose_utils_false():
     """Test WebApp with inject_moose_utils disabled."""
     app = MockFastAPIApp()
-    config = WebAppConfig(inject_moose_utils=False)
+    config = WebAppConfig(mount_path="/test", inject_moose_utils=False)
     webapp = WebApp("test_app", app, config)
 
     assert webapp.config.inject_moose_utils is False
@@ -159,13 +160,12 @@ def test_webapp_repr():
     assert "/myapi" in repr(webapp)
 
 
-def test_webapp_default_mount_path_in_repr():
-    """Test WebApp repr with default mount path."""
+def test_webapp_mount_path_required():
+    """Test that mount_path is required."""
     app = MockFastAPIApp()
-    webapp = WebApp("test_app", app)
 
-    assert "test_app" in repr(webapp)
-    assert "/" in repr(webapp)
+    with pytest.raises(ValueError, match="mountPath is required"):
+        WebApp("test_app", app, WebAppConfig(mount_path=""))
 
 
 def test_webapp_serialization():
@@ -197,16 +197,16 @@ def test_webapp_serialization():
     assert infra_map["webApps"]["test_app"]["metadata"]["description"] == "Test API"
 
 
-def test_webapp_serialization_default_mount_path():
-    """Test WebApp serialization with default mount path."""
+def test_webapp_serialization_with_mount_path():
+    """Test WebApp serialization with explicit mount path."""
     from moose_lib.internal import to_infra_map
 
     app = MockFastAPIApp()
-    WebApp("test_app", app)
+    WebApp("test_app", app, WebAppConfig(mount_path="/testpath"))
 
     infra_map = to_infra_map()
 
-    assert infra_map["webApps"]["test_app"]["mountPath"] == "/"
+    assert infra_map["webApps"]["test_app"]["mountPath"] == "/testpath"
 
 
 def test_webapp_serialization_no_metadata():

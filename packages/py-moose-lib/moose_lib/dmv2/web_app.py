@@ -37,15 +37,15 @@ class WebAppConfig:
     """Configuration for a WebApp.
 
     Attributes:
-        mount_path: The URL path where the WebApp will be mounted.
-                   Defaults to "/" if not specified.
-                   Cannot end with "/" (except for root "/").
+        mount_path: The URL path where the WebApp will be mounted (required).
+                   Cannot be "/" (root path).
+                   Cannot end with "/" (trailing slash).
                    Cannot start with reserved paths.
         metadata: Optional metadata for documentation purposes.
         inject_moose_utils: Whether to inject MooseClient utilities into requests.
                            Defaults to True.
     """
-    mount_path: Optional[str] = None
+    mount_path: str
     metadata: Optional[WebAppMetadata] = None
     inject_moose_utils: bool = True
 
@@ -85,7 +85,7 @@ class WebApp:
     Args:
         name: Unique name for this WebApp.
         app: The FastAPI application instance.
-        config: Optional configuration for the WebApp.
+        config: Configuration for the WebApp (required, must include mount_path).
 
     Raises:
         ValueError: If validation fails (duplicate name, invalid mount path, etc.)
@@ -95,11 +95,11 @@ class WebApp:
         self,
         name: str,
         app: Any,  # FastAPI app, typed as Any to avoid import dependency
-        config: Optional[WebAppConfig] = None,
+        config: WebAppConfig,
     ):
         self.name = name
         self.app = app
-        self.config = config or WebAppConfig()
+        self.config = config
 
         # Import the registry here to avoid circular dependency
         from ._registry import _web_apps
@@ -126,10 +126,23 @@ class WebApp:
         if name in existing_web_apps:
             raise ValueError(f"WebApp with name '{name}' already exists")
 
-        mount_path = config.mount_path or "/"
+        # Validate mountPath - it is required
+        if not config.mount_path:
+            raise ValueError(
+                f"mountPath is required. Please specify a mount path for your WebApp (e.g., \"/myapi\")."
+            )
+
+        mount_path = config.mount_path
+
+        # Check for root path - not allowed as it would overlap reserved paths
+        if mount_path == "/":
+            raise ValueError(
+                f"mountPath cannot be \"/\" as it would allow routes to overlap with reserved paths: "
+                f"{', '.join(RESERVED_MOUNT_PATHS)}"
+            )
 
         # Validate mount path format
-        if mount_path != "/" and mount_path.endswith("/"):
+        if mount_path.endswith("/"):
             raise ValueError(
                 f"mountPath cannot end with a trailing slash. "
                 f"Remove the '/' from: \"{mount_path}\""
@@ -146,7 +159,7 @@ class WebApp:
 
         # Check for duplicate mount path
         for existing_name, existing_app in existing_web_apps.items():
-            existing_mount = existing_app.config.mount_path or "/"
+            existing_mount = existing_app.config.mount_path
             if existing_mount == mount_path:
                 raise ValueError(
                     f"WebApp with mountPath \"{mount_path}\" already exists "
@@ -154,5 +167,4 @@ class WebApp:
                 )
 
     def __repr__(self) -> str:
-        mount = self.config.mount_path or "/"
-        return f"WebApp(name='{self.name}', mount_path='{mount}')"
+        return f"WebApp(name='{self.name}', mount_path='{self.config.mount_path}')"
