@@ -1,13 +1,18 @@
-import { Callout } from "@/components";
+---
+title: Secondary Indexes
+description: Specifying indexes with Moose OLAP
+---
 
 ## Indexes for ClickHouse tables
 
-Moose lets you declare secondary/data-skipping indexes directly in your table definitions. Moose generates the right ClickHouse `INDEX` clauses on create and plans `ALTER TABLE ADD/DROP INDEX` operations when you change them later.
+Moose lets you declare secondary/data-skipping indexes directly in your table definitions.
+Moose generates the ClickHouse `INDEX` clauses on create and
+plans `ALTER TABLE ADD/DROP INDEX` operations when you change them later.
 
 ### When to use indexes
 
 - Use indexes to optimize selective predicates on large tables, especially string and high-cardinality columns.
-- Common types: `minmax`, `set(N)`, `ngrambf_v1(...)`, `bloom_filter`.
+- Common types: `minmax`, `Set(max_rows)`, `ngrambf_v1(...)`, `bloom_filter`.
 
 ### TypeScript
 
@@ -64,14 +69,3 @@ events_table = OlapTable[Events](
 
 - On create, Moose emits `INDEX ...` entries inside `CREATE TABLE`.
 - On change, Moose plans `ALTER TABLE DROP INDEX <name>` then `ADD INDEX ...` if the definition changed; pure adds/drops are applied as single operations.
-
-<Callout>
-Index definitions are database-specific in ClickHouse. Moose passes through the type and arguments you provide.
-</Callout>
-
-### Tips
-
-- Keep index granularity small for highly selective predicates; default 1 is common for data-skipping indexes.
-- Test performance impacts using your real queries and dataset.
-
-
