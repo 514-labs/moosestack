@@ -3,6 +3,7 @@ use crate::framework::core::infrastructure::table::{
 };
 use crate::infrastructure::processes::kafka_clickhouse_sync::IPV4_PATTERN;
 use itertools::Either;
+use num_bigint::{BigInt, BigUint};
 use regex::Regex;
 use serde::de::{DeserializeSeed, Error, MapAccess, SeqAccess, Visitor};
 use serde::ser::{SerializeMap, SerializeSeq};
@@ -82,140 +83,167 @@ impl EnumInt for i64 {
 static INTEGER_REGEX: LazyLock<Regex> =
     std::sync::LazyLock::new(|| Regex::new(r"^-?\d+$").unwrap());
 
+static INT256_MIN: LazyLock<BigInt> = LazyLock::new(|| {
+    let mut value = BigInt::from(1u8);
+    value <<= 255usize;
+    -value
+});
+static INT256_MAX: LazyLock<BigInt> = LazyLock::new(|| {
+    let mut value = BigInt::from(1u8);
+    value <<= 255usize;
+    value - BigInt::from(1u8)
+});
+static UINT256_MAX: LazyLock<BigUint> = LazyLock::new(|| {
+    let mut value = BigUint::from(1u8);
+    value <<= 256usize;
+    value - BigUint::from(1u8)
+});
+
+fn parse_signed_number(num: &Number, int_type: &IntType, path: &str) -> Result<BigInt, String> {
+    if let Some(v) = num.as_i64() {
+        return Ok(BigInt::from(v));
+    }
+    if let Some(u) = num.as_u64() {
+        return Ok(BigInt::from(u));
+    }
+
+    let s = num.to_string();
+    if !INTEGER_REGEX.is_match(&s) {
+        return Err(format!("Expected integer for {int_type:?} at {path}"));
+    }
+
+    BigInt::from_str(&s).map_err(|_| format!("Value {s} out of range for {int_type:?} at {path}"))
+}
+
+fn parse_unsigned_number(num: &Number, int_type: &IntType, path: &str) -> Result<BigUint, String> {
+    if let Some(v) = num.as_i64() {
+        if v < 0 {
+            return Err(format!(
+                "Negative value {v} is invalid for {int_type:?} at {path}"
+            ));
+        }
+        let as_u64 = u64::try_from(v)
+            .map_err(|_| format!("Value {v} out of range for {int_type:?} at {path}"))?;
+        return Ok(BigUint::from(as_u64));
+    }
+    if let Some(u) = num.as_u64() {
+        return Ok(BigUint::from(u));
+    }
+
+    let s = num.to_string();
+    if !INTEGER_REGEX.is_match(&s) {
+        return Err(format!("Expected integer for {int_type:?} at {path}"));
+    }
+    if s.starts_with('-') {
+        return Err(format!(
+            "Negative value {s} is invalid for {int_type:?} at {path}"
+        ));
+    }
+
+    BigUint::from_str(&s).map_err(|_| format!("Value {s} out of range for {int_type:?} at {path}"))
+}
+
+fn check_signed_bounds(
+    value: &BigInt,
+    int_type: &IntType,
+    min: &BigInt,
+    max: &BigInt,
+    path: &str,
+) -> Result<(), String> {
+    if value < min || value > max {
+        Err(format!(
+            "Value {} out of range for {:?} at {}",
+            value, int_type, path
+        ))
+    } else {
+        Ok(())
+    }
+}
+
+fn check_unsigned_bounds(
+    value: &BigUint,
+    int_type: &IntType,
+    max: &BigUint,
+    path: &str,
+) -> Result<(), String> {
+    if value > max {
+        Err(format!(
+            "Value {} out of range for {:?} at {}",
+            value, int_type, path
+        ))
+    } else {
+        Ok(())
+    }
+}
+
 fn check_int_number_in_range<E>(num: &Number, int_type: &IntType, path: &str) -> Result<(), E>
 where
     E: serde::de::Error,
 {
-    let signed_bounds = |t: &IntType| -> (i128, i128) {
-        match t {
-            IntType::Int8 => (i8::MIN as i128, i8::MAX as i128),
-            IntType::Int16 => (i16::MIN as i128, i16::MAX as i128),
-            IntType::Int32 => (i32::MIN as i128, i32::MAX as i128),
-            IntType::Int64 => (i64::MIN as i128, i64::MAX as i128),
-            IntType::Int128 | IntType::Int256 => (i128::MIN, i128::MAX),
-            _ => (0, 0),
-        }
-    };
-    let unsigned_max = |t: &IntType| -> u128 {
-        match t {
-            IntType::UInt8 => u8::MAX as u128,
-            IntType::UInt16 => u16::MAX as u128,
-            IntType::UInt32 => u32::MAX as u128,
-            IntType::UInt64 => u64::MAX as u128,
-            IntType::UInt128 | IntType::UInt256 => u128::MAX,
-            _ => 0,
-        }
-    };
-
     match int_type {
-        IntType::Int8
-        | IntType::Int16
-        | IntType::Int32
-        | IntType::Int64
-        | IntType::Int128
-        | IntType::Int256 => {
-            if let Some(v) = num.as_i64() {
-                let (min, max) = signed_bounds(int_type);
-                let v128 = v as i128;
-                if v128 < min || v128 > max {
-                    return Err(E::custom(format!(
-                        "Value {v} out of range for {int_type:?} at {path}"
-                    )));
-                }
-                return Ok(());
-            }
-            if let Some(u) = num.as_u64() {
-                let (_min, max) = signed_bounds(int_type);
-                let u128v = u as u128;
-                if u128v > (max as u128) {
-                    return Err(E::custom(format!(
-                        "Value {u} out of range for {int_type:?} at {path}"
-                    )));
-                }
-                return Ok(());
-            }
-            let s = num.to_string();
-            if !INTEGER_REGEX.is_match(&s) {
-                return Err(E::custom(format!(
-                    "Expected integer for {int_type:?} at {path}"
-                )));
-            }
-            if *int_type == IntType::Int256 {
-                return Ok(());
-            }
-            match s.parse::<i128>() {
-                Ok(v) => {
-                    let (min, max) = signed_bounds(int_type);
-                    if v < min || v > max {
-                        return Err(E::custom(format!(
-                            "Value {s} out of range for {int_type:?} at {path}"
-                        )));
-                    }
-                    Ok(())
-                }
-                Err(_) => Err(E::custom(format!(
-                    "Value {s} out of range for {int_type:?} at {path}"
-                ))),
-            }
+        IntType::Int8 => {
+            let value = parse_signed_number(num, int_type, path).map_err(E::custom)?;
+            let min = BigInt::from(i8::MIN);
+            let max = BigInt::from(i8::MAX);
+            check_signed_bounds(&value, int_type, &min, &max, path).map_err(E::custom)
         }
-        IntType::UInt8
-        | IntType::UInt16
-        | IntType::UInt32
-        | IntType::UInt64
-        | IntType::UInt128
-        | IntType::UInt256 => {
-            if let Some(v) = num.as_i64() {
-                if v < 0 {
-                    return Err(E::custom(format!(
-                        "Negative value {v} is invalid for {int_type:?} at {path}"
-                    )));
-                }
-                let max = unsigned_max(int_type);
-                if (v as u128) > max {
-                    return Err(E::custom(format!(
-                        "Value {v} out of range for {int_type:?} at {path}"
-                    )));
-                }
-                return Ok(());
-            }
-            if let Some(u) = num.as_u64() {
-                let max = unsigned_max(int_type);
-                if (u as u128) > max {
-                    return Err(E::custom(format!(
-                        "Value {u} out of range for {int_type:?} at {path}"
-                    )));
-                }
-                return Ok(());
-            }
-            let s = num.to_string();
-            if !INTEGER_REGEX.is_match(&s) {
-                return Err(E::custom(format!(
-                    "Expected integer for {int_type:?} at {path}"
-                )));
-            }
-            if s.starts_with('-') {
-                return Err(E::custom(format!(
-                    "Negative value {s} is invalid for {int_type:?} at {path}"
-                )));
-            }
-            if *int_type == IntType::UInt256 {
-                return Ok(());
-            }
-            match s.parse::<u128>() {
-                Ok(v) => {
-                    let max = unsigned_max(int_type);
-                    if v > max {
-                        return Err(E::custom(format!(
-                            "Value {s} out of range for {int_type:?} at {path}"
-                        )));
-                    }
-                    Ok(())
-                }
-                Err(_) => Err(E::custom(format!(
-                    "Value {s} out of range for {int_type:?} at {path}"
-                ))),
-            }
+        IntType::Int16 => {
+            let value = parse_signed_number(num, int_type, path).map_err(E::custom)?;
+            let min = BigInt::from(i16::MIN);
+            let max = BigInt::from(i16::MAX);
+            check_signed_bounds(&value, int_type, &min, &max, path).map_err(E::custom)
         }
+        IntType::Int32 => {
+            let value = parse_signed_number(num, int_type, path).map_err(E::custom)?;
+            let min = BigInt::from(i32::MIN);
+            let max = BigInt::from(i32::MAX);
+            check_signed_bounds(&value, int_type, &min, &max, path).map_err(E::custom)
+        }
+        IntType::Int64 => {
+            let value = parse_signed_number(num, int_type, path).map_err(E::custom)?;
+            let min = BigInt::from(i64::MIN);
+            let max = BigInt::from(i64::MAX);
+            check_signed_bounds(&value, int_type, &min, &max, path).map_err(E::custom)
+        }
+        IntType::Int128 => {
+            let value = parse_signed_number(num, int_type, path).map_err(E::custom)?;
+            let min = BigInt::from(i128::MIN);
+            let max = BigInt::from(i128::MAX);
+            check_signed_bounds(&value, int_type, &min, &max, path).map_err(E::custom)
+        }
+        IntType::Int256 => {
+            let value = parse_signed_number(num, int_type, path).map_err(E::custom)?;
+            check_signed_bounds(&value, int_type, &*INT256_MIN, &*INT256_MAX, path)
+                .map_err(E::custom)
+        }
+        IntType::UInt8 => {
+            let value = parse_unsigned_number(num, int_type, path).map_err(E::custom)?;
+            let max = BigUint::from(u8::MAX);
+            check_unsigned_bounds(&value, int_type, &max, path).map_err(E::custom)
+        }
+        IntType::UInt16 => {
+            let value = parse_unsigned_number(num, int_type, path).map_err(E::custom)?;
+            let max = BigUint::from(u16::MAX);
+            check_unsigned_bounds(&value, int_type, &max, path).map_err(E::custom)
+        }
+        IntType::UInt32 => {
+            let value = parse_unsigned_number(num, int_type, path).map_err(E::custom)?;
+            let max = BigUint::from(u32::MAX);
+            check_unsigned_bounds(&value, int_type, &max, path).map_err(E::custom)
+        }
+        IntType::UInt64 => {
+            let value = parse_unsigned_number(num, int_type, path).map_err(E::custom)?;
+            let max = BigUint::from(u64::MAX);
+            check_unsigned_bounds(&value, int_type, &max, path).map_err(E::custom)
+        }
+        IntType::UInt128 => {
+            let value = parse_unsigned_number(num, int_type, path).map_err(E::custom)?;
+            let max = BigUint::from(u128::MAX);
+            check_unsigned_bounds(&value, int_type, &max, path).map_err(E::custom)
+        }
+        IntType::UInt256 => parse_unsigned_number(num, int_type, path)
+            .and_then(|value| check_unsigned_bounds(&value, int_type, &*UINT256_MAX, path))
+            .map_err(E::custom),
     }
 }
 
@@ -810,31 +838,42 @@ where
                         s, path
                     )));
                 }
-                if *int_t == IntType::Int256 {
-                    return Ok(());
-                }
-                match s.parse::<i128>() {
-                    Ok(v) => {
-                        let (min, max) = match int_t {
-                            IntType::Int8 => (i8::MIN as i128, i8::MAX as i128),
-                            IntType::Int16 => (i16::MIN as i128, i16::MAX as i128),
-                            IntType::Int32 => (i32::MIN as i128, i32::MAX as i128),
-                            IntType::Int64 => (i64::MIN as i128, i64::MAX as i128),
-                            IntType::Int128 => (i128::MIN, i128::MAX),
-                            _ => (i128::MIN, i128::MAX),
-                        };
-                        if v < min || v > max {
-                            return Err(E::custom(format!(
-                                "Integer key '{}' out of range for {:?} at {}",
-                                s, int_t, path
-                            )));
-                        }
-                        Ok(())
+
+                let value = BigInt::from_str(s).map_err(|_| {
+                    E::custom(format!("Invalid integer key '{}' for Map at {}", s, path))
+                })?;
+
+                match int_t {
+                    IntType::Int8 => {
+                        let min = BigInt::from(i8::MIN);
+                        let max = BigInt::from(i8::MAX);
+                        check_signed_bounds(&value, int_t, &min, &max, path).map_err(E::custom)
                     }
-                    Err(_) => Err(E::custom(format!(
-                        "Invalid integer key '{}' for Map at {}",
-                        s, path
-                    ))),
+                    IntType::Int16 => {
+                        let min = BigInt::from(i16::MIN);
+                        let max = BigInt::from(i16::MAX);
+                        check_signed_bounds(&value, int_t, &min, &max, path).map_err(E::custom)
+                    }
+                    IntType::Int32 => {
+                        let min = BigInt::from(i32::MIN);
+                        let max = BigInt::from(i32::MAX);
+                        check_signed_bounds(&value, int_t, &min, &max, path).map_err(E::custom)
+                    }
+                    IntType::Int64 => {
+                        let min = BigInt::from(i64::MIN);
+                        let max = BigInt::from(i64::MAX);
+                        check_signed_bounds(&value, int_t, &min, &max, path).map_err(E::custom)
+                    }
+                    IntType::Int128 => {
+                        let min = BigInt::from(i128::MIN);
+                        let max = BigInt::from(i128::MAX);
+                        check_signed_bounds(&value, int_t, &min, &max, path).map_err(E::custom)
+                    }
+                    IntType::Int256 => {
+                        check_signed_bounds(&value, int_t, &*INT256_MIN, &*INT256_MAX, path)
+                            .map_err(E::custom)
+                    }
+                    _ => unreachable!(),
                 }
             }
             IntType::UInt8
@@ -849,31 +888,39 @@ where
                         s, path
                     )));
                 }
-                if *int_t == IntType::UInt256 {
-                    return Ok(());
-                }
-                match s.parse::<u128>() {
-                    Ok(v) => {
-                        let max = match int_t {
-                            IntType::UInt8 => u8::MAX as u128,
-                            IntType::UInt16 => u16::MAX as u128,
-                            IntType::UInt32 => u32::MAX as u128,
-                            IntType::UInt64 => u64::MAX as u128,
-                            IntType::UInt128 => u128::MAX,
-                            _ => u128::MAX,
-                        };
-                        if v > max {
-                            return Err(E::custom(format!(
-                                "Unsigned integer key '{}' out of range for {:?} at {}",
-                                s, int_t, path
-                            )));
-                        }
-                        Ok(())
-                    }
-                    Err(_) => Err(E::custom(format!(
+
+                let value = BigUint::from_str(s).map_err(|_| {
+                    E::custom(format!(
                         "Invalid unsigned integer key '{}' for Map at {}",
                         s, path
-                    ))),
+                    ))
+                })?;
+
+                match int_t {
+                    IntType::UInt8 => {
+                        let max = BigUint::from(u8::MAX);
+                        check_unsigned_bounds(&value, int_t, &max, path).map_err(E::custom)
+                    }
+                    IntType::UInt16 => {
+                        let max = BigUint::from(u16::MAX);
+                        check_unsigned_bounds(&value, int_t, &max, path).map_err(E::custom)
+                    }
+                    IntType::UInt32 => {
+                        let max = BigUint::from(u32::MAX);
+                        check_unsigned_bounds(&value, int_t, &max, path).map_err(E::custom)
+                    }
+                    IntType::UInt64 => {
+                        let max = BigUint::from(u64::MAX);
+                        check_unsigned_bounds(&value, int_t, &max, path).map_err(E::custom)
+                    }
+                    IntType::UInt128 => {
+                        let max = BigUint::from(u128::MAX);
+                        check_unsigned_bounds(&value, int_t, &max, path).map_err(E::custom)
+                    }
+                    IntType::UInt256 => {
+                        check_unsigned_bounds(&value, int_t, &*UINT256_MAX, path).map_err(E::custom)
+                    }
+                    _ => unreachable!(),
                 }
             }
         }
@@ -1240,6 +1287,7 @@ mod tests {
     use crate::framework::core::infrastructure::table::{
         Column, ColumnType, DataEnum, EnumMember, EnumValue, FloatType, IntType, Nested,
     };
+    use num_bigint::{BigInt, BigUint};
 
     #[test]
     fn test_happy_path_all_types() {
@@ -1855,6 +1903,136 @@ mod tests {
     }
 
     #[test]
+    fn test_int128_range_boundaries() {
+        let columns = vec![Column {
+            name: "i128_col".to_string(),
+            data_type: ColumnType::Int(IntType::Int128),
+            required: true,
+            unique: false,
+            primary_key: false,
+            default: None,
+            annotations: vec![],
+            comment: None,
+        }];
+
+        let positive_limit: BigInt = BigInt::from(1u8) << 127usize;
+        let max = (positive_limit.clone() - BigInt::from(1u8)).to_string();
+        let min = (-positive_limit.clone()).to_string();
+        let max_plus_one = positive_limit.clone().to_string();
+        let min_minus_one = (-positive_limit.clone() - BigInt::from(1u8)).to_string();
+
+        let json = format!(r#"{{ "i128_col": {} }}"#, max);
+        let result = serde_json::Deserializer::from_str(&json)
+            .deserialize_any(&mut DataModelVisitor::new(&columns, None));
+        assert!(result.is_ok(), "expected max Int128 value to be valid");
+
+        let json = format!(r#"{{ "i128_col": {} }}"#, min);
+        let result = serde_json::Deserializer::from_str(&json)
+            .deserialize_any(&mut DataModelVisitor::new(&columns, None));
+        assert!(result.is_ok(), "expected min Int128 value to be valid");
+
+        let json = format!(r#"{{ "i128_col": {} }}"#, max_plus_one);
+        let err = serde_json::Deserializer::from_str(&json)
+            .deserialize_any(&mut DataModelVisitor::new(&columns, None))
+            .unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("out of range") && msg.contains("Int128"));
+
+        let json = format!(r#"{{ "i128_col": {} }}"#, min_minus_one);
+        let err = serde_json::Deserializer::from_str(&json)
+            .deserialize_any(&mut DataModelVisitor::new(&columns, None))
+            .unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("out of range") && msg.contains("Int128"));
+    }
+
+    #[test]
+    fn test_int256_range_boundaries() {
+        let columns = vec![Column {
+            name: "i256_col".to_string(),
+            data_type: ColumnType::Int(IntType::Int256),
+            required: true,
+            unique: false,
+            primary_key: false,
+            default: None,
+            annotations: vec![],
+            comment: None,
+        }];
+
+        let positive_limit: BigInt = BigInt::from(1u8) << 255usize;
+        let max = (positive_limit.clone() - BigInt::from(1u8)).to_string();
+        let min = (-positive_limit.clone()).to_string();
+        let max_plus_one = positive_limit.clone().to_string();
+        let min_minus_one = (-positive_limit.clone() - BigInt::from(1u8)).to_string();
+
+        let json = format!(r#"{{ "i256_col": {} }}"#, max);
+        let result = serde_json::Deserializer::from_str(&json)
+            .deserialize_any(&mut DataModelVisitor::new(&columns, None));
+        assert!(result.is_ok(), "expected max Int256 value to be valid");
+
+        let json = format!(r#"{{ "i256_col": {} }}"#, min);
+        let result = serde_json::Deserializer::from_str(&json)
+            .deserialize_any(&mut DataModelVisitor::new(&columns, None));
+        assert!(result.is_ok(), "expected min Int256 value to be valid");
+
+        let json = format!(r#"{{ "i256_col": {} }}"#, max_plus_one);
+        let err = serde_json::Deserializer::from_str(&json)
+            .deserialize_any(&mut DataModelVisitor::new(&columns, None))
+            .unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("out of range") && msg.contains("Int256"));
+
+        let json = format!(r#"{{ "i256_col": {} }}"#, min_minus_one);
+        let err = serde_json::Deserializer::from_str(&json)
+            .deserialize_any(&mut DataModelVisitor::new(&columns, None))
+            .unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("out of range") && msg.contains("Int256"));
+    }
+
+    #[test]
+    fn test_uint256_range_boundaries() {
+        let columns = vec![Column {
+            name: "u256_col".to_string(),
+            data_type: ColumnType::Int(IntType::UInt256),
+            required: true,
+            unique: false,
+            primary_key: false,
+            default: None,
+            annotations: vec![],
+            comment: None,
+        }];
+
+        let limit: BigUint = BigUint::from(1u8) << 256usize;
+        let max = (limit.clone() - BigUint::from(1u8)).to_string();
+        let max_plus_one = limit.to_string();
+
+        let json = r#"{ "u256_col": 0 }"#;
+        let result = serde_json::Deserializer::from_str(json)
+            .deserialize_any(&mut DataModelVisitor::new(&columns, None));
+        assert!(result.is_ok(), "expected 0 to be valid UInt256");
+
+        let json = format!(r#"{{ "u256_col": {} }}"#, max);
+        let result = serde_json::Deserializer::from_str(&json)
+            .deserialize_any(&mut DataModelVisitor::new(&columns, None));
+        assert!(result.is_ok(), "expected max UInt256 value to be valid");
+
+        let json = format!(r#"{{ "u256_col": {} }}"#, max_plus_one);
+        let err = serde_json::Deserializer::from_str(&json)
+            .deserialize_any(&mut DataModelVisitor::new(&columns, None))
+            .unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("out of range") && msg.contains("UInt256"));
+
+        let json = r#"{ "u256_col": -1 }"#;
+        let err = serde_json::Deserializer::from_str(json)
+            .deserialize_any(&mut DataModelVisitor::new(&columns, None))
+            .unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("Negative value") && msg.contains("UInt256"));
+    }
+
+    #[test]
     fn test_map_key_uint8_range() {
         let columns = vec![Column {
             name: "map_col".to_string(),
@@ -1891,5 +2069,84 @@ mod tests {
         // It will fail to parse as u128 and produce an error
         let msg = err.to_string();
         assert!(msg.contains("Invalid unsigned integer key") || msg.contains("out of range"));
+    }
+
+    #[test]
+    fn test_map_key_int256_range() {
+        let columns = vec![Column {
+            name: "map_col".to_string(),
+            data_type: ColumnType::Map {
+                key_type: Box::new(ColumnType::Int(IntType::Int256)),
+                value_type: Box::new(ColumnType::String),
+            },
+            required: true,
+            unique: false,
+            primary_key: false,
+            default: None,
+            annotations: vec![],
+            comment: None,
+        }];
+
+        let positive_limit: BigInt = BigInt::from(1u8) << 255usize;
+        let min = (-positive_limit.clone()).to_string();
+        let max = (positive_limit.clone() - BigInt::from(1u8)).to_string();
+        let json = format!(r#"{{ "map_col": {{ "{}": "a", "{}": "b" }} }}"#, min, max);
+        let result = serde_json::Deserializer::from_str(&json)
+            .deserialize_any(&mut DataModelVisitor::new(&columns, None));
+        assert!(result.is_ok());
+
+        let max_plus_one = (BigInt::from(1u8) << 255usize).to_string();
+        let json = format!(r#"{{ "map_col": {{ "{}": "a" }} }}"#, max_plus_one);
+        let err = serde_json::Deserializer::from_str(&json)
+            .deserialize_any(&mut DataModelVisitor::new(&columns, None))
+            .unwrap_err();
+        assert!(err.to_string().contains("out of range") && err.to_string().contains("Int256"));
+
+        let min_minus_one = (-(BigInt::from(1u8) << 255usize) - BigInt::from(1u8)).to_string();
+        let json = format!(r#"{{ "map_col": {{ "{}": "a" }} }}"#, min_minus_one);
+        let err = serde_json::Deserializer::from_str(&json)
+            .deserialize_any(&mut DataModelVisitor::new(&columns, None))
+            .unwrap_err();
+        assert!(err.to_string().contains("out of range") && err.to_string().contains("Int256"));
+    }
+
+    #[test]
+    fn test_map_key_uint256_range() {
+        let columns = vec![Column {
+            name: "map_col".to_string(),
+            data_type: ColumnType::Map {
+                key_type: Box::new(ColumnType::Int(IntType::UInt256)),
+                value_type: Box::new(ColumnType::String),
+            },
+            required: true,
+            unique: false,
+            primary_key: false,
+            default: None,
+            annotations: vec![],
+            comment: None,
+        }];
+
+        let limit: BigUint = BigUint::from(1u8) << 256usize;
+        let max = (limit.clone() - BigUint::from(1u8)).to_string();
+        let json = format!(r#"{{ "map_col": {{ "0": "a", "{}": "b" }} }}"#, max);
+        let result = serde_json::Deserializer::from_str(&json)
+            .deserialize_any(&mut DataModelVisitor::new(&columns, None));
+        assert!(result.is_ok());
+
+        let max_plus_one = limit.to_string();
+        let json = format!(r#"{{ "map_col": {{ "{}": "a" }} }}"#, max_plus_one);
+        let err = serde_json::Deserializer::from_str(&json)
+            .deserialize_any(&mut DataModelVisitor::new(&columns, None))
+            .unwrap_err();
+        assert!(err.to_string().contains("out of range") && err.to_string().contains("UInt256"));
+
+        let json = r#"{ "map_col": { "-1": "a" } }"#;
+        let err = serde_json::Deserializer::from_str(json)
+            .deserialize_any(&mut DataModelVisitor::new(&columns, None))
+            .unwrap_err();
+        assert!(
+            err.to_string().contains("Invalid unsigned integer key")
+                || err.to_string().contains("Negative value")
+        );
     }
 }
