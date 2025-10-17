@@ -375,7 +375,7 @@ export const SimpleAggTestTable = new OlapTable<SimpleAggTest>(
 
 // =======Index Extraction Test Table=======
 export interface IndexTest {
-  u64: Key<string>;
+  u64: Key<UInt64>;
   i32: number;
   s: string;
 }

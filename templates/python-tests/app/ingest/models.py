@@ -371,7 +371,7 @@ simple_agg_test_table = OlapTable[SimpleAggTest](
 
 # =======Index Extraction Test Table=======
 class IndexTest(BaseModel):
-    u64: Key[int]
+    u64: Key[Annotated[int, "uint64"]]
     i32: int
     s: str
 
