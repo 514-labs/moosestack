@@ -189,9 +189,15 @@ mod tests {
         let stream_tool = sample_stream::tool_definition();
         let get_source_tool = get_source::tool_definition();
 
-        // Ensure we have 4 tools
-        let all_tools = vec![&logs_tool, &infra_tool, &olap_tool, &stream_tool];
-        assert_eq!(all_tools.len(), 4);
+        // Ensure we have 5 tools
+        let all_tools = vec![
+            &logs_tool,
+            &infra_tool,
+            &olap_tool,
+            &stream_tool,
+            &get_source_tool,
+        ];
+        assert_eq!(all_tools.len(), 5);
 
         // Verify each tool has required fields
         for tool in all_tools {
