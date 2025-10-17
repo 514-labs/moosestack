@@ -3,322 +3,40 @@ title: Release Notes
 description: Moose / Sloan / Boreal Release Notes
 ---
 
-import { ZoomImg, Callout, ToggleBlock } from "@/components";
-import { Tabs } from "nextra/components";
+import { Callout } from "@/components";
+import Link from "next/link";
 
-As always, to get the latest:
+# Release Notes
+
+Welcome to the Moose, Sloan, and Boreal release notes. Here you'll find information about new features, improvements, and bug fixes for all our products.
+
+## Latest Updates
+
+* [July 3, 2025](/release-notes/2025-07-03) - Sloan MCP VS Code support
+* [May 30, 2025](/release-notes/2025-05-30) - Sloan ClickHouse connection
+* [May 23, 2025](/release-notes/2025-05-23) - Moose Dead Letter Queues
+* [May 19, 2025](/release-notes/2025-05-19) - Metadata in Moose primitives
+* [May 16, 2025](/release-notes/2025-05-16) - DuckDB integration for Sloan
+
+## Installation
+
+To get the latest versions of Moose and Sloan:
 
 ```bash
 bash -i <(curl -fsSL https://fiveonefour.com/install.sh) moose,sloan
 ```
 
-## Wednesday, 3 July 2025
+## Products
 
-<Callout type="info" title="Highlights">
-* **Sloan users** can now use Sloan MCP with VS Code, bringing CLI based MCP configuration to VS Code, Cursor, Windsurf and Claude Desktop.
+Our release notes cover updates across three main products:
+
+**Moose** - Build analytical backends with code-first infrastructure, including OLAP tables, streaming pipelines, and APIs.
+
+**Sloan** - AI-powered MCP tools for automated data engineering and project setup.
+
+**Boreal** - Our hosting platform for deploying and managing Moose applications.
+
+<Callout type="info">
+Select a date from the sidebar to view detailed release notes for that period.
 </Callout>
-
-### Sloan
-
-#### VS Code Support
-
-If you want to add Sloan MCP to your existing Moose project in VS Code, try 
-```bash filename="Terminal" copy
-sloan setup --mcp vscode-project
-```
-
-See the [VS Code setup guide](/sloan/getting-started/vs-code) for more details.
-
-#### Removal of `read_file` tool
-We originally created the `read_file` tool to allow non-code-editor clients to write and read files. From our work with users, we have seen that when people are creating and editing code, they are using code editors, and they primarily use chat based clients for consumption.
-
-#### Changing standard tools for each client
-Accordingly, Claude-Desktop now defaults to read tools, and code editors now default to read and write tools.
-
-## Friday, 30 May 2025
-
-
-<Callout type="info" title="Highlights">
-* **Sloan users** can now connect with their ClickHouse database with a new MCP tool in one CLI command.
-</Callout>
-
-### Sloan 
-
-#### Sloan connect ClickHouse
-```bash filename="Terminal" copy
-sloan connect clickhouse --connection-string "https://explorer:@play.clickhouse.com:443/?database=default" --mcp cursor-project
-```
-
-See [connect docs](../sloan/reference/cli-reference#sloan-connect-clickhouse). One line configuration to connect your Client of choice to your ClickHouse database with Sloan's MCP tools. Choose your MCP client of choice with the `--mcp` flag.
-
-<Callout type="info" title="Try with ClickHouse Playground">
-Want to test without your own ClickHouse? Use the [ClickHouse Playground](https://clickhouse.com/docs/getting-started/playground) with the connection string above. It has sample datasets (read-only) you can experiment with.
-
-```txt copy
-https://explorer:@play.clickhouse.com:443/?database=default
-```
-
-</Callout>
-
-
-<ToggleBlock openText="Need help finding credentials?" closeText="Hide credential help">
-  <Tabs items={["ClickHouse Cloud", "Self-Hosted", "Docker"]}>
-    <Tabs.Tab>
-      1. Log into your [ClickHouse Cloud console](https://clickhouse.cloud/)
-      2. Go to your service details page
-      3. Find "Connect" or "Connection Details" section
-      4. Copy the HTTPS endpoint and your username/password
-    </Tabs.Tab>
-    <Tabs.Tab>
-      - Check your ClickHouse config file (usually `/etc/clickhouse-server/config.xml`)
-      - Look for `<http_port>` (default: 8123) and `<https_port>` (default: 8443)
-      - Check users config in `/etc/clickhouse-server/users.xml` or users.d/ directory
-      - Default user is often `default` with no password
-    </Tabs.Tab>
-    <Tabs.Tab>
-      - Check your docker-compose.yml or docker run command for environment variables
-      - Look for `CLICKHOUSE_USER`, `CLICKHOUSE_PASSWORD`, `CLICKHOUSE_DB`
-      - Default is usually `http://default:@localhost:8123/?database=default`
-    </Tabs.Tab>
-  </Tabs>
-</ToggleBlock>
-
-<ToggleBlock openText="Common Issues" closeText="Hide Common Issues">
-
-- **Can't connect?** Try `curl http://your-host:8123/ping` to test connectivity
-- **Authentication failed?** Verify username/password with `clickhouse-client --user=username --password=password`
-- **Database not found?** Run `SHOW DATABASES` to see available databases
-- **Permission denied?** Check user permissions with `SHOW GRANTS FOR username`
-
-**Still stuck?** Check the [ClickHouse documentation](https://clickhouse.com/docs/en/getting-started/install) for your specific deployment method.
-
-</ToggleBlock>
-
-## Friday, 23 May 2025
-
-<Callout type="info" title="Highlights">
-* **Moose users** can now handle stream processing failures with **Dead Letter Queues** — comprehensive error handling with type-safe recovery workflows in both TypeScript and Python.
-* **Enhanced error visibility** with detailed failure metadata including original data, error messages, timestamps, and failure source.
-</Callout>
-
-### Moose
-
-#### Dead Letter Queue Support
-
-**No more pipeline failures from bad data.**
-
-You had to choose between strict data validation that could break your entire pipeline or loose validation that let bad data through. With Moose Dead Letter Queues, you get both reliability and data quality. When your stream processing hits malformed data, network failures, or validation errors, Moose automatically routes failed messages to a configured Dead Letter Queue. Your pipeline keeps running while you capture every failure for analysis and recovery.
-
-**TypeScript Setup:**
-```ts
-import { DeadLetterQueue, IngestPipeline } from "@514labs/moose-lib";
-
-interface UserEvent {
-  userId: string;
-  action: string;
-  timestamp: number;
-}
-
-// Create dead letter queue for failed transformations
-const eventDLQ = new DeadLetterQueue<UserEvent>("EventDLQ");
-
-// Set up your data pipelines
-const rawEvents = new IngestPipeline<UserEvent>("raw_events", {
-  ingest: true,
-  stream: true,
-  table: false
-});
-
-const processedEvents = new IngestPipeline<ProcessedEvent>("processed_events", {
-  ingest: false,
-  stream: true,
-  table: true
-});
-
-// Configure transform with error handling
-rawEvents.stream!.addTransform(
-  processedEvents.stream!,
-  (event: UserEvent) => {
-    // Your transformation logic that might fail
-    if (!event.userId) {
-      throw new Error("Invalid userId");
-    }
-    return { ...event, processedAt: new Date() };
-  },
-  { deadLetterQueue: eventDLQ }  // Failed messages go here
-);
-
-// Monitor and recover from failures
-eventDLQ.addConsumer((deadLetter) => {
-  const originalEvent: UserEvent = deadLetter.asTyped();
-  console.log(`Error: ${deadLetter.errorMessage}`);
-  // Implement recovery logic
-});
-```
-
-**Python Setup:**
-```py
-from moose_lib import DeadLetterQueue, IngestPipeline, TransformConfig
-from pydantic import BaseModel
-from datetime import datetime
-
-class UserEvent(BaseModel):
-    user_id: str
-    action: str
-    timestamp: float
-
-# Create dead letter queue
-event_dlq = DeadLetterQueue[UserEvent](name="EventDLQ")
-
-# Set up your data pipelines
-raw_events = IngestPipeline[UserEvent]("raw_events", {
-    "ingest": True,
-    "stream": True,
-    "table": False
-})
-
-processed_events = IngestPipeline[ProcessedEvent]("processed_events", {
-    "ingest": False,
-    "stream": True,
-    "table": True
-})
-
-def process_event(event: UserEvent) -> ProcessedEvent:
-    # Your transformation logic that might fail
-    if not event.user_id:
-        raise ValueError("Invalid user_id")
-    return ProcessedEvent(
-        user_id=event.user_id,
-        action=event.action,
-        processed_at=datetime.now()
-    )
-
-# Configure transform with error handling
-raw_events.get_stream().add_transform(
-    destination=processed_events.get_stream(),
-    transformation=process_event,
-    config=TransformConfig(dead_letter_queue=event_dlq)
-)
-
-# Monitor and recover from failures
-def monitor_failures(dead_letter):
-    original_event = dead_letter.as_typed()
-    print(f"Error: {dead_letter.error_message}")
-    # Implement recovery logic
-
-event_dlq.add_consumer(monitor_failures)
-```
-
-This means you can eliminate downtime from bad data, debug failures faster with full error context, and build self-healing systems with automated recovery patterns. You get comprehensive error metadata including the original record, error message, error type, timestamp, and failure source. Access your original typed data with the `asTyped()` method to build recovery workflows.
-
-**Coming next:**
-* **IngestApi integration** - HTTP endpoints will route validation failures to DLQs with client notifications
-* **OlapTable direct insert** - New batch insert APIs with DLQ support for failed operations
-* **Built-in metrics** - DLQ volume, error types, and recovery rates
-* **Retention policies** - Configurable cleanup for dead letter messages
-
-See [Dead Letter Queues documentation](../building/dead-letter-queues) for complete setup and recovery patterns.
-
-## Monday, 19 May 2025
-
-<Callout type="info" title="Highlights">
-* **Moose and Sloan users** can now embed metadata into their Moose primitives, for use by users, their agents, and their metadata tools.
-</Callout>
-
-### Moose + Sloan
-
-#### Descriptions in your Moose primitives
-
-**Store context about why you are building what you are building, for you and your agents.**
-
-Moose primitives can now include descriptions. 
-
-```ts
-const acPipeline = new IngestPipeline<AircraftTrackingProcessed>(
-    "AircraftTrackingProcessed",
-    {
-      table: true,
-      stream: true,
-      ingest: false,
-      metadata: {
-          description: "Pipeline for ingesting raw aircraft data" } // new description field!
-      }
-    },
-);
-```
-
-**Where is this used?** Sloan tools that create Moose primitives will now write the intention of the Moose primitive into the description field to give tools/agents that work with that primitive in the future more context. Practically, every description is now served to the tools as context too when the infra map is loaded up as context.
-
-**Future of the feature:** Two main extensions of this feature are planned:
-* Embedding the descriptions into the underlying infrastructure (e.g. as table level comments in ClickHouse)
-* Extending the metadata:
-    * To be on a field level as well as a primitive level
-    * To include any arbitrary key value pair, not just a description (use this for managing labels like PII!)
-
-## Friday, 16 May 2025
-
-<Callout type="info" title="Highlights">
-* **Sloan users** can now leverage **DuckDB** for local data wrangling.
-</Callout>
-
-### Moose + Sloan
-
-#### Quality of life and bug fixes:
-* **Flexible JSON ingest**. Our agents were confused by needing to specify whether ingested data was a JSON object or an array of JSON objects. Now by default both work.
-
-### Sloan MCP
-
-#### [External] DuckDB MCP
-
-You can now bring DuckDB's MCP tool into a Moose Project and manage that MCP through the Sloan CLI\! Try sloan config tools and enable `external-duck-db-mcp`. [Docs](https://docs.fiveonefour.com/sloan/tool-reference). You'll need to configure the MCP with your duckdb path—either after selectign the tool-set through `sloan config tools`, or by editing the MCP.json file directly.
-
-String DuckDB tool calls with Sloan tool calls to manipulate local files for ingestion. Try our Sloan tools for creating a DuckDB database from your local flat files.
-
-**Future of the feature:**
-* **Remote Data**: We're working on bringing remote data into Moose management with this MCP toolset
-
-#### Data Collection
-Sloan is in research preview, to help us improve our product, we've added data collection to our MCP tools. Ready-to-go templates default to `comprehensive` data collection (we figure that these templates are least likely to have sensitive information), and standard templates default to `standard` data collection. You can change your data collection preferences whenever you want (just by editing your project's `sloan.config.toml` file. [Docs](https://docs.fiveonefour.com/sloan/data-collection-policy).
-
-### Sloan CLI
-
-#### Quality of life and bug fixes:
-* **LLM Docs**. Want docs for your LLMs that work with Moose projects? [Here](https://docs.fiveonefour.com/api/llms.txt).
-* **Read only tools**. We've had requests for a read-only toolset, especially for people using chat based MCP clients. We've split standard tools into: read-only and egress-tools. [Docs](https://docs.fiveonefour.com/sloan/tool-reference).
-* **Sorting Projects**. Projects in the CLI are now sorted (hopefully y'all have enough Sloan projects that this is useful)! Affects sloan config tools and structure of ~/.sloan/config.toml. [Docs](https://docs.fiveonefour.com/sloan/tool-reference). Deleted projects will now be cleaned from ~/.sloan/config.toml and from whenever the CLI prints lists of projects.
-* **🐛Read tools now only read**. ClickHouse read tool was doing a little more than read, especially when used by Claude. Tool has been tightened up, and if you want extra certainty, create a read-only user (see snippet below).
-
-```SQL
-CREATE USER username IDENTIFIED BY 'password' SETTINGS PROFILE 'readonly'
-GRANT SHOW TABLES, SELECT ON db+name.* TO username
-```
-
-### In Progress
-Let us know if these features are interesting to you, we are always looking for beta users, design partners, and general feedback\!
-
-* **Google Docs MCP integration**. Get data from Google Docs / Sheets for use as context, or as a source\!  
-* **First Party Chat.** Chat with your data from our hosting platform, Boreal.
-
-### Sneak Peek: First Party Chat
-*Actively seeking feedback on this one!*
-
-A user can start a chat anywhere in Boreal—in a project, on a  table view, wherever they might be. Where they start the chat informs:
-1. the context that is available to the chat
-2. the actions that the chat window suggests that the user takes.
-
-![Starting a new chat](/new-chat.png)
-
-Here's an example of autocomplete—the chat suggests relevant tables and files to use as context. You can accept the suggestion, select specific context to add with "tab". You can add other context with "@".
-
-![Autocomplete](/autocomplete.png)
-
-Here's an example of chat with tool-calls.
-
-![Chat](/chat.png)
-
-The user can create persistent artifacts in chat (not static, they receive data from APIs created by the MCP tools called in the chat)
-
-![Artifacts](/artifact.png)
-
-The user can then deploy and share those artifacts.
 
