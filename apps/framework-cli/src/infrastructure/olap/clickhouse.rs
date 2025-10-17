@@ -1054,6 +1054,7 @@ impl OlapOperations for ConfiguredDBClient {
             r#"
             SELECT
                 name,
+                database,
                 engine,
                 create_table_query,
                 partition_key
@@ -1070,7 +1071,7 @@ impl OlapOperations for ConfiguredDBClient {
         let mut cursor = self
             .client
             .query(&query)
-            .fetch::<(String, String, String, String)>()
+            .fetch::<(String, String, String, String, String)>()
             .map_err(|e| {
                 debug!("Error fetching tables: {}", e);
                 OlapChangesError::DatabaseError(e.to_string())
@@ -1079,10 +1080,11 @@ impl OlapOperations for ConfiguredDBClient {
         let mut tables = Vec::new();
         let mut unsupported_tables = Vec::new();
 
-        'table_loop: while let Some((table_name, engine, create_query, partition_key)) = cursor
-            .next()
-            .await
-            .map_err(|e| OlapChangesError::DatabaseError(e.to_string()))?
+        'table_loop: while let Some((table_name, database, engine, create_query, partition_key)) =
+            cursor
+                .next()
+                .await
+                .map_err(|e| OlapChangesError::DatabaseError(e.to_string()))?
         {
             debug!("Processing table: {}", table_name);
             debug!("Table engine: {}", engine);
@@ -1315,7 +1317,7 @@ impl OlapOperations for ConfiguredDBClient {
                 life_cycle: LifeCycle::ExternallyManaged,
                 engine_params_hash,
                 table_settings,
-                database: None, // Database will be set from infrastructure map if specified
+                database: Some(database), // Captured from ClickHouse system.tables
             };
             debug!("Created table object: {:?}", table);
 
