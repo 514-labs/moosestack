@@ -509,6 +509,7 @@ pub struct ClickHouseTable {
     pub columns: Vec<ClickHouseColumn>,
     pub order_by: OrderBy,
     pub partition_by: Option<String>,
+    pub sample_by: Option<String>,
     pub engine: ClickhouseEngine,
     /// Table-level settings that can be modified with ALTER TABLE MODIFY SETTING
     pub table_settings: Option<std::collections::HashMap<String, String>>,

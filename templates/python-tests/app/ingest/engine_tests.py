@@ -26,6 +26,15 @@ class EngineTestData(BaseModel):
     category: str
     version: int
     is_deleted: bool  # For ReplacingMergeTree soft deletes (UInt8 in ClickHouse)
+    
+class EngineTestDataSample(BaseModel):
+    """Test data model for engine testing"""
+    id: str
+    timestamp: datetime
+    value: int
+    category: str
+    version: int
+    is_deleted: bool  # For ReplacingMergeTree soft deletes (UInt8 in ClickHouse)
 
 
 # Test MergeTree engine (default)
@@ -166,6 +175,16 @@ replicated_summing_merge_tree_table = OlapTable[EngineTestData](
     )
 )
 
+# Test SAMPLE BY clause for data sampling
+sample_by_table = OlapTable[EngineTestDataSample](
+    "SampleByTest",
+    OlapConfig(
+        engine=MergeTreeEngine(),
+        order_by_expression="cityHash64(id)",
+        sample_by_expression="cityHash64(id)"
+    )
+)
+
 # Note: S3Queue engine testing is more complex as it requires S3 configuration
 # and external dependencies, so it's not included in this basic engine test suite.
 # For S3Queue testing, see the dedicated S3 integration tests.
@@ -186,4 +205,5 @@ all_engine_test_tables = [
     replicated_replacing_soft_delete_table,
     replicated_aggregating_merge_tree_table,
     replicated_summing_merge_tree_table,
+    sample_by_table,
 ]

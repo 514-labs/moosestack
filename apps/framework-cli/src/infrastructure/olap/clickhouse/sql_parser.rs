@@ -221,6 +221,36 @@ pub fn extract_engine_from_create_table(sql: &str) -> Option<String> {
     }
 }
 
+/// Extract SAMPLE BY expression from a CREATE TABLE statement
+/// Returns the raw expression string that follows SAMPLE BY, trimmed,
+/// and stops before ORDER BY, SETTINGS, or end of statement
+pub fn extract_sample_by_from_create_table(sql: &str) -> Option<String> {
+    let upper = sql.to_uppercase();
+    let pos = upper.find("SAMPLE BY")?;
+    // After the keyword
+    let after = &sql[pos + "SAMPLE BY".len()..];
+    let after_upper = after.to_uppercase();
+
+    // Find earliest terminating keyword after SAMPLE BY
+    let mut end = after.len();
+    if let Some(i) = after_upper.find("ORDER BY") {
+        end = end.min(i);
+    }
+    if let Some(i) = after_upper.find("SETTINGS") {
+        end = end.min(i);
+    }
+    if let Some(i) = after_upper.find("PRIMARY KEY") {
+        end = end.min(i);
+    }
+
+    let expr = after[..end].trim();
+    if expr.is_empty() {
+        None
+    } else {
+        Some(expr.to_string())
+    }
+}
+
 // sql_parser library cannot handle clickhouse indexes last time i tried
 // `show indexes` does not provide index argument info
 // so we're stuck with this
@@ -1307,6 +1337,43 @@ mod tests {
         assert_eq!(
             result,
             Some("SharedReplacingMergeTree('/clickhouse/tables-v2/{uuid:01234-5678}/{shard}', '{replica}')".to_string())
+        );
+    }
+
+    #[test]
+    fn test_extract_sample_by_simple() {
+        let sql = r#"CREATE TABLE t (id UInt64) ENGINE = MergeTree ORDER BY id"#;
+        assert_eq!(extract_sample_by_from_create_table(sql), None);
+
+        let sql2 = r#"CREATE TABLE t (id UInt64) ENGINE = MergeTree
+            PARTITION BY toYYYYMM(now())
+            SAMPLE BY cityHash64(id)
+            ORDER BY id"#;
+        assert_eq!(
+            extract_sample_by_from_create_table(sql2),
+            Some("cityHash64(id)".to_string())
+        );
+    }
+
+    #[test]
+    fn test_extract_sample_by_with_settings() {
+        let sql = r#"CREATE TABLE t (id UInt64) ENGINE = MergeTree
+            SAMPLE BY cityHash64(id)
+            ORDER BY id
+            SETTINGS index_granularity = 8192"#;
+        assert_eq!(
+            extract_sample_by_from_create_table(sql),
+            Some("cityHash64(id)".to_string())
+        );
+    }
+
+    #[test]
+    fn test_extract_sample_by_no_order_by() {
+        let sql = r#"CREATE TABLE t (id UInt64) ENGINE = MergeTree
+            SAMPLE BY someExpr(id)"#;
+        assert_eq!(
+            extract_sample_by_from_create_table(sql),
+            Some("someExpr(id)".to_string())
         );
     }
 

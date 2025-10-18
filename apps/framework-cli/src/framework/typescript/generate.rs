@@ -433,6 +433,9 @@ pub fn tables_to_typescript(tables: &[Table], life_cycle: Option<LifeCycle>) -> 
         if let Some(partition_by) = &table.partition_by {
             writeln!(output, "    partitionBy: {:?},", partition_by).unwrap();
         }
+        if let Some(sample_by) = &table.sample_by {
+            writeln!(output, "    sampleByExpression: {:?},", sample_by).unwrap();
+        }
         if let Some(engine) = &table.engine {
             match engine {
                 crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine::S3Queue {
@@ -676,6 +679,7 @@ mod tests {
             ],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
             partition_by: None,
+            sample_by: None,
             engine: Some(ClickhouseEngine::MergeTree),
             version: None,
             source_primitive: PrimitiveSignature {
@@ -740,6 +744,7 @@ export const UserTable = new OlapTable<User>("User", {
                 },
             ],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
+            sample_by: None,
             partition_by: None,
             engine: Some(ClickhouseEngine::S3Queue {
                 s3_path: "s3://bucket/path".to_string(),
@@ -791,6 +796,7 @@ export const UserTable = new OlapTable<User>("User", {
             }],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
             partition_by: None,
+            sample_by: None,
             engine: Some(ClickhouseEngine::MergeTree),
             version: None,
             source_primitive: PrimitiveSignature {
@@ -858,6 +864,7 @@ export const UserTable = new OlapTable<User>("User", {
             ],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
             partition_by: None,
+            sample_by: None,
             engine: Some(ClickhouseEngine::ReplacingMergeTree {
                 ver: Some("version".to_string()),
                 is_deleted: Some("is_deleted".to_string()),
@@ -896,6 +903,7 @@ export const UserTable = new OlapTable<User>("User", {
                 annotations: vec![],
                 comment: None,
             }],
+            sample_by: None,
             order_by: OrderBy::Fields(vec!["id".to_string()]),
             partition_by: None,
             engine: Some(ClickhouseEngine::ReplicatedMergeTree {
@@ -964,6 +972,7 @@ export const UserTable = new OlapTable<User>("User", {
                     comment: None,
                 },
             ],
+            sample_by: None,
             order_by: OrderBy::Fields(vec!["id".to_string()]),
             partition_by: None,
             engine: Some(ClickhouseEngine::ReplicatedReplacingMergeTree {
@@ -1014,6 +1023,7 @@ export const UserTable = new OlapTable<User>("User", {
             }],
             order_by: OrderBy::Fields(vec!["u64".to_string()]),
             partition_by: None,
+            sample_by: None,
             engine: Some(ClickhouseEngine::MergeTree),
             version: None,
             source_primitive: PrimitiveSignature {
@@ -1094,6 +1104,7 @@ export const UserTable = new OlapTable<User>("User", {
             ],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
             partition_by: None,
+            sample_by: None,
             engine: Some(ClickhouseEngine::MergeTree),
             version: None,
             source_primitive: PrimitiveSignature {

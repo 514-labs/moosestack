@@ -56,6 +56,7 @@ impl DataModel {
             columns: self.columns.clone(),
             order_by,
             partition_by: None,
+            sample_by: None,
             engine,
             version: Some(self.version.clone()),
             source_primitive: PrimitiveSignature {

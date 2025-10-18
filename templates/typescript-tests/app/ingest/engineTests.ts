@@ -20,6 +20,14 @@ export interface EngineTestData {
   version: number;
   isDeleted: boolean; // For ReplacingMergeTree soft deletes (UInt8 in ClickHouse)
 }
+export interface EngineTestDataSample {
+  id: string;
+  timestamp: DateTime;
+  value: number;
+  category: string;
+  version: number;
+  isDeleted: boolean; // For ReplacingMergeTree soft deletes (UInt8 in ClickHouse)
+}
 
 // Test MergeTree engine (default)
 export const MergeTreeTable = new OlapTable<EngineTestData>("MergeTreeTest", {
@@ -166,6 +174,16 @@ export const ReplicatedSummingMergeTreeTable = new OlapTable<EngineTestData>(
   },
 );
 
+// Test SAMPLE BY clause for data sampling
+export const SampleByTable = new OlapTable<EngineTestDataSample>(
+  "SampleByTest",
+  {
+    engine: ClickHouseEngines.MergeTree,
+    orderByExpression: "cityHash64(id)",
+    sampleByExpression: "cityHash64(id)",
+  },
+);
+
 // Note: S3Queue engine testing is more complex as it requires S3 configuration
 // and external dependencies, so it's not included in this basic engine test suite.
 // For S3Queue testing, see the dedicated S3 integration tests.
@@ -189,4 +207,5 @@ export const allEngineTestTables = [
   ReplicatedReplacingSoftDeleteTable,
   ReplicatedAggregatingMergeTreeTable,
   ReplicatedSummingMergeTreeTable,
+  SampleByTable,
 ];

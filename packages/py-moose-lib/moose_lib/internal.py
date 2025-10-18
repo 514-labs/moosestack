@@ -150,6 +150,7 @@ class TableConfig(BaseModel):
         columns: List of columns with their types and attributes.
         order_by: List of columns used for the ORDER BY clause.
         partition_by: The column name used for the PARTITION BY clause.
+        sample_by_expression: Optional SAMPLE BY expression for data sampling.
         engine_config: Engine configuration with type-safe, engine-specific parameters.
         version: Optional version string of the table configuration.
         metadata: Optional metadata for the table.
@@ -162,6 +163,7 @@ class TableConfig(BaseModel):
     columns: List[Column]
     order_by: List[str] | str
     partition_by: Optional[str]
+    sample_by_expression: Optional[str] = None
     engine_config: Optional[EngineConfigDict] = Field(None, discriminator='engine')
     version: Optional[str] = None
     metadata: Optional[dict] = None
@@ -601,6 +603,7 @@ def to_infra_map() -> dict:
             columns=table._column_list,
             order_by=order_by_value,
             partition_by=table.config.partition_by,
+            sample_by_expression=table.config.sample_by_expression,
             engine_config=engine_config,
             version=table.config.version,
             metadata=getattr(table, "metadata", None),
