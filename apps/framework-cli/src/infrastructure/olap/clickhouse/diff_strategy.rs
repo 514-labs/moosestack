@@ -373,19 +373,10 @@ impl TableDiffStrategy for ClickHouseTableDiffStrategy {
             })
             .collect();
 
-        // If no column-level changes but indexes changed, still emit an Update
-        // so downstream planning can add/drop indexes appropriately.
-        if column_changes.is_empty() {
-            if before.indexes != after.indexes {
-                return vec![OlapChange::Table(TableChange::Updated {
-                    name: before.name.clone(),
-                    column_changes: vec![],
-                    order_by_change,
-                    before: before.clone(),
-                    after: after.clone(),
-                })];
-            }
-            // No relevant changes
+        // For other changes, ClickHouse can handle them via ALTER TABLE.
+        // If there are no column or index changes, return an empty vector since
+        // we've already handled all the cases that require drop+create.
+        if column_changes.is_empty() && before.indexes == after.indexes {
             vec![]
         } else {
             vec![OlapChange::Table(TableChange::Updated {
