@@ -628,10 +628,17 @@ fn handle_table_column_updates(
     // changes, those should have been converted to separate Remove+Add operations
     // by the appropriate TableDiffStrategy.
 
-    let mut plan = process_column_changes(before, after, column_changes);
+    // Process column changes as before
+    process_column_changes(before, after, column_changes)
+}
+
+/// Process index changes between two table definitions
+fn process_index_changes(before: &Table, after: &Table) -> OperationPlan {
+    let mut plan = OperationPlan::new();
 
     let before_indexes = &before.indexes;
     let after_indexes = &after.indexes;
+
     for after_idx in after_indexes {
         if let Some(before_idx) = before_indexes.iter().find(|b| b.name == after_idx.name) {
             if before_idx != after_idx {
@@ -664,6 +671,17 @@ fn handle_table_column_updates(
         }
     }
 
+    plan
+}
+
+/// Handle a table update by composing column and index changes
+fn handle_table_update(
+    before: &Table,
+    after: &Table,
+    column_changes: &[ColumnChange],
+) -> OperationPlan {
+    let mut plan = handle_table_column_updates(before, after, column_changes);
+    plan.combine(process_index_changes(before, after));
     plan
 }
 
@@ -903,7 +921,7 @@ pub fn order_olap_changes(
                 after,
                 column_changes,
                 ..
-            }) => handle_table_column_updates(before, after, column_changes),
+            }) => handle_table_update(before, after, column_changes),
             OlapChange::Table(TableChange::SettingsChanged {
                 table,
                 before_settings,
@@ -2726,7 +2744,7 @@ mod tests {
         ];
 
         // Generate the operation plan
-        let plan = handle_table_column_updates(&before_table, &after_table, &column_changes);
+        let plan = handle_table_update(&before_table, &after_table, &column_changes);
 
         // Check that the plan uses column-level operations (not drop+create)
         assert_eq!(
