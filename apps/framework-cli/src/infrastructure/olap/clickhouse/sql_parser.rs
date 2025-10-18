@@ -3,6 +3,7 @@
 //! This module provides parsing functionality for ClickHouse SQL statements,
 //! particularly CREATE MATERIALIZED VIEW and INSERT INTO ... SELECT statements.
 
+use crate::infrastructure::olap::clickhouse::model::ClickHouseIndex;
 use sqlparser::ast::{
     Expr, ObjectName, Query, Select, SelectItem, Statement, TableFactor, TableWithJoins,
 };
@@ -76,6 +77,10 @@ pub enum SqlParseError {
     UnsupportedStatement,
     #[error("Not a create table statement")]
     NotCreateTable,
+    #[error("Invalid index definition: {0}")]
+    InvalidIndexDefinition(String),
+    #[error("Invalid granularity value: '{0}' (expected unsigned integer)")]
+    InvalidGranularity(String),
 }
 
 /// Extract engine definition from a CREATE TABLE statement
@@ -214,6 +219,151 @@ pub fn extract_engine_from_create_table(sql: &str) -> Option<String> {
         // Engine without parameters
         Some(engine_name.to_string())
     }
+}
+
+// sql_parser library cannot handle clickhouse indexes last time i tried
+// `show indexes` does not provide index argument info
+// so we're stuck with this
+pub fn extract_indexes_from_create_table(sql: &str) -> Result<Vec<ClickHouseIndex>, SqlParseError> {
+    let mut result: Vec<ClickHouseIndex> = Vec::new();
+    let upper = sql.to_uppercase();
+    // Find opening '(' after CREATE TABLE ...
+    let open_paren_pos = upper.find('(');
+    let engine_pos = upper.find("\nENGINE").or_else(|| upper.find(" ENGINE"));
+    if open_paren_pos.is_none() || engine_pos.is_none() {
+        return Ok(result);
+    }
+    let (start, end) = (open_paren_pos.unwrap() + 1, engine_pos.unwrap());
+    let body = &sql[start..end];
+
+    // Split top-level comma-separated items, respecting nested parentheses
+    let mut items: Vec<String> = Vec::new();
+    let mut current = String::new();
+    let mut depth = 0i32;
+    let mut in_string = false;
+    let mut escape = false;
+    for ch in body.chars() {
+        if escape {
+            current.push(ch);
+            escape = false;
+            continue;
+        }
+        match ch {
+            '\\' if in_string => {
+                current.push(ch);
+                escape = true;
+            }
+            '\'' => {
+                in_string = !in_string;
+                current.push(ch);
+            }
+            '(' if !in_string => {
+                depth += 1;
+                current.push(ch);
+            }
+            ')' if !in_string => {
+                depth -= 1;
+                current.push(ch);
+            }
+            ',' if !in_string && depth == 0 => {
+                items.push(current.trim().to_string());
+                current.clear();
+            }
+            _ => current.push(ch),
+        }
+    }
+    if !current.trim().is_empty() {
+        items.push(current.trim().to_string());
+    }
+
+    for item in items
+        .into_iter()
+        .filter(|s| s.to_uppercase().starts_with("INDEX "))
+    {
+        // Structure: INDEX <name> <expression> TYPE <type>(args?) GRANULARITY <n>
+        let mut rest = item.trim_start_matches(|c: char| c.is_whitespace()).trim();
+        // strip leading INDEX
+        if let Some(after_index) = rest.strip_prefix("INDEX ") {
+            rest = after_index.trim_start();
+        }
+        // name is next token until whitespace
+        let mut parts = rest.splitn(2, char::is_whitespace);
+        let name = parts.next().unwrap_or("").trim().to_string();
+        let after_name = parts.next().unwrap_or("").trim();
+        if name.is_empty() || after_name.is_empty() {
+            return Err(SqlParseError::InvalidIndexDefinition(item));
+        }
+
+        // Find TYPE ... GRANULARITY ... boundaries while allowing parentheses in expression
+        let after_upper = after_name.to_uppercase();
+        let type_pos = after_upper.find(" TYPE ");
+        let gran_pos = after_upper.rfind(" GRANULARITY ");
+        if type_pos.is_none() || gran_pos.is_none() || type_pos.unwrap() >= gran_pos.unwrap() {
+            return Err(SqlParseError::InvalidIndexDefinition(item));
+        }
+        let expr = after_name[..type_pos.unwrap()].trim().to_string();
+        let type_and_after = &after_name[type_pos.unwrap() + 6..];
+        let type_upper = type_and_after.to_uppercase();
+        let gran_rel = type_upper
+            .rfind(" GRANULARITY ")
+            .ok_or_else(|| SqlParseError::InvalidIndexDefinition(item.clone()))?;
+        let type_section = type_and_after[..gran_rel].trim();
+        let gran_part = type_and_after[gran_rel + " GRANULARITY ".len()..].trim();
+
+        // Parse type name and optional arguments in parentheses
+        let (type_name, args): (String, Vec<String>) = if let Some(open) = type_section.find('(') {
+            let tname = type_section[..open].trim().to_string();
+            let mut depth = 0i32;
+            let mut end = None;
+            for (i, ch) in type_section[open..].chars().enumerate() {
+                match ch {
+                    '(' => depth += 1,
+                    ')' => {
+                        depth -= 1;
+                        if depth == 0 {
+                            end = Some(open + i);
+                            break;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            let args_raw = end.map(|e| &type_section[open + 1..=e - 1]).unwrap_or("");
+            let args = if args_raw.trim().is_empty() {
+                vec![]
+            } else {
+                args_raw.split(',').map(|s| s.trim().to_string()).collect()
+            };
+            (tname, args)
+        } else {
+            (type_section.to_string(), vec![])
+        };
+
+        // Parse granularity precisely: allow only digits, optionally a trailing ')'
+        let granularity: u64 = {
+            let trimmed = gran_part.trim();
+            let candidate = trimmed
+                .strip_suffix(')')
+                .map(|s| s.trim_end())
+                .unwrap_or(trimmed);
+            if !candidate.chars().all(|c| c.is_ascii_digit()) {
+                return Err(SqlParseError::InvalidGranularity(trimmed.to_string()));
+            }
+            candidate
+                .parse::<u64>()
+                .map_err(|_| SqlParseError::InvalidGranularity(trimmed.to_string()))?
+        };
+
+        result.push(ClickHouseIndex {
+            name,
+            expression: expr,
+            index_type: type_name,
+            arguments: args,
+            granularity,
+        });
+    }
+
+    Ok(result)
 }
 
 pub fn parse_create_materialized_view(
@@ -555,7 +705,7 @@ mod tests {
 
     #[test]
     fn test_extract_s3queue_simple() {
-        let sql = r#"CREATE TABLE s3_queue (name String, value UInt32) 
+        let sql = r#"CREATE TABLE s3_queue (name String, value UInt32)
             ENGINE = S3Queue('http://localhost:11111/test/file.csv', 'CSV')"#;
         let result = extract_engine_from_create_table(sql);
         assert_eq!(
@@ -566,7 +716,7 @@ mod tests {
 
     #[test]
     fn test_extract_s3queue_with_credentials() {
-        let sql = r#"CREATE TABLE s3_queue (name String, value UInt32) 
+        let sql = r#"CREATE TABLE s3_queue (name String, value UInt32)
             ENGINE = S3Queue('http://localhost:11111/test/{a,b,c}.tsv', 'user', 'password', CSV)"#;
         let result = extract_engine_from_create_table(sql);
         assert_eq!(
@@ -580,7 +730,7 @@ mod tests {
 
     #[test]
     fn test_extract_distributed_with_quotes() {
-        let sql = r#"CREATE TABLE t1 (c0 Int, c1 Int) 
+        let sql = r#"CREATE TABLE t1 (c0 Int, c1 Int)
             ENGINE = Distributed('test_shard_localhost', default, t0, `c1`)"#;
         let result = extract_engine_from_create_table(sql);
         assert_eq!(
@@ -592,7 +742,7 @@ mod tests {
     #[test]
     fn test_extract_replicated_merge_tree() {
         let sql = r#"CREATE TABLE test_r1 (x UInt64, "\\" String DEFAULT '\r\n\t\\' || '')
-            ENGINE = ReplicatedMergeTree('/clickhouse/{database}/test', 'r1') 
+            ENGINE = ReplicatedMergeTree('/clickhouse/{database}/test', 'r1')
             ORDER BY "\\""#;
         let result = extract_engine_from_create_table(sql);
         assert_eq!(
@@ -603,7 +753,7 @@ mod tests {
 
     #[test]
     fn test_extract_merge_engine_with_regex() {
-        let sql = r#"CREATE TABLE merge1 (x UInt64) 
+        let sql = r#"CREATE TABLE merge1 (x UInt64)
             ENGINE = Merge(currentDatabase(), '^merge\\d$')"#;
         let result = extract_engine_from_create_table(sql);
         assert_eq!(
@@ -614,7 +764,7 @@ mod tests {
 
     #[test]
     fn test_extract_engine_with_escaped_quotes() {
-        let sql = r#"CREATE TABLE test (x String) 
+        let sql = r#"CREATE TABLE test (x String)
             ENGINE = S3Queue('http://test.com/file\'s.csv', 'user\'s', 'pass\'word', CSV)"#;
         let result = extract_engine_from_create_table(sql);
         assert_eq!(
@@ -628,7 +778,7 @@ mod tests {
 
     #[test]
     fn test_extract_engine_with_nested_parentheses() {
-        let sql = r#"CREATE TABLE test (x String) 
+        let sql = r#"CREATE TABLE test (x String)
             ENGINE = S3Queue('http://test.com/path', func('arg1', 'arg2'), 'format')"#;
         let result = extract_engine_from_create_table(sql);
         assert_eq!(
@@ -672,7 +822,7 @@ mod tests {
     #[test]
     fn test_extract_s3queue_with_curly_braces() {
         // Test path with curly braces for pattern matching
-        let sql = r#"CREATE TABLE s3_queue (name String, value UInt32) 
+        let sql = r#"CREATE TABLE s3_queue (name String, value UInt32)
             ENGINE = S3Queue('http://localhost:11111/test/{a,b,c}.tsv', 'user', 'password', CSV)"#;
         let result = extract_engine_from_create_table(sql);
         assert_eq!(
@@ -687,7 +837,7 @@ mod tests {
     #[test]
     fn test_extract_engine_with_complex_nested_functions() {
         // Test with multiple levels of nested function calls
-        let sql = r#"CREATE TABLE test (x String) 
+        let sql = r#"CREATE TABLE test (x String)
             ENGINE = CustomEngine(func1(func2('arg1', func3('nested')), 'arg2'), 'final')"#;
         let result = extract_engine_from_create_table(sql);
         assert_eq!(
@@ -747,7 +897,7 @@ mod tests {
 
     #[test]
     fn test_extract_table_settings() {
-        let sql = r#"CREATE TABLE test (x Int32) ENGINE = S3Queue('path', 'CSV') 
+        let sql = r#"CREATE TABLE test (x Int32) ENGINE = S3Queue('path', 'CSV')
             SETTINGS mode = 'unordered', keeper_path = '/clickhouse/s3queue/test'"#;
         let result = extract_table_settings_from_create_table(sql);
         assert!(result.is_some());
@@ -762,8 +912,8 @@ mod tests {
     #[test]
     fn test_extract_table_settings_with_numeric_values() {
         // Test settings with numeric values (no quotes)
-        let sql = r#"CREATE TABLE test (x Int32) 
-            ENGINE = MergeTree ORDER BY x 
+        let sql = r#"CREATE TABLE test (x Int32)
+            ENGINE = MergeTree ORDER BY x
             SETTINGS index_granularity = 8192, min_bytes_for_wide_part = 0"#;
         let result = extract_table_settings_from_create_table(sql);
         assert!(result.is_some());
@@ -778,8 +928,8 @@ mod tests {
     #[test]
     fn test_extract_table_settings_with_large_numbers() {
         // Test with very large numbers (from S3Queue test)
-        let sql = r#"CREATE TABLE s3_queue (name String, value UInt32) 
-            ENGINE = S3Queue('http://localhost:11111/test/{a,b,c}.tsv', 'user', 'password', CSV) 
+        let sql = r#"CREATE TABLE s3_queue (name String, value UInt32)
+            ENGINE = S3Queue('http://localhost:11111/test/{a,b,c}.tsv', 'user', 'password', CSV)
             SETTINGS s3queue_tracked_files_limit = 18446744073709551615, mode = 'ordered'"#;
         let result = extract_table_settings_from_create_table(sql);
         assert!(result.is_some());
@@ -794,7 +944,7 @@ mod tests {
     #[test]
     fn test_extract_table_settings_mixed_quotes() {
         // Test with mixed quoted and unquoted values
-        let sql = r#"CREATE TABLE test (x Int32) ENGINE = MergeTree ORDER BY x 
+        let sql = r#"CREATE TABLE test (x Int32) ENGINE = MergeTree ORDER BY x
             SETTINGS storage_policy = 's3_cache', min_rows_for_wide_part = 10000, min_bytes_for_wide_part = 0"#;
         let result = extract_table_settings_from_create_table(sql);
         assert!(result.is_some());
@@ -850,7 +1000,7 @@ mod tests {
     #[test]
     fn test_extract_table_settings_with_boolean_values() {
         // Test settings with boolean-like values (0, 1)
-        let sql = r#"CREATE TABLE test (x Int32) ENGINE = MergeTree ORDER BY x 
+        let sql = r#"CREATE TABLE test (x Int32) ENGINE = MergeTree ORDER BY x
             SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1"#;
         let result = extract_table_settings_from_create_table(sql);
         assert!(result.is_some());
@@ -876,7 +1026,7 @@ mod tests {
     #[test]
     fn test_extract_table_settings_with_special_chars_in_values() {
         // Test settings with special characters in values
-        let sql = r#"CREATE TABLE test (x Int32) ENGINE = MergeTree ORDER BY x 
+        let sql = r#"CREATE TABLE test (x Int32) ENGINE = MergeTree ORDER BY x
             SETTINGS storage_policy = 's3_cache-2024', path_prefix = '/data/test-123'"#;
         let result = extract_table_settings_from_create_table(sql);
         assert!(result.is_some());
@@ -894,12 +1044,12 @@ mod tests {
     #[test]
     fn test_extract_table_settings_multiline() {
         // Test multiline SETTINGS with various formatting
-        let sql = r#"CREATE TABLE test (x Int32) 
-            ENGINE = MergeTree 
-            ORDER BY x 
-            SETTINGS 
-                index_granularity = 3, 
-                min_bytes_for_wide_part = 0, 
+        let sql = r#"CREATE TABLE test (x Int32)
+            ENGINE = MergeTree
+            ORDER BY x
+            SETTINGS
+                index_granularity = 3,
+                min_bytes_for_wide_part = 0,
                 min_rows_for_wide_part = 0"#;
         let result = extract_table_settings_from_create_table(sql);
         assert!(result.is_some());
@@ -938,8 +1088,8 @@ mod tests {
     // Tests for SharedMergeTree family engines
     #[test]
     fn test_extract_shared_merge_tree() {
-        let sql = r#"CREATE TABLE test (x Int32) 
-            ENGINE = SharedMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}') 
+        let sql = r#"CREATE TABLE test (x Int32)
+            ENGINE = SharedMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}')
             ORDER BY x"#;
         let result = extract_engine_from_create_table(sql);
         assert_eq!(
@@ -950,8 +1100,8 @@ mod tests {
 
     #[test]
     fn test_extract_shared_replacing_merge_tree_no_params() {
-        let sql = r#"CREATE TABLE test (x Int32) 
-            ENGINE = SharedReplacingMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}') 
+        let sql = r#"CREATE TABLE test (x Int32)
+            ENGINE = SharedReplacingMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}')
             ORDER BY x"#;
         let result = extract_engine_from_create_table(sql);
         assert_eq!(
@@ -965,8 +1115,8 @@ mod tests {
 
     #[test]
     fn test_extract_shared_replacing_merge_tree_with_ver() {
-        let sql = r#"CREATE TABLE test (x Int32, version DateTime) 
-            ENGINE = SharedReplacingMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}', version) 
+        let sql = r#"CREATE TABLE test (x Int32, version DateTime)
+            ENGINE = SharedReplacingMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}', version)
             ORDER BY x"#;
         let result = extract_engine_from_create_table(sql);
         assert_eq!(
@@ -977,8 +1127,8 @@ mod tests {
 
     #[test]
     fn test_extract_shared_replacing_merge_tree_with_ver_and_is_deleted() {
-        let sql = r#"CREATE TABLE test (x Int32, _peerdb_version DateTime, _peerdb_is_deleted UInt8) 
-            ENGINE = SharedReplacingMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}', _peerdb_version, _peerdb_is_deleted) 
+        let sql = r#"CREATE TABLE test (x Int32, _peerdb_version DateTime, _peerdb_is_deleted UInt8)
+            ENGINE = SharedReplacingMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}', _peerdb_version, _peerdb_is_deleted)
             ORDER BY x"#;
         let result = extract_engine_from_create_table(sql);
         assert_eq!(
@@ -989,8 +1139,8 @@ mod tests {
 
     #[test]
     fn test_extract_shared_aggregating_merge_tree() {
-        let sql = r#"CREATE TABLE test (x Int32) 
-            ENGINE = SharedAggregatingMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}') 
+        let sql = r#"CREATE TABLE test (x Int32)
+            ENGINE = SharedAggregatingMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}')
             ORDER BY x"#;
         let result = extract_engine_from_create_table(sql);
         assert_eq!(
@@ -1004,8 +1154,8 @@ mod tests {
 
     #[test]
     fn test_extract_shared_summing_merge_tree() {
-        let sql = r#"CREATE TABLE test (x Int32, sum_column Int64) 
-            ENGINE = SharedSummingMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}', sum_column) 
+        let sql = r#"CREATE TABLE test (x Int32, sum_column Int64)
+            ENGINE = SharedSummingMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}', sum_column)
             ORDER BY x"#;
         let result = extract_engine_from_create_table(sql);
         assert_eq!(
@@ -1016,8 +1166,8 @@ mod tests {
 
     #[test]
     fn test_extract_replicated_replacing_merge_tree_no_params() {
-        let sql = r#"CREATE TABLE test (x Int32) 
-            ENGINE = ReplicatedReplacingMergeTree('/clickhouse/tables/01/{shard}/hits', '{replica}') 
+        let sql = r#"CREATE TABLE test (x Int32)
+            ENGINE = ReplicatedReplacingMergeTree('/clickhouse/tables/01/{shard}/hits', '{replica}')
             ORDER BY x"#;
         let result = extract_engine_from_create_table(sql);
         assert_eq!(
@@ -1031,8 +1181,8 @@ mod tests {
 
     #[test]
     fn test_extract_replicated_replacing_merge_tree_with_ver() {
-        let sql = r#"CREATE TABLE test (x Int32, ver DateTime) 
-            ENGINE = ReplicatedReplacingMergeTree('/clickhouse/tables/01/{shard}/hits', '{replica}', ver) 
+        let sql = r#"CREATE TABLE test (x Int32, ver DateTime)
+            ENGINE = ReplicatedReplacingMergeTree('/clickhouse/tables/01/{shard}/hits', '{replica}', ver)
             ORDER BY x"#;
         let result = extract_engine_from_create_table(sql);
         assert_eq!(
@@ -1043,8 +1193,8 @@ mod tests {
 
     #[test]
     fn test_extract_replicated_replacing_merge_tree_with_ver_and_is_deleted() {
-        let sql = r#"CREATE TABLE test (x Int32, ver DateTime, is_deleted UInt8) 
-            ENGINE = ReplicatedReplacingMergeTree('/clickhouse/tables/01/{shard}/hits', '{replica}', ver, is_deleted) 
+        let sql = r#"CREATE TABLE test (x Int32, ver DateTime, is_deleted UInt8)
+            ENGINE = ReplicatedReplacingMergeTree('/clickhouse/tables/01/{shard}/hits', '{replica}', ver, is_deleted)
             ORDER BY x"#;
         let result = extract_engine_from_create_table(sql);
         assert_eq!(
@@ -1056,8 +1206,8 @@ mod tests {
     #[test]
     fn test_extract_shared_merge_tree_with_backticks() {
         // Test with backticks in column names (common in ClickHouse)
-        let sql = r#"CREATE TABLE test (x Int32, `version` DateTime) 
-            ENGINE = SharedReplacingMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}', `version`) 
+        let sql = r#"CREATE TABLE test (x Int32, `version` DateTime)
+            ENGINE = SharedReplacingMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}', `version`)
             ORDER BY x"#;
         let result = extract_engine_from_create_table(sql);
         assert_eq!(
@@ -1069,8 +1219,8 @@ mod tests {
     #[test]
     fn test_extract_shared_merge_tree_complex_path() {
         // Test with more complex path patterns
-        let sql = r#"CREATE TABLE test (x Int32) 
-            ENGINE = SharedMergeTree('/clickhouse/prod/tables/{database}/{table}/{uuid}', 'replica-{replica_num}') 
+        let sql = r#"CREATE TABLE test (x Int32)
+            ENGINE = SharedMergeTree('/clickhouse/prod/tables/{database}/{table}/{uuid}', 'replica-{replica_num}')
             ORDER BY x"#;
         let result = extract_engine_from_create_table(sql);
         assert_eq!(
@@ -1082,8 +1232,8 @@ mod tests {
     #[test]
     fn test_extract_shared_merge_tree_with_settings() {
         // Ensure extraction stops at engine definition and doesn't include SETTINGS
-        let sql = r#"CREATE TABLE test (x Int32) 
-            ENGINE = SharedMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}') 
+        let sql = r#"CREATE TABLE test (x Int32)
+            ENGINE = SharedMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}')
             ORDER BY x
             SETTINGS index_granularity = 8192"#;
         let result = extract_engine_from_create_table(sql);
@@ -1096,36 +1246,36 @@ mod tests {
     #[test]
     fn test_extract_clickhouse_cloud_real_example() {
         // Real example from ClickHouse Cloud as shown in the user's message
-        let sql = r#"CREATE TABLE `f45-lionheart-backen-staging-408b5`.RawGCPData_0_0 ( 
-            `studio_object_id` String, 
-            `studio_id` String, 
-            `studio_access_code` String, 
-            `user_object_id` String, 
-            `user_name` String, 
-            `user_email` String, 
-            `serial` String, 
-            `max` String, 
-            `totalpoints` String, 
-            `totalcalories` String, 
-            `averagebpm` String, 
-            `bpmmax` String, 
-            `bpmin` String, 
-            `hr70plus` String, 
-            `workoutname` String, 
-            `session_type` String, 
-            `workouttime` String, 
-            `workouttimestamp` String, 
-            `localip` String, 
-            `uuid` String, 
-            `scalar` String, 
-            `columns` Nested(time Array(Float64), percent Array(Float64), calories Array(Float64), points Array(Float64), certainty Array(Float64), bpm Array(Float64)), 
-            `created_at` String, 
-            `workouttimestampiso` String, 
-            `file_name` String, 
-            `line_number` Float64 
-        ) ENGINE = SharedMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}') 
-        PRIMARY KEY studio_object_id 
-        ORDER BY studio_object_id 
+        let sql = r#"CREATE TABLE `f45-lionheart-backen-staging-408b5`.RawGCPData_0_0 (
+            `studio_object_id` String,
+            `studio_id` String,
+            `studio_access_code` String,
+            `user_object_id` String,
+            `user_name` String,
+            `user_email` String,
+            `serial` String,
+            `max` String,
+            `totalpoints` String,
+            `totalcalories` String,
+            `averagebpm` String,
+            `bpmmax` String,
+            `bpmin` String,
+            `hr70plus` String,
+            `workoutname` String,
+            `session_type` String,
+            `workouttime` String,
+            `workouttimestamp` String,
+            `localip` String,
+            `uuid` String,
+            `scalar` String,
+            `columns` Nested(time Array(Float64), percent Array(Float64), calories Array(Float64), points Array(Float64), certainty Array(Float64), bpm Array(Float64)),
+            `created_at` String,
+            `workouttimestampiso` String,
+            `file_name` String,
+            `line_number` Float64
+        ) ENGINE = SharedMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}')
+        PRIMARY KEY studio_object_id
+        ORDER BY studio_object_id
         SETTINGS index_granularity = 8192"#;
         let result = extract_engine_from_create_table(sql);
         assert_eq!(
@@ -1137,8 +1287,8 @@ mod tests {
     #[test]
     fn test_extract_shared_replacing_merge_tree_quoted_params() {
         // Test with quoted column names as parameters
-        let sql = r#"CREATE TABLE test (x Int32, `_version` DateTime, `_is_deleted` UInt8) 
-            ENGINE = SharedReplacingMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}', '_version', '_is_deleted') 
+        let sql = r#"CREATE TABLE test (x Int32, `_version` DateTime, `_is_deleted` UInt8)
+            ENGINE = SharedReplacingMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}', '_version', '_is_deleted')
             ORDER BY x"#;
         let result = extract_engine_from_create_table(sql);
         assert_eq!(
@@ -1150,13 +1300,110 @@ mod tests {
     #[test]
     fn test_extract_shared_replacing_merge_tree_special_chars_in_path() {
         // Test with special characters in the path
-        let sql = r#"CREATE TABLE test (x Int32) 
-            ENGINE = SharedReplacingMergeTree('/clickhouse/tables-v2/{uuid:01234-5678}/{shard}', '{replica}') 
+        let sql = r#"CREATE TABLE test (x Int32)
+            ENGINE = SharedReplacingMergeTree('/clickhouse/tables-v2/{uuid:01234-5678}/{shard}', '{replica}')
             ORDER BY x"#;
         let result = extract_engine_from_create_table(sql);
         assert_eq!(
             result,
             Some("SharedReplacingMergeTree('/clickhouse/tables-v2/{uuid:01234-5678}/{shard}', '{replica}')".to_string())
+        );
+    }
+
+    #[test]
+    fn test_extract_indexes_from_create_table_multiple() {
+        let sql = "CREATE TABLE local.table_name (`u64` UInt64, `i32` Int32, `s` String, \
+        INDEX idx1 u64 TYPE bloom_filter GRANULARITY 3, \
+        INDEX idx2 u64 * i32 TYPE minmax GRANULARITY 3, \
+        INDEX idx3 u64 * length(s) TYPE set(1000) GRANULARITY 4, \
+        INDEX idx4 (u64, i32) TYPE MinMax GRANULARITY 1, \
+        INDEX idx5 (u64, i32) TYPE minmax GRANULARITY 1, \
+        INDEX idx6 toString(i32) TYPE ngrambf_v1(2, 256, 1, 123) GRANULARITY 1, \
+        INDEX idx7 s TYPE nGraMbf_v1(3, 256, 1, 123) GRANULARITY 1\
+        ) ENGINE = MergeTree ORDER BY u64 SETTINGS index_granularity = 8192";
+
+        let indexes = extract_indexes_from_create_table(sql).unwrap();
+        assert_eq!(indexes.len(), 7);
+
+        assert_eq!(
+            indexes[0],
+            ClickHouseIndex {
+                name: "idx1".to_string(),
+                expression: "u64".to_string(),
+                index_type: "bloom_filter".to_string(),
+                arguments: vec![],
+                granularity: 3,
+            }
+        );
+        assert_eq!(
+            indexes[1],
+            ClickHouseIndex {
+                name: "idx2".to_string(),
+                expression: "u64 * i32".to_string(),
+                index_type: "minmax".to_string(),
+                arguments: vec![],
+                granularity: 3,
+            }
+        );
+        assert_eq!(
+            indexes[2],
+            ClickHouseIndex {
+                name: "idx3".to_string(),
+                expression: "u64 * length(s)".to_string(),
+                index_type: "set".to_string(),
+                arguments: vec!["1000".to_string()],
+                granularity: 4,
+            }
+        );
+        assert_eq!(
+            indexes[3],
+            ClickHouseIndex {
+                name: "idx4".to_string(),
+                expression: "(u64, i32)".to_string(),
+                index_type: "MinMax".to_string(),
+                arguments: vec![],
+                granularity: 1,
+            }
+        );
+        assert_eq!(
+            indexes[4],
+            ClickHouseIndex {
+                name: "idx5".to_string(),
+                expression: "(u64, i32)".to_string(),
+                index_type: "minmax".to_string(),
+                arguments: vec![],
+                granularity: 1,
+            }
+        );
+        assert_eq!(
+            indexes[5],
+            ClickHouseIndex {
+                name: "idx6".to_string(),
+                expression: "toString(i32)".to_string(),
+                index_type: "ngrambf_v1".to_string(),
+                arguments: vec![
+                    "2".to_string(),
+                    "256".to_string(),
+                    "1".to_string(),
+                    "123".to_string()
+                ],
+                granularity: 1,
+            }
+        );
+        assert_eq!(
+            indexes[6],
+            ClickHouseIndex {
+                name: "idx7".to_string(),
+                expression: "s".to_string(),
+                index_type: "nGraMbf_v1".to_string(),
+                arguments: vec![
+                    "3".to_string(),
+                    "256".to_string(),
+                    "1".to_string(),
+                    "123".to_string()
+                ],
+                granularity: 1,
+            }
         );
     }
 }

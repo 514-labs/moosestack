@@ -374,9 +374,9 @@ impl TableDiffStrategy for ClickHouseTableDiffStrategy {
             .collect();
 
         // For other changes, ClickHouse can handle them via ALTER TABLE.
-        // If there are no column changes, return an empty vector since
+        // If there are no column or index changes, return an empty vector since
         // we've already handled all the cases that require drop+create.
-        if column_changes.is_empty() {
+        if column_changes.is_empty() && before.indexes == after.indexes {
             vec![]
         } else {
             vec![OlapChange::Table(TableChange::Updated {
@@ -439,6 +439,7 @@ mod tests {
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
             table_settings: None,
+            indexes: vec![],
         }
     }
 
@@ -911,6 +912,7 @@ mod tests {
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
             table_settings: Some(table_settings),
+            indexes: vec![],
         };
 
         assert!(ClickHouseTableDiffStrategy::is_s3queue_table(&s3_table));

@@ -493,6 +493,15 @@ pub struct ClickHouseSystemTable {
     pub engine: String,
 }
 
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct ClickHouseIndex {
+    pub name: String,
+    pub expression: String,
+    pub index_type: String,
+    pub arguments: Vec<String>,
+    pub granularity: u64,
+}
+
 #[derive(Debug, Clone)]
 pub struct ClickHouseTable {
     pub name: String,
@@ -503,6 +512,8 @@ pub struct ClickHouseTable {
     pub engine: ClickhouseEngine,
     /// Table-level settings that can be modified with ALTER TABLE MODIFY SETTING
     pub table_settings: Option<std::collections::HashMap<String, String>>,
+    /// Secondary data-skipping or specialized indexes
+    pub indexes: Vec<ClickHouseIndex>,
 }
 
 impl ClickHouseTable {

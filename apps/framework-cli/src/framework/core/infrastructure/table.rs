@@ -93,6 +93,40 @@ pub enum OrderBy {
     SingleExpr(String),
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
+pub struct TableIndex {
+    pub name: String,
+    pub expression: String,
+    #[serde(rename = "type")]
+    pub index_type: String,
+    #[serde(default)]
+    pub arguments: Vec<String>,
+    pub granularity: u64,
+}
+
+impl TableIndex {
+    pub fn to_proto(&self) -> crate::proto::infrastructure_map::TableIndex {
+        crate::proto::infrastructure_map::TableIndex {
+            name: self.name.clone(),
+            expression: self.expression.clone(),
+            type_: self.index_type.clone(),
+            arguments: self.arguments.clone(),
+            granularity: self.granularity,
+            special_fields: Default::default(),
+        }
+    }
+
+    pub fn from_proto(proto: crate::proto::infrastructure_map::TableIndex) -> Self {
+        TableIndex {
+            name: proto.name,
+            expression: proto.expression,
+            index_type: proto.type_,
+            arguments: proto.arguments,
+            granularity: proto.granularity,
+        }
+    }
+}
+
 impl PartialEq for OrderBy {
     fn eq(&self, other: &Self) -> bool {
         self.to_expr() == other.to_expr()
@@ -160,6 +194,9 @@ pub struct Table {
     /// These are separate from engine constructor parameters
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub table_settings: Option<std::collections::HashMap<String, String>>,
+    /// Secondary indexes.
+    #[serde(default)]
+    pub indexes: Vec<TableIndex>,
 }
 
 impl Table {
@@ -297,6 +334,7 @@ impl Table {
                 LifeCycle::DeletionProtected => ProtoLifeCycle::DELETION_PROTECTED.into(),
                 LifeCycle::ExternallyManaged => ProtoLifeCycle::EXTERNALLY_MANAGED.into(),
             },
+            indexes: self.indexes.iter().map(|i| i.to_proto()).collect(),
             special_fields: Default::default(),
         }
     }
@@ -376,6 +414,11 @@ impl Table {
             } else {
                 None
             },
+            indexes: proto
+                .indexes
+                .into_iter()
+                .map(TableIndex::from_proto)
+                .collect(),
         }
     }
 }

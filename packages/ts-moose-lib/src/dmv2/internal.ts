@@ -150,6 +150,14 @@ interface TableJson {
   lifeCycle?: string;
   /** Optional table-level settings that can be modified with ALTER TABLE MODIFY SETTING. */
   tableSettings?: { [key: string]: string };
+  /** Optional table indexes */
+  indexes?: {
+    name: string;
+    expression: string;
+    type: string;
+    arguments?: string[];
+    granularity: number;
+  }[];
 }
 /**
  * Represents a target destination for data flow, typically a stream.
@@ -562,6 +570,7 @@ export const toInfraMap = (registry: typeof moose_internal) => {
         tableSettings && Object.keys(tableSettings).length > 0 ?
           tableSettings
         : undefined,
+      indexes: table.config.indexes || [],
     };
   });
 

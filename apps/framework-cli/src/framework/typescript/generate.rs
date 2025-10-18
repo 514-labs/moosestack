@@ -553,6 +553,34 @@ pub fn tables_to_typescript(tables: &[Table], life_cycle: Option<LifeCycle>) -> 
             )
             .unwrap();
         };
+        if !table.indexes.is_empty() {
+            writeln!(output, "    indexes: [").unwrap();
+            for idx in &table.indexes {
+                let args_list = if idx.arguments.is_empty() {
+                    String::from("[]")
+                } else {
+                    format!(
+                        "[{}]",
+                        idx.arguments
+                            .iter()
+                            .map(|a| format!("{:?}", a))
+                            .collect::<Vec<String>>()
+                            .join(", ")
+                    )
+                };
+                writeln!(
+                    output,
+                    "        {{ name: {:?}, expression: {:?}, type: {:?}, arguments: {}, granularity: {} }},",
+                    idx.name,
+                    idx.expression,
+                    idx.index_type,
+                    args_list,
+                    idx.granularity
+                )
+                .unwrap();
+            }
+            writeln!(output, "    ],").unwrap();
+        }
         writeln!(output, "}});").unwrap();
         writeln!(output).unwrap();
     }
@@ -658,6 +686,7 @@ mod tests {
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
             table_settings: None,
+            indexes: vec![],
         }];
 
         let result = tables_to_typescript(&tables, None);
@@ -733,6 +762,7 @@ export const UserTable = new OlapTable<User>("User", {
                     .into_iter()
                     .collect(),
             ),
+            indexes: vec![],
         }];
 
         let result = tables_to_typescript(&tables, None);
@@ -778,6 +808,7 @@ export const UserTable = new OlapTable<User>("User", {
                 .into_iter()
                 .collect(),
             ),
+            indexes: vec![],
         }];
 
         let result = tables_to_typescript(&tables, None);
@@ -840,6 +871,7 @@ export const UserTable = new OlapTable<User>("User", {
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
             table_settings: None,
+            indexes: vec![],
         }];
 
         let result = tables_to_typescript(&tables, None);
@@ -879,6 +911,7 @@ export const UserTable = new OlapTable<User>("User", {
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
             table_settings: None,
+            indexes: vec![],
         }];
 
         let result = tables_to_typescript(&tables, None);
@@ -948,6 +981,7 @@ export const UserTable = new OlapTable<User>("User", {
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
             table_settings: None,
+            indexes: vec![],
         }];
 
         let result = tables_to_typescript(&tables, None);
@@ -962,6 +996,60 @@ export const UserTable = new OlapTable<User>("User", {
 
         // Ensure it doesn't contain the incorrect nested structure
         assert!(!result.contains("engine: {"));
+    }
+
+    #[test]
+    fn test_indexes_emission() {
+        let tables = vec![Table {
+            name: "IndexTest".to_string(),
+            columns: vec![Column {
+                name: "u64".to_string(),
+                data_type: ColumnType::String,
+                required: true,
+                unique: false,
+                primary_key: true,
+                default: None,
+                annotations: vec![],
+                comment: None,
+            }],
+            order_by: OrderBy::Fields(vec!["u64".to_string()]),
+            partition_by: None,
+            engine: Some(ClickhouseEngine::MergeTree),
+            version: None,
+            source_primitive: PrimitiveSignature {
+                name: "IndexTest".to_string(),
+                primitive_type: PrimitiveTypes::DataModel,
+            },
+            metadata: None,
+            life_cycle: LifeCycle::FullyManaged,
+            engine_params_hash: None,
+            table_settings: None,
+            indexes: vec![
+                crate::framework::core::infrastructure::table::TableIndex {
+                    name: "idx1".to_string(),
+                    expression: "u64".to_string(),
+                    index_type: "bloom_filter".to_string(),
+                    arguments: vec![],
+                    granularity: 3,
+                },
+                crate::framework::core::infrastructure::table::TableIndex {
+                    name: "idx2".to_string(),
+                    expression: "u64 * length(u64)".to_string(),
+                    index_type: "set".to_string(),
+                    arguments: vec!["1000".to_string()],
+                    granularity: 4,
+                },
+            ],
+        }];
+
+        let result = tables_to_typescript(&tables, None);
+        assert!(result.contains("indexes: ["));
+        assert!(result.contains("name: \"idx1\""));
+        assert!(result.contains("type: \"bloom_filter\""));
+        assert!(result.contains("arguments: []"));
+        assert!(result.contains("granularity: 3"));
+        assert!(result.contains("name: \"idx2\""));
+        assert!(result.contains("arguments: [\"1000\"]"));
     }
 
     #[test]
@@ -1016,6 +1104,7 @@ export const UserTable = new OlapTable<User>("User", {
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
             table_settings: None,
+            indexes: vec![],
         }];
 
         let result = tables_to_typescript(&tables, None);

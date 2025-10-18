@@ -1698,8 +1698,15 @@ impl InfrastructureMap {
                             }
                         };
 
+                        // Detect index changes (secondary/data-skipping indexes)
+                        let indexes_changed = table.indexes != target_table.indexes;
+
                         // Only process changes if there are actual differences to report
-                        if !column_changes.is_empty() || order_by_changed || engine_changed {
+                        if !column_changes.is_empty()
+                            || order_by_changed
+                            || engine_changed
+                            || indexes_changed
+                        {
                             // Use the strategy to determine the appropriate changes
                             let strategy_changes = strategy.diff_table_update(
                                 table,
@@ -1829,7 +1836,10 @@ impl InfrastructureMap {
         };
 
         // Only return changes if there are actual differences to report
-        if !column_changes.is_empty() || order_by_changed {
+        // Detect index changes
+        let indexes_changed = table.indexes != target_table.indexes;
+
+        if !column_changes.is_empty() || order_by_changed || indexes_changed {
             Some(TableChange::Updated {
                 name: table.name.clone(),
                 column_changes,
@@ -1923,8 +1933,11 @@ impl InfrastructureMap {
             }
         };
 
+        // Detect index changes
+        let indexes_changed = table.indexes != target_table.indexes;
+
         // Only return changes if there are actual differences to report
-        if !column_changes.is_empty() || order_by_changed {
+        if !column_changes.is_empty() || order_by_changed || indexes_changed {
             Some(TableChange::Updated {
                 name: table.name.clone(),
                 column_changes,
@@ -2609,6 +2622,7 @@ mod tests {
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
             table_settings: None,
+            indexes: vec![],
         };
 
         let after = Table {
@@ -2657,6 +2671,7 @@ mod tests {
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
             table_settings: None,
+            indexes: vec![],
         };
 
         let diff = compute_table_columns_diff(&before, &after);
@@ -2823,6 +2838,7 @@ mod diff_tests {
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
             table_settings: None,
+            indexes: vec![],
         }
     }
 
