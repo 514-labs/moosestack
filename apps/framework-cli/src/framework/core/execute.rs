@@ -29,7 +29,7 @@ use crate::{
             self, kafka_clickhouse_sync::SyncingProcessesRegistry,
             process_registry::ProcessRegistries,
         },
-        stream,
+        stream, webapp,
     },
     metrics::Metrics,
     project::Project,
@@ -50,6 +50,10 @@ pub enum ExecutionError {
     #[error("Failed to communicate with API")]
     ApiChange(#[from] Box<api::ApiChangeError>),
 
+    /// Error occurred while applying changes to WebApp endpoints
+    #[error("Failed to communicate with WebApp")]
+    WebAppChange(#[from] Box<webapp::WebAppChangeError>),
+
     /// Error occurred while applying changes to synchronization processes
     #[error("Failed to communicate with Sync Processes")]
     SyncProcessesChange(#[from] processes::SyncProcessChangesError),
@@ -57,6 +61,18 @@ pub enum ExecutionError {
     /// Error occurred while checking leadership status
     #[error("Leadership check failed")]
     LeadershipCheckFailed(anyhow::Error),
+}
+
+/// Context for executing infrastructure changes
+pub struct ExecutionContext<'a> {
+    pub project: &'a Project,
+    pub settings: &'a Settings,
+    pub plan: &'a InfraPlan,
+    pub skip_olap: bool,
+    pub api_changes_channel: Sender<(InfrastructureMap, ApiChange)>,
+    pub webapp_changes_channel: Sender<super::infrastructure_map::WebAppChange>,
+    pub metrics: Arc<Metrics>,
+    pub redis_client: &'a Arc<RedisClient>,
 }
 
 /// Executes the initial infrastructure changes when the system starts up.
@@ -71,72 +87,69 @@ pub enum ExecutionError {
 /// the instance that holds the leadership lock.
 ///
 /// # Arguments
-/// * `project` - The project configuration
-/// * `settings` - Application settings
-/// * `plan` - The infrastructure plan to execute
-/// * `skip_olap` - ignore plan.changes.olap_changes, when the migration yaml exists and overrides the plan.
-/// * `api_changes_channel` - Channel for sending API changes
-/// * `metrics` - Metrics collection
-/// * `redis_client` - Redis client for state management and leadership checks
+/// * `ctx` - Execution context containing project, settings, plan, and channels
 ///
 /// # Returns
 /// * `Result<ProcessRegistries, ExecutionError>` - The initialized process registries or an error
 pub async fn execute_initial_infra_change(
-    project: &Project,
-    settings: &Settings,
-    plan: &InfraPlan,
-    skip_olap: bool,
-    api_changes_channel: Sender<(InfrastructureMap, ApiChange)>,
-    metrics: Arc<Metrics>,
-    redis_client: &Arc<RedisClient>,
+    ctx: ExecutionContext<'_>,
 ) -> Result<ProcessRegistries, ExecutionError> {
     // This probably can be parallelized through Tokio Spawn
     // Check if infrastructure execution is bypassed
-    if settings.should_bypass_infrastructure_execution() {
+    if ctx.settings.should_bypass_infrastructure_execution() {
         log::info!("Bypassing OLAP and streaming infrastructure execution (bypass_infrastructure_execution is enabled)");
     } else {
         // Only execute OLAP changes if OLAP is enabled and not bypassed
-        if project.features.olap && !skip_olap {
-            olap::execute_changes(project, &plan.changes.olap_changes).await?;
+        if ctx.project.features.olap && !ctx.skip_olap {
+            olap::execute_changes(ctx.project, &ctx.plan.changes.olap_changes).await?;
         }
         // Only execute streaming changes if streaming engine is enabled and not bypassed
-        if project.features.streaming_engine {
-            stream::execute_changes(project, &plan.changes.streaming_engine_changes).await?;
+        if ctx.project.features.streaming_engine {
+            stream::execute_changes(ctx.project, &ctx.plan.changes.streaming_engine_changes)
+                .await?;
         }
     }
 
     // In prod, the webserver is part of the current process that gets spawned. As such
     // it is initialized from 0 and we don't need to apply diffs to it.
     api::execute_changes(
-        &plan.target_infra_map,
-        &plan.target_infra_map.init_api_endpoints(),
-        api_changes_channel,
+        &ctx.plan.target_infra_map,
+        &ctx.plan.target_infra_map.init_api_endpoints(),
+        ctx.api_changes_channel,
     )
     .await
     .map_err(Box::new)?;
 
+    // Send initial WebApp changes through the channel
+    for webapp_change in ctx.plan.target_infra_map.init_web_apps() {
+        if let Err(e) = ctx.webapp_changes_channel.send(webapp_change).await {
+            log::warn!("Failed to send webapp change: {}", e);
+        }
+    }
+
     let syncing_processes_registry = SyncingProcessesRegistry::new(
-        project.redpanda_config.clone(),
-        project.clickhouse_config.clone(),
+        ctx.project.redpanda_config.clone(),
+        ctx.project.clickhouse_config.clone(),
     );
     let mut process_registries =
-        ProcessRegistries::new(project, settings, syncing_processes_registry);
+        ProcessRegistries::new(ctx.project, ctx.settings, syncing_processes_registry);
 
     // Execute changes that are allowed on any instance
-    let changes = plan.target_infra_map.init_processes(project);
+    let changes = ctx.plan.target_infra_map.init_processes(ctx.project);
     processes::execute_changes(
-        &project.redpanda_config,
-        &plan.target_infra_map,
+        &ctx.project.redpanda_config,
+        &ctx.plan.target_infra_map,
         &mut process_registries,
         &changes,
-        metrics,
+        ctx.metrics,
     )
     .await?;
 
-    execute_scheduled_workflows(project, &plan.target_infra_map.workflows).await;
+    execute_scheduled_workflows(ctx.project, &ctx.plan.target_infra_map.workflows).await;
 
     // Check if this process instance has the "leadership" lock
-    if redis_client
+    if ctx
+        .redis_client
         .has_lock("leadership")
         .await
         .map_err(ExecutionError::LeadershipCheckFailed)?
@@ -164,16 +177,19 @@ pub async fn execute_initial_infra_change(
 /// * `project` - The project configuration
 /// * `plan` - The infrastructure plan to execute
 /// * `api_changes_channel` - Channel for sending API changes
+/// * `webapp_changes_channel` - Channel for sending WebApp changes
 /// * `process_registries` - Registry for all processes including syncing processes
 /// * `metrics` - Metrics collection
 /// * `settings` - Application settings
 ///
 /// # Returns
 /// * `Result<(), ExecutionError>` - Success or an error
+#[allow(clippy::too_many_arguments)]
 pub async fn execute_online_change(
     project: &Project,
     plan: &InfraPlan,
     api_changes_channel: Sender<(InfrastructureMap, ApiChange)>,
+    webapp_changes_channel: Sender<super::infrastructure_map::WebAppChange>,
     process_registries: &mut ProcessRegistries,
     metrics: Arc<Metrics>,
     settings: &Settings,
@@ -202,6 +218,18 @@ pub async fn execute_online_change(
     )
     .await
     .map_err(Box::new)?;
+
+    // Send WebApp changes through the channel
+    log::info!(
+        "🔄 Processing {} WebApp changes during online change",
+        plan.changes.web_app_changes.len()
+    );
+    for change in &plan.changes.web_app_changes {
+        log::info!("🔄 WebApp change in plan: {:?}", change);
+    }
+    webapp::execute_changes(&plan.changes.web_app_changes, webapp_changes_channel)
+        .await
+        .map_err(Box::new)?;
 
     processes::execute_leader_changes(process_registries, &plan.changes.processes_changes).await?;
     processes::execute_changes(

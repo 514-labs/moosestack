@@ -52,9 +52,14 @@ import {
   getExpectedSchemas,
   validateSchemasWithDebugging,
   verifyVersionedTables,
+  verifyWebAppEndpoint,
+  verifyWebAppHealth,
+  verifyWebAppQuery,
+  verifyWebAppPostEndpoint,
 } from "./utils";
 import { triggerWorkflow } from "./utils/workflow-utils";
 import { geoPayloadPy, geoPayloadTs } from "./utils/geo-payload";
+import { verifyTableIndexes, getTableDDL } from "./utils/database-utils";
 
 const execAsync = promisify(require("child_process").exec);
 const setTimeoutAsync = (ms: number) =>
@@ -273,6 +278,51 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
         // Verify that both versions of UserEvents tables are created
         await verifyVersionedTables("UserEvents", ["1.0", "2.0"]);
       });
+
+      it("should create indexes defined in templates", async function () {
+        this.timeout(TIMEOUTS.TEST_SETUP_MS);
+
+        // TypeScript and Python tests both define an IndexTest / IndexTest table
+        // Verify that all seven test indexes are present in the DDL
+        await verifyTableIndexes("IndexTest", [
+          "idx1",
+          "idx2",
+          "idx3",
+          "idx4",
+          "idx5",
+          "idx6",
+          "idx7",
+        ]);
+      });
+
+      it("should plan/apply index modifications on existing tables", async function () {
+        this.timeout(TIMEOUTS.TEST_SETUP_MS);
+
+        // Modify a template file in place to change an index definition
+        const modelPath = path.join(
+          TEST_PROJECT_DIR,
+          "app",
+          "ingest",
+          config.language === "typescript" ? "models.ts" : "models.py",
+        );
+        let contents = await fs.promises.readFile(modelPath, "utf8");
+
+        contents = contents
+          .replace("granularity: 3", "granularity: 4")
+          .replace("granularity=3", "granularity=4");
+        await fs.promises.writeFile(modelPath, contents, "utf8");
+
+        // Verify DDL reflects updated index
+        await withRetries(
+          async () => {
+            const ddl = await getTableDDL("IndexTest");
+            if (!ddl.includes("INDEX idx1") || !ddl.includes("GRANULARITY 4")) {
+              throw new Error(`idx1 not updated to GRANULARITY 4. DDL: ${ddl}`);
+            }
+          },
+          { attempts: 10, delayMs: 1000 },
+        );
+      });
     }
 
     // Create test case based on language
@@ -374,6 +424,54 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
           );
           await waitForDBWrite(devProcess!, "GeoTypes", 1);
           await verifyClickhouseData("GeoTypes", id, "id");
+        });
+
+        it("should serve WebApp at custom mountPath with Express framework", async function () {
+          this.timeout(TIMEOUTS.TEST_SETUP_MS);
+
+          // Test Express WebApp health endpoint
+          await verifyWebAppHealth("/express", "bar-express-api");
+
+          // Test Express WebApp query endpoint (GET)
+          await verifyWebAppQuery("/express/query", { limit: "5" });
+
+          // Test Express WebApp data endpoint (POST)
+          await verifyWebAppPostEndpoint(
+            "/express/data",
+            {
+              orderBy: "totalRows",
+              limit: 5,
+              startDay: 1,
+              endDay: 31,
+            },
+            200,
+            (json) => {
+              if (!json.success) {
+                throw new Error("Expected success to be true");
+              }
+              if (!Array.isArray(json.data)) {
+                throw new Error("Expected data to be an array");
+              }
+              if (json.params.orderBy !== "totalRows") {
+                throw new Error("Expected orderBy to be totalRows");
+              }
+            },
+          );
+        });
+
+        it("should handle multiple WebApp endpoints independently", async function () {
+          this.timeout(TIMEOUTS.TEST_SETUP_MS);
+
+          // Verify Express WebApp is accessible
+          await verifyWebAppEndpoint("/express/health", 200);
+
+          // Verify regular Api endpoint still works alongside WebApp
+          const apiResponse = await fetch(
+            `${SERVER_CONFIG.url}/api/bar?orderBy=totalRows&startDay=1&endDay=31&limit=5`,
+          );
+          expect(apiResponse.ok).to.be.true;
+          const apiData = await apiResponse.json();
+          expect(apiData).to.be.an("array");
         });
       }
     } else {

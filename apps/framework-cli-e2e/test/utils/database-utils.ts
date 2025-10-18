@@ -237,6 +237,32 @@ export const getTableDDL = async (tableName: string): Promise<string> => {
 };
 
 /**
+ * Verifies that the given table has indexes with the specified names present in its DDL
+ */
+export const verifyTableIndexes = async (
+  tableName: string,
+  expectedIndexNames: string[],
+): Promise<void> => {
+  await withRetries(
+    async () => {
+      const ddl = await getTableDDL(tableName);
+      const missing = expectedIndexNames.filter(
+        (name) => !ddl.includes(`INDEX ${name}`),
+      );
+      if (missing.length > 0) {
+        throw new Error(
+          `Missing indexes on ${tableName}: ${missing.join(", ")}. DDL: ${ddl}`,
+        );
+      }
+    },
+    {
+      attempts: RETRY_CONFIG.DEFAULT_ATTEMPTS,
+      delayMs: RETRY_CONFIG.DEFAULT_DELAY_MS,
+    },
+  );
+};
+
+/**
  * Lists all tables in the current database
  */
 export const getAllTables = async (): Promise<string[]> => {

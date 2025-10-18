@@ -144,4 +144,89 @@ describe("typeConvert mappings for helper types", function () {
       "DateTime(6)",
     ]);
   });
+
+  it('maps UInt64 & SimpleAggregated<"sum", UInt64> to SimpleAggregateFunction annotation', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "moose-typeconv-"));
+
+    const source = `
+      import { SimpleAggregated, UInt64 } from "@514labs/moose-lib";
+
+      export interface TestModel {
+        row_count: UInt64 & SimpleAggregated<"sum", UInt64>;
+      }
+    `;
+
+    const { checker, type } = createProgramWithSource(tempDir, source);
+    const columns = toColumns(type, checker);
+    expect(columns).to.have.length(1);
+    const col = columns[0];
+
+    expect(col.name).to.equal("row_count");
+    expect(col.data_type).to.equal("UInt64");
+
+    const simpleAgg = col.annotations.find(
+      ([k]) => k === "simpleAggregationFunction",
+    );
+    expect(simpleAgg).to.not.be.undefined;
+    const simpleAggPayload = (simpleAgg as any)[1];
+    expect(simpleAggPayload.functionName).to.equal("sum");
+    expect(simpleAggPayload.argumentType).to.equal("UInt64");
+  });
+
+  it("handles multiple SimpleAggregated fields with different functions", () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "moose-typeconv-"));
+
+    const source = `
+      import { SimpleAggregated, DateTime } from "@514labs/moose-lib";
+
+      export interface TestModel {
+        row_count: number & SimpleAggregated<"sum", number>;
+        max_value: number & SimpleAggregated<"max", number>;
+        min_value: number & SimpleAggregated<"min", number>;
+        last_updated: Date & SimpleAggregated<"anyLast", Date>;
+      }
+    `;
+
+    const { checker, type } = createProgramWithSource(tempDir, source);
+    const columns = toColumns(type, checker);
+    expect(columns).to.have.length(4);
+
+    // Test sum
+    const sumCol = columns.find((c) => c.name === "row_count");
+    expect(sumCol).to.not.be.undefined;
+    const sumAgg = sumCol!.annotations.find(
+      ([k]) => k === "simpleAggregationFunction",
+    );
+    expect(sumAgg).to.not.be.undefined;
+    expect((sumAgg as any)[1].functionName).to.equal("sum");
+
+    // Test max
+    const maxCol = columns.find((c) => c.name === "max_value");
+    expect(maxCol).to.not.be.undefined;
+    const maxAgg = maxCol!.annotations.find(
+      ([k]) => k === "simpleAggregationFunction",
+    );
+    expect(maxAgg).to.not.be.undefined;
+    expect((maxAgg as any)[1].functionName).to.equal("max");
+
+    // Test min
+    const minCol = columns.find((c) => c.name === "min_value");
+    expect(minCol).to.not.be.undefined;
+    const minAgg = minCol!.annotations.find(
+      ([k]) => k === "simpleAggregationFunction",
+    );
+    expect(minAgg).to.not.be.undefined;
+    expect((minAgg as any)[1].functionName).to.equal("min");
+
+    // Test anyLast with Date -> DateTime conversion
+    const lastCol = columns.find((c) => c.name === "last_updated");
+    expect(lastCol).to.not.be.undefined;
+    expect(lastCol!.data_type).to.equal("DateTime");
+    const lastAgg = lastCol!.annotations.find(
+      ([k]) => k === "simpleAggregationFunction",
+    );
+    expect(lastAgg).to.not.be.undefined;
+    expect((lastAgg as any)[1].functionName).to.equal("anyLast");
+    expect((lastAgg as any)[1].argumentType).to.equal("DateTime");
+  });
 });

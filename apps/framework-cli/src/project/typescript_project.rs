@@ -21,6 +21,9 @@ pub struct TypescriptProject {
     pub scripts: HashMap<String, String>,
     pub dependencies: HashMap<String, String>,
     pub dev_dependencies: HashMap<String, String>,
+    /// Preserve any additional fields from package.json (e.g. pnpm, npm, yarn config)
+    #[serde(flatten)]
+    pub additional_fields: HashMap<String, serde_json::Value>,
 }
 
 impl Default for TypescriptProject {
@@ -45,6 +48,7 @@ impl Default for TypescriptProject {
                 ("@514labs/moose-cli".to_string(), "latest".to_string()),
                 ("@types/node".to_string(), "^20.12.12".to_string()),
             ]),
+            additional_fields: HashMap::new(),
         }
     }
 }

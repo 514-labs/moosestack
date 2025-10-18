@@ -1,3 +1,4 @@
+import typia from "typia";
 import {
   IngestPipeline,
   Key,
@@ -12,6 +13,9 @@ import {
   ClickHousePolygon,
   ClickHouseMultiPolygon,
   ClickHouseEngines,
+  SimpleAggregated,
+  UInt64,
+  ClickHouseByteSize,
 } from "@514labs/moose-lib";
 
 /**
@@ -346,4 +350,88 @@ export const userEventsV2 = new OlapTable<UserEventV2>("UserEvents", {
   version: "2.0",
   engine: ClickHouseEngines.ReplacingMergeTree,
   orderByFields: ["userId", "sessionId", "timestamp"],
+});
+
+/** =======SimpleAggregateFunction Test========= */
+// Test SimpleAggregateFunction support for aggregated metrics
+// This demonstrates using SimpleAggregateFunction with AggregatingMergeTree
+
+export interface SimpleAggTest {
+  date_stamp: string & typia.tags.Format<"date"> & ClickHouseByteSize<2>;
+  table_name: string;
+  row_count: UInt64 & SimpleAggregated<"sum", UInt64>;
+  max_value: number & SimpleAggregated<"max", number>;
+  min_value: number & SimpleAggregated<"min", number>;
+  last_updated: DateTime & SimpleAggregated<"anyLast", DateTime>;
+}
+
+export const SimpleAggTestTable = new OlapTable<SimpleAggTest>(
+  "SimpleAggTest",
+  {
+    orderByFields: ["date_stamp", "table_name"],
+    engine: ClickHouseEngines.AggregatingMergeTree,
+  },
+);
+
+// =======Index Extraction Test Table=======
+export interface IndexTest {
+  u64: Key<UInt64>;
+  i32: number;
+  s: string;
+}
+
+export const IndexTestTable = new OlapTable<IndexTest>("IndexTest", {
+  engine: ClickHouseEngines.MergeTree,
+  orderByFields: ["u64"],
+  indexes: [
+    {
+      name: "idx1",
+      expression: "u64",
+      type: "bloom_filter",
+      arguments: [],
+      granularity: 3,
+    },
+    {
+      name: "idx2",
+      expression: "u64 * i32",
+      type: "minmax",
+      arguments: [],
+      granularity: 3,
+    },
+    {
+      name: "idx3",
+      expression: "u64 * length(s)",
+      type: "set",
+      arguments: ["1000"],
+      granularity: 4,
+    },
+    {
+      name: "idx4",
+      expression: "(u64, i32)",
+      type: "MinMax",
+      arguments: [],
+      granularity: 1,
+    },
+    {
+      name: "idx5",
+      expression: "(u64, i32)",
+      type: "minmax",
+      arguments: [],
+      granularity: 1,
+    },
+    {
+      name: "idx6",
+      expression: "toString(i32)",
+      type: "ngrambf_v1",
+      arguments: ["2", "256", "1", "123"],
+      granularity: 1,
+    },
+    {
+      name: "idx7",
+      expression: "s",
+      type: "nGraMbf_v1",
+      arguments: ["3", "256", "1", "123"],
+      granularity: 1,
+    },
+  ],
 });

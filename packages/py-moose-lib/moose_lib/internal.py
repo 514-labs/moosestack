@@ -19,9 +19,9 @@ from moose_lib.dmv2 import (
     get_apis,
     get_sql_resources,
     get_workflows,
+    get_web_apps,
     OlapTable,
-    View,
-    MaterializedView,
+    OlapConfig,
     SqlResource
 )
 from moose_lib.dmv2.stream import KafkaSchemaConfig
@@ -168,7 +168,8 @@ class TableConfig(BaseModel):
     version: Optional[str] = None
     metadata: Optional[dict] = None
     life_cycle: Optional[str] = None
-    table_settings: Optional[Dict[str, str]] = None
+    table_settings: Optional[dict[str, str]] = None
+    indexes: list[OlapConfig.TableIndex] = []
 
 
 class TopicConfig(BaseModel):
@@ -267,6 +268,32 @@ class WorkflowJson(BaseModel):
     schedule: Optional[str] = None
 
 
+class WebAppMetadataJson(BaseModel):
+    """Internal representation of WebApp metadata for serialization.
+
+    Attributes:
+        description: Optional description of the WebApp.
+    """
+    model_config = model_config
+
+    description: Optional[str] = None
+
+
+class WebAppJson(BaseModel):
+    """Internal representation of a WebApp configuration for serialization.
+
+    Attributes:
+        name: Name of the WebApp.
+        mount_path: The URL path where the WebApp is mounted.
+        metadata: Optional metadata for documentation purposes.
+    """
+    model_config = model_config
+
+    name: str
+    mount_path: str
+    metadata: Optional[WebAppMetadataJson] = None
+
+
 class InfrastructureSignatureJson(BaseModel):
     """Represents the unique signature of an infrastructure component (Table, Topic, etc.).
 
@@ -313,6 +340,7 @@ class InfrastructureMap(BaseModel):
         apis: Dictionary mapping API names to their configurations.
         sql_resources: Dictionary mapping SQL resource names to their configurations.
         workflows: Dictionary mapping workflow names to their configurations.
+        web_apps: Dictionary mapping WebApp names to their configurations.
     """
     model_config = model_config
 
@@ -322,6 +350,7 @@ class InfrastructureMap(BaseModel):
     apis: dict[str, InternalApiConfig]
     sql_resources: dict[str, SqlResourceConfig]
     workflows: dict[str, WorkflowJson]
+    web_apps: dict[str, WebAppJson]
 
 
 def _map_sql_resource_ref(r: Any) -> InfrastructureSignatureJson:
@@ -540,6 +569,7 @@ def to_infra_map() -> dict:
     apis = {}
     sql_resources = {}
     workflows = {}
+    web_apps = {}
 
     for _registry_key, table in get_tables().items():
         # Convert engine configuration to new format
@@ -580,6 +610,7 @@ def to_infra_map() -> dict:
             life_cycle=table.config.life_cycle.value if table.config.life_cycle else None,
             # Map 'settings' to 'table_settings' for internal use
             table_settings=table_settings if table_settings else None,
+            indexes=table.config.indexes,
         )
 
     for name, stream in get_streams().items():
@@ -660,13 +691,27 @@ def to_infra_map() -> dict:
             schedule=workflow.config.schedule,
         )
 
+    for name, web_app in get_web_apps().items():
+        mount_path = web_app.config.mount_path or "/"
+        metadata = None
+        if web_app.config.metadata:
+            metadata = WebAppMetadataJson(
+                description=web_app.config.metadata.description
+            )
+        web_apps[name] = WebAppJson(
+            name=web_app.name,
+            mount_path=mount_path,
+            metadata=metadata,
+        )
+
     infra_map = InfrastructureMap(
         tables=tables,
         topics=topics,
         ingest_apis=ingest_apis,
         apis=apis,
         sql_resources=sql_resources,
-        workflows=workflows
+        workflows=workflows,
+        web_apps=web_apps
     )
 
     return infra_map.model_dump(by_alias=True)

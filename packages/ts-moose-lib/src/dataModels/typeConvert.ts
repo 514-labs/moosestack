@@ -119,6 +119,43 @@ const handleAggregated = (
   }
 };
 
+const handleSimpleAggregated = (
+  t: ts.Type,
+  checker: TypeChecker,
+  fieldName: string,
+  typeName: string,
+): SimpleAggregationFunction | undefined => {
+  const functionSymbol = t.getProperty("_simpleAggregationFunction");
+  const argTypeSymbol = t.getProperty("_argType");
+
+  if (functionSymbol === undefined || argTypeSymbol === undefined) {
+    return undefined;
+  }
+  const functionStringLiteral = checker.getNonNullableType(
+    checker.getTypeOfSymbol(functionSymbol),
+  );
+  const argType = checker.getNonNullableType(
+    checker.getTypeOfSymbol(argTypeSymbol),
+  );
+
+  if (functionStringLiteral.isStringLiteral()) {
+    const argumentType = tsTypeToDataType(
+      argType,
+      checker,
+      fieldName,
+      typeName,
+      false,
+    )[2];
+    return { functionName: functionStringLiteral.value, argumentType };
+  } else {
+    console.log(
+      "Unexpected type inside SimpleAggregated",
+      functionStringLiteral,
+    );
+    return undefined;
+  }
+};
+
 /** Detect ClickHouse default annotation on a type and return raw sql */
 const handleDefault = (t: ts.Type, checker: TypeChecker): string | null => {
   // Ensure we check the non-nullable part so optionals still surface defaults
@@ -212,6 +249,11 @@ const handleNumberType = (
 export interface AggregationFunction {
   functionName: string;
   argumentTypes: DataType[];
+}
+
+export interface SimpleAggregationFunction {
+  functionName: string;
+  argumentType: DataType;
 }
 
 const isStringLiteral = (
@@ -536,6 +578,12 @@ const tsTypeToDataType = (
   const nullable = nonNull != t;
 
   const aggregationFunction = handleAggregated(t, checker, fieldName, typeName);
+  const simpleAggregationFunction = handleSimpleAggregated(
+    t,
+    checker,
+    fieldName,
+    typeName,
+  );
 
   let withoutTags = nonNull;
   // clean up intersection type tags
@@ -630,6 +678,9 @@ const tsTypeToDataType = (
   if (aggregationFunction !== undefined) {
     annotations.push(["aggregationFunction", aggregationFunction]);
   }
+  if (simpleAggregationFunction !== undefined) {
+    annotations.push(["simpleAggregationFunction", simpleAggregationFunction]);
+  }
 
   const lowCardinalitySymbol = t.getProperty("_LowCardinality");
   if (lowCardinalitySymbol !== undefined) {
@@ -698,13 +749,20 @@ export const toColumns = (t: ts.Type, checker: TypeChecker): Column[] => {
   }
 
   return checker.getPropertiesOfType(t).map((prop) => {
-    const node = prop.getDeclarations()![0] as ts.PropertyDeclaration;
-    const type = checker.getTypeOfSymbolAtLocation(prop, node);
+    let declarations = prop.getDeclarations();
+    const node =
+      declarations && declarations.length > 0
+        ? (declarations[0] as ts.PropertyDeclaration)
+        : undefined;
+    const type =
+      node !== undefined ?
+        checker.getTypeOfSymbolAtLocation(prop, node)
+      : checker.getTypeOfSymbol(prop);
 
-    const isKey = hasKeyWrapping(node.type);
-    const isJwt = hasJwtWrapping(node.type);
+    const isKey = hasKeyWrapping(node?.type);
+    const isJwt = hasJwtWrapping(node?.type);
 
-    const defaultExpression = handleDefaultWrapping(node.type);
+    const defaultExpression = handleDefaultWrapping(node?.type);
 
     const [nullable, annotations, dataType] = tsTypeToDataType(
       type,
@@ -712,7 +770,7 @@ export const toColumns = (t: ts.Type, checker: TypeChecker): Column[] => {
       prop.name,
       t.symbol?.name || "inline_type",
       isJwt,
-      node.type,
+      node?.type,
     );
 
     return {

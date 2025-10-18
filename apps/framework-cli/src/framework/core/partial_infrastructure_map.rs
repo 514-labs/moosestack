@@ -50,7 +50,7 @@ use super::{
         olap_process::OlapProcess,
         orchestration_worker::OrchestrationWorker,
         sql_resource::SqlResource,
-        table::{Column, Metadata, Table},
+        table::{Column, Metadata, Table, TableIndex},
         topic::{KafkaSchema, Topic, DEFAULT_MAX_MESSAGE_BYTES},
         topic_sync_process::{TopicToTableSyncProcess, TopicToTopicSyncProcess},
         view::View,
@@ -202,6 +202,8 @@ struct PartialTable {
     pub life_cycle: Option<LifeCycle>,
     #[serde(alias = "table_settings")]
     pub table_settings: Option<std::collections::HashMap<String, String>>,
+    #[serde(default)]
+    pub indexes: Vec<TableIndex>,
 }
 
 /// Represents a topic definition from user code before it's converted into a complete [`Topic`].
@@ -274,6 +276,14 @@ struct PartialApi {
     /// If not specified, defaults to "{name}" or "{name}/{version}"
     #[serde(default)]
     pub path: Option<String>,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct PartialWebApp {
+    pub name: String,
+    pub mount_path: String,
+    pub metadata: Option<Metadata>,
 }
 
 /// Specifies a write destination for data ingestion.
@@ -381,6 +391,8 @@ pub struct PartialInfrastructureMap {
     consumption_api_web_server: Option<ConsumptionApiWebServer>,
     #[serde(default)]
     workflows: HashMap<String, PartialWorkflow>,
+    #[serde(default)]
+    web_apps: HashMap<String, PartialWebApp>,
 }
 
 impl PartialInfrastructureMap {
@@ -485,6 +497,7 @@ impl PartialInfrastructureMap {
             self.create_topic_to_table_sync_processes(&tables, &topics);
         let function_processes = self.create_function_processes(main_file, language, &topics);
         let workflows = self.convert_workflows(language);
+        let web_apps = self.convert_web_apps();
 
         // Why does dmv1 InfrastructureMap::new do this?
         let mut orchestration_workers = HashMap::new();
@@ -506,6 +519,7 @@ impl PartialInfrastructureMap {
                 .unwrap_or(ConsumptionApiWebServer {}),
             orchestration_workers,
             workflows,
+            web_apps,
         }
     }
 
@@ -585,6 +599,7 @@ impl PartialInfrastructureMap {
                     } else {
                         Some(table_settings)
                     },
+                    indexes: partial_table.indexes.clone(),
                 };
                 (table.id(), table)
             })
@@ -1038,6 +1053,27 @@ impl PartialInfrastructureMap {
                 )
                 .expect("Failed to create workflow from user code");
                 (partial_workflow.name.clone(), workflow)
+            })
+            .collect()
+    }
+
+    /// Converts partial WebApp definitions into complete [`WebApp`] instances.
+    fn convert_web_apps(
+        &self,
+    ) -> HashMap<String, crate::framework::core::infrastructure::web_app::WebApp> {
+        self.web_apps
+            .values()
+            .map(|partial_webapp| {
+                let webapp = crate::framework::core::infrastructure::web_app::WebApp {
+                    name: partial_webapp.name.clone(),
+                    mount_path: partial_webapp.mount_path.clone(),
+                    metadata: partial_webapp.metadata.as_ref().map(|m| {
+                        crate::framework::core::infrastructure::web_app::WebAppMetadata {
+                            description: m.description.clone(),
+                        }
+                    }),
+                };
+                (partial_webapp.name.clone(), webapp)
             })
             .collect()
     }

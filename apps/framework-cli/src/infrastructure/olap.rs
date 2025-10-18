@@ -21,6 +21,8 @@ pub enum OlapChangesError {
 
     #[error("Failed to parse ClickHouse type: {0}")]
     ClickhouseTypeParser(#[from] clickhouse::type_parser::ClickHouseTypeError),
+    #[error("Failed to parse ClickHouse SQL: {0}")]
+    ClickhouseSqlParse(#[from] clickhouse::sql_parser::SqlParseError),
 }
 
 /// Trait defining operations that can be performed on an OLAP database

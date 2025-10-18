@@ -20,3 +20,4 @@ pub mod orchestration;
 pub mod processes;
 pub mod redis;
 pub mod stream;
+pub mod webapp;

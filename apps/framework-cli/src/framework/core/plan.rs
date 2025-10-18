@@ -245,6 +245,7 @@ pub async fn plan_changes(
         orchestration_workers: Default::default(),
         sql_resources: Default::default(),
         workflows: Default::default(),
+        web_apps: Default::default(),
     });
 
     // Reconcile the current map with reality before diffing, but only if OLAP is enabled
@@ -363,6 +364,7 @@ mod tests {
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
             table_settings: None,
+            indexes: vec![],
         }
     }
 

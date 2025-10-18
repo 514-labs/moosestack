@@ -5,8 +5,8 @@ use crate::framework::core::infrastructure::table::{
 use serde_json::Value;
 
 use crate::infrastructure::olap::clickhouse::model::{
-    AggregationFunction, ClickHouseColumn, ClickHouseColumnType, ClickHouseFloat, ClickHouseInt,
-    ClickHouseTable,
+    AggregationFunction, ClickHouseColumn, ClickHouseColumnType, ClickHouseFloat, ClickHouseIndex,
+    ClickHouseInt, ClickHouseTable,
 };
 
 use super::errors::ClickhouseError;
@@ -118,6 +118,29 @@ fn std_field_type_to_clickhouse_type_mapper(
     field_type: ColumnType,
     annotations: &[(String, Value)],
 ) -> Result<ClickHouseColumnType, ClickhouseError> {
+    if let Some((_, simple_agg_func)) = annotations
+        .iter()
+        .find(|(k, _)| k == "simpleAggregationFunction")
+    {
+        #[derive(serde::Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        struct SimpleAggFunctionAnnotation {
+            function_name: String,
+            argument_type: ColumnType,
+        }
+
+        let simple_agg =
+            serde_json::from_value::<SimpleAggFunctionAnnotation>(simple_agg_func.clone()).unwrap();
+
+        let argument_type =
+            std_field_type_to_clickhouse_type_mapper(simple_agg.argument_type, &[])?;
+
+        return Ok(ClickHouseColumnType::SimpleAggregateFunction {
+            function_name: simple_agg.function_name,
+            argument_type: Box::new(argument_type),
+        });
+    }
+
     if let Some((_, agg_func)) = annotations.iter().find(|(k, _)| k == "aggregationFunction") {
         let clickhouse_type = std_field_type_to_clickhouse_type_mapper(field_type, &[])?;
 
@@ -302,6 +325,17 @@ pub fn std_table_to_clickhouse_table(table: &Table) -> Result<ClickHouseTable, C
         sample_by: table.sample_by.clone(),
         engine: clickhouse_engine,
         table_settings: table.table_settings.clone(),
+        indexes: table
+            .indexes
+            .iter()
+            .map(|i| ClickHouseIndex {
+                name: i.name.clone(),
+                expression: i.expression.clone(),
+                index_type: i.index_type.clone(),
+                arguments: i.arguments.clone(),
+                granularity: i.granularity,
+            })
+            .collect(),
     })
 }
 

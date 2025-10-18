@@ -123,8 +123,8 @@ pub fn create_alias_for_table(
 static CREATE_TABLE_TEMPLATE: &str = r#"
 CREATE TABLE IF NOT EXISTS `{{db_name}}`.`{{table_name}}`
 (
-{{#each fields}} `{{field_name}}` {{{field_type}}} {{field_nullable}}{{#if field_default}} DEFAULT {{{field_default}}}{{/if}}{{#if field_comment}} COMMENT '{{{field_comment}}}'{{/if}}{{#unless @last}},{{/unless}}
-{{/each}}
+{{#each fields}} `{{field_name}}` {{{field_type}}} {{field_nullable}}{{#if field_default}} DEFAULT {{{field_default}}}{{/if}}{{#if field_comment}} COMMENT '{{{field_comment}}}'{{/if}}{{#unless @last}},
+{{/unless}}{{/each}}{{#if has_indexes}}, {{#each indexes}}{{this}}{{#unless @last}}, {{/unless}}{{/each}}{{/if}}
 )
 ENGINE = {{engine}}{{#if primary_key_string}}
 PRIMARY KEY ({{primary_key_string}}){{/if}}{{#if partition_by}}
@@ -1628,10 +1628,32 @@ pub fn create_table_query(
         .map(|column| column.name.clone())
         .collect::<Vec<String>>();
 
+    // Prepare indexes strings like: INDEX name expr TYPE type(args...) GRANULARITY n
+    let (has_indexes, index_strings): (bool, Vec<String>) = if table.indexes.is_empty() {
+        (false, vec![])
+    } else {
+        let mut items = Vec::with_capacity(table.indexes.len());
+        for idx in &table.indexes {
+            let args_part = if idx.arguments.is_empty() {
+                String::new()
+            } else {
+                format!("({})", idx.arguments.join(", "))
+            };
+            items.push(format!(
+                "INDEX {} {} TYPE {}{} GRANULARITY {}",
+                idx.name, idx.expression, idx.index_type, args_part, idx.granularity
+            ));
+        }
+        (true, items)
+    };
+
     let template_context = json!({
         "db_name": db_name,
         "table_name": table.name,
         "fields":  builds_field_context(&table.columns)?,
+        "has_fields": !table.columns.is_empty(),
+        "has_indexes": has_indexes,
+        "indexes": index_strings,
         "primary_key_string": if !primary_key.is_empty() {
             Some(wrap_and_join_column_names(&primary_key, ","))
         } else {
@@ -1844,6 +1866,15 @@ pub fn basic_field_type_to_string(
                 "AggregateFunction({function_name}, {inner_type_string})"
             ))
         }
+        ClickHouseColumnType::SimpleAggregateFunction {
+            function_name,
+            argument_type,
+        } => {
+            let arg_type_string = basic_field_type_to_string(argument_type)?;
+            Ok(format!(
+                "SimpleAggregateFunction({function_name}, {arg_type_string})"
+            ))
+        }
         ClickHouseColumnType::Uuid => Ok("UUID".to_string()),
         ClickHouseColumnType::Date32 => Ok("Date32".to_string()),
         ClickHouseColumnType::Date => Ok("Date".to_string()),
@@ -2008,6 +2039,43 @@ mod tests {
     fn test_nested_nested_generator() {}
 
     #[test]
+    fn test_simple_aggregate_function_sql_generation() {
+        // Test SimpleAggregateFunction with UInt64
+        let col_type = ClickHouseColumnType::SimpleAggregateFunction {
+            function_name: "sum".to_string(),
+            argument_type: Box::new(ClickHouseColumnType::ClickhouseInt(ClickHouseInt::UInt64)),
+        };
+        let sql = basic_field_type_to_string(&col_type).unwrap();
+        assert_eq!(sql, "SimpleAggregateFunction(sum, UInt64)");
+
+        // Test SimpleAggregateFunction with max and Int32
+        let col_type2 = ClickHouseColumnType::SimpleAggregateFunction {
+            function_name: "max".to_string(),
+            argument_type: Box::new(ClickHouseColumnType::ClickhouseInt(ClickHouseInt::Int32)),
+        };
+        let sql2 = basic_field_type_to_string(&col_type2).unwrap();
+        assert_eq!(sql2, "SimpleAggregateFunction(max, Int32)");
+
+        // Test SimpleAggregateFunction with anyLast and String
+        let col_type3 = ClickHouseColumnType::SimpleAggregateFunction {
+            function_name: "anyLast".to_string(),
+            argument_type: Box::new(ClickHouseColumnType::String),
+        };
+        let sql3 = basic_field_type_to_string(&col_type3).unwrap();
+        assert_eq!(sql3, "SimpleAggregateFunction(anyLast, String)");
+
+        // Test SimpleAggregateFunction with nullable argument
+        let col_type4 = ClickHouseColumnType::SimpleAggregateFunction {
+            function_name: "any".to_string(),
+            argument_type: Box::new(ClickHouseColumnType::Nullable(Box::new(
+                ClickHouseColumnType::ClickhouseFloat(ClickHouseFloat::Float64),
+            ))),
+        };
+        let sql4 = basic_field_type_to_string(&col_type4).unwrap();
+        assert_eq!(sql4, "SimpleAggregateFunction(any, Nullable(Float64))");
+    }
+
+    #[test]
     fn test_create_table_query_basic() {
         let table = ClickHouseTable {
             version: Some(Version::from_string("1".to_string())),
@@ -2037,6 +2105,7 @@ mod tests {
             sample_by: None,
             engine: ClickhouseEngine::MergeTree,
             table_settings: None,
+            indexes: vec![],
         };
 
         let query = create_table_query("test_db", table, false).unwrap();
@@ -2071,6 +2140,7 @@ PRIMARY KEY (`id`)
             sample_by: None,
             engine: ClickhouseEngine::MergeTree,
             table_settings: None,
+            indexes: vec![],
         };
 
         let query = create_table_query("test_db", table, false).unwrap();
@@ -2104,6 +2174,7 @@ ENGINE = MergeTree
             sample_by: None,
             engine: ClickhouseEngine::MergeTree,
             table_settings: None,
+            indexes: vec![],
         };
 
         let query = create_table_query("test_db", table, false).unwrap();
@@ -2139,6 +2210,7 @@ ENGINE = MergeTree
                 is_deleted: None,
             },
             table_settings: None,
+            indexes: vec![],
         };
 
         let query = create_table_query("test_db", table, false).unwrap();
@@ -2175,6 +2247,7 @@ ORDER BY (`id`) "#;
             order_by: OrderBy::Fields(vec![]),
             partition_by: None,
             table_settings: None,
+            indexes: vec![],
         };
 
         let result = create_table_query("test_db", table, false);
@@ -2217,6 +2290,7 @@ ORDER BY (`id`) "#;
                 is_deleted: None,
             },
             table_settings: None,
+            indexes: vec![],
         };
 
         let query = create_table_query("test_db", table, false).unwrap();
@@ -2274,6 +2348,7 @@ ORDER BY (`id`) "#;
                 is_deleted: Some("is_deleted".to_string()),
             },
             table_settings: None,
+            indexes: vec![],
         };
 
         let query = create_table_query("test_db", table, false).unwrap();
@@ -2312,6 +2387,7 @@ ORDER BY (`id`) "#;
                 is_deleted: Some("is_deleted".to_string()),
             },
             table_settings: None,
+            indexes: vec![],
         };
 
         let result = create_table_query("test_db", table, false);
@@ -2460,6 +2536,7 @@ ORDER BY (`id`) "#;
             order_by: OrderBy::Fields(vec!["id".to_string()]),
             partition_by: None,
             table_settings: None,
+            indexes: vec![],
         };
 
         let query = create_table_query("test_db", table, false).unwrap();
@@ -2521,6 +2598,7 @@ ORDER BY (`id`) "#;
                 aws_secret_access_key: None,
             },
             table_settings: Some(settings),
+            indexes: vec![],
         };
 
         let query = create_table_query("test_db", table, false).unwrap();
@@ -2991,6 +3069,7 @@ SETTINGS keeper_path = '/clickhouse/s3queue/test_table', mode = 'unordered', s3q
                 aws_secret_access_key: None,
             },
             table_settings: None,
+            indexes: vec![],
         };
 
         let query = create_table_query("test_db", table, false).unwrap();

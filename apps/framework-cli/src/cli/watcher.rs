@@ -109,6 +109,7 @@ impl EventBuckets {
 /// # Arguments
 /// * `project` - The project configuration
 /// * `route_update_channel` - Channel for sending API route updates
+/// * `webapp_update_channel` - Channel for sending WebApp updates
 /// * `infrastructure_map` - The current infrastructure map
 /// * `project_registries` - Registry for all processes including syncing processes
 /// * `metrics` - Metrics collection
@@ -118,6 +119,9 @@ impl EventBuckets {
 async fn watch(
     project: Arc<Project>,
     route_update_channel: tokio::sync::mpsc::Sender<(InfrastructureMap, ApiChange)>,
+    webapp_update_channel: tokio::sync::mpsc::Sender<
+        crate::framework::core::infrastructure_map::WebAppChange,
+    >,
     infrastructure_map: &'static RwLock<InfrastructureMap>,
     project_registries: Arc<RwLock<ProcessRegistries>>,
     metrics: Arc<Metrics>,
@@ -175,6 +179,7 @@ async fn watch(
                                         &project,
                                         &plan_result,
                                         route_update_channel.clone(),
+                                        webapp_update_channel.clone(),
                                         &mut project_registries,
                                         metrics.clone(),
                                         &settings,
@@ -264,6 +269,7 @@ impl FileWatcher {
     /// # Arguments
     /// * `project` - The project configuration
     /// * `route_update_channel` - Channel for sending API route updates
+    /// * `webapp_update_channel` - Channel for sending WebApp updates
     /// * `infrastructure_map` - The current infrastructure map
     /// * `project_registries` - Registry for all processes including syncing processes
     /// * `metrics` - Metrics collection
@@ -274,6 +280,9 @@ impl FileWatcher {
         &self,
         project: Arc<Project>,
         route_update_channel: tokio::sync::mpsc::Sender<(InfrastructureMap, ApiChange)>,
+        webapp_update_channel: tokio::sync::mpsc::Sender<
+            crate::framework::core::infrastructure_map::WebAppChange,
+        >,
         infrastructure_map: &'static RwLock<InfrastructureMap>,
         project_registries: Arc<RwLock<ProcessRegistries>>,
         metrics: Arc<Metrics>,
@@ -292,6 +301,7 @@ impl FileWatcher {
             watch(
                 project,
                 route_update_channel,
+                webapp_update_channel,
                 infrastructure_map,
                 project_registries,
                 metrics,

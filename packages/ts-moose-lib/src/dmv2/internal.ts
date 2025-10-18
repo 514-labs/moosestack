@@ -34,6 +34,7 @@ import {
   TransformConfig,
 } from "./sdk/stream";
 import { compilerLog } from "../commons";
+import { WebApp } from "./sdk/webApp";
 
 /**
  * Internal registry holding all defined Moose dmv2 resources.
@@ -47,6 +48,7 @@ const moose_internal = {
   apis: new Map<string, Api<any>>(),
   sqlResources: new Map<string, SqlResource>(),
   workflows: new Map<string, Workflow>(),
+  webApps: new Map<string, WebApp>(),
 };
 /**
  * Default retention period for streams if not specified (7 days in seconds).
@@ -150,6 +152,14 @@ interface TableJson {
   lifeCycle?: string;
   /** Optional table-level settings that can be modified with ALTER TABLE MODIFY SETTING. */
   tableSettings?: { [key: string]: string };
+  /** Optional table indexes */
+  indexes?: {
+    name: string;
+    expression: string;
+    type: string;
+    arguments?: string[];
+    granularity: number;
+  }[];
 }
 /**
  * Represents a target destination for data flow, typically a stream.
@@ -269,9 +279,12 @@ interface WorkflowJson {
   schedule?: string;
 }
 
-/**
- * JSON representation of a generic SQL resource (like View, MaterializedView).
- */
+interface WebAppJson {
+  name: string;
+  mountPath: string;
+  metadata?: { description?: string };
+}
+
 interface SqlResourceJson {
   /** The name of the SQL resource. */
   name: string;
@@ -485,6 +498,7 @@ export const toInfraMap = (registry: typeof moose_internal) => {
   const apis: { [key: string]: ApiJson } = {};
   const sqlResources: { [key: string]: SqlResourceJson } = {};
   const workflows: { [key: string]: WorkflowJson } = {};
+  const webApps: { [key: string]: WebAppJson } = {};
 
   registry.tables.forEach((table) => {
     const id =
@@ -559,6 +573,7 @@ export const toInfraMap = (registry: typeof moose_internal) => {
         tableSettings && Object.keys(tableSettings).length > 0 ?
           tableSettings
         : undefined,
+      indexes: table.config.indexes || [],
     };
   });
 
@@ -699,6 +714,14 @@ export const toInfraMap = (registry: typeof moose_internal) => {
     };
   });
 
+  registry.webApps.forEach((webApp) => {
+    webApps[webApp.name] = {
+      name: webApp.name,
+      mountPath: webApp.config.mountPath || "/",
+      metadata: webApp.config.metadata,
+    };
+  });
+
   return {
     topics,
     tables,
@@ -706,6 +729,7 @@ export const toInfraMap = (registry: typeof moose_internal) => {
     apis,
     sqlResources,
     workflows,
+    webApps,
   };
 };
 
@@ -743,6 +767,24 @@ export const dumpMooseInternal = async () => {
 };
 
 const loadIndex = () => {
+  // Clear the registry before loading to support hot reloading
+  const registry = getMooseInternal();
+  registry.tables.clear();
+  registry.streams.clear();
+  registry.ingestApis.clear();
+  registry.apis.clear();
+  registry.sqlResources.clear();
+  registry.workflows.clear();
+  registry.webApps.clear();
+
+  // Clear require cache for app directory to pick up changes
+  const appDir = `${process.cwd()}/app`;
+  Object.keys(require.cache).forEach((key) => {
+    if (key.startsWith(appDir)) {
+      delete require.cache[key];
+    }
+  });
+
   try {
     require(`${process.cwd()}/app/index.ts`);
   } catch (error) {
@@ -1005,4 +1047,9 @@ export const getTaskForWorkflow = async (
   }
 
   return task;
+};
+
+export const getWebApps = async () => {
+  loadIndex();
+  return getMooseInternal().webApps;
 };
