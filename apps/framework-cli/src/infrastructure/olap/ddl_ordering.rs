@@ -630,11 +630,8 @@ fn handle_table_column_updates(
 
     let mut plan = process_column_changes(before, after, column_changes);
 
-    // Compute index additions and removals
     let before_indexes = &before.indexes;
     let after_indexes = &after.indexes;
-
-    // Modifications: same name but different definition => drop then add
     for after_idx in after_indexes {
         if let Some(before_idx) = before_indexes.iter().find(|b| b.name == after_idx.name) {
             if before_idx != after_idx {
@@ -657,8 +654,6 @@ fn handle_table_column_updates(
             });
         }
     }
-
-    // Removals
     for idx in before_indexes {
         if !after_indexes.iter().any(|a| a.name == idx.name) {
             plan.teardown_ops.push(AtomicOlapOperation::DropTableIndex {
