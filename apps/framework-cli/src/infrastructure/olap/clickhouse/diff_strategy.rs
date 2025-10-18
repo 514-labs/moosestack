@@ -249,17 +249,7 @@ impl TableDiffStrategy for ClickHouseTableDiffStrategy {
             ];
         }
 
-        // Check if SAMPLE BY has changed
-        if before.sample_by != after.sample_by {
-            log::debug!(
-                "ClickHouse: SAMPLE BY changed for table '{}', requiring drop+create",
-                before.name
-            );
-            return vec![
-                OlapChange::Table(TableChange::Removed(before.clone())),
-                OlapChange::Table(TableChange::Added(after.clone())),
-            ];
-        }
+        // SAMPLE BY can be modified via ALTER TABLE; do not force drop+create
 
         // Check if primary key structure has changed
         let before_primary_keys = before.primary_key_columns();
@@ -386,9 +376,9 @@ impl TableDiffStrategy for ClickHouseTableDiffStrategy {
             .collect();
 
         // For other changes, ClickHouse can handle them via ALTER TABLE.
-        // If there are no column or index changes, return an empty vector since
-        // we've already handled all the cases that require drop+create.
-        if column_changes.is_empty() && before.indexes == after.indexes {
+        // If there are no column/index/sample_by changes, return an empty vector.
+        let sample_by_changed = before.sample_by != after.sample_by;
+        if column_changes.is_empty() && before.indexes == after.indexes && !sample_by_changed {
             vec![]
         } else {
             vec![OlapChange::Table(TableChange::Updated {
@@ -665,16 +655,10 @@ mod tests {
 
         let changes = strategy.diff_table_update(&before, &after, vec![], order_by_change);
 
-        // SAMPLE BY change should require drop+create
-        assert_eq!(changes.len(), 2);
-        assert!(matches!(
-            changes[0],
-            OlapChange::Table(TableChange::Removed(_))
-        ));
-        assert!(matches!(
-            changes[1],
-            OlapChange::Table(TableChange::Added(_))
-        ));
+        // SAMPLE BY change is handled via ALTER TABLE, expect an Updated change
+        assert!(changes
+            .iter()
+            .any(|c| matches!(c, OlapChange::Table(TableChange::Updated { .. }))));
     }
 
     #[test]
@@ -695,16 +679,10 @@ mod tests {
 
         let changes = strategy.diff_table_update(&before, &after, vec![], order_by_change);
 
-        // SAMPLE BY modification should require drop+create
-        assert_eq!(changes.len(), 2);
-        assert!(matches!(
-            changes[0],
-            OlapChange::Table(TableChange::Removed(_))
-        ));
-        assert!(matches!(
-            changes[1],
-            OlapChange::Table(TableChange::Added(_))
-        ));
+        // SAMPLE BY modification is handled via ALTER TABLE, expect an Updated change
+        assert!(changes
+            .iter()
+            .any(|c| matches!(c, OlapChange::Table(TableChange::Updated { .. }))));
     }
 
     #[test]

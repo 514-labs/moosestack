@@ -140,7 +140,7 @@ message Table {
   // Non-breaking: keeps legacy order_by (field 3) while adding a structured variant
   optional OrderBy order_by2 = 13;
   // Optional secondary/data-skipping indexes
-  repeated TableIndex indexes = 14;
+  repeated TableIndex indexes = 15;
 }
 
 // Structured representation of ORDER BY to support either explicit fields

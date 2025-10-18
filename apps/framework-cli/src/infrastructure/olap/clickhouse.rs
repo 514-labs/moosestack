@@ -46,7 +46,7 @@ use queries::{
 use serde::{Deserialize, Serialize};
 use sql_parser::{
     extract_engine_from_create_table, extract_indexes_from_create_table,
-    extract_table_settings_from_create_table,
+    extract_sample_by_from_create_table, extract_table_settings_from_create_table,
 };
 use std::ops::Deref;
 
@@ -163,6 +163,13 @@ pub enum SerializableOlapOperation {
     DropTableIndex {
         table: String,
         index_name: String,
+    },
+    ModifySampleBy {
+        table: String,
+        expression: String,
+    },
+    RemoveSampleBy {
+        table: String,
     },
     RawSql {
         /// The SQL statements to execute
@@ -305,6 +312,12 @@ pub async fn execute_atomic_operation(
         SerializableOlapOperation::DropTableIndex { table, index_name } => {
             execute_drop_table_index(db_name, table, index_name, client).await?;
         }
+        SerializableOlapOperation::ModifySampleBy { table, expression } => {
+            execute_modify_sample_by(db_name, table, expression, client).await?;
+        }
+        SerializableOlapOperation::RemoveSampleBy { table } => {
+            execute_remove_sample_by(db_name, table, client).await?;
+        }
         SerializableOlapOperation::RawSql { sql, description } => {
             execute_raw_sql(sql, description, client).await?;
         }
@@ -368,6 +381,41 @@ async fn execute_drop_table_index(
     let sql = format!(
         "ALTER TABLE `{}`.`{}` DROP INDEX `{}`",
         db_name, table_name, index_name
+    );
+    run_query(&sql, client)
+        .await
+        .map_err(|e| ClickhouseChangesError::ClickhouseClient {
+            error: e,
+            resource: Some(table_name.to_string()),
+        })
+}
+
+async fn execute_modify_sample_by(
+    db_name: &str,
+    table_name: &str,
+    expression: &str,
+    client: &ConfiguredDBClient,
+) -> Result<(), ClickhouseChangesError> {
+    let sql = format!(
+        "ALTER TABLE `{}`.`{}` MODIFY SAMPLE BY {}",
+        db_name, table_name, expression
+    );
+    run_query(&sql, client)
+        .await
+        .map_err(|e| ClickhouseChangesError::ClickhouseClient {
+            error: e,
+            resource: Some(table_name.to_string()),
+        })
+}
+
+async fn execute_remove_sample_by(
+    db_name: &str,
+    table_name: &str,
+    client: &ConfiguredDBClient,
+) -> Result<(), ClickhouseChangesError> {
+    let sql = format!(
+        "ALTER TABLE `{}`.`{}` REMOVE SAMPLE BY",
+        db_name, table_name
     );
     run_query(&sql, client)
         .await
@@ -1378,7 +1426,7 @@ impl OlapOperations for ConfiguredDBClient {
                     let p = partition_key.trim();
                     (!p.is_empty()).then(|| p.to_string())
                 },
-                sample_by: None, // TODO: Extract SAMPLE BY from CREATE TABLE query
+                sample_by: extract_sample_by_from_create_table(&create_query),
                 engine: engine_parsed,
                 version,
                 source_primitive,

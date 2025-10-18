@@ -1023,6 +1023,7 @@ export const UserTable = new OlapTable<User>("User", {
             }],
             order_by: OrderBy::Fields(vec!["u64".to_string()]),
             partition_by: None,
+            sample_by: None,
             engine: Some(ClickhouseEngine::MergeTree),
             version: None,
             source_primitive: PrimitiveSignature {
