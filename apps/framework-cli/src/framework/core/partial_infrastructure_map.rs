@@ -29,7 +29,7 @@
 //!     let complete_map = partial_map.into_infra_map(
 //!         SupportedLanguages::TypeScript,
 //!         Path::new("main.ts")
-//!     );
+//!     ).unwrap();
 //! }
 //! ```
 
@@ -64,7 +64,7 @@ use crate::{
         scripts::Workflow, versions::Version,
     },
     infrastructure::olap::clickhouse::queries::ClickhouseEngine,
-    utilities::constants,
+    utilities::{constants, secrets::resolve_optional_runtime_env},
 };
 
 /// Defines how Moose manages the lifecycle of database resources when code changes.
@@ -342,6 +342,14 @@ pub enum DmV2LoadingError {
     /// JSON parsing errors
     JsonParsing(#[from] serde_json::Error),
 
+    /// Secret resolution errors
+    #[error("Failed to resolve runtime secret for table '{table_name}' field '{field}': {error}")]
+    SecretResolution {
+        table_name: String,
+        field: String,
+        error: String,
+    },
+
     /// Catch-all for other types of errors
     #[error("{message}")]
     Other { message: String },
@@ -483,12 +491,18 @@ impl PartialInfrastructureMap {
     ///
     /// Returns a complete [`InfrastructureMap`] containing all the validated and transformed
     /// infrastructure components.
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`DmV2LoadingError`] if:
+    /// * Secret resolution fails during table conversion
+    /// * Engine configuration is invalid
     pub fn into_infra_map(
         self,
         language: SupportedLanguages,
         main_file: &Path,
-    ) -> InfrastructureMap {
-        let tables = self.convert_tables();
+    ) -> Result<InfrastructureMap, DmV2LoadingError> {
+        let tables = self.convert_tables()?;
         let topics = self.convert_topics();
         let api_endpoints = self.convert_api_endpoints(main_file, &topics);
         let topic_to_table_sync_processes =
@@ -502,7 +516,7 @@ impl PartialInfrastructureMap {
         let orchestration_worker = OrchestrationWorker::new(language);
         orchestration_workers.insert(orchestration_worker.id(), orchestration_worker);
 
-        InfrastructureMap {
+        Ok(InfrastructureMap {
             topics,
             api_endpoints,
             tables,
@@ -518,14 +532,20 @@ impl PartialInfrastructureMap {
             orchestration_workers,
             workflows,
             web_apps,
-        }
+        })
     }
 
     /// Converts partial table definitions into complete [`Table`] instances.
     ///
     /// This method handles versioning and naming of tables, ensuring that versioned tables
     /// have appropriate suffixes in their names.
-    fn convert_tables(&self) -> HashMap<String, Table> {
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`DmV2LoadingError`] if:
+    /// * Secret resolution fails (e.g., environment variable not found)
+    /// * Engine configuration is invalid
+    fn convert_tables(&self) -> Result<HashMap<String, Table>, DmV2LoadingError> {
         self.tables
             .values()
             .map(|partial_table| {
@@ -534,7 +554,7 @@ impl PartialInfrastructureMap {
                     .as_ref()
                     .map(|v_str| Version::from_string(v_str.clone()));
 
-                let engine = self.parse_engine(partial_table);
+                let engine = self.parse_engine(partial_table)?;
                 let engine_params_hash = engine.as_ref().map(|e| e.non_alterable_params_hash());
 
                 // S3Queue settings should come directly from table_settings in the user code
@@ -598,85 +618,110 @@ impl PartialInfrastructureMap {
                     },
                     indexes: partial_table.indexes.clone(),
                 };
-                (table.id(), table)
+                Ok((table.id(), table))
             })
             .collect()
     }
 
     /// Parses the engine configuration from a partial table using the discriminated union approach.
     /// This provides type-safe conversion from the serialized engine configuration to ClickhouseEngine.
-    fn parse_engine(&self, partial_table: &PartialTable) -> Option<ClickhouseEngine> {
+    ///
+    /// For S3Queue engines, this method resolves runtime environment variable markers into actual values.
+    /// This ensures secrets are resolved before the infrastructure diff is calculated, allowing credential
+    /// rotation to trigger table recreation.
+    fn parse_engine(
+        &self,
+        partial_table: &PartialTable,
+    ) -> Result<Option<ClickhouseEngine>, DmV2LoadingError> {
         match &partial_table.engine_config {
-            Some(EngineConfig::MergeTree {}) => Some(ClickhouseEngine::MergeTree),
+            Some(EngineConfig::MergeTree {}) => Ok(Some(ClickhouseEngine::MergeTree)),
 
             Some(EngineConfig::ReplacingMergeTree { ver, is_deleted }) => {
-                Some(ClickhouseEngine::ReplacingMergeTree {
+                Ok(Some(ClickhouseEngine::ReplacingMergeTree {
                     ver: ver.clone(),
                     is_deleted: is_deleted.clone(),
-                })
+                }))
             }
 
             Some(EngineConfig::AggregatingMergeTree {}) => {
-                Some(ClickhouseEngine::AggregatingMergeTree)
+                Ok(Some(ClickhouseEngine::AggregatingMergeTree))
             }
 
             Some(EngineConfig::SummingMergeTree { columns }) => {
-                Some(ClickhouseEngine::SummingMergeTree {
+                Ok(Some(ClickhouseEngine::SummingMergeTree {
                     columns: columns.clone(),
-                })
+                }))
             }
 
             Some(EngineConfig::ReplicatedMergeTree {
                 keeper_path,
                 replica_name,
-            }) => Some(ClickhouseEngine::ReplicatedMergeTree {
+            }) => Ok(Some(ClickhouseEngine::ReplicatedMergeTree {
                 keeper_path: keeper_path.clone(),
                 replica_name: replica_name.clone(),
-            }),
+            })),
 
             Some(EngineConfig::ReplicatedReplacingMergeTree {
                 keeper_path,
                 replica_name,
                 ver,
                 is_deleted,
-            }) => Some(ClickhouseEngine::ReplicatedReplacingMergeTree {
+            }) => Ok(Some(ClickhouseEngine::ReplicatedReplacingMergeTree {
                 keeper_path: keeper_path.clone(),
                 replica_name: replica_name.clone(),
                 ver: ver.clone(),
                 is_deleted: is_deleted.clone(),
-            }),
+            })),
 
             Some(EngineConfig::ReplicatedAggregatingMergeTree {
                 keeper_path,
                 replica_name,
-            }) => Some(ClickhouseEngine::ReplicatedAggregatingMergeTree {
+            }) => Ok(Some(ClickhouseEngine::ReplicatedAggregatingMergeTree {
                 keeper_path: keeper_path.clone(),
                 replica_name: replica_name.clone(),
-            }),
+            })),
 
             Some(EngineConfig::ReplicatedSummingMergeTree {
                 keeper_path,
                 replica_name,
                 columns,
-            }) => Some(ClickhouseEngine::ReplicatedSummingMergeTree {
+            }) => Ok(Some(ClickhouseEngine::ReplicatedSummingMergeTree {
                 keeper_path: keeper_path.clone(),
                 replica_name: replica_name.clone(),
                 columns: columns.clone(),
-            }),
+            })),
 
             Some(EngineConfig::S3Queue(config)) => {
+                // Resolve environment variable markers for AWS credentials at runtime
+                // This must happen before the infrastructure diff to support credential rotation
+                let resolved_access_key = resolve_optional_runtime_env(&config.aws_access_key_id)
+                    .map_err(|e| DmV2LoadingError::SecretResolution {
+                    table_name: partial_table.name.clone(),
+                    field: "awsAccessKeyId".to_string(),
+                    error: e.to_string(),
+                })?;
+
+                let resolved_secret_key =
+                    resolve_optional_runtime_env(&config.aws_secret_access_key).map_err(|e| {
+                        DmV2LoadingError::SecretResolution {
+                            table_name: partial_table.name.clone(),
+                            field: "awsSecretAccessKey".to_string(),
+                            error: e.to_string(),
+                        }
+                    })?;
+
                 // S3Queue settings are handled in table_settings, not in the engine
-                Some(ClickhouseEngine::S3Queue {
+                Ok(Some(ClickhouseEngine::S3Queue {
                     s3_path: config.s3_path.clone(),
                     format: config.format.clone(),
                     compression: config.compression.clone(),
                     headers: config.headers.clone(),
-                    aws_access_key_id: config.aws_access_key_id.clone(),
-                    aws_secret_access_key: config.aws_secret_access_key.clone(),
-                })
+                    aws_access_key_id: resolved_access_key,
+                    aws_secret_access_key: resolved_secret_key,
+                }))
             }
 
-            None => None,
+            None => Ok(None),
         }
     }
 

@@ -14,6 +14,7 @@ pub mod nodejs_version;
 pub mod package_managers;
 pub mod process_output;
 pub mod retry;
+pub mod secrets;
 pub mod system;
 pub mod validate_passthrough;
 
