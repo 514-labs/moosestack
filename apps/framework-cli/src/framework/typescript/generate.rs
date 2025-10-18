@@ -553,7 +553,6 @@ pub fn tables_to_typescript(tables: &[Table], life_cycle: Option<LifeCycle>) -> 
             )
             .unwrap();
         };
-        // Emit secondary/data-skipping indexes if present
         if !table.indexes.is_empty() {
             writeln!(output, "    indexes: [").unwrap();
             for idx in &table.indexes {

@@ -536,7 +536,6 @@ pub fn tables_to_python(tables: &[Table], life_cycle: Option<LifeCycle>) -> Stri
             )
             .unwrap();
         };
-        // Emit table settings if present (includes mode for S3Queue)
         if let Some(engine) = &table.engine {
             match engine {
                 crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine::S3Queue {
@@ -672,7 +671,7 @@ pub fn tables_to_python(tables: &[Table], life_cycle: Option<LifeCycle>) -> Stri
                 writeln!(output, "}},").unwrap();
             }
         }
-        // Emit secondary/data-skipping indexes if present
+
         if !table.indexes.is_empty() {
             writeln!(output, "    indexes=[").unwrap();
             for idx in &table.indexes {
