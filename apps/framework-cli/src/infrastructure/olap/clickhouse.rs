@@ -48,7 +48,6 @@ use sql_parser::{
     extract_engine_from_create_table, extract_indexes_from_create_table,
     extract_table_settings_from_create_table,
 };
-// use model::ClickHouseIndex; // not used directly here yet
 use std::ops::Deref;
 
 use self::model::ClickHouseSystemTable;

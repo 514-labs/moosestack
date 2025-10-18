@@ -607,7 +607,7 @@ def to_infra_map() -> dict:
             life_cycle=table.config.life_cycle.value if table.config.life_cycle else None,
             # Map 'settings' to 'table_settings' for internal use
             table_settings=table_settings if table_settings else None,
-            indexes=table.config.indexes or [],
+            indexes=table.config.indexes,
         )
 
     for name, stream in get_streams().items():
