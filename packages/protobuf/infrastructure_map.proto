@@ -133,14 +133,15 @@ message Table {
   map<string, string> table_settings = 11;
   // Optional PARTITION BY expression for ClickHouse tables
   optional string partition_by = 12;
-  // Optional SAMPLE BY expression for ClickHouse tables
-  optional string sample_by_expression = 14;
 
   // Next-version ORDER BY representation to match Rust enum
   // Non-breaking: keeps legacy order_by (field 3) while adding a structured variant
   optional OrderBy order_by2 = 13;
   // Optional secondary/data-skipping indexes
-  repeated TableIndex indexes = 15;
+  repeated TableIndex indexes = 14;
+
+  // Optional SAMPLE BY expression for ClickHouse tables
+  optional string sample_by_expression = 15;
 }
 
 // Structured representation of ORDER BY to support either explicit fields
