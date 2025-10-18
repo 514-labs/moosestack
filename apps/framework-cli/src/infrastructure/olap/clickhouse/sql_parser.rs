@@ -221,8 +221,9 @@ pub fn extract_engine_from_create_table(sql: &str) -> Option<String> {
     }
 }
 
-/// Extract index definitions from a CREATE TABLE statement
-/// Returns a vector of ClickHouseIndex with name, expression, type, arguments and granularity
+// sql_parser library cannot handle clickhouse indexes last time i tried
+// `show indexes` does not provide index argument info
+// so we're stuck with this
 pub fn extract_indexes_from_create_table(sql: &str) -> Result<Vec<ClickHouseIndex>, SqlParseError> {
     let mut result: Vec<ClickHouseIndex> = Vec::new();
     let upper = sql.to_uppercase();
