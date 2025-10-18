@@ -306,14 +306,11 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
           config.language === "typescript" ? "models.ts" : "models.py",
         );
         let contents = await fs.promises.readFile(modelPath, "utf8");
-        // Change granularity of idx1 from 3 to 4
+
         contents = contents
           .replace("granularity: 3", "granularity: 4")
           .replace("granularity=3", "granularity=4");
         await fs.promises.writeFile(modelPath, contents, "utf8");
-
-        // Trigger generator to pick up the change
-        await triggerWorkflow("generator");
 
         // Verify DDL reflects updated index
         await withRetries(
