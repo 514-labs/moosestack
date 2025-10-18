@@ -192,6 +192,8 @@ struct PartialTable {
     pub order_by: OrderBy,
     #[serde(default)]
     pub partition_by: Option<String>,
+    #[serde(default, alias = "sampleByExpression")]
+    pub sample_by: Option<String>,
     #[serde(alias = "engine_config")]
     pub engine_config: Option<EngineConfig>,
     pub version: Option<String>,
@@ -582,6 +584,7 @@ impl PartialInfrastructureMap {
                     columns: partial_table.columns.clone(),
                     order_by: partial_table.order_by.clone(),
                     partition_by: partial_table.partition_by.clone(),
+                    sample_by: partial_table.sample_by.clone(),
                     engine,
                     version,
                     source_primitive: PrimitiveSignature {

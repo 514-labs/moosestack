@@ -128,7 +128,8 @@ CREATE TABLE IF NOT EXISTS `{{db_name}}`.`{{table_name}}`
 )
 ENGINE = {{engine}}{{#if primary_key_string}}
 PRIMARY KEY ({{primary_key_string}}){{/if}}{{#if partition_by}}
-PARTITION BY {{partition_by}}{{/if}}{{#if order_by_string}}
+PARTITION BY {{partition_by}}{{/if}}{{#if sample_by}}
+SAMPLE BY {{sample_by}}{{/if}}{{#if order_by_string}}
 ORDER BY ({{order_by_string}}){{/if}}{{#if settings}}
 SETTINGS {{settings}}{{/if}}"#;
 
@@ -1665,6 +1666,7 @@ pub fn create_table_query(
             _ => None,
         },
         "partition_by": table.partition_by.as_deref(),
+        "sample_by": table.sample_by.as_deref(),
         "engine": engine,
         "settings": settings
     });
@@ -2100,6 +2102,7 @@ mod tests {
             ],
             order_by: OrderBy::Fields(vec![]),
             partition_by: None,
+            sample_by: None,
             engine: ClickhouseEngine::MergeTree,
             table_settings: None,
             indexes: vec![],
@@ -2134,6 +2137,7 @@ PRIMARY KEY (`id`)
             }],
             order_by: OrderBy::Fields(vec![]),
             partition_by: None,
+            sample_by: None,
             engine: ClickhouseEngine::MergeTree,
             table_settings: None,
             indexes: vec![],
@@ -2167,6 +2171,7 @@ ENGINE = MergeTree
             }],
             order_by: OrderBy::Fields(vec![]),
             partition_by: None,
+            sample_by: None,
             engine: ClickhouseEngine::MergeTree,
             table_settings: None,
             indexes: vec![],
@@ -2199,6 +2204,7 @@ ENGINE = MergeTree
             }],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
             partition_by: None,
+            sample_by: None,
             engine: ClickhouseEngine::ReplacingMergeTree {
                 ver: None,
                 is_deleted: None,
@@ -2237,6 +2243,7 @@ ORDER BY (`id`) "#;
                 ver: None,
                 is_deleted: None,
             },
+            sample_by: None,
             order_by: OrderBy::Fields(vec![]),
             partition_by: None,
             table_settings: None,
@@ -2277,6 +2284,7 @@ ORDER BY (`id`) "#;
             ],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
             partition_by: None,
+            sample_by: None,
             engine: ClickhouseEngine::ReplacingMergeTree {
                 ver: Some("version".to_string()),
                 is_deleted: None,
@@ -2334,6 +2342,7 @@ ORDER BY (`id`) "#;
             ],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
             partition_by: None,
+            sample_by: None,
             engine: ClickhouseEngine::ReplacingMergeTree {
                 ver: Some("version".to_string()),
                 is_deleted: Some("is_deleted".to_string()),
@@ -2370,6 +2379,7 @@ ORDER BY (`id`) "#;
                 default: None,
                 comment: None,
             }],
+            sample_by: None,
             order_by: OrderBy::Fields(vec!["id".to_string()]),
             partition_by: None,
             engine: ClickhouseEngine::ReplacingMergeTree {
@@ -2521,6 +2531,7 @@ ORDER BY (`id`) "#;
                     comment: None,
                 },
             ],
+            sample_by: None,
             engine: ClickhouseEngine::MergeTree,
             order_by: OrderBy::Fields(vec!["id".to_string()]),
             partition_by: None,
@@ -2577,6 +2588,7 @@ ORDER BY (`id`) "#;
             ],
             order_by: OrderBy::Fields(vec![]),
             partition_by: None,
+            sample_by: None,
             engine: ClickhouseEngine::S3Queue {
                 s3_path: "s3://my-bucket/data/*.json".to_string(),
                 format: "JSONEachRow".to_string(),
@@ -3047,6 +3059,7 @@ SETTINGS keeper_path = '/clickhouse/s3queue/test_table', mode = 'unordered', s3q
             }],
             order_by: OrderBy::Fields(vec![]),
             partition_by: None,
+            sample_by: None,
             engine: ClickhouseEngine::S3Queue {
                 s3_path: "s3://my-bucket/data/*.csv".to_string(),
                 format: "CSV".to_string(),
