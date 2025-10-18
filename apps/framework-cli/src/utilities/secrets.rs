@@ -1,34 +1,38 @@
-//! Runtime secret resolution utilities
+//! Runtime environment variable resolution utilities
 //!
 //! This module handles resolution of environment variable markers in infrastructure configuration.
-//! It provides a secure way to defer secret resolution until runtime, preventing credentials
+//! It provides a way to defer configuration resolution until runtime, preventing credentials
 //! from being embedded in Docker images or deployment artifacts.
 //!
 //! # Marker Format
 //!
-//! Secrets are marked with the prefix `__MOOSE_ENV_SECRET__:` followed by the environment
-//! variable name. For example: `__MOOSE_ENV_SECRET__:AWS_ACCESS_KEY_ID`
+//! Runtime environment variables are marked with the prefix `__MOOSE_RUNTIME_ENV__:` followed
+//! by the environment variable name. For example: `__MOOSE_RUNTIME_ENV__:AWS_ACCESS_KEY_ID`
 //!
 //! # Usage
 //!
 //! ```rust
-//! use framework_cli::utilities::secrets::{resolve_env_secret, resolve_optional_secret};
+//! use framework_cli::utilities::secrets::{resolve_runtime_env, resolve_optional_runtime_env};
 //!
-//! let marker = "__MOOSE_ENV_SECRET__:AWS_ACCESS_KEY_ID";
-//! let resolved = resolve_env_secret(marker)?;
+//! let marker = "__MOOSE_RUNTIME_ENV__:AWS_ACCESS_KEY_ID";
+//! let resolved = resolve_runtime_env(marker)?;
 //!
-//! let optional_marker = Some("__MOOSE_ENV_SECRET__:AWS_SECRET_KEY".to_string());
-//! let resolved_optional = resolve_optional_secret(&optional_marker)?;
+//! let optional_marker = Some("__MOOSE_RUNTIME_ENV__:AWS_SECRET_KEY".to_string());
+//! let resolved_optional = resolve_optional_runtime_env(&optional_marker)?;
 //! ```
 
 use std::env;
 
 /// Prefix used to mark values that should be resolved from environment variables
-pub const MOOSE_ENV_SECRET_PREFIX: &str = "__MOOSE_ENV_SECRET__:";
+pub const MOOSE_RUNTIME_ENV_PREFIX: &str = "__MOOSE_RUNTIME_ENV__:";
 
-/// Resolves a value that may contain a Moose environment secret marker.
+/// Legacy prefix for backwards compatibility
+#[deprecated(note = "Use MOOSE_RUNTIME_ENV_PREFIX instead")]
+pub const MOOSE_ENV_SECRET_PREFIX: &str = "__MOOSE_RUNTIME_ENV__:";
+
+/// Resolves a value that may contain a Moose runtime environment variable marker.
 ///
-/// If the value starts with `__MOOSE_ENV_SECRET__:`, extracts the variable name
+/// If the value starts with `__MOOSE_RUNTIME_ENV__:`, extracts the variable name
 /// and reads it from the environment at runtime.
 ///
 /// # Arguments
@@ -37,7 +41,7 @@ pub const MOOSE_ENV_SECRET_PREFIX: &str = "__MOOSE_ENV_SECRET__:";
 ///
 /// # Returns
 ///
-/// * `Result<String, SecretResolutionError>` - The resolved value
+/// * `Result<String, RuntimeEnvResolutionError>` - The resolved value
 ///
 /// # Errors
 ///
@@ -48,24 +52,24 @@ pub const MOOSE_ENV_SECRET_PREFIX: &str = "__MOOSE_ENV_SECRET__:";
 /// # Example
 ///
 /// ```rust
-/// use framework_cli::utilities::secrets::resolve_env_secret;
+/// use framework_cli::utilities::secrets::resolve_runtime_env;
 ///
 /// // With a marker:
-/// let value = "__MOOSE_ENV_SECRET__:AWS_ACCESS_KEY_ID";
-/// let resolved = resolve_env_secret(value)?;
+/// let value = "__MOOSE_RUNTIME_ENV__:AWS_ACCESS_KEY_ID";
+/// let resolved = resolve_runtime_env(value)?;
 ///
 /// // Without a marker (returns as-is):
 /// let value = "my-static-value";
-/// let resolved = resolve_env_secret(value)?;
+/// let resolved = resolve_runtime_env(value)?;
 /// assert_eq!(resolved, "my-static-value");
 /// ```
-pub fn resolve_env_secret(value: &str) -> Result<String, SecretResolutionError> {
-    if let Some(env_var_name) = value.strip_prefix(MOOSE_ENV_SECRET_PREFIX) {
+pub fn resolve_runtime_env(value: &str) -> Result<String, RuntimeEnvResolutionError> {
+    if let Some(env_var_name) = value.strip_prefix(MOOSE_RUNTIME_ENV_PREFIX) {
         if env_var_name.is_empty() {
-            return Err(SecretResolutionError::EmptyVariableName);
+            return Err(RuntimeEnvResolutionError::EmptyVariableName);
         }
 
-        env::var(env_var_name).map_err(|_| SecretResolutionError::VariableNotFound {
+        env::var(env_var_name).map_err(|_| RuntimeEnvResolutionError::VariableNotFound {
             var_name: env_var_name.to_string(),
         })
     } else {
@@ -74,9 +78,9 @@ pub fn resolve_env_secret(value: &str) -> Result<String, SecretResolutionError> 
     }
 }
 
-/// Resolves an optional secret value.
+/// Resolves an optional runtime environment variable value.
 ///
-/// This is a convenience wrapper around `resolve_env_secret` for `Option<String>` values.
+/// This is a convenience wrapper around `resolve_runtime_env` for `Option<String>` values.
 ///
 /// # Arguments
 ///
@@ -84,40 +88,54 @@ pub fn resolve_env_secret(value: &str) -> Result<String, SecretResolutionError> 
 ///
 /// # Returns
 ///
-/// * `Result<Option<String>, SecretResolutionError>` - The resolved optional value
+/// * `Result<Option<String>, RuntimeEnvResolutionError>` - The resolved optional value
 ///
 /// # Example
 ///
 /// ```rust
-/// use framework_cli::utilities::secrets::resolve_optional_secret;
+/// use framework_cli::utilities::secrets::resolve_optional_runtime_env;
 ///
-/// let value = Some("__MOOSE_ENV_SECRET__:MY_VAR".to_string());
-/// let resolved = resolve_optional_secret(&value)?;
+/// let value = Some("__MOOSE_RUNTIME_ENV__:MY_VAR".to_string());
+/// let resolved = resolve_optional_runtime_env(&value)?;
 ///
 /// let none_value: Option<String> = None;
-/// let resolved_none = resolve_optional_secret(&none_value)?;
+/// let resolved_none = resolve_optional_runtime_env(&none_value)?;
 /// assert!(resolved_none.is_none());
 /// ```
-pub fn resolve_optional_secret(
+pub fn resolve_optional_runtime_env(
     value: &Option<String>,
-) -> Result<Option<String>, SecretResolutionError> {
+) -> Result<Option<String>, RuntimeEnvResolutionError> {
     match value {
-        Some(v) => Ok(Some(resolve_env_secret(v)?)),
+        Some(v) => Ok(Some(resolve_runtime_env(v)?)),
         None => Ok(None),
     }
 }
 
-/// Errors that can occur during secret resolution
+/// Legacy function for backwards compatibility
+#[deprecated(note = "Use resolve_runtime_env instead")]
+pub fn resolve_env_secret(value: &str) -> Result<String, RuntimeEnvResolutionError> {
+    resolve_runtime_env(value)
+}
+
+/// Legacy function for backwards compatibility
+#[deprecated(note = "Use resolve_optional_runtime_env instead")]
+pub fn resolve_optional_secret(
+    value: &Option<String>,
+) -> Result<Option<String>, RuntimeEnvResolutionError> {
+    resolve_optional_runtime_env(value)
+}
+
+/// Errors that can occur during runtime environment variable resolution
 #[derive(Debug, thiserror::Error)]
-pub enum SecretResolutionError {
+pub enum RuntimeEnvResolutionError {
     /// Environment variable name in the marker is empty
-    #[error("Environment variable name in secret marker cannot be empty")]
+    #[error("Environment variable name in runtime marker cannot be empty")]
     EmptyVariableName,
 
     /// Environment variable not found in the environment
     #[error(
         "Environment variable '{var_name}' not found. Set this variable before running Moose.\n\
-         Example: export {var_name}=\"your-secret-value\""
+         Example: export {var_name}=\"your-value\""
     )]
     VariableNotFound {
         /// Name of the environment variable that was not found
@@ -125,45 +143,49 @@ pub enum SecretResolutionError {
     },
 }
 
+/// Legacy type alias for backwards compatibility
+#[deprecated(note = "Use RuntimeEnvResolutionError instead")]
+pub type SecretResolutionError = RuntimeEnvResolutionError;
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn test_resolve_env_secret_with_marker() {
+    fn test_resolve_runtime_env_with_marker() {
         // Set a test environment variable
-        env::set_var("TEST_SECRET_VAR", "test-secret-value");
+        env::set_var("TEST_RUNTIME_VAR", "test-runtime-value");
 
-        let marker = "__MOOSE_ENV_SECRET__:TEST_SECRET_VAR";
-        let result = resolve_env_secret(marker);
+        let marker = "__MOOSE_RUNTIME_ENV__:TEST_RUNTIME_VAR";
+        let result = resolve_runtime_env(marker);
 
         assert!(result.is_ok());
-        assert_eq!(result.unwrap(), "test-secret-value");
+        assert_eq!(result.unwrap(), "test-runtime-value");
 
         // Clean up
-        env::remove_var("TEST_SECRET_VAR");
+        env::remove_var("TEST_RUNTIME_VAR");
     }
 
     #[test]
-    fn test_resolve_env_secret_without_marker() {
+    fn test_resolve_runtime_env_without_marker() {
         let value = "plain-value";
-        let result = resolve_env_secret(value);
+        let result = resolve_runtime_env(value);
 
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), "plain-value");
     }
 
     #[test]
-    fn test_resolve_env_secret_missing_variable() {
+    fn test_resolve_runtime_env_missing_variable() {
         // Ensure variable doesn't exist
         env::remove_var("NONEXISTENT_VAR");
 
-        let marker = "__MOOSE_ENV_SECRET__:NONEXISTENT_VAR";
-        let result = resolve_env_secret(marker);
+        let marker = "__MOOSE_RUNTIME_ENV__:NONEXISTENT_VAR";
+        let result = resolve_runtime_env(marker);
 
         assert!(result.is_err());
         match result {
-            Err(SecretResolutionError::VariableNotFound { var_name }) => {
+            Err(RuntimeEnvResolutionError::VariableNotFound { var_name }) => {
                 assert_eq!(var_name, "NONEXISTENT_VAR");
             }
             _ => panic!("Expected VariableNotFound error"),
@@ -171,23 +193,23 @@ mod tests {
     }
 
     #[test]
-    fn test_resolve_env_secret_empty_variable_name() {
-        let marker = "__MOOSE_ENV_SECRET__:";
-        let result = resolve_env_secret(marker);
+    fn test_resolve_runtime_env_empty_variable_name() {
+        let marker = "__MOOSE_RUNTIME_ENV__:";
+        let result = resolve_runtime_env(marker);
 
         assert!(result.is_err());
         assert!(matches!(
             result,
-            Err(SecretResolutionError::EmptyVariableName)
+            Err(RuntimeEnvResolutionError::EmptyVariableName)
         ));
     }
 
     #[test]
-    fn test_resolve_optional_secret_some() {
+    fn test_resolve_optional_runtime_env_some() {
         env::set_var("TEST_OPTIONAL_VAR", "optional-value");
 
-        let value = Some("__MOOSE_ENV_SECRET__:TEST_OPTIONAL_VAR".to_string());
-        let result = resolve_optional_secret(&value);
+        let value = Some("__MOOSE_RUNTIME_ENV__:TEST_OPTIONAL_VAR".to_string());
+        let result = resolve_optional_runtime_env(&value);
 
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), Some("optional-value".to_string()));
@@ -196,37 +218,37 @@ mod tests {
     }
 
     #[test]
-    fn test_resolve_optional_secret_none() {
+    fn test_resolve_optional_runtime_env_none() {
         let value: Option<String> = None;
-        let result = resolve_optional_secret(&value);
+        let result = resolve_optional_runtime_env(&value);
 
         assert!(result.is_ok());
         assert!(result.unwrap().is_none());
     }
 
     #[test]
-    fn test_resolve_optional_secret_plain_value() {
+    fn test_resolve_optional_runtime_env_plain_value() {
         let value = Some("plain-optional-value".to_string());
-        let result = resolve_optional_secret(&value);
+        let result = resolve_optional_runtime_env(&value);
 
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), Some("plain-optional-value".to_string()));
     }
 
     #[test]
-    fn test_credential_rotation_detection() {
-        // Simulate credential rotation by changing env var value
-        env::set_var("ROTATION_TEST_VAR", "old_credential");
-        let marker = "__MOOSE_ENV_SECRET__:ROTATION_TEST_VAR";
-        let old_value = resolve_env_secret(marker).unwrap();
+    fn test_config_rotation_detection() {
+        // Simulate configuration rotation by changing env var value
+        env::set_var("ROTATION_TEST_VAR", "old_value");
+        let marker = "__MOOSE_RUNTIME_ENV__:ROTATION_TEST_VAR";
+        let old_value = resolve_runtime_env(marker).unwrap();
 
-        env::set_var("ROTATION_TEST_VAR", "new_credential");
-        let new_value = resolve_env_secret(marker).unwrap();
+        env::set_var("ROTATION_TEST_VAR", "new_value");
+        let new_value = resolve_runtime_env(marker).unwrap();
 
         // Different values should be returned
         assert_ne!(old_value, new_value);
-        assert_eq!(old_value, "old_credential");
-        assert_eq!(new_value, "new_credential");
+        assert_eq!(old_value, "old_value");
+        assert_eq!(new_value, "new_value");
 
         env::remove_var("ROTATION_TEST_VAR");
     }

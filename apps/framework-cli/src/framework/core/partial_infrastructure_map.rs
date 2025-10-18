@@ -64,7 +64,7 @@ use crate::{
         scripts::Workflow, versions::Version,
     },
     infrastructure::olap::clickhouse::queries::ClickhouseEngine,
-    utilities::{constants, secrets::resolve_optional_secret},
+    utilities::{constants, secrets::resolve_optional_runtime_env},
 };
 
 /// Defines how Moose manages the lifecycle of database resources when code changes.
@@ -691,18 +691,20 @@ impl PartialInfrastructureMap {
             Some(EngineConfig::S3Queue(config)) => {
                 // Resolve environment variable markers for AWS credentials at runtime
                 // This must happen before the infrastructure diff to support credential rotation
-                let resolved_access_key = resolve_optional_secret(&config.aws_access_key_id)
+                let resolved_access_key = resolve_optional_runtime_env(&config.aws_access_key_id)
                     .map_err(|e| DmV2LoadingError::SecretResolution {
-                        table_name: partial_table.name.clone(),
-                        field: "awsAccessKeyId".to_string(),
-                        error: e.to_string(),
-                    })?;
+                    table_name: partial_table.name.clone(),
+                    field: "awsAccessKeyId".to_string(),
+                    error: e.to_string(),
+                })?;
 
-                let resolved_secret_key = resolve_optional_secret(&config.aws_secret_access_key)
-                    .map_err(|e| DmV2LoadingError::SecretResolution {
-                        table_name: partial_table.name.clone(),
-                        field: "awsSecretAccessKey".to_string(),
-                        error: e.to_string(),
+                let resolved_secret_key =
+                    resolve_optional_runtime_env(&config.aws_secret_access_key).map_err(|e| {
+                        DmV2LoadingError::SecretResolution {
+                            table_name: partial_table.name.clone(),
+                            field: "awsSecretAccessKey".to_string(),
+                            error: e.to_string(),
+                        }
                     })?;
 
                 // S3Queue settings are handled in table_settings, not in the engine

@@ -3,14 +3,14 @@ import {
   ClickHouseEngines,
   Key,
   DateTime,
-  mooseEnvSecrets,
+  mooseRuntimeEnv,
 } from "@514labs/moose-lib";
 
 /**
- * S3Queue table tests for runtime secret resolution
+ * S3Queue table tests for runtime environment variable resolution
  *
- * These tables test the mooseEnvSecrets.get() functionality which allows
- * credentials to be resolved at runtime from environment variables rather
+ * These tables test the mooseRuntimeEnv.get() functionality which allows
+ * configuration to be resolved at runtime from environment variables rather
  * than being embedded at build time.
  */
 
@@ -20,7 +20,7 @@ export interface S3QueueTestData {
   data: string;
 }
 
-// Test S3Queue with runtime secret resolution using mooseEnvSecrets
+// Test S3Queue with runtime environment variable resolution using mooseRuntimeEnv
 // This table will only be created if the required environment variables are set
 export const S3QueueWithSecrets = new OlapTable<S3QueueTestData>(
   "S3QueueWithSecrets",
@@ -29,8 +29,8 @@ export const S3QueueWithSecrets = new OlapTable<S3QueueTestData>(
     s3Path: "s3://test-bucket/data/*.json",
     format: "JSONEachRow",
     // Credentials resolved at runtime from environment variables
-    awsAccessKeyId: mooseEnvSecrets.get("TEST_AWS_ACCESS_KEY_ID"),
-    awsSecretAccessKey: mooseEnvSecrets.get("TEST_AWS_SECRET_ACCESS_KEY"),
+    awsAccessKeyId: mooseRuntimeEnv.get("TEST_AWS_ACCESS_KEY_ID"),
+    awsSecretAccessKey: mooseRuntimeEnv.get("TEST_AWS_SECRET_ACCESS_KEY"),
     settings: {
       mode: "unordered",
       keeper_path: "/clickhouse/s3queue/test_with_secrets",

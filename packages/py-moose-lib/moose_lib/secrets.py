@@ -1,22 +1,22 @@
-"""Utilities for runtime secret resolution from environment variables.
+"""Utilities for runtime environment variable resolution.
 
 This module provides functionality to mark values that should be resolved
 from environment variables at runtime by the Moose CLI, rather than being
 embedded at build time.
 
 Example:
-    >>> from moose_lib import S3QueueEngine, moose_env_secrets
+    >>> from moose_lib import S3QueueEngine, moose_runtime_env
     >>>
     >>> engine = S3QueueEngine(
     ...     s3_path="s3://bucket/data/*.json",
     ...     format="JSONEachRow",
-    ...     aws_access_key_id=moose_env_secrets.get("AWS_ACCESS_KEY_ID"),
-    ...     aws_secret_access_key=moose_env_secrets.get("AWS_SECRET_ACCESS_KEY")
+    ...     aws_access_key_id=moose_runtime_env.get("AWS_ACCESS_KEY_ID"),
+    ...     aws_secret_access_key=moose_runtime_env.get("AWS_SECRET_ACCESS_KEY")
     ... )
 """
 
 #: Prefix used to mark values for runtime environment variable resolution.
-MOOSE_ENV_SECRET_PREFIX = "__MOOSE_ENV_SECRET__:"
+MOOSE_RUNTIME_ENV_PREFIX = "__MOOSE_RUNTIME_ENV__:"
 
 
 def get(env_var_name: str) -> str:
@@ -26,10 +26,11 @@ def get(env_var_name: str) -> str:
     a special marker is created that the Moose CLI will resolve when it
     processes your infrastructure configuration.
 
-    This ensures that:
-    - Credentials are never embedded in Docker images
-    - Secrets can be rotated without rebuilding
-    - Different environments can use different credentials
+    This is useful for:
+    - Credentials that should never be embedded in Docker images
+    - Configuration that can be rotated without rebuilding
+    - Different values for different environments (dev, staging, prod)
+    - Any runtime configuration in infrastructure elements (Tables, Topics, etc.)
 
     Args:
         env_var_name: Name of the environment variable to resolve
@@ -46,21 +47,21 @@ def get(env_var_name: str) -> str:
         >>> aws_key = os.environ.get("AWS_ACCESS_KEY_ID")
         >>>
         >>> # Use this (evaluated at runtime):
-        >>> aws_key = moose_env_secrets.get("AWS_ACCESS_KEY_ID")
+        >>> aws_key = moose_runtime_env.get("AWS_ACCESS_KEY_ID")
     """
     if not env_var_name or not env_var_name.strip():
         raise ValueError("Environment variable name cannot be empty")
-    return f"{MOOSE_ENV_SECRET_PREFIX}{env_var_name}"
+    return f"{MOOSE_RUNTIME_ENV_PREFIX}{env_var_name}"
 
 
-class MooseEnvSecrets:
+class MooseRuntimeEnv:
     """Utilities for marking values to be resolved from environment variables at runtime.
 
-    This class provides a namespace for secret resolution utilities. Use the
-    singleton instance `moose_env_secrets` rather than instantiating this class directly.
+    This class provides a namespace for runtime environment variable resolution.
+    Use the singleton instance `moose_runtime_env` rather than instantiating this class directly.
 
     Attributes:
-        get: Static method for creating runtime secret markers
+        get: Static method for creating runtime environment variable markers
     """
 
     @staticmethod
@@ -80,6 +81,20 @@ class MooseEnvSecrets:
 
 
 # Export singleton instance for module-level access
-moose_env_secrets = MooseEnvSecrets()
+moose_runtime_env = MooseRuntimeEnv()
 
-__all__ = ["moose_env_secrets", "MooseEnvSecrets", "get", "MOOSE_ENV_SECRET_PREFIX"]
+# Legacy exports for backwards compatibility
+MooseEnvSecrets = MooseRuntimeEnv  # Deprecated: Use MooseRuntimeEnv instead
+moose_env_secrets = moose_runtime_env  # Deprecated: Use moose_runtime_env instead
+MOOSE_ENV_SECRET_PREFIX = MOOSE_RUNTIME_ENV_PREFIX  # Deprecated: Use MOOSE_RUNTIME_ENV_PREFIX instead
+
+__all__ = [
+    "moose_runtime_env",
+    "MooseRuntimeEnv",
+    "get",
+    "MOOSE_RUNTIME_ENV_PREFIX",
+    # Legacy exports (deprecated)
+    "moose_env_secrets",
+    "MooseEnvSecrets",
+    "MOOSE_ENV_SECRET_PREFIX",
+]
