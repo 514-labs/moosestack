@@ -6,6 +6,9 @@ const rawMeta = {
     theme: {
       breadcrumb: false,
     },
+  "2025-10-19": {
+    title: "October 19, 2025",
+  },
   },
   "2025-07-03": {
     title: "July 3, 2025",
