@@ -1,0 +1,598 @@
+---
+title: October 19, 2025
+description: Release notes for October 19, 2025
+---
+
+import { Callout } from "@/components";
+
+# October 19, 2025
+
+<Callout type="info" title="Highlights">
+* **Breaking:** WebApp mount_path is now required and root path "/" is forbidden
+* **New:** Add SAMPLE BY support for ClickHouse tables
+* **New:** Add scoped environment variables for organizations, projects, and branches
+</Callout>
+
+
+
+## 🦌 Moose
+
+### ⚠️ Breaking Changes
+- **WebApp mount_path is now required and root path "/" is forbidden**
+  WebApp configuration now requires an explicit mount_path parameter and no longer allows mounting at the root path "/". This prevents conflicts with reserved system paths. Users must specify a non-root mount path like "/api" or "/myapp" when creating WebApps. This is a breaking change that requires updating existing WebApp configurations.
+
+  **WebApp with required mount_path configuration**
+  ```python
+  from moose_lib import WebApp, WebAppConfig
+  from fastapi import FastAPI
+  
+  # Create a FastAPI application for your data API
+  app = FastAPI()
+  
+  @app.get("/health")
+  def health_check():
+      return {"status": "healthy"}
+  
+  @app.get("/metrics")
+  def get_metrics():
+      return {"processed_events": 1000, "active_streams": 5}
+  
+  # Configure the WebApp with required mount_path
+  # Note: mount_path is now required and cannot be "/"
+  config = WebAppConfig(
+      mount_path="/api",  # Required: specify where to mount your app
+      metadata={
+          "description": "Data pipeline monitoring API",
+          "version": "1.0.0"
+      },
+      inject_moose_utils=True  # Enable MooseClient utilities in requests
+  )
+  
+  # Create the WebApp with the required configuration
+  data_api = WebApp(
+      name="monitoring_api",
+      app=app,
+      config=config  # Config with mount_path is now required
+  )
+  
+  # Your API will be available at /api/health and /api/metrics
+  ```
+  
+  Shows how to create a WebApp with the new required mount_path parameter. The example demonstrates mounting a FastAPI data monitoring application at "/api" instead of the now-forbidden root path "/".
+
+### New Features
+- **Add SAMPLE BY support for ClickHouse tables**
+  Users can now configure SAMPLE BY expressions on their ClickHouse tables to enable efficient sampling for large datasets. This is useful for approximate query processing and performance optimization when working with massive tables. The feature is available in both TypeScript and Python data model definitions using the sampleByExpression parameter.
+
+  **Configure ClickHouse table with SAMPLE BY for efficient sampling**
+  ```typescript
+  import { DataModel } from "@514labs/moose-lib";
+  
+  // Define a data model for user activity events
+  export interface UserActivity extends DataModel {
+    userId: string;
+    timestamp: Date;
+    eventType: string;
+    sessionId: string;
+    value: number;
+  }
+  
+  // Configure the table with SAMPLE BY for efficient sampling on large datasets
+  export default {
+    tableName: "UserActivity",
+    columns: [
+      { name: "userId", type: "String" },
+      { name: "timestamp", type: "DateTime" },
+      { name: "eventType", type: "String" },
+      { name: "sessionId", type: "String" },
+      { name: "value", type: "Float64" }
+    ],
+    orderBy: ["timestamp", "userId"],
+    // Enable sampling using cityHash64 for uniform distribution
+    sampleByExpression: "cityHash64(userId)",
+    engine: "MergeTree"
+  };
+  ```
+  
+  This example shows how to configure a ClickHouse table with SAMPLE BY expression in MooseStack. The sampleByExpression parameter enables efficient sampling on large datasets using cityHash64 for uniform distribution across user IDs, which is useful for approximate query processing and performance optimization.
+
+- **Add secondary indexes support for OLAP tables**
+  Users can now define secondary indexes on their OLAP tables to improve query performance. Indexes can be configured with custom names, expressions, types, arguments, and granularity settings. The framework automatically handles index creation, modification, and deployment across TypeScript and Python data models.
+
+  **Adding secondary indexes to OLAP tables for query optimization**
+  ```typescript
+  // app/datamodels/UserActivity.ts
+  import { Key } from "@514labs/moose-lib";
+  
+  export interface UserActivity {
+    id: Key<string>;
+    userId: string;
+    eventType: string;
+    timestamp: Date;
+    sessionId: string;
+    deviceType: string;
+    location: string;
+    value: number;
+  }
+  
+  // app/ingest/models.ts
+  import { OlapTable, OlapConfig } from "@514labs/moose-lib";
+  import { UserActivity } from "../datamodels/UserActivity";
+  
+  // Define OLAP table with secondary indexes for better query performance
+  export const userActivityTable = OlapTable<UserActivity>("UserActivity", OlapConfig({
+    // Primary table configuration
+    orderBy: "timestamp",
+    
+    // Secondary indexes to optimize common query patterns
+    indexes: [
+      // Index for user-based queries
+      {
+        name: "idx_user_time",
+        expression: "(userId, timestamp)",
+        type: "minmax",
+        granularity: 1
+      },
+      // Index for session analysis
+      {
+        name: "idx_session",
+        expression: "sessionId",
+        type: "bloom_filter",
+        arguments: ["0.01"], // false positive rate
+        granularity: 4
+      },
+      // Index for event type filtering
+      {
+        name: "idx_event_type",
+        expression: "eventType",
+        type: "set",
+        granularity: 8
+      },
+      // Composite index for device and location analytics
+      {
+        name: "idx_device_location",
+        expression: "(deviceType, location)",
+        type: "minmax",
+        granularity: 2
+      }
+    ]
+  }));
+  ```
+  
+  This example shows how to define secondary indexes on OLAP tables in MooseStack to optimize query performance. The indexes support different types (minmax, bloom_filter, set) with configurable granularity and can target single columns or composite expressions for common query patterns.
+
+- **Added get_source MCP tool for finding component source files**
+  Added a new MCP tool that allows AI assistants to find the source file location where infrastructure components (tables, topics, API endpoints) are defined in your codebase. This enables better code navigation and understanding when working with AI assistants in your IDE.
+
+- **Add Python WebApp SDK for FastAPI integration**
+  Developers can now register FastAPI applications as WebApp resources in their Moose projects. WebApps are automatically managed by the Moose infrastructure and proxied through the same port as other resources. Includes utilities for accessing MooseClient and SQL functions within FastAPI request handlers, enabling custom APIs that can query data and execute workflows.
+
+  **FastAPI WebApp with MooseClient integration**
+  ```python
+  from fastapi import FastAPI, Request, Depends
+  from moose_lib.dmv2 import WebApp, WebAppConfig, WebAppMetadata
+  from moose_lib.dmv2.web_app_helpers import get_moose_utils, get_moose_dependency, ApiUtil
+  
+  # Create a FastAPI application
+  app = FastAPI(title="Analytics Dashboard API")
+  
+  @app.get("/metrics/daily-users")
+  async def get_daily_users(request: Request):
+      """Get daily active users from the last 30 days."""
+      # Access Moose utilities from the request
+      moose = get_moose_utils(request)
+      if not moose:
+          return {"error": "Moose utilities not available"}
+      
+      # Execute a query using the injected MooseClient
+      result = moose.client.query.execute(
+          moose.sql("""
+              SELECT 
+                  toDate(timestamp) as date,
+                  uniq(user_id) as daily_users
+              FROM user_events 
+              WHERE timestamp >= now() - INTERVAL {days} DAY
+              GROUP BY date
+              ORDER BY date DESC
+          """, days=30)
+      )
+      return {"data": result}
+  
+  @app.get("/metrics/revenue")
+  async def get_revenue(moose: ApiUtil = Depends(get_moose_dependency())):
+      """Get monthly revenue using FastAPI dependency injection."""
+      # Use the dependency-injected moose utilities
+      result = moose.client.query.execute(
+          moose.sql("""
+              SELECT 
+                  toYYYYMM(created_at) as month,
+                  sum(amount) as total_revenue
+              FROM orders
+              WHERE created_at >= now() - INTERVAL 12 MONTH
+              GROUP BY month
+              ORDER BY month DESC
+          """)
+      )
+      return {"revenue": result}
+  
+  # Register the FastAPI app as a WebApp resource
+  analytics_webapp = WebApp(
+      name="analytics_dashboard",
+      app=app,
+      config=WebAppConfig(
+          mount_path="/analytics",  # Available at http://localhost:4000/analytics
+          metadata=WebAppMetadata(
+              description="Custom analytics dashboard with real-time metrics"
+          ),
+          inject_moose_utils=True  # Enable automatic MooseClient injection
+      )
+  )
+  ```
+  
+  This example shows how to create a custom FastAPI application and register it as a WebApp resource in Moose. The WebApp provides custom analytics endpoints that can query data using the injected MooseClient, demonstrating both manual utility extraction and FastAPI dependency injection patterns.
+
+- **Add support for custom TypeScript web frameworks in consumption APIs**
+  Users can now bring their own TypeScript web frameworks (like Express) to build custom web applications alongside their MooseStack data pipelines. This enables creating full-stack applications with custom routing, middleware, and UI components while leveraging MooseStack's data infrastructure. Includes a new typescript-express template and support for mounting web apps at custom paths.
+
+  **Express WebApp with MooseStack data integration**
+  ```typescript
+  // app/webapps/express/index.ts
+  import express from 'express';
+  import { WebApp } from '@514labs/moose-lib';
+  
+  const app = express();
+  
+  // Middleware for JSON parsing
+  app.use(express.json());
+  
+  // Health check endpoint
+  app.get('/health', (req, res) => {
+    res.json({
+      status: 'ok',
+      service: 'analytics-dashboard',
+      timestamp: new Date().toISOString()
+    });
+  });
+  
+  // Query endpoint with data pipeline integration
+  app.get('/query', async (req, res) => {
+    try {
+      const { limit = 10 } = req.query;
+      
+      // Query your MooseStack data models
+      const data = await queryClickhouse(`
+        SELECT * FROM UserEvents 
+        ORDER BY timestamp DESC 
+        LIMIT ${limit}
+      `);
+      
+      res.json({ success: true, data });
+    } catch (error) {
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
+  
+  // POST endpoint for complex analytics queries
+  app.post('/analytics', async (req, res) => {
+    const { startDate, endDate, metrics } = req.body;
+    
+    // Process analytics request using your data pipeline
+    const results = await processAnalytics(startDate, endDate, metrics);
+    
+    res.json({ success: true, results, params: req.body });
+  });
+  
+  // Export as WebApp with custom mount path
+  export default new WebApp(app, '/dashboard');
+  ```
+  
+  Shows how to create a custom Express.js web application that integrates with MooseStack data pipelines. The WebApp can query ClickHouse data, provide health checks, and handle complex analytics requests while being mounted at a custom path (/dashboard) alongside the standard MooseStack APIs.
+
+- **Add Schema Registry support for JSON Schema with Kafka/Redpanda streams**
+  Users can now integrate Confluent Schema Registry with Moose streams using JSON Schema encoding. This enables typed payloads with standards-compliant message envelopes, automatic schema resolution for producers and consumers, and CLI commands to discover existing topics and schemas. Configure via moose.config.toml and use schemaConfig on Stream definitions.
+
+  **Schema Registry JSON integration with typed streams**
+  ```typescript
+  import { Stream, type KafkaSchemaConfig } from "@514labs/moose-lib";
+  
+  // Define your data model
+  interface UserEvent {
+    userId: string;
+    eventType: "signup" | "login" | "purchase";
+    timestamp: Date;
+    metadata?: Record<string, any>;
+  }
+  
+  // Configure Schema Registry integration
+  const schemaConfig: KafkaSchemaConfig = {
+    kind: "JSON",
+    reference: { subjectLatest: "user-events-value" }
+  };
+  
+  // Create stream with Schema Registry support
+  export const userEvents = new Stream<UserEvent>("user-events", {
+    schemaConfig
+  });
+  
+  // Usage in your application code
+  export async function trackUserEvent(event: UserEvent) {
+    // Moose automatically handles Schema Registry envelope
+    // (0x00 + schema id + JSON payload)
+    await userEvents.send({
+      userId: event.userId,
+      eventType: event.eventType,
+      timestamp: new Date(),
+      metadata: event.metadata
+    });
+  }
+  
+  // Example usage
+  await trackUserEvent({
+    userId: "user-123",
+    eventType: "purchase",
+    timestamp: new Date(),
+    metadata: { amount: 99.99, currency: "USD" }
+  });
+  ```
+  
+  This example shows how to configure a Moose stream with Confluent Schema Registry using JSON Schema. The stream automatically handles the Schema Registry wire format when producing messages, while maintaining type safety with TypeScript interfaces.
+
+- **Add support for Drizzle ORM type inference in TypeScript data models**
+  Users can now define data models using Drizzle ORM's type inference capabilities. This allows for more flexible type definitions where the TypeScript type is inferred from a Drizzle schema rather than explicitly declared, enabling better integration with existing Drizzle-based codebases.
+
+  **Using Drizzle ORM type inference in MooseStack data models**
+  ```typescript
+  import { boolean, pgTable, text } from "drizzle-orm/pg-core";
+  import { ClickHouseEngines, OlapTable } from "@514labs/moose-lib";
+  
+  // Define your Drizzle schema as usual
+  export const userCredentialsSchema = pgTable("user_credentials", {
+    userId: text("user_id").notNull(),
+    isActive: boolean("is_active").notNull(),
+    email: text("email").notNull(),
+  });
+  
+  // Use Drizzle's type inference instead of declaring a separate interface
+  type UserCredentials = typeof userCredentialsSchema.$inferSelect;
+  
+  // Create a MooseStack data model using the inferred type
+  export const UserCredentials = new OlapTable<UserCredentials>(
+    "UserCredentials",
+    {
+      orderByFields: ["userId"],
+      engine: ClickHouseEngines.MergeTree,
+    },
+  );
+  
+  // The inferred type automatically includes:
+  // - userId: string
+  // - isActive: boolean  
+  // - email: string
+  // No need to manually declare these types!
+  ```
+  
+  This example shows how to use Drizzle ORM's type inference with MooseStack data models. Instead of manually declaring TypeScript interfaces, you can define a Drizzle schema and use `$inferSelect` to automatically generate the TypeScript type for your OlapTable.
+
+- **Add SimpleAggregateFunction support for ClickHouse data models**
+  Users can now define SimpleAggregateFunction columns in their data models for more efficient aggregations in ClickHouse. This enables optimized storage and querying for pre-aggregated data like sums, counts, min/max values, and last values. SimpleAggregateFunctions are lighter-weight alternatives to full AggregateFunction types and are ideal for materialized views and real-time analytics use cases.
+
+  **Define SimpleAggregateFunction columns for efficient aggregations**
+  ```typescript
+  import { OlapTable, SimpleAggregated } from "@514labs/moose-lib";
+  
+  // Define a data model with SimpleAggregateFunction columns for efficient aggregations
+  export interface UserActivitySummary extends OlapTable {
+    date: Date;
+    user_id: string;
+    
+    // SimpleAggregateFunction columns for pre-aggregated metrics
+    total_sessions: number & SimpleAggregated<"sum", number>;
+    max_session_duration: number & SimpleAggregated<"max", number>;
+    min_session_duration: number & SimpleAggregated<"min", number>;
+    last_activity_time: Date & SimpleAggregated<"anyLast", Date>;
+    total_page_views: number & SimpleAggregated<"sum", number>;
+  }
+  
+  // This table will be created in ClickHouse with optimized storage
+  // for real-time analytics and materialized view aggregations
+  ```
+  
+  This example shows how to define a data model with SimpleAggregateFunction columns in MooseStack. The SimpleAggregated type annotation enables ClickHouse to store pre-aggregated values efficiently, making it ideal for real-time analytics dashboards and materialized views that need fast aggregation queries.
+
+- **Add Docker Compose override support for custom development infrastructure**
+  Users can now extend their local development environment by creating a `docker-compose.dev.override.yaml` file in their project root. This allows adding custom services like PostgreSQL, Redis, Grafana, or modifying existing infrastructure alongside Moose's default setup. The CLI automatically detects and applies override files when running `moose dev`.
+
+  **Extending Moose dev environment with custom services**
+  ```yaml
+  # docker-compose.dev.override.yaml
+  # Place this file in your Moose project root to extend development infrastructure
+  
+  services:
+    # Add PostgreSQL for storing user profiles and application state
+    postgres:
+      image: postgres:16
+      environment:
+        POSTGRES_USER: analytics_app
+        POSTGRES_PASSWORD: dev_password
+        POSTGRES_DB: user_profiles
+      ports:
+        - "5432:5432"
+      volumes:
+        - postgres_data:/var/lib/postgresql/data
+  
+    # Add Redis for caching and session management
+    redis:
+      image: redis:7-alpine
+      ports:
+        - "6379:6379"
+      command: redis-server --appendonly yes
+      volumes:
+        - redis_data:/data
+  
+    # Add Grafana for monitoring your data pipelines
+    grafana:
+      image: grafana/grafana:latest
+      ports:
+        - "3001:3000"
+      environment:
+        - GF_SECURITY_ADMIN_PASSWORD=admin
+        - GF_USERS_ALLOW_SIGN_UP=false
+      volumes:
+        - grafana_data:/var/lib/grafana
+        - ./grafana/dashboards:/etc/grafana/provisioning/dashboards
+        - ./grafana/datasources:/etc/grafana/provisioning/datasources
+  
+    # Extend ClickHouse with custom configuration
+    clickhousedb:
+      volumes:
+        # Mount custom ClickHouse config for performance tuning
+        - ./clickhouse-custom.xml:/etc/clickhouse-server/config.d/custom.xml
+      environment:
+        - CLICKHOUSE_LOG_LEVEL=information
+  
+  volumes:
+    postgres_data:
+    redis_data:
+    grafana_data:
+  ```
+  
+  Shows how to extend Moose's development infrastructure by adding PostgreSQL for application data, Redis for caching, and Grafana for monitoring. The override file automatically merges with Moose's default Docker Compose setup when running `moose dev`.
+
+- **Add support for geometry data types (Point, Polygon, LineString, etc.)**
+  Users can now define data models with geometry types including Point, Ring, LineString, MultiLineString, Polygon, and MultiPolygon. These types are supported in both TypeScript and Python data models and are properly mapped to ClickHouse geometry types for spatial data analysis.
+
+  **Location Analytics with Geometry Types**
+  ```typescript
+  import { Key } from "@514labs/moose-lib";
+  
+  // Define a data model with geometry types for location-based analytics
+  export interface LocationEvent {
+    id: Key<string>;
+    timestamp: Date;
+    
+    // Store GPS coordinates as a Point
+    userLocation: Point;
+    
+    // Define delivery route as a LineString
+    deliveryRoute: LineString;
+    
+    // Store service area as a Polygon
+    serviceArea: Polygon;
+    
+    // Track multiple delivery zones as MultiPolygon
+    deliveryZones: MultiPolygon;
+    
+    // Store geofence boundaries as Ring
+    geofence: Ring;
+    
+    // Track multiple routes as MultiLineString
+    alternativeRoutes: MultiLineString;
+  }
+  
+  // Example usage: Creating location events with geometry data
+  const locationEvent: LocationEvent = {
+    id: "event_123",
+    timestamp: new Date(),
+    
+    // GPS coordinates: [longitude, latitude]
+    userLocation: [-122.4194, 37.7749], // San Francisco
+    
+    // Delivery route from warehouse to customer
+    deliveryRoute: [
+      [-122.4194, 37.7749], // Start point
+      [-122.4094, 37.7849], // Waypoint
+      [-122.3994, 37.7949]  // End point
+    ],
+    
+    // Service area polygon (must be closed)
+    serviceArea: [[
+      [-122.5, 37.7],
+      [-122.3, 37.7],
+      [-122.3, 37.8],
+      [-122.5, 37.8],
+      [-122.5, 37.7] // Close the polygon
+    ]],
+    
+    // Multiple delivery zones
+    deliveryZones: [
+      [[ // First zone
+        [-122.5, 37.7],
+        [-122.4, 37.7],
+        [-122.4, 37.75],
+        [-122.5, 37.75],
+        [-122.5, 37.7]
+      ]],
+      [[ // Second zone
+        [-122.4, 37.75],
+        [-122.3, 37.75],
+        [-122.3, 37.8],
+        [-122.4, 37.8],
+        [-122.4, 37.75]
+      ]]
+    ],
+    
+    // Geofence boundary (open ring)
+    geofence: [
+      [-122.42, 37.77],
+      [-122.41, 37.77],
+      [-122.41, 37.78]
+    ],
+    
+    // Multiple alternative routes
+    alternativeRoutes: [
+      [[-122.4194, 37.7749], [-122.4094, 37.7849]], // Route 1
+      [[-122.4194, 37.7749], [-122.4294, 37.7649]]  // Route 2
+    ]
+  };
+  ```
+  
+  This example shows how to define a TypeScript data model using MooseStack's new geometry types (Point, LineString, Polygon, etc.) for location-based analytics. The geometry data is automatically mapped to ClickHouse geometry types for efficient spatial queries and analysis.
+
+### Improvements
+- Improved documentation for Moose configuration and Docker Compose usage: Added clear guidance on when to use moose.config.toml vs docker-compose overrides for configuration. Users now have better documentation explaining that moose.config.toml is the primary way to configure Moose infrastructure, while Docker Compose overrides should only be used for adding new services. This helps prevent configuration conflicts and improves the development experience.
+- Enhanced quickstart tutorial with better examples and new View modeling docs: Updated the quickstart tutorial with more realistic data model examples (Bar interface with text analysis metrics) and added comprehensive documentation for modeling ClickHouse Views. Users now have clearer guidance on creating read-time projections and better understand the difference between Views and Materialized Views.
+- Kafka pull command now excludes Moose-managed topics: The `moose kafka pull` command now automatically filters out topics that are already managed by Moose, preventing duplicate topic definitions and configuration conflicts. Only externally managed topics will be pulled into your project.
+
+### Bug Fixes
+- Fix variable name sanitization for Kafka topic imports: Fixed an issue where Kafka topics with special characters (dots, hyphens, numbers) would generate invalid variable names when importing external topics. The CLI now properly sanitizes topic names to create valid TypeScript and Python identifiers, preventing compilation errors when using kafka pull command.
+- Fix TypeScript type conversion for types without declarations: Fixed a bug where TypeScript data models with certain type patterns would cause crashes during type conversion. This improves reliability when defining data models with complex TypeScript types.
+- Fix graceful shutdown to prevent connection errors during development: Fixed the shutdown sequence when stopping the development server (Ctrl+C) to properly close Kafka connections before stopping Docker containers. This prevents connection error messages that could appear during shutdown and ensures a cleaner development experience.
+
+## 🐻 Boreal
+
+### New Features
+- **Add scoped environment variables for organizations, projects, and branches**
+  Environment variables can now be configured at three different levels: organization-wide (shared across all projects), project-specific (shared across all branches), or branch-specific. This provides more flexible configuration management and allows teams to set common variables at higher levels while overriding them for specific environments as needed.
+  
+  📸 *[Screenshot needed: Environment variables can now be configured at three different levels: organization-wide (shared across all projects), project-specific (shared across all branches), or branch-specific. This provides more flexible configuration management and allows teams to set common variables at higher levels while overriding them for specific environments as needed.]*
+
+- **Added Help page with support resources and documentation links**
+  Users can now access a dedicated Help page from the sidebar navigation that provides quick access to community support (Slack), bug reporting, MooseStack documentation, engineering consultations, and sales information. This centralizes all support resources in one convenient location within the dashboard.
+  
+  📸 *[Screenshot needed: Users can now access a dedicated Help page from the sidebar navigation that provides quick access to community support (Slack), bug reporting, MooseStack documentation, engineering consultations, and sales information. This centralizes all support resources in one convenient location within the dashboard.]*
+
+- **Added connection string options for database credentials**
+  Users can now select from multiple connection string formats (HTTPS URL, JDBC, Python Client, Node.js Client) when viewing database credentials, making it easier to connect to databases from different environments and programming languages.
+  
+  📸 *[Screenshot needed: Users can now select from multiple connection string formats (HTTPS URL, JDBC, Python Client, Node.js Client) when viewing database credentials, making it easier to connect to databases from different environments and programming languages.]*
+
+- **Added new Branch Overview page with recent deployments**
+  Introduced a new Overview page for branches that displays recent deployments in an easy-to-view format. This replaces the previous default metrics page and provides users with a quick summary of their branch activity and deployment history.
+  
+  📸 *[Screenshot needed: Introduced a new Overview page for branches that displays recent deployments in an easy-to-view format. This replaces the previous default metrics page and provides users with a quick summary of their branch activity and deployment history.]*
+
+### Improvements
+- Release notes menu now displays newest releases first: The release notes sidebar menu now orders entries chronologically with the newest releases at the top, making it easier to find the latest updates and changes.
+
+### Bug Fixes
+- Fixed project deployment failures caused by empty environment variables: Resolved an issue where projects would fail to deploy when environment variables had empty keys or values. The system now properly filters out incomplete environment variables during deployment, preventing deployment errors and ensuring projects deploy successfully.
+- Fix scrolling in database credentials panel: Fixed scrolling issues in the database credentials panel that prevented users from viewing all connection details when the panel content exceeded the available space. The panel now properly scrolls to show all credentials and connection strings.
+- Fixed multi-tab organization switching in Boreal dashboard: Users can now have multiple Boreal tabs open with different organizations without conflicts. Previously, switching organizations in one tab could cause issues in other open tabs. Also fixed navigation when accessing URLs with different organizations than your currently active one.
+
+## 📦 infrastructure
+
+### New Features
+- **Add support for serverless job deployments**
+  Enhanced deployment capabilities to support serverless job workloads, enabling users to deploy and manage batch processing tasks alongside their existing applications.
+
+
