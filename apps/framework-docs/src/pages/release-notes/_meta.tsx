@@ -6,6 +6,8 @@ const rawMeta = {
     theme: {
       breadcrumb: false,
     },
+  "2025-10-19": {
+    title: "October 19, 2025",
   },
   "2025-07-03": {
     title: "July 3, 2025",
@@ -22,7 +24,7 @@ const rawMeta = {
   "2025-05-16": {
     title: "May 16, 2025",
   },
-  upcoming: { display: "hidden" }, // This hides it from sidebar/navigation
+  upcoming: { display: "hidden" },
 };
 
 // Process the raw meta object to generate the final meta object with proper rendering
