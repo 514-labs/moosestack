@@ -287,7 +287,7 @@ export interface OptionalNestedTest {
   id: Key<string>;
   timestamp: DateTime;
   nested: TestNested[];
-  other?: string & ClickHouseDefault<"''">;
+  other: string & ClickHouseDefault<"">;
 }
 
 export const OptionalNestedTestPipeline =

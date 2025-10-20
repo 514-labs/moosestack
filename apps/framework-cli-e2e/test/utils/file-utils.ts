@@ -9,50 +9,16 @@ import { randomUUID } from "crypto";
 export const removeTestProject = (dir: string): void => {
   console.log(`Deleting ${dir}`);
 
-  // Retry with exponential backoff for race conditions (especially on Node 22)
-  const maxRetries = 3;
-  const baseDelay = 100; // ms
-
-  for (let attempt = 0; attempt <= maxRetries; attempt++) {
-    try {
-      fs.rmSync(dir, {
-        recursive: true,
-        force: true,
-        maxRetries: 3,
-        retryDelay: 100,
-      });
-      return; // Success
-    } catch (error: any) {
-      if (attempt === maxRetries) {
-        // Last attempt failed, log but don't throw to avoid breaking tests
-        console.warn(
-          `Failed to delete ${dir} after ${maxRetries + 1} attempts:`,
-          error.message,
-        );
-        return;
-      }
-
-      // Only retry on ENOTEMPTY, EBUSY, or EPERM errors (file handle race conditions)
-      if (
-        error.code === "ENOTEMPTY" ||
-        error.code === "EBUSY" ||
-        error.code === "EPERM"
-      ) {
-        const delay = baseDelay * Math.pow(2, attempt);
-        console.log(
-          `Retry ${attempt + 1}/${maxRetries} after ${delay}ms due to ${error.code}`,
-        );
-
-        // Synchronous sleep
-        const start = Date.now();
-        while (Date.now() - start < delay) {
-          // Busy wait
-        }
-      } else {
-        // Different error, don't retry
-        throw error;
-      }
-    }
+  try {
+    fs.rmSync(dir, {
+      recursive: true,
+      force: true,
+      maxRetries: 3,
+      retryDelay: 100,
+    });
+  } catch (error: any) {
+    // Log but don't throw to avoid breaking tests
+    console.warn(`Failed to delete ${dir}:`, error.message);
   }
 };
 
@@ -86,16 +52,7 @@ export const cleanupLeftoverTestDirectories = (): void => {
 
     for (const dir of testDirs) {
       console.log(`Removing leftover test directory: ${dir}`);
-      try {
-        fs.rmSync(dir, {
-          recursive: true,
-          force: true,
-          maxRetries: 3,
-          retryDelay: 100,
-        });
-      } catch (error: any) {
-        console.warn(`Failed to remove ${dir}:`, error.message);
-      }
+      removeTestProject(dir);
     }
 
     if (testDirs.length > 0) {

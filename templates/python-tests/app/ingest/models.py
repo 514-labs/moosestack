@@ -279,7 +279,7 @@ class OptionalNestedTest(BaseModel):
     id: Key[str]
     timestamp: datetime
     nested: List[TestNested]
-    other: Annotated[str, clickhouse_default("''")] = "''"  # Use default value instead of Optional
+    other: Annotated[str, clickhouse_default("")] = ""
 
 optional_nested_test_model = IngestPipeline[OptionalNestedTest]("OptionalNestedTest", IngestPipelineConfig(
     ingest_api=True,
