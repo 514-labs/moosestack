@@ -302,6 +302,21 @@ pub fn describe_operation(operation: &SerializableOlapOperation) -> String {
         SerializableOlapOperation::ModifyTableSettings { table, .. } => {
             format!("Modifying settings for table '{}'", table)
         }
+        SerializableOlapOperation::AddTableIndex { table, index } => {
+            format!("Adding index '{}' to table '{}'", index.name, table)
+        }
+        SerializableOlapOperation::DropTableIndex { table, index_name } => {
+            format!("Dropping index '{}' from table '{}'", index_name, table)
+        }
+        SerializableOlapOperation::ModifySampleBy { table, expression } => {
+            format!(
+                "Modifying SAMPLE BY to '{}' for table '{}'",
+                expression, table
+            )
+        }
+        SerializableOlapOperation::RemoveSampleBy { table } => {
+            format!("Removing SAMPLE BY from table '{}'", table)
+        }
         SerializableOlapOperation::RawSql { description, .. } => description.clone(),
     }
 }
