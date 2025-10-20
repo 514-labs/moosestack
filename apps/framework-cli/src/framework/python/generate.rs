@@ -1325,6 +1325,7 @@ user_table = OlapTable[User]("User", OlapConfig(
             ],
             order_by: OrderBy::Fields(vec!["id".to_string(), "timestamp".to_string()]),
             partition_by: None,
+            sample_by: None,
             engine: Some(ClickhouseEngine::MergeTree),
             version: None,
             source_primitive: PrimitiveSignature {
@@ -1335,6 +1336,7 @@ user_table = OlapTable[User]("User", OlapConfig(
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
             table_settings: None,
+            indexes: vec![],
             table_ttl_setting: Some("timestamp + INTERVAL 90 DAY DELETE".to_string()),
         }];
 
@@ -1362,6 +1364,7 @@ user_table = OlapTable[User]("User", OlapConfig(
                 default: None,
                 annotations: vec![],
                 comment: None,
+                ttl: None,
             }],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
             partition_by: None,
@@ -1397,6 +1400,7 @@ user_table = OlapTable[User]("User", OlapConfig(
                     granularity: 1,
                 },
             ],
+            table_ttl_setting: None,
         }];
 
         let result = tables_to_python(&tables, None);

@@ -1050,6 +1050,7 @@ export const UserTable = new OlapTable<User>("User", {
                 default: None,
                 annotations: vec![],
                 comment: None,
+                ttl: None,
             }],
             order_by: OrderBy::Fields(vec!["u64".to_string()]),
             partition_by: None,
@@ -1080,6 +1081,7 @@ export const UserTable = new OlapTable<User>("User", {
                     granularity: 4,
                 },
             ],
+            table_ttl_setting: None,
         }];
 
         let result = tables_to_typescript(&tables, None);
@@ -1212,6 +1214,7 @@ export const TaskTable = new OlapTable<Task>("Task", {
             ],
             order_by: OrderBy::Fields(vec!["id".to_string(), "timestamp".to_string()]),
             partition_by: None,
+            sample_by: None,
             engine: Some(ClickhouseEngine::MergeTree),
             version: None,
             source_primitive: PrimitiveSignature {
@@ -1222,6 +1225,7 @@ export const TaskTable = new OlapTable<Task>("Task", {
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
             table_settings: None,
+            indexes: vec![],
             table_ttl_setting: Some("timestamp + INTERVAL 90 DAY DELETE".to_string()),
         }];
 
