@@ -131,6 +131,9 @@ class OlapConfig(BaseModel):
     metadata: Optional[dict] = None
     life_cycle: Optional[LifeCycle] = None
     settings: Optional[dict[str, str]] = None
+    # Optional table-level TTL expression (without leading 'TTL')
+    ttl: Optional[str] = None
+
     # Optional secondary/data-skipping indexes
     class TableIndex(BaseModel):
         name: str

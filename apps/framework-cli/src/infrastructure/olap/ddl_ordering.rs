@@ -88,6 +88,21 @@ pub enum AtomicOlapOperation {
         /// Dependency information
         dependency_info: DependencyInfo,
     },
+    /// Modify or remove table-level TTL
+    ModifyTableTtl {
+        table: Table,
+        before: Option<String>,
+        after: Option<String>,
+        dependency_info: DependencyInfo,
+    },
+    /// Modify or remove column-level TTL
+    ModifyColumnTtl {
+        table: Table,
+        column: String,
+        before: Option<String>,
+        after: Option<String>,
+        dependency_info: DependencyInfo,
+    },
     /// Add a secondary index to a table
     AddTableIndex {
         table: Table,
@@ -207,6 +222,28 @@ impl AtomicOlapOperation {
                 before_settings: before_settings.clone(),
                 after_settings: after_settings.clone(),
             },
+            AtomicOlapOperation::ModifyTableTtl {
+                table,
+                before,
+                after,
+                ..
+            } => SerializableOlapOperation::ModifyTableTtl {
+                table: table.name.clone(),
+                before: before.clone(),
+                after: after.clone(),
+            },
+            AtomicOlapOperation::ModifyColumnTtl {
+                table,
+                column,
+                before,
+                after,
+                ..
+            } => SerializableOlapOperation::ModifyColumnTtl {
+                table: table.name.clone(),
+                column: column.clone(),
+                before: before.clone(),
+                after: after.clone(),
+            },
             AtomicOlapOperation::AddTableIndex { table, index, .. } => {
                 SerializableOlapOperation::AddTableIndex {
                     table: table.name.clone(),
@@ -314,6 +351,12 @@ impl AtomicOlapOperation {
             AtomicOlapOperation::ModifyTableSettings { table, .. } => {
                 InfrastructureSignature::Table { id: table.id() }
             }
+            AtomicOlapOperation::ModifyTableTtl { table, .. } => {
+                InfrastructureSignature::Table { id: table.id() }
+            }
+            AtomicOlapOperation::ModifyColumnTtl { table, .. } => {
+                InfrastructureSignature::Table { id: table.id() }
+            }
             AtomicOlapOperation::AddTableIndex { table, .. } => {
                 InfrastructureSignature::Table { id: table.id() }
             }
@@ -369,6 +412,12 @@ impl AtomicOlapOperation {
                 dependency_info, ..
             }
             | AtomicOlapOperation::ModifyTableSettings {
+                dependency_info, ..
+            }
+            | AtomicOlapOperation::ModifyTableTtl {
+                dependency_info, ..
+            }
+            | AtomicOlapOperation::ModifyColumnTtl {
                 dependency_info, ..
             }
             | AtomicOlapOperation::AddTableIndex {
@@ -951,6 +1000,12 @@ pub fn order_olap_changes(
                 TableChange::SettingsChanged { table, .. } => {
                     tables.insert(table.name.clone(), table.clone());
                 }
+                TableChange::TtlChanged { table, .. } => {
+                    tables.insert(table.name.clone(), table.clone());
+                }
+                TableChange::ColumnTtlChanged { table, .. } => {
+                    tables.insert(table.name.clone(), table.clone());
+                }
             }
         } else if let OlapChange::PopulateMaterializedView { .. } = change {
             // No table to track for population operations
@@ -981,6 +1036,38 @@ pub fn order_olap_changes(
                 before_settings.clone(),
                 after_settings.clone(),
             ),
+            OlapChange::Table(TableChange::TtlChanged {
+                table,
+                before,
+                after,
+                ..
+            }) => {
+                let mut plan = OperationPlan::new();
+                plan.setup_ops.push(AtomicOlapOperation::ModifyTableTtl {
+                    table: table.clone(),
+                    before: before.clone(),
+                    after: after.clone(),
+                    dependency_info: create_empty_dependency_info(),
+                });
+                plan
+            }
+            OlapChange::Table(TableChange::ColumnTtlChanged {
+                table,
+                column,
+                before,
+                after,
+                ..
+            }) => {
+                let mut plan = OperationPlan::new();
+                plan.setup_ops.push(AtomicOlapOperation::ModifyColumnTtl {
+                    table: table.clone(),
+                    column: column.clone(),
+                    before: before.clone(),
+                    after: after.clone(),
+                    dependency_info: create_empty_dependency_info(),
+                });
+                plan
+            }
             OlapChange::PopulateMaterializedView {
                 view_name,
                 target_table,
@@ -1213,6 +1300,7 @@ mod tests {
             engine_params_hash: None,
             table_settings: None,
             indexes: vec![],
+            table_ttl_setting: None,
         };
 
         // Create some atomic operations
@@ -1241,6 +1329,7 @@ mod tests {
                 default: None,
                 annotations: vec![],
                 comment: None,
+                ttl: None,
             },
             after_column: None,
             dependency_info: DependencyInfo {
@@ -1284,6 +1373,7 @@ mod tests {
             engine_params_hash: None,
             table_settings: None,
             indexes: vec![],
+            table_ttl_setting: None,
         };
 
         // Create table B - depends on table A
@@ -1304,6 +1394,7 @@ mod tests {
             engine_params_hash: None,
             table_settings: None,
             indexes: vec![],
+            table_ttl_setting: None,
         };
 
         // Create view C - depends on table B
@@ -1395,6 +1486,7 @@ mod tests {
             engine_params_hash: None,
             table_settings: None,
             indexes: vec![],
+            table_ttl_setting: None,
         };
 
         // Create table B - target for materialized view
@@ -1415,6 +1507,7 @@ mod tests {
             engine_params_hash: None,
             table_settings: None,
             indexes: vec![],
+            table_ttl_setting: None,
         };
 
         // Create view C - depends on table B
@@ -1526,6 +1619,7 @@ mod tests {
             engine_params_hash: None,
             table_settings: None,
             indexes: vec![],
+            table_ttl_setting: None,
         };
 
         let view = View {
@@ -1545,6 +1639,7 @@ mod tests {
             default: None,
             annotations: vec![],
             comment: None,
+            ttl: None,
         };
 
         // Create operations with correct dependencies
@@ -1679,6 +1774,7 @@ mod tests {
             engine_params_hash: None,
             table_settings: None,
             indexes: vec![],
+            table_ttl_setting: None,
         };
 
         let table_b = Table {
@@ -1698,6 +1794,7 @@ mod tests {
             engine_params_hash: None,
             table_settings: None,
             indexes: vec![],
+            table_ttl_setting: None,
         };
 
         let table_c = Table {
@@ -1717,6 +1814,7 @@ mod tests {
             engine_params_hash: None,
             table_settings: None,
             indexes: vec![],
+            table_ttl_setting: None,
         };
 
         // Test operations
@@ -1804,6 +1902,7 @@ mod tests {
             engine_params_hash: None,
             table_settings: None,
             indexes: vec![],
+            table_ttl_setting: None,
         };
 
         let table_b = Table {
@@ -1823,6 +1922,7 @@ mod tests {
             engine_params_hash: None,
             table_settings: None,
             indexes: vec![],
+            table_ttl_setting: None,
         };
 
         let table_c = Table {
@@ -1842,6 +1942,7 @@ mod tests {
             engine_params_hash: None,
             table_settings: None,
             indexes: vec![],
+            table_ttl_setting: None,
         };
 
         let table_d = Table {
@@ -1861,6 +1962,7 @@ mod tests {
             engine_params_hash: None,
             table_settings: None,
             indexes: vec![],
+            table_ttl_setting: None,
         };
 
         let table_e = Table {
@@ -1880,6 +1982,7 @@ mod tests {
             engine_params_hash: None,
             table_settings: None,
             indexes: vec![],
+            table_ttl_setting: None,
         };
 
         let op_create_a = AtomicOlapOperation::CreateTable {
@@ -2030,6 +2133,7 @@ mod tests {
             engine_params_hash: None,
             table_settings: None,
             indexes: vec![],
+            table_ttl_setting: None,
         };
 
         // Create table B - target for materialized view
@@ -2050,6 +2154,7 @@ mod tests {
             engine_params_hash: None,
             table_settings: None,
             indexes: vec![],
+            table_ttl_setting: None,
         };
 
         // Create SQL resource for a materialized view
@@ -2168,6 +2273,7 @@ mod tests {
             engine_params_hash: None,
             table_settings: None,
             indexes: vec![],
+            table_ttl_setting: None,
         };
 
         // Create table B - target for materialized view
@@ -2188,6 +2294,7 @@ mod tests {
             engine_params_hash: None,
             table_settings: None,
             indexes: vec![],
+            table_ttl_setting: None,
         };
 
         // Create SQL resource for a materialized view
@@ -2311,6 +2418,7 @@ mod tests {
             engine_params_hash: None,
             table_settings: None,
             indexes: vec![],
+            table_ttl_setting: None,
         };
 
         let table_b = Table {
@@ -2330,6 +2438,7 @@ mod tests {
             engine_params_hash: None,
             table_settings: None,
             indexes: vec![],
+            table_ttl_setting: None,
         };
 
         // Create SQL resource for materialized view
@@ -2532,6 +2641,7 @@ mod tests {
             engine_params_hash: None,
             table_settings: None,
             indexes: vec![],
+            table_ttl_setting: None,
         };
 
         // Create a column
@@ -2544,6 +2654,7 @@ mod tests {
             default: None,
             annotations: vec![],
             comment: None,
+            ttl: None,
         };
 
         // Create operations with signatures that work with the current implementation
@@ -2634,6 +2745,7 @@ mod tests {
             engine_params_hash: None,
             table_settings: None,
             indexes: vec![],
+            table_ttl_setting: None,
         };
 
         // Create operations with signatures that work with the current implementation
@@ -2721,6 +2833,7 @@ mod tests {
                     default: None,
                     annotations: vec![],
                     comment: None,
+                    ttl: None,
                 },
                 Column {
                     name: "old_column".to_string(),
@@ -2731,6 +2844,7 @@ mod tests {
                     default: None,
                     annotations: vec![],
                     comment: None,
+                    ttl: None,
                 },
             ],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
@@ -2747,6 +2861,7 @@ mod tests {
             engine_params_hash: None,
             table_settings: None,
             indexes: vec![],
+            table_ttl_setting: None,
         };
 
         let after_table = Table {
@@ -2761,6 +2876,7 @@ mod tests {
                     default: None,
                     annotations: vec![],
                     comment: None,
+                    ttl: None,
                 },
                 Column {
                     name: "new_column".to_string(),
@@ -2771,6 +2887,7 @@ mod tests {
                     default: None,
                     annotations: vec![],
                     comment: None,
+                    ttl: None,
                 },
             ],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
@@ -2787,6 +2904,7 @@ mod tests {
             engine_params_hash: None,
             table_settings: None,
             indexes: vec![],
+            table_ttl_setting: None,
         };
 
         // Create column changes (remove old_column, add new_column)
@@ -2800,6 +2918,7 @@ mod tests {
                 default: None,
                 annotations: vec![],
                 comment: None,
+                ttl: None,
             }),
             ColumnChange::Added {
                 column: Column {
@@ -2811,6 +2930,7 @@ mod tests {
                     default: None,
                     annotations: vec![],
                     comment: None,
+                    ttl: None,
                 },
                 position_after: Some("id".to_string()),
             },

@@ -48,6 +48,7 @@ use sql_parser::{
     extract_engine_from_create_table, extract_indexes_from_create_table,
     extract_sample_by_from_create_table, extract_table_settings_from_create_table,
 };
+use std::collections::HashMap;
 use std::ops::Deref;
 
 use self::model::ClickHouseSystemTable;
@@ -152,9 +153,22 @@ pub enum SerializableOlapOperation {
         /// The table to modify settings for
         table: String,
         /// The settings before modification
-        before_settings: Option<std::collections::HashMap<String, String>>,
+        before_settings: Option<HashMap<String, String>>,
         /// The settings after modification
-        after_settings: Option<std::collections::HashMap<String, String>>,
+        after_settings: Option<HashMap<String, String>>,
+    },
+    /// Modify or remove table-level TTL
+    ModifyTableTtl {
+        table: String,
+        before: Option<String>,
+        after: Option<String>,
+    },
+    /// Modify or remove column-level TTL
+    ModifyColumnTtl {
+        table: String,
+        column: String,
+        before: Option<String>,
+        after: Option<String>,
     },
     AddTableIndex {
         table: String,
@@ -305,6 +319,48 @@ pub async fn execute_atomic_operation(
         } => {
             execute_modify_table_settings(db_name, table, before_settings, after_settings, client)
                 .await?;
+        }
+        SerializableOlapOperation::ModifyTableTtl {
+            table,
+            before: _,
+            after,
+        } => {
+            // Build ALTER TABLE ... [REMOVE TTL | MODIFY TTL expr]
+            let sql = if let Some(expr) = after {
+                format!("ALTER TABLE `{}`.`{}` MODIFY TTL {}", db_name, table, expr)
+            } else {
+                format!("ALTER TABLE `{}`.`{}` REMOVE TTL", db_name, table)
+            };
+            run_query(&sql, client).await.map_err(|e| {
+                ClickhouseChangesError::ClickhouseClient {
+                    error: e,
+                    resource: Some(table.clone()),
+                }
+            })?;
+        }
+        SerializableOlapOperation::ModifyColumnTtl {
+            table,
+            column,
+            before: _,
+            after,
+        } => {
+            let sql = if let Some(expr) = after {
+                format!(
+                    "ALTER TABLE `{}`.`{}` MODIFY COLUMN `{}` TTL {}",
+                    db_name, table, column, expr
+                )
+            } else {
+                format!(
+                    "ALTER TABLE `{}`.`{}` MODIFY COLUMN `{}` REMOVE TTL",
+                    db_name, table, column
+                )
+            };
+            run_query(&sql, client).await.map_err(|e| {
+                ClickhouseChangesError::ClickhouseClient {
+                    error: e,
+                    resource: Some(table.clone()),
+                }
+            })?;
         }
         SerializableOlapOperation::AddTableIndex { table, index } => {
             execute_add_table_index(db_name, table, index, client).await?;
@@ -654,8 +710,8 @@ fn build_modify_column_comment_sql(
 async fn execute_modify_table_settings(
     db_name: &str,
     table_name: &str,
-    before_settings: &Option<std::collections::HashMap<String, String>>,
-    after_settings: &Option<std::collections::HashMap<String, String>>,
+    before_settings: &Option<HashMap<String, String>>,
+    after_settings: &Option<HashMap<String, String>>,
     client: &ConfiguredDBClient,
 ) -> Result<(), ClickhouseChangesError> {
     use std::collections::HashMap;
@@ -1238,6 +1294,8 @@ impl OlapOperations for ConfiguredDBClient {
 
             let mut columns = Vec::new();
 
+            let column_ttls =
+                extract_column_ttls_from_create_query(&create_query).unwrap_or_default();
             while let Some((
                 col_name,
                 col_type,
@@ -1367,6 +1425,7 @@ impl OlapOperations for ConfiguredDBClient {
                     default,
                     annotations,
                     comment: column_comment,
+                    ttl: column_ttls.get(&col_name).cloned(),
                 };
 
                 columns.push(column);
@@ -1405,6 +1464,9 @@ impl OlapOperations for ConfiguredDBClient {
             // Extract table settings from CREATE TABLE query
             let table_settings = extract_table_settings_from_create_table(&create_query);
 
+            // Extract TTLs from CREATE TABLE
+            let table_ttl_setting = extract_table_ttl_from_create_query(&create_query);
+
             let indexes_ch = extract_indexes_from_create_table(&create_query)?;
             let indexes: Vec<TableIndex> = indexes_ch
                 .into_iter()
@@ -1436,6 +1498,7 @@ impl OlapOperations for ConfiguredDBClient {
                 engine_params_hash,
                 table_settings,
                 indexes,
+                table_ttl_setting,
             };
             debug!("Created table object: {:?}", table);
 
@@ -1508,6 +1571,123 @@ pub fn extract_order_by_from_create_query(create_query: &str) -> Vec<String> {
 
     debug!("No explicit ORDER BY clause found");
     Vec::new()
+}
+
+/// Extract table-level TTL expression from CREATE TABLE query (without leading 'TTL').
+/// Returns None if no table-level TTL clause is present.
+pub fn extract_table_ttl_from_create_query(create_query: &str) -> Option<String> {
+    let upper = create_query.to_uppercase();
+    // Start scanning after ENGINE clause (table-level TTL appears after ORDER BY)
+    let engine_pos = upper.find("ENGINE")?;
+    let tail = &create_query[engine_pos..];
+    let tail_upper = &upper[engine_pos..];
+    // Find " TTL " in the tail
+    let ttl_pos = tail_upper.find(" TTL ")?;
+    let ttl_start = ttl_pos + " TTL ".len();
+    let after_ttl = &tail[ttl_start..];
+    // TTL clause ends before SETTINGS or end of string
+    let end_idx = after_ttl
+        .to_uppercase()
+        .find(" SETTINGS")
+        .unwrap_or(after_ttl.len());
+    let expr = after_ttl[..end_idx].trim();
+    if expr.is_empty() {
+        None
+    } else {
+        Some(expr.to_string())
+    }
+}
+
+/// Extract column-level TTL expressions from the CREATE TABLE column list.
+/// Returns a map of column name to TTL expression (without leading 'TTL').
+pub fn extract_column_ttls_from_create_query(
+    create_query: &str,
+) -> Option<HashMap<String, String>> {
+    let upper = create_query.to_uppercase();
+    // Columns section is between the first '(' after CREATE TABLE and the closing ')' before ENGINE
+    let open_paren = upper.find('(')?;
+    let engine_pos = upper
+        .find("\nENGINE")
+        .or_else(|| upper.find("\r\nENGINE"))
+        .or_else(|| upper.rfind("ENGINE"))?;
+    if engine_pos <= open_paren {
+        return None;
+    }
+    let columns_block = &create_query[open_paren + 1..engine_pos];
+    let mut map = HashMap::new();
+
+    // Split columns by top-level commas (not inside parentheses or single quotes)
+    let mut col_defs: Vec<String> = Vec::new();
+    let mut current = String::new();
+    let mut depth: i32 = 0;
+    let mut in_string = false;
+    let mut prev: Option<char> = None;
+    for ch in columns_block.chars() {
+        if ch == '\'' && prev != Some('\\') {
+            in_string = !in_string;
+        }
+        if !in_string {
+            if ch == '(' {
+                depth += 1;
+            } else if ch == ')' {
+                if depth > 0 {
+                    depth -= 1;
+                }
+            } else if ch == ',' && depth == 0 {
+                let trimmed = current.trim();
+                if !trimmed.is_empty() {
+                    col_defs.push(trimmed.to_string());
+                }
+                current.clear();
+                prev = Some(ch);
+                continue;
+            }
+        }
+        current.push(ch);
+        prev = Some(ch);
+    }
+    let trimmed = current.trim();
+    if !trimmed.is_empty() {
+        col_defs.push(trimmed.to_string());
+    }
+
+    for def in col_defs {
+        let line_trim = def.trim();
+        // Expect defs like: `col` Type ... [TTL expr] ...
+        if !line_trim.starts_with('`') {
+            continue;
+        }
+        // Extract column name between the first pair of backticks
+        let first_bt = 0; // starts with backtick
+        let second_bt = match line_trim[1..].find('`') {
+            Some(pos) => 1 + pos,
+            None => continue,
+        };
+        let col_name = &line_trim[first_bt + 1..second_bt];
+
+        // Find TTL clause within this column definition
+        let upper_line = line_trim.to_uppercase();
+        if let Some(idx) = upper_line.find(" TTL ") {
+            let after = &line_trim[idx + 5..];
+            let after_upper = after.to_uppercase();
+            let mut cut = after.len();
+            for kw in [" DEFAULT", " COMMENT"] {
+                if let Some(pos) = after_upper.find(kw) {
+                    cut = cut.min(pos);
+                }
+            }
+            let expr = after[..cut].trim();
+            if !expr.is_empty() {
+                map.insert(col_name.to_string(), expr.to_string());
+            }
+        }
+    }
+
+    if map.is_empty() {
+        None
+    } else {
+        Some(map)
+    }
 }
 
 #[cfg(test)]
@@ -1657,6 +1837,7 @@ mod tests {
             default: None,
             annotations: vec![],
             comment: Some("Old user comment".to_string()),
+            ttl: None,
         };
 
         let after_column = Column {
@@ -1674,6 +1855,7 @@ mod tests {
             default: None,
             annotations: vec![],
             comment: Some("New user comment".to_string()),
+            ttl: None,
         };
 
         // The execute_modify_table_column function should detect this as comment-only change
@@ -1698,6 +1880,7 @@ mod tests {
             default: Some("1".to_string()),
             annotations: vec![],
             comment: Some("Number of things".to_string()),
+            ttl: None,
         };
         let after_column = Column {
             default: Some("42".to_string()),
@@ -1727,6 +1910,7 @@ mod tests {
             default: Some("'open'".to_string()),
             annotations: vec![],
             comment: Some("old".to_string()),
+            ttl: None,
         };
 
         let after_column = Column {
@@ -1758,6 +1942,7 @@ mod tests {
             default: Some("'updated default'".to_string()),
             annotations: vec![],
             comment: Some("Updated description field".to_string()),
+            ttl: None,
         };
 
         let clickhouse_column = std_column_to_clickhouse_column(column).unwrap();
@@ -1818,6 +2003,23 @@ mod tests {
     }
 
     #[test]
+    fn test_extract_column_ttls_from_create_query_single_line() {
+        let query = "CREATE TABLE local.example1 (`timestamp` DateTime, `x` UInt32 TTL timestamp + toIntervalMonth(1), `y` String TTL timestamp + toIntervalDay(1), `z` String) ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 8192";
+        let map = extract_column_ttls_from_create_query(query).expect("expected some TTLs");
+
+        assert_eq!(
+            map.get("x"),
+            Some(&"timestamp + toIntervalMonth(1)".to_string())
+        );
+        assert_eq!(
+            map.get("y"),
+            Some(&"timestamp + toIntervalDay(1)".to_string())
+        );
+        assert!(!map.contains_key("z"));
+        assert!(!map.contains_key("timestamp"));
+    }
+
+    #[test]
     fn test_add_column_with_default_value() {
         use crate::framework::core::infrastructure::table::{Column, IntType};
         use crate::infrastructure::olap::clickhouse::mapper::std_column_to_clickhouse_column;
@@ -1833,6 +2035,7 @@ mod tests {
             default: Some("42".to_string()),
             annotations: vec![],
             comment: Some("Number of items".to_string()),
+            ttl: None,
         };
 
         let clickhouse_column = std_column_to_clickhouse_column(column).unwrap();
@@ -1878,6 +2081,7 @@ mod tests {
             default: Some("'default text'".to_string()),
             annotations: vec![],
             comment: None,
+            ttl: None,
         };
 
         let clickhouse_column = std_column_to_clickhouse_column(column).unwrap();

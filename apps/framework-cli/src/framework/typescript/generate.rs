@@ -270,6 +270,7 @@ pub fn tables_to_typescript(tables: &[Table], life_cycle: Option<LifeCycle>) -> 
         "ClickHouseDefault",
         "WithDefault",
         "LifeCycle",
+        "ClickHouseTTL",
     ];
 
     if uses_simple_aggregate {
@@ -383,6 +384,10 @@ pub fn tables_to_typescript(tables: &[Table], life_cycle: Option<LifeCycle>) -> 
                 }
             }
 
+            // Append ClickHouseTTL type tag if present on the column
+            if let Some(expr) = &column.ttl {
+                type_str = format!("{type_str} & ClickHouseTTL<\"{}\">", expr);
+            }
             let type_str = match column.default {
                 None => type_str,
                 Some(ref default) if type_str == "Date" => {
@@ -556,6 +561,9 @@ pub fn tables_to_typescript(tables: &[Table], life_cycle: Option<LifeCycle>) -> 
             )
             .unwrap();
         };
+        if let Some(ttl_expr) = &table.table_ttl_setting {
+            writeln!(output, "    ttl: {:?},", ttl_expr).unwrap();
+        }
         if !table.indexes.is_empty() {
             writeln!(output, "    indexes: [").unwrap();
             for idx in &table.indexes {
@@ -615,6 +623,7 @@ mod tests {
                     default: None,
                     annotations: vec![],
                     comment: None,
+                    ttl: None,
                 },
                 Column {
                     name: "city".to_string(),
@@ -625,6 +634,7 @@ mod tests {
                     default: None,
                     annotations: vec![],
                     comment: None,
+                    ttl: None,
                 },
                 Column {
                     name: "zip_code".to_string(),
@@ -635,6 +645,7 @@ mod tests {
                     default: None,
                     annotations: vec![],
                     comment: None,
+                    ttl: None,
                 },
             ],
             jwt: false,
@@ -652,6 +663,7 @@ mod tests {
                     default: None,
                     annotations: vec![],
                     comment: None,
+                    ttl: None,
                 },
                 Column {
                     name: "address".to_string(),
@@ -662,6 +674,7 @@ mod tests {
                     default: None,
                     annotations: vec![],
                     comment: None,
+                    ttl: None,
                 },
                 Column {
                     name: "addresses".to_string(),
@@ -675,6 +688,7 @@ mod tests {
                     default: None,
                     annotations: vec![],
                     comment: None,
+                    ttl: None,
                 },
             ],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
@@ -691,6 +705,7 @@ mod tests {
             engine_params_hash: None,
             table_settings: None,
             indexes: vec![],
+            table_ttl_setting: None,
         }];
 
         let result = tables_to_typescript(&tables, None);
@@ -731,6 +746,7 @@ export const UserTable = new OlapTable<User>("User", {
                     default: None,
                     annotations: vec![],
                     comment: None,
+                    ttl: None,
                 },
                 Column {
                     name: "data".to_string(),
@@ -741,6 +757,7 @@ export const UserTable = new OlapTable<User>("User", {
                     default: None,
                     annotations: vec![],
                     comment: None,
+                    ttl: None,
                 },
             ],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
@@ -768,6 +785,7 @@ export const UserTable = new OlapTable<User>("User", {
                     .collect(),
             ),
             indexes: vec![],
+            table_ttl_setting: None,
         }];
 
         let result = tables_to_typescript(&tables, None);
@@ -793,6 +811,7 @@ export const UserTable = new OlapTable<User>("User", {
                 default: None,
                 annotations: vec![],
                 comment: None,
+                ttl: None,
             }],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
             partition_by: None,
@@ -815,6 +834,7 @@ export const UserTable = new OlapTable<User>("User", {
                 .collect(),
             ),
             indexes: vec![],
+            table_ttl_setting: None,
         }];
 
         let result = tables_to_typescript(&tables, None);
@@ -840,6 +860,7 @@ export const UserTable = new OlapTable<User>("User", {
                     default: None,
                     annotations: vec![],
                     comment: None,
+                    ttl: None,
                 },
                 Column {
                     name: "version".to_string(),
@@ -850,6 +871,7 @@ export const UserTable = new OlapTable<User>("User", {
                     default: None,
                     annotations: vec![],
                     comment: None,
+                    ttl: None,
                 },
                 Column {
                     name: "is_deleted".to_string(),
@@ -860,6 +882,7 @@ export const UserTable = new OlapTable<User>("User", {
                     default: None,
                     annotations: vec![],
                     comment: None,
+                    ttl: None,
                 },
             ],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
@@ -879,6 +902,7 @@ export const UserTable = new OlapTable<User>("User", {
             engine_params_hash: None,
             table_settings: None,
             indexes: vec![],
+            table_ttl_setting: None,
         }];
 
         let result = tables_to_typescript(&tables, None);
@@ -902,6 +926,7 @@ export const UserTable = new OlapTable<User>("User", {
                 default: None,
                 annotations: vec![],
                 comment: None,
+                ttl: None,
             }],
             sample_by: None,
             order_by: OrderBy::Fields(vec!["id".to_string()]),
@@ -920,6 +945,7 @@ export const UserTable = new OlapTable<User>("User", {
             engine_params_hash: None,
             table_settings: None,
             indexes: vec![],
+            table_ttl_setting: None,
         }];
 
         let result = tables_to_typescript(&tables, None);
@@ -950,6 +976,7 @@ export const UserTable = new OlapTable<User>("User", {
                     default: None,
                     annotations: vec![],
                     comment: None,
+                    ttl: None,
                 },
                 Column {
                     name: "version".to_string(),
@@ -960,6 +987,7 @@ export const UserTable = new OlapTable<User>("User", {
                     default: None,
                     annotations: vec![],
                     comment: None,
+                    ttl: None,
                 },
                 Column {
                     name: "is_deleted".to_string(),
@@ -970,6 +998,7 @@ export const UserTable = new OlapTable<User>("User", {
                     default: None,
                     annotations: vec![],
                     comment: None,
+                    ttl: None,
                 },
             ],
             sample_by: None,
@@ -991,6 +1020,7 @@ export const UserTable = new OlapTable<User>("User", {
             engine_params_hash: None,
             table_settings: None,
             indexes: vec![],
+            table_ttl_setting: None,
         }];
 
         let result = tables_to_typescript(&tables, None);
@@ -1020,6 +1050,7 @@ export const UserTable = new OlapTable<User>("User", {
                 default: None,
                 annotations: vec![],
                 comment: None,
+                ttl: None,
             }],
             order_by: OrderBy::Fields(vec!["u64".to_string()]),
             partition_by: None,
@@ -1050,6 +1081,7 @@ export const UserTable = new OlapTable<User>("User", {
                     granularity: 4,
                 },
             ],
+            table_ttl_setting: None,
         }];
 
         let result = tables_to_typescript(&tables, None);
@@ -1090,6 +1122,7 @@ export const UserTable = new OlapTable<User>("User", {
                     default: None,
                     annotations: vec![],
                     comment: None,
+                    ttl: None,
                 },
                 Column {
                     name: "status".to_string(),
@@ -1100,6 +1133,7 @@ export const UserTable = new OlapTable<User>("User", {
                     default: None,
                     annotations: vec![],
                     comment: None,
+                    ttl: None,
                 },
             ],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
@@ -1116,6 +1150,7 @@ export const UserTable = new OlapTable<User>("User", {
             engine_params_hash: None,
             table_settings: None,
             indexes: vec![],
+            table_ttl_setting: None,
         }];
 
         let result = tables_to_typescript(&tables, None);
@@ -1136,5 +1171,71 @@ export const TaskTable = new OlapTable<Task>("Task", {
     engine: ClickHouseEngines.MergeTree,
 });"#
         ));
+    }
+
+    #[test]
+    fn test_ttl_generation_typescript() {
+        let tables = vec![Table {
+            name: "Events".to_string(),
+            columns: vec![
+                Column {
+                    name: "id".to_string(),
+                    data_type: ColumnType::String,
+                    required: true,
+                    unique: false,
+                    primary_key: true,
+                    default: None,
+                    annotations: vec![],
+                    comment: None,
+                    ttl: None,
+                },
+                Column {
+                    name: "timestamp".to_string(),
+                    data_type: ColumnType::DateTime { precision: None },
+                    required: true,
+                    unique: false,
+                    primary_key: false,
+                    default: None,
+                    annotations: vec![],
+                    comment: None,
+                    ttl: None,
+                },
+                Column {
+                    name: "email".to_string(),
+                    data_type: ColumnType::String,
+                    required: true,
+                    unique: false,
+                    primary_key: false,
+                    default: None,
+                    annotations: vec![],
+                    comment: None,
+                    ttl: Some("timestamp + INTERVAL 30 DAY".to_string()),
+                },
+            ],
+            order_by: OrderBy::Fields(vec!["id".to_string(), "timestamp".to_string()]),
+            partition_by: None,
+            sample_by: None,
+            engine: Some(ClickhouseEngine::MergeTree),
+            version: None,
+            source_primitive: PrimitiveSignature {
+                name: "Events".to_string(),
+                primitive_type: PrimitiveTypes::DataModel,
+            },
+            metadata: None,
+            life_cycle: LifeCycle::FullyManaged,
+            engine_params_hash: None,
+            table_settings: None,
+            indexes: vec![],
+            table_ttl_setting: Some("timestamp + INTERVAL 90 DAY DELETE".to_string()),
+        }];
+
+        let result = tables_to_typescript(&tables, None);
+
+        // Import should include ClickHouseTTL
+        assert!(result.contains("ClickHouseTTL"));
+        // Column-level TTL should be applied to the field type
+        assert!(result.contains("email: string & ClickHouseTTL<\"timestamp + INTERVAL 30 DAY\">;"));
+        // Table-level TTL should be present in table config
+        assert!(result.contains("ttl: \"timestamp + INTERVAL 90 DAY DELETE\","));
     }
 }

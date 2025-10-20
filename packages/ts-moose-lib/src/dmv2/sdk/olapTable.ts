@@ -212,6 +212,13 @@ export type BaseOlapConfig<T> = (
   version?: string;
   lifeCycle?: LifeCycle;
   settings?: { [key: string]: string };
+  /**
+   * Optional TTL configuration for the table.
+   * e.g., "TTL timestamp + INTERVAL 90 DAY DELETE"
+   *
+   * Use the {@link ClickHouseTTL} type to configure column level TTL
+   */
+  ttl?: string;
   /** Optional secondary/data-skipping indexes */
   indexes?: TableIndex[];
 };

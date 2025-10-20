@@ -119,6 +119,18 @@ const handleAggregated = (
   }
 };
 
+const getTaggedType = (
+  t: ts.Type,
+  checker: TypeChecker,
+  propertyName: string,
+): ts.Type | null => {
+  // Ensure we check the non-nullable part so the tag property is there
+  const nonNull = t.getNonNullableType();
+  const ttlSymbol = nonNull.getProperty(propertyName);
+  if (ttlSymbol === undefined) return null;
+  return checker.getNonNullableType(checker.getTypeOfSymbol(ttlSymbol));
+};
+
 const handleSimpleAggregated = (
   t: ts.Type,
   checker: TypeChecker,
@@ -155,22 +167,32 @@ const handleSimpleAggregated = (
     return undefined;
   }
 };
-
 /** Detect ClickHouse default annotation on a type and return raw sql */
 const handleDefault = (t: ts.Type, checker: TypeChecker): string | null => {
-  // Ensure we check the non-nullable part so optionals still surface defaults
-  const nonNull = t.getNonNullableType();
-  const defaultSymbol = nonNull.getProperty("_clickhouse_default");
-  if (defaultSymbol === undefined) return null;
-  const defaultType = checker.getNonNullableType(
-    checker.getTypeOfSymbol(defaultSymbol),
-  );
+  const defaultType = getTaggedType(t, checker, "_clickhouse_default");
+  if (defaultType === null) {
+    return null;
+  }
   if (!defaultType.isStringLiteral()) {
     throw new UnsupportedFeature(
       'ClickHouseDefault must use a string literal, e.g. ClickHouseDefault<"now()">',
     );
   }
   return defaultType.value;
+};
+
+/** Detect ClickHouse TTL annotation on a type and return raw sql */
+const handleTtl = (t: ts.Type, checker: TypeChecker): string | null => {
+  const ttlType = getTaggedType(t, checker, "_clickhouse_ttl");
+  if (ttlType === null) {
+    return null;
+  }
+  if (!ttlType.isStringLiteral()) {
+    throw new UnsupportedFeature(
+      'ClickHouseTTL must use a string literal, e.g. ClickHouseTTL<"timestamp + INTERVAL 1 WEEK">',
+    );
+  }
+  return ttlType.value;
 };
 
 const handleNumberType = (
@@ -751,9 +773,9 @@ export const toColumns = (t: ts.Type, checker: TypeChecker): Column[] => {
   return checker.getPropertiesOfType(t).map((prop) => {
     let declarations = prop.getDeclarations();
     const node =
-      declarations && declarations.length > 0
-        ? (declarations[0] as ts.PropertyDeclaration)
-        : undefined;
+      declarations && declarations.length > 0 ?
+        (declarations[0] as ts.PropertyDeclaration)
+      : undefined;
     const type =
       node !== undefined ?
         checker.getTypeOfSymbolAtLocation(prop, node)
@@ -780,6 +802,7 @@ export const toColumns = (t: ts.Type, checker: TypeChecker): Column[] => {
       required: !nullable,
       unique: false,
       default: defaultExpression ?? handleDefault(type, checker),
+      ttl: handleTtl(type, checker),
       annotations,
     };
   });

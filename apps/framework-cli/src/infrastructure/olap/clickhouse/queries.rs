@@ -123,14 +123,15 @@ pub fn create_alias_for_table(
 static CREATE_TABLE_TEMPLATE: &str = r#"
 CREATE TABLE IF NOT EXISTS `{{db_name}}`.`{{table_name}}`
 (
-{{#each fields}} `{{field_name}}` {{{field_type}}} {{field_nullable}}{{#if field_default}} DEFAULT {{{field_default}}}{{/if}}{{#if field_comment}} COMMENT '{{{field_comment}}}'{{/if}}{{#unless @last}},
+{{#each fields}} `{{field_name}}` {{{field_type}}} {{field_nullable}}{{#if field_default}} DEFAULT {{{field_default}}}{{/if}}{{#if field_comment}} COMMENT '{{{field_comment}}}'{{/if}}{{#if field_ttl}} TTL {{{field_ttl}}}{{/if}}{{#unless @last}},
 {{/unless}}{{/each}}{{#if has_indexes}}, {{#each indexes}}{{this}}{{#unless @last}}, {{/unless}}{{/each}}{{/if}}
 )
 ENGINE = {{engine}}{{#if primary_key_string}}
 PRIMARY KEY ({{primary_key_string}}){{/if}}{{#if partition_by}}
 PARTITION BY {{partition_by}}{{/if}}{{#if sample_by}}
 SAMPLE BY {{sample_by}}{{/if}}{{#if order_by_string}}
-ORDER BY ({{order_by_string}}){{/if}}{{#if settings}}
+ORDER BY ({{order_by_string}}){{/if}}{{#if ttl_clause}}
+TTL {{ttl_clause}}{{/if}}{{#if settings}}
 SETTINGS {{settings}}{{/if}}"#;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -1668,7 +1669,8 @@ pub fn create_table_query(
         "partition_by": table.partition_by.as_deref(),
         "sample_by": table.sample_by.as_deref(),
         "engine": engine,
-        "settings": settings
+        "settings": settings,
+        "ttl_clause": table.table_ttl_setting.as_deref()
     });
 
     Ok(reg.render_template(CREATE_TABLE_TEMPLATE, &template_context)?)
@@ -1920,9 +1922,12 @@ fn builds_field_context(columns: &[ClickHouseColumn]) -> Result<Vec<Value>, Clic
             // Escape single quotes in comments for SQL safety
             let escaped_comment = column.comment.as_ref().map(|c| c.replace('\'', "''"));
 
+            let field_ttl = column.ttl.as_ref();
+
             Ok(json!({
                 "field_name": column.name,
                 "field_type": field_type,
+                "field_ttl": field_ttl,
                 "field_default": column.default,
                 "field_nullable": if let ClickHouseColumnType::Nullable(_) = column.column_type {
                     // if type is Nullable, do not add extra specifier
@@ -1959,6 +1964,7 @@ mod tests {
                 primary_key: false,
                 default: None,
                 comment: None,
+                ttl: None,
             },
             ClickHouseColumn {
                 name: "nested_field_2".to_string(),
@@ -1968,6 +1974,7 @@ mod tests {
                 primary_key: false,
                 default: None,
                 comment: None,
+                ttl: None,
             },
             ClickHouseColumn {
                 name: "nested_field_3".to_string(),
@@ -1977,6 +1984,7 @@ mod tests {
                 primary_key: false,
                 default: None,
                 comment: None,
+                ttl: None,
             },
             ClickHouseColumn {
                 name: "nested_field_4".to_string(),
@@ -1986,6 +1994,7 @@ mod tests {
                 primary_key: false,
                 default: None,
                 comment: None,
+                ttl: None,
             },
             ClickHouseColumn {
                 name: "nested_field_5".to_string(),
@@ -1995,6 +2004,7 @@ mod tests {
                 primary_key: false,
                 default: None,
                 comment: None,
+                ttl: None,
             },
             ClickHouseColumn {
                 name: "nested_field_6".to_string(),
@@ -2016,6 +2026,7 @@ mod tests {
                 primary_key: false,
                 default: None,
                 comment: None,
+                ttl: None,
             },
             ClickHouseColumn {
                 name: "nested_field_7".to_string(),
@@ -2025,6 +2036,7 @@ mod tests {
                 primary_key: false,
                 default: None,
                 comment: None,
+                ttl: None,
             },
         ]);
 
@@ -2089,6 +2101,7 @@ mod tests {
                     unique: false,
                     default: None,
                     comment: None,
+                    ttl: None,
                 },
                 ClickHouseColumn {
                     name: "name".to_string(),
@@ -2098,6 +2111,7 @@ mod tests {
                     unique: false,
                     default: None,
                     comment: None,
+                    ttl: None,
                 },
             ],
             order_by: OrderBy::Fields(vec![]),
@@ -2106,6 +2120,7 @@ mod tests {
             engine: ClickhouseEngine::MergeTree,
             table_settings: None,
             indexes: vec![],
+            table_ttl_setting: None,
         };
 
         let query = create_table_query("test_db", table, false).unwrap();
@@ -2134,6 +2149,7 @@ PRIMARY KEY (`id`)
                 unique: false,
                 default: Some("'abc'".to_string()),
                 comment: None,
+                ttl: None,
             }],
             order_by: OrderBy::Fields(vec![]),
             partition_by: None,
@@ -2141,6 +2157,7 @@ PRIMARY KEY (`id`)
             engine: ClickhouseEngine::MergeTree,
             table_settings: None,
             indexes: vec![],
+            table_ttl_setting: None,
         };
 
         let query = create_table_query("test_db", table, false).unwrap();
@@ -2168,6 +2185,7 @@ ENGINE = MergeTree
                 unique: false,
                 default: Some("42".to_string()),
                 comment: None,
+                ttl: None,
             }],
             order_by: OrderBy::Fields(vec![]),
             partition_by: None,
@@ -2175,6 +2193,7 @@ ENGINE = MergeTree
             engine: ClickhouseEngine::MergeTree,
             table_settings: None,
             indexes: vec![],
+            table_ttl_setting: None,
         };
 
         let query = create_table_query("test_db", table, false).unwrap();
@@ -2201,6 +2220,7 @@ ENGINE = MergeTree
                 unique: false,
                 default: None,
                 comment: None,
+                ttl: None,
             }],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
             partition_by: None,
@@ -2211,6 +2231,7 @@ ENGINE = MergeTree
             },
             table_settings: None,
             indexes: vec![],
+            table_ttl_setting: None,
         };
 
         let query = create_table_query("test_db", table, false).unwrap();
@@ -2238,6 +2259,7 @@ ORDER BY (`id`) "#;
                 unique: false,
                 default: None,
                 comment: None,
+                ttl: None,
             }],
             engine: ClickhouseEngine::ReplacingMergeTree {
                 ver: None,
@@ -2248,6 +2270,7 @@ ORDER BY (`id`) "#;
             partition_by: None,
             table_settings: None,
             indexes: vec![],
+            table_ttl_setting: None,
         };
 
         let result = create_table_query("test_db", table, false);
@@ -2271,6 +2294,7 @@ ORDER BY (`id`) "#;
                     unique: false,
                     default: None,
                     comment: None,
+                    ttl: None,
                 },
                 ClickHouseColumn {
                     name: "version".to_string(),
@@ -2280,6 +2304,7 @@ ORDER BY (`id`) "#;
                     unique: false,
                     default: None,
                     comment: None,
+                    ttl: None,
                 },
             ],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
@@ -2291,6 +2316,7 @@ ORDER BY (`id`) "#;
             },
             table_settings: None,
             indexes: vec![],
+            table_ttl_setting: None,
         };
 
         let query = create_table_query("test_db", table, false).unwrap();
@@ -2320,6 +2346,7 @@ ORDER BY (`id`) "#;
                     unique: false,
                     default: None,
                     comment: None,
+                    ttl: None,
                 },
                 ClickHouseColumn {
                     name: "version".to_string(),
@@ -2329,6 +2356,7 @@ ORDER BY (`id`) "#;
                     unique: false,
                     default: None,
                     comment: None,
+                    ttl: None,
                 },
                 ClickHouseColumn {
                     name: "is_deleted".to_string(),
@@ -2338,6 +2366,7 @@ ORDER BY (`id`) "#;
                     unique: false,
                     default: None,
                     comment: None,
+                    ttl: None,
                 },
             ],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
@@ -2349,6 +2378,7 @@ ORDER BY (`id`) "#;
             },
             table_settings: None,
             indexes: vec![],
+            table_ttl_setting: None,
         };
 
         let query = create_table_query("test_db", table, false).unwrap();
@@ -2378,6 +2408,7 @@ ORDER BY (`id`) "#;
                 unique: false,
                 default: None,
                 comment: None,
+                ttl: None,
             }],
             sample_by: None,
             order_by: OrderBy::Fields(vec!["id".to_string()]),
@@ -2387,6 +2418,7 @@ ORDER BY (`id`) "#;
                 is_deleted: Some("is_deleted".to_string()),
             },
             table_settings: None,
+            table_ttl_setting: None,
             indexes: vec![],
         };
 
@@ -2480,6 +2512,7 @@ ORDER BY (`id`) "#;
                     unique: false,
                     default: None,
                     comment: None,
+                    ttl: None,
                 },
                 ClickHouseColumn {
                     name: "nested_data".to_string(),
@@ -2492,6 +2525,7 @@ ORDER BY (`id`) "#;
                             unique: false,
                             default: None,
                             comment: None,
+                            ttl: None,
                         },
                         ClickHouseColumn {
                             name: "field2".to_string(),
@@ -2501,6 +2535,7 @@ ORDER BY (`id`) "#;
                             unique: false,
                             default: None,
                             comment: None,
+                            ttl: None,
                         },
                     ]),
                     required: true,
@@ -2508,6 +2543,7 @@ ORDER BY (`id`) "#;
                     unique: false,
                     default: None,
                     comment: None,
+                    ttl: None,
                 },
                 ClickHouseColumn {
                     name: "status".to_string(),
@@ -2529,6 +2565,7 @@ ORDER BY (`id`) "#;
                     unique: false,
                     default: None,
                     comment: None,
+                    ttl: None,
                 },
             ],
             sample_by: None,
@@ -2537,6 +2574,7 @@ ORDER BY (`id`) "#;
             partition_by: None,
             table_settings: None,
             indexes: vec![],
+            table_ttl_setting: None,
         };
 
         let query = create_table_query("test_db", table, false).unwrap();
@@ -2575,6 +2613,7 @@ ORDER BY (`id`) "#;
                     unique: false,
                     default: None,
                     comment: None,
+                    ttl: None,
                 },
                 ClickHouseColumn {
                     name: "data".to_string(),
@@ -2584,6 +2623,7 @@ ORDER BY (`id`) "#;
                     unique: false,
                     default: None,
                     comment: None,
+                    ttl: None,
                 },
             ],
             order_by: OrderBy::Fields(vec![]),
@@ -2599,6 +2639,7 @@ ORDER BY (`id`) "#;
             },
             table_settings: Some(settings),
             indexes: vec![],
+            table_ttl_setting: None,
         };
 
         let query = create_table_query("test_db", table, false).unwrap();
@@ -3056,6 +3097,7 @@ SETTINGS keeper_path = '/clickhouse/s3queue/test_table', mode = 'unordered', s3q
                 unique: false,
                 default: None,
                 comment: None,
+                ttl: None,
             }],
             order_by: OrderBy::Fields(vec![]),
             partition_by: None,
@@ -3070,6 +3112,7 @@ SETTINGS keeper_path = '/clickhouse/s3queue/test_table', mode = 'unordered', s3q
             },
             table_settings: None,
             indexes: vec![],
+            table_ttl_setting: None,
         };
 
         let query = create_table_query("test_db", table, false).unwrap();

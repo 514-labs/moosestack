@@ -119,6 +119,18 @@ export type ClickHouseDefault<SqlExpression extends string> = {
 };
 
 /**
+ * @example
+ * {
+ *   ...
+ *   timestamp: Date;
+ *   debugMessage: string & ClickHouseTTL<"timestamp + INTERVAL 1 WEEK">;
+ * }
+ */
+export type ClickHouseTTL<SqlExpression extends string> = {
+  _clickhouse_ttl?: SqlExpression;
+};
+
+/**
  * See also {@link ClickHouseDefault}
  *
  * @example{ updated_at: WithDefault<Date, "now()"> }

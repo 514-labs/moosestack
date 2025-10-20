@@ -3,6 +3,7 @@ import {
   ClickHouseEngines,
   Key,
   DateTime,
+  ClickHouseTTL,
 } from "@514labs/moose-lib";
 
 /**
@@ -28,6 +29,19 @@ export interface EngineTestDataSample {
   version: number;
   isDeleted: boolean; // For ReplacingMergeTree soft deletes (UInt8 in ClickHouse)
 }
+
+// Table with TTL: delete rows older than 90 days, delete email after 30 days
+export interface TTLTestData {
+  id: Key<string>;
+  timestamp: DateTime;
+  email: string & ClickHouseTTL<"timestamp + INTERVAL 30 DAY">;
+}
+
+export const TTLTable = new OlapTable<TTLTestData>("TTLTable", {
+  engine: ClickHouseEngines.MergeTree,
+  orderByFields: ["id", "timestamp"],
+  ttl: "timestamp + INTERVAL 90 DAY DELETE",
+});
 
 // Test MergeTree engine (default)
 export const MergeTreeTable = new OlapTable<EngineTestData>("MergeTreeTest", {
@@ -208,4 +222,5 @@ export const allEngineTestTables = [
   ReplicatedAggregatingMergeTreeTable,
   ReplicatedSummingMergeTreeTable,
   SampleByTable,
+  TTLTable,
 ];
