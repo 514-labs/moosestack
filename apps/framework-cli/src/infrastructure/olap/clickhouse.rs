@@ -1457,6 +1457,13 @@ impl OlapOperations for ConfiguredDBClient {
                 };
 
                 let mut annotations = Vec::new();
+
+                // Check for LowCardinality wrapper
+                if col_type.starts_with("LowCardinality(") {
+                    debug!("Detected LowCardinality for column {}", col_name);
+                    annotations.push(("LowCardinality".to_string(), serde_json::json!(true)));
+                }
+
                 if let Ok(Some((function_name, arg_type))) =
                     type_parser::extract_simple_aggregate_function(&col_type)
                 {

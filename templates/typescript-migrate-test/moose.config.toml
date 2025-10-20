@@ -51,9 +51,9 @@ postgresql_version = "13"
 streaming_engine = false
 workflows = false
 apis = false
+ddl_plan = false
 data_model_v2 = true
 olap = true
-ddl_plan = true
 
 # IMPORTANT: This template is for testing serverless migration flow
 # State is stored in ClickHouse instead of Redis

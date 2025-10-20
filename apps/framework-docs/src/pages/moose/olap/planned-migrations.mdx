@@ -265,7 +265,7 @@ storage = "clickhouse"
 
 [features]
 olap = true
-ddl_plan = true
+data_model_v2 = true
 ```
 
 **Workflow:**
@@ -292,5 +292,5 @@ Execution rules:
 ## Troubleshooting
 - Failure to connect to remote database? Make sure you have [your admin API key setup correctly](./apis/auth#admin-endpoints)
 - Plan rejected due to drift: Re-generate a plan against the current remote, review, and retry.
-- No execution: Ensure `ddl_plan = true` and `./migrations/plan.yaml` exists.
+- No execution in moose server deployments: Ensure `ddl_plan = true` and `./migrations/plan.yaml` exists.
 - OLAP disabled: Ensure `[features].olap = true`.

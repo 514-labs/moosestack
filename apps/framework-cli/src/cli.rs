@@ -826,7 +826,11 @@ pub async fn top_command_handler(
                 "production infrastructure".to_string(),
             )))
         }
-        Commands::Plan { url, token } => {
+        Commands::Plan {
+            url,
+            token,
+            clickhouse_url,
+        } => {
             info!("Running plan command");
             let project = load_project()?;
 
@@ -840,7 +844,7 @@ pub async fn top_command_handler(
 
             check_project_name(&project.name())?;
 
-            let result = routines::remote_plan(&project, url, token).await;
+            let result = routines::remote_plan(&project, url, token, clickhouse_url).await;
 
             result.map_err(|e| {
                 RoutineFailure::error(Message {
