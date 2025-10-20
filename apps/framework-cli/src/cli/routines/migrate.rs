@@ -460,6 +460,8 @@ mod tests {
             }],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
             partition_by: None,
+            sample_by: None,
+            indexes: vec![],
             version: None,
             source_primitive: PrimitiveSignature {
                 name: name.to_string(),
