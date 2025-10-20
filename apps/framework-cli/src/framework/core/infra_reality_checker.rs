@@ -242,14 +242,14 @@ impl<T: OlapOperations> InfraRealityChecker<T> {
                     .cloned()
                     .collect();
                 for col in keys {
-                    let a = actual_cols.get(&col).cloned();
-                    let b = desired_cols.get(&col).cloned();
-                    if a != b {
+                    let actual_column = actual_cols.get(&col).cloned();
+                    let desired_column = desired_cols.get(&col).cloned();
+                    if actual_column != desired_column {
                         mismatched_tables.push(OlapChange::Table(TableChange::ColumnTtlChanged {
                             name: name.clone(),
                             column: col.clone(),
-                            before: a,
-                            after: b,
+                            before: actual_column,
+                            after: desired_column,
                             table: mapped_table.clone(),
                         }));
                     }
