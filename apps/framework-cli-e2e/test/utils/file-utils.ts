@@ -4,11 +4,22 @@ import * as os from "os";
 import { randomUUID } from "crypto";
 
 /**
- * Removes a test project directory
+ * Removes a test project directory with retry logic for race conditions
  */
 export const removeTestProject = (dir: string): void => {
   console.log(`Deleting ${dir}`);
-  fs.rmSync(dir, { recursive: true, force: true });
+
+  try {
+    fs.rmSync(dir, {
+      recursive: true,
+      force: true,
+      maxRetries: 3,
+      retryDelay: 100,
+    });
+  } catch (error: any) {
+    // Log but don't throw to avoid breaking tests
+    console.warn(`Failed to delete ${dir}:`, error.message);
+  }
 };
 
 /**
@@ -41,7 +52,7 @@ export const cleanupLeftoverTestDirectories = (): void => {
 
     for (const dir of testDirs) {
       console.log(`Removing leftover test directory: ${dir}`);
-      fs.rmSync(dir, { recursive: true, force: true });
+      removeTestProject(dir);
     }
 
     if (testDirs.length > 0) {
