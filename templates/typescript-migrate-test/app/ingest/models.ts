@@ -1,10 +1,4 @@
-import {
-  IngestPipeline,
-  Key,
-  OlapTable,
-  DeadLetterModel,
-  DateTime,
-} from "@514labs/moose-lib";
+import { Key, OlapTable, DeadLetterModel, DateTime } from "@514labs/moose-lib";
 
 export interface Foo {
   primaryKey: Key<string>;
