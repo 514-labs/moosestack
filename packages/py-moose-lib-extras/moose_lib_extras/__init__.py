@@ -41,8 +41,11 @@ from .sap_hana_validators import (
     # Spatial types
     SapStGeometry, SapStPoint,
     
+    # Comprehensive validator
+    SapHanaValue,
+    
     # Utility functions
-    validate_sap_hana_value, get_sap_hana_validator, get_sap_hana_annotated_type,
+    validate_sap_hana_value, validate_sap_hana_value_comprehensive, get_sap_hana_validator, get_sap_hana_annotated_type,
 )
 from .sap_pydantic_model import (
     SapHanaBaseModel,
@@ -91,8 +94,11 @@ __all__ = [
     # SAP HANA Validators - Spatial types
     "SapStGeometry", "SapStPoint",
     
+    # SAP HANA Validators - Comprehensive validator
+    "SapHanaValue",
+    
     # SAP HANA Validators - Utility functions
-    "validate_sap_hana_value", "get_sap_hana_validator", "get_sap_hana_annotated_type",
+    "validate_sap_hana_value", "validate_sap_hana_value_comprehensive", "get_sap_hana_validator", "get_sap_hana_annotated_type",
     
     # SAP HANA Pydantic Models
     "SapHanaBaseModel", "create_sap_hana_model_class",

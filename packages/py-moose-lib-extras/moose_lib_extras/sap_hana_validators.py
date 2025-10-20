@@ -11,7 +11,7 @@ import logging
 from datetime import datetime, date, time, timedelta
 from decimal import Decimal
 from typing import Any, Union, Annotated, get_args, get_origin
-from pydantic import GetCoreSchemaHandler, GetJsonSchemaHandler
+from pydantic import GetCoreSchemaHandler, GetJsonSchemaHandler, BeforeValidator
 from pydantic_core import core_schema
 from pydantic.json_schema import JsonSchemaValue
 
@@ -250,6 +250,10 @@ def validate_sap_decimal(value: Any) -> Decimal:
     else:
         total_digits = len(decimal_str)
     
+    # Debug logging
+    if total_digits > 10:
+        logger.warning(f"SAP Decimal validator: Input {decimal_val} has {total_digits} digits, limiting to 10")
+    
     # If precision is too high, round to fit ClickHouse limits
     if total_digits > 10:
         # Calculate how many decimal places to keep
@@ -283,7 +287,79 @@ def validate_sap_decimal(value: Any) -> Decimal:
             else:
                 decimal_val = Decimal(final_str[:10])
     
+    # Debug logging for final result
+    final_str = str(decimal_val)
+    final_digits = len(final_str.replace('.', ''))
+    if final_digits > 10:
+        logger.error(f"SAP Decimal validator: Final result {decimal_val} still has {final_digits} digits!")
+    
     return decimal_val
+
+
+def validate_sap_hana_value_comprehensive(value: Any) -> Any:
+    """
+    Comprehensive validator for SAP HANA values with ClickHouse compatibility.
+    This validator handles all data type conversions that were previously done in _convert_row_data.
+    Use this with BeforeValidator to eliminate the need for manual data conversion.
+    """
+    if value is None:
+        return None
+    elif isinstance(value, memoryview):
+        # Convert memoryview to hex string for binary fields
+        return value.hex()
+    elif isinstance(value, bytes):
+        # Convert bytes to hex string for binary fields
+        return value.hex()
+    elif isinstance(value, (int, Decimal)):
+        # Handle integer and decimal precision for ClickHouse compatibility
+        if isinstance(value, int):
+            # Convert int to Decimal first, then apply precision limiting
+            decimal_val = Decimal(str(value))
+        else:
+            decimal_val = value
+        
+        # Apply precision limiting (same logic as validate_sap_decimal)
+        decimal_str = str(decimal_val)
+        
+        # Remove decimal point and count digits
+        if '.' in decimal_str:
+            integer_part, decimal_part = decimal_str.split('.')
+            total_digits = len(integer_part) + len(decimal_part)
+        else:
+            total_digits = len(decimal_str)
+        
+        # If precision is too high, limit it
+        if total_digits > 10:
+            if '.' in decimal_str:
+                integer_part, decimal_part = decimal_str.split('.')
+                integer_digits = len(integer_part)
+                
+                # If integer part is already too long, truncate it
+                if integer_digits > 10:
+                    # Truncate the integer part to max_digits
+                    truncated_integer = integer_part[:10]
+                    decimal_val = Decimal(truncated_integer)
+                else:
+                    # Keep integer part, limit decimal places
+                    max_decimal_places = max(0, 10 - integer_digits)
+                    
+                    # Round to the maximum allowed decimal places
+                    if max_decimal_places > 0:
+                        decimal_val = decimal_val.quantize(Decimal('0.' + '0' * max_decimal_places))
+                    else:
+                        # No decimal places allowed, round to nearest integer
+                        decimal_val = decimal_val.quantize(Decimal('1'))
+            else:
+                # If it's a whole number with too many digits, truncate
+                decimal_val = Decimal(decimal_str[:10])
+            
+            # Log precision limiting
+            logger.info(f"SAP HANA value precision limited: {value} -> {decimal_val}")
+        
+        return decimal_val
+    else:
+        # Keep other values as-is
+        return value
 
 
 def validate_sap_real(value: Any) -> float:
@@ -571,45 +647,48 @@ def validate_sap_st_point(value: Any) -> str:
 # ============================================================================
 
 # Datetime types
-SapDate = Annotated[date, validate_sap_date]
-SapTime = Annotated[time, validate_sap_time]
-SapSecondDate = Annotated[datetime, validate_sap_seconddate]
-SapTimestamp = Annotated[datetime, validate_sap_timestamp]
+SapDate = Annotated[date, BeforeValidator(validate_sap_date)]
+SapTime = Annotated[time, BeforeValidator(validate_sap_time)]
+SapSecondDate = Annotated[datetime, BeforeValidator(validate_sap_seconddate)]
+SapTimestamp = Annotated[datetime, BeforeValidator(validate_sap_timestamp)]
 
 # Numeric types
 SapTinyInt = Annotated[int, validate_sap_tinyint]
-SapSmallInt = Annotated[int, validate_sap_smallint]
-SapInteger = Annotated[int, validate_sap_integer]
-SapBigInt = Annotated[int, validate_sap_bigint]
-SapSmallDecimal = Annotated[Decimal, validate_sap_smalldecimal]
-SapDecimal = Annotated[Decimal, validate_sap_decimal]
-SapReal = Annotated[float, validate_sap_real]
-SapDouble = Annotated[float, validate_sap_double]
+SapSmallInt = Annotated[int, BeforeValidator(validate_sap_smallint)]
+SapInteger = Annotated[int, BeforeValidator(validate_sap_integer)]
+SapBigInt = Annotated[int, BeforeValidator(validate_sap_bigint)]
+SapSmallDecimal = Annotated[Decimal, BeforeValidator(validate_sap_smalldecimal)]
+SapDecimal = Annotated[Decimal, BeforeValidator(validate_sap_decimal)]
+SapReal = Annotated[float, BeforeValidator(validate_sap_real)]
+SapDouble = Annotated[float, BeforeValidator(validate_sap_double)]
 
 # Boolean type
-SapBoolean = Annotated[bool, validate_sap_boolean]
+SapBoolean = Annotated[bool, BeforeValidator(validate_sap_boolean)]
 
 # Character string types
-SapVarchar = Annotated[str, validate_sap_varchar]
-SapNvarchar = Annotated[str, validate_sap_nvarchar]
-SapAlphanum = Annotated[str, validate_sap_alphanum]
-SapShortText = Annotated[str, validate_sap_shorttext]
+SapVarchar = Annotated[str, BeforeValidator(validate_sap_varchar)]
+SapNvarchar = Annotated[str, BeforeValidator(validate_sap_nvarchar)]
+SapAlphanum = Annotated[str, BeforeValidator(validate_sap_alphanum)]
+SapShortText = Annotated[str, BeforeValidator(validate_sap_shorttext)]
 
 # Binary types
-SapVarbinary = Annotated[str, validate_sap_varbinary]
+SapVarbinary = Annotated[str, BeforeValidator(validate_sap_varbinary)]
 
 # Large Object types
-SapBlob = Annotated[str, validate_sap_blob]
-SapClob = Annotated[str, validate_sap_clob]
-SapNclob = Annotated[str, validate_sap_nclob]
-SapText = Annotated[str, validate_sap_text]
+SapBlob = Annotated[str, BeforeValidator(validate_sap_blob)]
+SapClob = Annotated[str, BeforeValidator(validate_sap_clob)]
+SapNclob = Annotated[str, BeforeValidator(validate_sap_nclob)]
+SapText = Annotated[str, BeforeValidator(validate_sap_text)]
 
 # Multi-valued types
-SapArray = Annotated[list, validate_sap_array]
+SapArray = Annotated[list, BeforeValidator(validate_sap_array)]
 
 # Spatial types
-SapStGeometry = Annotated[str, validate_sap_st_geometry]
-SapStPoint = Annotated[str, validate_sap_st_point]
+SapStGeometry = Annotated[str, BeforeValidator(validate_sap_st_geometry)]
+SapStPoint = Annotated[str, BeforeValidator(validate_sap_st_point)]
+
+# Comprehensive validator for all SAP HANA values
+SapHanaValue = Annotated[Any, BeforeValidator(validate_sap_hana_value_comprehensive)]
 
 
 # ============================================================================
