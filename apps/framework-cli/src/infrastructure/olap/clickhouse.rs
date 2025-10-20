@@ -48,6 +48,7 @@ use sql_parser::{
     extract_engine_from_create_table, extract_indexes_from_create_table,
     extract_sample_by_from_create_table, extract_table_settings_from_create_table,
 };
+use std::collections::HashMap;
 use std::ops::Deref;
 
 use self::model::ClickHouseSystemTable;
@@ -152,9 +153,9 @@ pub enum SerializableOlapOperation {
         /// The table to modify settings for
         table: String,
         /// The settings before modification
-        before_settings: Option<std::collections::HashMap<String, String>>,
+        before_settings: Option<HashMap<String, String>>,
         /// The settings after modification
-        after_settings: Option<std::collections::HashMap<String, String>>,
+        after_settings: Option<HashMap<String, String>>,
     },
     /// Modify or remove table-level TTL
     ModifyTableTtl {
@@ -712,8 +713,8 @@ fn build_modify_column_comment_sql(
 async fn execute_modify_table_settings(
     db_name: &str,
     table_name: &str,
-    before_settings: &Option<std::collections::HashMap<String, String>>,
-    after_settings: &Option<std::collections::HashMap<String, String>>,
+    before_settings: &Option<HashMap<String, String>>,
+    after_settings: &Option<HashMap<String, String>>,
     client: &ConfiguredDBClient,
 ) -> Result<(), ClickhouseChangesError> {
     use std::collections::HashMap;
@@ -1296,6 +1297,8 @@ impl OlapOperations for ConfiguredDBClient {
 
             let mut columns = Vec::new();
 
+            let column_ttls =
+                extract_column_ttls_from_create_query(&create_query).unwrap_or_default();
             while let Some((
                 col_name,
                 col_type,
@@ -1425,7 +1428,7 @@ impl OlapOperations for ConfiguredDBClient {
                     default,
                     annotations,
                     comment: column_comment,
-                    ttl: None,
+                    ttl: column_ttls.get(&col_name).cloned(),
                 };
 
                 columns.push(column);
@@ -1466,8 +1469,6 @@ impl OlapOperations for ConfiguredDBClient {
 
             // Extract TTLs from CREATE TABLE
             let table_ttl_setting = extract_table_ttl_from_create_query(&create_query);
-            // TODO: wtf
-            let _column_ttls = extract_column_ttls_from_create_query(&create_query);
 
             let indexes_ch = extract_indexes_from_create_table(&create_query)?;
             let indexes: Vec<TableIndex> = indexes_ch
@@ -1604,7 +1605,7 @@ pub fn extract_table_ttl_from_create_query(create_query: &str) -> Option<String>
 /// Returns a map of column name to TTL expression (without leading 'TTL').
 pub fn extract_column_ttls_from_create_query(
     create_query: &str,
-) -> Option<std::collections::HashMap<String, String>> {
+) -> Option<HashMap<String, String>> {
     let upper = create_query.to_uppercase();
     // Columns section is between the first '(' after CREATE TABLE and the closing ')' before ENGINE
     let open_paren = upper.find('(')?;
@@ -1616,27 +1617,64 @@ pub fn extract_column_ttls_from_create_query(
         return None;
     }
     let columns_block = &create_query[open_paren + 1..engine_pos];
-    let mut map = std::collections::HashMap::new();
-    for line in columns_block.lines() {
-        let line_trim = line.trim();
-        // Expect lines like: `col` Type ... [TTL expr] ...
+    let mut map = HashMap::new();
+
+    // Split columns by top-level commas (not inside parentheses or single quotes)
+    let mut col_defs: Vec<String> = Vec::new();
+    let mut current = String::new();
+    let mut depth: i32 = 0;
+    let mut in_string = false;
+    let mut prev: Option<char> = None;
+    for ch in columns_block.chars() {
+        if ch == '\'' && prev != Some('\\') {
+            in_string = !in_string;
+        }
+        if !in_string {
+            if ch == '(' {
+                depth += 1;
+            } else if ch == ')' {
+                if depth > 0 {
+                    depth -= 1;
+                }
+            } else if ch == ',' && depth == 0 {
+                let trimmed = current.trim();
+                if !trimmed.is_empty() {
+                    col_defs.push(trimmed.to_string());
+                }
+                current.clear();
+                prev = Some(ch);
+                continue;
+            }
+        }
+        current.push(ch);
+        prev = Some(ch);
+    }
+    let trimmed = current.trim();
+    if !trimmed.is_empty() {
+        col_defs.push(trimmed.to_string());
+    }
+
+    for def in col_defs {
+        let line_trim = def.trim();
+        // Expect defs like: `col` Type ... [TTL expr] ...
         if !line_trim.starts_with('`') {
             continue;
         }
-        let mut parts = line_trim.splitn(3, '`');
-        parts.next();
-        let col_name = match parts.next() {
-            Some(n) => n,
+        // Extract column name between the first pair of backticks
+        let first_bt = 0; // starts with backtick
+        let second_bt = match line_trim[1..].find('`') {
+            Some(pos) => 1 + pos,
             None => continue,
         };
-        // After column name, check for TTL token
-        let ttl_idx = line_trim.to_uppercase().find(" TTL ");
-        if let Some(idx) = ttl_idx {
+        let col_name = &line_trim[first_bt + 1..second_bt];
+
+        // Find TTL clause within this column definition
+        let upper_line = line_trim.to_uppercase();
+        if let Some(idx) = upper_line.find(" TTL ") {
             let after = &line_trim[idx + 5..];
-            // Cut at DEFAULT/COMMENT/comma if present
             let after_upper = after.to_uppercase();
             let mut cut = after.len();
-            for kw in [" DEFAULT", " COMMENT", ","] {
+            for kw in [" DEFAULT", " COMMENT"] {
                 if let Some(pos) = after_upper.find(kw) {
                     cut = cut.min(pos);
                 }
@@ -1647,6 +1685,7 @@ pub fn extract_column_ttls_from_create_query(
             }
         }
     }
+
     if map.is_empty() {
         None
     } else {
@@ -1964,6 +2003,23 @@ mod tests {
         let query = "CREATE TABLE test (`PRIMARY KEY` Int64) ENGINE = MergeTree() ORDER BY (`id`)";
         let order_by = extract_order_by_from_create_query(query);
         assert_eq!(order_by, vec!["id".to_string()]);
+    }
+
+    #[test]
+    fn test_extract_column_ttls_from_create_query_single_line() {
+        let query = "CREATE TABLE local.example1 (`timestamp` DateTime, `x` UInt32 TTL timestamp + toIntervalMonth(1), `y` String TTL timestamp + toIntervalDay(1), `z` String) ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 8192";
+        let map = extract_column_ttls_from_create_query(query).expect("expected some TTLs");
+
+        assert_eq!(
+            map.get("x"),
+            Some(&"timestamp + toIntervalMonth(1)".to_string())
+        );
+        assert_eq!(
+            map.get("y"),
+            Some(&"timestamp + toIntervalDay(1)".to_string())
+        );
+        assert!(!map.contains_key("z"));
+        assert!(!map.contains_key("timestamp"));
     }
 
     #[test]
