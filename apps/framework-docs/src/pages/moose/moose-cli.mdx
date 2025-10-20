@@ -238,11 +238,19 @@ Available workflow commands:
 
 ### Plan
 Display infrastructure changes for the next production deployment.
+
+**For Moose Server deployments:**
 ```bash
 moose plan [--url <url>] [--token <token>]
 ```
 - `--url`: Remote Moose instance URL (default: http://localhost:4000)
 - `--token`: API token for authentication
+
+**For Serverless deployments:**
+```bash
+moose plan --clickhouse-url <url>
+```
+- `--clickhouse-url`: ClickHouse connection URL (e.g., `clickhouse://user:pass@host:port/database`)
 
 ### Refresh
 Integrate matching tables from a remote instance into the local project.

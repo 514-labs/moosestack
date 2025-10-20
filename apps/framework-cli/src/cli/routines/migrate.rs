@@ -293,8 +293,6 @@ pub async fn execute_migration(
         })?
         .unwrap_or_default();
 
-    // Reconcile with actual database state (like /admin/inframap does)
-    // This ensures we're comparing against what's REALLY in ClickHouse, not stale state
     let current_infra_map = if project.features.olap {
         use crate::framework::core::plan::reconcile_with_reality;
         use std::collections::HashSet;
