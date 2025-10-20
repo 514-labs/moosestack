@@ -28,8 +28,6 @@ from moose_lib.dmv2.stream import KafkaSchemaConfig
 from pydantic.alias_generators import to_camel
 from pydantic.json_schema import JsonSchemaValue
 
-from .dmv2.olap_table import TTLConfig
-
 model_config = ConfigDict(alias_generator=AliasGenerator(
     serialization_alias=to_camel,
 ))

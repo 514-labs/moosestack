@@ -52,7 +52,6 @@ import {
   getExpectedSchemas,
   validateSchemasWithDebugging,
   verifyVersionedTables,
-  // WebApp verification utilities
   verifyWebAppEndpoint,
   verifyWebAppHealth,
   verifyWebAppQuery,

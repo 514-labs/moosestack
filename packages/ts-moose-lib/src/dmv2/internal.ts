@@ -576,7 +576,7 @@ export const toInfraMap = (registry: typeof moose_internal) => {
           tableSettings
         : undefined,
       indexes: table.config.indexes || [],
-      ttl: (table.config as any).ttl,
+      ttl: table.config.ttl,
     };
   });
 
