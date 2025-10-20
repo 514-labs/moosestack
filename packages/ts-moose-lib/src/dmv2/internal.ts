@@ -140,6 +140,8 @@ interface TableJson {
   orderBy: string[] | string;
   /** The column name used for the PARTITION BY clause. */
   partitionBy?: string;
+  /** SAMPLE BY expression for approximate query processing. */
+  sampleByExpression?: string;
   /** Engine configuration with type-safe, engine-specific parameters */
   engineConfig?: EngineConfig;
   /** Optional version string for the table configuration. */
@@ -150,6 +152,14 @@ interface TableJson {
   lifeCycle?: string;
   /** Optional table-level settings that can be modified with ALTER TABLE MODIFY SETTING. */
   tableSettings?: { [key: string]: string };
+  /** Optional table indexes */
+  indexes?: {
+    name: string;
+    expression: string;
+    type: string;
+    arguments?: string[];
+    granularity: number;
+  }[];
   /** Optional table-level TTL expression (without leading 'TTL'). */
   ttl?: string;
 }
@@ -555,6 +565,7 @@ export const toInfraMap = (registry: typeof moose_internal) => {
       columns: table.columnArray,
       orderBy,
       partitionBy: table.config.partitionBy,
+      sampleByExpression: table.config.sampleByExpression,
       engineConfig,
       version: table.config.version,
       metadata,
@@ -564,6 +575,7 @@ export const toInfraMap = (registry: typeof moose_internal) => {
         tableSettings && Object.keys(tableSettings).length > 0 ?
           tableSettings
         : undefined,
+      indexes: table.config.indexes || [],
       ttl: (table.config as any).ttl,
     };
   });

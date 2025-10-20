@@ -5,8 +5,8 @@ use crate::framework::core::infrastructure::table::{
 use serde_json::Value;
 
 use crate::infrastructure::olap::clickhouse::model::{
-    AggregationFunction, ClickHouseColumn, ClickHouseColumnType, ClickHouseFloat, ClickHouseInt,
-    ClickHouseTable,
+    AggregationFunction, ClickHouseColumn, ClickHouseColumnType, ClickHouseFloat, ClickHouseIndex,
+    ClickHouseInt, ClickHouseTable,
 };
 
 use super::errors::ClickhouseError;
@@ -323,8 +323,20 @@ pub fn std_table_to_clickhouse_table(table: &Table) -> Result<ClickHouseTable, C
         columns,
         order_by: table.order_by.clone(),
         partition_by: table.partition_by.clone(),
+        sample_by: table.sample_by.clone(),
         engine: clickhouse_engine,
         table_settings: table.table_settings.clone(),
+        indexes: table
+            .indexes
+            .iter()
+            .map(|i| ClickHouseIndex {
+                name: i.name.clone(),
+                expression: i.expression.clone(),
+                index_type: i.index_type.clone(),
+                arguments: i.arguments.clone(),
+                granularity: i.granularity,
+            })
+            .collect(),
         table_ttl_setting: table.table_ttl_setting.clone(),
     })
 }

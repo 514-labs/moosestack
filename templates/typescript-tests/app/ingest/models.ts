@@ -372,3 +372,66 @@ export const SimpleAggTestTable = new OlapTable<SimpleAggTest>(
     engine: ClickHouseEngines.AggregatingMergeTree,
   },
 );
+
+// =======Index Extraction Test Table=======
+export interface IndexTest {
+  u64: Key<UInt64>;
+  i32: number;
+  s: string;
+}
+
+export const IndexTestTable = new OlapTable<IndexTest>("IndexTest", {
+  engine: ClickHouseEngines.MergeTree,
+  orderByFields: ["u64"],
+  indexes: [
+    {
+      name: "idx1",
+      expression: "u64",
+      type: "bloom_filter",
+      arguments: [],
+      granularity: 3,
+    },
+    {
+      name: "idx2",
+      expression: "u64 * i32",
+      type: "minmax",
+      arguments: [],
+      granularity: 3,
+    },
+    {
+      name: "idx3",
+      expression: "u64 * length(s)",
+      type: "set",
+      arguments: ["1000"],
+      granularity: 4,
+    },
+    {
+      name: "idx4",
+      expression: "(u64, i32)",
+      type: "MinMax",
+      arguments: [],
+      granularity: 1,
+    },
+    {
+      name: "idx5",
+      expression: "(u64, i32)",
+      type: "minmax",
+      arguments: [],
+      granularity: 1,
+    },
+    {
+      name: "idx6",
+      expression: "toString(i32)",
+      type: "ngrambf_v1",
+      arguments: ["2", "256", "1", "123"],
+      granularity: 1,
+    },
+    {
+      name: "idx7",
+      expression: "s",
+      type: "nGraMbf_v1",
+      arguments: ["3", "256", "1", "123"],
+      granularity: 1,
+    },
+  ],
+});

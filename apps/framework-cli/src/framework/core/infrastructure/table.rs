@@ -24,8 +24,15 @@ use std::fmt;
 use std::fmt::Debug;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Eq, Hash)]
+pub struct SourceLocation {
+    pub file: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Eq, Hash)]
 pub struct Metadata {
     pub description: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub source: Option<SourceLocation>,
 }
 
 /// Prefix for Moose-managed metadata in column comments.
@@ -86,6 +93,40 @@ pub enum OrderBy {
     SingleExpr(String),
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
+pub struct TableIndex {
+    pub name: String,
+    pub expression: String,
+    #[serde(rename = "type")]
+    pub index_type: String,
+    #[serde(default)]
+    pub arguments: Vec<String>,
+    pub granularity: u64,
+}
+
+impl TableIndex {
+    pub fn to_proto(&self) -> crate::proto::infrastructure_map::TableIndex {
+        crate::proto::infrastructure_map::TableIndex {
+            name: self.name.clone(),
+            expression: self.expression.clone(),
+            type_: self.index_type.clone(),
+            arguments: self.arguments.clone(),
+            granularity: self.granularity,
+            special_fields: Default::default(),
+        }
+    }
+
+    pub fn from_proto(proto: crate::proto::infrastructure_map::TableIndex) -> Self {
+        TableIndex {
+            name: proto.name,
+            expression: proto.expression,
+            index_type: proto.type_,
+            arguments: proto.arguments,
+            granularity: proto.granularity,
+        }
+    }
+}
+
 impl PartialEq for OrderBy {
     fn eq(&self, other: &Self) -> bool {
         self.to_expr() == other.to_expr()
@@ -138,6 +179,8 @@ pub struct Table {
     pub order_by: OrderBy,
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub partition_by: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub sample_by: Option<String>,
     #[serde(default)]
     pub engine: Option<ClickhouseEngine>,
     pub version: Option<Version>,
@@ -153,6 +196,9 @@ pub struct Table {
     /// These are separate from engine constructor parameters
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub table_settings: Option<std::collections::HashMap<String, String>>,
+    /// Secondary indexes.
+    #[serde(default)]
+    pub indexes: Vec<TableIndex>,
     /// Table-level TTL expression (without leading 'TTL')
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub table_ttl_setting: Option<String>,
@@ -259,6 +305,7 @@ impl Table {
             columns: self.columns.iter().map(|c| c.to_proto()).collect(),
             order_by: proto_order_by,
             partition_by: self.partition_by.clone(),
+            sample_by_expression: self.sample_by.clone(),
             version: self.version.as_ref().map(|v| v.to_string()),
             source_primitive: MessageField::some(self.source_primitive.to_proto()),
             deduplicate: self
@@ -280,6 +327,12 @@ impl Table {
             metadata: MessageField::from_option(self.metadata.as_ref().map(|m| {
                 infrastructure_map::Metadata {
                     description: m.description.clone().unwrap_or_default(),
+                    source: MessageField::from_option(m.source.as_ref().map(|s| {
+                        infrastructure_map::SourceLocation {
+                            file: s.file.clone(),
+                            special_fields: Default::default(),
+                        }
+                    })),
                     special_fields: Default::default(),
                 }
             })),
@@ -288,6 +341,7 @@ impl Table {
                 LifeCycle::DeletionProtected => ProtoLifeCycle::DELETION_PROTECTED.into(),
                 LifeCycle::ExternallyManaged => ProtoLifeCycle::EXTERNALLY_MANAGED.into(),
             },
+            indexes: self.indexes.iter().map(|i| i.to_proto()).collect(),
             special_fields: Default::default(),
         }
     }
@@ -310,7 +364,7 @@ impl Table {
 
         // Engine settings are now handled via table_settings field
 
-        let fallback = || {
+        let fallback = || -> OrderBy {
             if proto.order_by.len() == 1 {
                 let s = proto.order_by[0].clone();
                 if s == "tuple()" {
@@ -340,6 +394,7 @@ impl Table {
             columns: proto.columns.into_iter().map(Column::from_proto).collect(),
             order_by,
             partition_by: proto.partition_by,
+            sample_by: proto.sample_by_expression,
             version: proto.version.map(Version::from_string),
             source_primitive: PrimitiveSignature::from_proto(proto.source_primitive.unwrap()),
             engine,
@@ -349,6 +404,10 @@ impl Table {
                 } else {
                     Some(m.description)
                 },
+                source: m
+                    .source
+                    .into_option()
+                    .map(|s| SourceLocation { file: s.file }),
             }),
             life_cycle: match proto.life_cycle.enum_value_or_default() {
                 ProtoLifeCycle::FULLY_MANAGED => LifeCycle::FullyManaged,
@@ -363,6 +422,11 @@ impl Table {
             } else {
                 None
             },
+            indexes: proto
+                .indexes
+                .into_iter()
+                .map(TableIndex::from_proto)
+                .collect(),
             table_ttl_setting: proto.table_ttl_setting,
         }
     }

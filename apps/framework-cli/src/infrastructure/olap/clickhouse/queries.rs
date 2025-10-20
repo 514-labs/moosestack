@@ -123,12 +123,13 @@ pub fn create_alias_for_table(
 static CREATE_TABLE_TEMPLATE: &str = r#"
 CREATE TABLE IF NOT EXISTS `{{db_name}}`.`{{table_name}}`
 (
-{{#each fields}} `{{field_name}}` {{{field_type}}} {{field_nullable}}{{#if field_default}} DEFAULT {{{field_default}}}{{/if}}{{#if field_ttl}} TTL {{{field_ttl}}}{{/if}}{{#if field_comment}} COMMENT '{{{field_comment}}}'{{/if}}{{#unless @last}},{{/unless}}
-{{/each}}
+{{#each fields}} `{{field_name}}` {{{field_type}}} {{field_nullable}}{{#if field_default}} DEFAULT {{{field_default}}}{{/if}}{{#if field_comment}} COMMENT '{{{field_comment}}}'{{/if}}{{#if field_ttl}} TTL {{{field_ttl}}}{{/if}}{{#unless @last}},
+{{/unless}}{{/each}}{{#if has_indexes}}, {{#each indexes}}{{this}}{{#unless @last}}, {{/unless}}{{/each}}{{/if}}
 )
 ENGINE = {{engine}}{{#if primary_key_string}}
 PRIMARY KEY ({{primary_key_string}}){{/if}}{{#if partition_by}}
-PARTITION BY {{partition_by}}{{/if}}{{#if order_by_string}}
+PARTITION BY {{partition_by}}{{/if}}{{#if sample_by}}
+SAMPLE BY {{sample_by}}{{/if}}{{#if order_by_string}}
 ORDER BY ({{order_by_string}}){{/if}}{{#if ttl_clause}}
 TTL {{ttl_clause}}{{/if}}{{#if settings}}
 SETTINGS {{settings}}{{/if}}"#;
@@ -1628,25 +1629,32 @@ pub fn create_table_query(
         .map(|column| column.name.clone())
         .collect::<Vec<String>>();
 
-    // Build TTL clause from table-level and column-level TTLs if present
-    let ttl_clause: Option<String> = {
-        let mut parts: Vec<String> = Vec::new();
-        if let Some(expr) = table.table_ttl_setting.as_ref() {
-            if !expr.trim().is_empty() {
-                parts.push(expr.trim().to_string());
-            }
+    // Prepare indexes strings like: INDEX name expr TYPE type(args...) GRANULARITY n
+    let (has_indexes, index_strings): (bool, Vec<String>) = if table.indexes.is_empty() {
+        (false, vec![])
+    } else {
+        let mut items = Vec::with_capacity(table.indexes.len());
+        for idx in &table.indexes {
+            let args_part = if idx.arguments.is_empty() {
+                String::new()
+            } else {
+                format!("({})", idx.arguments.join(", "))
+            };
+            items.push(format!(
+                "INDEX {} {} TYPE {}{} GRANULARITY {}",
+                idx.name, idx.expression, idx.index_type, args_part, idx.granularity
+            ));
         }
-        if parts.is_empty() {
-            None
-        } else {
-            Some(parts.join(", "))
-        }
+        (true, items)
     };
 
     let template_context = json!({
         "db_name": db_name,
         "table_name": table.name,
         "fields":  builds_field_context(&table.columns)?,
+        "has_fields": !table.columns.is_empty(),
+        "has_indexes": has_indexes,
+        "indexes": index_strings,
         "primary_key_string": if !primary_key.is_empty() {
             Some(wrap_and_join_column_names(&primary_key, ","))
         } else {
@@ -1659,9 +1667,10 @@ pub fn create_table_query(
             _ => None,
         },
         "partition_by": table.partition_by.as_deref(),
+        "sample_by": table.sample_by.as_deref(),
         "engine": engine,
         "settings": settings,
-        "ttl_clause": ttl_clause
+        "ttl_clause": table.table_ttl_setting.as_deref()
     });
 
     Ok(reg.render_template(CREATE_TABLE_TEMPLATE, &template_context)?)
@@ -2107,8 +2116,10 @@ mod tests {
             ],
             order_by: OrderBy::Fields(vec![]),
             partition_by: None,
+            sample_by: None,
             engine: ClickhouseEngine::MergeTree,
             table_settings: None,
+            indexes: vec![],
             table_ttl_setting: None,
         };
 
@@ -2142,8 +2153,10 @@ PRIMARY KEY (`id`)
             }],
             order_by: OrderBy::Fields(vec![]),
             partition_by: None,
+            sample_by: None,
             engine: ClickhouseEngine::MergeTree,
             table_settings: None,
+            indexes: vec![],
             table_ttl_setting: None,
         };
 
@@ -2176,8 +2189,10 @@ ENGINE = MergeTree
             }],
             order_by: OrderBy::Fields(vec![]),
             partition_by: None,
+            sample_by: None,
             engine: ClickhouseEngine::MergeTree,
             table_settings: None,
+            indexes: vec![],
             table_ttl_setting: None,
         };
 
@@ -2209,11 +2224,13 @@ ENGINE = MergeTree
             }],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
             partition_by: None,
+            sample_by: None,
             engine: ClickhouseEngine::ReplacingMergeTree {
                 ver: None,
                 is_deleted: None,
             },
             table_settings: None,
+            indexes: vec![],
             table_ttl_setting: None,
         };
 
@@ -2248,9 +2265,11 @@ ORDER BY (`id`) "#;
                 ver: None,
                 is_deleted: None,
             },
+            sample_by: None,
             order_by: OrderBy::Fields(vec![]),
             partition_by: None,
             table_settings: None,
+            indexes: vec![],
             table_ttl_setting: None,
         };
 
@@ -2290,11 +2309,13 @@ ORDER BY (`id`) "#;
             ],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
             partition_by: None,
+            sample_by: None,
             engine: ClickhouseEngine::ReplacingMergeTree {
                 ver: Some("version".to_string()),
                 is_deleted: None,
             },
             table_settings: None,
+            indexes: vec![],
             table_ttl_setting: None,
         };
 
@@ -2350,11 +2371,13 @@ ORDER BY (`id`) "#;
             ],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
             partition_by: None,
+            sample_by: None,
             engine: ClickhouseEngine::ReplacingMergeTree {
                 ver: Some("version".to_string()),
                 is_deleted: Some("is_deleted".to_string()),
             },
             table_settings: None,
+            indexes: vec![],
             table_ttl_setting: None,
         };
 
@@ -2387,6 +2410,7 @@ ORDER BY (`id`) "#;
                 comment: None,
                 ttl: None,
             }],
+            sample_by: None,
             order_by: OrderBy::Fields(vec!["id".to_string()]),
             partition_by: None,
             engine: ClickhouseEngine::ReplacingMergeTree {
@@ -2395,6 +2419,7 @@ ORDER BY (`id`) "#;
             },
             table_settings: None,
             table_ttl_setting: None,
+            indexes: vec![],
         };
 
         let result = create_table_query("test_db", table, false);
@@ -2543,10 +2568,12 @@ ORDER BY (`id`) "#;
                     ttl: None,
                 },
             ],
+            sample_by: None,
             engine: ClickhouseEngine::MergeTree,
             order_by: OrderBy::Fields(vec!["id".to_string()]),
             partition_by: None,
             table_settings: None,
+            indexes: vec![],
             table_ttl_setting: None,
         };
 
@@ -2601,6 +2628,7 @@ ORDER BY (`id`) "#;
             ],
             order_by: OrderBy::Fields(vec![]),
             partition_by: None,
+            sample_by: None,
             engine: ClickhouseEngine::S3Queue {
                 s3_path: "s3://my-bucket/data/*.json".to_string(),
                 format: "JSONEachRow".to_string(),
@@ -2610,6 +2638,7 @@ ORDER BY (`id`) "#;
                 aws_secret_access_key: None,
             },
             table_settings: Some(settings),
+            indexes: vec![],
             table_ttl_setting: None,
         };
 
@@ -3072,6 +3101,7 @@ SETTINGS keeper_path = '/clickhouse/s3queue/test_table', mode = 'unordered', s3q
             }],
             order_by: OrderBy::Fields(vec![]),
             partition_by: None,
+            sample_by: None,
             engine: ClickhouseEngine::S3Queue {
                 s3_path: "s3://my-bucket/data/*.csv".to_string(),
                 format: "CSV".to_string(),
@@ -3081,6 +3111,7 @@ SETTINGS keeper_path = '/clickhouse/s3queue/test_table', mode = 'unordered', s3q
                 aws_secret_access_key: None,
             },
             table_settings: None,
+            indexes: vec![],
             table_ttl_setting: None,
         };
 

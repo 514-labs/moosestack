@@ -124,6 +124,8 @@ class OlapConfig(BaseModel):
                              `order_by_expression="(id, name)"` is equivalent to order_by_fields=["id", "name"], or
                              "tuple()" for no sorting.
         partition_by: Optional PARTITION BY expression (single ClickHouse SQL expression).
+        sample_by_expression: Optional SAMPLE BY expression for data sampling (single ClickHouse SQL expression).
+                              Used to enable efficient approximate query processing with SAMPLE clause.
         engine: The ClickHouse table engine to use. Can be either a ClickHouseEngines enum value
                 (for backward compatibility) or an EngineConfig instance (recommended).
         version: Optional version string for tracking configuration changes.
@@ -135,6 +137,7 @@ class OlapConfig(BaseModel):
     order_by_fields: list[str] = []
     order_by_expression: Optional[str] = None
     partition_by: Optional[str] = None
+    sample_by_expression: Optional[str] = None
     engine: Optional[Union[ClickHouseEngines, EngineConfig]] = None
     version: Optional[str] = None
     metadata: Optional[dict] = None
@@ -142,6 +145,15 @@ class OlapConfig(BaseModel):
     settings: Optional[dict[str, str]] = None
     # Optional table-level TTL expression (without leading 'TTL')
     ttl: Optional[str] = None
+    # Optional secondary/data-skipping indexes
+    class TableIndex(BaseModel):
+        name: str
+        expression: str
+        type: str
+        arguments: Optional[list[str]] = None
+        granularity: int
+
+    indexes: list[TableIndex] = []
 
     def model_post_init(self, __context):
         has_fields = bool(self.order_by_fields)

@@ -368,3 +368,26 @@ simple_agg_test_table = OlapTable[SimpleAggTest](
         order_by_fields=["date_stamp", "table_name"]
     )
 )
+
+# =======Index Extraction Test Table=======
+class IndexTest(BaseModel):
+    u64: Key[Annotated[int, "uint64"]]
+    i32: Annotated[int, "i32"]
+    s: str
+
+index_test_table = OlapTable[IndexTest](
+    "IndexTest",
+    OlapConfig(
+        engine=MergeTreeEngine(),
+        order_by_fields=["u64"],
+        indexes=[
+            OlapConfig.TableIndex(name="idx1", expression="u64", type="bloom_filter", arguments=[], granularity=3),
+            OlapConfig.TableIndex(name="idx2", expression="u64 * i32", type="minmax", arguments=[], granularity=3),
+            OlapConfig.TableIndex(name="idx3", expression="u64 * length(s)", type="set", arguments=["1000"], granularity=4),
+            OlapConfig.TableIndex(name="idx4", expression="(u64, i32)", type="MinMax", arguments=[], granularity=1),
+            OlapConfig.TableIndex(name="idx5", expression="(u64, i32)", type="minmax", arguments=[], granularity=1),
+            OlapConfig.TableIndex(name="idx6", expression="toString(i32)", type="ngrambf_v1", arguments=["2", "256", "1", "123"], granularity=1),
+            OlapConfig.TableIndex(name="idx7", expression="s", type="nGraMbf_v1", arguments=["3", "256", "1", "123"], granularity=1),
+        ],
+    ),
+)

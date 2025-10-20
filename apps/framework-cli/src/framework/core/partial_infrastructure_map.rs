@@ -50,7 +50,7 @@ use super::{
         olap_process::OlapProcess,
         orchestration_worker::OrchestrationWorker,
         sql_resource::SqlResource,
-        table::{Column, Metadata, Table},
+        table::{Column, Metadata, Table, TableIndex},
         topic::{KafkaSchema, Topic, DEFAULT_MAX_MESSAGE_BYTES},
         topic_sync_process::{TopicToTableSyncProcess, TopicToTopicSyncProcess},
         view::View,
@@ -192,6 +192,8 @@ struct PartialTable {
     pub order_by: OrderBy,
     #[serde(default)]
     pub partition_by: Option<String>,
+    #[serde(default, alias = "sampleByExpression")]
+    pub sample_by: Option<String>,
     #[serde(alias = "engine_config")]
     pub engine_config: Option<EngineConfig>,
     pub version: Option<String>,
@@ -200,6 +202,8 @@ struct PartialTable {
     pub life_cycle: Option<LifeCycle>,
     #[serde(alias = "table_settings")]
     pub table_settings: Option<std::collections::HashMap<String, String>>,
+    #[serde(default)]
+    pub indexes: Vec<TableIndex>,
     /// Optional table-level TTL expression (ClickHouse expression, without leading 'TTL')
     #[serde(alias = "ttl")]
     pub ttl: Option<String>,
@@ -586,6 +590,7 @@ impl PartialInfrastructureMap {
                     columns: partial_table.columns.clone(),
                     order_by: partial_table.order_by.clone(),
                     partition_by: partial_table.partition_by.clone(),
+                    sample_by: partial_table.sample_by.clone(),
                     engine,
                     version,
                     source_primitive: PrimitiveSignature {
@@ -600,6 +605,7 @@ impl PartialInfrastructureMap {
                     } else {
                         Some(table_settings)
                     },
+                    indexes: partial_table.indexes.clone(),
                     table_ttl_setting,
                 };
                 (table.id(), table)

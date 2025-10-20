@@ -1,0 +1,131 @@
+---
+title: May 23, 2025
+description: Release notes for May 23, 2025
+---
+
+import { Callout } from "@/components";
+
+# May 23, 2025
+
+<Callout type="info" title="Highlights">
+* **Moose users** can now handle stream processing failures with **Dead Letter Queues** — comprehensive error handling with type-safe recovery workflows in both TypeScript and Python.
+* **Enhanced error visibility** with detailed failure metadata including original data, error messages, timestamps, and failure source.
+</Callout>
+
+## Moose
+
+### Dead Letter Queue Support
+
+**No more pipeline failures from bad data.**
+
+You had to choose between strict data validation that could break your entire pipeline or loose validation that let bad data through. With Moose Dead Letter Queues, you get both reliability and data quality. When your stream processing hits malformed data, network failures, or validation errors, Moose automatically routes failed messages to a configured Dead Letter Queue. Your pipeline keeps running while you capture every failure for analysis and recovery.
+
+**TypeScript Setup:**
+```ts
+import { DeadLetterQueue, IngestPipeline } from "@514labs/moose-lib";
+
+interface UserEvent {
+  userId: string;
+  action: string;
+  timestamp: number;
+}
+
+// Create dead letter queue for failed transformations
+const eventDLQ = new DeadLetterQueue<UserEvent>("EventDLQ");
+
+// Set up your data pipelines
+const rawEvents = new IngestPipeline<UserEvent>("raw_events", {
+  ingest: true,
+  stream: true,
+  table: false
+});
+
+const processedEvents = new IngestPipeline<ProcessedEvent>("processed_events", {
+  ingest: false,
+  stream: true,
+  table: true
+});
+
+// Configure transform with error handling
+rawEvents.stream!.addTransform(
+  processedEvents.stream!,
+  (event: UserEvent) => {
+    // Your transformation logic that might fail
+    if (!event.userId) {
+      throw new Error("Invalid userId");
+    }
+    return { ...event, processedAt: new Date() };
+  },
+  { deadLetterQueue: eventDLQ }  // Failed messages go here
+);
+
+// Monitor and recover from failures
+eventDLQ.addConsumer((deadLetter) => {
+  const originalEvent: UserEvent = deadLetter.asTyped();
+  console.log(`Error: ${deadLetter.errorMessage}`);
+  // Implement recovery logic
+});
+```
+
+**Python Setup:**
+```py
+from moose_lib import DeadLetterQueue, IngestPipeline, TransformConfig
+from pydantic import BaseModel
+from datetime import datetime
+
+class UserEvent(BaseModel):
+    user_id: str
+    action: str
+    timestamp: float
+
+# Create dead letter queue
+event_dlq = DeadLetterQueue[UserEvent](name="EventDLQ")
+
+# Set up your data pipelines
+raw_events = IngestPipeline[UserEvent]("raw_events", {
+    "ingest": True,
+    "stream": True,
+    "table": False
+})
+
+processed_events = IngestPipeline[ProcessedEvent]("processed_events", {
+    "ingest": False,
+    "stream": True,
+    "table": True
+})
+
+def process_event(event: UserEvent) -> ProcessedEvent:
+    # Your transformation logic that might fail
+    if not event.user_id:
+        raise ValueError("Invalid user_id")
+    return ProcessedEvent(
+        user_id=event.user_id,
+        action=event.action,
+        processed_at=datetime.now()
+    )
+
+# Configure transform with error handling
+raw_events.get_stream().add_transform(
+    destination=processed_events.get_stream(),
+    transformation=process_event,
+    config=TransformConfig(dead_letter_queue=event_dlq)
+)
+
+# Monitor and recover from failures
+def monitor_failures(dead_letter):
+    original_event = dead_letter.as_typed()
+    print(f"Error: {dead_letter.error_message}")
+    # Implement recovery logic
+
+event_dlq.add_consumer(monitor_failures)
+```
+
+This means you can eliminate downtime from bad data, debug failures faster with full error context, and build self-healing systems with automated recovery patterns. You get comprehensive error metadata including the original record, error message, error type, timestamp, and failure source. Access your original typed data with the `asTyped()` method to build recovery workflows.
+
+**Coming next:**
+* **IngestApi integration** - HTTP endpoints will route validation failures to DLQs with client notifications
+* **OlapTable direct insert** - New batch insert APIs with DLQ support for failed operations
+* **Built-in metrics** - DLQ volume, error types, and recovery rates
+* **Retention policies** - Configurable cleanup for dead letter messages
+
+See [Dead Letter Queues documentation](../building/dead-letter-queues) for complete setup and recovery patterns.

@@ -961,7 +961,7 @@ impl InfrastructureMap {
 
         for (id, topic) in self_topics {
             if let Some(target_topic) = target_topics.get(id) {
-                if topic != target_topic {
+                if !topics_equal_ignore_metadata(topic, target_topic) {
                     // Respect lifecycle: ExternallyManaged topics are never modified
                     if target_topic.life_cycle == LifeCycle::ExternallyManaged && respect_life_cycle
                     {
@@ -1056,7 +1056,7 @@ impl InfrastructureMap {
 
         for (id, endpoint) in self_endpoints {
             if let Some(target_endpoint) = target_endpoints.get(id) {
-                if endpoint != target_endpoint {
+                if !api_endpoints_equal_ignore_metadata(endpoint, target_endpoint) {
                     log::debug!("API Endpoint updated: {}", id);
                     endpoint_updates += 1;
                     api_changes.push(ApiChange::ApiEndpoint(Change::<ApiEndpoint>::Updated {
@@ -1635,7 +1635,7 @@ impl InfrastructureMap {
 
         for (id, table) in self_tables {
             if let Some(target_table) = target_tables.get(id) {
-                if table != target_table {
+                if !tables_equal_ignore_metadata(table, target_table) {
                     // Respect lifecycle: ExternallyManaged tables are never modified
                     if target_table.life_cycle == LifeCycle::ExternallyManaged && respect_life_cycle
                     {
@@ -1713,8 +1713,15 @@ impl InfrastructureMap {
                             }
                         };
 
+                        // Detect index changes (secondary/data-skipping indexes)
+                        let indexes_changed = table.indexes != target_table.indexes;
+
                         // Only process changes if there are actual differences to report
-                        if !column_changes.is_empty() || order_by_changed || engine_changed {
+                        if !column_changes.is_empty()
+                            || order_by_changed
+                            || engine_changed
+                            || indexes_changed
+                        {
                             // Use the strategy to determine the appropriate changes
                             let strategy_changes = strategy.diff_table_update(
                                 table,
@@ -1844,7 +1851,10 @@ impl InfrastructureMap {
         };
 
         // Only return changes if there are actual differences to report
-        if !column_changes.is_empty() || order_by_changed {
+        // Detect index changes
+        let indexes_changed = table.indexes != target_table.indexes;
+
+        if !column_changes.is_empty() || order_by_changed || indexes_changed {
             Some(TableChange::Updated {
                 name: table.name.clone(),
                 column_changes,
@@ -1938,8 +1948,11 @@ impl InfrastructureMap {
             }
         };
 
+        // Detect index changes
+        let indexes_changed = table.indexes != target_table.indexes;
+
         // Only return changes if there are actual differences to report
-        if !column_changes.is_empty() || order_by_changed {
+        if !column_changes.is_empty() || order_by_changed || indexes_changed {
             Some(TableChange::Updated {
                 name: table.name.clone(),
                 column_changes,
@@ -2416,6 +2429,60 @@ fn columns_are_equivalent(before: &Column, after: &Column) -> bool {
     }
 }
 
+/// Check if two topics are equal, ignoring metadata
+///
+/// Metadata changes (like source file location) should not trigger redeployments.
+///
+/// # Arguments
+/// * `a` - The first topic to compare
+/// * `b` - The second topic to compare
+///
+/// # Returns
+/// `true` if the topics are equal ignoring metadata, `false` otherwise
+fn topics_equal_ignore_metadata(a: &Topic, b: &Topic) -> bool {
+    let mut a = a.clone();
+    let mut b = b.clone();
+    a.metadata = None;
+    b.metadata = None;
+    a == b
+}
+
+/// Check if two tables are equal, ignoring metadata
+///
+/// Metadata changes (like source file location) should not trigger redeployments.
+///
+/// # Arguments
+/// * `a` - The first table to compare
+/// * `b` - The second table to compare
+///
+/// # Returns
+/// `true` if the tables are equal ignoring metadata, `false` otherwise
+fn tables_equal_ignore_metadata(a: &Table, b: &Table) -> bool {
+    let mut a = a.clone();
+    let mut b = b.clone();
+    a.metadata = None;
+    b.metadata = None;
+    a == b
+}
+
+/// Check if two API endpoints are equal, ignoring metadata
+///
+/// Metadata changes (like source file location) should not trigger redeployments.
+///
+/// # Arguments
+/// * `a` - The first API endpoint to compare
+/// * `b` - The second API endpoint to compare
+///
+/// # Returns
+/// `true` if the API endpoints are equal ignoring metadata, `false` otherwise
+fn api_endpoints_equal_ignore_metadata(a: &ApiEndpoint, b: &ApiEndpoint) -> bool {
+    let mut a = a.clone();
+    let mut b = b.clone();
+    a.metadata = None;
+    b.metadata = None;
+    a == b
+}
+
 /// Computes the detailed differences between two table versions
 ///
 /// This function performs a column-by-column comparison between two tables
@@ -2564,6 +2631,7 @@ mod tests {
             ],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
             partition_by: None,
+            sample_by: None,
             version: Some(Version::from_string("1.0".to_string())),
             source_primitive: PrimitiveSignature {
                 name: "test_primitive".to_string(),
@@ -2573,6 +2641,7 @@ mod tests {
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
             table_settings: None,
+            indexes: vec![],
             table_ttl_setting: None,
         };
 
@@ -2616,6 +2685,7 @@ mod tests {
             ],
             order_by: OrderBy::Fields(vec!["id".to_string(), "name".to_string()]), // Changed order_by
             partition_by: None,
+            sample_by: None,
             version: Some(Version::from_string("1.1".to_string())),
             source_primitive: PrimitiveSignature {
                 name: "test_primitive".to_string(),
@@ -2625,6 +2695,7 @@ mod tests {
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
             table_settings: None,
+            indexes: vec![],
             table_ttl_setting: None,
         };
 
@@ -2787,6 +2858,7 @@ mod diff_tests {
             columns: vec![],
             order_by: OrderBy::Fields(vec![]),
             partition_by: None,
+            sample_by: None,
             version: Some(Version::from_string(version.to_string())),
             source_primitive: PrimitiveSignature {
                 name: "test_primitive".to_string(),
@@ -2796,6 +2868,7 @@ mod diff_tests {
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
             table_settings: None,
+            indexes: vec![],
             table_ttl_setting: None,
         }
     }

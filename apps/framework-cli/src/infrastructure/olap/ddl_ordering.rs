@@ -1,5 +1,5 @@
 use crate::framework::core::infrastructure::sql_resource::SqlResource;
-use crate::framework::core::infrastructure::table::{Column, Table};
+use crate::framework::core::infrastructure::table::{Column, Table, TableIndex};
 use crate::framework::core::infrastructure::view::{View, ViewType};
 use crate::framework::core::infrastructure::DataLineage;
 use crate::framework::core::infrastructure::InfrastructureSignature;
@@ -101,6 +101,29 @@ pub enum AtomicOlapOperation {
         column: String,
         before: Option<String>,
         after: Option<String>,
+        dependency_info: DependencyInfo,
+    },
+    /// Add a secondary index to a table
+    AddTableIndex {
+        table: Table,
+        index: TableIndex,
+        dependency_info: DependencyInfo,
+    },
+    /// Drop a secondary index from a table
+    DropTableIndex {
+        table: Table,
+        index_name: String,
+        dependency_info: DependencyInfo,
+    },
+    /// Set or change SAMPLE BY expression for a table
+    ModifySampleBy {
+        table: Table,
+        expression: String,
+        dependency_info: DependencyInfo,
+    },
+    /// Remove SAMPLE BY from a table
+    RemoveSampleBy {
+        table: Table,
         dependency_info: DependencyInfo,
     },
     /// Populate a materialized view with initial data
@@ -221,6 +244,29 @@ impl AtomicOlapOperation {
                 before: before.clone(),
                 after: after.clone(),
             },
+            AtomicOlapOperation::AddTableIndex { table, index, .. } => {
+                SerializableOlapOperation::AddTableIndex {
+                    table: table.name.clone(),
+                    index: index.clone(),
+                }
+            }
+            AtomicOlapOperation::DropTableIndex {
+                table, index_name, ..
+            } => SerializableOlapOperation::DropTableIndex {
+                table: table.name.clone(),
+                index_name: index_name.clone(),
+            },
+            AtomicOlapOperation::ModifySampleBy {
+                table, expression, ..
+            } => SerializableOlapOperation::ModifySampleBy {
+                table: table.name.clone(),
+                expression: expression.clone(),
+            },
+            AtomicOlapOperation::RemoveSampleBy { table, .. } => {
+                SerializableOlapOperation::RemoveSampleBy {
+                    table: table.name.clone(),
+                }
+            }
             AtomicOlapOperation::PopulateMaterializedView {
                 view_name: _,
                 target_table,
@@ -311,6 +357,18 @@ impl AtomicOlapOperation {
             AtomicOlapOperation::ModifyColumnTtl { table, .. } => {
                 InfrastructureSignature::Table { id: table.id() }
             }
+            AtomicOlapOperation::AddTableIndex { table, .. } => {
+                InfrastructureSignature::Table { id: table.id() }
+            }
+            AtomicOlapOperation::DropTableIndex { table, .. } => {
+                InfrastructureSignature::Table { id: table.id() }
+            }
+            AtomicOlapOperation::ModifySampleBy { table, .. } => {
+                InfrastructureSignature::Table { id: table.id() }
+            }
+            AtomicOlapOperation::RemoveSampleBy { table, .. } => {
+                InfrastructureSignature::Table { id: table.id() }
+            }
             AtomicOlapOperation::PopulateMaterializedView { view_name, .. } => {
                 InfrastructureSignature::SqlResource {
                     id: view_name.clone(),
@@ -360,6 +418,18 @@ impl AtomicOlapOperation {
                 dependency_info, ..
             }
             | AtomicOlapOperation::ModifyColumnTtl {
+                dependency_info, ..
+            }
+            | AtomicOlapOperation::AddTableIndex {
+                dependency_info, ..
+            }
+            | AtomicOlapOperation::DropTableIndex {
+                dependency_info, ..
+            }
+            | AtomicOlapOperation::ModifySampleBy {
+                dependency_info, ..
+            }
+            | AtomicOlapOperation::RemoveSampleBy {
                 dependency_info, ..
             }
             | AtomicOlapOperation::PopulateMaterializedView {
@@ -645,6 +715,74 @@ fn handle_table_column_updates(
     process_column_changes(before, after, column_changes)
 }
 
+/// Process index changes between two table definitions
+fn process_index_changes(before: &Table, after: &Table) -> OperationPlan {
+    let mut plan = OperationPlan::new();
+
+    let before_indexes = &before.indexes;
+    let after_indexes = &after.indexes;
+
+    for after_idx in after_indexes {
+        if let Some(before_idx) = before_indexes.iter().find(|b| b.name == after_idx.name) {
+            if before_idx != after_idx {
+                plan.teardown_ops.push(AtomicOlapOperation::DropTableIndex {
+                    table: before.clone(),
+                    index_name: before_idx.name.clone(),
+                    dependency_info: create_empty_dependency_info(),
+                });
+                plan.setup_ops.push(AtomicOlapOperation::AddTableIndex {
+                    table: after.clone(),
+                    index: after_idx.clone(),
+                    dependency_info: create_empty_dependency_info(),
+                });
+            }
+        } else {
+            plan.setup_ops.push(AtomicOlapOperation::AddTableIndex {
+                table: after.clone(),
+                index: after_idx.clone(),
+                dependency_info: create_empty_dependency_info(),
+            });
+        }
+    }
+    for idx in before_indexes {
+        if !after_indexes.iter().any(|a| a.name == idx.name) {
+            plan.teardown_ops.push(AtomicOlapOperation::DropTableIndex {
+                table: before.clone(),
+                index_name: idx.name.clone(),
+                dependency_info: create_empty_dependency_info(),
+            });
+        }
+    }
+
+    plan
+}
+
+/// Handle a table update by composing column and index changes
+fn handle_table_update(
+    before: &Table,
+    after: &Table,
+    column_changes: &[ColumnChange],
+) -> OperationPlan {
+    let mut plan = handle_table_column_updates(before, after, column_changes);
+    plan.combine(process_index_changes(before, after));
+    // SAMPLE BY changes are handled via ALTER TABLE
+    if before.sample_by != after.sample_by {
+        if let Some(expr) = &after.sample_by {
+            plan.setup_ops.push(AtomicOlapOperation::ModifySampleBy {
+                table: after.clone(),
+                expression: expr.clone(),
+                dependency_info: create_empty_dependency_info(),
+            });
+        } else {
+            plan.setup_ops.push(AtomicOlapOperation::RemoveSampleBy {
+                table: after.clone(),
+                dependency_info: create_empty_dependency_info(),
+            });
+        }
+    }
+    plan
+}
+
 /// Process a column addition with position information
 fn process_column_addition(
     after: &Table,
@@ -887,7 +1025,7 @@ pub fn order_olap_changes(
                 after,
                 column_changes,
                 ..
-            }) => handle_table_column_updates(before, after, column_changes),
+            }) => handle_table_update(before, after, column_changes),
             OlapChange::Table(TableChange::SettingsChanged {
                 table,
                 before_settings,
@@ -1150,6 +1288,7 @@ mod tests {
             columns: vec![],
             order_by: OrderBy::Fields(vec![]),
             partition_by: None,
+            sample_by: None,
             engine: None,
             version: None,
             source_primitive: PrimitiveSignature {
@@ -1160,6 +1299,7 @@ mod tests {
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
             table_settings: None,
+            indexes: vec![],
             table_ttl_setting: None,
         };
 
@@ -1221,6 +1361,7 @@ mod tests {
             columns: vec![],
             order_by: OrderBy::Fields(vec![]),
             partition_by: None,
+            sample_by: None,
             engine: None,
             version: None,
             source_primitive: PrimitiveSignature {
@@ -1231,6 +1372,7 @@ mod tests {
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
             table_settings: None,
+            indexes: vec![],
             table_ttl_setting: None,
         };
 
@@ -1240,6 +1382,7 @@ mod tests {
             columns: vec![],
             order_by: OrderBy::Fields(vec![]),
             partition_by: None,
+            sample_by: None,
             engine: None,
             version: None,
             source_primitive: PrimitiveSignature {
@@ -1250,6 +1393,7 @@ mod tests {
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
             table_settings: None,
+            indexes: vec![],
             table_ttl_setting: None,
         };
 
@@ -1330,6 +1474,7 @@ mod tests {
             columns: vec![],
             order_by: OrderBy::Fields(vec![]),
             partition_by: None,
+            sample_by: None,
             engine: None,
             version: None,
             source_primitive: PrimitiveSignature {
@@ -1340,6 +1485,7 @@ mod tests {
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
             table_settings: None,
+            indexes: vec![],
             table_ttl_setting: None,
         };
 
@@ -1349,6 +1495,7 @@ mod tests {
             columns: vec![],
             order_by: OrderBy::Fields(vec![]),
             partition_by: None,
+            sample_by: None,
             engine: None,
             version: None,
             source_primitive: PrimitiveSignature {
@@ -1359,6 +1506,7 @@ mod tests {
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
             table_settings: None,
+            indexes: vec![],
             table_ttl_setting: None,
         };
 
@@ -1459,6 +1607,7 @@ mod tests {
             columns: vec![],
             order_by: OrderBy::Fields(vec![]),
             partition_by: None,
+            sample_by: None,
             engine: None,
             version: None,
             source_primitive: PrimitiveSignature {
@@ -1469,6 +1618,7 @@ mod tests {
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
             table_settings: None,
+            indexes: vec![],
             table_ttl_setting: None,
         };
 
@@ -1612,6 +1762,7 @@ mod tests {
             columns: vec![],
             order_by: OrderBy::Fields(vec![]),
             partition_by: None,
+            sample_by: None,
             engine: None,
             version: None,
             source_primitive: PrimitiveSignature {
@@ -1622,6 +1773,7 @@ mod tests {
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
             table_settings: None,
+            indexes: vec![],
             table_ttl_setting: None,
         };
 
@@ -1630,6 +1782,7 @@ mod tests {
             columns: vec![],
             order_by: OrderBy::Fields(vec![]),
             partition_by: None,
+            sample_by: None,
             engine: None,
             version: None,
             source_primitive: PrimitiveSignature {
@@ -1640,6 +1793,7 @@ mod tests {
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
             table_settings: None,
+            indexes: vec![],
             table_ttl_setting: None,
         };
 
@@ -1648,6 +1802,7 @@ mod tests {
             columns: vec![],
             order_by: OrderBy::Fields(vec![]),
             partition_by: None,
+            sample_by: None,
             engine: None,
             version: None,
             source_primitive: PrimitiveSignature {
@@ -1658,6 +1813,7 @@ mod tests {
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
             table_settings: None,
+            indexes: vec![],
             table_ttl_setting: None,
         };
 
@@ -1734,6 +1890,7 @@ mod tests {
             columns: vec![],
             order_by: OrderBy::Fields(vec![]),
             partition_by: None,
+            sample_by: None,
             engine: None,
             version: None,
             source_primitive: PrimitiveSignature {
@@ -1744,6 +1901,7 @@ mod tests {
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
             table_settings: None,
+            indexes: vec![],
             table_ttl_setting: None,
         };
 
@@ -1752,6 +1910,7 @@ mod tests {
             columns: vec![],
             order_by: OrderBy::Fields(vec![]),
             partition_by: None,
+            sample_by: None,
             engine: None,
             version: None,
             source_primitive: PrimitiveSignature {
@@ -1762,6 +1921,7 @@ mod tests {
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
             table_settings: None,
+            indexes: vec![],
             table_ttl_setting: None,
         };
 
@@ -1770,6 +1930,7 @@ mod tests {
             columns: vec![],
             order_by: OrderBy::Fields(vec![]),
             partition_by: None,
+            sample_by: None,
             engine: None,
             version: None,
             source_primitive: PrimitiveSignature {
@@ -1780,6 +1941,7 @@ mod tests {
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
             table_settings: None,
+            indexes: vec![],
             table_ttl_setting: None,
         };
 
@@ -1788,6 +1950,7 @@ mod tests {
             columns: vec![],
             order_by: OrderBy::Fields(vec![]),
             partition_by: None,
+            sample_by: None,
             engine: None,
             version: None,
             source_primitive: PrimitiveSignature {
@@ -1798,6 +1961,7 @@ mod tests {
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
             table_settings: None,
+            indexes: vec![],
             table_ttl_setting: None,
         };
 
@@ -1806,6 +1970,7 @@ mod tests {
             columns: vec![],
             order_by: OrderBy::Fields(vec![]),
             partition_by: None,
+            sample_by: None,
             engine: None,
             version: None,
             source_primitive: PrimitiveSignature {
@@ -1816,6 +1981,7 @@ mod tests {
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
             table_settings: None,
+            indexes: vec![],
             table_ttl_setting: None,
         };
 
@@ -1955,6 +2121,7 @@ mod tests {
             columns: vec![],
             order_by: OrderBy::Fields(vec![]),
             partition_by: None,
+            sample_by: None,
             engine: None,
             version: None,
             source_primitive: PrimitiveSignature {
@@ -1965,6 +2132,7 @@ mod tests {
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
             table_settings: None,
+            indexes: vec![],
             table_ttl_setting: None,
         };
 
@@ -1974,6 +2142,7 @@ mod tests {
             columns: vec![],
             order_by: OrderBy::Fields(vec![]),
             partition_by: None,
+            sample_by: None,
             engine: None,
             version: None,
             source_primitive: PrimitiveSignature {
@@ -1984,6 +2153,7 @@ mod tests {
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
             table_settings: None,
+            indexes: vec![],
             table_ttl_setting: None,
         };
 
@@ -2091,6 +2261,7 @@ mod tests {
             columns: vec![],
             order_by: OrderBy::Fields(vec![]),
             partition_by: None,
+            sample_by: None,
             engine: None,
             version: None,
             source_primitive: PrimitiveSignature {
@@ -2101,6 +2272,7 @@ mod tests {
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
             table_settings: None,
+            indexes: vec![],
             table_ttl_setting: None,
         };
 
@@ -2110,6 +2282,7 @@ mod tests {
             columns: vec![],
             order_by: OrderBy::Fields(vec![]),
             partition_by: None,
+            sample_by: None,
             engine: None,
             version: None,
             source_primitive: PrimitiveSignature {
@@ -2120,6 +2293,7 @@ mod tests {
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
             table_settings: None,
+            indexes: vec![],
             table_ttl_setting: None,
         };
 
@@ -2232,6 +2406,7 @@ mod tests {
             columns: vec![],
             order_by: OrderBy::Fields(vec![]),
             partition_by: None,
+            sample_by: None,
             engine: None,
             version: None,
             source_primitive: PrimitiveSignature {
@@ -2242,6 +2417,7 @@ mod tests {
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
             table_settings: None,
+            indexes: vec![],
             table_ttl_setting: None,
         };
 
@@ -2250,6 +2426,7 @@ mod tests {
             columns: vec![],
             order_by: OrderBy::Fields(vec![]),
             partition_by: None,
+            sample_by: None,
             engine: None,
             version: None,
             source_primitive: PrimitiveSignature {
@@ -2260,6 +2437,7 @@ mod tests {
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
             table_settings: None,
+            indexes: vec![],
             table_ttl_setting: None,
         };
 
@@ -2451,6 +2629,7 @@ mod tests {
             columns: vec![],
             order_by: OrderBy::Fields(vec![]),
             partition_by: None,
+            sample_by: None,
             engine: None,
             version: None,
             source_primitive: PrimitiveSignature {
@@ -2461,6 +2640,7 @@ mod tests {
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
             table_settings: None,
+            indexes: vec![],
             table_ttl_setting: None,
         };
 
@@ -2553,6 +2733,7 @@ mod tests {
             columns: vec![],
             order_by: OrderBy::Fields(vec![]),
             partition_by: None,
+            sample_by: None,
             engine: None,
             version: None,
             source_primitive: PrimitiveSignature {
@@ -2563,6 +2744,7 @@ mod tests {
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
             table_settings: None,
+            indexes: vec![],
             table_ttl_setting: None,
         };
 
@@ -2667,6 +2849,7 @@ mod tests {
             ],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
             partition_by: None,
+            sample_by: None,
             engine: Some(ClickhouseEngine::MergeTree),
             version: None,
             source_primitive: PrimitiveSignature {
@@ -2677,6 +2860,7 @@ mod tests {
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
             table_settings: None,
+            indexes: vec![],
             table_ttl_setting: None,
         };
 
@@ -2708,6 +2892,7 @@ mod tests {
             ],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
             partition_by: None,
+            sample_by: None,
             engine: Some(ClickhouseEngine::MergeTree),
             version: None,
             source_primitive: PrimitiveSignature {
@@ -2718,6 +2903,7 @@ mod tests {
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
             table_settings: None,
+            indexes: vec![],
             table_ttl_setting: None,
         };
 
@@ -2751,7 +2937,7 @@ mod tests {
         ];
 
         // Generate the operation plan
-        let plan = handle_table_column_updates(&before_table, &after_table, &column_changes);
+        let plan = handle_table_update(&before_table, &after_table, &column_changes);
 
         // Check that the plan uses column-level operations (not drop+create)
         assert_eq!(

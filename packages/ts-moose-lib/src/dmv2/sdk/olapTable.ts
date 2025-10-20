@@ -17,6 +17,14 @@ import { LifeCycle } from "./lifeCycle";
 import { IdentifierBrandedString, quoteIdentifier } from "../../sqlHelpers";
 import type { NodeClickHouseClient } from "@clickhouse/client/dist/client";
 
+export interface TableIndex {
+  name: string;
+  expression: string;
+  type: string;
+  arguments?: string[];
+  granularity: number;
+}
+
 /**
  * Represents a failed record during insertion with error details
  */
@@ -156,6 +164,7 @@ export interface S3QueueTableSettings {
  * Base configuration shared by all table engines
  * @template T The data type of the records stored in the table.
  */
+
 export type BaseOlapConfig<T> = (
   | {
       /**
@@ -179,6 +188,27 @@ export type BaseOlapConfig<T> = (
   | { orderByFields?: undefined; orderByExpression?: undefined }
 ) & {
   partitionBy?: string;
+  /**
+   * SAMPLE BY expression for approximate query processing.
+   *
+   * Examples:
+   * ```typescript
+   * // Single unsigned integer field
+   * sampleByExpression: "userId"
+   *
+   * // Hash function on any field type
+   * sampleByExpression: "cityHash64(id)"
+   *
+   * // Multiple fields with hash
+   * sampleByExpression: "cityHash64(userId, timestamp)"
+   * ```
+   *
+   * Requirements:
+   * - Expression must evaluate to an unsigned integer (UInt8/16/32/64)
+   * - Expression must be present in the ORDER BY clause
+   * - If using hash functions, the same expression must appear in orderByExpression
+   */
+  sampleByExpression?: string;
   version?: string;
   lifeCycle?: LifeCycle;
   settings?: { [key: string]: string };
@@ -189,6 +219,8 @@ export type BaseOlapConfig<T> = (
    * Use the {@link ClickHouseTTL} type to configure column level TTL
    */
   ttl?: string;
+  /** Optional secondary/data-skipping indexes */
+  indexes?: TableIndex[];
 };
 
 /**

@@ -23,6 +23,9 @@ const rawMeta = {
   "schema-optimization": {
     title: "Schema Optimization",
   },
+  indexes: {
+    title: "Secondary & Data-skipping Indexes",
+  },
   "---Remote DB---": {
     title: "Remote ClickHouse",
     type: "separator",

@@ -44,13 +44,16 @@ use queries::{
     basic_field_type_to_string, create_table_query, drop_table_query,
 };
 use serde::{Deserialize, Serialize};
-use sql_parser::{extract_engine_from_create_table, extract_table_settings_from_create_table};
+use sql_parser::{
+    extract_engine_from_create_table, extract_indexes_from_create_table,
+    extract_sample_by_from_create_table, extract_table_settings_from_create_table,
+};
 use std::ops::Deref;
 
 use self::model::ClickHouseSystemTable;
 use crate::framework::core::infrastructure::table::{
     Column, ColumnMetadata, ColumnType, DataEnum, EnumMember, EnumValue, EnumValueMetadata,
-    OrderBy, Table, METADATA_PREFIX,
+    OrderBy, Table, TableIndex, METADATA_PREFIX,
 };
 use crate::framework::core::infrastructure_map::{PrimitiveSignature, PrimitiveTypes};
 use crate::framework::core::partial_infrastructure_map::LifeCycle;
@@ -165,6 +168,21 @@ pub enum SerializableOlapOperation {
         column: String,
         before: Option<String>,
         after: Option<String>,
+    },
+    AddTableIndex {
+        table: String,
+        index: TableIndex,
+    },
+    DropTableIndex {
+        table: String,
+        index_name: String,
+    },
+    ModifySampleBy {
+        table: String,
+        expression: String,
+    },
+    RemoveSampleBy {
+        table: String,
     },
     RawSql {
         /// The SQL statements to execute
@@ -346,6 +364,18 @@ pub async fn execute_atomic_operation(
                 }
             })?;
         }
+        SerializableOlapOperation::AddTableIndex { table, index } => {
+            execute_add_table_index(db_name, table, index, client).await?;
+        }
+        SerializableOlapOperation::DropTableIndex { table, index_name } => {
+            execute_drop_table_index(db_name, table, index_name, client).await?;
+        }
+        SerializableOlapOperation::ModifySampleBy { table, expression } => {
+            execute_modify_sample_by(db_name, table, expression, client).await?;
+        }
+        SerializableOlapOperation::RemoveSampleBy { table } => {
+            execute_remove_sample_by(db_name, table, client).await?;
+        }
         SerializableOlapOperation::RawSql { sql, description } => {
             execute_raw_sql(sql, description, client).await?;
         }
@@ -369,6 +399,88 @@ async fn execute_create_table(
             resource: Some(table.name.clone()),
         })?;
     Ok(())
+}
+
+async fn execute_add_table_index(
+    db_name: &str,
+    table_name: &str,
+    index: &TableIndex,
+    client: &ConfiguredDBClient,
+) -> Result<(), ClickhouseChangesError> {
+    let args = if index.arguments.is_empty() {
+        String::new()
+    } else {
+        format!("({})", index.arguments.join(", "))
+    };
+    let sql = format!(
+        "ALTER TABLE `{}`.`{}` ADD INDEX `{}` {} TYPE {}{} GRANULARITY {}",
+        db_name,
+        table_name,
+        index.name,
+        index.expression,
+        index.index_type,
+        args,
+        index.granularity
+    );
+    run_query(&sql, client)
+        .await
+        .map_err(|e| ClickhouseChangesError::ClickhouseClient {
+            error: e,
+            resource: Some(table_name.to_string()),
+        })
+}
+
+async fn execute_drop_table_index(
+    db_name: &str,
+    table_name: &str,
+    index_name: &str,
+    client: &ConfiguredDBClient,
+) -> Result<(), ClickhouseChangesError> {
+    let sql = format!(
+        "ALTER TABLE `{}`.`{}` DROP INDEX `{}`",
+        db_name, table_name, index_name
+    );
+    run_query(&sql, client)
+        .await
+        .map_err(|e| ClickhouseChangesError::ClickhouseClient {
+            error: e,
+            resource: Some(table_name.to_string()),
+        })
+}
+
+async fn execute_modify_sample_by(
+    db_name: &str,
+    table_name: &str,
+    expression: &str,
+    client: &ConfiguredDBClient,
+) -> Result<(), ClickhouseChangesError> {
+    let sql = format!(
+        "ALTER TABLE `{}`.`{}` MODIFY SAMPLE BY {}",
+        db_name, table_name, expression
+    );
+    run_query(&sql, client)
+        .await
+        .map_err(|e| ClickhouseChangesError::ClickhouseClient {
+            error: e,
+            resource: Some(table_name.to_string()),
+        })
+}
+
+async fn execute_remove_sample_by(
+    db_name: &str,
+    table_name: &str,
+    client: &ConfiguredDBClient,
+) -> Result<(), ClickhouseChangesError> {
+    let sql = format!(
+        "ALTER TABLE `{}`.`{}` REMOVE SAMPLE BY",
+        db_name, table_name
+    );
+    run_query(&sql, client)
+        .await
+        .map_err(|e| ClickhouseChangesError::ClickhouseClient {
+            error: e,
+            resource: Some(table_name.to_string()),
+        })
 }
 
 async fn execute_drop_table(
@@ -1354,7 +1466,21 @@ impl OlapOperations for ConfiguredDBClient {
 
             // Extract TTLs from CREATE TABLE
             let table_ttl_setting = extract_table_ttl_from_create_query(&create_query);
+            // TODO: wtf
             let _column_ttls = extract_column_ttls_from_create_query(&create_query);
+
+            let indexes_ch = extract_indexes_from_create_table(&create_query)?;
+            let indexes: Vec<TableIndex> = indexes_ch
+                .into_iter()
+                .map(|i| TableIndex {
+                    name: i.name,
+                    expression: i.expression,
+                    index_type: i.index_type,
+                    arguments: i.arguments,
+                    granularity: i.granularity,
+                })
+                .collect();
+            debug!("Extracted indexes for table {}: {:?}", table_name, indexes);
 
             let table = Table {
                 name: table_name, // Keep the original table name with version
@@ -1364,6 +1490,7 @@ impl OlapOperations for ConfiguredDBClient {
                     let p = partition_key.trim();
                     (!p.is_empty()).then(|| p.to_string())
                 },
+                sample_by: extract_sample_by_from_create_table(&create_query),
                 engine: engine_parsed,
                 version,
                 source_primitive,
@@ -1372,6 +1499,7 @@ impl OlapOperations for ConfiguredDBClient {
                 life_cycle: LifeCycle::ExternallyManaged,
                 engine_params_hash,
                 table_settings,
+                indexes,
                 table_ttl_setting,
             };
             debug!("Created table object: {:?}", table);

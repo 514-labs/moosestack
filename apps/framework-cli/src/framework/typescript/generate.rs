@@ -438,6 +438,9 @@ pub fn tables_to_typescript(tables: &[Table], life_cycle: Option<LifeCycle>) -> 
         if let Some(partition_by) = &table.partition_by {
             writeln!(output, "    partitionBy: {:?},", partition_by).unwrap();
         }
+        if let Some(sample_by) = &table.sample_by {
+            writeln!(output, "    sampleByExpression: {:?},", sample_by).unwrap();
+        }
         if let Some(engine) = &table.engine {
             match engine {
                 crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine::S3Queue {
@@ -561,6 +564,34 @@ pub fn tables_to_typescript(tables: &[Table], life_cycle: Option<LifeCycle>) -> 
         if let Some(ttl_expr) = &table.table_ttl_setting {
             writeln!(output, "    ttl: {:?},", ttl_expr).unwrap();
         }
+        if !table.indexes.is_empty() {
+            writeln!(output, "    indexes: [").unwrap();
+            for idx in &table.indexes {
+                let args_list = if idx.arguments.is_empty() {
+                    String::from("[]")
+                } else {
+                    format!(
+                        "[{}]",
+                        idx.arguments
+                            .iter()
+                            .map(|a| format!("{:?}", a))
+                            .collect::<Vec<String>>()
+                            .join(", ")
+                    )
+                };
+                writeln!(
+                    output,
+                    "        {{ name: {:?}, expression: {:?}, type: {:?}, arguments: {}, granularity: {} }},",
+                    idx.name,
+                    idx.expression,
+                    idx.index_type,
+                    args_list,
+                    idx.granularity
+                )
+                .unwrap();
+            }
+            writeln!(output, "    ],").unwrap();
+        }
         writeln!(output, "}});").unwrap();
         writeln!(output).unwrap();
     }
@@ -662,6 +693,7 @@ mod tests {
             ],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
             partition_by: None,
+            sample_by: None,
             engine: Some(ClickhouseEngine::MergeTree),
             version: None,
             source_primitive: PrimitiveSignature {
@@ -672,6 +704,7 @@ mod tests {
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
             table_settings: None,
+            indexes: vec![],
             table_ttl_setting: None,
         }];
 
@@ -728,6 +761,7 @@ export const UserTable = new OlapTable<User>("User", {
                 },
             ],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
+            sample_by: None,
             partition_by: None,
             engine: Some(ClickhouseEngine::S3Queue {
                 s3_path: "s3://bucket/path".to_string(),
@@ -750,6 +784,7 @@ export const UserTable = new OlapTable<User>("User", {
                     .into_iter()
                     .collect(),
             ),
+            indexes: vec![],
             table_ttl_setting: None,
         }];
 
@@ -780,6 +815,7 @@ export const UserTable = new OlapTable<User>("User", {
             }],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
             partition_by: None,
+            sample_by: None,
             engine: Some(ClickhouseEngine::MergeTree),
             version: None,
             source_primitive: PrimitiveSignature {
@@ -797,6 +833,7 @@ export const UserTable = new OlapTable<User>("User", {
                 .into_iter()
                 .collect(),
             ),
+            indexes: vec![],
             table_ttl_setting: None,
         }];
 
@@ -850,6 +887,7 @@ export const UserTable = new OlapTable<User>("User", {
             ],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
             partition_by: None,
+            sample_by: None,
             engine: Some(ClickhouseEngine::ReplacingMergeTree {
                 ver: Some("version".to_string()),
                 is_deleted: Some("is_deleted".to_string()),
@@ -863,6 +901,7 @@ export const UserTable = new OlapTable<User>("User", {
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
             table_settings: None,
+            indexes: vec![],
             table_ttl_setting: None,
         }];
 
@@ -889,6 +928,7 @@ export const UserTable = new OlapTable<User>("User", {
                 comment: None,
                 ttl: None,
             }],
+            sample_by: None,
             order_by: OrderBy::Fields(vec!["id".to_string()]),
             partition_by: None,
             engine: Some(ClickhouseEngine::ReplicatedMergeTree {
@@ -904,6 +944,7 @@ export const UserTable = new OlapTable<User>("User", {
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
             table_settings: None,
+            indexes: vec![],
             table_ttl_setting: None,
         }];
 
@@ -960,6 +1001,7 @@ export const UserTable = new OlapTable<User>("User", {
                     ttl: None,
                 },
             ],
+            sample_by: None,
             order_by: OrderBy::Fields(vec!["id".to_string()]),
             partition_by: None,
             engine: Some(ClickhouseEngine::ReplicatedReplacingMergeTree {
@@ -977,6 +1019,7 @@ export const UserTable = new OlapTable<User>("User", {
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
             table_settings: None,
+            indexes: vec![],
             table_ttl_setting: None,
         }];
 
@@ -992,6 +1035,61 @@ export const UserTable = new OlapTable<User>("User", {
 
         // Ensure it doesn't contain the incorrect nested structure
         assert!(!result.contains("engine: {"));
+    }
+
+    #[test]
+    fn test_indexes_emission() {
+        let tables = vec![Table {
+            name: "IndexTest".to_string(),
+            columns: vec![Column {
+                name: "u64".to_string(),
+                data_type: ColumnType::String,
+                required: true,
+                unique: false,
+                primary_key: true,
+                default: None,
+                annotations: vec![],
+                comment: None,
+            }],
+            order_by: OrderBy::Fields(vec!["u64".to_string()]),
+            partition_by: None,
+            sample_by: None,
+            engine: Some(ClickhouseEngine::MergeTree),
+            version: None,
+            source_primitive: PrimitiveSignature {
+                name: "IndexTest".to_string(),
+                primitive_type: PrimitiveTypes::DataModel,
+            },
+            metadata: None,
+            life_cycle: LifeCycle::FullyManaged,
+            engine_params_hash: None,
+            table_settings: None,
+            indexes: vec![
+                crate::framework::core::infrastructure::table::TableIndex {
+                    name: "idx1".to_string(),
+                    expression: "u64".to_string(),
+                    index_type: "bloom_filter".to_string(),
+                    arguments: vec![],
+                    granularity: 3,
+                },
+                crate::framework::core::infrastructure::table::TableIndex {
+                    name: "idx2".to_string(),
+                    expression: "u64 * length(u64)".to_string(),
+                    index_type: "set".to_string(),
+                    arguments: vec!["1000".to_string()],
+                    granularity: 4,
+                },
+            ],
+        }];
+
+        let result = tables_to_typescript(&tables, None);
+        assert!(result.contains("indexes: ["));
+        assert!(result.contains("name: \"idx1\""));
+        assert!(result.contains("type: \"bloom_filter\""));
+        assert!(result.contains("arguments: []"));
+        assert!(result.contains("granularity: 3"));
+        assert!(result.contains("name: \"idx2\""));
+        assert!(result.contains("arguments: [\"1000\"]"));
     }
 
     #[test]
@@ -1038,6 +1136,7 @@ export const UserTable = new OlapTable<User>("User", {
             ],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
             partition_by: None,
+            sample_by: None,
             engine: Some(ClickhouseEngine::MergeTree),
             version: None,
             source_primitive: PrimitiveSignature {
@@ -1048,6 +1147,7 @@ export const UserTable = new OlapTable<User>("User", {
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
             table_settings: None,
+            indexes: vec![],
             table_ttl_setting: None,
         }];
 

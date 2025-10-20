@@ -196,6 +196,8 @@ export interface ExpectedTableSchema {
   columns: ExpectedColumn[];
   engine?: string;
   orderBy?: string[];
+  orderByExpression?: string;
+  sampleByExpression?: string;
 }
 
 /**
@@ -232,6 +234,32 @@ export const getTableDDL = async (tableName: string): Promise<string> => {
   } finally {
     await client.close();
   }
+};
+
+/**
+ * Verifies that the given table has indexes with the specified names present in its DDL
+ */
+export const verifyTableIndexes = async (
+  tableName: string,
+  expectedIndexNames: string[],
+): Promise<void> => {
+  await withRetries(
+    async () => {
+      const ddl = await getTableDDL(tableName);
+      const missing = expectedIndexNames.filter(
+        (name) => !ddl.includes(`INDEX ${name}`),
+      );
+      if (missing.length > 0) {
+        throw new Error(
+          `Missing indexes on ${tableName}: ${missing.join(", ")}. DDL: ${ddl}`,
+        );
+      }
+    },
+    {
+      attempts: RETRY_CONFIG.DEFAULT_ATTEMPTS,
+      delayMs: RETRY_CONFIG.DEFAULT_DELAY_MS,
+    },
+  );
 };
 
 /**
@@ -337,7 +365,11 @@ export const validateTableSchema = async (
     }
 
     // Validate table engine and settings if specified
-    if (expectedSchema.engine || expectedSchema.orderBy) {
+    if (
+      expectedSchema.engine ||
+      expectedSchema.orderBy ||
+      expectedSchema.sampleByExpression
+    ) {
       const ddl = await getTableDDL(expectedSchema.tableName);
 
       if (
@@ -354,6 +386,22 @@ export const validateTableSchema = async (
         if (!ddl.includes(`ORDER BY (${expectedOrderBy})`)) {
           errors.push(
             `Table '${expectedSchema.tableName}' ORDER BY mismatch: expected '(${expectedOrderBy})'`,
+          );
+        }
+      }
+
+      if (expectedSchema.orderByExpression) {
+        if (!ddl.includes(`ORDER BY ${expectedSchema.orderByExpression}`)) {
+          errors.push(
+            `Table '${expectedSchema.tableName}' ORDER BY mismatch: expected '${expectedSchema.orderByExpression}'`,
+          );
+        }
+      }
+
+      if (expectedSchema.sampleByExpression) {
+        if (!ddl.includes(`SAMPLE BY ${expectedSchema.sampleByExpression}`)) {
+          errors.push(
+            `Table '${expectedSchema.tableName}' SAMPLE BY mismatch: expected '${expectedSchema.sampleByExpression}'`,
           );
         }
       }

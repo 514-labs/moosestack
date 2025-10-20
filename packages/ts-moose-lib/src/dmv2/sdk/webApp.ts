@@ -17,7 +17,7 @@ export interface FrameworkApp {
 }
 
 export interface WebAppConfig {
-  mountPath?: string;
+  mountPath: string;
   metadata?: { description?: string };
   injectMooseUtils?: boolean;
 }
@@ -42,29 +42,40 @@ export class WebApp {
   constructor(
     name: string,
     appOrHandler: FrameworkApp | WebAppHandler,
-    config?: WebAppConfig,
+    config: WebAppConfig,
   ) {
     this.name = name;
-    this.config = config ?? {};
+    this.config = config;
 
-    // Validate mountPath
-    if (this.config.mountPath) {
-      const mountPath = this.config.mountPath;
+    // Validate mountPath - it is required
+    if (!this.config.mountPath) {
+      throw new Error(
+        `mountPath is required. Please specify a mount path for your WebApp (e.g., "/myapi").`,
+      );
+    }
 
-      // Check for trailing slash
-      if (mountPath.endsWith("/")) {
+    const mountPath = this.config.mountPath;
+
+    // Check for root path - not allowed as it would overlap reserved paths
+    if (mountPath === "/") {
+      throw new Error(
+        `mountPath cannot be "/" as it would allow routes to overlap with reserved paths: ${RESERVED_MOUNT_PATHS.join(", ")}`,
+      );
+    }
+
+    // Check for trailing slash
+    if (mountPath.endsWith("/")) {
+      throw new Error(
+        `mountPath cannot end with a trailing slash. Remove the '/' from: "${mountPath}"`,
+      );
+    }
+
+    // Check for reserved path prefixes
+    for (const reserved of RESERVED_MOUNT_PATHS) {
+      if (mountPath === reserved || mountPath.startsWith(`${reserved}/`)) {
         throw new Error(
-          `mountPath cannot end with a trailing slash. Remove the '/' from: "${mountPath}"`,
+          `mountPath cannot begin with a reserved path: ${RESERVED_MOUNT_PATHS.join(", ")}. Got: "${mountPath}"`,
         );
-      }
-
-      // Check for reserved path prefixes
-      for (const reserved of RESERVED_MOUNT_PATHS) {
-        if (mountPath === reserved || mountPath.startsWith(`${reserved}/`)) {
-          throw new Error(
-            `mountPath cannot begin with a reserved path: ${RESERVED_MOUNT_PATHS.join(", ")}. Got: "${mountPath}"`,
-          );
-        }
       }
     }
 
