@@ -317,6 +317,25 @@ pub fn describe_operation(operation: &SerializableOlapOperation) -> String {
         SerializableOlapOperation::RemoveSampleBy { table } => {
             format!("Removing SAMPLE BY from table '{}'", table)
         }
+        SerializableOlapOperation::ModifyTableTtl { table, after, .. } => {
+            if after.is_some() {
+                format!("Modifying table TTL for '{}'", table)
+            } else {
+                format!("Removing table TTL from '{}'", table)
+            }
+        }
+        SerializableOlapOperation::ModifyColumnTtl {
+            table,
+            column,
+            after,
+            ..
+        } => {
+            if after.is_some() {
+                format!("Modifying column '{}' TTL in table '{}'", column, table)
+            } else {
+                format!("Removing column '{}' TTL from table '{}'", column, table)
+            }
+        }
         SerializableOlapOperation::RawSql { description, .. } => description.clone(),
     }
 }
