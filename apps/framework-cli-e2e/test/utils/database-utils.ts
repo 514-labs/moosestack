@@ -617,3 +617,173 @@ export const verifyVersionedTables = async (
     },
   );
 };
+
+// ============ CLICKHOUSE CONTAINER MANAGEMENT ============
+
+const execAsync = require("util").promisify(require("child_process").exec);
+
+export interface ClickHouseTestInstance {
+  url: string;
+  containerName: string;
+  dbName: string;
+  user: string;
+  password: string;
+  port: number;
+}
+
+/**
+ * Spawns a standalone ClickHouse container with the same settings as moose dev
+ * Uses the same image and configuration as the docker-compose template
+ */
+export const spawnClickHouseForMigrationTest = async (
+  testName: string,
+): Promise<ClickHouseTestInstance> => {
+  const containerName = `moose-test-clickhouse-${testName}-${Date.now()}`;
+  const dbName = `test_${testName}`;
+  const user = "panda";
+  const password = "pandapass";
+  // Use a random port to avoid conflicts with other tests/moose dev instances
+  const port = 18123 + Math.floor(Math.random() * 1000);
+
+  console.log(
+    `Spawning ClickHouse container: ${containerName} on port ${port}...`,
+  );
+
+  try {
+    // Start ClickHouse with the same image/settings as moose dev uses
+    // Note: We use a simplified setup without ClickHouse Keeper since we don't need distributed DDL for these tests
+    await execAsync(
+      `docker run -d \
+        --name ${containerName} \
+        -p ${port}:8123 \
+        -e CLICKHOUSE_DB=${dbName} \
+        -e CLICKHOUSE_USER=${user} \
+        -e CLICKHOUSE_PASSWORD=${password} \
+        -e CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT=1 \
+        --ulimit nofile=20000:40000 \
+        docker.io/clickhouse/clickhouse-server:25.6`,
+    );
+
+    // Wait for ClickHouse to be ready
+    await waitForClickHouseContainerReady(port, dbName, user, password);
+
+    console.log(`✓ ClickHouse ready at http://localhost:${port}/${dbName}`);
+
+    return {
+      url: `http://${user}:${password}@localhost:${port}/${dbName}`,
+      containerName,
+      dbName,
+      user,
+      password,
+      port,
+    };
+  } catch (error) {
+    console.error(
+      `Failed to spawn ClickHouse container ${containerName}:`,
+      error,
+    );
+    // Attempt cleanup if container was created but health check failed
+    try {
+      await execAsync(`docker rm -f ${containerName}`);
+    } catch (cleanupError) {
+      console.warn("Failed to cleanup failed container:", cleanupError);
+    }
+    throw error;
+  }
+};
+
+/**
+ * Waits for ClickHouse container to be ready to accept connections
+ */
+const waitForClickHouseContainerReady = async (
+  port: number,
+  dbName: string,
+  user: string,
+  password: string,
+  maxAttempts: number = 30,
+): Promise<void> => {
+  console.log("Waiting for ClickHouse to be ready...");
+
+  await withRetries(
+    async () => {
+      const client = createClient({
+        url: `http://localhost:${port}`,
+        database: dbName,
+        username: user,
+        password: password,
+      });
+
+      try {
+        await client.query({ query: "SELECT 1" });
+        console.log("✓ ClickHouse health check passed");
+      } finally {
+        await client.close();
+      }
+    },
+    {
+      attempts: maxAttempts,
+      delayMs: RETRY_CONFIG.DEFAULT_DELAY_MS,
+      backoffFactor: 1, // Linear backoff for startup
+    },
+  );
+};
+
+/**
+ * Stops and removes ClickHouse container
+ */
+export const stopClickHouseContainer = async (
+  containerName: string,
+): Promise<void> => {
+  console.log(`Stopping ClickHouse container: ${containerName}...`);
+  try {
+    await execAsync(`docker stop ${containerName}`);
+    await execAsync(`docker rm ${containerName}`);
+    console.log("✓ ClickHouse container removed");
+  } catch (error) {
+    console.warn(`Failed to stop container ${containerName}:`, error);
+    // Don't throw - we want cleanup to continue even if Docker cleanup fails
+  }
+};
+
+/**
+ * Queries ClickHouse directly for verification (supports custom instance)
+ */
+export const queryClickHouseInstance = async (
+  instance: ClickHouseTestInstance,
+  query: string,
+): Promise<any[]> => {
+  const client = createClient({
+    url: `http://localhost:${instance.port}`,
+    database: instance.dbName,
+    username: instance.user,
+    password: instance.password,
+  });
+
+  try {
+    const result = await client.query({ query, format: "JSONEachRow" });
+    return await result.json();
+  } finally {
+    await client.close();
+  }
+};
+
+/**
+ * Executes a ClickHouse command (non-query) on custom instance
+ */
+export const execClickHouseCommand = async (
+  instance: ClickHouseTestInstance,
+  query: string,
+): Promise<void> => {
+  const client = createClient({
+    url: `http://localhost:${instance.port}`,
+    database: instance.dbName,
+    username: instance.user,
+    password: instance.password,
+  });
+
+  try {
+    await client.command({ query });
+  } finally {
+    await client.close();
+  }
+};
