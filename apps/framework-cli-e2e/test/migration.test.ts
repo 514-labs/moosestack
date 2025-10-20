@@ -101,11 +101,6 @@ describe("typescript template tests - migration", () => {
 
       console.log("\n--- Testing: Generate Migration Plan ---");
 
-      // Build the project first so TypeScript code is compiled
-      console.log("Building project...");
-      await execAsync(`"${CLI_PATH}" build`, { cwd: projectDir });
-      console.log("✓ Project built");
-
       // Run: moose generate migration --clickhouse-url <url> --save
       const { stdout, stderr } = await execAsync(
         `"${CLI_PATH}" generate migration --clickhouse-url "${clickhouse.url}" --save`,
@@ -258,11 +253,7 @@ describe("typescript template tests - migration", () => {
       );
       await fs.promises.writeFile(configPath, config);
 
-      // 4. Build the project first
-      console.log("Building project...");
-      await execAsync(`"${CLI_PATH}" build`, { cwd: projectDir });
-
-      // 5. Apply initial migration (so Moose is managing tables)
+      // 4. Apply initial migration (so Moose is managing tables)
       console.log("Generating and applying initial migration...");
       await execAsync(
         `"${CLI_PATH}" generate migration --clickhouse-url "${clickhouse.url}" --save`,
