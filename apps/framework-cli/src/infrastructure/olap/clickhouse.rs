@@ -344,15 +344,12 @@ pub async fn execute_atomic_operation(
             before: _,
             after,
         } => {
-            // ALTER TABLE ... MODIFY COLUMN `col` <type> TTL expr
-            // We don't have the type here; use ALTER TABLE ... MODIFY COLUMN `col` TTL ... (ClickHouse supports column TTL changes without restating type)
             let sql = if let Some(expr) = after {
                 format!(
                     "ALTER TABLE `{}`.`{}` MODIFY COLUMN `{}` TTL {}",
                     db_name, table, column, expr
                 )
             } else {
-                // Removing column TTL is done by specifying TTL 0? ClickHouse supports removing by omitting TTL; but we can reset via MODIFY COLUMN without TTL by restating column type. Fallback to REMOVE TTL not supported per-column => set TTL to 0 seconds equivalent
                 format!(
                     "ALTER TABLE `{}`.`{}` MODIFY COLUMN `{}` REMOVE TTL",
                     db_name, table, column
