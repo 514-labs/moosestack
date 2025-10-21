@@ -85,18 +85,18 @@ static INTEGER_REGEX: LazyLock<Regex> =
 
 static INT256_MIN: LazyLock<BigInt> = LazyLock::new(|| {
     let mut value = BigInt::from(1u8);
-    value <<= 255usize;
+    value <<= 255;
     -value
 });
 static INT256_MAX: LazyLock<BigInt> = LazyLock::new(|| {
     let mut value = BigInt::from(1u8);
-    value <<= 255usize;
-    value - BigInt::from(1u8)
+    value <<= 255;
+    value - 1
 });
 static UINT256_MAX: LazyLock<BigUint> = LazyLock::new(|| {
     let mut value = BigUint::from(1u8);
     value <<= 256usize;
-    value - BigUint::from(1u8)
+    value - 1usize
 });
 
 fn parse_signed_number(num: &Number, int_type: &IntType, path: &str) -> Result<BigInt, String> {
@@ -173,6 +173,36 @@ fn check_unsigned_bounds(
         ))
     } else {
         Ok(())
+    }
+}
+
+fn check_uint_in_range(n: u64, int_type: &IntType) -> bool {
+    match int_type {
+        IntType::Int8 => n <= i8::MAX as u64,
+        IntType::Int16 => n <= i16::MAX as u64,
+        IntType::Int32 => n <= i32::MAX as u64,
+        IntType::Int64 => n <= i64::MAX as u64,
+        IntType::UInt8 => n <= u8::MAX as u64,
+        IntType::UInt16 => n <= u16::MAX as u64,
+        IntType::UInt32 => n <= u32::MAX as u64,
+        IntType::UInt64
+        | IntType::Int128
+        | IntType::Int256
+        | IntType::UInt128
+        | IntType::UInt256 => true,
+    }
+}
+
+fn check_int_in_range(n: i64, int_type: &IntType) -> bool {
+    match int_type {
+        IntType::Int8 => n >= i8::MIN as i64 && n <= i8::MAX as i64,
+        IntType::Int16 => n >= i16::MIN as i64 && n <= i16::MAX as i64,
+        IntType::Int32 => n >= i32::MIN as i64 && n <= i32::MAX as i64,
+        IntType::Int64 | IntType::Int128 | IntType::Int256 => true,
+        IntType::UInt8 => n >= 0 && n <= u8::MAX as i64,
+        IntType::UInt16 => n >= 0 && n <= u16::MAX as i64,
+        IntType::UInt32 => n >= 0 && n <= u32::MAX as i64,
+        IntType::UInt128 | IntType::UInt256 | IntType::UInt64 => n >= 0,
     }
 }
 
@@ -380,9 +410,7 @@ impl<'de, S: SerializeValue> Visitor<'de> for &mut ValueVisitor<'_, S> {
         E: Error,
     {
         match self.t {
-            ColumnType::Int(int_t) => {
-                let num = Number::from(v);
-                check_int_number_in_range::<E>(&num, int_t, &self.get_path())?;
+            ColumnType::Int(int_t) if check_int_in_range(v, int_t) => {
                 self.write_to.serialize_value(&v).map_err(Error::custom)
             }
             ColumnType::Float(_) => self.write_to.serialize_value(&v).map_err(Error::custom),
@@ -397,9 +425,7 @@ impl<'de, S: SerializeValue> Visitor<'de> for &mut ValueVisitor<'_, S> {
         E: Error,
     {
         match self.t {
-            ColumnType::Int(int_t) => {
-                let num = Number::from(v);
-                check_int_number_in_range::<E>(&num, int_t, &self.get_path())?;
+            ColumnType::Int(int_t) if check_uint_in_range(v, int_t) => {
                 self.write_to.serialize_value(&v).map_err(Error::custom)
             }
             ColumnType::Float(_) => self.write_to.serialize_value(&v).map_err(Error::custom),
