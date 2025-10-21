@@ -277,26 +277,25 @@ export const EdgeCasesPipeline = new IngestPipeline<EdgeCases>("EdgeCases", {
 
 /** =======Optional Nested Fields with ClickHouse Defaults Test========= */
 
-// TODO: Fix ClickHouseDefault usage - temporarily commented out to unblock array transform tests
-// /** Test interface with optional nested fields and ClickHouse defaults */
-// export interface TestNested {
-//   name?: string;
-//   age?: number;
-// }
+/** Test interface with optional nested fields and ClickHouse defaults */
+export interface TestNested {
+  name?: string;
+  age?: number;
+}
 
-// export interface OptionalNestedTest {
-//   id: Key<string>;
-//   timestamp: DateTime;
-//   nested: TestNested[];
-//   other: string & ClickHouseDefault<"default_value">;
-// }
+export interface OptionalNestedTest {
+  id: Key<string>;
+  timestamp: DateTime;
+  nested: TestNested[];
+  other: string & ClickHouseDefault<"">;
+}
 
-// export const OptionalNestedTestPipeline =
-//   new IngestPipeline<OptionalNestedTest>("OptionalNestedTest", {
-//     table: true,
-//     stream: true,
-//     ingestApi: true,
-//   });
+export const OptionalNestedTestPipeline =
+  new IngestPipeline<OptionalNestedTest>("OptionalNestedTest", {
+    table: true,
+    stream: true,
+    ingestApi: true,
+  });
 
 /** =======Geometry Types========= */
 
