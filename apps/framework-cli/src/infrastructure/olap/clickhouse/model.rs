@@ -351,6 +351,10 @@ impl ClickHouseValue {
         ClickHouseValue::ClickhouseInt(format!("{value}"))
     }
 
+    pub fn new_number(value: &serde_json::Number) -> ClickHouseValue {
+        ClickHouseValue::ClickhouseInt(format!("{value}"))
+    }
+
     pub fn new_float_64(value: f64) -> ClickHouseValue {
         ClickHouseValue::ClickhouseFloat(format!("{value}"))
     }
