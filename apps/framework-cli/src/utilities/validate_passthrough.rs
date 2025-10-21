@@ -141,7 +141,7 @@ fn check_str_in_range(n: &str, int_type: &IntType) -> bool {
         IntType::Int256 => BigInt::parse_bytes(n.as_bytes(), 10)
             .is_some_and(|n| INT256_MIN.deref() <= &n && &n <= INT256_MAX.deref()),
         IntType::UInt256 => BigUint::parse_bytes(n.as_bytes(), 10)
-            .is_some_and(|n| n <= BigUint::zero() && &n <= UINT256_MAX.deref()),
+            .is_some_and(|n| &BigUint::zero() <= &n && &n <= UINT256_MAX.deref()),
     }
 }
 
@@ -297,6 +297,31 @@ impl<'de, S: SerializeValue> Visitor<'de> for &mut ValueVisitor<'_, S> {
             ColumnType::Float(_) => self.write_to.serialize_value(&v).map_err(Error::custom),
             ColumnType::Decimal { .. } => self.write_to.serialize_value(&v).map_err(Error::custom),
             ColumnType::Enum(enum_def) => handle_enum_value(self.write_to, enum_def, v),
+            ColumnType::Int(int_t) => {
+                let is_unsigned = matches!(
+                    int_t,
+                    IntType::UInt8
+                        | IntType::UInt16
+                        | IntType::UInt32
+                        | IntType::UInt64
+                        | IntType::UInt128
+                        | IntType::UInt256
+                );
+                if is_unsigned && v < 0 {
+                    Err(Error::custom(format!(
+                        "Negative value for {:?} at {}",
+                        int_t,
+                        self.get_path()
+                    )))
+                } else {
+                    Err(Error::custom(format!(
+                        "Integer out of range for {:?} at {}: {}",
+                        int_t,
+                        self.get_path(),
+                        v
+                    )))
+                }
+            }
             _ => Err(Error::invalid_type(serde::de::Unexpected::Signed(v), &self)),
         }
     }
@@ -312,6 +337,12 @@ impl<'de, S: SerializeValue> Visitor<'de> for &mut ValueVisitor<'_, S> {
             ColumnType::Float(_) => self.write_to.serialize_value(&v).map_err(Error::custom),
             ColumnType::Decimal { .. } => self.write_to.serialize_value(&v).map_err(Error::custom),
             ColumnType::Enum(enum_def) => handle_enum_value(self.write_to, enum_def, v),
+            ColumnType::Int(int_t) => Err(Error::custom(format!(
+                "Integer out of range for {:?} at {}: {}",
+                int_t,
+                self.get_path(),
+                v
+            ))),
             _ => Err(Error::invalid_type(
                 serde::de::Unexpected::Unsigned(v),
                 &self,
@@ -677,7 +708,12 @@ impl<'de, S: SerializeValue> Visitor<'de> for &mut ValueVisitor<'_, S> {
                         Ok(number) => {
                             if let ColumnType::Int(int_t) = t {
                                 if !check_str_in_range(number.as_str(), int_t) {
-                                    return Err(A::Error::custom("Invalid integer value"));
+                                    return Err(A::Error::custom(format!(
+                                        "Integer out of range for {:?} at {}: {}",
+                                        int_t,
+                                        self.get_path(),
+                                        number
+                                    )));
                                 }
                             }
                             return self
@@ -730,14 +766,32 @@ where
     match key_type {
         ColumnType::String => Ok(()), // String keys are always valid
         ColumnType::Int(int_t) => {
-            if check_str_in_range(key_str, int_t) {
-                Ok(())
-            } else {
-                Err(E::custom(format!(
+            // Minimal logic using existing helpers, with test-aligned messages
+            if !INTEGER_REGEX.is_match(key_str) {
+                return Err(E::custom(format!(
                     "Invalid integer key '{}' for Map at {}",
                     key_str,
                     context.get_path()
-                )))
+                )));
+            }
+
+            let is_unsigned = matches!(
+                int_t,
+                IntType::UInt8
+                    | IntType::UInt16
+                    | IntType::UInt32
+                    | IntType::UInt64
+                    | IntType::UInt128
+                    | IntType::UInt256
+            );
+            if is_unsigned && key_str.starts_with('-') {
+                return Err(E::custom("Invalid unsigned integer key"));
+            }
+
+            if check_str_in_range(key_str, int_t) {
+                Ok(())
+            } else {
+                Err(E::custom(format!("out of range {:?}", int_t)))
             }
         }
         ColumnType::Float(_) => {
