@@ -72,122 +72,6 @@ pub struct JsonOptions {
     pub skip_regexps: Vec<String>,
 }
 
-impl JsonOptions {
-    pub fn parse_from_options_str(inner: &str) -> Result<Self, String> {
-        let mut opts = JsonOptions::default();
-        let parts = split_top_level_commas(inner);
-        for raw in parts {
-            let item = raw.trim();
-            if item.is_empty() {
-                continue;
-            }
-            if let Some(rest) = item.strip_prefix("max_dynamic_paths") {
-                let n = parse_equals_u64(rest)?;
-                opts.max_dynamic_paths = Some(n);
-                continue;
-            }
-            if let Some(rest) = item.strip_prefix("max_dynamic_types") {
-                let n = parse_equals_u64(rest)?;
-                opts.max_dynamic_types = Some(n);
-                continue;
-            }
-            if let Some(rest) = item.strip_prefix("SKIP REGEXP") {
-                let pat = parse_single_quoted_str(rest)?;
-                opts.skip_regexps.push(pat);
-                continue;
-            }
-            if let Some(rest) = item.strip_prefix("SKIP") {
-                let path = rest.trim();
-                if path.is_empty() {
-                    return Err("SKIP requires a path".to_string());
-                }
-                opts.skip_paths.push(path.to_string());
-                continue;
-            }
-            // typed path: "some.path TypeName"
-            if let Some((path, ty)) = parse_typed_path(item)? {
-                opts.typed_paths.push((path, ty));
-                continue;
-            }
-            return Err(format!("Unrecognized Json option: {item}"));
-        }
-        Ok(opts)
-    }
-}
-
-fn split_top_level_commas(s: &str) -> Vec<&str> {
-    let mut parts = Vec::new();
-    let mut start = 0usize;
-    let mut in_single_quote = false;
-    let bytes = s.as_bytes();
-    let mut i = 0usize;
-    while i < bytes.len() {
-        let c = bytes[i] as char;
-        if c == '\'' {
-            in_single_quote = !in_single_quote;
-            i += 1;
-            continue;
-        }
-        if !in_single_quote && c == ',' {
-            parts.push(&s[start..i]);
-            i += 1;
-            while i < bytes.len() && (bytes[i] as char).is_whitespace() {
-                i += 1;
-            }
-            start = i;
-            continue;
-        }
-        i += 1;
-    }
-    if start <= s.len() {
-        parts.push(&s[start..]);
-    }
-    parts
-}
-
-fn parse_equals_u64(rest: &str) -> Result<u64, String> {
-    let r = rest.trim_start();
-    let r = r
-        .strip_prefix('=')
-        .ok_or_else(|| "Expected '=' after option name".to_string())?;
-    let n = r.trim().parse::<u64>().map_err(|e| e.to_string())?;
-    Ok(n)
-}
-
-fn parse_single_quoted_str(rest: &str) -> Result<String, String> {
-    let r = rest.trim();
-    if !r.starts_with('\'') {
-        return Err("Expected opening single quote".to_string());
-    }
-    let r = &r[1..];
-    let end = r
-        .find('\'')
-        .ok_or_else(|| "Unterminated single-quoted string".to_string())?;
-    Ok(r[..end].to_string())
-}
-
-fn parse_typed_path(item: &str) -> Result<Option<(String, ColumnType)>, String> {
-    // split on first whitespace
-    let mut iter = item
-        .splitn(2, char::is_whitespace)
-        .filter(|s| !s.is_empty());
-    let path = match iter.next() {
-        Some(p) => p.trim(),
-        None => return Ok(None),
-    };
-    let rest = match iter.next() {
-        Some(r) => r.trim(),
-        None => return Ok(None),
-    };
-    if path.eq_ignore_ascii_case("skip") {
-        return Ok(None);
-    }
-    // Use serde to reuse ColumnType string parsing
-    let quoted = format!("\"{}\"", rest);
-    let ty: ColumnType = serde_json::from_str(&quoted).map_err(|e| e.to_string())?;
-    Ok(Some((path.to_string(), ty)))
-}
-
 /// Metadata for an enum type
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct EnumMetadata {
@@ -734,7 +618,7 @@ impl Serialize for ColumnType {
                 state.serialize_field("jwt", &nested.jwt)?;
                 state.end()
             }
-            ColumnType::Json(_) => serializer.serialize_str("Json"),
+            ColumnType::Json(opts) => opts.serialize(serializer),
             ColumnType::Bytes => serializer.serialize_str("Bytes"),
             ColumnType::Uuid => serializer.serialize_str("UUID"),
             ColumnType::Date => serializer.serialize_str("Date"),
@@ -888,15 +772,6 @@ impl<'de> Visitor<'de> for ColumnTypeVisitor {
             ColumnType::Date16
         } else if v == "Json" {
             ColumnType::Json(JsonOptions::default())
-        } else if v.starts_with("Json(") {
-            let inner = v
-                .strip_prefix("Json(")
-                .unwrap()
-                .strip_suffix(")")
-                .ok_or_else(|| E::custom(format!("Invalid Json options: {v}")))?;
-            let opts = JsonOptions::parse_from_options_str(inner)
-                .map_err(|e| E::custom(format!("Invalid Json options: {e}")))?;
-            ColumnType::Json(opts)
         } else if v == "Bytes" {
             ColumnType::Bytes
         } else if v == "UUID" {
@@ -938,6 +813,13 @@ impl<'de> Visitor<'de> for ColumnTypeVisitor {
         let mut element_nullable = None;
         let mut key_type = None;
         let mut value_type = None;
+        // Json options support
+        let mut json_max_dynamic_paths: Option<u64> = None;
+        let mut json_max_dynamic_types: Option<u64> = None;
+        let mut json_typed_paths: Option<Vec<(String, ColumnType)>> = None;
+        let mut json_skip_paths: Option<Vec<String>> = None;
+        let mut json_skip_regexps: Option<Vec<String>> = None;
+        let mut seen_json_options = false;
         while let Some(key) = map.next_key::<String>()? {
             if key == "elementType" || key == "element_type" {
                 element_type = Some(map.next_value::<ColumnType>().map_err(|e| {
@@ -965,6 +847,21 @@ impl<'de> Visitor<'de> for ColumnTypeVisitor {
                 value_type = Some(map.next_value::<ColumnType>().map_err(|e| {
                     A::Error::custom(format!("Map value type deserialization error {e}."))
                 })?)
+            } else if key == "max_dynamic_paths" || key == "maxDynamicPaths" {
+                json_max_dynamic_paths = Some(map.next_value::<u64>()?);
+                seen_json_options = true;
+            } else if key == "max_dynamic_types" || key == "maxDynamicTypes" {
+                json_max_dynamic_types = Some(map.next_value::<u64>()?);
+                seen_json_options = true;
+            } else if key == "typed_paths" || key == "typedPaths" {
+                json_typed_paths = Some(map.next_value::<Vec<(String, ColumnType)>>()?);
+                seen_json_options = true;
+            } else if key == "skip_paths" || key == "skipPaths" {
+                json_skip_paths = Some(map.next_value::<Vec<String>>()?);
+                seen_json_options = true;
+            } else if key == "skip_regexps" || key == "skipRegexps" {
+                json_skip_regexps = Some(map.next_value::<Vec<String>>()?);
+                seen_json_options = true;
             } else {
                 map.next_value::<IgnoredAny>()?;
             }
@@ -993,6 +890,16 @@ impl<'de> Visitor<'de> for ColumnTypeVisitor {
             } else {
                 return Err(A::Error::custom("Map type missing valueType field"));
             }
+        }
+
+        if seen_json_options {
+            return Ok(ColumnType::Json(JsonOptions {
+                max_dynamic_paths: json_max_dynamic_paths,
+                max_dynamic_types: json_max_dynamic_types,
+                typed_paths: json_typed_paths.unwrap_or_default(),
+                skip_paths: json_skip_paths.unwrap_or_default(),
+                skip_regexps: json_skip_regexps.unwrap_or_default(),
+            }));
         }
 
         let name = name.ok_or(A::Error::custom("Missing field: name."))?;
