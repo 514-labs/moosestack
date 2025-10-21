@@ -100,83 +100,6 @@ static UINT256_MAX: LazyLock<BigUint> = LazyLock::new(|| {
     value - 1usize
 });
 
-fn parse_signed_number(num: &Number, int_type: &IntType, path: &str) -> Result<BigInt, String> {
-    if let Some(v) = num.as_i64() {
-        return Ok(BigInt::from(v));
-    }
-    if let Some(u) = num.as_u64() {
-        return Ok(BigInt::from(u));
-    }
-
-    let s = num.to_string();
-    if !INTEGER_REGEX.is_match(&s) {
-        return Err(format!("Expected integer for {int_type:?} at {path}"));
-    }
-
-    BigInt::from_str(&s).map_err(|_| format!("Value {s} out of range for {int_type:?} at {path}"))
-}
-
-fn parse_unsigned_number(num: &Number, int_type: &IntType, path: &str) -> Result<BigUint, String> {
-    if let Some(v) = num.as_i64() {
-        if v < 0 {
-            return Err(format!(
-                "Negative value {v} is invalid for {int_type:?} at {path}"
-            ));
-        }
-        let as_u64 = u64::try_from(v)
-            .map_err(|_| format!("Value {v} out of range for {int_type:?} at {path}"))?;
-        return Ok(BigUint::from(as_u64));
-    }
-    if let Some(u) = num.as_u64() {
-        return Ok(BigUint::from(u));
-    }
-
-    let s = num.to_string();
-    if !INTEGER_REGEX.is_match(&s) {
-        return Err(format!("Expected integer for {int_type:?} at {path}"));
-    }
-    if s.starts_with('-') {
-        return Err(format!(
-            "Negative value {s} is invalid for {int_type:?} at {path}"
-        ));
-    }
-
-    BigUint::from_str(&s).map_err(|_| format!("Value {s} out of range for {int_type:?} at {path}"))
-}
-
-fn check_signed_bounds(
-    value: &BigInt,
-    int_type: &IntType,
-    min: &BigInt,
-    max: &BigInt,
-    path: &str,
-) -> Result<(), String> {
-    if value < min || value > max {
-        Err(format!(
-            "Value {} out of range for {:?} at {}",
-            value, int_type, path
-        ))
-    } else {
-        Ok(())
-    }
-}
-
-fn check_unsigned_bounds(
-    value: &BigUint,
-    int_type: &IntType,
-    max: &BigUint,
-    path: &str,
-) -> Result<(), String> {
-    if value > max {
-        Err(format!(
-            "Value {} out of range for {:?} at {}",
-            value, int_type, path
-        ))
-    } else {
-        Ok(())
-    }
-}
-
 fn check_uint_in_range(n: u64, int_type: &IntType) -> bool {
     match int_type {
         IntType::Int8 => n <= i8::MAX as u64,
@@ -232,76 +155,6 @@ fn check_int_in_range(n: i64, int_type: &IntType) -> bool {
         IntType::UInt16 => n >= 0 && n <= u16::MAX as i64,
         IntType::UInt32 => n >= 0 && n <= u32::MAX as i64,
         IntType::UInt128 | IntType::UInt256 | IntType::UInt64 => n >= 0,
-    }
-}
-
-fn check_int_number_in_range<E>(num: &Number, int_type: &IntType, path: &str) -> Result<(), E>
-where
-    E: serde::de::Error,
-{
-    match int_type {
-        IntType::Int8 => {
-            let value = parse_signed_number(num, int_type, path).map_err(E::custom)?;
-            let min = BigInt::from(i8::MIN);
-            let max = BigInt::from(i8::MAX);
-            check_signed_bounds(&value, int_type, &min, &max, path).map_err(E::custom)
-        }
-        IntType::Int16 => {
-            let value = parse_signed_number(num, int_type, path).map_err(E::custom)?;
-            let min = BigInt::from(i16::MIN);
-            let max = BigInt::from(i16::MAX);
-            check_signed_bounds(&value, int_type, &min, &max, path).map_err(E::custom)
-        }
-        IntType::Int32 => {
-            let value = parse_signed_number(num, int_type, path).map_err(E::custom)?;
-            let min = BigInt::from(i32::MIN);
-            let max = BigInt::from(i32::MAX);
-            check_signed_bounds(&value, int_type, &min, &max, path).map_err(E::custom)
-        }
-        IntType::Int64 => {
-            let value = parse_signed_number(num, int_type, path).map_err(E::custom)?;
-            let min = BigInt::from(i64::MIN);
-            let max = BigInt::from(i64::MAX);
-            check_signed_bounds(&value, int_type, &min, &max, path).map_err(E::custom)
-        }
-        IntType::Int128 => {
-            let value = parse_signed_number(num, int_type, path).map_err(E::custom)?;
-            let min = BigInt::from(i128::MIN);
-            let max = BigInt::from(i128::MAX);
-            check_signed_bounds(&value, int_type, &min, &max, path).map_err(E::custom)
-        }
-        IntType::Int256 => {
-            let value = parse_signed_number(num, int_type, path).map_err(E::custom)?;
-            check_signed_bounds(&value, int_type, &INT256_MIN, &INT256_MAX, path).map_err(E::custom)
-        }
-        IntType::UInt8 => {
-            let value = parse_unsigned_number(num, int_type, path).map_err(E::custom)?;
-            let max = BigUint::from(u8::MAX);
-            check_unsigned_bounds(&value, int_type, &max, path).map_err(E::custom)
-        }
-        IntType::UInt16 => {
-            let value = parse_unsigned_number(num, int_type, path).map_err(E::custom)?;
-            let max = BigUint::from(u16::MAX);
-            check_unsigned_bounds(&value, int_type, &max, path).map_err(E::custom)
-        }
-        IntType::UInt32 => {
-            let value = parse_unsigned_number(num, int_type, path).map_err(E::custom)?;
-            let max = BigUint::from(u32::MAX);
-            check_unsigned_bounds(&value, int_type, &max, path).map_err(E::custom)
-        }
-        IntType::UInt64 => {
-            let value = parse_unsigned_number(num, int_type, path).map_err(E::custom)?;
-            let max = BigUint::from(u64::MAX);
-            check_unsigned_bounds(&value, int_type, &max, path).map_err(E::custom)
-        }
-        IntType::UInt128 => {
-            let value = parse_unsigned_number(num, int_type, path).map_err(E::custom)?;
-            let max = BigUint::from(u128::MAX);
-            check_unsigned_bounds(&value, int_type, &max, path).map_err(E::custom)
-        }
-        IntType::UInt256 => parse_unsigned_number(num, int_type, path)
-            .and_then(|value| check_unsigned_bounds(&value, int_type, &UINT256_MAX, path))
-            .map_err(E::custom),
     }
 }
 
@@ -823,11 +676,9 @@ impl<'de, S: SerializeValue> Visitor<'de> for &mut ValueVisitor<'_, S> {
                     match arbitrary_precision {
                         Ok(number) => {
                             if let ColumnType::Int(int_t) = t {
-                                check_int_number_in_range::<A::Error>(
-                                    &number,
-                                    int_t,
-                                    &self.get_path(),
-                                )?;
+                                if !check_str_in_range(number.as_str(), int_t) {
+                                    return Err(A::Error::custom("Invalid integer value"));
+                                }
                             }
                             return self
                                 .write_to
