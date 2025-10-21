@@ -141,7 +141,7 @@ fn check_str_in_range(n: &str, int_type: &IntType) -> bool {
         IntType::Int256 => BigInt::parse_bytes(n.as_bytes(), 10)
             .is_some_and(|n| INT256_MIN.deref() <= &n && &n <= INT256_MAX.deref()),
         IntType::UInt256 => BigUint::parse_bytes(n.as_bytes(), 10)
-            .is_some_and(|n| &BigUint::zero() <= &n && &n <= UINT256_MAX.deref()),
+            .is_some_and(|n| BigUint::zero() <= n && &n <= UINT256_MAX.deref()),
     }
 }
 
@@ -375,6 +375,26 @@ impl<'de, S: SerializeValue> Visitor<'de> for &mut ValueVisitor<'_, S> {
         E: Error,
     {
         match self.t {
+            ColumnType::Int(int_t) => {
+                if !INTEGER_REGEX.is_match(v) {
+                    return Err(Error::invalid_type(serde::de::Unexpected::Str(v), &self));
+                }
+                if !check_str_in_range(v, int_t) {
+                    return Err(Error::invalid_type(serde::de::Unexpected::Str(v), &self));
+                }
+                self.write_to
+                    .serialize_value(&serde_json::Number::from_str(v).unwrap())
+                    .map_err(Error::custom)
+            }
+            ColumnType::Float(_) => {
+                if let Ok(parsed) = v.parse::<f64>() {
+                    return self
+                        .write_to
+                        .serialize_value(&parsed)
+                        .map_err(Error::custom);
+                }
+                Err(Error::invalid_type(serde::de::Unexpected::Str(v), &self))
+            }
             ColumnType::String => self.write_to.serialize_value(v).map_err(Error::custom),
             ColumnType::DateTime { .. } => {
                 chrono::DateTime::parse_from_rfc3339(v).map_err(|_| {
