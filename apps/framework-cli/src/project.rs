@@ -235,6 +235,13 @@ pub struct Project {
     /// TypeScript-specific configuration
     #[serde(default)]
     pub typescript_config: TypescriptConfig,
+    /// Custom source directory path (defaults to "app")
+    #[serde(default = "default_source_dir")]
+    pub source_dir: String,
+}
+
+pub fn default_source_dir() -> String {
+    APP_DIR.to_string()
 }
 
 static STREAMING_FUNCTION_RENAME_WARNING: Once = Once::new();
@@ -307,6 +314,7 @@ impl Project {
             authentication: AuthenticationConfig::default(),
             load_infra: None,
             typescript_config: TypescriptConfig::default(),
+            source_dir: default_source_dir(),
         }
     }
 
@@ -383,7 +391,7 @@ impl Project {
     /// Returns the path to the app directory
     pub fn app_dir(&self) -> PathBuf {
         let mut app_dir = self.project_location.clone();
-        app_dir.push(APP_DIR);
+        app_dir.push(&self.source_dir);
 
         debug!("App dir: {:?}", app_dir);
 
