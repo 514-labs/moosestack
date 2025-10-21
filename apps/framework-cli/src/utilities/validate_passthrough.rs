@@ -243,8 +243,7 @@ where
         }
         IntType::Int256 => {
             let value = parse_signed_number(num, int_type, path).map_err(E::custom)?;
-            check_signed_bounds(&value, int_type, &*INT256_MIN, &*INT256_MAX, path)
-                .map_err(E::custom)
+            check_signed_bounds(&value, int_type, &INT256_MIN, &INT256_MAX, path).map_err(E::custom)
         }
         IntType::UInt8 => {
             let value = parse_unsigned_number(num, int_type, path).map_err(E::custom)?;
@@ -272,7 +271,7 @@ where
             check_unsigned_bounds(&value, int_type, &max, path).map_err(E::custom)
         }
         IntType::UInt256 => parse_unsigned_number(num, int_type, path)
-            .and_then(|value| check_unsigned_bounds(&value, int_type, &*UINT256_MAX, path))
+            .and_then(|value| check_unsigned_bounds(&value, int_type, &UINT256_MAX, path))
             .map_err(E::custom),
     }
 }
@@ -897,7 +896,7 @@ where
                         check_signed_bounds(&value, int_t, &min, &max, path).map_err(E::custom)
                     }
                     IntType::Int256 => {
-                        check_signed_bounds(&value, int_t, &*INT256_MIN, &*INT256_MAX, path)
+                        check_signed_bounds(&value, int_t, &INT256_MIN, &INT256_MAX, path)
                             .map_err(E::custom)
                     }
                     _ => unreachable!(),
@@ -945,7 +944,7 @@ where
                         check_unsigned_bounds(&value, int_t, &max, path).map_err(E::custom)
                     }
                     IntType::UInt256 => {
-                        check_unsigned_bounds(&value, int_t, &*UINT256_MAX, path).map_err(E::custom)
+                        check_unsigned_bounds(&value, int_t, &UINT256_MAX, path).map_err(E::custom)
                     }
                     _ => unreachable!(),
                 }
@@ -1877,6 +1876,7 @@ mod tests {
             default: None,
             annotations: vec![],
             comment: None,
+            ttl: None,
         }];
 
         // Min boundary 0
@@ -1919,6 +1919,7 @@ mod tests {
             default: None,
             annotations: vec![],
             comment: None,
+            ttl: None,
         }];
 
         // Min boundary -32768
@@ -1961,6 +1962,7 @@ mod tests {
             default: None,
             annotations: vec![],
             comment: None,
+            ttl: None,
         }];
 
         let positive_limit: BigInt = BigInt::from(1u8) << 127usize;
@@ -2005,6 +2007,7 @@ mod tests {
             default: None,
             annotations: vec![],
             comment: None,
+            ttl: None,
         }];
 
         let positive_limit: BigInt = BigInt::from(1u8) << 255usize;
@@ -2049,6 +2052,7 @@ mod tests {
             default: None,
             annotations: vec![],
             comment: None,
+            ttl: None,
         }];
 
         let limit: BigUint = BigUint::from(1u8) << 256usize;
@@ -2094,6 +2098,7 @@ mod tests {
             default: None,
             annotations: vec![],
             comment: None,
+            ttl: None,
         }];
 
         // Valid keys
@@ -2133,6 +2138,7 @@ mod tests {
             default: None,
             annotations: vec![],
             comment: None,
+            ttl: None,
         }];
 
         let positive_limit: BigInt = BigInt::from(1u8) << 255usize;
@@ -2172,6 +2178,7 @@ mod tests {
             default: None,
             annotations: vec![],
             comment: None,
+            ttl: None,
         }];
 
         let limit: BigUint = BigUint::from(1u8) << 256usize;
