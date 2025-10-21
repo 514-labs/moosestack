@@ -491,3 +491,42 @@ engine_test_model = IngestPipeline[EngineTest]("EngineTest", IngestPipelineConfi
     ),
     dead_letter_queue=True
 ))
+
+# =======Array Transform Test Models=========
+# Test models for verifying that transforms returning arrays produce multiple Kafka messages
+
+class ArrayInput(BaseModel):
+    """Input model for array transform test - contains an array to explode."""
+    id: Key[str]
+    data: List[str]  # Array of strings to explode into individual records
+
+
+class ArrayOutput(BaseModel):
+    """Output model for array transform test - one record per array item."""
+    input_id: Key[str]  # Reference to source ArrayInput.id
+    value: str  # From array element
+    index: int  # Position in original array
+    timestamp: datetime
+
+
+array_input_model = IngestPipeline[ArrayInput]("ArrayInput", IngestPipelineConfig(
+    ingest_api=True,
+    stream=True,
+    table=False,  # No table for input
+    dead_letter_queue=True
+))
+
+# Use OlapTable for output table
+array_output_table = OlapTable[ArrayOutput](
+    "ArrayOutput",
+    OlapConfig(
+        order_by_fields=["input_id", "timestamp"]
+    )
+)
+
+# Create a Stream that writes to the OlapTable
+from moose_lib import Stream, StreamConfig
+array_output_stream = Stream[ArrayOutput](
+    "ArrayOutput",
+    StreamConfig(destination=array_output_table)
+)
