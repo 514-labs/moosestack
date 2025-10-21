@@ -14,6 +14,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fmt::{Display, Formatter, Write};
 use std::marker::PhantomData;
+use std::ops::Deref;
 use std::str::FromStr;
 use std::sync::LazyLock;
 
@@ -190,6 +191,34 @@ fn check_uint_in_range(n: u64, int_type: &IntType) -> bool {
         | IntType::Int256
         | IntType::UInt128
         | IntType::UInt256 => true,
+    }
+}
+
+fn check_str_in_range(n: &str, int_type: &IntType) -> bool {
+    use num_traits::Zero;
+    match int_type {
+        IntType::Int8 | IntType::Int16 | IntType::Int32 | IntType::Int64 => {
+            n.parse::<i64>().is_ok_and(|n| match int_type {
+                IntType::Int8 => i8::MIN as i64 <= n && n <= i8::MAX as i64,
+                IntType::Int16 => i16::MIN as i64 <= n && n <= i16::MAX as i64,
+                IntType::Int32 => i32::MIN as i64 <= n && n <= i32::MAX as i64,
+                _ => true,
+            })
+        }
+        IntType::UInt8 | IntType::UInt16 | IntType::UInt32 | IntType::UInt64 => {
+            n.parse::<u64>().is_ok_and(|n| match int_type {
+                IntType::UInt8 => u8::MIN as u64 <= n && n <= u8::MAX as u64,
+                IntType::UInt16 => u16::MIN as u64 <= n && n <= u16::MAX as u64,
+                IntType::UInt32 => u32::MIN as u64 <= n && n <= u32::MAX as u64,
+                _ => true,
+            })
+        }
+        IntType::Int128 => n.parse::<i128>().is_ok(),
+        IntType::UInt128 => n.parse::<u128>().is_ok(),
+        IntType::Int256 => BigInt::parse_bytes(n.as_bytes(), 10)
+            .is_some_and(|n| INT256_MIN.deref() <= &n && &n <= INT256_MAX.deref()),
+        IntType::UInt256 => BigUint::parse_bytes(n.as_bytes(), 10)
+            .is_some_and(|n| n <= BigUint::zero() && &n <= UINT256_MAX.deref()),
     }
 }
 
@@ -847,113 +876,19 @@ fn validate_map_key<E>(
 where
     E: serde::ser::Error,
 {
-    fn validate_int_key_str<E>(s: &str, int_t: &IntType, path: &str) -> Result<(), E>
-    where
-        E: serde::ser::Error,
-    {
-        match int_t {
-            IntType::Int8
-            | IntType::Int16
-            | IntType::Int32
-            | IntType::Int64
-            | IntType::Int128
-            | IntType::Int256 => {
-                if !INTEGER_REGEX.is_match(s) {
-                    return Err(E::custom(format!(
-                        "Invalid integer key '{}' for Map at {}",
-                        s, path
-                    )));
-                }
-
-                let value = BigInt::from_str(s).map_err(|_| {
-                    E::custom(format!("Invalid integer key '{}' for Map at {}", s, path))
-                })?;
-
-                match int_t {
-                    IntType::Int8 => {
-                        let min = BigInt::from(i8::MIN);
-                        let max = BigInt::from(i8::MAX);
-                        check_signed_bounds(&value, int_t, &min, &max, path).map_err(E::custom)
-                    }
-                    IntType::Int16 => {
-                        let min = BigInt::from(i16::MIN);
-                        let max = BigInt::from(i16::MAX);
-                        check_signed_bounds(&value, int_t, &min, &max, path).map_err(E::custom)
-                    }
-                    IntType::Int32 => {
-                        let min = BigInt::from(i32::MIN);
-                        let max = BigInt::from(i32::MAX);
-                        check_signed_bounds(&value, int_t, &min, &max, path).map_err(E::custom)
-                    }
-                    IntType::Int64 => {
-                        let min = BigInt::from(i64::MIN);
-                        let max = BigInt::from(i64::MAX);
-                        check_signed_bounds(&value, int_t, &min, &max, path).map_err(E::custom)
-                    }
-                    IntType::Int128 => {
-                        let min = BigInt::from(i128::MIN);
-                        let max = BigInt::from(i128::MAX);
-                        check_signed_bounds(&value, int_t, &min, &max, path).map_err(E::custom)
-                    }
-                    IntType::Int256 => {
-                        check_signed_bounds(&value, int_t, &INT256_MIN, &INT256_MAX, path)
-                            .map_err(E::custom)
-                    }
-                    _ => unreachable!(),
-                }
-            }
-            IntType::UInt8
-            | IntType::UInt16
-            | IntType::UInt32
-            | IntType::UInt64
-            | IntType::UInt128
-            | IntType::UInt256 => {
-                if !INTEGER_REGEX.is_match(s) || s.starts_with('-') {
-                    return Err(E::custom(format!(
-                        "Invalid unsigned integer key '{}' for Map at {}",
-                        s, path
-                    )));
-                }
-
-                let value = BigUint::from_str(s).map_err(|_| {
-                    E::custom(format!(
-                        "Invalid unsigned integer key '{}' for Map at {}",
-                        s, path
-                    ))
-                })?;
-
-                match int_t {
-                    IntType::UInt8 => {
-                        let max = BigUint::from(u8::MAX);
-                        check_unsigned_bounds(&value, int_t, &max, path).map_err(E::custom)
-                    }
-                    IntType::UInt16 => {
-                        let max = BigUint::from(u16::MAX);
-                        check_unsigned_bounds(&value, int_t, &max, path).map_err(E::custom)
-                    }
-                    IntType::UInt32 => {
-                        let max = BigUint::from(u32::MAX);
-                        check_unsigned_bounds(&value, int_t, &max, path).map_err(E::custom)
-                    }
-                    IntType::UInt64 => {
-                        let max = BigUint::from(u64::MAX);
-                        check_unsigned_bounds(&value, int_t, &max, path).map_err(E::custom)
-                    }
-                    IntType::UInt128 => {
-                        let max = BigUint::from(u128::MAX);
-                        check_unsigned_bounds(&value, int_t, &max, path).map_err(E::custom)
-                    }
-                    IntType::UInt256 => {
-                        check_unsigned_bounds(&value, int_t, &UINT256_MAX, path).map_err(E::custom)
-                    }
-                    _ => unreachable!(),
-                }
-            }
-        }
-    }
     match key_type {
         ColumnType::String => Ok(()), // String keys are always valid
-        ColumnType::Int(int_t) => validate_int_key_str(key_str, int_t, &context.get_path()),
+        ColumnType::Int(int_t) => {
+            if check_str_in_range(key_str, int_t) {
+                Ok(())
+            } else {
+                Err(E::custom(format!(
+                    "Invalid integer key '{}' for Map at {}",
+                    key_str,
+                    context.get_path()
+                )))
+            }
+        }
         ColumnType::Float(_) => {
             key_str.parse::<f64>().map_err(|_| {
                 E::custom(format!(
