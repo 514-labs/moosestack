@@ -191,6 +191,9 @@ impl Default for ProjectFeatures {
 pub struct Project {
     /// Programming language used in the project
     pub language: SupportedLanguages,
+    /// Custom source directory path (defaults to "app")
+    #[serde(default = "default_source_dir")]
+    pub source_dir: String,
     /// Redpanda streaming configuration
     #[serde(default, alias = "kafka_config")]
     pub redpanda_config: KafkaConfig,
@@ -235,9 +238,6 @@ pub struct Project {
     /// TypeScript-specific configuration
     #[serde(default)]
     pub typescript_config: TypescriptConfig,
-    /// Custom source directory path (defaults to "app")
-    #[serde(default = "default_source_dir")]
-    pub source_dir: String,
 }
 
 pub fn default_source_dir() -> String {
