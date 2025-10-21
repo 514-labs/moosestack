@@ -40,6 +40,7 @@ import {
   waitForDBWrite,
   waitForMaterializedViewUpdate,
   verifyClickhouseData,
+  verifyRecordCount,
   withRetries,
   verifyConsumptionApi,
   verifyVersionedConsumptionApi,
@@ -442,6 +443,48 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
           await verifyClickhouseData("GeoTypes", id, "id");
         });
 
+        it("should send array transform results as individual Kafka messages (TS)", async function () {
+          this.timeout(TIMEOUTS.TEST_SETUP_MS);
+
+          const inputId = randomUUID();
+          const testData = ["item1", "item2", "item3", "item4", "item5"];
+
+          // Send one input record with an array in the data field
+          await withRetries(
+            async () => {
+              const response = await fetch(
+                `${SERVER_CONFIG.url}/ingest/array-input`,
+                {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    id: inputId,
+                    data: testData,
+                  }),
+                },
+              );
+              if (!response.ok) {
+                const text = await response.text();
+                throw new Error(`${response.status}: ${text}`);
+              }
+            },
+            { attempts: 5, delayMs: 500 },
+          );
+
+          // Wait for all output records to be written to the database
+          await waitForDBWrite(devProcess!, "ArrayOutput", testData.length);
+
+          // Verify that we have exactly 'testData.length' records in the output table
+          await verifyClickhouseData("ArrayOutput", inputId, "inputId");
+
+          // Verify the count of records
+          await verifyRecordCount(
+            "ArrayOutput",
+            `inputId = '${inputId}'`,
+            testData.length,
+          );
+        });
+
         it("should serve WebApp at custom mountPath with Express framework", async function () {
           this.timeout(TIMEOUTS.TEST_SETUP_MS);
 
@@ -588,6 +631,48 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
           );
           await waitForDBWrite(devProcess!, "GeoTypes", 1);
           await verifyClickhouseData("GeoTypes", id, "id");
+        });
+
+        it("should send array transform results as individual Kafka messages (PY)", async function () {
+          this.timeout(TIMEOUTS.TEST_SETUP_MS);
+
+          const inputId = randomUUID();
+          const testData = ["item1", "item2", "item3", "item4", "item5"];
+
+          // Send one input record with an array in the data field
+          await withRetries(
+            async () => {
+              const response = await fetch(
+                `${SERVER_CONFIG.url}/ingest/arrayinput`,
+                {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    id: inputId,
+                    data: testData,
+                  }),
+                },
+              );
+              if (!response.ok) {
+                const text = await response.text();
+                throw new Error(`${response.status}: ${text}`);
+              }
+            },
+            { attempts: 5, delayMs: 500 },
+          );
+
+          // Wait for all output records to be written to the database
+          await waitForDBWrite(devProcess!, "ArrayOutput", testData.length);
+
+          // Verify that we have exactly 'testData.length' records in the output table
+          await verifyClickhouseData("ArrayOutput", inputId, "input_id");
+
+          // Verify the count of records
+          await verifyRecordCount(
+            "ArrayOutput",
+            `input_id = '${inputId}'`,
+            testData.length,
+          );
         });
       }
     }
