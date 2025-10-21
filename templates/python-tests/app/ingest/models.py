@@ -279,7 +279,7 @@ class OptionalNestedTest(BaseModel):
     id: Key[str]
     timestamp: datetime
     nested: List[TestNested]
-    other: Optional[Annotated[str, clickhouse_default("''")]] = None
+    other: Annotated[str, clickhouse_default("")] = ""
 
 optional_nested_test_model = IngestPipeline[OptionalNestedTest]("OptionalNestedTest", IngestPipelineConfig(
     ingest_api=True,
@@ -391,3 +391,103 @@ index_test_table = OlapTable[IndexTest](
         ],
     ),
 )
+
+# =======Real-World Production Patterns (District Cannabis Inspired)=========
+
+# Test 8: Complex discount structure with mixed nullability
+class DiscountInfo(BaseModel):
+    discount_id: Optional[int] = None
+    discount_name: Optional[str] = None  # Explicit null
+    discount_reason: Optional[str] = None
+    amount: float  # Required field
+
+# Test 9: Transaction item with complex nested structure
+class ProductItem(BaseModel):
+    product_id: Optional[int] = None
+    product_name: Optional[str] = None
+    quantity: float
+    unit_price: float
+    unit_cost: Optional[float] = None
+    package_id: Optional[str] = None
+
+# Test 10: Complex transaction with multiple array types and ReplacingMergeTree
+class ComplexTransaction(BaseModel):
+    transaction_id: Key[int]  # Primary key
+    customer_id: Optional[int] = None
+    transaction_date: datetime
+    location: str  # Part of order by
+    subtotal: float
+    tax: float
+    total: float
+    # Multiple complex array fields
+    items: List[ProductItem]
+    discounts: List[DiscountInfo]
+    order_ids: List[int]  # Simple array
+    # Mixed nullability patterns
+    tip_amount: Optional[float] = None
+    invoice_number: Optional[str] = None
+    terminal_name: Optional[str] = None  # Optional without explicit null
+    # Boolean fields
+    is_void: bool
+    is_tax_inclusive: Optional[bool] = None
+
+# Test 11: Base type pattern with extension (common pattern)
+class BaseProduct(BaseModel):
+    product_id: Optional[int] = None
+    product_name: Optional[str] = None
+    description: Optional[str] = None
+    category_id: Optional[int] = None
+    tags: List[str]  # Remove optional - arrays cannot be nullable in ClickHouse
+
+class ProductWithLocation(BaseModel):
+    # Simulate Omit pattern by redefining fields
+    product_id: int  # Make required (was optional in base)
+    product_name: Optional[str] = None
+    description: Optional[str] = None
+    category_id: Optional[int] = None
+    tags: List[str]  # Remove optional - arrays cannot be nullable in ClickHouse
+    # Extension fields
+    location: str
+    inventory_id: Key[int]
+
+# Test 12: Engine and ordering configuration test
+class EngineTest(BaseModel):
+    id: Key[str]
+    timestamp: datetime
+    location: str
+    category: str
+    value: float
+
+# =======Pipeline Configurations for Production Patterns=========
+
+from moose_lib import OlapConfig, ReplacingMergeTreeEngine, MergeTreeEngine
+
+complex_transaction_model = IngestPipeline[ComplexTransaction]("ComplexTransaction", IngestPipelineConfig(
+    ingest_api=True,
+    stream=True,
+    table=OlapConfig(
+        engine=ReplacingMergeTreeEngine(),
+        order_by_fields=["transaction_id", "location", "transaction_date"]  # Primary key must be first
+    ),
+    dead_letter_queue=True
+))
+
+product_with_location_model = IngestPipeline[ProductWithLocation]("ProductWithLocation", IngestPipelineConfig(
+    ingest_api=True,
+    stream=True,
+    table=OlapConfig(
+        engine=ReplacingMergeTreeEngine(),
+        order_by_fields=["inventory_id", "location"]
+    ),
+    dead_letter_queue=True
+))
+
+engine_test_model = IngestPipeline[EngineTest]("EngineTest", IngestPipelineConfig(
+    ingest_api=True,
+    stream=True,
+    table=OlapConfig(
+        engine=MergeTreeEngine(),
+        order_by_fields=["id", "location", "category"]
+    ),
+    dead_letter_queue=True
+))
