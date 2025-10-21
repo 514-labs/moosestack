@@ -242,7 +242,7 @@ impl<'de, S: SerializeValue> Visitor<'de> for &mut ValueVisitor<'_, S> {
             | ColumnType::IpV4
             | ColumnType::IpV6
             | ColumnType::Decimal { .. }
-            | ColumnType::Json
+            | ColumnType::Json(_)
             | ColumnType::Bytes => formatter.write_str("a value matching the column type"),
             ColumnType::Uuid => formatter.write_str("a UUID"),
             ColumnType::Nullable(inner) => {
@@ -678,7 +678,7 @@ impl<'de, S: SerializeValue> Visitor<'de> for &mut ValueVisitor<'_, S> {
                     .serialize_value(&map)
                     .map_err(A::Error::custom)
             }
-            ColumnType::Json => {
+            ColumnType::Json(_) => {
                 struct JsonPassThrough<'de, MA: MapAccess<'de>> {
                     map: RefCell<MA>,
                     _phantom_data: &'de PhantomData<()>,

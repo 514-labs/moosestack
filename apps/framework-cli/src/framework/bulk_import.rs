@@ -76,7 +76,7 @@ pub async fn import_csv_file(
                             ColumnType::Array { .. }
                             | ColumnType::NamedTuple(_)
                             | ColumnType::Nested(_)
-                            | ColumnType::Json
+                            | ColumnType::Json(_)
                             | ColumnType::Uuid
                             | ColumnType::Bytes
                             | ColumnType::Point

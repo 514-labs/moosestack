@@ -71,7 +71,7 @@ fn map_column_type_to_typescript(
             format!("{inner_type}[]")
         }
         ColumnType::Nested(nested_type) => nested.get(nested_type).unwrap().to_string(),
-        ColumnType::Json => "Record<string, any>".to_string(),
+        ColumnType::Json(_) => "Record<string, any>".to_string(),
         ColumnType::Bytes => "Uint8Array".to_string(),
         ColumnType::Uuid => "string & typia.tags.Format<\"uuid\">".to_string(),
         ColumnType::IpV4 => "string & typia.tags.Format<\"ipv4\">".to_string(),

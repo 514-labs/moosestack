@@ -1208,7 +1208,7 @@ pub fn convert_ast_to_column_type(
                 "Float32" => Ok(ColumnType::Float(FloatType::Float32)),
                 "Float64" => Ok(ColumnType::Float(FloatType::Float64)),
                 "Bool" | "Boolean" => Ok(ColumnType::Boolean),
-                "JSON" => Ok(ColumnType::Json),
+                "JSON" => Ok(ColumnType::Json(Default::default())),
                 "UUID" => Ok(ColumnType::Uuid),
                 // ClickHouse Date (2 bytes) -> Framework Date16 (memory-optimized)
                 "Date" => Ok(ColumnType::Date16),
@@ -1323,7 +1323,7 @@ pub fn convert_ast_to_column_type(
         ClickHouseTypeNode::IPv4 => Ok((ColumnType::IpV4, false)),
         ClickHouseTypeNode::IPv6 => Ok((ColumnType::IpV6, false)),
 
-        ClickHouseTypeNode::JSON => Ok((ColumnType::Json, false)),
+        ClickHouseTypeNode::JSON => Ok((ColumnType::Json(Default::default()), false)),
 
         ClickHouseTypeNode::Dynamic => Err(ConversionError::UnsupportedType {
             type_name: "Dynamic".to_string(),
@@ -2444,7 +2444,10 @@ mod tests {
         let json_parsed = parse_clickhouse_type("JSON").unwrap();
         let json_conversion = convert_ast_to_column_type(&json_parsed);
         assert!(json_conversion.is_ok(), "JSON should be convertible");
-        assert_eq!(json_conversion.unwrap().0, ColumnType::Json);
+        assert_eq!(
+            json_conversion.unwrap().0,
+            ColumnType::Json(Default::default())
+        );
     }
 
     #[test]

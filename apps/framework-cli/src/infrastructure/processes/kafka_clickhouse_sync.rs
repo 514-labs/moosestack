@@ -950,12 +950,12 @@ fn map_json_value_to_clickhouse_value(
                 })
             }
         }
-        ColumnType::Json => {
+        ColumnType::Json(_) => {
             if let Some(obj) = value.as_object() {
                 Ok(ClickHouseValue::new_json(obj.clone()))
             } else {
                 Err(MappingError::TypeMismatch {
-                    column_type: Box::new(ColumnType::Json),
+                    column_type: Box::new(ColumnType::Json(Default::default())),
                     value: value.clone(),
                 })
             }

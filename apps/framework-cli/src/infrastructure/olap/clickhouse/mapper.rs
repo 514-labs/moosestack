@@ -249,7 +249,7 @@ fn std_field_type_to_clickhouse_type_mapper(
         ColumnType::BigInt => Err(ClickhouseError::UnsupportedDataType {
             type_name: "BigInt".to_string(),
         }),
-        ColumnType::Json => Ok(ClickHouseColumnType::Json),
+        ColumnType::Json(_) => Ok(ClickHouseColumnType::Json),
         ColumnType::Bytes => Err(ClickhouseError::UnsupportedDataType {
             type_name: "Bytes".to_string(),
         }),

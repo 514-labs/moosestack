@@ -104,7 +104,7 @@ fn map_column_type_to_python(
             let class_name = named_tuples.get(fields).unwrap();
             format!("Annotated[{class_name}, \"ClickHouseNamedTuple\"]")
         }
-        ColumnType::Json => "Any".to_string(),
+        ColumnType::Json(_) => "Any".to_string(),
         ColumnType::Bytes => "bytes".to_string(),
         ColumnType::Uuid => "UUID".to_string(),
         ColumnType::IpV4 => "ipaddress.IPv4Address".to_string(),

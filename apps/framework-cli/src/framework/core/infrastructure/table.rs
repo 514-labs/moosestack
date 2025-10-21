@@ -58,6 +58,136 @@ pub struct ColumnMetadata {
     // Future fields can be added here with #[serde(skip_serializing_if = "Option::is_none")]
 }
 
+#[derive(Debug, Clone, Eq, PartialEq, Hash, Default, Serialize, Deserialize)]
+pub struct JsonOptions {
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub max_dynamic_paths: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub max_dynamic_types: Option<u64>,
+    #[serde(default)]
+    pub typed_paths: Vec<(String, ColumnType)>,
+    #[serde(default)]
+    pub skip_paths: Vec<String>,
+    #[serde(default)]
+    pub skip_regexps: Vec<String>,
+}
+
+impl JsonOptions {
+    pub fn parse_from_options_str(inner: &str) -> Result<Self, String> {
+        let mut opts = JsonOptions::default();
+        let parts = split_top_level_commas(inner);
+        for raw in parts {
+            let item = raw.trim();
+            if item.is_empty() {
+                continue;
+            }
+            if let Some(rest) = item.strip_prefix("max_dynamic_paths") {
+                let n = parse_equals_u64(rest)?;
+                opts.max_dynamic_paths = Some(n);
+                continue;
+            }
+            if let Some(rest) = item.strip_prefix("max_dynamic_types") {
+                let n = parse_equals_u64(rest)?;
+                opts.max_dynamic_types = Some(n);
+                continue;
+            }
+            if let Some(rest) = item.strip_prefix("SKIP REGEXP") {
+                let pat = parse_single_quoted_str(rest)?;
+                opts.skip_regexps.push(pat);
+                continue;
+            }
+            if let Some(rest) = item.strip_prefix("SKIP") {
+                let path = rest.trim();
+                if path.is_empty() {
+                    return Err("SKIP requires a path".to_string());
+                }
+                opts.skip_paths.push(path.to_string());
+                continue;
+            }
+            // typed path: "some.path TypeName"
+            if let Some((path, ty)) = parse_typed_path(item)? {
+                opts.typed_paths.push((path, ty));
+                continue;
+            }
+            return Err(format!("Unrecognized Json option: {item}"));
+        }
+        Ok(opts)
+    }
+}
+
+fn split_top_level_commas(s: &str) -> Vec<&str> {
+    let mut parts = Vec::new();
+    let mut start = 0usize;
+    let mut in_single_quote = false;
+    let bytes = s.as_bytes();
+    let mut i = 0usize;
+    while i < bytes.len() {
+        let c = bytes[i] as char;
+        if c == '\'' {
+            in_single_quote = !in_single_quote;
+            i += 1;
+            continue;
+        }
+        if !in_single_quote && c == ',' {
+            parts.push(&s[start..i]);
+            i += 1;
+            while i < bytes.len() && (bytes[i] as char).is_whitespace() {
+                i += 1;
+            }
+            start = i;
+            continue;
+        }
+        i += 1;
+    }
+    if start <= s.len() {
+        parts.push(&s[start..]);
+    }
+    parts
+}
+
+fn parse_equals_u64(rest: &str) -> Result<u64, String> {
+    let r = rest.trim_start();
+    let r = r
+        .strip_prefix('=')
+        .ok_or_else(|| "Expected '=' after option name".to_string())?;
+    let n = r.trim().parse::<u64>().map_err(|e| e.to_string())?;
+    Ok(n)
+}
+
+fn parse_single_quoted_str(rest: &str) -> Result<String, String> {
+    let r = rest.trim();
+    if !r.starts_with('\'') {
+        return Err("Expected opening single quote".to_string());
+    }
+    let r = &r[1..];
+    let end = r
+        .find('\'')
+        .ok_or_else(|| "Unterminated single-quoted string".to_string())?;
+    Ok(r[..end].to_string())
+}
+
+fn parse_typed_path(item: &str) -> Result<Option<(String, ColumnType)>, String> {
+    // split on first whitespace
+    let mut iter = item
+        .splitn(2, char::is_whitespace)
+        .filter(|s| !s.is_empty());
+    let path = match iter.next() {
+        Some(p) => p.trim(),
+        None => return Ok(None),
+    };
+    let rest = match iter.next() {
+        Some(r) => r.trim(),
+        None => return Ok(None),
+    };
+    if path.eq_ignore_ascii_case("skip") {
+        return Ok(None);
+    }
+    // Use serde to reuse ColumnType string parsing
+    let quoted = format!("\"{}\"", rest);
+    let ty: ColumnType = serde_json::from_str(&quoted).map_err(|e| e.to_string())?;
+    Ok(Some((path.to_string(), ty)))
+}
+
 /// Metadata for an enum type
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct EnumMetadata {
@@ -503,8 +633,8 @@ pub enum ColumnType {
         value_type: Box<ColumnType>,
     },
     Nested(Nested),
-    Json,  // TODO: Eventually support for only views and tables (not topics)
-    Bytes, // TODO: Explore if we ever need this type
+    Json(JsonOptions), // TODO: Eventually support for only views and tables (not topics)
+    Bytes,             // TODO: Explore if we ever need this type
     Uuid,
     IpV4,
     IpV6,
@@ -538,7 +668,7 @@ impl fmt::Display for ColumnType {
                 element_nullable: _,
             } => write!(f, "Array<{inner}>"),
             ColumnType::Nested(n) => write!(f, "Nested<{}>", n.name),
-            ColumnType::Json => write!(f, "Json"),
+            ColumnType::Json(_) => write!(f, "Json"),
             ColumnType::Bytes => write!(f, "Bytes"),
             ColumnType::Uuid => write!(f, "UUID"),
             ColumnType::Date => write!(f, "Date"),
@@ -604,7 +734,7 @@ impl Serialize for ColumnType {
                 state.serialize_field("jwt", &nested.jwt)?;
                 state.end()
             }
-            ColumnType::Json => serializer.serialize_str("Json"),
+            ColumnType::Json(_) => serializer.serialize_str("Json"),
             ColumnType::Bytes => serializer.serialize_str("Bytes"),
             ColumnType::Uuid => serializer.serialize_str("UUID"),
             ColumnType::Date => serializer.serialize_str("Date"),
@@ -674,7 +804,7 @@ impl<'de> Visitor<'de> for ColumnTypeVisitor {
     type Value = ColumnType;
 
     fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-        formatter.write_str("a string or an object for Enum/Array/Nested")
+        formatter.write_str("a string or an object for Enum/Array/Nested/Json")
     }
 
     fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
@@ -757,7 +887,16 @@ impl<'de> Visitor<'de> for ColumnTypeVisitor {
         } else if v == "Date16" {
             ColumnType::Date16
         } else if v == "Json" {
-            ColumnType::Json
+            ColumnType::Json(JsonOptions::default())
+        } else if v.starts_with("Json(") {
+            let inner = v
+                .strip_prefix("Json(")
+                .unwrap()
+                .strip_suffix(")")
+                .ok_or_else(|| E::custom(format!("Invalid Json options: {v}")))?;
+            let opts = JsonOptions::parse_from_options_str(inner)
+                .map_err(|e| E::custom(format!("Invalid Json options: {e}")))?;
+            ColumnType::Json(opts)
         } else if v == "Bytes" {
             ColumnType::Bytes
         } else if v == "UUID" {
@@ -987,7 +1126,7 @@ impl ColumnType {
                 element_nullable: true,
             } => column_type::T::ArrayOfNullable(Box::new(element_type.to_proto())),
             ColumnType::Nested(nested) => column_type::T::Nested(nested.to_proto()),
-            ColumnType::Json => column_type::T::Simple(SimpleColumnType::JSON_COLUMN.into()),
+            ColumnType::Json(_) => column_type::T::Simple(SimpleColumnType::JSON_COLUMN.into()),
             ColumnType::Bytes => column_type::T::Simple(SimpleColumnType::BYTES.into()),
             ColumnType::Uuid => column_type::T::Simple(SimpleColumnType::UUID_TYPE.into()),
             ColumnType::Date => T::Simple(SimpleColumnType::DATE.into()),
@@ -1035,7 +1174,7 @@ impl ColumnType {
                         scale: 0,
                     },
                     SimpleColumnType::DATETIME => ColumnType::DateTime { precision: None },
-                    SimpleColumnType::JSON_COLUMN => ColumnType::Json,
+                    SimpleColumnType::JSON_COLUMN => ColumnType::Json(Default::default()),
                     SimpleColumnType::BYTES => ColumnType::Bytes,
                     SimpleColumnType::UUID_TYPE => ColumnType::Uuid,
                     SimpleColumnType::DATE => ColumnType::Date,
