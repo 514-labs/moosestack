@@ -1833,7 +1833,7 @@ pub fn basic_field_type_to_string(
 
             Ok(format!("Nested({nested_fields})"))
         }
-        ClickHouseColumnType::Json => Ok("JSON".to_string()),
+        ClickHouseColumnType::Json(_opts) => Ok("JSON".to_string()),
         ClickHouseColumnType::Bytes => Err(ClickhouseError::UnsupportedDataType {
             type_name: "Bytes".to_string(),
         }),

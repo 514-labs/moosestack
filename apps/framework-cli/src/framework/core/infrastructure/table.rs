@@ -72,6 +72,36 @@ pub struct JsonOptions {
     pub skip_regexps: Vec<String>,
 }
 
+impl JsonOptions {
+    pub fn is_empty(&self) -> bool {
+        self.max_dynamic_paths.is_none()
+            && self.max_dynamic_types.is_none()
+            && self.typed_paths.is_empty()
+            && self.skip_paths.is_empty()
+            && self.skip_regexps.is_empty()
+    }
+
+    pub fn to_option_strings(&self) -> Vec<String> {
+        let mut parts: Vec<String> = Vec::new();
+        if let Some(n) = self.max_dynamic_paths {
+            parts.push(format!("max_dynamic_paths={}", n));
+        }
+        if let Some(n) = self.max_dynamic_types {
+            parts.push(format!("max_dynamic_types={}", n));
+        }
+        for (path, ty) in &self.typed_paths {
+            parts.push(format!("{} {}", path, ty));
+        }
+        for path in &self.skip_paths {
+            parts.push(format!("SKIP {}", path));
+        }
+        for re in &self.skip_regexps {
+            parts.push(format!("SKIP REGEXP '{}'", re));
+        }
+        parts
+    }
+}
+
 /// Metadata for an enum type
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct EnumMetadata {
@@ -552,7 +582,14 @@ impl fmt::Display for ColumnType {
                 element_nullable: _,
             } => write!(f, "Array<{inner}>"),
             ColumnType::Nested(n) => write!(f, "Nested<{}>", n.name),
-            ColumnType::Json(_) => write!(f, "Json"),
+            ColumnType::Json(opts) => {
+                if opts.is_empty() {
+                    write!(f, "Json")
+                } else {
+                    let parts = opts.to_option_strings();
+                    write!(f, "Json({})", parts.join(", "))
+                }
+            }
             ColumnType::Bytes => write!(f, "Bytes"),
             ColumnType::Uuid => write!(f, "UUID"),
             ColumnType::Date => write!(f, "Date"),
