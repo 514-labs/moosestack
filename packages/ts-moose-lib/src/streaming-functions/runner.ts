@@ -443,7 +443,13 @@ const handleMessage = async (
 
     if (transformedData) {
       if (Array.isArray(transformedData)) {
+        // We Promise.all streamingFunctionWithConfigList above.
+        // Promise.all always wraps results in an array, even for single transforms.
+        // When a transform returns an array (e.g., [msg1, msg2] to emit multiple messages),
+        // we get [[msg1, msg2]]. flat() unwraps one level so each item becomes its own message.
+        // Without flat(), the entire array would be JSON.stringify'd as a single message.
         return transformedData
+          .flat()
           .filter((item) => item !== undefined && item !== null)
           .map((item) => ({ value: JSON.stringify(item) }));
       } else {

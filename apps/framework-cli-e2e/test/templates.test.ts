@@ -40,6 +40,7 @@ import {
   waitForDBWrite,
   waitForMaterializedViewUpdate,
   verifyClickhouseData,
+  verifyRecordCount,
   withRetries,
   verifyConsumptionApi,
   verifyVersionedConsumptionApi,
@@ -477,20 +478,10 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
           await verifyClickhouseData("ArrayOutput", inputId, "inputId");
 
           // Verify the count of records
-          await withRetries(
-            async () => {
-              const { stdout } = await require("child_process").exec(
-                `docker exec moose-clickhouse clickhouse-client --query "SELECT COUNT(*) FROM ArrayOutput WHERE inputId = '${inputId}'"`,
-                { encoding: "utf-8" },
-              );
-              const recordCount = parseInt(stdout.trim(), 10);
-              if (recordCount !== testData.length) {
-                throw new Error(
-                  `Expected ${testData.length} records, but found ${recordCount}`,
-                );
-              }
-            },
-            { attempts: 10, delayMs: 1000 },
+          await verifyRecordCount(
+            "ArrayOutput",
+            `inputId = '${inputId}'`,
+            testData.length,
           );
         });
 
@@ -677,20 +668,10 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
           await verifyClickhouseData("ArrayOutput", inputId, "input_id");
 
           // Verify the count of records
-          await withRetries(
-            async () => {
-              const { stdout } = await require("child_process").exec(
-                `docker exec moose-clickhouse clickhouse-client --query "SELECT COUNT(*) FROM ArrayOutput WHERE input_id = '${inputId}'"`,
-                { encoding: "utf-8" },
-              );
-              const recordCount = parseInt(stdout.trim(), 10);
-              if (recordCount !== testData.length) {
-                throw new Error(
-                  `Expected ${testData.length} records, but found ${recordCount}`,
-                );
-              }
-            },
-            { attempts: 10, delayMs: 1000 },
+          await verifyRecordCount(
+            "ArrayOutput",
+            `input_id = '${inputId}'`,
+            testData.length,
           );
         });
       }
