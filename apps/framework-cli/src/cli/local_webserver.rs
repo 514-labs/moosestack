@@ -2355,6 +2355,7 @@ impl Webserver {
         openapi_path: Option<PathBuf>,
         process_registry: Arc<RwLock<ProcessRegistries>>,
         enable_mcp: bool,
+        processing_coordinator: crate::cli::processing_coordinator::ProcessingCoordinator,
     ) {
         //! Starts the local webserver
         let socket = self.socket().await;
@@ -2451,6 +2452,7 @@ impl Webserver {
                 redis_client_arc.clone(),
                 project.clickhouse_config.clone(),
                 Arc::new(project.redpanda_config.clone()),
+                processing_coordinator.clone(),
             );
             // Wrap the Tower service to make it compatible with Hyper
             Some(TowerToHyperService::new(tower_service))
