@@ -329,6 +329,8 @@ const createMainRouter = async (
 
         try {
           // Create a modified request preserving all properties including headers
+          // A shallow clone (like { ...req }) generally will not work since headers and other
+          // members are not cloned.
           const modifiedReq = Object.assign(
             Object.create(Object.getPrototypeOf(req)),
             req,
@@ -362,6 +364,8 @@ const createMainRouter = async (
     if (apiPath !== pathname) {
       // Create a modified request with the rewritten URL for the apiHandler
       // Preserve all properties including headers by using Object.assign with prototype chain
+      // A shallow clone (like { ...req }) generally will not work since headers and other
+      // members are not cloned.
       const modifiedReq = Object.assign(
         Object.create(Object.getPrototypeOf(req)),
         req,
