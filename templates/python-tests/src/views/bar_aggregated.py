@@ -1,6 +1,6 @@
 # This block is used to aggregate the data from the Bar table into a materialized view
 from moose_lib.dmv2 import MaterializedView, MaterializedViewOptions
-from app.ingest.models import barModel
+from src.ingest.models import barModel
 from pydantic import BaseModel
 
 class BarAggregated(BaseModel):

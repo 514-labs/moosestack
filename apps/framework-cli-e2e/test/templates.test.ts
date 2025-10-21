@@ -318,7 +318,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
         // Modify a template file in place to change an index definition
         const modelPath = path.join(
           TEST_PROJECT_DIR,
-          "app",
+          "src",
           "ingest",
           config.language === "typescript" ? "models.ts" : "models.py",
         );
