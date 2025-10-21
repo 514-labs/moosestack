@@ -80,9 +80,9 @@ impl EnumInt for i64 {
     }
 }
 
-// Integer regex for arbitrary-precision comparisons
+// Integer regex for arbitrary-precision comparisons - disallows leading zeros
 static INTEGER_REGEX: LazyLock<Regex> =
-    std::sync::LazyLock::new(|| Regex::new(r"^-?\d+$").unwrap());
+    LazyLock::new(|| Regex::new(r"^-?(?:0|[1-9]\d*)$").unwrap());
 
 static INT256_MIN: LazyLock<BigInt> = LazyLock::new(|| {
     let mut value = BigInt::from(1u8);
@@ -896,11 +896,10 @@ impl<'de, A: SeqAccess<'de>> Serialize for SeqAccessSerializer<'_, 'de, A> {
     }
 }
 
-static DATE_REGEX: LazyLock<Regex> = std::sync::LazyLock::new(|| {
-    Regex::new(r"^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$").unwrap()
-});
+static DATE_REGEX: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$").unwrap());
 pub static DECIMAL_REGEX: LazyLock<Regex> =
-    std::sync::LazyLock::new(|| Regex::new(r"^-?\d+(\.\d+)?$").unwrap());
+    LazyLock::new(|| Regex::new(r"^-?\d+(\.\d+)?$").unwrap());
 static PHANTOM_DATA: PhantomData<()> = PhantomData {};
 // RefCell for interior mutability
 // generally serialization for T should not change the T
