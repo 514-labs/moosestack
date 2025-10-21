@@ -165,7 +165,7 @@ async fn watch(
                     rx.mark_unchanged();
 
                     // Begin processing - guard will mark complete on drop
-                    let _processing_guard = processing_coordinator.begin_processing();
+                    let _processing_guard = processing_coordinator.begin_processing().await;
 
                     let result: anyhow::Result<()> = with_spinner_completion_async(
                         "Processing Infrastructure changes from file watcher",

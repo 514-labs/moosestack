@@ -6,80 +6,77 @@
 //!
 //! ## Architecture
 //!
-//! The coordinator uses a generation counter pattern:
-//! - Even generations = stable state (safe to read)
-//! - Odd generations = processing in progress (wait before reading)
+//! The coordinator uses an RwLock-based synchronization pattern:
+//! - File watcher holds a write lock during infrastructure processing
+//! - MCP tools acquire a read lock to ensure stable state before reading
+//! - Multiple MCP tools can read concurrently when no processing is occurring
 //!
 //! ## Usage
 //!
 //! ```rust
 //! // In file watcher:
-//! let _guard = coordinator.begin_processing();
+//! let _guard = coordinator.begin_processing().await;
 //! // ... apply infrastructure changes ...
-//! // Guard drops, marking processing complete
+//! // Guard drops, releasing write lock
 //!
 //! // In MCP tool:
 //! coordinator.wait_for_stable_state().await;
 //! // Now safe to read infrastructure state
 //! ```
 
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
-use tokio::sync::Notify;
+use tokio::sync::RwLock;
 
 /// Coordinates MCP requests with file watcher processing to prevent race conditions.
 ///
 /// This coordinator ensures that MCP tools wait for any in-progress infrastructure
 /// changes to complete before reading state from Redis, ClickHouse, or Kafka.
+///
+/// Uses an RwLock where:
+/// - Write lock = processing in progress (file watcher holds it)
+/// - Read lock = verifying stable state (MCP tools acquire briefly)
 #[derive(Clone)]
 pub struct ProcessingCoordinator {
-    /// Generation counter - increments with each processing cycle
-    /// Even = stable, Odd = processing
-    generation: Arc<AtomicU64>,
-    /// Notifies waiters when processing completes
-    completion_notify: Arc<Notify>,
+    /// RwLock for synchronization
+    /// Write lock held during processing, read lock acquired to verify stability
+    lock: Arc<RwLock<()>>,
 }
 
 impl ProcessingCoordinator {
     /// Create a new ProcessingCoordinator
     pub fn new() -> Self {
         Self {
-            generation: Arc::new(AtomicU64::new(0)),
-            completion_notify: Arc::new(Notify::new()),
+            lock: Arc::new(RwLock::new(())),
         }
     }
 
     /// Mark the start of infrastructure processing, returning a guard.
     ///
-    /// The guard will automatically mark processing as complete when dropped,
-    /// ensuring that waiters are notified even if processing fails.
+    /// The guard holds a write lock for the duration of processing.
+    /// When dropped, the write lock is released, allowing MCP tools to proceed.
     ///
     /// # Example
     ///
     /// ```rust
-    /// let _guard = coordinator.begin_processing();
+    /// let _guard = coordinator.begin_processing().await;
     /// // ... perform infrastructure changes ...
-    /// // Guard drops here, notifying waiters
+    /// // Guard drops here, releasing write lock
     /// ```
-    pub fn begin_processing(&self) -> ProcessingGuard {
-        let gen = self.generation.fetch_add(1, Ordering::SeqCst);
-        log::debug!(
-            "[ProcessingCoordinator] Begin processing, generation {} -> {}",
-            gen,
-            gen + 1
-        );
+    pub async fn begin_processing(&self) -> ProcessingGuard {
+        log::debug!("[ProcessingCoordinator] Acquiring write lock for processing");
+        let write_guard = self.lock.clone().write_owned().await;
+        log::debug!("[ProcessingCoordinator] Write lock acquired, processing started");
 
         ProcessingGuard {
-            generation: self.generation.clone(),
-            completion_notify: self.completion_notify.clone(),
-            start_generation: gen,
+            _write_guard: write_guard,
         }
     }
 
     /// Wait for any in-progress processing to complete.
     ///
-    /// This method returns immediately if no processing is occurring.
-    /// If processing is in progress, it waits until the processing guard is dropped.
+    /// This method acquires a read lock, which will block if processing is in progress.
+    /// Once the read lock is acquired, the state is guaranteed to be stable.
+    /// The read lock is immediately released after acquisition.
     ///
     /// # Example
     ///
@@ -89,45 +86,10 @@ impl ProcessingCoordinator {
     /// // Now safe to read from Redis, ClickHouse, etc.
     /// ```
     pub async fn wait_for_stable_state(&self) {
-        loop {
-            let current_gen = self.generation.load(Ordering::SeqCst);
-
-            // Even generation = stable state
-            if current_gen % 2 == 0 {
-                log::trace!(
-                    "[ProcessingCoordinator] State is stable (generation {})",
-                    current_gen
-                );
-                return;
-            }
-
-            // Odd generation = processing in progress
-            log::debug!(
-                "[ProcessingCoordinator] Processing in progress (generation {}), waiting...",
-                current_gen
-            );
-
-            // Wait for notification
-            let notified = self.completion_notify.notified();
-            notified.await;
-
-            // Loop to check generation again (handles spurious wakeups)
-        }
-    }
-
-    /// Check if processing is currently in progress.
-    ///
-    /// This is primarily useful for debugging and monitoring.
-    /// Use `wait_for_stable_state()` to ensure you're reading stable state.
-    pub fn is_processing(&self) -> bool {
-        self.generation.load(Ordering::SeqCst) % 2 == 1
-    }
-
-    /// Get the current generation number.
-    ///
-    /// Useful for debugging and testing.
-    pub fn current_generation(&self) -> u64 {
-        self.generation.load(Ordering::SeqCst)
+        log::trace!("[ProcessingCoordinator] Waiting for stable state (acquiring read lock)");
+        let _read_guard = self.lock.read().await;
+        log::trace!("[ProcessingCoordinator] State is stable (read lock acquired)");
+        // Read lock is dropped here, allowing processing to proceed if needed
     }
 }
 
@@ -137,27 +99,18 @@ impl Default for ProcessingCoordinator {
     }
 }
 
-/// RAII guard that marks processing as complete when dropped.
+/// RAII guard that holds a write lock for the duration of processing.
 ///
-/// This ensures that even if processing fails or panics, waiters will be notified
-/// and the coordinator returns to a stable state.
+/// This ensures that even if processing fails or panics, the write lock will be
+/// released, allowing MCP tools to proceed.
 pub struct ProcessingGuard {
-    generation: Arc<AtomicU64>,
-    completion_notify: Arc<Notify>,
-    start_generation: u64,
+    _write_guard: tokio::sync::OwnedRwLockWriteGuard<()>,
 }
 
 impl Drop for ProcessingGuard {
     fn drop(&mut self) {
-        let new_gen = self.generation.fetch_add(1, Ordering::SeqCst) + 1;
-        log::debug!(
-            "[ProcessingCoordinator] End processing, generation {} -> {}",
-            self.start_generation + 1,
-            new_gen
-        );
-
-        // Notify all waiters that processing is complete
-        self.completion_notify.notify_waiters();
+        log::debug!("[ProcessingCoordinator] Processing complete, releasing write lock");
+        // Write guard drops automatically, releasing the lock
     }
 }
 
@@ -167,27 +120,42 @@ mod tests {
     use std::time::Duration;
     use tokio::time::sleep;
 
-    #[test]
-    fn test_coordinator_starts_stable() {
+    #[tokio::test]
+    async fn test_coordinator_starts_stable() {
         let coordinator = ProcessingCoordinator::new();
-        assert_eq!(coordinator.current_generation(), 0);
-        assert!(!coordinator.is_processing());
+
+        // Should be able to immediately acquire read lock (stable state)
+        let start = std::time::Instant::now();
+        coordinator.wait_for_stable_state().await;
+        let elapsed = start.elapsed();
+
+        assert!(elapsed < Duration::from_millis(10));
     }
 
     #[tokio::test]
-    async fn test_begin_processing_increments_generation() {
+    async fn test_begin_processing_blocks_reads() {
         let coordinator = ProcessingCoordinator::new();
 
-        assert_eq!(coordinator.current_generation(), 0);
+        // Acquire write lock (begin processing)
+        let _guard = coordinator.begin_processing().await;
 
-        {
-            let _guard = coordinator.begin_processing();
-            assert_eq!(coordinator.current_generation(), 1);
-            assert!(coordinator.is_processing());
-        }
+        // Try to acquire read lock in another task - should block
+        let coordinator_clone = coordinator.clone();
+        let read_task = tokio::spawn(async move {
+            let start = std::time::Instant::now();
+            coordinator_clone.wait_for_stable_state().await;
+            start.elapsed()
+        });
 
-        assert_eq!(coordinator.current_generation(), 2);
-        assert!(!coordinator.is_processing());
+        // Give the read task time to start and block
+        sleep(Duration::from_millis(50)).await;
+
+        // Drop the write lock
+        drop(_guard);
+
+        // Read task should now complete
+        let elapsed = read_task.await.unwrap();
+        assert!(elapsed >= Duration::from_millis(40));
     }
 
     #[tokio::test]
@@ -211,12 +179,12 @@ mod tests {
 
         // Spawn a task that starts processing and holds it for a bit
         let processor = tokio::spawn(async move {
-            let _guard = coordinator_clone.begin_processing();
+            let _guard = coordinator_clone.begin_processing().await;
             sleep(processing_duration).await;
             // Guard drops here
         });
 
-        // Give the processor time to start
+        // Give the processor time to acquire the write lock
         sleep(Duration::from_millis(10)).await;
 
         // Now wait for stable state
@@ -226,7 +194,6 @@ mod tests {
 
         // Should have waited approximately the processing duration
         assert!(elapsed >= Duration::from_millis(80));
-        assert!(!coordinator.is_processing());
 
         processor.await.unwrap();
     }
@@ -236,38 +203,38 @@ mod tests {
         let coordinator = ProcessingCoordinator::new();
         let coordinator_clone = coordinator.clone();
 
-        // Spawn multiple waiters
+        // Start processing first
+        let processor = tokio::spawn(async move {
+            let _guard = coordinator_clone.begin_processing().await;
+            sleep(Duration::from_millis(100)).await;
+        });
+
+        // Give processor time to acquire write lock
+        sleep(Duration::from_millis(10)).await;
+
+        // Spawn multiple waiters that should all block on the write lock
         let mut waiter_handles = vec![];
         for i in 0..5 {
             let coord = coordinator.clone();
             waiter_handles.push(tokio::spawn(async move {
+                let start = std::time::Instant::now();
                 coord.wait_for_stable_state().await;
-                i
+                (i, start.elapsed())
             }));
         }
-
-        // Give waiters time to start
-        sleep(Duration::from_millis(10)).await;
-
-        // Start processing
-        let processor = tokio::spawn(async move {
-            let _guard = coordinator_clone.begin_processing();
-            sleep(Duration::from_millis(50)).await;
-        });
 
         // Wait for processing to complete
         processor.await.unwrap();
 
-        // All waiters should complete
+        // All waiters should complete and have waited
         for (i, handle) in waiter_handles.into_iter().enumerate() {
-            let result = tokio::time::timeout(Duration::from_millis(100), handle)
+            let (result_i, elapsed) = tokio::time::timeout(Duration::from_millis(200), handle)
                 .await
                 .unwrap()
                 .unwrap();
-            assert_eq!(result, i);
+            assert_eq!(result_i, i);
+            assert!(elapsed >= Duration::from_millis(80));
         }
-
-        assert!(!coordinator.is_processing());
     }
 
     #[tokio::test]
@@ -277,40 +244,43 @@ mod tests {
 
         // Spawn a task that panics while holding the guard
         let processor = tokio::spawn(async move {
-            let _guard = coordinator_clone.begin_processing();
+            let _guard = coordinator_clone.begin_processing().await;
             sleep(Duration::from_millis(10)).await;
             panic!("Simulated panic during processing");
         });
 
-        // Give the processor time to start
+        // Give the processor time to acquire write lock
         sleep(Duration::from_millis(5)).await;
 
         // Wait for the panic
         let _ = processor.await;
 
         // Coordinator should return to stable state despite panic
+        // (write lock should be released when task panics)
+        let start = std::time::Instant::now();
         coordinator.wait_for_stable_state().await;
-        assert!(!coordinator.is_processing());
-        // Generation should be even (stable)
-        assert_eq!(coordinator.current_generation() % 2, 0);
+        let elapsed = start.elapsed();
+
+        // Should complete quickly since panic releases the lock
+        assert!(elapsed < Duration::from_millis(100));
     }
 
     #[tokio::test]
     async fn test_sequential_processing_cycles() {
         let coordinator = ProcessingCoordinator::new();
 
-        for i in 0..3 {
-            assert_eq!(coordinator.current_generation(), i * 2);
-            assert!(!coordinator.is_processing());
+        for _ in 0..3 {
+            // Should be able to acquire read lock immediately (stable)
+            coordinator.wait_for_stable_state().await;
 
             {
-                let _guard = coordinator.begin_processing();
-                assert_eq!(coordinator.current_generation(), i * 2 + 1);
-                assert!(coordinator.is_processing());
+                let _guard = coordinator.begin_processing().await;
+                // While guard is held, another task trying to read should block
+                // (tested implicitly by other tests)
             }
 
-            assert_eq!(coordinator.current_generation(), i * 2 + 2);
-            assert!(!coordinator.is_processing());
+            // After guard drops, should be stable again
+            coordinator.wait_for_stable_state().await;
         }
     }
 
@@ -320,15 +290,53 @@ mod tests {
         let coordinator2 = coordinator1.clone();
 
         {
-            let _guard = coordinator1.begin_processing();
-            assert!(coordinator2.is_processing());
-            assert_eq!(
-                coordinator1.current_generation(),
-                coordinator2.current_generation()
-            );
+            let _guard = coordinator1.begin_processing().await;
+
+            // coordinator2 should also see the processing state (shared lock)
+            let coordinator2_clone = coordinator2.clone();
+            let read_task = tokio::spawn(async move {
+                let start = std::time::Instant::now();
+                coordinator2_clone.wait_for_stable_state().await;
+                start.elapsed()
+            });
+
+            // Give read task time to start
+            sleep(Duration::from_millis(10)).await;
+
+            // Drop guard
+            drop(_guard);
+
+            // Read task should complete
+            let elapsed = read_task.await.unwrap();
+            assert!(elapsed >= Duration::from_millis(5));
         }
 
-        assert!(!coordinator1.is_processing());
-        assert!(!coordinator2.is_processing());
+        // Both coordinators should be able to read now
+        coordinator1.wait_for_stable_state().await;
+        coordinator2.wait_for_stable_state().await;
+    }
+
+    #[tokio::test]
+    async fn test_multiple_concurrent_reads() {
+        let coordinator = ProcessingCoordinator::new();
+
+        // Multiple readers should be able to acquire read locks concurrently
+        let mut read_tasks = vec![];
+        for i in 0..5 {
+            let coord = coordinator.clone();
+            read_tasks.push(tokio::spawn(async move {
+                coord.wait_for_stable_state().await;
+                i
+            }));
+        }
+
+        // All should complete quickly
+        for (i, handle) in read_tasks.into_iter().enumerate() {
+            let result = tokio::time::timeout(Duration::from_millis(50), handle)
+                .await
+                .unwrap()
+                .unwrap();
+            assert_eq!(result, i);
+        }
     }
 }
