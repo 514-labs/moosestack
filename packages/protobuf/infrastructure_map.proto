@@ -21,10 +21,16 @@ message InfrastructureMap {
   map<string, OrchestrationWorker> orchestration_workers = 11;
 
   map<string, SqlResource> sql_resources = 12;
+  map<string, WebApp> web_apps = 13;
+}
+
+message SourceLocation {
+  string file = 1;
 }
 
 message Metadata {
   string description = 1;
+  optional SourceLocation source = 2;
 }
 
 message Topic {
@@ -131,6 +137,13 @@ message Table {
   // Next-version ORDER BY representation to match Rust enum
   // Non-breaking: keeps legacy order_by (field 3) while adding a structured variant
   optional OrderBy order_by2 = 13;
+  // Optional secondary/data-skipping indexes
+  repeated TableIndex indexes = 14;
+
+  // Optional SAMPLE BY expression for ClickHouse tables
+  optional string sample_by_expression = 15;
+  // Optional TTL expression at table level (without leading 'TTL')
+  optional string table_ttl_setting = 16;
 }
 
 // Structured representation of ORDER BY to support either explicit fields
@@ -146,6 +159,15 @@ message OrderBy {
 
 message OrderByFields {
   repeated string field = 1;
+}
+
+// DB-neutral representation of a table index
+message TableIndex {
+  string name = 1;
+  string expression = 2;
+  string type = 3;
+  repeated string arguments = 4;
+  uint64 granularity = 5;
 }
 
 message View {
@@ -207,6 +229,8 @@ message Column {
 
   map<string, string> annotations = 7;
   optional string comment = 8; // Column comment for metadata storage
+  // Optional column-level TTL expression (without leading 'TTL')
+  optional string ttl = 10;
 }
 
 enum SimpleColumnType {
@@ -364,4 +388,14 @@ message InfrastructureSignature {
     string api_endpoint_id = 5;
     string topic_to_table_sync_process_id = 6;
   }
+}
+
+message WebApp {
+  string name = 1;
+  string mount_path = 2;
+  optional WebAppMetadata metadata = 3;
+}
+
+message WebAppMetadata {
+  optional string description = 1;
 }

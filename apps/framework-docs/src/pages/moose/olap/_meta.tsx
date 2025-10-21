@@ -11,11 +11,20 @@ const rawMeta = {
   "model-materialized-view": {
     title: "Modeling Materialized Views",
   },
+  "model-view": {
+    title: "Modeling Views",
+  },
   "supported-types": {
     title: "Supported Types",
   },
+  ttl: {
+    title: "TTL (Time-to-Live)",
+  },
   "schema-optimization": {
     title: "Schema Optimization",
+  },
+  indexes: {
+    title: "Secondary & Data-skipping Indexes",
   },
   "---Remote DB---": {
     title: "Remote ClickHouse",

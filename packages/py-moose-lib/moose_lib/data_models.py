@@ -35,6 +35,11 @@ def clickhouse_default(expression: str) -> ClickhouseDefault:
     return ClickhouseDefault(expression=expression)
 
 
+@dataclasses.dataclass(frozen=True)
+class ClickHouseTTL:
+    expression: str
+
+
 def clickhouse_decimal(precision: int, scale: int) -> Type[Decimal]:
     return Annotated[Decimal, Field(max_digits=precision, decimal_places=scale)]
 
@@ -75,6 +80,46 @@ class AggregateFunction:
             "argumentTypes": [
                 py_type_to_column_type(t, [])[2] for t in self.param_types
             ]
+        }
+
+
+def simple_aggregated[T](
+        agg_func: str,
+        arg_type: Type[T]
+) -> Type[T]:
+    """Helper to create a SimpleAggregateFunction type annotation.
+
+    SimpleAggregateFunction is a ClickHouse type for storing aggregated values directly
+    instead of intermediate states. It's more efficient for functions like sum, max, min, etc.
+
+    Args:
+        agg_func: The aggregation function name (e.g., "sum", "max", "anyLast")
+        arg_type: The argument type for the function (also the result type)
+
+    Returns:
+        An Annotated type with SimpleAggregateFunction metadata
+
+    Example:
+        ```python
+        from moose_lib import simple_aggregated
+
+        row_count: simple_aggregated("sum", int)
+        max_value: simple_aggregated("max", float)
+        last_status: simple_aggregated("anyLast", str)
+        ```
+    """
+    return Annotated[arg_type, SimpleAggregateFunction(agg_func=agg_func, arg_type=arg_type)]
+
+
+@dataclasses.dataclass(frozen=True)
+class SimpleAggregateFunction:
+    agg_func: str
+    arg_type: type | GenericAlias | _BaseGenericAlias
+
+    def to_dict(self):
+        return {
+            "functionName": self.agg_func,
+            "argumentType": py_type_to_column_type(self.arg_type, [])[2]
         }
 
 
@@ -154,6 +199,7 @@ class Column(BaseModel):
     primary_key: bool
     default: str | None = None
     annotations: list[Tuple[str, Any]] = []
+    ttl: str | None = None
 
     def to_expr(self):
         # Lazy import to avoid circular dependency at import time
@@ -352,6 +398,10 @@ def _to_columns(model: type[BaseModel]) -> list[Column]:
                 annotations.append(
                     ("aggregationFunction", md.to_dict())
                 )
+            if isinstance(md, SimpleAggregateFunction):
+                annotations.append(
+                    ("simpleAggregationFunction", md.to_dict())
+                )
             if md == "LowCardinality":
                 annotations.append(
                     ("LowCardinality", True)
@@ -365,6 +415,12 @@ def _to_columns(model: type[BaseModel]) -> list[Column]:
             None,
         )
 
+        # Extract TTL expression from metadata, if provided
+        ttl_expr = next(
+            (md.expression for md in mds if isinstance(md, ClickHouseTTL)),
+            None,
+        )
+
         columns.append(
             Column(
                 name=column_name,
@@ -374,6 +430,7 @@ def _to_columns(model: type[BaseModel]) -> list[Column]:
                 primary_key=primary_key,
                 default=default_expr,
                 annotations=annotations,
+                ttl=ttl_expr,
             )
         )
     return columns

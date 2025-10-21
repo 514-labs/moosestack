@@ -1,0 +1,94 @@
+---
+title: Modeling Views
+description: Define standard ClickHouse Views for read-time projections
+---
+
+import { Callout, LanguageSwitcher, TypeScript, Python, PathConfig } from "@/components";
+
+# Modeling Views
+
+<LanguageSwitcher />
+
+## Overview
+Views are read-time projections in ClickHouse. A static `SELECT` defines the view over one or more base tables or other views. Moose wraps [ClickHouse `VIEW`](https://clickhouse.com/docs/en/sql-reference/statements/create/view) with a simple `View` class in <Python inline>Python</Python><TypeScript inline>TypeScript</TypeScript>. You provide the view name, the `SELECT`, and the list of source tables/views so Moose can order DDL correctly during migrations.
+
+<Callout type="info" title="When to use a View" compact>
+Use `View` when you want a virtual read-time projection and don’t need write-time transformation or a separate storage table. For write-time pipelines and backfills, use a Materialized View instead.
+</Callout>
+
+## Basic Usage
+
+<TypeScript>
+```ts filename="BasicUsage.ts" copy
+import { View, sql } from "@514labs/moose-lib";
+import { users } from "./Users";
+import { events } from "./Events";
+
+export const activeUserEvents = new View(
+  "active_user_events",
+  sql`
+    SELECT
+      ${events.columns.id}    AS event_id,
+      ${users.columns.id}     AS user_id,
+      ${users.columns.name}   AS user_name,
+      ${events.columns.ts}    AS ts
+    FROM ${events}
+    JOIN ${users} ON ${events.columns.user_id} = ${users.columns.id}
+    WHERE ${users.columns.active} = 1
+  `,
+  [events, users],
+);
+```
+</TypeScript>
+
+<Python>
+```python filename="BasicUsage.py" copy
+from moose_lib import View
+from tables import users, events
+
+active_user_events = View(
+    "active_user_events",
+    """
+    SELECT
+      {events.columns.id}    AS event_id,
+      {users.columns.id}     AS user_id,
+      {users.columns.name}   AS user_name,
+      {events.columns.ts}    AS ts
+    FROM {events}
+    JOIN {users} ON {events.columns.user_id} = {users.columns.id}
+    WHERE {users.columns.active} = 1
+    """,
+    [events, users],
+)
+```
+</Python>
+
+## Quick Reference
+
+<TypeScript>
+```ts filename="Signature.ts" copy
+// new View(name, selectStatement, baseTables)
+new View(
+  "view_name",
+  sql`SELECT ... FROM ${someTable}`,
+  [someTable, /* other tables or views */],
+);
+```
+</TypeScript>
+
+<Python>
+```python filename="Signature.py" copy
+# View(name: str, select_statement: str, base_tables: list[OlapTable | View])
+View(
+    "view_name",
+    "SELECT ... FROM {someTable}",
+    [someTable],
+)
+```
+</Python>
+
+<Callout type="info" title="Static SQL recommended" compact icon={PathConfig.fromClickhouse.icon} href="https://clickhouse.com/docs/en/sql-reference" ctaLabel="ClickHouse SQL">
+The `SELECT` should be static (no runtime parameters). In TypeScript, prefer Moose’s `sql` template for safe table/column interpolation; in Python, use string templates with `{table.columns.col}`.
+</Callout>
+
+

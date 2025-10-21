@@ -1,5 +1,17 @@
 import { ExpectedTableSchema } from "./database-utils";
 
+// ============ CLICKHOUSE TYPE CONSTRAINTS ============
+//
+// CRITICAL CONSTRAINTS discovered through testing:
+// 1. ❌ Nullable(Array(...)) is ILLEGAL - Arrays cannot be wrapped in Nullable
+// 2. ❌ Nullable(Nested(...)) is ILLEGAL - Nested types cannot be wrapped in Nullable
+// 3. ❌ Primary key must be prefix of ORDER BY - First ORDER BY column must be primary key
+// 4. ✅ Nested(field Nullable(Type)) is LEGAL - Nullable fields inside Nested are OK
+// 5. ✅ Array(Array(...)) is LEGAL - Multi-dimensional arrays work
+// 6. ✅ Array(Nested(...)) patterns need verification
+//
+// These constraints are enforced by ClickHouse and must be respected in our type mappings.
+
 // ============ TYPESCRIPT TEMPLATE SCHEMA DEFINITIONS ============
 
 /**
@@ -189,6 +201,19 @@ export const TYPESCRIPT_TEST_SCHEMAS: ExpectedTableSchema[] = [
       { name: "isDeleted", type: "Bool" },
     ],
   },
+  {
+    tableName: "SampleByTest",
+    columns: [
+      { name: "id", type: "String" },
+      { name: "timestamp", type: /DateTime\('UTC'\)/ },
+      { name: "value", type: "Float64" },
+      { name: "category", type: "String" },
+      { name: "version", type: "Float64" },
+      { name: "isDeleted", type: "Bool" },
+    ],
+    orderByExpression: "cityHash64(id)",
+    sampleByExpression: "cityHash64(id)",
+  },
   // Type test tables
   {
     tableName: "BasicTypes",
@@ -278,8 +303,8 @@ export const TYPESCRIPT_TEST_SCHEMAS: ExpectedTableSchema[] = [
         name: "nested",
         type: /Nested\(name Nullable\(String\), age Nullable\(Float64\)\)/,
       },
-      // Optional field with ClickHouse default - should have default value
-      { name: "other", type: "Nullable(String)", nullable: true },
+      // Field with ClickHouse default - should be String with default value, not nullable
+      { name: "other", type: "String", nullable: false },
     ],
   },
   // Geometry tables
@@ -301,6 +326,78 @@ export const TYPESCRIPT_TEST_SCHEMAS: ExpectedTableSchema[] = [
         type: /(MultiPolygon|Array\(Array\(Array\(Point\)\)\))/,
       },
     ],
+  },
+  // SimpleAggregateFunction test table
+  {
+    tableName: "SimpleAggTest",
+    columns: [
+      { name: "date_stamp", type: "Date" },
+      { name: "table_name", type: "String" },
+      { name: "row_count", type: /SimpleAggregateFunction\(sum, UInt64\)/ },
+      { name: "max_value", type: /SimpleAggregateFunction\(max, Float64\)/ },
+      { name: "min_value", type: /SimpleAggregateFunction\(min, Float64\)/ },
+      {
+        name: "last_updated",
+        type: /SimpleAggregateFunction\(anyLast, DateTime\('UTC'\)/,
+      },
+    ],
+  },
+  // NonDeclaredType test table
+  {
+    tableName: "NonDeclaredType",
+    columns: [
+      { name: "id", type: "String" },
+      { name: "yes", type: "Bool" },
+    ],
+  },
+  // Production pattern tests
+  {
+    tableName: "ComplexTransaction",
+    columns: [
+      { name: "transactionId", type: "Float64" }, // Key<number> becomes Float64 in TypeScript
+      { name: "customerId", type: "Nullable(Float64)", nullable: true },
+      { name: "transactionDate", type: /DateTime\('UTC'\)/ },
+      { name: "location", type: "String" },
+      { name: "subtotal", type: "Float64" },
+      { name: "tax", type: "Float64" },
+      { name: "total", type: "Float64" },
+      { name: "items", type: /Nested\(.*\)/ },
+      { name: "discounts", type: /Nested\(.*\)/ },
+      { name: "orderIds", type: /Array\(Float64\)/ }, // number[] becomes Array(Float64)
+      { name: "tipAmount", type: "Nullable(Float64)", nullable: true },
+      { name: "invoiceNumber", type: "Nullable(String)", nullable: true },
+      { name: "terminalName", type: "Nullable(String)", nullable: true },
+      { name: "isVoid", type: "Bool" },
+      { name: "isTaxInclusive", type: "Nullable(Bool)", nullable: true },
+    ],
+    engine: "ReplacingMergeTree",
+    orderBy: ["transactionId", "location", "transactionDate"], // Primary key must be first
+  },
+  {
+    tableName: "ProductWithLocation",
+    columns: [
+      { name: "productId", type: "Float64" }, // TypeScript number becomes Float64
+      { name: "productName", type: "Nullable(String)", nullable: true },
+      { name: "description", type: "Nullable(String)", nullable: true },
+      { name: "categoryId", type: "Nullable(Float64)", nullable: true }, // TypeScript number becomes Float64
+      { name: "tags", type: /Array\(String\)/ }, // Arrays cannot be nullable in ClickHouse
+      { name: "location", type: "String" },
+      { name: "inventoryId", type: "Float64" }, // TypeScript number becomes Float64
+    ],
+    engine: "ReplacingMergeTree",
+    orderBy: ["inventoryId", "location"],
+  },
+  {
+    tableName: "EngineTest",
+    columns: [
+      { name: "id", type: "String" },
+      { name: "timestamp", type: /DateTime\('UTC'\)/ },
+      { name: "location", type: "String" },
+      { name: "category", type: "String" },
+      { name: "value", type: "Float64" },
+    ],
+    engine: "MergeTree",
+    orderBy: ["id", "location", "category"],
   },
 ];
 
@@ -472,6 +569,19 @@ export const PYTHON_TEST_SCHEMAS: ExpectedTableSchema[] = [
       { name: "is_deleted", type: "Bool" },
     ],
   },
+  {
+    tableName: "SampleByTest",
+    columns: [
+      { name: "id", type: "String" },
+      { name: "timestamp", type: /DateTime\('UTC'\)/ },
+      { name: "value", type: "Int64" },
+      { name: "category", type: "String" },
+      { name: "version", type: "Int64" },
+      { name: "is_deleted", type: "Bool" },
+    ],
+    orderByExpression: "cityHash64(id)",
+    sampleByExpression: "cityHash64(id)",
+  },
   // Type test tables
   {
     tableName: "BasicTypes",
@@ -563,8 +673,8 @@ export const PYTHON_TEST_SCHEMAS: ExpectedTableSchema[] = [
         name: "nested",
         type: /Nested\(name Nullable\(String\), age Nullable\(Float64\)\)/,
       },
-      // Optional field with ClickHouse default - should have default value
-      { name: "other", type: "Nullable(String)", nullable: true },
+      // Field with ClickHouse default - should be String with default value, not nullable
+      { name: "other", type: "String", nullable: false },
     ],
   },
   // Geometry tables
@@ -586,6 +696,70 @@ export const PYTHON_TEST_SCHEMAS: ExpectedTableSchema[] = [
         type: /(MultiPolygon|Array\(Array\(Array\(Point\)\)\))/,
       },
     ],
+  },
+  // SimpleAggregateFunction test table
+  {
+    tableName: "SimpleAggTest",
+    columns: [
+      { name: "date_stamp", type: "Date" },
+      { name: "table_name", type: "String" },
+      { name: "row_count", type: /SimpleAggregateFunction\(sum, UInt64\)/ },
+      { name: "max_value", type: /SimpleAggregateFunction\(max, Int64\)/ },
+      { name: "min_value", type: /SimpleAggregateFunction\(min, Int64\)/ },
+      {
+        name: "last_updated",
+        type: /SimpleAggregateFunction\(anyLast, DateTime\('UTC'\)/,
+      },
+    ],
+  },
+  // Production pattern tests for Python
+  {
+    tableName: "ComplexTransaction",
+    columns: [
+      { name: "transaction_id", type: "Int64" }, // Key<int> becomes Int64
+      { name: "customer_id", type: "Nullable(Int64)", nullable: true },
+      { name: "transaction_date", type: /DateTime\('UTC'\)/ },
+      { name: "location", type: "String" },
+      { name: "subtotal", type: "Float64" },
+      { name: "tax", type: "Float64" },
+      { name: "total", type: "Float64" },
+      { name: "items", type: /Nested\(.*\)/ },
+      { name: "discounts", type: /Nested\(.*\)/ },
+      { name: "order_ids", type: /Array\(Int64\)/ }, // Python int becomes Int64
+      { name: "tip_amount", type: "Nullable(Float64)", nullable: true },
+      { name: "invoice_number", type: "Nullable(String)", nullable: true },
+      { name: "terminal_name", type: "Nullable(String)", nullable: true },
+      { name: "is_void", type: "Bool" },
+      { name: "is_tax_inclusive", type: "Nullable(Bool)", nullable: true },
+    ],
+    engine: "ReplacingMergeTree",
+    orderBy: ["transaction_id", "location", "transaction_date"],
+  },
+  {
+    tableName: "ProductWithLocation",
+    columns: [
+      { name: "product_id", type: "Int64" }, // Made required
+      { name: "product_name", type: "Nullable(String)", nullable: true },
+      { name: "description", type: "Nullable(String)", nullable: true },
+      { name: "category_id", type: "Nullable(Int64)", nullable: true },
+      { name: "tags", type: /Array\(String\)/ }, // Arrays cannot be nullable in ClickHouse
+      { name: "location", type: "String" },
+      { name: "inventory_id", type: "Int64" },
+    ],
+    engine: "ReplacingMergeTree",
+    orderBy: ["inventory_id", "location"],
+  },
+  {
+    tableName: "EngineTest",
+    columns: [
+      { name: "id", type: "String" },
+      { name: "timestamp", type: /DateTime\('UTC'\)/ },
+      { name: "location", type: "String" },
+      { name: "category", type: "String" },
+      { name: "value", type: "Float64" },
+    ],
+    engine: "MergeTree",
+    orderBy: ["id", "location", "category"],
   },
 ];
 

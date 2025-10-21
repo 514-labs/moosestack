@@ -52,6 +52,7 @@ impl ColumnBuilder {
             // Comment is None at parsing stage - metadata comments for enum handling
             // are generated later when converting to ClickHouse columns
             comment: None,
+            ttl: None,
         })
     }
 }

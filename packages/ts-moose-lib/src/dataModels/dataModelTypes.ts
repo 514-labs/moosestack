@@ -24,6 +24,7 @@ export interface Column {
   unique: false; // what is this for?
   primary_key: boolean;
   default: string | null;
+  ttl: string | null;
   annotations: [string, any][];
 }
 

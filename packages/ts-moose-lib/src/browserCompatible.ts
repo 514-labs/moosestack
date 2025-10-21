@@ -4,6 +4,7 @@ export type JWT<T extends object> = T;
 
 export {
   Aggregated,
+  SimpleAggregated,
   OlapTable,
   OlapConfig,
   S3QueueTableSettings,
@@ -27,6 +28,10 @@ export {
   ETLPipeline,
   ETLPipelineConfig,
   LifeCycle,
+  WebApp,
+  WebAppConfig,
+  WebAppHandler,
+  FrameworkApp,
 } from "./dmv2";
 
 export {
@@ -38,6 +43,7 @@ export {
   LowCardinality,
   ClickHouseNamedTuple,
   ClickHouseDefault,
+  ClickHouseTTL,
   WithDefault,
   // Added friendly aliases and numeric helpers
   DateTime,

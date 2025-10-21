@@ -302,6 +302,21 @@ pub enum TableChange {
         /// Complete table representation for context
         table: Table,
     },
+    /// Table-level TTL changed
+    TtlChanged {
+        name: String,
+        before: Option<String>,
+        after: Option<String>,
+        table: Table,
+    },
+    /// Column-level TTL changed
+    ColumnTtlChanged {
+        name: String,
+        column: String,
+        before: Option<String>,
+        after: Option<String>,
+        table: Table,
+    },
 }
 
 /// Generic representation of a change to any infrastructure component
@@ -330,6 +345,8 @@ pub enum InfraChange {
     Streaming(StreamingChange),
     /// Changes to API components
     Api(ApiChange),
+    /// Changes to WebApp components
+    WebApp(WebAppChange),
     /// Changes to process components
     Process(ProcessChange),
 }
@@ -378,6 +395,13 @@ pub enum ApiChange {
     ApiEndpoint(Change<ApiEndpoint>),
 }
 
+/// Changes to WebApp components
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum WebAppChange {
+    /// Change to a WebApp
+    WebApp(Change<super::infrastructure::web_app::WebApp>),
+}
+
 /// Changes to process components
 ///
 /// This includes various types of processes that operate on the infrastructure.
@@ -409,6 +433,8 @@ pub struct InfraChanges {
     pub processes_changes: Vec<ProcessChange>,
     /// Changes to API components
     pub api_changes: Vec<ApiChange>,
+    /// Changes to WebApp components
+    pub web_app_changes: Vec<WebAppChange>,
     /// Changes to streaming components
     pub streaming_engine_changes: Vec<StreamingChange>,
 }
@@ -421,6 +447,7 @@ impl InfraChanges {
         self.olap_changes.is_empty()
             && self.processes_changes.is_empty()
             && self.api_changes.is_empty()
+            && self.web_app_changes.is_empty()
             && self.streaming_engine_changes.is_empty()
     }
 }
@@ -481,6 +508,10 @@ pub struct InfrastructureMap {
     /// Collection of workflows indexed by workflow name
     #[serde(default)]
     pub workflows: HashMap<String, Workflow>,
+
+    /// Collection of web applications indexed by name
+    #[serde(default)]
+    pub web_apps: HashMap<String, super::infrastructure::web_app::WebApp>,
 }
 
 impl InfrastructureMap {
@@ -655,6 +686,7 @@ impl InfrastructureMap {
             orchestration_workers,
             sql_resources: Default::default(),
             workflows: Default::default(),
+            web_apps: Default::default(),
         }
     }
 
@@ -680,6 +712,7 @@ impl InfrastructureMap {
             processes_changes,
             api_changes,
             streaming_engine_changes,
+            web_app_changes: vec![],
         }
     }
 
@@ -707,6 +740,23 @@ impl InfrastructureMap {
             .values()
             .map(|api_endpoint| {
                 ApiChange::ApiEndpoint(Change::<ApiEndpoint>::Added(Box::new(api_endpoint.clone())))
+            })
+            .collect()
+    }
+
+    /// Creates changes for initial WebApp deployment
+    ///
+    /// Generates changes representing the creation of all WebApps in this map.
+    ///
+    /// # Returns
+    /// A vector of `WebAppChange` objects for WebApp creation
+    pub fn init_web_apps(&self) -> Vec<WebAppChange> {
+        self.web_apps
+            .values()
+            .map(|web_app| {
+                WebAppChange::WebApp(Change::<super::infrastructure::web_app::WebApp>::Added(
+                    Box::new(web_app.clone()),
+                ))
             })
             .collect()
     }
@@ -835,6 +885,13 @@ impl InfrastructureMap {
             &mut changes.api_changes,
         );
 
+        // WebApps
+        Self::diff_web_apps(
+            &self.web_apps,
+            &target_map.web_apps,
+            &mut changes.web_app_changes,
+        );
+
         // Tables (using custom strategy)
         log::info!("Analyzing changes in Tables...");
         let olap_changes_len_before = changes.olap_changes.len();
@@ -868,10 +925,11 @@ impl InfrastructureMap {
 
         // Summary
         log::info!(
-            "Total changes detected - OLAP: {}, Processes: {}, API: {}, Streaming: {}",
+            "Total changes detected - OLAP: {}, Processes: {}, API: {}, WebApps: {}, Streaming: {}",
             changes.olap_changes.len(),
             changes.processes_changes.len(),
             changes.api_changes.len(),
+            changes.web_app_changes.len(),
             changes.streaming_engine_changes.len()
         );
 
@@ -903,7 +961,7 @@ impl InfrastructureMap {
 
         for (id, topic) in self_topics {
             if let Some(target_topic) = target_topics.get(id) {
-                if topic != target_topic {
+                if !topics_equal_ignore_metadata(topic, target_topic) {
                     // Respect lifecycle: ExternallyManaged topics are never modified
                     if target_topic.life_cycle == LifeCycle::ExternallyManaged && respect_life_cycle
                     {
@@ -998,7 +1056,7 @@ impl InfrastructureMap {
 
         for (id, endpoint) in self_endpoints {
             if let Some(target_endpoint) = target_endpoints.get(id) {
-                if endpoint != target_endpoint {
+                if !api_endpoints_equal_ignore_metadata(endpoint, target_endpoint) {
                     log::debug!("API Endpoint updated: {}", id);
                     endpoint_updates += 1;
                     api_changes.push(ApiChange::ApiEndpoint(Change::<ApiEndpoint>::Updated {
@@ -1033,6 +1091,67 @@ impl InfrastructureMap {
         );
 
         (endpoint_additions, endpoint_removals, endpoint_updates)
+    }
+
+    /// Compare WebApps between two infrastructure maps and compute the differences
+    ///
+    /// This method identifies added, removed, and updated WebApps by comparing
+    /// the source and target WebApp maps.
+    ///
+    /// # Arguments
+    /// * `self_web_apps` - HashMap of source WebApps to compare from
+    /// * `target_web_apps` - HashMap of target WebApps to compare against
+    /// * `web_app_changes` - Mutable vector to collect the identified changes
+    ///
+    /// # Returns
+    /// A tuple of (additions, removals, updates) counts
+    fn diff_web_apps(
+        self_web_apps: &HashMap<String, super::infrastructure::web_app::WebApp>,
+        target_web_apps: &HashMap<String, super::infrastructure::web_app::WebApp>,
+        web_app_changes: &mut Vec<WebAppChange>,
+    ) -> (usize, usize, usize) {
+        log::info!("Analyzing changes in WebApps...");
+        let mut webapp_updates = 0;
+        let mut webapp_removals = 0;
+        let mut webapp_additions = 0;
+
+        for (id, webapp) in self_web_apps {
+            if let Some(target_webapp) = target_web_apps.get(id) {
+                if webapp != target_webapp {
+                    log::debug!("WebApp updated: {}", id);
+                    webapp_updates += 1;
+                    web_app_changes.push(WebAppChange::WebApp(Change::Updated {
+                        before: Box::new(webapp.clone()),
+                        after: Box::new(target_webapp.clone()),
+                    }));
+                }
+            } else {
+                log::debug!("WebApp removed: {}", id);
+                webapp_removals += 1;
+                web_app_changes.push(WebAppChange::WebApp(Change::Removed(Box::new(
+                    webapp.clone(),
+                ))));
+            }
+        }
+
+        for (id, webapp) in target_web_apps {
+            if !self_web_apps.contains_key(id) {
+                log::debug!("WebApp added: {}", id);
+                webapp_additions += 1;
+                web_app_changes.push(WebAppChange::WebApp(Change::Added(Box::new(
+                    webapp.clone(),
+                ))));
+            }
+        }
+
+        log::info!(
+            "WebApp changes: {} added, {} removed, {} updated",
+            webapp_additions,
+            webapp_removals,
+            webapp_updates
+        );
+
+        (webapp_additions, webapp_removals, webapp_updates)
     }
 
     /// Compare views between two infrastructure maps and compute the differences
@@ -1516,7 +1635,7 @@ impl InfrastructureMap {
 
         for (id, table) in self_tables {
             if let Some(target_table) = target_tables.get(id) {
-                if table != target_table {
+                if !tables_equal_ignore_metadata(table, target_table) {
                     // Respect lifecycle: ExternallyManaged tables are never modified
                     if target_table.life_cycle == LifeCycle::ExternallyManaged && respect_life_cycle
                     {
@@ -1594,8 +1713,15 @@ impl InfrastructureMap {
                             }
                         };
 
+                        // Detect index changes (secondary/data-skipping indexes)
+                        let indexes_changed = table.indexes != target_table.indexes;
+
                         // Only process changes if there are actual differences to report
-                        if !column_changes.is_empty() || order_by_changed || engine_changed {
+                        if !column_changes.is_empty()
+                            || order_by_changed
+                            || engine_changed
+                            || indexes_changed
+                        {
                             // Use the strategy to determine the appropriate changes
                             let strategy_changes = strategy.diff_table_update(
                                 table,
@@ -1725,7 +1851,10 @@ impl InfrastructureMap {
         };
 
         // Only return changes if there are actual differences to report
-        if !column_changes.is_empty() || order_by_changed {
+        // Detect index changes
+        let indexes_changed = table.indexes != target_table.indexes;
+
+        if !column_changes.is_empty() || order_by_changed || indexes_changed {
             Some(TableChange::Updated {
                 name: table.name.clone(),
                 column_changes,
@@ -1819,8 +1948,11 @@ impl InfrastructureMap {
             }
         };
 
+        // Detect index changes
+        let indexes_changed = table.indexes != target_table.indexes;
+
         // Only return changes if there are actual differences to report
-        if !column_changes.is_empty() || order_by_changed {
+        if !column_changes.is_empty() || order_by_changed || indexes_changed {
             Some(TableChange::Updated {
                 name: table.name.clone(),
                 column_changes,
@@ -1990,6 +2122,11 @@ impl InfrastructureMap {
                 .iter()
                 .map(|(k, v)| (k.clone(), v.to_proto()))
                 .collect(),
+            web_apps: self
+                .web_apps
+                .iter()
+                .map(|(k, v)| (k.clone(), v.to_proto()))
+                .collect(),
             special_fields: Default::default(),
         }
     }
@@ -2062,6 +2199,11 @@ impl InfrastructureMap {
                 .collect(),
             // TODO: add proto
             workflows: HashMap::new(),
+            web_apps: proto
+                .web_apps
+                .into_iter()
+                .map(|(k, v)| (k, super::infrastructure::web_app::WebApp::from_proto(&v)))
+                .collect(),
         })
     }
 
@@ -2287,6 +2429,60 @@ fn columns_are_equivalent(before: &Column, after: &Column) -> bool {
     }
 }
 
+/// Check if two topics are equal, ignoring metadata
+///
+/// Metadata changes (like source file location) should not trigger redeployments.
+///
+/// # Arguments
+/// * `a` - The first topic to compare
+/// * `b` - The second topic to compare
+///
+/// # Returns
+/// `true` if the topics are equal ignoring metadata, `false` otherwise
+fn topics_equal_ignore_metadata(a: &Topic, b: &Topic) -> bool {
+    let mut a = a.clone();
+    let mut b = b.clone();
+    a.metadata = None;
+    b.metadata = None;
+    a == b
+}
+
+/// Check if two tables are equal, ignoring metadata
+///
+/// Metadata changes (like source file location) should not trigger redeployments.
+///
+/// # Arguments
+/// * `a` - The first table to compare
+/// * `b` - The second table to compare
+///
+/// # Returns
+/// `true` if the tables are equal ignoring metadata, `false` otherwise
+fn tables_equal_ignore_metadata(a: &Table, b: &Table) -> bool {
+    let mut a = a.clone();
+    let mut b = b.clone();
+    a.metadata = None;
+    b.metadata = None;
+    a == b
+}
+
+/// Check if two API endpoints are equal, ignoring metadata
+///
+/// Metadata changes (like source file location) should not trigger redeployments.
+///
+/// # Arguments
+/// * `a` - The first API endpoint to compare
+/// * `b` - The second API endpoint to compare
+///
+/// # Returns
+/// `true` if the API endpoints are equal ignoring metadata, `false` otherwise
+fn api_endpoints_equal_ignore_metadata(a: &ApiEndpoint, b: &ApiEndpoint) -> bool {
+    let mut a = a.clone();
+    let mut b = b.clone();
+    a.metadata = None;
+    b.metadata = None;
+    a == b
+}
+
 /// Computes the detailed differences between two table versions
 ///
 /// This function performs a column-by-column comparison between two tables
@@ -2372,6 +2568,7 @@ impl Default for InfrastructureMap {
             orchestration_workers: HashMap::new(),
             sql_resources: HashMap::new(),
             workflows: HashMap::new(),
+            web_apps: HashMap::new(),
         }
     }
 }
@@ -2407,6 +2604,7 @@ mod tests {
                     default: None,
                     annotations: vec![],
                     comment: None,
+                    ttl: None,
                 },
                 Column {
                     name: "name".to_string(),
@@ -2417,6 +2615,7 @@ mod tests {
                     default: None,
                     annotations: vec![],
                     comment: None,
+                    ttl: None,
                 },
                 Column {
                     name: "to_be_removed".to_string(),
@@ -2427,10 +2626,12 @@ mod tests {
                     default: None,
                     annotations: vec![],
                     comment: None,
+                    ttl: None,
                 },
             ],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
             partition_by: None,
+            sample_by: None,
             version: Some(Version::from_string("1.0".to_string())),
             source_primitive: PrimitiveSignature {
                 name: "test_primitive".to_string(),
@@ -2440,6 +2641,8 @@ mod tests {
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
             table_settings: None,
+            indexes: vec![],
+            table_ttl_setting: None,
         };
 
         let after = Table {
@@ -2455,6 +2658,7 @@ mod tests {
                     default: None,
                     annotations: vec![],
                     comment: None,
+                    ttl: None,
                 },
                 Column {
                     name: "name".to_string(),
@@ -2465,6 +2669,7 @@ mod tests {
                     default: None,
                     annotations: vec![],
                     comment: None,
+                    ttl: None,
                 },
                 Column {
                     name: "age".to_string(), // New column
@@ -2475,10 +2680,12 @@ mod tests {
                     default: None,
                     annotations: vec![],
                     comment: None,
+                    ttl: None,
                 },
             ],
             order_by: OrderBy::Fields(vec!["id".to_string(), "name".to_string()]), // Changed order_by
             partition_by: None,
+            sample_by: None,
             version: Some(Version::from_string("1.1".to_string())),
             source_primitive: PrimitiveSignature {
                 name: "test_primitive".to_string(),
@@ -2488,6 +2695,8 @@ mod tests {
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
             table_settings: None,
+            indexes: vec![],
+            table_ttl_setting: None,
         };
 
         let diff = compute_table_columns_diff(&before, &after);
@@ -2517,6 +2726,7 @@ mod tests {
                 default: None,
                 annotations: vec![],
                 comment: None,
+                ttl: None,
             },
             Column {
                 name: "to_remove".to_string(),
@@ -2527,6 +2737,7 @@ mod tests {
                 default: None,
                 annotations: vec![],
                 comment: None,
+                ttl: None,
             },
         ];
 
@@ -2542,6 +2753,7 @@ mod tests {
                 default: None,
                 annotations: vec![],
                 comment: None,
+                ttl: None,
             },
             Column {
                 name: "new_column".to_string(),
@@ -2552,6 +2764,7 @@ mod tests {
                 default: None,
                 annotations: vec![],
                 comment: None,
+                ttl: None,
             },
         ];
 
@@ -2645,6 +2858,7 @@ mod diff_tests {
             columns: vec![],
             order_by: OrderBy::Fields(vec![]),
             partition_by: None,
+            sample_by: None,
             version: Some(Version::from_string(version.to_string())),
             source_primitive: PrimitiveSignature {
                 name: "test_primitive".to_string(),
@@ -2654,6 +2868,8 @@ mod diff_tests {
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
             table_settings: None,
+            indexes: vec![],
+            table_ttl_setting: None,
         }
     }
 
@@ -2680,6 +2896,7 @@ mod diff_tests {
             default: None,
             annotations: vec![],
             comment: None,
+            ttl: None,
         });
 
         let diff = compute_table_columns_diff(&before, &after);
@@ -2710,6 +2927,7 @@ mod diff_tests {
             default: None,
             annotations: vec![],
             comment: None,
+            ttl: None,
         });
 
         let diff = compute_table_columns_diff(&before, &after);
@@ -2737,6 +2955,7 @@ mod diff_tests {
             default: None,
             annotations: vec![],
             comment: None,
+            ttl: None,
         });
 
         after.columns.push(Column {
@@ -2748,6 +2967,7 @@ mod diff_tests {
             default: None,
             annotations: vec![],
             comment: None,
+            ttl: None,
         });
 
         let diff = compute_table_columns_diff(&before, &after);
@@ -2781,6 +3001,7 @@ mod diff_tests {
                 default: None,
                 annotations: vec![],
                 comment: None,
+                ttl: None,
             },
             Column {
                 name: "to_remove".to_string(),
@@ -2791,6 +3012,7 @@ mod diff_tests {
                 default: None,
                 annotations: vec![],
                 comment: None,
+                ttl: None,
             },
             Column {
                 name: "to_modify".to_string(),
@@ -2801,6 +3023,7 @@ mod diff_tests {
                 default: None,
                 annotations: vec![],
                 comment: None,
+                ttl: None,
             },
         ]);
 
@@ -2815,6 +3038,7 @@ mod diff_tests {
                 default: None,
                 annotations: vec![],
                 comment: None,
+                ttl: None,
             },
             Column {
                 name: "to_modify".to_string(), // modified
@@ -2825,6 +3049,7 @@ mod diff_tests {
                 default: None,
                 annotations: vec![],
                 comment: None,
+                ttl: None,
             },
             Column {
                 name: "new_column".to_string(), // added
@@ -2835,6 +3060,7 @@ mod diff_tests {
                 default: None,
                 annotations: vec![],
                 comment: None,
+                ttl: None,
             },
         ]);
 
@@ -2962,6 +3188,7 @@ mod diff_tests {
             default: Some("auto_increment".to_string()),
             annotations: vec![],
             comment: None,
+            ttl: None,
         });
 
         after.columns.push(Column {
@@ -2973,6 +3200,7 @@ mod diff_tests {
             default: Some("now()".to_string()),
             annotations: vec![],
             comment: None,
+            ttl: None,
         });
 
         let diff = compute_table_columns_diff(&before, &after);
@@ -3005,6 +3233,7 @@ mod diff_tests {
                 default: None,
                 annotations: vec![],
                 comment: None,
+                ttl: None,
             },
             Column {
                 name: "name".to_string(),
@@ -3015,6 +3244,7 @@ mod diff_tests {
                 default: None,
                 annotations: vec![],
                 comment: None,
+                ttl: None,
             },
         ]);
 
@@ -3029,6 +3259,7 @@ mod diff_tests {
                 default: None,
                 annotations: vec![],
                 comment: None,
+                ttl: None,
             },
             Column {
                 name: "id".to_string(),
@@ -3039,6 +3270,7 @@ mod diff_tests {
                 default: None,
                 annotations: vec![],
                 comment: None,
+                ttl: None,
             },
         ]);
 
@@ -3065,6 +3297,7 @@ mod diff_tests {
                 default: None,
                 annotations: vec![],
                 comment: None,
+                ttl: None,
             };
             before.columns.push(col.clone());
             after.columns.push(col);
@@ -3105,6 +3338,7 @@ mod diff_tests {
                 default: None,
                 annotations: vec![],
                 comment: None,
+                ttl: None,
             });
 
             // Change every other column type in the after table
@@ -3137,6 +3371,7 @@ mod diff_tests {
                 default: None,
                 annotations: vec![],
                 comment: None,
+                ttl: None,
             });
         }
 
@@ -3166,6 +3401,7 @@ mod diff_tests {
                 ("deprecated".to_string(), JsonValue::Bool(true)),
             ],
             comment: None,
+            ttl: None,
         });
 
         after.columns.push(Column {
@@ -3180,6 +3416,7 @@ mod diff_tests {
                 ("new_annotation".to_string(), JsonValue::Bool(true)),
             ],
             comment: None,
+            ttl: None,
         });
 
         let diff = compute_table_columns_diff(&before, &after);
@@ -3219,6 +3456,7 @@ mod diff_tests {
             default: None,
             annotations: vec![],
             comment: None,
+            ttl: None,
         });
 
         after.columns.push(Column {
@@ -3230,6 +3468,7 @@ mod diff_tests {
             default: None,
             annotations: vec![],
             comment: None,
+            ttl: None,
         });
 
         // Test special characters in column name
@@ -3242,6 +3481,7 @@ mod diff_tests {
             default: None,
             annotations: vec![],
             comment: None,
+            ttl: None,
         });
 
         after.columns.push(Column {
@@ -3253,6 +3493,7 @@ mod diff_tests {
             default: None,
             annotations: vec![],
             comment: None,
+            ttl: None,
         });
 
         let diff = compute_table_columns_diff(&before, &after);
@@ -3276,6 +3517,7 @@ mod diff_tests {
             default: None,
             annotations: vec![],
             comment: None,
+            ttl: None,
         };
         let col2 = col1.clone();
         assert!(columns_are_equivalent(&col1, &col2));
@@ -3312,6 +3554,7 @@ mod diff_tests {
             default: None,
             annotations: vec![],
             comment: None,
+            ttl: None,
         };
 
         let clickhouse_enum_col = Column {
@@ -3335,6 +3578,7 @@ mod diff_tests {
             default: None,
             annotations: vec![],
             comment: None,
+            ttl: None,
         };
 
         // These should be equivalent due to the enum semantic comparison
@@ -3359,6 +3603,7 @@ mod diff_tests {
             default: None,
             annotations: vec![],
             comment: None,
+            ttl: None,
         };
 
         assert!(!columns_are_equivalent(
@@ -3376,6 +3621,7 @@ mod diff_tests {
             default: None,
             annotations: vec![],
             comment: None,
+            ttl: None,
         };
 
         let int_col2 = Column {
@@ -3387,6 +3633,7 @@ mod diff_tests {
             default: None,
             annotations: vec![],
             comment: None,
+            ttl: None,
         };
 
         assert!(!columns_are_equivalent(&int_col1, &int_col2));
@@ -3656,6 +3903,7 @@ mod diff_topic_tests {
                 default: None,
                 annotations: Vec::new(),
                 comment: None,
+                ttl: None,
             }],
             metadata: None,
             life_cycle: LifeCycle::FullyManaged,
@@ -3937,6 +4185,7 @@ mod diff_topic_to_table_sync_process_tests {
                 default: None,
                 annotations: Vec::new(),
                 comment: None,
+                ttl: None,
             }],
             version: Some(version.clone()),
             source_primitive: PrimitiveSignature {
@@ -4056,6 +4305,7 @@ mod diff_topic_to_table_sync_process_tests {
             default: None,
             annotations: vec![("note".to_string(), Value::String("changed".to_string()))],
             comment: None,
+            ttl: None,
         }];
 
         assert_eq!(

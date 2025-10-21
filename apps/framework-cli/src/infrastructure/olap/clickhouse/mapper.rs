@@ -5,8 +5,8 @@ use crate::framework::core::infrastructure::table::{
 use serde_json::Value;
 
 use crate::infrastructure::olap::clickhouse::model::{
-    AggregationFunction, ClickHouseColumn, ClickHouseColumnType, ClickHouseFloat, ClickHouseInt,
-    ClickHouseTable,
+    AggregationFunction, ClickHouseColumn, ClickHouseColumnType, ClickHouseFloat, ClickHouseIndex,
+    ClickHouseInt, ClickHouseTable,
 };
 
 use super::errors::ClickhouseError;
@@ -83,6 +83,7 @@ pub fn std_column_to_clickhouse_column(
         primary_key: column.primary_key,
         default: column.default.clone(),
         comment,
+        ttl: column.ttl.clone(),
     };
 
     Ok(clickhouse_column)
@@ -118,6 +119,29 @@ fn std_field_type_to_clickhouse_type_mapper(
     field_type: ColumnType,
     annotations: &[(String, Value)],
 ) -> Result<ClickHouseColumnType, ClickhouseError> {
+    if let Some((_, simple_agg_func)) = annotations
+        .iter()
+        .find(|(k, _)| k == "simpleAggregationFunction")
+    {
+        #[derive(serde::Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        struct SimpleAggFunctionAnnotation {
+            function_name: String,
+            argument_type: ColumnType,
+        }
+
+        let simple_agg =
+            serde_json::from_value::<SimpleAggFunctionAnnotation>(simple_agg_func.clone()).unwrap();
+
+        let argument_type =
+            std_field_type_to_clickhouse_type_mapper(simple_agg.argument_type, &[])?;
+
+        return Ok(ClickHouseColumnType::SimpleAggregateFunction {
+            function_name: simple_agg.function_name,
+            argument_type: Box::new(argument_type),
+        });
+    }
+
     if let Some((_, agg_func)) = annotations.iter().find(|(k, _)| k == "aggregationFunction") {
         let clickhouse_type = std_field_type_to_clickhouse_type_mapper(field_type, &[])?;
 
@@ -299,8 +323,21 @@ pub fn std_table_to_clickhouse_table(table: &Table) -> Result<ClickHouseTable, C
         columns,
         order_by: table.order_by.clone(),
         partition_by: table.partition_by.clone(),
+        sample_by: table.sample_by.clone(),
         engine: clickhouse_engine,
         table_settings: table.table_settings.clone(),
+        indexes: table
+            .indexes
+            .iter()
+            .map(|i| ClickHouseIndex {
+                name: i.name.clone(),
+                expression: i.expression.clone(),
+                index_type: i.index_type.clone(),
+                arguments: i.arguments.clone(),
+                granularity: i.granularity,
+            })
+            .collect(),
+        table_ttl_setting: table.table_ttl_setting.clone(),
     })
 }
 
@@ -375,6 +412,7 @@ mod tests {
             default: None,
             annotations: vec![],
             comment: Some("This is a user comment about the record type".to_string()),
+            ttl: None,
         };
 
         let clickhouse_column = std_column_to_clickhouse_column(column_with_user_comment).unwrap();
@@ -398,6 +436,7 @@ mod tests {
             default: None,
             annotations: vec![],
             comment: Some(format!("Old user comment {}", old_metadata)),
+            ttl: None,
         };
 
         let clickhouse_column = std_column_to_clickhouse_column(column_with_both).unwrap();
@@ -423,6 +462,7 @@ mod tests {
             default: None,
             annotations: vec![],
             comment: Some(old_metadata),
+            ttl: None,
         };
 
         let clickhouse_column = std_column_to_clickhouse_column(column_metadata_only).unwrap();
@@ -464,6 +504,7 @@ mod tests {
                     default: None,
                     annotations: vec![],
                     comment: None,
+                    ttl: None,
                 },
                 Column {
                     name: "status".to_string(),
@@ -474,6 +515,7 @@ mod tests {
                     default: None,
                     annotations: vec![],
                     comment: Some("User status field".to_string()), // User comment
+                    ttl: None,
                 },
             ],
             jwt: false,

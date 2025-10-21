@@ -71,6 +71,12 @@ You can publish directly to a stream from your Moose code using the stream's `se
 This is useful when emitting events from workflows or other backend logic.
 `send` accepts a single record or an array of records.
 
+<Callout type="info" title="Using Schema Registry JSON">
+If your `Stream` is configured with `schemaConfig.kind = "JSON"`,
+Moose produces using the Confluent envelope automatically (0x00 + schema id + JSON).
+No code changes are needed beyond setting `schemaConfig`. See the [Schema Registry guide](/moose/streaming/schema-registry).
+</Callout>
+
 <Tabs items={["TypeScript", "Python"]}>
 <Tabs.Tab>
 <TypeScript>

@@ -104,7 +104,16 @@ def handler_with_client(moose_client):
                               str(size)))
         def do_GET(self):
             parsed_path = urlparse(self.path)
-            full_path = parsed_path.path.lstrip('/').rstrip('/')
+            # Strip /api or /consumption prefix
+            raw_path = parsed_path.path
+            if raw_path.startswith('/api'):
+                stripped_path = raw_path[len('/api'):]
+            elif raw_path.startswith('/consumption'):
+                stripped_path = raw_path[len('/consumption'):]
+            else:
+                stripped_path = raw_path
+
+            full_path = stripped_path.lstrip('/').rstrip('/')
             path_parts = full_path.split('/')
             
             # For backward compatibility, keep the old parsing logic

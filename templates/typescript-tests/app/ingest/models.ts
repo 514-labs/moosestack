@@ -1,3 +1,4 @@
+import typia from "typia";
 import {
   IngestPipeline,
   Key,
@@ -12,6 +13,9 @@ import {
   ClickHousePolygon,
   ClickHouseMultiPolygon,
   ClickHouseEngines,
+  SimpleAggregated,
+  UInt64,
+  ClickHouseByteSize,
 } from "@514labs/moose-lib";
 
 /**
@@ -283,7 +287,7 @@ export interface OptionalNestedTest {
   id: Key<string>;
   timestamp: DateTime;
   nested: TestNested[];
-  other?: string & ClickHouseDefault<"''">;
+  other: string & ClickHouseDefault<"">;
 }
 
 export const OptionalNestedTestPipeline =
@@ -346,4 +350,185 @@ export const userEventsV2 = new OlapTable<UserEventV2>("UserEvents", {
   version: "2.0",
   engine: ClickHouseEngines.ReplacingMergeTree,
   orderByFields: ["userId", "sessionId", "timestamp"],
+});
+
+/** =======SimpleAggregateFunction Test========= */
+// Test SimpleAggregateFunction support for aggregated metrics
+// This demonstrates using SimpleAggregateFunction with AggregatingMergeTree
+
+export interface SimpleAggTest {
+  date_stamp: string & typia.tags.Format<"date"> & ClickHouseByteSize<2>;
+  table_name: string;
+  row_count: UInt64 & SimpleAggregated<"sum", UInt64>;
+  max_value: number & SimpleAggregated<"max", number>;
+  min_value: number & SimpleAggregated<"min", number>;
+  last_updated: DateTime & SimpleAggregated<"anyLast", DateTime>;
+}
+
+export const SimpleAggTestTable = new OlapTable<SimpleAggTest>(
+  "SimpleAggTest",
+  {
+    orderByFields: ["date_stamp", "table_name"],
+    engine: ClickHouseEngines.AggregatingMergeTree,
+  },
+);
+
+// =======Index Extraction Test Table=======
+export interface IndexTest {
+  u64: Key<UInt64>;
+  i32: number;
+  s: string;
+}
+
+export const IndexTestTable = new OlapTable<IndexTest>("IndexTest", {
+  engine: ClickHouseEngines.MergeTree,
+  orderByFields: ["u64"],
+  indexes: [
+    {
+      name: "idx1",
+      expression: "u64",
+      type: "bloom_filter",
+      arguments: [],
+      granularity: 3,
+    },
+    {
+      name: "idx2",
+      expression: "u64 * i32",
+      type: "minmax",
+      arguments: [],
+      granularity: 3,
+    },
+    {
+      name: "idx3",
+      expression: "u64 * length(s)",
+      type: "set",
+      arguments: ["1000"],
+      granularity: 4,
+    },
+    {
+      name: "idx4",
+      expression: "(u64, i32)",
+      type: "MinMax",
+      arguments: [],
+      granularity: 1,
+    },
+    {
+      name: "idx5",
+      expression: "(u64, i32)",
+      type: "minmax",
+      arguments: [],
+      granularity: 1,
+    },
+    {
+      name: "idx6",
+      expression: "toString(i32)",
+      type: "ngrambf_v1",
+      arguments: ["2", "256", "1", "123"],
+      granularity: 1,
+    },
+    {
+      name: "idx7",
+      expression: "s",
+      type: "nGraMbf_v1",
+      arguments: ["3", "256", "1", "123"],
+      granularity: 1,
+    },
+  ],
+});
+
+/** =======Real-World Production Patterns (District Cannabis Inspired)========= */
+
+/** Test 8: Complex discount structure with mixed nullability */
+export interface DiscountInfo {
+  discountId?: number;
+  discountName?: string | null; // Explicit null union
+  discountReason?: string | null;
+  amount: number; // Required field
+}
+
+/** Test 9: Transaction item with complex nested structure */
+export interface ProductItem {
+  productId?: number;
+  productName?: string | null;
+  quantity: number;
+  unitPrice: number;
+  unitCost?: number | null;
+  packageId?: string | null;
+}
+
+/** Test 10: Complex transaction with multiple array types and ReplacingMergeTree */
+export interface ComplexTransaction {
+  transactionId: Key<number>; // Primary key
+  customerId?: number;
+  transactionDate: DateTime;
+  location: string; // Part of order by
+  subtotal: number;
+  tax: number;
+  total: number;
+  // Multiple complex array fields
+  items: ProductItem[];
+  discounts: DiscountInfo[];
+  orderIds: number[]; // Simple array
+  // Mixed nullability patterns
+  tipAmount?: number | null;
+  invoiceNumber?: string | null;
+  terminalName?: string; // Optional without null
+  // Boolean fields
+  isVoid: boolean;
+  isTaxInclusive?: boolean;
+}
+
+/** Test 11: Omit pattern with type extension (common pattern) */
+interface BaseProduct {
+  productId?: number;
+  productName?: string | null;
+  description?: string | null;
+  categoryId?: number | null;
+  tags: string[]; // Remove optional - arrays cannot be nullable in ClickHouse
+}
+
+export interface ProductWithLocation extends Omit<BaseProduct, "productId"> {
+  productId: number; // Make required
+  location: string;
+  inventoryId: Key<number>;
+}
+
+/** Test 12: Engine and ordering configuration test */
+export interface EngineTest {
+  id: Key<string>;
+  timestamp: DateTime;
+  location: string;
+  category: string;
+  value: number;
+}
+
+/** =======Pipeline Configurations for Production Patterns========= */
+
+export const ComplexTransactionPipeline =
+  new IngestPipeline<ComplexTransaction>("ComplexTransaction", {
+    table: {
+      engine: ClickHouseEngines.ReplacingMergeTree,
+      orderByFields: ["transactionId", "location", "transactionDate"], // Primary key must be first
+    },
+    stream: true,
+    ingestApi: true,
+  });
+
+export const ProductWithLocationPipeline =
+  new IngestPipeline<ProductWithLocation>("ProductWithLocation", {
+    table: {
+      engine: ClickHouseEngines.ReplacingMergeTree,
+      orderByFields: ["inventoryId", "location"],
+    },
+    stream: true,
+    ingestApi: true,
+  });
+
+export const EngineTestPipeline = new IngestPipeline<EngineTest>("EngineTest", {
+  table: {
+    engine: ClickHouseEngines.MergeTree,
+    orderByFields: ["id", "location", "category"],
+  },
+  stream: true,
+  ingestApi: true,
 });
