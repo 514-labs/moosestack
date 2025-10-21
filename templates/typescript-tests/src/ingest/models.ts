@@ -532,3 +532,38 @@ export const EngineTestPipeline = new IngestPipeline<EngineTest>("EngineTest", {
   stream: true,
   ingestApi: true,
 });
+
+/** =======Array Transform Test Models========= */
+// Test models for verifying that transforms returning arrays produce multiple Kafka messages
+
+/** Input model for array transform test - contains an array to explode */
+export interface ArrayInput {
+  id: Key<string>;
+  data: string[]; // Array of strings to explode into individual records
+}
+
+/** Output model for array transform test - one record per array item */
+export interface ArrayOutput {
+  inputId: Key<string>; // Reference to source ArrayInput.id
+  value: string; // From array element
+  index: number; // Position in original array
+  timestamp: DateTime;
+}
+
+// Use OlapTable for output table
+export const ArrayOutputTable = new OlapTable<ArrayOutput>("ArrayOutput", {
+  orderByFields: ["inputId", "timestamp"],
+});
+
+// Create a Stream that writes to the OlapTable
+import { Stream, IngestApi } from "@514labs/moose-lib";
+
+export const arrayOutputStream = new Stream<ArrayOutput>("ArrayOutput", {
+  destination: ArrayOutputTable,
+});
+
+export const arrayInputStream = new Stream<ArrayInput>("ArrayInput");
+
+export const ingestapi = new IngestApi<ArrayInput>("array-input", {
+  destination: arrayInputStream,
+});

@@ -794,8 +794,8 @@ fn map_json_value_to_clickhouse_value(
             }
         }
         ColumnType::Int(_) => {
-            if let Some(value_int) = value.as_i64() {
-                Ok(ClickHouseValue::new_int_64(value_int))
+            if let Some(value_int) = value.as_number() {
+                Ok(ClickHouseValue::new_number(value_int))
             } else {
                 Err(MappingError::TypeMismatch {
                     column_type: Box::new(column_type.clone()),

@@ -163,6 +163,41 @@ export const verifyClickhouseData = async (
   );
 };
 
+/**
+ * Verifies that a specific number of records exist in ClickHouse matching the WHERE clause
+ */
+export const verifyRecordCount = async (
+  tableName: string,
+  whereClause: string,
+  expectedCount: number,
+): Promise<void> => {
+  await withRetries(
+    async () => {
+      const client = createClient(CLICKHOUSE_CONFIG);
+      try {
+        const result = await client.query({
+          query: `SELECT COUNT(*) as count FROM ${tableName} WHERE ${whereClause}`,
+          format: "JSONEachRow",
+        });
+        const rows: any[] = await result.json();
+        const actualCount = parseInt(rows[0].count, 10);
+
+        if (actualCount !== expectedCount) {
+          throw new Error(
+            `Expected ${expectedCount} records in ${tableName}, but found ${actualCount}`,
+          );
+        }
+      } finally {
+        await client.close();
+      }
+    },
+    {
+      attempts: 10,
+      delayMs: 1000,
+    },
+  );
+};
+
 // ============ SCHEMA INTROSPECTION UTILITIES ============
 
 /**

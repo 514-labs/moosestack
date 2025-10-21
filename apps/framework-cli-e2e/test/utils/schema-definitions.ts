@@ -399,6 +399,16 @@ export const TYPESCRIPT_TEST_SCHEMAS: ExpectedTableSchema[] = [
     engine: "MergeTree",
     orderBy: ["id", "location", "category"],
   },
+  // Array transform test
+  {
+    tableName: "ArrayOutput",
+    columns: [
+      { name: "inputId", type: "String" },
+      { name: "value", type: "String" },
+      { name: "index", type: "Float64" }, // TypeScript number becomes Float64
+      { name: "timestamp", type: /DateTime\('UTC'\)/ },
+    ],
+  },
 ];
 
 // ============ PYTHON TEMPLATE SCHEMA DEFINITIONS ============
@@ -760,6 +770,16 @@ export const PYTHON_TEST_SCHEMAS: ExpectedTableSchema[] = [
     ],
     engine: "MergeTree",
     orderBy: ["id", "location", "category"],
+  },
+  // Array transform test
+  {
+    tableName: "ArrayOutput",
+    columns: [
+      { name: "input_id", type: "String" },
+      { name: "value", type: "String" },
+      { name: "index", type: "Int64" }, // Python int becomes Int64
+      { name: "timestamp", type: /DateTime\('UTC'\)/ },
+    ],
   },
 ];
 
