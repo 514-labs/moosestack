@@ -1,4 +1,4 @@
-import { FooPipeline, BarPipeline, Foo, Bar } from "./models";
+import { FooPipeline, BarPipeline, Foo, Bar, arrayInputStream } from "./models";
 import { DeadLetterQueue, MooseCache } from "@514labs/moose-lib";
 
 // Transform Foo events to Bar events
@@ -7,17 +7,17 @@ FooPipeline.stream!.addTransform(
   async (foo: Foo): Promise<Bar> => {
     /**
      * Transform Foo events to Bar events with error handling and caching.
-     * 
+     *
      * Normal flow:
      * 1. Check cache for previously processed events
      * 2. Transform Foo to Bar
      * 3. Cache the result
      * 4. Return transformed Bar event
-     * 
+     *
      * Alternate flow (DLQ):
      * - If errors occur during transformation, the event is sent to DLQ
      * - This enables separate error handling, monitoring, and retry strategies
-    */
+     */
 
     // Initialize cache
     const cache = await MooseCache.get();
@@ -69,3 +69,20 @@ FooPipeline.deadLetterQueue!.addConsumer((deadLetter) => {
   const foo: Foo = deadLetter.asTyped();
   console.log(foo);
 });
+
+// Test transform that returns an array - each element should be sent as a separate Kafka message
+import { arrayOutputStream, ArrayInput, ArrayOutput } from "./models";
+
+arrayInputStream.addTransform(
+  arrayOutputStream,
+  (input: ArrayInput): ArrayOutput[] => {
+    // Explode the input array into individual output records
+    // Each item in input.data becomes a separate Kafka message
+    return input.data.map((value, index) => ({
+      inputId: input.id,
+      value: value,
+      index: index,
+      timestamp: new Date(),
+    }));
+  },
+);
