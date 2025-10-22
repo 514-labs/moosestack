@@ -217,7 +217,7 @@ def handler_with_client(moose_client):
                             scope = {
                                 'type': 'http',
                                 'asgi': {'version': '3.0'},
-                                'http_version': self.request_version,
+                                'http_version': self.request_version.split('/')[-1],
                                 'method': method,
                                 'scheme': 'http',
                                 'path': proxied_path,
