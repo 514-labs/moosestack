@@ -38,13 +38,14 @@ def clickhouse_default(expression: str) -> ClickhouseDefault:
 @dataclasses.dataclass(frozen=True)
 class ClickHouseTTL:
     expression: str
+
+
 @dataclasses.dataclass(frozen=True)
 class ClickHouseJson:
     max_dynamic_paths: int | None = None
     max_dynamic_types: int | None = None
     skip_paths: tuple[str, ...] = ()
     skip_regexes: tuple[str, ...] = ()
-
 
 
 def clickhouse_decimal(precision: int, scale: int) -> Type[Decimal]:
@@ -259,8 +260,8 @@ def _validate_geometry_type(requested: str, t: type) -> None:
                 )
         case "MultiPolygon":
             if not _is_list_of(
-                lambda x: _is_list_of(lambda y: _is_list_of(_is_point_type, y), x),
-                t,
+                    lambda x: _is_list_of(lambda y: _is_list_of(_is_point_type, y), x),
+                    t,
             ):
                 raise ValueError(
                     "MultiPolygon must be typed as list[list[list[tuple[float, float]]]]"
@@ -329,7 +330,7 @@ def py_type_to_column_type(t: type, mds: list[Any]) -> Tuple[bool, list[Any], Da
         data_type = "IPv4"
     elif t is ipaddress.IPv6Address:
         data_type = "IPv6"
-    elif any(md in [ # this check has to happen before t is matched against tuple/list
+    elif any(md in [  # this check has to happen before t is matched against tuple/list
         "Point",
         "Ring",
         "LineString",
@@ -381,21 +382,21 @@ def py_type_to_column_type(t: type, mds: list[Any]) -> Tuple[bool, list[Any], Da
         except Exception:
             pass
         opts = next(md for md in mds if isinstance(md, ClickHouseJson))
-        
+
         # Build typed_paths from fields as tuples of (name, type)
         typed_paths: list[tuple[str, DataType]] = []
         for c in columns:
             tname: DataType = c.data_type if isinstance(c.data_type, str) else "String"
             typed_paths.append((c.name, tname))
-        
+
         has_any_option = (
-            opts.max_dynamic_paths is not None or
-            opts.max_dynamic_types is not None or
-            len(typed_paths) > 0 or
-            len(opts.skip_paths) > 0 or
-            len(opts.skip_regexes) > 0
+                opts.max_dynamic_paths is not None or
+                opts.max_dynamic_types is not None or
+                len(typed_paths) > 0 or
+                len(opts.skip_paths) > 0 or
+                len(opts.skip_regexes) > 0
         )
-        
+
         if not has_any_option:
             data_type = "Json"
         else:
