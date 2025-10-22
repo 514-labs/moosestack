@@ -885,10 +885,10 @@ impl<'de> Visitor<'de> for ColumnTypeVisitor {
                     A::Error::custom(format!("Map value type deserialization error {e}."))
                 })?)
             } else if key == "max_dynamic_paths" || key == "maxDynamicPaths" {
-                json_max_dynamic_paths = Some(map.next_value::<u64>()?);
+                json_max_dynamic_paths = map.next_value::<Option<u64>>()?;
                 seen_json_options = true;
             } else if key == "max_dynamic_types" || key == "maxDynamicTypes" {
-                json_max_dynamic_types = Some(map.next_value::<u64>()?);
+                json_max_dynamic_types = map.next_value::<Option<u64>>()?;
                 seen_json_options = true;
             } else if key == "typed_paths" || key == "typedPaths" {
                 json_typed_paths = Some(map.next_value::<Vec<(String, ColumnType)>>()?);
