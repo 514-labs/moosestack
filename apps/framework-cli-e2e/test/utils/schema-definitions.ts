@@ -409,6 +409,14 @@ export const TYPESCRIPT_TEST_SCHEMAS: ExpectedTableSchema[] = [
       { name: "timestamp", type: /DateTime\('UTC'\)/ },
     ],
   },
+  {
+    tableName: "JsonTest",
+    columns: [
+      { name: "id", type: "String" },
+      { name: "timestamp", type: /DateTime\('UTC'\)/ },
+      { name: "payload", type: "JSON" },
+    ],
+  },
 ];
 
 // ============ PYTHON TEMPLATE SCHEMA DEFINITIONS ============
@@ -779,6 +787,14 @@ export const PYTHON_TEST_SCHEMAS: ExpectedTableSchema[] = [
       { name: "value", type: "String" },
       { name: "index", type: "Int64" }, // Python int becomes Int64
       { name: "timestamp", type: /DateTime\('UTC'\)/ },
+    ],
+  },
+  {
+    tableName: "JsonTest",
+    columns: [
+      { name: "id", type: "String" },
+      { name: "timestamp", type: /DateTime\('UTC'\)/ },
+      { name: "payload", type: "JSON" },
     ],
   },
 ];

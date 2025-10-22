@@ -131,6 +131,110 @@ const getTaggedType = (
   return checker.getNonNullableType(checker.getTypeOfSymbol(ttlSymbol));
 };
 
+// JSON mapping: recognize SomeInterface & ClickHouseJson<...>
+const getJsonMappedType = (
+  t: ts.Type,
+  checker: TypeChecker,
+  fieldName: string,
+  typeName: string,
+): string | null => {
+  const mappingSymbol = getPropertyDeep(t, "_clickhouse_mapped_type");
+  if (mappingSymbol === undefined) return null;
+  const mappedType = checker.getNonNullableType(
+    checker.getTypeOfSymbol(mappingSymbol),
+  );
+  if (!mappedType.isStringLiteral() || mappedType.value !== "JSON") {
+    return null;
+  }
+
+  // Try to extract options from nested settings object
+  const getSettingsSymbol = () =>
+    getPropertyDeep(t, "_clickhouse_json_settings");
+  const getNumberLiteral = (name: string): number | undefined => {
+    const settings = getSettingsSymbol();
+    const sym =
+      settings ?
+        checker.getTypeOfSymbol(settings).getProperty(name)
+      : undefined;
+    if (!sym) return undefined;
+    const tt = checker.getNonNullableType(checker.getTypeOfSymbol(sym));
+    return tt.isNumberLiteral() ? tt.value : undefined;
+  };
+
+  const collectStringArray = (name: string): string[] => {
+    const out: string[] = [];
+    const settings = getSettingsSymbol();
+    const sym =
+      settings ?
+        checker.getTypeOfSymbol(settings).getProperty(name)
+      : undefined;
+    if (!sym) return out;
+    const tt = checker.getNonNullableType(checker.getTypeOfSymbol(sym));
+    // Tuple literal of strings
+    if (checker.isTupleType(tt)) {
+      const tupleArgs = (tt as TupleType).typeArguments || [];
+      tupleArgs.forEach((arg) => {
+        if (arg.isStringLiteral()) {
+          out.push(arg.value);
+        }
+      });
+      return out;
+    }
+    // Array<string literal union> - best effort if it's a union of string literals
+    const indexType = tt.getNumberIndexType?.();
+    if (indexType && indexType.isUnion()) {
+      indexType.types.forEach((arg) => {
+        if (arg.isStringLiteral()) out.push(arg.value);
+      });
+    }
+    return out;
+  };
+
+  const maxDynamicPaths = getNumberLiteral("maxDynamicPaths");
+  // support both spellings just in case
+  const maxDynamicTypes =
+    getNumberLiteral("maxDyanmicTypes") ?? getNumberLiteral("maxDynamicTypes");
+  const skipPaths = collectStringArray("skipPaths");
+  const skipRegexes = collectStringArray("skipRegexes");
+
+  // For typed paths, try to find the interface part of the intersection
+  let base: ts.Type = t.getNonNullableType();
+  if (base.isIntersection()) {
+    const candidates = base.types.filter((sub) => {
+      const m = getPropertyDeep(sub, "_clickhouse_mapped_type");
+      if (!m) return true;
+      const mt = checker.getNonNullableType(checker.getTypeOfSymbol(m));
+      return !(mt.isStringLiteral() && mt.value === "JSON");
+    });
+    if (candidates.length > 0) base = candidates[0];
+  }
+
+  // Build typed paths from the base interface's columns (top-level only)
+  let typedPaths: string[] = [];
+  try {
+    const cols = toColumns(base, checker);
+    typedPaths = cols.map(
+      (c) =>
+        `${c.name} ${typeof c.data_type === "string" ? c.data_type : "String"}`,
+    );
+  } catch (_) {
+    // Fallback silently if we cannot derive columns
+    typedPaths = [];
+  }
+
+  const items: string[] = [];
+  if (typeof maxDynamicPaths === "number")
+    items.push(`max_dynamic_paths=${maxDynamicPaths}`);
+  if (typeof maxDynamicTypes === "number")
+    items.push(`max_dynamic_types=${maxDynamicTypes}`);
+  items.push(...typedPaths);
+  items.push(...skipPaths.map((p) => `SKIP ${p}`));
+  items.push(...skipRegexes.map((r) => `SKIP REGEXP '${r}'`));
+
+  if (items.length === 0) return "Json";
+  return `Json(${items.join(", ")})`;
+};
+
 const handleSimpleAggregated = (
   t: ts.Type,
   checker: TypeChecker,
@@ -646,15 +750,25 @@ const tsTypeToDataType = (
     typeSymbolName === "DateTime64" ||
     checker.isTypeAssignableTo(nonNull, dateType(checker));
 
-  const dataType: DataType =
-    isEnum(nonNull) ? enumConvert(nonNull)
-    : isStringAnyRecord(nonNull, checker) ? "Json"
-    : isDateLike ?
-      (() => {
-        // Prefer precision from AST (DateTime64<P>) if available
-        if (datePrecisionFromNode !== undefined) {
-          return `DateTime(${datePrecisionFromNode})` as DataType;
-        }
+  let dataType: DataType;
+  if (isEnum(nonNull)) {
+    dataType = enumConvert(nonNull);
+  } else {
+    const jsonCandidate = getJsonMappedType(
+      nonNull,
+      checker,
+      fieldName,
+      typeName,
+    );
+    if (jsonCandidate !== null) {
+      dataType = jsonCandidate as DataType;
+    } else if (isStringAnyRecord(nonNull, checker)) {
+      dataType = "Json";
+    } else if (isDateLike) {
+      // Prefer precision from AST (DateTime64<P>) if available
+      if (datePrecisionFromNode !== undefined) {
+        dataType = `DateTime(${datePrecisionFromNode})` as DataType;
+      } else {
         // Add precision support for Date via ClickHousePrecision<P>
         const precisionSymbol =
           getPropertyDeep(nonNull, "_clickhouse_precision") ||
@@ -664,20 +778,24 @@ const tsTypeToDataType = (
             checker.getTypeOfSymbol(precisionSymbol),
           );
           if (precisionType.isNumberLiteral()) {
-            return `DateTime(${precisionType.value})` as DataType;
+            dataType = `DateTime(${precisionType.value})` as DataType;
+          } else {
+            dataType = "DateTime";
           }
+        } else {
+          dataType = "DateTime";
         }
-        return "DateTime" as DataType;
-      })()
-    : checker.isTypeAssignableTo(nonNull, checker.getStringType()) ?
-      handleStringType(nonNull, checker, fieldName, annotations)
-    : isNumberType(nonNull, checker) ?
-      handleNumberType(nonNull, checker, fieldName)
-    : checker.isTypeAssignableTo(nonNull, checker.getBooleanType()) ? "Boolean"
-    : getGeometryMappedType(nonNull, checker) !== null ?
-      getGeometryMappedType(nonNull, checker)!
-    : checker.isArrayType(withoutTags) ?
-      toArrayType(
+      }
+    } else if (checker.isTypeAssignableTo(nonNull, checker.getStringType())) {
+      dataType = handleStringType(nonNull, checker, fieldName, annotations);
+    } else if (isNumberType(nonNull, checker)) {
+      dataType = handleNumberType(nonNull, checker, fieldName);
+    } else if (checker.isTypeAssignableTo(nonNull, checker.getBooleanType())) {
+      dataType = "Boolean";
+    } else if (getGeometryMappedType(nonNull, checker) !== null) {
+      dataType = getGeometryMappedType(nonNull, checker)!;
+    } else if (checker.isArrayType(withoutTags)) {
+      dataType = toArrayType(
         tsTypeToDataType(
           nonNull.getNumberIndexType()!,
           checker,
@@ -686,17 +804,22 @@ const tsTypeToDataType = (
           isJwt,
           undefined,
         ),
-      )
-    : isNamedTuple(nonNull, checker) ? handleNamedTuple(nonNull, checker)
-    : isRecordType(nonNull, checker) ?
-      handleRecordType(nonNull, checker, fieldName, typeName, isJwt)
-    : (
+      );
+    } else if (isNamedTuple(nonNull, checker)) {
+      dataType = handleNamedTuple(nonNull, checker);
+    } else if (isRecordType(nonNull, checker)) {
+      dataType = handleRecordType(nonNull, checker, fieldName, typeName, isJwt);
+    } else if (
       withoutTags.isClassOrInterface() ||
       (withoutTags.flags & TypeFlags.Object) !== 0
-    ) ?
-      handleNested(withoutTags, checker, fieldName, isJwt)
-    : nonNull == checker.getNeverType() ? throwNullType(fieldName, typeName)
-    : throwUnknownType(t, fieldName, typeName);
+    ) {
+      dataType = handleNested(withoutTags, checker, fieldName, isJwt);
+    } else if (nonNull == checker.getNeverType()) {
+      dataType = throwNullType(fieldName, typeName);
+    } else {
+      dataType = throwUnknownType(t, fieldName, typeName);
+    }
+  }
   if (aggregationFunction !== undefined) {
     annotations.push(["aggregationFunction", aggregationFunction]);
   }

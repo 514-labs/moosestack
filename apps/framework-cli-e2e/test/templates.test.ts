@@ -532,6 +532,65 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
           const apiData = await apiResponse.json();
           expect(apiData).to.be.an("array");
         });
+
+        it("should create JSON table and accept extra fields in payload", async function () {
+          this.timeout(TIMEOUTS.TEST_SETUP_MS);
+
+          const id = randomUUID();
+          await withRetries(
+            async () => {
+              const response = await fetch(
+                `${SERVER_CONFIG.url}/ingest/JsonTest`,
+                {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    id,
+                    timestamp: TEST_DATA.TIMESTAMP,
+                    payload: {
+                      name: "alpha",
+                      count: 3,
+                      extraField: "allowed",
+                      nested: { another: "field" },
+                    },
+                  }),
+                },
+              );
+              if (!response.ok) {
+                const text = await response.text();
+                throw new Error(`${response.status}: ${text}`);
+              }
+            },
+            { attempts: 5, delayMs: 500 },
+          );
+
+          // DDL should show JSON type
+          const ddl = await getTableDDL("JsonTest");
+          if (!ddl.includes("`payload` JSON")) {
+            throw new Error(`JsonTest DDL missing JSON payload: ${ddl}`);
+          }
+
+          await waitForDBWrite(devProcess!, "JsonTest", 1);
+
+          // Verify row exists and payload is present
+          const client = (await import("@clickhouse/client")).createClient(
+            CLICKHOUSE_CONFIG,
+          );
+          try {
+            const result = await client.query({
+              query: `SELECT id, JSON_QUERY(payload, '$.name') as name FROM JsonTest WHERE id = '${id}'`,
+              format: "JSONEachRow",
+            });
+            const rows: any[] = await result.json();
+            if (!rows.length || rows[0].name == null) {
+              throw new Error("JSON payload not stored as expected");
+            }
+          } finally {
+            await (
+              await import("@clickhouse/client")
+            ).createClient;
+          }
+        });
       }
     } else {
       it("should successfully ingest data and verify through consumption API", async function () {

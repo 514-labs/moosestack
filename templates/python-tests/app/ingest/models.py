@@ -4,7 +4,8 @@ from moose_lib import Point, Ring, LineString, MultiLineString, Polygon, MultiPo
 from moose_lib import Key, IngestPipeline, IngestPipelineConfig, StringToEnumMixin, clickhouse_default, OlapTable, OlapConfig, MergeTreeEngine, ReplacingMergeTreeEngine, AggregatingMergeTreeEngine, simple_aggregated, ClickhouseSize
 from datetime import datetime, date
 from typing import Optional, Annotated, Any
-from pydantic import BaseModel, BeforeValidator
+from pydantic import BaseModel, BeforeValidator, ConfigDict
+from moose_lib.data_models import ClickHouseJson
 from enum import IntEnum, auto
 
 
@@ -217,6 +218,22 @@ class EdgeCases(BaseModel):
     # Simplified complex arrays
     complex_array: List[SimplifiedComplexItem]
 
+# =======JSON Types Test=========
+class JsonInner(BaseModel):
+    name: str
+    count: int
+
+class JsonTest(BaseModel):
+    model_config = ConfigDict(extra='allow')
+    id: Key[str]
+    timestamp: datetime
+    payload: Annotated[JsonInner, ClickHouseJson(
+        max_dynamic_paths=256,
+        max_dynamic_types=16,
+        skip_paths=("skip.me",),
+        skip_regexes=(r"^tmp\\.",)
+    )]
+
 # =======Pipeline Configurations for Test Models=========
 
 basic_types_model = IngestPipeline[BasicTypes]("BasicTypes", IngestPipelineConfig(
@@ -262,6 +279,13 @@ mixed_complex_types_model = IngestPipeline[MixedComplexTypes]("MixedComplexTypes
 ))
 
 edge_cases_model = IngestPipeline[EdgeCases]("EdgeCases", IngestPipelineConfig(
+    ingest_api=True,
+    stream=True,
+    table=True,
+    dead_letter_queue=True
+))
+
+json_test_model = IngestPipeline[JsonTest]("JsonTest", IngestPipelineConfig(
     ingest_api=True,
     stream=True,
     table=True,

@@ -38,6 +38,13 @@ def clickhouse_default(expression: str) -> ClickhouseDefault:
 @dataclasses.dataclass(frozen=True)
 class ClickHouseTTL:
     expression: str
+@dataclasses.dataclass(frozen=True)
+class ClickHouseJson:
+    max_dynamic_paths: int | None = None
+    max_dynamic_types: int | None = None
+    skip_paths: tuple[str, ...] = ()
+    skip_regexes: tuple[str, ...] = ()
+
 
 
 def clickhouse_decimal(precision: int, scale: int) -> Type[Decimal]:
@@ -347,6 +354,39 @@ def py_type_to_column_type(t: type, mds: list[Any]) -> Tuple[bool, list[Any], Da
         data_type = "UUID"
     elif t is Any:
         data_type = "Json"
+    elif any(isinstance(md, ClickHouseJson) for md in mds) and issubclass(t, BaseModel):
+        # Annotated[SomePydanticClass, ClickHouseJson(...)]
+        columns = _to_columns(t)
+        for c in columns:
+            if c.default is not None:
+                raise ValueError(
+                    "Default in inner field. Put ClickHouseDefault in top level field."
+                )
+        # Enforce extra='allow' for JSON-mapped models
+        # If model_config is missing, set via __config__ for Pydantic v2 style
+        try:
+            # Pydantic v2: use model_config on class
+            cfg = getattr(t, 'model_config', None)
+            if not isinstance(cfg, ConfigDict) or cfg.get('extra') != 'allow':
+                # overwrite model_config (class attr) to enforce extra allow
+                setattr(t, 'model_config', ConfigDict(extra='allow'))
+        except Exception:
+            pass
+        opts = next(md for md in mds if isinstance(md, ClickHouseJson))
+        parts: list[str] = []
+        if opts.max_dynamic_paths is not None:
+            parts.append(f"max_dynamic_paths={opts.max_dynamic_paths}")
+        if opts.max_dynamic_types is not None:
+            parts.append(f"max_dynamic_types={opts.max_dynamic_types}")
+        # typed paths from fields as top-level names and types
+        for c in columns:
+            tname = c.data_type if isinstance(c.data_type, str) else "String"
+            parts.append(f"{c.name} {tname}")
+        for p in opts.skip_paths:
+            parts.append(f"SKIP {p}")
+        for r in opts.skip_regexes:
+            parts.append(f"SKIP REGEXP '{r}'")
+        data_type = "Json" if not parts else f"Json({', '.join(parts)})"
     elif get_origin(t) is Literal and all(isinstance(arg, str) for arg in get_args(t)):
         data_type = "String"
         mds.append("LowCardinality")
