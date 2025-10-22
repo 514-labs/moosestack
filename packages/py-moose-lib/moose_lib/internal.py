@@ -732,7 +732,9 @@ def load_models():
        (`___MOOSE_STUFF___start` and `end___MOOSE_STUFF___`), which the
        calling system uses to extract the configuration.
     """
-    import_module("app.main")
+    import os
+    source_dir = os.environ.get("MOOSE_SOURCE_DIR", "app")
+    import_module(f"{source_dir}.main")
 
     # Generate the infrastructure map
     infra_map = to_infra_map()

@@ -41,7 +41,8 @@ pub fn run(
         .env(
             "MOOSE_MANAGEMENT_PORT",
             project.http_server_config.management_port.to_string(),
-        );
+        )
+        .env("MOOSE_SOURCE_DIR", &project.source_dir);
 
     if binary_command == "consumption-apis"
         || binary_command == "consumption-type-serializer"

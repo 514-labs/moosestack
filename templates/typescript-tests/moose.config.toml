@@ -1,4 +1,5 @@
 language = "Typescript"
+source_dir = "src"
 
 [typescript_config]
 # Package manager to use for installing dependencies
