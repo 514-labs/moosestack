@@ -40,4 +40,12 @@ cp "../../target/${build_target}/release/${current_bin}" "../../target/${build_t
 cp "../../target/${build_target}/release/${current_bin}" "${node_pkg}/bin"
 # publish the package
 cd "${node_pkg}"
-npm publish --access public
+# For CI builds (TAG_LATEST=false), publish with version-specific tag
+# For release builds (TAG_LATEST=true), publish and update the 'latest' tag
+if [ "${TAG_LATEST}" = "true" ]; then
+    # Release build - publish and update 'latest' tag
+    npm publish --access public
+else
+    # CI build - publish with version as tag (e.g., 0.6.148-ci-2-g9b399a90)
+    npm publish --access public --tag "${node_version}"
+fi
