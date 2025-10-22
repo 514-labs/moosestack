@@ -593,19 +593,13 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
           const client = (await import("@clickhouse/client")).createClient(
             CLICKHOUSE_CONFIG,
           );
-          try {
-            const result = await client.query({
-              query: `SELECT id, JSON_QUERY(payload, '$.name') as name FROM JsonTest WHERE id = '${id}'`,
-              format: "JSONEachRow",
-            });
-            const rows: any[] = await result.json();
-            if (!rows.length || rows[0].name == null) {
-              throw new Error("JSON payload not stored as expected");
-            }
-          } finally {
-            await (
-              await import("@clickhouse/client")
-            ).createClient;
+          const result = await client.query({
+            query: `SELECT id, getSubcolumn(${fieldName}, 'name') as name FROM JsonTest WHERE id = '${id}'`,
+            format: "JSONEachRow",
+          });
+          const rows: any[] = await result.json();
+          if (!rows.length || rows[0].name == null) {
+            throw new Error("JSON payload not stored as expected");
           }
         });
       }

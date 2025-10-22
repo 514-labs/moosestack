@@ -1,5 +1,5 @@
 use crate::framework::core::infrastructure::table::{
-    ColumnType, DataEnum, EnumValue, FloatType, Nested, OrderBy, Table,
+    ColumnType, DataEnum, EnumValue, FloatType, JsonOptions, Nested, OrderBy, Table,
 };
 use crate::framework::core::partial_infrastructure_map::LifeCycle;
 use crate::utilities::identifiers as ident;
@@ -30,6 +30,7 @@ fn map_column_type_to_typescript(
     column_type: &ColumnType,
     enums: &HashMap<&DataEnum, String>,
     nested: &HashMap<&Nested, String>,
+    json_types: &HashMap<&JsonOptions, String>,
 ) -> String {
     match column_type {
         ColumnType::String => "string".to_string(),
@@ -61,7 +62,8 @@ fn map_column_type_to_typescript(
             element_type,
             element_nullable,
         } => {
-            let mut inner_type = map_column_type_to_typescript(element_type, enums, nested);
+            let mut inner_type =
+                map_column_type_to_typescript(element_type, enums, nested, json_types);
             if *element_nullable {
                 inner_type = format!("({inner_type} | undefined)")
             };
@@ -71,19 +73,59 @@ fn map_column_type_to_typescript(
             format!("{inner_type}[]")
         }
         ColumnType::Nested(nested_type) => nested.get(nested_type).unwrap().to_string(),
-        ColumnType::Json(_) => "Record<string, any>".to_string(),
+        ColumnType::Json(opts) => {
+            if opts.typed_paths.is_empty() {
+                "Record<string, any>".to_string()
+            } else {
+                let class_name = json_types.get(opts).unwrap();
+                let mut parts = Vec::new();
+                if let Some(n) = opts.max_dynamic_paths {
+                    parts.push(format!("{n}"));
+                } else {
+                    parts.push("undefined".to_string());
+                }
+                if let Some(n) = opts.max_dynamic_types {
+                    parts.push(format!("{n}"));
+                } else {
+                    parts.push("undefined".to_string());
+                }
+                if !opts.skip_paths.is_empty() {
+                    let paths = opts
+                        .skip_paths
+                        .iter()
+                        .map(|p| format!("{:?}", p))
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    parts.push(format!("[{}]", paths));
+                } else {
+                    parts.push("[]".to_string());
+                }
+                if !opts.skip_regexps.is_empty() {
+                    let regexps = opts
+                        .skip_regexps
+                        .iter()
+                        .map(|r| format!("{:?}", r))
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    parts.push(format!("[{}]", regexps));
+                } else {
+                    parts.push("[]".to_string());
+                }
+                format!("{class_name} & ClickHouseJson<{}>", parts.join(", "))
+            }
+        }
         ColumnType::Bytes => "Uint8Array".to_string(),
         ColumnType::Uuid => "string & typia.tags.Format<\"uuid\">".to_string(),
         ColumnType::IpV4 => "string & typia.tags.Format<\"ipv4\">".to_string(),
         ColumnType::IpV6 => "string & typia.tags.Format<\"ipv6\">".to_string(),
         ColumnType::Nullable(inner) => {
-            let inner_type = map_column_type_to_typescript(inner, enums, nested);
+            let inner_type = map_column_type_to_typescript(inner, enums, nested, json_types);
             format!("{inner_type} | undefined")
         }
         ColumnType::NamedTuple(fields) => {
             let mut field_types = Vec::new();
             for (name, field_type) in fields {
-                let type_str = map_column_type_to_typescript(field_type, enums, nested);
+                let type_str = map_column_type_to_typescript(field_type, enums, nested, json_types);
                 field_types.push(format!("{name}: {type_str}"));
             }
             format!("{{ {} }} & ClickHouseNamedTuple", field_types.join("; "))
@@ -98,8 +140,9 @@ fn map_column_type_to_typescript(
             key_type,
             value_type,
         } => {
-            let key_type_str = map_column_type_to_typescript(key_type, enums, nested);
-            let value_type_str = map_column_type_to_typescript(value_type, enums, nested);
+            let key_type_str = map_column_type_to_typescript(key_type, enums, nested, json_types);
+            let value_type_str =
+                map_column_type_to_typescript(value_type, enums, nested, json_types);
             format!("Record<{key_type_str}, {value_type_str}>")
         }
     }
@@ -220,12 +263,14 @@ fn generate_interface(
     name: &str,
     enums: &HashMap<&DataEnum, String>,
     nested_models: &HashMap<&Nested, String>,
+    json_types: &HashMap<&JsonOptions, String>,
 ) -> String {
     let mut interface = String::new();
     writeln!(interface, "export interface {name} {{").unwrap();
 
     for column in &nested.columns {
-        let type_str = map_column_type_to_typescript(&column.data_type, enums, nested_models);
+        let type_str =
+            map_column_type_to_typescript(&column.data_type, enums, nested_models, json_types);
         let type_str = if column.primary_key {
             format!("Key<{type_str}>")
         } else {
@@ -238,6 +283,25 @@ fn generate_interface(
         };
         let name = quote_name_if_needed(&column.name);
         writeln!(interface, "    {name}: {type_str};").unwrap();
+    }
+    writeln!(interface, "}}").unwrap();
+    writeln!(interface).unwrap();
+    interface
+}
+
+fn generate_json_inner_interface(
+    opts: &JsonOptions,
+    name: &str,
+    enums: &HashMap<&DataEnum, String>,
+    nested_models: &HashMap<&Nested, String>,
+    json_types: &HashMap<&JsonOptions, String>,
+) -> String {
+    let mut interface = String::new();
+    writeln!(interface, "export interface {name} {{").unwrap();
+
+    for (field_name, field_type) in &opts.typed_paths {
+        let type_str = map_column_type_to_typescript(field_type, enums, nested_models, json_types);
+        writeln!(interface, "    {field_name}: {type_str};").unwrap();
     }
     writeln!(interface, "}}").unwrap();
     writeln!(interface).unwrap();
@@ -292,12 +356,13 @@ pub fn tables_to_typescript(tables: &[Table], life_cycle: Option<LifeCycle>) -> 
     writeln!(output, "import typia from \"typia\";").unwrap();
     writeln!(output).unwrap();
 
-    // Collect all enums and nested types
+    // Collect all enums, nested types, and json types
     let mut enums: HashMap<&DataEnum, String> = HashMap::new();
     let mut extra_type_names: HashMap<String, usize> = HashMap::new();
     let mut nested_models: HashMap<&Nested, String> = HashMap::new();
+    let mut json_types: HashMap<&JsonOptions, String> = HashMap::new();
 
-    // First pass: collect all nested types and enums
+    // First pass: collect all nested types, enums, and json types
     for table in tables {
         for column in &table.columns {
             match &column.data_type {
@@ -333,6 +398,22 @@ pub fn tables_to_typescript(tables: &[Table], life_cycle: Option<LifeCycle>) -> 
                         nested_models.insert(nested, name);
                     }
                 }
+                ColumnType::Json(opts) => {
+                    if !opts.typed_paths.is_empty() && !json_types.contains_key(opts) {
+                        let name = format!("{}Json", sanitize_typescript_identifier(&column.name));
+                        let name = match extra_type_names.entry(name.clone()) {
+                            Entry::Occupied(mut entry) => {
+                                *entry.get_mut() = entry.get() + 1;
+                                format!("{}{}", name, entry.get())
+                            }
+                            Entry::Vacant(entry) => {
+                                entry.insert(0);
+                                name
+                            }
+                        };
+                        json_types.insert(opts, name);
+                    }
+                }
                 _ => {}
             }
         }
@@ -343,9 +424,26 @@ pub fn tables_to_typescript(tables: &[Table], life_cycle: Option<LifeCycle>) -> 
         output.push_str(&generate_enum(data_enum, name));
     }
 
+    // Generate JSON inner interface definitions
+    for (opts, name) in json_types.iter() {
+        output.push_str(&generate_json_inner_interface(
+            opts,
+            name,
+            &enums,
+            &nested_models,
+            &json_types,
+        ));
+    }
+
     // Generate nested interface definitions
     for (nested, name) in nested_models.iter() {
-        output.push_str(&generate_interface(nested, name, &enums, &nested_models));
+        output.push_str(&generate_interface(
+            nested,
+            name,
+            &enums,
+            &nested_models,
+            &json_types,
+        ));
     }
 
     // Generate model interfaces
@@ -366,8 +464,12 @@ pub fn tables_to_typescript(tables: &[Table], life_cycle: Option<LifeCycle>) -> 
         writeln!(output, "export interface {} {{", table.name).unwrap();
 
         for column in &table.columns {
-            let mut type_str =
-                map_column_type_to_typescript(&column.data_type, &enums, &nested_models);
+            let mut type_str = map_column_type_to_typescript(
+                &column.data_type,
+                &enums,
+                &nested_models,
+                &json_types,
+            );
 
             if let Some((_, simple_agg_func)) = column
                 .annotations
