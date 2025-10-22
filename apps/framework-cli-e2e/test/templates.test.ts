@@ -28,6 +28,7 @@ import {
   TEST_DATA,
   TEMPLATE_NAMES,
   APP_NAMES,
+  CLICKHOUSE_CONFIG,
 } from "./constants";
 
 import {
