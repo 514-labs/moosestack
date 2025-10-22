@@ -223,7 +223,7 @@ export interface EdgeCases {
 
 interface JsonInner {
   name: string;
-  count: number;
+  count: UInt64;
 }
 
 export interface JsonTest {
