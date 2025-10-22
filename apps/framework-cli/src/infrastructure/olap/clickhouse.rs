@@ -1542,11 +1542,19 @@ pub fn extract_order_by_from_create_query(create_query: &str) -> Vec<String> {
     }
 
     if let Some(after_order_by) = after_order_by {
-        // Find where the ORDER BY clause ends (at SETTINGS or end of string)
+        // Find where the ORDER BY clause ends (at TTL, SETTINGS, or end of string)
         let mut end_idx = after_order_by.len();
-        if let Some(settings_idx) = after_order_by.to_uppercase().find("SETTINGS") {
-            end_idx = settings_idx;
+
+        // Check for TTL keyword (appears after ORDER BY but before SETTINGS)
+        if let Some(ttl_idx) = after_order_by.to_uppercase().find(" TTL ") {
+            end_idx = std::cmp::min(end_idx, ttl_idx);
         }
+
+        // Check for SETTINGS keyword
+        if let Some(settings_idx) = after_order_by.to_uppercase().find("SETTINGS") {
+            end_idx = std::cmp::min(end_idx, settings_idx);
+        }
+
         if let Some(next_order_by) = after_order_by[8..].to_uppercase().find("ORDER BY") {
             end_idx = std::cmp::min(end_idx, next_order_by + 8);
         }
@@ -1796,6 +1804,11 @@ mod tests {
         let query = "CREATE TABLE test (id Int64) ENGINE = MergeTree() ORDER BY (id, timestamp) SETTINGS index_granularity = 8192";
         let order_by = extract_order_by_from_create_query(query);
         assert_eq!(order_by, vec!["id".to_string(), "timestamp".to_string()]);
+
+        // Test with ORDER BY and TTL (should not include TTL in ORDER BY)
+        let query = "CREATE TABLE test (id Int64, ts DateTime) ENGINE = MergeTree ORDER BY (id, ts) TTL ts + INTERVAL 90 DAY SETTINGS index_granularity = 8192";
+        let order_by = extract_order_by_from_create_query(query);
+        assert_eq!(order_by, vec!["id".to_string(), "ts".to_string()]);
 
         // Test with backticks
         let query =
