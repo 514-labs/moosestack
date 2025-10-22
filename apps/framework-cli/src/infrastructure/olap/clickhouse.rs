@@ -1546,7 +1546,7 @@ pub fn extract_order_by_from_create_query(create_query: &str) -> Vec<String> {
         let mut end_idx = after_order_by.len();
 
         // Check for TTL keyword (appears after ORDER BY but before SETTINGS)
-        if let Some(ttl_idx) = after_order_by.to_uppercase().find("TTL") {
+        if let Some(ttl_idx) = after_order_by.to_uppercase().find(" TTL ") {
             end_idx = std::cmp::min(end_idx, ttl_idx);
         }
 
