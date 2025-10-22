@@ -61,6 +61,8 @@ impl ClickHouseStateStorage {
 
     /// Ensure the state table exists
     async fn ensure_state_table(&self) -> Result<()> {
+        // Use ReplacingMergeTree to safely update state without losing data if INSERT fails.
+        // The updated_at column determines which row is "latest" during merges.
         let create_table_sql = format!(
             r#"
             CREATE TABLE IF NOT EXISTS `{}`.`{}`
@@ -131,11 +133,12 @@ impl StateStorage for ClickHouseStateStorage {
         // Ensure table exists first
         self.ensure_state_table().await?;
 
-        // Query for the latest state
+        // Query for the latest state. Use FINAL to force deduplication and ensure we read
+        // the most recent value immediately, rather than waiting for background merges.
         let query_sql = format!(
             r#"
             SELECT value
-            FROM `{}`.`{}`
+            FROM `{}`.`{}` FINAL
             WHERE key = '{}'
             ORDER BY updated_at DESC
             LIMIT 1
@@ -181,20 +184,51 @@ impl StateStorage for ClickHouseStateStorage {
     }
 }
 
-/// Creates the appropriate state storage implementation based on project configuration
-pub async fn create_state_storage(
-    project: &Project,
-    redis_client: &Arc<RedisClient>,
-) -> Result<Box<dyn StateStorage>> {
-    match project.state_config.storage.as_str() {
-        "clickhouse" => {
-            let client = create_client(project.clickhouse_config.clone());
-            check_ready(&client).await?;
-            Ok(Box::new(ClickHouseStateStorage::new(
-                client,
-                project.clickhouse_config.db_name.clone(),
-            )))
+/// Builder for creating state storage based on project configuration.
+///
+/// Storage backend is determined by `state_config.storage` in moose.config.toml.
+pub struct StateStorageBuilder<'a> {
+    project: &'a Project,
+    redis_client: Option<&'a Arc<RedisClient>>,
+}
+
+impl<'a> StateStorageBuilder<'a> {
+    pub fn from_config(project: &'a Project) -> Self {
+        Self {
+            project,
+            redis_client: None,
         }
-        _ => Ok(Box::new(RedisStateStorage::new(redis_client.clone()))),
+    }
+
+    pub fn redis_client(mut self, redis_client: Option<&'a Arc<RedisClient>>) -> Self {
+        self.redis_client = redis_client;
+        self
+    }
+
+    pub async fn build(self) -> Result<Box<dyn StateStorage>> {
+        match self.project.state_config.storage.as_str() {
+            "clickhouse" => {
+                let client = create_client(self.project.clickhouse_config.clone());
+                check_ready(&client).await?;
+                Ok(Box::new(ClickHouseStateStorage::new(
+                    client,
+                    self.project.clickhouse_config.db_name.clone(),
+                )))
+            }
+            "redis" => {
+                let redis_client = self.redis_client
+                    .ok_or_else(|| anyhow::anyhow!(
+                        "Project configuration specifies Redis state storage (state_config.storage = \"redis\") \
+                         but no Redis client was provided. Either provide a Redis client via .redis_client(Some(...)) \
+                         or change state_config.storage to \"clickhouse\" in moose.config.toml"
+                    ))?;
+                Ok(Box::new(RedisStateStorage::new(redis_client.clone())))
+            }
+            _ => anyhow::bail!(
+                "Unknown state storage backend '{}' in project configuration. \
+                 Valid options are \"redis\" or \"clickhouse\"",
+                self.project.state_config.storage
+            ),
+        }
     }
 }

@@ -118,7 +118,7 @@ use crate::framework::core::partial_infrastructure_map::LifeCycle;
 use crate::framework::core::plan::plan_changes;
 use crate::framework::core::plan::InfraPlan;
 use crate::framework::core::primitive_map::PrimitiveMap;
-use crate::framework::core::state_storage;
+use crate::framework::core::state_storage::StateStorageBuilder;
 use crate::infrastructure::olap::clickhouse::{check_ready, create_client};
 use crate::infrastructure::olap::OlapOperations;
 use crate::infrastructure::orchestration::temporal_client::{
@@ -400,7 +400,10 @@ pub async fn start_development_mode(
     let webapp_update_channel = web_server.spawn_webapp_update_listener(web_apps).await;
 
     // Create state storage once based on project configuration
-    let state_storage = state_storage::create_state_storage(&project, &redis_client).await?;
+    let state_storage = StateStorageBuilder::from_config(&project)
+        .redis_client(Some(&redis_client))
+        .build()
+        .await?;
 
     let (_, plan) = plan_changes(&*state_storage, &project).await?;
 
@@ -660,7 +663,10 @@ pub async fn start_production_mode(
         Box::leak(Box::new(RwLock::new(route_table)));
 
     // Create state storage once based on project configuration
-    let state_storage = state_storage::create_state_storage(&project, &redis_client).await?;
+    let state_storage = StateStorageBuilder::from_config(&project)
+        .redis_client(Some(&redis_client))
+        .build()
+        .await?;
 
     let (current_state, plan) = plan_changes(&*state_storage, &project).await?;
     maybe_warmup_connections(&project, &redis_client).await;
