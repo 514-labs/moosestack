@@ -181,11 +181,11 @@ def handler_with_client(moose_client):
                 if is_dmv2:
                     web_apps = get_web_apps()
                     # Sort by mount path length (longest first) for proper routing
-                    sorted_web_apps = sorted(web_apps.values(), key=lambda wa: len(wa.config.mount_path or "/"), reverse=True)
+                    sorted_web_apps = sorted(web_apps.values(), key=lambda wa: len(wa.config.mount_path), reverse=True)
 
                     for web_app in sorted_web_apps:
-                        mount_path = web_app.config.mount_path or "/"
-                        normalized_mount = mount_path.rstrip('/') if mount_path != "/" else "/"
+                        mount_path = web_app.config.mount_path
+                        normalized_mount = mount_path.rstrip('/')
 
                         # Check if path matches this WebApp
                         matches = (
@@ -208,8 +208,7 @@ def handler_with_client(moose_client):
 
                             # Strip mount path from URL for the FastAPI app
                             proxied_path = raw_path
-                            if normalized_mount != "/":
-                                proxied_path = raw_path[len(normalized_mount):] or "/"
+                            proxied_path = raw_path[len(normalized_mount):]
 
                             # Build ASGI scope
                             server_name = getattr(self.server, 'server_name', 'localhost')
