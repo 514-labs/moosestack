@@ -147,7 +147,10 @@ fn detect_drift(
 
     let changed_tables: Vec<String> = current_no_metadata
         .keys()
-        .filter(|k| current_no_metadata.get(*k) != expected_no_metadata.get(*k))
+        .filter(|k| {
+            expected_no_metadata.contains_key(*k)
+                && current_no_metadata.get(*k) != expected_no_metadata.get(*k)
+        })
         .cloned()
         .collect();
 
