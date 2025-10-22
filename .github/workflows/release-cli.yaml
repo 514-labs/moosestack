@@ -3,7 +3,7 @@ name: Release CLI
 on:
   push:
     branches:
-      - main
+      - '**'  # All branches
     paths:
       - ".github/workflows/release-cli.yaml"
       - "apps/moose-cli-npm/**"
@@ -32,23 +32,66 @@ jobs:
       id-token: "write"
     outputs:
       version: ${{ steps.version.outputs.VERSION }}
+      python_version: ${{ steps.version.outputs.PYTHON_VERSION }}
+      is_ci_build: ${{ steps.version.outputs.IS_CI_BUILD }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          fetch-depth: 20
+          fetch-depth: 0  # Need full history for git describe
+          fetch-tags: true
 
       - name: Generate Version
         id: version
         run: |
-          ./scripts/version.js ${{ github.sha }} >> "$GITHUB_OUTPUT"
+          # Determine if this is a CI build (any branch other than main)
+          if [[ "${{ github.ref_name }}" != "main" ]]; then
+            # For CI builds, use git describe but exclude any -ci- tags
+            git fetch --tags
 
-      - name: Create Release
+            # Use git describe with --match to only consider release tags (without -ci-)
+            # This ensures we build from the last real release, not a CI tag
+            CI_VERSION=$(git describe --tags --always --match="v[0-9]*.[0-9]*.[0-9]*")
+            # Remove the 'v' prefix if present
+            CI_VERSION=${CI_VERSION#v}
+
+            # Insert -ci- after the base version tag
+            # This transforms v0.6.147-3-g7b637a7e to v0.6.147-ci-3-g7b637a7e
+            # Pattern: base_version-commit_count-ghash becomes base_version-ci-commit_count-ghash
+            if [[ "$CI_VERSION" =~ ^([0-9]+\.[0-9]+\.[0-9]+)-([0-9]+)-g([0-9a-f]+)(.*)$ ]]; then
+              CI_VERSION="${BASH_REMATCH[1]}-ci-${BASH_REMATCH[2]}-g${BASH_REMATCH[3]}${BASH_REMATCH[4]}"
+              # For Python, convert to PEP 440 compliant pre-release version
+              # Use git hash (hex) converted to decimal for uniqueness
+              # 0.6.147-ci-3-g7b637a7e -> 0.6.147.dev2066915966 (0x7b637a7e = 2066915966)
+              GIT_HASH_HEX="${BASH_REMATCH[3]}"
+              GIT_HASH_DEC=$((16#${GIT_HASH_HEX}))
+              PYTHON_VERSION="${BASH_REMATCH[1]}.dev${GIT_HASH_DEC}"
+            else
+              echo "ERROR: Unexpected CI version format: ${CI_VERSION}"
+              exit 1
+            fi
+
+            echo "VERSION=${CI_VERSION}" >> "$GITHUB_OUTPUT"
+            echo "PYTHON_VERSION=${PYTHON_VERSION}" >> "$GITHUB_OUTPUT"
+            echo "IS_CI_BUILD=true" >> "$GITHUB_OUTPUT"
+            echo "Generated CI version: ${CI_VERSION}"
+            echo "Generated Python version: ${PYTHON_VERSION}"
+          else
+            # For release builds (main branch), use the existing version.js script
+            ./scripts/version.js ${{ github.sha }} >> "$GITHUB_OUTPUT"
+            # For release builds, Python version is the same as the main version
+            RELEASE_VERSION=$(./scripts/version.js ${{ github.sha }} | grep "VERSION=" | cut -d'=' -f2)
+            echo "PYTHON_VERSION=${RELEASE_VERSION}" >> "$GITHUB_OUTPUT"
+            echo "IS_CI_BUILD=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create Release/Tag
         uses: ncipollo/release-action@v1
         if: ${{ !inputs.dry-run }}
         with:
           tag: v${{ steps.version.outputs.VERSION }}
-          generateReleaseNotes: true
+          generateReleaseNotes: ${{ steps.version.outputs.IS_CI_BUILD != 'true' }}
+          prerelease: ${{ steps.version.outputs.IS_CI_BUILD == 'true' }}
           commit: ${{ github.sha }}
 
       - name: Auth
@@ -62,15 +105,16 @@ jobs:
         with:
           install_components: "gsutil"
 
-      - name: Determine Version
+      - name: Upload Version Info
         run: |
-          if [ "${{ github.ref_name }}" = "main" ]; then
-            # Update latest version file and upload
+          if [[ "${{ steps.version.outputs.IS_CI_BUILD }}" == "true" ]]; then
+            # CI builds go to the dev channel
+            echo "${{ steps.version.outputs.VERSION }}" > moose-cli.version
+            gsutil cp moose-cli.version gs://downloads.fiveonefour.com/dev/${{ steps.version.outputs.VERSION }}/
+          else
+            # Release builds (main branch) update the latest stable version
             echo "${{ steps.version.outputs.VERSION }}" > moose-cli.version
             gsutil cp moose-cli.version gs://downloads.fiveonefour.com/stable/latest/
-          else
-            # Use branch name as version for dev builds
-            echo "version=${{ github.ref_name }}" >> $GITHUB_OUTPUT
           fi
 
   build-and-publish-py-moose-lib:
@@ -109,7 +153,10 @@ jobs:
           TWINE_PASSWORD: ${{ steps.op-load-secret.outputs.PYPI_TOKEN }}
         run: |
           cd packages/py-moose-lib
-          python setup.py --version ${{ needs.version.outputs.version }} sdist bdist_wheel
+          # Use PYTHON_VERSION for PEP 440 compliant versioning
+          # CI builds: 0.6.147.dev3 (pre-release, won't become default)
+          # Release builds: 0.6.147 (stable, becomes default)
+          python setup.py --version ${{ needs.version.outputs.python_version }} sdist bdist_wheel
           twine upload dist/*
 
   package-and-publish-independant-ts-package:
@@ -141,6 +188,8 @@ jobs:
       - name: Publish the NPM Moose CLI package
         shell: bash
         run: ./packages/ts-moose-lib/scripts/release-lib.sh ${{ needs.version.outputs.version }}
+        env:
+          TAG_LATEST: ${{ needs.version.outputs.is_ci_build == 'false' }}
 
       - name: Wait for @514labs/ts-moose-lib to be available
         shell: bash
@@ -149,6 +198,8 @@ jobs:
       - name: Publish the NPM Moose Connector API package
         shell: bash
         run: ./packages/ts-connector-api/scripts/release-lib.sh ${{ needs.version.outputs.version }}
+        env:
+          TAG_LATEST: ${{ needs.version.outputs.is_ci_build == 'false' }}
 
       - name: Wait for @514labs/moose-connector-api to be available
         shell: bash
@@ -157,6 +208,8 @@ jobs:
       - name: Publish the NPM Moose Connector S3 package
         shell: bash
         run: ./packages/ts-connector-s3/scripts/release-lib.sh ${{ needs.version.outputs.version }}
+        env:
+          TAG_LATEST: ${{ needs.version.outputs.is_ci_build == 'false' }}
 
       - name: Wait for @514labs/moose-connector-s3 to be available
         shell: bash
@@ -165,6 +218,8 @@ jobs:
       - name: Publish the NPM Moose design-system package
         shell: bash
         run: ./packages/design-system-base/scripts/release.sh ${{ needs.version.outputs.version }}
+        env:
+          TAG_LATEST: ${{ needs.version.outputs.is_ci_build == 'false' }}
 
       - name: Wait for @514labs/design-system-base to be available
         shell: bash
@@ -173,6 +228,8 @@ jobs:
       - name: Publish the NPM Moose event-capture package
         shell: bash
         run: ./packages/event-capture/scripts/release.sh ${{ needs.version.outputs.version }}
+        env:
+          TAG_LATEST: ${{ needs.version.outputs.is_ci_build == 'false' }}
 
       - name: Wait for d@514labs/event-capture to be available
         shell: bash
@@ -181,6 +238,8 @@ jobs:
       - name: Publish the NPM Moose Protobuf package
         shell: bash
         run: ./packages/ts-moose-proto/scripts/release-lib.sh ${{ needs.version.outputs.version }}
+        env:
+          TAG_LATEST: ${{ needs.version.outputs.is_ci_build == 'false' }}
 
       - name: Wait for @514labs/moose-proto to be available
         shell: bash
@@ -317,17 +376,37 @@ jobs:
 
       - name: Set Version
         run: |
-          # Update version in Cargo.toml using sed - compatible with both macOS and Linux
+          # Set Cargo.toml to base version only (strip -ci- part)
+          # Maturin tries to convert this to Python format, so keep it simple
+          BASE_VERSION=$(echo "${{ needs.version.outputs.version }}" | sed 's/-ci-.*//')
+
           if [[ "$OSTYPE" == "darwin"* ]]; then
             # macOS version of sed requires an empty string after -i
-            sed -i '' "s/^version = \".*\"/version = \"${{ needs.version.outputs.version }}\"/" Cargo.toml
-            sed -i '' '/name = "moose-cli"/,/version = ".*"/ s/version = ".*"/version = "${{ needs.version.outputs.version }}"/' ../../Cargo.lock
+            sed -i '' "s/^version = \".*\"/version = \"${BASE_VERSION}\"/" Cargo.toml
+            sed -i '' '/name = "moose-cli"/,/version = ".*"/ s/version = ".*"/version = "'"${BASE_VERSION}"'"/' ../../Cargo.lock
           else
             # Linux version of sed
-            sed -i "s/^version = \".*\"/version = \"${{ needs.version.outputs.version }}\"/" Cargo.toml
-            sed -i '/name = "moose-cli"/,/version = ".*"/ s/version = ".*"/version = "${{ needs.version.outputs.version }}"/' ../../Cargo.lock
+            sed -i "s/^version = \".*\"/version = \"${BASE_VERSION}\"/" Cargo.toml
+            sed -i '/name = "moose-cli"/,/version = ".*"/ s/version = ".*"/version = "'"${BASE_VERSION}"'"/' ../../Cargo.lock
           fi
+
+          # Set Python package version in pyproject.toml (PEP 440 compliant)
+          # Maturin will use this for the Python package metadata
+          perl -i -pe 's/^(\[project\])$/$1\nversion = "${{ needs.version.outputs.python_version }}"/' pyproject.toml
+
+          # Debug: Show what we set
+          echo "Cargo.toml version (base): ${BASE_VERSION}"
+          grep '^version = ' Cargo.toml || echo "  (not found)"
+          echo "pyproject.toml [project] section:"
+          sed -n '/^\[project\]/,/^\[/p' pyproject.toml | head -10
         working-directory: ./apps/framework-cli
+
+      - name: Override version for binary
+        run: |
+          # Set CARGO_PKG_VERSION env var to override what env!("CARGO_PKG_VERSION") sees
+          # This gives the Rust binary the full version string including -ci- part
+          echo "CARGO_PKG_VERSION=${{ needs.version.outputs.version }}" >> $GITHUB_ENV
+          echo "Set CARGO_PKG_VERSION to: ${{ needs.version.outputs.version }}"
 
       - name: Build wheels
         uses: PyO3/maturin-action@v1
@@ -348,7 +427,7 @@ jobs:
               PROTOC_VERSION=24.4
               PROTOC_ZIP=protoc-$PROTOC_VERSION-linux-x86_64.zip
               export POSTHOG_API_KEY=${{ secrets.POSTHOG_API_KEY }}
-              
+
               # Debian-based distribution
               apt install -y curl unzip
 
@@ -377,6 +456,7 @@ jobs:
         run: ./scripts/release-bin.sh ${{ needs.version.outputs.version }} ${{ matrix.build.TARGET }} ${{ matrix.build.OS }} ${{ matrix.build.NAME }}
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          TAG_LATEST: ${{ needs.version.outputs.is_ci_build == 'false' }}
 
       - name: Upload binary
         uses: ncipollo/release-action@v1
@@ -411,9 +491,9 @@ jobs:
           glob: "moose-cli{,.sig,.sha256}"
           process_gcloudignore: false
           parent: false
-          destination: "downloads.fiveonefour.com/${{ github.ref_name == 'main' && 'stable' || 'dev' }}/${{ needs.version.outputs.version }}/${{ matrix.build.TARGET }}"
+          destination: "downloads.fiveonefour.com/${{ needs.version.outputs.is_ci_build == 'true' && 'dev' || 'stable' }}/${{ needs.version.outputs.version }}/${{ matrix.build.TARGET }}"
           headers: |-
-            cache-control: ${{ github.ref_name != 'main' && 'no-store, no-cache, must-revalidate' || 'public, max-age=3600' }}
+            cache-control: ${{ needs.version.outputs.is_ci_build == 'true' && 'no-store, no-cache, must-revalidate' || 'public, max-age=3600' }}
 
   update-moose-version-index:
     needs: [build-and-publish-binaries, version]
@@ -437,10 +517,10 @@ jobs:
       - name: Determine channel
         id: channel
         run: |
-          if [ "${{ github.ref_name }}" = "main" ]; then
-            echo "channel=stable" >> $GITHUB_OUTPUT
-          else
+          if [[ "${{ needs.version.outputs.is_ci_build }}" == "true" ]]; then
             echo "channel=dev" >> $GITHUB_OUTPUT
+          else
+            echo "channel=stable" >> $GITHUB_OUTPUT
           fi
 
       - name: Download current index file
@@ -474,7 +554,7 @@ jobs:
   release-python:
     name: Release Python Wheels
     runs-on: ubuntu-latest
-    needs: [build-and-publish-binaries, cleanup-pypi]
+    needs: [version, build-and-publish-binaries, cleanup-pypi]
     if: ${{ !inputs.dry-run }}
     # Add explicit permissions
     permissions:
@@ -560,6 +640,8 @@ jobs:
       - name: Publish the NPM Moose CLI package
         shell: bash
         run: ./apps/moose-cli-npm/scripts/release-cli.sh ${{ needs.version.outputs.version }}
+        env:
+          TAG_LATEST: ${{ needs.version.outputs.is_ci_build == 'false' }}
 
       - name: Wait for @514labs/moose-cli to be available
         shell: bash
@@ -568,6 +650,8 @@ jobs:
       - name: Publish the NPM Moose create app package
         shell: bash
         run: ./apps/create-moose-app/scripts/release.sh ${{ needs.version.outputs.version }}
+        env:
+          TAG_LATEST: ${{ needs.version.outputs.is_ci_build == 'false' }}
 
 
   build-and-publish-fullstack-image:
