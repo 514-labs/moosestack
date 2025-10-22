@@ -615,7 +615,7 @@ jobs:
 
       - name: Wait for @514labs/moose-cli-darwin-x64 to be available
         shell: bash
-        run: ./scripts/wait-for-npm-package.sh @514labs/moose-cli-linux-x64 ${{ needs.version.outputs.version }}
+        run: ./scripts/wait-for-npm-package.sh @514labs/moose-cli-darwin-x64 ${{ needs.version.outputs.version }}
 
       - name: Wait for @514labs/moose-cli-darwin-arm64 to be available
         shell: bash
@@ -623,7 +623,7 @@ jobs:
 
       - name: Wait for @514labs/moose-cli-linux-arm64 to be available
         shell: bash
-        run: ./scripts/wait-for-npm-package.sh @514labs/moose-cli-linux-x64 ${{ needs.version.outputs.version }}
+        run: ./scripts/wait-for-npm-package.sh @514labs/moose-cli-linux-arm64 ${{ needs.version.outputs.version }}
 
       - name: Wait for @514labs/moose-cli-linux-x64 to be available
         shell: bash
