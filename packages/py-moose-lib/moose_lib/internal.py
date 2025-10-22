@@ -21,8 +21,7 @@ from moose_lib.dmv2 import (
     get_workflows,
     get_web_apps,
     OlapTable,
-    View,
-    MaterializedView,
+    OlapConfig,
     SqlResource
 )
 from moose_lib.dmv2.stream import KafkaSchemaConfig
@@ -151,6 +150,7 @@ class TableConfig(BaseModel):
         columns: List of columns with their types and attributes.
         order_by: List of columns used for the ORDER BY clause.
         partition_by: The column name used for the PARTITION BY clause.
+        sample_by_expression: Optional SAMPLE BY expression for data sampling.
         engine_config: Engine configuration with type-safe, engine-specific parameters.
         version: Optional version string of the table configuration.
         metadata: Optional metadata for the table.
@@ -163,11 +163,14 @@ class TableConfig(BaseModel):
     columns: List[Column]
     order_by: List[str] | str
     partition_by: Optional[str]
+    sample_by_expression: Optional[str] = None
     engine_config: Optional[EngineConfigDict] = Field(None, discriminator='engine')
     version: Optional[str] = None
     metadata: Optional[dict] = None
     life_cycle: Optional[str] = None
-    table_settings: Optional[Dict[str, str]] = None
+    table_settings: Optional[dict[str, str]] = None
+    indexes: list[OlapConfig.TableIndex] = []
+    ttl: Optional[str] = None
 
 
 class TopicConfig(BaseModel):
@@ -601,12 +604,15 @@ def to_infra_map() -> dict:
             columns=table._column_list,
             order_by=order_by_value,
             partition_by=table.config.partition_by,
+            sample_by_expression=table.config.sample_by_expression,
             engine_config=engine_config,
             version=table.config.version,
             metadata=getattr(table, "metadata", None),
             life_cycle=table.config.life_cycle.value if table.config.life_cycle else None,
             # Map 'settings' to 'table_settings' for internal use
             table_settings=table_settings if table_settings else None,
+            indexes=table.config.indexes,
+            ttl=table.config.ttl,
         )
 
     for name, stream in get_streams().items():
@@ -726,7 +732,9 @@ def load_models():
        (`___MOOSE_STUFF___start` and `end___MOOSE_STUFF___`), which the
        calling system uses to extract the configuration.
     """
-    import_module("app.main")
+    import os
+    source_dir = os.environ.get("MOOSE_SOURCE_DIR", "app")
+    import_module(f"{source_dir}.main")
 
     # Generate the infrastructure map
     infra_map = to_infra_map()

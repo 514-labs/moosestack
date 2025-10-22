@@ -1,7 +1,7 @@
 # Test all supported ClickHouse engines to ensure proper configuration
 # These tables verify that all engine types can be created and configured correctly
 
-from moose_lib import OlapTable, OlapConfig, Key
+from moose_lib import OlapTable, OlapConfig, Key, ClickHouseTTL
 from moose_lib.blocks import (
     MergeTreeEngine,
     ReplacingMergeTreeEngine,
@@ -15,12 +15,36 @@ from moose_lib.blocks import (
 )
 from pydantic import BaseModel
 from datetime import datetime
-from typing import Optional
+from typing import Optional, Annotated
 
 
 class EngineTestData(BaseModel):
     """Test data model for engine testing"""
     id: Key[str]
+    timestamp: datetime
+    value: int
+    category: str
+    version: int
+    is_deleted: bool  # For ReplacingMergeTree soft deletes (UInt8 in ClickHouse)
+
+# Table with TTL: delete rows older than 90 days, delete email after 30 days
+class TTLTestData(BaseModel):
+    id: Key[str]
+    timestamp: datetime
+    email: Annotated[str, ClickHouseTTL("timestamp + INTERVAL 30 DAY")]
+
+ttl_table = OlapTable[TTLTestData](
+    "TTLTable",
+    OlapConfig(
+        engine=MergeTreeEngine(),
+        order_by_fields=["id", "timestamp"],
+        ttl="timestamp + INTERVAL 90 DAY DELETE",
+    ),
+)
+
+class EngineTestDataSample(BaseModel):
+    """Test data model for engine testing"""
+    id: str
     timestamp: datetime
     value: int
     category: str
@@ -166,6 +190,16 @@ replicated_summing_merge_tree_table = OlapTable[EngineTestData](
     )
 )
 
+# Test SAMPLE BY clause for data sampling
+sample_by_table = OlapTable[EngineTestDataSample](
+    "SampleByTest",
+    OlapConfig(
+        engine=MergeTreeEngine(),
+        order_by_expression="cityHash64(id)",
+        sample_by_expression="cityHash64(id)"
+    )
+)
+
 # Note: S3Queue engine testing is more complex as it requires S3 configuration
 # and external dependencies, so it's not included in this basic engine test suite.
 # For S3Queue testing, see the dedicated S3 integration tests.
@@ -186,4 +220,6 @@ all_engine_test_tables = [
     replicated_replacing_soft_delete_table,
     replicated_aggregating_merge_tree_table,
     replicated_summing_merge_tree_table,
+    sample_by_table,
+    ttl_table,
 ]

@@ -1,0 +1,42 @@
+---
+title: May 19, 2025
+description: Release notes for May 19, 2025
+---
+
+import { Callout } from "@/components";
+
+# May 19, 2025
+
+<Callout type="info" title="Highlights">
+* **Moose and Sloan users** can now embed metadata into their Moose primitives, for use by users, their agents, and their metadata tools.
+</Callout>
+
+## Moose + Sloan
+
+### Descriptions in your Moose primitives
+
+**Store context about why you are building what you are building, for you and your agents.**
+
+Moose primitives can now include descriptions.
+
+```ts
+const acPipeline = new IngestPipeline<AircraftTrackingProcessed>(
+    "AircraftTrackingProcessed",
+    {
+      table: true,
+      stream: true,
+      ingest: false,
+      metadata: {
+          description: "Pipeline for ingesting raw aircraft data" } // new description field!
+      }
+    },
+);
+```
+
+**Where is this used?** Sloan tools that create Moose primitives will now write the intention of the Moose primitive into the description field to give tools/agents that work with that primitive in the future more context. Practically, every description is now served to the tools as context too when the infra map is loaded up as context.
+
+**Future of the feature:** Two main extensions of this feature are planned:
+* Embedding the descriptions into the underlying infrastructure (e.g. as table level comments in ClickHouse)
+* Extending the metadata:
+    * To be on a field level as well as a primitive level
+    * To include any arbitrary key value pair, not just a description (use this for managing labels like PII!)

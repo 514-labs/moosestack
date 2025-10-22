@@ -48,6 +48,13 @@ const convertSourceFile = (
   return output;
 };
 
+/**
+ * Gets the source directory from environment variable or defaults to "app"
+ */
+function getSourceDir(): string {
+  return process.env.MOOSE_SOURCE_DIR || "app";
+}
+
 export default function (
   program: ts.Program,
   _pluginConfig: PluginConfig,
@@ -56,7 +63,7 @@ export default function (
   const checker = program.getTypeChecker();
 
   const cwd = program.getCurrentDirectory();
-  const dataModelDir = `${cwd}/app/datamodels/`;
+  const dataModelDir = `${cwd}/${getSourceDir()}/datamodels/`;
   const oldVersionDir = `${cwd}/.moose/versions/`;
 
   const outputDir = `${cwd}/.moose/serialized_datamodels/`;

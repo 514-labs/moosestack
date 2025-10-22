@@ -2,7 +2,7 @@ from moose_lib import Task, TaskConfig, Workflow, WorkflowConfig, OlapTable, Ins
 from pydantic import BaseModel
 from datetime import datetime
 from faker import Faker
-from app.ingest.models import Foo, Baz, fooModel
+from src.ingest.models import Foo, Baz, fooModel
 import requests
 
 class FooWorkflow(BaseModel):

@@ -328,13 +328,17 @@ const createMainRouter = async (
         }
 
         try {
-          await webApp.handler(
+          // Create a modified request preserving all properties including headers
+          // A shallow clone (like { ...req }) generally will not work since headers and other
+          // members are not cloned.
+          const modifiedReq = Object.assign(
+            Object.create(Object.getPrototypeOf(req)),
+            req,
             {
-              ...req,
               url: proxiedUrl,
             },
-            res,
           );
+          await webApp.handler(modifiedReq, res);
           return;
         } catch (error) {
           console.error(`Error in WebApp ${webApp.name}:`, error);
@@ -359,13 +363,16 @@ const createMainRouter = async (
     // If we stripped a prefix, it's an Api request
     if (apiPath !== pathname) {
       // Create a modified request with the rewritten URL for the apiHandler
-      // Note: apiHandler only reads basic properties (url, headers, method)
-      // If it needs stream methods in future, consider refactoring both
-      // Api and WebApp routing to avoid URL rewriting
-      const modifiedReq = {
-        ...req,
-        url: apiPath + url.search,
-      };
+      // Preserve all properties including headers by using Object.assign with prototype chain
+      // A shallow clone (like { ...req }) generally will not work since headers and other
+      // members are not cloned.
+      const modifiedReq = Object.assign(
+        Object.create(Object.getPrototypeOf(req)),
+        req,
+        {
+          url: apiPath + url.search,
+        },
+      );
       await apiRequestHandler(modifiedReq as http.IncomingMessage, res);
       return;
     }

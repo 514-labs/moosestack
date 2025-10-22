@@ -350,9 +350,11 @@ mod tests {
                 default: None,
                 annotations: vec![],
                 comment: None,
+                ttl: None,
             }],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
             partition_by: None,
+            sample_by: None,
             engine: None,
             version: Some(Version::from_string("1.0.0".to_string())),
             source_primitive: PrimitiveSignature {
@@ -363,6 +365,8 @@ mod tests {
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
             table_settings: None,
+            indexes: vec![],
+            table_ttl_setting: None,
         }
     }
 
@@ -397,6 +401,7 @@ mod tests {
             load_infra: None,
 
             typescript_config: crate::project::TypescriptConfig::default(),
+            source_dir: crate::project::default_source_dir(),
         }
     }
 
@@ -527,6 +532,7 @@ mod tests {
             default: None,
             annotations: vec![],
             comment: None,
+            ttl: None,
         });
 
         // Create mock OLAP client with the actual table

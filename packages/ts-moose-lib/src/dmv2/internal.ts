@@ -37,6 +37,13 @@ import { compilerLog } from "../commons";
 import { WebApp } from "./sdk/webApp";
 
 /**
+ * Gets the source directory from environment variable or defaults to "app"
+ */
+function getSourceDir(): string {
+  return process.env.MOOSE_SOURCE_DIR || "app";
+}
+
+/**
  * Internal registry holding all defined Moose dmv2 resources.
  * Populated by the constructors of OlapTable, Stream, IngestApi, etc.
  * Accessed via `getMooseInternal()`.
@@ -140,6 +147,8 @@ interface TableJson {
   orderBy: string[] | string;
   /** The column name used for the PARTITION BY clause. */
   partitionBy?: string;
+  /** SAMPLE BY expression for approximate query processing. */
+  sampleByExpression?: string;
   /** Engine configuration with type-safe, engine-specific parameters */
   engineConfig?: EngineConfig;
   /** Optional version string for the table configuration. */
@@ -150,6 +159,16 @@ interface TableJson {
   lifeCycle?: string;
   /** Optional table-level settings that can be modified with ALTER TABLE MODIFY SETTING. */
   tableSettings?: { [key: string]: string };
+  /** Optional table indexes */
+  indexes?: {
+    name: string;
+    expression: string;
+    type: string;
+    arguments?: string[];
+    granularity: number;
+  }[];
+  /** Optional table-level TTL expression (without leading 'TTL'). */
+  ttl?: string;
 }
 /**
  * Represents a target destination for data flow, typically a stream.
@@ -553,6 +572,7 @@ export const toInfraMap = (registry: typeof moose_internal) => {
       columns: table.columnArray,
       orderBy,
       partitionBy: table.config.partitionBy,
+      sampleByExpression: table.config.sampleByExpression,
       engineConfig,
       version: table.config.version,
       metadata,
@@ -562,6 +582,8 @@ export const toInfraMap = (registry: typeof moose_internal) => {
         tableSettings && Object.keys(tableSettings).length > 0 ?
           tableSettings
         : undefined,
+      indexes: table.config.indexes || [],
+      ttl: table.config.ttl,
     };
   });
 
@@ -766,7 +788,7 @@ const loadIndex = () => {
   registry.webApps.clear();
 
   // Clear require cache for app directory to pick up changes
-  const appDir = `${process.cwd()}/app`;
+  const appDir = `${process.cwd()}/${getSourceDir()}`;
   Object.keys(require.cache).forEach((key) => {
     if (key.startsWith(appDir)) {
       delete require.cache[key];
@@ -774,7 +796,7 @@ const loadIndex = () => {
   });
 
   try {
-    require(`${process.cwd()}/app/index.ts`);
+    require(`${process.cwd()}/${getSourceDir()}/index.ts`);
   } catch (error) {
     let hint: string | undefined;
     const details = error instanceof Error ? error.message : String(error);
@@ -950,6 +972,7 @@ export const dlqColumns: Column[] = [
     unique: false,
     default: null,
     annotations: [],
+    ttl: null,
   },
   {
     name: "errorMessage",
@@ -959,6 +982,7 @@ export const dlqColumns: Column[] = [
     unique: false,
     default: null,
     annotations: [],
+    ttl: null,
   },
   {
     name: "errorType",
@@ -968,6 +992,7 @@ export const dlqColumns: Column[] = [
     unique: false,
     default: null,
     annotations: [],
+    ttl: null,
   },
   {
     name: "failedAt",
@@ -977,6 +1002,7 @@ export const dlqColumns: Column[] = [
     unique: false,
     default: null,
     annotations: [],
+    ttl: null,
   },
   {
     name: "source",
@@ -986,6 +1012,7 @@ export const dlqColumns: Column[] = [
     unique: false,
     default: null,
     annotations: [],
+    ttl: null,
   },
 ];
 

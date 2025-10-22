@@ -1396,6 +1396,7 @@ pub fn convert_ast_to_column_type(
                             // Actual column comments (including enum metadata) come from
                             // system.columns queries, not from type string parsing.
                             comment: None,
+                            ttl: None,
                         });
                     }
                     TupleElement::Unnamed(_) => {

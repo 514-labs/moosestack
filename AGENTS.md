@@ -21,7 +21,7 @@ You can find the logs for moose if you need to troublehoot into `~/.moose/*-cli.
 ### Rust Components
 - **Build Rust**: `cargo build`
 - **Run Rust tests**: `cargo test`
-- **Lint Rust code**: `cargo clippy -D warnings` (no warnings allowed)
+- **Lint Rust code**: `cargo clippy --all-targets -- -D warnings` (no warnings allowed)
 - **Format Rust code**: `rustfmt --edition 2021 <file.rs>`
 
 ### Testing
@@ -97,7 +97,7 @@ This is a multi-language monorepo using:
 
 ### Pre-commit Requirements
 - **TypeScript/JavaScript**: Must pass linting and code formating checks (`npx lint-staged`)
-- **Rust**: Must pass `cargo clippy -D warnings` (no warnings permitted)
+- **Rust**: Must pass `cargo clippy --all-targets -- -D warnings` (no warnings permitted)
 - **All components**: Tests must pass before PR submission
 
 ### Error Handling (Rust)
@@ -110,7 +110,7 @@ This is a multi-language monorepo using:
 - **Constants**: Use `const` in Rust, place in `constants.rs` at appropriate module level
 - **Newtypes**: Use tuple structs with validation constructors
 - **Documentation**: All public APIs must be documented
-- **Linting**: Always run `cargo clippy -D warnings` for Rust code
+- **Linting**: Always run `cargo clippy --all-targets -- -D warnings` for Rust code
 - Follow existing patterns and conventions in each language
 
 ### Templates
