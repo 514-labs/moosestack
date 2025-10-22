@@ -1,6 +1,9 @@
 import { render } from "@/components";
 
 const rawMeta = {
+  auth: {
+    title: "Auth",
+  },
   "ingest-api": {
     title: "Ingest New Data",
   },
@@ -9,9 +12,6 @@ const rawMeta = {
   },
   "trigger-api": {
     title: "Trigger Workflows",
-  },
-  auth: {
-    title: "Securing API Endpoints",
   },
   __client__: {
     type: "separator",
