@@ -1,6 +1,3 @@
-use crate::framework::core::infrastructure::table::{
-    ColumnType as FWColumnType, IntType as FWIntType,
-};
 use crate::framework::core::infrastructure::table::{DataEnum, JsonOptions, OrderBy};
 use crate::framework::versions::Version;
 use crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine;
@@ -311,6 +308,9 @@ fn parse_json_options(inner: &str) -> Option<JsonOptions> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::framework::core::infrastructure::table::{
+        ColumnType as FWColumnType, IntType as FWIntType,
+    };
 
     #[test]
     fn test_parse_json_options_numbers() {

@@ -1070,7 +1070,26 @@ impl ColumnType {
                 element_nullable: true,
             } => column_type::T::ArrayOfNullable(Box::new(element_type.to_proto())),
             ColumnType::Nested(nested) => column_type::T::Nested(nested.to_proto()),
-            ColumnType::Json(_) => column_type::T::Simple(SimpleColumnType::JSON_COLUMN.into()),
+            ColumnType::Json(opts) => {
+                column_type::T::Json(crate::proto::infrastructure_map::Json {
+                    max_dynamic_paths: opts.max_dynamic_paths,
+                    max_dynamic_types: opts.max_dynamic_types,
+                    typed_paths: opts
+                        .typed_paths
+                        .iter()
+                        .map(
+                            |(path, t)| crate::proto::infrastructure_map::JsonTypedPath {
+                                path: path.clone(),
+                                type_: MessageField::some(t.to_proto()),
+                                special_fields: Default::default(),
+                            },
+                        )
+                        .collect(),
+                    skip_paths: opts.skip_paths.clone(),
+                    skip_regexps: opts.skip_regexps.clone(),
+                    special_fields: Default::default(),
+                })
+            }
             ColumnType::Bytes => column_type::T::Simple(SimpleColumnType::BYTES.into()),
             ColumnType::Uuid => column_type::T::Simple(SimpleColumnType::UUID_TYPE.into()),
             ColumnType::Date => T::Simple(SimpleColumnType::DATE.into()),
@@ -1186,6 +1205,17 @@ impl ColumnType {
                 key_type: Box::new(Self::from_proto(map.key_type.clone().unwrap())),
                 value_type: Box::new(Self::from_proto(map.value_type.clone().unwrap())),
             },
+            T::Json(json) => ColumnType::Json(JsonOptions {
+                max_dynamic_paths: json.max_dynamic_paths,
+                max_dynamic_types: json.max_dynamic_types,
+                typed_paths: json
+                    .typed_paths
+                    .into_iter()
+                    .map(|tp| (tp.path, Self::from_proto(tp.type_.unwrap())))
+                    .collect(),
+                skip_paths: json.skip_paths,
+                skip_regexps: json.skip_regexps,
+            }),
         }
     }
 }
