@@ -77,6 +77,27 @@ is_dmv2 = args.is_dmv2.lower() == 'true'
 
 sys.path.append(consumption_dir_path)
 
+# Persistent event loop for handling async ASGI requests
+# Reusing a single event loop avoids the overhead of creating/destroying
+# a new loop on every request (which asyncio.run() does)
+_event_loop = None
+_event_loop_thread = None
+
+def get_persistent_event_loop():
+    """Get or create a persistent event loop running in a background thread."""
+    global _event_loop, _event_loop_thread
+
+    if _event_loop is None:
+        def run_loop(loop):
+            asyncio.set_event_loop(loop)
+            loop.run_forever()
+
+        _event_loop = asyncio.new_event_loop()
+        _event_loop_thread = threading.Thread(target=run_loop, args=(_event_loop,), daemon=True)
+        _event_loop_thread.start()
+
+    return _event_loop
+
 
 def verify_jwt(token: str) -> Optional[Dict[str, Any]]:
     try:
@@ -228,10 +249,14 @@ def handler_with_client(moose_client):
                                 'state': {'moose': moose_utils} if moose_utils else {},
                             }
 
-                            # Execute the FastAPI app via ASGI
-                            status_code, response_headers, response_body = asyncio.run(
-                                execute_asgi_app(web_app.app, scope, request_body)
+                            # Execute the FastAPI app via ASGI using persistent event loop
+                            # This avoids creating a new event loop on every request
+                            loop = get_persistent_event_loop()
+                            future = asyncio.run_coroutine_threadsafe(
+                                execute_asgi_app(web_app.app, scope, request_body),
+                                loop
                             )
+                            status_code, response_headers, response_body = future.result()
 
                             # Send response
                             self.send_response(status_code)
@@ -405,6 +430,14 @@ def main():
         httpd.shutdown()
         print("\nShutting down server...")
         httpd.server_close()
+
+        # Cleanup persistent event loop
+        global _event_loop
+        if _event_loop is not None:
+            _event_loop.call_soon_threadsafe(_event_loop.stop)
+            if _event_loop_thread is not None:
+                _event_loop_thread.join(timeout=5.0)
+
         # Cleanup clients
         asyncio.run(moose_client.cleanup())
         print("Server shutdown complete")
