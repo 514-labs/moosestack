@@ -414,7 +414,11 @@ export const TYPESCRIPT_TEST_SCHEMAS: ExpectedTableSchema[] = [
     columns: [
       { name: "id", type: "String" },
       { name: "timestamp", type: /DateTime\('UTC'\)/ },
-      { name: "payload", type: "JSON(count Float64, name String)" },
+      {
+        name: "payloadWithConfig",
+        type: "JSON(max_dynamic_types=16, max_dynamic_paths=256, count Int64, name String, SKIP `skip.me`, SKIP REGEXP '^tmp\\\\.')",
+      },
+      { name: "payloadBasic", type: "JSON(count Float64, name String)" },
     ],
   },
 ];
@@ -795,9 +799,10 @@ export const PYTHON_TEST_SCHEMAS: ExpectedTableSchema[] = [
       { name: "id", type: "String" },
       { name: "timestamp", type: /DateTime\('UTC'\)/ },
       {
-        name: "payload",
+        name: "payload_with_config",
         type: "JSON(max_dynamic_types=16, max_dynamic_paths=256, count Int64, name String, SKIP `skip.me`, SKIP REGEXP '^tmp\\\\.')",
       },
+      { name: "payload_basic", type: "JSON(count Int64, name String)" },
     ],
   },
 ];

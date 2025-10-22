@@ -221,7 +221,7 @@ export interface EdgeCases {
 
 /** =======JSON Types Test========= */
 
-interface JsonSettings {
+interface JsonInner {
   name: string;
   count: number;
 }
@@ -229,7 +229,11 @@ interface JsonSettings {
 export interface JsonTest {
   id: Key<string>;
   timestamp: DateTime;
-  payload: JsonSettings & ClickHouseJson<256, 16, ["skip.me"], ["^tmp\\."]>;
+  // Test JSON with full configuration (max_dynamic_paths, max_dynamic_types, skip_paths, skip_regexes)
+  payloadWithConfig: JsonInner &
+    ClickHouseJson<256, 16, ["skip.me"], ["^tmp\\."]>;
+  // Test basic JSON without configuration
+  payloadBasic: JsonInner & ClickHouseJson;
 }
 
 export const JsonTestPipeline = new IngestPipeline<JsonTest>("JsonTest", {

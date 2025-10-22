@@ -227,12 +227,15 @@ class JsonTest(BaseModel):
     model_config = ConfigDict(extra='allow')
     id: Key[str]
     timestamp: datetime
-    payload: Annotated[JsonInner, ClickHouseJson(
+    # Test JSON with full configuration (max_dynamic_paths, max_dynamic_types, skip_paths, skip_regexes)
+    payload_with_config: Annotated[JsonInner, ClickHouseJson(
         max_dynamic_paths=256,
         max_dynamic_types=16,
         skip_paths=("skip.me",),
         skip_regexes=(r"^tmp\\.",)
     )]
+    # Test basic JSON without configuration
+    payload_basic: Annotated[JsonInner, ClickHouseJson()]
 
 # =======Pipeline Configurations for Test Models=========
 

@@ -548,11 +548,16 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
                   body: JSON.stringify({
                     id,
                     timestamp: new Date(TEST_DATA.TIMESTAMP),
-                    payload: {
+                    payloadWithConfig: {
                       name: "alpha",
                       count: 3,
                       extraField: "allowed",
                       nested: { another: "field" },
+                    },
+                    payloadBasic: {
+                      name: "beta",
+                      count: 5,
+                      anotherExtra: "also-allowed",
                     },
                   }),
                 },
@@ -565,10 +570,21 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
             { attempts: 5, delayMs: 500 },
           );
 
-          // DDL should show JSON type
+          // DDL should show JSON types for both fields
           const ddl = await getTableDDL("JsonTest");
-          if (!ddl.includes("`payload` JSON")) {
-            throw new Error(`JsonTest DDL missing JSON payload: ${ddl}`);
+          const fieldName =
+            config.language === "python" ?
+              "payload_with_config"
+            : "payloadWithConfig";
+          const basicFieldName =
+            config.language === "python" ? "payload_basic" : "payloadBasic";
+          if (!ddl.includes(`\`${fieldName}\` JSON`)) {
+            throw new Error(`JsonTest DDL missing JSON ${fieldName}: ${ddl}`);
+          }
+          if (!ddl.includes(`\`${basicFieldName}\` JSON`)) {
+            throw new Error(
+              `JsonTest DDL missing JSON ${basicFieldName}: ${ddl}`,
+            );
           }
 
           await waitForDBWrite(devProcess!, "JsonTest", 1);
