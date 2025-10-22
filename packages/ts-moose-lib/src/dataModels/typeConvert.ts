@@ -137,6 +137,7 @@ const getJsonMappedType = (
   checker: TypeChecker,
   fieldName: string,
   typeName: string,
+  typeNode?: ts.TypeNode,
 ): DataType | null => {
   const mappingSymbol = getPropertyDeep(t, "_clickhouse_mapped_type");
   if (mappingSymbol === undefined) return null;
@@ -147,55 +148,63 @@ const getJsonMappedType = (
     return null;
   }
 
-  // Try to extract options from nested settings object
-  const getSettingsSymbol = () =>
-    getPropertyDeep(t, "_clickhouse_json_settings");
-  const getNumberLiteral = (name: string): number | undefined => {
-    const settings = getSettingsSymbol();
-    const sym =
-      settings ?
-        checker.getTypeOfSymbol(settings).getProperty(name)
-      : undefined;
-    if (!sym) return undefined;
-    const tt = checker.getNonNullableType(checker.getTypeOfSymbol(sym));
-    return tt.isNumberLiteral() ? tt.value : undefined;
-  };
+  // Extract generic type arguments from AST node if available
+  let maxDynamicPaths: number | undefined = undefined;
+  let maxDynamicTypes: number | undefined = undefined;
+  let skipPaths: string[] = [];
+  let skipRegexes: string[] = [];
 
-  const collectStringArray = (name: string): string[] => {
-    const out: string[] = [];
-    const settings = getSettingsSymbol();
-    const sym =
-      settings ?
-        checker.getTypeOfSymbol(settings).getProperty(name)
-      : undefined;
-    if (!sym) return out;
-    const tt = checker.getNonNullableType(checker.getTypeOfSymbol(sym));
-    // Tuple literal of strings
-    if (checker.isTupleType(tt)) {
-      const tupleArgs = (tt as TupleType).typeArguments || [];
-      tupleArgs.forEach((arg) => {
-        if (arg.isStringLiteral()) {
-          out.push(arg.value);
+  // Try to find ClickHouseJson<...> in the intersection type node
+  if (typeNode && ts.isIntersectionTypeNode(typeNode)) {
+    for (const typeElem of typeNode.types) {
+      if (ts.isTypeReferenceNode(typeElem)) {
+        const typeName = typeElem.typeName;
+        const name =
+          ts.isIdentifier(typeName) ? typeName.text : typeName.right.text;
+        if (name === "ClickHouseJson" && typeElem.typeArguments) {
+          const args = typeElem.typeArguments;
+          // ClickHouseJson<maxDynamicPaths, maxDynamicTypes, skipPaths, skipRegexes>
+          if (
+            args[0] &&
+            ts.isLiteralTypeNode(args[0]) &&
+            ts.isNumericLiteral(args[0].literal)
+          ) {
+            maxDynamicPaths = Number(args[0].literal.text);
+          }
+          if (
+            args[1] &&
+            ts.isLiteralTypeNode(args[1]) &&
+            ts.isNumericLiteral(args[1].literal)
+          ) {
+            maxDynamicTypes = Number(args[1].literal.text);
+          }
+          if (args[2] && ts.isTupleTypeNode(args[2])) {
+            skipPaths = args[2].elements
+              .filter(
+                (el) =>
+                  ts.isLiteralTypeNode(el) && ts.isStringLiteral(el.literal),
+              )
+              .map(
+                (el) =>
+                  ((el as ts.LiteralTypeNode).literal as ts.StringLiteral).text,
+              );
+          }
+          if (args[3] && ts.isTupleTypeNode(args[3])) {
+            skipRegexes = args[3].elements
+              .filter(
+                (el) =>
+                  ts.isLiteralTypeNode(el) && ts.isStringLiteral(el.literal),
+              )
+              .map(
+                (el) =>
+                  ((el as ts.LiteralTypeNode).literal as ts.StringLiteral).text,
+              );
+          }
+          break;
         }
-      });
-      return out;
+      }
     }
-    // Array<string literal union> - best effort if it's a union of string literals
-    const indexType = tt.getNumberIndexType?.();
-    if (indexType && indexType.isUnion()) {
-      indexType.types.forEach((arg) => {
-        if (arg.isStringLiteral()) out.push(arg.value);
-      });
-    }
-    return out;
-  };
-
-  const maxDynamicPaths = getNumberLiteral("maxDynamicPaths");
-  // support both spellings just in case
-  const maxDynamicTypes =
-    getNumberLiteral("maxDyanmicTypes") ?? getNumberLiteral("maxDynamicTypes");
-  const skipPaths = collectStringArray("skipPaths");
-  const skipRegexes = collectStringArray("skipRegexes");
+  }
 
   // For typed paths, try to find the interface part of the intersection
   let base: ts.Type = t.getNonNullableType();
@@ -243,13 +252,21 @@ const getJsonMappedType = (
     return [path, typeStr as DataType];
   });
 
-  return {
-    max_dynamic_paths: maxDynamicPaths,
-    max_dynamic_types: maxDynamicTypes,
+  const result: Record<string, any> = {
     typed_paths: parsedTypedPaths,
     skip_paths: skipPaths,
     skip_regexps: skipRegexes,
-  } as unknown as DataType;
+  };
+
+  // Only include these fields if they have actual values
+  if (typeof maxDynamicPaths === "number") {
+    result.max_dynamic_paths = maxDynamicPaths;
+  }
+  if (typeof maxDynamicTypes === "number") {
+    result.max_dynamic_types = maxDynamicTypes;
+  }
+
+  return result as unknown as DataType;
 };
 
 const handleSimpleAggregated = (
@@ -776,6 +793,7 @@ const tsTypeToDataType = (
       checker,
       fieldName,
       typeName,
+      typeNode,
     );
     if (jsonCandidate !== null) {
       dataType = jsonCandidate as DataType;
