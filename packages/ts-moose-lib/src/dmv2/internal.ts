@@ -37,6 +37,13 @@ import { compilerLog } from "../commons";
 import { WebApp } from "./sdk/webApp";
 
 /**
+ * Gets the source directory from environment variable or defaults to "app"
+ */
+function getSourceDir(): string {
+  return process.env.MOOSE_SOURCE_DIR || "app";
+}
+
+/**
  * Internal registry holding all defined Moose dmv2 resources.
  * Populated by the constructors of OlapTable, Stream, IngestApi, etc.
  * Accessed via `getMooseInternal()`.
@@ -781,7 +788,7 @@ const loadIndex = () => {
   registry.webApps.clear();
 
   // Clear require cache for app directory to pick up changes
-  const appDir = `${process.cwd()}/app`;
+  const appDir = `${process.cwd()}/${getSourceDir()}`;
   Object.keys(require.cache).forEach((key) => {
     if (key.startsWith(appDir)) {
       delete require.cache[key];
@@ -789,7 +796,7 @@ const loadIndex = () => {
   });
 
   try {
-    require(`${process.cwd()}/app/index.ts`);
+    require(`${process.cwd()}/${getSourceDir()}/index.ts`);
   } catch (error) {
     let hint: string | undefined;
     const details = error instanceof Error ? error.message : String(error);

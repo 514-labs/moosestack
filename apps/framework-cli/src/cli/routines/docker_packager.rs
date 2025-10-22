@@ -446,7 +446,7 @@ RUN echo "=== Rebuilding native modules ===" && \
                 let copy_from_build = format!(
                     r#"
 # Copy application files from monorepo stage
-COPY --from=monorepo-base --chown=moose:moose /monorepo/{}/app ./app
+COPY --from=monorepo-base --chown=moose:moose /monorepo/{}/{} ./{}
 COPY --from=monorepo-base --chown=moose:moose /monorepo/{}/package.json ./package.json
 COPY --from=monorepo-base --chown=moose:moose /monorepo/{}/tsconfig.json ./tsconfig.json
 
@@ -471,14 +471,16 @@ RUN rm -rf /temp-deploy /temp-monorepo
 RUN if [ -d "/application/node_modules/@514labs/moose-lib/dist/" ]; then ls -la /application/node_modules/@514labs/moose-lib/dist/; fi
 USER moose:moose
 WORKDIR /application"#,
-                    relative_project_path.to_string_lossy(), // 1: /monorepo/{}/app
-                    relative_project_path.to_string_lossy(), // 2: /monorepo/{}/package.json
-                    relative_project_path.to_string_lossy(), // 3: /monorepo/{}/tsconfig.json
-                    deploy_lock_file_copy,                   // 4: lock file copy or comment
-                    relative_project_path.to_string_lossy(), // 5: /monorepo/{} ./{}
-                    relative_project_path.to_string_lossy(), // 6: /monorepo/{} ./{}
-                    workspace_copies,                        // 7: {} (workspace_copies)
-                    deploy_install_command,                  // 8: package manager install command
+                    relative_project_path.to_string_lossy(), // 1: /monorepo/{}
+                    project.source_dir,                      // 2: source_dir
+                    project.source_dir,                      // 3: source_dir
+                    relative_project_path.to_string_lossy(), // 4: /monorepo/{}/package.json
+                    relative_project_path.to_string_lossy(), // 5: /monorepo/{}/tsconfig.json
+                    deploy_lock_file_copy,                   // 6: lock file copy or comment
+                    relative_project_path.to_string_lossy(), // 7: /monorepo/{} ./{}
+                    relative_project_path.to_string_lossy(), // 8: /monorepo/{} ./{}
+                    workspace_copies,                        // 9: {} (workspace_copies)
+                    deploy_install_command,                  // 10: package manager install command
                 );
 
                 dockerfile = dockerfile.replace("COPY_PACKAGE_FILE", &copy_from_build);
@@ -515,13 +517,14 @@ WORKDIR /application"#,
             }
         }
         SupportedLanguages::Python => {
-            let install = DOCKER_FILE_COMMON
-                .replace(
-                    "COPY_PACKAGE_FILE",
-                    r#"COPY --chown=moose:moose ./setup.py ./setup.py
+            let copy_package_content = format!(
+                r#"COPY --chown=moose:moose ./setup.py ./setup.py
 COPY --chown=moose:moose ./requirements.txt ./requirements.txt
-COPY --chown=moose:moose ./app ./app"#,
-                )
+COPY --chown=moose:moose ./{} ./{}"#,
+                project.source_dir, project.source_dir
+            );
+            let install = DOCKER_FILE_COMMON
+                .replace("COPY_PACKAGE_FILE", &copy_package_content)
                 .replace("INSTALL_COMMAND", "RUN pip install -r requirements.txt");
 
             format!("{PY_BASE_DOCKER_FILE}{install}")
@@ -1206,10 +1209,14 @@ fn create_standard_typescript_dockerfile_content(
         };
 
     // Build copy commands for package files
+    let app_copy = format!(
+        "COPY --chown=moose:moose ./{} ./{}",
+        project.source_dir, project.source_dir
+    );
     let mut copy_commands = vec![
         "COPY --chown=moose:moose ./package.json ./package.json",
         "COPY --chown=moose:moose ./tsconfig.json ./tsconfig.json",
-        "COPY --chown=moose:moose ./app ./app",
+        &app_copy,
     ];
 
     // Add lock file copy command if detected
