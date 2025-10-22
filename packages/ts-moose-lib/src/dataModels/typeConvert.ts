@@ -137,7 +137,7 @@ const getJsonMappedType = (
   checker: TypeChecker,
   fieldName: string,
   typeName: string,
-): string | null => {
+): DataType | null => {
   const mappingSymbol = getPropertyDeep(t, "_clickhouse_mapped_type");
   if (mappingSymbol === undefined) return null;
   const mappedType = checker.getNonNullableType(
@@ -222,17 +222,34 @@ const getJsonMappedType = (
     typedPaths = [];
   }
 
-  const items: string[] = [];
-  if (typeof maxDynamicPaths === "number")
-    items.push(`max_dynamic_paths=${maxDynamicPaths}`);
-  if (typeof maxDynamicTypes === "number")
-    items.push(`max_dynamic_types=${maxDynamicTypes}`);
-  items.push(...typedPaths);
-  items.push(...skipPaths.map((p) => `SKIP ${p}`));
-  items.push(...skipRegexes.map((r) => `SKIP REGEXP '${r}'`));
+  const hasAnyOption =
+    typeof maxDynamicPaths === "number" ||
+    typeof maxDynamicTypes === "number" ||
+    typedPaths.length > 0 ||
+    skipPaths.length > 0 ||
+    skipRegexes.length > 0;
 
-  if (items.length === 0) return "Json";
-  return `Json(${items.join(", ")})`;
+  if (!hasAnyOption) return "Json";
+
+  // typedPaths is an array of strings like "fieldName String"
+  // Parse each into a tuple [name, type]
+  const parsedTypedPaths: Array<[string, DataType]> = typedPaths.map((tp) => {
+    const spaceIndex = tp.indexOf(" ");
+    if (spaceIndex === -1) {
+      return [tp, "String" as DataType];
+    }
+    const path = tp.substring(0, spaceIndex);
+    const typeStr = tp.substring(spaceIndex + 1);
+    return [path, typeStr as DataType];
+  });
+
+  return {
+    max_dynamic_paths: maxDynamicPaths,
+    max_dynamic_types: maxDynamicTypes,
+    typed_paths: parsedTypedPaths,
+    skip_paths: skipPaths,
+    skip_regexps: skipRegexes,
+  } as unknown as DataType;
 };
 
 const handleSimpleAggregated = (

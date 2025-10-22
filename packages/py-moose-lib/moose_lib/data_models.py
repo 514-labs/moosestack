@@ -167,7 +167,15 @@ class MapType(BaseModel):
     value_type: "DataType"
 
 
-type DataType = str | DataEnum | ArrayType | Nested | NamedTupleType | MapType
+class JsonOptions(BaseModel):
+    max_dynamic_paths: int | None = None
+    max_dynamic_types: int | None = None
+    typed_paths: list[tuple[str, "DataType"]] = []
+    skip_paths: list[str] = []
+    skip_regexps: list[str] = []
+
+
+type DataType = str | DataEnum | ArrayType | Nested | NamedTupleType | MapType | JsonOptions
 
 
 def handle_jwt(field_type: type) -> Tuple[bool, type]:
@@ -373,20 +381,31 @@ def py_type_to_column_type(t: type, mds: list[Any]) -> Tuple[bool, list[Any], Da
         except Exception:
             pass
         opts = next(md for md in mds if isinstance(md, ClickHouseJson))
-        parts: list[str] = []
-        if opts.max_dynamic_paths is not None:
-            parts.append(f"max_dynamic_paths={opts.max_dynamic_paths}")
-        if opts.max_dynamic_types is not None:
-            parts.append(f"max_dynamic_types={opts.max_dynamic_types}")
-        # typed paths from fields as top-level names and types
+        
+        # Build typed_paths from fields as tuples of (name, type)
+        typed_paths: list[tuple[str, DataType]] = []
         for c in columns:
-            tname = c.data_type if isinstance(c.data_type, str) else "String"
-            parts.append(f"{c.name} {tname}")
-        for p in opts.skip_paths:
-            parts.append(f"SKIP {p}")
-        for r in opts.skip_regexes:
-            parts.append(f"SKIP REGEXP '{r}'")
-        data_type = "Json" if not parts else f"Json({', '.join(parts)})"
+            tname: DataType = c.data_type if isinstance(c.data_type, str) else "String"
+            typed_paths.append((c.name, tname))
+        
+        has_any_option = (
+            opts.max_dynamic_paths is not None or
+            opts.max_dynamic_types is not None or
+            len(typed_paths) > 0 or
+            len(opts.skip_paths) > 0 or
+            len(opts.skip_regexes) > 0
+        )
+        
+        if not has_any_option:
+            data_type = "Json"
+        else:
+            data_type = JsonOptions(
+                max_dynamic_paths=opts.max_dynamic_paths,
+                max_dynamic_types=opts.max_dynamic_types,
+                typed_paths=typed_paths,
+                skip_paths=list(opts.skip_paths),
+                skip_regexps=list(opts.skip_regexes),
+            )
     elif get_origin(t) is Literal and all(isinstance(arg, str) for arg in get_args(t)):
         data_type = "String"
         mds.append("LowCardinality")
