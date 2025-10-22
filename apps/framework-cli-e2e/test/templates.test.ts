@@ -40,6 +40,7 @@ import {
   waitForDBWrite,
   waitForMaterializedViewUpdate,
   verifyClickhouseData,
+  verifyRecordCount,
   withRetries,
   verifyConsumptionApi,
   verifyVersionedConsumptionApi,
@@ -59,6 +60,7 @@ import {
 } from "./utils";
 import { triggerWorkflow } from "./utils/workflow-utils";
 import { geoPayloadPy, geoPayloadTs } from "./utils/geo-payload";
+import { verifyTableIndexes, getTableDDL } from "./utils/database-utils";
 
 const execAsync = promisify(require("child_process").exec);
 const setTimeoutAsync = (ms: number) =>
@@ -269,6 +271,22 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
       console.log(`✅ Schema validation passed for ${config.displayName}`);
     });
 
+    it("should include TTL in DDL when configured", async function () {
+      if (config.isTestsVariant) {
+        const ddl = await getTableDDL("TTLTable");
+        if (!ddl.includes("TTL timestamp + toIntervalDay(90)")) {
+          throw new Error(
+            `Schema validation failed for tables TTLTable: ${ddl}`,
+          );
+        }
+        if (!ddl.includes("`email` String TTL timestamp + toIntervalDay(30)")) {
+          throw new Error(
+            `Schema validation failed for tables TTLTable: ${ddl}`,
+          );
+        }
+      }
+    });
+
     // Add versioned tables test for tests templates
     if (config.isTestsVariant) {
       it("should create versioned OlapTables correctly", async function () {
@@ -276,6 +294,51 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
 
         // Verify that both versions of UserEvents tables are created
         await verifyVersionedTables("UserEvents", ["1.0", "2.0"]);
+      });
+
+      it("should create indexes defined in templates", async function () {
+        this.timeout(TIMEOUTS.TEST_SETUP_MS);
+
+        // TypeScript and Python tests both define an IndexTest / IndexTest table
+        // Verify that all seven test indexes are present in the DDL
+        await verifyTableIndexes("IndexTest", [
+          "idx1",
+          "idx2",
+          "idx3",
+          "idx4",
+          "idx5",
+          "idx6",
+          "idx7",
+        ]);
+      });
+
+      it("should plan/apply index modifications on existing tables", async function () {
+        this.timeout(TIMEOUTS.TEST_SETUP_MS);
+
+        // Modify a template file in place to change an index definition
+        const modelPath = path.join(
+          TEST_PROJECT_DIR,
+          "src",
+          "ingest",
+          config.language === "typescript" ? "models.ts" : "models.py",
+        );
+        let contents = await fs.promises.readFile(modelPath, "utf8");
+
+        contents = contents
+          .replace("granularity: 3", "granularity: 4")
+          .replace("granularity=3", "granularity=4");
+        await fs.promises.writeFile(modelPath, contents, "utf8");
+
+        // Verify DDL reflects updated index
+        await withRetries(
+          async () => {
+            const ddl = await getTableDDL("IndexTest");
+            if (!ddl.includes("INDEX idx1") || !ddl.includes("GRANULARITY 4")) {
+              throw new Error(`idx1 not updated to GRANULARITY 4. DDL: ${ddl}`);
+            }
+          },
+          { attempts: 10, delayMs: 1000 },
+        );
       });
     }
 
@@ -378,6 +441,48 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
           );
           await waitForDBWrite(devProcess!, "GeoTypes", 1);
           await verifyClickhouseData("GeoTypes", id, "id");
+        });
+
+        it("should send array transform results as individual Kafka messages (TS)", async function () {
+          this.timeout(TIMEOUTS.TEST_SETUP_MS);
+
+          const inputId = randomUUID();
+          const testData = ["item1", "item2", "item3", "item4", "item5"];
+
+          // Send one input record with an array in the data field
+          await withRetries(
+            async () => {
+              const response = await fetch(
+                `${SERVER_CONFIG.url}/ingest/array-input`,
+                {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    id: inputId,
+                    data: testData,
+                  }),
+                },
+              );
+              if (!response.ok) {
+                const text = await response.text();
+                throw new Error(`${response.status}: ${text}`);
+              }
+            },
+            { attempts: 5, delayMs: 500 },
+          );
+
+          // Wait for all output records to be written to the database
+          await waitForDBWrite(devProcess!, "ArrayOutput", testData.length);
+
+          // Verify that we have exactly 'testData.length' records in the output table
+          await verifyClickhouseData("ArrayOutput", inputId, "inputId");
+
+          // Verify the count of records
+          await verifyRecordCount(
+            "ArrayOutput",
+            `inputId = '${inputId}'`,
+            testData.length,
+          );
         });
 
         it("should serve WebApp at custom mountPath with Express framework", async function () {
@@ -526,6 +631,48 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
           );
           await waitForDBWrite(devProcess!, "GeoTypes", 1);
           await verifyClickhouseData("GeoTypes", id, "id");
+        });
+
+        it("should send array transform results as individual Kafka messages (PY)", async function () {
+          this.timeout(TIMEOUTS.TEST_SETUP_MS);
+
+          const inputId = randomUUID();
+          const testData = ["item1", "item2", "item3", "item4", "item5"];
+
+          // Send one input record with an array in the data field
+          await withRetries(
+            async () => {
+              const response = await fetch(
+                `${SERVER_CONFIG.url}/ingest/arrayinput`,
+                {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    id: inputId,
+                    data: testData,
+                  }),
+                },
+              );
+              if (!response.ok) {
+                const text = await response.text();
+                throw new Error(`${response.status}: ${text}`);
+              }
+            },
+            { attempts: 5, delayMs: 500 },
+          );
+
+          // Wait for all output records to be written to the database
+          await waitForDBWrite(devProcess!, "ArrayOutput", testData.length);
+
+          // Verify that we have exactly 'testData.length' records in the output table
+          await verifyClickhouseData("ArrayOutput", inputId, "input_id");
+
+          // Verify the count of records
+          await verifyRecordCount(
+            "ArrayOutput",
+            `input_id = '${inputId}'`,
+            testData.length,
+          );
         });
       }
     }

@@ -279,7 +279,7 @@ class OptionalNestedTest(BaseModel):
     id: Key[str]
     timestamp: datetime
     nested: List[TestNested]
-    other: Optional[Annotated[str, clickhouse_default("''")]] = None
+    other: Annotated[str, clickhouse_default("")] = ""
 
 optional_nested_test_model = IngestPipeline[OptionalNestedTest]("OptionalNestedTest", IngestPipelineConfig(
     ingest_api=True,
@@ -367,4 +367,166 @@ simple_agg_test_table = OlapTable[SimpleAggTest](
         engine=AggregatingMergeTreeEngine(),
         order_by_fields=["date_stamp", "table_name"]
     )
+)
+
+# =======Index Extraction Test Table=======
+class IndexTest(BaseModel):
+    u64: Key[Annotated[int, "uint64"]]
+    i32: Annotated[int, "i32"]
+    s: str
+
+index_test_table = OlapTable[IndexTest](
+    "IndexTest",
+    OlapConfig(
+        engine=MergeTreeEngine(),
+        order_by_fields=["u64"],
+        indexes=[
+            OlapConfig.TableIndex(name="idx1", expression="u64", type="bloom_filter", arguments=[], granularity=3),
+            OlapConfig.TableIndex(name="idx2", expression="u64 * i32", type="minmax", arguments=[], granularity=3),
+            OlapConfig.TableIndex(name="idx3", expression="u64 * length(s)", type="set", arguments=["1000"], granularity=4),
+            OlapConfig.TableIndex(name="idx4", expression="(u64, i32)", type="MinMax", arguments=[], granularity=1),
+            OlapConfig.TableIndex(name="idx5", expression="(u64, i32)", type="minmax", arguments=[], granularity=1),
+            OlapConfig.TableIndex(name="idx6", expression="toString(i32)", type="ngrambf_v1", arguments=["2", "256", "1", "123"], granularity=1),
+            OlapConfig.TableIndex(name="idx7", expression="s", type="nGraMbf_v1", arguments=["3", "256", "1", "123"], granularity=1),
+        ],
+    ),
+)
+
+# =======Real-World Production Patterns (District Cannabis Inspired)=========
+
+# Test 8: Complex discount structure with mixed nullability
+class DiscountInfo(BaseModel):
+    discount_id: Optional[int] = None
+    discount_name: Optional[str] = None  # Explicit null
+    discount_reason: Optional[str] = None
+    amount: float  # Required field
+
+# Test 9: Transaction item with complex nested structure
+class ProductItem(BaseModel):
+    product_id: Optional[int] = None
+    product_name: Optional[str] = None
+    quantity: float
+    unit_price: float
+    unit_cost: Optional[float] = None
+    package_id: Optional[str] = None
+
+# Test 10: Complex transaction with multiple array types and ReplacingMergeTree
+class ComplexTransaction(BaseModel):
+    transaction_id: Key[int]  # Primary key
+    customer_id: Optional[int] = None
+    transaction_date: datetime
+    location: str  # Part of order by
+    subtotal: float
+    tax: float
+    total: float
+    # Multiple complex array fields
+    items: List[ProductItem]
+    discounts: List[DiscountInfo]
+    order_ids: List[int]  # Simple array
+    # Mixed nullability patterns
+    tip_amount: Optional[float] = None
+    invoice_number: Optional[str] = None
+    terminal_name: Optional[str] = None  # Optional without explicit null
+    # Boolean fields
+    is_void: bool
+    is_tax_inclusive: Optional[bool] = None
+
+# Test 11: Base type pattern with extension (common pattern)
+class BaseProduct(BaseModel):
+    product_id: Optional[int] = None
+    product_name: Optional[str] = None
+    description: Optional[str] = None
+    category_id: Optional[int] = None
+    tags: List[str]  # Remove optional - arrays cannot be nullable in ClickHouse
+
+class ProductWithLocation(BaseModel):
+    # Simulate Omit pattern by redefining fields
+    product_id: int  # Make required (was optional in base)
+    product_name: Optional[str] = None
+    description: Optional[str] = None
+    category_id: Optional[int] = None
+    tags: List[str]  # Remove optional - arrays cannot be nullable in ClickHouse
+    # Extension fields
+    location: str
+    inventory_id: Key[int]
+
+# Test 12: Engine and ordering configuration test
+class EngineTest(BaseModel):
+    id: Key[str]
+    timestamp: datetime
+    location: str
+    category: str
+    value: float
+
+# =======Pipeline Configurations for Production Patterns=========
+
+from moose_lib import OlapConfig, ReplacingMergeTreeEngine, MergeTreeEngine
+
+complex_transaction_model = IngestPipeline[ComplexTransaction]("ComplexTransaction", IngestPipelineConfig(
+    ingest_api=True,
+    stream=True,
+    table=OlapConfig(
+        engine=ReplacingMergeTreeEngine(),
+        order_by_fields=["transaction_id", "location", "transaction_date"]  # Primary key must be first
+    ),
+    dead_letter_queue=True
+))
+
+product_with_location_model = IngestPipeline[ProductWithLocation]("ProductWithLocation", IngestPipelineConfig(
+    ingest_api=True,
+    stream=True,
+    table=OlapConfig(
+        engine=ReplacingMergeTreeEngine(),
+        order_by_fields=["inventory_id", "location"]
+    ),
+    dead_letter_queue=True
+))
+
+engine_test_model = IngestPipeline[EngineTest]("EngineTest", IngestPipelineConfig(
+    ingest_api=True,
+    stream=True,
+    table=OlapConfig(
+        engine=MergeTreeEngine(),
+        order_by_fields=["id", "location", "category"]
+    ),
+    dead_letter_queue=True
+))
+
+# =======Array Transform Test Models=========
+# Test models for verifying that transforms returning arrays produce multiple Kafka messages
+
+class ArrayInput(BaseModel):
+    """Input model for array transform test - contains an array to explode."""
+    id: Key[str]
+    data: List[str]  # Array of strings to explode into individual records
+
+
+class ArrayOutput(BaseModel):
+    """Output model for array transform test - one record per array item."""
+    input_id: Key[str]  # Reference to source ArrayInput.id
+    value: str  # From array element
+    index: int  # Position in original array
+    timestamp: datetime
+
+
+array_input_model = IngestPipeline[ArrayInput]("ArrayInput", IngestPipelineConfig(
+    ingest_api=True,
+    stream=True,
+    table=False,  # No table for input
+    dead_letter_queue=True
+))
+
+# Use OlapTable for output table
+array_output_table = OlapTable[ArrayOutput](
+    "ArrayOutput",
+    OlapConfig(
+        order_by_fields=["input_id", "timestamp"]
+    )
+)
+
+# Create a Stream that writes to the OlapTable
+from moose_lib import Stream, StreamConfig
+array_output_stream = Stream[ArrayOutput](
+    "ArrayOutput",
+    StreamConfig(destination=array_output_table)
 )

@@ -2355,6 +2355,7 @@ impl Webserver {
         openapi_path: Option<PathBuf>,
         process_registry: Arc<RwLock<ProcessRegistries>>,
         enable_mcp: bool,
+        processing_coordinator: crate::cli::processing_coordinator::ProcessingCoordinator,
     ) {
         //! Starts the local webserver
         let socket = self.socket().await;
@@ -2451,6 +2452,7 @@ impl Webserver {
                 redis_client_arc.clone(),
                 project.clickhouse_config.clone(),
                 Arc::new(project.redpanda_config.clone()),
+                processing_coordinator.clone(),
             );
             // Wrap the Tower service to make it compatible with Hyper
             Some(TowerToHyperService::new(tower_service))
@@ -3446,9 +3448,11 @@ mod tests {
                 default: None,
                 annotations: vec![],
                 comment: None,
+                ttl: None,
             }],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
             partition_by: None,
+            sample_by: None,
             engine: None,
             version: Some(Version::from_string("1.0.0".to_string())),
             source_primitive: PrimitiveSignature {
@@ -3459,6 +3463,8 @@ mod tests {
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
             table_settings: None,
+            indexes: vec![],
+            table_ttl_setting: None,
         }
     }
 

@@ -2873,6 +2873,7 @@ dependencies = [
  "log",
  "logos",
  "notify",
+ "num-bigint",
  "num-traits",
  "openssl",
  "opentelemetry 0.29.1",

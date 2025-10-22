@@ -56,6 +56,7 @@ impl DataModel {
             columns: self.columns.clone(),
             order_by,
             partition_by: None,
+            sample_by: None,
             engine,
             version: Some(self.version.clone()),
             source_primitive: PrimitiveSignature {
@@ -66,6 +67,8 @@ impl DataModel {
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash,
             table_settings: None, // TODO: Parse table_settings from data model config
+            indexes: vec![],
+            table_ttl_setting: None,
         }
     }
 

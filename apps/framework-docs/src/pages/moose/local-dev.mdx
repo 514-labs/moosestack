@@ -50,6 +50,14 @@ apis = true              # Enables Analytics APIs server
 
 You can extend Moose's Docker Compose configuration with custom services by creating a `docker-compose.dev.override.yaml` file in your project root. This allows you to add additional infrastructure (databases, monitoring tools, etc.) that runs alongside your Moose development environment.
 
+<Callout type="warning" title="Use moose.config.toml for Moose Configuration">
+**Do not use docker-compose.dev.override.yaml to modify Moose-managed services** (ClickHouse, Redpanda, Redis, Temporal). The Docker Compose merge behavior makes it difficult to override existing configuration correctly, often leading to conflicts.
+
+Instead, use `moose.config.toml` to configure Moose infrastructure. See [Configuration](/moose/configuration) for all available options including database connections, ports, volumes, and service-specific settings.
+
+Use the override file **only for adding new services** that complement your Moose environment (e.g., PostgreSQL for application data, monitoring tools).
+</Callout>
+
 **How it works:**
 
 When you run `moose dev`, Moose automatically detects and merges your override file with the generated Docker Compose configuration. The files are merged using Docker Compose's [standard merge behavior](https://docs.docker.com/compose/how-tos/multiple-compose-files/merge/).
@@ -81,25 +89,19 @@ Now when you run `moose dev`, PostgreSQL will start alongside your other infrast
 [moose] Using docker-compose.dev.override.yaml for custom infrastructure
 ```
 
-**Common Use Cases:**
+**Recommended Use Cases:**
 
 - **Add databases**: PostgreSQL, MySQL, MongoDB for application data
 - **Add monitoring**: Grafana, Prometheus for metrics visualization
-- **Add custom services**: Redis alternatives, message queues
-- **Modify existing services**: Add volumes, environment variables, or override ports
+- **Add custom services**: Additional message queues, caching layers, or development tools
 
-**Example: Modifying ClickHouse Configuration**
+**Not Recommended:**
 
-```yaml copy filename="docker-compose.dev.override.yaml"
-services:
-  clickhousedb:
-    # Add a custom volume mount
-    volumes:
-      - ./clickhouse-config.xml:/etc/clickhouse-server/config.d/custom.xml
-    # Add environment variables
-    environment:
-      CLICKHOUSE_LOG_LEVEL: debug
-```
+- Modifying Moose-managed services (ClickHouse, Redpanda, Redis, Temporal)
+- Overriding ports, volumes, or environment variables for Moose infrastructure
+- Attempting to change database credentials or connection settings
+
+For any Moose infrastructure configuration, use `moose.config.toml` instead. See [Configuration](/moose/configuration).
 
 **Example: Adding Grafana for Monitoring**
 

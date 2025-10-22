@@ -1,4 +1,4 @@
-from app.ingest.models import fooModel, barModel, Foo, Bar
+from src.ingest.models import fooModel, barModel, Foo, Bar
 from moose_lib import DeadLetterQueue, DeadLetterModel, TransformConfig, MooseCache
 from datetime import datetime
 
@@ -67,3 +67,30 @@ def print_messages(dead_letter: DeadLetterModel[Foo]):
 
 
 fooModel.get_dead_letter_queue().add_consumer(print_messages)
+
+# Test transform that returns a list - each element should be sent as a separate Kafka message
+from src.ingest.models import array_input_model, array_output_stream, ArrayInput, ArrayOutput
+
+def array_transform(input_data: ArrayInput) -> list[ArrayOutput]:
+    """Transform that explodes an input array into individual output records.
+
+    This tests that when a transform returns an array, each element
+    is sent as a separate Kafka message to the destination stream.
+    """
+    # Explode the input array into individual output records
+    # Each item in input_data.data becomes a separate Kafka message
+    return [
+        ArrayOutput(
+            input_id=input_data.id,
+            value=value,
+            index=index,
+            timestamp=datetime.now()
+        )
+        for index, value in enumerate(input_data.data)
+    ]
+
+
+array_input_model.get_stream().add_transform(
+    destination=array_output_stream,
+    transformation=array_transform,
+)

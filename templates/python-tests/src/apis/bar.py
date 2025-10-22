@@ -4,7 +4,7 @@
 from moose_lib import MooseClient, Api, MooseCache, Query, and_
 from pydantic import BaseModel, Field
 from typing import Optional, Literal
-from app.views.bar_aggregated import barAggregatedMV
+from src.views.bar_aggregated import barAggregatedMV
 from datetime import datetime, timezone
 
 # Query params are defined as Pydantic models and are validated automatically

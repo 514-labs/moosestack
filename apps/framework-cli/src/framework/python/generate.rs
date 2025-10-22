@@ -388,7 +388,7 @@ pub fn tables_to_python(tables: &[Table], life_cycle: Option<LifeCycle>) -> Stri
     .unwrap();
     writeln!(
         output,
-        "from moose_lib import clickhouse_default, LifeCycle"
+        "from moose_lib import clickhouse_default, LifeCycle, ClickHouseTTL"
     )
     .unwrap();
     writeln!(
@@ -484,6 +484,9 @@ pub fn tables_to_python(tables: &[Table], life_cycle: Option<LifeCycle>) -> Stri
                 }
             }
 
+            if let Some(ref ttl_expr) = column.ttl {
+                type_str = format!("Annotated[{}, ClickHouseTTL({:?})]", type_str, ttl_expr);
+            }
             if let Some(ref default_expr) = column.default {
                 type_str = format!(
                     "Annotated[{}, clickhouse_default({:?})]",
@@ -528,6 +531,9 @@ pub fn tables_to_python(tables: &[Table], life_cycle: Option<LifeCycle>) -> Stri
         if let Some(partition_by) = &table.partition_by {
             writeln!(output, "    partition_by={:?},", partition_by).unwrap();
         }
+        if let Some(sample_by) = &table.sample_by {
+            writeln!(output, "    sample_by_expression={:?},", sample_by).unwrap();
+        }
         if let Some(life_cycle) = life_cycle {
             writeln!(
                 output,
@@ -536,6 +542,9 @@ pub fn tables_to_python(tables: &[Table], life_cycle: Option<LifeCycle>) -> Stri
             )
             .unwrap();
         };
+        if let Some(ttl_expr) = &table.table_ttl_setting {
+            writeln!(output, "    ttl={:?},", ttl_expr).unwrap();
+        }
         if let Some(engine) = &table.engine {
             match engine {
                 crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine::S3Queue {
@@ -671,6 +680,36 @@ pub fn tables_to_python(tables: &[Table], life_cycle: Option<LifeCycle>) -> Stri
                 writeln!(output, "}},").unwrap();
             }
         }
+
+        if !table.indexes.is_empty() {
+            writeln!(output, "    indexes=[").unwrap();
+            for idx in &table.indexes {
+                // arguments optional
+                if idx.arguments.is_empty() {
+                    writeln!(
+                        output,
+                        "        OlapConfig.TableIndex(name={:?}, expression={:?}, type={:?}, granularity={}),",
+                        idx.name, idx.expression, idx.index_type, idx.granularity
+                    )
+                    .unwrap();
+                } else {
+                    write!(
+                        output,
+                        "        OlapConfig.TableIndex(name={:?}, expression={:?}, type={:?}, arguments=[",
+                        idx.name, idx.expression, idx.index_type
+                    )
+                    .unwrap();
+                    for (i, a) in idx.arguments.iter().enumerate() {
+                        if i > 0 {
+                            write!(output, ", ").unwrap();
+                        }
+                        write!(output, "{:?}", a).unwrap();
+                    }
+                    writeln!(output, "], granularity={}),", idx.granularity).unwrap();
+                }
+            }
+            writeln!(output, "    ],").unwrap();
+        }
         writeln!(output, "))").unwrap();
         writeln!(output).unwrap();
     }
@@ -700,6 +739,7 @@ mod tests {
                     default: None,
                     annotations: vec![],
                     comment: None,
+                    ttl: None,
                 },
                 Column {
                     name: "timestamp".to_string(),
@@ -710,6 +750,7 @@ mod tests {
                     default: None,
                     annotations: vec![],
                     comment: None,
+                    ttl: None,
                 },
                 Column {
                     name: "optional_text".to_string(),
@@ -720,10 +761,12 @@ mod tests {
                     default: None,
                     annotations: vec![],
                     comment: None,
+                    ttl: None,
                 },
             ],
             order_by: OrderBy::Fields(vec!["primary_key".to_string()]),
             partition_by: None,
+            sample_by: None,
             engine: Some(ClickhouseEngine::MergeTree),
             version: None,
             source_primitive: PrimitiveSignature {
@@ -734,6 +777,8 @@ mod tests {
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
             table_settings: None,
+            indexes: vec![],
+            table_ttl_setting: None,
         }];
 
         let result = tables_to_python(&tables, None);
@@ -747,7 +792,7 @@ from uuid import UUID
 from enum import IntEnum, Enum
 from moose_lib import Key, IngestPipeline, IngestPipelineConfig, OlapTable, OlapConfig, clickhouse_datetime64, clickhouse_decimal, ClickhouseSize, StringToEnumMixin
 from moose_lib import Point, Ring, LineString, MultiLineString, Polygon, MultiPolygon
-from moose_lib import clickhouse_default, LifeCycle
+from moose_lib import clickhouse_default, LifeCycle, ClickHouseTTL
 from moose_lib.blocks import MergeTreeEngine, ReplacingMergeTreeEngine, AggregatingMergeTreeEngine, SummingMergeTreeEngine, S3QueueEngine, ReplicatedMergeTreeEngine, ReplicatedReplacingMergeTreeEngine, ReplicatedAggregatingMergeTreeEngine, ReplicatedSummingMergeTreeEngine
 
 class Foo(BaseModel):
@@ -776,6 +821,7 @@ foo_table = OlapTable[Foo]("Foo", OlapConfig(
                     default: None,
                     annotations: vec![],
                     comment: None,
+                    ttl: None,
                 },
                 Column {
                     name: "numbers".to_string(),
@@ -789,6 +835,7 @@ foo_table = OlapTable[Foo]("Foo", OlapConfig(
                     default: None,
                     annotations: vec![],
                     comment: None,
+                    ttl: None,
                 },
                 Column {
                     name: "nested_numbers".to_string(),
@@ -805,10 +852,12 @@ foo_table = OlapTable[Foo]("Foo", OlapConfig(
                     default: None,
                     annotations: vec![],
                     comment: None,
+                    ttl: None,
                 },
             ],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
             partition_by: None,
+            sample_by: None,
             engine: Some(ClickhouseEngine::MergeTree),
             version: None,
             source_primitive: PrimitiveSignature {
@@ -819,6 +868,8 @@ foo_table = OlapTable[Foo]("Foo", OlapConfig(
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
             table_settings: None,
+            indexes: vec![],
+            table_ttl_setting: None,
         }];
 
         let result = tables_to_python(&tables, None);
@@ -853,6 +904,7 @@ nested_array_table = OlapTable[NestedArray]("NestedArray", OlapConfig(
                     default: None,
                     annotations: vec![],
                     comment: None,
+                    ttl: None,
                 },
                 Column {
                     name: "city".to_string(),
@@ -863,6 +915,7 @@ nested_array_table = OlapTable[NestedArray]("NestedArray", OlapConfig(
                     default: None,
                     annotations: vec![],
                     comment: None,
+                    ttl: None,
                 },
                 Column {
                     name: "zipCode".to_string(),
@@ -873,6 +926,7 @@ nested_array_table = OlapTable[NestedArray]("NestedArray", OlapConfig(
                     default: None,
                     annotations: vec![],
                     comment: None,
+                    ttl: None,
                 },
             ],
             jwt: false,
@@ -890,6 +944,7 @@ nested_array_table = OlapTable[NestedArray]("NestedArray", OlapConfig(
                     default: None,
                     annotations: vec![],
                     comment: None,
+                    ttl: None,
                 },
                 Column {
                     name: "address".to_string(),
@@ -900,6 +955,7 @@ nested_array_table = OlapTable[NestedArray]("NestedArray", OlapConfig(
                     default: None,
                     annotations: vec![],
                     comment: None,
+                    ttl: None,
                 },
                 Column {
                     name: "addresses".to_string(),
@@ -913,10 +969,12 @@ nested_array_table = OlapTable[NestedArray]("NestedArray", OlapConfig(
                     default: None,
                     annotations: vec![],
                     comment: None,
+                    ttl: None,
                 },
             ],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
             partition_by: None,
+            sample_by: None,
             engine: Some(ClickhouseEngine::MergeTree),
             version: None,
             source_primitive: PrimitiveSignature {
@@ -927,6 +985,8 @@ nested_array_table = OlapTable[NestedArray]("NestedArray", OlapConfig(
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
             table_settings: None,
+            indexes: vec![],
+            table_ttl_setting: None,
         }];
 
         let result = tables_to_python(&tables, None);
@@ -964,6 +1024,7 @@ user_table = OlapTable[User]("User", OlapConfig(
                     default: None,
                     annotations: vec![],
                     comment: None,
+                    ttl: None,
                 },
                 Column {
                     name: "data".to_string(),
@@ -974,10 +1035,12 @@ user_table = OlapTable[User]("User", OlapConfig(
                     default: None,
                     annotations: vec![],
                     comment: None,
+                    ttl: None,
                 },
             ],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
             partition_by: None,
+            sample_by: None,
             engine: Some(ClickhouseEngine::S3Queue {
                 s3_path: "s3://bucket/path".to_string(),
                 format: "JSONEachRow".to_string(),
@@ -999,6 +1062,8 @@ user_table = OlapTable[User]("User", OlapConfig(
                     .into_iter()
                     .collect(),
             ),
+            indexes: vec![],
+            table_ttl_setting: None,
         }];
 
         let result = tables_to_python(&tables, None);
@@ -1025,9 +1090,11 @@ user_table = OlapTable[User]("User", OlapConfig(
                 default: None,
                 annotations: vec![],
                 comment: None,
+                ttl: None,
             }],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
             partition_by: None,
+            sample_by: None,
             engine: Some(ClickhouseEngine::ReplacingMergeTree {
                 ver: None,
                 is_deleted: None,
@@ -1051,6 +1118,8 @@ user_table = OlapTable[User]("User", OlapConfig(
                 .into_iter()
                 .collect(),
             ),
+            indexes: vec![],
+            table_ttl_setting: None,
         }];
 
         let result = tables_to_python(&tables, None);
@@ -1075,6 +1144,7 @@ user_table = OlapTable[User]("User", OlapConfig(
                     default: None,
                     annotations: vec![],
                     comment: None,
+                    ttl: None,
                 },
                 Column {
                     name: "version".to_string(),
@@ -1085,6 +1155,7 @@ user_table = OlapTable[User]("User", OlapConfig(
                     default: None,
                     annotations: vec![],
                     comment: None,
+                    ttl: None,
                 },
                 Column {
                     name: "is_deleted".to_string(),
@@ -1095,10 +1166,12 @@ user_table = OlapTable[User]("User", OlapConfig(
                     default: None,
                     annotations: vec![],
                     comment: None,
+                    ttl: None,
                 },
             ],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
             partition_by: None,
+            sample_by: None,
             engine: Some(ClickhouseEngine::ReplacingMergeTree {
                 ver: Some("version".to_string()),
                 is_deleted: Some("is_deleted".to_string()),
@@ -1112,6 +1185,8 @@ user_table = OlapTable[User]("User", OlapConfig(
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
             table_settings: None,
+            indexes: vec![],
+            table_ttl_setting: None,
         }];
 
         let result = tables_to_python(&tables, None);
@@ -1136,6 +1211,7 @@ user_table = OlapTable[User]("User", OlapConfig(
                     default: None,
                     annotations: vec![],
                     comment: None,
+                    ttl: None,
                 },
                 Column {
                     name: "coordinates".to_string(),
@@ -1149,6 +1225,7 @@ user_table = OlapTable[User]("User", OlapConfig(
                     default: None,
                     annotations: vec![],
                     comment: None,
+                    ttl: None,
                 },
                 Column {
                     name: "metadata".to_string(),
@@ -1162,10 +1239,12 @@ user_table = OlapTable[User]("User", OlapConfig(
                     default: None,
                     annotations: vec![],
                     comment: None,
+                    ttl: None,
                 },
             ],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
             partition_by: None,
+            sample_by: None,
             engine: Some(ClickhouseEngine::MergeTree),
             version: None,
             source_primitive: PrimitiveSignature {
@@ -1176,6 +1255,8 @@ user_table = OlapTable[User]("User", OlapConfig(
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
             table_settings: None,
+            indexes: vec![],
+            table_ttl_setting: None,
         }];
 
         let result = tables_to_python(&tables, None);
@@ -1201,5 +1282,133 @@ user_table = OlapTable[User]("User", OlapConfig(
         assert!(result.contains("    lng: float"));
         assert!(result.contains("    name: str"));
         assert!(result.contains("    value: Annotated[int, \"int32\"]"));
+    }
+
+    #[test]
+    fn test_ttl_generation_python() {
+        let tables = vec![Table {
+            name: "Events".to_string(),
+            columns: vec![
+                Column {
+                    name: "id".to_string(),
+                    data_type: ColumnType::String,
+                    required: true,
+                    unique: false,
+                    primary_key: true,
+                    default: None,
+                    annotations: vec![],
+                    comment: None,
+                    ttl: None,
+                },
+                Column {
+                    name: "timestamp".to_string(),
+                    data_type: ColumnType::DateTime { precision: None },
+                    required: true,
+                    unique: false,
+                    primary_key: false,
+                    default: None,
+                    annotations: vec![],
+                    comment: None,
+                    ttl: None,
+                },
+                Column {
+                    name: "email".to_string(),
+                    data_type: ColumnType::String,
+                    required: true,
+                    unique: false,
+                    primary_key: false,
+                    default: None,
+                    annotations: vec![],
+                    comment: None,
+                    ttl: Some("timestamp + INTERVAL 30 DAY".to_string()),
+                },
+            ],
+            order_by: OrderBy::Fields(vec!["id".to_string(), "timestamp".to_string()]),
+            partition_by: None,
+            sample_by: None,
+            engine: Some(ClickhouseEngine::MergeTree),
+            version: None,
+            source_primitive: PrimitiveSignature {
+                name: "Events".to_string(),
+                primitive_type: PrimitiveTypes::DataModel,
+            },
+            metadata: None,
+            life_cycle: LifeCycle::FullyManaged,
+            engine_params_hash: None,
+            table_settings: None,
+            indexes: vec![],
+            table_ttl_setting: Some("timestamp + INTERVAL 90 DAY DELETE".to_string()),
+        }];
+
+        let result = tables_to_python(&tables, None);
+
+        // Import should include ClickHouseTTL
+        assert!(result.contains("ClickHouseTTL"));
+        // Column-level TTL should be applied via Annotated
+        assert!(result
+            .contains("email: Annotated[str, ClickHouseTTL(\"timestamp + INTERVAL 30 DAY\")]"));
+        // Table-level TTL should be present in OlapConfig
+        assert!(result.contains("ttl=\"timestamp + INTERVAL 90 DAY DELETE\","));
+    }
+
+    #[test]
+    fn test_indexes_emission() {
+        let tables = vec![Table {
+            name: "IndexPy".to_string(),
+            columns: vec![Column {
+                name: "id".to_string(),
+                data_type: ColumnType::String,
+                required: true,
+                unique: false,
+                primary_key: true,
+                default: None,
+                annotations: vec![],
+                comment: None,
+                ttl: None,
+            }],
+            order_by: OrderBy::Fields(vec!["id".to_string()]),
+            partition_by: None,
+            sample_by: None,
+            engine: Some(ClickhouseEngine::MergeTree),
+            version: None,
+            source_primitive: PrimitiveSignature {
+                name: "IndexPy".to_string(),
+                primitive_type: PrimitiveTypes::DataModel,
+            },
+            metadata: None,
+            life_cycle: LifeCycle::FullyManaged,
+            engine_params_hash: None,
+            table_settings: None,
+            indexes: vec![
+                crate::framework::core::infrastructure::table::TableIndex {
+                    name: "idx1".to_string(),
+                    expression: "id".to_string(),
+                    index_type: "bloom_filter".to_string(),
+                    arguments: vec![],
+                    granularity: 3,
+                },
+                crate::framework::core::infrastructure::table::TableIndex {
+                    name: "idx2".to_string(),
+                    expression: "length(id)".to_string(),
+                    index_type: "ngrambf_v1".to_string(),
+                    arguments: vec![
+                        "2".to_string(),
+                        "256".to_string(),
+                        "1".to_string(),
+                        "123".to_string(),
+                    ],
+                    granularity: 1,
+                },
+            ],
+            table_ttl_setting: None,
+        }];
+
+        let result = tables_to_python(&tables, None);
+        assert!(result.contains("indexes=["));
+        assert!(result.contains("name=\"idx1\""));
+        assert!(result.contains("type=\"bloom_filter\""));
+        assert!(result.contains("granularity=3"));
+        assert!(result.contains("name=\"idx2\""));
+        assert!(result.contains("arguments=[\"2\", \"256\", \"1\", \"123\"]"));
     }
 }

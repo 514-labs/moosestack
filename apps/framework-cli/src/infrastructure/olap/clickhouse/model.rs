@@ -296,6 +296,7 @@ pub struct ClickHouseColumn {
     pub primary_key: bool,
     pub default: Option<String>,
     pub comment: Option<String>, // Column comment for metadata storage
+    pub ttl: Option<String>,
 }
 
 impl ClickHouseColumn {
@@ -347,6 +348,10 @@ impl ClickHouseValue {
     }
 
     pub fn new_int_64(value: i64) -> ClickHouseValue {
+        ClickHouseValue::ClickhouseInt(format!("{value}"))
+    }
+
+    pub fn new_number(value: &serde_json::Number) -> ClickHouseValue {
         ClickHouseValue::ClickhouseInt(format!("{value}"))
     }
 
@@ -493,6 +498,15 @@ pub struct ClickHouseSystemTable {
     pub engine: String,
 }
 
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct ClickHouseIndex {
+    pub name: String,
+    pub expression: String,
+    pub index_type: String,
+    pub arguments: Vec<String>,
+    pub granularity: u64,
+}
+
 #[derive(Debug, Clone)]
 pub struct ClickHouseTable {
     pub name: String,
@@ -500,9 +514,14 @@ pub struct ClickHouseTable {
     pub columns: Vec<ClickHouseColumn>,
     pub order_by: OrderBy,
     pub partition_by: Option<String>,
+    pub sample_by: Option<String>,
     pub engine: ClickhouseEngine,
     /// Table-level settings that can be modified with ALTER TABLE MODIFY SETTING
     pub table_settings: Option<std::collections::HashMap<String, String>>,
+    /// Secondary data-skipping or specialized indexes
+    pub indexes: Vec<ClickHouseIndex>,
+    /// Optional TTL expression at table level (without leading 'TTL')
+    pub table_ttl_setting: Option<String>,
 }
 
 impl ClickHouseTable {

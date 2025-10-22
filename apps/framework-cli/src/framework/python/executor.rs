@@ -100,6 +100,7 @@ pub fn run_python_command(
             "MOOSE_MANAGEMENT_PORT",
             project.http_server_config.management_port.to_string(),
         )
+        .env("MOOSE_SOURCE_DIR", &project.source_dir)
         .arg("-m")
         .arg(library_module)
         .args(get_args)
@@ -128,6 +129,7 @@ pub fn run_python_program(
             "MOOSE_MANAGEMENT_PORT",
             project.http_server_config.management_port.to_string(),
         )
+        .env("MOOSE_SOURCE_DIR", &project.source_dir)
         .arg("-u")
         .arg("-c")
         .arg(program_string)

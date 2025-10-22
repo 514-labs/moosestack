@@ -1,4 +1,5 @@
 language = "Python"
+source_dir = "src"
 
 [redpanda_config]
 broker = "localhost:19092"

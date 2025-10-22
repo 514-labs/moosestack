@@ -555,6 +555,10 @@ pub async fn start_development_mode(
     let infra_map: &'static RwLock<InfrastructureMap> =
         Box::leak(Box::new(RwLock::new(plan.target_infra_map)));
 
+    // Create processing coordinator to synchronize file watcher with MCP tools
+    use crate::cli::processing_coordinator::ProcessingCoordinator;
+    let processing_coordinator = ProcessingCoordinator::new();
+
     let file_watcher = FileWatcher::new();
     file_watcher.start(
         project.clone(),
@@ -565,6 +569,7 @@ pub async fn start_development_mode(
         metrics.clone(),
         redis_client.clone(),
         settings.clone(),
+        processing_coordinator.clone(),
     )?;
 
     // Log MCP server status
@@ -597,6 +602,7 @@ pub async fn start_development_mode(
             Some(openapi_file),
             process_registry,
             enable_mcp,
+            processing_coordinator,
         )
         .await;
 
@@ -739,6 +745,10 @@ pub async fn start_production_mode(
 
     let infra_map: &'static InfrastructureMap = Box::leak(Box::new(plan.target_infra_map));
 
+    // Create processing coordinator (unused in production but required for API consistency)
+    use crate::cli::processing_coordinator::ProcessingCoordinator;
+    let processing_coordinator = ProcessingCoordinator::new();
+
     web_server
         .start(
             settings,
@@ -751,6 +761,7 @@ pub async fn start_production_mode(
             None,
             Arc::new(RwLock::new(process_registry)),
             false, // MCP is disabled in production mode
+            processing_coordinator,
         )
         .await;
 
