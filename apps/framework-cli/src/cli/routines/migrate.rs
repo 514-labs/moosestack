@@ -86,38 +86,68 @@ fn load_migration_files() -> Result<MigrationFiles> {
     })
 }
 
-/// Check for drift between current, expected, and target states
+fn strip_metadata(tables: &HashMap<String, Table>) -> HashMap<String, Table> {
+    tables
+        .iter()
+        .map(|(name, table)| {
+            let mut table = table.clone();
+            table.metadata = None;
+            (name.clone(), table)
+        })
+        .collect()
+}
+
+/// Detects drift by comparing three snapshots of table state.
+///
+/// This function strips metadata (file paths) before comparison to avoid false positives
+/// when code is reorganized without schema changes.
+///
+/// # Arguments
+/// * `current_tables` - What's in the database right now (after reconciliation)
+/// * `expected_tables` - What was in the database when the migration plan was generated
+/// * `target_tables` - What the current code defines as the desired state
+///
+/// # Returns
+/// * `DriftStatus::NoDrift` - Database matches expected state, safe to proceed
+/// * `DriftStatus::AlreadyAtTarget` - Database already matches target, migration already applied
+/// * `DriftStatus::DriftDetected` - Database has diverged, migration plan is stale
 fn detect_drift(
     current_tables: &HashMap<String, Table>,
     expected_tables: &HashMap<String, Table>,
     target_tables: &HashMap<String, Table>,
 ) -> DriftStatus {
-    if current_tables == expected_tables {
+    // Strip metadata to avoid false drift from file path changes
+    let current_no_metadata = strip_metadata(current_tables);
+    let expected_no_metadata = strip_metadata(expected_tables);
+    let target_no_metadata = strip_metadata(target_tables);
+
+    // Check 1: Did the DB change since the plan was generated?
+    if current_no_metadata == expected_no_metadata {
         return DriftStatus::NoDrift;
     }
 
-    if current_tables == target_tables {
+    // Check 2: Are we already at the desired end state?
+    // (handles cases where changes were manually applied or migration ran twice)
+    if current_no_metadata == target_no_metadata {
         return DriftStatus::AlreadyAtTarget;
     }
 
-    // Calculate drift details
-    let extra_tables: Vec<String> = current_tables
+    // Calculate drift details for error reporting
+    let extra_tables: Vec<String> = current_no_metadata
         .keys()
-        .filter(|k| !expected_tables.contains_key(*k))
+        .filter(|k| !expected_no_metadata.contains_key(*k))
         .cloned()
         .collect();
 
-    let missing_tables: Vec<String> = expected_tables
+    let missing_tables: Vec<String> = expected_no_metadata
         .keys()
-        .filter(|k| !current_tables.contains_key(*k))
+        .filter(|k| !current_no_metadata.contains_key(*k))
         .cloned()
         .collect();
 
-    let changed_tables: Vec<String> = current_tables
+    let changed_tables: Vec<String> = current_no_metadata
         .keys()
-        .filter(|k| {
-            expected_tables.contains_key(*k) && expected_tables.get(*k) != current_tables.get(*k)
-        })
+        .filter(|k| current_no_metadata.get(*k) != expected_no_metadata.get(*k))
         .cloned()
         .collect();
 
@@ -156,11 +186,17 @@ async fn execute_operations(
     migration_plan: &MigrationPlan,
     client: &ConfiguredDBClient,
 ) -> Result<()> {
-    if !project.features.olap || migration_plan.operations.is_empty() {
-        if migration_plan.operations.is_empty() {
-            println!("\n✓ No operations to apply - database is already up to date");
-        }
+    if migration_plan.operations.is_empty() {
+        println!("\n✓ No operations to apply - database is already up to date");
         return Ok(());
+    } else if !project.features.olap {
+        anyhow::bail!(
+            "OLAP must be enabled to apply migrations\n\
+             \n\
+             Add to moose.config.toml:\n\
+             [features]\n\
+             olap = true"
+        );
     }
 
     println!(
@@ -275,7 +311,7 @@ pub async fn execute_migration(
         )
     })?;
 
-    // Always use ClickHouse state storage for migrate command
+    // Create state storage directly from CLI-provided ClickHouse URL
     let state_storage = ClickHouseStateStorage::new(client, clickhouse_config.db_name.clone());
 
     // Load current state from ClickHouse state table and reconcile with reality
