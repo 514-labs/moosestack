@@ -4,3 +4,4 @@ from src.ingest import engine_tests  # Import engine tests to load all supported
 import src.apis.bar as bar_api
 import src.views.bar_aggregated as bar_view
 from src.workflows.generator import ingest_workflow, ingest_task
+from src.apis.webapp_bar import bar_webapp

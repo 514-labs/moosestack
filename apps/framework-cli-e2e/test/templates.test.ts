@@ -674,6 +674,54 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
             testData.length,
           );
         });
+
+        it("should serve WebApp at custom mountPath with FastAPI framework", async function () {
+          this.timeout(TIMEOUTS.TEST_SETUP_MS);
+
+          // Test FastAPI WebApp health endpoint
+          await verifyWebAppHealth("/fastapi", "bar-fastapi-api");
+
+          // Test FastAPI WebApp query endpoint (GET)
+          await verifyWebAppQuery("/fastapi/query", { limit: "5" });
+
+          // Test FastAPI WebApp data endpoint (POST)
+          await verifyWebAppPostEndpoint(
+            "/fastapi/data",
+            {
+              order_by: "total_rows",
+              limit: 5,
+              start_day: 1,
+              end_day: 31,
+            },
+            200,
+            (json) => {
+              if (!json.success) {
+                throw new Error("Expected success to be true");
+              }
+              if (!Array.isArray(json.data)) {
+                throw new Error("Expected data to be an array");
+              }
+              if (json.params.order_by !== "total_rows") {
+                throw new Error("Expected order_by to be total_rows");
+              }
+            },
+          );
+        });
+
+        it("should handle multiple WebApp endpoints independently (PY)", async function () {
+          this.timeout(TIMEOUTS.TEST_SETUP_MS);
+
+          // Verify FastAPI WebApp is accessible
+          await verifyWebAppEndpoint("/fastapi/health", 200);
+
+          // Verify regular Api endpoint still works alongside WebApp
+          const apiResponse = await fetch(
+            `${SERVER_CONFIG.url}/api/bar?order_by=total_rows&start_day=1&end_day=31&limit=5`,
+          );
+          expect(apiResponse.ok).to.be.true;
+          const apiData = await apiResponse.json();
+          expect(apiData).to.be.an("array");
+        });
       }
     }
   });
