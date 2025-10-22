@@ -6,6 +6,9 @@ use sha2::{Digest, Sha256};
 
 use super::errors::ClickhouseError;
 use super::model::ClickHouseColumn;
+use crate::framework::core::infrastructure::table::{
+    ColumnType as FWColumnType, FloatType as FWFloatType, IntType as FWIntType,
+};
 use crate::framework::core::infrastructure::table::{EnumValue, OrderBy};
 use crate::infrastructure::olap::clickhouse::model::{
     wrap_and_join_column_names, AggregationFunction, ClickHouseColumnType, ClickHouseFloat,
@@ -1833,7 +1836,34 @@ pub fn basic_field_type_to_string(
 
             Ok(format!("Nested({nested_fields})"))
         }
-        ClickHouseColumnType::Json(_opts) => Ok("JSON".to_string()),
+        ClickHouseColumnType::Json(opts) => {
+            // Render JSON with options when present
+            let mut parts: Vec<String> = Vec::new();
+            if let Some(n) = opts.max_dynamic_paths {
+                parts.push(format!("max_dynamic_paths={n}"));
+            }
+            if let Some(n) = opts.max_dynamic_types {
+                parts.push(format!("max_dynamic_types={n}"));
+            }
+            // typed paths: path Type
+            for (path, ty) in &opts.typed_paths {
+                let ty_str = fw_column_type_to_clickhouse_str(ty)?;
+                parts.push(format!("{path} {ty_str}"));
+            }
+            // SKIP path
+            for path in &opts.skip_paths {
+                parts.push(format!("SKIP {path}"));
+            }
+            // SKIP REGEXP '...'
+            for re in &opts.skip_regexps {
+                parts.push(format!("SKIP REGEXP '{}'", re.replace('\'', "\\'")));
+            }
+            if parts.is_empty() {
+                Ok("JSON".to_string())
+            } else {
+                Ok(format!("JSON({})", parts.join(", ")))
+            }
+        }
         ClickHouseColumnType::Bytes => Err(ClickhouseError::UnsupportedDataType {
             type_name: "Bytes".to_string(),
         }),
@@ -1942,6 +1972,67 @@ fn builds_field_context(columns: &[ClickHouseColumn]) -> Result<Vec<Value>, Clic
             }))
         })
         .collect::<Result<Vec<Value>, ClickhouseError>>()
+}
+
+fn fw_column_type_to_clickhouse_str(t: &FWColumnType) -> Result<String, ClickhouseError> {
+    Ok(match t {
+        FWColumnType::String => "String".to_string(),
+        FWColumnType::Boolean => "Boolean".to_string(),
+        FWColumnType::Int(int_t) => match int_t {
+            FWIntType::Int8 => "Int8".to_string(),
+            FWIntType::Int16 => "Int16".to_string(),
+            FWIntType::Int32 => "Int32".to_string(),
+            FWIntType::Int64 => "Int64".to_string(),
+            FWIntType::Int128 => "Int128".to_string(),
+            FWIntType::Int256 => "Int256".to_string(),
+            FWIntType::UInt8 => "UInt8".to_string(),
+            FWIntType::UInt16 => "UInt16".to_string(),
+            FWIntType::UInt32 => "UInt32".to_string(),
+            FWIntType::UInt64 => "UInt64".to_string(),
+            FWIntType::UInt128 => "UInt128".to_string(),
+            FWIntType::UInt256 => "UInt256".to_string(),
+        },
+        FWColumnType::BigInt => {
+            return Err(ClickhouseError::UnsupportedDataType {
+                type_name: "BigInt".to_string(),
+            })
+        }
+        FWColumnType::Float(f_t) => match f_t {
+            FWFloatType::Float32 => "Float32".to_string(),
+            FWFloatType::Float64 => "Float64".to_string(),
+        },
+        FWColumnType::Decimal { precision, scale } => {
+            format!("Decimal({precision}, {scale})")
+        }
+        FWColumnType::DateTime { .. } => "DateTime".to_string(),
+        FWColumnType::Date => "Date32".to_string(),
+        FWColumnType::Date16 => "Date".to_string(),
+        FWColumnType::Enum(_) => {
+            return Err(ClickhouseError::UnsupportedDataType {
+                type_name: "Enum in JSON typed path".to_string(),
+            })
+        }
+        FWColumnType::Array { .. }
+        | FWColumnType::Nullable(_)
+        | FWColumnType::NamedTuple(_)
+        | FWColumnType::Map { .. }
+        | FWColumnType::Nested(_)
+        | FWColumnType::Json(_)
+        | FWColumnType::Bytes
+        | FWColumnType::Uuid
+        | FWColumnType::IpV4
+        | FWColumnType::IpV6
+        | FWColumnType::Point
+        | FWColumnType::Ring
+        | FWColumnType::LineString
+        | FWColumnType::MultiLineString
+        | FWColumnType::Polygon
+        | FWColumnType::MultiPolygon => {
+            return Err(ClickhouseError::UnsupportedDataType {
+                type_name: format!("Unsupported type for JSON typed path: {t:?}"),
+            })
+        }
+    })
 }
 
 // Tests
