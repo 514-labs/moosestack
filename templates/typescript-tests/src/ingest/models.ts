@@ -17,6 +17,7 @@ import {
   UInt64,
   ClickHouseByteSize,
   ClickHouseJson,
+  Int64,
 } from "@514labs/moose-lib";
 
 /**
@@ -223,7 +224,7 @@ export interface EdgeCases {
 
 interface JsonInner {
   name: string;
-  count: UInt64;
+  count: Int64;
 }
 
 export interface JsonTest {

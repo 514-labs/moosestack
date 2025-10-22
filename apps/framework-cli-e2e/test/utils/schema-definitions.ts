@@ -418,7 +418,7 @@ export const TYPESCRIPT_TEST_SCHEMAS: ExpectedTableSchema[] = [
         name: "payloadWithConfig",
         type: "JSON(max_dynamic_types=16, max_dynamic_paths=256, count Int64, name String, SKIP `skip.me`, SKIP REGEXP '^tmp\\\\.')",
       },
-      { name: "payloadBasic", type: "JSON(count Float64, name String)" },
+      { name: "payloadBasic", type: "JSON(count Int64, name String)" },
     ],
   },
 ];
