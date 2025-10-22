@@ -15,4 +15,12 @@ jq \
 cd ../..
 pnpm build --filter=@514labs/event-capture
 cd packages/event-capture
-pnpm publish --access public --no-git-checks
+# For CI builds (TAG_LATEST=false), publish without updating any tags
+# For release builds (TAG_LATEST=true), publish and update the 'latest' tag
+if [ "${TAG_LATEST}" = "true" ]; then
+    # Release build - publish and update 'latest' tag
+    pnpm publish --access public --no-git-checks
+else
+    # CI build - publish without updating any dist-tags
+    pnpm publish --access public --no-git-checks --no-tag
+fi
