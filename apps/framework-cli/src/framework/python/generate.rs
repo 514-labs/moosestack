@@ -897,13 +897,14 @@ mod tests {
         let result = tables_to_python(&tables, None);
 
         assert!(result.contains(
-            r#"from pydantic import BaseModel, Field
+            r#"from pydantic import BaseModel, Field, ConfigDict
 from typing import Optional, Any, Annotated
 import datetime
 import ipaddress
 from uuid import UUID
 from enum import IntEnum, Enum
 from moose_lib import Key, IngestPipeline, IngestPipelineConfig, OlapTable, OlapConfig, clickhouse_datetime64, clickhouse_decimal, ClickhouseSize, StringToEnumMixin
+from moose_lib.data_models import ClickHouseJson
 from moose_lib import Point, Ring, LineString, MultiLineString, Polygon, MultiPolygon
 from moose_lib import clickhouse_default, LifeCycle, ClickHouseTTL
 from moose_lib.blocks import MergeTreeEngine, ReplacingMergeTreeEngine, AggregatingMergeTreeEngine, SummingMergeTreeEngine, S3QueueEngine, ReplicatedMergeTreeEngine, ReplicatedReplacingMergeTreeEngine, ReplicatedAggregatingMergeTreeEngine, ReplicatedSummingMergeTreeEngine
@@ -1523,5 +1524,79 @@ user_table = OlapTable[User]("User", OlapConfig(
         assert!(result.contains("granularity=3"));
         assert!(result.contains("name=\"idx2\""));
         assert!(result.contains("arguments=[\"2\", \"256\", \"1\", \"123\"]"));
+    }
+
+    #[test]
+    fn test_json_with_typed_paths() {
+        let tables = vec![Table {
+            name: "JsonTest".to_string(),
+            columns: vec![
+                Column {
+                    name: "id".to_string(),
+                    data_type: ColumnType::String,
+                    required: true,
+                    unique: false,
+                    primary_key: true,
+                    default: None,
+                    annotations: vec![],
+                    comment: None,
+                    ttl: None,
+                },
+                Column {
+                    name: "payload".to_string(),
+                    data_type: ColumnType::Json(JsonOptions {
+                        max_dynamic_paths: Some(256),
+                        max_dynamic_types: Some(16),
+                        typed_paths: vec![
+                            ("name".to_string(), ColumnType::String),
+                            ("count".to_string(), ColumnType::Int(IntType::Int64)),
+                        ],
+                        skip_paths: vec!["skip.me".to_string()],
+                        skip_regexps: vec!["^tmp\\.".to_string()],
+                    }),
+                    required: true,
+                    unique: false,
+                    primary_key: false,
+                    default: None,
+                    annotations: vec![],
+                    comment: None,
+                    ttl: None,
+                },
+            ],
+            order_by: OrderBy::Fields(vec!["id".to_string()]),
+            partition_by: None,
+            sample_by: None,
+            engine: Some(ClickhouseEngine::MergeTree),
+            version: None,
+            source_primitive: PrimitiveSignature {
+                name: "JsonTest".to_string(),
+                primitive_type: PrimitiveTypes::DataModel,
+            },
+            metadata: None,
+            life_cycle: LifeCycle::FullyManaged,
+            engine_params_hash: None,
+            table_settings: None,
+            indexes: vec![],
+            table_ttl_setting: None,
+        }];
+
+        let result = tables_to_python(&tables, None);
+        println!("{}", result);
+
+        // Check for JSON inner model generation
+        assert!(result.contains("class PayloadJson(BaseModel):"));
+        assert!(result.contains("model_config = ConfigDict(extra='allow')"));
+        assert!(result.contains("name: str"));
+        assert!(result.contains("count: Annotated[int, \"int64\"]"));
+
+        // Check for ClickHouseJson import
+        assert!(result.contains("from moose_lib.data_models import ClickHouseJson"));
+
+        // Check that the main table uses the JSON type correctly
+        assert!(result.contains("payload: Annotated[PayloadJson, ClickHouseJson("));
+        assert!(result.contains("max_dynamic_paths=256"));
+        assert!(result.contains("max_dynamic_types=16"));
+        assert!(result.contains("skip_paths=(\"skip.me\",)"));
+        assert!(result.contains("skip_regexes=(r\"^tmp\\\\.\",)"));
     }
 }

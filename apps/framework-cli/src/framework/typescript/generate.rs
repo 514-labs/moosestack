@@ -1340,4 +1340,73 @@ export const TaskTable = new OlapTable<Task>("Task", {
         // Table-level TTL should be present in table config
         assert!(result.contains("ttl: \"timestamp + INTERVAL 90 DAY DELETE\","));
     }
+
+    #[test]
+    fn test_json_with_typed_paths_typescript() {
+        use crate::framework::core::infrastructure::table::IntType;
+        let tables = vec![Table {
+            name: "JsonTest".to_string(),
+            columns: vec![
+                Column {
+                    name: "id".to_string(),
+                    data_type: ColumnType::String,
+                    required: true,
+                    unique: false,
+                    primary_key: true,
+                    default: None,
+                    annotations: vec![],
+                    comment: None,
+                    ttl: None,
+                },
+                Column {
+                    name: "payload".to_string(),
+                    data_type: ColumnType::Json(JsonOptions {
+                        max_dynamic_paths: Some(256),
+                        max_dynamic_types: Some(16),
+                        typed_paths: vec![
+                            ("name".to_string(), ColumnType::String),
+                            ("count".to_string(), ColumnType::Int(IntType::Int64)),
+                        ],
+                        skip_paths: vec!["skip.me".to_string()],
+                        skip_regexps: vec!["^tmp\\.".to_string()],
+                    }),
+                    required: true,
+                    unique: false,
+                    primary_key: false,
+                    default: None,
+                    annotations: vec![],
+                    comment: None,
+                    ttl: None,
+                },
+            ],
+            order_by: OrderBy::Fields(vec!["id".to_string()]),
+            partition_by: None,
+            sample_by: None,
+            engine: Some(ClickhouseEngine::MergeTree),
+            version: None,
+            source_primitive: PrimitiveSignature {
+                name: "JsonTest".to_string(),
+                primitive_type: PrimitiveTypes::DataModel,
+            },
+            metadata: None,
+            life_cycle: LifeCycle::FullyManaged,
+            engine_params_hash: None,
+            table_settings: None,
+            indexes: vec![],
+            table_ttl_setting: None,
+        }];
+
+        let result = tables_to_typescript(&tables, None);
+        println!("{}", result);
+
+        // Check for JSON inner interface generation
+        assert!(result.contains("export interface PayloadJson {"));
+        assert!(result.contains("name: string;"));
+        assert!(result.contains("count: number & ClickHouseInt<\"int64\">;"));
+
+        // Check that the main interface uses the JSON type correctly
+        assert!(result.contains(
+            "payload: PayloadJson & ClickHouseJson<256, 16, [\"skip.me\"], [\"^tmp\\\\.\"]>;"
+        ));
+    }
 }
