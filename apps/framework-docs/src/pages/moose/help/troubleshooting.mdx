@@ -216,6 +216,29 @@ native_port = 9000
    moose auth check
    ```
 
+### Issue: Migration stuck with "Migration already in progress"
+
+**Cause:** A previous migration was interrupted without releasing its lock.
+
+**Solution:**
+
+1. **Wait 5 minutes** - locks expire automatically
+
+2. **Or manually clear the lock:**
+   ```sql
+   DELETE FROM _MOOSE_STATE WHERE key = 'migration_lock';
+   ```
+
+3. **Verify it worked:**
+   ```sql
+   SELECT * FROM _MOOSE_STATE WHERE key = 'migration_lock';
+   -- Should return no rows
+   ```
+
+<Callout type="info">
+The `_MOOSE_STATE` table uses ClickHouse's KeeperMap engine for distributed locking, ensuring only one migration runs at a time across multiple deployments.
+</Callout>
+
 ## Getting Help
 
 If you can't resolve an issue:

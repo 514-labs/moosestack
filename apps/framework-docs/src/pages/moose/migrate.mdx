@@ -214,6 +214,14 @@ data_models_v2 = true
 ```
 </Callout>
 
+<Callout type="warning" title="ClickHouse Requirements for Serverless">
+Your ClickHouse instance needs the KeeperMap engine for state storage and migration locking.
+
+✅ **ClickHouse Cloud**: Works out of the box
+✅ **`moose dev` or `moose prod`**: Already configured
+⚠️ **Self-hosted ClickHouse**: See [ClickHouse KeeperMap documentation](https://clickhouse.com/docs/en/engines/table-engines/special/keeper-map) for setup requirements
+</Callout>
+
 ### Understanding Plan Output
 
 Moose shows exactly what will change:
@@ -293,3 +301,7 @@ replication_factor = 1
 - Check `moose logs` for detailed error messages
 - Verify object definitions in your main file
 - Ensure all required fields are properly typed
+- **Stuck migration lock**: If you see "Migration already in progress" but no migration is running, wait 5 minutes for automatic expiry or manually clear it:
+  ```sql
+  DELETE FROM _MOOSE_STATE WHERE key = 'migration_lock';
+  ```
