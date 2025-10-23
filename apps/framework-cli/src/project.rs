@@ -167,6 +167,14 @@ impl Default for StateConfig {
     }
 }
 
+/// Migration configuration
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+pub struct MigrationConfig {
+    /// Operations to ignore during migration plan generation
+    #[serde(default)]
+    pub ignore_operations: Vec<crate::framework::core::migration_plan::IgnorableOperation>,
+}
+
 /// Feature flags for the project
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ProjectFeatures {
@@ -235,6 +243,9 @@ pub struct Project {
     /// State storage configuration
     #[serde(default)]
     pub state_config: StateConfig,
+    /// Migration configuration
+    #[serde(default)]
+    pub migration_config: MigrationConfig,
     /// Language-specific project configuration (not serialized)
     #[serde(skip)]
     pub language_project_config: LanguageProjectConfig,
@@ -332,6 +343,7 @@ impl Project {
             http_server_config: LocalWebserverConfig::default(),
             temporal_config: TemporalConfig::default(),
             state_config: StateConfig::default(),
+            migration_config: MigrationConfig::default(),
             language_project_config,
             supported_old_versions: HashMap::new(),
             git_config: GitConfig::default(),
