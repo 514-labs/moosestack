@@ -136,8 +136,17 @@ impl ClickHouseStateStorage {
             .fetch::<String>()
             .context("Failed to query for existing lock")?;
 
-        if let Ok(Some(lock_json)) = cursor.next().await {
+        if let Ok(Some(lock_json_base64)) = cursor.next().await {
             // Lock exists - check if expired
+            // Base64 decode the lock data
+            let lock_json_bytes = base64::Engine::decode(
+                &base64::engine::general_purpose::STANDARD,
+                lock_json_base64.as_bytes(),
+            )
+            .context("Failed to base64 decode lock data")?;
+            let lock_json = String::from_utf8(lock_json_bytes)
+                .context("Failed to convert lock data to UTF-8")?;
+
             let existing_lock: MigrationLock =
                 serde_json::from_str(&lock_json).context("Failed to deserialize existing lock")?;
 
@@ -187,12 +196,18 @@ impl ClickHouseStateStorage {
         let lock_json =
             serde_json::to_string(&lock_data).context("Failed to serialize lock data")?;
 
+        // Base64 encode to avoid SQL injection (no escaping needed for base64)
+        let lock_json_base64 = base64::Engine::encode(
+            &base64::engine::general_purpose::STANDARD,
+            lock_json.as_bytes(),
+        );
+
         let insert_sql = format!(
             "INSERT INTO `{}`.`{}` (key, value) VALUES ('{}', '{}')",
             self.db_name,
             Self::STATE_TABLE,
             Self::LOCK_KEY,
-            lock_json.replace('\'', "\\'")
+            lock_json_base64
         );
 
         match self.client.client.query(&insert_sql).execute().await {
@@ -252,7 +267,7 @@ impl StateStorage for ClickHouseStateStorage {
             self.db_name,
             Self::STATE_TABLE,
             key,
-            encoded_base64.replace('\'', "\\'")
+            encoded_base64
         );
 
         debug!(
