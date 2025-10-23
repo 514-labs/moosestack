@@ -699,32 +699,58 @@ exec /entrypoint.sh"`,
     );
 
     // Wait for Keeper to be healthy (not just running)
-    console.log("Waiting for Keeper to be healthy...");
+    console.log("Waiting for Keeper to be healthy (may take longer in CI)...");
     let keeperHealthy = false;
-    for (let i = 0; i < 60; i++) {
+    let lastStatus = "unknown";
+    for (let i = 0; i < 120; i++) {
       try {
         const { stdout } = await execAsync(
           `docker inspect --format='{{.State.Health.Status}}' ${keeperContainerName}`,
         );
-        if (stdout.trim() === "healthy") {
+        const status = stdout.trim();
+
+        // Log status changes for debugging
+        if (status !== lastStatus) {
+          console.log(`  Keeper health status: ${status} (${i}s elapsed)`);
+          lastStatus = status;
+        }
+
+        if (status === "healthy") {
           console.log("✓ Keeper healthcheck passed");
           keeperHealthy = true;
           break;
         }
       } catch (e) {
-        // Health status not available yet
+        // Health status not available yet or container not found
+        if (i % 10 === 0 && i > 0) {
+          console.log(
+            `  Still waiting for Keeper container... (${i}s elapsed)`,
+          );
+        }
       }
       await new Promise((resolve) => setTimeout(resolve, 1000));
     }
 
     if (!keeperHealthy) {
-      throw new Error("Keeper did not become healthy within 60 seconds");
+      // Show Keeper logs for debugging
+      console.error("Keeper healthcheck failed. Last status:", lastStatus);
+      try {
+        const { stdout: logs } = await execAsync(
+          `docker logs ${keeperContainerName} 2>&1 | tail -50`,
+        );
+        console.error("Keeper logs (last 50 lines):", logs);
+      } catch (e) {
+        console.error("Could not fetch Keeper logs:", e);
+      }
+      throw new Error(
+        `Keeper did not become healthy within 120 seconds (last status: ${lastStatus})`,
+      );
     }
 
     // Extra wait to ensure Keeper is really stable
     // ClickHouse will try to connect during startup, so we need Keeper to be rock solid
     console.log("Giving Keeper extra time to stabilize...");
-    await new Promise((resolve) => setTimeout(resolve, 5000));
+    await new Promise((resolve) => setTimeout(resolve, 3000));
 
     // Start ClickHouse with Keeper connection and keeper_map_path_prefix
     await execAsync(
