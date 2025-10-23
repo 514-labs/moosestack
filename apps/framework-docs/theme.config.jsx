@@ -31,7 +31,9 @@ function buildLlmHref(asPath, suffix) {
     return "/";
   }
 
-  const pathWithoutHash = asPath.split("#")[0];
+  const safePath = asPath || "/";
+
+  const pathWithoutHash = safePath.split("#")[0];
   const pathWithoutQuery = pathWithoutHash.split("?")[0];
 
   if (!pathWithoutQuery || pathWithoutQuery === "/") {
