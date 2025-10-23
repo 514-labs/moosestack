@@ -73,22 +73,26 @@ function EditLinks({ filePath, className, children }) {
           {children}
         </Link>
       : <span className={className}>{children}</span>}
-      <Link
-        href={tsHref}
-        className={className}
-        target="_blank"
-        rel="noreferrer"
-      >
-        LLM docs: TS
-      </Link>
-      <Link
-        href={pyHref}
-        className={className}
-        target="_blank"
-        rel="noreferrer"
-      >
-        LLM docs: PY
-      </Link>
+      <span className={className}>
+        LLM docs:{" "}
+        <Link
+          href={tsHref}
+          className={className}
+          target="_blank"
+          rel="noreferrer"
+        >
+          TS
+        </Link>{" "}
+        /{" "}
+        <Link
+          href={pyHref}
+          className={className}
+          target="_blank"
+          rel="noreferrer"
+        >
+          PY
+        </Link>
+      </span>
     </div>
   );
 }
