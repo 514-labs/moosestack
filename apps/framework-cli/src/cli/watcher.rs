@@ -30,6 +30,7 @@ use tokio::sync::RwLock;
 use crate::framework::core::infrastructure_map::{ApiChange, InfrastructureMap};
 
 use super::display::{self, with_spinner_completion_async, Message, MessageType};
+use super::processing_coordinator::ProcessingCoordinator;
 use super::settings::Settings;
 
 use crate::cli::routines::openapi::openapi;
@@ -115,6 +116,7 @@ impl EventBuckets {
 /// * `metrics` - Metrics collection
 /// * `redis_client` - Redis client for state management
 /// * `settings` - CLI settings configuration
+/// * `processing_coordinator` - Coordinator for synchronizing with MCP tools
 #[allow(clippy::too_many_arguments)]
 async fn watch(
     project: Arc<Project>,
@@ -127,6 +129,7 @@ async fn watch(
     metrics: Arc<Metrics>,
     redis_client: Arc<RedisClient>,
     settings: Settings,
+    processing_coordinator: ProcessingCoordinator,
 ) -> Result<(), anyhow::Error> {
     log::debug!(
         "Starting file watcher for project: {:?}",
@@ -160,6 +163,9 @@ async fn watch(
                     log::debug!("Debounce period elapsed, processing changes");
                     receiver_ack.send_replace(EventBuckets::default());
                     rx.mark_unchanged();
+
+                    // Begin processing - guard will mark complete on drop
+                    let _processing_guard = processing_coordinator.begin_processing().await;
 
                     let result: anyhow::Result<()> = with_spinner_completion_async(
                         "Processing Infrastructure changes from file watcher",
@@ -275,6 +281,7 @@ impl FileWatcher {
     /// * `metrics` - Metrics collection
     /// * `redis_client` - Redis client for state management
     /// * `settings` - CLI settings configuration
+    /// * `processing_coordinator` - Coordinator for synchronizing with MCP tools
     #[allow(clippy::too_many_arguments)]
     pub fn start(
         &self,
@@ -288,6 +295,7 @@ impl FileWatcher {
         metrics: Arc<Metrics>,
         redis_client: Arc<RedisClient>,
         settings: Settings,
+        processing_coordinator: ProcessingCoordinator,
     ) -> Result<(), Error> {
         show_message!(MessageType::Info, {
             Message {
@@ -307,6 +315,7 @@ impl FileWatcher {
                 metrics,
                 redis_client,
                 settings,
+                processing_coordinator,
             )
             .await
         };

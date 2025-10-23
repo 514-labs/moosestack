@@ -13,6 +13,7 @@ use rmcp::{
 use std::sync::Arc;
 
 use super::tools::{create_error_result, get_source, infra_map, logs, query_olap, sample_stream};
+use crate::cli::processing_coordinator::ProcessingCoordinator;
 use crate::infrastructure::olap::clickhouse::config::ClickHouseConfig;
 use crate::infrastructure::redis::redis_client::RedisClient;
 use crate::infrastructure::stream::kafka::models::KafkaConfig;
@@ -25,6 +26,7 @@ pub struct MooseMcpHandler {
     redis_client: Arc<RedisClient>,
     clickhouse_config: ClickHouseConfig,
     kafka_config: Arc<KafkaConfig>,
+    processing_coordinator: ProcessingCoordinator,
 }
 
 impl MooseMcpHandler {
@@ -35,6 +37,7 @@ impl MooseMcpHandler {
         redis_client: Arc<RedisClient>,
         clickhouse_config: ClickHouseConfig,
         kafka_config: Arc<KafkaConfig>,
+        processing_coordinator: ProcessingCoordinator,
     ) -> Self {
         Self {
             server_name,
@@ -42,6 +45,7 @@ impl MooseMcpHandler {
             redis_client,
             clickhouse_config,
             kafka_config,
+            processing_coordinator,
         }
     }
 }
@@ -90,6 +94,10 @@ impl ServerHandler for MooseMcpHandler {
         param: CallToolRequestParam,
         _context: RequestContext<RoleServer>,
     ) -> Result<CallToolResult, ErrorData> {
+        // Wait for any in-progress file watcher processing to complete
+        // This ensures we read stable infrastructure state
+        self.processing_coordinator.wait_for_stable_state().await;
+
         match param.name.as_ref() {
             "get_logs" => Ok(logs::handle_call(param.arguments.as_ref())),
             "get_infra_map" => Ok(infra_map::handle_call(
@@ -126,6 +134,7 @@ impl ServerHandler for MooseMcpHandler {
 /// * `redis_client` - Redis client for accessing infrastructure state
 /// * `clickhouse_config` - ClickHouse configuration for database access
 /// * `kafka_config` - Kafka configuration for streaming operations
+/// * `processing_coordinator` - Coordinator for synchronizing with file watcher
 ///
 /// # Returns
 /// * `StreamableHttpService` - HTTP service that can handle MCP requests
@@ -135,6 +144,7 @@ pub fn create_mcp_http_service(
     redis_client: Arc<RedisClient>,
     clickhouse_config: ClickHouseConfig,
     kafka_config: Arc<KafkaConfig>,
+    processing_coordinator: ProcessingCoordinator,
 ) -> StreamableHttpService<MooseMcpHandler, LocalSessionManager> {
     info!(
         "[MCP] Creating MCP HTTP service: {} v{}",
@@ -157,6 +167,7 @@ pub fn create_mcp_http_service(
                 redis_client.clone(),
                 clickhouse_config.clone(),
                 kafka_config.clone(),
+                processing_coordinator.clone(),
             ))
         },
         session_manager,

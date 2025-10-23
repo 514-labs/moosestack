@@ -18,7 +18,7 @@ import { CheckCircle, Clock, Laptop, Terminal } from "lucide-react";
 <LanguageSwitcher />
 
 <TypeScript>
-<MuxVideo 
+<MuxVideo
   playbackId="ayaB9Q00q9RIePJLfErDyRnCIOpGpHmVNSX7xy02SBGN8"
   title="Moose Quickstart Video"
   width="100%"
@@ -28,7 +28,7 @@ import { CheckCircle, Clock, Laptop, Terminal } from "lucide-react";
 </TypeScript>
 
 <Python>
-<MuxVideo 
+<MuxVideo
   playbackId="7b6BmW9005WdBQnBrA1l2dHKNvLKyKIrlz9700k9NV71o"
   title="Moose Quickstart Video"
   width="100%"
@@ -46,13 +46,13 @@ import { CheckCircle, Clock, Laptop, Terminal } from "lucide-react";
   compact={true}
   divider={false}
   bullets={[
-    { 
-      title: "Node.js 20+", 
+    {
+      title: "Node.js 20+",
       description: "Required for TypeScript development",
       link: { text: "Download →", href: "https://nodejs.org/en/download", external: true }
     },
-    { 
-      title: "Docker Desktop", 
+    {
+      title: "Docker Desktop",
       description: "For local development environment",
       link: { text: "Download →", href: "https://docs.docker.com/get-started/get-docker/", external: true }
     },
@@ -71,13 +71,13 @@ import { CheckCircle, Clock, Laptop, Terminal } from "lucide-react";
   compact={true}
   divider={false}
   bullets={[
-    { 
-      title: "Python 3.12+", 
+    {
+      title: "Python 3.12+",
       description: "Required for Python development",
       link: { text: "Download →", href: "https://www.python.org/downloads/", external: true }
     },
-    { 
-      title: "Docker Desktop", 
+    {
+      title: "Docker Desktop",
       description: "For local development environment",
       link: { text: "Download →", href: "https://docs.docker.com/get-started/get-docker/", external: true }
     },
@@ -167,7 +167,7 @@ moose dev # This will spin up the Moose, ClickHouse, Redpanda, and Temporal cont
        Started Webserver.
 
 
-  Next Steps   
+  Next Steps
 
 💻 Run the moose 👉 `ls` 👈 command for a bird's eye view of your application and infrastructure
 
@@ -231,9 +231,9 @@ Your project includes a complete example pipeline:
 **Important:** While your pipeline objects are defined in the child folders, they **must be imported** into the root <TypeScript inline>`index.ts`</TypeScript><Python inline>`main.py`</Python> file for the Moose CLI to discover and use them.
 
 <TypeScript>
-```ts filename="app/index.ts" 
+```ts filename="app/index.ts"
 export * from "./ingest/models";      // Data models & pipelines
-export * from "./ingest/transforms";  // Transformation logic  
+export * from "./ingest/transforms";  // Transformation logic
 export * from "./apis/bar";           // API endpoints
 export * from "./views/barAggregated"; // Materialized views
 export * from "./workflows/generator"; // Background workflows
@@ -244,7 +244,7 @@ export * from "./workflows/generator"; // Background workflows
 ```python filename="app/main.py"
 from app.ingest.models import *      # Data models & pipelines
 from app.ingest.transform import *   # Transformation logic
-from app.apis.bar import *           # API endpoints  
+from app.apis.bar import *           # API endpoints
 from app.views.bar_aggregated import * # Materialized views
 from app.workflows.generator import *  # Background workflows
 ```
@@ -256,7 +256,7 @@ from app.workflows.generator import *  # Background workflows
 <Steps>
 ### Send test data
 
-<Callout type="info" title="Open a new terminal window to run these commands" icon={Terminal} compact={true}>
+<Callout type="info" title="Open a new terminal window to run these commands in the project directory" icon={Terminal} compact={true}>
 </Callout>
 
 Your project comes with a pre-built [Workflow](../workflows) called `generator` that acts as a **data simulator**. Trigger the workflow with:
@@ -268,6 +268,8 @@ moose workflow run generator
 
 <Python>
 ```bash filename="Open a new terminal window" copy
+# This is to activate the virtual environment in your new terminal
+source .venv/bin/activate
 moose workflow run generator
 ```
 </Python>
@@ -381,11 +383,11 @@ curl "http://localhost:4000/api/bar?limit=5&orderBy=totalRows"
 <ToggleBlock openText="Explore with OpenAPI UI" closeText="Hide Explore with OpenAPI UI">
 
 1. Install the [OpenAPI (Swagger) Viewer extension](https://marketplace.cursorapi.com/items?itemName=42Crunch.vscode-openapi) in your IDE
-2. Open `.moose/openapi.yaml` in your IDE  
+2. Open `.moose/openapi.yaml` in your IDE
 3. Click the "Preview" icon to launch the interactive API explorer
 4. Test the `POST /ingest/Foo` and `GET /api/bar` endpoints
 
-<MuxVideo 
+<MuxVideo
   playbackId="66qLKy46JddIBcJWqestllPmBJBxWcOwbgw00WpKXO02M"
   title="Using the OpenAPI Swagger UI for Moose APIs"
   width="100%"
@@ -523,7 +525,7 @@ nvm use 20
 <Python>
 **Python version too old:**
 ```bash filename="Terminal" copy
-# Check version  
+# Check version
 python3 --version
 
 # Install Python 3.12+ with pyenv
