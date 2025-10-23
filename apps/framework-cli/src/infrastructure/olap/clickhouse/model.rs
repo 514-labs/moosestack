@@ -1,7 +1,6 @@
 use crate::framework::core::infrastructure::table::{DataEnum, JsonOptions, OrderBy};
 use crate::framework::versions::Version;
 use crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine;
-use crate::infrastructure::olap::clickhouse::type_parser::convert_clickhouse_type_to_column_type;
 use chrono::{DateTime, FixedOffset};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
@@ -47,7 +46,7 @@ pub enum ClickHouseColumnType {
         scale: u8,
     },
     DateTime,
-    Json(JsonOptions),
+    Json(JsonOptions<ClickHouseColumnType>),
     Bytes,
     Array(Box<ClickHouseColumnType>),
     Nullable(Box<ClickHouseColumnType>),
@@ -260,7 +259,7 @@ impl ClickHouseColumnType {
     }
 }
 
-fn parse_json_options(inner: &str) -> Option<JsonOptions> {
+fn parse_json_options(inner: &str) -> Option<JsonOptions<ClickHouseColumnType>> {
     let mut opts = JsonOptions::default();
     for part in inner.split(',') {
         let item = part.trim();
@@ -292,12 +291,11 @@ fn parse_json_options(inner: &str) -> Option<JsonOptions> {
             if path.eq_ignore_ascii_case("SKIP") {
                 continue;
             }
-            match convert_clickhouse_type_to_column_type(ty_str) {
-                Ok((ty, _)) => {
-                    opts.typed_paths.push((path.to_string(), ty));
-                    continue;
-                }
-                Err(_) => return None,
+            if let Some(ty) = ClickHouseColumnType::from_type_str(ty_str) {
+                opts.typed_paths.push((path.to_string(), ty));
+                continue;
+            } else {
+                return None;
             }
         }
         return None;
@@ -308,9 +306,6 @@ fn parse_json_options(inner: &str) -> Option<JsonOptions> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::framework::core::infrastructure::table::{
-        ColumnType as FWColumnType, IntType as FWIntType,
-    };
 
     #[test]
     fn test_parse_json_options_numbers() {
@@ -335,7 +330,7 @@ mod tests {
                 assert_eq!(opts.typed_paths[0].0, "a.b");
                 assert_eq!(opts.skip_paths, vec!["a.e".to_string()]);
                 match &opts.typed_paths[0].1 {
-                    FWColumnType::Int(FWIntType::UInt32) => {}
+                    ClickHouseColumnType::ClickhouseInt(ClickHouseInt::UInt32) => {}
                     other => panic!("Unexpected type parsed: {:?}", other),
                 }
             }

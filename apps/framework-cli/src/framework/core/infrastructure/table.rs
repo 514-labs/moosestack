@@ -58,21 +58,33 @@ pub struct ColumnMetadata {
     // Future fields can be added here with #[serde(skip_serializing_if = "Option::is_none")]
 }
 
-#[derive(Debug, Clone, Eq, PartialEq, Hash, Default, Serialize, Deserialize)]
-pub struct JsonOptions {
+#[derive(Debug, Clone, Eq, PartialEq, Hash, Serialize, Deserialize)]
+pub struct JsonOptions<T = ColumnType> {
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub max_dynamic_paths: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub max_dynamic_types: Option<u64>,
     #[serde(default)]
-    pub typed_paths: Vec<(String, ColumnType)>,
+    pub typed_paths: Vec<(String, T)>,
     #[serde(default)]
     pub skip_paths: Vec<String>,
     #[serde(default)]
     pub skip_regexps: Vec<String>,
 }
 
-impl JsonOptions {
+impl<T> Default for JsonOptions<T> {
+    fn default() -> Self {
+        JsonOptions {
+            max_dynamic_paths: None,
+            max_dynamic_types: None,
+            typed_paths: Vec::new(),
+            skip_paths: Vec::new(),
+            skip_regexps: Vec::new(),
+        }
+    }
+}
+
+impl<T> JsonOptions<T> {
     pub fn is_empty(&self) -> bool {
         self.max_dynamic_paths.is_none()
             && self.max_dynamic_types.is_none()
@@ -81,19 +93,12 @@ impl JsonOptions {
             && self.skip_regexps.is_empty()
     }
 
-    pub fn to_option_strings(&self) -> Vec<String> {
-        self.to_option_strings_with_type_convert::<_, std::convert::Infallible>(|ty| {
-            Ok(ty.to_string())
-        })
-        .unwrap()
-    }
-
     pub fn to_option_strings_with_type_convert<F, E>(
         &self,
         type_converter: F,
     ) -> Result<Vec<String>, E>
     where
-        F: Fn(&ColumnType) -> Result<String, E>,
+        F: Fn(&T) -> Result<String, E>,
     {
         let mut parts: Vec<String> = Vec::new();
         if let Some(n) = self.max_dynamic_paths {
@@ -113,6 +118,32 @@ impl JsonOptions {
             parts.push(format!("SKIP REGEXP '{}'", re.replace('\'', "\\'")));
         }
         Ok(parts)
+    }
+
+    pub fn convert_inner_types<U, F>(self, mut f: F) -> JsonOptions<U>
+    where
+        F: FnMut(T) -> U,
+    {
+        JsonOptions {
+            max_dynamic_paths: self.max_dynamic_paths,
+            max_dynamic_types: self.max_dynamic_types,
+            typed_paths: self
+                .typed_paths
+                .into_iter()
+                .map(|(path, ty)| (path, f(ty)))
+                .collect(),
+            skip_paths: self.skip_paths,
+            skip_regexps: self.skip_regexps,
+        }
+    }
+}
+
+impl<T: std::fmt::Display> JsonOptions<T> {
+    pub fn to_option_strings(&self) -> Vec<String> {
+        self.to_option_strings_with_type_convert::<_, std::convert::Infallible>(|ty| {
+            Ok(ty.to_string())
+        })
+        .unwrap()
     }
 }
 
