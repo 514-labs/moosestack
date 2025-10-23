@@ -95,6 +95,10 @@ function parseFrontMatter(source: string): ParsedDocument {
   }
 
   const [, frontMatterBlock] = frontMatterMatch;
+
+  if (!frontMatterBlock) {
+    return { frontMatter: {}, body: source };
+  }
   const frontMatter: FrontMatter = {};
 
   for (const line of frontMatterBlock.split("\n")) {
@@ -185,7 +189,7 @@ function stripExportConstBlocks(input: string) {
     let i = braceIndex + 1;
 
     while (i < input.length && depth > 0) {
-      const char = input[i];
+      const char = input.charAt(i);
 
       if (char === "{") {
         depth += 1;
@@ -196,7 +200,7 @@ function stripExportConstBlocks(input: string) {
       i += 1;
     }
 
-    while (i < input.length && /[\s;,\r\n]/.test(input[i])) {
+    while (i < input.length && /[\s;,\r\n]/.test(input.charAt(i))) {
       i += 1;
     }
 
