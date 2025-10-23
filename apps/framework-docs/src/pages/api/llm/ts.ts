@@ -1,5 +1,6 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { buildLanguageDocs } from "@/lib/llmDocGenerator";
+import { extractDecodedParam } from "@/lib/llmHelpers";
 
 export default async function handler(
   req: NextApiRequest,
@@ -25,21 +26,5 @@ export default async function handler(
 function extractScope(query: NextApiRequest["query"]): string | undefined {
   const raw = query.section ?? query.scope;
 
-  if (!raw) {
-    return undefined;
-  }
-
-  const value = Array.isArray(raw) ? raw[0] : raw;
-  if (!value) {
-    return undefined;
-  }
-  return decodeScopeValue(value);
-}
-
-function decodeScopeValue(value: string) {
-  try {
-    return decodeURIComponent(value);
-  } catch {
-    return value;
-  }
+  return extractDecodedParam(raw);
 }

@@ -36,7 +36,10 @@ function matchLlmPath(pathname: string): LlmPathMatch | null {
     return null;
   }
 
-  const filename = segments.pop()!;
+  const filename = segments.pop();
+  if (!filename) {
+    return null;
+  }
   const language = extractLanguage(filename);
   if (!language) {
     return null;

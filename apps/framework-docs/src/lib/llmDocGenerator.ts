@@ -210,27 +210,100 @@ function stripExportConstBlocks(input: string) {
   let cursor = 0;
   let result = "";
 
-  while (cursor < input.length) {
-    const exportIndex = input.indexOf("export const", cursor);
+  const KEYWORD = "export const";
 
-    if (exportIndex === -1) {
-      result += input.slice(cursor);
+  const skipWhitespaceAndComments = (source: string, start: number) => {
+    let i = start;
+    while (i < source.length) {
+      const char = source.charAt(i);
+
+      if (char === "/" && source.charAt(i + 1) === "/") {
+        i += 2;
+        while (i < source.length && source.charAt(i) !== "\n") {
+          i += 1;
+        }
+        continue;
+      }
+
+      if (char === "/" && source.charAt(i + 1) === "*") {
+        i += 2;
+        while (
+          i < source.length &&
+          !(source.charAt(i) === "*" && source.charAt(i + 1) === "/")
+        ) {
+          i += 1;
+        }
+        i += 2;
+        continue;
+      }
+
+      if (/\s/.test(char)) {
+        i += 1;
+        continue;
+      }
+
       break;
     }
+    return i;
+  };
 
-    result += input.slice(cursor, exportIndex);
+  const skipString = (source: string, start: number) => {
+    const quote = source.charAt(start);
+    let i = start + 1;
+    while (i < source.length) {
+      const char = source.charAt(i);
 
-    let braceIndex = input.indexOf("{", exportIndex);
-    if (braceIndex === -1) {
-      cursor = exportIndex + "export const".length;
-      continue;
+      if (char === "\\") {
+        i += 2;
+        continue;
+      }
+
+      if (quote === "`" && char === "$" && source.charAt(i + 1) === "{") {
+        i = skipTemplateExpression(source, i + 2);
+        continue;
+      }
+
+      if (char === quote) {
+        return i + 1;
+      }
+
+      i += 1;
     }
 
-    let depth = 1;
-    let i = braceIndex + 1;
+    return source.length;
+  };
 
-    while (i < input.length && depth > 0) {
-      const char = input.charAt(i);
+  const skipTemplateExpression = (source: string, start: number) => {
+    let depth = 1;
+    let i = start;
+
+    while (i < source.length && depth > 0) {
+      const char = source.charAt(i);
+
+      if (char === "'" || char === '"' || char === "`") {
+        i = skipString(source, i);
+        continue;
+      }
+
+      if (char === "/" && source.charAt(i + 1) === "/") {
+        i += 2;
+        while (i < source.length && source.charAt(i) !== "\n") {
+          i += 1;
+        }
+        continue;
+      }
+
+      if (char === "/" && source.charAt(i + 1) === "*") {
+        i += 2;
+        while (
+          i < source.length &&
+          !(source.charAt(i) === "*" && source.charAt(i + 1) === "/")
+        ) {
+          i += 1;
+        }
+        i += 2;
+        continue;
+      }
 
       if (char === "{") {
         depth += 1;
@@ -241,11 +314,114 @@ function stripExportConstBlocks(input: string) {
       i += 1;
     }
 
-    while (i < input.length && /[\s;,\r\n]/.test(input.charAt(i))) {
+    return i;
+  };
+
+  const skipBlock = (source: string, start: number) => {
+    let depth = 1;
+    let i = start + 1;
+
+    while (i < source.length && depth > 0) {
+      const char = source.charAt(i);
+
+      if (char === "'" || char === '"' || char === "`") {
+        i = skipString(source, i);
+        continue;
+      }
+
+      if (char === "/" && source.charAt(i + 1) === "/") {
+        i += 2;
+        while (i < source.length && source.charAt(i) !== "\n") {
+          i += 1;
+        }
+        continue;
+      }
+
+      if (char === "/" && source.charAt(i + 1) === "*") {
+        i += 2;
+        while (
+          i < source.length &&
+          !(source.charAt(i) === "*" && source.charAt(i + 1) === "/")
+        ) {
+          i += 1;
+        }
+        i += 2;
+        continue;
+      }
+
+      if (char === "{") {
+        depth += 1;
+      } else if (char === "}") {
+        depth -= 1;
+      }
+
       i += 1;
     }
 
-    cursor = i;
+    return skipWhitespaceAndComments(source, i);
+  };
+
+  while (cursor < input.length) {
+    const exportIndex = input.indexOf(KEYWORD, cursor);
+
+    if (exportIndex === -1) {
+      result += input.slice(cursor);
+      break;
+    }
+
+    result += input.slice(cursor, exportIndex);
+
+    let scanIndex = exportIndex + KEYWORD.length;
+    scanIndex = skipWhitespaceAndComments(input, scanIndex);
+
+    let braceIndex = -1;
+
+    while (scanIndex < input.length) {
+      const char = input.charAt(scanIndex);
+
+      if (char === "'" || char === '"' || char === "`") {
+        scanIndex = skipString(input, scanIndex);
+        continue;
+      }
+
+      if (char === "/" && input.charAt(scanIndex + 1) === "/") {
+        scanIndex += 2;
+        while (scanIndex < input.length && input.charAt(scanIndex) !== "\n") {
+          scanIndex += 1;
+        }
+        scanIndex += 1;
+        continue;
+      }
+
+      if (char === "/" && input.charAt(scanIndex + 1) === "*") {
+        scanIndex += 2;
+        while (
+          scanIndex < input.length &&
+          !(
+            input.charAt(scanIndex) === "*" &&
+            input.charAt(scanIndex + 1) === "/"
+          )
+        ) {
+          scanIndex += 1;
+        }
+        scanIndex += 2;
+        continue;
+      }
+
+      if (char === "{") {
+        braceIndex = scanIndex;
+        break;
+      }
+
+      scanIndex += 1;
+    }
+
+    if (braceIndex === -1) {
+      cursor = exportIndex + KEYWORD.length;
+      continue;
+    }
+
+    cursor = skipBlock(input, braceIndex);
   }
 
   return result;
