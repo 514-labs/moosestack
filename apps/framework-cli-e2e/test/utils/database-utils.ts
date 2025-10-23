@@ -629,6 +629,7 @@ export interface ClickHouseTestInstance {
   user: string;
   password: string;
   port: number;
+  networkName: string;
 }
 
 /**
@@ -650,18 +651,94 @@ export const spawnClickHouseForMigrationTest = async (
   );
 
   try {
-    // Start ClickHouse with the same image/settings as moose dev uses
-    // Note: We use a simplified setup without ClickHouse Keeper since we don't need distributed DDL for these tests
+    // Create a Docker network for this test (like docker-compose does)
+    const networkName = `moose-test-network-${testName}`;
+    await execAsync(`docker network create ${networkName}`);
+
+    // Start ClickHouse Keeper first (needed for KeeperMap state storage)
+    const keeperContainerName = `${containerName}-keeper`;
+    const keeperPort = port + 10000; // Use a different port for Keeper
+
+    // Start Keeper with proper config (must listen on 0.0.0.0 for network access)
+    await execAsync(
+      `docker run -d \
+        --name ${keeperContainerName} \
+        --network ${networkName} \
+        --network-alias clickhouse-keeper \
+        -p ${keeperPort}:9181 \
+        --health-cmd "echo 'ruok' | nc localhost 9181 | grep -q 'imok'" \
+        --health-interval 5s \
+        --health-timeout 5s \
+        --health-retries 5 \
+        --health-start-period 10s \
+        docker.io/clickhouse/clickhouse-keeper:25.6 \
+        sh -c "mkdir -p /etc/clickhouse-keeper && cat > /etc/clickhouse-keeper/keeper_config.xml << 'EOF'
+<clickhouse>
+  <listen_host>0.0.0.0</listen_host>
+  <keeper_server>
+    <tcp_port>9181</tcp_port>
+    <server_id>1</server_id>
+    <log_storage_path>/var/lib/clickhouse-keeper/coordination/log</log_storage_path>
+    <snapshot_storage_path>/var/lib/clickhouse-keeper/coordination/snapshots</snapshot_storage_path>
+    <coordination_settings>
+      <operation_timeout_ms>10000</operation_timeout_ms>
+      <session_timeout_ms>30000</session_timeout_ms>
+    </coordination_settings>
+    <raft_configuration>
+      <server>
+        <id>1</id>
+        <hostname>clickhouse-keeper</hostname>
+        <port>9234</port>
+      </server>
+    </raft_configuration>
+    <four_letter_word_white_list>*</four_letter_word_white_list>
+  </keeper_server>
+</clickhouse>
+EOF
+exec /entrypoint.sh"`,
+    );
+
+    // Wait for Keeper to be healthy (not just running)
+    console.log("Waiting for Keeper to be healthy...");
+    let keeperHealthy = false;
+    for (let i = 0; i < 60; i++) {
+      try {
+        const { stdout } = await execAsync(
+          `docker inspect --format='{{.State.Health.Status}}' ${keeperContainerName}`,
+        );
+        if (stdout.trim() === "healthy") {
+          console.log("✓ Keeper healthcheck passed");
+          keeperHealthy = true;
+          break;
+        }
+      } catch (e) {
+        // Health status not available yet
+      }
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+    }
+
+    if (!keeperHealthy) {
+      throw new Error("Keeper did not become healthy within 60 seconds");
+    }
+
+    // Extra wait to ensure Keeper is really stable
+    // ClickHouse will try to connect during startup, so we need Keeper to be rock solid
+    console.log("Giving Keeper extra time to stabilize...");
+    await new Promise((resolve) => setTimeout(resolve, 5000));
+
+    // Start ClickHouse with Keeper connection and keeper_map_path_prefix
     await execAsync(
       `docker run -d \
         --name ${containerName} \
+        --network ${networkName} \
         -p ${port}:8123 \
         -e CLICKHOUSE_DB=${dbName} \
         -e CLICKHOUSE_USER=${user} \
         -e CLICKHOUSE_PASSWORD=${password} \
         -e CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT=1 \
         --ulimit nofile=20000:40000 \
-        docker.io/clickhouse/clickhouse-server:25.6`,
+        docker.io/clickhouse/clickhouse-server:25.6 \
+        /bin/bash -c "echo '<clickhouse><zookeeper><node><host>clickhouse-keeper</host><port>9181</port></node></zookeeper><keeper_map_path_prefix>/keeper_map_tables</keeper_map_path_prefix></clickhouse>' > /etc/clickhouse-server/config.d/keeper.xml && /entrypoint.sh"`,
     );
 
     // Wait for ClickHouse to be ready
@@ -676,17 +753,21 @@ export const spawnClickHouseForMigrationTest = async (
       user,
       password,
       port,
+      networkName,
     };
   } catch (error) {
     console.error(
       `Failed to spawn ClickHouse container ${containerName}:`,
       error,
     );
-    // Attempt cleanup if container was created but health check failed
+    // Attempt cleanup if containers were created but health check failed
     try {
       await execAsync(`docker rm -f ${containerName}`);
+      await execAsync(`docker rm -f ${containerName}-keeper`);
+      const networkName = `moose-test-network-${testName}`;
+      await execAsync(`docker network rm ${networkName}`);
     } catch (cleanupError) {
-      console.warn("Failed to cleanup failed container:", cleanupError);
+      console.warn("Failed to cleanup failed containers:", cleanupError);
     }
     throw error;
   }
@@ -729,18 +810,28 @@ const waitForClickHouseContainerReady = async (
 };
 
 /**
- * Stops and removes ClickHouse container
+ * Stops and removes ClickHouse container, Keeper container, and network
  */
 export const stopClickHouseContainer = async (
   containerName: string,
+  networkName?: string,
 ): Promise<void> => {
-  console.log(`Stopping ClickHouse container: ${containerName}...`);
+  console.log(`Stopping ClickHouse containers: ${containerName}...`);
   try {
+    // Stop both ClickHouse and Keeper containers
     await execAsync(`docker stop ${containerName}`);
     await execAsync(`docker rm ${containerName}`);
-    console.log("✓ ClickHouse container removed");
+    await execAsync(`docker stop ${containerName}-keeper`);
+    await execAsync(`docker rm ${containerName}-keeper`);
+
+    // Remove the network if provided
+    if (networkName) {
+      await execAsync(`docker network rm ${networkName}`);
+    }
+
+    console.log("✓ ClickHouse containers and network removed");
   } catch (error) {
-    console.warn(`Failed to stop container ${containerName}:`, error);
+    console.warn(`Failed to stop containers ${containerName}:`, error);
     // Don't throw - we want cleanup to continue even if Docker cleanup fails
   }
 };

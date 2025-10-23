@@ -92,7 +92,10 @@ describe("typescript template tests - migration", () => {
     after(async function () {
       this.timeout(TIMEOUTS.CLEANUP_MS);
       console.log("\n=== Cleaning up Happy Path Test ===");
-      await stopClickHouseContainer(clickhouse.containerName);
+      await stopClickHouseContainer(
+        clickhouse.containerName,
+        clickhouse.networkName,
+      );
       removeTestProject(projectDir);
     });
 
@@ -199,10 +202,14 @@ describe("typescript template tests - migration", () => {
 
       const stateData = await queryClickHouseInstance(
         clickhouse,
-        "SELECT * FROM _MOOSE_STATE WHERE key = 'infrastructure_map'",
+        "SELECT * FROM _MOOSE_STATE WHERE key LIKE 'infra_map_%' ORDER BY created_at DESC LIMIT 1",
       );
-      expect(stateData).to.have.length(1);
-      console.log("✓ State saved to _MOOSE_STATE");
+      expect(stateData).to.have.length.at.least(1);
+      console.log(
+        "✓ State saved to _MOOSE_STATE (found",
+        stateData.length,
+        "history entries)",
+      );
 
       console.log("✓ Migration applied successfully");
     });
@@ -305,7 +312,10 @@ describe("typescript template tests - migration", () => {
     after(async function () {
       this.timeout(TIMEOUTS.CLEANUP_MS);
       console.log("\n=== Cleaning up Drift Detection Test ===");
-      await stopClickHouseContainer(clickhouse.containerName);
+      await stopClickHouseContainer(
+        clickhouse.containerName,
+        clickhouse.networkName,
+      );
       removeTestProject(projectDir);
     });
 
