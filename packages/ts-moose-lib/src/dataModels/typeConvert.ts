@@ -60,11 +60,11 @@ const throwIndexTypeError = (t: ts.Type, checker: TypeChecker): never => {
 const getPropertyDeep = (t: ts.Type, name: string): ts.Symbol | undefined => {
   const direct = t.getProperty(name);
   if (direct !== undefined) return direct;
+  // TODO: investigate if this logic is needed.
+  //  the properties in types in intersection should be reachable by t.getProperty
   // Intersection constituents may carry the marker symbols
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const types = (t as any).types as ts.Type[] | undefined;
-  if (Array.isArray(types)) {
-    for (const sub of types) {
+  if (t.isIntersection()) {
+    for (const sub of t.types) {
       const found = getPropertyDeep(sub, name);
       if (found) return found;
     }
@@ -135,9 +135,6 @@ const getTaggedType = (
 const getJsonMappedType = (
   t: ts.Type,
   checker: TypeChecker,
-  fieldName: string,
-  typeName: string,
-  typeNode?: ts.TypeNode,
 ): DataType | null => {
   const mappingSymbol = getPropertyDeep(t, "_clickhouse_mapped_type");
   if (mappingSymbol === undefined) return null;
@@ -148,59 +145,55 @@ const getJsonMappedType = (
     return null;
   }
 
-  // Extract generic type arguments from AST node if available
+  // Extract settings from the type properties
   let maxDynamicPaths: number | undefined = undefined;
   let maxDynamicTypes: number | undefined = undefined;
   let skipPaths: string[] = [];
   let skipRegexes: string[] = [];
 
-  // Try to find ClickHouseJson<...> in the intersection type node
-  if (typeNode && ts.isIntersectionTypeNode(typeNode)) {
-    for (const typeElem of typeNode.types) {
-      if (ts.isTypeReferenceNode(typeElem)) {
-        const typeName = typeElem.typeName;
-        const name =
-          ts.isIdentifier(typeName) ? typeName.text : typeName.right.text;
-        if (name === "ClickHouseJson" && typeElem.typeArguments) {
-          const args = typeElem.typeArguments;
-          if (
-            args[0] &&
-            ts.isLiteralTypeNode(args[0]) &&
-            ts.isNumericLiteral(args[0].literal)
-          ) {
-            maxDynamicPaths = Number(args[0].literal.text);
-          }
-          if (
-            args[1] &&
-            ts.isLiteralTypeNode(args[1]) &&
-            ts.isNumericLiteral(args[1].literal)
-          ) {
-            maxDynamicTypes = Number(args[1].literal.text);
-          }
-          if (args[2] && ts.isTupleTypeNode(args[2])) {
-            skipPaths = args[2].elements
-              .filter(
-                (el) =>
-                  ts.isLiteralTypeNode(el) && ts.isStringLiteral(el.literal),
-              )
-              .map(
-                (el) =>
-                  ((el as ts.LiteralTypeNode).literal as ts.StringLiteral).text,
-              );
-          }
-          if (args[3] && ts.isTupleTypeNode(args[3])) {
-            skipRegexes = args[3].elements
-              .filter(
-                (el) =>
-                  ts.isLiteralTypeNode(el) && ts.isStringLiteral(el.literal),
-              )
-              .map(
-                (el) =>
-                  ((el as ts.LiteralTypeNode).literal as ts.StringLiteral).text,
-              );
-          }
-          break;
-        }
+  const settingsSymbol = getPropertyDeep(t, "_clickhouse_json_settings");
+  if (settingsSymbol !== undefined) {
+    const settingsType = checker.getTypeOfSymbol(settingsSymbol);
+
+    const maxPathsSymbol = getPropertyDeep(settingsType, "maxDynamicPaths");
+    if (maxPathsSymbol !== undefined) {
+      const maxPathsType = checker.getNonNullableType(
+        checker.getTypeOfSymbol(maxPathsSymbol),
+      );
+      if (maxPathsType.isNumberLiteral()) {
+        maxDynamicPaths = maxPathsType.value;
+      }
+    }
+
+    const maxTypesSymbol = getPropertyDeep(settingsType, "maxDyanmicTypes");
+    if (maxTypesSymbol !== undefined) {
+      const maxTypesType = checker.getNonNullableType(
+        checker.getTypeOfSymbol(maxTypesSymbol),
+      );
+      if (maxTypesType.isNumberLiteral()) {
+        maxDynamicTypes = maxTypesType.value;
+      }
+    }
+
+    const skipPathsSymbol = getPropertyDeep(settingsType, "skipPaths");
+    if (skipPathsSymbol !== undefined) {
+      const skipPathsType = checker.getTypeOfSymbol(skipPathsSymbol);
+      if (checker.isTupleType(skipPathsType)) {
+        const tuple = skipPathsType as TupleType;
+        skipPaths = (tuple.typeArguments || [])
+          .filter((t) => t.isStringLiteral())
+          .map((t) => (t as ts.StringLiteralType).value);
+      }
+    }
+
+    const skipRegexesSymbol = getPropertyDeep(settingsType, "skipRegexes");
+    if (skipRegexesSymbol !== undefined) {
+      const skipRegexesType = checker.getTypeOfSymbol(skipRegexesSymbol);
+      if (checker.isTupleType(skipRegexesType)) {
+        const tuple = skipRegexesType as TupleType;
+        skipRegexes = (tuple.typeArguments || [])
+          .filter((t) => t.isStringLiteral())
+          .map((t) => (t as ts.StringLiteralType).value);
       }
     }
   }
@@ -787,15 +780,9 @@ const tsTypeToDataType = (
   if (isEnum(nonNull)) {
     dataType = enumConvert(nonNull);
   } else {
-    const jsonCandidate = getJsonMappedType(
-      nonNull,
-      checker,
-      fieldName,
-      typeName,
-      typeNode,
-    );
+    const jsonCandidate = getJsonMappedType(nonNull, checker);
     if (jsonCandidate !== null) {
-      dataType = jsonCandidate as DataType;
+      dataType = jsonCandidate;
     } else if (isStringAnyRecord(nonNull, checker)) {
       dataType = "Json";
     } else if (isDateLike) {

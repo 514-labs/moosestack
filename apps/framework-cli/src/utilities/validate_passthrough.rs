@@ -678,134 +678,15 @@ impl<'de, S: SerializeValue> Visitor<'de> for &mut ValueVisitor<'_, S> {
                     .serialize_value(&map)
                     .map_err(A::Error::custom)
             }
-            ColumnType::Json(opts) => {
-                struct JsonPassThrough<'de, 'a, MA: MapAccess<'de>> {
-                    map: RefCell<MA>,
-                    opts: &'a crate::framework::core::infrastructure::table::JsonOptions,
-                    parent_context: &'a ParentContext<'a>,
-                    _phantom_data: &'de PhantomData<()>,
-                }
-                impl<'de, 'a, MA: MapAccess<'de>> Serialize for JsonPassThrough<'de, 'a, MA> {
-                    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-                    where
-                        S: Serializer,
-                    {
-                        use serde::ser::Error;
-                        use std::collections::HashMap;
-
-                        // Group typed paths by their top-level key
-                        #[derive(Clone)]
-                        struct PathSpec {
-                            full: String,
-                            segments: Vec<String>,
-                            required: bool,
-                            seen: bool,
-                        }
-
-                        let mut by_top: HashMap<String, Vec<PathSpec>> = HashMap::new();
-                        for (p, t) in &self.opts.typed_paths {
-                            let required = !matches!(t, ColumnType::Nullable(_));
-                            let mut parts = p.split('.').map(|s| s.to_string());
-                            if let Some(top) = parts.next() {
-                                let rest: Vec<String> = parts.collect();
-                                by_top.entry(top).or_default().push(PathSpec {
-                                    full: p.clone(),
-                                    segments: rest,
-                                    required,
-                                    seen: false,
-                                });
-                            }
-                        }
-
-                        let mut inner = serializer.serialize_map(None)?;
-                        let mut map = self.map.borrow_mut();
-                        while let Some(key) = map.next_key::<String>().map_err(S::Error::custom)? {
-                            // Validate typed paths under this top-level key if any
-                            if let Some(path_specs) = by_top.get_mut(&key) {
-                                let v: serde_json::Value = map
-                                    .next_value::<serde_json::Value>()
-                                    .map_err(S::Error::custom)?;
-
-                                // For each spec, walk the value to ensure presence (and not null)
-                                for spec in path_specs.iter_mut() {
-                                    let mut current = &v;
-                                    let mut missing = false;
-                                    for (i, seg) in spec.segments.iter().enumerate() {
-                                        match current {
-                                            serde_json::Value::Object(obj) => {
-                                                if let Some(next) = obj.get(seg) {
-                                                    current = next;
-                                                } else {
-                                                    missing = true;
-                                                    break;
-                                                }
-                                            }
-                                            _ => {
-                                                // if there are remaining segments but not an object
-                                                if i < spec.segments.len() {
-                                                    missing = true;
-                                                    break;
-                                                }
-                                            }
-                                        }
-                                    }
-                                    if !missing && spec.required {
-                                        missing = current == &serde_json::Value::Null;
-                                    }
-                                    if !missing {
-                                        spec.seen = true;
-                                    }
-                                }
-
-                                // write the original key/value to output
-                                inner.serialize_key(&key).map_err(S::Error::custom)?;
-                                SerializeMap::serialize_value(&mut inner, &v)?;
-                            } else {
-                                // Not a typed path top-level key, just forward
-                                inner.serialize_key(&key).map_err(S::Error::custom)?;
-                                SerializeMap::serialize_value(
-                                    &mut inner,
-                                    &map.next_value::<serde_json::Value>()
-                                        .map_err(S::Error::custom)?,
-                                )?;
-                            }
-                        }
-
-                        // Check for any missing required typed paths
-                        let mut missing_paths: Vec<String> = Vec::new();
-                        for (_k, specs) in by_top.iter() {
-                            for spec in specs {
-                                if spec.required && !spec.seen {
-                                    // Prepend parent path (column name) to match error style
-                                    let parent = self.parent_context.get_path();
-                                    let path = if parent.is_empty() {
-                                        spec.full.clone()
-                                    } else {
-                                        format!("{}.{}", parent, spec.full)
-                                    };
-                                    missing_paths.push(path);
-                                }
-                            }
-                        }
-                        if !missing_paths.is_empty() {
-                            return Err(S::Error::custom(format!(
-                                "Missing fields: {}",
-                                missing_paths.join(", ")
-                            )));
-                        }
-
-                        inner.end().map_err(S::Error::custom)
-                    }
-                }
-                self.write_to
-                    .serialize_value(&JsonPassThrough {
-                        map: RefCell::new(map),
-                        opts,
-                        parent_context: &self.context,
-                        _phantom_data: &PhantomData,
-                    })
-                    .map_err(A::Error::custom)
-            }
+            ColumnType::Json(opts) => self
+                .write_to
+                .serialize_value(&JsonPassThrough {
+                    map: RefCell::new(map),
+                    opts,
+                    parent_context: &self.context,
+                    _phantom_data: &PhantomData,
+                })
+                .map_err(A::Error::custom),
             t => {
                 if matches!(
                     t,
@@ -1260,6 +1141,121 @@ fn is_nested_with_jwt(column_type: &ColumnType) -> bool {
     match column_type {
         ColumnType::Nested(nested) => nested.jwt,
         _ => false,
+    }
+}
+
+struct JsonPassThrough<'de, 'a, MA: MapAccess<'de>> {
+    map: RefCell<MA>,
+    opts: &'a crate::framework::core::infrastructure::table::JsonOptions,
+    parent_context: &'a ParentContext<'a>,
+    _phantom_data: &'de PhantomData<()>,
+}
+impl<'de, 'a, MA: MapAccess<'de>> Serialize for JsonPassThrough<'de, 'a, MA> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        use serde::ser::Error;
+
+        // Group typed paths by their top-level key
+        #[derive(Clone)]
+        struct PathSpec {
+            full: String,
+            segments: Vec<String>,
+            required: bool,
+            seen: bool,
+        }
+
+        let mut by_top: HashMap<String, Vec<PathSpec>> = HashMap::new();
+        for (p, t) in &self.opts.typed_paths {
+            let required = !matches!(t, ColumnType::Nullable(_));
+            let mut parts = p.split('.').map(|s| s.to_string());
+            if let Some(top) = parts.next() {
+                let rest: Vec<String> = parts.collect();
+                by_top.entry(top).or_default().push(PathSpec {
+                    full: p.clone(),
+                    segments: rest,
+                    required,
+                    seen: false,
+                });
+            }
+        }
+
+        let mut inner = serializer.serialize_map(None)?;
+        let mut map = self.map.borrow_mut();
+        while let Some(key) = map.next_key::<String>().map_err(Error::custom)? {
+            // Validate typed paths under this top-level key if any
+            if let Some(path_specs) = by_top.get_mut(&key) {
+                let v: Value = map.next_value::<Value>().map_err(Error::custom)?;
+
+                // For each spec, walk the value to ensure presence (and not null)
+                for spec in path_specs.iter_mut() {
+                    let mut current = &v;
+                    let mut missing = false;
+                    for (i, seg) in spec.segments.iter().enumerate() {
+                        match current {
+                            Value::Object(obj) => {
+                                if let Some(next) = obj.get(seg) {
+                                    current = next;
+                                } else {
+                                    missing = true;
+                                    break;
+                                }
+                            }
+                            _ => {
+                                // if there are remaining segments but not an object
+                                if i < spec.segments.len() {
+                                    missing = true;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    if !missing && spec.required {
+                        missing = current == &Value::Null;
+                    }
+                    if !missing {
+                        spec.seen = true;
+                    }
+                }
+
+                // write the original key/value to output
+                inner.serialize_key(&key).map_err(S::Error::custom)?;
+                SerializeMap::serialize_value(&mut inner, &v)?;
+            } else {
+                // Not a typed path top-level key, just forward
+                inner.serialize_key(&key).map_err(S::Error::custom)?;
+                SerializeMap::serialize_value(
+                    &mut inner,
+                    &map.next_value::<Value>().map_err(S::Error::custom)?,
+                )?;
+            }
+        }
+
+        // Check for any missing required typed paths
+        let mut missing_paths: Vec<String> = Vec::new();
+        for (_k, specs) in by_top.iter() {
+            for spec in specs {
+                if spec.required && !spec.seen {
+                    // Prepend parent path (column name) to match error style
+                    let parent = self.parent_context.get_path();
+                    let path = if parent.is_empty() {
+                        spec.full.clone()
+                    } else {
+                        format!("{}.{}", parent, spec.full)
+                    };
+                    missing_paths.push(path);
+                }
+            }
+        }
+        if !missing_paths.is_empty() {
+            return Err(S::Error::custom(format!(
+                "Missing fields: {}",
+                missing_paths.join(", ")
+            )));
+        }
+
+        inner.end().map_err(S::Error::custom)
     }
 }
 
