@@ -69,6 +69,7 @@ impl DataModel {
             table_settings: None, // TODO: Parse table_settings from data model config
             indexes: vec![],
             table_ttl_setting: None,
+            cluster_name: None,
         }
     }
 

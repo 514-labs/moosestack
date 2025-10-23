@@ -779,6 +779,7 @@ mod tests {
             table_settings: None,
             indexes: vec![],
             table_ttl_setting: None,
+            cluster_name: None,
         }];
 
         let result = tables_to_python(&tables, None);
@@ -870,6 +871,7 @@ foo_table = OlapTable[Foo]("Foo", OlapConfig(
             table_settings: None,
             indexes: vec![],
             table_ttl_setting: None,
+            cluster_name: None,
         }];
 
         let result = tables_to_python(&tables, None);
@@ -987,6 +989,7 @@ nested_array_table = OlapTable[NestedArray]("NestedArray", OlapConfig(
             table_settings: None,
             indexes: vec![],
             table_ttl_setting: None,
+            cluster_name: None,
         }];
 
         let result = tables_to_python(&tables, None);
@@ -1064,6 +1067,7 @@ user_table = OlapTable[User]("User", OlapConfig(
             ),
             indexes: vec![],
             table_ttl_setting: None,
+            cluster_name: None,
         }];
 
         let result = tables_to_python(&tables, None);
@@ -1120,6 +1124,7 @@ user_table = OlapTable[User]("User", OlapConfig(
             ),
             indexes: vec![],
             table_ttl_setting: None,
+            cluster_name: None,
         }];
 
         let result = tables_to_python(&tables, None);
@@ -1187,6 +1192,7 @@ user_table = OlapTable[User]("User", OlapConfig(
             table_settings: None,
             indexes: vec![],
             table_ttl_setting: None,
+            cluster_name: None,
         }];
 
         let result = tables_to_python(&tables, None);
@@ -1257,6 +1263,7 @@ user_table = OlapTable[User]("User", OlapConfig(
             table_settings: None,
             indexes: vec![],
             table_ttl_setting: None,
+            cluster_name: None,
         }];
 
         let result = tables_to_python(&tables, None);
@@ -1338,6 +1345,7 @@ user_table = OlapTable[User]("User", OlapConfig(
             table_settings: None,
             indexes: vec![],
             table_ttl_setting: Some("timestamp + INTERVAL 90 DAY DELETE".to_string()),
+            cluster_name: None,
         }];
 
         let result = tables_to_python(&tables, None);
@@ -1401,6 +1409,7 @@ user_table = OlapTable[User]("User", OlapConfig(
                 },
             ],
             table_ttl_setting: None,
+            cluster_name: None,
         }];
 
         let result = tables_to_python(&tables, None);

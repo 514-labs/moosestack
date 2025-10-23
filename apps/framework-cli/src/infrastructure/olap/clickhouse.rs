@@ -114,6 +114,8 @@ pub enum SerializableOlapOperation {
     DropTable {
         /// The table to drop
         table: String,
+        /// Optional cluster name for ON CLUSTER support
+        cluster_name: Option<String>,
     },
     /// Add a column to a table
     AddTableColumn {
@@ -275,8 +277,11 @@ pub async fn execute_atomic_operation(
         SerializableOlapOperation::CreateTable { table } => {
             execute_create_table(db_name, table, client, is_dev).await?;
         }
-        SerializableOlapOperation::DropTable { table, .. } => {
-            execute_drop_table(db_name, table, client).await?;
+        SerializableOlapOperation::DropTable {
+            table,
+            cluster_name,
+        } => {
+            execute_drop_table(db_name, table, cluster_name.as_deref(), client).await?;
         }
         SerializableOlapOperation::AddTableColumn {
             table,
@@ -484,10 +489,11 @@ async fn execute_remove_sample_by(
 async fn execute_drop_table(
     db_name: &str,
     table_name: &str,
+    cluster_name: Option<&str>,
     client: &ConfiguredDBClient,
 ) -> Result<(), ClickhouseChangesError> {
     log::info!("Executing DropTable: {:?}", table_name);
-    let drop_query = drop_table_query(db_name, table_name)?;
+    let drop_query = drop_table_query(db_name, table_name, cluster_name)?;
     run_query(&drop_query, client)
         .await
         .map_err(|e| ClickhouseChangesError::ClickhouseClient {
@@ -1499,6 +1505,7 @@ impl OlapOperations for ConfiguredDBClient {
                 table_settings,
                 indexes,
                 table_ttl_setting,
+                cluster_name: None, // Cluster info not extracted from introspection
             };
             debug!("Created table object: {:?}", table);
 

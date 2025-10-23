@@ -144,6 +144,8 @@ message Table {
   optional string sample_by_expression = 15;
   // Optional TTL expression at table level (without leading 'TTL')
   optional string table_ttl_setting = 16;
+  // Optional cluster name for ON CLUSTER support in ClickHouse
+  optional string cluster_name = 17;
 }
 
 // Structured representation of ORDER BY to support either explicit fields

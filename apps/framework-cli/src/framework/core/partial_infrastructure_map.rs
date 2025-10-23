@@ -207,6 +207,9 @@ struct PartialTable {
     /// Optional table-level TTL expression (ClickHouse expression, without leading 'TTL')
     #[serde(alias = "ttl")]
     pub ttl: Option<String>,
+    /// Optional cluster name for ON CLUSTER support
+    #[serde(default)]
+    pub cluster: Option<String>,
 }
 
 /// Represents a topic definition from user code before it's converted into a complete [`Topic`].
@@ -607,6 +610,7 @@ impl PartialInfrastructureMap {
                     },
                     indexes: partial_table.indexes.clone(),
                     table_ttl_setting,
+                    cluster_name: partial_table.cluster.clone(),
                 };
                 (table.id(), table)
             })

@@ -435,6 +435,7 @@ fn parse_clickhouse_connection_string(conn_str: &str) -> anyhow::Result<ClickHou
         host_port: port,
         native_port: port,
         host_data_path: None,
+        clusters: None,
     };
 
     Ok(config)

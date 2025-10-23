@@ -2643,6 +2643,7 @@ mod tests {
             table_settings: None,
             indexes: vec![],
             table_ttl_setting: None,
+            cluster_name: None,
         };
 
         let after = Table {
@@ -2697,6 +2698,7 @@ mod tests {
             table_settings: None,
             indexes: vec![],
             table_ttl_setting: None,
+            cluster_name: None,
         };
 
         let diff = compute_table_columns_diff(&before, &after);
@@ -2870,6 +2872,7 @@ mod diff_tests {
             table_settings: None,
             indexes: vec![],
             table_ttl_setting: None,
+            cluster_name: None,
         }
     }
 

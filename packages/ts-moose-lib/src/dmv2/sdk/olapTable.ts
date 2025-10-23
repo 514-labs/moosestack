@@ -221,6 +221,13 @@ export type BaseOlapConfig<T> = (
   ttl?: string;
   /** Optional secondary/data-skipping indexes */
   indexes?: TableIndex[];
+  /**
+   * Optional cluster name for ON CLUSTER support.
+   * Use this to enable replicated tables across ClickHouse clusters.
+   * The cluster must be defined in config.toml (dev environment only).
+   * Example: cluster: "prod_cluster"
+   */
+  cluster?: string;
 };
 
 /**
