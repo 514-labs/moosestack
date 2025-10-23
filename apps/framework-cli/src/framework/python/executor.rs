@@ -46,6 +46,7 @@ pub static BLOCKS_RUNNER: &str = include_str!("wrappers/blocks_runner.py");
 pub static CONSUMPTION_RUNNER: &str = include_str!("wrappers/consumption_runner.py");
 pub static LOAD_API_PARAMS: &str = include_str!("wrappers/load_api_params.py");
 pub static ORCHESTRATION_WORKER: &str = include_str!("wrappers/scripts/worker-main.py");
+pub static STREAMING_RUNNER_WRAPPER: &str = include_str!("wrappers/streaming_runner_wrapper.py");
 
 const PYTHON_PATH: &str = "PYTHONPATH";
 
@@ -87,24 +88,29 @@ pub fn run_python_command(
     project_location: &Path,
     command: PythonCommand,
 ) -> Result<Child, std::io::Error> {
-    let (get_args, library_module) = match command {
-        PythonCommand::DmV2Serializer => (Vec::<String>::new(), "moose_lib.dmv2_serializer"),
+    let mut cmd = Command::new("python3");
+    cmd.kill_on_drop(true);
+
+    cmd.env(PYTHON_PATH, python_path_with_lib(project_location));
+    cmd.env(
+        "MOOSE_MANAGEMENT_PORT",
+        project.http_server_config.management_port.to_string(),
+    );
+    cmd.env("MOOSE_SOURCE_DIR", &project.source_dir);
+
+    match command {
+        PythonCommand::DmV2Serializer => {
+            cmd.arg("-m").arg("moose_lib.dmv2_serializer");
+        }
         PythonCommand::StreamingFunctionRunner { args } => {
-            (args, "moose_lib.streaming.streaming_function_runner")
+            cmd.arg("-u")
+                .arg("-c")
+                .arg(STREAMING_RUNNER_WRAPPER)
+                .args(args);
         }
     };
 
-    Command::new("python3")
-        .env(PYTHON_PATH, python_path_with_lib(project_location))
-        .env(
-            "MOOSE_MANAGEMENT_PORT",
-            project.http_server_config.management_port.to_string(),
-        )
-        .env("MOOSE_SOURCE_DIR", &project.source_dir)
-        .arg("-m")
-        .arg(library_module)
-        .args(get_args)
-        .stdin(Stdio::piped())
+    cmd.stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
@@ -123,7 +129,10 @@ pub fn run_python_program(
         PythonProgram::OrchestrationWorker { args } => (args, ORCHESTRATION_WORKER),
     };
 
-    Command::new("python3")
+    let mut command = Command::new("python3");
+    command.kill_on_drop(true);
+
+    command
         .env(PYTHON_PATH, python_path_with_lib(project_location))
         .env(
             "MOOSE_MANAGEMENT_PORT",
@@ -147,6 +156,7 @@ pub async fn run_python_file(
 ) -> Result<Child, std::io::Error> {
     let mut command = Command::new("python3");
 
+    command.kill_on_drop(true);
     command.env(PYTHON_PATH, python_path_with_lib(project_location));
     for (key, val) in env {
         command.env(key, val);

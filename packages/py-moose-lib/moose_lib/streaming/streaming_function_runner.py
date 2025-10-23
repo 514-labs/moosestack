@@ -21,6 +21,7 @@ from importlib import import_module
 import io
 import json
 import signal
+import os
 import sys
 from kafka import KafkaConsumer, KafkaProducer
 import requests
@@ -369,6 +370,10 @@ def main():
         'producer': None
     }
 
+    # Track shutdown state and parent process for orphan detection
+    shutdown_event = threading.Event()
+    original_parent_pid = os.getppid()
+
     def send_message_metrics():
         while running.is_set():
             time.sleep(1)
@@ -509,14 +514,42 @@ def main():
 
     def shutdown(signum, frame):
         """Handle shutdown signals gracefully"""
+        if shutdown_event.is_set():
+            return
+        shutdown_event.set()
         log("Received shutdown signal, cleaning up...")
         running.clear()  # This will trigger the main loop to exit
+
+    def monitor_parent():
+        """Ensure the runner exits if the parent process terminates unexpectedly."""
+        while not shutdown_event.is_set():
+            time.sleep(1)
+            current_parent = os.getppid()
+            if current_parent == original_parent_pid:
+                continue
+
+            try:
+                os.kill(original_parent_pid, 0)
+            except ProcessLookupError:
+                log("Parent process exited unexpectedly. Initiating shutdown...")
+                shutdown(None, None)
+                break
+            except PermissionError:
+                log("Lost permission to monitor parent process. Initiating shutdown as safeguard...")
+                shutdown(None, None)
+                break
+
+            log("Parent process changed. Initiating shutdown to prevent orphaned runner...")
+            shutdown(None, None)
+            break
 
     # Set up signal handlers
     signal.signal(signal.SIGTERM, shutdown)
     signal.signal(signal.SIGINT, shutdown)
     signal.signal(signal.SIGHUP, shutdown)  # Handle parent process termination
     signal.signal(signal.SIGQUIT, shutdown)  # Handle quit signal from parent
+
+    threading.Thread(target=monitor_parent, daemon=True).start()
 
     # Start the metrics thread
     metrics_thread = threading.Thread(target=send_message_metrics)
@@ -562,6 +595,7 @@ def main():
             except Exception as e:
                 log(f"Error closing producer: {e}")
 
+        shutdown_event.set()
         log("Shutdown complete")
         sys.exit(0)
 

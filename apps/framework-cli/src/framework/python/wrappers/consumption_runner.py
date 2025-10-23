@@ -7,6 +7,7 @@ import subprocess
 import sys
 import traceback
 import signal
+import time
 import threading
 from datetime import datetime, timezone, date, timedelta
 
@@ -423,10 +424,17 @@ def main():
     handler = handler_with_client(moose_client)
     httpd = HTTPServer(server_address, handler)
 
+    # Track shutdown state to avoid double execution
+    shutdown_event = threading.Event()
+    original_parent_pid = os.getppid()
+
     # Store references for cleanup
     httpd.moose_client = moose_client  # type: ignore[attr-defined]
     
     def shutdown_server():
+        if shutdown_event.is_set():
+            return
+        shutdown_event.set()
         httpd.shutdown()
         print("\nShutting down server...")
         httpd.server_close()
@@ -443,15 +451,63 @@ def main():
         print("Server shutdown complete")
     
     def signal_handler(signum, frame):
+        if shutdown_event.is_set():
+            return
         print(f"\nReceived signal {signum}. Starting graceful shutdown...")
         # Start shutdown in a separate thread to avoid deadlock
-        threading.Thread(target=shutdown_server).start()
+        threading.Thread(target=shutdown_server, daemon=True).start()
+
+    def monitor_parent_process():
+        """Ensure the server exits if the parent process terminates unexpectedly."""
+        while not shutdown_event.is_set():
+            time.sleep(1)
+            current_parent = os.getppid()
+            if current_parent == original_parent_pid:
+                continue
+
+            try:
+                os.kill(original_parent_pid, 0)
+            except ProcessLookupError:
+                print("\nParent process exited unexpectedly. Initiating shutdown...")
+                shutdown_server()
+                break
+            except PermissionError:
+                # Parent still exists but we lack permission; fallback to shutdown on PPID change
+                print("\nLost permission to monitor parent process. Initiating shutdown as safeguard...")
+                shutdown_server()
+                break
+
+            # Parent PID changed but old parent still exists (rare); treat as shutdown safeguard
+            print("\nParent process changed. Initiating shutdown to prevent orphaned server...")
+            shutdown_server()
+            break
+        # Request process termination if still running after graceful shutdown
+        if not shutdown_event.is_set():
+            return
+        try:
+            os.kill(os.getpid(), signal.SIGTERM)
+        except OSError:
+            return
+        time.sleep(3)
+        os._exit(0)
     
     # Register signal handlers
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
     signal.signal(signal.SIGQUIT, signal_handler)
     signal.signal(signal.SIGHUP, signal_handler)
+
+    threading.Thread(target=monitor_parent_process, daemon=True).start()
+    def force_exit():
+        # Wait for up to 5 seconds for graceful shutdown
+        for _ in range(10):
+            if shutdown_event.is_set():
+                return
+            time.sleep(0.5)
+        if not shutdown_event.is_set():
+            os._exit(0)
+
+    threading.Thread(target=force_exit, daemon=True).start()
     
     print(f"Starting server on http://localhost:{server_port}")
     
