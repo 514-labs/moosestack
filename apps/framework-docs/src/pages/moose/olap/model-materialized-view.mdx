@@ -13,7 +13,7 @@ import { Lightbulb } from "lucide-react";
 
 ## Overview
 
-Materialized views are write-time transformations in ClickHouse. A static `SELECT` populates a destination table from one or more sources. You query the destination like any other table. The `MaterializedView` class wraps [ClickHouse `MATERIALIZED VIEW`](https://clickhouse.com/docs/en/sql-reference/statements/create/view/#create-materialized-view) and keeps the `SELECT` explicit. When you edit the destination schema in code and update the `SELECT` accordingly, Moose applies the corresponding DDL, orders dependent updates, and backfills as needed, so the pipeline stays consistent as you iterate in <Python>Python</Python><TypeScript>TypeScript</TypeScript>.
+Materialized views are write-time transformations in ClickHouse. A static `SELECT` populates a destination table from one or more sources. You query the destination like any other table. The `MaterializedView` class wraps [ClickHouse `MATERIALIZED VIEW`](https://clickhouse.com/docs/en/sql-reference/statements/create/view/#create-materialized-view) and keeps the `SELECT` explicit. When you edit the destination schema in code and update the `SELECT` accordingly, Moose applies the corresponding DDL, orders dependent updates, and backfills as needed, so the pipeline stays consistent as you iterate.
 
 <BulletPointsCard title="Materialized Views: ClickHouse vs. Other Databases" bulletStyle="number" compact bullets={[
     "Requires two parts: a SELECT transformation and a destination table schema",
