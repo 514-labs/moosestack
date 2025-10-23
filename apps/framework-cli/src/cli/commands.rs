@@ -62,12 +62,12 @@ pub enum Commands {
     /// to production, considering the current state of the project
     Plan {
         /// URL of the remote Moose instance (default: http://localhost:4000)
-        #[arg(long, conflicts_with = "clickhouse_url", requires = "token")]
+        #[arg(long, conflicts_with = "clickhouse_url")]
         url: Option<String>,
 
         /// API token for authentication with the remote Moose instance
         /// This token will be sent as a Bearer token in the Authorization header
-        #[arg(long, requires = "url")]
+        #[arg(long)]
         token: Option<String>,
 
         /// ClickHouse connection URL for serverless deployments
@@ -205,14 +205,13 @@ pub enum GenerateCommand {
         #[arg(
             long,
             conflicts_with = "clickhouse_url",
-            required_unless_present = "clickhouse_url",
-            requires = "token"
+            required_unless_present = "clickhouse_url"
         )]
         url: Option<String>,
 
         /// API token for authentication with the remote Moose instance
         /// This token will be sent as a Bearer token in the Authorization header
-        #[arg(long, requires = "url")]
+        #[arg(long)]
         token: Option<String>,
 
         /// ClickHouse connection URL for serverless deployments
