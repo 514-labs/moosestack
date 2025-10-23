@@ -87,6 +87,21 @@ export type ClickHouseNamedTuple = {
   _clickhouse_mapped_type?: "namedTuple";
 };
 
+export type ClickHouseJson<
+  maxDynamicPaths extends number | undefined = undefined,
+  maxDynamicTypes extends number | undefined = undefined,
+  skipPaths extends string[] = [],
+  skipRegexes extends string[] = [],
+> = {
+  _clickhouse_mapped_type?: "JSON";
+  _clickhouse_json_settings?: {
+    maxDynamicPaths?: maxDynamicPaths;
+    maxDynamicTypes?: maxDynamicTypes;
+    skipPaths?: skipPaths;
+    skipRegexes?: skipRegexes;
+  };
+};
+
 // Geometry helper types
 export type ClickHousePoint = [number, number] & {
   _clickhouse_mapped_type?: "Point";

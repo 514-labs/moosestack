@@ -244,6 +244,7 @@ impl PrimitiveTypes {
 /// This enum captures the three possible states of change for a column:
 /// addition, removal, or update with before and after states.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[allow(clippy::large_enum_variant)]
 pub enum ColumnChange {
     /// A new column has been added
     Added {
@@ -3324,7 +3325,7 @@ mod diff_tests {
             ColumnType::String,
             ColumnType::Boolean,
             ColumnType::DateTime { precision: None },
-            ColumnType::Json,
+            ColumnType::Json(Default::default()),
             ColumnType::Uuid,
         ];
 
@@ -3353,10 +3354,10 @@ mod diff_tests {
                         precision: 10,
                         scale: 0,
                     },
-                    ColumnType::String => ColumnType::Json,
+                    ColumnType::String => ColumnType::Json(Default::default()),
                     ColumnType::Boolean => ColumnType::Int(IntType::Int64),
                     ColumnType::DateTime { precision: None } => ColumnType::String,
-                    ColumnType::Json => ColumnType::String,
+                    ColumnType::Json(_) => ColumnType::String,
                     ColumnType::Uuid => ColumnType::String,
                     _ => ColumnType::String, // Fallback for any other types
                 }

@@ -517,13 +517,17 @@ class User(BaseModel):
 
 ### JSON Type
 
-The `Json` type stores arbitrary JSON data.
+The `Json` type stores arbitrary JSON data with optional schema configuration for performance and type safety.
+
+#### Basic JSON (Unstructured)
+
+For completely dynamic JSON data without any schema:
 
 <TypeScript>
 ```typescript
 interface Event {
-  metadata: Record<string, any>;  // Json
-  config: any;                    // Json
+  metadata: Record<string, any>;  // Basic JSON - accepts any structure
+  config: any;                    // Basic JSON - fully dynamic
 }
 ```
 </TypeScript>
@@ -533,8 +537,172 @@ interface Event {
 from typing import Any, Dict
 
 class Event(BaseModel):
-    metadata: Dict[str, Any]  # Json
-    config: Any               # Json
+    metadata: Dict[str, Any]  # Basic JSON - accepts any structure
+    config: Any               # Basic JSON - fully dynamic
+```
+</Python>
+
+#### Rich JSON with Type Configuration
+
+For better performance and validation, you can define typed fields within your JSON using `ClickHouseJson`. This creates a ClickHouse `JSON` column with explicit type hints for specific paths.
+
+<TypeScript>
+```typescript
+import { ClickHouseJson } from "@514labs/moose-lib";
+
+// Define the structure for your JSON payload
+interface PayloadStructure {
+  name: string;
+  count: number;
+  timestamp?: Date;
+}
+
+interface Event {
+  id: string;
+  // JSON with typed paths - better performance, allows extra fields
+  payload: PayloadStructure & ClickHouseJson;
+  
+  // JSON with performance tuning options
+  metadata: PayloadStructure & ClickHouseJson<
+    256,      // max_dynamic_paths: limit tracked paths (default: no limit)
+    16,       // max_dynamic_types: limit type variations (default: no limit)
+    ["skip.me"],           // skip_paths: exclude specific paths
+    ["^tmp\\."]            // skip_regexps: exclude paths matching regex
+  >;
+}
+```
+</TypeScript>
+
+<Python>
+```python
+from typing import Annotated
+from pydantic import BaseModel, ConfigDict
+from moose_lib.data_models import ClickHouseJson
+
+# Define the structure for your JSON payload
+class PayloadStructure(BaseModel):
+    model_config = ConfigDict(extra='allow')  # Required for JSON types
+    name: str
+    count: int
+    timestamp: Optional[datetime] = None
+
+class Event(BaseModel):
+    id: str
+    # JSON with typed paths - better performance, allows extra fields
+    payload: Annotated[PayloadStructure, ClickHouseJson()]
+    
+    # JSON with performance tuning options
+    metadata: Annotated[PayloadStructure, ClickHouseJson(
+        max_dynamic_paths=256,         # Limit tracked paths
+        max_dynamic_types=16,          # Limit type variations
+        skip_paths=("skip.me",),       # Exclude specific paths
+        skip_regexes=(r"^tmp\\.",)     # Exclude paths matching regex
+    )]
+```
+</Python>
+
+#### Configuration Options
+
+| Option | Type | Description |
+|--------|------|-------------|
+| `max_dynamic_paths` | `number` | Maximum number of unique JSON paths to track. Helps control memory usage for highly variable JSON structures. |
+| `max_dynamic_types` | `number` | Maximum number of type variations allowed per path. Useful when paths may contain different types. |
+| `skip_paths` | `string[]` | Array of exact JSON paths to ignore during ingestion (e.g., `["temp", "debug.info"]`). |
+| `skip_regexps` | `string[]` | Array of regex patterns for paths to exclude (e.g., `["^tmp\\.", ".*_internal$"]`). |
+
+#### Benefits of Typed JSON
+
+1. **Better Performance**: ClickHouse can optimize storage and queries for known paths
+2. **Type Safety**: Validates that specified paths match expected types
+3. **Flexible Schema**: Allows additional fields beyond typed paths
+4. **Memory Control**: Configure limits to prevent unbounded resource usage
+
+<Callout type="info" title="When to use each approach">
+- **Basic JSON** (`any`, `Dict[str, Any]`): Use when JSON structure is completely unknown or rarely queried
+- **Rich JSON** (`ClickHouseJson`): Use when you have known fields that need indexing/querying, but want to allow additional dynamic fields
+</Callout>
+
+#### Example: Product Event Tracking
+
+<TypeScript>
+```typescript
+import { ClickHouseJson, Key } from "@514labs/moose-lib";
+
+interface ProductProperties {
+  category: string;
+  price: number;
+  inStock: boolean;
+}
+
+interface ProductEvent {
+  eventId: Key<string>;
+  timestamp: DateTime;
+  // Typed paths for common fields, but allows custom properties
+  properties: ProductProperties & ClickHouseJson<
+    128,                    // Track up to 128 unique paths
+    8,                      // Allow up to 8 type variations per path
+    ["_internal"],          // Ignore internal fields
+    ["^debug_"]             // Ignore debug fields
+  >;
+}
+```
+
+With this schema, you can send events like:
+```json
+{
+  "eventId": "evt_123",
+  "timestamp": "2025-10-22T12:00:00Z",
+  "properties": {
+    "category": "electronics",     // Typed field ✓
+    "price": 99.99,                // Typed field ✓
+    "inStock": true,               // Typed field ✓
+    "customTag": "holiday-sale",   // Extra field - accepted ✓
+    "brandId": 42,                 // Extra field - accepted ✓
+    "_internal": "ignored"         // Skipped by skip_paths ✓
+  }
+}
+```
+</TypeScript>
+
+<Python>
+```python
+from typing import Annotated, Optional
+from pydantic import BaseModel, ConfigDict
+from moose_lib import Key, ClickHouseJson
+from datetime import datetime
+
+class ProductProperties(BaseModel):
+    model_config = ConfigDict(extra='allow')
+    category: str
+    price: float
+    in_stock: bool
+
+class ProductEvent(BaseModel):
+    event_id: Key[str]
+    timestamp: datetime
+    # Typed paths for common fields, but allows custom properties
+    properties: Annotated[ProductProperties, ClickHouseJson(
+        max_dynamic_paths=128,         # Track up to 128 unique paths
+        max_dynamic_types=8,           # Allow up to 8 type variations per path
+        skip_paths=("_internal",),     # Ignore internal fields
+        skip_regexes=(r"^debug_",)     # Ignore debug fields
+    )]
+```
+
+With this schema, you can send events like:
+```python
+{
+    "event_id": "evt_123",
+    "timestamp": "2025-10-22T12:00:00Z",
+    "properties": {
+        "category": "electronics",     # Typed field ✓
+        "price": 99.99,                # Typed field ✓
+        "in_stock": True,              # Typed field ✓
+        "custom_tag": "holiday-sale",  # Extra field - accepted ✓
+        "brand_id": 42,                # Extra field - accepted ✓
+        "_internal": "ignored"         # Skipped by skip_paths ✓
+    }
+}
 ```
 </Python>
 ### Nullable Types

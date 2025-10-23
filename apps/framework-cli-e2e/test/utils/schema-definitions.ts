@@ -409,6 +409,18 @@ export const TYPESCRIPT_TEST_SCHEMAS: ExpectedTableSchema[] = [
       { name: "timestamp", type: /DateTime\('UTC'\)/ },
     ],
   },
+  {
+    tableName: "JsonTest",
+    columns: [
+      { name: "id", type: "String" },
+      { name: "timestamp", type: /DateTime\('UTC'\)/ },
+      {
+        name: "payloadWithConfig",
+        type: "JSON(max_dynamic_types=16, max_dynamic_paths=256, count Int64, name String, SKIP `skip.me`, SKIP REGEXP '^tmp\\\\.')",
+      },
+      { name: "payloadBasic", type: "JSON(count Int64, name String)" },
+    ],
+  },
 ];
 
 // ============ PYTHON TEMPLATE SCHEMA DEFINITIONS ============
@@ -779,6 +791,18 @@ export const PYTHON_TEST_SCHEMAS: ExpectedTableSchema[] = [
       { name: "value", type: "String" },
       { name: "index", type: "Int64" }, // Python int becomes Int64
       { name: "timestamp", type: /DateTime\('UTC'\)/ },
+    ],
+  },
+  {
+    tableName: "JsonTest",
+    columns: [
+      { name: "id", type: "String" },
+      { name: "timestamp", type: /DateTime\('UTC'\)/ },
+      {
+        name: "payload_with_config",
+        type: "JSON(max_dynamic_types=16, max_dynamic_paths=256, count Int64, name String, SKIP `skip.me`, SKIP REGEXP '^tmp\\\\.')",
+      },
+      { name: "payload_basic", type: "JSON(count Int64, name String)" },
     ],
   },
 ];

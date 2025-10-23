@@ -204,7 +204,7 @@ fn std_field_type_to_typescript_field_mapper(
             type_name: "Bytes".to_string(),
         }),
         ColumnType::Enum(enum_type) => Ok(InterfaceFieldType::Enum(map_std_enum_to_ts(enum_type))),
-        ColumnType::Json => Err(TypescriptGeneratorError::UnsupportedDataTypeError {
+        ColumnType::Json(_) => Err(TypescriptGeneratorError::UnsupportedDataTypeError {
             type_name: "Json".to_string(),
         }),
         ColumnType::BigInt => Err(TypescriptGeneratorError::UnsupportedDataTypeError {

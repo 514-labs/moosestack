@@ -60,11 +60,11 @@ const throwIndexTypeError = (t: ts.Type, checker: TypeChecker): never => {
 const getPropertyDeep = (t: ts.Type, name: string): ts.Symbol | undefined => {
   const direct = t.getProperty(name);
   if (direct !== undefined) return direct;
+  // TODO: investigate if this logic is needed.
+  //  the properties in types in intersection should be reachable by t.getProperty
   // Intersection constituents may carry the marker symbols
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const types = (t as any).types as ts.Type[] | undefined;
-  if (Array.isArray(types)) {
-    for (const sub of types) {
+  if (t.isIntersection()) {
+    for (const sub of t.types) {
       const found = getPropertyDeep(sub, name);
       if (found) return found;
     }
@@ -129,6 +129,127 @@ const getTaggedType = (
   const ttlSymbol = nonNull.getProperty(propertyName);
   if (ttlSymbol === undefined) return null;
   return checker.getNonNullableType(checker.getTypeOfSymbol(ttlSymbol));
+};
+
+// JSON mapping: recognize SomeInterface & ClickHouseJson<...>
+const getJsonMappedType = (
+  t: ts.Type,
+  checker: TypeChecker,
+): DataType | null => {
+  const mappingSymbol = getPropertyDeep(t, "_clickhouse_mapped_type");
+  if (mappingSymbol === undefined) return null;
+  const mappedType = checker.getNonNullableType(
+    checker.getTypeOfSymbol(mappingSymbol),
+  );
+  if (!mappedType.isStringLiteral() || mappedType.value !== "JSON") {
+    return null;
+  }
+
+  // Extract settings from the type properties
+  let maxDynamicPaths: number | undefined = undefined;
+  let maxDynamicTypes: number | undefined = undefined;
+  let skipPaths: string[] = [];
+  let skipRegexes: string[] = [];
+
+  const settingsSymbol = getPropertyDeep(t, "_clickhouse_json_settings");
+  if (settingsSymbol !== undefined) {
+    const settingsType = checker.getNonNullableType(
+      checker.getTypeOfSymbol(settingsSymbol),
+    );
+
+    const maxPathsSymbol = getPropertyDeep(settingsType, "maxDynamicPaths");
+    if (maxPathsSymbol !== undefined) {
+      const maxPathsType = checker.getNonNullableType(
+        checker.getTypeOfSymbol(maxPathsSymbol),
+      );
+      if (maxPathsType.isNumberLiteral()) {
+        maxDynamicPaths = maxPathsType.value;
+      }
+    }
+
+    const maxTypesSymbol = getPropertyDeep(settingsType, "maxDynamicTypes");
+    if (maxTypesSymbol !== undefined) {
+      const maxTypesType = checker.getNonNullableType(
+        checker.getTypeOfSymbol(maxTypesSymbol),
+      );
+      if (maxTypesType.isNumberLiteral()) {
+        maxDynamicTypes = maxTypesType.value;
+      }
+    }
+
+    const skipPathsSymbol = getPropertyDeep(settingsType, "skipPaths");
+    if (skipPathsSymbol !== undefined) {
+      const skipPathsType = checker.getNonNullableType(
+        checker.getTypeOfSymbol(skipPathsSymbol),
+      );
+      if (checker.isTupleType(skipPathsType)) {
+        const tuple = skipPathsType as TupleType;
+        skipPaths = (tuple.typeArguments || [])
+          .filter((t) => t.isStringLiteral())
+          .map((t) => (t as ts.StringLiteralType).value);
+      }
+    }
+
+    const skipRegexesSymbol = getPropertyDeep(settingsType, "skipRegexes");
+    if (skipRegexesSymbol !== undefined) {
+      const skipRegexesType = checker.getNonNullableType(
+        checker.getTypeOfSymbol(skipRegexesSymbol),
+      );
+      if (checker.isTupleType(skipRegexesType)) {
+        const tuple = skipRegexesType as TupleType;
+        skipRegexes = (tuple.typeArguments || [])
+          .filter((t) => t.isStringLiteral())
+          .map((t) => (t as ts.StringLiteralType).value);
+      }
+    }
+  }
+
+  // For typed paths, try to find the interface part of the intersection
+  let base: ts.Type = t.getNonNullableType();
+  if (base.isIntersection()) {
+    const candidates = base.types.filter((sub) => {
+      const m = getPropertyDeep(sub, "_clickhouse_mapped_type");
+      if (!m) return true;
+      const mt = checker.getNonNullableType(checker.getTypeOfSymbol(m));
+      return !(mt.isStringLiteral() && mt.value === "JSON");
+    });
+    if (candidates.length > 0) base = candidates[0];
+  }
+
+  // Build typed paths from the base interface's columns (top-level only)
+  let typedPaths: Array<[string, DataType]> = [];
+  try {
+    const cols = toColumns(base, checker);
+    typedPaths = cols.map((c) => [c.name, c.data_type]);
+  } catch (_) {
+    // Fallback silently if we cannot derive columns
+    typedPaths = [];
+  }
+
+  const hasAnyOption =
+    typeof maxDynamicPaths === "number" ||
+    typeof maxDynamicTypes === "number" ||
+    typedPaths.length > 0 ||
+    skipPaths.length > 0 ||
+    skipRegexes.length > 0;
+
+  if (!hasAnyOption) return "Json";
+
+  const result: Record<string, any> = {
+    typed_paths: typedPaths,
+    skip_paths: skipPaths,
+    skip_regexps: skipRegexes,
+  };
+
+  // Only include these fields if they have actual values
+  if (typeof maxDynamicPaths === "number") {
+    result.max_dynamic_paths = maxDynamicPaths;
+  }
+  if (typeof maxDynamicTypes === "number") {
+    result.max_dynamic_types = maxDynamicTypes;
+  }
+
+  return result as unknown as DataType;
 };
 
 const handleSimpleAggregated = (
@@ -646,15 +767,20 @@ const tsTypeToDataType = (
     typeSymbolName === "DateTime64" ||
     checker.isTypeAssignableTo(nonNull, dateType(checker));
 
-  const dataType: DataType =
-    isEnum(nonNull) ? enumConvert(nonNull)
-    : isStringAnyRecord(nonNull, checker) ? "Json"
-    : isDateLike ?
-      (() => {
-        // Prefer precision from AST (DateTime64<P>) if available
-        if (datePrecisionFromNode !== undefined) {
-          return `DateTime(${datePrecisionFromNode})` as DataType;
-        }
+  let dataType: DataType;
+  if (isEnum(nonNull)) {
+    dataType = enumConvert(nonNull);
+  } else {
+    const jsonCandidate = getJsonMappedType(nonNull, checker);
+    if (jsonCandidate !== null) {
+      dataType = jsonCandidate;
+    } else if (isStringAnyRecord(nonNull, checker)) {
+      dataType = "Json";
+    } else if (isDateLike) {
+      // Prefer precision from AST (DateTime64<P>) if available
+      if (datePrecisionFromNode !== undefined) {
+        dataType = `DateTime(${datePrecisionFromNode})` as DataType;
+      } else {
         // Add precision support for Date via ClickHousePrecision<P>
         const precisionSymbol =
           getPropertyDeep(nonNull, "_clickhouse_precision") ||
@@ -664,20 +790,24 @@ const tsTypeToDataType = (
             checker.getTypeOfSymbol(precisionSymbol),
           );
           if (precisionType.isNumberLiteral()) {
-            return `DateTime(${precisionType.value})` as DataType;
+            dataType = `DateTime(${precisionType.value})` as DataType;
+          } else {
+            dataType = "DateTime";
           }
+        } else {
+          dataType = "DateTime";
         }
-        return "DateTime" as DataType;
-      })()
-    : checker.isTypeAssignableTo(nonNull, checker.getStringType()) ?
-      handleStringType(nonNull, checker, fieldName, annotations)
-    : isNumberType(nonNull, checker) ?
-      handleNumberType(nonNull, checker, fieldName)
-    : checker.isTypeAssignableTo(nonNull, checker.getBooleanType()) ? "Boolean"
-    : getGeometryMappedType(nonNull, checker) !== null ?
-      getGeometryMappedType(nonNull, checker)!
-    : checker.isArrayType(withoutTags) ?
-      toArrayType(
+      }
+    } else if (checker.isTypeAssignableTo(nonNull, checker.getStringType())) {
+      dataType = handleStringType(nonNull, checker, fieldName, annotations);
+    } else if (isNumberType(nonNull, checker)) {
+      dataType = handleNumberType(nonNull, checker, fieldName);
+    } else if (checker.isTypeAssignableTo(nonNull, checker.getBooleanType())) {
+      dataType = "Boolean";
+    } else if (getGeometryMappedType(nonNull, checker) !== null) {
+      dataType = getGeometryMappedType(nonNull, checker)!;
+    } else if (checker.isArrayType(withoutTags)) {
+      dataType = toArrayType(
         tsTypeToDataType(
           nonNull.getNumberIndexType()!,
           checker,
@@ -686,17 +816,22 @@ const tsTypeToDataType = (
           isJwt,
           undefined,
         ),
-      )
-    : isNamedTuple(nonNull, checker) ? handleNamedTuple(nonNull, checker)
-    : isRecordType(nonNull, checker) ?
-      handleRecordType(nonNull, checker, fieldName, typeName, isJwt)
-    : (
+      );
+    } else if (isNamedTuple(nonNull, checker)) {
+      dataType = handleNamedTuple(nonNull, checker);
+    } else if (isRecordType(nonNull, checker)) {
+      dataType = handleRecordType(nonNull, checker, fieldName, typeName, isJwt);
+    } else if (
       withoutTags.isClassOrInterface() ||
       (withoutTags.flags & TypeFlags.Object) !== 0
-    ) ?
-      handleNested(withoutTags, checker, fieldName, isJwt)
-    : nonNull == checker.getNeverType() ? throwNullType(fieldName, typeName)
-    : throwUnknownType(t, fieldName, typeName);
+    ) {
+      dataType = handleNested(withoutTags, checker, fieldName, isJwt);
+    } else if (nonNull == checker.getNeverType()) {
+      dataType = throwNullType(fieldName, typeName);
+    } else {
+      dataType = throwUnknownType(t, fieldName, typeName);
+    }
+  }
   if (aggregationFunction !== undefined) {
     annotations.push(["aggregationFunction", aggregationFunction]);
   }
