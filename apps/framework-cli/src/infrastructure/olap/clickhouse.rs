@@ -50,6 +50,7 @@ use sql_parser::{
 };
 use std::collections::HashMap;
 use std::ops::Deref;
+use std::sync::LazyLock;
 
 use self::model::ClickHouseSystemTable;
 use crate::framework::core::infrastructure::table::{
@@ -1513,6 +1514,12 @@ impl OlapOperations for ConfiguredDBClient {
     }
 }
 
+/// Regex pattern to find keywords that terminate an ORDER BY clause
+static ORDER_BY_TERMINATOR_PATTERN: LazyLock<regex::Regex> = LazyLock::new(|| {
+    regex::Regex::new(r"\s(PARTITION BY|PRIMARY KEY|SAMPLE BY|TTL|SETTINGS)")
+        .expect("ORDER_BY_TERMINATOR_PATTERN regex should compile")
+});
+
 /// Extracts ORDER BY columns from a CREATE TABLE query
 ///
 /// # Arguments
@@ -1542,22 +1549,23 @@ pub fn extract_order_by_from_create_query(create_query: &str) -> Vec<String> {
     }
 
     if let Some(after_order_by) = after_order_by {
-        // Find where the ORDER BY clause ends (at TTL, SETTINGS, or end of string)
+        // Find where the ORDER BY clause ends by checking for keywords that can follow it.
+        // We look for any of the ClickHouse table engine keywords that terminate ORDER BY.
         let mut end_idx = after_order_by.len();
+        let upper_after = after_order_by.to_uppercase();
 
-        // Check for TTL keyword (appears after ORDER BY but before SETTINGS)
-        if let Some(ttl_idx) = after_order_by.to_uppercase().find(" TTL ") {
-            end_idx = std::cmp::min(end_idx, ttl_idx);
+        // Use regex to find keywords preceded by whitespace
+        // \s matches any whitespace character (space, tab, newline, etc.)
+        if let Some(mat) = ORDER_BY_TERMINATOR_PATTERN.find(&upper_after) {
+            // The match includes the leading whitespace, so we use mat.start()
+            end_idx = mat.start();
         }
 
-        // Check for SETTINGS keyword
-        if let Some(settings_idx) = after_order_by.to_uppercase().find("SETTINGS") {
-            end_idx = std::cmp::min(end_idx, settings_idx);
-        }
-
+        // Check for another ORDER BY (shouldn't happen in normal cases)
         if let Some(next_order_by) = after_order_by[8..].to_uppercase().find("ORDER BY") {
             end_idx = std::cmp::min(end_idx, next_order_by + 8);
         }
+
         let order_by_clause = &after_order_by[..end_idx];
 
         // Extract the column names
@@ -1809,6 +1817,37 @@ mod tests {
         let query = "CREATE TABLE test (id Int64, ts DateTime) ENGINE = MergeTree ORDER BY (id, ts) TTL ts + INTERVAL 90 DAY SETTINGS index_granularity = 8192";
         let order_by = extract_order_by_from_create_query(query);
         assert_eq!(order_by, vec!["id".to_string(), "ts".to_string()]);
+
+        // Test with ORDER BY and SAMPLE BY (should not include SAMPLE BY in ORDER BY)
+        let query = "CREATE TABLE test (id Int64, hash UInt64) ENGINE = MergeTree ORDER BY (id, hash) SAMPLE BY hash SETTINGS index_granularity = 8192";
+        let order_by = extract_order_by_from_create_query(query);
+        assert_eq!(order_by, vec!["id".to_string(), "hash".to_string()]);
+
+        let query = r#"CREATE TABLE local.test
+(
+    `_hardware_id` String,
+    `_hostname` String,
+    `date_stamp` Date DEFAULT '1970-01-01',
+    `hour_stamp` UInt64 DEFAULT toStartOfHour(toDateTime(_time_observed / 1000)),
+    `sample_hash` UInt64 DEFAULT xxHash64(_hardware_id),
+    `_time_observed` UInt64,
+    INDEX index_time_observed_v1 _time_observed TYPE minmax GRANULARITY 3
+)
+ENGINE = MergeTree
+PARTITION BY toYYYYMMDD(toStartOfWeek(toDateTime(_time_observed / 1000)))
+PRIMARY KEY (hour_stamp, sample_hash)
+ORDER BY (hour_stamp, sample_hash, _time_observed)
+SAMPLE BY sample_hash
+SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_granularity_bytes = 10485760"#;
+        let order_by = extract_order_by_from_create_query(query);
+        assert_eq!(
+            order_by,
+            vec![
+                "hour_stamp".to_string(),
+                "sample_hash".to_string(),
+                "_time_observed".to_string()
+            ]
+        );
 
         // Test with backticks
         let query =
