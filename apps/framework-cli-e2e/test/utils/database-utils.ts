@@ -669,8 +669,8 @@ export const spawnClickHouseForMigrationTest = async (
         --health-cmd "echo 'ruok' | nc localhost 9181 | grep -q 'imok'" \
         --health-interval 5s \
         --health-timeout 5s \
-        --health-retries 5 \
-        --health-start-period 10s \
+        --health-retries 20 \
+        --health-start-period 60s \
         docker.io/clickhouse/clickhouse-keeper:25.6 \
         sh -c "mkdir -p /etc/clickhouse-keeper && cat > /etc/clickhouse-keeper/keeper_config.xml << 'EOF'
 <clickhouse>
