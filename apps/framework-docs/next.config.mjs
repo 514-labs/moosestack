@@ -40,7 +40,7 @@ const nextConfig = {
   },
   // Optional build-time configuration options
   async rewrites() {
-    return [
+    const baseRewrites = [
       {
         source: "/robots.txt",
         destination: "/api/robots.txt",
@@ -58,6 +58,27 @@ const nextConfig = {
         destination: "https://us.i.posthog.com/decide",
       },
     ];
+
+    const llmRewrites = [
+      {
+        source: "/llm-ts.txt",
+        destination: "/api/llm/ts",
+      },
+      {
+        source: "/llm-py.txt",
+        destination: "/api/llm/py",
+      },
+      {
+        source: "/:scope*/llm-ts.txt",
+        destination: "/api/llm/ts?scope=:scope*",
+      },
+      {
+        source: "/:scope*/llm-py.txt",
+        destination: "/api/llm/py?scope=:scope*",
+      },
+    ];
+
+    return [...baseRewrites, ...llmRewrites];
   },
   skipTrailingSlashRedirect: true,
 };
