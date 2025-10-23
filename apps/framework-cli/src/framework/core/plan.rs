@@ -367,6 +367,7 @@ mod tests {
             table_settings: None,
             indexes: vec![],
             table_ttl_setting: None,
+            cluster_name: None,
         }
     }
 
@@ -384,6 +385,7 @@ mod tests {
                 host_port: 18123,
                 native_port: 9000,
                 host_data_path: None,
+                clusters: None,
             },
             http_server_config: crate::cli::local_webserver::LocalWebserverConfig::default(),
             redis_config: crate::infrastructure::redis::redis_client::RedisConfig::default(),

@@ -326,6 +326,7 @@ mod tests {
                 host_port: 18123,
                 native_port: 9000,
                 host_data_path: None,
+                clusters: None,
             },
             http_server_config: LocalWebserverConfig {
                 proxy_port: crate::cli::local_webserver::default_proxy_port(),
@@ -379,6 +380,7 @@ mod tests {
             table_settings: None,
             indexes: vec![],
             table_ttl_setting: None,
+            cluster_name: None,
         }
     }
 

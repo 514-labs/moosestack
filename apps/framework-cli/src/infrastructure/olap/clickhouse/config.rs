@@ -13,6 +13,11 @@ fn default_native_port() -> i32 {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct ClusterConfig {
+    pub name: String,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ClickHouseConfig {
     pub db_name: String, // ex. local
     pub user: String,
@@ -26,6 +31,9 @@ pub struct ClickHouseConfig {
     /// If not specified, a Docker-managed volume will be used.
     #[serde(default)]
     pub host_data_path: Option<PathBuf>,
+    /// Optional cluster configurations for ON CLUSTER support
+    #[serde(default)]
+    pub clusters: Option<Vec<ClusterConfig>>,
 }
 
 impl Default for ClickHouseConfig {
@@ -39,6 +47,7 @@ impl Default for ClickHouseConfig {
             host_port: 18123,
             native_port: default_native_port(),
             host_data_path: None,
+            clusters: None,
         }
     }
 }

@@ -121,7 +121,8 @@ pub fn create_alias_for_table(
 }
 
 static CREATE_TABLE_TEMPLATE: &str = r#"
-CREATE TABLE IF NOT EXISTS `{{db_name}}`.`{{table_name}}`
+CREATE TABLE IF NOT EXISTS `{{db_name}}`.`{{table_name}}`{{#if cluster_name}}
+ON CLUSTER {{cluster_name}}{{/if}}
 (
 {{#each fields}} `{{field_name}}` {{{field_type}}} {{field_nullable}}{{#if field_default}} DEFAULT {{{field_default}}}{{/if}}{{#if field_comment}} COMMENT '{{{field_comment}}}'{{/if}}{{#if field_ttl}} TTL {{{field_ttl}}}{{/if}}{{#unless @last}},
 {{/unless}}{{/each}}{{#if has_indexes}}, {{#each indexes}}{{this}}{{#unless @last}}, {{/unless}}{{/each}}{{/if}}
@@ -1651,6 +1652,7 @@ pub fn create_table_query(
     let template_context = json!({
         "db_name": db_name,
         "table_name": table.name,
+        "cluster_name": table.cluster_name.as_deref(),
         "fields":  builds_field_context(&table.columns)?,
         "has_fields": !table.columns.is_empty(),
         "has_indexes": has_indexes,
@@ -1677,16 +1679,21 @@ pub fn create_table_query(
 }
 
 pub static DROP_TABLE_TEMPLATE: &str = r#"
-DROP TABLE IF EXISTS `{{db_name}}`.`{{table_name}}`;
+DROP TABLE IF EXISTS `{{db_name}}`.`{{table_name}}`{{#if cluster_name}} ON CLUSTER {{cluster_name}}{{/if}};
 "#;
 
-pub fn drop_table_query(db_name: &str, table_name: &str) -> Result<String, ClickhouseError> {
+pub fn drop_table_query(
+    db_name: &str,
+    table_name: &str,
+    cluster_name: Option<&str>,
+) -> Result<String, ClickhouseError> {
     let mut reg = Handlebars::new();
     reg.register_escape_fn(no_escape);
 
     let context = json!({
         "db_name": db_name,
         "table_name": table_name,
+        "cluster_name": cluster_name,
     });
 
     Ok(reg.render_template(DROP_TABLE_TEMPLATE, &context)?)
@@ -2121,6 +2128,7 @@ mod tests {
             table_settings: None,
             indexes: vec![],
             table_ttl_setting: None,
+            cluster_name: None,
         };
 
         let query = create_table_query("test_db", table, false).unwrap();
@@ -2158,6 +2166,7 @@ PRIMARY KEY (`id`)
             table_settings: None,
             indexes: vec![],
             table_ttl_setting: None,
+            cluster_name: None,
         };
 
         let query = create_table_query("test_db", table, false).unwrap();
@@ -2194,6 +2203,7 @@ ENGINE = MergeTree
             table_settings: None,
             indexes: vec![],
             table_ttl_setting: None,
+            cluster_name: None,
         };
 
         let query = create_table_query("test_db", table, false).unwrap();
@@ -2232,6 +2242,7 @@ ENGINE = MergeTree
             table_settings: None,
             indexes: vec![],
             table_ttl_setting: None,
+            cluster_name: None,
         };
 
         let query = create_table_query("test_db", table, false).unwrap();
@@ -2271,6 +2282,7 @@ ORDER BY (`id`) "#;
             table_settings: None,
             indexes: vec![],
             table_ttl_setting: None,
+            cluster_name: None,
         };
 
         let result = create_table_query("test_db", table, false);
@@ -2317,6 +2329,7 @@ ORDER BY (`id`) "#;
             table_settings: None,
             indexes: vec![],
             table_ttl_setting: None,
+            cluster_name: None,
         };
 
         let query = create_table_query("test_db", table, false).unwrap();
@@ -2379,6 +2392,7 @@ ORDER BY (`id`) "#;
             table_settings: None,
             indexes: vec![],
             table_ttl_setting: None,
+            cluster_name: None,
         };
 
         let query = create_table_query("test_db", table, false).unwrap();
@@ -2419,6 +2433,7 @@ ORDER BY (`id`) "#;
             },
             table_settings: None,
             table_ttl_setting: None,
+            cluster_name: None,
             indexes: vec![],
         };
 
@@ -2575,6 +2590,7 @@ ORDER BY (`id`) "#;
             table_settings: None,
             indexes: vec![],
             table_ttl_setting: None,
+            cluster_name: None,
         };
 
         let query = create_table_query("test_db", table, false).unwrap();
@@ -2640,6 +2656,7 @@ ORDER BY (`id`) "#;
             table_settings: Some(settings),
             indexes: vec![],
             table_ttl_setting: None,
+            cluster_name: None,
         };
 
         let query = create_table_query("test_db", table, false).unwrap();
@@ -3113,6 +3130,7 @@ SETTINGS keeper_path = '/clickhouse/s3queue/test_table', mode = 'unordered', s3q
             table_settings: None,
             indexes: vec![],
             table_ttl_setting: None,
+            cluster_name: None,
         };
 
         let query = create_table_query("test_db", table, false).unwrap();
