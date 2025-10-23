@@ -13,7 +13,7 @@ import {
   BreadcrumbSeparator,
 } from "@/components/ui/breadcrumb";
 import { useRouter } from "next/router";
-import { useConfig } from "nextra-theme-docs";
+import { useConfig, useThemeConfig } from "nextra-theme-docs";
 import { PathConfig } from "./src/components/ctas";
 import { GitHubStarsButton } from "@/components";
 
@@ -47,7 +47,8 @@ function buildLlmHref(asPath, suffix) {
 }
 
 function EditLinks({ filePath, href, className, children }) {
-  const { docsRepositoryBase, pageOpts } = useConfig();
+  const { pageOpts } = useConfig();
+  const { docsRepositoryBase } = useThemeConfig();
   const { asPath } = useRouter();
 
   const resolvedFilePath = filePath || pageOpts?.filePath;
@@ -69,34 +70,24 @@ function EditLinks({ filePath, href, className, children }) {
   return (
     <div className="flex flex-col items-start gap-2">
       {editHref ?
-        <Link
+        <a
           href={editHref}
           className={className}
           target="_blank"
           rel="noreferrer"
         >
           {children}
-        </Link>
+        </a>
       : <span className={className}>{children}</span>}
       <span className={className}>
         LLM docs:{" "}
-        <Link
-          href={tsHref}
-          className={className}
-          target="_blank"
-          rel="noreferrer"
-        >
+        <a href={tsHref} className={className} target="_blank" rel="noreferrer">
           TS
-        </Link>{" "}
+        </a>{" "}
         /{" "}
-        <Link
-          href={pyHref}
-          className={className}
-          target="_blank"
-          rel="noreferrer"
-        >
+        <a href={pyHref} className={className} target="_blank" rel="noreferrer">
           PY
-        </Link>
+        </a>
       </span>
     </div>
   );
