@@ -781,10 +781,9 @@ impl<'de, S: SerializeValue> Visitor<'de> for &mut ValueVisitor<'_, S> {
                                     let path = if parent.is_empty() {
                                         spec.full.clone()
                                     } else {
-                                        format!("{}.{},", parent, spec.full)
+                                        format!("{}.{}", parent, spec.full)
                                     };
-                                    // we will trim trailing comma when joining
-                                    missing_paths.push(path.trim_end_matches(',').to_string());
+                                    missing_paths.push(path);
                                 }
                             }
                         }
