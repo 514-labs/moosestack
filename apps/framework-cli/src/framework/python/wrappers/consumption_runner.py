@@ -16,10 +16,11 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 from importlib import import_module
 from typing import Optional, Dict, Any
 from urllib.parse import urlparse, parse_qs
-from moose_lib import MooseClient
+from moose_lib import MooseClient, Sql
 from moose_lib.query_param import map_params_to_class, convert_api_param, convert_pydantic_definition
 from moose_lib.internal import load_models
-from moose_lib.dmv2 import get_api, get_apis, get_workflow
+from moose_lib.dmv2 import get_api, get_apis, get_workflow, get_web_apps
+from moose_lib.dmv2.web_app_helpers import ApiUtil
 from pydantic import BaseModel, ValidationError
 
 import jwt
@@ -76,6 +77,27 @@ is_dmv2 = args.is_dmv2.lower() == 'true'
 
 sys.path.append(consumption_dir_path)
 
+# Persistent event loop for handling async ASGI requests
+# Reusing a single event loop avoids the overhead of creating/destroying
+# a new loop on every request (which asyncio.run() does)
+_event_loop = None
+_event_loop_thread = None
+
+def get_persistent_event_loop():
+    """Get or create a persistent event loop running in a background thread."""
+    global _event_loop, _event_loop_thread
+
+    if _event_loop is None:
+        def run_loop(loop):
+            asyncio.set_event_loop(loop)
+            loop.run_forever()
+
+        _event_loop = asyncio.new_event_loop()
+        _event_loop_thread = threading.Thread(target=run_loop, args=(_event_loop,), daemon=True)
+        _event_loop_thread.start()
+
+    return _event_loop
+
 
 def verify_jwt(token: str) -> Optional[Dict[str, Any]]:
     try:
@@ -87,6 +109,54 @@ def verify_jwt(token: str) -> Optional[Dict[str, Any]]:
 
 def has_jwt_config() -> bool:
     return jwt_secret and jwt_issuer and jwt_audience
+
+
+async def execute_asgi_app(asgi_app, scope, request_body: bytes):
+    """
+    Execute an ASGI application (FastAPI) and return the response.
+
+    Args:
+        asgi_app: The ASGI application (FastAPI app instance)
+        scope: ASGI scope dictionary with request information
+        request_body: The request body as bytes
+
+    Returns:
+        tuple: (status_code, headers, body)
+    """
+    response_started = False
+    status_code = 200
+    response_headers = []
+    response_body = []
+
+    async def receive():
+        """ASGI receive callable - provides request body."""
+        return {
+            'type': 'http.request',
+            'body': request_body,
+            'more_body': False,
+        }
+
+    async def send(message):
+        """ASGI send callable - captures response."""
+        nonlocal response_started, status_code, response_headers, response_body
+
+        if message['type'] == 'http.response.start':
+            response_started = True
+            status_code = message['status']
+            response_headers = message.get('headers', [])
+        elif message['type'] == 'http.response.body':
+            body = message.get('body', b'')
+            if body:
+                response_body.append(body)
+
+    try:
+        await asgi_app(scope, receive, send)
+        return status_code, response_headers, b''.join(response_body)
+    except Exception as e:
+        print(f"Error executing ASGI app: {e}")
+        traceback.print_exc()
+        return 500, [], json.dumps({"error": "Internal Server Error"}).encode()
+
 
 def handler_with_client(moose_client):
     class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
@@ -102,24 +172,15 @@ def handler_with_client(moose_client):
                               self.requestline,
                               str(code),
                               str(size)))
-        def do_GET(self):
+        def handle_request(self):
+            """Unified request handler for all HTTP methods."""
             parsed_path = urlparse(self.path)
-            # Strip /api or /consumption prefix
             raw_path = parsed_path.path
-            if raw_path.startswith('/api'):
-                stripped_path = raw_path[len('/api'):]
-            elif raw_path.startswith('/consumption'):
-                stripped_path = raw_path[len('/consumption'):]
-            else:
-                stripped_path = raw_path
+            method = self.command
 
-            full_path = stripped_path.lstrip('/').rstrip('/')
-            path_parts = full_path.split('/')
-            
-            # For backward compatibility, keep the old parsing logic
-            module_name = path_parts[0]
-            version_from_path = "/".join(path_parts[1:]) if len(path_parts) > 1 else None
-
+            # Read request body for POST/PUT/PATCH methods
+            content_length = int(self.headers.get('Content-Length', 0))
+            request_body = self.rfile.read(content_length) if content_length > 0 else b''
 
             try:
                 jwt_payload = None
@@ -137,7 +198,91 @@ def handler_with_client(moose_client):
                         self.wfile.write(bytes(json.dumps({"error": "Unauthorized"}), 'utf-8'))
                         return
 
+                # Check for WebApp routes first (if dmv2 is enabled)
+                if is_dmv2:
+                    web_apps = get_web_apps()
+                    # Sort by mount path length (longest first) for proper routing
+                    sorted_web_apps = sorted(web_apps.values(), key=lambda wa: len(wa.config.mount_path), reverse=True)
+
+                    for web_app in sorted_web_apps:
+                        mount_path = web_app.config.mount_path
+                        normalized_mount = mount_path.rstrip('/')
+
+                        # Check if path matches this WebApp
+                        matches = (
+                            raw_path == normalized_mount or
+                            raw_path.startswith(normalized_mount + "/")
+                        )
+
+                        if matches:
+                            # This request is for a WebApp
+                            print(f"[WebApp] Routing {method} {raw_path} to WebApp '{web_app.name}'")
+
+                            # Inject Moose utilities into request state if enabled
+                            moose_utils = None
+                            if web_app.config.inject_moose_utils:
+                                moose_utils = ApiUtil(
+                                    client=moose_client,
+                                    sql=Sql,
+                                    jwt=jwt_payload
+                                )
+
+                            # Strip mount path from URL for the FastAPI app
+                            proxied_path = raw_path
+                            proxied_path = raw_path[len(normalized_mount):]
+
+                            # Build ASGI scope
+                            server_name = getattr(self.server, 'server_name', 'localhost')
+                            server_port = getattr(self.server, 'server_port', 4000)
+                            scope = {
+                                'type': 'http',
+                                'asgi': {'version': '3.0'},
+                                'http_version': self.request_version.split('/')[-1],
+                                'method': method,
+                                'scheme': 'http',
+                                'path': proxied_path,
+                                'query_string': parsed_path.query.encode() if parsed_path.query else b'',
+                                'root_path': '',
+                                'headers': [(k.lower().encode(), v.encode()) for k, v in self.headers.items()],
+                                'server': (server_name, server_port),
+                                'client': self.client_address,
+                                'state': {'moose': moose_utils} if moose_utils else {},
+                            }
+
+                            # Execute the FastAPI app via ASGI using persistent event loop
+                            # This avoids creating a new event loop on every request
+                            loop = get_persistent_event_loop()
+                            future = asyncio.run_coroutine_threadsafe(
+                                execute_asgi_app(web_app.app, scope, request_body),
+                                loop
+                            )
+                            status_code, response_headers, response_body = future.result()
+
+                            # Send response
+                            self.send_response(status_code)
+                            for header_name, header_value in response_headers:
+                                self.send_header(header_name.decode(), header_value.decode())
+                            self.end_headers()
+                            self.wfile.write(response_body)
+                            return
+
+                # If no WebApp matched, fall back to Api routing
                 query_params = parse_qs(parsed_path.query)
+
+                # Strip /api or /consumption prefix for Api routing
+                if raw_path.startswith('/api'):
+                    stripped_path = raw_path[len('/api'):]
+                elif raw_path.startswith('/consumption'):
+                    stripped_path = raw_path[len('/consumption'):]
+                else:
+                    stripped_path = raw_path
+
+                full_path = stripped_path.lstrip('/').rstrip('/')
+                path_parts = full_path.split('/')
+
+                # For backward compatibility, keep the old parsing logic
+                module_name = path_parts[0]
+                version_from_path = "/".join(path_parts[1:]) if len(path_parts) > 1 else None
 
                 if is_dmv2:
                     # First try to look up by the full path (for custom paths)
@@ -195,8 +340,8 @@ def handler_with_client(moose_client):
                     response = module.run(*args)
 
                 if hasattr(response, 'status') and hasattr(response, 'body'):
-                    self.send_response(response.status)
-                    response_message = bytes(json.dumps(response.body, cls=EnhancedJSONEncoder), 'utf-8')
+                    self.send_response(response.status)  # type: ignore[attr-defined]
+                    response_message = bytes(json.dumps(response.body, cls=EnhancedJSONEncoder), 'utf-8')  # type: ignore[attr-defined]
                 else:
                     self.send_response(200)
                     response_message = bytes(
@@ -211,6 +356,28 @@ def handler_with_client(moose_client):
                 self.send_response(500)
                 self.end_headers()
                 self.wfile.write(str(e).encode())
+
+        # HTTP method handlers - all delegate to handle_request
+        def do_GET(self):
+            self.handle_request()
+
+        def do_POST(self):
+            self.handle_request()
+
+        def do_PUT(self):
+            self.handle_request()
+
+        def do_DELETE(self):
+            self.handle_request()
+
+        def do_PATCH(self):
+            self.handle_request()
+
+        def do_OPTIONS(self):
+            self.handle_request()
+
+        def do_HEAD(self):
+            self.handle_request()
 
     return SimpleHTTPRequestHandler
 
@@ -255,14 +422,22 @@ def main():
     server_address = ('localhost', server_port)
     handler = handler_with_client(moose_client)
     httpd = HTTPServer(server_address, handler)
-    
+
     # Store references for cleanup
-    httpd.moose_client = moose_client
+    httpd.moose_client = moose_client  # type: ignore[attr-defined]
     
     def shutdown_server():
         httpd.shutdown()
         print("\nShutting down server...")
         httpd.server_close()
+
+        # Cleanup persistent event loop
+        global _event_loop
+        if _event_loop is not None:
+            _event_loop.call_soon_threadsafe(_event_loop.stop)
+            if _event_loop_thread is not None:
+                _event_loop_thread.join(timeout=5.0)
+
         # Cleanup clients
         asyncio.run(moose_client.cleanup())
         print("Server shutdown complete")
