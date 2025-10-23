@@ -4,6 +4,7 @@ pub(crate) mod display;
 mod commands;
 pub mod local_webserver;
 pub mod logger;
+pub mod processing_coordinator;
 pub mod routines;
 use crate::cli::routines::seed_data;
 pub mod settings;
