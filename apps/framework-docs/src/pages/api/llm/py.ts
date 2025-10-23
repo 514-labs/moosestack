@@ -11,7 +11,7 @@ export default async function handler(
     const payload = await buildLanguageDocs("python", { scope });
 
     res.setHeader("Content-Type", "text/plain; charset=utf-8");
-    res.setHeader("Cache-Control", "s-maxage=1800, stale-while-revalidate");
+    res.setHeader("Cache-Control", "s-maxage=1800, stale-while-revalidate=300");
     res.status(200).send(payload);
   } catch (error) {
     if (error instanceof Error && error.message.startsWith("Invalid scope")) {
