@@ -164,7 +164,7 @@ interface TableJson {
     name: string;
     expression: string;
     type: string;
-    arguments?: string[];
+    arguments: string[];
     granularity: number;
   }[];
   /** Optional table-level TTL expression (without leading 'TTL'). */
@@ -582,7 +582,12 @@ export const toInfraMap = (registry: typeof moose_internal) => {
         tableSettings && Object.keys(tableSettings).length > 0 ?
           tableSettings
         : undefined,
-      indexes: table.config.indexes || [],
+      indexes:
+        table.config.indexes?.map((i) => ({
+          ...i,
+          granularity: i.granularity == undefined ? 1 : i.granularity,
+          arguments: i.arguments === undefined ? [] : i.arguments,
+        })) || [],
       ttl: table.config.ttl,
     };
   });

@@ -139,8 +139,8 @@ class OlapConfig(BaseModel):
         name: str
         expression: str
         type: str
-        arguments: Optional[list[str]] = None
-        granularity: int
+        arguments: list[str] = []
+        granularity: int = 1
 
     indexes: list[TableIndex] = []
 
