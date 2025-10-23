@@ -134,7 +134,7 @@ fn map_column_type_to_python(
                         .map(|r| format!("r{:?}", r))
                         .collect::<Vec<_>>()
                         .join(", ");
-                    parts.push(format!("skip_regexes=({},)", regexps));
+                    parts.push(format!("skip_regexps=({},)", regexps));
                 }
                 if parts.is_empty() {
                     format!("Annotated[{class_name}, ClickHouseJson()]")
@@ -1597,6 +1597,6 @@ user_table = OlapTable[User]("User", OlapConfig(
         assert!(result.contains("max_dynamic_paths=256"));
         assert!(result.contains("max_dynamic_types=16"));
         assert!(result.contains("skip_paths=(\"skip.me\",)"));
-        assert!(result.contains("skip_regexes=(r\"^tmp\\\\.\",)"));
+        assert!(result.contains("skip_regexps=(r\"^tmp\\\\.\",)"));
     }
 }

@@ -82,6 +82,19 @@ impl JsonOptions {
     }
 
     pub fn to_option_strings(&self) -> Vec<String> {
+        self.to_option_strings_with_type_convert::<_, std::convert::Infallible>(|ty| {
+            Ok(ty.to_string())
+        })
+        .unwrap()
+    }
+
+    pub fn to_option_strings_with_type_convert<F, E>(
+        &self,
+        type_converter: F,
+    ) -> Result<Vec<String>, E>
+    where
+        F: Fn(&ColumnType) -> Result<String, E>,
+    {
         let mut parts: Vec<String> = Vec::new();
         if let Some(n) = self.max_dynamic_paths {
             parts.push(format!("max_dynamic_paths={}", n));
@@ -90,15 +103,16 @@ impl JsonOptions {
             parts.push(format!("max_dynamic_types={}", n));
         }
         for (path, ty) in &self.typed_paths {
-            parts.push(format!("{} {}", path, ty));
+            let ty_str = type_converter(ty)?;
+            parts.push(format!("{} {}", path, ty_str));
         }
         for path in &self.skip_paths {
             parts.push(format!("SKIP {}", path));
         }
         for re in &self.skip_regexps {
-            parts.push(format!("SKIP REGEXP '{}'", re));
+            parts.push(format!("SKIP REGEXP '{}'", re.replace('\'', "\\'")));
         }
-        parts
+        Ok(parts)
     }
 }
 

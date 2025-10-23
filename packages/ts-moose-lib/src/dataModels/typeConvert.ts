@@ -163,7 +163,6 @@ const getJsonMappedType = (
           ts.isIdentifier(typeName) ? typeName.text : typeName.right.text;
         if (name === "ClickHouseJson" && typeElem.typeArguments) {
           const args = typeElem.typeArguments;
-          // ClickHouseJson<maxDynamicPaths, maxDynamicTypes, skipPaths, skipRegexes>
           if (
             args[0] &&
             ts.isLiteralTypeNode(args[0]) &&

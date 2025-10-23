@@ -1837,27 +1837,8 @@ pub fn basic_field_type_to_string(
             Ok(format!("Nested({nested_fields})"))
         }
         ClickHouseColumnType::Json(opts) => {
-            // Render JSON with options when present
-            let mut parts: Vec<String> = Vec::new();
-            if let Some(n) = opts.max_dynamic_paths {
-                parts.push(format!("max_dynamic_paths={n}"));
-            }
-            if let Some(n) = opts.max_dynamic_types {
-                parts.push(format!("max_dynamic_types={n}"));
-            }
-            // typed paths: path Type
-            for (path, ty) in &opts.typed_paths {
-                let ty_str = fw_column_type_to_clickhouse_str(ty)?;
-                parts.push(format!("{path} {ty_str}"));
-            }
-            // SKIP path
-            for path in &opts.skip_paths {
-                parts.push(format!("SKIP {path}"));
-            }
-            // SKIP REGEXP '...'
-            for re in &opts.skip_regexps {
-                parts.push(format!("SKIP REGEXP '{}'", re.replace('\'', "\\'")));
-            }
+            let parts =
+                opts.to_option_strings_with_type_convert(fw_column_type_to_clickhouse_str)?;
             if parts.is_empty() {
                 Ok("JSON".to_string())
             } else {

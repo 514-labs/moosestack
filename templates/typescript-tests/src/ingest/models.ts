@@ -233,7 +233,7 @@ export interface JsonTest {
   // Test JSON with full configuration (max_dynamic_paths, max_dynamic_types, skip_paths, skip_regexes)
   payloadWithConfig: JsonInner &
     ClickHouseJson<256, 16, ["skip.me"], ["^tmp\\."]>;
-  // Test basic JSON without configuration
+  // Test JSON with paths but without configuration
   payloadBasic: JsonInner & ClickHouseJson;
 }
 

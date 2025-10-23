@@ -749,20 +749,8 @@ impl<'de, S: SerializeValue> Visitor<'de> for &mut ValueVisitor<'_, S> {
                                             }
                                         }
                                     }
-                                    // If no remaining segments (i.e., original path was just top-level), current is the top-level value
-                                    // Now ensure it's populated if required
-                                    if !missing {
-                                        if spec.segments.is_empty() {
-                                            if !(current != &serde_json::Value::Null)
-                                                && spec.required
-                                            {
-                                                missing = true;
-                                            }
-                                        } else if spec.required
-                                            && current == &serde_json::Value::Null
-                                        {
-                                            missing = true;
-                                        }
+                                    if !missing && spec.required {
+                                        missing = current == &serde_json::Value::Null;
                                     }
                                     if !missing {
                                         spec.seen = true;

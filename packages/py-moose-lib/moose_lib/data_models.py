@@ -45,7 +45,7 @@ class ClickHouseJson:
     max_dynamic_paths: int | None = None
     max_dynamic_types: int | None = None
     skip_paths: tuple[str, ...] = ()
-    skip_regexes: tuple[str, ...] = ()
+    skip_regexps: tuple[str, ...] = ()
 
 
 def clickhouse_decimal(precision: int, scale: int) -> Type[Decimal]:
@@ -394,7 +394,7 @@ def py_type_to_column_type(t: type, mds: list[Any]) -> Tuple[bool, list[Any], Da
                 opts.max_dynamic_types is not None or
                 len(typed_paths) > 0 or
                 len(opts.skip_paths) > 0 or
-                len(opts.skip_regexes) > 0
+                len(opts.skip_regexps) > 0
         )
 
         if not has_any_option:
@@ -405,7 +405,7 @@ def py_type_to_column_type(t: type, mds: list[Any]) -> Tuple[bool, list[Any], Da
                 max_dynamic_types=opts.max_dynamic_types,
                 typed_paths=typed_paths,
                 skip_paths=list(opts.skip_paths),
-                skip_regexps=list(opts.skip_regexes),
+                skip_regexps=list(opts.skip_regexps),
             )
     elif get_origin(t) is Literal and all(isinstance(arg, str) for arg in get_args(t)):
         data_type = "String"
