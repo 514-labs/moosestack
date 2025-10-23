@@ -243,7 +243,7 @@ fn column_type_to_enum_mapping(t: &ClickHouseColumnType) -> Option<Vec<&str>> {
         | ClickHouseColumnType::DateTime64 { .. }
         | ClickHouseColumnType::IpV4
         | ClickHouseColumnType::IpV6
-        | ClickHouseColumnType::Json
+        | ClickHouseColumnType::Json(_)
         | ClickHouseColumnType::Uuid
         | ClickHouseColumnType::AggregateFunction { .. }
         | ClickHouseColumnType::SimpleAggregateFunction { .. }

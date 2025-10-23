@@ -1833,7 +1833,14 @@ pub fn basic_field_type_to_string(
 
             Ok(format!("Nested({nested_fields})"))
         }
-        ClickHouseColumnType::Json => Ok("JSON".to_string()),
+        ClickHouseColumnType::Json(opts) => {
+            let parts = opts.to_option_strings_with_type_convert(basic_field_type_to_string)?;
+            if parts.is_empty() {
+                Ok("JSON".to_string())
+            } else {
+                Ok(format!("JSON({})", parts.join(", ")))
+            }
+        }
         ClickHouseColumnType::Bytes => Err(ClickhouseError::UnsupportedDataType {
             type_name: "Bytes".to_string(),
         }),

@@ -153,7 +153,7 @@ fn get_default_value_for_type(column_type: &ColumnType, lang: SupportedLanguages
         (ColumnType::Array { .. }, _) => "[]".to_string(),
         (ColumnType::Nested(_), SupportedLanguages::Typescript) => "{}".to_string(),
         (ColumnType::Nested(inner), SupportedLanguages::Python) => format!("{}()", inner.name),
-        (ColumnType::Json, _) => "{}".to_string(),
+        (ColumnType::Json(_), _) => "{}".to_string(),
         (ColumnType::Bytes, _) => "[]".to_string(),
         (ColumnType::Uuid, SupportedLanguages::Typescript) => {
             "'4f487363-a767-491c-84ea-00b7724383d2'".to_string()

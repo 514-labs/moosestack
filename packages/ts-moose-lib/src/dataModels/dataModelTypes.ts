@@ -9,6 +9,13 @@ export type Nested = { name: string; columns: Column[]; jwt: boolean };
 export type ArrayType = { elementType: DataType; elementNullable: boolean };
 export type NamedTupleType = { fields: Array<[string, DataType]> };
 export type MapType = { keyType: DataType; valueType: DataType };
+export type JsonOptions = {
+  max_dynamic_paths?: number;
+  max_dynamic_types?: number;
+  typed_paths?: Array<[string, DataType]>;
+  skip_paths?: string[];
+  skip_regexps?: string[];
+};
 export type DataType =
   | string
   | DataEnum
@@ -16,6 +23,7 @@ export type DataType =
   | Nested
   | NamedTupleType
   | MapType
+  | JsonOptions
   | { nullable: DataType };
 export interface Column {
   name: IdentifierBrandedString;

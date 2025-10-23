@@ -40,6 +40,7 @@ export {
   ClickHouseByteSize,
   ClickHouseFloat,
   ClickHouseInt,
+  ClickHouseJson,
   LowCardinality,
   ClickHouseNamedTuple,
   ClickHouseDefault,
