@@ -42,14 +42,6 @@ const nextConfig = {
   async rewrites() {
     return [
       {
-        source: "/moose/llm-py.txt",
-        destination: "/api/llm/py",
-      },
-      {
-        source: "/moose/llm-ts.txt",
-        destination: "/api/llm/ts",
-      },
-      {
         source: "/robots.txt",
         destination: "/api/robots.txt",
       },

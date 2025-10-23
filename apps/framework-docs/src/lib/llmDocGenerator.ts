@@ -22,14 +22,37 @@ const LANGUAGE_TAG: Record<SupportedLanguage, string> = {
   typescript: "TypeScript",
 };
 
-export async function buildLanguageDocs(language: SupportedLanguage) {
-  const files = collectMdxFiles(DOCS_ROOT).sort();
+interface BuildLanguageDocsOptions {
+  scope?: string;
+  heading?: string;
+}
+
+export async function buildLanguageDocs(
+  language: SupportedLanguage,
+  options: BuildLanguageDocsOptions = {},
+) {
+  const normalizedScope = normalizeScope(options.scope);
+  const scopeRoot =
+    normalizedScope ? path.join(DOCS_ROOT, normalizedScope) : DOCS_ROOT;
+
+  const docHeading =
+    options.heading ??
+    `# ${buildScopeTitle(normalizedScope)} Documentation – ${
+      LANGUAGE_TAG[language]
+    }`;
+
+  if (!fs.existsSync(scopeRoot)) {
+    return docHeading;
+  }
+
+  const files = collectMdxFiles(scopeRoot).sort();
   const sections: string[] = [];
+  const includedPaths: string[] = [];
 
   for (const filePath of files) {
     const raw = await fs.promises.readFile(filePath, "utf8");
     const { frontMatter, body } = parseFrontMatter(raw);
-    const relativePath = path.relative(DOCS_ROOT, filePath);
+    const relativePath = path.relative(scopeRoot, filePath);
 
     const filtered = filterLanguageContent(body, language);
     const cleaned = cleanContent(filtered);
@@ -42,7 +65,9 @@ export async function buildLanguageDocs(language: SupportedLanguage) {
     const sectionLines: string[] = [];
     const heading = buildHeading(frontMatter, relativePath);
     sectionLines.push(heading);
-    sectionLines.push(`Source: ${relativePath}`);
+    const sourcePath = buildSourcePath(normalizedScope, relativePath);
+    includedPaths.push(sourcePath);
+    sectionLines.push(`Source: ${sourcePath}`);
 
     if (frontMatter.description) {
       sectionLines.push(frontMatter.description.trim());
@@ -52,12 +77,9 @@ export async function buildLanguageDocs(language: SupportedLanguage) {
     sections.push(sectionLines.join("\n\n"));
   }
 
-  const heading =
-    language === "python" ?
-      "# Moose Documentation – Python"
-    : "# Moose Documentation – TypeScript";
+  const toc = buildTocSection(includedPaths);
 
-  return [heading, sections.join(SECTION_SEPARATOR)]
+  return [docHeading, toc, sections.join(SECTION_SEPARATOR)]
     .filter(Boolean)
     .join("\n\n");
 }
@@ -217,4 +239,69 @@ function buildHeading(frontMatter: FrontMatter, relativePath: string) {
 
   const baseName = relativePath.replace(/\.mdx$/, "");
   return `## ${baseName}`;
+}
+
+function buildTocSection(paths: string[]) {
+  if (paths.length === 0) {
+    return undefined;
+  }
+
+  const items = paths.map((path, index) => `${index + 1}. ${path}`);
+  return ["## Included Files", ...items].join("\n");
+}
+
+function normalizeScope(scope?: string) {
+  if (!scope) {
+    return undefined;
+  }
+
+  const parts = scope
+    .split(/[\\/]+/)
+    .map((part) => part.trim())
+    .filter(Boolean);
+
+  if (parts.some((part) => part === ".." || part.includes(".."))) {
+    throw new Error(`Invalid scope path: ${scope}`);
+  }
+
+  const normalized = parts.join(path.sep);
+  return normalized ? normalized : undefined;
+}
+
+function buildScopeTitle(scope?: string) {
+  if (!scope) {
+    return "Moose";
+  }
+
+  const segments = scope
+    .split(path.sep)
+    .filter(Boolean)
+    .map((segment) =>
+      segment.split(/[-_]/).filter(Boolean).map(capitalize).join(" "),
+    );
+
+  if (segments.length === 0) {
+    return "Moose";
+  }
+
+  return segments.join(" / ");
+}
+
+function buildSourcePath(scope: string | undefined, relativePath: string) {
+  const normalizedRelative = relativePath.split(path.sep).join("/");
+
+  if (!scope) {
+    return normalizedRelative;
+  }
+
+  const normalizedScope = scope.split(path.sep).join("/");
+  return `${normalizedScope}/${normalizedRelative}`;
+}
+
+function capitalize(segment: string) {
+  if (!segment) {
+    return segment;
+  }
+
+  return segment.charAt(0).toUpperCase() + segment.slice(1);
 }
