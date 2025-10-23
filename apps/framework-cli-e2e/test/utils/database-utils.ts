@@ -617,11 +617,3 @@ export const verifyVersionedTables = async (
     },
   );
 };
-
-/**
- * Creates a ClickHouse client with default configuration
- * Used for migration tests that connect to moose dev's ClickHouse instance
- */
-export const createClickHouseClient = () => {
-  return createClient(CLICKHOUSE_CONFIG);
-};

@@ -20,6 +20,7 @@ import { expect } from "chai";
 import * as fs from "fs";
 import * as path from "path";
 import { promisify } from "util";
+import { createClient } from "@clickhouse/client";
 
 // Import constants and utilities
 import { TIMEOUTS, CLICKHOUSE_CONFIG, SERVER_CONFIG } from "./constants";
@@ -29,7 +30,6 @@ import {
   waitForServerStart,
   cleanupClickhouseData,
   cleanupDocker,
-  createClickHouseClient,
   createTempTestDirectory,
   removeTestProject,
 } from "./utils";
@@ -186,7 +186,7 @@ describe("typescript template tests - migration", () => {
       console.log("Migrate output:", stdout);
 
       // Verify tables were created in ClickHouse
-      const client = createClickHouseClient();
+      const client = createClient(CLICKHOUSE_CONFIG);
 
       const result = await client.query({
         query: "SHOW TABLES",
@@ -239,7 +239,7 @@ describe("typescript template tests - migration", () => {
 
       // NOW manually modify the database BEFORE applying the migration
       console.log("Manually modifying database to create drift...");
-      const client = createClickHouseClient();
+      const client = createClient(CLICKHOUSE_CONFIG);
       await client.command({
         query: "ALTER TABLE Bar ADD COLUMN drift_column String",
       });
