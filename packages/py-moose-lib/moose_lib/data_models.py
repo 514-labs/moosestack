@@ -372,15 +372,12 @@ def py_type_to_column_type(t: type, mds: list[Any]) -> Tuple[bool, list[Any], Da
                     "Default in inner field. Put ClickHouseDefault in top level field."
                 )
         # Enforce extra='allow' for JSON-mapped models
-        # If model_config is missing, set via __config__ for Pydantic v2 style
-        try:
-            # Pydantic v2: use model_config on class
-            cfg = getattr(t, 'model_config', None)
-            if not isinstance(cfg, ConfigDict) or cfg.get('extra') != 'allow':
-                # overwrite model_config (class attr) to enforce extra allow
-                setattr(t, 'model_config', ConfigDict(extra='allow'))
-        except Exception:
-            pass
+        cfg = getattr(t, 'model_config', None)
+        if not isinstance(cfg, ConfigDict) or cfg.get('extra') != 'allow':
+            raise ValueError(
+                f"Model {t.__name__} with ClickHouseJson must have model_config with extra='allow'. "
+                "Add: model_config = ConfigDict(extra='allow')"
+            )
         opts = next(md for md in mds if isinstance(md, ClickHouseJson))
 
         # Build typed_paths from fields as tuples of (name, type)

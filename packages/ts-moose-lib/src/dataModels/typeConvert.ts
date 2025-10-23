@@ -179,7 +179,9 @@ const getJsonMappedType = (
 
     const skipPathsSymbol = getPropertyDeep(settingsType, "skipPaths");
     if (skipPathsSymbol !== undefined) {
-      const skipPathsType = checker.getTypeOfSymbol(skipPathsSymbol);
+      const skipPathsType = checker.getNonNullableType(
+        checker.getTypeOfSymbol(skipPathsSymbol),
+      );
       if (checker.isTupleType(skipPathsType)) {
         const tuple = skipPathsType as TupleType;
         skipPaths = (tuple.typeArguments || [])
@@ -190,7 +192,9 @@ const getJsonMappedType = (
 
     const skipRegexesSymbol = getPropertyDeep(settingsType, "skipRegexes");
     if (skipRegexesSymbol !== undefined) {
-      const skipRegexesType = checker.getTypeOfSymbol(skipRegexesSymbol);
+      const skipRegexesType = checker.getNonNullableType(
+        checker.getTypeOfSymbol(skipRegexesSymbol),
+      );
       if (checker.isTupleType(skipRegexesType)) {
         const tuple = skipRegexesType as TupleType;
         skipRegexes = (tuple.typeArguments || [])

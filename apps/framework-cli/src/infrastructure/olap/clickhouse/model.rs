@@ -276,6 +276,17 @@ fn parse_json_options(inner: &str) -> Option<JsonOptions<ClickHouseColumnType>> 
             opts.max_dynamic_paths = Some(n);
             continue;
         }
+        if let Some(rest) = item.strip_prefix("SKIP REGEXP ") {
+            // Extract regex pattern from quotes
+            let rest = rest.trim();
+            if let Some(pattern) = rest.strip_prefix('\'').and_then(|s| s.strip_suffix('\'')) {
+                opts.skip_regexps.push(pattern.to_string());
+            } else {
+                // Pattern not quoted, use as-is
+                opts.skip_regexps.push(rest.to_string());
+            }
+            continue;
+        }
         if let Some(rest) = item.strip_prefix("SKIP ") {
             opts.skip_paths.push(rest.trim().to_string());
             continue;
@@ -335,6 +346,36 @@ mod tests {
                 }
             }
             _ => panic!("Failed to parse JSON options with typed path and skip"),
+        }
+    }
+
+    #[test]
+    fn test_parse_json_options_skip_regexp() {
+        let t = ClickHouseColumnType::from_type_str("JSON(SKIP REGEXP '^tmp\\\\.')");
+        match t {
+            Some(ClickHouseColumnType::Json(opts)) => {
+                assert_eq!(opts.skip_regexps.len(), 1);
+                assert_eq!(opts.skip_regexps[0], "^tmp\\\\.");
+                assert_eq!(opts.skip_paths.len(), 0);
+            }
+            _ => panic!("Failed to parse JSON options with SKIP REGEXP"),
+        }
+    }
+
+    #[test]
+    fn test_parse_json_options_mixed() {
+        let t = ClickHouseColumnType::from_type_str(
+            "JSON(max_dynamic_types=16, a.b UInt32, SKIP a.e, SKIP REGEXP '^tmp\\\\.')",
+        );
+        match t {
+            Some(ClickHouseColumnType::Json(opts)) => {
+                assert_eq!(opts.max_dynamic_types, Some(16));
+                assert_eq!(opts.typed_paths.len(), 1);
+                assert_eq!(opts.typed_paths[0].0, "a.b");
+                assert_eq!(opts.skip_paths, vec!["a.e".to_string()]);
+                assert_eq!(opts.skip_regexps, vec!["^tmp\\\\.".to_string()]);
+            }
+            _ => panic!("Failed to parse JSON options with mixed configuration"),
         }
     }
 }
