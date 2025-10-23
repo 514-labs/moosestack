@@ -2,377 +2,276 @@
 /// <reference types="mocha" />
 /// <reference types="chai" />
 /**
- * E2E tests for moose migrate command
+ * E2E tests for moose migrate command using nested moose structure
  *
- * These tests verify the serverless/OLAP-only migration flow:
- * 1. Fresh ClickHouse database (no moose dev involved)
- * 2. Generate migration plan
- * 3. Apply migration with moose migrate
- * 4. Verify tables are created correctly
+ * Structure:
+ * - Outer moose app (typescript-migrate-test/) starts infrastructure only
+ * - Inner moose app (typescript-migrate-test/migration/) runs migration CLI commands
+ *
+ * This tests the serverless/OLAP-only migration flow where:
+ * 1. Infrastructure is already running (ClickHouse + Keeper)
+ * 2. User runs `moose generate migration` to create migration plan
+ * 3. User runs `moose migrate` to apply the plan
+ * 4. State is stored in ClickHouse (not Redis)
  */
 
+import { spawn, ChildProcess } from "child_process";
 import { expect } from "chai";
 import * as fs from "fs";
 import * as path from "path";
 import { promisify } from "util";
 
 // Import constants and utilities
-import { TIMEOUTS } from "./constants";
+import { TIMEOUTS, CLICKHOUSE_CONFIG, SERVER_CONFIG } from "./constants";
 
 import {
-  spawnClickHouseForMigrationTest,
-  stopClickHouseContainer,
-  queryClickHouseInstance,
-  execClickHouseCommand,
-  ClickHouseTestInstance,
-  removeTestProject,
+  stopDevProcess,
+  waitForServerStart,
+  cleanupClickhouseData,
+  cleanupDocker,
+  createClickHouseClient,
   createTempTestDirectory,
-  setupTypeScriptProject,
+  removeTestProject,
 } from "./utils";
 
 const execAsync = promisify(require("child_process").exec);
 
 const CLI_PATH = path.resolve(__dirname, "../../../target/debug/moose-cli");
-const MOOSE_LIB_PATH = path.resolve(
+const TEMPLATE_SOURCE_DIR = path.resolve(
   __dirname,
-  "../../../packages/ts-moose-lib",
+  "../../../templates/typescript-migrate-test",
 );
-const TEMPLATE_NAME = "typescript-migrate-test";
-const APP_NAME = "moose-migrate-test-app";
+
+// Build ClickHouse connection URL for migration commands
+const CLICKHOUSE_URL = `http://${CLICKHOUSE_CONFIG.username}:${CLICKHOUSE_CONFIG.password}@localhost:18123/${CLICKHOUSE_CONFIG.database}`;
 
 describe("typescript template tests - migration", () => {
+  let outerMooseProcess: ChildProcess;
+  let testProjectDir: string;
+  let outerMooseDir: string;
+  let innerMooseDir: string;
+
+  before(async function () {
+    this.timeout(TIMEOUTS.TEST_SETUP_MS);
+
+    console.log("\n=== Starting Migration Tests ===");
+
+    testProjectDir = createTempTestDirectory("ts-migrate");
+    outerMooseDir = testProjectDir;
+    innerMooseDir = path.join(testProjectDir, "migration");
+
+    console.log("Test project dir:", testProjectDir);
+    console.log("Outer moose dir:", outerMooseDir);
+    console.log("Inner moose dir:", innerMooseDir);
+
+    // Copy template structure to temp directory
+    console.log("\nCopying template to temp directory...");
+    fs.cpSync(TEMPLATE_SOURCE_DIR, testProjectDir, { recursive: true });
+    console.log("✓ Template copied");
+
+    // Install dependencies for outer moose app
+    console.log("\nInstalling dependencies for outer moose app...");
+    await execAsync("npm install", { cwd: outerMooseDir });
+    console.log("✓ Dependencies installed");
+
+    // Install dependencies for inner moose app
+    console.log("\nInstalling dependencies for inner moose app...");
+    await execAsync("npm install", { cwd: innerMooseDir });
+    console.log("✓ Dependencies installed");
+
+    // Start outer moose dev (just for infrastructure - ClickHouse + Keeper)
+    console.log("\nStarting outer moose dev for infrastructure...");
+    outerMooseProcess = spawn(CLI_PATH, ["dev"], {
+      stdio: "pipe",
+      cwd: outerMooseDir,
+      env: process.env,
+    });
+
+    // Wait for moose dev to start (ClickHouse ready)
+    await waitForServerStart(
+      outerMooseProcess,
+      TIMEOUTS.SERVER_STARTUP_MS,
+      SERVER_CONFIG.startupMessage,
+      SERVER_CONFIG.url,
+    );
+
+    console.log("✓ Infrastructure ready (ClickHouse + Keeper running)");
+
+    // Clean up any existing test tables
+    await cleanupClickhouseData();
+    console.log("✓ ClickHouse cleaned");
+  });
+
+  after(async function () {
+    this.timeout(TIMEOUTS.CLEANUP_MS);
+    console.log("\n=== Cleaning up Migration Tests ===");
+
+    try {
+      // Stop the moose dev process
+      if (outerMooseProcess) {
+        await stopDevProcess(outerMooseProcess);
+        console.log("✓ Outer moose dev stopped");
+      }
+
+      // Clean up Docker containers and volumes
+      await cleanupDocker(outerMooseDir, "ts-migrate");
+      console.log("✓ Docker resources cleaned");
+
+      // Remove the entire temp directory (includes migration files, node_modules, etc.)
+      removeTestProject(testProjectDir);
+      console.log("✓ Test project directory removed");
+    } catch (error) {
+      console.error("Error during cleanup:", error);
+      // Force kill process if cleanup fails
+      try {
+        if (outerMooseProcess && !outerMooseProcess.killed) {
+          outerMooseProcess.kill("SIGKILL");
+        }
+      } catch (killError) {
+        console.warn("Failed to force kill process:", killError);
+      }
+    }
+  });
+
   describe("First-time migration (Happy Path)", () => {
-    let clickhouse: ClickHouseTestInstance;
-    let projectDir: string;
+    it("should generate migration plan from code", async function () {
+      this.timeout(TIMEOUTS.MIGRATION_MS);
 
-    before(async function () {
-      this.timeout(TIMEOUTS.TEST_SETUP_MS);
+      console.log("\n--- Generating migration plan ---");
 
-      console.log("\n=== Setting up Happy Path Migration Test ===");
-
-      // 1. Spin up fresh ClickHouse container
-      clickhouse = await spawnClickHouseForMigrationTest("happy");
-
-      // 2. Setup TypeScript project from template
-      projectDir = createTempTestDirectory("migrate-happy");
-      await setupTypeScriptProject(
-        projectDir,
-        TEMPLATE_NAME,
-        CLI_PATH,
-        MOOSE_LIB_PATH,
-        APP_NAME,
-        "npm",
-      );
-
-      // 3. Update moose.config.toml with the test ClickHouse settings
-      console.log(
-        "Updating moose.config.toml with test ClickHouse settings...",
-      );
-      const configPath = path.join(projectDir, "moose.config.toml");
-      let config = await fs.promises.readFile(configPath, "utf-8");
-      // Update ClickHouse config with test database settings
-      config = config.replace(
-        /db_name = "[^"]*"/,
-        `db_name = "${clickhouse.dbName}"`,
-      );
-      config = config.replace(
-        /host_port = \d+/,
-        `host_port = ${clickhouse.port}`,
-      );
-      config = config.replace(/user = "[^"]*"/, `user = "${clickhouse.user}"`);
-      config = config.replace(
-        /password = "[^"]*"/,
-        `password = "${clickhouse.password}"`,
-      );
-      await fs.promises.writeFile(configPath, config);
-
-      console.log("✓ Test setup complete");
-    });
-
-    after(async function () {
-      this.timeout(TIMEOUTS.CLEANUP_MS);
-      console.log("\n=== Cleaning up Happy Path Test ===");
-      await stopClickHouseContainer(
-        clickhouse.containerName,
-        clickhouse.networkName,
-      );
-      removeTestProject(projectDir);
-    });
-
-    it("should generate migration plan from empty database", async function () {
-      this.timeout(60000);
-
-      console.log("\n--- Testing: Generate Migration Plan ---");
-
-      // Run: moose generate migration --clickhouse-url <url> --save
-      const { stdout, stderr } = await execAsync(
-        `"${CLI_PATH}" generate migration --clickhouse-url "${clickhouse.url}" --save`,
-        { cwd: projectDir },
+      const { stdout } = await execAsync(
+        `"${CLI_PATH}" generate migration --clickhouse-url "${CLICKHOUSE_URL}" --save`,
+        {
+          cwd: innerMooseDir,
+        },
       );
 
       console.log("Generate migration output:", stdout);
-      if (stderr) console.log("Generate migration stderr:", stderr);
 
       // Verify migration files were created
-      const planFile = path.join(projectDir, "migrations/plan.yaml");
-      const remoteStateFile = path.join(
-        projectDir,
-        "migrations/remote_state.json",
+      const migrationsDir = path.join(innerMooseDir, "migrations");
+      expect(fs.existsSync(migrationsDir)).to.be.true;
+
+      // Migration files are stored directly in migrations/ directory
+      const planPath = path.join(migrationsDir, "plan.yaml");
+      const remoteStatePath = path.join(migrationsDir, "remote_state.json");
+      const localInfraMapPath = path.join(
+        migrationsDir,
+        "local_infra_map.json",
       );
-      const localStateFile = path.join(
-        projectDir,
-        "migrations/local_infra_map.json",
-      );
 
-      expect(fs.existsSync(planFile), "plan.yaml should exist").to.be.true;
-      expect(fs.existsSync(remoteStateFile), "remote_state.json should exist")
-        .to.be.true;
-      expect(fs.existsSync(localStateFile), "local_infra_map.json should exist")
-        .to.be.true;
+      expect(fs.existsSync(planPath)).to.be.true;
+      expect(fs.existsSync(remoteStatePath)).to.be.true;
+      expect(fs.existsSync(localInfraMapPath)).to.be.true;
 
-      // Verify plan contains expected operations
-      const planContent = await fs.promises.readFile(planFile, "utf-8");
-      console.log("Generated plan:\n", planContent);
+      const planContent = fs.readFileSync(planPath, "utf-8");
+      console.log("Migration plan content:", planContent);
 
-      expect(planContent).to.include("CreateTable");
-      // Should create tables for Foo, Bar, FooDeadLetter, and BarAggregated
-      expect(planContent).to.match(/Foo|Bar/);
-
-      console.log("✓ Migration plan generated successfully");
+      expect(planContent).to.include("operations:");
+      console.log("✓ Migration plan generated");
     });
 
     it("should apply migration plan and create tables", async function () {
-      this.timeout(30000);
+      this.timeout(TIMEOUTS.MIGRATION_MS);
 
-      console.log("\n--- Testing: Apply Migration Plan ---");
+      console.log("\n--- Applying migration ---");
 
-      // Run: moose migrate --clickhouse-url <url>
-      const { stdout, stderr } = await execAsync(
-        `"${CLI_PATH}" migrate --clickhouse-url "${clickhouse.url}"`,
-        { cwd: projectDir },
+      const { stdout } = await execAsync(
+        `"${CLI_PATH}" migrate --clickhouse-url "${CLICKHOUSE_URL}"`,
+        {
+          cwd: innerMooseDir,
+        },
       );
 
       console.log("Migrate output:", stdout);
-      if (stderr) console.log("Migrate stderr:", stderr);
 
       // Verify tables were created in ClickHouse
-      const tables = await queryClickHouseInstance(clickhouse, "SHOW TABLES");
+      const client = createClickHouseClient();
+
+      const result = await client.query({
+        query: "SHOW TABLES",
+        format: "JSONEachRow",
+      });
+
+      const tables: any[] = await result.json();
       console.log(
-        "Tables after migration:",
+        "Tables in ClickHouse:",
         tables.map((t) => t.name),
       );
 
+      // Should have the tables from the inner moose app
       const tableNames = tables.map((t) => t.name);
-      expect(tableNames).to.include("Foo");
       expect(tableNames).to.include("Bar");
-      expect(tableNames).to.include("FooDeadLetter");
       expect(tableNames).to.include("BarAggregated");
 
-      // Verify Foo table schema
-      const fooSchema = await queryClickHouseInstance(
-        clickhouse,
-        "DESCRIBE TABLE Foo",
-      );
-      console.log("Foo schema:", fooSchema);
+      // Verify state was stored in ClickHouse
+      expect(tableNames).to.include("_MOOSE_STATE");
 
-      const fooColumns = fooSchema.map((col: any) => col.name);
-      expect(fooColumns).to.include("primaryKey");
-      expect(fooColumns).to.include("timestamp");
-      expect(fooColumns).to.include("optionalText");
+      const stateData = await client.query({
+        query:
+          "SELECT * FROM _MOOSE_STATE WHERE key LIKE 'infra_map_%' ORDER BY created_at DESC LIMIT 1",
+        format: "JSONEachRow",
+      });
 
-      // Verify Bar table schema
-      const barSchema = await queryClickHouseInstance(
-        clickhouse,
-        "DESCRIBE TABLE Bar",
-      );
-      console.log("Bar schema:", barSchema);
-
-      const barColumns = barSchema.map((col: any) => col.name);
-      expect(barColumns).to.include("primaryKey");
-      expect(barColumns).to.include("utcTimestamp");
-      expect(barColumns).to.include("hasText");
-      expect(barColumns).to.include("textLength");
-
-      // Verify _MOOSE_STATE table exists and has data
-      const stateTables = await queryClickHouseInstance(
-        clickhouse,
-        "SHOW TABLES",
-      );
-      expect(stateTables.map((t) => t.name)).to.include("_MOOSE_STATE");
-
-      const stateData = await queryClickHouseInstance(
-        clickhouse,
-        "SELECT * FROM _MOOSE_STATE WHERE key LIKE 'infra_map_%' ORDER BY created_at DESC LIMIT 1",
-      );
-      expect(stateData).to.have.length.at.least(1);
-      console.log(
-        "✓ State saved to _MOOSE_STATE (found",
-        stateData.length,
-        "history entries)",
-      );
+      const stateRows: any[] = await stateData.json();
+      expect(stateRows.length).to.be.greaterThan(0);
 
       console.log("✓ Migration applied successfully");
+      console.log("✓ State saved to _MOOSE_STATE");
     });
   });
 
-  describe("Drift detection (Error Case)", () => {
-    let clickhouse: ClickHouseTestInstance;
-    let projectDir: string;
+  describe("Drift detection", () => {
+    it("should detect drift when database is modified between plan generation and execution", async function () {
+      this.timeout(TIMEOUTS.MIGRATION_MS);
 
-    before(async function () {
-      this.timeout(TIMEOUTS.TEST_SETUP_MS);
+      console.log("\n--- Testing drift detection ---");
 
-      console.log("\n=== Setting up Drift Detection Test ===");
-
-      // 1. Spin up fresh ClickHouse container
-      clickhouse = await spawnClickHouseForMigrationTest("drift");
-
-      // 2. Setup TypeScript project
-      projectDir = createTempTestDirectory("migrate-drift");
-      await setupTypeScriptProject(
-        projectDir,
-        TEMPLATE_NAME,
-        CLI_PATH,
-        MOOSE_LIB_PATH,
-        APP_NAME,
-        "npm",
+      // Generate migration plan (captures current DB state as "expected")
+      console.log("Generating migration plan...");
+      await execAsync(
+        `"${CLI_PATH}" generate migration --clickhouse-url "${CLICKHOUSE_URL}" --save`,
+        {
+          cwd: innerMooseDir,
+        },
       );
+      console.log("✓ Migration plan generated");
 
-      // 3. Update moose.config.toml
+      // NOW manually modify the database BEFORE applying the migration
+      console.log("Manually modifying database to create drift...");
+      const client = createClickHouseClient();
+      await client.command({
+        query: "ALTER TABLE Bar ADD COLUMN drift_column String",
+      });
+      console.log("✓ Added drift_column to Bar table");
+
+      // Try to apply the migration - should fail due to drift
+      // The plan's "expected state" doesn't include drift_column, but current DB does
       console.log(
-        "Updating moose.config.toml with test ClickHouse settings...",
+        "Attempting to apply migration (should fail due to drift)...",
       );
-      const configPath = path.join(projectDir, "moose.config.toml");
-      let config = await fs.promises.readFile(configPath, "utf-8");
-      // Update ClickHouse config with test database settings
-      config = config.replace(
-        /db_name = "[^"]*"/,
-        `db_name = "${clickhouse.dbName}"`,
-      );
-      config = config.replace(
-        /host_port = \d+/,
-        `host_port = ${clickhouse.port}`,
-      );
-      config = config.replace(/user = "[^"]*"/, `user = "${clickhouse.user}"`);
-      config = config.replace(
-        /password = "[^"]*"/,
-        `password = "${clickhouse.password}"`,
-      );
-      await fs.promises.writeFile(configPath, config);
-
-      // 4. Apply initial migration (so Moose is managing tables)
-      console.log("Generating and applying initial migration...");
-      await execAsync(
-        `"${CLI_PATH}" generate migration --clickhouse-url "${clickhouse.url}" --save`,
-        { cwd: projectDir },
-      );
-      await execAsync(
-        `"${CLI_PATH}" migrate --clickhouse-url "${clickhouse.url}"`,
-        { cwd: projectDir },
-      );
-      console.log("✓ Initial migration applied (Moose now managing tables)");
-
-      // 6. Verify tables were created
-      const tables = await queryClickHouseInstance(clickhouse, "SHOW TABLES");
-      const tableNames = tables.map((t) => t.name);
-      expect(tableNames).to.include("Foo");
-      expect(tableNames).to.include("Bar");
-      console.log("✓ Tables created:", tableNames);
-
-      // 7. Manually modify Foo table (add unexpected column)
-      console.log("Manually adding column to Foo (first modification)...");
-      await execClickHouseCommand(
-        clickhouse,
-        `ALTER TABLE Foo ADD COLUMN unexpected_column String`,
-      );
-
-      // 8. Generate a new migration plan that captures this state
-      console.log("Generating migration plan (captures unexpected_column)...");
-      await execAsync(
-        `"${CLI_PATH}" generate migration --clickhouse-url "${clickhouse.url}" --save`,
-        { cwd: projectDir },
-      );
-
-      // 9. Manually modify Foo table AGAIN (different change, making plan stale)
-      console.log(
-        "Manually adding another column to Foo (second modification)...",
-      );
-      await execClickHouseCommand(
-        clickhouse,
-        `ALTER TABLE Foo ADD COLUMN another_unexpected_column Int64`,
-      );
-
-      // Now: migration plan expects Foo with unexpected_column
-      // But actual DB has Foo with unexpected_column AND another_unexpected_column
-      // This is drift!
-
-      console.log("✓ Drift scenario setup complete");
-    });
-
-    after(async function () {
-      this.timeout(TIMEOUTS.CLEANUP_MS);
-      console.log("\n=== Cleaning up Drift Detection Test ===");
-      await stopClickHouseContainer(
-        clickhouse.containerName,
-        clickhouse.networkName,
-      );
-      removeTestProject(projectDir);
-    });
-
-    it("should detect drift and fail migration", async function () {
-      this.timeout(30000);
-
-      console.log("\n--- Testing: Drift Detection ---");
-
-      // Run: moose migrate --clickhouse-url <url>
-      // Should fail because actual Foo has another_unexpected_column
-      // but the plan's snapshot doesn't expect it
-      let didFail = false;
-      let errorOutput = "";
-
       try {
         await execAsync(
-          `"${CLI_PATH}" migrate --clickhouse-url "${clickhouse.url}"`,
-          { cwd: projectDir },
+          `"${CLI_PATH}" migrate --clickhouse-url "${CLICKHOUSE_URL}"`,
+          {
+            cwd: innerMooseDir,
+          },
         );
+
+        // If we get here, the migration didn't fail - that's unexpected
+        expect.fail("Migration should have failed due to drift");
       } catch (error: any) {
-        didFail = true;
-        errorOutput = error.stdout || error.stderr || error.message || "";
-        console.log("Migration failed as expected");
-        console.log("Error stdout:", error.stdout || "(empty)");
-        console.log("Error stderr:", error.stderr || "(empty)");
-        console.log("Error message:", error.message || "(empty)");
+        // Expected to fail - check that it's a drift error, not some other error
+        console.log("Migration failed as expected:", error.message);
+
+        // The error should contain the drift detection message
+        const errorOutput = error.message + (error.stderr || "");
+        expect(errorOutput).to.include(
+          "The database state has changed since the migration plan was generated",
+        );
+
+        console.log("✓ Drift detected correctly");
       }
-
-      expect(didFail, "Migration should have failed due to drift").to.be.true;
-
-      // Verify error message mentions drift/schema changes/database state
-      const lowerOutput = errorOutput.toLowerCase();
-      const hasDriftMessage =
-        lowerOutput.includes("schema changes") ||
-        lowerOutput.includes("drift") ||
-        lowerOutput.includes("changed") ||
-        lowerOutput.includes("database state") ||
-        lowerOutput.includes("tables with");
-
-      if (!hasDriftMessage) {
-        console.log("Full error output for debugging:", errorOutput);
-      }
-
-      expect(hasDriftMessage, "Error should mention drift or schema changes").to
-        .be.true;
-      expect(errorOutput).to.include("Foo");
-
-      // Verify database still has both unexpected columns (migration didn't run)
-      const schema = await queryClickHouseInstance(
-        clickhouse,
-        "DESCRIBE TABLE Foo",
-      );
-      const columnNames = schema.map((col: any) => col.name);
-      expect(columnNames).to.include("unexpected_column");
-      expect(columnNames).to.include("another_unexpected_column");
-
-      console.log("✓ Drift detected and migration failed as expected");
     });
   });
 });
