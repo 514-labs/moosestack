@@ -1,6 +1,6 @@
 use crate::framework::core::infrastructure::table::{
     Column, ColumnMetadata, ColumnType, DataEnum, EnumMemberMetadata, EnumMetadata, EnumValue,
-    EnumValueMetadata, FloatType, IntType, Table, METADATA_PREFIX, METADATA_VERSION,
+    EnumValueMetadata, FloatType, IntType, JsonOptions, Table, METADATA_PREFIX, METADATA_VERSION,
 };
 use serde_json::Value;
 
@@ -250,10 +250,19 @@ fn std_field_type_to_clickhouse_type_mapper(
             type_name: "BigInt".to_string(),
         }),
         ColumnType::Json(opts) => {
-            let ch_opts = opts.convert_inner_types(|ty| {
-                std_field_type_to_clickhouse_type_mapper(ty, &[])
-                    .expect("JSON typed path conversion should not fail")
-            });
+            let ch_opts =
+                opts.convert_inner_types(|ty| std_field_type_to_clickhouse_type_mapper(ty, &[]));
+            let ch_opts: JsonOptions<ClickHouseColumnType> = JsonOptions {
+                typed_paths: ch_opts
+                    .typed_paths
+                    .into_iter()
+                    .map(|(path, t)| t.map(|inner| (path, inner)))
+                    .collect::<Result<Vec<_>, _>>()?,
+                max_dynamic_paths: ch_opts.max_dynamic_paths,
+                max_dynamic_types: ch_opts.max_dynamic_types,
+                skip_paths: ch_opts.skip_paths,
+                skip_regexps: ch_opts.skip_regexps,
+            };
             Ok(ClickHouseColumnType::Json(ch_opts))
         }
         ColumnType::Bytes => Err(ClickhouseError::UnsupportedDataType {
