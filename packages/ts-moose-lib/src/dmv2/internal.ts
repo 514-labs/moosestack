@@ -585,7 +585,7 @@ export const toInfraMap = (registry: typeof moose_internal) => {
       indexes:
         table.config.indexes?.map((i) => ({
           ...i,
-          granularity: i.granularity == undefined ? 1 : i.granularity,
+          granularity: i.granularity === undefined ? 1 : i.granularity,
           arguments: i.arguments === undefined ? [] : i.arguments,
         })) || [],
       ttl: table.config.ttl,
