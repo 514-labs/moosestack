@@ -330,6 +330,7 @@ fn generate_json_inner_model(
     let mut model = String::new();
     writeln!(model, "class {name}(BaseModel):").unwrap();
     writeln!(model, "    model_config = ConfigDict(extra='allow')").unwrap();
+    writeln!(model).unwrap();
 
     for (field_name, field_type) in &opts.typed_paths {
         let type_str =

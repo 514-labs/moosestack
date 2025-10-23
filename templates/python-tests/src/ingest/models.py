@@ -220,11 +220,12 @@ class EdgeCases(BaseModel):
 
 # =======JSON Types Test=========
 class JsonInner(BaseModel):
+    model_config = ConfigDict(extra='allow')
+
     name: str
     count: int
 
 class JsonTest(BaseModel):
-    model_config = ConfigDict(extra='allow')
     id: Key[str]
     timestamp: datetime
     # Test JSON with full configuration (max_dynamic_paths, max_dynamic_types, skip_paths, skip_regexps)
