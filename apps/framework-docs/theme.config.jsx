@@ -13,7 +13,7 @@ import {
   BreadcrumbSeparator,
 } from "@/components/ui/breadcrumb";
 import { useRouter } from "next/router";
-import { useConfig } from "nextra-theme-docs";
+import { useConfig, useThemeConfig } from "nextra-theme-docs";
 import { PathConfig } from "./src/components/ctas";
 import { GitHubStarsButton } from "@/components";
 
@@ -25,6 +25,85 @@ const baseTextStyles = {
     "text-primary text-base sm:text-lg 2xl:text-xl 3xl:text-2xl leading-normal",
   heading: "text-primary font-semibold",
 };
+
+function buildLlmHref(asPath, suffix) {
+  if (!suffix) {
+    return "/";
+  }
+
+  const safePath = asPath || "/";
+
+  const pathWithoutHash = safePath.split("#")[0];
+  const pathWithoutQuery = pathWithoutHash.split("?")[0];
+
+  if (!pathWithoutQuery || pathWithoutQuery === "/") {
+    return `/${suffix}`;
+  }
+
+  const trimmedPath =
+    pathWithoutQuery.endsWith("/") ?
+      pathWithoutQuery.slice(0, -1)
+    : pathWithoutQuery;
+
+  return `${trimmedPath}/${suffix}`;
+}
+
+function EditLinks({ filePath, href, className, children }) {
+  const { pageOpts } = useConfig();
+  const { docsRepositoryBase } = useThemeConfig();
+  const { asPath } = useRouter();
+
+  const resolvedFilePath = filePath || pageOpts?.filePath;
+
+  const cleanedRepoBase =
+    docsRepositoryBase && docsRepositoryBase.endsWith("/") ?
+      docsRepositoryBase.slice(0, -1)
+    : docsRepositoryBase;
+
+  const editHref =
+    href ||
+    (cleanedRepoBase && resolvedFilePath ?
+      `${cleanedRepoBase}/${resolvedFilePath}`
+    : undefined);
+
+  const tsHref = buildLlmHref(asPath, "llm-ts.txt");
+  const pyHref = buildLlmHref(asPath, "llm-py.txt");
+
+  return (
+    <div className="flex flex-col items-start gap-2">
+      {editHref ?
+        <a
+          href={editHref}
+          className={className}
+          target="_blank"
+          rel="noreferrer noopener"
+        >
+          {children}
+        </a>
+      : <span className={className}>{children}</span>}
+      <span className={className}>
+        LLM docs:{" "}
+        <a
+          href={tsHref}
+          className={className}
+          target="_blank"
+          rel="noreferrer noopener"
+        >
+          TS
+        </a>{" "}
+        /{" "}
+        <a
+          href={pyHref}
+          className={className}
+          target="_blank"
+          rel="noreferrer noopener"
+        >
+          PY
+        </a>
+      </span>
+    </div>
+  );
+}
 
 export function Logo() {
   return (
@@ -175,6 +254,10 @@ export default {
   navigation: {
     prev: true,
     next: true,
+  },
+  editLink: {
+    component: EditLinks,
+    content: "Edit this page",
   },
   components: {
     // Heading components with stable rendering
