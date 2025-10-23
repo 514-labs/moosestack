@@ -46,9 +46,11 @@ function buildLlmHref(asPath, suffix) {
   return `${trimmedPath}/${suffix}`;
 }
 
-function EditLinks({ filePath, className, children }) {
-  const { docsRepositoryBase } = useConfig();
+function EditLinks({ filePath, href, className, children }) {
+  const { docsRepositoryBase, pageOpts } = useConfig();
   const { asPath } = useRouter();
+
+  const resolvedFilePath = filePath || pageOpts?.filePath;
 
   const cleanedRepoBase =
     docsRepositoryBase && docsRepositoryBase.endsWith("/") ?
@@ -56,7 +58,10 @@ function EditLinks({ filePath, className, children }) {
     : docsRepositoryBase;
 
   const editHref =
-    cleanedRepoBase && filePath ? `${cleanedRepoBase}/${filePath}` : undefined;
+    href ||
+    (cleanedRepoBase && resolvedFilePath ?
+      `${cleanedRepoBase}/${resolvedFilePath}`
+    : undefined);
 
   const tsHref = buildLlmHref(asPath, "llm-ts.txt");
   const pyHref = buildLlmHref(asPath, "llm-py.txt");
