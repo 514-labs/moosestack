@@ -299,6 +299,26 @@ message Map {
   ColumnType value_type = 2;
 }
 
+// JSON type with optional settings
+message JsonTypedPath {
+  // JSON path like "a.b[0].c"
+  string path = 1;
+  // Concrete type for the value at the path
+  ColumnType type = 2;
+}
+
+message Json {
+  // Limits for dynamic discovery
+  optional uint64 max_dynamic_paths = 1;
+  optional uint64 max_dynamic_types = 2;
+  // List of typed paths (path, type)
+  repeated JsonTypedPath typed_paths = 3;
+  // Paths to skip during ingestion
+  repeated string skip_paths = 4;
+  // Regex patterns of paths to skip
+  repeated string skip_regexps = 5;
+}
+
 // TODO: nullable not being a type, relying on `bool required`
 // is causing some mess e.g. the special case array_of_nullable
 message ColumnType {
@@ -312,6 +332,9 @@ message ColumnType {
     Tuple tuple = 6;
     ColumnType nullable = 7;
     Map map = 8;
+
+    // JSON with settings (non-breaking addition). Keep legacy `simple = JSON_COLUMN` for back-compat.
+    Json json = 9;
 
     DateType date_time = 12;
     Decimal decimal = 13;

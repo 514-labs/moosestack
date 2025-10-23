@@ -1,5 +1,5 @@
 use crate::framework::core::infrastructure::table::{
-    ColumnType, DataEnum, EnumValue, FloatType, IntType, Nested, OrderBy, Table,
+    ColumnType, DataEnum, EnumValue, FloatType, IntType, JsonOptions, Nested, OrderBy, Table,
 };
 use crate::framework::core::partial_infrastructure_map::LifeCycle;
 use crate::utilities::identifiers as ident;
@@ -54,6 +54,7 @@ fn map_column_type_to_python(
     enums: &HashMap<&DataEnum, String>,
     nested: &HashMap<&Nested, String>,
     named_tuples: &HashMap<&Vec<(String, ColumnType)>, String>,
+    json_types: &HashMap<&JsonOptions, String>,
 ) -> String {
     match column_type {
         ColumnType::String => "str".to_string(),
@@ -91,7 +92,8 @@ fn map_column_type_to_python(
             element_type,
             element_nullable,
         } => {
-            let inner_type = map_column_type_to_python(element_type, enums, nested, named_tuples);
+            let inner_type =
+                map_column_type_to_python(element_type, enums, nested, named_tuples, json_types);
             let inner_type = if *element_nullable {
                 format!("Optional[{inner_type}]")
             } else {
@@ -104,13 +106,53 @@ fn map_column_type_to_python(
             let class_name = named_tuples.get(fields).unwrap();
             format!("Annotated[{class_name}, \"ClickHouseNamedTuple\"]")
         }
-        ColumnType::Json => "Any".to_string(),
+        ColumnType::Json(opts) => {
+            if opts.typed_paths.is_empty() {
+                "Any".to_string()
+            } else {
+                let class_name = json_types.get(opts).unwrap();
+                let mut parts = Vec::new();
+                if let Some(n) = opts.max_dynamic_paths {
+                    parts.push(format!("max_dynamic_paths={n}"));
+                }
+                if let Some(n) = opts.max_dynamic_types {
+                    parts.push(format!("max_dynamic_types={n}"));
+                }
+                if !opts.skip_paths.is_empty() {
+                    let paths = opts
+                        .skip_paths
+                        .iter()
+                        .map(|p| format!("{:?}", p))
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    parts.push(format!("skip_paths=({},)", paths));
+                }
+                if !opts.skip_regexps.is_empty() {
+                    let regexps = opts
+                        .skip_regexps
+                        .iter()
+                        .map(|r| format!("r{:?}", r))
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    parts.push(format!("skip_regexps=({},)", regexps));
+                }
+                if parts.is_empty() {
+                    format!("Annotated[{class_name}, ClickHouseJson()]")
+                } else {
+                    format!(
+                        "Annotated[{class_name}, ClickHouseJson({})]",
+                        parts.join(", ")
+                    )
+                }
+            }
+        }
         ColumnType::Bytes => "bytes".to_string(),
         ColumnType::Uuid => "UUID".to_string(),
         ColumnType::IpV4 => "ipaddress.IPv4Address".to_string(),
         ColumnType::IpV6 => "ipaddress.IPv6Address".to_string(),
         ColumnType::Nullable(inner) => {
-            let inner_type = map_column_type_to_python(inner, enums, nested, named_tuples);
+            let inner_type =
+                map_column_type_to_python(inner, enums, nested, named_tuples, json_types);
             format!("Optional[{inner_type}]")
         }
         ColumnType::Point => "Point".to_string(),
@@ -123,8 +165,10 @@ fn map_column_type_to_python(
             key_type,
             value_type,
         } => {
-            let key_type_str = map_column_type_to_python(key_type, enums, nested, named_tuples);
-            let value_type_str = map_column_type_to_python(value_type, enums, nested, named_tuples);
+            let key_type_str =
+                map_column_type_to_python(key_type, enums, nested, named_tuples, json_types);
+            let value_type_str =
+                map_column_type_to_python(value_type, enums, nested, named_tuples, json_types);
             format!("dict[{key_type_str}, {value_type_str}]")
         }
     }
@@ -227,13 +271,19 @@ fn generate_nested_model(
     enums: &HashMap<&DataEnum, String>,
     nested_models: &HashMap<&Nested, String>,
     named_tuples: &HashMap<&Vec<(String, ColumnType)>, String>,
+    json_types: &HashMap<&JsonOptions, String>,
 ) -> String {
     let mut model = String::new();
     writeln!(model, "class {name}(BaseModel):").unwrap();
 
     for column in &nested.columns {
-        let type_str =
-            map_column_type_to_python(&column.data_type, enums, nested_models, named_tuples);
+        let type_str = map_column_type_to_python(
+            &column.data_type,
+            enums,
+            nested_models,
+            named_tuples,
+            json_types,
+        );
 
         let type_str = if !column.required {
             format!("Optional[{type_str}]")
@@ -255,12 +305,36 @@ fn generate_named_tuple_model(
     enums: &HashMap<&DataEnum, String>,
     nested_models: &HashMap<&Nested, String>,
     named_tuples: &HashMap<&Vec<(String, ColumnType)>, String>,
+    json_types: &HashMap<&JsonOptions, String>,
 ) -> String {
     let mut model = String::new();
     writeln!(model, "class {name}(BaseModel):").unwrap();
 
     for (field_name, field_type) in fields {
-        let type_str = map_column_type_to_python(field_type, enums, nested_models, named_tuples);
+        let type_str =
+            map_column_type_to_python(field_type, enums, nested_models, named_tuples, json_types);
+        writeln!(model, "    {field_name}: {type_str}").unwrap();
+    }
+    writeln!(model).unwrap();
+    model
+}
+
+fn generate_json_inner_model(
+    opts: &JsonOptions,
+    name: &str,
+    enums: &HashMap<&DataEnum, String>,
+    nested_models: &HashMap<&Nested, String>,
+    named_tuples: &HashMap<&Vec<(String, ColumnType)>, String>,
+    json_types: &HashMap<&JsonOptions, String>,
+) -> String {
+    let mut model = String::new();
+    writeln!(model, "class {name}(BaseModel):").unwrap();
+    writeln!(model, "    model_config = ConfigDict(extra='allow')").unwrap();
+    writeln!(model).unwrap();
+
+    for (field_name, field_type) in &opts.typed_paths {
+        let type_str =
+            map_column_type_to_python(field_type, enums, nested_models, named_tuples, json_types);
         writeln!(model, "    {field_name}: {type_str}").unwrap();
     }
     writeln!(model).unwrap();
@@ -274,6 +348,7 @@ fn collect_types<'a>(
     extra_class_names: &mut HashMap<String, usize>,
     nested_models: &mut HashMap<&'a Nested, String>,
     named_tuples: &mut HashMap<&'a Vec<(String, ColumnType)>, String>,
+    json_types: &mut HashMap<&'a JsonOptions, String>,
 ) {
     match column_type {
         ColumnType::Enum(data_enum) => {
@@ -324,6 +399,22 @@ fn collect_types<'a>(
                 named_tuples.insert(fields, name);
             }
         }
+        ColumnType::Json(opts) => {
+            if !opts.typed_paths.is_empty() && !json_types.contains_key(opts) {
+                let name = format!("{}Json", map_to_python_class_name(name));
+                let name = match extra_class_names.entry(name.clone()) {
+                    Entry::Occupied(mut entry) => {
+                        *entry.get_mut() = entry.get() + 1;
+                        format!("{}{}", name, entry.get())
+                    }
+                    Entry::Vacant(entry) => {
+                        entry.insert(0);
+                        name
+                    }
+                };
+                json_types.insert(opts, name);
+            }
+        }
         ColumnType::Array {
             element_type,
             element_nullable: _,
@@ -334,6 +425,7 @@ fn collect_types<'a>(
             extra_class_names,
             nested_models,
             named_tuples,
+            json_types,
         ),
         _ => {}
     }
@@ -352,7 +444,7 @@ pub fn tables_to_python(tables: &[Table], life_cycle: Option<LifeCycle>) -> Stri
     });
 
     // Add imports
-    writeln!(output, "from pydantic import BaseModel, Field").unwrap();
+    writeln!(output, "from pydantic import BaseModel, Field, ConfigDict").unwrap();
     writeln!(output, "from typing import Optional, Any, Annotated").unwrap();
     writeln!(output, "import datetime").unwrap();
     writeln!(output, "import ipaddress").unwrap();
@@ -381,6 +473,7 @@ pub fn tables_to_python(tables: &[Table], life_cycle: Option<LifeCycle>) -> Stri
         moose_lib_imports.join(", ")
     )
     .unwrap();
+    writeln!(output, "from moose_lib.data_models import ClickHouseJson").unwrap();
     writeln!(
         output,
         "from moose_lib import Point, Ring, LineString, MultiLineString, Polygon, MultiPolygon"
@@ -398,13 +491,14 @@ pub fn tables_to_python(tables: &[Table], life_cycle: Option<LifeCycle>) -> Stri
     .unwrap();
     writeln!(output).unwrap();
 
-    // Collect all enums, nested types, and named tuples
+    // Collect all enums, nested types, named tuples, and json types
     let mut enums: HashMap<&DataEnum, String> = HashMap::new();
     let mut extra_class_names: HashMap<String, usize> = HashMap::new();
     let mut nested_models: HashMap<&Nested, String> = HashMap::new();
     let mut named_tuples: HashMap<&Vec<(String, ColumnType)>, String> = HashMap::new();
+    let mut json_types: HashMap<&JsonOptions, String> = HashMap::new();
 
-    // First pass: collect all nested types, enums, and named tuples
+    // First pass: collect all nested types, enums, named tuples, and json types
     for table in tables {
         for column in &table.columns {
             collect_types(
@@ -414,6 +508,7 @@ pub fn tables_to_python(tables: &[Table], life_cycle: Option<LifeCycle>) -> Stri
                 &mut extra_class_names,
                 &mut nested_models,
                 &mut named_tuples,
+                &mut json_types,
             );
         }
     }
@@ -431,6 +526,19 @@ pub fn tables_to_python(tables: &[Table], life_cycle: Option<LifeCycle>) -> Stri
             &enums,
             &nested_models,
             &named_tuples,
+            &json_types,
+        ));
+    }
+
+    // Generate JSON inner model classes
+    for (opts, name) in json_types.iter() {
+        output.push_str(&generate_json_inner_model(
+            opts,
+            name,
+            &enums,
+            &nested_models,
+            &named_tuples,
+            &json_types,
         ));
     }
 
@@ -442,6 +550,7 @@ pub fn tables_to_python(tables: &[Table], life_cycle: Option<LifeCycle>) -> Stri
             &enums,
             &nested_models,
             &named_tuples,
+            &json_types,
         ));
     }
 
@@ -463,8 +572,13 @@ pub fn tables_to_python(tables: &[Table], life_cycle: Option<LifeCycle>) -> Stri
         let can_use_key_wrapping = table.order_by.starts_with_fields(&primary_key);
 
         for column in &table.columns {
-            let type_str =
-                map_column_type_to_python(&column.data_type, &enums, &nested_models, &named_tuples);
+            let type_str = map_column_type_to_python(
+                &column.data_type,
+                &enums,
+                &nested_models,
+                &named_tuples,
+                &json_types,
+            );
 
             let mut type_str = if !column.required {
                 format!("Optional[{type_str}]")
@@ -784,13 +898,14 @@ mod tests {
         let result = tables_to_python(&tables, None);
 
         assert!(result.contains(
-            r#"from pydantic import BaseModel, Field
+            r#"from pydantic import BaseModel, Field, ConfigDict
 from typing import Optional, Any, Annotated
 import datetime
 import ipaddress
 from uuid import UUID
 from enum import IntEnum, Enum
 from moose_lib import Key, IngestPipeline, IngestPipelineConfig, OlapTable, OlapConfig, clickhouse_datetime64, clickhouse_decimal, ClickhouseSize, StringToEnumMixin
+from moose_lib.data_models import ClickHouseJson
 from moose_lib import Point, Ring, LineString, MultiLineString, Polygon, MultiPolygon
 from moose_lib import clickhouse_default, LifeCycle, ClickHouseTTL
 from moose_lib.blocks import MergeTreeEngine, ReplacingMergeTreeEngine, AggregatingMergeTreeEngine, SummingMergeTreeEngine, S3QueueEngine, ReplicatedMergeTreeEngine, ReplicatedReplacingMergeTreeEngine, ReplicatedAggregatingMergeTreeEngine, ReplicatedSummingMergeTreeEngine
@@ -1410,5 +1525,79 @@ user_table = OlapTable[User]("User", OlapConfig(
         assert!(result.contains("granularity=3"));
         assert!(result.contains("name=\"idx2\""));
         assert!(result.contains("arguments=[\"2\", \"256\", \"1\", \"123\"]"));
+    }
+
+    #[test]
+    fn test_json_with_typed_paths() {
+        let tables = vec![Table {
+            name: "JsonTest".to_string(),
+            columns: vec![
+                Column {
+                    name: "id".to_string(),
+                    data_type: ColumnType::String,
+                    required: true,
+                    unique: false,
+                    primary_key: true,
+                    default: None,
+                    annotations: vec![],
+                    comment: None,
+                    ttl: None,
+                },
+                Column {
+                    name: "payload".to_string(),
+                    data_type: ColumnType::Json(JsonOptions {
+                        max_dynamic_paths: Some(256),
+                        max_dynamic_types: Some(16),
+                        typed_paths: vec![
+                            ("name".to_string(), ColumnType::String),
+                            ("count".to_string(), ColumnType::Int(IntType::Int64)),
+                        ],
+                        skip_paths: vec!["skip.me".to_string()],
+                        skip_regexps: vec!["^tmp\\.".to_string()],
+                    }),
+                    required: true,
+                    unique: false,
+                    primary_key: false,
+                    default: None,
+                    annotations: vec![],
+                    comment: None,
+                    ttl: None,
+                },
+            ],
+            order_by: OrderBy::Fields(vec!["id".to_string()]),
+            partition_by: None,
+            sample_by: None,
+            engine: Some(ClickhouseEngine::MergeTree),
+            version: None,
+            source_primitive: PrimitiveSignature {
+                name: "JsonTest".to_string(),
+                primitive_type: PrimitiveTypes::DataModel,
+            },
+            metadata: None,
+            life_cycle: LifeCycle::FullyManaged,
+            engine_params_hash: None,
+            table_settings: None,
+            indexes: vec![],
+            table_ttl_setting: None,
+        }];
+
+        let result = tables_to_python(&tables, None);
+        println!("{}", result);
+
+        // Check for JSON inner model generation
+        assert!(result.contains("class PayloadJson(BaseModel):"));
+        assert!(result.contains("model_config = ConfigDict(extra='allow')"));
+        assert!(result.contains("name: str"));
+        assert!(result.contains("count: Annotated[int, \"int64\"]"));
+
+        // Check for ClickHouseJson import
+        assert!(result.contains("from moose_lib.data_models import ClickHouseJson"));
+
+        // Check that the main table uses the JSON type correctly
+        assert!(result.contains("payload: Annotated[PayloadJson, ClickHouseJson("));
+        assert!(result.contains("max_dynamic_paths=256"));
+        assert!(result.contains("max_dynamic_types=16"));
+        assert!(result.contains("skip_paths=(\"skip.me\",)"));
+        assert!(result.contains("skip_regexps=(r\"^tmp\\\\.\",)"));
     }
 }

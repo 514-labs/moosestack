@@ -31,6 +31,7 @@ pub struct DependencyInfo {
 /// Represents atomic DDL operations for OLAP resources.
 /// These are the smallest operational units that can be executed.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[allow(clippy::large_enum_variant)]
 pub enum AtomicOlapOperation {
     /// Create a new table
     CreateTable {

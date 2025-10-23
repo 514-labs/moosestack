@@ -40,6 +40,14 @@ class ClickHouseTTL:
     expression: str
 
 
+@dataclasses.dataclass(frozen=True)
+class ClickHouseJson:
+    max_dynamic_paths: int | None = None
+    max_dynamic_types: int | None = None
+    skip_paths: tuple[str, ...] = ()
+    skip_regexps: tuple[str, ...] = ()
+
+
 def clickhouse_decimal(precision: int, scale: int) -> Type[Decimal]:
     return Annotated[Decimal, Field(max_digits=precision, decimal_places=scale)]
 
@@ -160,7 +168,15 @@ class MapType(BaseModel):
     value_type: "DataType"
 
 
-type DataType = str | DataEnum | ArrayType | Nested | NamedTupleType | MapType
+class JsonOptions(BaseModel):
+    max_dynamic_paths: int | None = None
+    max_dynamic_types: int | None = None
+    typed_paths: list[tuple[str, "DataType"]] = []
+    skip_paths: list[str] = []
+    skip_regexps: list[str] = []
+
+
+type DataType = str | DataEnum | ArrayType | Nested | NamedTupleType | MapType | JsonOptions
 
 
 def handle_jwt(field_type: type) -> Tuple[bool, type]:
@@ -244,8 +260,8 @@ def _validate_geometry_type(requested: str, t: type) -> None:
                 )
         case "MultiPolygon":
             if not _is_list_of(
-                lambda x: _is_list_of(lambda y: _is_list_of(_is_point_type, y), x),
-                t,
+                    lambda x: _is_list_of(lambda y: _is_list_of(_is_point_type, y), x),
+                    t,
             ):
                 raise ValueError(
                     "MultiPolygon must be typed as list[list[list[tuple[float, float]]]]"
@@ -314,7 +330,7 @@ def py_type_to_column_type(t: type, mds: list[Any]) -> Tuple[bool, list[Any], Da
         data_type = "IPv4"
     elif t is ipaddress.IPv6Address:
         data_type = "IPv6"
-    elif any(md in [ # this check has to happen before t is matched against tuple/list
+    elif any(md in [  # this check has to happen before t is matched against tuple/list
         "Point",
         "Ring",
         "LineString",
@@ -347,6 +363,45 @@ def py_type_to_column_type(t: type, mds: list[Any]) -> Tuple[bool, list[Any], Da
         data_type = "UUID"
     elif t is Any:
         data_type = "Json"
+    elif any(isinstance(md, ClickHouseJson) for md in mds) and issubclass(t, BaseModel):
+        # Annotated[SomePydanticClass, ClickHouseJson(...)]
+        columns = _to_columns(t)
+        for c in columns:
+            if c.default is not None:
+                raise ValueError(
+                    "Default in inner field. Put ClickHouseDefault in top level field."
+                )
+        # Enforce extra='allow' for JSON-mapped models
+        if t.model_config.get('extra') != 'allow':
+            raise ValueError(
+                f"Model {t.__name__} with ClickHouseJson must have model_config with extra='allow'. "
+                "Add: model_config = ConfigDict(extra='allow')"
+            )
+        opts = next(md for md in mds if isinstance(md, ClickHouseJson))
+
+        # Build typed_paths from fields as tuples of (name, type)
+        typed_paths: list[tuple[str, DataType]] = []
+        for c in columns:
+            typed_paths.append((c.name, c.data_type))
+
+        has_any_option = (
+                opts.max_dynamic_paths is not None or
+                opts.max_dynamic_types is not None or
+                len(typed_paths) > 0 or
+                len(opts.skip_paths) > 0 or
+                len(opts.skip_regexps) > 0
+        )
+
+        if not has_any_option:
+            data_type = "Json"
+        else:
+            data_type = JsonOptions(
+                max_dynamic_paths=opts.max_dynamic_paths,
+                max_dynamic_types=opts.max_dynamic_types,
+                typed_paths=typed_paths,
+                skip_paths=list(opts.skip_paths),
+                skip_regexps=list(opts.skip_regexps),
+            )
     elif get_origin(t) is Literal and all(isinstance(arg, str) for arg in get_args(t)):
         data_type = "String"
         mds.append("LowCardinality")

@@ -58,6 +58,95 @@ pub struct ColumnMetadata {
     // Future fields can be added here with #[serde(skip_serializing_if = "Option::is_none")]
 }
 
+#[derive(Debug, Clone, Eq, PartialEq, Hash, Serialize, Deserialize)]
+pub struct JsonOptions<T = ColumnType> {
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub max_dynamic_paths: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub max_dynamic_types: Option<u64>,
+    #[serde(default)]
+    pub typed_paths: Vec<(String, T)>,
+    #[serde(default)]
+    pub skip_paths: Vec<String>,
+    #[serde(default)]
+    pub skip_regexps: Vec<String>,
+}
+
+impl<T> Default for JsonOptions<T> {
+    fn default() -> Self {
+        JsonOptions {
+            max_dynamic_paths: None,
+            max_dynamic_types: None,
+            typed_paths: Vec::new(),
+            skip_paths: Vec::new(),
+            skip_regexps: Vec::new(),
+        }
+    }
+}
+
+impl<T> JsonOptions<T> {
+    pub fn is_empty(&self) -> bool {
+        self.max_dynamic_paths.is_none()
+            && self.max_dynamic_types.is_none()
+            && self.typed_paths.is_empty()
+            && self.skip_paths.is_empty()
+            && self.skip_regexps.is_empty()
+    }
+
+    pub fn to_option_strings_with_type_convert<F, E>(
+        &self,
+        type_converter: F,
+    ) -> Result<Vec<String>, E>
+    where
+        F: Fn(&T) -> Result<String, E>,
+    {
+        let mut parts: Vec<String> = Vec::new();
+        if let Some(n) = self.max_dynamic_paths {
+            parts.push(format!("max_dynamic_paths={}", n));
+        }
+        if let Some(n) = self.max_dynamic_types {
+            parts.push(format!("max_dynamic_types={}", n));
+        }
+        for (path, ty) in &self.typed_paths {
+            let ty_str = type_converter(ty)?;
+            parts.push(format!("{} {}", path, ty_str));
+        }
+        for path in &self.skip_paths {
+            parts.push(format!("SKIP {}", path));
+        }
+        for re in &self.skip_regexps {
+            parts.push(format!("SKIP REGEXP '{}'", re.replace('\'', "\\'")));
+        }
+        Ok(parts)
+    }
+
+    pub fn convert_inner_types<U, F>(self, mut f: F) -> JsonOptions<U>
+    where
+        F: FnMut(T) -> U,
+    {
+        JsonOptions {
+            max_dynamic_paths: self.max_dynamic_paths,
+            max_dynamic_types: self.max_dynamic_types,
+            typed_paths: self
+                .typed_paths
+                .into_iter()
+                .map(|(path, ty)| (path, f(ty)))
+                .collect(),
+            skip_paths: self.skip_paths,
+            skip_regexps: self.skip_regexps,
+        }
+    }
+}
+
+impl<T: std::fmt::Display> JsonOptions<T> {
+    pub fn to_option_strings(&self) -> Vec<String> {
+        self.to_option_strings_with_type_convert::<_, std::convert::Infallible>(|ty| {
+            Ok(ty.to_string())
+        })
+        .unwrap()
+    }
+}
+
 /// Metadata for an enum type
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct EnumMetadata {
@@ -503,8 +592,8 @@ pub enum ColumnType {
         value_type: Box<ColumnType>,
     },
     Nested(Nested),
-    Json,  // TODO: Eventually support for only views and tables (not topics)
-    Bytes, // TODO: Explore if we ever need this type
+    Json(JsonOptions), // TODO: Eventually support for only views and tables (not topics)
+    Bytes,             // TODO: Explore if we ever need this type
     Uuid,
     IpV4,
     IpV6,
@@ -538,7 +627,14 @@ impl fmt::Display for ColumnType {
                 element_nullable: _,
             } => write!(f, "Array<{inner}>"),
             ColumnType::Nested(n) => write!(f, "Nested<{}>", n.name),
-            ColumnType::Json => write!(f, "Json"),
+            ColumnType::Json(opts) => {
+                if opts.is_empty() {
+                    write!(f, "Json")
+                } else {
+                    let parts = opts.to_option_strings();
+                    write!(f, "Json({})", parts.join(", "))
+                }
+            }
             ColumnType::Bytes => write!(f, "Bytes"),
             ColumnType::Uuid => write!(f, "UUID"),
             ColumnType::Date => write!(f, "Date"),
@@ -604,7 +700,7 @@ impl Serialize for ColumnType {
                 state.serialize_field("jwt", &nested.jwt)?;
                 state.end()
             }
-            ColumnType::Json => serializer.serialize_str("Json"),
+            ColumnType::Json(opts) => opts.serialize(serializer),
             ColumnType::Bytes => serializer.serialize_str("Bytes"),
             ColumnType::Uuid => serializer.serialize_str("UUID"),
             ColumnType::Date => serializer.serialize_str("Date"),
@@ -674,7 +770,7 @@ impl<'de> Visitor<'de> for ColumnTypeVisitor {
     type Value = ColumnType;
 
     fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-        formatter.write_str("a string or an object for Enum/Array/Nested")
+        formatter.write_str("a string or an object for Enum/Array/Nested/Json")
     }
 
     fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
@@ -757,7 +853,7 @@ impl<'de> Visitor<'de> for ColumnTypeVisitor {
         } else if v == "Date16" {
             ColumnType::Date16
         } else if v == "Json" {
-            ColumnType::Json
+            ColumnType::Json(JsonOptions::default())
         } else if v == "Bytes" {
             ColumnType::Bytes
         } else if v == "UUID" {
@@ -799,6 +895,13 @@ impl<'de> Visitor<'de> for ColumnTypeVisitor {
         let mut element_nullable = None;
         let mut key_type = None;
         let mut value_type = None;
+        // Json options support
+        let mut json_max_dynamic_paths: Option<u64> = None;
+        let mut json_max_dynamic_types: Option<u64> = None;
+        let mut json_typed_paths: Option<Vec<(String, ColumnType)>> = None;
+        let mut json_skip_paths: Option<Vec<String>> = None;
+        let mut json_skip_regexps: Option<Vec<String>> = None;
+        let mut seen_json_options = false;
         while let Some(key) = map.next_key::<String>()? {
             if key == "elementType" || key == "element_type" {
                 element_type = Some(map.next_value::<ColumnType>().map_err(|e| {
@@ -826,6 +929,21 @@ impl<'de> Visitor<'de> for ColumnTypeVisitor {
                 value_type = Some(map.next_value::<ColumnType>().map_err(|e| {
                     A::Error::custom(format!("Map value type deserialization error {e}."))
                 })?)
+            } else if key == "max_dynamic_paths" || key == "maxDynamicPaths" {
+                json_max_dynamic_paths = map.next_value::<Option<u64>>()?;
+                seen_json_options = true;
+            } else if key == "max_dynamic_types" || key == "maxDynamicTypes" {
+                json_max_dynamic_types = map.next_value::<Option<u64>>()?;
+                seen_json_options = true;
+            } else if key == "typed_paths" || key == "typedPaths" {
+                json_typed_paths = Some(map.next_value::<Vec<(String, ColumnType)>>()?);
+                seen_json_options = true;
+            } else if key == "skip_paths" || key == "skipPaths" {
+                json_skip_paths = Some(map.next_value::<Vec<String>>()?);
+                seen_json_options = true;
+            } else if key == "skip_regexps" || key == "skipRegexps" {
+                json_skip_regexps = Some(map.next_value::<Vec<String>>()?);
+                seen_json_options = true;
             } else {
                 map.next_value::<IgnoredAny>()?;
             }
@@ -854,6 +972,16 @@ impl<'de> Visitor<'de> for ColumnTypeVisitor {
             } else {
                 return Err(A::Error::custom("Map type missing valueType field"));
             }
+        }
+
+        if seen_json_options {
+            return Ok(ColumnType::Json(JsonOptions {
+                max_dynamic_paths: json_max_dynamic_paths,
+                max_dynamic_types: json_max_dynamic_types,
+                typed_paths: json_typed_paths.unwrap_or_default(),
+                skip_paths: json_skip_paths.unwrap_or_default(),
+                skip_regexps: json_skip_regexps.unwrap_or_default(),
+            }));
         }
 
         let name = name.ok_or(A::Error::custom("Missing field: name."))?;
@@ -987,7 +1115,26 @@ impl ColumnType {
                 element_nullable: true,
             } => column_type::T::ArrayOfNullable(Box::new(element_type.to_proto())),
             ColumnType::Nested(nested) => column_type::T::Nested(nested.to_proto()),
-            ColumnType::Json => column_type::T::Simple(SimpleColumnType::JSON_COLUMN.into()),
+            ColumnType::Json(opts) => {
+                column_type::T::Json(crate::proto::infrastructure_map::Json {
+                    max_dynamic_paths: opts.max_dynamic_paths,
+                    max_dynamic_types: opts.max_dynamic_types,
+                    typed_paths: opts
+                        .typed_paths
+                        .iter()
+                        .map(
+                            |(path, t)| crate::proto::infrastructure_map::JsonTypedPath {
+                                path: path.clone(),
+                                type_: MessageField::some(t.to_proto()),
+                                special_fields: Default::default(),
+                            },
+                        )
+                        .collect(),
+                    skip_paths: opts.skip_paths.clone(),
+                    skip_regexps: opts.skip_regexps.clone(),
+                    special_fields: Default::default(),
+                })
+            }
             ColumnType::Bytes => column_type::T::Simple(SimpleColumnType::BYTES.into()),
             ColumnType::Uuid => column_type::T::Simple(SimpleColumnType::UUID_TYPE.into()),
             ColumnType::Date => T::Simple(SimpleColumnType::DATE.into()),
@@ -1035,7 +1182,7 @@ impl ColumnType {
                         scale: 0,
                     },
                     SimpleColumnType::DATETIME => ColumnType::DateTime { precision: None },
-                    SimpleColumnType::JSON_COLUMN => ColumnType::Json,
+                    SimpleColumnType::JSON_COLUMN => ColumnType::Json(Default::default()),
                     SimpleColumnType::BYTES => ColumnType::Bytes,
                     SimpleColumnType::UUID_TYPE => ColumnType::Uuid,
                     SimpleColumnType::DATE => ColumnType::Date,
@@ -1103,6 +1250,17 @@ impl ColumnType {
                 key_type: Box::new(Self::from_proto(map.key_type.clone().unwrap())),
                 value_type: Box::new(Self::from_proto(map.value_type.clone().unwrap())),
             },
+            T::Json(json) => ColumnType::Json(JsonOptions {
+                max_dynamic_paths: json.max_dynamic_paths,
+                max_dynamic_types: json.max_dynamic_types,
+                typed_paths: json
+                    .typed_paths
+                    .into_iter()
+                    .map(|tp| (tp.path, Self::from_proto(tp.type_.unwrap())))
+                    .collect(),
+                skip_paths: json.skip_paths,
+                skip_regexps: json.skip_regexps,
+            }),
         }
     }
 }

@@ -16,6 +16,8 @@ import {
   SimpleAggregated,
   UInt64,
   ClickHouseByteSize,
+  ClickHouseJson,
+  Int64,
 } from "@514labs/moose-lib";
 
 /**
@@ -217,6 +219,29 @@ export interface EdgeCases {
     }[];
   }[];
 }
+
+/** =======JSON Types Test========= */
+
+interface JsonInner {
+  name: string;
+  count: Int64;
+}
+
+export interface JsonTest {
+  id: Key<string>;
+  timestamp: DateTime;
+  // Test JSON with full configuration (max_dynamic_paths, max_dynamic_types, skip_paths, skip_regexes)
+  payloadWithConfig: JsonInner &
+    ClickHouseJson<256, 16, ["skip.me"], ["^tmp\\."]>;
+  // Test JSON with paths but without configuration
+  payloadBasic: JsonInner & ClickHouseJson;
+}
+
+export const JsonTestPipeline = new IngestPipeline<JsonTest>("JsonTest", {
+  table: true,
+  stream: true,
+  ingestApi: true,
+});
 
 /** =======Pipeline Configurations for Test Models========= */
 

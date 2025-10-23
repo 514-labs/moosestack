@@ -1,4 +1,4 @@
-use crate::framework::core::infrastructure::table::{DataEnum, OrderBy};
+use crate::framework::core::infrastructure::table::{DataEnum, JsonOptions, OrderBy};
 use crate::framework::versions::Version;
 use crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine;
 use chrono::{DateTime, FixedOffset};
@@ -46,7 +46,7 @@ pub enum ClickHouseColumnType {
         scale: u8,
     },
     DateTime,
-    Json,
+    Json(JsonOptions<ClickHouseColumnType>),
     Bytes,
     Array(Box<ClickHouseColumnType>),
     Nullable(Box<ClickHouseColumnType>),
@@ -153,7 +153,15 @@ impl ClickHouseColumnType {
             "Polygon" => Self::Polygon,
             "MultiPolygon" => Self::MultiPolygon,
             "DateTime" | "DateTime('UTC')" => Self::DateTime,
-            "JSON" => Self::Json,
+            t if t.starts_with("JSON(") || t.starts_with("Json(") => {
+                let inner = t
+                    .trim_start_matches("JSON(")
+                    .trim_start_matches("Json(")
+                    .trim_end_matches(')');
+                let opts = parse_json_options(inner)?;
+                Self::Json(opts)
+            }
+            "JSON" => Self::Json(JsonOptions::default()),
 
             // recursively parsing Nullable and Array
             t if t.starts_with("Nullable(") => {
@@ -248,6 +256,127 @@ impl ClickHouseColumnType {
             _ => return None,
         };
         Some(result)
+    }
+}
+
+fn parse_json_options(inner: &str) -> Option<JsonOptions<ClickHouseColumnType>> {
+    let mut opts = JsonOptions::default();
+    for part in inner.split(',') {
+        let item = part.trim();
+        if item.is_empty() {
+            continue;
+        }
+        if let Some(v) = item.strip_prefix("max_dynamic_types=") {
+            let n = v.trim().parse::<u64>().ok()?;
+            opts.max_dynamic_types = Some(n);
+            continue;
+        }
+        if let Some(v) = item.strip_prefix("max_dynamic_paths=") {
+            let n = v.trim().parse::<u64>().ok()?;
+            opts.max_dynamic_paths = Some(n);
+            continue;
+        }
+        if let Some(rest) = item.strip_prefix("SKIP REGEXP ") {
+            // Extract regex pattern from quotes
+            let rest = rest.trim();
+            if let Some(pattern) = rest.strip_prefix('\'').and_then(|s| s.strip_suffix('\'')) {
+                opts.skip_regexps.push(pattern.to_string());
+            } else {
+                // Pattern not quoted, use as-is
+                opts.skip_regexps.push(rest.to_string());
+            }
+            continue;
+        }
+        if let Some(rest) = item.strip_prefix("SKIP ") {
+            opts.skip_paths.push(rest.trim().to_string());
+            continue;
+        }
+        // typed path: path<space>Type
+        if let Some(space_idx) = item.rfind(' ') {
+            let (path, ty_str) = item.split_at(space_idx);
+            let path = path.trim();
+            let ty_str = ty_str.trim();
+            if path.is_empty() || ty_str.is_empty() {
+                return None;
+            }
+            if path.eq_ignore_ascii_case("SKIP") {
+                continue;
+            }
+            if let Some(ty) = ClickHouseColumnType::from_type_str(ty_str) {
+                opts.typed_paths.push((path.to_string(), ty));
+                continue;
+            } else {
+                return None;
+            }
+        }
+        return None;
+    }
+    Some(opts)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_json_options_numbers() {
+        let t = ClickHouseColumnType::from_type_str(
+            "JSON(max_dynamic_types=16, max_dynamic_paths=256)",
+        );
+        match t {
+            Some(ClickHouseColumnType::Json(opts)) => {
+                assert_eq!(opts.max_dynamic_types, Some(16));
+                assert_eq!(opts.max_dynamic_paths, Some(256));
+            }
+            _ => panic!("Failed to parse JSON options with numbers"),
+        }
+    }
+
+    #[test]
+    fn test_parse_json_options_typed_and_skip() {
+        let t = ClickHouseColumnType::from_type_str("JSON(a.b UInt32, SKIP a.e)");
+        match t {
+            Some(ClickHouseColumnType::Json(opts)) => {
+                assert_eq!(opts.typed_paths.len(), 1);
+                assert_eq!(opts.typed_paths[0].0, "a.b");
+                assert_eq!(opts.skip_paths, vec!["a.e".to_string()]);
+                match &opts.typed_paths[0].1 {
+                    ClickHouseColumnType::ClickhouseInt(ClickHouseInt::UInt32) => {}
+                    other => panic!("Unexpected type parsed: {:?}", other),
+                }
+            }
+            _ => panic!("Failed to parse JSON options with typed path and skip"),
+        }
+    }
+
+    #[test]
+    fn test_parse_json_options_skip_regexp() {
+        let t = ClickHouseColumnType::from_type_str("JSON(SKIP REGEXP '^tmp\\\\.')");
+        match t {
+            Some(ClickHouseColumnType::Json(opts)) => {
+                assert_eq!(opts.skip_regexps.len(), 1);
+                assert_eq!(opts.skip_regexps[0], "^tmp\\\\.");
+                assert_eq!(opts.skip_paths.len(), 0);
+            }
+            _ => panic!("Failed to parse JSON options with SKIP REGEXP"),
+        }
+    }
+
+    #[test]
+    fn test_parse_json_options_mixed() {
+        let t = ClickHouseColumnType::from_type_str(
+            "JSON(max_dynamic_types=16, a.b UInt32, SKIP a.e, SKIP REGEXP '^tmp\\\\.')",
+        );
+        match t {
+            Some(ClickHouseColumnType::Json(opts)) => {
+                assert_eq!(opts.max_dynamic_types, Some(16));
+                assert_eq!(opts.typed_paths.len(), 1);
+                assert_eq!(opts.typed_paths[0].0, "a.b");
+                assert_eq!(opts.skip_paths, vec!["a.e".to_string()]);
+                assert_eq!(opts.skip_regexps, vec!["^tmp\\\\.".to_string()]);
+            }
+            _ => panic!("Failed to parse JSON options with mixed configuration"),
+        }
     }
 }
 
