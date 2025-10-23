@@ -89,14 +89,14 @@ export type ClickHouseNamedTuple = {
 
 export type ClickHouseJson<
   maxDynamicPaths extends number | undefined = undefined,
-  maxDyanmicTypes extends number | undefined = undefined,
+  maxDynamicTypes extends number | undefined = undefined,
   skipPaths extends string[] = [],
   skipRegexes extends string[] = [],
 > = {
   _clickhouse_mapped_type?: "JSON";
   _clickhouse_json_settings?: {
     maxDynamicPaths?: maxDynamicPaths;
-    maxDyanmicTypes?: maxDyanmicTypes;
+    maxDynamicTypes?: maxDynamicTypes;
     skipPaths?: skipPaths;
     skipRegexes?: skipRegexes;
   };

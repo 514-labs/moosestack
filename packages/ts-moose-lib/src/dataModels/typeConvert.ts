@@ -165,7 +165,7 @@ const getJsonMappedType = (
       }
     }
 
-    const maxTypesSymbol = getPropertyDeep(settingsType, "maxDyanmicTypes");
+    const maxTypesSymbol = getPropertyDeep(settingsType, "maxDynamicTypes");
     if (maxTypesSymbol !== undefined) {
       const maxTypesType = checker.getNonNullableType(
         checker.getTypeOfSymbol(maxTypesSymbol),
