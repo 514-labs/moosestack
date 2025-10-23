@@ -29,5 +29,17 @@ function extractScope(query: NextApiRequest["query"]): string | undefined {
     return undefined;
   }
 
-  return Array.isArray(raw) ? raw[0] : raw;
+  const value = Array.isArray(raw) ? raw[0] : raw;
+  if (!value) {
+    return undefined;
+  }
+  return decodeScopeValue(value);
+}
+
+function decodeScopeValue(value: string) {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
 }

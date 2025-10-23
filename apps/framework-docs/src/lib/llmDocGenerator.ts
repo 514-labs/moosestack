@@ -32,7 +32,7 @@ export async function buildLanguageDocs(
   options: BuildLanguageDocsOptions = {},
 ) {
   const normalizedScope = normalizeScope(options.scope);
-  const scopeRoot =
+  const initialRoot =
     normalizedScope ? path.join(DOCS_ROOT, normalizedScope) : DOCS_ROOT;
 
   const docHeading =
@@ -41,18 +41,37 @@ export async function buildLanguageDocs(
       LANGUAGE_TAG[language]
     }`;
 
-  if (!fs.existsSync(scopeRoot)) {
+  let searchRoot = initialRoot;
+  let files: string[] = [];
+
+  if (fs.existsSync(initialRoot)) {
+    const stats = fs.statSync(initialRoot);
+
+    if (stats.isDirectory()) {
+      files = collectMdxFiles(initialRoot).sort();
+    } else if (stats.isFile()) {
+      searchRoot = path.dirname(initialRoot);
+      files = [initialRoot];
+    }
+  } else {
+    const candidateFile = `${initialRoot}.mdx`;
+    if (fs.existsSync(candidateFile) && fs.statSync(candidateFile).isFile()) {
+      searchRoot = path.dirname(candidateFile);
+      files = [candidateFile];
+    }
+  }
+
+  if (files.length === 0) {
     return docHeading;
   }
 
-  const files = collectMdxFiles(scopeRoot).sort();
   const sections: string[] = [];
   const includedPaths: string[] = [];
 
   for (const filePath of files) {
     const raw = await fs.promises.readFile(filePath, "utf8");
     const { frontMatter, body } = parseFrontMatter(raw);
-    const relativePath = path.relative(scopeRoot, filePath);
+    const relativePath = path.relative(searchRoot, filePath);
 
     const filtered = filterLanguageContent(body, language);
     const cleaned = cleanContent(filtered);
