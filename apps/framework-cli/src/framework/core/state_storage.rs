@@ -8,11 +8,22 @@ use crate::infrastructure::olap::clickhouse::ConfiguredDBClient;
 use crate::infrastructure::olap::clickhouse::{check_ready, create_client};
 use crate::infrastructure::redis::redis_client::RedisClient;
 use crate::project::Project;
+use crate::utilities::machine_id::get_or_create_machine_id;
 use anyhow::{Context, Result};
 use async_trait::async_trait;
-use log::{debug, info};
+use chrono::{DateTime, Duration, Utc};
+use log::{debug, info, warn};
 use protobuf::Message;
+use serde::{Deserialize, Serialize};
 use std::sync::Arc;
+
+/// Lock data for migration coordination
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MigrationLock {
+    pub machine_id: String,
+    pub started_at: DateTime<Utc>,
+    pub expires_at: DateTime<Utc>,
+}
 
 #[async_trait]
 pub trait StateStorage: Send + Sync {
@@ -53,32 +64,38 @@ pub struct ClickHouseStateStorage {
 
 impl ClickHouseStateStorage {
     const STATE_TABLE: &'static str = "_MOOSE_STATE";
-    const STATE_KEY: &'static str = "infrastructure_map";
+    const LOCK_KEY: &'static str = "migration_lock";
+    const LOCK_TIMEOUT_SECS: i64 = 300; // 5 minutes
 
     pub fn new(client: ConfiguredDBClient, db_name: String) -> Self {
         Self { client, db_name }
     }
 
-    /// Ensure the state table exists
+    /// Ensure the state table exists using KeeperMap for strong consistency
     async fn ensure_state_table(&self) -> Result<()> {
-        // Use ReplacingMergeTree to safely update state without losing data if INSERT fails.
-        // The updated_at column determines which row is "latest" during merges.
+        // Use KeeperMap for:
+        // 1. Atomic lock operations (prevents concurrent migrations)
+        // 2. Synchronous writes (no async_insert race conditions)
+        // 3. Immediate read-after-write consistency
+        // 4. Already configured in dev mode. Available in Clickhouse Cloud
         let create_table_sql = format!(
             r#"
             CREATE TABLE IF NOT EXISTS `{}`.`{}`
             (
                 key String,
                 value String,
-                updated_at DateTime DEFAULT now()
+                created_at DateTime DEFAULT now()
             )
-            ENGINE = ReplacingMergeTree(updated_at)
-            ORDER BY key
+            ENGINE = KeeperMap('/{}/{}')
+            PRIMARY KEY key
             "#,
+            self.db_name,
+            Self::STATE_TABLE,
             self.db_name,
             Self::STATE_TABLE
         );
 
-        debug!("Creating state table: {}", create_table_sql);
+        debug!("Creating KeeperMap state table: {}", create_table_sql);
 
         self.client
             .client
@@ -87,6 +104,129 @@ impl ClickHouseStateStorage {
             .await
             .context("Failed to create state table")?;
 
+        Ok(())
+    }
+
+    /// Try to acquire migration lock
+    /// Must be manually released with release_migration_lock()
+    /// Lock automatically expires after 5 minutes as a safety fallback
+    pub async fn acquire_migration_lock(&self) -> Result<()> {
+        self.ensure_state_table().await?;
+
+        // Enable strict mode for this session - INSERT will fail if key exists (not overwrite)
+        self.client
+            .client
+            .query("SET keeper_map_strict_mode = 1")
+            .execute()
+            .await
+            .context("Failed to enable strict mode")?;
+
+        // Check if lock exists
+        let existing_lock_query = format!(
+            "SELECT value FROM `{}`.`{}` WHERE key = '{}'",
+            self.db_name,
+            Self::STATE_TABLE,
+            Self::LOCK_KEY
+        );
+
+        let mut cursor = self
+            .client
+            .client
+            .query(&existing_lock_query)
+            .fetch::<String>()
+            .context("Failed to query for existing lock")?;
+
+        if let Ok(Some(lock_json)) = cursor.next().await {
+            // Lock exists - check if expired
+            let existing_lock: MigrationLock =
+                serde_json::from_str(&lock_json).context("Failed to deserialize existing lock")?;
+
+            if existing_lock.expires_at < Utc::now() {
+                // Stale lock - delete it
+                let delete_sql = format!(
+                    "DELETE FROM `{}`.`{}` WHERE key = '{}'",
+                    self.db_name,
+                    Self::STATE_TABLE,
+                    Self::LOCK_KEY
+                );
+
+                self.client
+                    .client
+                    .query(&delete_sql)
+                    .execute()
+                    .await
+                    .context("Failed to delete stale lock")?;
+
+                warn!(
+                    "Deleted stale migration lock from machine {} (expired at {})",
+                    existing_lock.machine_id, existing_lock.expires_at
+                );
+            } else {
+                // Active lock held by someone else
+                let time_remaining = existing_lock.expires_at - Utc::now();
+                let minutes = time_remaining.num_minutes();
+                let seconds = time_remaining.num_seconds() % 60;
+
+                anyhow::bail!(
+                    "Migration already in progress on machine {}. Started at {}. Expires in {}m {}s.",
+                    existing_lock.machine_id,
+                    existing_lock.started_at.format("%Y-%m-%d %H:%M:%S UTC"),
+                    minutes,
+                    seconds
+                );
+            }
+        }
+
+        // Try to acquire lock
+        let lock_data = MigrationLock {
+            machine_id: get_or_create_machine_id(),
+            started_at: Utc::now(),
+            expires_at: Utc::now() + Duration::seconds(Self::LOCK_TIMEOUT_SECS),
+        };
+
+        let lock_json =
+            serde_json::to_string(&lock_data).context("Failed to serialize lock data")?;
+
+        let insert_sql = format!(
+            "INSERT INTO `{}`.`{}` (key, value) VALUES ('{}', '{}')",
+            self.db_name,
+            Self::STATE_TABLE,
+            Self::LOCK_KEY,
+            lock_json.replace('\'', "\\'")
+        );
+
+        match self.client.client.query(&insert_sql).execute().await {
+            Ok(_) => {
+                info!(
+                    "Acquired migration lock (expires in {} seconds)",
+                    Self::LOCK_TIMEOUT_SECS
+                );
+                Ok(())
+            }
+            Err(e) => {
+                // Race condition - someone else got the lock between our check and insert
+                anyhow::bail!("Failed to acquire migration lock (race condition): {}", e)
+            }
+        }
+    }
+
+    /// Release migration lock
+    pub async fn release_migration_lock(&self) -> Result<()> {
+        let delete_sql = format!(
+            "DELETE FROM `{}`.`{}` WHERE key = '{}'",
+            self.db_name,
+            Self::STATE_TABLE,
+            Self::LOCK_KEY
+        );
+
+        self.client
+            .client
+            .query(&delete_sql)
+            .execute()
+            .await
+            .context("Failed to release migration lock")?;
+
+        info!("Released migration lock");
         Ok(())
     }
 }
@@ -102,20 +242,23 @@ impl StateStorage for ClickHouseStateStorage {
         let encoded_base64 =
             base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &encoded);
 
-        // Insert or update the state
+        // Use timestamp-based key for history
+        let timestamp_ms = Utc::now().timestamp_millis();
+        let key = format!("infra_map_{}", timestamp_ms);
+
+        // Insert with timestamp key (creates audit history)
         let insert_sql = format!(
-            r#"
-            INSERT INTO `{}`.`{}`
-            (key, value, updated_at)
-            VALUES ('{}', '{}', now())
-            "#,
+            "INSERT INTO `{}`.`{}` (key, value) VALUES ('{}', '{}')",
             self.db_name,
             Self::STATE_TABLE,
-            Self::STATE_KEY,
-            encoded_base64
+            key,
+            encoded_base64.replace('\'', "\\'")
         );
 
-        debug!("Storing infrastructure map in ClickHouse state table");
+        debug!(
+            "Storing infrastructure map in ClickHouse KeeperMap state table (key: {})",
+            key
+        );
 
         self.client
             .client
@@ -124,7 +267,7 @@ impl StateStorage for ClickHouseStateStorage {
             .await
             .context("Failed to store infrastructure map in ClickHouse")?;
 
-        info!("✓ Stored infrastructure map in ClickHouse");
+        info!("Stored infrastructure map in ClickHouse ({})", key);
 
         Ok(())
     }
@@ -133,22 +276,20 @@ impl StateStorage for ClickHouseStateStorage {
         // Ensure table exists first
         self.ensure_state_table().await?;
 
-        // Query for the latest state. Use FINAL to force deduplication and ensure we read
-        // the most recent value immediately, rather than waiting for background merges.
+        // Query for the latest state by timestamp
         let query_sql = format!(
             r#"
             SELECT value
-            FROM `{}`.`{}` FINAL
-            WHERE key = '{}'
-            ORDER BY updated_at DESC
+            FROM `{}`.`{}`
+            WHERE key LIKE 'infra_map_%'
+            ORDER BY created_at DESC
             LIMIT 1
             "#,
             self.db_name,
-            Self::STATE_TABLE,
-            Self::STATE_KEY
+            Self::STATE_TABLE
         );
 
-        debug!("Loading infrastructure map from ClickHouse state table");
+        debug!("Loading infrastructure map from ClickHouse KeeperMap state table");
 
         let mut cursor = self
             .client
@@ -178,7 +319,7 @@ impl StateStorage for ClickHouseStateStorage {
         let infra_map = InfrastructureMap::from_proto(encoded)
             .context("Failed to deserialize infrastructure map from protobuf")?;
 
-        info!("✓ Loaded infrastructure map from ClickHouse");
+        info!("Loaded infrastructure map from ClickHouse");
 
         Ok(Some(infra_map))
     }

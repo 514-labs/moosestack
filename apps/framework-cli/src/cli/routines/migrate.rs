@@ -317,79 +317,100 @@ pub async fn execute_migration(
     // Create state storage directly from CLI-provided ClickHouse URL
     let state_storage = ClickHouseStateStorage::new(client, clickhouse_config.db_name.clone());
 
-    // Load current state from ClickHouse state table and reconcile with reality
-    let current_infra_map = state_storage
-        .load_infrastructure_map()
-        .await
-        .map_err(|e| {
-            RoutineFailure::new(
-                Message::new(
-                    "State".to_string(),
-                    "Failed to load infrastructure state from ClickHouse".to_string(),
-                ),
-                e,
-            )
-        })?
-        .unwrap_or_default();
-
-    let current_infra_map = if project.features.olap {
-        use crate::framework::core::plan::reconcile_with_reality;
-        use std::collections::HashSet;
-
-        let target_table_names: HashSet<String> =
-            current_infra_map.tables.keys().cloned().collect();
-
-        let olap_client = create_client(clickhouse_config.clone());
-
-        reconcile_with_reality(
-            project,
-            &current_infra_map,
-            &target_table_names,
-            olap_client,
+    // Acquire migration lock to prevent concurrent migrations
+    state_storage.acquire_migration_lock().await.map_err(|e| {
+        RoutineFailure::new(
+            Message::new(
+                "Lock".to_string(),
+                "Failed to acquire migration lock".to_string(),
+            ),
+            e,
         )
-        .await
-        .map_err(|e| {
-            RoutineFailure::new(
-                Message::new(
-                    "Reconciliation".to_string(),
-                    "Failed to reconcile state with ClickHouse reality".to_string(),
-                ),
-                anyhow::anyhow!("{:?}", e),
+    })?;
+
+    // Wrap all operations to ensure lock cleanup on any error
+    let result = async {
+        // Load current state from ClickHouse state table and reconcile with reality
+        let current_infra_map = state_storage
+            .load_infrastructure_map()
+            .await
+            .map_err(|e| {
+                RoutineFailure::new(
+                    Message::new(
+                        "State".to_string(),
+                        "Failed to load infrastructure state from ClickHouse".to_string(),
+                    ),
+                    e,
+                )
+            })?
+            .unwrap_or_default();
+
+        let current_infra_map = if project.features.olap {
+            use crate::framework::core::plan::reconcile_with_reality;
+            use std::collections::HashSet;
+
+            let target_table_names: HashSet<String> =
+                current_infra_map.tables.keys().cloned().collect();
+
+            let olap_client = create_client(clickhouse_config.clone());
+
+            reconcile_with_reality(
+                project,
+                &current_infra_map,
+                &target_table_names,
+                olap_client,
             )
-        })?
-    } else {
-        current_infra_map
-    };
+            .await
+            .map_err(|e| {
+                RoutineFailure::new(
+                    Message::new(
+                        "Reconciliation".to_string(),
+                        "Failed to reconcile state with ClickHouse reality".to_string(),
+                    ),
+                    anyhow::anyhow!("{:?}", e),
+                )
+            })?
+        } else {
+            current_infra_map
+        };
 
-    let current_tables = &current_infra_map.tables;
+        let current_tables = &current_infra_map.tables;
 
-    // Load target state from current code
-    let target_infra_map = InfrastructureMap::load_from_user_code(project)
-        .await
-        .map_err(|e| {
-            RoutineFailure::new(
-                Message::new(
-                    "Code".to_string(),
-                    "Failed to load infrastructure from code".to_string(),
-                ),
-                e,
-            )
-        })?;
+        // Load target state from current code
+        let target_infra_map = InfrastructureMap::load_from_user_code(project)
+            .await
+            .map_err(|e| {
+                RoutineFailure::new(
+                    Message::new(
+                        "Code".to_string(),
+                        "Failed to load infrastructure from code".to_string(),
+                    ),
+                    e,
+                )
+            })?;
 
-    // Execute migration (moose migrate always uses ClickHouse state)
-    execute_migration_plan(project, current_tables, &target_infra_map, &state_storage)
-        .await
-        .map_err(|e| {
-            RoutineFailure::new(
-                Message::new(
-                    "\nMigration".to_string(),
-                    "Failed to execute migration plan".to_string(),
-                ),
-                e,
-            )
-        })?;
+        // Execute migration (moose migrate always uses ClickHouse state)
+        execute_migration_plan(project, current_tables, &target_infra_map, &state_storage)
+            .await
+            .map_err(|e| {
+                RoutineFailure::new(
+                    Message::new(
+                        "\nMigration".to_string(),
+                        "Failed to execute migration plan".to_string(),
+                    ),
+                    e,
+                )
+            })
+    }
+    .await;
 
-    Ok(())
+    // Always release lock explicitly before returning
+    // This ensures cleanup happens even if any operation above failed
+    if let Err(e) = state_storage.release_migration_lock().await {
+        log::warn!("Failed to release migration lock: {}", e);
+    }
+
+    result
 }
 
 /// Execute pre-planned migration
