@@ -26,6 +26,73 @@ const baseTextStyles = {
   heading: "text-primary font-semibold",
 };
 
+function buildLlmHref(asPath, suffix) {
+  if (!suffix) {
+    return "/";
+  }
+
+  const pathWithoutHash = asPath.split("#")[0];
+  const pathWithoutQuery = pathWithoutHash.split("?")[0];
+
+  if (!pathWithoutQuery || pathWithoutQuery === "/") {
+    return `/${suffix}`;
+  }
+
+  const trimmedPath =
+    pathWithoutQuery.endsWith("/") ?
+      pathWithoutQuery.slice(0, -1)
+    : pathWithoutQuery;
+
+  return `${trimmedPath}/${suffix}`;
+}
+
+function EditLinks({ filePath, className, children }) {
+  const { docsRepositoryBase } = useConfig();
+  const { asPath } = useRouter();
+
+  const cleanedRepoBase =
+    docsRepositoryBase && docsRepositoryBase.endsWith("/") ?
+      docsRepositoryBase.slice(0, -1)
+    : docsRepositoryBase;
+
+  const editHref =
+    cleanedRepoBase && filePath ? `${cleanedRepoBase}/${filePath}` : undefined;
+
+  const tsHref = buildLlmHref(asPath, "llm-ts.txt");
+  const pyHref = buildLlmHref(asPath, "llm-py.txt");
+
+  return (
+    <div className="flex flex-col items-start gap-2">
+      {editHref ?
+        <Link
+          href={editHref}
+          className={className}
+          target="_blank"
+          rel="noreferrer"
+        >
+          {children}
+        </Link>
+      : <span className={className}>{children}</span>}
+      <Link
+        href={tsHref}
+        className={className}
+        target="_blank"
+        rel="noreferrer"
+      >
+        LLM docs: TS
+      </Link>
+      <Link
+        href={pyHref}
+        className={className}
+        target="_blank"
+        rel="noreferrer"
+      >
+        LLM docs: PY
+      </Link>
+    </div>
+  );
+}
+
 export function Logo() {
   return (
     <Link
@@ -175,6 +242,10 @@ export default {
   navigation: {
     prev: true,
     next: true,
+  },
+  editLink: {
+    component: EditLinks,
+    content: "Edit this page",
   },
   components: {
     // Heading components with stable rendering
