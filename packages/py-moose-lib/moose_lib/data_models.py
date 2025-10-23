@@ -372,8 +372,7 @@ def py_type_to_column_type(t: type, mds: list[Any]) -> Tuple[bool, list[Any], Da
                     "Default in inner field. Put ClickHouseDefault in top level field."
                 )
         # Enforce extra='allow' for JSON-mapped models
-        cfg = getattr(t, 'model_config', None)
-        if not isinstance(cfg, ConfigDict) or cfg.get('extra') != 'allow':
+        if t.model_config.get('extra') != 'allow':
             raise ValueError(
                 f"Model {t.__name__} with ClickHouseJson must have model_config with extra='allow'. "
                 "Add: model_config = ConfigDict(extra='allow')"
