@@ -53,20 +53,22 @@ async def query(request: Request, limit: int = 10):
         )
 
     try:
-        # Get the target table
-        target_table = barAggregatedMV.target_table
-
-        # Build the query
-        query = f"""
+        # Build the query with substitution
+        query = """
             SELECT
-                {target_table.cols.day_of_month},
-                {target_table.cols.total_rows}
-            FROM {target_table.name}
-            ORDER BY {target_table.cols.total_rows} DESC
+                {day_of_month},
+                {total_rows}
+            FROM {table}
+            ORDER BY {total_rows} DESC
             LIMIT {limit}
         """
 
-        result = moose.client.query.execute(query)
+        result = moose.client.query.execute(query, {
+            "table": barAggregatedMV.target_table,
+            "day_of_month": barAggregatedMV.target_table.cols.day_of_month,
+            "total_rows": barAggregatedMV.target_table.cols.total_rows,
+            "limit": limit
+        })
 
         return {
             "success": True,
@@ -107,30 +109,34 @@ async def data(request: Request, body: DataRequest):
         )
 
     try:
-        # Get the target table
-        target_table = barAggregatedMV.target_table
-
-        # Map the order_by field to the column
-        order_by_column = getattr(target_table.cols, body.order_by, None)
-        if not order_by_column:
+        # Validate order_by field
+        valid_fields = ["total_rows", "rows_with_text", "max_text_length", "total_text_length"]
+        if body.order_by not in valid_fields:
             raise HTTPException(
                 status_code=400,
                 detail=f"Invalid order_by field: {body.order_by}"
             )
 
-        query = f"""
+        query = """
             SELECT
-                {target_table.cols.day_of_month},
-                {order_by_column}
-            FROM {target_table.name}
+                {day_of_month},
+                {order_by}
+            FROM {table}
             WHERE
-                {target_table.cols.day_of_month} >= {body.start_day}
-                AND {target_table.cols.day_of_month} <= {body.end_day}
-            ORDER BY {order_by_column} DESC
-            LIMIT {body.limit}
+                {day_of_month} >= {start_day}
+                AND {day_of_month} <= {end_day}
+            ORDER BY {order_by} DESC
+            LIMIT {limit}
         """
 
-        result = moose.client.query.execute(query)
+        result = moose.client.query.execute(query, {
+            "table": barAggregatedMV.target_table,
+            "day_of_month": barAggregatedMV.target_table.cols.day_of_month,
+            "order_by": barAggregatedMV.target_table.cols[body.order_by],
+            "start_day": body.start_day,
+            "end_day": body.end_day,
+            "limit": body.limit
+        })
 
         return {
             "success": True,

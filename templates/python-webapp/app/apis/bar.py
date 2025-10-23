@@ -53,17 +53,22 @@ async def query(request: Request, limit: int = 10):
         )
 
     try:
-        # Build the query
-        query = f"""
+        # Build the query with substitution
+        query = """
             SELECT
-                day_of_month,
-                total_rows
-            FROM BarAggregated
-            ORDER BY total_rows DESC
+                {day_of_month},
+                {total_rows}
+            FROM {table}
+            ORDER BY {total_rows} DESC
             LIMIT {limit}
         """
 
-        result = moose.client.query.execute(query)
+        result = moose.client.query.execute(query, {
+            "table": BarAggregatedMV.target_table,
+            "day_of_month": BarAggregatedMV.target_table.cols.day_of_month,
+            "total_rows": BarAggregatedMV.target_table.cols.total_rows,
+            "limit": limit
+        })
 
         return {
             "success": True,
@@ -112,19 +117,26 @@ async def data(request: Request, body: DataRequest):
                 detail=f"Invalid order_by field: {body.order_by}"
             )
 
-        query = f"""
+        query = """
             SELECT
-                day_of_month,
-                {body.order_by}
-            FROM BarAggregated
+                {day_of_month},
+                {order_by}
+            FROM {table}
             WHERE
-                day_of_month >= {body.start_day}
-                AND day_of_month <= {body.end_day}
-            ORDER BY {body.order_by} DESC
-            LIMIT {body.limit}
+                {day_of_month} >= {start_day}
+                AND {day_of_month} <= {end_day}
+            ORDER BY {order_by} DESC
+            LIMIT {limit}
         """
 
-        result = moose.client.query.execute(query)
+        result = moose.client.query.execute(query, {
+            "table": BarAggregatedMV.target_table,
+            "day_of_month": BarAggregatedMV.target_table.cols.day_of_month,
+            "order_by": BarAggregatedMV.target_table.cols[body.order_by],
+            "start_day": body.start_day,
+            "end_day": body.end_day,
+            "limit": body.limit
+        })
 
         return {
             "success": True,
