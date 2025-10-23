@@ -74,18 +74,28 @@ function EditLinks({ filePath, href, className, children }) {
           href={editHref}
           className={className}
           target="_blank"
-          rel="noreferrer"
+          rel="noreferrer noopener"
         >
           {children}
         </a>
       : <span className={className}>{children}</span>}
       <span className={className}>
         LLM docs:{" "}
-        <a href={tsHref} className={className} target="_blank" rel="noreferrer">
+        <a
+          href={tsHref}
+          className={className}
+          target="_blank"
+          rel="noreferrer noopener"
+        >
           TS
         </a>{" "}
         /{" "}
-        <a href={pyHref} className={className} target="_blank" rel="noreferrer">
+        <a
+          href={pyHref}
+          className={className}
+          target="_blank"
+          rel="noreferrer noopener"
+        >
           PY
         </a>
       </span>
