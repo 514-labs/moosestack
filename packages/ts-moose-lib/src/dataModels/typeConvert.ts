@@ -217,13 +217,10 @@ const getJsonMappedType = (
   }
 
   // Build typed paths from the base interface's columns (top-level only)
-  let typedPaths: string[] = [];
+  let typedPaths: Array<[string, DataType]> = [];
   try {
     const cols = toColumns(base, checker);
-    typedPaths = cols.map(
-      (c) =>
-        `${c.name} ${typeof c.data_type === "string" ? c.data_type : "String"}`,
-    );
+    typedPaths = cols.map((c) => [c.name, c.data_type]);
   } catch (_) {
     // Fallback silently if we cannot derive columns
     typedPaths = [];
@@ -238,20 +235,8 @@ const getJsonMappedType = (
 
   if (!hasAnyOption) return "Json";
 
-  // typedPaths is an array of strings like "fieldName String"
-  // Parse each into a tuple [name, type]
-  const parsedTypedPaths: Array<[string, DataType]> = typedPaths.map((tp) => {
-    const spaceIndex = tp.indexOf(" ");
-    if (spaceIndex === -1) {
-      return [tp, "String" as DataType];
-    }
-    const path = tp.substring(0, spaceIndex);
-    const typeStr = tp.substring(spaceIndex + 1);
-    return [path, typeStr as DataType];
-  });
-
   const result: Record<string, any> = {
-    typed_paths: parsedTypedPaths,
+    typed_paths: typedPaths,
     skip_paths: skipPaths,
     skip_regexps: skipRegexes,
   };

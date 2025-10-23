@@ -382,8 +382,7 @@ def py_type_to_column_type(t: type, mds: list[Any]) -> Tuple[bool, list[Any], Da
         # Build typed_paths from fields as tuples of (name, type)
         typed_paths: list[tuple[str, DataType]] = []
         for c in columns:
-            tname: DataType = c.data_type if isinstance(c.data_type, str) else "String"
-            typed_paths.append((c.name, tname))
+            typed_paths.append((c.name, c.data_type))
 
         has_any_option = (
                 opts.max_dynamic_paths is not None or
