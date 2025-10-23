@@ -22,7 +22,7 @@ export interface TableIndex {
   expression: string;
   type: string;
   arguments?: string[];
-  granularity: number;
+  granularity?: number;
 }
 
 /**
