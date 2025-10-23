@@ -153,7 +153,9 @@ const getJsonMappedType = (
 
   const settingsSymbol = getPropertyDeep(t, "_clickhouse_json_settings");
   if (settingsSymbol !== undefined) {
-    const settingsType = checker.getTypeOfSymbol(settingsSymbol);
+    const settingsType = checker.getNonNullableType(
+      checker.getTypeOfSymbol(settingsSymbol),
+    );
 
     const maxPathsSymbol = getPropertyDeep(settingsType, "maxDynamicPaths");
     if (maxPathsSymbol !== undefined) {
