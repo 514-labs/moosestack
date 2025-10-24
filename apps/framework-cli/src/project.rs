@@ -38,6 +38,7 @@ use crate::framework::languages::SupportedLanguages;
 use crate::framework::streaming::loader::parse_streaming_function;
 use crate::framework::versions::Version;
 use crate::infrastructure::olap::clickhouse::config::ClickHouseConfig;
+use crate::infrastructure::olap::clickhouse::IgnorableOperation;
 use crate::infrastructure::orchestration::temporal::TemporalConfig;
 
 use crate::infrastructure::redis::redis_client::RedisConfig;
@@ -208,6 +209,14 @@ impl Default for ProjectFeatures {
     }
 }
 
+/// Migration configuration
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+pub struct MigrationConfig {
+    /// Operations to ignore during migration plan generation
+    #[serde(default)]
+    pub ignore_operations: Vec<IgnorableOperation>,
+}
+
 /// Represents a user's Moose project
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Project {
@@ -235,6 +244,9 @@ pub struct Project {
     /// State storage configuration
     #[serde(default)]
     pub state_config: StateConfig,
+    /// Migration configuration
+    #[serde(default)]
+    pub migration_config: MigrationConfig,
     /// Language-specific project configuration (not serialized)
     #[serde(skip)]
     pub language_project_config: LanguageProjectConfig,
@@ -332,6 +344,7 @@ impl Project {
             http_server_config: LocalWebserverConfig::default(),
             temporal_config: TemporalConfig::default(),
             state_config: StateConfig::default(),
+            migration_config: MigrationConfig::default(),
             language_project_config,
             supported_old_versions: HashMap::new(),
             git_config: GitConfig::default(),

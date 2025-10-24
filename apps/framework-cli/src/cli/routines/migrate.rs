@@ -7,6 +7,7 @@ use crate::framework::core::infrastructure_map::InfrastructureMap;
 use crate::framework::core::migration_plan::MigrationPlan;
 use crate::framework::core::state_storage::{ClickHouseStateStorage, StateStorage};
 use crate::infrastructure::olap::clickhouse::config::parse_clickhouse_connection_string;
+use crate::infrastructure::olap::clickhouse::IgnorableOperation;
 use crate::infrastructure::olap::clickhouse::{check_ready, create_client, ConfiguredDBClient};
 use crate::project::Project;
 use crate::utilities::constants::{
@@ -86,12 +87,19 @@ fn load_migration_files() -> Result<MigrationFiles> {
     })
 }
 
-fn strip_metadata(tables: &HashMap<String, Table>) -> HashMap<String, Table> {
+/// Strips both metadata and ignored fields from tables
+fn strip_metadata_and_ignored_fields(
+    tables: &HashMap<String, Table>,
+    ignore_ops: &[IgnorableOperation],
+) -> HashMap<String, Table> {
     tables
         .iter()
         .map(|(name, table)| {
             let mut table = table.clone();
             table.metadata = None;
+            // Also strip ignored fields
+            let table =
+                crate::framework::core::migration_plan::strip_ignored_fields(&table, ignore_ops);
             (name.clone(), table)
         })
         .collect()
@@ -115,11 +123,13 @@ fn detect_drift(
     current_tables: &HashMap<String, Table>,
     expected_tables: &HashMap<String, Table>,
     target_tables: &HashMap<String, Table>,
+    ignore_operations: &[IgnorableOperation],
 ) -> DriftStatus {
-    // Strip metadata to avoid false drift from file path changes
-    let current_no_metadata = strip_metadata(current_tables);
-    let expected_no_metadata = strip_metadata(expected_tables);
-    let target_no_metadata = strip_metadata(target_tables);
+    // Strip metadata and ignored fields to avoid false drift
+    let current_no_metadata = strip_metadata_and_ignored_fields(current_tables, ignore_operations);
+    let expected_no_metadata =
+        strip_metadata_and_ignored_fields(expected_tables, ignore_operations);
+    let target_no_metadata = strip_metadata_and_ignored_fields(target_tables, ignore_operations);
 
     // Check 1: Did the DB change since the plan was generated?
     if current_no_metadata == expected_no_metadata {
@@ -445,6 +455,7 @@ pub async fn execute_migration_plan(
         current_tables,
         &files.state_before.tables,
         &target_infra_map.tables,
+        &project.migration_config.ignore_operations,
     );
 
     match drift {
@@ -565,7 +576,7 @@ mod tests {
         target.insert("posts".to_string(), create_test_table("posts"));
         target.insert("comments".to_string(), create_test_table("comments"));
 
-        let result = detect_drift(&current, &expected, &target);
+        let result = detect_drift(&current, &expected, &target, &[]);
         assert!(matches!(result, DriftStatus::NoDrift));
     }
 
@@ -580,7 +591,7 @@ mod tests {
 
         let target = current.clone();
 
-        let result = detect_drift(&current, &expected, &target);
+        let result = detect_drift(&current, &expected, &target, &[]);
         assert!(matches!(result, DriftStatus::AlreadyAtTarget));
     }
 
@@ -597,7 +608,7 @@ mod tests {
 
         let target = expected.clone();
 
-        let result = detect_drift(&current, &expected, &target);
+        let result = detect_drift(&current, &expected, &target, &[]);
         match result {
             DriftStatus::DriftDetected {
                 extra_tables,
@@ -624,7 +635,7 @@ mod tests {
 
         let target = expected.clone();
 
-        let result = detect_drift(&current, &expected, &target);
+        let result = detect_drift(&current, &expected, &target, &[]);
         match result {
             DriftStatus::DriftDetected {
                 extra_tables,
@@ -653,7 +664,7 @@ mod tests {
 
         let target = expected.clone();
 
-        let result = detect_drift(&current, &expected, &target);
+        let result = detect_drift(&current, &expected, &target, &[]);
         match result {
             DriftStatus::DriftDetected {
                 extra_tables,
@@ -680,7 +691,7 @@ mod tests {
 
         let target = expected.clone();
 
-        let result = detect_drift(&current, &expected, &target);
+        let result = detect_drift(&current, &expected, &target, &[]);
         match result {
             DriftStatus::DriftDetected {
                 extra_tables,
@@ -701,7 +712,7 @@ mod tests {
         let expected = HashMap::new();
         let target = HashMap::new();
 
-        let result = detect_drift(&current, &expected, &target);
+        let result = detect_drift(&current, &expected, &target, &[]);
         assert!(matches!(result, DriftStatus::NoDrift));
     }
 
@@ -717,7 +728,116 @@ mod tests {
         target.insert("posts".to_string(), create_test_table("posts"));
 
         // Current == Expected, but different from Target
-        let result = detect_drift(&current, &expected, &target);
+        let result = detect_drift(&current, &expected, &target, &[]);
         assert!(matches!(result, DriftStatus::NoDrift));
+    }
+
+    #[test]
+    fn test_ignore_table_ttl_differences() {
+        let mut current_table = create_test_table("users");
+        current_table.table_ttl_setting = Some("timestamp + INTERVAL 30 DAY".to_string());
+
+        let mut expected_table = create_test_table("users");
+        expected_table.table_ttl_setting = None;
+
+        let mut target_table = create_test_table("users");
+        target_table.table_ttl_setting = Some("timestamp + INTERVAL 90 DAY".to_string());
+
+        let mut current = HashMap::new();
+        current.insert("users".to_string(), current_table);
+        let mut expected = HashMap::new();
+        expected.insert("users".to_string(), expected_table);
+        let mut target = HashMap::new();
+        target.insert("users".to_string(), target_table);
+
+        // Without ignoring TTL, drift is detected
+        let result = detect_drift(&current, &expected, &target, &[]);
+        match result {
+            DriftStatus::DriftDetected { changed_tables, .. } => {
+                assert_eq!(changed_tables, vec!["users".to_string()]);
+            }
+            _ => panic!("Expected drift to be detected"),
+        }
+
+        // With ignoring table TTL, no drift
+        let result = detect_drift(
+            &current,
+            &expected,
+            &target,
+            &[IgnorableOperation::ModifyTableTtl],
+        );
+        assert!(matches!(result, DriftStatus::NoDrift));
+    }
+
+    #[test]
+    fn test_ignore_column_ttl_differences() {
+        let mut current_table = create_test_table("users");
+        current_table.columns[0].ttl = Some("timestamp + INTERVAL 7 DAY".to_string());
+
+        let expected_table = create_test_table("users");
+
+        let mut target_table = create_test_table("users");
+        target_table.columns[0].ttl = Some("timestamp + INTERVAL 14 DAY".to_string());
+
+        let mut current = HashMap::new();
+        current.insert("users".to_string(), current_table);
+        let mut expected = HashMap::new();
+        expected.insert("users".to_string(), expected_table);
+        let mut target = HashMap::new();
+        target.insert("users".to_string(), target_table);
+
+        // Without ignoring column TTL, drift is detected
+        let result = detect_drift(&current, &expected, &target, &[]);
+        match result {
+            DriftStatus::DriftDetected { changed_tables, .. } => {
+                assert_eq!(changed_tables, vec!["users".to_string()]);
+            }
+            _ => panic!("Expected drift to be detected"),
+        }
+
+        // With ignoring column TTL, no drift
+        let result = detect_drift(
+            &current,
+            &expected,
+            &target,
+            &[IgnorableOperation::ModifyColumnTtl],
+        );
+        assert!(matches!(result, DriftStatus::NoDrift));
+    }
+
+    #[test]
+    fn test_non_ignored_changes_still_detected() {
+        // Current DB has an extra column that wasn't expected (manual change)
+        let mut current_table = create_modified_table("users");
+        current_table.table_ttl_setting = Some("timestamp + INTERVAL 30 DAY".to_string());
+
+        // Expected state was the base table
+        let mut expected_table = create_test_table("users");
+        expected_table.table_ttl_setting = None;
+
+        // Target also wants the base table but with different TTL
+        let mut target_table = create_test_table("users");
+        target_table.table_ttl_setting = Some("timestamp + INTERVAL 90 DAY".to_string());
+
+        let mut current = HashMap::new();
+        current.insert("users".to_string(), current_table);
+        let mut expected = HashMap::new();
+        expected.insert("users".to_string(), expected_table);
+        let mut target = HashMap::new();
+        target.insert("users".to_string(), target_table);
+
+        // Even with ignoring table TTL, structural changes (extra column) are still detected
+        let result = detect_drift(
+            &current,
+            &expected,
+            &target,
+            &[IgnorableOperation::ModifyTableTtl],
+        );
+        match result {
+            DriftStatus::DriftDetected { changed_tables, .. } => {
+                assert_eq!(changed_tables, vec!["users".to_string()]);
+            }
+            _ => panic!("Expected drift to be detected due to structural change (extra column)"),
+        }
     }
 }
