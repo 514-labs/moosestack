@@ -33,6 +33,9 @@ export const TIMEOUTS = {
 
   // Schema validation timeout (30 seconds)
   SCHEMA_VALIDATION_MS: 30_000,
+
+  // Migration operations timeout (2 minutes)
+  MIGRATION_MS: 120_000,
 } as const;
 
 // Retry configuration

@@ -1,0 +1,24 @@
+{
+  "name": "ts-migrate",
+  "version": "0.0",
+  "scripts": {
+    "moose": "moose-cli",
+    "build": "moose-cli build --docker",
+    "dev": "moose-cli dev"
+  },
+  "dependencies": {
+    "axios": "^1.7.7",
+    "ts-patch": "^3.3.0",
+    "@514labs/moose-lib": "latest",
+    "typia": "^9.6.1"
+  },
+  "devDependencies": {
+    "@514labs/moose-cli": "latest",
+    "@types/node": "^20.12.12"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "@confluentinc/kafka-javascript"
+    ]
+  }
+}

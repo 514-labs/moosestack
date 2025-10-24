@@ -62,13 +62,25 @@ pub enum Commands {
     /// to production, considering the current state of the project
     Plan {
         /// URL of the remote Moose instance (default: http://localhost:4000)
-        #[arg(long)]
+        #[arg(long, conflicts_with = "clickhouse_url")]
         url: Option<String>,
 
         /// API token for authentication with the remote Moose instance
         /// This token will be sent as a Bearer token in the Authorization header
         #[arg(long)]
         token: Option<String>,
+
+        /// ClickHouse connection URL for serverless deployments
+        #[arg(long, conflicts_with = "url")]
+        clickhouse_url: Option<String>,
+    },
+
+    /// Execute a migration plan against a remote ClickHouse database
+    Migrate {
+        /// ClickHouse connection URL (e.g., clickhouse://user:pass@host:port/database or https://user:pass@host:port/database)
+        /// Authentication credentials should be included in the URL
+        #[arg(long)]
+        clickhouse_url: String,
     },
 
     /// View some data from a table or stream
@@ -189,13 +201,23 @@ pub enum GenerateCommand {
     HashToken {},
     /// Generate migration files
     Migration {
-        /// URL of the remote Moose instance
-        #[arg(long)]
-        url: String,
+        /// URL of the remote Moose instance (use with --token)
+        #[arg(
+            long,
+            conflicts_with = "clickhouse_url",
+            required_unless_present = "clickhouse_url"
+        )]
+        url: Option<String>,
+
         /// API token for authentication with the remote Moose instance
         /// This token will be sent as a Bearer token in the Authorization header
         #[arg(long)]
         token: Option<String>,
+
+        /// ClickHouse connection URL for serverless deployments
+        #[arg(long, conflicts_with = "url")]
+        clickhouse_url: Option<String>,
+
         /// Save the migration files in the migrations/ directory
         #[arg(long, default_value = "false")]
         save: bool,

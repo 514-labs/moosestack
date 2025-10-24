@@ -149,12 +149,14 @@ class UserSchema(BaseModel):
 
 ## Production Workflow
 
-### Remote Planning
+Moose supports two deployment patterns: **Moose Server** and **Serverless**.
 
-For production deployments, preview changes before applying:
+### Moose Server Deployments
+
+For deployments with a running Moose server, preview changes before applying:
 
 ```bash filename="Terminal" copy
-moose plan --url https://your-production-instance
+moose plan --url https://your-production-instance --token <token>
 ```
 
 <Callout type="warning" title="Authentication Required">
@@ -166,7 +168,58 @@ Remote planning requires authentication:
 [authentication]
 admin_api_key = "your-hashed-token"
 ```
-3. Use the token: `moose plan --token your-auth-token`
+3. Use the token with `--token` flag
+</Callout>
+
+**Deployment Flow:**
+1. **Develop locally** with `moose dev`
+2. **Test changes** in local environment
+3. **Plan against production**: `moose plan --url <url> --token <token>`
+4. **Review changes** carefully
+5. **Deploy** - Moose applies migrations automatically on startup
+
+### Serverless Deployments
+
+For serverless deployments (no Moose server), use the ClickHouse connection directly:
+
+```bash filename="Terminal" copy
+# Step 1: Generate migration files
+moose generate migration --clickhouse-url <url> --save
+
+# Step 2: Preview changes in PR
+moose plan --clickhouse-url clickhouse://user:pass@host:port/database
+
+# Step 3: Execute migration after merge
+moose migrate --clickhouse-url <url>
+```
+
+**Deployment Flow:**
+1. **Develop locally** with `moose dev`
+2. **Generate migration plan**: `moose generate migration --clickhouse-url <url> --save`
+3. **Create PR** with `plan.yaml`, `remote_state.json`, `local_infra_map.json`
+4. **PR validation**: Run `moose plan --clickhouse-url <url>` in CI to preview changes
+5. **Review** migration files and plan output
+6. **Merge PR**
+7. **Execute migration**: Run `moose migrate --clickhouse-url <url>` in CI/CD
+
+<Callout type="info" title="Serverless Configuration">
+Requires `state_config.storage = "clickhouse"` in `moose.config.toml`:
+```toml filename="moose.config.toml" copy
+[state_config]
+storage = "clickhouse"
+
+[features]
+olap = true
+data_models_v2 = true
+```
+</Callout>
+
+<Callout type="warning" title="ClickHouse Requirements for Serverless">
+Your ClickHouse instance needs the KeeperMap engine for state storage and migration locking.
+
+✅ **ClickHouse Cloud**: Works out of the box
+✅ **`moose dev` or `moose prod`**: Already configured
+⚠️ **Self-hosted ClickHouse**: See [ClickHouse KeeperMap documentation](https://clickhouse.com/docs/en/engines/table-engines/special/keeper-map) for setup requirements
 </Callout>
 
 ### Understanding Plan Output
@@ -177,14 +230,6 @@ Moose shows exactly what will change:
   +  Table: Analytics Version None - id: String, number: Int64, status: String -  - deduplicate: false
   +  Table: Users Version None - id: String, name: String, email: String -  - deduplicate: false
 ```
-
-### Production Deployment Flow
-
-1. **Develop locally** with `moose dev`
-2. **Test changes** in local environment
-3. **Plan against production** with `moose plan`
-4. **Review changes** carefully
-5. **Deploy** using your deployment process
 
 ## Migration Types
 
@@ -256,3 +301,7 @@ replication_factor = 1
 - Check `moose logs` for detailed error messages
 - Verify object definitions in your main file
 - Ensure all required fields are properly typed
+- **Stuck migration lock**: If you see "Migration already in progress" but no migration is running, wait 5 minutes for automatic expiry or manually clear it:
+  ```sql
+  DELETE FROM _MOOSE_STATE WHERE key = 'migration_lock';
+  ```

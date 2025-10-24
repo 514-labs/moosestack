@@ -605,7 +605,12 @@ pub async fn top_command_handler(
                     "Success".to_string(),
                 )))
             }
-            Some(GenerateCommand::Migration { url, token, save }) => {
+            Some(GenerateCommand::Migration {
+                url,
+                token,
+                clickhouse_url,
+                save,
+            }) => {
                 info!("Running generate migration command");
 
                 let project = load_project()?;
@@ -620,13 +625,24 @@ pub async fn top_command_handler(
 
                 check_project_name(&project.name())?;
 
-                let result = routines::remote_gen_migration(&project, url, token)
+                let remote = if let Some(clickhouse_url) = clickhouse_url {
+                    routines::RemoteSource::ClickHouse {
+                        url: clickhouse_url,
+                    }
+                } else {
+                    routines::RemoteSource::Moose {
+                        url: url.as_ref().unwrap(),
+                        token,
+                    }
+                };
+
+                let result = routines::remote_gen_migration(&project, remote)
                     .await
                     .map_err(|e| {
                         RoutineFailure::new(
                             Message {
                                 action: "Plan".to_string(),
-                                details: "Failed to plan changes".to_string(),
+                                details: "Failed to generate migration plan".to_string(),
                             },
                             e,
                         )
@@ -811,7 +827,11 @@ pub async fn top_command_handler(
                 "production infrastructure".to_string(),
             )))
         }
-        Commands::Plan { url, token } => {
+        Commands::Plan {
+            url,
+            token,
+            clickhouse_url,
+        } => {
             info!("Running plan command");
             let project = load_project()?;
 
@@ -825,7 +845,7 @@ pub async fn top_command_handler(
 
             check_project_name(&project.name())?;
 
-            let result = routines::remote_plan(&project, url, token).await;
+            let result = routines::remote_plan(&project, url, token, clickhouse_url).await;
 
             result.map_err(|e| {
                 RoutineFailure::error(Message {
@@ -839,6 +859,29 @@ pub async fn top_command_handler(
             Ok(RoutineSuccess::success(Message::new(
                 "Plan".to_string(),
                 "Successfully planned changes to the infrastructure".to_string(),
+            )))
+        }
+        Commands::Migrate { clickhouse_url } => {
+            info!("Running migrate command");
+            let project = load_project()?;
+
+            let capture_handle = crate::utilities::capture::capture_usage(
+                ActivityType::MigrateCommand,
+                Some(project.name()),
+                &settings,
+                machine_id.clone(),
+                HashMap::new(),
+            );
+
+            check_project_name(&project.name())?;
+
+            routines::migrate::execute_migration(&project, clickhouse_url).await?;
+
+            wait_for_usage_capture(capture_handle).await;
+
+            Ok(RoutineSuccess::success(Message::new(
+                "Migrate".to_string(),
+                "Successfully executed migration plan".to_string(),
             )))
         }
         Commands::Clean {} => {

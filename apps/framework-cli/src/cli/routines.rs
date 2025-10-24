@@ -118,16 +118,14 @@ use crate::framework::core::partial_infrastructure_map::LifeCycle;
 use crate::framework::core::plan::plan_changes;
 use crate::framework::core::plan::InfraPlan;
 use crate::framework::core::primitive_map::PrimitiveMap;
+use crate::framework::core::state_storage::StateStorageBuilder;
 use crate::infrastructure::olap::clickhouse::{check_ready, create_client};
 use crate::infrastructure::olap::OlapOperations;
 use crate::infrastructure::orchestration::temporal_client::{
     manager_from_project_if_enabled, probe_temporal,
 };
 use crate::infrastructure::stream::kafka::client::fetch_topics;
-use crate::utilities::constants::{
-    KEY_REMOTE_CLICKHOUSE_URL, MIGRATION_AFTER_STATE_FILE, MIGRATION_BEFORE_STATE_FILE,
-    MIGRATION_FILE, STORE_CRED_PROMPT,
-};
+use crate::utilities::constants::{KEY_REMOTE_CLICKHOUSE_URL, MIGRATION_FILE, STORE_CRED_PROMPT};
 use crate::utilities::keyring::{KeyringSecretRepository, SecretRepository};
 
 async fn maybe_warmup_connections(project: &Project, redis_client: &Arc<RedisClient>) {
@@ -167,6 +165,7 @@ pub mod kafka_pull;
 pub mod logs;
 pub mod ls;
 pub mod metrics_console;
+pub mod migrate;
 pub mod openapi;
 pub mod peek;
 pub mod ps;
@@ -400,7 +399,13 @@ pub async fn start_development_mode(
 
     let webapp_update_channel = web_server.spawn_webapp_update_listener(web_apps).await;
 
-    let (_, plan) = plan_changes(&redis_client, &project).await?;
+    // Create state storage once based on project configuration
+    let state_storage = StateStorageBuilder::from_config(&project)
+        .redis_client(Some(&redis_client))
+        .build()
+        .await?;
+
+    let (_, plan) = plan_changes(&*state_storage, &project).await?;
 
     let externally_managed: Vec<_> = plan
         .target_infra_map
@@ -550,7 +555,9 @@ pub async fn start_development_mode(
 
     let openapi_file = openapi(&project, &plan.target_infra_map).await?;
 
-    plan.target_infra_map.store_in_redis(&redis_client).await?;
+    state_storage
+        .store_infrastructure_map(&plan.target_infra_map)
+        .await?;
 
     let infra_map: &'static RwLock<InfrastructureMap> =
         Box::leak(Box::new(RwLock::new(plan.target_infra_map)));
@@ -567,7 +574,7 @@ pub async fn start_development_mode(
         infra_map,
         process_registry.clone(),
         metrics.clone(),
-        redis_client.clone(),
+        Arc::new(state_storage),
         settings.clone(),
         processing_coordinator.clone(),
     )?;
@@ -661,64 +668,25 @@ pub async fn start_production_mode(
     let route_table: &'static RwLock<HashMap<PathBuf, RouteMeta>> =
         Box::leak(Box::new(RwLock::new(route_table)));
 
-    let (current_state, plan) = plan_changes(&redis_client, &project).await?;
+    // Create state storage once based on project configuration
+    let state_storage = StateStorageBuilder::from_config(&project)
+        .redis_client(Some(&redis_client))
+        .build()
+        .await?;
+
+    let (current_state, plan) = plan_changes(&*state_storage, &project).await?;
     maybe_warmup_connections(&project, &redis_client).await;
 
     let execute_migration_yaml = project.features.ddl_plan && std::fs::exists(MIGRATION_FILE)?;
 
     if execute_migration_yaml {
-        info!("Executing pre-planned migrations");
-
-        // Load and validate the approved migration plan
-        let plan_content = std::fs::read_to_string(MIGRATION_FILE)?;
-        let migration_plan: MigrationPlan =
-            // see MigrationPlan::to_yaml for the reason of this workaround
-            serde_json::from_value(serde_yaml::from_str::<serde_json::Value>(&plan_content)?)?;
-
-        info!("Loaded approved migration plan from {:?}", MIGRATION_FILE);
-        info!("Plan created: {}", migration_plan.created_at);
-        info!("Total operations: {}", migration_plan.total_operations());
-
-        let before_state = std::fs::read_to_string(MIGRATION_BEFORE_STATE_FILE)?;
-        let state_when_planned: InfrastructureMap = serde_json::from_str(&before_state)?;
-
-        if current_state.tables == state_when_planned.tables {
-            info!("Before DB state matches.");
-
-            let after_state = std::fs::read_to_string(MIGRATION_AFTER_STATE_FILE)?;
-            let desired_state: InfrastructureMap = serde_json::from_str(&after_state)?;
-
-            if desired_state.tables == plan.target_infra_map.tables {
-                info!("Desired DB state matches.");
-            } else {
-                anyhow::bail!(
-                    "The desired state of the plan is different from the built infrastructure map.\nThe migration is perhaps generated before additional code change."
-                );
-            }
-
-            // Execute the migration plan directly using OLAP operations
-            if project.features.olap && !migration_plan.operations.is_empty() {
-                info!("Executing approved migration plan...");
-
-                let client = create_client(project.clickhouse_config.clone());
-                check_ready(&client).await?;
-                let is_dev = !project.is_production;
-                for operation in migration_plan.operations.iter() {
-                    crate::infrastructure::olap::clickhouse::execute_atomic_operation(
-                        &client.config.db_name,
-                        operation,
-                        &client,
-                        is_dev,
-                    )
-                    .await?;
-                }
-                info!("✓ Migration plan executed successfully");
-            }
-        } else if current_state.tables == plan.target_infra_map.tables {
-            info!("Current state already matches. Migration should be applied, ignoring.");
-        } else {
-            anyhow::bail!("The DB state has changed. Plan is no longer valid.");
-        }
+        migrate::execute_migration_plan(
+            &project,
+            &current_state.tables,
+            &plan.target_infra_map,
+            &*state_storage,
+        )
+        .await?;
     };
 
     plan_validator::validate(&project, &plan)?;
@@ -741,7 +709,9 @@ pub async fn start_production_mode(
     })
     .await?;
 
-    plan.target_infra_map.store_in_redis(&redis_client).await?;
+    state_storage
+        .store_infrastructure_map(&plan.target_infra_map)
+        .await?;
 
     let infra_map: &'static InfrastructureMap = Box::leak(Box::new(plan.target_infra_map));
 
@@ -1008,6 +978,7 @@ pub async fn remote_plan(
     project: &Project,
     base_url: &Option<String>,
     token: &Option<String>,
+    clickhouse_url: &Option<String>,
 ) -> anyhow::Result<()> {
     // Build the inframap from the local project
     let local_infra_map = if project.features.data_model_v2 {
@@ -1019,83 +990,108 @@ pub async fn remote_plan(
         InfrastructureMap::new(project, primitive_map)
     };
 
-    display::show_message_wrapper(
-        MessageType::Info,
-        Message {
-            action: "Remote Plan".to_string(),
-            details: "Comparing local project code with remote instance".to_string(),
-        },
-    );
+    // Determine remote source based on provided arguments
+    let remote_infra_map = if let Some(ch_url) = clickhouse_url {
+        // Serverless flow: connect directly to ClickHouse
+        display::show_message_wrapper(
+            MessageType::Info,
+            Message {
+                action: "Remote Plan".to_string(),
+                details: "Comparing local project code with ClickHouse database".to_string(),
+            },
+        );
 
-    // Try new endpoint first, fallback to legacy if not available
-    match get_remote_inframap_protobuf(base_url.as_deref(), token).await {
-        Ok(remote_infra_map) => {
-            // New flow: client-side diff calculation
-            display::show_message_wrapper(
-                MessageType::Info,
-                Message {
-                    action: "New Endpoint".to_string(),
-                    details: "Successfully retrieved infrastructure map from /admin/inframap"
-                        .to_string(),
-                },
-            );
+        get_remote_inframap_from_clickhouse(project, ch_url).await?
+    } else {
+        // Moose server flow
+        display::show_message_wrapper(
+            MessageType::Info,
+            Message {
+                action: "Remote Plan".to_string(),
+                details: "Comparing local project code with remote Moose instance".to_string(),
+            },
+        );
 
-            let changes = calculate_plan_diff_local(&remote_infra_map, &local_infra_map);
-
-            display::show_message_wrapper(
-                MessageType::Success,
-                Message {
-                    action: "Remote Plan".to_string(),
-                    details: "Calculated plan differences locally".to_string(),
-                },
-            );
-
-            if changes.is_empty() {
+        // Try new endpoint first, fallback to legacy if not available
+        match get_remote_inframap_protobuf(base_url.as_deref(), token).await {
+            Ok(infra_map) => {
                 display::show_message_wrapper(
                     MessageType::Info,
                     Message {
-                        action: "No Changes".to_string(),
-                        details: "No changes detected".to_string(),
+                        action: "New Endpoint".to_string(),
+                        details: "Successfully retrieved infrastructure map from /admin/inframap"
+                            .to_string(),
                     },
                 );
-                return Ok(());
+                infra_map
             }
+            Err(InfraRetrievalError::EndpointNotFound) => {
+                // Fallback to legacy logic
+                display::show_message_wrapper(
+                    MessageType::Info,
+                    Message {
+                        action: "Legacy Fallback".to_string(),
+                        details: "New endpoint not available, using legacy /admin/plan endpoint"
+                            .to_string(),
+                    },
+                );
+                return legacy_remote_plan_logic(project, base_url, token).await;
+            }
+            Err(e) => {
+                return Err(anyhow::anyhow!(
+                    "Failed to retrieve infrastructure map: {}",
+                    e
+                ));
+            }
+        }
+    };
 
-            // Create a temporary InfraPlan to use with the show_changes function
-            let temp_plan = InfraPlan {
-                changes,
-                target_infra_map: local_infra_map,
-            };
+    // Calculate and display changes
+    let changes = calculate_plan_diff_local(&remote_infra_map, &local_infra_map);
 
-            display::show_changes(&temp_plan);
-            Ok(())
-        }
-        Err(InfraRetrievalError::EndpointNotFound) => {
-            // Fallback to existing logic
-            display::show_message_wrapper(
-                MessageType::Info,
-                Message {
-                    action: "Legacy Fallback".to_string(),
-                    details: "New endpoint not available, using legacy /admin/plan endpoint"
-                        .to_string(),
-                },
-            );
-            legacy_remote_plan_logic(project, base_url, token).await
-        }
-        Err(e) => {
-            // Other errors should be propagated
-            Err(anyhow::anyhow!(
-                "Failed to retrieve infrastructure map: {}",
-                e
-            ))
-        }
+    display::show_message_wrapper(
+        MessageType::Success,
+        Message {
+            action: "Remote Plan".to_string(),
+            details: "Calculated plan differences locally".to_string(),
+        },
+    );
+
+    if changes.is_empty() {
+        display::show_message_wrapper(
+            MessageType::Info,
+            Message {
+                action: "No Changes".to_string(),
+                details: "No changes detected".to_string(),
+            },
+        );
+        return Ok(());
     }
+
+    // Create a temporary InfraPlan to use with the show_changes function
+    let temp_plan = InfraPlan {
+        changes,
+        target_infra_map: local_infra_map,
+    };
+
+    display::show_changes(&temp_plan);
+    Ok(())
+}
+
+/// Remote source for migration generation
+pub enum RemoteSource<'a> {
+    /// Full Moose deployment with HTTP server
+    Moose {
+        url: &'a str,
+        token: &'a Option<String>,
+    },
+    /// Direct ClickHouse connection for serverless/CLI-only
+    ClickHouse { url: &'a str },
 }
 
 pub async fn remote_gen_migration(
     project: &Project,
-    base_url: &str,
-    token: &Option<String>,
+    remote: RemoteSource<'_>,
 ) -> anyhow::Result<MigrationPlanWithBeforeAfter> {
     // Build the inframap from the local project
     let local_infra_map = if project.features.data_model_v2 {
@@ -1107,19 +1103,34 @@ pub async fn remote_gen_migration(
         InfrastructureMap::new(project, primitive_map)
     };
 
-    display::show_message_wrapper(
-        MessageType::Info,
-        Message {
-            action: "Remote Plan".to_string(),
-            details: "Comparing local project code with remote instance".to_string(),
-        },
-    );
+    // Get remote infrastructure map based on source type
+    let remote_infra_map = match remote {
+        RemoteSource::Moose { url, token } => {
+            display::show_message_wrapper(
+                MessageType::Info,
+                Message {
+                    action: "Remote Plan".to_string(),
+                    details: "Comparing local project code with remote Moose instance".to_string(),
+                },
+            );
 
-    use anyhow::Context;
-    // No fallback, we need the remote state
-    let remote_infra_map = get_remote_inframap_protobuf(Some(base_url), token)
-        .await
-        .with_context(|| "Failed to retrieve infrastructure map".to_string())?;
+            use anyhow::Context;
+            get_remote_inframap_protobuf(Some(url), token)
+                .await
+                .with_context(|| "Failed to retrieve infrastructure map".to_string())?
+        }
+        RemoteSource::ClickHouse { url } => {
+            display::show_message_wrapper(
+                MessageType::Info,
+                Message {
+                    action: "Remote Plan".to_string(),
+                    details: "Comparing local project code with ClickHouse database".to_string(),
+                },
+            );
+
+            get_remote_inframap_from_clickhouse(project, url).await?
+        }
+    };
 
     let changes = calculate_plan_diff_local(&remote_infra_map, &local_infra_map);
 
@@ -1136,6 +1147,48 @@ pub async fn remote_gen_migration(
         local_infra_map,
         db_migration: MigrationPlan::from_infra_plan(&changes)?,
     })
+}
+
+/// Get remote infrastructure map from ClickHouse directly (for serverless flow)
+async fn get_remote_inframap_from_clickhouse(
+    project: &Project,
+    clickhouse_url: &str,
+) -> anyhow::Result<InfrastructureMap> {
+    use crate::framework::core::plan::reconcile_with_reality;
+    use crate::framework::core::state_storage::{ClickHouseStateStorage, StateStorage};
+    use crate::infrastructure::olap::clickhouse::config::parse_clickhouse_connection_string;
+    use crate::infrastructure::olap::clickhouse::{check_ready, create_client};
+    use std::collections::HashSet;
+
+    let clickhouse_config = parse_clickhouse_connection_string(clickhouse_url)?;
+    let client = create_client(clickhouse_config.clone());
+    check_ready(&client).await?;
+
+    let state_storage = ClickHouseStateStorage::new(client, clickhouse_config.db_name.clone());
+    let remote_infra_map = state_storage
+        .load_infrastructure_map()
+        .await?
+        .unwrap_or_default();
+
+    // Reconcile with actual database state to detect manual changes
+    let reconciled_infra_map = if project.features.olap {
+        let target_table_names: HashSet<String> = remote_infra_map.tables.keys().cloned().collect();
+
+        // Create a separate client for reconciliation
+        let reconcile_client = create_client(clickhouse_config.clone());
+
+        reconcile_with_reality(
+            project,
+            &remote_infra_map,
+            &target_table_names,
+            reconcile_client,
+        )
+        .await?
+    } else {
+        remote_infra_map
+    };
+
+    Ok(reconciled_infra_map)
 }
 
 pub async fn remote_refresh(

@@ -3,6 +3,8 @@ title: Troubleshooting
 description: Troubleshooting for Moose
 ---
 
+import { Callout } from "@/components";
+
 # Troubleshooting
 
 Common issues and their solutions when working with Moose.
@@ -215,6 +217,29 @@ native_port = 9000
    # Check permissions
    moose auth check
    ```
+
+### Issue: Migration stuck with "Migration already in progress"
+
+**Cause:** A previous migration was interrupted without releasing its lock.
+
+**Solution:**
+
+1. **Wait 5 minutes** - locks expire automatically
+
+2. **Or manually clear the lock:**
+   ```sql
+   DELETE FROM _MOOSE_STATE WHERE key = 'migration_lock';
+   ```
+
+3. **Verify it worked:**
+   ```sql
+   SELECT * FROM _MOOSE_STATE WHERE key = 'migration_lock';
+   -- Should return no rows
+   ```
+
+<Callout type="info">
+The `_MOOSE_STATE` table uses ClickHouse's KeeperMap engine for distributed locking, ensuring only one migration runs at a time across multiple deployments.
+</Callout>
 
 ## Getting Help
 

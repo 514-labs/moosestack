@@ -3,6 +3,8 @@ title: Preparing access to ClickHouse, Redis, Temporal and Redpanda
 description: Preparing access to ClickHouse, Redis, Temporal and Redpanda
 ---
 
+import { Callout } from "@/components";
+
 # Preparing access to ClickHouse, Redis, Temporal and Redpanda 
 
 Your hosted Moose application requires access to hosted ClickHouse and Redis service instances. You can also optionally use Redpanda for event streaming. 
@@ -14,6 +16,16 @@ You can stand up open source versions of these applications within your environm
 - [Temporal Cloud](https://temporal.io)
 
 ## ClickHouse Configuration
+
+<Callout type="info" title="KeeperMap Engine Required for ClickHouse State Storage">
+If you're using `state_config.storage = "clickhouse"` in your config (serverless mode without Redis), your ClickHouse instance must support the **KeeperMap** table engine. This is used for migration state storage and distributed locking.
+
+✅ **ClickHouse Cloud**: Supported by default
+✅ **`moose dev` / `moose prod`**: Already configured in our Docker setup
+⚠️ **Self-hosted ClickHouse**: See [ClickHouse KeeperMap documentation](https://clickhouse.com/docs/en/engines/table-engines/special/keeper-map) for setup requirements
+
+If you're using Redis for state storage (`state_config.storage = "redis"`), you don't need KeeperMap.
+</Callout>
 
 For ClickHouse, you'll need the following information:
 

@@ -265,6 +265,82 @@ pub async fn execute_changes(
     Ok(())
 }
 
+/// Returns a human-readable description of an operation for logging/display
+pub fn describe_operation(operation: &SerializableOlapOperation) -> String {
+    match operation {
+        SerializableOlapOperation::CreateTable { table } => {
+            format!("Creating table '{}'", table.name)
+        }
+        SerializableOlapOperation::DropTable { table } => {
+            format!("Dropping table '{}'", table)
+        }
+        SerializableOlapOperation::AddTableColumn { table, column, .. } => {
+            format!("Adding column '{}' to table '{}'", column.name, table)
+        }
+        SerializableOlapOperation::DropTableColumn { table, column_name } => {
+            format!("Dropping column '{}' from table '{}'", column_name, table)
+        }
+        SerializableOlapOperation::ModifyTableColumn {
+            table,
+            after_column,
+            ..
+        } => {
+            format!(
+                "Modifying column '{}' in table '{}'",
+                after_column.name, table
+            )
+        }
+        SerializableOlapOperation::RenameTableColumn {
+            table,
+            before_column_name,
+            after_column_name,
+        } => {
+            format!(
+                "Renaming column '{}' to '{}' in table '{}'",
+                before_column_name, after_column_name, table
+            )
+        }
+        SerializableOlapOperation::ModifyTableSettings { table, .. } => {
+            format!("Modifying settings for table '{}'", table)
+        }
+        SerializableOlapOperation::AddTableIndex { table, index } => {
+            format!("Adding index '{}' to table '{}'", index.name, table)
+        }
+        SerializableOlapOperation::DropTableIndex { table, index_name } => {
+            format!("Dropping index '{}' from table '{}'", index_name, table)
+        }
+        SerializableOlapOperation::ModifySampleBy { table, expression } => {
+            format!(
+                "Modifying SAMPLE BY to '{}' for table '{}'",
+                expression, table
+            )
+        }
+        SerializableOlapOperation::RemoveSampleBy { table } => {
+            format!("Removing SAMPLE BY from table '{}'", table)
+        }
+        SerializableOlapOperation::ModifyTableTtl { table, after, .. } => {
+            if after.is_some() {
+                format!("Modifying table TTL for '{}'", table)
+            } else {
+                format!("Removing table TTL from '{}'", table)
+            }
+        }
+        SerializableOlapOperation::ModifyColumnTtl {
+            table,
+            column,
+            after,
+            ..
+        } => {
+            if after.is_some() {
+                format!("Modifying column '{}' TTL in table '{}'", column, table)
+            } else {
+                format!("Removing column '{}' TTL from table '{}'", column, table)
+            }
+        }
+        SerializableOlapOperation::RawSql { description, .. } => description.clone(),
+    }
+}
+
 /// Executes a single atomic OLAP operation.
 pub async fn execute_atomic_operation(
     db_name: &str,
@@ -1401,6 +1477,13 @@ impl OlapOperations for ConfiguredDBClient {
                 };
 
                 let mut annotations = Vec::new();
+
+                // Check for LowCardinality wrapper
+                if col_type.starts_with("LowCardinality(") {
+                    debug!("Detected LowCardinality for column {}", col_name);
+                    annotations.push(("LowCardinality".to_string(), serde_json::json!(true)));
+                }
+
                 if let Ok(Some((function_name, arg_type))) =
                     type_parser::extract_simple_aggregate_function(&col_type)
                 {
