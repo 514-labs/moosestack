@@ -403,10 +403,12 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
         await withRetries(
           async () => {
             const ddl = await getTableDDL("TTLTable");
-            if (!ddl.includes("TTL timestamp + toIntervalDay(60) DELETE")) {
+            if (!/TTL timestamp \+ toIntervalDay\(90\)\s+SETTINGS/.test(ddl)) {
               throw new Error(`Table TTL not updated to 60 days. DDL: ${ddl}`);
             }
-            if (!ddl.includes("TTL timestamp + toIntervalDay(14)")) {
+            if (
+              !ddl.includes("`email` String TTL timestamp + toIntervalDay(14)")
+            ) {
               throw new Error(`Column TTL not updated to 14 days. DDL: ${ddl}`);
             }
           },
