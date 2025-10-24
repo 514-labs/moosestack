@@ -470,6 +470,52 @@ You cannot have multiple transforms between the same source and destination stre
 - Implement a fan-out/fan-in pattern, where you route records to different intermediate streams and then merge them back into the destination stream.
 </Callout>
 
+### Array transforms
+
+Transforms can now return arrays, and Moose will emit each element as its own Kafka message. This is perfect for explode/unnest workloads where a single upstream record fan-outs into many downstream facts.
+
+<TypeScript>
+```ts filename="ArrayTransform.ts"
+import { IngestPipeline, Stream, OlapTable } from "@514labs/moose-lib";
+
+interface OrderEvent {
+  orderId: string;
+  customerId: string;
+  items: {
+    sku: string;
+    price: number;
+  }[];
+  timestamp: Date;
+}
+
+interface OrderItem {
+  orderId: string;
+  customerId: string;
+  sku: string;
+  price: number;
+  timestamp: Date;
+}
+
+const orderEvents = new IngestPipeline<OrderEvent>("OrderEvent", { stream: true });
+const orderItemTable = new OlapTable<OrderItem>("OrderItem", { orderByFields: ["orderId", "timestamp"] });
+const orderItemStream = new Stream<OrderItem>("OrderItem", { destination: orderItemTable });
+
+orderEvents.getStream().addTransform(orderItemStream, (event) =>
+  event.items.map((item) => ({
+    orderId: event.orderId,
+    customerId: event.customerId,
+    sku: item.sku,
+    price: item.price,
+    timestamp: event.timestamp,
+  }))
+);
+```
+</TypeScript>
+
+<Callout type="info">
+Each object returned from the array becomes an individual message with its own offset and retry semantics. You no longer need manual producer loops to fan out data.
+</Callout>
+
 ## Error Handling with Dead Letter Queues
 
 When stream processing fails, you can configure dead letter queues to capture failed messages for later analysis and recovery. This prevents single message failures from stopping your entire pipeline.

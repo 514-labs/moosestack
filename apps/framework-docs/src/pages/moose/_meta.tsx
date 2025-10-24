@@ -50,6 +50,10 @@ const rawMeta = {
     title: "MCP - AI Assisted Dev",
     Icon: Sparkles,
   },
+  "llm-docs": {
+    title: "LLM Optimized Docs",
+    Icon: BookMarked,
+  },
   "data-modeling": {
     title: "Data Modeling",
     Icon: FileCode,

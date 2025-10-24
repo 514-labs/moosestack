@@ -13,6 +13,22 @@ The `moose.config.toml` file is the primary way to configure all Moose infrastru
 Do not use docker-compose overrides to modify Moose-managed services. See [Development Mode](/moose/local-dev#extending-docker-infrastructure) for guidelines on when to use docker-compose extensions.
 </Callout>
 
+## Custom source directory
+
+Moose defaults to loading app code from the `app/` folder. Set `source_dir` in `moose.config.toml` to point at any directory (for example `src/` in a monorepo), and Moose will load your data models, APIs, and workflows from that location. The CLI also exposes the setting to runtimes through the `MOOSE_SOURCE_DIR` environment variable so both the TypeScript and Python executors import from the correct path.
+
+```toml filename="moose.config.toml"
+language = "TypeScript"
+source_dir = "src"
+```
+
+```bash filename="Terminal"
+# Available for custom tooling or CI
+echo $MOOSE_SOURCE_DIR   # -> src
+```
+
+Updating this value allows you to reorganize projects without symlinks or wrapper scripts—Moose will scaffold, build, and deploy from the directory you specify.
+
 ```toml
 # Programming language used in the project (`Typescript` or `Python`)
 language = "Typescript"
@@ -163,4 +179,3 @@ olap = true
 # Enable Analytics APIs server (Default: true)
 apis = true
 ```
-

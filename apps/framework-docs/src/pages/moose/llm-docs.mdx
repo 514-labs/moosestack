@@ -13,26 +13,11 @@ Moose now publishes lightweight documentation bundles so AI assistants can reaso
 - Python bundle: `/llm-py.txt`
 - Scoped bundle: append `?path=relative/docs/section` to either endpoint to fetch a specific subsection
 
-You can open these URLs in a browser, pipe them into tooling, or share them with agents such as Claude, Cursor, and Windsurf. The payload contains:
-
-- Normalized headings and Markdown stripped of styling noise
-- Canonical component names (tables, streams, APIs, workflows)
-- Short code snippets that illustrate the API surface area
-- Metadata blocks so assistants know which language the snippet targets
+You can open these URLs in a browser, pipe them into tooling, or share them with agents such as Claude, Cursor, and Windsurf. 
 
 ```bash filename="Terminal"
 # Fetch the TypeScript bundle for the OLAP docs
 curl "http://localhost:4000/llm-ts.txt?path=moose/olap/model-table"
 ```
-
-<Callout type="info" title="Automatically accessible in docs">
-Every docs page now shows **View → LLM (TS)** and **View → LLM (Py)** shortcuts in the sidebar so you can copy a scoped link directly into your assistant.
-</Callout>
-
-## When to use it
-
-- Prime an AI assistant before asking for Moose-specific help
-- Share a bundle link in GitHub issues or support tickets so context stays consistent
-- Integrate with MCP or custom bots to keep local knowledge bases in sync
 
 For project-specific knowledge, combine these static bundles with live context from the [MCP server](/moose/mcp-dev-server).
