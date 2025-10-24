@@ -81,6 +81,11 @@ pub enum Commands {
         /// Authentication credentials should be included in the URL
         #[arg(long)]
         clickhouse_url: String,
+
+        /// Redis connection URL for state storage (e.g., redis://host:port)
+        /// Required when state_config.storage = "redis"
+        #[arg(long)]
+        redis_url: Option<String>,
     },
 
     /// View some data from a table or stream
@@ -217,6 +222,11 @@ pub enum GenerateCommand {
         /// ClickHouse connection URL for serverless deployments
         #[arg(long, conflicts_with = "url")]
         clickhouse_url: Option<String>,
+
+        /// Redis connection URL for state storage (e.g., redis://host:port)
+        /// Required when state_config.storage = "redis"
+        #[arg(long)]
+        redis_url: Option<String>,
 
         /// Save the migration files in the migrations/ directory
         #[arg(long, default_value = "false")]

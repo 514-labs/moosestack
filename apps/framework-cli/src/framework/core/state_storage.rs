@@ -32,6 +32,14 @@ pub trait StateStorage: Send + Sync {
 
     /// Load the infrastructure map
     async fn load_infrastructure_map(&self) -> Result<Option<InfrastructureMap>>;
+
+    /// Try to acquire migration lock
+    /// Must be manually released with release_migration_lock()
+    /// Lock automatically expires after 5 minutes as a safety fallback
+    async fn acquire_migration_lock(&self) -> Result<()>;
+
+    /// Release migration lock
+    async fn release_migration_lock(&self) -> Result<()>;
 }
 
 /// Redis-based state storage
@@ -40,6 +48,9 @@ pub struct RedisStateStorage {
 }
 
 impl RedisStateStorage {
+    const LOCK_KEY: &'static str = "migration_lock";
+    const LOCK_TIMEOUT_SECS: i64 = 300; // 5 minutes
+
     pub fn new(client: Arc<RedisClient>) -> Self {
         Self { client }
     }
@@ -53,6 +64,59 @@ impl StateStorage for RedisStateStorage {
 
     async fn load_infrastructure_map(&self) -> Result<Option<InfrastructureMap>> {
         InfrastructureMap::load_from_last_redis_prefix(&self.client).await
+    }
+
+    async fn acquire_migration_lock(&self) -> Result<()> {
+        // Use LeadershipManager's atomic lock acquisition
+        let (has_lock, is_new) = self
+            .client
+            .leadership_manager
+            .attempt_lock(
+                self.client.connection_manager.connection.clone(),
+                Self::LOCK_KEY,
+                Self::LOCK_TIMEOUT_SECS,
+            )
+            .await;
+
+        if !has_lock {
+            // Check if there's an existing lock to provide better error message
+            let lock_value: Option<String> =
+                self.client.get_with_service_prefix(Self::LOCK_KEY).await?;
+
+            if lock_value.is_some() {
+                anyhow::bail!(
+                    "Migration already in progress. Lock expires automatically after {} seconds.",
+                    Self::LOCK_TIMEOUT_SECS
+                );
+            } else {
+                anyhow::bail!("Failed to acquire migration lock (race condition)");
+            }
+        }
+
+        if is_new {
+            info!(
+                "Acquired migration lock (expires in {} seconds)",
+                Self::LOCK_TIMEOUT_SECS
+            );
+        }
+
+        Ok(())
+    }
+
+    async fn release_migration_lock(&self) -> Result<()> {
+        let machine_id = get_or_create_machine_id();
+
+        self.client
+            .leadership_manager
+            .release_lock(
+                self.client.connection_manager.connection.clone(),
+                Self::LOCK_KEY,
+                &machine_id,
+            )
+            .await?;
+
+        info!("Released migration lock");
+        Ok(())
     }
 }
 
@@ -106,11 +170,102 @@ impl ClickHouseStateStorage {
 
         Ok(())
     }
+}
 
-    /// Try to acquire migration lock
-    /// Must be manually released with release_migration_lock()
-    /// Lock automatically expires after 5 minutes as a safety fallback
-    pub async fn acquire_migration_lock(&self) -> Result<()> {
+#[async_trait]
+impl StateStorage for ClickHouseStateStorage {
+    async fn store_infrastructure_map(&self, infra_map: &InfrastructureMap) -> Result<()> {
+        // Ensure table exists
+        self.ensure_state_table().await?;
+
+        // Serialize to protobuf
+        let encoded: Vec<u8> = infra_map.to_proto().write_to_bytes()?;
+        let encoded_base64 =
+            base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &encoded);
+
+        // Use timestamp-based key for history
+        let timestamp_ms = Utc::now().timestamp_millis();
+        let key = format!("infra_map_{}", timestamp_ms);
+
+        // Insert with timestamp key (creates audit history)
+        let insert_sql = format!(
+            "INSERT INTO `{}`.`{}` (key, value) VALUES ('{}', '{}')",
+            self.db_name,
+            Self::STATE_TABLE,
+            key,
+            encoded_base64
+        );
+
+        debug!(
+            "Storing infrastructure map in ClickHouse KeeperMap state table (key: {})",
+            key
+        );
+
+        self.client
+            .client
+            .query(&insert_sql)
+            .execute()
+            .await
+            .context("Failed to store infrastructure map in ClickHouse")?;
+
+        info!("Stored infrastructure map in ClickHouse ({})", key);
+
+        Ok(())
+    }
+
+    async fn load_infrastructure_map(&self) -> Result<Option<InfrastructureMap>> {
+        // Ensure table exists first
+        self.ensure_state_table().await?;
+
+        // Query for the latest state by timestamp
+        let query_sql = format!(
+            r#"
+            SELECT value
+            FROM `{}`.`{}`
+            WHERE key LIKE 'infra_map_%'
+            ORDER BY created_at DESC
+            LIMIT 1
+            "#,
+            self.db_name,
+            Self::STATE_TABLE
+        );
+
+        debug!("Loading infrastructure map from ClickHouse KeeperMap state table");
+
+        let mut cursor = self
+            .client
+            .client
+            .query(&query_sql)
+            .fetch::<String>()
+            .context("Failed to query state table")?;
+
+        // Try to get the first row
+        let value_str = match cursor.next().await {
+            Ok(Some(value)) => value,
+            Ok(None) => {
+                debug!("No infrastructure map found in ClickHouse state table");
+                return Ok(None);
+            }
+            Err(e) => {
+                return Err(anyhow::anyhow!("Failed to fetch row: {}", e));
+            }
+        };
+
+        // Decode from base64
+        let encoded =
+            base64::Engine::decode(&base64::engine::general_purpose::STANDARD, &value_str)
+                .context("Failed to decode base64 state value")?;
+
+        // Deserialize from protobuf
+        let infra_map = InfrastructureMap::from_proto(encoded)
+            .context("Failed to deserialize infrastructure map from protobuf")?;
+
+        info!("Loaded infrastructure map from ClickHouse");
+
+        Ok(Some(infra_map))
+    }
+
+    async fn acquire_migration_lock(&self) -> Result<()> {
         self.ensure_state_table().await?;
 
         // Enable strict mode for this session - INSERT will fail if key exists (not overwrite)
@@ -225,8 +380,7 @@ impl ClickHouseStateStorage {
         }
     }
 
-    /// Release migration lock
-    pub async fn release_migration_lock(&self) -> Result<()> {
+    async fn release_migration_lock(&self) -> Result<()> {
         let delete_sql = format!(
             "DELETE FROM `{}`.`{}` WHERE key = '{}'",
             self.db_name,
@@ -243,100 +397,6 @@ impl ClickHouseStateStorage {
 
         info!("Released migration lock");
         Ok(())
-    }
-}
-
-#[async_trait]
-impl StateStorage for ClickHouseStateStorage {
-    async fn store_infrastructure_map(&self, infra_map: &InfrastructureMap) -> Result<()> {
-        // Ensure table exists
-        self.ensure_state_table().await?;
-
-        // Serialize to protobuf
-        let encoded: Vec<u8> = infra_map.to_proto().write_to_bytes()?;
-        let encoded_base64 =
-            base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &encoded);
-
-        // Use timestamp-based key for history
-        let timestamp_ms = Utc::now().timestamp_millis();
-        let key = format!("infra_map_{}", timestamp_ms);
-
-        // Insert with timestamp key (creates audit history)
-        let insert_sql = format!(
-            "INSERT INTO `{}`.`{}` (key, value) VALUES ('{}', '{}')",
-            self.db_name,
-            Self::STATE_TABLE,
-            key,
-            encoded_base64
-        );
-
-        debug!(
-            "Storing infrastructure map in ClickHouse KeeperMap state table (key: {})",
-            key
-        );
-
-        self.client
-            .client
-            .query(&insert_sql)
-            .execute()
-            .await
-            .context("Failed to store infrastructure map in ClickHouse")?;
-
-        info!("Stored infrastructure map in ClickHouse ({})", key);
-
-        Ok(())
-    }
-
-    async fn load_infrastructure_map(&self) -> Result<Option<InfrastructureMap>> {
-        // Ensure table exists first
-        self.ensure_state_table().await?;
-
-        // Query for the latest state by timestamp
-        let query_sql = format!(
-            r#"
-            SELECT value
-            FROM `{}`.`{}`
-            WHERE key LIKE 'infra_map_%'
-            ORDER BY created_at DESC
-            LIMIT 1
-            "#,
-            self.db_name,
-            Self::STATE_TABLE
-        );
-
-        debug!("Loading infrastructure map from ClickHouse KeeperMap state table");
-
-        let mut cursor = self
-            .client
-            .client
-            .query(&query_sql)
-            .fetch::<String>()
-            .context("Failed to query state table")?;
-
-        // Try to get the first row
-        let value_str = match cursor.next().await {
-            Ok(Some(value)) => value,
-            Ok(None) => {
-                debug!("No infrastructure map found in ClickHouse state table");
-                return Ok(None);
-            }
-            Err(e) => {
-                return Err(anyhow::anyhow!("Failed to fetch row: {}", e));
-            }
-        };
-
-        // Decode from base64
-        let encoded =
-            base64::Engine::decode(&base64::engine::general_purpose::STANDARD, &value_str)
-                .context("Failed to decode base64 state value")?;
-
-        // Deserialize from protobuf
-        let infra_map = InfrastructureMap::from_proto(encoded)
-            .context("Failed to deserialize infrastructure map from protobuf")?;
-
-        info!("Loaded infrastructure map from ClickHouse");
-
-        Ok(Some(infra_map))
     }
 }
 
