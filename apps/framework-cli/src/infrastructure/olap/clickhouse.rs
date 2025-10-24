@@ -186,6 +186,28 @@ pub enum SerializableOlapOperation {
     },
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[serde(rename_all = "PascalCase")]
+pub enum IgnorableOperation {
+    ModifyTableTtl,
+    ModifyColumnTtl,
+}
+
+impl IgnorableOperation {
+    pub fn matches(&self, op: &SerializableOlapOperation) -> bool {
+        matches!(
+            (self, op),
+            (
+                Self::ModifyTableTtl,
+                SerializableOlapOperation::ModifyTableTtl { .. }
+            ) | (
+                Self::ModifyColumnTtl,
+                SerializableOlapOperation::ModifyColumnTtl { .. }
+            )
+        )
+    }
+}
+
 /// Executes a series of changes to the ClickHouse database schema
 ///
 /// # Arguments
