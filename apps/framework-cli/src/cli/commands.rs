@@ -80,7 +80,7 @@ pub enum Commands {
         /// ClickHouse connection URL (e.g., clickhouse://user:pass@host:port/database or https://user:pass@host:port/database)
         /// Authentication credentials should be included in the URL
         #[arg(long)]
-        clickhouse_url: String,
+        clickhouse_url: Option<String>,
 
         /// Redis connection URL for state storage (e.g., redis://host:port)
         /// Required when state_config.storage = "redis"
