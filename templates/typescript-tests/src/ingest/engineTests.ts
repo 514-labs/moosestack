@@ -4,6 +4,7 @@ import {
   Key,
   DateTime,
   ClickHouseTTL,
+  ClickHouseDefault,
 } from "@514labs/moose-lib";
 
 /**
@@ -41,6 +42,19 @@ export const TTLTable = new OlapTable<TTLTestData>("TTLTable", {
   engine: ClickHouseEngines.MergeTree,
   orderByFields: ["id", "timestamp"],
   ttl: "timestamp + INTERVAL 90 DAY DELETE",
+});
+
+// Table with DEFAULT values for testing DEFAULT removal
+export interface DefaultTestData {
+  id: Key<string>;
+  timestamp: DateTime;
+  status: string & ClickHouseDefault<"'pending'">;
+  count: number & ClickHouseDefault<"0">;
+}
+
+export const DefaultTable = new OlapTable<DefaultTestData>("DefaultTable", {
+  engine: ClickHouseEngines.MergeTree,
+  orderByFields: ["id", "timestamp"],
 });
 
 // Test MergeTree engine (default)
@@ -223,4 +237,5 @@ export const allEngineTestTables = [
   ReplicatedSummingMergeTreeTable,
   SampleByTable,
   TTLTable,
+  DefaultTable,
 ];

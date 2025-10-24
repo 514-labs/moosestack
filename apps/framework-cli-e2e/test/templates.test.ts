@@ -415,6 +415,80 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
           { attempts: 10, delayMs: 1000 },
         );
       });
+
+      it("should plan/apply DEFAULT removal on existing tables", async function () {
+        this.timeout(TIMEOUTS.TEST_SETUP_MS);
+
+        // First, verify initial DEFAULT settings
+        await withRetries(
+          async () => {
+            const ddl = await getTableDDL("DefaultTable");
+            if (!ddl.includes("`status` String DEFAULT 'pending'")) {
+              throw new Error(`Initial status DEFAULT not found. DDL: ${ddl}`);
+            }
+            if (!ddl.includes("`count` Int32 DEFAULT 0")) {
+              throw new Error(`Initial count DEFAULT not found. DDL: ${ddl}`);
+            }
+          },
+          { attempts: 10, delayMs: 1000 },
+        );
+
+        // Modify the template file to remove DEFAULT settings
+        const engineTestsPath = path.join(
+          TEST_PROJECT_DIR,
+          "src",
+          "ingest",
+          config.language === "typescript" ?
+            "engineTests.ts"
+          : "engine_tests.py",
+        );
+        let contents = await fs.promises.readFile(engineTestsPath, "utf8");
+
+        // Remove both DEFAULT annotations
+        if (config.language === "typescript") {
+          contents = contents
+            .replace(
+              "status: string & ClickHouseDefault<\"'pending'\">;",
+              "status: string;",
+            )
+            .replace(
+              'count: number & ClickHouseDefault<"0">;',
+              "count: number;",
+            );
+        } else {
+          contents = contents
+            .replace(
+              "status: Annotated[str, clickhouse_default(\"'pending'\")]",
+              "status: str",
+            )
+            .replace(
+              'count: Annotated[int, clickhouse_default("0")]',
+              "count: int",
+            );
+        }
+        await fs.promises.writeFile(engineTestsPath, contents, "utf8");
+
+        // Verify DDL reflects removed DEFAULT settings
+        await withRetries(
+          async () => {
+            const ddl = await getTableDDL("DefaultTable");
+            if (ddl.includes("`status` String DEFAULT 'pending'")) {
+              throw new Error(`DEFAULT not removed from status. DDL: ${ddl}`);
+            }
+            if (ddl.includes("`count` Int32 DEFAULT 0")) {
+              throw new Error(`DEFAULT not removed from count. DDL: ${ddl}`);
+            }
+            // Verify columns still exist without DEFAULT
+            if (!ddl.includes("`status` String")) {
+              throw new Error(`status column not found. DDL: ${ddl}`);
+            }
+            if (!ddl.includes("`count` Int32")) {
+              throw new Error(`count column not found. DDL: ${ddl}`);
+            }
+          },
+          { attempts: 10, delayMs: 1000 },
+        );
+      });
     }
 
     // Create test case based on language
