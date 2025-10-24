@@ -609,6 +609,7 @@ pub async fn top_command_handler(
                 url,
                 token,
                 clickhouse_url,
+                redis_url,
                 save,
             }) => {
                 info!("Running generate migration command");
@@ -627,7 +628,8 @@ pub async fn top_command_handler(
 
                 let remote = if let Some(clickhouse_url) = clickhouse_url {
                     routines::RemoteSource::ClickHouse {
-                        url: clickhouse_url,
+                        clickhouse_url,
+                        redis_url,
                     }
                 } else {
                     routines::RemoteSource::Moose {
@@ -861,7 +863,10 @@ pub async fn top_command_handler(
                 "Successfully planned changes to the infrastructure".to_string(),
             )))
         }
-        Commands::Migrate { clickhouse_url } => {
+        Commands::Migrate {
+            clickhouse_url,
+            redis_url,
+        } => {
             info!("Running migrate command");
             let project = load_project()?;
 
@@ -875,7 +880,8 @@ pub async fn top_command_handler(
 
             check_project_name(&project.name())?;
 
-            routines::migrate::execute_migration(&project, clickhouse_url).await?;
+            routines::migrate::execute_migration(&project, clickhouse_url, redis_url.as_deref())
+                .await?;
 
             wait_for_usage_capture(capture_handle).await;
 

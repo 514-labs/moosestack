@@ -5,7 +5,9 @@ use crate::cli::routines::RoutineFailure;
 use crate::framework::core::infrastructure::table::Table;
 use crate::framework::core::infrastructure_map::InfrastructureMap;
 use crate::framework::core::migration_plan::MigrationPlan;
-use crate::framework::core::state_storage::{ClickHouseStateStorage, StateStorage};
+use crate::framework::core::state_storage::{
+    ClickHouseStateStorage, RedisStateStorage, StateStorage,
+};
 use crate::infrastructure::olap::clickhouse::config::parse_clickhouse_connection_string;
 use crate::infrastructure::olap::clickhouse::{check_ready, create_client, ConfiguredDBClient};
 use crate::project::Project;
@@ -279,21 +281,9 @@ fn report_partial_failure(succeeded_count: usize, total_count: usize) {
 pub async fn execute_migration(
     project: &Project,
     clickhouse_url: &str,
+    redis_url: Option<&str>,
 ) -> Result<(), RoutineFailure> {
-    // Validate that state storage is configured for ClickHouse
-    if project.state_config.storage != "clickhouse" {
-        return Err(RoutineFailure::error(Message {
-            action: "Configuration".to_string(),
-            details: format!(
-                "moose migrate requires state_config.storage = \"clickhouse\"\n\
-                 \n\
-                 Current setting: state_config.storage = \"{}\"\n",
-                project.state_config.storage
-            ),
-        }));
-    }
-
-    // Parse URL and create client
+    // Parse ClickHouse URL and create client
     let clickhouse_config = parse_clickhouse_connection_string(clickhouse_url).map_err(|e| {
         RoutineFailure::new(
             Message::new(
@@ -314,8 +304,55 @@ pub async fn execute_migration(
         )
     })?;
 
-    // Create state storage directly from CLI-provided ClickHouse URL
-    let state_storage = ClickHouseStateStorage::new(client, clickhouse_config.db_name.clone());
+    // Build state storage based on config
+    use crate::infrastructure::redis::redis_client::{RedisClient, RedisConfig};
+    use std::sync::Arc;
+
+    let state_storage: Box<dyn StateStorage> = match project.state_config.storage.as_str() {
+        "redis" => {
+            let redis_url_from_env = std::env::var("MOOSE_REDIS_CONFIG__URL").ok();
+            let redis_url = redis_url.or(redis_url_from_env.as_deref()).ok_or_else(|| {
+                RoutineFailure::error(Message {
+                    action: "Configuration".to_string(),
+                    details: "--redis-url required when state_config.storage = \"redis\""
+                        .to_string(),
+                })
+            })?;
+
+            let redis_config = RedisConfig {
+                url: redis_url.to_string(),
+                key_prefix: project.redis_config.key_prefix.clone(),
+                ..Default::default()
+            };
+            let redis_client = Arc::new(
+                RedisClient::new("moose_migrate".to_string(), redis_config)
+                    .await
+                    .map_err(|e| {
+                        RoutineFailure::new(
+                            Message::new(
+                                "Redis".to_string(),
+                                "Failed to connect to Redis".to_string(),
+                            ),
+                            e,
+                        )
+                    })?,
+            );
+            Box::new(RedisStateStorage::new(redis_client))
+        }
+        "clickhouse" => Box::new(ClickHouseStateStorage::new(
+            client,
+            clickhouse_config.db_name.clone(),
+        )),
+        _ => {
+            return Err(RoutineFailure::error(Message {
+                action: "Configuration".to_string(),
+                details: format!(
+                    "Invalid state_config.storage: {}",
+                    project.state_config.storage
+                ),
+            }));
+        }
+    };
 
     // Acquire migration lock to prevent concurrent migrations
     state_storage.acquire_migration_lock().await.map_err(|e| {
@@ -389,18 +426,23 @@ pub async fn execute_migration(
                 )
             })?;
 
-        // Execute migration (moose migrate always uses ClickHouse state)
-        execute_migration_plan(project, current_tables, &target_infra_map, &state_storage)
-            .await
-            .map_err(|e| {
-                RoutineFailure::new(
-                    Message::new(
-                        "\nMigration".to_string(),
-                        "Failed to execute migration plan".to_string(),
-                    ),
-                    e,
-                )
-            })
+        // Execute migration
+        execute_migration_plan(
+            project,
+            current_tables,
+            &target_infra_map,
+            state_storage.as_ref(),
+        )
+        .await
+        .map_err(|e| {
+            RoutineFailure::new(
+                Message::new(
+                    "\nMigration".to_string(),
+                    "Failed to execute migration plan".to_string(),
+                ),
+                e,
+            )
+        })
     }
     .await;
 

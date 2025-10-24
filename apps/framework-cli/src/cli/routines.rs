@@ -991,17 +991,17 @@ pub async fn remote_plan(
     };
 
     // Determine remote source based on provided arguments
-    let remote_infra_map = if let Some(ch_url) = clickhouse_url {
+    let remote_infra_map = if let Some(clickhouse_url) = clickhouse_url {
         // Serverless flow: connect directly to ClickHouse
         display::show_message_wrapper(
             MessageType::Info,
             Message {
                 action: "Remote Plan".to_string(),
-                details: "Comparing local project code with ClickHouse database".to_string(),
+                details: "Comparing local project code with deployed infrastructure".to_string(),
             },
         );
 
-        get_remote_inframap_from_clickhouse(project, ch_url).await?
+        get_remote_inframap_serverless(project, clickhouse_url, None).await?
     } else {
         // Moose server flow
         display::show_message_wrapper(
@@ -1086,7 +1086,10 @@ pub enum RemoteSource<'a> {
         token: &'a Option<String>,
     },
     /// Direct ClickHouse connection for serverless/CLI-only
-    ClickHouse { url: &'a str },
+    ClickHouse {
+        clickhouse_url: &'a str,
+        redis_url: &'a Option<String>,
+    },
 }
 
 pub async fn remote_gen_migration(
@@ -1119,16 +1122,20 @@ pub async fn remote_gen_migration(
                 .await
                 .with_context(|| "Failed to retrieve infrastructure map".to_string())?
         }
-        RemoteSource::ClickHouse { url } => {
+        RemoteSource::ClickHouse {
+            clickhouse_url,
+            redis_url,
+        } => {
             display::show_message_wrapper(
                 MessageType::Info,
                 Message {
                     action: "Remote Plan".to_string(),
-                    details: "Comparing local project code with ClickHouse database".to_string(),
+                    details: "Comparing local project code with deployed infrastructure"
+                        .to_string(),
                 },
             );
 
-            get_remote_inframap_from_clickhouse(project, url).await?
+            get_remote_inframap_serverless(project, clickhouse_url, redis_url.as_deref()).await?
         }
     };
 
@@ -1149,22 +1156,57 @@ pub async fn remote_gen_migration(
     })
 }
 
-/// Get remote infrastructure map from ClickHouse directly (for serverless flow)
-async fn get_remote_inframap_from_clickhouse(
+/// Get remote infrastructure map for serverless deployments
+///
+/// Loads state from Redis or ClickHouse (based on config), then reconciles with actual ClickHouse schema
+async fn get_remote_inframap_serverless(
     project: &Project,
     clickhouse_url: &str,
+    redis_url: Option<&str>,
 ) -> anyhow::Result<InfrastructureMap> {
     use crate::framework::core::plan::reconcile_with_reality;
-    use crate::framework::core::state_storage::{ClickHouseStateStorage, StateStorage};
+    use crate::framework::core::state_storage::{
+        ClickHouseStateStorage, RedisStateStorage, StateStorage,
+    };
     use crate::infrastructure::olap::clickhouse::config::parse_clickhouse_connection_string;
     use crate::infrastructure::olap::clickhouse::{check_ready, create_client};
+    use crate::infrastructure::redis::redis_client::{RedisClient, RedisConfig};
     use std::collections::HashSet;
+    use std::sync::Arc;
 
     let clickhouse_config = parse_clickhouse_connection_string(clickhouse_url)?;
-    let client = create_client(clickhouse_config.clone());
-    check_ready(&client).await?;
 
-    let state_storage = ClickHouseStateStorage::new(client, clickhouse_config.db_name.clone());
+    // Build state storage based on config
+    let state_storage: Box<dyn StateStorage> = match project.state_config.storage.as_str() {
+        "redis" => {
+            let redis_url_from_env = std::env::var("MOOSE_REDIS_CONFIG__URL").ok();
+            let redis_url = redis_url.or(redis_url_from_env.as_deref()).ok_or_else(|| {
+                anyhow::anyhow!("--redis-url required when state_config.storage = \"redis\"")
+            })?;
+
+            let redis_config = RedisConfig {
+                url: redis_url.to_string(),
+                key_prefix: project.redis_config.key_prefix.clone(),
+                ..Default::default()
+            };
+            let redis_client =
+                Arc::new(RedisClient::new("moose_migrate".to_string(), redis_config).await?);
+            Box::new(RedisStateStorage::new(redis_client))
+        }
+        "clickhouse" => {
+            let client = create_client(clickhouse_config.clone());
+            check_ready(&client).await?;
+            Box::new(ClickHouseStateStorage::new(
+                client,
+                clickhouse_config.db_name.clone(),
+            ))
+        }
+        _ => anyhow::bail!(
+            "Invalid state_config.storage: {}",
+            project.state_config.storage
+        ),
+    };
+
     let remote_infra_map = state_storage
         .load_infrastructure_map()
         .await?
