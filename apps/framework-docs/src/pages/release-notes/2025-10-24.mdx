@@ -8,700 +8,76 @@ import { Callout } from "@/components";
 # October 24, 2025
 
 <Callout type="info" title="Highlights">
-* **Breaking:** WebApp mount_path is now required and root path "/" is forbidden
-* **New:** Add Python FastAPI WebApp template for BYOF (Bring Your Own Framework)
+* **New:** `moose migrate --clickhouse-url` enables serverless ClickHouse schema deploys
+* **Improved:** JSON columns now accept dynamic payloads with fine-grained controls
 </Callout>
 
 
 
+## ⭐ Featured New Features
+
+### Serverless ClickHouse migrations with `moose migrate`
+Run schema diffs and applies straight against a ClickHouse endpoint—perfect for OLAP-only or CI/CD environments that don’t boot the full Moose runtime.
+
+```bash
+# Detect changes and persist the migration plan
+moose generate migration \
+  --clickhouse-url "https://user:pass@ch.serverless.dev/main" \
+  --save
+
+# Apply the plan directly to ClickHouse
+moose migrate --clickhouse-url "https://user:pass@ch.serverless.dev/main"
+```
+
+_Workflow: serverless ClickHouse • Value: lightweight schema deploys without Redis/Temporal dependencies._ ([#2872](https://github.com/514labs/moose/pull/2872))
+
+📘 Docs: [Serverless ClickHouse migrations guide](/moose/migrate#serverless-deployments)
+
+### Adaptive JSON columns with `__mooseJsonOptions`
+Model semi-structured payloads while locking in typed paths for the fields you care about.
+
+```typescript
+export interface UserActivity {
+  id: Key<string>;
+  metadata: {
+    userId: string;
+    sessionId: string;
+    __mooseJsonOptions: {
+      maxDynamicPaths: 256;
+      typedPaths: [
+        ["userId", "String"],
+        ["sessionId", "String"]
+      ];
+      skipRegexps: ["^debug\\."];
+    };
+  };
+}
+```
+
+_Workflow: ingestion pipelines • Value: accept evolving payloads without breaking typed reads._ ([#2887](https://github.com/514labs/moose/pull/2887))
+
+📘 Docs: [Configurable JSON columns reference](/moose/data-modeling#configurable-json-columns)
+
 ## 🦌 Moose
 
-### ⚠️ Breaking Changes
-- **WebApp mount_path is now required and root path "/" is forbidden**
-  WebApp configuration now requires an explicit mount_path parameter and no longer allows mounting at the root path "/". This prevents conflicts with reserved system paths. Users must specify a non-root mount path like "/api" or "/myapp" when creating WebApps. This is a breaking change that requires updating existing WebApp configurations.
+- **`moose migrate --clickhouse-url`** – Generate and apply migrations directly against hosted ClickHouse, ideal for OLAP-only or CI/CD workflows that run without the full Moose runtime. [Docs: Serverless ClickHouse migrations](/moose/migrate#serverless-deployments) | PRs [#2872](https://github.com/514labs/moose/pull/2872). _Workflow: serverless ClickHouse; Value: lightweight schema deploys._
+- **LLM-friendly docs & endpoints** – Framework pages expose TS/Py “LLM view” links and the CLI now serves `/llm-ts.txt` + `/llm-py.txt` for assistants that need scoped context. [Docs: LLM-optimized docs](/moose/llm-docs) | PRs [#2892](https://github.com/514labs/moose/pull/2892). _Workflow: AI-assisted development; Value: fewer hallucinated Moose APIs._
+  📸 *[Screenshot needed: Documentation pages now include links to LLM-optimized versions (TypeScript and Python) that provide AI assistants with better context for helping users with MooseStack development.]*
+- **Flexible JSON columns** – `__mooseJsonOptions` lets models cap dynamic paths, pin typed paths, or skip keys/regexes so ingestion can accept evolving payloads without breaking typed reads. [Docs: Configurable JSON columns](/moose/data-modeling#configurable-json-columns) | PRs [#2887](https://github.com/514labs/moose/pull/2887). _Workflow: ingestion pipelines; Value: resilient schemas._
+- **Configurable `source_dir`** – `moose.config.toml` can point at `src/` (or any folder) instead of the default `app/`, simplifying adoption inside existing repos. [Docs: Custom source directory](/moose/configuration#custom-source-directory) | PRs [#2886](https://github.com/514labs/moose/pull/2886). _Workflow: mono-repo alignment; Value: less refactoring._
+- **Array transforms can fan out events** – Transform functions that return arrays automatically emit one Kafka message per element, covering explode/normalize patterns without extra producers. [Docs: Array transforms](/moose/streaming/transform-functions#array-transforms) | PRs [#2882](https://github.com/514labs/moose/pull/2882). _Workflow: streaming pipelines; Value: zero boilerplate fan-out._
+- **ClickHouse modeling controls** – Table DSL now covers TTL per table/column, `sampleByExpression`, and fully configurable secondary indexes (type, args, granularity) so you can encode retention + performance plans directly in code. [Docs: TTL](/moose/olap/ttl) • [Docs: Sample BY](/moose/olap/schema-optimization#sample-by-expressions) • [Docs: Secondary indexes](/moose/olap/indexes) | PRs [#2845](https://github.com/514labs/moose/pull/2845), [#2867](https://github.com/514labs/moose/pull/2867), [#2869](https://github.com/514labs/moose/pull/2869). _Workflow: governance & analytics tuning; Value: faster, cheaper warehouses._
+- **`get_source` MCP tool** – AI assistants can resolve a Moose component (tables, APIs, streams) back to its source file for faster code navigation. [Docs: MCP get_source tool](/moose/mcp-dev-server#get_source) | PRs [#2848](https://github.com/514labs/moose/pull/2848). _Workflow: IDE automation; Value: shorter debug loops._
+- **Google Analytics v4 connector** – Service-account authenticated connector streams GA4 reports and realtime metrics into Moose pipelines so marketing data lands without bespoke ETL. [Docs: Connector reference](https://registry.moosestack.com/connectors/google-analytics) | PRs [registry#121](https://github.com/514-labs/registry/pull/121). _Workflow: SaaS ingestion; Value: turnkey analytics feeds._
+- **Connector registry APIs** – Public REST endpoints expose connector metadata, docs, schemas, and versions for catalogs or automation. [Docs: Registry API docs](https://registry.moosestack.com/docs/api) | PRs [registry#120](https://github.com/514-labs/registry/pull/120). _Workflow: ecosystem tooling; Value: integrate registry data anywhere._
 
-  **WebApp with required mount_path configuration**
-  ```python
-  from moose_lib import WebApp, WebAppConfig
-  from fastapi import FastAPI
-  
-  # Create a FastAPI application for your data API
-  app = FastAPI()
-  
-  @app.get("/health")
-  def health_check():
-      return {"status": "healthy"}
-  
-  @app.get("/metrics")
-  def get_metrics():
-      return {"processed_events": 1000, "active_streams": 5}
-  
-  # Configure the WebApp with required mount_path
-  # Note: mount_path is now required and cannot be "/"
-  config = WebAppConfig(
-      mount_path="/api",  # Required: specify where to mount your app
-      metadata={
-          "description": "Data pipeline monitoring API",
-          "version": "1.0.0"
-      },
-      inject_moose_utils=True  # Enable MooseClient utilities in requests
-  )
-  
-  # Create the WebApp with the required configuration
-  data_api = WebApp(
-      name="monitoring_api",
-      app=app,
-      config=config  # Config with mount_path is now required
-  )
-  
-  # Your API will be available at /api/health and /api/metrics
-  ```
-  
-  Shows how to create a WebApp with the new required mount_path parameter. The example demonstrates mounting a FastAPI data monitoring application at "/api" instead of the now-forbidden root path "/".
+- **Onboarding & docs polish** – Quickstart, auth, materialized view, and config guides now call out install checkpoints, nullable column behavior, and when to prefer `moose.config.toml` over Docker overrides. [Docs: Quickstart](/moose/getting-started/quickstart) | PRs [#2903](https://github.com/514labs/moose/pull/2903), [#2894](https://github.com/514labs/moose/pull/2894), [#2893](https://github.com/514labs/moose/pull/2893), [#2890](https://github.com/514labs/moose/pull/2890). _Workflow: first-run experience; Value: fewer support tickets._
+- **Integer validation parity** – The ingest API enforces every ClickHouse integer range (Int8–UInt256) with clear errors, preventing silent overflows. [Docs: Ingest API](/moose/apis/ingest-api) | PRs [#2861](https://github.com/514labs/moose/pull/2861). _Workflow: ingestion reliability; Value: data integrity._
+- **MCP watcher stability** – The MCP server now waits for file-system changes to settle before responding so IDE bots always read consistent artifacts. [Docs: MCP server](/moose/mcp-dev-server) | PRs [#2884](https://github.com/514labs/moose/pull/2884). _Workflow: AI tooling; Value: fewer race conditions._
 
-### New Features
-- **Add Python FastAPI WebApp template for BYOF (Bring Your Own Framework)**
-  Added a new Python template that demonstrates how to build web applications using FastAPI with MooseStack. The template includes examples of health checks, query endpoints, POST data handling, JWT authentication, and middleware integration. This enables Python developers to create custom web APIs and applications on top of their MooseStack data infrastructure using their preferred FastAPI framework.
-
-  **FastAPI WebApp with MooseStack Integration**
-  ```python
-  """
-  FastAPI WebApp with MooseStack integration
-  """
-  from fastapi import FastAPI, Request, HTTPException, Depends
-  from fastapi.responses import JSONResponse
-  from moose_lib.dmv2 import WebApp, WebAppConfig, WebAppMetadata
-  from moose_lib.dmv2.web_app_helpers import get_moose_utils
-  from pydantic import BaseModel, Field
-  from typing import Literal
-  from datetime import datetime
-  
-  app = FastAPI()
-  
-  # Middleware for request logging
-  @app.middleware("http")
-  async def log_requests(request: Request, call_next):
-      print(f"[webapp] {request.method} {request.url.path}")
-      response = await call_next(request)
-      return response
-  
-  # Health check endpoint
-  @app.get("/health")
-  async def health():
-      return {
-          "status": "ok",
-          "timestamp": datetime.now().isoformat(),
-          "service": "my-fastapi-app",
-      }
-  
-  # Query endpoint using MooseStack data
-  @app.get("/data")
-  async def get_data(request: Request, limit: int = 10):
-      """Query data using MooseStack QueryClient"""
-      moose = get_moose_utils(request)
-      if not moose:
-          raise HTTPException(status_code=500, detail="MooseStack not available")
-      
-      # Execute query against your data warehouse
-      result = moose.client.query.execute(
-          "SELECT * FROM user_events ORDER BY timestamp DESC LIMIT {limit}",
-          {"limit": limit}
-      )
-      
-      return {"success": True, "data": result, "count": len(result)}
-  
-  # Request model for POST endpoints
-  class DataRequest(BaseModel):
-      start_date: str = Field(description="Start date for filtering")
-      end_date: str = Field(description="End date for filtering")
-      limit: int = Field(default=100, le=1000)
-  
-  @app.post("/analytics")
-  async def analytics(request: Request, body: DataRequest):
-      """POST endpoint with request validation"""
-      moose = get_moose_utils(request)
-      
-      result = moose.client.query.execute(
-          """SELECT date, COUNT(*) as events 
-             FROM user_events 
-             WHERE date BETWEEN {start_date} AND {end_date}
-             GROUP BY date 
-             LIMIT {limit}""",
-          {
-              "start_date": body.start_date,
-              "end_date": body.end_date,
-              "limit": body.limit
-          }
-      )
-      
-      return {"data": result, "params": body.dict()}
-  
-  # Register FastAPI app as MooseStack WebApp
-  my_webapp = WebApp(
-      "myFastApiApp",
-      app,
-      WebAppConfig(
-          mount_path="/api/v1",  # Custom mount path
-          metadata=WebAppMetadata(
-              description="Custom FastAPI web application with MooseStack"
-          ),
-      )
-  )
-  ```
-  
-  This example shows how to create a FastAPI web application integrated with MooseStack using the new WebApp template. It demonstrates health checks, data querying with the MooseStack QueryClient, request validation with Pydantic models, and proper WebApp registration with custom configuration.
-
-- **Add `moose migrate` command for serverless ClickHouse deployments**
-  Introduces a new migration workflow for serverless/OLAP-only deployments. Users can now run `moose generate migration --clickhouse-url` to create migration plans and `moose migrate --clickhouse-url` to apply them directly to ClickHouse databases. This enables database schema migrations without requiring a full Moose server instance, perfect for serverless deployments where only the database layer is managed.
-
-  **Serverless ClickHouse migrations with moose migrate**
-  ```bash
-  # First, define your data models in your Moose project
-  # datamodels/UserEvent.ts
-  interface UserEvent {
-    id: string;
-    userId: string;
-    eventType: string;
-    timestamp: Date;
-  }
-  
-  # After making schema changes, generate a migration plan
-  # This connects directly to your ClickHouse database
-  moose generate migration --clickhouse-url "http://user:password@localhost:8123/mydb" --save
-  
-  # Review the generated migration plan
-  cat migrations/plan.yaml
-  
-  # Apply the migration to update your database schema
-  # Perfect for serverless deployments without a full Moose server
-  moose migrate --clickhouse-url "http://user:password@localhost:8123/mydb"
-  
-  # The migration system tracks state in ClickHouse itself
-  # No Redis or external state management required
-  ```
-  
-  Shows the complete serverless migration workflow for ClickHouse deployments. Users can generate migration plans and apply schema changes directly to their database without running a full Moose server instance.
-
-- **Added LLM-optimized documentation links to framework docs**
-  Documentation pages now include links to LLM-optimized versions (TypeScript and Python) that provide AI assistants with better context for helping users with MooseStack development. These specialized doc formats are designed to improve AI-assisted coding experiences.
-  
-  📸 *[Screenshot needed: Documentation pages now include links to LLM-optimized versions (TypeScript and Python) that provide AI assistants with better context for helping users with MooseStack development. These specialized doc formats are designed to improve AI-assisted coding experiences.]*
-
-- **Enhanced JSON support with configurable options and flexible schema handling**
-  Added advanced JSON column type support with configurable options including max_dynamic_paths, max_dynamic_types, typed_paths, skip_paths, and skip_regexps. JSON fields now accept extra fields in payloads beyond the defined schema, making data ingestion more flexible. Users can define JSON columns in their data models that automatically handle dynamic content while maintaining type safety for known fields.
-
-  **JSON columns with flexible schema handling**
-  ```typescript
-  import { Key } from "@514labs/moose-lib";
-  
-  // Define a data model with JSON columns that accept flexible payloads
-  export interface UserActivity {
-    id: Key<string>;
-    timestamp: Date;
-    
-    // JSON column with configuration options
-    metadata: {
-      // Define known fields with types
-      userId: string;
-      sessionId: string;
-      // Configure JSON options for flexible schema handling
-      __mooseJsonOptions: {
-        maxDynamicPaths: 256;
-        maxDynamicTypes: 16;
-        typedPaths: [
-          ["userId", "String"],
-          ["sessionId", "String"]
-        ];
-        skipPaths: ["internal.debug"];
-        skipRegexps: ["^temp\\..*"];
-      };
-    };
-    
-    // Basic JSON column without configuration
-    customData: {
-      category: string;
-      value: number;
-    };
-  }
-  
-  // Example usage: The JSON fields will accept extra fields beyond the schema
-  const activityData = {
-    id: "activity-123",
-    timestamp: new Date(),
-    metadata: {
-      userId: "user-456",
-      sessionId: "session-789",
-      // These extra fields are automatically accepted
-      deviceType: "mobile",
-      location: { city: "San Francisco", country: "US" },
-      experimentFlags: ["feature-a", "feature-b"]
-    },
-    customData: {
-      category: "purchase",
-      value: 99.99,
-      // Extra fields also accepted here
-      productId: "prod-123",
-      discount: 0.1
-    }
-  };
-  ```
-  
-  This example shows how to define data models with JSON columns that have configurable options for handling dynamic content. The JSON fields accept extra fields beyond the defined schema while maintaining type safety for known fields, making data ingestion more flexible for evolving data structures.
-
-- **Add WebApp support to Python consumption runner**
-  Python consumption runner now supports WebApps in addition to APIs. Users can now create full web applications with FastAPI that integrate with Moose data and utilities. WebApps support all HTTP methods, custom routing, and optional Moose utility injection for accessing data and SQL capabilities within web applications.
-
-  **FastAPI WebApp with Moose Data Integration**
-  ```python
-  # apps/user-analytics/consumption/webapp.py
-  from fastapi import FastAPI, Request, HTTPException
-  from fastapi.responses import HTMLResponse
-  from pydantic import BaseModel
-  from typing import List, Optional
-  
-  # Create FastAPI webapp instance
-  app = FastAPI(title="User Analytics Dashboard")
-  
-  class UserMetrics(BaseModel):
-      user_id: str
-      page_views: int
-      session_duration: float
-      last_active: str
-  
-  @app.get("/", response_class=HTMLResponse)
-  async def dashboard_home():
-      """Main dashboard page"""
-      return """
-      <html><body>
-          <h1>User Analytics Dashboard</h1>
-          <p><a href="/api/users">View User Metrics</a></p>
-          <p><a href="/api/users/top">Top Active Users</a></p>
-      </body></html>
-      """
-  
-  @app.get("/api/users", response_model=List[UserMetrics])
-  async def get_user_metrics(request: Request, limit: int = 10):
-      """Get user analytics data using Moose utilities"""
-      # Access injected Moose utilities from request state
-      moose = request.state.moose
-      
-      # Query user metrics using Moose SQL utilities
-      query = """
-      SELECT 
-          user_id,
-          COUNT(*) as page_views,
-          AVG(session_duration) as session_duration,
-          MAX(timestamp) as last_active
-      FROM user_events 
-      GROUP BY user_id 
-      ORDER BY page_views DESC 
-      LIMIT %(limit)s
-      """
-      
-      results = await moose.sql.execute(query, {"limit": limit})
-      
-      return [
-          UserMetrics(
-              user_id=row["user_id"],
-              page_views=row["page_views"],
-              session_duration=row["session_duration"],
-              last_active=row["last_active"]
-          )
-          for row in results
-      ]
-  
-  @app.get("/api/users/top")
-  async def get_top_users(request: Request):
-      """Get top 5 most active users with JWT user context"""
-      moose = request.state.moose
-      
-      # Access JWT payload for user context
-      if moose.jwt and moose.jwt.get("role") != "admin":
-          raise HTTPException(status_code=403, detail="Admin access required")
-      
-      # Use Moose client for data access
-      top_users = await moose.client.query(
-          "SELECT user_id, COUNT(*) as events FROM user_events GROUP BY user_id ORDER BY events DESC LIMIT 5"
-      )
-      
-      return {"top_users": top_users}
-  ```
-  
-  Shows how to create a FastAPI web application in Moose that uses injected utilities to access data and SQL capabilities. The webapp handles multiple HTTP methods, includes custom routing, and demonstrates accessing Moose client, SQL utilities, and JWT context within web application endpoints.
-
-- **Add language-specific LLM documentation endpoints**
-  Added new API endpoints that provide language-specific documentation aggregates for LLMs and AI assistants. Users can now access Python-specific docs at `/llm-py.txt` and TypeScript-specific docs at `/llm-ts.txt`, with optional scoping to specific documentation sections. This enables better AI-powered development assistance by providing contextually relevant documentation based on the programming language being used.
-
-- **Add configurable source directory in moose.config.toml**
-  Users can now customize their project's source directory by setting `source_dir` in moose.config.toml instead of being forced to use the default "app" directory. This provides more flexibility in organizing project structure to match team conventions or existing codebases.
-
-  **Configure custom source directory in moose.config.toml**
-  ```toml
-  # moose.config.toml - Custom source directory configuration
-  language = "TypeScript"
-  source_dir = "src"  # Use 'src' instead of default 'app' directory
-  
-  [redpanda_config]
-  broker = "localhost:19092"
-  
-  [clickhouse_config]
-  db_name = "local"
-  host = "localhost"
-  port = 9000
-  
-  [http_server_config]
-  host = "localhost"
-  port = 4000
-  ```
-  
-  This example shows how to configure a custom source directory in moose.config.toml. By setting source_dir = "src", the project will use the 'src' directory instead of the default 'app' directory for all data models, APIs, and streaming functions.
-
-- **Add support for array transforms that emit multiple messages**
-  Transform functions can now return arrays where each element is sent as a separate Kafka message. This enables users to create transforms that explode single input records into multiple output records, useful for data normalization and event expansion patterns.
-
-  **Array Transform: Exploding Order Events into Individual Items**
-  ```typescript
-  import { IngestPipeline, OlapTable, Stream } from "@514labs/moose-lib";
-  
-  // Input model - receives events with arrays to explode
-  interface OrderEvent {
-    orderId: string;
-    customerId: string;
-    items: string[]; // Array of product IDs to explode
-    timestamp: Date;
-  }
-  
-  // Output model - one record per array item
-  interface OrderItem {
-    orderId: string;
-    customerId: string;
-    productId: string;
-    itemIndex: number;
-    timestamp: Date;
-  }
-  
-  // Set up input pipeline
-  export const orderEventPipeline = new IngestPipeline<OrderEvent>("OrderEvent", {
-    ingestApi: true,
-    stream: true,
-    table: false, // No table for input events
-  });
-  
-  // Set up output table and stream
-  export const orderItemTable = new OlapTable<OrderItem>("OrderItem", {
-    orderBy: ["orderId", "timestamp"]
-  });
-  
-  export const orderItemStream = new Stream<OrderItem>("OrderItem", {
-    destination: orderItemTable
-  });
-  
-  // Transform that returns an array - each element becomes a separate Kafka message
-  orderEventPipeline.getStream().addTransform({
-    destination: orderItemStream,
-    transformation: (orderEvent: OrderEvent): OrderItem[] => {
-      // Explode the items array into individual records
-      // Each item becomes a separate message in Kafka
-      return orderEvent.items.map((productId, index) => ({
-        orderId: orderEvent.orderId,
-        customerId: orderEvent.customerId,
-        productId: productId,
-        itemIndex: index,
-        timestamp: orderEvent.timestamp
-      }));
-    }
-  });
-  ```
-  
-  This example shows how to use array transforms to explode a single order event containing multiple items into individual order item records. When the transform returns an array, each element is automatically sent as a separate Kafka message, enabling data normalization patterns.
-
-- **Add TTL (Time To Live) support for tables and columns**
-  Users can now configure TTL (Time To Live) settings on both tables and individual columns to automatically expire data after a specified time period. This enables automatic data cleanup and storage optimization for time-series data. TTL can be set at the table level to expire entire rows, or at the column level to expire specific column values while keeping the row.
-
-  **Configure TTL for automatic data expiration**
-  ```typescript
-  // datamodels/UserActivity.ts
-  import { Key } from "@514labs/moose-lib";
-  
-  export interface UserActivity {
-    @Key
-    id: string;
-    userId: string;
-    email: string; // This column will expire after 30 days
-    activity: string;
-    timestamp: Date;
-    sessionData: string; // This column will expire after 7 days
-  }
-  
-  // Configure TTL settings for the table and specific columns
-  export const UserActivityTable = {
-    // Table-level TTL: entire rows expire 90 days after timestamp
-    ttl: "timestamp + toIntervalDay(90)",
-    
-    // Column-level TTL: specific columns expire independently
-    columnTtl: {
-      email: "timestamp + toIntervalDay(30)",      // Email expires after 30 days
-      sessionData: "timestamp + toIntervalDay(7)"  // Session data expires after 7 days
-    }
-  };
-  ```
-  
-  This example shows how to configure TTL (Time To Live) settings for automatic data cleanup in MooseStack. The table-level TTL removes entire rows after 90 days, while column-level TTL expires specific sensitive data (email after 30 days, session data after 7 days) while keeping the rest of the row intact.
-
-- **Add SAMPLE BY support for ClickHouse tables**
-  Users can now configure SAMPLE BY expressions on their ClickHouse tables to enable efficient sampling for large datasets. This is useful for approximate query processing and performance optimization when working with massive tables. The feature is available in both TypeScript and Python data model definitions using the sampleByExpression parameter.
-
-  **Configure ClickHouse table with SAMPLE BY for efficient sampling**
-  ```typescript
-  import { DataModel } from "@514labs/moose-lib";
-  
-  // Define a data model for user activity events
-  export interface UserActivity extends DataModel {
-    userId: string;
-    timestamp: Date;
-    eventType: string;
-    sessionId: string;
-    value: number;
-  }
-  
-  // Configure the table with SAMPLE BY for efficient sampling on large datasets
-  export default {
-    tableName: "UserActivity",
-    columns: [
-      { name: "userId", type: "String" },
-      { name: "timestamp", type: "DateTime" },
-      { name: "eventType", type: "String" },
-      { name: "sessionId", type: "String" },
-      { name: "value", type: "Float64" }
-    ],
-    orderBy: ["timestamp", "userId"],
-    // Enable sampling using cityHash64 for uniform distribution
-    sampleByExpression: "cityHash64(userId)",
-    engine: "MergeTree"
-  };
-  ```
-  
-  This example shows how to configure a ClickHouse table with SAMPLE BY expression in MooseStack. The sampleByExpression parameter enables efficient sampling on large datasets using cityHash64 for uniform distribution across user IDs, which is useful for approximate query processing and performance optimization.
-
-- **Add secondary indexes support for OLAP tables**
-  Users can now define secondary indexes on their OLAP tables to improve query performance. Indexes can be configured with custom names, expressions, types, arguments, and granularity settings. The framework automatically handles index creation, modification, and deployment across TypeScript and Python data models.
-
-  **Adding secondary indexes to OLAP tables for query optimization**
-  ```typescript
-  // app/datamodels/UserActivity.ts
-  import { Key } from "@514labs/moose-lib";
-  
-  export interface UserActivity {
-    id: Key<string>;
-    userId: string;
-    eventType: string;
-    timestamp: Date;
-    sessionId: string;
-    deviceType: string;
-    location: string;
-    value: number;
-  }
-  
-  // app/ingest/models.ts
-  import { OlapTable, OlapConfig } from "@514labs/moose-lib";
-  import { UserActivity } from "../datamodels/UserActivity";
-  
-  // Define OLAP table with secondary indexes for better query performance
-  export const userActivityTable = OlapTable<UserActivity>("UserActivity", OlapConfig({
-    // Primary table configuration
-    orderBy: "timestamp",
-    
-    // Secondary indexes to optimize common query patterns
-    indexes: [
-      // Index for user-based queries
-      {
-        name: "idx_user_time",
-        expression: "(userId, timestamp)",
-        type: "minmax",
-        granularity: 1
-      },
-      // Index for session analysis
-      {
-        name: "idx_session",
-        expression: "sessionId",
-        type: "bloom_filter",
-        arguments: ["0.01"], // false positive rate
-        granularity: 4
-      },
-      // Index for event type filtering
-      {
-        name: "idx_event_type",
-        expression: "eventType",
-        type: "set",
-        granularity: 8
-      },
-      // Composite index for device and location analytics
-      {
-        name: "idx_device_location",
-        expression: "(deviceType, location)",
-        type: "minmax",
-        granularity: 2
-      }
-    ]
-  }));
-  ```
-  
-  This example shows how to define secondary indexes on OLAP tables in MooseStack to optimize query performance. The indexes support different types (minmax, bloom_filter, set) with configurable granularity and can target single columns or composite expressions for common query patterns.
-
-- **Added get_source MCP tool for finding component source files**
-  Added a new MCP tool that allows AI assistants to find the source file location where infrastructure components (tables, topics, API endpoints) are defined in your codebase. This enables better code navigation and understanding when working with AI assistants in your IDE.
-
-- **Added Google Analytics v4 connector**
-  New Google Analytics v4 connector allows users to sync Google Analytics data including reports, realtime data, metadata, and audience exports. Includes comprehensive documentation, TypeScript implementation, and authentication setup guides.
-
-  **Sync Google Analytics v4 data with MooseStack connector**
-  ```typescript
-  import { Moose } from "@514labs/moose-lib";
-  import { GoogleAnalyticsConnector } from "@workspace/connector-google-analytics";
-  
-  // Initialize Moose app
-  const moose = Moose({
-    name: "analytics-pipeline",
-    routines: []
-  });
-  
-  // Configure Google Analytics v4 connector
-  const gaConnector = new GoogleAnalyticsConnector({
-    // Authentication using service account
-    credentials: {
-      type: "service_account",
-      project_id: process.env.GA_PROJECT_ID,
-      private_key: process.env.GA_PRIVATE_KEY,
-      client_email: process.env.GA_CLIENT_EMAIL,
-    },
-    // Your GA4 property ID
-    propertyId: process.env.GA_PROPERTY_ID,
-  });
-  
-  // Sync GA4 reports data to your data warehouse
-  moose.streamingFunction({
-    source: gaConnector.reports({
-      // Define the report metrics and dimensions
-      metrics: ["sessions", "pageviews", "bounceRate"],
-      dimensions: ["date", "country", "deviceCategory"],
-      dateRanges: [{ startDate: "30daysAgo", endDate: "today" }]
-    }),
-    run: async (data) => {
-      // Transform GA4 data for your analytics
-      return {
-        date: data.date,
-        country: data.country,
-        device_type: data.deviceCategory,
-        sessions: parseInt(data.sessions),
-        pageviews: parseInt(data.pageviews),
-        bounce_rate: parseFloat(data.bounceRate),
-        synced_at: new Date()
-      };
-    }
-  });
-  
-  // Also sync realtime data for live dashboards
-  moose.streamingFunction({
-    source: gaConnector.realtime({
-      metrics: ["activeUsers"],
-      dimensions: ["country", "deviceCategory"]
-    }),
-    run: async (realtimeData) => {
-      // Process realtime GA4 data
-      return {
-        active_users: parseInt(realtimeData.activeUsers),
-        country: realtimeData.country,
-        device_type: realtimeData.deviceCategory,
-        timestamp: new Date()
-      };
-    }
-  });
-  ```
-  
-  This example shows how to use the new Google Analytics v4 connector in a MooseStack data pipeline to sync GA4 reports and realtime data. The connector handles authentication, data fetching, and provides structured access to GA4 metrics and dimensions for transformation into your data warehouse.
-
-- **Add public API endpoints for connector registry**
-  Introduces new REST API endpoints that allow programmatic access to connector information, including connector details, versions, implementations, documentation, and schemas. Users can now integrate connector data into their own applications and tools.
-
-  **Accessing connector registry via public API endpoints**
-  ```typescript
-  import fetch from 'node-fetch';
-  
-  // Fetch all available connectors from the registry
-  async function listConnectors() {
-    const response = await fetch('https://registry.moosestack.com/api/registry/contents');
-    const data = await response.json();
-    
-    // Filter for connectors only
-    const connectors = data.items.filter(item => item.type === 'connector');
-    console.log(`Found ${connectors.length} connectors`);
-    
-    return connectors;
-  }
-  
-  // Get detailed information about a specific connector implementation
-  async function getConnectorDetails(id: string, version: string, creator: string, language: string) {
-    const url = `https://registry.moosestack.com/api/connectors/${id}/${version}/${creator}/${language}/default`;
-    const response = await fetch(url);
-    
-    if (!response.ok) {
-      throw new Error(`Connector not found: ${response.status}`);
-    }
-    
-    const connector = await response.json();
-    
-    // Access connector metadata, documentation, and schema information
-    console.log(`Connector: ${connector.name}`);
-    console.log(`Description: ${connector.description}`);
-    console.log(`Schema tables: ${connector.schema.database.tables.length}`);
-    console.log(`Documentation files: ${connector.docs.length}`);
-    
-    return connector;
-  }
-  
-  // Example usage: Find and inspect a Stripe connector
-  async function main() {
-    const connectors = await listConnectors();
-    const stripeConnector = connectors.find(c => c.id === 'stripe');
-    
-    if (stripeConnector) {
-      const details = await getConnectorDetails(
-        stripeConnector.id,
-        stripeConnector.version,
-        stripeConnector.authorId,
-        'typescript'
-      );
-      
-      // Use the connector information in your application
-      console.log('Available endpoints:', details.schema.endpoints);
-    }
-  }
-  
-  main().catch(console.error);
-  ```
-  
-  Shows how to programmatically access the MooseStack connector registry API to discover available connectors and retrieve detailed information including schemas, documentation, and metadata. This enables developers to build tools that integrate with the connector ecosystem.
-
-### Improvements
-- Improved quickstart guide with detailed setup steps and troubleshooting: Enhanced the getting started experience with step-by-step installation verification, Docker setup checks, clearer terminal instructions, and comprehensive troubleshooting guidance. Added checkpoints throughout the process to help users identify and resolve common setup issues before proceeding to the next step.
-- Improved materialized view documentation clarity: Updated materialized view documentation to remove language-specific references, making the explanation clearer and more universally applicable for all users regardless of their chosen language (Python or TypeScript).
-- Improved quickstart documentation with clearer instructions: Enhanced the quickstart guide with better terminal instructions, clarified Python virtual environment activation, and fixed formatting issues throughout the documentation to improve the getting started experience.
-- MCP server now waits for file system changes to complete: The MCP server now properly synchronizes with file watcher processing to prevent race conditions. This ensures that IDE integrations and AI assistants get consistent, up-to-date information about your data models and infrastructure state, eliminating potential issues where MCP tools might read partial or stale data during file changes.
-- Improved API authentication documentation with clearer structure and examples: Reorganized and expanded the API authentication documentation to make it easier to understand and implement. The docs now provide clearer guidance on choosing between API Keys and JWT authentication, with step-by-step setup instructions, practical examples, and better explanations of how both methods work together. This helps users more easily secure their Moose deployments.
-- Add clarifying comment for nullable fields in data model documentation: Added a comment to clarify that optional fields with the `?` operator are nullable in ClickHouse data models, helping users better understand how optional TypeScript fields map to database schema
-- Improved integer validation in data ingest API: Enhanced integer type validation during data ingestion to properly check range boundaries for all integer types (Int8, Int16, Int32, Int64, UInt8, UInt16, UInt32, UInt64, Int128, Int256, UInt128, UInt256). The ingest API now correctly validates that incoming integer values fit within the specified column type ranges and provides clear error messages when values are out of bounds. This prevents data corruption and improves error reporting for users sending data that doesn't match their schema definitions.
-- Improved documentation for Moose configuration and Docker Compose usage: Added clear guidance on when to use moose.config.toml vs docker-compose overrides for configuration. Users now have better documentation explaining that moose.config.toml is the primary way to configure Moose infrastructure, while Docker Compose overrides should only be used for adding new services, not modifying existing Moose-managed services.
-
-### Bug Fixes
-- Fix version detection to exclude CI build tags: Fixed an issue where the version script could incorrectly pick up CI build tags instead of actual release tags, ensuring proper version detection during releases and builds.
-- Fix ORDER BY parsing in ClickHouse table creation: Fixed a bug where ORDER BY clauses in CREATE TABLE statements were incorrectly parsed when followed by PARTITION BY, PRIMARY KEY, SAMPLE BY, TTL, or SETTINGS keywords. This ensures table schemas are properly interpreted and created with the correct column ordering.
-- Fix table index configuration with optional arguments and granularity: Fixed an issue where table indexes with optional arguments or granularity settings could cause configuration errors. Index arguments now default to an empty array and granularity defaults to 1 when not specified, making index configuration more robust and preventing runtime errors.
-- Fix ORDER BY parsing when TTL is present in table definitions: Fixed a bug where ORDER BY clauses were incorrectly parsed when TTL (Time To Live) settings were present in ClickHouse table definitions. This ensures data models with TTL configurations work correctly with the framework's table creation and management.
-- Fix request handling for proxied consumption APIs: Fixed an issue where HTTP headers and other request properties were not properly preserved when routing requests through consumption APIs and web applications. This ensures that authentication headers, content-type, and other critical request metadata are correctly passed through to your API handlers.
+- **Release + schema compiler hardening** – Version detection ignores CI-only tags, and ClickHouse parsing handles ORDER BY around `PARTITION BY`, `TTL`, `SAMPLE BY`, and secondary indexes even when optional arguments are omitted. PRs [#2902](https://github.com/514labs/moose/pull/2902), [#2898](https://github.com/514labs/moose/pull/2898), [#2897](https://github.com/514labs/moose/pull/2897), [#2889](https://github.com/514labs/moose/pull/2889). _Workflow: deploy automation; Value: safer migrations._
+- **Proxy request fidelity** – Consumption APIs now preserve headers/body metadata end-to-end, keeping auth tokens and content negotiation intact. PRs [#2881](https://github.com/514labs/moose/pull/2881). _Workflow: API gateway; Value: predictable integrations._
 
 ## 🐻 Boreal
 
-### Bug Fixes
-- Fixed navigation links showing "undefined" after visiting 404 page: Resolved an issue where visiting a 404 page would cause all navigation links to display "undefined" in the URL instead of the proper organization ID, breaking navigation throughout the dashboard.
-
-
+- **Navigation slug fix** – Visiting a 404 no longer strips the org ID from subsequent links, so multi-tenant operators stay on the right workspace. _Workflow: dashboard UX; Value: no dead ends._ ([commercial#1014](https://github.com/514-labs/commercial/pull/1014))
