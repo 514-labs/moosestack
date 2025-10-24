@@ -13,12 +13,14 @@ use crate::infrastructure::olap::clickhouse::IgnorableOperation;
 use crate::infrastructure::olap::clickhouse::{
     check_ready, create_client, ConfiguredDBClient, SerializableOlapOperation,
 };
+use crate::infrastructure::redis::redis_client::{RedisClient, RedisConfig};
 use crate::project::Project;
 use crate::utilities::constants::{
-    MIGRATION_AFTER_STATE_FILE, MIGRATION_BEFORE_STATE_FILE, MIGRATION_FILE,
+    ENV_REDIS_URL, MIGRATION_AFTER_STATE_FILE, MIGRATION_BEFORE_STATE_FILE, MIGRATION_FILE,
 };
 use anyhow::Result;
 use std::collections::HashMap;
+use std::sync::Arc;
 
 /// Migration files loaded from disk
 struct MigrationFiles {
@@ -438,24 +440,11 @@ pub async fn execute_migration(
             e,
         )
     })?;
-    let client = create_client(clickhouse_config.clone());
-    check_ready(&client).await.map_err(|e| {
-        RoutineFailure::new(
-            Message::new(
-                "ClickHouse".to_string(),
-                "Failed to connect to ClickHouse".to_string(),
-            ),
-            e,
-        )
-    })?;
 
     // Build state storage based on config
-    use crate::infrastructure::redis::redis_client::{RedisClient, RedisConfig};
-    use std::sync::Arc;
-
     let state_storage: Box<dyn StateStorage> = match project.state_config.storage.as_str() {
         "redis" => {
-            let redis_url_from_env = std::env::var("MOOSE_REDIS_CONFIG__URL").ok();
+            let redis_url_from_env = std::env::var(ENV_REDIS_URL).ok();
             let redis_url = redis_url.or(redis_url_from_env.as_deref()).ok_or_else(|| {
                 RoutineFailure::error(Message {
                     action: "Configuration".to_string(),
@@ -484,10 +473,23 @@ pub async fn execute_migration(
             );
             Box::new(RedisStateStorage::new(redis_client))
         }
-        "clickhouse" => Box::new(ClickHouseStateStorage::new(
-            client,
-            clickhouse_config.db_name.clone(),
-        )),
+        "clickhouse" => {
+            // Only create ClickHouse client when using it for state storage
+            let client = create_client(clickhouse_config.clone());
+            check_ready(&client).await.map_err(|e| {
+                RoutineFailure::new(
+                    Message::new(
+                        "ClickHouse".to_string(),
+                        "Failed to connect to ClickHouse".to_string(),
+                    ),
+                    e,
+                )
+            })?;
+            Box::new(ClickHouseStateStorage::new(
+                client,
+                clickhouse_config.db_name.clone(),
+            ))
+        }
         _ => {
             return Err(RoutineFailure::error(Message {
                 action: "Configuration".to_string(),

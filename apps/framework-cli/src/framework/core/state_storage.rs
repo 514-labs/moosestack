@@ -68,12 +68,14 @@ impl StateStorage for RedisStateStorage {
 
     async fn acquire_migration_lock(&self) -> Result<()> {
         // Use LeadershipManager's atomic lock acquisition
+        // Add key_prefix for multi-tenancy isolation (different projects can migrate in parallel)
+        let lock_key = self.client.service_prefix(&[Self::LOCK_KEY]);
         let (has_lock, is_new) = self
             .client
             .leadership_manager
             .attempt_lock(
                 self.client.connection_manager.connection.clone(),
-                Self::LOCK_KEY,
+                &lock_key,
                 Self::LOCK_TIMEOUT_SECS,
             )
             .await;
@@ -104,18 +106,19 @@ impl StateStorage for RedisStateStorage {
     }
 
     async fn release_migration_lock(&self) -> Result<()> {
-        let machine_id = get_or_create_machine_id();
+        // Use same prefixed key as acquire for multi-tenancy isolation
+        let lock_key = self.client.service_prefix(&[Self::LOCK_KEY]);
 
         self.client
             .leadership_manager
             .release_lock(
                 self.client.connection_manager.connection.clone(),
-                Self::LOCK_KEY,
-                &machine_id,
+                &lock_key,
+                &self.client.instance_id,
             )
             .await?;
 
-        info!("Released migration lock");
+        info!("Released migration lock {}", lock_key);
         Ok(())
     }
 }
