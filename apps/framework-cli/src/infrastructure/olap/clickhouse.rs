@@ -663,15 +663,29 @@ async fn execute_modify_table_column(
 
     // Full column modification including type change
     let clickhouse_column = std_column_to_clickhouse_column(after_column.clone())?;
-    let modify_column_query = build_modify_column_sql(db_name, table_name, &clickhouse_column)?;
 
-    log::debug!("Modifying column: {}", modify_column_query);
-    run_query(&modify_column_query, client).await.map_err(|e| {
-        ClickhouseChangesError::ClickhouseClient {
-            error: e,
-            resource: Some(table_name.to_string()),
-        }
-    })?;
+    // Build all the SQL statements needed (main modify + optional removes)
+    let removing_default = before_column.default.is_some() && after_column.default.is_none();
+    let removing_ttl = before_column.ttl.is_some() && after_column.ttl.is_none();
+    let queries = build_modify_column_sql(
+        db_name,
+        table_name,
+        &clickhouse_column,
+        removing_default,
+        removing_ttl,
+    )?;
+
+    // Execute all statements in order
+    for query in queries {
+        log::debug!("Modifying column: {}", query);
+        run_query(&query, client)
+            .await
+            .map_err(|e| ClickhouseChangesError::ClickhouseClient {
+                error: e,
+                resource: Some(table_name.to_string()),
+            })?;
+    }
+
     Ok(())
 }
 
@@ -709,22 +723,48 @@ fn build_modify_column_sql(
     db_name: &str,
     table_name: &str,
     ch_col: &ClickHouseColumn,
-) -> Result<String, ClickhouseChangesError> {
+    removing_default: bool,
+    removing_ttl: bool,
+) -> Result<Vec<String>, ClickhouseChangesError> {
     let column_type_string = basic_field_type_to_string(&ch_col.column_type)?;
 
+    let mut statements = vec![];
+
+    // Add REMOVE DEFAULT statement if needed
+    // ClickHouse doesn't allow mixing column properties with REMOVE clauses
+    if removing_default {
+        statements.push(format!(
+            "ALTER TABLE `{}`.`{}` MODIFY COLUMN `{}` REMOVE DEFAULT",
+            db_name, table_name, ch_col.name
+        ));
+    }
+
+    // Add REMOVE TTL statement if needed
+    if removing_ttl {
+        statements.push(format!(
+            "ALTER TABLE `{}`.`{}` MODIFY COLUMN `{}` REMOVE TTL",
+            db_name, table_name, ch_col.name
+        ));
+    }
+
+    // DEFAULT clause: If omitted, ClickHouse KEEPS any existing DEFAULT
+    // Therefore, DEFAULT removal requires a separate REMOVE DEFAULT statement
     let default_clause = ch_col
         .default
         .as_ref()
         .map(|d| format!(" DEFAULT {}", d))
         .unwrap_or_default();
 
+    // TTL clause: If omitted, ClickHouse KEEPS any existing TTL
+    // Therefore, TTL removal requires a separate REMOVE TTL statement
     let ttl_clause = ch_col
         .ttl
         .as_ref()
         .map(|t| format!(" TTL {}", t))
         .unwrap_or_default();
 
-    let sql = if let Some(ref comment) = ch_col.comment {
+    // Build the main MODIFY COLUMN statement
+    let main_sql = if let Some(ref comment) = ch_col.comment {
         let escaped_comment = comment.replace('\'', "''");
         format!(
             "ALTER TABLE `{}`.`{}` MODIFY COLUMN IF EXISTS `{}` {}{}{} COMMENT '{}'",
@@ -742,7 +782,9 @@ fn build_modify_column_sql(
             db_name, table_name, ch_col.name, column_type_string, default_clause, ttl_clause
         )
     };
-    Ok(sql)
+    statements.push(main_sql);
+
+    Ok(statements)
 }
 
 fn build_modify_column_comment_sql(
@@ -1998,10 +2040,11 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
         };
 
         let ch_after = std_column_to_clickhouse_column(after_column).unwrap();
-        let sql = build_modify_column_sql("db", "table", &ch_after).unwrap();
+        let sqls = build_modify_column_sql("db", "table", &ch_after, false, false).unwrap();
 
+        assert_eq!(sqls.len(), 1);
         assert_eq!(
-            sql,
+            sqls[0],
             "ALTER TABLE `db`.`table` MODIFY COLUMN IF EXISTS `count` Int32 DEFAULT 42 COMMENT 'Number of things'".to_string()
         );
     }
@@ -2057,10 +2100,12 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
 
         let clickhouse_column = std_column_to_clickhouse_column(column).unwrap();
 
-        let sql = build_modify_column_sql("test_db", "users", &clickhouse_column).unwrap();
+        let sqls =
+            build_modify_column_sql("test_db", "users", &clickhouse_column, false, false).unwrap();
 
+        assert_eq!(sqls.len(), 1);
         assert_eq!(
-            sql,
+            sqls[0],
             "ALTER TABLE `test_db`.`users` MODIFY COLUMN IF EXISTS `description` Nullable(String) DEFAULT 'updated default' COMMENT 'Updated description field'"
         );
     }
