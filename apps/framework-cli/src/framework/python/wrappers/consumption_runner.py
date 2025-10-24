@@ -440,11 +440,11 @@ def main():
         httpd.server_close()
 
         # Cleanup persistent event loop
-        global _event_loop
+        global _event_loop, _event_loop_thread
         if _event_loop is not None:
             _event_loop.call_soon_threadsafe(_event_loop.stop)
             if _event_loop_thread is not None:
-                _event_loop_thread.join(timeout=5.0)
+                _event_loop_thread.join(timeout=2.0)
 
         # Cleanup clients
         asyncio.run(moose_client.cleanup())
@@ -465,31 +465,19 @@ def main():
             if current_parent == original_parent_pid:
                 continue
 
+            # Parent PID changed - initiate shutdown and let signal handlers do the rest
             try:
                 os.kill(original_parent_pid, 0)
             except ProcessLookupError:
                 print("\nParent process exited unexpectedly. Initiating shutdown...")
-                shutdown_server()
-                break
             except PermissionError:
-                # Parent still exists but we lack permission; fallback to shutdown on PPID change
                 print("\nLost permission to monitor parent process. Initiating shutdown as safeguard...")
-                shutdown_server()
-                break
+            else:
+                # Parent PID changed but old parent still exists (rare)
+                print("\nParent process changed. Initiating shutdown to prevent orphaned server...")
 
-            # Parent PID changed but old parent still exists (rare); treat as shutdown safeguard
-            print("\nParent process changed. Initiating shutdown to prevent orphaned server...")
             shutdown_server()
             break
-        # Request process termination if still running after graceful shutdown
-        if not shutdown_event.is_set():
-            return
-        try:
-            os.kill(os.getpid(), signal.SIGTERM)
-        except OSError:
-            return
-        time.sleep(3)
-        os._exit(0)
     
     # Register signal handlers
     signal.signal(signal.SIGINT, signal_handler)
@@ -497,18 +485,9 @@ def main():
     signal.signal(signal.SIGQUIT, signal_handler)
     signal.signal(signal.SIGHUP, signal_handler)
 
+    # Start parent monitoring thread
     threading.Thread(target=monitor_parent_process, daemon=True).start()
-    def force_exit():
-        # Wait for up to 5 seconds for graceful shutdown
-        for _ in range(10):
-            if shutdown_event.is_set():
-                return
-            time.sleep(0.5)
-        if not shutdown_event.is_set():
-            os._exit(0)
 
-    threading.Thread(target=force_exit, daemon=True).start()
-    
     print(f"Starting server on http://localhost:{server_port}")
     
     try:

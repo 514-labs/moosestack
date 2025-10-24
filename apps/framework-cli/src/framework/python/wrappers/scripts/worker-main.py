@@ -20,31 +20,30 @@ def main():
     shutdown_event = threading.Event()
 
     def monitor_parent():
+        """Monitor parent process and initiate shutdown if it dies."""
         while not shutdown_event.is_set():
             time.sleep(1)
             current = os.getppid()
             if current == parent_pid:
                 continue
 
+            # Parent PID changed - log and exit
             try:
                 os.kill(parent_pid, 0)
             except ProcessLookupError:
-                pass
+                log.info("Parent process exited unexpectedly. Terminating worker...")
             except PermissionError:
-                pass
+                log.info("Lost permission to monitor parent process. Terminating worker...")
+            else:
+                # Parent PID changed but old parent still exists (rare)
+                log.info("Parent process changed. Terminating worker to prevent orphan...")
 
             shutdown_event.set()
 
-            try:
-                os.kill(os.getpid(), signal.SIGTERM)
-            except OSError:
-                return
+            # Give main thread brief moment to exit gracefully
+            time.sleep(2)
 
-            for _ in range(6):
-                if not shutdown_event.is_set():
-                    return
-                time.sleep(0.5)
-
+            # Force exit if still running
             os._exit(0)
 
     threading.Thread(target=monitor_parent, daemon=True).start()
