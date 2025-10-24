@@ -179,7 +179,7 @@ Make sure `moose dev` is running before using the MCP tools. The AI client will 
 
 ## Available Tools
 
-The Moose MCP server provides four tools for interacting with your local development environment:
+The Moose MCP server provides five tools for interacting with your local development environment:
 
 ### `get_logs`
 
@@ -447,6 +447,38 @@ Retrieved 3 message(s) from 1 partition(s)
 
 ---
 
+### `get_source`
+
+Look up the file path where a Moose component (table, stream, API, workflow, etc.) is defined. The tool searches the infrastructure map and returns the relative path plus snippet metadata.
+
+**What you can ask for:**
+- "Where is the `UserActivity` table defined?"
+- "Open the TypeScript file for the `orderEventPipeline` stream."
+- "Show me the FastAPI app behind the `analytics_api` web route."
+
+**Example prompt and response:**
+
+```
+You: "Find the source for the OrderItem stream"
+
+AI:
+Component: stream/OrderItem (TypeScript)
+File: src/ingest/order-items.ts
+Snippet:
+  export const orderItemStream = new Stream<OrderItem>("OrderItem", {
+    destination: orderItemTable
+  });
+```
+
+**Use cases:**
+- Jump from CLI output or infra map entries to the actual code
+- Let AI assistants open the correct file before editing
+- Generate documentation references that include file paths
+
+The tool only reads paths within your workspace and never executes code. Pair it with `get_infra_map` for quick “find-then-open” workflows.
+
+---
+
 ## Example Workflows
 
 ### Debugging a Data Pipeline
@@ -521,6 +553,12 @@ The MCP server:
 - Does not run in production mode (`moose prod`)
 - Provides read-only access to sensitive infrastructure
 - Should not be exposed over networks or proxied externally
+
+## LLM-Optimized Documentation Feeds
+
+Before handing control to an AI assistant, prime it with a compact doc bundle so it understands Moose primitives and terminology. We publish TypeScript and Python versions at `/llm-ts.txt` and `/llm-py.txt`, with optional `?path=` filters for specific sections.
+
+See [LLM-optimized docs](/moose/llm-docs) for instructions on embedding these feeds into Claude, Cursor, Windsurf, or MCP clients alongside the live tools described above.
 
 ## Troubleshooting
 
