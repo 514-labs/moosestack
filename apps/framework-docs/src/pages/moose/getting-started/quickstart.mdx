@@ -38,6 +38,7 @@ import { CheckCircle, Clock, Laptop, Terminal } from "lucide-react";
 </Python>
 
 ## Prerequisites
+Check that your pre-requisites are installed by running the following commands:
 
 <TypeScript>
 <BulletPointsCard
@@ -62,6 +63,15 @@ import { CheckCircle, Clock, Laptop, Terminal } from "lucide-react";
     }
   ]}
 />
+
+```bash filename="Terminal" copy
+node --version
+```
+
+```bash filename="Terminal" copy
+docker ps
+```
+
 </TypeScript>
 
 <Python>
@@ -87,6 +97,14 @@ import { CheckCircle, Clock, Laptop, Terminal } from "lucide-react";
     }
   ]}
 />
+
+```bash filename="Terminal" copy
+python --version
+```
+
+```bash filename="Terminal" copy
+docker ps
+```
 </Python>
 
 <Callout type="info" title="Already have ClickHouse running?" href={PathConfig.fromClickhouse.path} icon={PathConfig.fromClickhouse.icon} ctaLabel="Add to ClickHouse">
@@ -161,40 +179,7 @@ You should see the moose version number. Do not proceed to Step 2 until `moose -
 
 <br />
 
-## Step 2: Verify Docker is Running (30 seconds)
-
-Moose uses Docker to run ClickHouse, Redpanda, and Temporal locally. **Let's verify Docker is ready before creating your project.**
-
-<Steps>
-### Check if Docker Desktop is running
-
-```bash filename="Terminal" copy
-docker ps
-```
-
-You should see a table with headers like `CONTAINER ID`, `IMAGE`, `COMMAND` (the table might be empty - that's fine).
-
-<Callout type="warning" title="If you see an error" compact={true}>
-
-**Docker is not running.** Start Docker Desktop:
-
-- **macOS**: Open Applications → Docker
-- **Windows**: Open Start Menu → Docker Desktop
-- **Linux**: Run `sudo systemctl start docker`
-
-**Wait 30-60 seconds** for Docker to fully start, then run `docker ps` again.
-
-</Callout>
-
-<Callout type="success" title="Checkpoint" icon={CheckCircle} compact={true}>
-You should see the `docker ps` output without errors before proceeding.
-</Callout>
-
-</Steps>
-
-<br />
-
-## Step 3: Create Your Project (1 minute)
+## Step 2: Create Your Project (1 minute)
 
 <Steps>
 ### Initialize your project
@@ -236,8 +221,14 @@ A virtual environment isolates your project's dependencies. We recommend creatin
 </Callout>
 
 
+**Create a virtual environment (Recommended)**
+
 ```bash filename="Terminal" copy
 python3 -m venv .venv
+```
+
+**activate your virtual environment(Recommended)**
+```bash filename="Terminal" copy
 source .venv/bin/activate
 ```
 
@@ -329,7 +320,7 @@ Keep this terminal running. This is your Moose development server. You'll open a
 
 </Steps>
 
-## Step 4: Understand Your Project (1 minute)
+## Step 3: Understand Your Project (1 minute)
 
 Your project includes a complete example pipeline:
 
@@ -399,7 +390,7 @@ from app.workflows.generator import *  # Background workflows
 </Python>
 
 
-## Step 5: Test Your Pipeline (2 minutes)
+## Step 4: Test Your Pipeline (2 minutes)
 
 <Callout type="info" title="Important: Open a second terminal window" compact={true}>
 **Keep your `moose dev` terminal running.** You need a second terminal for the next commands.
@@ -598,7 +589,7 @@ curl "http://localhost:4000/api/bar?limit=5&orderBy=totalRows"
 
 </Steps>
 
-## Step 6: Hot Reload Schema Changes (1 minute)
+## Step 5: Hot Reload Schema Changes (1 minute)
 
 1. Open <TypeScript inline>`app/ingest/models.ts`</TypeScript><Python inline>`app/ingest/models.py`</Python>
 2. Add a new field to your data model:
