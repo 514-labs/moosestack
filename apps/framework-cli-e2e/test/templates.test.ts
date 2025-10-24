@@ -341,6 +341,76 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
           { attempts: 10, delayMs: 1000 },
         );
       });
+
+      it("should plan/apply TTL modifications on existing tables", async function () {
+        this.timeout(TIMEOUTS.TEST_SETUP_MS);
+
+        // First, verify initial TTL settings
+        // Note: ClickHouse normalizes "INTERVAL N DAY" to "toIntervalDay(N)"
+        await withRetries(
+          async () => {
+            const ddl = await getTableDDL("TTLTable");
+            if (!ddl.includes("TTL timestamp + toIntervalDay(90) DELETE")) {
+              throw new Error(`Initial table TTL not found. DDL: ${ddl}`);
+            }
+            if (!ddl.includes("TTL timestamp + toIntervalDay(30)")) {
+              throw new Error(`Initial column TTL not found. DDL: ${ddl}`);
+            }
+          },
+          { attempts: 10, delayMs: 1000 },
+        );
+
+        // Modify the template file to change TTL settings
+        const engineTestsPath = path.join(
+          TEST_PROJECT_DIR,
+          "src",
+          "ingest",
+          config.language === "typescript" ?
+            "engineTests.ts"
+          : "engine_tests.py",
+        );
+        let contents = await fs.promises.readFile(engineTestsPath, "utf8");
+
+        // Update table-level TTL: 90 days -> 60 days
+        // Update column-level TTL: 30 days -> 14 days
+        if (config.language === "typescript") {
+          contents = contents
+            .replace(
+              'ttl: "timestamp + INTERVAL 90 DAY DELETE"',
+              'ttl: "timestamp + INTERVAL 60 DAY DELETE"',
+            )
+            .replace(
+              'ClickHouseTTL<"timestamp + INTERVAL 30 DAY">',
+              'ClickHouseTTL<"timestamp + INTERVAL 14 DAY">',
+            );
+        } else {
+          contents = contents
+            .replace(
+              'ttl="timestamp + INTERVAL 90 DAY DELETE"',
+              'ttl="timestamp + INTERVAL 60 DAY DELETE"',
+            )
+            .replace(
+              'ClickHouseTTL("timestamp + INTERVAL 30 DAY")',
+              'ClickHouseTTL("timestamp + INTERVAL 14 DAY")',
+            );
+        }
+        await fs.promises.writeFile(engineTestsPath, contents, "utf8");
+
+        // Verify DDL reflects updated TTL settings
+        // Note: ClickHouse normalizes "INTERVAL N DAY" to "toIntervalDay(N)"
+        await withRetries(
+          async () => {
+            const ddl = await getTableDDL("TTLTable");
+            if (!ddl.includes("TTL timestamp + toIntervalDay(60) DELETE")) {
+              throw new Error(`Table TTL not updated to 60 days. DDL: ${ddl}`);
+            }
+            if (!ddl.includes("TTL timestamp + toIntervalDay(14)")) {
+              throw new Error(`Column TTL not updated to 14 days. DDL: ${ddl}`);
+            }
+          },
+          { attempts: 10, delayMs: 1000 },
+        );
+      });
     }
 
     // Create test case based on language
