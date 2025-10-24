@@ -12,11 +12,7 @@ import { Callout } from "@/components";
 * **Improved:** JSON columns now accept dynamic payloads with fine-grained controls
 </Callout>
 
-
-
-## ⭐ Featured New Features
-
-### Serverless ClickHouse migrations with `moose migrate`
+## Serverless ClickHouse migrations with `moose migrate`
 Run schema diffs and applies straight against a ClickHouse endpoint—perfect for OLAP-only or CI/CD environments that don’t boot the full Moose runtime.
 
 ```bash
@@ -29,11 +25,9 @@ moose generate migration \
 moose migrate --clickhouse-url "https://user:pass@ch.serverless.dev/main"
 ```
 
-_Workflow: serverless ClickHouse • Value: lightweight schema deploys without Redis/Temporal dependencies._ ([#2872](https://github.com/514labs/moose/pull/2872))
+🐙 PR: ([#2872](https://github.com/514labs/moose/pull/2872)) | 📘 Docs: [Serverless ClickHouse migrations guide](/moose/migrate#serverless-deployments)
 
-📘 Docs: [Serverless ClickHouse migrations guide](/moose/migrate#serverless-deployments)
-
-### Adaptive JSON columns with `__mooseJsonOptions`
+## Adaptive JSON columns with `__mooseJsonOptions`
 Model semi-structured payloads while locking in typed paths for the fields you care about.
 
 ```typescript
@@ -54,30 +48,25 @@ export interface UserActivity {
 }
 ```
 
-_Workflow: ingestion pipelines • Value: accept evolving payloads without breaking typed reads._ ([#2887](https://github.com/514labs/moose/pull/2887))
+🐙 PR:([#2887](https://github.com/514labs/moose/pull/2887)) | 📘 Docs: [Configurable JSON columns reference](/moose/data-modeling#configurable-json-columns)
 
-📘 Docs: [Configurable JSON columns reference](/moose/data-modeling#configurable-json-columns)
+## Moose
 
-## 🦌 Moose
+- **`moose migrate --clickhouse-url`** – Generate and apply migrations directly against hosted ClickHouse, ideal for OLAP-only or CI/CD workflows that run without the full Moose runtime. [Docs: Serverless ClickHouse migrations](/moose/migrate#serverless-deployments) | PRs [#2872](https://github.com/514labs/moose/pull/2872).
+- **LLM-friendly docs & endpoints** – Framework pages expose TS/Py “LLM view” links and the CLI now serves `/llm-ts.txt` + `/llm-py.txt` for assistants that need scoped context. | PRs [#2892](https://github.com/514labs/moose/pull/2892).
+- **Flexible JSON columns** – `__mooseJsonOptions` lets models cap dynamic paths, pin typed paths, or skip keys/regexes so ingestion can accept evolving payloads without breaking typed reads. [Docs: Configurable JSON columns](/moose/data-modeling#configurable-json-columns) | PRs [#2887](https://github.com/514labs/moose/pull/2887).
+- **Configurable `source_dir`** – `moose.config.toml` can point at `src/` (or any folder) instead of the default `app/`, simplifying adoption inside existing repos. [Docs: Custom source directory](/moose/configuration#custom-source-directory) | PRs [#2886](https://github.com/514labs/moose/pull/2886).
+- **Array transforms can fan out events** – Transform functions that return arrays automatically emit one Kafka message per element, covering explode/normalize patterns without extra producers. [Docs: Array transforms](/moose/streaming/transform-functions#array-transforms) | PRs [#2882](https://github.com/514labs/moose/pull/2882).
+- **ClickHouse modeling controls** – Table DSL now covers TTL per table/column, `sampleByExpression`, and fully configurable secondary indexes (type, args, granularity) so you can encode retention + performance plans directly in code. [Docs: TTL](/moose/olap/ttl) • [Docs: Sample BY](/moose/olap/schema-optimization#sample-by-expressions) • [Docs: Secondary indexes](/moose/olap/indexes) | PRs [#2845](https://github.com/514labs/moose/pull/2845), [#2867](https://github.com/514labs/moose/pull/2867), [#2869](https://github.com/514labs/moose/pull/2869).
+- **`get_source` MCP tool** – AI assistants can resolve a Moose component (tables, APIs, streams) back to its source file for faster code navigation. [Docs: MCP get_source tool](/moose/mcp-dev-server#get_source) | PRs [#2848](https://github.com/514labs/moose/pull/2848).
+- **Google Analytics v4 connector** – Service-account authenticated connector streams GA4 reports and realtime metrics into Moose pipelines so marketing data lands without bespoke ETL. [Docs: Connector reference](https://registry.moosestack.com/connectors/google-analytics) | PRs [registry#121](https://github.com/514-labs/registry/pull/121).
+- **Connector registry APIs** – Public REST endpoints expose connector metadata, docs, schemas, and versions for catalogs or automation. [Docs: Registry API docs](https://registry.moosestack.com/docs/api) | PRs [registry#120](https://github.com/514-labs/registry/pull/120).
+- **Onboarding & docs polish** – Quickstart, auth, materialized view, and config guides now call out install checkpoints, nullable column behavior, and when to prefer `moose.config.toml` over Docker overrides. [Docs: Quickstart](/moose/getting-started/quickstart) | PRs [#2903](https://github.com/514labs/moose/pull/2903), [#2894](https://github.com/514labs/moose/pull/2894), [#2893](https://github.com/514labs/moose/pull/2893), [#2890](https://github.com/514labs/moose/pull/2890).
+- **Integer validation parity** – The ingest API enforces every ClickHouse integer range (Int8–UInt256) with clear errors, preventing silent overflows. [Docs: Ingest API](/moose/apis/ingest-api) | PRs [#2861](https://github.com/514labs/moose/pull/2861).
+- **MCP watcher stability** – The MCP server now waits for file-system changes to settle before responding so IDE bots always read consistent artifacts. [Docs: MCP server](/moose/mcp-dev-server) | PRs [#2884](https://github.com/514labs/moose/pull/2884).
+- **Release + schema compiler hardening** – Version detection ignores CI-only tags, and ClickHouse parsing handles ORDER BY around `PARTITION BY`, `TTL`, `SAMPLE BY`, and secondary indexes even when optional arguments are omitted. PRs [#2902](https://github.com/514labs/moose/pull/2902), [#2898](https://github.com/514labs/moose/pull/2898), [#2897](https://github.com/514labs/moose/pull/2897), [#2889](https://github.com/514labs/moose/pull/2889).
+- **Proxy request fidelity** – Consumption APIs now preserve headers/body metadata end-to-end, keeping auth tokens and content negotiation intact. PRs [#2881](https://github.com/514labs/moose/pull/2881).
 
-- **`moose migrate --clickhouse-url`** – Generate and apply migrations directly against hosted ClickHouse, ideal for OLAP-only or CI/CD workflows that run without the full Moose runtime. [Docs: Serverless ClickHouse migrations](/moose/migrate#serverless-deployments) | PRs [#2872](https://github.com/514labs/moose/pull/2872). _Workflow: serverless ClickHouse; Value: lightweight schema deploys._
-- **LLM-friendly docs & endpoints** – Framework pages expose TS/Py “LLM view” links and the CLI now serves `/llm-ts.txt` + `/llm-py.txt` for assistants that need scoped context. [Docs: LLM-optimized docs](/moose/llm-docs) | PRs [#2892](https://github.com/514labs/moose/pull/2892). _Workflow: AI-assisted development; Value: fewer hallucinated Moose APIs._
-  📸 *[Screenshot needed: Documentation pages now include links to LLM-optimized versions (TypeScript and Python) that provide AI assistants with better context for helping users with MooseStack development.]*
-- **Flexible JSON columns** – `__mooseJsonOptions` lets models cap dynamic paths, pin typed paths, or skip keys/regexes so ingestion can accept evolving payloads without breaking typed reads. [Docs: Configurable JSON columns](/moose/data-modeling#configurable-json-columns) | PRs [#2887](https://github.com/514labs/moose/pull/2887). _Workflow: ingestion pipelines; Value: resilient schemas._
-- **Configurable `source_dir`** – `moose.config.toml` can point at `src/` (or any folder) instead of the default `app/`, simplifying adoption inside existing repos. [Docs: Custom source directory](/moose/configuration#custom-source-directory) | PRs [#2886](https://github.com/514labs/moose/pull/2886). _Workflow: mono-repo alignment; Value: less refactoring._
-- **Array transforms can fan out events** – Transform functions that return arrays automatically emit one Kafka message per element, covering explode/normalize patterns without extra producers. [Docs: Array transforms](/moose/streaming/transform-functions#array-transforms) | PRs [#2882](https://github.com/514labs/moose/pull/2882). _Workflow: streaming pipelines; Value: zero boilerplate fan-out._
-- **ClickHouse modeling controls** – Table DSL now covers TTL per table/column, `sampleByExpression`, and fully configurable secondary indexes (type, args, granularity) so you can encode retention + performance plans directly in code. [Docs: TTL](/moose/olap/ttl) • [Docs: Sample BY](/moose/olap/schema-optimization#sample-by-expressions) • [Docs: Secondary indexes](/moose/olap/indexes) | PRs [#2845](https://github.com/514labs/moose/pull/2845), [#2867](https://github.com/514labs/moose/pull/2867), [#2869](https://github.com/514labs/moose/pull/2869). _Workflow: governance & analytics tuning; Value: faster, cheaper warehouses._
-- **`get_source` MCP tool** – AI assistants can resolve a Moose component (tables, APIs, streams) back to its source file for faster code navigation. [Docs: MCP get_source tool](/moose/mcp-dev-server#get_source) | PRs [#2848](https://github.com/514labs/moose/pull/2848). _Workflow: IDE automation; Value: shorter debug loops._
-- **Google Analytics v4 connector** – Service-account authenticated connector streams GA4 reports and realtime metrics into Moose pipelines so marketing data lands without bespoke ETL. [Docs: Connector reference](https://registry.moosestack.com/connectors/google-analytics) | PRs [registry#121](https://github.com/514-labs/registry/pull/121). _Workflow: SaaS ingestion; Value: turnkey analytics feeds._
-- **Connector registry APIs** – Public REST endpoints expose connector metadata, docs, schemas, and versions for catalogs or automation. [Docs: Registry API docs](https://registry.moosestack.com/docs/api) | PRs [registry#120](https://github.com/514-labs/registry/pull/120). _Workflow: ecosystem tooling; Value: integrate registry data anywhere._
+## Boreal
 
-- **Onboarding & docs polish** – Quickstart, auth, materialized view, and config guides now call out install checkpoints, nullable column behavior, and when to prefer `moose.config.toml` over Docker overrides. [Docs: Quickstart](/moose/getting-started/quickstart) | PRs [#2903](https://github.com/514labs/moose/pull/2903), [#2894](https://github.com/514labs/moose/pull/2894), [#2893](https://github.com/514labs/moose/pull/2893), [#2890](https://github.com/514labs/moose/pull/2890). _Workflow: first-run experience; Value: fewer support tickets._
-- **Integer validation parity** – The ingest API enforces every ClickHouse integer range (Int8–UInt256) with clear errors, preventing silent overflows. [Docs: Ingest API](/moose/apis/ingest-api) | PRs [#2861](https://github.com/514labs/moose/pull/2861). _Workflow: ingestion reliability; Value: data integrity._
-- **MCP watcher stability** – The MCP server now waits for file-system changes to settle before responding so IDE bots always read consistent artifacts. [Docs: MCP server](/moose/mcp-dev-server) | PRs [#2884](https://github.com/514labs/moose/pull/2884). _Workflow: AI tooling; Value: fewer race conditions._
-
-- **Release + schema compiler hardening** – Version detection ignores CI-only tags, and ClickHouse parsing handles ORDER BY around `PARTITION BY`, `TTL`, `SAMPLE BY`, and secondary indexes even when optional arguments are omitted. PRs [#2902](https://github.com/514labs/moose/pull/2902), [#2898](https://github.com/514labs/moose/pull/2898), [#2897](https://github.com/514labs/moose/pull/2897), [#2889](https://github.com/514labs/moose/pull/2889). _Workflow: deploy automation; Value: safer migrations._
-- **Proxy request fidelity** – Consumption APIs now preserve headers/body metadata end-to-end, keeping auth tokens and content negotiation intact. PRs [#2881](https://github.com/514labs/moose/pull/2881). _Workflow: API gateway; Value: predictable integrations._
-
-## 🐻 Boreal
-
-- **Navigation slug fix** – Visiting a 404 no longer strips the org ID from subsequent links, so multi-tenant operators stay on the right workspace. _Workflow: dashboard UX; Value: no dead ends._ ([commercial#1014](https://github.com/514-labs/commercial/pull/1014))
+- **Navigation slug fix** – Visiting a 404 no longer strips the org ID from subsequent links, so multi-tenant operators stay on the right workspace. ([commercial#1014](https://github.com/514-labs/commercial/pull/1014))
