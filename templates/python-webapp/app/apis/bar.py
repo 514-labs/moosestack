@@ -66,8 +66,8 @@ async def query(request: Request, limit: int = 10):
         )
 
     try:
-        # Build the query
-        query_str = f"""
+        # Build the query with safe parameterization
+        query_str = """
             SELECT
                 day_of_month,
                 total_rows
@@ -76,7 +76,9 @@ async def query(request: Request, limit: int = 10):
             LIMIT {limit}
         """
 
-        result = moose.client.query.execute(query_str)
+        result = moose.client.query.execute(query_str, {
+            "limit": limit
+        })
 
         return {
             "success": True,
@@ -136,20 +138,26 @@ async def data(request: Request, body: DataRequest):
         )
 
     try:
-        # Build the query with parameters
-        query_str = f"""
+        # Build the query with safe parameterization
+        query_str = """
             SELECT
                 day_of_month,
-                {body.order_by}
+                {select_column}
             FROM BarAggregated
             WHERE
-                day_of_month >= {body.start_day}
-                AND day_of_month <= {body.end_day}
-            ORDER BY {body.order_by} DESC
-            LIMIT {body.limit}
+                day_of_month >= {start_day}
+                AND day_of_month <= {end_day}
+            ORDER BY {order_by} DESC
+            LIMIT {limit}
         """
 
-        result = moose.client.query.execute(query_str)
+        result = moose.client.query.execute(query_str, {
+            "select_column": body.order_by,
+            "order_by": body.order_by,
+            "start_day": body.start_day,
+            "end_day": body.end_day,
+            "limit": body.limit
+        })
 
         return {
             "success": True,
