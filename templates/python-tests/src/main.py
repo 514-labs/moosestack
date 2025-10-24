@@ -2,5 +2,6 @@
 from src.ingest import models, transforms
 from src.ingest import engine_tests  # Import engine tests to load all supported ClickHouse engines
 import src.apis.bar as bar_api
+from src.apis.webapp_bar import bar_fastapi_app
 import src.views.bar_aggregated as bar_view
 from src.workflows.generator import ingest_workflow, ingest_task

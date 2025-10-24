@@ -4,5 +4,4 @@ requests==2.32.4
 moose-cli
 moose-lib
 faker
-sqlglot[rs]>=27.16.3
 fastapi[standard]
