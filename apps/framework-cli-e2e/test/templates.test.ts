@@ -350,10 +350,12 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
         await withRetries(
           async () => {
             const ddl = await getTableDDL("TTLTable");
-            if (!ddl.includes("TTL timestamp + toIntervalDay(90) DELETE")) {
+            if (!/TTL timestamp \+ toIntervalDay\(90\)\s+SETTINGS/.test(ddl)) {
               throw new Error(`Initial table TTL not found. DDL: ${ddl}`);
             }
-            if (!ddl.includes("TTL timestamp + toIntervalDay(30)")) {
+            if (
+              !ddl.includes("`email` String TTL timestamp + toIntervalDay(30)")
+            ) {
               throw new Error(`Initial column TTL not found. DDL: ${ddl}`);
             }
           },
