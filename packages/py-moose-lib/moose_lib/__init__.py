@@ -4,6 +4,8 @@ from .blocks import *
 
 from .commons import *
 
+from .secrets import moose_runtime_env
+
 from .data_models import *
 
 from .dmv2 import *
