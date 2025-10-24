@@ -30,8 +30,11 @@ if (tags.length > 0 && tags.startsWith("v")) {
   process.exit(0);
 }
 
-// We retrieve the last release tag.
-const latestTag = execSync("git describe --tags --abbrev=0").toString().trim();
+// We retrieve the last release tag (excluding CI tags).
+// This ensures we only consider actual releases, not CI builds
+const latestTag = execSync("git describe --tags --abbrev=0 --exclude='*-ci-*'")
+  .toString()
+  .trim();
 // We parse the version number from the tag
 const version = latestTag.match(/v(\d+)\.(\d+)\.(\d+)/);
 
