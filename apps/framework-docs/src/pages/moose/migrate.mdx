@@ -222,6 +222,43 @@ Your ClickHouse instance needs the KeeperMap engine for state storage and migrat
 ⚠️ **Self-hosted ClickHouse**: See [ClickHouse KeeperMap documentation](https://clickhouse.com/docs/en/engines/table-engines/special/keeper-map) for setup requirements
 </Callout>
 
+### State Storage Options
+
+Moose migrations require storing infrastructure state and coordinating locks. You can choose between two backends:
+
+**ClickHouse State Storage (Default)**
+Uses the `_MOOSE_STATE` KeeperMap table. Best for:
+- ClickHouse Cloud (works out of the box)
+- Self-hosted with ClickHouse Keeper already configured
+
+**Redis State Storage**
+Uses Redis for state and locking. Best for:
+- Existing Redis infrastructure
+- Multi-tenant deployments (isolated by `key_prefix`)
+- When ClickHouse Keeper isn't available
+
+**Configuration:**
+```toml filename="moose.config.toml" copy
+[state_config]
+storage = "redis"  # or "clickhouse" (default)
+```
+
+**Usage with Redis:**
+```bash filename="Terminal" copy
+# With environment variable (recommended)
+export MOOSE_REDIS_CONFIG__URL="redis://host:port"
+moose migrate --clickhouse-url clickhouse://...
+
+# Or with CLI flag
+moose migrate \
+  --clickhouse-url clickhouse://... \
+  --redis-url redis://host:port
+```
+
+<Callout type="info">
+The ClickHouse URL is always required, even when using Redis for state storage.
+</Callout>
+
 ### Understanding Plan Output
 
 Moose shows exactly what will change:

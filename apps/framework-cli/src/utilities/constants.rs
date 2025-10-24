@@ -105,6 +105,9 @@ pub const KEY_REMOTE_CLICKHOUSE_URL: &str = "remote_clickhouse_url";
 pub const KEY_REMOTE_ADMIN_URL: &str = "remote_admin_url";
 pub const KEY_REMOTE_ADMIN_TOKEN: &str = "remote_admin_token";
 
+pub const ENV_CLICKHOUSE_URL: &str = "MOOSE_CLICKHOUSE_CONFIG__URL";
+pub const ENV_REDIS_URL: &str = "MOOSE_REDIS_CONFIG__URL";
+
 pub const MIGRATION_FILE: &str = "./migrations/plan.yaml";
 pub const MIGRATION_BEFORE_STATE_FILE: &str = "./migrations/remote_state.json";
 pub const MIGRATION_AFTER_STATE_FILE: &str = "./migrations/local_infra_map.json";

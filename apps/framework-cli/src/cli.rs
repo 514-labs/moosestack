@@ -56,8 +56,8 @@ use crate::project::Project;
 use crate::utilities::capture::{wait_for_usage_capture, ActivityType};
 use crate::utilities::constants::KEY_REMOTE_CLICKHOUSE_URL;
 use crate::utilities::constants::{
-    CLI_VERSION, MIGRATION_AFTER_STATE_FILE, MIGRATION_BEFORE_STATE_FILE, MIGRATION_FILE,
-    PROJECT_NAME_ALLOW_PATTERN,
+    CLI_VERSION, ENV_CLICKHOUSE_URL, ENV_REDIS_URL, MIGRATION_AFTER_STATE_FILE,
+    MIGRATION_BEFORE_STATE_FILE, MIGRATION_FILE, PROJECT_NAME_ALLOW_PATTERN,
 };
 use crate::utilities::keyring::{KeyringSecretRepository, SecretRepository};
 
@@ -609,6 +609,7 @@ pub async fn top_command_handler(
                 url,
                 token,
                 clickhouse_url,
+                redis_url,
                 save,
             }) => {
                 info!("Running generate migration command");
@@ -625,15 +626,29 @@ pub async fn top_command_handler(
 
                 check_project_name(&project.name())?;
 
-                let remote = if let Some(clickhouse_url) = clickhouse_url {
-                    routines::RemoteSource::ClickHouse {
-                        url: clickhouse_url,
+                // Resolve URLs from flags or env vars
+                let clickhouse_url_from_env = std::env::var(ENV_CLICKHOUSE_URL).ok();
+                let resolved_clickhouse_url = clickhouse_url.clone().or(clickhouse_url_from_env);
+
+                let redis_url_from_env = std::env::var(ENV_REDIS_URL).ok();
+                let resolved_redis_url = redis_url.clone().or(redis_url_from_env);
+
+                // Validate that at least one remote source is configured
+                let remote = if let Some(ref ch_url) = resolved_clickhouse_url {
+                    routines::RemoteSource::Serverless {
+                        clickhouse_url: ch_url,
+                        redis_url: &resolved_redis_url,
                     }
-                } else {
+                } else if let Some(ref moose_url) = url {
                     routines::RemoteSource::Moose {
-                        url: url.as_ref().unwrap(),
+                        url: moose_url,
                         token,
                     }
+                } else {
+                    return Err(RoutineFailure::error(Message {
+                        action: "Configuration".to_string(),
+                        details: "Either --url or --clickhouse-url is required (or set environment variables)".to_string(),
+                    }));
                 };
 
                 let result = routines::remote_gen_migration(&project, remote)
@@ -861,7 +876,10 @@ pub async fn top_command_handler(
                 "Successfully planned changes to the infrastructure".to_string(),
             )))
         }
-        Commands::Migrate { clickhouse_url } => {
+        Commands::Migrate {
+            clickhouse_url,
+            redis_url,
+        } => {
             info!("Running migrate command");
             let project = load_project()?;
 
@@ -875,7 +893,26 @@ pub async fn top_command_handler(
 
             check_project_name(&project.name())?;
 
-            routines::migrate::execute_migration(&project, clickhouse_url).await?;
+            let clickhouse_url_from_env = std::env::var(ENV_CLICKHOUSE_URL).ok();
+            let resolved_clickhouse_url = clickhouse_url
+                .as_deref()
+                .or(clickhouse_url_from_env.as_deref())
+                .ok_or_else(|| {
+                    RoutineFailure::error(Message {
+                        action: "Configuration".to_string(),
+                        details: format!(
+                            "--clickhouse-url required (or set {} environment variable)",
+                            ENV_CLICKHOUSE_URL
+                        ),
+                    })
+                })?;
+
+            routines::migrate::execute_migration(
+                &project,
+                resolved_clickhouse_url,
+                redis_url.as_deref(),
+            )
+            .await?;
 
             wait_for_usage_capture(capture_handle).await;
 
