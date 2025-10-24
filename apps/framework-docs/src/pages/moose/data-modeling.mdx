@@ -783,46 +783,6 @@ raw_stream.add_transform(processed_stream, process_data)
 ```
 </Python>
 
-### Configurable JSON columns
-
-Control how ClickHouse JSON columns accept dynamic data by attaching a `__mooseJsonOptions` object to the field definition. This keeps typed paths strict while still allowing experimental keys during ingestion.
-
-<TypeScript>
-```ts filename="app/datamodels/UserActivity.ts"
-import { Key } from "@514labs/moose-lib";
-
-interface UserActivity {
-  id: Key<string>;
-  timestamp: Date;
-  metadata: {
-    userId: string;
-    sessionId: string;
-    device?: string;
-    __mooseJsonOptions: {
-      maxDynamicPaths: 256;        // how many unknown keys to index
-      maxDynamicTypes: 16;         // number of type variations to tolerate
-      typedPaths: [
-        ["userId", "String"],
-        ["sessionId", "String"]
-      ];
-      skipPaths: ["internal.debug"];     // exact paths to ignore
-      skipRegexps: ["^temp\\."];
-    };
-  };
-  extras: Record<string, unknown>;       // plain JSON column
-}
-```
-</TypeScript>
-
-**Supported options**
-- `maxDynamicPaths`: cap on the number of unseen keys ClickHouse tracks.
-- `maxDynamicTypes`: limit for type variations seen per key.
-- `typedPaths`: array of `[path, ClickHouseType]` entries for enforced typing.
-- `skipPaths`: exact paths to drop during ingestion.
-- `skipRegexps`: regular expressions applied to dotted paths to skip entire branches.
-
-Use these options to phase in schema changes safely—existing dashboards keep typed guarantees while new producers can ship additional metadata without breaking deploys.
-
 ### Modeling for Workflow Tasks
 
 Define strongly-typed inputs and outputs for async jobs:
