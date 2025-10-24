@@ -626,22 +626,29 @@ pub async fn top_command_handler(
 
                 check_project_name(&project.name())?;
 
+                // Resolve URLs from flags or env vars
                 let clickhouse_url_from_env = std::env::var(ENV_CLICKHOUSE_URL).ok();
                 let resolved_clickhouse_url = clickhouse_url.clone().or(clickhouse_url_from_env);
 
                 let redis_url_from_env = std::env::var(ENV_REDIS_URL).ok();
                 let resolved_redis_url = redis_url.clone().or(redis_url_from_env);
 
+                // Validate that at least one remote source is configured
                 let remote = if let Some(ref ch_url) = resolved_clickhouse_url {
                     routines::RemoteSource::Serverless {
                         clickhouse_url: ch_url,
                         redis_url: &resolved_redis_url,
                     }
-                } else {
+                } else if let Some(ref moose_url) = url {
                     routines::RemoteSource::Moose {
-                        url: url.as_ref().unwrap(),
+                        url: moose_url,
                         token,
                     }
+                } else {
+                    return Err(RoutineFailure::error(Message {
+                        action: "Configuration".to_string(),
+                        details: "Either --url or --clickhouse-url is required (or set environment variables)".to_string(),
+                    }));
                 };
 
                 let result = routines::remote_gen_migration(&project, remote)
