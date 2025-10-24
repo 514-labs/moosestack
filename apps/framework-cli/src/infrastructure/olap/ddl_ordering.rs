@@ -96,14 +96,6 @@ pub enum AtomicOlapOperation {
         after: Option<String>,
         dependency_info: DependencyInfo,
     },
-    /// Modify or remove column-level TTL
-    ModifyColumnTtl {
-        table: Table,
-        column: String,
-        before: Option<String>,
-        after: Option<String>,
-        dependency_info: DependencyInfo,
-    },
     /// Add a secondary index to a table
     AddTableIndex {
         table: Table,
@@ -233,18 +225,6 @@ impl AtomicOlapOperation {
                 before: before.clone(),
                 after: after.clone(),
             },
-            AtomicOlapOperation::ModifyColumnTtl {
-                table,
-                column,
-                before,
-                after,
-                ..
-            } => SerializableOlapOperation::ModifyColumnTtl {
-                table: table.name.clone(),
-                column: column.clone(),
-                before: before.clone(),
-                after: after.clone(),
-            },
             AtomicOlapOperation::AddTableIndex { table, index, .. } => {
                 SerializableOlapOperation::AddTableIndex {
                     table: table.name.clone(),
@@ -355,9 +335,6 @@ impl AtomicOlapOperation {
             AtomicOlapOperation::ModifyTableTtl { table, .. } => {
                 InfrastructureSignature::Table { id: table.id() }
             }
-            AtomicOlapOperation::ModifyColumnTtl { table, .. } => {
-                InfrastructureSignature::Table { id: table.id() }
-            }
             AtomicOlapOperation::AddTableIndex { table, .. } => {
                 InfrastructureSignature::Table { id: table.id() }
             }
@@ -416,9 +393,6 @@ impl AtomicOlapOperation {
                 dependency_info, ..
             }
             | AtomicOlapOperation::ModifyTableTtl {
-                dependency_info, ..
-            }
-            | AtomicOlapOperation::ModifyColumnTtl {
                 dependency_info, ..
             }
             | AtomicOlapOperation::AddTableIndex {
@@ -1004,9 +978,6 @@ pub fn order_olap_changes(
                 TableChange::TtlChanged { table, .. } => {
                     tables.insert(table.name.clone(), table.clone());
                 }
-                TableChange::ColumnTtlChanged { table, .. } => {
-                    tables.insert(table.name.clone(), table.clone());
-                }
             }
         } else if let OlapChange::PopulateMaterializedView { .. } = change {
             // No table to track for population operations
@@ -1046,23 +1017,6 @@ pub fn order_olap_changes(
                 let mut plan = OperationPlan::new();
                 plan.setup_ops.push(AtomicOlapOperation::ModifyTableTtl {
                     table: table.clone(),
-                    before: before.clone(),
-                    after: after.clone(),
-                    dependency_info: create_empty_dependency_info(),
-                });
-                plan
-            }
-            OlapChange::Table(TableChange::ColumnTtlChanged {
-                table,
-                column,
-                before,
-                after,
-                ..
-            }) => {
-                let mut plan = OperationPlan::new();
-                plan.setup_ops.push(AtomicOlapOperation::ModifyColumnTtl {
-                    table: table.clone(),
-                    column: column.clone(),
                     before: before.clone(),
                     after: after.clone(),
                     dependency_info: create_empty_dependency_info(),

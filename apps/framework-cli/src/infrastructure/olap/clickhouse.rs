@@ -164,13 +164,6 @@ pub enum SerializableOlapOperation {
         before: Option<String>,
         after: Option<String>,
     },
-    /// Modify or remove column-level TTL
-    ModifyColumnTtl {
-        table: String,
-        column: String,
-        before: Option<String>,
-        after: Option<String>,
-    },
     AddTableIndex {
         table: String,
         index: TableIndex,
@@ -325,18 +318,6 @@ pub fn describe_operation(operation: &SerializableOlapOperation) -> String {
                 format!("Removing table TTL from '{}'", table)
             }
         }
-        SerializableOlapOperation::ModifyColumnTtl {
-            table,
-            column,
-            after,
-            ..
-        } => {
-            if after.is_some() {
-                format!("Modifying column '{}' TTL in table '{}'", column, table)
-            } else {
-                format!("Removing column '{}' TTL from table '{}'", column, table)
-            }
-        }
         SerializableOlapOperation::RawSql { description, .. } => description.clone(),
     }
 }
@@ -407,30 +388,6 @@ pub async fn execute_atomic_operation(
                 format!("ALTER TABLE `{}`.`{}` MODIFY TTL {}", db_name, table, expr)
             } else {
                 format!("ALTER TABLE `{}`.`{}` REMOVE TTL", db_name, table)
-            };
-            run_query(&sql, client).await.map_err(|e| {
-                ClickhouseChangesError::ClickhouseClient {
-                    error: e,
-                    resource: Some(table.clone()),
-                }
-            })?;
-        }
-        SerializableOlapOperation::ModifyColumnTtl {
-            table,
-            column,
-            before: _,
-            after,
-        } => {
-            let sql = if let Some(expr) = after {
-                format!(
-                    "ALTER TABLE `{}`.`{}` MODIFY COLUMN `{}` TTL {}",
-                    db_name, table, column, expr
-                )
-            } else {
-                format!(
-                    "ALTER TABLE `{}`.`{}` MODIFY COLUMN `{}` REMOVE TTL",
-                    db_name, table, column
-                )
             };
             run_query(&sql, client).await.map_err(|e| {
                 ClickhouseChangesError::ClickhouseClient {
@@ -667,10 +624,16 @@ async fn execute_modify_table_column(
     let default_changed = before_column.default != after_column.default;
     let required_changed = before_column.required != after_column.required;
     let comment_changed = before_column.comment != after_column.comment;
+    let ttl_changed = before_column.ttl != after_column.ttl;
 
     // If only the comment changed, use a simpler ALTER TABLE ... MODIFY COLUMN ... COMMENT
     // This is more efficient and avoids unnecessary table rebuilds
-    if !data_type_changed && !required_changed && !default_changed && comment_changed {
+    if !data_type_changed
+        && !required_changed
+        && !default_changed
+        && !ttl_changed
+        && comment_changed
+    {
         log::info!(
             "Executing comment-only modification for table: {}, column: {}",
             table_name,
@@ -755,16 +718,28 @@ fn build_modify_column_sql(
         .map(|d| format!(" DEFAULT {}", d))
         .unwrap_or_default();
 
+    let ttl_clause = ch_col
+        .ttl
+        .as_ref()
+        .map(|t| format!(" TTL {}", t))
+        .unwrap_or_default();
+
     let sql = if let Some(ref comment) = ch_col.comment {
         let escaped_comment = comment.replace('\'', "''");
         format!(
-            "ALTER TABLE `{}`.`{}` MODIFY COLUMN IF EXISTS `{}` {}{} COMMENT '{}'",
-            db_name, table_name, ch_col.name, column_type_string, default_clause, escaped_comment
+            "ALTER TABLE `{}`.`{}` MODIFY COLUMN IF EXISTS `{}` {}{}{} COMMENT '{}'",
+            db_name,
+            table_name,
+            ch_col.name,
+            column_type_string,
+            default_clause,
+            ttl_clause,
+            escaped_comment
         )
     } else {
         format!(
-            "ALTER TABLE `{}`.`{}` MODIFY COLUMN IF EXISTS `{}` {}{}",
-            db_name, table_name, ch_col.name, column_type_string, default_clause
+            "ALTER TABLE `{}`.`{}` MODIFY COLUMN IF EXISTS `{}` {}{}{}",
+            db_name, table_name, ch_col.name, column_type_string, default_clause, ttl_clause
         )
     };
     Ok(sql)
