@@ -56,8 +56,8 @@ use crate::project::Project;
 use crate::utilities::capture::{wait_for_usage_capture, ActivityType};
 use crate::utilities::constants::KEY_REMOTE_CLICKHOUSE_URL;
 use crate::utilities::constants::{
-    CLI_VERSION, MIGRATION_AFTER_STATE_FILE, MIGRATION_BEFORE_STATE_FILE, MIGRATION_FILE,
-    PROJECT_NAME_ALLOW_PATTERN,
+    CLI_VERSION, ENV_CLICKHOUSE_URL, MIGRATION_AFTER_STATE_FILE, MIGRATION_BEFORE_STATE_FILE,
+    MIGRATION_FILE, PROJECT_NAME_ALLOW_PATTERN,
 };
 use crate::utilities::keyring::{KeyringSecretRepository, SecretRepository};
 
@@ -626,9 +626,12 @@ pub async fn top_command_handler(
 
                 check_project_name(&project.name())?;
 
-                let remote = if let Some(clickhouse_url) = clickhouse_url {
+                let clickhouse_url_from_env = std::env::var(ENV_CLICKHOUSE_URL).ok();
+                let resolved_clickhouse_url = clickhouse_url.clone().or(clickhouse_url_from_env);
+
+                let remote = if let Some(ref ch_url) = resolved_clickhouse_url {
                     routines::RemoteSource::ClickHouse {
-                        clickhouse_url,
+                        clickhouse_url: ch_url,
                         redis_url,
                     }
                 } else {
@@ -880,8 +883,26 @@ pub async fn top_command_handler(
 
             check_project_name(&project.name())?;
 
-            routines::migrate::execute_migration(&project, clickhouse_url, redis_url.as_deref())
-                .await?;
+            let clickhouse_url_from_env = std::env::var(ENV_CLICKHOUSE_URL).ok();
+            let resolved_clickhouse_url = clickhouse_url
+                .as_deref()
+                .or(clickhouse_url_from_env.as_deref())
+                .ok_or_else(|| {
+                    RoutineFailure::error(Message {
+                        action: "Configuration".to_string(),
+                        details: format!(
+                            "--clickhouse-url required (or set {} environment variable)",
+                            ENV_CLICKHOUSE_URL
+                        ),
+                    })
+                })?;
+
+            routines::migrate::execute_migration(
+                &project,
+                resolved_clickhouse_url,
+                redis_url.as_deref(),
+            )
+            .await?;
 
             wait_for_usage_capture(capture_handle).await;
 

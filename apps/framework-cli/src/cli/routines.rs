@@ -125,7 +125,9 @@ use crate::infrastructure::orchestration::temporal_client::{
     manager_from_project_if_enabled, probe_temporal,
 };
 use crate::infrastructure::stream::kafka::client::fetch_topics;
-use crate::utilities::constants::{KEY_REMOTE_CLICKHOUSE_URL, MIGRATION_FILE, STORE_CRED_PROMPT};
+use crate::utilities::constants::{
+    ENV_REDIS_URL, KEY_REMOTE_CLICKHOUSE_URL, MIGRATION_FILE, STORE_CRED_PROMPT,
+};
 use crate::utilities::keyring::{KeyringSecretRepository, SecretRepository};
 
 async fn maybe_warmup_connections(project: &Project, redis_client: &Arc<RedisClient>) {
@@ -1184,7 +1186,7 @@ async fn get_remote_inframap_serverless(
     // Build state storage based on config
     let state_storage: Box<dyn StateStorage> = match project.state_config.storage.as_str() {
         "redis" => {
-            let redis_url_from_env = std::env::var("MOOSE_REDIS_CONFIG__URL").ok();
+            let redis_url_from_env = std::env::var(ENV_REDIS_URL).ok();
             let redis_url = redis_url.or(redis_url_from_env.as_deref()).ok_or_else(|| {
                 anyhow::anyhow!("--redis-url required when state_config.storage = \"redis\"")
             })?;
