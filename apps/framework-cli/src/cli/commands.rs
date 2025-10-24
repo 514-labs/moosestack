@@ -207,11 +207,7 @@ pub enum GenerateCommand {
     /// Generate migration files
     Migration {
         /// URL of the remote Moose instance (use with --token)
-        #[arg(
-            long,
-            conflicts_with = "clickhouse_url",
-            required_unless_present = "clickhouse_url"
-        )]
+        #[arg(long, conflicts_with = "clickhouse_url")]
         url: Option<String>,
 
         /// API token for authentication with the remote Moose instance
