@@ -1087,8 +1087,8 @@ pub enum RemoteSource<'a> {
         url: &'a str,
         token: &'a Option<String>,
     },
-    /// Direct ClickHouse connection for serverless/CLI-only
-    ClickHouse {
+    /// Serverless deployment (direct ClickHouse + optional Redis for state)
+    Serverless {
         clickhouse_url: &'a str,
         redis_url: &'a Option<String>,
     },
@@ -1124,7 +1124,7 @@ pub async fn remote_gen_migration(
                 .await
                 .with_context(|| "Failed to retrieve infrastructure map".to_string())?
         }
-        RemoteSource::ClickHouse {
+        RemoteSource::Serverless {
             clickhouse_url,
             redis_url,
         } => {

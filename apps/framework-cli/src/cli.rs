@@ -56,8 +56,8 @@ use crate::project::Project;
 use crate::utilities::capture::{wait_for_usage_capture, ActivityType};
 use crate::utilities::constants::KEY_REMOTE_CLICKHOUSE_URL;
 use crate::utilities::constants::{
-    CLI_VERSION, ENV_CLICKHOUSE_URL, MIGRATION_AFTER_STATE_FILE, MIGRATION_BEFORE_STATE_FILE,
-    MIGRATION_FILE, PROJECT_NAME_ALLOW_PATTERN,
+    CLI_VERSION, ENV_CLICKHOUSE_URL, ENV_REDIS_URL, MIGRATION_AFTER_STATE_FILE,
+    MIGRATION_BEFORE_STATE_FILE, MIGRATION_FILE, PROJECT_NAME_ALLOW_PATTERN,
 };
 use crate::utilities::keyring::{KeyringSecretRepository, SecretRepository};
 
@@ -629,10 +629,13 @@ pub async fn top_command_handler(
                 let clickhouse_url_from_env = std::env::var(ENV_CLICKHOUSE_URL).ok();
                 let resolved_clickhouse_url = clickhouse_url.clone().or(clickhouse_url_from_env);
 
+                let redis_url_from_env = std::env::var(ENV_REDIS_URL).ok();
+                let resolved_redis_url = redis_url.clone().or(redis_url_from_env);
+
                 let remote = if let Some(ref ch_url) = resolved_clickhouse_url {
-                    routines::RemoteSource::ClickHouse {
+                    routines::RemoteSource::Serverless {
                         clickhouse_url: ch_url,
-                        redis_url,
+                        redis_url: &resolved_redis_url,
                     }
                 } else {
                     routines::RemoteSource::Moose {
