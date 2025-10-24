@@ -152,6 +152,13 @@ enforce_on_all_ingest_apis = false
 # Optional hashed admin API key for auth (Default: None)
 # admin_api_key = "hashed_api_key"
 
+# Migration configuration
+[migration_config]
+# Operations to ignore during migration plan generation and drift detection
+# Useful for managing TTL changes outside of Moose or when you don't want
+# migration failures due to TTL drift
+# ignore_operations = ["ModifyTableTtl", "ModifyColumnTtl"]
+
 # Feature flags
 [features]
 # Enable the streaming engine (Default: true)
