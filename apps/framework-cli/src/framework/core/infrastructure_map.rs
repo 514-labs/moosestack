@@ -310,14 +310,6 @@ pub enum TableChange {
         after: Option<String>,
         table: Table,
     },
-    /// Column-level TTL changed
-    ColumnTtlChanged {
-        name: String,
-        column: String,
-        before: Option<String>,
-        after: Option<String>,
-        table: Table,
-    },
 }
 
 /// Generic representation of a change to any infrastructure component
@@ -1717,6 +1709,26 @@ impl InfrastructureMap {
                         // Detect index changes (secondary/data-skipping indexes)
                         let indexes_changed = table.indexes != target_table.indexes;
 
+                        // Detect and emit table-level TTL changes
+                        if table.table_ttl_setting != target_table.table_ttl_setting {
+                            log::debug!(
+                                "Table '{}' has table-level TTL change: {:?} -> {:?}",
+                                table.name,
+                                table.table_ttl_setting,
+                                target_table.table_ttl_setting
+                            );
+                            olap_changes.push(OlapChange::Table(TableChange::TtlChanged {
+                                name: table.name.clone(),
+                                before: table.table_ttl_setting.clone(),
+                                after: target_table.table_ttl_setting.clone(),
+                                table: target_table.clone(),
+                            }));
+                            table_updates += 1;
+                        }
+
+                        // Column-level TTL changes are handled as regular column modifications
+                        // since ClickHouse requires the full column definition when modifying TTL
+
                         // Only process changes if there are actual differences to report
                         if !column_changes.is_empty()
                             || order_by_changed
@@ -1855,7 +1867,10 @@ impl InfrastructureMap {
         // Detect index changes
         let indexes_changed = table.indexes != target_table.indexes;
 
-        if !column_changes.is_empty() || order_by_changed || indexes_changed {
+        // Detect table-level TTL changes
+        let ttl_changed = table.table_ttl_setting != target_table.table_ttl_setting;
+
+        if !column_changes.is_empty() || order_by_changed || indexes_changed || ttl_changed {
             Some(TableChange::Updated {
                 name: table.name.clone(),
                 column_changes,
@@ -1952,8 +1967,11 @@ impl InfrastructureMap {
         // Detect index changes
         let indexes_changed = table.indexes != target_table.indexes;
 
+        // Detect table-level TTL changes
+        let ttl_changed = table.table_ttl_setting != target_table.table_ttl_setting;
+
         // Only return changes if there are actual differences to report
-        if !column_changes.is_empty() || order_by_changed || indexes_changed {
+        if !column_changes.is_empty() || order_by_changed || indexes_changed || ttl_changed {
             Some(TableChange::Updated {
                 name: table.name.clone(),
                 column_changes,
@@ -2413,6 +2431,7 @@ fn columns_are_equivalent(before: &Column, after: &Column) -> bool {
         || before.default != after.default
         || before.annotations != after.annotations
         || before.comment != after.comment
+        || before.ttl != after.ttl
     {
         return false;
     }

@@ -164,13 +164,6 @@ pub enum SerializableOlapOperation {
         before: Option<String>,
         after: Option<String>,
     },
-    /// Modify or remove column-level TTL
-    ModifyColumnTtl {
-        table: String,
-        column: String,
-        before: Option<String>,
-        after: Option<String>,
-    },
     AddTableIndex {
         table: String,
         index: TableIndex,
@@ -202,14 +195,14 @@ pub enum IgnorableOperation {
 
 impl IgnorableOperation {
     pub fn matches(&self, op: &SerializableOlapOperation) -> bool {
+        // Simple pattern matching for operations that can be entirely filtered
+        // Note: ModifyColumnTtl is handled specially in filter_ignored_operations
+        // where we strip TTL changes from ModifyTableColumn operations
         matches!(
             (self, op),
             (
                 Self::ModifyTableTtl,
                 SerializableOlapOperation::ModifyTableTtl { .. }
-            ) | (
-                Self::ModifyColumnTtl,
-                SerializableOlapOperation::ModifyColumnTtl { .. }
             )
         )
     }
@@ -347,18 +340,6 @@ pub fn describe_operation(operation: &SerializableOlapOperation) -> String {
                 format!("Removing table TTL from '{}'", table)
             }
         }
-        SerializableOlapOperation::ModifyColumnTtl {
-            table,
-            column,
-            after,
-            ..
-        } => {
-            if after.is_some() {
-                format!("Modifying column '{}' TTL in table '{}'", column, table)
-            } else {
-                format!("Removing column '{}' TTL from table '{}'", column, table)
-            }
-        }
         SerializableOlapOperation::RawSql { description, .. } => description.clone(),
     }
 }
@@ -429,30 +410,6 @@ pub async fn execute_atomic_operation(
                 format!("ALTER TABLE `{}`.`{}` MODIFY TTL {}", db_name, table, expr)
             } else {
                 format!("ALTER TABLE `{}`.`{}` REMOVE TTL", db_name, table)
-            };
-            run_query(&sql, client).await.map_err(|e| {
-                ClickhouseChangesError::ClickhouseClient {
-                    error: e,
-                    resource: Some(table.clone()),
-                }
-            })?;
-        }
-        SerializableOlapOperation::ModifyColumnTtl {
-            table,
-            column,
-            before: _,
-            after,
-        } => {
-            let sql = if let Some(expr) = after {
-                format!(
-                    "ALTER TABLE `{}`.`{}` MODIFY COLUMN `{}` TTL {}",
-                    db_name, table, column, expr
-                )
-            } else {
-                format!(
-                    "ALTER TABLE `{}`.`{}` MODIFY COLUMN `{}` REMOVE TTL",
-                    db_name, table, column
-                )
             };
             run_query(&sql, client).await.map_err(|e| {
                 ClickhouseChangesError::ClickhouseClient {
@@ -689,10 +646,16 @@ async fn execute_modify_table_column(
     let default_changed = before_column.default != after_column.default;
     let required_changed = before_column.required != after_column.required;
     let comment_changed = before_column.comment != after_column.comment;
+    let ttl_changed = before_column.ttl != after_column.ttl;
 
     // If only the comment changed, use a simpler ALTER TABLE ... MODIFY COLUMN ... COMMENT
     // This is more efficient and avoids unnecessary table rebuilds
-    if !data_type_changed && !required_changed && !default_changed && comment_changed {
+    if !data_type_changed
+        && !required_changed
+        && !default_changed
+        && !ttl_changed
+        && comment_changed
+    {
         log::info!(
             "Executing comment-only modification for table: {}, column: {}",
             table_name,
@@ -722,15 +685,29 @@ async fn execute_modify_table_column(
 
     // Full column modification including type change
     let clickhouse_column = std_column_to_clickhouse_column(after_column.clone())?;
-    let modify_column_query = build_modify_column_sql(db_name, table_name, &clickhouse_column)?;
 
-    log::debug!("Modifying column: {}", modify_column_query);
-    run_query(&modify_column_query, client).await.map_err(|e| {
-        ClickhouseChangesError::ClickhouseClient {
-            error: e,
-            resource: Some(table_name.to_string()),
-        }
-    })?;
+    // Build all the SQL statements needed (main modify + optional removes)
+    let removing_default = before_column.default.is_some() && after_column.default.is_none();
+    let removing_ttl = before_column.ttl.is_some() && after_column.ttl.is_none();
+    let queries = build_modify_column_sql(
+        db_name,
+        table_name,
+        &clickhouse_column,
+        removing_default,
+        removing_ttl,
+    )?;
+
+    // Execute all statements in order
+    for query in queries {
+        log::debug!("Modifying column: {}", query);
+        run_query(&query, client)
+            .await
+            .map_err(|e| ClickhouseChangesError::ClickhouseClient {
+                error: e,
+                resource: Some(table_name.to_string()),
+            })?;
+    }
+
     Ok(())
 }
 
@@ -768,28 +745,68 @@ fn build_modify_column_sql(
     db_name: &str,
     table_name: &str,
     ch_col: &ClickHouseColumn,
-) -> Result<String, ClickhouseChangesError> {
+    removing_default: bool,
+    removing_ttl: bool,
+) -> Result<Vec<String>, ClickhouseChangesError> {
     let column_type_string = basic_field_type_to_string(&ch_col.column_type)?;
 
+    let mut statements = vec![];
+
+    // Add REMOVE DEFAULT statement if needed
+    // ClickHouse doesn't allow mixing column properties with REMOVE clauses
+    if removing_default {
+        statements.push(format!(
+            "ALTER TABLE `{}`.`{}` MODIFY COLUMN `{}` REMOVE DEFAULT",
+            db_name, table_name, ch_col.name
+        ));
+    }
+
+    // Add REMOVE TTL statement if needed
+    if removing_ttl {
+        statements.push(format!(
+            "ALTER TABLE `{}`.`{}` MODIFY COLUMN `{}` REMOVE TTL",
+            db_name, table_name, ch_col.name
+        ));
+    }
+
+    // DEFAULT clause: If omitted, ClickHouse KEEPS any existing DEFAULT
+    // Therefore, DEFAULT removal requires a separate REMOVE DEFAULT statement
     let default_clause = ch_col
         .default
         .as_ref()
         .map(|d| format!(" DEFAULT {}", d))
         .unwrap_or_default();
 
-    let sql = if let Some(ref comment) = ch_col.comment {
+    // TTL clause: If omitted, ClickHouse KEEPS any existing TTL
+    // Therefore, TTL removal requires a separate REMOVE TTL statement
+    let ttl_clause = ch_col
+        .ttl
+        .as_ref()
+        .map(|t| format!(" TTL {}", t))
+        .unwrap_or_default();
+
+    // Build the main MODIFY COLUMN statement
+    let main_sql = if let Some(ref comment) = ch_col.comment {
         let escaped_comment = comment.replace('\'', "''");
         format!(
-            "ALTER TABLE `{}`.`{}` MODIFY COLUMN IF EXISTS `{}` {}{} COMMENT '{}'",
-            db_name, table_name, ch_col.name, column_type_string, default_clause, escaped_comment
+            "ALTER TABLE `{}`.`{}` MODIFY COLUMN IF EXISTS `{}` {}{}{} COMMENT '{}'",
+            db_name,
+            table_name,
+            ch_col.name,
+            column_type_string,
+            default_clause,
+            ttl_clause,
+            escaped_comment
         )
     } else {
         format!(
-            "ALTER TABLE `{}`.`{}` MODIFY COLUMN IF EXISTS `{}` {}{}",
-            db_name, table_name, ch_col.name, column_type_string, default_clause
+            "ALTER TABLE `{}`.`{}` MODIFY COLUMN IF EXISTS `{}` {}{}{}",
+            db_name, table_name, ch_col.name, column_type_string, default_clause, ttl_clause
         )
     };
-    Ok(sql)
+    statements.push(main_sql);
+
+    Ok(statements)
 }
 
 fn build_modify_column_comment_sql(
@@ -2045,10 +2062,11 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
         };
 
         let ch_after = std_column_to_clickhouse_column(after_column).unwrap();
-        let sql = build_modify_column_sql("db", "table", &ch_after).unwrap();
+        let sqls = build_modify_column_sql("db", "table", &ch_after, false, false).unwrap();
 
+        assert_eq!(sqls.len(), 1);
         assert_eq!(
-            sql,
+            sqls[0],
             "ALTER TABLE `db`.`table` MODIFY COLUMN IF EXISTS `count` Int32 DEFAULT 42 COMMENT 'Number of things'".to_string()
         );
     }
@@ -2104,10 +2122,12 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
 
         let clickhouse_column = std_column_to_clickhouse_column(column).unwrap();
 
-        let sql = build_modify_column_sql("test_db", "users", &clickhouse_column).unwrap();
+        let sqls =
+            build_modify_column_sql("test_db", "users", &clickhouse_column, false, false).unwrap();
 
+        assert_eq!(sqls.len(), 1);
         assert_eq!(
-            sql,
+            sqls[0],
             "ALTER TABLE `test_db`.`users` MODIFY COLUMN IF EXISTS `description` Nullable(String) DEFAULT 'updated default' COMMENT 'Updated description field'"
         );
     }

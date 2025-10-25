@@ -154,8 +154,39 @@ pub async fn reconcile_with_reality<T: OlapOperations>(
 
                         reconciled_map.tables.insert(reality_table.id(), table);
                     }
-                    _ => {
-                        // Other table changes (Add/Remove) are already handled by unmapped/missing
+                    TableChange::TtlChanged {
+                        name,
+                        before: reality_ttl,
+                        table,
+                        ..
+                    } => {
+                        debug!(
+                            "Updating table {} TTL in infrastructure map to match reality: {:?}",
+                            name, reality_ttl
+                        );
+                        // Update the table in the reconciled map with the actual TTL from reality
+                        if let Some(existing_table) = reconciled_map.tables.get_mut(&table.id()) {
+                            existing_table.table_ttl_setting = reality_ttl.clone();
+                        }
+                    }
+                    TableChange::SettingsChanged {
+                        name,
+                        before_settings: reality_settings,
+                        table,
+                        ..
+                    } => {
+                        debug!(
+                            "Updating table {} settings in infrastructure map to match reality: {:?}",
+                            name, reality_settings
+                        );
+                        // Update the table in the reconciled map with the actual settings from reality
+                        if let Some(existing_table) = reconciled_map.tables.get_mut(&table.id()) {
+                            existing_table.table_settings = reality_settings.clone();
+                        }
+                    }
+
+                    TableChange::Added(_) | TableChange::Removed(_) => {
+                        // Add/Remove are already handled by unmapped/missing
                         debug!("Skipping table change: {:?}", table_change);
                     }
                 }
