@@ -207,6 +207,9 @@ struct PartialTable {
     /// Optional table-level TTL expression (ClickHouse expression, without leading 'TTL')
     #[serde(alias = "ttl")]
     pub ttl: Option<String>,
+    /// Optional database name for multi-database support
+    #[serde(default)]
+    pub database: Option<String>,
 }
 
 /// Represents a topic definition from user code before it's converted into a complete [`Topic`].
@@ -607,7 +610,7 @@ impl PartialInfrastructureMap {
                     },
                     indexes: partial_table.indexes.clone(),
                     table_ttl_setting,
-                    database: None, // Database defaults to global config
+                    database: partial_table.database.clone(),
                 };
                 (table.id(), table)
             })
