@@ -339,7 +339,9 @@ pub fn describe_operation(operation: &SerializableOlapOperation) -> String {
         SerializableOlapOperation::AddTableColumn { table, column, .. } => {
             format!("Adding column '{}' to table '{}'", column.name, table)
         }
-        SerializableOlapOperation::DropTableColumn { table, column_name, .. } => {
+        SerializableOlapOperation::DropTableColumn {
+            table, column_name, ..
+        } => {
             format!("Dropping column '{}' from table '{}'", column_name, table)
         }
         SerializableOlapOperation::ModifyTableColumn {
@@ -369,10 +371,14 @@ pub fn describe_operation(operation: &SerializableOlapOperation) -> String {
         SerializableOlapOperation::AddTableIndex { table, index, .. } => {
             format!("Adding index '{}' to table '{}'", index.name, table)
         }
-        SerializableOlapOperation::DropTableIndex { table, index_name, .. } => {
+        SerializableOlapOperation::DropTableIndex {
+            table, index_name, ..
+        } => {
             format!("Dropping index '{}' from table '{}'", index_name, table)
         }
-        SerializableOlapOperation::ModifySampleBy { table, expression, .. } => {
+        SerializableOlapOperation::ModifySampleBy {
+            table, expression, ..
+        } => {
             format!(
                 "Modifying SAMPLE BY to '{}' for table '{}'",
                 expression, table
