@@ -203,13 +203,80 @@ fn validate_table_databases(
 ) -> Result<()> {
     let mut invalid_tables = Vec::new();
 
+    // Helper to validate a database option
+    let mut validate_db = |db_opt: &Option<String>, table_name: &str| {
+        if let Some(db) = db_opt {
+            if db != primary_database && !additional_databases.contains(db) {
+                invalid_tables.push((table_name.to_string(), db.clone()));
+            }
+        }
+    };
+
     for operation in operations {
-        if let SerializableOlapOperation::CreateTable { table } = operation {
-            if let Some(db) = &table.database {
-                // Check if database is either primary or in additional_databases
-                if db != primary_database && !additional_databases.contains(db) {
-                    invalid_tables.push((table.name.clone(), db.clone()));
-                }
+        match operation {
+            SerializableOlapOperation::CreateTable { table } => {
+                validate_db(&table.database, &table.name);
+            }
+            SerializableOlapOperation::DropTable { table, database } => {
+                validate_db(database, table);
+            }
+            SerializableOlapOperation::AddTableColumn {
+                table, database, ..
+            } => {
+                validate_db(database, table);
+            }
+            SerializableOlapOperation::DropTableColumn {
+                table, database, ..
+            } => {
+                validate_db(database, table);
+            }
+            SerializableOlapOperation::ModifyTableColumn {
+                table, database, ..
+            } => {
+                validate_db(database, table);
+            }
+            SerializableOlapOperation::RenameTableColumn {
+                table, database, ..
+            } => {
+                validate_db(database, table);
+            }
+            SerializableOlapOperation::ModifyTableSettings {
+                table, database, ..
+            } => {
+                validate_db(database, table);
+            }
+            SerializableOlapOperation::ModifyTableTtl {
+                table, database, ..
+            } => {
+                validate_db(database, table);
+            }
+            SerializableOlapOperation::ModifyColumnTtl {
+                table, database, ..
+            } => {
+                validate_db(database, table);
+            }
+            SerializableOlapOperation::AddTableIndex {
+                table, database, ..
+            } => {
+                validate_db(database, table);
+            }
+            SerializableOlapOperation::DropTableIndex {
+                table, database, ..
+            } => {
+                validate_db(database, table);
+            }
+            SerializableOlapOperation::ModifySampleBy {
+                table, database, ..
+            } => {
+                validate_db(database, table);
+            }
+            SerializableOlapOperation::RemoveSampleBy {
+                table, database, ..
+            } => {
+                validate_db(database, table);
+            }
+            SerializableOlapOperation::RawSql { .. } => {
+                // RawSql doesn't reference specific tables/databases, skip validation
             }
         }
     }
@@ -908,5 +975,113 @@ mod tests {
             }
             _ => panic!("Expected drift to be detected due to structural change (extra column)"),
         }
+    }
+
+    #[test]
+    fn test_validate_table_databases_valid() {
+        let table = create_test_table("users");
+        let operations = vec![SerializableOlapOperation::CreateTable {
+            table: table.clone(),
+        }];
+
+        // Primary database matches - should pass
+        let result = validate_table_databases(&operations, "local", &[]);
+        assert!(result.is_ok());
+
+        // Database in additional_databases - should pass
+        let mut table_analytics = table.clone();
+        table_analytics.database = Some("analytics".to_string());
+        let operations = vec![SerializableOlapOperation::CreateTable {
+            table: table_analytics,
+        }];
+        let result = validate_table_databases(&operations, "local", &["analytics".to_string()]);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_validate_table_databases_invalid() {
+        let mut table = create_test_table("users");
+        table.database = Some("unconfigured_db".to_string());
+
+        let operations = vec![SerializableOlapOperation::CreateTable { table }];
+
+        // Database not in config - should fail
+        let result = validate_table_databases(&operations, "local", &[]);
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("unconfigured_db"));
+        assert!(err.contains("moose.config.toml"));
+    }
+
+    #[test]
+    fn test_validate_table_databases_all_operation_types() {
+        // Test that all operation types with database fields are validated
+        let operations = vec![
+            SerializableOlapOperation::DropTable {
+                table: "test".to_string(),
+                database: Some("bad_db".to_string()),
+            },
+            SerializableOlapOperation::AddTableColumn {
+                table: "test".to_string(),
+                column: Column {
+                    name: "new_col".to_string(),
+                    data_type: ColumnType::String,
+                    required: false,
+                    unique: false,
+                    primary_key: false,
+                    default: None,
+                    annotations: vec![],
+                    comment: None,
+                    ttl: None,
+                },
+                after_column: None,
+                database: Some("bad_db".to_string()),
+            },
+            SerializableOlapOperation::ModifyTableColumn {
+                table: "test".to_string(),
+                before_column: Column {
+                    name: "col".to_string(),
+                    data_type: ColumnType::String,
+                    required: false,
+                    unique: false,
+                    primary_key: false,
+                    default: None,
+                    annotations: vec![],
+                    comment: None,
+                    ttl: None,
+                },
+                after_column: Column {
+                    name: "col".to_string(),
+                    data_type: ColumnType::BigInt,
+                    required: false,
+                    unique: false,
+                    primary_key: false,
+                    default: None,
+                    annotations: vec![],
+                    comment: None,
+                    ttl: None,
+                },
+                database: Some("another_bad_db".to_string()),
+            },
+        ];
+
+        let result = validate_table_databases(&operations, "local", &[]);
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        // Should report both bad databases
+        assert!(err.contains("bad_db"));
+        assert!(err.contains("another_bad_db"));
+    }
+
+    #[test]
+    fn test_validate_table_databases_raw_sql_ignored() {
+        // RawSql operations should not be validated
+        let operations = vec![SerializableOlapOperation::RawSql {
+            sql: vec!["SELECT 1".to_string()],
+            description: "test".to_string(),
+        }];
+
+        let result = validate_table_databases(&operations, "local", &[]);
+        assert!(result.is_ok());
     }
 }
