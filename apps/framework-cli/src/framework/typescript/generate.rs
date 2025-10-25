@@ -1358,6 +1358,7 @@ export const TaskTable = new OlapTable<Task>("Task", {
         use crate::framework::core::infrastructure::table::IntType;
         let tables = vec![Table {
             name: "JsonTest".to_string(),
+            database: Some("local".to_string()),
             columns: vec![
                 Column {
                     name: "id".to_string(),

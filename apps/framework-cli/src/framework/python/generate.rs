@@ -1543,6 +1543,7 @@ user_table = OlapTable[User]("User", OlapConfig(
     fn test_json_with_typed_paths() {
         let tables = vec![Table {
             name: "JsonTest".to_string(),
+            database: Some("local".to_string()),
             columns: vec![
                 Column {
                     name: "id".to_string(),

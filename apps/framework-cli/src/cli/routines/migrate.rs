@@ -517,6 +517,7 @@ mod tests {
     fn create_test_table(name: &str) -> Table {
         Table {
             name: name.to_string(),
+            database: Some("local".to_string()),
             columns: vec![Column {
                 name: "id".to_string(),
                 data_type: ColumnType::String,
