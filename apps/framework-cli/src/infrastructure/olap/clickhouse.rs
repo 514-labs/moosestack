@@ -195,14 +195,14 @@ pub enum IgnorableOperation {
 
 impl IgnorableOperation {
     pub fn matches(&self, op: &SerializableOlapOperation) -> bool {
+        // Simple pattern matching for operations that can be entirely filtered
+        // Note: ModifyColumnTtl is handled specially in filter_ignored_operations
+        // where we strip TTL changes from ModifyTableColumn operations
         matches!(
             (self, op),
             (
                 Self::ModifyTableTtl,
                 SerializableOlapOperation::ModifyTableTtl { .. }
-            ) | (
-                Self::ModifyColumnTtl,
-                SerializableOlapOperation::ModifyColumnTtl { .. }
             )
         )
     }

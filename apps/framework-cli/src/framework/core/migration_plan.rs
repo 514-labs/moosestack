@@ -55,14 +55,49 @@ impl MigrationPlan {
     }
 
     /// Filter out operations that should be ignored based on config
+    /// For operations that have both ignored and non-ignored changes, strip the ignored parts
     pub fn filter_ignored_operations(&mut self, ignore_ops: &[IgnorableOperation]) {
         if ignore_ops.is_empty() {
             return;
         }
 
+        let ignore_column_ttl = ignore_ops.contains(&IgnorableOperation::ModifyColumnTtl);
+
+        // First pass: strip TTL from ModifyTableColumn operations if needed
+        if ignore_column_ttl {
+            for op in &mut self.operations {
+                if let SerializableOlapOperation::ModifyTableColumn {
+                    before_column,
+                    after_column,
+                    ..
+                } = op
+                {
+                    // If TTL is the only difference, this will be filtered in the next step
+                    // If there are other changes, strip the TTL change but keep the operation
+                    if before_column.ttl != after_column.ttl {
+                        // Preserve the old TTL value (i.e., don't change TTL)
+                        after_column.ttl = before_column.ttl.clone();
+                    }
+                }
+            }
+        }
+
+        // Second pass: filter out operations that are now no-ops or fully ignored
         self.operations.retain(|op| {
-            // Keep operation if none of the ignore rules match it
-            !ignore_ops.iter().any(|ig| ig.matches(op))
+            match op {
+                SerializableOlapOperation::ModifyTableColumn {
+                    before_column,
+                    after_column,
+                    ..
+                } => {
+                    // After stripping ignored fields, check if there are any real changes left
+                    before_column != after_column
+                }
+                _ => {
+                    // Keep operation if none of the ignore rules match it
+                    !ignore_ops.iter().any(|ig| ig.matches(op))
+                }
+            }
         });
     }
 }
@@ -180,17 +215,23 @@ mod tests {
     #[test]
     fn test_filter_modify_column_ttl() {
         let test_table = create_test_table();
+
+        // Create a column modification where ONLY TTL changes
+        let mut before_column = test_table.columns[1].clone();
+        before_column.ttl = None;
+        let mut after_column = test_table.columns[1].clone();
+        after_column.ttl = Some("timestamp + INTERVAL 30 DAY".to_string());
+
         let mut plan = MigrationPlan {
             created_at: Utc::now(),
             operations: vec![
                 SerializableOlapOperation::CreateTable {
                     table: test_table.clone(),
                 },
-                SerializableOlapOperation::ModifyColumnTtl {
+                SerializableOlapOperation::ModifyTableColumn {
                     table: "users".to_string(),
-                    column: "created_at".to_string(),
-                    before: None,
-                    after: Some("timestamp + INTERVAL 30 DAY".to_string()),
+                    before_column,
+                    after_column,
                 },
                 SerializableOlapOperation::DropTable {
                     table: "old_users".to_string(),
@@ -198,8 +239,11 @@ mod tests {
             ],
         };
 
+        // With ModifyColumnTtl in ignore list, TTL-only changes should be filtered out
+        // After stripping TTL, before == after, so the operation becomes a no-op
         plan.filter_ignored_operations(&[IgnorableOperation::ModifyColumnTtl]);
 
+        // The ModifyTableColumn should be filtered out since TTL was the only change
         assert_eq!(plan.operations.len(), 2);
         assert!(matches!(
             plan.operations[0],
@@ -214,6 +258,13 @@ mod tests {
     #[test]
     fn test_filter_multiple_ignored_operations() {
         let test_table = create_test_table();
+
+        // Create a column modification where only TTL changes
+        let mut before_column = test_table.columns[0].clone();
+        before_column.ttl = None;
+        let mut after_column = test_table.columns[0].clone();
+        after_column.ttl = Some("ttl2".to_string());
+
         let mut plan = MigrationPlan {
             created_at: Utc::now(),
             operations: vec![
@@ -222,11 +273,10 @@ mod tests {
                     before: None,
                     after: Some("ttl1".to_string()),
                 },
-                SerializableOlapOperation::ModifyColumnTtl {
+                SerializableOlapOperation::ModifyTableColumn {
                     table: "users".to_string(),
-                    column: "col".to_string(),
-                    before: None,
-                    after: Some("ttl2".to_string()),
+                    before_column,
+                    after_column,
                 },
                 SerializableOlapOperation::CreateTable {
                     table: test_table.clone(),
@@ -243,6 +293,85 @@ mod tests {
         assert!(matches!(
             plan.operations[0],
             SerializableOlapOperation::CreateTable { .. }
+        ));
+    }
+
+    #[test]
+    fn test_filter_column_ttl_with_other_changes() {
+        let test_table = create_test_table();
+
+        // Create a column modification where BOTH TTL and default change
+        let mut before_column = test_table.columns[1].clone();
+        before_column.ttl = None;
+        before_column.default = Some("'old_default'".to_string());
+
+        let mut after_column = test_table.columns[1].clone();
+        after_column.ttl = Some("timestamp + INTERVAL 30 DAY".to_string());
+        after_column.default = Some("'new_default'".to_string());
+
+        let mut plan = MigrationPlan {
+            created_at: Utc::now(),
+            operations: vec![SerializableOlapOperation::ModifyTableColumn {
+                table: "users".to_string(),
+                before_column: before_column.clone(),
+                after_column,
+            }],
+        };
+
+        // With ModifyColumnTtl in ignore list:
+        // - The operation should NOT be filtered out (because default also changed)
+        // - The TTL change should be stripped (TTL preserved at old value)
+        // - The default change should still be applied
+        plan.filter_ignored_operations(&[IgnorableOperation::ModifyColumnTtl]);
+
+        // Should still have the operation because default changed
+        assert_eq!(plan.operations.len(), 1);
+
+        if let SerializableOlapOperation::ModifyTableColumn {
+            after_column: final_after,
+            ..
+        } = &plan.operations[0]
+        {
+            // TTL should be preserved (same as before)
+            assert_eq!(final_after.ttl, before_column.ttl);
+            // Default should have changed
+            assert_eq!(final_after.default, Some("'new_default'".to_string()));
+        } else {
+            panic!("Expected ModifyTableColumn operation");
+        }
+    }
+
+    #[test]
+    fn test_filter_column_non_ttl_changes_not_affected() {
+        let test_table = create_test_table();
+
+        // Create a column modification where ONLY default changes (TTL stays the same)
+        let mut before_column = test_table.columns[1].clone();
+        before_column.ttl = Some("timestamp + INTERVAL 30 DAY".to_string());
+        before_column.default = Some("'old_default'".to_string());
+
+        let mut after_column = test_table.columns[1].clone();
+        after_column.ttl = Some("timestamp + INTERVAL 30 DAY".to_string()); // Same TTL
+        after_column.default = Some("'new_default'".to_string()); // Different default
+
+        let mut plan = MigrationPlan {
+            created_at: Utc::now(),
+            operations: vec![SerializableOlapOperation::ModifyTableColumn {
+                table: "users".to_string(),
+                before_column,
+                after_column,
+            }],
+        };
+
+        // With ModifyColumnTtl in ignore list, this should still NOT be filtered
+        // because TTL didn't change - only default changed
+        plan.filter_ignored_operations(&[IgnorableOperation::ModifyColumnTtl]);
+
+        // Should still have the operation because TTL didn't change
+        assert_eq!(plan.operations.len(), 1);
+        assert!(matches!(
+            plan.operations[0],
+            SerializableOlapOperation::ModifyTableColumn { .. }
         ));
     }
 
