@@ -14,6 +14,42 @@ use crate::framework::core::infrastructure_map::{
 use crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine;
 use std::collections::HashMap;
 
+/// Generates a formatted error message for database field changes.
+///
+/// This function creates a user-friendly error message explaining that database field
+/// changes require manual intervention to prevent data loss.
+///
+/// # Arguments
+/// * `table_name` - The name of the table being changed
+/// * `before_db` - The original database name (or "<default>" if None)
+/// * `after_db` - The new database name (or "<default>" if None)
+///
+/// # Returns
+/// A formatted string with migration instructions
+fn format_database_change_error(table_name: &str, before_db: &str, after_db: &str) -> String {
+    format!(
+        "\n\n\
+        ERROR: Database field change detected for table '{}'\n\
+        \n\
+        The database field changed from '{}' to '{}'\n\
+        \n\
+        Changing the database field is a destructive operation that requires\n\
+        manual intervention to ensure data safety.\n\
+        \n\
+        To migrate this table to a new database:\n\
+        \n\
+        1. Create a new table definition with the target database\n\
+        2. Migrate your data (if needed):\n\
+           INSERT INTO {}.{} SELECT * FROM {}.{}\n\
+        3. Update your application to use the new table\n\
+        4. Delete the old table definition from your code\n\
+        \n\
+        This ensures you maintain control over data migration and prevents\n\
+        accidental data loss.\n",
+        table_name, before_db, after_db, after_db, table_name, before_db, table_name
+    )
+}
+
 /// ClickHouse-specific table diff strategy
 ///
 /// ClickHouse has several limitations that require drop+create operations instead of ALTER:
@@ -242,30 +278,7 @@ impl TableDiffStrategy for ClickHouseTableDiffStrategy {
             let before_db = before.database.as_deref().unwrap_or("<default>");
             let after_db = after.database.as_deref().unwrap_or("<default>");
 
-            let error_message = format!(
-                "\n\n\
-                ╔════════════════════════════════════════════════════════════════════════════╗\n\
-                ║ ERROR: Database field change detected for table '{}'                      \n\
-                ╠════════════════════════════════════════════════════════════════════════════╣\n\
-                ║                                                                            ║\n\
-                ║ The database field changed from '{}' to '{}'                              \n\
-                ║                                                                            ║\n\
-                ║ Changing the database field is a destructive operation that requires      ║\n\
-                ║ manual intervention to ensure data safety.                                ║\n\
-                ║                                                                            ║\n\
-                ║ To migrate this table to a new database:                                  ║\n\
-                ║                                                                            ║\n\
-                ║   1. Create a new table definition with the target database               ║\n\
-                ║   2. Migrate your data (if needed):                                       ║\n\
-                ║      INSERT INTO {}.{} SELECT * FROM {}.{}     \n\
-                ║   3. Update your application to use the new table                         ║\n\
-                ║   4. Delete the old table definition from your code                       ║\n\
-                ║                                                                            ║\n\
-                ║ This ensures you maintain control over data migration and prevents        ║\n\
-                ║ accidental data loss.                                                     ║\n\
-                ╚════════════════════════════════════════════════════════════════════════════╝\n",
-                before.name, before_db, after_db, after_db, before.name, before_db, before.name
-            );
+            let error_message = format_database_change_error(&before.name, before_db, after_db);
 
             log::error!("{}", error_message);
 
@@ -1156,5 +1169,65 @@ mod tests {
         assert_eq!(mv_stmt.target_database, Some("mydb".to_string()));
         assert_eq!(mv_stmt.source_tables.len(), 1);
         assert_eq!(mv_stmt.source_tables[0].table, "source_table");
+    }
+
+    #[test]
+    fn test_format_database_change_error_basic() {
+        let error_msg = format_database_change_error("users", "local", "analytics");
+
+        // Check that all the expected components are present
+        assert!(error_msg.contains("ERROR: Database field change detected for table 'users'"));
+        assert!(error_msg.contains("The database field changed from 'local' to 'analytics'"));
+        assert!(error_msg.contains("INSERT INTO analytics.users SELECT * FROM local.users"));
+    }
+
+    #[test]
+    fn test_format_database_change_error_with_default() {
+        let error_msg = format_database_change_error("events", "<default>", "archive");
+
+        // Check handling of default database
+        assert!(error_msg.contains("ERROR: Database field change detected for table 'events'"));
+        assert!(error_msg.contains("The database field changed from '<default>' to 'archive'"));
+        assert!(error_msg.contains("INSERT INTO archive.events SELECT * FROM <default>.events"));
+    }
+
+    #[test]
+    fn test_format_database_change_error_formatting() {
+        let error_msg = format_database_change_error("test_table", "db1", "db2");
+
+        // Verify the INSERT statement has correct database.table format
+        assert!(error_msg.contains("INSERT INTO db2.test_table SELECT * FROM db1.test_table"));
+
+        // Verify migration instructions are present
+        assert!(error_msg.contains("1. Create a new table definition with the target database"));
+        assert!(error_msg.contains("2. Migrate your data (if needed):"));
+        assert!(error_msg.contains("3. Update your application to use the new table"));
+        assert!(error_msg.contains("4. Delete the old table definition from your code"));
+    }
+
+    #[test]
+    fn test_format_database_change_error_no_placeholder_leakage() {
+        // Test that there are no unresolved {} placeholders in the output
+        let error_msg = format_database_change_error("my_table", "source_db", "target_db");
+
+        // Count the number of curly braces - should all be matched or properly formatted
+        // The only {} should be in the formatted database.table references
+        let open_braces = error_msg.matches('{').count();
+        let close_braces = error_msg.matches('}').count();
+
+        // Should have no unmatched braces (all format placeholders resolved)
+        assert_eq!(
+            open_braces, 0,
+            "Found unresolved open braces in error message"
+        );
+        assert_eq!(
+            close_braces, 0,
+            "Found unresolved close braces in error message"
+        );
+
+        // Verify the actual formatted content
+        assert!(
+            error_msg.contains("INSERT INTO target_db.my_table SELECT * FROM source_db.my_table")
+        );
     }
 }
