@@ -318,6 +318,17 @@ pub enum TableChange {
         after: Option<String>,
         table: Table,
     },
+    /// A validation error occurred - the requested change is not allowed
+    ValidationError {
+        /// Name of the table
+        table_name: String,
+        /// Error message explaining why the change is not allowed
+        message: String,
+        /// Complete representation of the table before the invalid change
+        before: Box<Table>,
+        /// Complete representation of the table after the invalid change
+        after: Box<Table>,
+    },
 }
 
 /// Generic representation of a change to any infrastructure component
@@ -2643,6 +2654,7 @@ mod tests {
             engine_params_hash: None,
             table_settings: None,
             indexes: vec![],
+            database: None,
             table_ttl_setting: None,
         };
 
@@ -2697,6 +2709,7 @@ mod tests {
             engine_params_hash: None,
             table_settings: None,
             indexes: vec![],
+            database: None,
             table_ttl_setting: None,
         };
 
@@ -2870,6 +2883,7 @@ mod diff_tests {
             engine_params_hash: None,
             table_settings: None,
             indexes: vec![],
+            database: None,
             table_ttl_setting: None,
         }
     }

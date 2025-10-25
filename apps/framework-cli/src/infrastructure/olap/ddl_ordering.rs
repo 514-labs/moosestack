@@ -184,6 +184,7 @@ impl AtomicOlapOperation {
                 dependency_info: _,
             } => SerializableOlapOperation::DropTable {
                 table: table.name.clone(),
+                database: table.database.clone(),
             },
             AtomicOlapOperation::AddTableColumn {
                 table,
@@ -194,6 +195,7 @@ impl AtomicOlapOperation {
                 table: table.name.clone(),
                 column: column.clone(),
                 after_column: after_column.clone(),
+                database: table.database.clone(),
             },
             AtomicOlapOperation::DropTableColumn {
                 table,
@@ -202,6 +204,7 @@ impl AtomicOlapOperation {
             } => SerializableOlapOperation::DropTableColumn {
                 table: table.name.clone(),
                 column_name: column_name.clone(),
+                database: table.database.clone(),
             },
             AtomicOlapOperation::ModifyTableColumn {
                 table,
@@ -212,6 +215,7 @@ impl AtomicOlapOperation {
                 table: table.name.clone(),
                 before_column: before_column.clone(),
                 after_column: after_column.clone(),
+                database: table.database.clone(),
             },
             AtomicOlapOperation::ModifyTableSettings {
                 table,
@@ -222,6 +226,7 @@ impl AtomicOlapOperation {
                 table: table.name.clone(),
                 before_settings: before_settings.clone(),
                 after_settings: after_settings.clone(),
+                database: table.database.clone(),
             },
             AtomicOlapOperation::ModifyTableTtl {
                 table,
@@ -232,6 +237,7 @@ impl AtomicOlapOperation {
                 table: table.name.clone(),
                 before: before.clone(),
                 after: after.clone(),
+                database: table.database.clone(),
             },
             AtomicOlapOperation::ModifyColumnTtl {
                 table,
@@ -244,11 +250,13 @@ impl AtomicOlapOperation {
                 column: column.clone(),
                 before: before.clone(),
                 after: after.clone(),
+                database: table.database.clone(),
             },
             AtomicOlapOperation::AddTableIndex { table, index, .. } => {
                 SerializableOlapOperation::AddTableIndex {
                     table: table.name.clone(),
                     index: index.clone(),
+                    database: table.database.clone(),
                 }
             }
             AtomicOlapOperation::DropTableIndex {
@@ -256,16 +264,19 @@ impl AtomicOlapOperation {
             } => SerializableOlapOperation::DropTableIndex {
                 table: table.name.clone(),
                 index_name: index_name.clone(),
+                database: table.database.clone(),
             },
             AtomicOlapOperation::ModifySampleBy {
                 table, expression, ..
             } => SerializableOlapOperation::ModifySampleBy {
                 table: table.name.clone(),
                 expression: expression.clone(),
+                database: table.database.clone(),
             },
             AtomicOlapOperation::RemoveSampleBy { table, .. } => {
                 SerializableOlapOperation::RemoveSampleBy {
                     table: table.name.clone(),
+                    database: table.database.clone(),
                 }
             }
             AtomicOlapOperation::PopulateMaterializedView {
@@ -1007,6 +1018,10 @@ pub fn order_olap_changes(
                 TableChange::ColumnTtlChanged { table, .. } => {
                     tables.insert(table.name.clone(), table.clone());
                 }
+                TableChange::ValidationError { .. } => {
+                    // Validation errors should be caught by plan validator
+                    // before reaching this code. Skip processing.
+                }
             }
         } else if let OlapChange::PopulateMaterializedView { .. } = change {
             // No table to track for population operations
@@ -1068,6 +1083,11 @@ pub fn order_olap_changes(
                     dependency_info: create_empty_dependency_info(),
                 });
                 plan
+            }
+            OlapChange::Table(TableChange::ValidationError { .. }) => {
+                // Validation errors should be caught by plan validator
+                // before reaching this code. Return empty plan.
+                OperationPlan::new()
             }
             OlapChange::PopulateMaterializedView {
                 view_name,
@@ -1301,6 +1321,7 @@ mod tests {
             engine_params_hash: None,
             table_settings: None,
             indexes: vec![],
+            database: None,
             table_ttl_setting: None,
         };
 
@@ -1374,6 +1395,7 @@ mod tests {
             engine_params_hash: None,
             table_settings: None,
             indexes: vec![],
+            database: None,
             table_ttl_setting: None,
         };
 
@@ -1395,6 +1417,7 @@ mod tests {
             engine_params_hash: None,
             table_settings: None,
             indexes: vec![],
+            database: None,
             table_ttl_setting: None,
         };
 
@@ -1487,6 +1510,7 @@ mod tests {
             engine_params_hash: None,
             table_settings: None,
             indexes: vec![],
+            database: None,
             table_ttl_setting: None,
         };
 
@@ -1508,6 +1532,7 @@ mod tests {
             engine_params_hash: None,
             table_settings: None,
             indexes: vec![],
+            database: None,
             table_ttl_setting: None,
         };
 
@@ -1620,6 +1645,7 @@ mod tests {
             engine_params_hash: None,
             table_settings: None,
             indexes: vec![],
+            database: None,
             table_ttl_setting: None,
         };
 
@@ -1775,6 +1801,7 @@ mod tests {
             engine_params_hash: None,
             table_settings: None,
             indexes: vec![],
+            database: None,
             table_ttl_setting: None,
         };
 
@@ -1795,6 +1822,7 @@ mod tests {
             engine_params_hash: None,
             table_settings: None,
             indexes: vec![],
+            database: None,
             table_ttl_setting: None,
         };
 
@@ -1815,6 +1843,7 @@ mod tests {
             engine_params_hash: None,
             table_settings: None,
             indexes: vec![],
+            database: None,
             table_ttl_setting: None,
         };
 
@@ -1903,6 +1932,7 @@ mod tests {
             engine_params_hash: None,
             table_settings: None,
             indexes: vec![],
+            database: None,
             table_ttl_setting: None,
         };
 
@@ -1923,6 +1953,7 @@ mod tests {
             engine_params_hash: None,
             table_settings: None,
             indexes: vec![],
+            database: None,
             table_ttl_setting: None,
         };
 
@@ -1943,6 +1974,7 @@ mod tests {
             engine_params_hash: None,
             table_settings: None,
             indexes: vec![],
+            database: None,
             table_ttl_setting: None,
         };
 
@@ -1963,6 +1995,7 @@ mod tests {
             engine_params_hash: None,
             table_settings: None,
             indexes: vec![],
+            database: None,
             table_ttl_setting: None,
         };
 
@@ -1983,6 +2016,7 @@ mod tests {
             engine_params_hash: None,
             table_settings: None,
             indexes: vec![],
+            database: None,
             table_ttl_setting: None,
         };
 
@@ -2134,6 +2168,7 @@ mod tests {
             engine_params_hash: None,
             table_settings: None,
             indexes: vec![],
+            database: None,
             table_ttl_setting: None,
         };
 
@@ -2155,6 +2190,7 @@ mod tests {
             engine_params_hash: None,
             table_settings: None,
             indexes: vec![],
+            database: None,
             table_ttl_setting: None,
         };
 
@@ -2274,6 +2310,7 @@ mod tests {
             engine_params_hash: None,
             table_settings: None,
             indexes: vec![],
+            database: None,
             table_ttl_setting: None,
         };
 
@@ -2295,6 +2332,7 @@ mod tests {
             engine_params_hash: None,
             table_settings: None,
             indexes: vec![],
+            database: None,
             table_ttl_setting: None,
         };
 
@@ -2419,6 +2457,7 @@ mod tests {
             engine_params_hash: None,
             table_settings: None,
             indexes: vec![],
+            database: None,
             table_ttl_setting: None,
         };
 
@@ -2439,6 +2478,7 @@ mod tests {
             engine_params_hash: None,
             table_settings: None,
             indexes: vec![],
+            database: None,
             table_ttl_setting: None,
         };
 
@@ -2642,6 +2682,7 @@ mod tests {
             engine_params_hash: None,
             table_settings: None,
             indexes: vec![],
+            database: None,
             table_ttl_setting: None,
         };
 
@@ -2746,6 +2787,7 @@ mod tests {
             engine_params_hash: None,
             table_settings: None,
             indexes: vec![],
+            database: None,
             table_ttl_setting: None,
         };
 
@@ -2862,6 +2904,7 @@ mod tests {
             engine_params_hash: None,
             table_settings: None,
             indexes: vec![],
+            database: None,
             table_ttl_setting: None,
         };
 
@@ -2905,6 +2948,7 @@ mod tests {
             engine_params_hash: None,
             table_settings: None,
             indexes: vec![],
+            database: None,
             table_ttl_setting: None,
         };
 

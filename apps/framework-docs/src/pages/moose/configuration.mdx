@@ -70,6 +70,8 @@ host_port = 18123
 native_port = 9000
 # Optional host path to mount as the ClickHouse data volume (uses Docker volume if None) (Default: None)
 # host_data_path = "/path/on/host/clickhouse_data"
+# Optional list of additional databases to create on startup (Default: [])
+# additional_databases = ["analytics", "staging"]
 
 # HTTP server configuration for local development
 [http_server_config]

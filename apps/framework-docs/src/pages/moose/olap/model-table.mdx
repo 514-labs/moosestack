@@ -315,6 +315,64 @@ If a field is optional in your app model but you provide a ClickHouse default, M
 This lets you keep optional fields at the application layer while avoiding Nullable columns in ClickHouse when a server-side default exists.
 </Callout>
 
+### Database Selection
+
+By default, tables are created in the database specified in your `moose.config.toml` ClickHouse configuration. You can override this on a per-table basis using the `database` field:
+
+<TypeScript>
+```ts filename="DatabaseOverride.ts" copy
+import { OlapTable } from "@514labs/moose-lib";
+
+interface UserData {
+  id: Key<string>;
+  name: string;
+  email: string;
+}
+
+// Table in default database (from moose.config.toml)
+const defaultTable = new OlapTable<UserData>("users");
+
+// Table in specific database (e.g., "analytics")
+const analyticsTable = new OlapTable<UserData>("users", {
+  database: "analytics",
+  orderByFields: ["id"]
+});
+```
+</TypeScript>
+
+<Python>
+```py filename="DatabaseOverride.py" copy
+from moose_lib import Key, OlapTable, OlapConfig
+from pydantic import BaseModel
+
+class UserData(BaseModel):
+    id: Key[str]
+    name: str
+    email: str
+
+# Table in default database (from moose.config.toml)
+default_table = OlapTable[UserData]("users")
+
+# Table in specific database (e.g., "analytics")
+analytics_table = OlapTable[UserData]("users", OlapConfig(
+    database="analytics",
+    order_by_fields=["id"]
+))
+```
+</Python>
+
+<Callout type="info" title="Multi-database setup">
+To use custom databases, configure them in your `moose.config.toml`:
+
+```toml
+[clickhouse_config]
+db_name = "local"
+additional_databases = ["analytics", "staging"]
+```
+
+The databases in `additional_databases` will be created automatically when you start your Moose application.
+</Callout>
+
 ### Primary Keys and Sorting
 
 You must configure table indexing using one of these approaches:

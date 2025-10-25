@@ -171,6 +171,7 @@ class TableConfig(BaseModel):
     table_settings: Optional[dict[str, str]] = None
     indexes: list[OlapConfig.TableIndex] = []
     ttl: Optional[str] = None
+    database: Optional[str] = None
 
 
 class TopicConfig(BaseModel):
@@ -613,6 +614,7 @@ def to_infra_map() -> dict:
             table_settings=table_settings if table_settings else None,
             indexes=table.config.indexes,
             ttl=table.config.ttl,
+            database=table.config.database,
         )
 
     for name, stream in get_streams().items():

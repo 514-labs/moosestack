@@ -73,6 +73,47 @@ export const dedupTable = new OlapTable<UserProfile>("user_profiles", {
 });
 ```
 
+### `BaseOlapConfig<T>`
+Base configuration interface for `OlapTable` with common table configuration options.
+```ts
+interface BaseOlapConfig<T> {
+  // Optional database name (defaults to moose.config.toml clickhouse_config.db_name)
+  database?: string;
+
+  // Optional array of field names to order by
+  orderByFields?: (keyof T & string)[];
+
+  // Optional SQL expression for ORDER BY clause (alternative to orderByFields)
+  orderByExpression?: string;
+
+  // Optional table engine (defaults to MergeTree)
+  engine?: ClickHouseEngines;
+
+  // Optional settings for table configuration
+  settings?: { [key: string]: string };
+
+  // Optional lifecycle mode (defaults to MOOSE_MANAGED)
+  lifeCycle?: LifeCycle;
+
+  // Additional engine-specific fields (ver, isDeleted, keeperPath, etc.)
+  // depend on the engine type
+}
+```
+
+Example with database override:
+```ts
+// Table in custom database
+export const analyticsTable = new OlapTable<UserEvent>("user_events", {
+  database: "analytics",  // Override default database
+  orderByFields: ["id", "timestamp"]
+});
+
+// Default database (from moose.config.toml)
+export const defaultTable = new OlapTable<UserEvent>("user_events", {
+  orderByFields: ["id", "timestamp"]
+});
+```
+
 ### `Stream<T>`
 Creates a Redpanda topic with the schema of type T.
 ```ts

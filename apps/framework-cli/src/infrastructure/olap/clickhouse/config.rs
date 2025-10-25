@@ -15,7 +15,7 @@ fn default_native_port() -> i32 {
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ClickHouseConfig {
-    pub db_name: String, // ex. local
+    pub db_name: String, // ex. local (primary database)
     pub user: String,
     pub password: String,
     pub use_ssl: bool,
@@ -27,6 +27,11 @@ pub struct ClickHouseConfig {
     /// If not specified, a Docker-managed volume will be used.
     #[serde(default)]
     pub host_data_path: Option<PathBuf>,
+    /// Additional databases to create and manage alongside the primary database.
+    /// Tables can specify which database they belong to using the database field.
+    /// Example: additional_databases = ["warehouse", "analytics", "logging"]
+    #[serde(default)]
+    pub additional_databases: Vec<String>,
 }
 
 impl Default for ClickHouseConfig {
@@ -40,6 +45,7 @@ impl Default for ClickHouseConfig {
             host_port: 18123,
             native_port: default_native_port(),
             host_data_path: None,
+            additional_databases: Vec::new(),
         }
     }
 }
@@ -84,6 +90,7 @@ pub fn parse_clickhouse_connection_string(conn_str: &str) -> anyhow::Result<Clic
         host_port: port,
         native_port: port,
         host_data_path: None,
+        additional_databases: Vec::new(),
     };
 
     Ok(config)

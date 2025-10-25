@@ -101,6 +101,7 @@ mod tests {
     fn create_test_table() -> Table {
         Table {
             name: "test_table".to_string(),
+            database: Some("local".to_string()),
             columns: vec![
                 Column {
                     name: "id".to_string(),
@@ -155,11 +156,13 @@ mod tests {
                 },
                 SerializableOlapOperation::ModifyTableTtl {
                     table: "users".to_string(),
+                    database: Some("local".to_string()),
                     before: None,
                     after: Some("timestamp + INTERVAL 30 DAY".to_string()),
                 },
                 SerializableOlapOperation::DropTable {
                     table: "old_users".to_string(),
+                    database: Some("local".to_string()),
                 },
             ],
         };
@@ -188,12 +191,14 @@ mod tests {
                 },
                 SerializableOlapOperation::ModifyColumnTtl {
                     table: "users".to_string(),
+                    database: Some("local".to_string()),
                     column: "created_at".to_string(),
                     before: None,
                     after: Some("timestamp + INTERVAL 30 DAY".to_string()),
                 },
                 SerializableOlapOperation::DropTable {
                     table: "old_users".to_string(),
+                    database: Some("local".to_string()),
                 },
             ],
         };
@@ -219,11 +224,13 @@ mod tests {
             operations: vec![
                 SerializableOlapOperation::ModifyTableTtl {
                     table: "users".to_string(),
+                    database: Some("local".to_string()),
                     before: None,
                     after: Some("ttl1".to_string()),
                 },
                 SerializableOlapOperation::ModifyColumnTtl {
                     table: "users".to_string(),
+                    database: Some("local".to_string()),
                     column: "col".to_string(),
                     before: None,
                     after: Some("ttl2".to_string()),

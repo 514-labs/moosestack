@@ -543,6 +543,9 @@ pub fn tables_to_typescript(tables: &[Table], life_cycle: Option<LifeCycle>) -> 
         if let Some(sample_by) = &table.sample_by {
             writeln!(output, "    sampleByExpression: {:?},", sample_by).unwrap();
         }
+        if let Some(database) = &table.database {
+            writeln!(output, "    database: {:?},", database).unwrap();
+        }
         if let Some(engine) = &table.engine {
             match engine {
                 crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine::S3Queue {
@@ -807,6 +810,7 @@ mod tests {
             engine_params_hash: None,
             table_settings: None,
             indexes: vec![],
+            database: None,
             table_ttl_setting: None,
         }];
 
@@ -887,6 +891,7 @@ export const UserTable = new OlapTable<User>("User", {
                     .collect(),
             ),
             indexes: vec![],
+            database: None,
             table_ttl_setting: None,
         }];
 
@@ -936,6 +941,7 @@ export const UserTable = new OlapTable<User>("User", {
                 .collect(),
             ),
             indexes: vec![],
+            database: None,
             table_ttl_setting: None,
         }];
 
@@ -1004,6 +1010,7 @@ export const UserTable = new OlapTable<User>("User", {
             engine_params_hash: None,
             table_settings: None,
             indexes: vec![],
+            database: None,
             table_ttl_setting: None,
         }];
 
@@ -1047,6 +1054,7 @@ export const UserTable = new OlapTable<User>("User", {
             engine_params_hash: None,
             table_settings: None,
             indexes: vec![],
+            database: None,
             table_ttl_setting: None,
         }];
 
@@ -1122,6 +1130,7 @@ export const UserTable = new OlapTable<User>("User", {
             engine_params_hash: None,
             table_settings: None,
             indexes: vec![],
+            database: None,
             table_ttl_setting: None,
         }];
 
@@ -1183,6 +1192,7 @@ export const UserTable = new OlapTable<User>("User", {
                     granularity: 4,
                 },
             ],
+            database: None,
             table_ttl_setting: None,
         }];
 
@@ -1252,6 +1262,7 @@ export const UserTable = new OlapTable<User>("User", {
             engine_params_hash: None,
             table_settings: None,
             indexes: vec![],
+            database: None,
             table_ttl_setting: None,
         }];
 
@@ -1328,6 +1339,7 @@ export const TaskTable = new OlapTable<Task>("Task", {
             engine_params_hash: None,
             table_settings: None,
             indexes: vec![],
+            database: None,
             table_ttl_setting: Some("timestamp + INTERVAL 90 DAY DELETE".to_string()),
         }];
 
@@ -1346,6 +1358,7 @@ export const TaskTable = new OlapTable<Task>("Task", {
         use crate::framework::core::infrastructure::table::IntType;
         let tables = vec![Table {
             name: "JsonTest".to_string(),
+            database: Some("local".to_string()),
             columns: vec![
                 Column {
                     name: "id".to_string(),
@@ -1408,5 +1421,42 @@ export const TaskTable = new OlapTable<Task>("Task", {
         assert!(result.contains(
             "payload: PayloadJson & ClickHouseJson<256, 16, [\"skip.me\"], [\"^tmp\\\\.\"]>;"
         ));
+    }
+
+    #[test]
+    fn test_database_field_emission() {
+        let tables = vec![Table {
+            name: "ExternalData".to_string(),
+            columns: vec![Column {
+                name: "id".to_string(),
+                data_type: ColumnType::String,
+                required: true,
+                unique: false,
+                primary_key: true,
+                default: None,
+                annotations: vec![],
+                comment: None,
+                ttl: None,
+            }],
+            order_by: OrderBy::Fields(vec!["id".to_string()]),
+            partition_by: None,
+            sample_by: None,
+            engine: Some(ClickhouseEngine::MergeTree),
+            version: None,
+            source_primitive: PrimitiveSignature {
+                name: "ExternalData".to_string(),
+                primitive_type: PrimitiveTypes::DataModel,
+            },
+            metadata: None,
+            life_cycle: LifeCycle::FullyManaged,
+            engine_params_hash: None,
+            table_settings: None,
+            indexes: vec![],
+            database: Some("analytics_db".to_string()),
+            table_ttl_setting: None,
+        }];
+
+        let result = tables_to_typescript(&tables, None);
+        assert!(result.contains("database: \"analytics_db\""));
     }
 }

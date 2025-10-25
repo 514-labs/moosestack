@@ -221,6 +221,11 @@ export type BaseOlapConfig<T> = (
   ttl?: string;
   /** Optional secondary/data-skipping indexes */
   indexes?: TableIndex[];
+  /**
+   * Optional database name for multi-database support.
+   * When not specified, uses the global ClickHouse config database.
+   */
+  database?: string;
 };
 
 /**

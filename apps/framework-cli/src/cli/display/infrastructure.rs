@@ -549,6 +549,10 @@ pub fn show_olap_changes(olap_changes: &[OlapChange]) {
 
             infra_updated_detailed(&format!("Table Settings: {name}"), &details);
         }
+        OlapChange::Table(TableChange::ValidationError { message, .. }) => {
+            // Display validation error - it's already formatted with box borders
+            eprintln!("{}", message);
+        }
         OlapChange::View(view_change) => {
             handle_standard_change!(view_change);
         }
