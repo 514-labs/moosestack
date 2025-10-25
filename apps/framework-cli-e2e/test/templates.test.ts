@@ -452,7 +452,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
               "status: string;",
             )
             .replace(
-              'count: number & ClickHouseDefault<"0">;',
+              'count: UInt32 & ClickHouseDefault<"0">;',
               "count: number;",
             );
         } else {
@@ -462,8 +462,8 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
               "status: str",
             )
             .replace(
-              'count: Annotated[int, clickhouse_default("0")]',
-              "count: int",
+              'count: Annotated[int, clickhouse_default("0"), "uint32"]',
+              'count: Annotated[int, "uint32"]',
             );
         }
         await fs.promises.writeFile(engineTestsPath, contents, "utf8");
