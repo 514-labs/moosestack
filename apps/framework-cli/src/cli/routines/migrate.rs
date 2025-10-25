@@ -8,7 +8,9 @@ use crate::framework::core::migration_plan::MigrationPlan;
 use crate::framework::core::state_storage::{ClickHouseStateStorage, StateStorage};
 use crate::infrastructure::olap::clickhouse::config::parse_clickhouse_connection_string;
 use crate::infrastructure::olap::clickhouse::IgnorableOperation;
-use crate::infrastructure::olap::clickhouse::{check_ready, create_client, ConfiguredDBClient};
+use crate::infrastructure::olap::clickhouse::{
+    check_ready, create_client, ConfiguredDBClient, SerializableOlapOperation,
+};
 use crate::project::Project;
 use crate::utilities::constants::{
     MIGRATION_AFTER_STATE_FILE, MIGRATION_BEFORE_STATE_FILE, MIGRATION_FILE,
@@ -193,6 +195,65 @@ fn report_drift(drift: &DriftStatus) {
     }
 }
 
+/// Validates that all table databases specified in operations are configured
+fn validate_table_databases(
+    operations: &[SerializableOlapOperation],
+    primary_database: &str,
+    additional_databases: &[String],
+) -> Result<()> {
+    let mut invalid_tables = Vec::new();
+
+    for operation in operations {
+        if let SerializableOlapOperation::CreateTable { table } = operation {
+            if let Some(db) = &table.database {
+                // Check if database is either primary or in additional_databases
+                if db != primary_database && !additional_databases.contains(db) {
+                    invalid_tables.push((table.name.clone(), db.clone()));
+                }
+            }
+        }
+    }
+
+    if !invalid_tables.is_empty() {
+        let mut error_message = String::from(
+            "One or more tables specify databases that are not configured in moose.config.toml:\n\n"
+        );
+
+        for (table_name, database) in &invalid_tables {
+            error_message.push_str(&format!(
+                "  • Table '{}' specifies database '{}'\n",
+                table_name, database
+            ));
+        }
+
+        error_message
+            .push_str("\nTo fix this, add the missing database(s) to your moose.config.toml:\n\n");
+        error_message.push_str("[clickhouse_config]\n");
+        error_message.push_str(&format!("db_name = \"{}\"\n", primary_database));
+        error_message.push_str("additional_databases = [");
+
+        let mut all_databases: Vec<String> = additional_databases.to_vec();
+        for (_, db) in &invalid_tables {
+            if !all_databases.contains(db) {
+                all_databases.push(db.clone());
+            }
+        }
+        all_databases.sort();
+
+        let db_list = all_databases
+            .iter()
+            .map(|db| format!("\"{}\"", db))
+            .collect::<Vec<_>>()
+            .join(", ");
+        error_message.push_str(&db_list);
+        error_message.push_str("]\n");
+
+        anyhow::bail!(error_message);
+    }
+
+    Ok(())
+}
+
 /// Execute migration operations with detailed error handling
 async fn execute_operations(
     project: &Project,
@@ -216,6 +277,13 @@ async fn execute_operations(
         "\n▶ Applying {} migration operation(s)...",
         migration_plan.operations.len()
     );
+
+    // Validate that all table databases are configured
+    validate_table_databases(
+        &migration_plan.operations,
+        &project.clickhouse_config.db_name,
+        &project.clickhouse_config.additional_databases,
+    )?;
 
     let is_dev = !project.is_production;
     for (idx, operation) in migration_plan.operations.iter().enumerate() {
