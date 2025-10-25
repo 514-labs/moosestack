@@ -5,6 +5,7 @@ import {
   DateTime,
   ClickHouseTTL,
   ClickHouseDefault,
+  UInt32,
 } from "@514labs/moose-lib";
 
 /**
@@ -49,7 +50,7 @@ export interface DefaultTestData {
   id: Key<string>;
   timestamp: DateTime;
   status: string & ClickHouseDefault<"'pending'">;
-  count: number & ClickHouseDefault<"0">;
+  count: UInt32 & ClickHouseDefault<"0">;
 }
 
 export const DefaultTable = new OlapTable<DefaultTestData>("DefaultTable", {

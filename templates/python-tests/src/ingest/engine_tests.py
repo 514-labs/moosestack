@@ -47,7 +47,7 @@ class DefaultTestData(BaseModel):
     id: Key[str]
     timestamp: datetime
     status: Annotated[str, clickhouse_default("'pending'")]
-    count: Annotated[int, clickhouse_default("0")]
+    count: Annotated[int, clickhouse_default("0"), "uint32"]
 
 default_table = OlapTable[DefaultTestData](
     "DefaultTable",
