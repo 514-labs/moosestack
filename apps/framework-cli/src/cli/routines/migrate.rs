@@ -5,22 +5,18 @@ use crate::cli::routines::RoutineFailure;
 use crate::framework::core::infrastructure::table::Table;
 use crate::framework::core::infrastructure_map::InfrastructureMap;
 use crate::framework::core::migration_plan::MigrationPlan;
-use crate::framework::core::state_storage::{
-    ClickHouseStateStorage, RedisStateStorage, StateStorage,
-};
+use crate::framework::core::state_storage::{StateStorage, StateStorageBuilder};
 use crate::infrastructure::olap::clickhouse::config::parse_clickhouse_connection_string;
 use crate::infrastructure::olap::clickhouse::IgnorableOperation;
 use crate::infrastructure::olap::clickhouse::{
     check_ready, create_client, ConfiguredDBClient, SerializableOlapOperation,
 };
-use crate::infrastructure::redis::redis_client::{RedisClient, RedisConfig};
 use crate::project::Project;
 use crate::utilities::constants::{
-    ENV_REDIS_URL, MIGRATION_AFTER_STATE_FILE, MIGRATION_BEFORE_STATE_FILE, MIGRATION_FILE,
+    MIGRATION_AFTER_STATE_FILE, MIGRATION_BEFORE_STATE_FILE, MIGRATION_FILE,
 };
 use anyhow::Result;
 use std::collections::HashMap;
-use std::sync::Arc;
 
 /// Migration files loaded from disk
 struct MigrationFiles {
@@ -442,64 +438,19 @@ pub async fn execute_migration(
     })?;
 
     // Build state storage based on config
-    let state_storage: Box<dyn StateStorage> = match project.state_config.storage.as_str() {
-        "redis" => {
-            let redis_url_from_env = std::env::var(ENV_REDIS_URL).ok();
-            let redis_url = redis_url.or(redis_url_from_env.as_deref()).ok_or_else(|| {
-                RoutineFailure::error(Message {
-                    action: "Configuration".to_string(),
-                    details: "--redis-url required when state_config.storage = \"redis\""
-                        .to_string(),
-                })
-            })?;
-
-            let redis_config = RedisConfig {
-                url: redis_url.to_string(),
-                key_prefix: project.redis_config.key_prefix.clone(),
-                ..Default::default()
-            };
-            let redis_client = Arc::new(
-                RedisClient::new("moose_migrate".to_string(), redis_config)
-                    .await
-                    .map_err(|e| {
-                        RoutineFailure::new(
-                            Message::new(
-                                "Redis".to_string(),
-                                "Failed to connect to Redis".to_string(),
-                            ),
-                            e,
-                        )
-                    })?,
-            );
-            Box::new(RedisStateStorage::new(redis_client))
-        }
-        "clickhouse" => {
-            // Only create ClickHouse client when using it for state storage
-            let client = create_client(clickhouse_config.clone());
-            check_ready(&client).await.map_err(|e| {
-                RoutineFailure::new(
-                    Message::new(
-                        "ClickHouse".to_string(),
-                        "Failed to connect to ClickHouse".to_string(),
-                    ),
-                    e,
-                )
-            })?;
-            Box::new(ClickHouseStateStorage::new(
-                client,
-                clickhouse_config.db_name.clone(),
-            ))
-        }
-        _ => {
-            return Err(RoutineFailure::error(Message {
-                action: "Configuration".to_string(),
-                details: format!(
-                    "Invalid state_config.storage: {}",
-                    project.state_config.storage
+    let state_storage = StateStorageBuilder::from_config(project)
+        .redis_url(redis_url.map(String::from))
+        .build()
+        .await
+        .map_err(|e| {
+            RoutineFailure::new(
+                Message::new(
+                    "State Storage".to_string(),
+                    "Failed to build state storage".to_string(),
                 ),
-            }));
-        }
-    };
+                e,
+            )
+        })?;
 
     // Acquire migration lock to prevent concurrent migrations
     state_storage.acquire_migration_lock().await.map_err(|e| {
