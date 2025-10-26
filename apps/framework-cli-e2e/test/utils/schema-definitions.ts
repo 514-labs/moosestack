@@ -293,22 +293,20 @@ export const TYPESCRIPT_TEST_SCHEMAS: ExpectedTableSchema[] = [
       { name: "complexArray", type: /Nested\(.*\)/ },
     ],
   },
-  // TEMPORARILY COMMENTED OUT: ClickHouse syntax error - "Expected lambda expression"
-  // This is a pre-existing bug unrelated to S3Queue runtime env resolution
-  // {
-  //   tableName: "OptionalNestedTest",
-  //   columns: [
-  //     { name: "id", type: "String" },
-  //     { name: "timestamp", type: /DateTime\('UTC'\)/ },
-  //     // Arrays of objects with optional fields - should become Nested type with nullable inner fields
-  //     {
-  //       name: "nested",
-  //       type: /Nested\(name Nullable\(String\), age Nullable\(Float64\)\)/,
-  //     },
-  //     // Field with ClickHouse default - should be String with default value, not nullable
-  //     { name: "other", type: "String", nullable: false },
-  //   ],
-  // },
+  {
+    tableName: "OptionalNestedTest",
+    columns: [
+      { name: "id", type: "String" },
+      { name: "timestamp", type: /DateTime\('UTC'\)/ },
+      // Arrays of objects with optional fields - should become Nested type with nullable inner fields
+      {
+        name: "nested",
+        type: /Nested\(name Nullable\(String\), age Nullable\(Float64\)\)/,
+      },
+      // Field with ClickHouse default - should be String with default value, not nullable
+      { name: "other", type: "String", nullable: false },
+    ],
+  },
   // Geometry tables
   {
     tableName: "GeoTypes",
@@ -687,22 +685,20 @@ export const PYTHON_TEST_SCHEMAS: ExpectedTableSchema[] = [
       { name: "complex_array", type: /Nested\(.*\)/ },
     ],
   },
-  // TEMPORARILY COMMENTED OUT: ClickHouse syntax error - "Expected lambda expression"
-  // This is a pre-existing bug unrelated to S3Queue runtime env resolution
-  // {
-  //   tableName: "OptionalNestedTest",
-  //   columns: [
-  //     { name: "id", type: "String" },
-  //     { name: "timestamp", type: /DateTime\('UTC'\)/ },
-  //     // Arrays of objects with optional fields - should become Nested type with nullable inner fields
-  //     {
-  //       name: "nested",
-  //       type: /Nested\(name Nullable\(String\), age Nullable\(Float64\)\)/,
-  //     },
-  //     // Field with ClickHouse default - should be String with default value, not nullable
-  //     { name: "other", type: "String", nullable: false },
-  //   ],
-  // },
+  {
+    tableName: "OptionalNestedTest",
+    columns: [
+      { name: "id", type: "String" },
+      { name: "timestamp", type: /DateTime\('UTC'\)/ },
+      // Arrays of objects with optional fields - should become Nested type with nullable inner fields
+      {
+        name: "nested",
+        type: /Nested\(name Nullable\(String\), age Nullable\(Float64\)\)/,
+      },
+      // Field with ClickHouse default - should be String with default value, not nullable
+      { name: "other", type: "String", nullable: false },
+    ],
+  },
   // Geometry tables
   {
     tableName: "GeoTypes",

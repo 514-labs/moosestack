@@ -303,26 +303,24 @@ export const EdgeCasesPipeline = new IngestPipeline<EdgeCases>("EdgeCases", {
 /** =======Optional Nested Fields with ClickHouse Defaults Test========= */
 
 /** Test interface with optional nested fields and ClickHouse defaults */
-// TEMPORARILY COMMENTED OUT: ClickHouse syntax error - "Expected lambda expression"
-// This is a pre-existing bug unrelated to S3Queue runtime env resolution
-// export interface TestNested {
-//   name?: string;
-//   age?: number;
-// }
+export interface TestNested {
+  name?: string;
+  age?: number;
+}
 
-// export interface OptionalNestedTest {
-//   id: Key<string>;
-//   timestamp: DateTime;
-//   nested: TestNested[];
-//   other: string & ClickHouseDefault<"">;
-// }
+export interface OptionalNestedTest {
+  id: Key<string>;
+  timestamp: DateTime;
+  nested: TestNested[];
+  other: string & ClickHouseDefault<"">;
+}
 
-// export const OptionalNestedTestPipeline =
-//   new IngestPipeline<OptionalNestedTest>("OptionalNestedTest", {
-//     table: true,
-//     stream: true,
-//     ingestApi: true,
-//   });
+export const OptionalNestedTestPipeline =
+  new IngestPipeline<OptionalNestedTest>("OptionalNestedTest", {
+    table: true,
+    stream: true,
+    ingestApi: true,
+  });
 
 /** =======Geometry Types========= */
 

@@ -299,24 +299,22 @@ json_test_model = IngestPipeline[JsonTest]("JsonTest", IngestPipelineConfig(
 # =======Optional Nested Fields with ClickHouse Defaults Test=========
 
 # Test class with optional nested fields and ClickHouse defaults
-# TEMPORARILY COMMENTED OUT: ClickHouse syntax error - "Expected lambda expression"
-# This is a pre-existing bug unrelated to S3Queue runtime env resolution
-# class TestNested(BaseModel):
-#     name: Optional[str] = None
-#     age: Optional[float] = None
+class TestNested(BaseModel):
+    name: Optional[str] = None
+    age: Optional[float] = None
 
-# class OptionalNestedTest(BaseModel):
-#     id: Key[str]
-#     timestamp: datetime
-#     nested: List[TestNested]
-#     other: Annotated[str, clickhouse_default("")] = ""
+class OptionalNestedTest(BaseModel):
+    id: Key[str]
+    timestamp: datetime
+    nested: List[TestNested]
+    other: Annotated[str, clickhouse_default("")] = ""
 
-# optional_nested_test_model = IngestPipeline[OptionalNestedTest]("OptionalNestedTest", IngestPipelineConfig(
-#     ingest_api=True,
-#     stream=True,
-#     table=True,
-#     dead_letter_queue=True
-# ))
+optional_nested_test_model = IngestPipeline[OptionalNestedTest]("OptionalNestedTest", IngestPipelineConfig(
+    ingest_api=True,
+    stream=True,
+    table=True,
+    dead_letter_queue=True
+))
 
 # =======Geometry Types=========
 

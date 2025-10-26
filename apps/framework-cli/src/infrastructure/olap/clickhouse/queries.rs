@@ -14,10 +14,10 @@ use crate::infrastructure::olap::clickhouse::model::{
 
 /// Format a ClickHouse setting value with proper quoting.
 /// - Numeric values (integers, floats) are not quoted
-/// - Boolean values (true, false) are not quoted  
+/// - Boolean values (true, false) are not quoted
 /// - String values are quoted with single quotes
 /// - Already quoted values are preserved as-is
-fn format_clickhouse_setting_value(value: &str) -> String {
+pub fn format_clickhouse_setting_value(value: &str) -> String {
     // If already quoted, use as-is
     if value.starts_with('\'') && value.ends_with('\'') {
         value.to_string()
@@ -1938,11 +1938,17 @@ fn builds_field_context(columns: &[ClickHouseColumn]) -> Result<Vec<Value>, Clic
 
             let field_ttl = column.ttl.as_ref();
 
+            // Format default value properly - quote strings, keep numbers/booleans unquoted
+            let formatted_default = column
+                .default
+                .as_ref()
+                .map(|d| format_clickhouse_setting_value(d));
+
             Ok(json!({
                 "field_name": column.name,
                 "field_type": field_type,
                 "field_ttl": field_ttl,
-                "field_default": column.default,
+                "field_default": formatted_default,
                 "field_nullable": if let ClickHouseColumnType::Nullable(_) = column.column_type {
                     // if type is Nullable, do not add extra specifier
                     "".to_string()
