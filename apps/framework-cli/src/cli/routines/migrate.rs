@@ -6,7 +6,9 @@ use crate::framework::core::infrastructure::table::Table;
 use crate::framework::core::infrastructure_map::InfrastructureMap;
 use crate::framework::core::migration_plan::MigrationPlan;
 use crate::framework::core::state_storage::{StateStorage, StateStorageBuilder};
-use crate::infrastructure::olap::clickhouse::config::parse_clickhouse_connection_string;
+use crate::infrastructure::olap::clickhouse::config::{
+    parse_clickhouse_connection_string, ClickHouseConfig,
+};
 use crate::infrastructure::olap::clickhouse::IgnorableOperation;
 use crate::infrastructure::olap::clickhouse::{
     check_ready, create_client, ConfiguredDBClient, SerializableOlapOperation,
@@ -434,6 +436,7 @@ pub async fn execute_migration(
 
     // Build state storage based on config
     let state_storage = StateStorageBuilder::from_config(project)
+        .clickhouse_config(Some(clickhouse_config.clone()))
         .redis_url(redis_url.map(String::from))
         .build()
         .await
@@ -522,6 +525,7 @@ pub async fn execute_migration(
         // Execute migration
         execute_migration_plan(
             project,
+            &clickhouse_config,
             current_tables,
             &target_infra_map,
             state_storage.as_ref(),
@@ -554,6 +558,7 @@ pub async fn execute_migration(
 /// it saves the new infrastructure state.
 pub async fn execute_migration_plan(
     project: &Project,
+    clickhouse_config: &ClickHouseConfig,
     current_tables: &HashMap<String, Table>,
     target_infra_map: &InfrastructureMap,
     state_storage: &dyn StateStorage,
@@ -600,7 +605,7 @@ pub async fn execute_migration_plan(
             println!("  ✓ Target = Code (plan is still valid)");
 
             // Execute operations
-            let client = create_client(project.clickhouse_config.clone());
+            let client = create_client(clickhouse_config.clone());
             check_ready(&client).await?;
             execute_operations(project, &files.plan, &client).await?;
         }

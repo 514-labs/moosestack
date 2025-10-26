@@ -401,6 +401,7 @@ pub async fn start_development_mode(
 
     // Create state storage once based on project configuration
     let state_storage = StateStorageBuilder::from_config(&project)
+        .clickhouse_config(Some(project.clickhouse_config.clone()))
         .redis_client(Some(&redis_client))
         .build()
         .await?;
@@ -670,6 +671,7 @@ pub async fn start_production_mode(
 
     // Create state storage once based on project configuration
     let state_storage = StateStorageBuilder::from_config(&project)
+        .clickhouse_config(Some(project.clickhouse_config.clone()))
         .redis_client(Some(&redis_client))
         .build()
         .await?;
@@ -682,6 +684,7 @@ pub async fn start_production_mode(
     if execute_migration_yaml {
         migrate::execute_migration_plan(
             &project,
+            &project.clickhouse_config,
             &current_state.tables,
             &plan.target_infra_map,
             &*state_storage,
@@ -1179,6 +1182,7 @@ async fn get_remote_inframap_serverless(
 
     // Build state storage based on config
     let state_storage = StateStorageBuilder::from_config(project)
+        .clickhouse_config(Some(clickhouse_config.clone()))
         .redis_url(redis_url.map(String::from))
         .build()
         .await?;

@@ -4,6 +4,7 @@
 //! State can be stored in Redis (traditional) or ClickHouse (for serverless/CLI-only deployments).
 
 use crate::framework::core::infrastructure_map::InfrastructureMap;
+use crate::infrastructure::olap::clickhouse::config::ClickHouseConfig;
 use crate::infrastructure::olap::clickhouse::ConfiguredDBClient;
 use crate::infrastructure::olap::clickhouse::{check_ready, create_client};
 use crate::infrastructure::redis::redis_client::RedisClient;
@@ -233,7 +234,7 @@ impl StateStorage for ClickHouseStateStorage {
             Self::STATE_TABLE
         );
 
-        debug!("Loading infrastructure map from ClickHouse KeeperMap state table");
+        info!("Loading infrastructure map from database: {}", self.db_name);
 
         let mut cursor = self
             .client
@@ -408,6 +409,7 @@ impl StateStorage for ClickHouseStateStorage {
 /// Storage backend is determined by `state_config.storage` in moose.config.toml.
 pub struct StateStorageBuilder<'a> {
     project: &'a Project,
+    clickhouse_config: Option<ClickHouseConfig>,
     redis_client: Option<&'a Arc<RedisClient>>,
     redis_url: Option<String>,
 }
@@ -416,9 +418,16 @@ impl<'a> StateStorageBuilder<'a> {
     pub fn from_config(project: &'a Project) -> Self {
         Self {
             project,
+            clickhouse_config: None,
             redis_client: None,
             redis_url: None,
         }
+    }
+
+    /// Provide a ClickHouse config (for serverless migrations with remote ClickHouse)
+    pub fn clickhouse_config(mut self, clickhouse_config: Option<ClickHouseConfig>) -> Self {
+        self.clickhouse_config = clickhouse_config;
+        self
     }
 
     /// Provide an existing Redis client (for moose dev/prod with background tasks)
@@ -436,11 +445,18 @@ impl<'a> StateStorageBuilder<'a> {
     pub async fn build(self) -> Result<Box<dyn StateStorage>> {
         match self.project.state_config.storage.as_str() {
             "clickhouse" => {
-                let client = create_client(self.project.clickhouse_config.clone());
+                let clickhouse_config = self.clickhouse_config.ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "Internal error: ClickHouse state storage builder called without config. \
+                         This should have been provided by the caller via .clickhouse_config(Some(...))."
+                    )
+                })?;
+
+                let client = create_client(clickhouse_config.clone());
                 check_ready(&client).await?;
                 Ok(Box::new(ClickHouseStateStorage::new(
                     client,
-                    self.project.clickhouse_config.db_name.clone(),
+                    clickhouse_config.db_name.clone(),
                 )))
             }
             "redis" => {
