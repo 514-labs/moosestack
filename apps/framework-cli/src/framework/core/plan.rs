@@ -21,6 +21,8 @@ use crate::framework::core::infrastructure_map::{
 use crate::framework::core::primitive_map::PrimitiveMap;
 use crate::framework::core::state_storage::StateStorage;
 use crate::infrastructure::olap::clickhouse;
+#[cfg(test)]
+use crate::infrastructure::olap::clickhouse::config::DEFAULT_DATABASE_NAME;
 use crate::infrastructure::olap::clickhouse::diff_strategy::ClickHouseTableDiffStrategy;
 use crate::infrastructure::olap::OlapOperations;
 use crate::project::Project;
@@ -152,7 +154,9 @@ pub async fn reconcile_with_reality<T: OlapOperations>(
                         // that might have authentication parameters.
                         table.engine_params_hash = infra_map_table.engine_params_hash.clone();
 
-                        reconciled_map.tables.insert(reality_table.id(), table);
+                        reconciled_map
+                            .tables
+                            .insert(reality_table.id(&reconciled_map.default_database), table);
                     }
                     _ => {
                         // Other table changes (Add/Remove) are already handled by unmapped/missing
@@ -169,9 +173,10 @@ pub async fn reconcile_with_reality<T: OlapOperations>(
     // Add unmapped tables
     for unmapped_table in discrepancies.unmapped_tables {
         if target_table_names.contains(&unmapped_table.name) {
-            reconciled_map
-                .tables
-                .insert(unmapped_table.id(), unmapped_table);
+            reconciled_map.tables.insert(
+                unmapped_table.id(&reconciled_map.default_database),
+                unmapped_table,
+            );
         }
     }
 
@@ -234,6 +239,7 @@ pub async fn plan_changes(
     );
 
     let current_map_or_empty = current_infra_map.unwrap_or_else(|| InfrastructureMap {
+        default_database: project.clickhouse_config.db_name.clone(),
         topics: Default::default(),
         api_endpoints: Default::default(),
         tables: Default::default(),
@@ -367,6 +373,7 @@ mod tests {
             engine_params_hash: None,
             table_settings: None,
             indexes: vec![],
+            database: None,
             table_ttl_setting: None,
         }
     }
@@ -385,6 +392,7 @@ mod tests {
                 host_port: 18123,
                 native_port: 9000,
                 host_data_path: None,
+                additional_databases: Vec::new(),
             },
             http_server_config: crate::cli::local_webserver::LocalWebserverConfig::default(),
             redis_config: crate::infrastructure::redis::redis_client::RedisConfig::default(),
@@ -482,7 +490,9 @@ mod tests {
 
         // Create infrastructure map with one table
         let mut infra_map = InfrastructureMap::default();
-        infra_map.tables.insert(table.id(), table.clone());
+        infra_map
+            .tables
+            .insert(table.id(DEFAULT_DATABASE_NAME), table.clone());
 
         // Replace the normal check_reality function with our mock
         let reality_checker = InfraRealityChecker::new(mock_client);
@@ -547,7 +557,7 @@ mod tests {
         let mut infra_map = InfrastructureMap::default();
         infra_map
             .tables
-            .insert(infra_table.id(), infra_table.clone());
+            .insert(infra_table.id(DEFAULT_DATABASE_NAME), infra_table.clone());
 
         // Replace the normal check_reality function with our mock
         let reality_checker = InfraRealityChecker::new(mock_client);
@@ -602,7 +612,9 @@ mod tests {
 
         // Create infrastructure map with the same table
         let mut infra_map = InfrastructureMap::default();
-        infra_map.tables.insert(table.id(), table.clone());
+        infra_map
+            .tables
+            .insert(table.id(DEFAULT_DATABASE_NAME), table.clone());
 
         // Replace the normal check_reality function with our mock
         let reality_checker = InfraRealityChecker::new(mock_client);

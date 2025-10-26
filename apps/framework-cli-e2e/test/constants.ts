@@ -25,8 +25,8 @@ export const TIMEOUTS = {
   DOCKER_VOLUME_LIST_MS: 10_000,
   DOCKER_VOLUME_REMOVE_MS: 5_000,
 
-  // Wait time before tests (10 seconds)
-  PRE_TEST_WAIT_MS: 10_000,
+  // Wait time before tests (30 seconds - allows Kafka to fully initialize after Docker restart)
+  PRE_TEST_WAIT_MS: 30_000,
 
   // Brief cleanup wait (1 second)
   BRIEF_CLEANUP_WAIT_MS: 1_000,
@@ -36,6 +36,9 @@ export const TIMEOUTS = {
 
   // Migration operations timeout (2 minutes)
   MIGRATION_MS: 120_000,
+
+  // Kafka readiness timeout (60 seconds)
+  KAFKA_READY_MS: 60_000,
 } as const;
 
 // Retry configuration

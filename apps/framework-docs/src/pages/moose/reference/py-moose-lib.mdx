@@ -57,10 +57,11 @@ class ApiResult:
 Configuration for OLAP tables.
 
 ```python
-from typing import Union
+from typing import Union, Optional
 from moose_lib.blocks import EngineConfig
 
 class OlapConfig(BaseModel):
+    database: Optional[str] = None  # Optional database name (defaults to moose.config.toml clickhouse_config.db_name)
     order_by_fields: list[str] = []  # Fields to order by
     engine: Optional[EngineConfig] = None  # Table engine configuration
 ```
@@ -158,6 +159,12 @@ my_table = OlapTable[UserProfile]("user_profiles", OlapConfig(
 my_table_expr = OlapTable[UserProfile]("user_profiles_expr", OlapConfig(
     order_by_expression="(id, timestamp)",
     engine=ReplacingMergeTreeEngine(),
+))
+
+# With custom database override
+analytics_table = OlapTable[UserProfile]("user_profiles", OlapConfig(
+    database="analytics",  # Override default database
+    order_by_fields=["id", "timestamp"]
 ))
 
 # Disable sorting entirely

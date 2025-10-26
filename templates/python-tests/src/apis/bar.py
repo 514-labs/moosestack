@@ -48,7 +48,7 @@ def run(client: MooseClient, params: QueryParams):
     cache_key = f"bar:{params.order_by}:{params.limit}:{params.start_day}:{params.end_day}"
 
     # Check for cached query results
-    cached_result = cache.get(cache_key)
+    cached_result = cache.get(cache_key, type_hint=list)
     if cached_result and len(cached_result) > 0:
         return cached_result
 
@@ -87,7 +87,7 @@ def run_v1(client: MooseClient, params: QueryParams):
     cache_key = f"bar:v1:{params.order_by}:{params.limit}:{params.start_day}:{params.end_day}"
 
     # Check for cached query results
-    cached_result = cache.get(cache_key)
+    cached_result = cache.get(cache_key, type_hint=list)
     if cached_result and len(cached_result) > 0:
         return cached_result
 

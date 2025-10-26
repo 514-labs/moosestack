@@ -34,6 +34,7 @@ import {
 import {
   stopDevProcess,
   waitForServerStart,
+  waitForKafkaReady,
   killRemainingProcesses,
   cleanupDocker,
   globalDockerCleanup,
@@ -216,7 +217,9 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
         SERVER_CONFIG.startupMessage,
         SERVER_CONFIG.url,
       );
-      console.log("Server started, cleaning up old data...");
+      console.log("Server started, waiting for Kafka broker to be ready...");
+      await waitForKafkaReady(TIMEOUTS.KAFKA_READY_MS);
+      console.log("Kafka ready, cleaning up old data...");
       await cleanupClickhouseData();
       console.log("Waiting before running tests...");
       await setTimeoutAsync(TIMEOUTS.PRE_TEST_WAIT_MS);
@@ -257,8 +260,10 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
       );
 
       // Validate all table schemas with debugging
-      const validationResult =
-        await validateSchemasWithDebugging(expectedSchemas);
+      const validationResult = await validateSchemasWithDebugging(
+        expectedSchemas,
+        "local",
+      );
 
       // Assert that all schemas are valid
       if (!validationResult.valid) {
@@ -274,7 +279,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
 
     it("should include TTL in DDL when configured", async function () {
       if (config.isTestsVariant) {
-        const ddl = await getTableDDL("TTLTable");
+        const ddl = await getTableDDL("TTLTable", "local");
         if (!ddl.includes("TTL timestamp + toIntervalDay(90)")) {
           throw new Error(
             `Schema validation failed for tables TTLTable: ${ddl}`,
@@ -294,7 +299,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
         this.timeout(TIMEOUTS.TEST_SETUP_MS);
 
         // Verify that both versions of UserEvents tables are created
-        await verifyVersionedTables("UserEvents", ["1.0", "2.0"]);
+        await verifyVersionedTables("UserEvents", ["1.0", "2.0"], "local");
       });
 
       it("should create indexes defined in templates", async function () {
@@ -302,15 +307,11 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
 
         // TypeScript and Python tests both define an IndexTest / IndexTest table
         // Verify that all seven test indexes are present in the DDL
-        await verifyTableIndexes("IndexTest", [
-          "idx1",
-          "idx2",
-          "idx3",
-          "idx4",
-          "idx5",
-          "idx6",
-          "idx7",
-        ]);
+        await verifyTableIndexes(
+          "IndexTest",
+          ["idx1", "idx2", "idx3", "idx4", "idx5", "idx6", "idx7"],
+          "local",
+        );
       });
 
       it("should plan/apply index modifications on existing tables", async function () {
@@ -333,7 +334,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
         // Verify DDL reflects updated index
         await withRetries(
           async () => {
-            const ddl = await getTableDDL("IndexTest");
+            const ddl = await getTableDDL("IndexTest", "local");
             if (!ddl.includes("INDEX idx1") || !ddl.includes("GRANULARITY 4")) {
               throw new Error(`idx1 not updated to GRANULARITY 4. DDL: ${ddl}`);
             }
@@ -372,9 +373,20 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
         }
 
         await triggerWorkflow("generator");
-        await waitForDBWrite(devProcess!, "Bar", recordsToSend);
-        await verifyClickhouseData("Bar", eventId, "primaryKey");
-        await waitForMaterializedViewUpdate("BarAggregated", 1);
+        await waitForDBWrite(
+          devProcess!,
+          "Bar",
+          recordsToSend,
+          60_000,
+          "local",
+        );
+        await verifyClickhouseData("Bar", eventId, "primaryKey", "local");
+        await waitForMaterializedViewUpdate(
+          "BarAggregated",
+          1,
+          60_000,
+          "local",
+        );
         await verifyConsumptionApi(
           "bar?orderBy=totalRows&startDay=19&endDay=19&limit=1",
           [
@@ -440,8 +452,8 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
             },
             { attempts: 5, delayMs: 500 },
           );
-          await waitForDBWrite(devProcess!, "GeoTypes", 1);
-          await verifyClickhouseData("GeoTypes", id, "id");
+          await waitForDBWrite(devProcess!, "GeoTypes", 1, 60_000, "local");
+          await verifyClickhouseData("GeoTypes", id, "id", "local");
         });
 
         it("should send array transform results as individual Kafka messages (TS)", async function () {
@@ -473,16 +485,29 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
           );
 
           // Wait for all output records to be written to the database
-          await waitForDBWrite(devProcess!, "ArrayOutput", testData.length);
+          await waitForDBWrite(
+            devProcess!,
+            "ArrayOutput",
+            testData.length,
+            60_000,
+            "local",
+            `inputId = '${inputId}'`,
+          );
 
           // Verify that we have exactly 'testData.length' records in the output table
-          await verifyClickhouseData("ArrayOutput", inputId, "inputId");
+          await verifyClickhouseData(
+            "ArrayOutput",
+            inputId,
+            "inputId",
+            "local",
+          );
 
           // Verify the count of records
           await verifyRecordCount(
             "ArrayOutput",
             `inputId = '${inputId}'`,
             testData.length,
+            "local",
           );
         });
 
@@ -626,9 +651,14 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
           { attempts: 5, delayMs: 500 },
         );
         await triggerWorkflow("generator");
-        await waitForDBWrite(devProcess!, "Bar", 1);
-        await verifyClickhouseData("Bar", eventId, "primary_key");
-        await waitForMaterializedViewUpdate("bar_aggregated", 1);
+        await waitForDBWrite(devProcess!, "Bar", 1, 60_000, "local");
+        await verifyClickhouseData("Bar", eventId, "primary_key", "local");
+        await waitForMaterializedViewUpdate(
+          "bar_aggregated",
+          1,
+          60_000,
+          "local",
+        );
         await verifyConsumptionApi(
           "bar?order_by=total_rows&start_day=19&end_day=19&limit=1",
           [
@@ -699,8 +729,8 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
             },
             { attempts: 5, delayMs: 500 },
           );
-          await waitForDBWrite(devProcess!, "GeoTypes", 1);
-          await verifyClickhouseData("GeoTypes", id, "id");
+          await waitForDBWrite(devProcess!, "GeoTypes", 1, 60_000, "local");
+          await verifyClickhouseData("GeoTypes", id, "id", "local");
         });
 
         it("should send array transform results as individual Kafka messages (PY)", async function () {
@@ -732,16 +762,29 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
           );
 
           // Wait for all output records to be written to the database
-          await waitForDBWrite(devProcess!, "ArrayOutput", testData.length);
+          await waitForDBWrite(
+            devProcess!,
+            "ArrayOutput",
+            testData.length,
+            60_000,
+            "local",
+            `input_id = '${inputId}'`,
+          );
 
           // Verify that we have exactly 'testData.length' records in the output table
-          await verifyClickhouseData("ArrayOutput", inputId, "input_id");
+          await verifyClickhouseData(
+            "ArrayOutput",
+            inputId,
+            "input_id",
+            "local",
+          );
 
           // Verify the count of records
           await verifyRecordCount(
             "ArrayOutput",
             `input_id = '${inputId}'`,
             testData.length,
+            "local",
           );
         });
 

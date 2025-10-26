@@ -51,6 +51,7 @@ use crate::framework::core::infrastructure_map::Change::Added;
 use crate::framework::languages::SupportedLanguages;
 use crate::framework::python::datamodel_config::load_main_py;
 use crate::framework::scripts::Workflow;
+use crate::infrastructure::olap::clickhouse::config::DEFAULT_DATABASE_NAME;
 use crate::infrastructure::redis::redis_client::RedisClient;
 use crate::project::Project;
 use crate::proto::infrastructure_map::InfrastructureMap as ProtoInfrastructureMap;
@@ -76,6 +77,7 @@ pub trait TableDiffStrategy {
     /// * `after` - The table after changes
     /// * `column_changes` - Detailed column-level changes
     /// * `order_by_change` - Changes to the ORDER BY clause
+    /// * `default_database` - The configured default database name for equivalence checks
     ///
     /// # Returns
     /// A vector of `OlapChange` representing the actual operations needed
@@ -85,6 +87,7 @@ pub trait TableDiffStrategy {
         after: &Table,
         column_changes: Vec<ColumnChange>,
         order_by_change: OrderByChange,
+        default_database: &str,
     ) -> Vec<OlapChange>;
 }
 
@@ -105,6 +108,7 @@ impl TableDiffStrategy for DefaultTableDiffStrategy {
         after: &Table,
         column_changes: Vec<ColumnChange>,
         order_by_change: OrderByChange,
+        _default_database: &str,
     ) -> Vec<OlapChange> {
         // Most databases can handle all changes via ALTER TABLE operations
         // Return the standard table update change
@@ -318,6 +322,17 @@ pub enum TableChange {
         after: Option<String>,
         table: Table,
     },
+    /// A validation error occurred - the requested change is not allowed
+    ValidationError {
+        /// Name of the table
+        table_name: String,
+        /// Error message explaining why the change is not allowed
+        message: String,
+        /// Complete representation of the table before the invalid change
+        before: Box<Table>,
+        /// Complete representation of the table after the invalid change
+        after: Box<Table>,
+    },
 }
 
 /// Generic representation of a change to any infrastructure component
@@ -455,6 +470,11 @@ impl InfraChanges {
 
 /// Represents the complete infrastructure map of the system, containing all components and their relationships
 ///
+/// Default function for serde to provide default database name
+fn default_database_name() -> String {
+    DEFAULT_DATABASE_NAME.to_string()
+}
+
 /// The `InfrastructureMap` is the central data structure of the Moose framework's infrastructure management.
 /// It contains a comprehensive representation of all infrastructure components and their relationships,
 /// serving as the source of truth for the entire system architecture.
@@ -467,6 +487,8 @@ impl InfraChanges {
 /// Helper methods facilitate navigating the map and finding related components.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct InfrastructureMap {
+    #[serde(default = "default_database_name")]
+    pub default_database: String,
     /// Collection of topics indexed by topic ID
     pub topics: HashMap<String, Topic>,
 
@@ -535,6 +557,8 @@ impl InfrastructureMap {
     /// # Returns
     /// A complete infrastructure map with all components and their relationships
     pub fn new(project: &Project, primitive_map: PrimitiveMap) -> InfrastructureMap {
+        // Get the default database name from the project configuration
+        let default_database = &project.clickhouse_config.db_name;
         let mut tables = HashMap::new();
         let mut views = HashMap::new();
         let mut topics = HashMap::new();
@@ -563,9 +587,10 @@ impl InfrastructureMap {
                 // If storage is enabled for this data model, create necessary infrastructure
                 if data_model.config.storage.enabled {
                     let table = data_model.to_table();
-                    let topic_to_table_sync_process = TopicToTableSyncProcess::new(&topic, &table);
+                    let topic_to_table_sync_process =
+                        TopicToTableSyncProcess::new(&topic, &table, default_database);
 
-                    tables.insert(table.id(), table);
+                    tables.insert(table.id(default_database), table);
                     topic_to_table_sync_processes.insert(
                         topic_to_table_sync_process.id(),
                         topic_to_table_sync_process,
@@ -674,7 +699,7 @@ impl InfrastructureMap {
         orchestration_workers.insert(orchestration_worker.id(), orchestration_worker);
 
         InfrastructureMap {
-            // primitive_map,
+            default_database: default_database.clone(),
             topics,
             api_endpoints,
             topic_to_table_sync_processes,
@@ -902,6 +927,7 @@ impl InfrastructureMap {
             &mut changes.olap_changes,
             table_diff_strategy,
             respect_life_cycle,
+            &self.default_database,
         );
         let table_changes = changes.olap_changes.len() - olap_changes_len_before;
         log::info!("Table changes detected: {}", table_changes);
@@ -1617,12 +1643,14 @@ impl InfrastructureMap {
     /// * `target_tables` - HashMap of target tables to compare against
     /// * `olap_changes` - Mutable vector to collect the identified changes
     /// * `strategy` - Strategy for handling database-specific table diffing logic
+    /// * `default_database` - The configured default database name
     pub fn diff_tables_with_strategy(
         self_tables: &HashMap<String, Table>,
         target_tables: &HashMap<String, Table>,
         olap_changes: &mut Vec<OlapChange>,
         strategy: &dyn TableDiffStrategy,
         respect_life_cycle: bool,
+        default_database: &str,
     ) {
         log::info!(
             "Analyzing table differences between {} source tables and {} target tables",
@@ -1729,6 +1757,7 @@ impl InfrastructureMap {
                                 target_table,
                                 column_changes,
                                 order_by_change,
+                                default_database,
                             );
 
                             // Only count as a table update if the strategy returned actual operations
@@ -1803,11 +1832,13 @@ impl InfrastructureMap {
     /// * `self_tables` - HashMap of source tables to compare from
     /// * `target_tables` - HashMap of target tables to compare against
     /// * `olap_changes` - Mutable vector to collect the identified changes
+    /// * `default_database` - The configured default database name
     pub fn diff_tables(
         self_tables: &HashMap<String, Table>,
         target_tables: &HashMap<String, Table>,
         olap_changes: &mut Vec<OlapChange>,
         respect_life_cycle: bool,
+        default_database: &str,
     ) {
         let default_strategy = DefaultTableDiffStrategy;
         Self::diff_tables_with_strategy(
@@ -1816,6 +1847,7 @@ impl InfrastructureMap {
             olap_changes,
             &default_strategy,
             respect_life_cycle,
+            default_database,
         );
     }
 
@@ -2151,6 +2183,7 @@ impl InfrastructureMap {
         let proto = ProtoInfrastructureMap::parse_from_bytes(&bytes)?;
 
         Ok(InfrastructureMap {
+            default_database: default_database_name(),
             topics: proto
                 .topics
                 .into_iter()
@@ -2213,7 +2246,7 @@ impl InfrastructureMap {
     /// # Arguments
     /// * `table` - The table to add
     pub fn add_table(&mut self, table: Table) {
-        self.tables.insert(table.id(), table);
+        self.tables.insert(table.id(&self.default_database), table);
     }
 
     /// Finds a table by name
@@ -2253,7 +2286,11 @@ impl InfrastructureMap {
         } else {
             load_main_py(project, &project.project_location).await?
         };
-        let infra_map = partial.into_infra_map(project.language, &project.main_file());
+        let infra_map = partial.into_infra_map(
+            project.language,
+            &project.main_file(),
+            &project.clickhouse_config.db_name,
+        );
 
         // Provide explicit feedback when streams are defined but streaming engine is disabled
         if !project.features.streaming_engine && infra_map.uses_streaming() {
@@ -2557,6 +2594,7 @@ impl Default for InfrastructureMap {
     /// An empty infrastructure map
     fn default() -> Self {
         Self {
+            default_database: default_database_name(),
             topics: HashMap::new(),
             api_endpoints: HashMap::new(),
             tables: HashMap::new(),
@@ -2589,6 +2627,7 @@ mod tests {
         partial_infrastructure_map::LifeCycle,
     };
     use crate::framework::versions::Version;
+    use crate::infrastructure::olap::clickhouse::config::DEFAULT_DATABASE_NAME;
 
     #[test]
     fn test_compute_table_diff() {
@@ -2643,6 +2682,7 @@ mod tests {
             engine_params_hash: None,
             table_settings: None,
             indexes: vec![],
+            database: None,
             table_ttl_setting: None,
         };
 
@@ -2697,6 +2737,7 @@ mod tests {
             engine_params_hash: None,
             table_settings: None,
             indexes: vec![],
+            database: None,
             table_ttl_setting: None,
         };
 
@@ -2807,7 +2848,7 @@ mod tests {
             super::diff_tests::create_test_table("external_table", "1.0");
         externally_managed_table.life_cycle = LifeCycle::ExternallyManaged;
         map1.tables.insert(
-            externally_managed_table.id(),
+            externally_managed_table.id(DEFAULT_DATABASE_NAME),
             externally_managed_table.clone(),
         );
 
@@ -2870,6 +2911,7 @@ mod diff_tests {
             engine_params_hash: None,
             table_settings: None,
             indexes: vec![],
+            database: None,
             table_ttl_setting: None,
         }
     }
@@ -3119,6 +3161,7 @@ mod diff_tests {
             &HashMap::from([("test".to_string(), after)]),
             &mut changes,
             true,
+            DEFAULT_DATABASE_NAME,
         );
 
         assert_eq!(changes.len(), 1, "Expected one change");
@@ -3156,6 +3199,7 @@ mod diff_tests {
             &HashMap::from([("test".to_string(), after)]),
             &mut changes,
             true,
+            DEFAULT_DATABASE_NAME,
         );
 
         assert_eq!(changes.len(), 1, "Expected one change");

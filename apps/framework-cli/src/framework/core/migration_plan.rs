@@ -18,9 +18,13 @@ pub const MIGRATION_SCHEMA: &str = include_str!("../../utilities/migration_plan_
 
 impl MigrationPlan {
     /// Creates a new migration plan from an infrastructure plan
-    pub fn from_infra_plan(infra_plan_changes: &InfraChanges) -> Result<Self, PlanOrderingError> {
+    pub fn from_infra_plan(
+        infra_plan_changes: &InfraChanges,
+        default_database: &str,
+    ) -> Result<Self, PlanOrderingError> {
         // Convert OLAP changes to atomic operations
-        let (teardown_ops, setup_ops) = order_olap_changes(&infra_plan_changes.olap_changes)?;
+        let (teardown_ops, setup_ops) =
+            order_olap_changes(&infra_plan_changes.olap_changes, default_database)?;
 
         // Combine teardown and setup operations into a single vector
         // Teardown operations are executed first, then setup operations
@@ -101,6 +105,7 @@ mod tests {
     fn create_test_table() -> Table {
         Table {
             name: "test_table".to_string(),
+            database: Some("local".to_string()),
             columns: vec![
                 Column {
                     name: "id".to_string(),
@@ -155,11 +160,13 @@ mod tests {
                 },
                 SerializableOlapOperation::ModifyTableTtl {
                     table: "users".to_string(),
+                    database: Some("local".to_string()),
                     before: None,
                     after: Some("timestamp + INTERVAL 30 DAY".to_string()),
                 },
                 SerializableOlapOperation::DropTable {
                     table: "old_users".to_string(),
+                    database: Some("local".to_string()),
                 },
             ],
         };
@@ -188,12 +195,14 @@ mod tests {
                 },
                 SerializableOlapOperation::ModifyColumnTtl {
                     table: "users".to_string(),
+                    database: Some("local".to_string()),
                     column: "created_at".to_string(),
                     before: None,
                     after: Some("timestamp + INTERVAL 30 DAY".to_string()),
                 },
                 SerializableOlapOperation::DropTable {
                     table: "old_users".to_string(),
+                    database: Some("local".to_string()),
                 },
             ],
         };
@@ -219,11 +228,13 @@ mod tests {
             operations: vec![
                 SerializableOlapOperation::ModifyTableTtl {
                     table: "users".to_string(),
+                    database: Some("local".to_string()),
                     before: None,
                     after: Some("ttl1".to_string()),
                 },
                 SerializableOlapOperation::ModifyColumnTtl {
                     table: "users".to_string(),
+                    database: Some("local".to_string()),
                     column: "col".to_string(),
                     before: None,
                     after: Some("ttl2".to_string()),

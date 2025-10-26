@@ -107,14 +107,26 @@ impl<T: OlapOperations> InfraRealityChecker<T> {
         debug!("Project version: {}", project.cur_version());
         debug!("Database: {}", project.clickhouse_config.db_name);
 
-        // Get actual tables from OLAP database
-        debug!("Fetching actual tables from OLAP database");
-        let (actual_tables, tables_cannot_be_mapped_back) = self
-            .olap_client
-            .list_tables(&project.clickhouse_config.db_name, project)
-            .await?;
+        // Get actual tables from all configured databases
+        debug!("Fetching actual tables from OLAP databases");
 
-        debug!("Found {} tables in database", actual_tables.len());
+        // Collect all databases from config
+        let mut all_databases = vec![project.clickhouse_config.db_name.clone()];
+        all_databases.extend(project.clickhouse_config.additional_databases.clone());
+
+        let mut actual_tables = Vec::new();
+        let mut tables_cannot_be_mapped_back = Vec::new();
+
+        // Query each database and merge results
+        for database in &all_databases {
+            debug!("Fetching tables from database: {}", database);
+            let (mut db_tables, mut db_unmappable) =
+                self.olap_client.list_tables(database, project).await?;
+            actual_tables.append(&mut db_tables);
+            tables_cannot_be_mapped_back.append(&mut db_unmappable);
+        }
+
+        debug!("Found {} tables across all databases", actual_tables.len());
 
         // Filter out tables starting with "_moose" (case-insensitive)
         let actual_tables: Vec<_> = actual_tables
@@ -201,6 +213,7 @@ impl<T: OlapOperations> InfraRealityChecker<T> {
                         &mut changes,
                         // respect_life_cycle is false to not hide the difference
                         false,
+                        &infra_map.default_database,
                     );
                     debug!(
                         "Found {} changes for table {}: {:?}",
@@ -292,6 +305,7 @@ mod tests {
     };
     use crate::framework::core::partial_infrastructure_map::LifeCycle;
     use crate::framework::versions::Version;
+    use crate::infrastructure::olap::clickhouse::config::DEFAULT_DATABASE_NAME;
     use crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine;
     use crate::infrastructure::olap::clickhouse::TableWithUnsupportedType;
     use async_trait::async_trait;
@@ -326,6 +340,7 @@ mod tests {
                 host_port: 18123,
                 native_port: 9000,
                 host_data_path: None,
+                additional_databases: Vec::new(),
             },
             http_server_config: LocalWebserverConfig {
                 proxy_port: crate::cli::local_webserver::default_proxy_port(),
@@ -380,6 +395,7 @@ mod tests {
             engine_params_hash: None,
             table_settings: None,
             indexes: vec![],
+            database: None,
             table_ttl_setting: None,
         }
     }
@@ -396,6 +412,7 @@ mod tests {
 
         // Create empty infrastructure map
         let mut infra_map = InfrastructureMap {
+            default_database: DEFAULT_DATABASE_NAME.to_string(),
             topics: HashMap::new(),
             api_endpoints: HashMap::new(),
             tables: HashMap::new(),
@@ -458,6 +475,7 @@ mod tests {
         };
 
         let mut infra_map = InfrastructureMap {
+            default_database: DEFAULT_DATABASE_NAME.to_string(),
             topics: HashMap::new(),
             api_endpoints: HashMap::new(),
             tables: HashMap::new(),
@@ -528,6 +546,7 @@ mod tests {
         };
 
         let mut infra_map = InfrastructureMap {
+            default_database: DEFAULT_DATABASE_NAME.to_string(),
             topics: HashMap::new(),
             api_endpoints: HashMap::new(),
             tables: HashMap::new(),
@@ -591,6 +610,7 @@ mod tests {
         };
 
         let mut infra_map = InfrastructureMap {
+            default_database: DEFAULT_DATABASE_NAME.to_string(),
             topics: HashMap::new(),
             api_endpoints: HashMap::new(),
             tables: HashMap::new(),
