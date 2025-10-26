@@ -1648,6 +1648,9 @@ pub fn create_table_query(
         (true, items)
     };
 
+    // S3Queue engine doesn't support PRIMARY_KEY, ORDER_BY, PARTITION_BY, or SAMPLE_BY clauses
+    let is_s3_queue = matches!(table.engine, ClickhouseEngine::S3Queue { .. });
+
     let template_context = json!({
         "db_name": db_name,
         "table_name": table.name,
@@ -1655,19 +1658,23 @@ pub fn create_table_query(
         "has_fields": !table.columns.is_empty(),
         "has_indexes": has_indexes,
         "indexes": index_strings,
-        "primary_key_string": if !primary_key.is_empty() {
+        "primary_key_string": if !is_s3_queue && !primary_key.is_empty() {
             Some(wrap_and_join_column_names(&primary_key, ","))
         } else {
             None
         },
-        "order_by_string": match &table.order_by {
-            crate::framework::core::infrastructure::table::OrderBy::Fields(v) if v.len() == 1 && v[0] == "tuple()" => Some("tuple()".to_string()),
-            crate::framework::core::infrastructure::table::OrderBy::Fields(v) if !v.is_empty() => Some(wrap_and_join_column_names(v, ",")),
-            crate::framework::core::infrastructure::table::OrderBy::SingleExpr(expr) => Some(expr.clone()),
-            _ => None,
+        "order_by_string": if !is_s3_queue {
+            match &table.order_by {
+                crate::framework::core::infrastructure::table::OrderBy::Fields(v) if v.len() == 1 && v[0] == "tuple()" => Some("tuple()".to_string()),
+                crate::framework::core::infrastructure::table::OrderBy::Fields(v) if !v.is_empty() => Some(wrap_and_join_column_names(v, ",")),
+                crate::framework::core::infrastructure::table::OrderBy::SingleExpr(expr) => Some(expr.clone()),
+                _ => None,
+            }
+        } else {
+            None
         },
-        "partition_by": table.partition_by.as_deref(),
-        "sample_by": table.sample_by.as_deref(),
+        "partition_by": if !is_s3_queue { table.partition_by.as_deref() } else { None },
+        "sample_by": if !is_s3_queue { table.sample_by.as_deref() } else { None },
         "engine": engine,
         "settings": settings,
         "ttl_clause": table.table_ttl_setting.as_deref()

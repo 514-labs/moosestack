@@ -202,8 +202,16 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
             ...process.env,
             VIRTUAL_ENV: path.join(TEST_PROJECT_DIR, ".venv"),
             PATH: `${path.join(TEST_PROJECT_DIR, ".venv", "bin")}:${process.env.PATH}`,
+            // Add test credentials for S3Queue tests
+            TEST_AWS_ACCESS_KEY_ID: "test-access-key-id",
+            TEST_AWS_SECRET_ACCESS_KEY: "test-secret-access-key",
           }
-        : process.env;
+        : {
+            ...process.env,
+            // Add test credentials for S3Queue tests
+            TEST_AWS_ACCESS_KEY_ID: "test-access-key-id",
+            TEST_AWS_SECRET_ACCESS_KEY: "test-secret-access-key",
+          };
 
       devProcess = spawn(CLI_PATH, ["dev"], {
         stdio: "pipe",
