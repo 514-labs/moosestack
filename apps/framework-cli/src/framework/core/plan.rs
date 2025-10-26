@@ -21,6 +21,7 @@ use crate::framework::core::infrastructure_map::{
 use crate::framework::core::primitive_map::PrimitiveMap;
 use crate::framework::core::state_storage::StateStorage;
 use crate::infrastructure::olap::clickhouse;
+#[cfg(test)]
 use crate::infrastructure::olap::clickhouse::config::DEFAULT_DATABASE_NAME;
 use crate::infrastructure::olap::clickhouse::diff_strategy::ClickHouseTableDiffStrategy;
 use crate::infrastructure::olap::OlapOperations;
@@ -238,7 +239,7 @@ pub async fn plan_changes(
     );
 
     let current_map_or_empty = current_infra_map.unwrap_or_else(|| InfrastructureMap {
-        default_database: DEFAULT_DATABASE_NAME.to_string(),
+        default_database: project.clickhouse_config.db_name.clone(),
         topics: Default::default(),
         api_endpoints: Default::default(),
         tables: Default::default(),
