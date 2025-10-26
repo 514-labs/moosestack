@@ -1412,6 +1412,7 @@ impl EnumValue {
 mod tests {
 
     use super::*;
+    use crate::infrastructure::olap::clickhouse::config::DEFAULT_DATABASE_NAME;
 
     fn serialize_and_deserialize(t: &ColumnType) {
         let json = serde_json::to_string(t).unwrap();

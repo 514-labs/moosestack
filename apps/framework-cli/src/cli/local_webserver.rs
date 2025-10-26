@@ -3449,6 +3449,7 @@ mod tests {
     };
     use crate::framework::core::partial_infrastructure_map::LifeCycle;
     use crate::framework::versions::Version;
+    use crate::infrastructure::olap::clickhouse::config::DEFAULT_DATABASE_NAME;
 
     fn create_test_table(name: &str) -> Table {
         Table {
@@ -3520,9 +3521,15 @@ mod tests {
 
         assert_eq!(updated_tables.len(), 1);
         assert_eq!(updated_tables[0], table_name);
-        assert!(infra_map.tables.contains_key(&test_table.id()));
+        assert!(infra_map
+            .tables
+            .contains_key(&test_table.id(DEFAULT_DATABASE_NAME)));
         assert_eq!(
-            infra_map.tables.get(&test_table.id()).unwrap().name,
+            infra_map
+                .tables
+                .get(&test_table.id(DEFAULT_DATABASE_NAME))
+                .unwrap()
+                .name,
             table_name
         );
     }
@@ -3546,9 +3553,15 @@ mod tests {
 
         assert_eq!(updated_tables.len(), 1);
         assert_eq!(updated_tables[0], table_name);
-        assert!(infra_map.tables.contains_key(&test_table.id()));
+        assert!(infra_map
+            .tables
+            .contains_key(&test_table.id(DEFAULT_DATABASE_NAME)));
         assert_eq!(
-            infra_map.tables.get(&test_table.id()).unwrap().name,
+            infra_map
+                .tables
+                .get(&test_table.id(DEFAULT_DATABASE_NAME))
+                .unwrap()
+                .name,
             table_name
         );
     }

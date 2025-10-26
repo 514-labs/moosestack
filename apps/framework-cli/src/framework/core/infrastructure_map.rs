@@ -2617,6 +2617,7 @@ mod tests {
         partial_infrastructure_map::LifeCycle,
     };
     use crate::framework::versions::Version;
+    use crate::infrastructure::olap::clickhouse::config::DEFAULT_DATABASE_NAME;
 
     #[test]
     fn test_compute_table_diff() {
@@ -4155,15 +4156,13 @@ mod diff_view_tests {
 
         // Ensure IDs are the same before insertion
         assert_eq!(
-            view_before.id(DEFAULT_DATABASE_NAME),
-            view_after.id(DEFAULT_DATABASE_NAME),
+            view_before.id(),
+            view_after.id(),
             "Test setup error: IDs should be the same for update test"
         );
 
-        map1.views
-            .insert(view_before.id(DEFAULT_DATABASE_NAME), view_before.clone());
-        map2.views
-            .insert(view_after.id(DEFAULT_DATABASE_NAME), view_after.clone());
+        map1.views.insert(view_before.id(), view_before.clone());
+        map2.views.insert(view_after.id(), view_after.clone());
 
         let changes = map1.diff_with_table_strategy(&map2, &DefaultTableDiffStrategy, true);
         assert_eq!(changes.olap_changes.len(), 1, "Expected one OLAP change");
@@ -4343,19 +4342,15 @@ mod diff_topic_to_table_sync_process_tests {
         }];
 
         assert_eq!(
-            process_before.id(DEFAULT_DATABASE_NAME),
-            process_after.id(DEFAULT_DATABASE_NAME),
+            process_before.id(),
+            process_after.id(),
             "Test setup error: IDs should be the same for update test"
         );
 
-        map1.topic_to_table_sync_processes.insert(
-            process_before.id(DEFAULT_DATABASE_NAME),
-            process_before.clone(),
-        );
-        map2.topic_to_table_sync_processes.insert(
-            process_after.id(DEFAULT_DATABASE_NAME),
-            process_after.clone(),
-        );
+        map1.topic_to_table_sync_processes
+            .insert(process_before.id(), process_before.clone());
+        map2.topic_to_table_sync_processes
+            .insert(process_after.id(), process_after.clone());
 
         let changes = map1.diff_with_table_strategy(&map2, &DefaultTableDiffStrategy, true);
         let process_change_found = changes
@@ -4501,19 +4496,15 @@ mod diff_topic_to_topic_sync_process_tests {
         process_after.source_primitive.name = "func1_new".to_string();
 
         assert_eq!(
-            process_before.id(DEFAULT_DATABASE_NAME),
-            process_after.id(DEFAULT_DATABASE_NAME),
+            process_before.id(),
+            process_after.id(),
             "Test setup error: IDs should be the same for update test"
         );
 
-        map1.topic_to_topic_sync_processes.insert(
-            process_before.id(DEFAULT_DATABASE_NAME),
-            process_before.clone(),
-        );
-        map2.topic_to_topic_sync_processes.insert(
-            process_after.id(DEFAULT_DATABASE_NAME),
-            process_after.clone(),
-        );
+        map1.topic_to_topic_sync_processes
+            .insert(process_before.id(), process_before.clone());
+        map2.topic_to_topic_sync_processes
+            .insert(process_after.id(), process_after.clone());
 
         let changes = map1.diff_with_table_strategy(&map2, &DefaultTableDiffStrategy, true);
         let process_change_found = changes
@@ -4683,19 +4674,15 @@ mod diff_function_process_tests {
         process_after.executable = PathBuf::from("path/to/new_func1.py");
 
         assert_eq!(
-            process_before.id(DEFAULT_DATABASE_NAME),
-            process_after.id(DEFAULT_DATABASE_NAME),
+            process_before.id(),
+            process_after.id(),
             "Test setup error: IDs should be the same for update test"
         );
 
-        map1.function_processes.insert(
-            process_before.id(DEFAULT_DATABASE_NAME),
-            process_before.clone(),
-        );
-        map2.function_processes.insert(
-            process_after.id(DEFAULT_DATABASE_NAME),
-            process_after.clone(),
-        );
+        map1.function_processes
+            .insert(process_before.id(), process_before.clone());
+        map2.function_processes
+            .insert(process_after.id(), process_after.clone());
 
         let changes = map1.diff_with_table_strategy(&map2, &DefaultTableDiffStrategy, true);
         let process_change_found = changes
@@ -4764,16 +4751,8 @@ mod diff_orchestration_worker_tests {
         );
         match process_change_found.unwrap() {
             ProcessChange::OrchestrationWorker(Change::Updated { before, after }) => {
-                assert_eq!(
-                    before.id(DEFAULT_DATABASE_NAME),
-                    id,
-                    "Before worker ID does not match"
-                );
-                assert_eq!(
-                    after.id(DEFAULT_DATABASE_NAME),
-                    id,
-                    "After worker ID does not match"
-                );
+                assert_eq!(before.id(), id, "Before worker ID does not match");
+                assert_eq!(after.id(), id, "After worker ID does not match");
                 // Can compare the workers directly if PartialEq is derived/implemented
                 assert_eq!(**before, worker, "Before worker does not match expected");
                 assert_eq!(**after, worker, "After worker does not match expected");
@@ -4803,11 +4782,7 @@ mod diff_orchestration_worker_tests {
         );
         match process_change_found.unwrap() {
             ProcessChange::OrchestrationWorker(Change::Added(w)) => {
-                assert_eq!(
-                    w.id(DEFAULT_DATABASE_NAME),
-                    id,
-                    "Added worker ID does not match"
-                );
+                assert_eq!(w.id(), id, "Added worker ID does not match");
                 assert_eq!(**w, worker, "Added worker does not match expected");
             }
             _ => panic!("Expected OrchestrationWorker Added change"),
@@ -4835,11 +4810,7 @@ mod diff_orchestration_worker_tests {
         );
         match process_change_found.unwrap() {
             ProcessChange::OrchestrationWorker(Change::Removed(w)) => {
-                assert_eq!(
-                    w.id(DEFAULT_DATABASE_NAME),
-                    id,
-                    "Removed worker ID does not match"
-                );
+                assert_eq!(w.id(), id, "Removed worker ID does not match");
                 assert_eq!(**w, worker, "Removed worker does not match expected");
             }
             _ => panic!("Expected OrchestrationWorker Removed change"),

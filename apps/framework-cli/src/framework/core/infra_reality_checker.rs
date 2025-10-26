@@ -304,6 +304,7 @@ mod tests {
     };
     use crate::framework::core::partial_infrastructure_map::LifeCycle;
     use crate::framework::versions::Version;
+    use crate::infrastructure::olap::clickhouse::config::DEFAULT_DATABASE_NAME;
     use crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine;
     use crate::infrastructure::olap::clickhouse::TableWithUnsupportedType;
     use async_trait::async_trait;
@@ -410,6 +411,7 @@ mod tests {
 
         // Create empty infrastructure map
         let mut infra_map = InfrastructureMap {
+            default_database: DEFAULT_DATABASE_NAME.to_string(),
             topics: HashMap::new(),
             api_endpoints: HashMap::new(),
             tables: HashMap::new(),
@@ -472,6 +474,7 @@ mod tests {
         };
 
         let mut infra_map = InfrastructureMap {
+            default_database: DEFAULT_DATABASE_NAME.to_string(),
             topics: HashMap::new(),
             api_endpoints: HashMap::new(),
             tables: HashMap::new(),
@@ -542,6 +545,7 @@ mod tests {
         };
 
         let mut infra_map = InfrastructureMap {
+            default_database: DEFAULT_DATABASE_NAME.to_string(),
             topics: HashMap::new(),
             api_endpoints: HashMap::new(),
             tables: HashMap::new(),
@@ -605,6 +609,7 @@ mod tests {
         };
 
         let mut infra_map = InfrastructureMap {
+            default_database: DEFAULT_DATABASE_NAME.to_string(),
             topics: HashMap::new(),
             api_endpoints: HashMap::new(),
             tables: HashMap::new(),
