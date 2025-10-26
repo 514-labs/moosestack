@@ -556,7 +556,10 @@ impl PartialInfrastructureMap {
     /// Returns a [`DmV2LoadingError`] if:
     /// * Secret resolution fails (e.g., environment variable not found)
     /// * Engine configuration is invalid
-    fn convert_tables(&self, default_database: &str) -> Result<HashMap<String, Table>, DmV2LoadingError> {
+    fn convert_tables(
+        &self,
+        default_database: &str,
+    ) -> Result<HashMap<String, Table>, DmV2LoadingError> {
         self.tables
             .values()
             .map(|partial_table| {
