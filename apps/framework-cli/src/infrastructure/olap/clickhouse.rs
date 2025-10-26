@@ -573,7 +573,7 @@ async fn execute_create_table(
     client: &ConfiguredDBClient,
     is_dev: bool,
 ) -> Result<(), ClickhouseChangesError> {
-    log::info!("Executing CreateTable: {:?}", table.id());
+    log::info!("Executing CreateTable: {:?}", table.id(db_name));
     let clickhouse_table = std_table_to_clickhouse_table(table)?;
     // Use table's database if specified, otherwise use global database
     let target_database = table.database.as_deref().unwrap_or(db_name);

@@ -4,6 +4,7 @@ use crate::framework::core::infrastructure::view::{View, ViewType};
 use crate::framework::core::infrastructure::DataLineage;
 use crate::framework::core::infrastructure::InfrastructureSignature;
 use crate::framework::core::infrastructure_map::{Change, ColumnChange, OlapChange, TableChange};
+use crate::infrastructure::olap::clickhouse::config::DEFAULT_DATABASE_NAME;
 use crate::infrastructure::olap::clickhouse::SerializableOlapOperation;
 use petgraph::algo::toposort;
 use petgraph::graph::{DiGraph, NodeIndex};
@@ -345,42 +346,46 @@ impl AtomicOlapOperation {
     /// Returns the infrastructure signature associated with this operation
     pub fn resource_signature(&self) -> InfrastructureSignature {
         match self {
-            AtomicOlapOperation::CreateTable { table, .. } => {
-                InfrastructureSignature::Table { id: table.id() }
-            }
-            AtomicOlapOperation::DropTable { table, .. } => {
-                InfrastructureSignature::Table { id: table.id() }
-            }
-            AtomicOlapOperation::AddTableColumn { table, .. } => {
-                InfrastructureSignature::Table { id: table.id() }
-            }
-            AtomicOlapOperation::DropTableColumn { table, .. } => {
-                InfrastructureSignature::Table { id: table.id() }
-            }
+            AtomicOlapOperation::CreateTable { table, .. } => InfrastructureSignature::Table {
+                id: table.id(DEFAULT_DATABASE_NAME),
+            },
+            AtomicOlapOperation::DropTable { table, .. } => InfrastructureSignature::Table {
+                id: table.id(DEFAULT_DATABASE_NAME),
+            },
+            AtomicOlapOperation::AddTableColumn { table, .. } => InfrastructureSignature::Table {
+                id: table.id(DEFAULT_DATABASE_NAME),
+            },
+            AtomicOlapOperation::DropTableColumn { table, .. } => InfrastructureSignature::Table {
+                id: table.id(DEFAULT_DATABASE_NAME),
+            },
             AtomicOlapOperation::ModifyTableColumn { table, .. } => {
-                InfrastructureSignature::Table { id: table.id() }
+                InfrastructureSignature::Table {
+                    id: table.id(DEFAULT_DATABASE_NAME),
+                }
             }
             AtomicOlapOperation::ModifyTableSettings { table, .. } => {
-                InfrastructureSignature::Table { id: table.id() }
+                InfrastructureSignature::Table {
+                    id: table.id(DEFAULT_DATABASE_NAME),
+                }
             }
-            AtomicOlapOperation::ModifyTableTtl { table, .. } => {
-                InfrastructureSignature::Table { id: table.id() }
-            }
-            AtomicOlapOperation::ModifyColumnTtl { table, .. } => {
-                InfrastructureSignature::Table { id: table.id() }
-            }
-            AtomicOlapOperation::AddTableIndex { table, .. } => {
-                InfrastructureSignature::Table { id: table.id() }
-            }
-            AtomicOlapOperation::DropTableIndex { table, .. } => {
-                InfrastructureSignature::Table { id: table.id() }
-            }
-            AtomicOlapOperation::ModifySampleBy { table, .. } => {
-                InfrastructureSignature::Table { id: table.id() }
-            }
-            AtomicOlapOperation::RemoveSampleBy { table, .. } => {
-                InfrastructureSignature::Table { id: table.id() }
-            }
+            AtomicOlapOperation::ModifyTableTtl { table, .. } => InfrastructureSignature::Table {
+                id: table.id(DEFAULT_DATABASE_NAME),
+            },
+            AtomicOlapOperation::ModifyColumnTtl { table, .. } => InfrastructureSignature::Table {
+                id: table.id(DEFAULT_DATABASE_NAME),
+            },
+            AtomicOlapOperation::AddTableIndex { table, .. } => InfrastructureSignature::Table {
+                id: table.id(DEFAULT_DATABASE_NAME),
+            },
+            AtomicOlapOperation::DropTableIndex { table, .. } => InfrastructureSignature::Table {
+                id: table.id(DEFAULT_DATABASE_NAME),
+            },
+            AtomicOlapOperation::ModifySampleBy { table, .. } => InfrastructureSignature::Table {
+                id: table.id(DEFAULT_DATABASE_NAME),
+            },
+            AtomicOlapOperation::RemoveSampleBy { table, .. } => InfrastructureSignature::Table {
+                id: table.id(DEFAULT_DATABASE_NAME),
+            },
             AtomicOlapOperation::PopulateMaterializedView { view_name, .. } => {
                 InfrastructureSignature::SqlResource {
                     id: view_name.clone(),
@@ -1442,7 +1447,9 @@ mod tests {
         let op_create_b = AtomicOlapOperation::CreateTable {
             table: table_b.clone(),
             dependency_info: DependencyInfo {
-                pulls_data_from: vec![InfrastructureSignature::Table { id: table_a.id() }],
+                pulls_data_from: vec![InfrastructureSignature::Table {
+                    id: table_a.id(DEFAULT_DATABASE_NAME),
+                }],
                 pushes_data_to: vec![],
             },
         };
@@ -1450,7 +1457,9 @@ mod tests {
         let op_create_c = AtomicOlapOperation::CreateView {
             view: view_c.clone(),
             dependency_info: DependencyInfo {
-                pulls_data_from: vec![InfrastructureSignature::Table { id: table_b.id() }],
+                pulls_data_from: vec![InfrastructureSignature::Table {
+                    id: table_b.id(DEFAULT_DATABASE_NAME),
+                }],
                 pushes_data_to: vec![],
             },
         };
@@ -1548,7 +1557,9 @@ mod tests {
                 // Table A doesn't depend on anything
                 pulls_data_from: vec![],
                 // Table A is a dependency for Table B
-                pushes_data_to: vec![InfrastructureSignature::Table { id: table_b.id() }],
+                pushes_data_to: vec![InfrastructureSignature::Table {
+                    id: table_b.id(DEFAULT_DATABASE_NAME),
+                }],
             },
         };
 
@@ -1557,7 +1568,9 @@ mod tests {
             table: table_b.clone(),
             dependency_info: DependencyInfo {
                 // Table B depends on Table A
-                pulls_data_from: vec![InfrastructureSignature::Table { id: table_a.id() }],
+                pulls_data_from: vec![InfrastructureSignature::Table {
+                    id: table_a.id(DEFAULT_DATABASE_NAME),
+                }],
                 // View C depends on Table B
                 pushes_data_to: vec![InfrastructureSignature::View {
                     id: "view_c".to_string(),
@@ -1570,7 +1583,9 @@ mod tests {
             view: view_c.clone(),
             dependency_info: DependencyInfo {
                 // View C depends on Table B
-                pulls_data_from: vec![InfrastructureSignature::Table { id: table_b.id() }],
+                pulls_data_from: vec![InfrastructureSignature::Table {
+                    id: table_b.id(DEFAULT_DATABASE_NAME),
+                }],
                 // View C doesn't push data to anything
                 pushes_data_to: vec![],
             },
@@ -1680,7 +1695,9 @@ mod tests {
             column: column.clone(),
             after_column: None,
             dependency_info: DependencyInfo {
-                pulls_data_from: vec![InfrastructureSignature::Table { id: table.id() }],
+                pulls_data_from: vec![InfrastructureSignature::Table {
+                    id: table.id(DEFAULT_DATABASE_NAME),
+                }],
                 pushes_data_to: vec![],
             },
         };
@@ -1689,7 +1706,9 @@ mod tests {
         let op_create_view = AtomicOlapOperation::CreateView {
             view: view.clone(),
             dependency_info: DependencyInfo {
-                pulls_data_from: vec![InfrastructureSignature::Table { id: table.id() }],
+                pulls_data_from: vec![InfrastructureSignature::Table {
+                    id: table.id(DEFAULT_DATABASE_NAME),
+                }],
                 pushes_data_to: vec![],
             },
         };
@@ -2017,7 +2036,9 @@ mod tests {
         let op_create_b = AtomicOlapOperation::CreateTable {
             table: table_b.clone(),
             dependency_info: DependencyInfo {
-                pulls_data_from: vec![InfrastructureSignature::Table { id: table_a.id() }],
+                pulls_data_from: vec![InfrastructureSignature::Table {
+                    id: table_a.id(DEFAULT_DATABASE_NAME),
+                }],
                 pushes_data_to: vec![],
             },
         };
@@ -2025,7 +2046,9 @@ mod tests {
         let op_create_c = AtomicOlapOperation::CreateTable {
             table: table_c.clone(),
             dependency_info: DependencyInfo {
-                pulls_data_from: vec![InfrastructureSignature::Table { id: table_a.id() }],
+                pulls_data_from: vec![InfrastructureSignature::Table {
+                    id: table_a.id(DEFAULT_DATABASE_NAME),
+                }],
                 pushes_data_to: vec![],
             },
         };
@@ -2034,8 +2057,12 @@ mod tests {
             table: table_d.clone(),
             dependency_info: DependencyInfo {
                 pulls_data_from: vec![
-                    InfrastructureSignature::Table { id: table_b.id() },
-                    InfrastructureSignature::Table { id: table_c.id() },
+                    InfrastructureSignature::Table {
+                        id: table_b.id(DEFAULT_DATABASE_NAME),
+                    },
+                    InfrastructureSignature::Table {
+                        id: table_c.id(DEFAULT_DATABASE_NAME),
+                    },
                 ],
                 pushes_data_to: vec![],
             },
@@ -2044,7 +2071,9 @@ mod tests {
         let op_create_e = AtomicOlapOperation::CreateTable {
             table: table_e.clone(),
             dependency_info: DependencyInfo {
-                pulls_data_from: vec![InfrastructureSignature::Table { id: table_d.id() }],
+                pulls_data_from: vec![InfrastructureSignature::Table {
+                    id: table_d.id(DEFAULT_DATABASE_NAME),
+                }],
                 pushes_data_to: vec![],
             },
         };
@@ -2178,8 +2207,12 @@ mod tests {
                     .to_string(),
             ],
             teardown: vec!["DROP VIEW mv_a_to_b".to_string()],
-            pulls_data_from: vec![InfrastructureSignature::Table { id: table_a.id() }],
-            pushes_data_to: vec![InfrastructureSignature::Table { id: table_b.id() }],
+            pulls_data_from: vec![InfrastructureSignature::Table {
+                id: table_a.id(DEFAULT_DATABASE_NAME),
+            }],
+            pushes_data_to: vec![InfrastructureSignature::Table {
+                id: table_b.id(DEFAULT_DATABASE_NAME),
+            }],
         };
 
         // Create operations
@@ -2202,8 +2235,12 @@ mod tests {
         let op_setup_mv = AtomicOlapOperation::RunSetupSql {
             resource: mv_sql_resource.clone(),
             dependency_info: DependencyInfo {
-                pulls_data_from: vec![InfrastructureSignature::Table { id: table_a.id() }],
-                pushes_data_to: vec![InfrastructureSignature::Table { id: table_b.id() }],
+                pulls_data_from: vec![InfrastructureSignature::Table {
+                    id: table_a.id(DEFAULT_DATABASE_NAME),
+                }],
+                pushes_data_to: vec![InfrastructureSignature::Table {
+                    id: table_b.id(DEFAULT_DATABASE_NAME),
+                }],
             },
         };
 
@@ -2312,8 +2349,12 @@ mod tests {
                     .to_string(),
             ],
             teardown: vec!["DROP VIEW mv_a_to_b".to_string()],
-            pulls_data_from: vec![InfrastructureSignature::Table { id: table_a.id() }],
-            pushes_data_to: vec![InfrastructureSignature::Table { id: table_b.id() }],
+            pulls_data_from: vec![InfrastructureSignature::Table {
+                id: table_a.id(DEFAULT_DATABASE_NAME),
+            }],
+            pushes_data_to: vec![InfrastructureSignature::Table {
+                id: table_b.id(DEFAULT_DATABASE_NAME),
+            }],
         };
 
         // MV - no dependencies for teardown (it should be removed first)
@@ -2454,8 +2495,12 @@ mod tests {
                     .to_string(),
             ],
             teardown: vec!["DROP VIEW mv_a_to_b".to_string()],
-            pulls_data_from: vec![InfrastructureSignature::Table { id: table_a.id() }],
-            pushes_data_to: vec![InfrastructureSignature::Table { id: table_b.id() }],
+            pulls_data_from: vec![InfrastructureSignature::Table {
+                id: table_a.id(DEFAULT_DATABASE_NAME),
+            }],
+            pushes_data_to: vec![InfrastructureSignature::Table {
+                id: table_b.id(DEFAULT_DATABASE_NAME),
+            }],
         };
 
         // Create setup operations
@@ -2481,8 +2526,12 @@ mod tests {
         let op_create_mv = AtomicOlapOperation::RunSetupSql {
             resource: resource.clone(),
             dependency_info: DependencyInfo {
-                pulls_data_from: vec![InfrastructureSignature::Table { id: table_a.id() }],
-                pushes_data_to: vec![InfrastructureSignature::Table { id: table_b.id() }],
+                pulls_data_from: vec![InfrastructureSignature::Table {
+                    id: table_a.id(DEFAULT_DATABASE_NAME),
+                }],
+                pushes_data_to: vec![InfrastructureSignature::Table {
+                    id: table_b.id(DEFAULT_DATABASE_NAME),
+                }],
             },
         };
 

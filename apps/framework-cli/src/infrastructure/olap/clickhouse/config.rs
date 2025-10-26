@@ -9,6 +9,11 @@ use crate::utilities::clickhouse_url::convert_http_to_clickhouse;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
+/// Default database name used by ClickHouse when not otherwise specified.
+/// This is used as the default value for ClickHouseConfig::db_name and for
+/// normalizing table IDs when table.database is None.
+pub const DEFAULT_DATABASE_NAME: &str = "local";
+
 fn default_native_port() -> i32 {
     9000
 }
@@ -37,7 +42,7 @@ pub struct ClickHouseConfig {
 impl Default for ClickHouseConfig {
     fn default() -> Self {
         Self {
-            db_name: "local".to_string(),
+            db_name: DEFAULT_DATABASE_NAME.to_string(),
             user: "panda".to_string(),
             password: "pandapass".to_string(),
             use_ssl: false,

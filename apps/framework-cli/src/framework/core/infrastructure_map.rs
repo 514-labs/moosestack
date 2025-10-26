@@ -51,6 +51,7 @@ use crate::framework::core::infrastructure_map::Change::Added;
 use crate::framework::languages::SupportedLanguages;
 use crate::framework::python::datamodel_config::load_main_py;
 use crate::framework::scripts::Workflow;
+use crate::infrastructure::olap::clickhouse::config::DEFAULT_DATABASE_NAME;
 use crate::infrastructure::redis::redis_client::RedisClient;
 use crate::project::Project;
 use crate::proto::infrastructure_map::InfrastructureMap as ProtoInfrastructureMap;
@@ -466,6 +467,11 @@ impl InfraChanges {
 
 /// Represents the complete infrastructure map of the system, containing all components and their relationships
 ///
+/// Default function for serde to provide default database name
+fn default_database_name() -> String {
+    DEFAULT_DATABASE_NAME.to_string()
+}
+
 /// The `InfrastructureMap` is the central data structure of the Moose framework's infrastructure management.
 /// It contains a comprehensive representation of all infrastructure components and their relationships,
 /// serving as the source of truth for the entire system architecture.
@@ -478,6 +484,8 @@ impl InfraChanges {
 /// Helper methods facilitate navigating the map and finding related components.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct InfrastructureMap {
+    #[serde(default = "default_database_name")]
+    pub default_database: String,
     /// Collection of topics indexed by topic ID
     pub topics: HashMap<String, Topic>,
 
@@ -546,6 +554,8 @@ impl InfrastructureMap {
     /// # Returns
     /// A complete infrastructure map with all components and their relationships
     pub fn new(project: &Project, primitive_map: PrimitiveMap) -> InfrastructureMap {
+        // Get the default database name from the project configuration
+        let default_database = &project.clickhouse_config.db_name;
         let mut tables = HashMap::new();
         let mut views = HashMap::new();
         let mut topics = HashMap::new();
@@ -574,9 +584,10 @@ impl InfrastructureMap {
                 // If storage is enabled for this data model, create necessary infrastructure
                 if data_model.config.storage.enabled {
                     let table = data_model.to_table();
-                    let topic_to_table_sync_process = TopicToTableSyncProcess::new(&topic, &table);
+                    let topic_to_table_sync_process =
+                        TopicToTableSyncProcess::new(&topic, &table, default_database);
 
-                    tables.insert(table.id(), table);
+                    tables.insert(table.id(default_database), table);
                     topic_to_table_sync_processes.insert(
                         topic_to_table_sync_process.id(),
                         topic_to_table_sync_process,
@@ -685,7 +696,7 @@ impl InfrastructureMap {
         orchestration_workers.insert(orchestration_worker.id(), orchestration_worker);
 
         InfrastructureMap {
-            // primitive_map,
+            default_database: default_database.clone(),
             topics,
             api_endpoints,
             topic_to_table_sync_processes,
@@ -2162,6 +2173,7 @@ impl InfrastructureMap {
         let proto = ProtoInfrastructureMap::parse_from_bytes(&bytes)?;
 
         Ok(InfrastructureMap {
+            default_database: default_database_name(),
             topics: proto
                 .topics
                 .into_iter()
@@ -2224,7 +2236,7 @@ impl InfrastructureMap {
     /// # Arguments
     /// * `table` - The table to add
     pub fn add_table(&mut self, table: Table) {
-        self.tables.insert(table.id(), table);
+        self.tables.insert(table.id(&self.default_database), table);
     }
 
     /// Finds a table by name
@@ -2264,7 +2276,11 @@ impl InfrastructureMap {
         } else {
             load_main_py(project, &project.project_location).await?
         };
-        let infra_map = partial.into_infra_map(project.language, &project.main_file());
+        let infra_map = partial.into_infra_map(
+            project.language,
+            &project.main_file(),
+            &project.clickhouse_config.db_name,
+        );
 
         // Provide explicit feedback when streams are defined but streaming engine is disabled
         if !project.features.streaming_engine && infra_map.uses_streaming() {
@@ -2568,6 +2584,7 @@ impl Default for InfrastructureMap {
     /// An empty infrastructure map
     fn default() -> Self {
         Self {
+            default_database: default_database_name(),
             topics: HashMap::new(),
             api_endpoints: HashMap::new(),
             tables: HashMap::new(),
@@ -2820,7 +2837,7 @@ mod tests {
             super::diff_tests::create_test_table("external_table", "1.0");
         externally_managed_table.life_cycle = LifeCycle::ExternallyManaged;
         map1.tables.insert(
-            externally_managed_table.id(),
+            externally_managed_table.id(DEFAULT_DATABASE_NAME),
             externally_managed_table.clone(),
         );
 
@@ -4138,13 +4155,15 @@ mod diff_view_tests {
 
         // Ensure IDs are the same before insertion
         assert_eq!(
-            view_before.id(),
-            view_after.id(),
+            view_before.id(DEFAULT_DATABASE_NAME),
+            view_after.id(DEFAULT_DATABASE_NAME),
             "Test setup error: IDs should be the same for update test"
         );
 
-        map1.views.insert(view_before.id(), view_before.clone());
-        map2.views.insert(view_after.id(), view_after.clone());
+        map1.views
+            .insert(view_before.id(DEFAULT_DATABASE_NAME), view_before.clone());
+        map2.views
+            .insert(view_after.id(DEFAULT_DATABASE_NAME), view_after.clone());
 
         let changes = map1.diff_with_table_strategy(&map2, &DefaultTableDiffStrategy, true);
         assert_eq!(changes.olap_changes.len(), 1, "Expected one OLAP change");
@@ -4324,15 +4343,19 @@ mod diff_topic_to_table_sync_process_tests {
         }];
 
         assert_eq!(
-            process_before.id(),
-            process_after.id(),
+            process_before.id(DEFAULT_DATABASE_NAME),
+            process_after.id(DEFAULT_DATABASE_NAME),
             "Test setup error: IDs should be the same for update test"
         );
 
-        map1.topic_to_table_sync_processes
-            .insert(process_before.id(), process_before.clone());
-        map2.topic_to_table_sync_processes
-            .insert(process_after.id(), process_after.clone());
+        map1.topic_to_table_sync_processes.insert(
+            process_before.id(DEFAULT_DATABASE_NAME),
+            process_before.clone(),
+        );
+        map2.topic_to_table_sync_processes.insert(
+            process_after.id(DEFAULT_DATABASE_NAME),
+            process_after.clone(),
+        );
 
         let changes = map1.diff_with_table_strategy(&map2, &DefaultTableDiffStrategy, true);
         let process_change_found = changes
@@ -4478,15 +4501,19 @@ mod diff_topic_to_topic_sync_process_tests {
         process_after.source_primitive.name = "func1_new".to_string();
 
         assert_eq!(
-            process_before.id(),
-            process_after.id(),
+            process_before.id(DEFAULT_DATABASE_NAME),
+            process_after.id(DEFAULT_DATABASE_NAME),
             "Test setup error: IDs should be the same for update test"
         );
 
-        map1.topic_to_topic_sync_processes
-            .insert(process_before.id(), process_before.clone());
-        map2.topic_to_topic_sync_processes
-            .insert(process_after.id(), process_after.clone());
+        map1.topic_to_topic_sync_processes.insert(
+            process_before.id(DEFAULT_DATABASE_NAME),
+            process_before.clone(),
+        );
+        map2.topic_to_topic_sync_processes.insert(
+            process_after.id(DEFAULT_DATABASE_NAME),
+            process_after.clone(),
+        );
 
         let changes = map1.diff_with_table_strategy(&map2, &DefaultTableDiffStrategy, true);
         let process_change_found = changes
@@ -4656,15 +4683,19 @@ mod diff_function_process_tests {
         process_after.executable = PathBuf::from("path/to/new_func1.py");
 
         assert_eq!(
-            process_before.id(),
-            process_after.id(),
+            process_before.id(DEFAULT_DATABASE_NAME),
+            process_after.id(DEFAULT_DATABASE_NAME),
             "Test setup error: IDs should be the same for update test"
         );
 
-        map1.function_processes
-            .insert(process_before.id(), process_before.clone());
-        map2.function_processes
-            .insert(process_after.id(), process_after.clone());
+        map1.function_processes.insert(
+            process_before.id(DEFAULT_DATABASE_NAME),
+            process_before.clone(),
+        );
+        map2.function_processes.insert(
+            process_after.id(DEFAULT_DATABASE_NAME),
+            process_after.clone(),
+        );
 
         let changes = map1.diff_with_table_strategy(&map2, &DefaultTableDiffStrategy, true);
         let process_change_found = changes
@@ -4733,8 +4764,16 @@ mod diff_orchestration_worker_tests {
         );
         match process_change_found.unwrap() {
             ProcessChange::OrchestrationWorker(Change::Updated { before, after }) => {
-                assert_eq!(before.id(), id, "Before worker ID does not match");
-                assert_eq!(after.id(), id, "After worker ID does not match");
+                assert_eq!(
+                    before.id(DEFAULT_DATABASE_NAME),
+                    id,
+                    "Before worker ID does not match"
+                );
+                assert_eq!(
+                    after.id(DEFAULT_DATABASE_NAME),
+                    id,
+                    "After worker ID does not match"
+                );
                 // Can compare the workers directly if PartialEq is derived/implemented
                 assert_eq!(**before, worker, "Before worker does not match expected");
                 assert_eq!(**after, worker, "After worker does not match expected");
@@ -4764,7 +4803,11 @@ mod diff_orchestration_worker_tests {
         );
         match process_change_found.unwrap() {
             ProcessChange::OrchestrationWorker(Change::Added(w)) => {
-                assert_eq!(w.id(), id, "Added worker ID does not match");
+                assert_eq!(
+                    w.id(DEFAULT_DATABASE_NAME),
+                    id,
+                    "Added worker ID does not match"
+                );
                 assert_eq!(**w, worker, "Added worker does not match expected");
             }
             _ => panic!("Expected OrchestrationWorker Added change"),
@@ -4792,7 +4835,11 @@ mod diff_orchestration_worker_tests {
         );
         match process_change_found.unwrap() {
             ProcessChange::OrchestrationWorker(Change::Removed(w)) => {
-                assert_eq!(w.id(), id, "Removed worker ID does not match");
+                assert_eq!(
+                    w.id(DEFAULT_DATABASE_NAME),
+                    id,
+                    "Removed worker ID does not match"
+                );
                 assert_eq!(**w, worker, "Removed worker does not match expected");
             }
             _ => panic!("Expected OrchestrationWorker Removed change"),

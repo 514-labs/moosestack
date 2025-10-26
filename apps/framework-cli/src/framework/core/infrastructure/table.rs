@@ -304,14 +304,14 @@ pub struct Table {
 impl Table {
     // This is only to be used in the context of the new core
     // currently name includes the version, here we are separating that out.
-    pub fn id(&self) -> String {
+    pub fn id(&self, default_database: &str) -> String {
         // Table ID includes database, name, and version
-        // - database: Use DEFAULT_DATABASE when None to match explicit "local" from ClickHouse
-        // - This ensures tables with database: None and database: Some("local") have the same ID
+        // - database: Use the configured default_database when None to match explicit database from ClickHouse
+        // - This ensures tables with database: None and database: Some(configured_db) have the same ID
         // - Tables in different databases will have different IDs (preventing collisions)
 
-        // Get the database, defaulting to DEFAULT_DATABASE if None
-        let db = self.database.as_deref().unwrap_or(DEFAULT_DATABASE);
+        // Get the database, defaulting to the configured default_database if None
+        let db = self.database.as_deref().unwrap_or(default_database);
 
         // Build base_id with name and optional version
         let base_id = self.version.as_ref().map_or(self.name.clone(), |v| {
@@ -1559,7 +1559,7 @@ mod tests {
             database: None,
             table_ttl_setting: None,
         };
-        assert_eq!(table1.id(), "local_users");
+        assert_eq!(table1.id(DEFAULT_DATABASE_NAME), "local_users");
 
         // Test 2: Table with explicit "local" database - should match table1
         let table2 = Table {
@@ -1567,10 +1567,10 @@ mod tests {
             database: Some("local".to_string()),
             ..table1.clone()
         };
-        assert_eq!(table2.id(), "local_users");
+        assert_eq!(table2.id(DEFAULT_DATABASE_NAME), "local_users");
         assert_eq!(
-            table1.id(),
-            table2.id(),
+            table1.id(DEFAULT_DATABASE_NAME),
+            table2.id(DEFAULT_DATABASE_NAME),
             "database: None and database: Some('local') should produce same ID"
         );
 
@@ -1580,7 +1580,7 @@ mod tests {
             database: Some("analytics".to_string()),
             ..table1.clone()
         };
-        assert_eq!(table2b.id(), "analytics_users");
+        assert_eq!(table2b.id(DEFAULT_DATABASE_NAME), "analytics_users");
 
         // Test 3: Legacy format - table name contains database prefix (backward compatibility)
         let table3 = Table {
@@ -1588,7 +1588,7 @@ mod tests {
             database: None,
             ..table1.clone()
         };
-        assert_eq!(table3.id(), "analytics.users");
+        assert_eq!(table3.id(DEFAULT_DATABASE_NAME), "analytics.users");
 
         // Test 4: CRITICAL - Adding database field to legacy format should NOT change ID
         let table4 = Table {
@@ -1597,7 +1597,7 @@ mod tests {
             ..table1.clone()
         };
         assert_eq!(
-            table4.id(),
+            table4.id(DEFAULT_DATABASE_NAME),
             "analytics.users",
             "ID should remain stable when database field is added to legacy table name format"
         );
@@ -1609,7 +1609,7 @@ mod tests {
             ..table1.clone()
         };
         assert_eq!(
-            table5.id(),
+            table5.id(DEFAULT_DATABASE_NAME),
             "analytics.users",
             "ID should use name (which contains dot) even if database field differs"
         );
@@ -1621,7 +1621,7 @@ mod tests {
             database: Some("analytics".to_string()),
             ..table1.clone()
         };
-        assert_eq!(table6.id(), "analytics_users_1_0");
+        assert_eq!(table6.id(DEFAULT_DATABASE_NAME), "analytics_users_1_0");
 
         // Test 7: With version and default database
         let table7 = Table {
@@ -1630,6 +1630,6 @@ mod tests {
             database: None,
             ..table1.clone()
         };
-        assert_eq!(table7.id(), "local_users_1_0");
+        assert_eq!(table7.id(DEFAULT_DATABASE_NAME), "local_users_1_0");
     }
 }
