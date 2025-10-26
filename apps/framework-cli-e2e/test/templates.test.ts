@@ -426,7 +426,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
             if (!ddl.includes("`status` String DEFAULT 'pending'")) {
               throw new Error(`Initial status DEFAULT not found. DDL: ${ddl}`);
             }
-            if (!ddl.includes("`count` Int32 DEFAULT 0")) {
+            if (!ddl.includes("`count` UInt32 DEFAULT 0")) {
               throw new Error(`Initial count DEFAULT not found. DDL: ${ddl}`);
             }
           },
