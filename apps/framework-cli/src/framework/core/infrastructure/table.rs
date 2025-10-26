@@ -43,6 +43,10 @@ pub const METADATA_PREFIX: &str = "[MOOSE_METADATA:DO_NOT_MODIFY] ";
 /// This allows for future format changes while maintaining backward compatibility.
 pub const METADATA_VERSION: u32 = 1;
 
+/// Default database name used when table.database is None
+/// This must match the default in ClickHouseConfig::default()
+pub const DEFAULT_DATABASE: &str = "local";
+
 /// Root structure for column metadata stored in ClickHouse column comments.
 ///
 /// This metadata preserves the original TypeScript enum definitions to solve
@@ -301,14 +305,25 @@ impl Table {
     // This is only to be used in the context of the new core
     // currently name includes the version, here we are separating that out.
     pub fn id(&self) -> String {
-        // Table ID is based on name and version only
-        // Database field is NOT included in the ID because:
-        // 1. Tables should match for diffing even if database field differs
-        // 2. database: None (use default) should match database: Some("local") when "local" is the default
-        // 3. The database field is a configuration property, not part of table identity
-        self.version.as_ref().map_or(self.name.clone(), |v| {
+        // Table ID includes database, name, and version
+        // - database: Use DEFAULT_DATABASE when None to match explicit "local" from ClickHouse
+        // - This ensures tables with database: None and database: Some("local") have the same ID
+        // - Tables in different databases will have different IDs (preventing collisions)
+
+        // Get the database, defaulting to DEFAULT_DATABASE if None
+        let db = self.database.as_deref().unwrap_or(DEFAULT_DATABASE);
+
+        // Build base_id with name and optional version
+        let base_id = self.version.as_ref().map_or(self.name.clone(), |v| {
             format!("{}_{}", self.name, v.as_suffix())
-        })
+        });
+
+        // Only include database prefix if name doesn't already contain a dot (fully qualified name)
+        if self.name.contains('.') {
+            base_id
+        } else {
+            format!("{}_{}", db, base_id)
+        }
     }
 
     /// Computes a hash of non-alterable parameters including engine params and database
@@ -1523,7 +1538,7 @@ mod tests {
     fn test_table_id_with_database_field() {
         use crate::framework::core::infrastructure_map::PrimitiveTypes;
 
-        // Test 1: Simple table without database field
+        // Test 1: Simple table without database field - uses DEFAULT_DATABASE
         let table1 = Table {
             name: "users".to_string(),
             columns: vec![],
@@ -1544,16 +1559,28 @@ mod tests {
             database: None,
             table_ttl_setting: None,
         };
-        assert_eq!(table1.id(), "users");
+        assert_eq!(table1.id(), "local_users");
 
-        // Test 2: Table with explicit database field
-        // Database field should NOT be included in ID (it's a config property, not identity)
+        // Test 2: Table with explicit "local" database - should match table1
         let table2 = Table {
+            name: "users".to_string(),
+            database: Some("local".to_string()),
+            ..table1.clone()
+        };
+        assert_eq!(table2.id(), "local_users");
+        assert_eq!(
+            table1.id(),
+            table2.id(),
+            "database: None and database: Some('local') should produce same ID"
+        );
+
+        // Test 2b: Table with different database - should have different ID
+        let table2b = Table {
             name: "users".to_string(),
             database: Some("analytics".to_string()),
             ..table1.clone()
         };
-        assert_eq!(table2.id(), "users");
+        assert_eq!(table2b.id(), "analytics_users");
 
         // Test 3: Legacy format - table name contains database prefix (backward compatibility)
         let table3 = Table {
@@ -1587,14 +1614,22 @@ mod tests {
             "ID should use name (which contains dot) even if database field differs"
         );
 
-        // Test 6: With version
-        // Database field should NOT be included in ID (it's a config property, not identity)
+        // Test 6: With version - database should be included
         let table6 = Table {
             name: "users".to_string(),
             version: Some(Version::from_string("1.0".to_string())),
             database: Some("analytics".to_string()),
             ..table1.clone()
         };
-        assert_eq!(table6.id(), "users_1_0");
+        assert_eq!(table6.id(), "analytics_users_1_0");
+
+        // Test 7: With version and default database
+        let table7 = Table {
+            name: "users".to_string(),
+            version: Some(Version::from_string("1.0".to_string())),
+            database: None,
+            ..table1.clone()
+        };
+        assert_eq!(table7.id(), "local_users_1_0");
     }
 }
