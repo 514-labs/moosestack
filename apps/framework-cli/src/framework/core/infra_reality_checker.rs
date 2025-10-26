@@ -213,6 +213,7 @@ impl<T: OlapOperations> InfraRealityChecker<T> {
                         &mut changes,
                         // respect_life_cycle is false to not hide the difference
                         false,
+                        &infra_map.default_database,
                     );
                     debug!(
                         "Found {} changes for table {}: {:?}",

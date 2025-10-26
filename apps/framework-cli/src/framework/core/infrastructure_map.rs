@@ -77,6 +77,7 @@ pub trait TableDiffStrategy {
     /// * `after` - The table after changes
     /// * `column_changes` - Detailed column-level changes
     /// * `order_by_change` - Changes to the ORDER BY clause
+    /// * `default_database` - The configured default database name for equivalence checks
     ///
     /// # Returns
     /// A vector of `OlapChange` representing the actual operations needed
@@ -86,6 +87,7 @@ pub trait TableDiffStrategy {
         after: &Table,
         column_changes: Vec<ColumnChange>,
         order_by_change: OrderByChange,
+        default_database: &str,
     ) -> Vec<OlapChange>;
 }
 
@@ -106,6 +108,7 @@ impl TableDiffStrategy for DefaultTableDiffStrategy {
         after: &Table,
         column_changes: Vec<ColumnChange>,
         order_by_change: OrderByChange,
+        _default_database: &str,
     ) -> Vec<OlapChange> {
         // Most databases can handle all changes via ALTER TABLE operations
         // Return the standard table update change
@@ -924,6 +927,7 @@ impl InfrastructureMap {
             &mut changes.olap_changes,
             table_diff_strategy,
             respect_life_cycle,
+            &self.default_database,
         );
         let table_changes = changes.olap_changes.len() - olap_changes_len_before;
         log::info!("Table changes detected: {}", table_changes);
@@ -1639,12 +1643,14 @@ impl InfrastructureMap {
     /// * `target_tables` - HashMap of target tables to compare against
     /// * `olap_changes` - Mutable vector to collect the identified changes
     /// * `strategy` - Strategy for handling database-specific table diffing logic
+    /// * `default_database` - The configured default database name
     pub fn diff_tables_with_strategy(
         self_tables: &HashMap<String, Table>,
         target_tables: &HashMap<String, Table>,
         olap_changes: &mut Vec<OlapChange>,
         strategy: &dyn TableDiffStrategy,
         respect_life_cycle: bool,
+        default_database: &str,
     ) {
         log::info!(
             "Analyzing table differences between {} source tables and {} target tables",
@@ -1751,6 +1757,7 @@ impl InfrastructureMap {
                                 target_table,
                                 column_changes,
                                 order_by_change,
+                                default_database,
                             );
 
                             // Only count as a table update if the strategy returned actual operations
@@ -1825,11 +1832,13 @@ impl InfrastructureMap {
     /// * `self_tables` - HashMap of source tables to compare from
     /// * `target_tables` - HashMap of target tables to compare against
     /// * `olap_changes` - Mutable vector to collect the identified changes
+    /// * `default_database` - The configured default database name
     pub fn diff_tables(
         self_tables: &HashMap<String, Table>,
         target_tables: &HashMap<String, Table>,
         olap_changes: &mut Vec<OlapChange>,
         respect_life_cycle: bool,
+        default_database: &str,
     ) {
         let default_strategy = DefaultTableDiffStrategy;
         Self::diff_tables_with_strategy(
@@ -1838,6 +1847,7 @@ impl InfrastructureMap {
             olap_changes,
             &default_strategy,
             respect_life_cycle,
+            default_database,
         );
     }
 

@@ -259,6 +259,7 @@ impl TableDiffStrategy for ClickHouseTableDiffStrategy {
         after: &Table,
         column_changes: Vec<ColumnChange>,
         order_by_change: OrderByChange,
+        default_database: &str,
     ) -> Vec<OlapChange> {
         // Check if ORDER BY has changed
         let order_by_changed = order_by_change.before != order_by_change.after;
@@ -274,21 +275,19 @@ impl TableDiffStrategy for ClickHouseTableDiffStrategy {
         }
 
         // Check if database has changed
-        // Note: database: None means "use default database" (DEFAULT_DATABASE_NAME)
+        // Note: database: None means "use default database" (from config)
         // Only treat it as a real change if both are Some() and different, OR
         // if one is None and the other is Some(non-default)
-        use crate::infrastructure::olap::clickhouse::config::DEFAULT_DATABASE_NAME;
-
         let database_changed = match (&before.database, &after.database) {
             (Some(before_db), Some(after_db)) => before_db != after_db,
             (None, None) => false,
-            // If one is None and one is Some(DEFAULT_DATABASE_NAME), treat as equivalent
-            (None, Some(db)) | (Some(db), None) => db != DEFAULT_DATABASE_NAME,
+            // If one is None and one is Some(default_database), treat as equivalent
+            (None, Some(db)) | (Some(db), None) => db != default_database,
         };
 
         if database_changed {
-            let before_db = before.database.as_deref().unwrap_or(DEFAULT_DATABASE_NAME);
-            let after_db = after.database.as_deref().unwrap_or(DEFAULT_DATABASE_NAME);
+            let before_db = before.database.as_deref().unwrap_or(default_database);
+            let after_db = after.database.as_deref().unwrap_or(default_database);
 
             let error_message = format_database_change_error(&before.name, before_db, after_db);
 
