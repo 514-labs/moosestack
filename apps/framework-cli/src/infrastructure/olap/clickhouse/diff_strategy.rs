@@ -274,21 +274,21 @@ impl TableDiffStrategy for ClickHouseTableDiffStrategy {
         }
 
         // Check if database has changed
-        // Note: database: None means "use default database" (DEFAULT_DATABASE)
+        // Note: database: None means "use default database" (DEFAULT_DATABASE_NAME)
         // Only treat it as a real change if both are Some() and different, OR
         // if one is None and the other is Some(non-default)
-        use crate::framework::core::infrastructure::table::DEFAULT_DATABASE;
+        use crate::infrastructure::olap::clickhouse::config::DEFAULT_DATABASE_NAME;
 
         let database_changed = match (&before.database, &after.database) {
             (Some(before_db), Some(after_db)) => before_db != after_db,
             (None, None) => false,
-            // If one is None and one is Some(DEFAULT_DATABASE), treat as equivalent
-            (None, Some(db)) | (Some(db), None) => db != DEFAULT_DATABASE,
+            // If one is None and one is Some(DEFAULT_DATABASE_NAME), treat as equivalent
+            (None, Some(db)) | (Some(db), None) => db != DEFAULT_DATABASE_NAME,
         };
 
         if database_changed {
-            let before_db = before.database.as_deref().unwrap_or(DEFAULT_DATABASE);
-            let after_db = after.database.as_deref().unwrap_or(DEFAULT_DATABASE);
+            let before_db = before.database.as_deref().unwrap_or(DEFAULT_DATABASE_NAME);
+            let after_db = after.database.as_deref().unwrap_or(DEFAULT_DATABASE_NAME);
 
             let error_message = format_database_change_error(&before.name, before_db, after_db);
 

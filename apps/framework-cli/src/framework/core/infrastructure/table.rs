@@ -43,10 +43,6 @@ pub const METADATA_PREFIX: &str = "[MOOSE_METADATA:DO_NOT_MODIFY] ";
 /// This allows for future format changes while maintaining backward compatibility.
 pub const METADATA_VERSION: u32 = 1;
 
-/// Default database name used when table.database is None
-/// This must match the default in ClickHouseConfig::default()
-pub const DEFAULT_DATABASE: &str = "local";
-
 /// Root structure for column metadata stored in ClickHouse column comments.
 ///
 /// This metadata preserves the original TypeScript enum definitions to solve
