@@ -409,6 +409,7 @@ impl StateStorage for ClickHouseStateStorage {
 pub struct StateStorageBuilder<'a> {
     project: &'a Project,
     redis_client: Option<&'a Arc<RedisClient>>,
+    redis_url: Option<String>,
 }
 
 impl<'a> StateStorageBuilder<'a> {
@@ -416,11 +417,19 @@ impl<'a> StateStorageBuilder<'a> {
         Self {
             project,
             redis_client: None,
+            redis_url: None,
         }
     }
 
+    /// Provide an existing Redis client (for moose dev/prod with background tasks)
     pub fn redis_client(mut self, redis_client: Option<&'a Arc<RedisClient>>) -> Self {
         self.redis_client = redis_client;
+        self
+    }
+
+    /// Provide a Redis URL to create a new client (for serverless migrations)
+    pub fn redis_url(mut self, redis_url: Option<String>) -> Self {
+        self.redis_url = redis_url;
         self
     }
 
@@ -435,13 +444,31 @@ impl<'a> StateStorageBuilder<'a> {
                 )))
             }
             "redis" => {
-                let redis_client = self.redis_client
-                    .ok_or_else(|| anyhow::anyhow!(
-                        "Project configuration specifies Redis state storage (state_config.storage = \"redis\") \
-                         but no Redis client was provided. Either provide a Redis client via .redis_client(Some(...)) \
-                         or change state_config.storage to \"clickhouse\" in moose.config.toml"
-                    ))?;
-                Ok(Box::new(RedisStateStorage::new(redis_client.clone())))
+                // Use provided client (for moose dev/prod with background tasks)
+                if let Some(client) = self.redis_client {
+                    return Ok(Box::new(RedisStateStorage::new(client.clone())));
+                }
+
+                // Otherwise, create from URL (for serverless migrations)
+                let redis_url = self.redis_url.ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "Internal error: Redis state storage builder called without URL. \
+                         This should have been validated by the CLI layer."
+                    )
+                })?;
+
+                use crate::infrastructure::redis::redis_client::{RedisClient, RedisConfig};
+                use std::sync::Arc;
+
+                let redis_config = RedisConfig {
+                    url: redis_url,
+                    key_prefix: self.project.redis_config.key_prefix.clone(),
+                    ..Default::default()
+                };
+                let redis_client = Arc::new(
+                    RedisClient::new("moose_state_storage".to_string(), redis_config).await?,
+                );
+                Ok(Box::new(RedisStateStorage::new(redis_client)))
             }
             _ => anyhow::bail!(
                 "Unknown state storage backend '{}' in project configuration. \

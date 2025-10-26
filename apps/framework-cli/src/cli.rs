@@ -56,8 +56,8 @@ use crate::project::Project;
 use crate::utilities::capture::{wait_for_usage_capture, ActivityType};
 use crate::utilities::constants::KEY_REMOTE_CLICKHOUSE_URL;
 use crate::utilities::constants::{
-    CLI_VERSION, ENV_CLICKHOUSE_URL, ENV_REDIS_URL, MIGRATION_AFTER_STATE_FILE,
-    MIGRATION_BEFORE_STATE_FILE, MIGRATION_FILE, PROJECT_NAME_ALLOW_PATTERN,
+    CLI_VERSION, ENV_CLICKHOUSE_URL, MIGRATION_AFTER_STATE_FILE, MIGRATION_BEFORE_STATE_FILE,
+    MIGRATION_FILE, PROJECT_NAME_ALLOW_PATTERN,
 };
 use crate::utilities::keyring::{KeyringSecretRepository, SecretRepository};
 
@@ -171,6 +171,37 @@ fn check_project_name(name: &str) -> Result<(), RoutineFailure> {
         }));
     }
     Ok(())
+}
+
+/// Resolves ClickHouse and Redis URLs from flags and environment variables, and validates Redis URL if needed
+fn resolve_serverless_urls<'a>(
+    project: &Project,
+    clickhouse_url: Option<&'a str>,
+    redis_url: Option<&'a str>,
+) -> Result<(Option<String>, Option<String>), RoutineFailure> {
+    use crate::utilities::constants::{ENV_CLICKHOUSE_URL, ENV_REDIS_URL};
+
+    // Resolve ClickHouse URL from flag or env var
+    let clickhouse_url_from_env = std::env::var(ENV_CLICKHOUSE_URL).ok();
+    let resolved_clickhouse_url = clickhouse_url.map(String::from).or(clickhouse_url_from_env);
+
+    // Resolve Redis URL from flag or env var
+    let redis_url_from_env = std::env::var(ENV_REDIS_URL).ok();
+    let resolved_redis_url = redis_url.map(String::from).or(redis_url_from_env);
+
+    // Validate Redis URL is provided when using Redis for state storage
+    if project.state_config.storage == "redis" && resolved_redis_url.is_none() {
+        return Err(RoutineFailure::error(Message {
+            action: "Configuration".to_string(),
+            details: format!(
+                "--redis-url required when state_config.storage = \"redis\" \
+                 (or set {} environment variable)",
+                ENV_REDIS_URL
+            ),
+        }));
+    }
+
+    Ok((resolved_clickhouse_url, resolved_redis_url))
 }
 
 /// Runs local infrastructure with a configurable timeout
@@ -627,11 +658,11 @@ pub async fn top_command_handler(
                 check_project_name(&project.name())?;
 
                 // Resolve URLs from flags or env vars
-                let clickhouse_url_from_env = std::env::var(ENV_CLICKHOUSE_URL).ok();
-                let resolved_clickhouse_url = clickhouse_url.clone().or(clickhouse_url_from_env);
-
-                let redis_url_from_env = std::env::var(ENV_REDIS_URL).ok();
-                let resolved_redis_url = redis_url.clone().or(redis_url_from_env);
+                let (resolved_clickhouse_url, resolved_redis_url) = resolve_serverless_urls(
+                    &project,
+                    clickhouse_url.as_deref(),
+                    redis_url.as_deref(),
+                )?;
 
                 // Validate that at least one remote source is configured
                 let remote = if let Some(ref ch_url) = resolved_clickhouse_url {
@@ -893,24 +924,24 @@ pub async fn top_command_handler(
 
             check_project_name(&project.name())?;
 
-            let clickhouse_url_from_env = std::env::var(ENV_CLICKHOUSE_URL).ok();
-            let resolved_clickhouse_url = clickhouse_url
-                .as_deref()
-                .or(clickhouse_url_from_env.as_deref())
-                .ok_or_else(|| {
-                    RoutineFailure::error(Message {
-                        action: "Configuration".to_string(),
-                        details: format!(
-                            "--clickhouse-url required (or set {} environment variable)",
-                            ENV_CLICKHOUSE_URL
-                        ),
-                    })
-                })?;
+            // Resolve URLs from flags or env vars
+            let (resolved_clickhouse_url, resolved_redis_url) =
+                resolve_serverless_urls(&project, clickhouse_url.as_deref(), redis_url.as_deref())?;
+
+            let resolved_clickhouse_url = resolved_clickhouse_url.ok_or_else(|| {
+                RoutineFailure::error(Message {
+                    action: "Configuration".to_string(),
+                    details: format!(
+                        "--clickhouse-url required (or set {} environment variable)",
+                        ENV_CLICKHOUSE_URL
+                    ),
+                })
+            })?;
 
             routines::migrate::execute_migration(
                 &project,
-                resolved_clickhouse_url,
-                redis_url.as_deref(),
+                &resolved_clickhouse_url,
+                resolved_redis_url.as_deref(),
             )
             .await?;
 
