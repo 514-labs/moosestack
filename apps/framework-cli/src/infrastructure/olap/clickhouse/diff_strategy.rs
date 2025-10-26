@@ -274,9 +274,18 @@ impl TableDiffStrategy for ClickHouseTableDiffStrategy {
         }
 
         // Check if database has changed
-        if before.database != after.database {
-            let before_db = before.database.as_deref().unwrap_or("<default>");
-            let after_db = after.database.as_deref().unwrap_or("<default>");
+        // Note: database: None means "use default database"
+        // Only treat it as a real change if both are Some() and different
+        let database_changed = match (&before.database, &after.database) {
+            (Some(before_db), Some(after_db)) => before_db != after_db,
+            (None, None) => false,
+            // If one is None and one is Some, treat as equivalent (None means default)
+            _ => false,
+        };
+
+        if database_changed {
+            let before_db = before.database.as_deref().unwrap();
+            let after_db = after.database.as_deref().unwrap();
 
             let error_message = format_database_change_error(&before.name, before_db, after_db);
 

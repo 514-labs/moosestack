@@ -301,19 +301,14 @@ impl Table {
     // This is only to be used in the context of the new core
     // currently name includes the version, here we are separating that out.
     pub fn id(&self) -> String {
-        let base_id = self.version.as_ref().map_or(self.name.clone(), |v| {
+        // Table ID is based on name and version only
+        // Database field is NOT included in the ID because:
+        // 1. Tables should match for diffing even if database field differs
+        // 2. database: None (use default) should match database: Some("local") when "local" is the default
+        // 3. The database field is a configuration property, not part of table identity
+        self.version.as_ref().map_or(self.name.clone(), |v| {
             format!("{}_{}", self.name, v.as_suffix())
-        });
-
-        // Include database in the ID only if:
-        // 1. Database field is specified
-        // 2. AND the table name doesn't already contain a database prefix (no dot)
-        // This preserves backward compatibility with tables named "database.table"
-        // Format: {database}_{table_name}_{version} or {table_name}_{version}
-        match (self.database.as_ref(), self.name.contains('.')) {
-            (Some(db), false) => format!("{}_{}", db, base_id),
-            _ => base_id,
-        }
+        })
     }
 
     /// Computes a hash of non-alterable parameters including engine params and database
@@ -1552,12 +1547,13 @@ mod tests {
         assert_eq!(table1.id(), "users");
 
         // Test 2: Table with explicit database field
+        // Database field should NOT be included in ID (it's a config property, not identity)
         let table2 = Table {
             name: "users".to_string(),
             database: Some("analytics".to_string()),
             ..table1.clone()
         };
-        assert_eq!(table2.id(), "analytics_users");
+        assert_eq!(table2.id(), "users");
 
         // Test 3: Legacy format - table name contains database prefix (backward compatibility)
         let table3 = Table {
@@ -1592,12 +1588,13 @@ mod tests {
         );
 
         // Test 6: With version
+        // Database field should NOT be included in ID (it's a config property, not identity)
         let table6 = Table {
             name: "users".to_string(),
             version: Some(Version::from_string("1.0".to_string())),
             database: Some("analytics".to_string()),
             ..table1.clone()
         };
-        assert_eq!(table6.id(), "analytics_users_1_0");
+        assert_eq!(table6.id(), "users_1_0");
     }
 }

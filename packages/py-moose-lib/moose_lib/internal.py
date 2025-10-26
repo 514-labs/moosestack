@@ -718,7 +718,7 @@ def to_infra_map() -> dict:
         web_apps=web_apps
     )
 
-    return infra_map.model_dump(by_alias=True)
+    return infra_map.model_dump(by_alias=True, exclude_none=True)
 
 
 def load_models():
