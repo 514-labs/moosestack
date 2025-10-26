@@ -1442,9 +1442,7 @@ mod tests {
         let op_create_b = AtomicOlapOperation::CreateTable {
             table: table_b.clone(),
             dependency_info: DependencyInfo {
-                pulls_data_from: vec![InfrastructureSignature::Table {
-                    id: "table_a".to_string(),
-                }],
+                pulls_data_from: vec![InfrastructureSignature::Table { id: table_a.id() }],
                 pushes_data_to: vec![],
             },
         };
@@ -1452,9 +1450,7 @@ mod tests {
         let op_create_c = AtomicOlapOperation::CreateView {
             view: view_c.clone(),
             dependency_info: DependencyInfo {
-                pulls_data_from: vec![InfrastructureSignature::Table {
-                    id: "table_b".to_string(),
-                }],
+                pulls_data_from: vec![InfrastructureSignature::Table { id: table_b.id() }],
                 pushes_data_to: vec![],
             },
         };
@@ -1552,9 +1548,7 @@ mod tests {
                 // Table A doesn't depend on anything
                 pulls_data_from: vec![],
                 // Table A is a dependency for Table B
-                pushes_data_to: vec![InfrastructureSignature::Table {
-                    id: "table_b".to_string(),
-                }],
+                pushes_data_to: vec![InfrastructureSignature::Table { id: table_b.id() }],
             },
         };
 
@@ -1563,9 +1557,7 @@ mod tests {
             table: table_b.clone(),
             dependency_info: DependencyInfo {
                 // Table B depends on Table A
-                pulls_data_from: vec![InfrastructureSignature::Table {
-                    id: "table_a".to_string(),
-                }],
+                pulls_data_from: vec![InfrastructureSignature::Table { id: table_a.id() }],
                 // View C depends on Table B
                 pushes_data_to: vec![InfrastructureSignature::View {
                     id: "view_c".to_string(),
@@ -1578,9 +1570,7 @@ mod tests {
             view: view_c.clone(),
             dependency_info: DependencyInfo {
                 // View C depends on Table B
-                pulls_data_from: vec![InfrastructureSignature::Table {
-                    id: "table_b".to_string(),
-                }],
+                pulls_data_from: vec![InfrastructureSignature::Table { id: table_b.id() }],
                 // View C doesn't push data to anything
                 pushes_data_to: vec![],
             },
@@ -1690,9 +1680,7 @@ mod tests {
             column: column.clone(),
             after_column: None,
             dependency_info: DependencyInfo {
-                pulls_data_from: vec![InfrastructureSignature::Table {
-                    id: table.name.clone(),
-                }],
+                pulls_data_from: vec![InfrastructureSignature::Table { id: table.id() }],
                 pushes_data_to: vec![],
             },
         };
@@ -1701,9 +1689,7 @@ mod tests {
         let op_create_view = AtomicOlapOperation::CreateView {
             view: view.clone(),
             dependency_info: DependencyInfo {
-                pulls_data_from: vec![InfrastructureSignature::Table {
-                    id: table.name.clone(),
-                }],
+                pulls_data_from: vec![InfrastructureSignature::Table { id: table.id() }],
                 pushes_data_to: vec![],
             },
         };
@@ -2031,9 +2017,7 @@ mod tests {
         let op_create_b = AtomicOlapOperation::CreateTable {
             table: table_b.clone(),
             dependency_info: DependencyInfo {
-                pulls_data_from: vec![InfrastructureSignature::Table {
-                    id: "table_a".to_string(),
-                }],
+                pulls_data_from: vec![InfrastructureSignature::Table { id: table_a.id() }],
                 pushes_data_to: vec![],
             },
         };
@@ -2041,9 +2025,7 @@ mod tests {
         let op_create_c = AtomicOlapOperation::CreateTable {
             table: table_c.clone(),
             dependency_info: DependencyInfo {
-                pulls_data_from: vec![InfrastructureSignature::Table {
-                    id: "table_a".to_string(),
-                }],
+                pulls_data_from: vec![InfrastructureSignature::Table { id: table_a.id() }],
                 pushes_data_to: vec![],
             },
         };
@@ -2052,12 +2034,8 @@ mod tests {
             table: table_d.clone(),
             dependency_info: DependencyInfo {
                 pulls_data_from: vec![
-                    InfrastructureSignature::Table {
-                        id: "table_b".to_string(),
-                    },
-                    InfrastructureSignature::Table {
-                        id: "table_c".to_string(),
-                    },
+                    InfrastructureSignature::Table { id: table_b.id() },
+                    InfrastructureSignature::Table { id: table_c.id() },
                 ],
                 pushes_data_to: vec![],
             },
@@ -2066,9 +2044,7 @@ mod tests {
         let op_create_e = AtomicOlapOperation::CreateTable {
             table: table_e.clone(),
             dependency_info: DependencyInfo {
-                pulls_data_from: vec![InfrastructureSignature::Table {
-                    id: "table_d".to_string(),
-                }],
+                pulls_data_from: vec![InfrastructureSignature::Table { id: table_d.id() }],
                 pushes_data_to: vec![],
             },
         };
@@ -2202,12 +2178,8 @@ mod tests {
                     .to_string(),
             ],
             teardown: vec!["DROP VIEW mv_a_to_b".to_string()],
-            pulls_data_from: vec![InfrastructureSignature::Table {
-                id: "table_a".to_string(),
-            }],
-            pushes_data_to: vec![InfrastructureSignature::Table {
-                id: "table_b".to_string(),
-            }],
+            pulls_data_from: vec![InfrastructureSignature::Table { id: table_a.id() }],
+            pushes_data_to: vec![InfrastructureSignature::Table { id: table_b.id() }],
         };
 
         // Create operations
@@ -2230,12 +2202,8 @@ mod tests {
         let op_setup_mv = AtomicOlapOperation::RunSetupSql {
             resource: mv_sql_resource.clone(),
             dependency_info: DependencyInfo {
-                pulls_data_from: vec![InfrastructureSignature::Table {
-                    id: "table_a".to_string(),
-                }],
-                pushes_data_to: vec![InfrastructureSignature::Table {
-                    id: "table_b".to_string(),
-                }],
+                pulls_data_from: vec![InfrastructureSignature::Table { id: table_a.id() }],
+                pushes_data_to: vec![InfrastructureSignature::Table { id: table_b.id() }],
             },
         };
 
@@ -2344,12 +2312,8 @@ mod tests {
                     .to_string(),
             ],
             teardown: vec!["DROP VIEW mv_a_to_b".to_string()],
-            pulls_data_from: vec![InfrastructureSignature::Table {
-                id: "table_a".to_string(),
-            }],
-            pushes_data_to: vec![InfrastructureSignature::Table {
-                id: "table_b".to_string(),
-            }],
+            pulls_data_from: vec![InfrastructureSignature::Table { id: table_a.id() }],
+            pushes_data_to: vec![InfrastructureSignature::Table { id: table_b.id() }],
         };
 
         // MV - no dependencies for teardown (it should be removed first)
@@ -2490,12 +2454,8 @@ mod tests {
                     .to_string(),
             ],
             teardown: vec!["DROP VIEW mv_a_to_b".to_string()],
-            pulls_data_from: vec![InfrastructureSignature::Table {
-                id: "table_a".to_string(),
-            }],
-            pushes_data_to: vec![InfrastructureSignature::Table {
-                id: "table_b".to_string(),
-            }],
+            pulls_data_from: vec![InfrastructureSignature::Table { id: table_a.id() }],
+            pushes_data_to: vec![InfrastructureSignature::Table { id: table_b.id() }],
         };
 
         // Create setup operations
@@ -2521,12 +2481,8 @@ mod tests {
         let op_create_mv = AtomicOlapOperation::RunSetupSql {
             resource: resource.clone(),
             dependency_info: DependencyInfo {
-                pulls_data_from: vec![InfrastructureSignature::Table {
-                    id: "table_a".to_string(),
-                }],
-                pushes_data_to: vec![InfrastructureSignature::Table {
-                    id: "table_b".to_string(),
-                }],
+                pulls_data_from: vec![InfrastructureSignature::Table { id: table_a.id() }],
+                pushes_data_to: vec![InfrastructureSignature::Table { id: table_b.id() }],
             },
         };
 

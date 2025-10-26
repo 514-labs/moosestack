@@ -274,18 +274,21 @@ impl TableDiffStrategy for ClickHouseTableDiffStrategy {
         }
 
         // Check if database has changed
-        // Note: database: None means "use default database"
-        // Only treat it as a real change if both are Some() and different
+        // Note: database: None means "use default database" (DEFAULT_DATABASE)
+        // Only treat it as a real change if both are Some() and different, OR
+        // if one is None and the other is Some(non-default)
+        use crate::framework::core::infrastructure::table::DEFAULT_DATABASE;
+
         let database_changed = match (&before.database, &after.database) {
             (Some(before_db), Some(after_db)) => before_db != after_db,
             (None, None) => false,
-            // If one is None and one is Some, treat as equivalent (None means default)
-            _ => false,
+            // If one is None and one is Some(DEFAULT_DATABASE), treat as equivalent
+            (None, Some(db)) | (Some(db), None) => db != DEFAULT_DATABASE,
         };
 
         if database_changed {
-            let before_db = before.database.as_deref().unwrap();
-            let after_db = after.database.as_deref().unwrap();
+            let before_db = before.database.as_deref().unwrap_or(DEFAULT_DATABASE);
+            let after_db = after.database.as_deref().unwrap_or(DEFAULT_DATABASE);
 
             let error_message = format_database_change_error(&before.name, before_db, after_db);
 
@@ -821,7 +824,7 @@ mod tests {
 
         // Check the error message contains expected information
         if let OlapChange::Table(TableChange::ValidationError { message, .. }) = &changes[0] {
-            assert!(message.contains("<default>"));
+            assert!(message.contains("local")); // DEFAULT_DATABASE = "local"
             assert!(message.contains("new_db"));
             assert!(message.contains("manual intervention"));
         } else {
