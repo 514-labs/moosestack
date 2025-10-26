@@ -2670,7 +2670,6 @@ CREATE TABLE IF NOT EXISTS `test_db`.`test_table`
  `data` String NOT NULL
 )
 ENGINE = S3Queue('s3://my-bucket/data/*.json', NOSIGN, 'JSONEachRow')
-PRIMARY KEY (`id`)
 SETTINGS keeper_path = '/clickhouse/s3queue/test_table', mode = 'unordered', s3queue_loading_retries = 3"#;
         assert_eq!(query.trim(), expected.trim());
     }
@@ -3141,8 +3140,7 @@ CREATE TABLE IF NOT EXISTS `test_db`.`test_table`
 (
  `id` Int32 NOT NULL
 )
-ENGINE = S3Queue('s3://my-bucket/data/*.csv', NOSIGN, 'CSV')
-PRIMARY KEY (`id`)"#;
+ENGINE = S3Queue('s3://my-bucket/data/*.csv', NOSIGN, 'CSV')"#;
         assert_eq!(query.trim(), expected.trim());
     }
 
