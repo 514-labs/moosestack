@@ -3161,6 +3161,7 @@ mod diff_tests {
             &HashMap::from([("test".to_string(), after)]),
             &mut changes,
             true,
+            DEFAULT_DATABASE_NAME,
         );
 
         assert_eq!(changes.len(), 1, "Expected one change");
@@ -3198,6 +3199,7 @@ mod diff_tests {
             &HashMap::from([("test".to_string(), after)]),
             &mut changes,
             true,
+            DEFAULT_DATABASE_NAME,
         );
 
         assert_eq!(changes.len(), 1, "Expected one change");

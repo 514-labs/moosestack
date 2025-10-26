@@ -530,7 +530,7 @@ mod tests {
             after: OrderBy::Fields(vec!["id".to_string(), "timestamp".to_string()]),
         };
 
-        let changes = strategy.diff_table_update(&before, &after, vec![], order_by_change);
+        let changes = strategy.diff_table_update(&before, &after, vec![], order_by_change, "local");
 
         assert_eq!(changes.len(), 2);
         assert!(matches!(
@@ -555,7 +555,7 @@ mod tests {
             after: after.order_by.clone(),
         };
 
-        let changes = strategy.diff_table_update(&before, &after, vec![], order_by_change);
+        let changes = strategy.diff_table_update(&before, &after, vec![], order_by_change, "local");
 
         assert_eq!(changes.len(), 2);
         assert!(matches!(
@@ -595,7 +595,8 @@ mod tests {
             after: after.order_by.clone(),
         };
 
-        let changes = strategy.diff_table_update(&before, &after, column_changes, order_by_change);
+        let changes =
+            strategy.diff_table_update(&before, &after, column_changes, order_by_change, "local");
 
         assert_eq!(changes.len(), 1);
         assert!(matches!(
@@ -640,7 +641,8 @@ mod tests {
             after: OrderBy::Fields(vec!["id".to_string(), "timestamp".to_string()]),
         };
 
-        let changes = strategy.diff_table_update(&before, &after, column_changes, order_by_change);
+        let changes =
+            strategy.diff_table_update(&before, &after, column_changes, order_by_change, "local");
 
         // With identical ORDER BY but column changes, should use ALTER (not drop+create)
         assert_eq!(changes.len(), 1);
@@ -673,7 +675,8 @@ mod tests {
             after: OrderBy::Fields(vec!["id".to_string(), "timestamp".to_string()]),
         };
 
-        let changes = strategy.diff_table_update(&before, &after, column_changes, order_by_change);
+        let changes =
+            strategy.diff_table_update(&before, &after, column_changes, order_by_change, "local");
 
         // With no actual changes, should return empty vector
         assert_eq!(changes.len(), 0);
@@ -693,7 +696,8 @@ mod tests {
             after: OrderBy::Fields(vec!["timestamp".to_string()]),
         };
 
-        let changes = strategy.diff_table_update(&before, &after, column_changes, order_by_change);
+        let changes =
+            strategy.diff_table_update(&before, &after, column_changes, order_by_change, "local");
 
         // Should still require drop+create even with no column changes
         assert_eq!(changes.len(), 2);
@@ -723,7 +727,7 @@ mod tests {
             after: after.order_by.clone(),
         };
 
-        let changes = strategy.diff_table_update(&before, &after, vec![], order_by_change);
+        let changes = strategy.diff_table_update(&before, &after, vec![], order_by_change, "local");
 
         // SAMPLE BY change is handled via ALTER TABLE, expect an Updated change
         assert!(changes
@@ -747,7 +751,7 @@ mod tests {
             after: after.order_by.clone(),
         };
 
-        let changes = strategy.diff_table_update(&before, &after, vec![], order_by_change);
+        let changes = strategy.diff_table_update(&before, &after, vec![], order_by_change, "local");
 
         // SAMPLE BY modification is handled via ALTER TABLE, expect an Updated change
         assert!(changes
@@ -771,7 +775,7 @@ mod tests {
             after: after.order_by.clone(),
         };
 
-        let changes = strategy.diff_table_update(&before, &after, vec![], order_by_change);
+        let changes = strategy.diff_table_update(&before, &after, vec![], order_by_change, "local");
 
         // Should return exactly one ValidationError
         assert_eq!(changes.len(), 1);
@@ -812,7 +816,7 @@ mod tests {
             after: after.order_by.clone(),
         };
 
-        let changes = strategy.diff_table_update(&before, &after, vec![], order_by_change);
+        let changes = strategy.diff_table_update(&before, &after, vec![], order_by_change, "local");
 
         // Should return exactly one ValidationError
         assert_eq!(changes.len(), 1);
