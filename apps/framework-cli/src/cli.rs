@@ -645,7 +645,7 @@ pub async fn top_command_handler(
             }) => {
                 info!("Running generate migration command");
 
-                let project = load_project()?;
+                let mut project = load_project()?;
 
                 let capture_handle = crate::utilities::capture::capture_usage(
                     ActivityType::GenerateMigrationCommand,
@@ -682,7 +682,7 @@ pub async fn top_command_handler(
                     }));
                 };
 
-                let result = routines::remote_gen_migration(&project, remote)
+                let result = routines::remote_gen_migration(&mut project, remote)
                     .await
                     .map_err(|e| {
                         RoutineFailure::new(
@@ -912,7 +912,7 @@ pub async fn top_command_handler(
             redis_url,
         } => {
             info!("Running migrate command");
-            let project = load_project()?;
+            let mut project = load_project()?;
 
             let capture_handle = crate::utilities::capture::capture_usage(
                 ActivityType::MigrateCommand,
@@ -939,7 +939,7 @@ pub async fn top_command_handler(
             })?;
 
             routines::migrate::execute_migration(
-                &project,
+                &mut project,
                 &resolved_clickhouse_url,
                 resolved_redis_url.as_deref(),
             )
