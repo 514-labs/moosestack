@@ -202,6 +202,30 @@ export const SampleByTable = new OlapTable<EngineTestDataSample>(
 // and external dependencies, so it's not included in this basic engine test suite.
 // For S3Queue testing, see the dedicated S3 integration tests.
 
+// Test Buffer engine - buffers writes before flushing to destination table
+// First create the destination table
+export const BufferDestinationTable = new OlapTable<EngineTestData>(
+  "BufferDestinationTest",
+  {
+    engine: ClickHouseEngines.MergeTree,
+    orderByFields: ["id", "timestamp"],
+  },
+);
+
+// Then create the buffer table that points to it
+export const BufferTable = new OlapTable<EngineTestData>("BufferTest", {
+  engine: ClickHouseEngines.Buffer,
+  targetDatabase: "local",
+  targetTable: "BufferDestinationTest",
+  numLayers: 16,
+  minTime: 10,
+  maxTime: 100,
+  minRows: 10000,
+  maxRows: 1000000,
+  minBytes: 10485760,
+  maxBytes: 104857600,
+});
+
 /**
  * Export all test tables for verification that engine configurations
  * can be properly instantiated and don't throw errors during table creation.
@@ -223,4 +247,6 @@ export const allEngineTestTables = [
   ReplicatedSummingMergeTreeTable,
   SampleByTable,
   TTLTable,
+  BufferDestinationTable,
+  BufferTable,
 ];

@@ -342,6 +342,54 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
           { attempts: 10, delayMs: 1000 },
         );
       });
+
+      it("should create Buffer engine table correctly", async function () {
+        this.timeout(TIMEOUTS.TEST_SETUP_MS);
+
+        // Verify the destination table exists first
+        const destinationDDL = await getTableDDL(
+          "BufferDestinationTest",
+          "local",
+        );
+        console.log(`Destination table DDL: ${destinationDDL}`);
+
+        if (!destinationDDL.includes("ENGINE = MergeTree")) {
+          throw new Error(
+            `BufferDestinationTest should use MergeTree engine. DDL: ${destinationDDL}`,
+          );
+        }
+
+        // Verify the Buffer table exists and has correct configuration
+        const bufferDDL = await getTableDDL("BufferTest", "local");
+        console.log(`Buffer table DDL: ${bufferDDL}`);
+
+        // Check that it uses Buffer engine with correct parameters
+        if (!bufferDDL.includes("ENGINE = Buffer")) {
+          throw new Error(
+            `BufferTest should use Buffer engine. DDL: ${bufferDDL}`,
+          );
+        }
+
+        // Verify it points to the correct destination table
+        if (!bufferDDL.includes("BufferDestinationTest")) {
+          throw new Error(
+            `BufferTest should reference BufferDestinationTest. DDL: ${bufferDDL}`,
+          );
+        }
+
+        // Verify buffer parameters are present
+        if (
+          !bufferDDL.includes("16") ||
+          !bufferDDL.includes("10") ||
+          !bufferDDL.includes("100")
+        ) {
+          throw new Error(
+            `BufferTest should have correct buffer parameters. DDL: ${bufferDDL}`,
+          );
+        }
+
+        console.log("✅ Buffer engine table created successfully");
+      });
     }
 
     // Create test case based on language
@@ -407,7 +455,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
               totalRows: "1",
               metadata: {
                 version: "1.0",
-                queryParams: {
+                queryarams: {
                   orderBy: "totalRows",
                   limit: 1,
                   startDay: 19,

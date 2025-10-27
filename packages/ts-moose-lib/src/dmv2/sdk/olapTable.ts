@@ -357,6 +357,86 @@ export type S3QueueConfig<T> = Omit<BaseOlapConfig<T>, "settings"> & {
 };
 
 /**
+ * Configuration for S3 engine
+ * @template T The data type of the records stored in the table.
+ */
+export type S3Config<T> = BaseOlapConfig<T> & {
+  engine: ClickHouseEngines.S3;
+  /** S3 path (e.g., 's3://bucket/path/file.json') */
+  path: string;
+  /** Data format (e.g., 'JSONEachRow', 'CSV', 'Parquet') */
+  format: string;
+  /** Use NOSIGN for public buckets (no authentication) */
+  noSign?: boolean;
+  /** AWS access key ID (optional, omit if using NOSIGN) */
+  awsAccessKeyId?: string;
+  /** AWS secret access key (optional, omit if using NOSIGN) */
+  awsSecretAccessKey?: string;
+  /** Compression type (e.g., 'gzip', 'zstd', 'auto') */
+  compression?: string;
+  /** Partition strategy (optional) */
+  partitionStrategy?: string;
+  /** Partition columns in data file (optional) */
+  partitionColumnsInDataFile?: string;
+};
+
+/**
+ * Configuration for Buffer engine
+ * @template T The data type of the records stored in the table.
+ */
+export type BufferConfig<T> = Omit<
+  BaseOlapConfig<T>,
+  "orderByFields" | "orderByExpression" | "partitionBy" | "sampleByExpression"
+> & {
+  engine: ClickHouseEngines.Buffer;
+  /** Target database name for the destination table */
+  targetDatabase: string;
+  /** Target table name where data will be flushed */
+  targetTable: string;
+  /** Number of buffer layers (typically 16) */
+  numLayers: number;
+  /** Minimum time in seconds before flushing */
+  minTime: number;
+  /** Maximum time in seconds before flushing */
+  maxTime: number;
+  /** Minimum number of rows before flushing */
+  minRows: number;
+  /** Maximum number of rows before flushing */
+  maxRows: number;
+  /** Minimum bytes before flushing */
+  minBytes: number;
+  /** Maximum bytes before flushing */
+  maxBytes: number;
+  /** Optional: Flush time in seconds */
+  flushTime?: number;
+  /** Optional: Flush number of rows */
+  flushRows?: number;
+  /** Optional: Flush number of bytes */
+  flushBytes?: number;
+};
+
+/**
+ * Configuration for Distributed engine
+ * @template T The data type of the records stored in the table.
+ */
+export type DistributedConfig<T> = Omit<
+  BaseOlapConfig<T>,
+  "orderByFields" | "orderByExpression" | "partitionBy" | "sampleByExpression"
+> & {
+  engine: ClickHouseEngines.Distributed;
+  /** Cluster name from the ClickHouse configuration */
+  cluster: string;
+  /** Database name on the cluster */
+  targetDatabase: string;
+  /** Table name on the cluster */
+  targetTable: string;
+  /** Optional: Sharding key expression for data distribution */
+  shardingKey?: string;
+  /** Optional: Policy name for data distribution */
+  policyName?: string;
+};
+
+/**
  * Legacy configuration (backward compatibility) - defaults to MergeTree engine
  * @template T The data type of the records stored in the table.
  */
@@ -371,7 +451,10 @@ type EngineConfig<T> =
   | ReplicatedReplacingMergeTreeConfig<T>
   | ReplicatedAggregatingMergeTreeConfig<T>
   | ReplicatedSummingMergeTreeConfig<T>
-  | S3QueueConfig<T>;
+  | S3QueueConfig<T>
+  | S3Config<T>
+  | BufferConfig<T>
+  | DistributedConfig<T>;
 
 /**
  * Union of all engine-specific configurations (new API)

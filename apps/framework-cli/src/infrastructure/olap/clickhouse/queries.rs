@@ -197,6 +197,62 @@ pub enum ClickhouseEngine {
         aws_access_key_id: Option<String>,
         aws_secret_access_key: Option<String>,
     },
+    S3 {
+        // S3 path to the data file(s)
+        path: String,
+        // Data format (e.g., JSONEachRow, CSV, Parquet)
+        format: String,
+        // Use NOSIGN for public buckets (no authentication)
+        no_sign: Option<bool>,
+        // AWS access key ID (optional)
+        aws_access_key_id: Option<String>,
+        // AWS secret access key (optional)
+        aws_secret_access_key: Option<String>,
+        // Compression type (e.g., gzip, zstd, auto)
+        compression: Option<String>,
+        // Partition strategy
+        partition_strategy: Option<String>,
+        // Partition columns in data file
+        partition_columns_in_data_file: Option<String>,
+    },
+    Buffer {
+        // Target database name
+        target_database: String,
+        // Target table name
+        target_table: String,
+        // Number of buffer layers (typically 16)
+        num_layers: u32,
+        // Minimum time in seconds before flushing
+        min_time: u32,
+        // Maximum time in seconds before flushing
+        max_time: u32,
+        // Minimum number of rows before flushing
+        min_rows: u64,
+        // Maximum number of rows before flushing
+        max_rows: u64,
+        // Minimum bytes before flushing
+        min_bytes: u64,
+        // Maximum bytes before flushing
+        max_bytes: u64,
+        // Optional flush time
+        flush_time: Option<u32>,
+        // Optional flush rows
+        flush_rows: Option<u64>,
+        // Optional flush bytes
+        flush_bytes: Option<u64>,
+    },
+    Distributed {
+        // Cluster name from ClickHouse configuration
+        cluster: String,
+        // Database name on the cluster
+        target_database: String,
+        // Table name on the cluster
+        target_table: String,
+        // Optional sharding key expression
+        sharding_key: Option<String>,
+        // Optional policy name
+        policy_name: Option<String>,
+    },
 }
 
 // The implementation is not symetric between TryFrom and Into so we
@@ -254,6 +310,65 @@ impl Into<String> for ClickhouseEngine {
                 &headers,
                 &aws_access_key_id,
                 &aws_secret_access_key,
+            ),
+            ClickhouseEngine::S3 {
+                path,
+                format,
+                no_sign,
+                aws_access_key_id,
+                aws_secret_access_key,
+                compression,
+                partition_strategy,
+                partition_columns_in_data_file,
+            } => Self::serialize_s3_for_display(
+                &path,
+                &format,
+                &no_sign,
+                &aws_access_key_id,
+                &aws_secret_access_key,
+                &compression,
+                &partition_strategy,
+                &partition_columns_in_data_file,
+            ),
+            ClickhouseEngine::Buffer {
+                target_database,
+                target_table,
+                num_layers,
+                min_time,
+                max_time,
+                min_rows,
+                max_rows,
+                min_bytes,
+                max_bytes,
+                flush_time,
+                flush_rows,
+                flush_bytes,
+            } => Self::serialize_buffer(
+                &target_database,
+                &target_table,
+                num_layers,
+                min_time,
+                max_time,
+                min_rows,
+                max_rows,
+                min_bytes,
+                max_bytes,
+                &flush_time,
+                &flush_rows,
+                &flush_bytes,
+            ),
+            ClickhouseEngine::Distributed {
+                cluster,
+                target_database,
+                target_table,
+                sharding_key,
+                policy_name,
+            } => Self::serialize_distributed(
+                &cluster,
+                &target_database,
+                &target_table,
+                &sharding_key,
+                &policy_name,
             ),
         }
     }
@@ -795,6 +910,62 @@ impl ClickhouseEngine {
                 headers,
                 ..
             } => Self::serialize_s3queue(s3_path, format, compression, headers),
+            ClickhouseEngine::S3 {
+                path,
+                format,
+                no_sign,
+                compression,
+                partition_strategy,
+                partition_columns_in_data_file,
+                ..
+            } => Self::serialize_s3(
+                path,
+                format,
+                no_sign,
+                compression,
+                partition_strategy,
+                partition_columns_in_data_file,
+            ),
+            ClickhouseEngine::Buffer {
+                target_database,
+                target_table,
+                num_layers,
+                min_time,
+                max_time,
+                min_rows,
+                max_rows,
+                min_bytes,
+                max_bytes,
+                flush_time,
+                flush_rows,
+                flush_bytes,
+            } => Self::serialize_buffer_proto(
+                target_database,
+                target_table,
+                *num_layers,
+                *min_time,
+                *max_time,
+                *min_rows,
+                *max_rows,
+                *min_bytes,
+                *max_bytes,
+                flush_time,
+                flush_rows,
+                flush_bytes,
+            ),
+            ClickhouseEngine::Distributed {
+                cluster,
+                target_database,
+                target_table,
+                sharding_key,
+                policy_name,
+            } => Self::serialize_distributed_proto(
+                cluster,
+                target_database,
+                target_table,
+                sharding_key,
+                policy_name,
+            ),
         }
     }
 
@@ -854,6 +1025,123 @@ impl ClickhouseEngine {
         result
     }
 
+    /// Serialize S3 engine to string format for proto storage (no sensitive data)
+    /// Format: S3('path', 'format', 'compression'|null, 'partition_strategy'|null, 'partition_columns'|null)
+    fn serialize_s3(
+        path: &str,
+        format: &str,
+        no_sign: &Option<bool>,
+        compression: &Option<String>,
+        partition_strategy: &Option<String>,
+        partition_columns_in_data_file: &Option<String>,
+    ) -> String {
+        let mut result = format!("S3('{}', '{}'", path, format);
+
+        // Add no_sign flag
+        if no_sign == &Some(true) {
+            result.push_str(", NOSIGN");
+        } else {
+            result.push_str(", null");
+        }
+
+        // Add compression if present
+        if let Some(comp) = compression {
+            result.push_str(&format!(", '{}'", comp));
+        } else {
+            result.push_str(", null");
+        }
+
+        // Add partition strategy if present
+        if let Some(ps) = partition_strategy {
+            result.push_str(&format!(", '{}'", ps));
+        } else {
+            result.push_str(", null");
+        }
+
+        // Add partition columns if present
+        if let Some(pc) = partition_columns_in_data_file {
+            result.push_str(&format!(", '{}'", pc));
+        } else {
+            result.push_str(", null");
+        }
+
+        result.push(')');
+        result
+    }
+
+    /// Serialize Buffer engine to string format for proto storage
+    /// Format: Buffer('database', 'table', num_layers, min_time, max_time, min_rows, max_rows, min_bytes, max_bytes[, flush_time, flush_rows, flush_bytes])
+    #[allow(clippy::too_many_arguments)]
+    fn serialize_buffer_proto(
+        target_database: &str,
+        target_table: &str,
+        num_layers: u32,
+        min_time: u32,
+        max_time: u32,
+        min_rows: u64,
+        max_rows: u64,
+        min_bytes: u64,
+        max_bytes: u64,
+        flush_time: &Option<u32>,
+        flush_rows: &Option<u64>,
+        flush_bytes: &Option<u64>,
+    ) -> String {
+        let mut result = format!(
+            "Buffer('{}', '{}', {}, {}, {}, {}, {}, {}, {}",
+            target_database,
+            target_table,
+            num_layers,
+            min_time,
+            max_time,
+            min_rows,
+            max_rows,
+            min_bytes,
+            max_bytes
+        );
+
+        // Add optional flush parameters
+        if let Some(ft) = flush_time {
+            result.push_str(&format!(", {}", ft));
+        }
+        if let Some(fr) = flush_rows {
+            result.push_str(&format!(", {}", fr));
+        }
+        if let Some(fb) = flush_bytes {
+            result.push_str(&format!(", {}", fb));
+        }
+
+        result.push(')');
+        result
+    }
+
+    /// Serialize Distributed engine to string format for proto storage
+    /// Format: Distributed('cluster', 'database', 'table'[, sharding_key][, 'policy_name'])
+    fn serialize_distributed_proto(
+        cluster: &str,
+        target_database: &str,
+        target_table: &str,
+        sharding_key: &Option<String>,
+        policy_name: &Option<String>,
+    ) -> String {
+        let mut result = format!(
+            "Distributed('{}', '{}', '{}'",
+            cluster, target_database, target_table
+        );
+
+        // Add sharding key if present
+        if let Some(key) = sharding_key {
+            result.push_str(&format!(", {}", key));
+        }
+
+        // Add policy name if present
+        if let Some(policy) = policy_name {
+            result.push_str(&format!(", '{}'", policy));
+        }
+
+        result.push(')');
+        result
+    }
+
     /// Serialize S3Queue engine for display purposes, including masked credentials
     /// Format: S3Queue('path', 'format', auth_info, 'compression'|null, 'headers_json'|null)
     fn serialize_s3queue_for_display(
@@ -897,6 +1185,139 @@ impl ClickhouseEngine {
             if !hdrs.is_empty() {
                 result.push_str(&format!(", headers_count={}", hdrs.len()));
             }
+        }
+
+        result.push(')');
+        result
+    }
+
+    /// Serialize S3 engine for display purposes, including masked credentials
+    /// Format: S3('path', auth_info, 'format'[, 'compression'][, ...])
+    #[allow(clippy::too_many_arguments)]
+    fn serialize_s3_for_display(
+        path: &str,
+        format: &str,
+        no_sign: &Option<bool>,
+        aws_access_key_id: &Option<String>,
+        aws_secret_access_key: &Option<String>,
+        compression: &Option<String>,
+        partition_strategy: &Option<String>,
+        partition_columns_in_data_file: &Option<String>,
+    ) -> String {
+        let mut result = format!("S3('{}'", path);
+
+        // Add authentication info for display
+        if no_sign == &Some(true) {
+            result.push_str(", NOSIGN");
+        } else {
+            match (aws_access_key_id, aws_secret_access_key) {
+                (Some(key_id), Some(secret)) => {
+                    // Show the full access key ID and first 4 + last 4 chars of secret
+                    let masked_secret = if secret.len() > 8 {
+                        format!("{}...{}", &secret[..4], &secret[secret.len() - 4..])
+                    } else {
+                        // For very short secrets, just show partial
+                        format!("{}...", &secret[..secret.len().min(3)])
+                    };
+                    result.push_str(&format!(", '{}', '{}'", key_id, masked_secret));
+                }
+                _ => {
+                    // No auth specified, likely using IAM or default credentials
+                }
+            }
+        }
+
+        // Add format
+        result.push_str(&format!(", '{}'", format));
+
+        // Add compression if present
+        if let Some(comp) = compression {
+            result.push_str(&format!(", '{}'", comp));
+        }
+
+        // Add partition strategy if present
+        if let Some(ps) = partition_strategy {
+            result.push_str(&format!(", partition_strategy='{}'", ps));
+        }
+
+        // Add partition columns if present
+        if let Some(pc) = partition_columns_in_data_file {
+            result.push_str(&format!(", partition_columns='{}'", pc));
+        }
+
+        result.push(')');
+        result
+    }
+
+    /// Serialize Buffer engine to string format
+    /// Format: Buffer('database', 'table', num_layers, min_time, max_time, min_rows, max_rows, min_bytes, max_bytes[, flush_time, flush_rows, flush_bytes])
+    #[allow(clippy::too_many_arguments)]
+    fn serialize_buffer(
+        target_database: &str,
+        target_table: &str,
+        num_layers: u32,
+        min_time: u32,
+        max_time: u32,
+        min_rows: u64,
+        max_rows: u64,
+        min_bytes: u64,
+        max_bytes: u64,
+        flush_time: &Option<u32>,
+        flush_rows: &Option<u64>,
+        flush_bytes: &Option<u64>,
+    ) -> String {
+        let mut result = format!(
+            "Buffer('{}', '{}', {}, {}, {}, {}, {}, {}, {}",
+            target_database,
+            target_table,
+            num_layers,
+            min_time,
+            max_time,
+            min_rows,
+            max_rows,
+            min_bytes,
+            max_bytes
+        );
+
+        // Add optional flush parameters if any are present
+        if flush_time.is_some() || flush_rows.is_some() || flush_bytes.is_some() {
+            if let Some(ft) = flush_time {
+                result.push_str(&format!(", {}", ft));
+            }
+            if let Some(fr) = flush_rows {
+                result.push_str(&format!(", {}", fr));
+            }
+            if let Some(fb) = flush_bytes {
+                result.push_str(&format!(", {}", fb));
+            }
+        }
+
+        result.push(')');
+        result
+    }
+
+    /// Serialize Distributed engine to string format
+    /// Format: Distributed('cluster', 'database', 'table'[, 'sharding_key'][, 'policy_name'])
+    fn serialize_distributed(
+        cluster: &str,
+        target_database: &str,
+        target_table: &str,
+        sharding_key: &Option<String>,
+        policy_name: &Option<String>,
+    ) -> String {
+        let mut result = format!(
+            "Distributed('{}', '{}', '{}'",
+            cluster, target_database, target_table
+        );
+
+        // Add sharding key if present
+        if let Some(key) = sharding_key {
+            result.push_str(&format!(", {}", key)); // Don't quote - it's an expression
+        }
+
+        // Add policy name if present
+        if let Some(policy) = policy_name {
+            result.push_str(&format!(", '{}'", policy));
         }
 
         result.push(')');
@@ -1307,6 +1728,122 @@ impl ClickhouseEngine {
 
                 // Note: settings are NOT included as they are alterable
             }
+            ClickhouseEngine::S3 {
+                path,
+                format,
+                no_sign,
+                aws_access_key_id,
+                aws_secret_access_key,
+                compression,
+                partition_strategy,
+                partition_columns_in_data_file,
+            } => {
+                hasher.update("S3".as_bytes());
+                hasher.update(path.as_bytes());
+                hasher.update(format.as_bytes());
+
+                // Hash no_sign flag
+                if let Some(ns) = no_sign {
+                    hasher.update(if *ns { "true" } else { "false" }.as_bytes());
+                } else {
+                    hasher.update("null".as_bytes());
+                }
+
+                // Hash credentials
+                if let Some(key_id) = aws_access_key_id {
+                    hasher.update(key_id.as_bytes());
+                } else {
+                    hasher.update("null".as_bytes());
+                }
+                if let Some(secret) = aws_secret_access_key {
+                    hasher.update(secret.as_bytes());
+                } else {
+                    hasher.update("null".as_bytes());
+                }
+
+                // Hash optional parameters
+                if let Some(comp) = compression {
+                    hasher.update(comp.as_bytes());
+                } else {
+                    hasher.update("null".as_bytes());
+                }
+                if let Some(ps) = partition_strategy {
+                    hasher.update(ps.as_bytes());
+                } else {
+                    hasher.update("null".as_bytes());
+                }
+                if let Some(pc) = partition_columns_in_data_file {
+                    hasher.update(pc.as_bytes());
+                } else {
+                    hasher.update("null".as_bytes());
+                }
+            }
+            ClickhouseEngine::Buffer {
+                target_database,
+                target_table,
+                num_layers,
+                min_time,
+                max_time,
+                min_rows,
+                max_rows,
+                min_bytes,
+                max_bytes,
+                flush_time,
+                flush_rows,
+                flush_bytes,
+            } => {
+                hasher.update("Buffer".as_bytes());
+                hasher.update(target_database.as_bytes());
+                hasher.update(target_table.as_bytes());
+                hasher.update(num_layers.to_le_bytes());
+                hasher.update(min_time.to_le_bytes());
+                hasher.update(max_time.to_le_bytes());
+                hasher.update(min_rows.to_le_bytes());
+                hasher.update(max_rows.to_le_bytes());
+                hasher.update(min_bytes.to_le_bytes());
+                hasher.update(max_bytes.to_le_bytes());
+
+                // Hash optional flush parameters
+                if let Some(ft) = flush_time {
+                    hasher.update(ft.to_le_bytes());
+                } else {
+                    hasher.update("null".as_bytes());
+                }
+                if let Some(fr) = flush_rows {
+                    hasher.update(fr.to_le_bytes());
+                } else {
+                    hasher.update("null".as_bytes());
+                }
+                if let Some(fb) = flush_bytes {
+                    hasher.update(fb.to_le_bytes());
+                } else {
+                    hasher.update("null".as_bytes());
+                }
+            }
+            ClickhouseEngine::Distributed {
+                cluster,
+                target_database,
+                target_table,
+                sharding_key,
+                policy_name,
+            } => {
+                hasher.update("Distributed".as_bytes());
+                hasher.update(cluster.as_bytes());
+                hasher.update(target_database.as_bytes());
+                hasher.update(target_table.as_bytes());
+
+                // Hash optional parameters
+                if let Some(key) = sharding_key {
+                    hasher.update(key.as_bytes());
+                } else {
+                    hasher.update("null".as_bytes());
+                }
+                if let Some(policy) = policy_name {
+                    hasher.update(policy.as_bytes());
+                } else {
+                    hasher.update("null".as_bytes());
+                }
+            }
         }
 
         format!("{:x}", hasher.finalize())
@@ -1599,6 +2136,104 @@ pub fn create_table_query(
             }
 
             format!("S3Queue({})", engine_parts.join(", "))
+        }
+        ClickhouseEngine::S3 {
+            path,
+            format,
+            no_sign,
+            aws_access_key_id,
+            aws_secret_access_key,
+            compression,
+            partition_strategy,
+            partition_columns_in_data_file,
+        } => {
+            let mut engine_parts = vec![format!("'{}'", path)];
+
+            // Handle credentials
+            if no_sign == &Some(true) {
+                engine_parts.push("NOSIGN".to_string());
+            } else if let (Some(key_id), Some(secret)) = (aws_access_key_id, aws_secret_access_key)
+            {
+                engine_parts.push(format!("'{}'", key_id));
+                engine_parts.push(format!("'{}'", secret));
+            }
+
+            engine_parts.push(format!("'{}'", format));
+
+            // Add optional parameters
+            if let Some(comp) = compression {
+                engine_parts.push(format!("'{}'", comp));
+            }
+            if let Some(ps) = partition_strategy {
+                engine_parts.push(format!("'{}'", ps));
+            }
+            if let Some(pc) = partition_columns_in_data_file {
+                engine_parts.push(format!("'{}'", pc));
+            }
+
+            format!("S3({})", engine_parts.join(", "))
+        }
+        ClickhouseEngine::Buffer {
+            target_database,
+            target_table,
+            num_layers,
+            min_time,
+            max_time,
+            min_rows,
+            max_rows,
+            min_bytes,
+            max_bytes,
+            flush_time,
+            flush_rows,
+            flush_bytes,
+        } => {
+            let mut engine_parts = vec![
+                format!("'{}'", target_database),
+                format!("'{}'", target_table),
+                num_layers.to_string(),
+                min_time.to_string(),
+                max_time.to_string(),
+                min_rows.to_string(),
+                max_rows.to_string(),
+                min_bytes.to_string(),
+                max_bytes.to_string(),
+            ];
+
+            // Add optional flush parameters
+            if let Some(ft) = flush_time {
+                engine_parts.push(ft.to_string());
+            }
+            if let Some(fr) = flush_rows {
+                engine_parts.push(fr.to_string());
+            }
+            if let Some(fb) = flush_bytes {
+                engine_parts.push(fb.to_string());
+            }
+
+            format!("Buffer({})", engine_parts.join(", "))
+        }
+        ClickhouseEngine::Distributed {
+            cluster,
+            target_database,
+            target_table,
+            sharding_key,
+            policy_name,
+        } => {
+            let mut engine_parts = vec![
+                format!("'{}'", cluster),
+                format!("'{}'", target_database),
+                format!("'{}'", target_table),
+            ];
+
+            // Add optional parameters
+            if let Some(key) = sharding_key {
+                engine_parts.push(key.clone()); // Don't quote - it's an expression
+            }
+            if let Some(policy) = policy_name {
+                engine_parts.push(format!("'{}'", policy));
+            }
+
+            format!("Distributed({})", engine_parts.join(", "))
         }
     };
 

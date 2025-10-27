@@ -643,6 +643,90 @@ pub fn tables_to_typescript(tables: &[Table], life_cycle: Option<LifeCycle>) -> 
                         }
                     }
                 }
+                crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine::S3 {
+                    path,
+                    format,
+                    no_sign,
+                    aws_access_key_id,
+                    aws_secret_access_key,
+                    compression,
+                    partition_strategy,
+                    partition_columns_in_data_file,
+                } => {
+                    writeln!(output, "    engine: ClickHouseEngines.S3,").unwrap();
+                    writeln!(output, "    path: {:?},", path).unwrap();
+                    writeln!(output, "    format: {:?},", format).unwrap();
+                    if let Some(no_sign_val) = no_sign {
+                        writeln!(output, "    noSign: {},", no_sign_val).unwrap();
+                    }
+                    if let Some(key_id) = aws_access_key_id {
+                        writeln!(output, "    awsAccessKeyId: {:?},", key_id).unwrap();
+                    }
+                    if let Some(secret) = aws_secret_access_key {
+                        writeln!(output, "    awsSecretAccessKey: {:?},", secret).unwrap();
+                    }
+                    if let Some(comp) = compression {
+                        writeln!(output, "    compression: {:?},", comp).unwrap();
+                    }
+                    if let Some(ps) = partition_strategy {
+                        writeln!(output, "    partitionStrategy: {:?},", ps).unwrap();
+                    }
+                    if let Some(pc) = partition_columns_in_data_file {
+                        writeln!(output, "    partitionColumnsInDataFile: {:?},", pc).unwrap();
+                    }
+                }
+                crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine::Buffer {
+                    target_database,
+                    target_table,
+                    num_layers,
+                    min_time,
+                    max_time,
+                    min_rows,
+                    max_rows,
+                    min_bytes,
+                    max_bytes,
+                    flush_time,
+                    flush_rows,
+                    flush_bytes,
+                } => {
+                    writeln!(output, "    engine: ClickHouseEngines.Buffer,").unwrap();
+                    writeln!(output, "    targetDatabase: {:?},", target_database).unwrap();
+                    writeln!(output, "    targetTable: {:?},", target_table).unwrap();
+                    writeln!(output, "    numLayers: {},", num_layers).unwrap();
+                    writeln!(output, "    minTime: {},", min_time).unwrap();
+                    writeln!(output, "    maxTime: {},", max_time).unwrap();
+                    writeln!(output, "    minRows: {},", min_rows).unwrap();
+                    writeln!(output, "    maxRows: {},", max_rows).unwrap();
+                    writeln!(output, "    minBytes: {},", min_bytes).unwrap();
+                    writeln!(output, "    maxBytes: {},", max_bytes).unwrap();
+                    if let Some(ft) = flush_time {
+                        writeln!(output, "    flushTime: {},", ft).unwrap();
+                    }
+                    if let Some(fr) = flush_rows {
+                        writeln!(output, "    flushRows: {},", fr).unwrap();
+                    }
+                    if let Some(fb) = flush_bytes {
+                        writeln!(output, "    flushBytes: {},", fb).unwrap();
+                    }
+                }
+                crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine::Distributed {
+                    cluster,
+                    target_database,
+                    target_table,
+                    sharding_key,
+                    policy_name,
+                } => {
+                    writeln!(output, "    engine: ClickHouseEngines.Distributed,").unwrap();
+                    writeln!(output, "    cluster: {:?},", cluster).unwrap();
+                    writeln!(output, "    targetDatabase: {:?},", target_database).unwrap();
+                    writeln!(output, "    targetTable: {:?},", target_table).unwrap();
+                    if let Some(key) = sharding_key {
+                        writeln!(output, "    shardingKey: {:?},", key).unwrap();
+                    }
+                    if let Some(policy) = policy_name {
+                        writeln!(output, "    policyName: {:?},", policy).unwrap();
+                    }
+                }
             }
         }
         // Add table settings if present (works for all engines)

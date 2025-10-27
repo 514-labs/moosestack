@@ -119,6 +119,67 @@ struct S3QueueConfig {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct S3Config {
+    path: String,
+    format: String,
+    #[serde(default)]
+    no_sign: Option<bool>,
+    #[serde(alias = "awsAccessKeyId")]
+    aws_access_key_id: Option<String>,
+    #[serde(alias = "awsSecretAccessKey")]
+    aws_secret_access_key: Option<String>,
+    compression: Option<String>,
+    #[serde(alias = "partitionStrategy")]
+    partition_strategy: Option<String>,
+    #[serde(alias = "partitionColumnsInDataFile")]
+    partition_columns_in_data_file: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct BufferConfig {
+    #[serde(alias = "targetDatabase")]
+    target_database: String,
+    #[serde(alias = "targetTable")]
+    target_table: String,
+    #[serde(alias = "numLayers")]
+    num_layers: u32,
+    #[serde(alias = "minTime")]
+    min_time: u32,
+    #[serde(alias = "maxTime")]
+    max_time: u32,
+    #[serde(alias = "minRows")]
+    min_rows: u64,
+    #[serde(alias = "maxRows")]
+    max_rows: u64,
+    #[serde(alias = "minBytes")]
+    min_bytes: u64,
+    #[serde(alias = "maxBytes")]
+    max_bytes: u64,
+    #[serde(alias = "flushTime")]
+    flush_time: Option<u32>,
+    #[serde(alias = "flushRows")]
+    flush_rows: Option<u64>,
+    #[serde(alias = "flushBytes")]
+    flush_bytes: Option<u64>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct DistributedConfig {
+    cluster: String,
+    #[serde(alias = "targetDatabase")]
+    target_database: String,
+    #[serde(alias = "targetTable")]
+    target_table: String,
+    #[serde(alias = "shardingKey")]
+    sharding_key: Option<String>,
+    #[serde(alias = "policyName")]
+    policy_name: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
 #[serde(tag = "engine", rename_all = "camelCase")]
 enum EngineConfig {
     #[serde(rename = "MergeTree")]
@@ -181,6 +242,15 @@ enum EngineConfig {
 
     #[serde(rename = "S3Queue")]
     S3Queue(Box<S3QueueConfig>),
+
+    #[serde(rename = "S3")]
+    S3(Box<S3Config>),
+
+    #[serde(rename = "Buffer")]
+    Buffer(Box<BufferConfig>),
+
+    #[serde(rename = "Distributed")]
+    Distributed(Box<DistributedConfig>),
 }
 
 #[derive(Debug, Deserialize)]
@@ -691,6 +761,40 @@ impl PartialInfrastructureMap {
                     aws_secret_access_key: config.aws_secret_access_key.clone(),
                 })
             }
+
+            Some(EngineConfig::S3(config)) => Some(ClickhouseEngine::S3 {
+                path: config.path.clone(),
+                format: config.format.clone(),
+                no_sign: config.no_sign,
+                aws_access_key_id: config.aws_access_key_id.clone(),
+                aws_secret_access_key: config.aws_secret_access_key.clone(),
+                compression: config.compression.clone(),
+                partition_strategy: config.partition_strategy.clone(),
+                partition_columns_in_data_file: config.partition_columns_in_data_file.clone(),
+            }),
+
+            Some(EngineConfig::Buffer(config)) => Some(ClickhouseEngine::Buffer {
+                target_database: config.target_database.clone(),
+                target_table: config.target_table.clone(),
+                num_layers: config.num_layers,
+                min_time: config.min_time,
+                max_time: config.max_time,
+                min_rows: config.min_rows,
+                max_rows: config.max_rows,
+                min_bytes: config.min_bytes,
+                max_bytes: config.max_bytes,
+                flush_time: config.flush_time,
+                flush_rows: config.flush_rows,
+                flush_bytes: config.flush_bytes,
+            }),
+
+            Some(EngineConfig::Distributed(config)) => Some(ClickhouseEngine::Distributed {
+                cluster: config.cluster.clone(),
+                target_database: config.target_database.clone(),
+                target_table: config.target_table.clone(),
+                sharding_key: config.sharding_key.clone(),
+                policy_name: config.policy_name.clone(),
+            }),
 
             None => None,
         }
