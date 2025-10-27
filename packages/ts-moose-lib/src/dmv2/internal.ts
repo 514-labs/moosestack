@@ -568,7 +568,8 @@ export const toInfraMap = (registry: typeof moose_internal) => {
       );
     }
     const orderBy: string[] | string =
-      hasOrderByExpression ? (table.config.orderByExpression as string)
+      hasOrderByExpression && "orderByExpression" in table.config ?
+        table.config.orderByExpression
       : "orderByFields" in table.config ? (table.config.orderByFields ?? [])
       : [];
 
