@@ -3335,6 +3335,7 @@ async fn admin_plan_route(
         &plan_request.infra_map,
         &clickhouse_strategy,
         true,
+        project.is_production,
     );
 
     // Prepare the response
