@@ -553,10 +553,13 @@ export const toInfraMap = (registry: typeof moose_internal) => {
     }
 
     // Determine ORDER BY from config
+    // Note: engines like Buffer and Distributed don't support orderBy/partitionBy/sampleBy
     const hasOrderByFields =
+      "orderByFields" in table.config &&
       Array.isArray(table.config.orderByFields) &&
       table.config.orderByFields.length > 0;
     const hasOrderByExpression =
+      "orderByExpression" in table.config &&
       typeof table.config.orderByExpression === "string" &&
       table.config.orderByExpression.length > 0;
     if (hasOrderByFields && hasOrderByExpression) {
@@ -565,16 +568,20 @@ export const toInfraMap = (registry: typeof moose_internal) => {
       );
     }
     const orderBy: string[] | string =
-      hasOrderByExpression ?
-        (table.config.orderByExpression as string)
-      : (table.config.orderByFields ?? []);
+      hasOrderByExpression ? (table.config.orderByExpression as string)
+      : "orderByFields" in table.config ? (table.config.orderByFields ?? [])
+      : [];
 
     tables[id] = {
       name: table.name,
       columns: table.columnArray,
       orderBy,
-      partitionBy: table.config.partitionBy,
-      sampleByExpression: table.config.sampleByExpression,
+      partitionBy:
+        "partitionBy" in table.config ? table.config.partitionBy : undefined,
+      sampleByExpression:
+        "sampleByExpression" in table.config ?
+          table.config.sampleByExpression
+        : undefined,
       engineConfig,
       version: table.config.version,
       metadata,
