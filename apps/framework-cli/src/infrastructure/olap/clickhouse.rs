@@ -1629,6 +1629,11 @@ impl OlapOperations for ConfiguredDBClient {
                     annotations.push(("simpleAggregationFunction".to_string(), annotation_value));
                 }
 
+                // Normalize extracted TTL expressions immediately to ensure consistent comparison
+                let normalized_ttl = column_ttls
+                    .get(&col_name)
+                    .map(|ttl| normalize_ttl_expression(ttl));
+
                 let column = Column {
                     name: col_name.clone(),
                     data_type,
@@ -1638,7 +1643,7 @@ impl OlapOperations for ConfiguredDBClient {
                     default,
                     annotations,
                     comment: column_comment,
-                    ttl: column_ttls.get(&col_name).cloned(),
+                    ttl: normalized_ttl,
                 };
 
                 columns.push(column);
@@ -1677,8 +1682,10 @@ impl OlapOperations for ConfiguredDBClient {
             // Extract table settings from CREATE TABLE query
             let table_settings = extract_table_settings_from_create_table(&create_query);
 
-            // Extract TTLs from CREATE TABLE
-            let table_ttl_setting = extract_table_ttl_from_create_query(&create_query);
+            // Extract TTLs from CREATE TABLE and normalize immediately
+            // This ensures consistent comparison with user-defined TTLs
+            let table_ttl_setting = extract_table_ttl_from_create_query(&create_query)
+                .map(|ttl| normalize_ttl_expression(&ttl));
 
             let indexes_ch = extract_indexes_from_create_table(&create_query)?;
             let indexes: Vec<TableIndex> = indexes_ch
