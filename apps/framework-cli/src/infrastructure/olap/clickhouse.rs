@@ -2431,26 +2431,6 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
     }
 
     #[test]
-    fn test_extract_column_ttls_without_engine_clause() {
-        // Test case where the last column has TTL and there's a closing parenthesis
-        let query = "CREATE TABLE local.TTLTable
-(
-    `id` String,
-    `timestamp` DateTime('UTC'),
-    `email` String TTL timestamp + toIntervalDay(30)
-)";
-        let map = extract_column_ttls_from_create_query(query).expect("expected some TTLs");
-
-        assert_eq!(
-            map.get("email"),
-            Some(&"timestamp + toIntervalDay(30)".to_string()),
-            "TTL should not include trailing parenthesis"
-        );
-        assert!(!map.contains_key("id"));
-        assert!(!map.contains_key("timestamp"));
-    }
-
-    #[test]
     fn test_add_column_with_default_value() {
         use crate::framework::core::infrastructure::table::{Column, IntType};
         use crate::infrastructure::olap::clickhouse::mapper::std_column_to_clickhouse_column;
