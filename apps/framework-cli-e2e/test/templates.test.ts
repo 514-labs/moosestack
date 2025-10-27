@@ -455,7 +455,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
               totalRows: "1",
               metadata: {
                 version: "1.0",
-                queryarams: {
+                queryParams: {
                   orderBy: "totalRows",
                   limit: 1,
                   startDay: 19,

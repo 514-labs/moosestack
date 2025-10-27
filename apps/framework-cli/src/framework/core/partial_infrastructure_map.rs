@@ -107,12 +107,9 @@ impl LifeCycle {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct S3QueueConfig {
-    #[serde(alias = "s3Path")]
     s3_path: String,
     format: String,
-    #[serde(alias = "awsAccessKeyId")]
     aws_access_key_id: Option<String>,
-    #[serde(alias = "awsSecretAccessKey")]
     aws_secret_access_key: Option<String>,
     compression: Option<String>,
     headers: Option<std::collections::HashMap<String, String>>,
@@ -125,43 +122,27 @@ struct S3Config {
     format: String,
     #[serde(default)]
     no_sign: Option<bool>,
-    #[serde(alias = "awsAccessKeyId")]
     aws_access_key_id: Option<String>,
-    #[serde(alias = "awsSecretAccessKey")]
     aws_secret_access_key: Option<String>,
     compression: Option<String>,
-    #[serde(alias = "partitionStrategy")]
     partition_strategy: Option<String>,
-    #[serde(alias = "partitionColumnsInDataFile")]
     partition_columns_in_data_file: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct BufferConfig {
-    #[serde(alias = "targetDatabase")]
     target_database: String,
-    #[serde(alias = "targetTable")]
     target_table: String,
-    #[serde(alias = "numLayers")]
     num_layers: u32,
-    #[serde(alias = "minTime")]
     min_time: u32,
-    #[serde(alias = "maxTime")]
     max_time: u32,
-    #[serde(alias = "minRows")]
     min_rows: u64,
-    #[serde(alias = "maxRows")]
     max_rows: u64,
-    #[serde(alias = "minBytes")]
     min_bytes: u64,
-    #[serde(alias = "maxBytes")]
     max_bytes: u64,
-    #[serde(alias = "flushTime")]
     flush_time: Option<u32>,
-    #[serde(alias = "flushRows")]
     flush_rows: Option<u64>,
-    #[serde(alias = "flushBytes")]
     flush_bytes: Option<u64>,
 }
 
@@ -169,13 +150,9 @@ struct BufferConfig {
 #[serde(rename_all = "camelCase")]
 struct DistributedConfig {
     cluster: String,
-    #[serde(alias = "targetDatabase")]
     target_database: String,
-    #[serde(alias = "targetTable")]
     target_table: String,
-    #[serde(alias = "shardingKey")]
     sharding_key: Option<String>,
-    #[serde(alias = "policyName")]
     policy_name: Option<String>,
 }
 
