@@ -7,12 +7,11 @@ than being embedded at build time.
 """
 
 from moose_lib import Key, OlapTable, OlapConfig, S3QueueEngine, moose_runtime_env
-from dataclasses import dataclass
+from pydantic import BaseModel
 from datetime import datetime
 
 
-@dataclass
-class S3QueueTestData:
+class S3QueueTestData(BaseModel):
     id: Key[str]
     timestamp: datetime
     data: str
@@ -20,10 +19,9 @@ class S3QueueTestData:
 
 # Test S3Queue with runtime environment variable resolution using moose_runtime_env
 # This table will only be created if the required environment variables are set
-s3_queue_with_secrets = OlapTable(
-    S3QueueTestData,
+s3_queue_with_secrets = OlapTable[S3QueueTestData](
     "S3QueueWithSecrets",
-    config=OlapConfig(
+    OlapConfig(
         engine=S3QueueEngine(
             s3_path="s3://test-bucket/data/*.json",
             format="JSONEachRow",
@@ -39,10 +37,9 @@ s3_queue_with_secrets = OlapTable(
 )
 
 # Test S3Queue with public bucket (no credentials needed)
-s3_queue_public = OlapTable(
-    S3QueueTestData,
+s3_queue_public = OlapTable[S3QueueTestData](
     "S3QueuePublic",
-    config=OlapConfig(
+    OlapConfig(
         engine=S3QueueEngine(
             s3_path="s3://public-test-bucket/data/*.csv",
             format="CSV",
