@@ -1945,11 +1945,34 @@ pub fn extract_column_ttls_from_create_query(
             let after = &line_trim[idx + 5..];
             let after_upper = after.to_uppercase();
             let mut cut = after.len();
+
+            // Check for keywords that end the TTL expression
             for kw in [" DEFAULT", " COMMENT"] {
                 if let Some(pos) = after_upper.find(kw) {
                     cut = cut.min(pos);
                 }
             }
+
+            // Find the closing parenthesis at depth 0 (the one that ends the column list)
+            let mut depth = 0;
+            for (i, ch) in after.chars().enumerate() {
+                if i >= cut {
+                    break;
+                }
+                match ch {
+                    '(' => depth += 1,
+                    ')' => {
+                        if depth == 0 {
+                            // This is the closing parenthesis of the column list
+                            cut = cut.min(i);
+                            break;
+                        }
+                        depth -= 1;
+                    }
+                    _ => {}
+                }
+            }
+
             let expr = after[..cut].trim();
             if !expr.is_empty() {
                 map.insert(col_name.to_string(), expr.to_string());
@@ -2404,6 +2427,26 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
             Some(&"timestamp + toIntervalDay(1)".to_string())
         );
         assert!(!map.contains_key("z"));
+        assert!(!map.contains_key("timestamp"));
+    }
+
+    #[test]
+    fn test_extract_column_ttls_without_engine_clause() {
+        // Test case where the last column has TTL and there's a closing parenthesis
+        let query = "CREATE TABLE local.TTLTable
+(
+    `id` String,
+    `timestamp` DateTime('UTC'),
+    `email` String TTL timestamp + toIntervalDay(30)
+)";
+        let map = extract_column_ttls_from_create_query(query).expect("expected some TTLs");
+
+        assert_eq!(
+            map.get("email"),
+            Some(&"timestamp + toIntervalDay(30)".to_string()),
+            "TTL should not include trailing parenthesis"
+        );
+        assert!(!map.contains_key("id"));
         assert!(!map.contains_key("timestamp"));
     }
 
