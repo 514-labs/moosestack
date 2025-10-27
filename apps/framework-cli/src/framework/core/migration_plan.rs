@@ -326,6 +326,7 @@ mod tests {
                 table: "users".to_string(),
                 before_column: before_column.clone(),
                 after_column,
+                database: None,
             }],
         };
 
@@ -371,6 +372,7 @@ mod tests {
                 table: "users".to_string(),
                 before_column,
                 after_column,
+                database: None,
             }],
         };
 
