@@ -397,6 +397,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
               'ClickHouseTTL("timestamp + INTERVAL 14 DAY")',
             );
         }
+        console.log("contents\n", contents);
         await fs.promises.writeFile(engineTestsPath, contents, "utf8");
 
         // Verify DDL reflects updated TTL settings
@@ -467,6 +468,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
               'count: Annotated[int, "uint32"]',
             );
         }
+        console.log("contents\n", contents);
         await fs.promises.writeFile(engineTestsPath, contents, "utf8");
 
         // Verify DDL reflects removed DEFAULT settings
