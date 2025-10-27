@@ -335,7 +335,13 @@ export type ReplicatedSummingMergeTreeConfig<T> = Omit<
  * in the settings field, not here.
  * @template T The data type of the records stored in the table.
  */
-export type S3QueueConfig<T> = Omit<BaseOlapConfig<T>, "settings"> & {
+export type S3QueueConfig<T> = Omit<
+  BaseOlapConfig<T>,
+  "settings",
+  "orderByFields",
+  "partitionBy",
+  "sampleByExpression"
+> & {
   engine: ClickHouseEngines.S3Queue;
   /** S3 bucket path with wildcards (e.g., 's3://bucket/data/*.json') */
   s3Path: string;
