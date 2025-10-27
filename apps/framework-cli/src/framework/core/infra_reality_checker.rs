@@ -227,7 +227,19 @@ impl<T: OlapOperations> InfraRealityChecker<T> {
                 }
 
                 // TTL: table-level diff
-                if actual_table.table_ttl_setting != mapped_table.table_ttl_setting {
+                // Use normalized comparison to avoid false positives from ClickHouse's TTL normalization
+                // ClickHouse converts "INTERVAL 30 DAY" to "toIntervalDay(30)"
+                use crate::infrastructure::olap::clickhouse::normalize_ttl_expression;
+                let actual_ttl_normalized = actual_table
+                    .table_ttl_setting
+                    .as_ref()
+                    .map(|t| normalize_ttl_expression(t));
+                let mapped_ttl_normalized = mapped_table
+                    .table_ttl_setting
+                    .as_ref()
+                    .map(|t| normalize_ttl_expression(t));
+
+                if actual_ttl_normalized != mapped_ttl_normalized {
                     mismatched_tables.push(OlapChange::Table(TableChange::TtlChanged {
                         name: name.clone(),
                         before: actual_table.table_ttl_setting.clone(),

@@ -454,7 +454,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
             )
             .replace(
               'count: UInt32 & ClickHouseDefault<"0">;',
-              "count: number;",
+              "count: UInt32;",
             );
         } else {
           contents = contents
@@ -476,14 +476,14 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
             if (ddl.includes("`status` String DEFAULT 'pending'")) {
               throw new Error(`DEFAULT not removed from status. DDL: ${ddl}`);
             }
-            if (ddl.includes("`count` Int32 DEFAULT 0")) {
+            if (ddl.includes("`count` UInt32 DEFAULT 0")) {
               throw new Error(`DEFAULT not removed from count. DDL: ${ddl}`);
             }
             // Verify columns still exist without DEFAULT
             if (!ddl.includes("`status` String")) {
               throw new Error(`status column not found. DDL: ${ddl}`);
             }
-            if (!ddl.includes("`count` Int32")) {
+            if (!ddl.includes("`count` UInt32")) {
               throw new Error(`count column not found. DDL: ${ddl}`);
             }
           },

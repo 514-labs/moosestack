@@ -1827,6 +1827,44 @@ pub fn extract_table_ttl_from_create_query(create_query: &str) -> Option<String>
     }
 }
 
+/// Normalize a TTL expression to match ClickHouse's canonical form.
+/// Converts SQL INTERVAL syntax to toInterval* function calls that ClickHouse uses internally.
+///
+/// # Examples
+/// - "timestamp + INTERVAL 30 DAY" → "timestamp + toIntervalDay(30)"
+/// - "timestamp + INTERVAL 1 MONTH" → "timestamp + toIntervalMonth(1)"
+/// - "timestamp + INTERVAL 90 DAY DELETE" → "timestamp + toIntervalDay(90) DELETE"
+pub fn normalize_ttl_expression(expr: &str) -> String {
+    use regex::Regex;
+
+    // Pattern to match INTERVAL N UNIT, where N is a number and UNIT is the time unit
+    // Captures: (number) (unit)
+    let interval_pattern =
+        Regex::new(r"(?i)INTERVAL\s+(\d+)\s+(SECOND|MINUTE|HOUR|DAY|WEEK|MONTH|QUARTER|YEAR)")
+            .expect("Valid regex pattern");
+
+    interval_pattern
+        .replace_all(expr, |caps: &regex::Captures| {
+            let number = &caps[1];
+            let unit = caps[2].to_uppercase();
+
+            let func_name = match unit.as_str() {
+                "SECOND" => "toIntervalSecond",
+                "MINUTE" => "toIntervalMinute",
+                "HOUR" => "toIntervalHour",
+                "DAY" => "toIntervalDay",
+                "WEEK" => "toIntervalWeek",
+                "MONTH" => "toIntervalMonth",
+                "QUARTER" => "toIntervalQuarter",
+                "YEAR" => "toIntervalYear",
+                _ => return format!("INTERVAL {} {}", number, unit), // Shouldn't happen, but keep as-is
+            };
+
+            format!("{}({})", func_name, number)
+        })
+        .to_string()
+}
+
 /// Extract column-level TTL expressions from the CREATE TABLE column list.
 /// Returns a map of column name to TTL expression (without leading 'TTL').
 pub fn extract_column_ttls_from_create_query(
@@ -2268,6 +2306,81 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
         let query = "CREATE TABLE test (`PRIMARY KEY` Int64) ENGINE = MergeTree() ORDER BY (`id`)";
         let order_by = extract_order_by_from_create_query(query);
         assert_eq!(order_by, vec!["id".to_string()]);
+    }
+
+    #[test]
+    fn test_normalize_ttl_expression() {
+        // Test DAY conversion
+        assert_eq!(
+            normalize_ttl_expression("timestamp + INTERVAL 30 DAY"),
+            "timestamp + toIntervalDay(30)"
+        );
+
+        // Test MONTH conversion
+        assert_eq!(
+            normalize_ttl_expression("timestamp + INTERVAL 1 MONTH"),
+            "timestamp + toIntervalMonth(1)"
+        );
+
+        // Test YEAR conversion
+        assert_eq!(
+            normalize_ttl_expression("timestamp + INTERVAL 2 YEAR"),
+            "timestamp + toIntervalYear(2)"
+        );
+
+        // Test HOUR conversion
+        assert_eq!(
+            normalize_ttl_expression("timestamp + INTERVAL 24 HOUR"),
+            "timestamp + toIntervalHour(24)"
+        );
+
+        // Test MINUTE conversion
+        assert_eq!(
+            normalize_ttl_expression("timestamp + INTERVAL 60 MINUTE"),
+            "timestamp + toIntervalMinute(60)"
+        );
+
+        // Test SECOND conversion
+        assert_eq!(
+            normalize_ttl_expression("timestamp + INTERVAL 3600 SECOND"),
+            "timestamp + toIntervalSecond(3600)"
+        );
+
+        // Test WEEK conversion
+        assert_eq!(
+            normalize_ttl_expression("timestamp + INTERVAL 4 WEEK"),
+            "timestamp + toIntervalWeek(4)"
+        );
+
+        // Test QUARTER conversion
+        assert_eq!(
+            normalize_ttl_expression("timestamp + INTERVAL 1 QUARTER"),
+            "timestamp + toIntervalQuarter(1)"
+        );
+
+        // Test with DELETE clause
+        assert_eq!(
+            normalize_ttl_expression("timestamp + INTERVAL 90 DAY DELETE"),
+            "timestamp + toIntervalDay(90) DELETE"
+        );
+
+        // Test case insensitivity
+        assert_eq!(
+            normalize_ttl_expression("timestamp + interval 30 day"),
+            "timestamp + toIntervalDay(30)"
+        );
+
+        // Test already normalized expression (should be unchanged)
+        assert_eq!(
+            normalize_ttl_expression("timestamp + toIntervalDay(30)"),
+            "timestamp + toIntervalDay(30)"
+        );
+
+        // Test multiple intervals in one expression
+        assert_eq!(
+            normalize_ttl_expression("timestamp + INTERVAL 1 MONTH + INTERVAL 7 DAY"),
+            "timestamp + toIntervalMonth(1) + toIntervalDay(7)"
+        );
     }
 
     #[test]
