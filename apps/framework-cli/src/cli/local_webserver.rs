@@ -2967,7 +2967,9 @@ async fn update_inframap_tables(
             Some(table) => {
                 debug!("Updating table {} in inframap", table_name);
                 // Use table.id() as the key for the HashMap
-                infra_map.tables.insert(table.id(), table);
+                infra_map
+                    .tables
+                    .insert(table.id(&infra_map.default_database), table);
                 updated_tables.push(table_name);
             }
             None => {
@@ -2982,7 +2984,7 @@ async fn update_inframap_tables(
                         .iter()
                         .find(|change| matches!(change, OlapChange::Table(TableChange::Removed(table)) if table.name == table_name))
                     {
-                        infra_map.tables.remove(&table.id());
+                        infra_map.tables.remove(&table.id(&infra_map.default_database));
                         updated_tables.push(table_name);
                     }
                 } else {
@@ -2990,7 +2992,7 @@ async fn update_inframap_tables(
                     // Check if this table is in unmapped_tables
                     if let Some(table) = discrepancies.unmapped_tables.iter().find(|t| t.name == table_name) {
                         debug!("Found unmapped table {}, adding to inframap", table_name);
-                        infra_map.tables.insert(table.id(), table.clone());
+                        infra_map.tables.insert(table.id(&infra_map.default_database), table.clone());
                         updated_tables.push(table_name);
                     } else {
                         debug!("Table {} is not unmapped", table_name);
@@ -3447,6 +3449,7 @@ mod tests {
     };
     use crate::framework::core::partial_infrastructure_map::LifeCycle;
     use crate::framework::versions::Version;
+    use crate::infrastructure::olap::clickhouse::config::DEFAULT_DATABASE_NAME;
 
     fn create_test_table(name: &str) -> Table {
         Table {
@@ -3476,6 +3479,7 @@ mod tests {
             engine_params_hash: None,
             table_settings: None,
             indexes: vec![],
+            database: None,
             table_ttl_setting: None,
         }
     }
@@ -3517,9 +3521,15 @@ mod tests {
 
         assert_eq!(updated_tables.len(), 1);
         assert_eq!(updated_tables[0], table_name);
-        assert!(infra_map.tables.contains_key(&test_table.id()));
+        assert!(infra_map
+            .tables
+            .contains_key(&test_table.id(DEFAULT_DATABASE_NAME)));
         assert_eq!(
-            infra_map.tables.get(&test_table.id()).unwrap().name,
+            infra_map
+                .tables
+                .get(&test_table.id(DEFAULT_DATABASE_NAME))
+                .unwrap()
+                .name,
             table_name
         );
     }
@@ -3543,9 +3553,15 @@ mod tests {
 
         assert_eq!(updated_tables.len(), 1);
         assert_eq!(updated_tables[0], table_name);
-        assert!(infra_map.tables.contains_key(&test_table.id()));
+        assert!(infra_map
+            .tables
+            .contains_key(&test_table.id(DEFAULT_DATABASE_NAME)));
         assert_eq!(
-            infra_map.tables.get(&test_table.id()).unwrap().name,
+            infra_map
+                .tables
+                .get(&test_table.id(DEFAULT_DATABASE_NAME))
+                .unwrap()
+                .name,
             table_name
         );
     }

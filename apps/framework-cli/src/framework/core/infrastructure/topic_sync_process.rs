@@ -25,7 +25,7 @@ pub struct TopicToTableSyncProcess {
 }
 
 impl TopicToTableSyncProcess {
-    pub fn new(topic: &Topic, table: &Table) -> Self {
+    pub fn new(topic: &Topic, table: &Table, default_database: &str) -> Self {
         if topic.version != table.version {
             panic!("Version mismatch between topic and table")
         }
@@ -33,7 +33,7 @@ impl TopicToTableSyncProcess {
         TopicToTableSyncProcess {
             source_topic_id: topic.id(),
             columns: topic.columns.clone(),
-            target_table_id: table.id(),
+            target_table_id: table.id(default_database),
             version: topic.version.clone(),
             source_primitive: topic.source_primitive.clone(),
         }

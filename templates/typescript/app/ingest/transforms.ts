@@ -7,17 +7,17 @@ FooPipeline.stream!.addTransform(
   async (foo: Foo): Promise<Bar> => {
     /**
      * Transform Foo events to Bar events with error handling and caching.
-     * 
+     *
      * Normal flow:
      * 1. Check cache for previously processed events
      * 2. Transform Foo to Bar
      * 3. Cache the result
      * 4. Return transformed Bar event
-     * 
+     *
      * Alternate flow (DLQ):
      * - If errors occur during transformation, the event is sent to DLQ
      * - This enables separate error handling, monitoring, and retry strategies
-    */
+     */
 
     // Initialize cache
     const cache = await MooseCache.get();
@@ -37,7 +37,7 @@ FooPipeline.stream!.addTransform(
 
     const result: Bar = {
       primaryKey: foo.primaryKey,
-      utcTimestamp: new Date(foo.timestamp * 1000), // Convert timestamp to Date
+      utcTimestamp: new Date(foo.timestamp), // timestamp is already in milliseconds
       hasText: foo.optionalText !== undefined,
       textLength: foo.optionalText?.length ?? 0,
     };
@@ -56,7 +56,7 @@ FooPipeline.stream!.addTransform(
 const printFooEvent = (foo: Foo): void => {
   console.log("Received Foo event:");
   console.log(`  Primary Key: ${foo.primaryKey}`);
-  console.log(`  Timestamp: ${new Date(foo.timestamp * 1000)}`);
+  console.log(`  Timestamp: ${new Date(foo.timestamp)}`); // timestamp is already in milliseconds
   console.log(`  Optional Text: ${foo.optionalText ?? "None"}`);
   console.log("---");
 };

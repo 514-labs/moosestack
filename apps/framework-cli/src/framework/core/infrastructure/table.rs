@@ -288,6 +288,10 @@ pub struct Table {
     /// Secondary indexes.
     #[serde(default)]
     pub indexes: Vec<TableIndex>,
+    /// Optional database name for multi-database support
+    /// When not specified, uses the global ClickHouse config database
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub database: Option<String>,
     /// Table-level TTL expression (without leading 'TTL')
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub table_ttl_setting: Option<String>,
@@ -296,10 +300,57 @@ pub struct Table {
 impl Table {
     // This is only to be used in the context of the new core
     // currently name includes the version, here we are separating that out.
-    pub fn id(&self) -> String {
-        self.version.as_ref().map_or(self.name.clone(), |v| {
+    pub fn id(&self, default_database: &str) -> String {
+        // Table ID includes database, name, and version
+        // - database: Use the configured default_database when None to match explicit database from ClickHouse
+        // - This ensures tables with database: None and database: Some(configured_db) have the same ID
+        // - Tables in different databases will have different IDs (preventing collisions)
+
+        // Get the database, defaulting to the configured default_database if None
+        let db = self.database.as_deref().unwrap_or(default_database);
+
+        // Build base_id with name and optional version
+        let base_id = self.version.as_ref().map_or(self.name.clone(), |v| {
             format!("{}_{}", self.name, v.as_suffix())
-        })
+        });
+
+        // Only include database prefix if name doesn't already contain a dot (fully qualified name)
+        if self.name.contains('.') {
+            base_id
+        } else {
+            format!("{}_{}", db, base_id)
+        }
+    }
+
+    /// Computes a hash of non-alterable parameters including engine params and database
+    /// This hash is used for change detection - if it changes, the table must be dropped and recreated
+    pub fn compute_non_alterable_params_hash(&self) -> Option<String> {
+        use sha2::{Digest, Sha256};
+
+        // Combine engine hash and database into a single hash
+        let engine_hash = self.engine.as_ref().map(|e| e.non_alterable_params_hash());
+
+        // If we have neither engine hash nor database, return None
+        if engine_hash.is_none() && self.database.is_none() {
+            return None;
+        }
+
+        // Create a combined hash that includes both engine params and database
+        let mut hasher = Sha256::new();
+
+        // Include engine params hash if it exists
+        if let Some(ref hash) = engine_hash {
+            hasher.update(hash.as_bytes());
+        }
+
+        // Include database field
+        if let Some(ref db) = self.database {
+            hasher.update(b"database:");
+            hasher.update(db.as_bytes());
+        }
+
+        // Convert to hex string
+        Some(format!("{:x}", hasher.finalize()))
     }
 
     pub fn matches(&self, target_table_name: &str, target_table_version: Option<&Version>) -> bool {
@@ -406,11 +457,11 @@ impl Table {
                 special_fields: Default::default(),
             })),
             order_by2: MessageField::some(proto_order_by2),
-            // Store the hash for change detection (or calculate it if not present)
+            // Store the hash for change detection, including database field
             engine_params_hash: self
                 .engine_params_hash
                 .clone()
-                .or_else(|| self.engine.as_ref().map(|e| e.non_alterable_params_hash())),
+                .or_else(|| self.compute_non_alterable_params_hash()),
             table_settings: self.table_settings.clone().unwrap_or_default(),
             table_ttl_setting: self.table_ttl_setting.clone(),
             metadata: MessageField::from_option(self.metadata.as_ref().map(|m| {
@@ -431,6 +482,7 @@ impl Table {
                 LifeCycle::ExternallyManaged => ProtoLifeCycle::EXTERNALLY_MANAGED.into(),
             },
             indexes: self.indexes.iter().map(|i| i.to_proto()).collect(),
+            database: self.database.clone(),
             special_fields: Default::default(),
         }
     }
@@ -516,6 +568,8 @@ impl Table {
                 .into_iter()
                 .map(TableIndex::from_proto)
                 .collect(),
+            // Load database from proto
+            database: proto.database,
             table_ttl_setting: proto.table_ttl_setting,
         }
     }
@@ -1354,6 +1408,7 @@ impl EnumValue {
 mod tests {
 
     use super::*;
+    use crate::infrastructure::olap::clickhouse::config::DEFAULT_DATABASE_NAME;
 
     fn serialize_and_deserialize(t: &ColumnType) {
         let json = serde_json::to_string(t).unwrap();
@@ -1474,5 +1529,104 @@ mod tests {
 
         assert_eq!(column_without_comment, reconstructed);
         assert_eq!(reconstructed.comment, None);
+    }
+
+    #[test]
+    fn test_table_id_with_database_field() {
+        use crate::framework::core::infrastructure_map::PrimitiveTypes;
+
+        // Test 1: Simple table without database field - uses DEFAULT_DATABASE
+        let table1 = Table {
+            name: "users".to_string(),
+            columns: vec![],
+            order_by: OrderBy::Fields(vec![]),
+            partition_by: None,
+            sample_by: None,
+            engine: None,
+            version: None,
+            source_primitive: PrimitiveSignature {
+                name: "Users".to_string(),
+                primitive_type: PrimitiveTypes::DataModel,
+            },
+            metadata: None,
+            life_cycle: LifeCycle::FullyManaged,
+            engine_params_hash: None,
+            table_settings: None,
+            indexes: vec![],
+            database: None,
+            table_ttl_setting: None,
+        };
+        assert_eq!(table1.id(DEFAULT_DATABASE_NAME), "local_users");
+
+        // Test 2: Table with explicit "local" database - should match table1
+        let table2 = Table {
+            name: "users".to_string(),
+            database: Some("local".to_string()),
+            ..table1.clone()
+        };
+        assert_eq!(table2.id(DEFAULT_DATABASE_NAME), "local_users");
+        assert_eq!(
+            table1.id(DEFAULT_DATABASE_NAME),
+            table2.id(DEFAULT_DATABASE_NAME),
+            "database: None and database: Some('local') should produce same ID"
+        );
+
+        // Test 2b: Table with different database - should have different ID
+        let table2b = Table {
+            name: "users".to_string(),
+            database: Some("analytics".to_string()),
+            ..table1.clone()
+        };
+        assert_eq!(table2b.id(DEFAULT_DATABASE_NAME), "analytics_users");
+
+        // Test 3: Legacy format - table name contains database prefix (backward compatibility)
+        let table3 = Table {
+            name: "analytics.users".to_string(),
+            database: None,
+            ..table1.clone()
+        };
+        assert_eq!(table3.id(DEFAULT_DATABASE_NAME), "analytics.users");
+
+        // Test 4: CRITICAL - Adding database field to legacy format should NOT change ID
+        let table4 = Table {
+            name: "analytics.users".to_string(),
+            database: Some("analytics".to_string()),
+            ..table1.clone()
+        };
+        assert_eq!(
+            table4.id(DEFAULT_DATABASE_NAME),
+            "analytics.users",
+            "ID should remain stable when database field is added to legacy table name format"
+        );
+
+        // Test 5: Even with mismatched database, ID should remain stable (name takes precedence)
+        let table5 = Table {
+            name: "analytics.users".to_string(),
+            database: Some("other_db".to_string()),
+            ..table1.clone()
+        };
+        assert_eq!(
+            table5.id(DEFAULT_DATABASE_NAME),
+            "analytics.users",
+            "ID should use name (which contains dot) even if database field differs"
+        );
+
+        // Test 6: With version - database should be included
+        let table6 = Table {
+            name: "users".to_string(),
+            version: Some(Version::from_string("1.0".to_string())),
+            database: Some("analytics".to_string()),
+            ..table1.clone()
+        };
+        assert_eq!(table6.id(DEFAULT_DATABASE_NAME), "analytics_users_1_0");
+
+        // Test 7: With version and default database
+        let table7 = Table {
+            name: "users".to_string(),
+            version: Some(Version::from_string("1.0".to_string())),
+            database: None,
+            ..table1.clone()
+        };
+        assert_eq!(table7.id(DEFAULT_DATABASE_NAME), "local_users_1_0");
     }
 }

@@ -14,6 +14,42 @@ use crate::framework::core::infrastructure_map::{
 use crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine;
 use std::collections::HashMap;
 
+/// Generates a formatted error message for database field changes.
+///
+/// This function creates a user-friendly error message explaining that database field
+/// changes require manual intervention to prevent data loss.
+///
+/// # Arguments
+/// * `table_name` - The name of the table being changed
+/// * `before_db` - The original database name (or "<default>" if None)
+/// * `after_db` - The new database name (or "<default>" if None)
+///
+/// # Returns
+/// A formatted string with migration instructions
+fn format_database_change_error(table_name: &str, before_db: &str, after_db: &str) -> String {
+    format!(
+        "\n\n\
+        ERROR: Database field change detected for table '{}'\n\
+        \n\
+        The database field changed from '{}' to '{}'\n\
+        \n\
+        Changing the database field is a destructive operation that requires\n\
+        manual intervention to ensure data safety.\n\
+        \n\
+        To migrate this table to a new database:\n\
+        \n\
+        1. Create a new table definition with the target database\n\
+        2. Migrate your data (if needed):\n\
+           INSERT INTO {}.{} SELECT * FROM {}.{}\n\
+        3. Update your application to use the new table\n\
+        4. Delete the old table definition from your code\n\
+        \n\
+        This ensures you maintain control over data migration and prevents\n\
+        accidental data loss.\n",
+        table_name, before_db, after_db, after_db, table_name, before_db, table_name
+    )
+}
+
 /// ClickHouse-specific table diff strategy
 ///
 /// ClickHouse has several limitations that require drop+create operations instead of ALTER:
@@ -223,6 +259,7 @@ impl TableDiffStrategy for ClickHouseTableDiffStrategy {
         after: &Table,
         column_changes: Vec<ColumnChange>,
         order_by_change: OrderByChange,
+        default_database: &str,
     ) -> Vec<OlapChange> {
         // Check if ORDER BY has changed
         let order_by_changed = order_by_change.before != order_by_change.after;
@@ -235,6 +272,33 @@ impl TableDiffStrategy for ClickHouseTableDiffStrategy {
                 OlapChange::Table(TableChange::Removed(before.clone())),
                 OlapChange::Table(TableChange::Added(after.clone())),
             ];
+        }
+
+        // Check if database has changed
+        // Note: database: None means "use default database" (from config)
+        // Only treat it as a real change if both are Some() and different, OR
+        // if one is None and the other is Some(non-default)
+        let database_changed = match (&before.database, &after.database) {
+            (Some(before_db), Some(after_db)) => before_db != after_db,
+            (None, None) => false,
+            // If one is None and one is Some(default_database), treat as equivalent
+            (None, Some(db)) | (Some(db), None) => db != default_database,
+        };
+
+        if database_changed {
+            let before_db = before.database.as_deref().unwrap_or(default_database);
+            let after_db = after.database.as_deref().unwrap_or(default_database);
+
+            let error_message = format_database_change_error(&before.name, before_db, after_db);
+
+            log::error!("{}", error_message);
+
+            return vec![OlapChange::Table(TableChange::ValidationError {
+                table_name: before.name.clone(),
+                message: error_message,
+                before: Box::new(before.clone()),
+                after: Box::new(after.clone()),
+            })];
         }
 
         // Check if PARTITION BY has changed
@@ -445,6 +509,7 @@ mod tests {
             engine_params_hash: None,
             table_settings: None,
             indexes: vec![],
+            database: None,
             table_ttl_setting: None,
         }
     }
@@ -465,7 +530,7 @@ mod tests {
             after: OrderBy::Fields(vec!["id".to_string(), "timestamp".to_string()]),
         };
 
-        let changes = strategy.diff_table_update(&before, &after, vec![], order_by_change);
+        let changes = strategy.diff_table_update(&before, &after, vec![], order_by_change, "local");
 
         assert_eq!(changes.len(), 2);
         assert!(matches!(
@@ -490,7 +555,7 @@ mod tests {
             after: after.order_by.clone(),
         };
 
-        let changes = strategy.diff_table_update(&before, &after, vec![], order_by_change);
+        let changes = strategy.diff_table_update(&before, &after, vec![], order_by_change, "local");
 
         assert_eq!(changes.len(), 2);
         assert!(matches!(
@@ -530,7 +595,8 @@ mod tests {
             after: after.order_by.clone(),
         };
 
-        let changes = strategy.diff_table_update(&before, &after, column_changes, order_by_change);
+        let changes =
+            strategy.diff_table_update(&before, &after, column_changes, order_by_change, "local");
 
         assert_eq!(changes.len(), 1);
         assert!(matches!(
@@ -575,7 +641,8 @@ mod tests {
             after: OrderBy::Fields(vec!["id".to_string(), "timestamp".to_string()]),
         };
 
-        let changes = strategy.diff_table_update(&before, &after, column_changes, order_by_change);
+        let changes =
+            strategy.diff_table_update(&before, &after, column_changes, order_by_change, "local");
 
         // With identical ORDER BY but column changes, should use ALTER (not drop+create)
         assert_eq!(changes.len(), 1);
@@ -608,7 +675,8 @@ mod tests {
             after: OrderBy::Fields(vec!["id".to_string(), "timestamp".to_string()]),
         };
 
-        let changes = strategy.diff_table_update(&before, &after, column_changes, order_by_change);
+        let changes =
+            strategy.diff_table_update(&before, &after, column_changes, order_by_change, "local");
 
         // With no actual changes, should return empty vector
         assert_eq!(changes.len(), 0);
@@ -628,7 +696,8 @@ mod tests {
             after: OrderBy::Fields(vec!["timestamp".to_string()]),
         };
 
-        let changes = strategy.diff_table_update(&before, &after, column_changes, order_by_change);
+        let changes =
+            strategy.diff_table_update(&before, &after, column_changes, order_by_change, "local");
 
         // Should still require drop+create even with no column changes
         assert_eq!(changes.len(), 2);
@@ -658,7 +727,7 @@ mod tests {
             after: after.order_by.clone(),
         };
 
-        let changes = strategy.diff_table_update(&before, &after, vec![], order_by_change);
+        let changes = strategy.diff_table_update(&before, &after, vec![], order_by_change, "local");
 
         // SAMPLE BY change is handled via ALTER TABLE, expect an Updated change
         assert!(changes
@@ -682,12 +751,88 @@ mod tests {
             after: after.order_by.clone(),
         };
 
-        let changes = strategy.diff_table_update(&before, &after, vec![], order_by_change);
+        let changes = strategy.diff_table_update(&before, &after, vec![], order_by_change, "local");
 
         // SAMPLE BY modification is handled via ALTER TABLE, expect an Updated change
         assert!(changes
             .iter()
             .any(|c| matches!(c, OlapChange::Table(TableChange::Updated { .. }))));
+    }
+
+    #[test]
+    fn test_database_change_triggers_validation_error() {
+        let strategy = ClickHouseTableDiffStrategy;
+
+        let mut before = create_test_table("test", vec!["id".to_string()], false);
+        let mut after = create_test_table("test", vec!["id".to_string()], false);
+
+        // Change the database field
+        before.database = Some("old_db".to_string());
+        after.database = Some("new_db".to_string());
+
+        let order_by_change = OrderByChange {
+            before: before.order_by.clone(),
+            after: after.order_by.clone(),
+        };
+
+        let changes = strategy.diff_table_update(&before, &after, vec![], order_by_change, "local");
+
+        // Should return exactly one ValidationError
+        assert_eq!(changes.len(), 1);
+        assert!(matches!(
+            changes[0],
+            OlapChange::Table(TableChange::ValidationError { .. })
+        ));
+
+        // Check the error message contains expected information
+        if let OlapChange::Table(TableChange::ValidationError {
+            table_name,
+            message,
+            ..
+        }) = &changes[0]
+        {
+            assert_eq!(table_name, "test");
+            assert!(message.contains("old_db"));
+            assert!(message.contains("new_db"));
+            assert!(message.contains("manual intervention"));
+        } else {
+            panic!("Expected ValidationError variant");
+        }
+    }
+
+    #[test]
+    fn test_database_change_from_none_to_some_triggers_validation_error() {
+        let strategy = ClickHouseTableDiffStrategy;
+
+        let mut before = create_test_table("test", vec!["id".to_string()], false);
+        let mut after = create_test_table("test", vec!["id".to_string()], false);
+
+        // Change database from None (default) to Some
+        before.database = None;
+        after.database = Some("new_db".to_string());
+
+        let order_by_change = OrderByChange {
+            before: before.order_by.clone(),
+            after: after.order_by.clone(),
+        };
+
+        let changes = strategy.diff_table_update(&before, &after, vec![], order_by_change, "local");
+
+        // Should return exactly one ValidationError
+        assert_eq!(changes.len(), 1);
+        assert!(matches!(
+            changes[0],
+            OlapChange::Table(TableChange::ValidationError { .. })
+        ));
+
+        // Check the error message contains expected information
+        if let OlapChange::Table(TableChange::ValidationError { message, .. }) = &changes[0] {
+            assert!(message.contains("local")); // DEFAULT_DATABASE = "local"
+            assert!(message.contains("new_db"));
+            assert!(message.contains("manual intervention"));
+        } else {
+            panic!("Expected ValidationError variant");
+        }
     }
 
     #[test]
@@ -970,6 +1115,7 @@ mod tests {
             engine_params_hash: None,
             table_settings: Some(table_settings),
             indexes: vec![],
+            database: None,
             table_ttl_setting: None,
         };
 
@@ -1038,5 +1184,65 @@ mod tests {
         assert_eq!(mv_stmt.target_database, Some("mydb".to_string()));
         assert_eq!(mv_stmt.source_tables.len(), 1);
         assert_eq!(mv_stmt.source_tables[0].table, "source_table");
+    }
+
+    #[test]
+    fn test_format_database_change_error_basic() {
+        let error_msg = format_database_change_error("users", "local", "analytics");
+
+        // Check that all the expected components are present
+        assert!(error_msg.contains("ERROR: Database field change detected for table 'users'"));
+        assert!(error_msg.contains("The database field changed from 'local' to 'analytics'"));
+        assert!(error_msg.contains("INSERT INTO analytics.users SELECT * FROM local.users"));
+    }
+
+    #[test]
+    fn test_format_database_change_error_with_default() {
+        let error_msg = format_database_change_error("events", "<default>", "archive");
+
+        // Check handling of default database
+        assert!(error_msg.contains("ERROR: Database field change detected for table 'events'"));
+        assert!(error_msg.contains("The database field changed from '<default>' to 'archive'"));
+        assert!(error_msg.contains("INSERT INTO archive.events SELECT * FROM <default>.events"));
+    }
+
+    #[test]
+    fn test_format_database_change_error_formatting() {
+        let error_msg = format_database_change_error("test_table", "db1", "db2");
+
+        // Verify the INSERT statement has correct database.table format
+        assert!(error_msg.contains("INSERT INTO db2.test_table SELECT * FROM db1.test_table"));
+
+        // Verify migration instructions are present
+        assert!(error_msg.contains("1. Create a new table definition with the target database"));
+        assert!(error_msg.contains("2. Migrate your data (if needed):"));
+        assert!(error_msg.contains("3. Update your application to use the new table"));
+        assert!(error_msg.contains("4. Delete the old table definition from your code"));
+    }
+
+    #[test]
+    fn test_format_database_change_error_no_placeholder_leakage() {
+        // Test that there are no unresolved {} placeholders in the output
+        let error_msg = format_database_change_error("my_table", "source_db", "target_db");
+
+        // Count the number of curly braces - should all be matched or properly formatted
+        // The only {} should be in the formatted database.table references
+        let open_braces = error_msg.matches('{').count();
+        let close_braces = error_msg.matches('}').count();
+
+        // Should have no unmatched braces (all format placeholders resolved)
+        assert_eq!(
+            open_braces, 0,
+            "Found unresolved open braces in error message"
+        );
+        assert_eq!(
+            close_braces, 0,
+            "Found unresolved close braces in error message"
+        );
+
+        // Verify the actual formatted content
+        assert!(
+            error_msg.contains("INSERT INTO target_db.my_table SELECT * FROM source_db.my_table")
+        );
     }
 }

@@ -143,6 +143,7 @@ class OlapConfig(BaseModel):
         granularity: int = 1
 
     indexes: list[TableIndex] = []
+    database: Optional[str] = None  # Optional database name for multi-database support
 
     def model_post_init(self, __context):
         has_fields = bool(self.order_by_fields)

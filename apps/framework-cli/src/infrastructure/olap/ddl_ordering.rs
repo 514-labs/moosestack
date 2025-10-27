@@ -4,6 +4,8 @@ use crate::framework::core::infrastructure::view::{View, ViewType};
 use crate::framework::core::infrastructure::DataLineage;
 use crate::framework::core::infrastructure::InfrastructureSignature;
 use crate::framework::core::infrastructure_map::{Change, ColumnChange, OlapChange, TableChange};
+#[cfg(test)]
+use crate::infrastructure::olap::clickhouse::config::DEFAULT_DATABASE_NAME;
 use crate::infrastructure::olap::clickhouse::SerializableOlapOperation;
 use petgraph::algo::toposort;
 use petgraph::graph::{DiGraph, NodeIndex};
@@ -176,6 +178,7 @@ impl AtomicOlapOperation {
                 dependency_info: _,
             } => SerializableOlapOperation::DropTable {
                 table: table.name.clone(),
+                database: table.database.clone(),
             },
             AtomicOlapOperation::AddTableColumn {
                 table,
@@ -186,6 +189,7 @@ impl AtomicOlapOperation {
                 table: table.name.clone(),
                 column: column.clone(),
                 after_column: after_column.clone(),
+                database: table.database.clone(),
             },
             AtomicOlapOperation::DropTableColumn {
                 table,
@@ -194,6 +198,7 @@ impl AtomicOlapOperation {
             } => SerializableOlapOperation::DropTableColumn {
                 table: table.name.clone(),
                 column_name: column_name.clone(),
+                database: table.database.clone(),
             },
             AtomicOlapOperation::ModifyTableColumn {
                 table,
@@ -204,6 +209,7 @@ impl AtomicOlapOperation {
                 table: table.name.clone(),
                 before_column: before_column.clone(),
                 after_column: after_column.clone(),
+                database: table.database.clone(),
             },
             AtomicOlapOperation::ModifyTableSettings {
                 table,
@@ -214,6 +220,7 @@ impl AtomicOlapOperation {
                 table: table.name.clone(),
                 before_settings: before_settings.clone(),
                 after_settings: after_settings.clone(),
+                database: table.database.clone(),
             },
             AtomicOlapOperation::ModifyTableTtl {
                 table,
@@ -224,11 +231,13 @@ impl AtomicOlapOperation {
                 table: table.name.clone(),
                 before: before.clone(),
                 after: after.clone(),
+                database: table.database.clone(),
             },
             AtomicOlapOperation::AddTableIndex { table, index, .. } => {
                 SerializableOlapOperation::AddTableIndex {
                     table: table.name.clone(),
                     index: index.clone(),
+                    database: table.database.clone(),
                 }
             }
             AtomicOlapOperation::DropTableIndex {
@@ -236,16 +245,19 @@ impl AtomicOlapOperation {
             } => SerializableOlapOperation::DropTableIndex {
                 table: table.name.clone(),
                 index_name: index_name.clone(),
+                database: table.database.clone(),
             },
             AtomicOlapOperation::ModifySampleBy {
                 table, expression, ..
             } => SerializableOlapOperation::ModifySampleBy {
                 table: table.name.clone(),
                 expression: expression.clone(),
+                database: table.database.clone(),
             },
             AtomicOlapOperation::RemoveSampleBy { table, .. } => {
                 SerializableOlapOperation::RemoveSampleBy {
                     table: table.name.clone(),
+                    database: table.database.clone(),
                 }
             }
             AtomicOlapOperation::PopulateMaterializedView {
@@ -312,41 +324,45 @@ impl AtomicOlapOperation {
     }
 
     /// Returns the infrastructure signature associated with this operation
-    pub fn resource_signature(&self) -> InfrastructureSignature {
+    pub fn resource_signature(&self, default_database: &str) -> InfrastructureSignature {
         match self {
-            AtomicOlapOperation::CreateTable { table, .. } => {
-                InfrastructureSignature::Table { id: table.id() }
-            }
-            AtomicOlapOperation::DropTable { table, .. } => {
-                InfrastructureSignature::Table { id: table.id() }
-            }
-            AtomicOlapOperation::AddTableColumn { table, .. } => {
-                InfrastructureSignature::Table { id: table.id() }
-            }
-            AtomicOlapOperation::DropTableColumn { table, .. } => {
-                InfrastructureSignature::Table { id: table.id() }
-            }
+            AtomicOlapOperation::CreateTable { table, .. } => InfrastructureSignature::Table {
+                id: table.id(default_database),
+            },
+            AtomicOlapOperation::DropTable { table, .. } => InfrastructureSignature::Table {
+                id: table.id(default_database),
+            },
+            AtomicOlapOperation::AddTableColumn { table, .. } => InfrastructureSignature::Table {
+                id: table.id(default_database),
+            },
+            AtomicOlapOperation::DropTableColumn { table, .. } => InfrastructureSignature::Table {
+                id: table.id(default_database),
+            },
             AtomicOlapOperation::ModifyTableColumn { table, .. } => {
-                InfrastructureSignature::Table { id: table.id() }
+                InfrastructureSignature::Table {
+                    id: table.id(default_database),
+                }
             }
             AtomicOlapOperation::ModifyTableSettings { table, .. } => {
-                InfrastructureSignature::Table { id: table.id() }
+                InfrastructureSignature::Table {
+                    id: table.id(default_database),
+                }
             }
-            AtomicOlapOperation::ModifyTableTtl { table, .. } => {
-                InfrastructureSignature::Table { id: table.id() }
-            }
-            AtomicOlapOperation::AddTableIndex { table, .. } => {
-                InfrastructureSignature::Table { id: table.id() }
-            }
-            AtomicOlapOperation::DropTableIndex { table, .. } => {
-                InfrastructureSignature::Table { id: table.id() }
-            }
-            AtomicOlapOperation::ModifySampleBy { table, .. } => {
-                InfrastructureSignature::Table { id: table.id() }
-            }
-            AtomicOlapOperation::RemoveSampleBy { table, .. } => {
-                InfrastructureSignature::Table { id: table.id() }
-            }
+            AtomicOlapOperation::ModifyTableTtl { table, .. } => InfrastructureSignature::Table {
+                id: table.id(default_database),
+            },
+            AtomicOlapOperation::AddTableIndex { table, .. } => InfrastructureSignature::Table {
+                id: table.id(default_database),
+            },
+            AtomicOlapOperation::DropTableIndex { table, .. } => InfrastructureSignature::Table {
+                id: table.id(default_database),
+            },
+            AtomicOlapOperation::ModifySampleBy { table, .. } => InfrastructureSignature::Table {
+                id: table.id(default_database),
+            },
+            AtomicOlapOperation::RemoveSampleBy { table, .. } => InfrastructureSignature::Table {
+                id: table.id(default_database),
+            },
             AtomicOlapOperation::PopulateMaterializedView { view_name, .. } => {
                 InfrastructureSignature::SqlResource {
                     id: view_name.clone(),
@@ -428,13 +444,13 @@ impl AtomicOlapOperation {
     /// Returns edges representing setup dependencies (dependency → dependent)
     ///
     /// These edges indicate that the dependency must be created before the dependent.
-    fn get_setup_edges(&self) -> Vec<DependencyEdge> {
+    fn get_setup_edges(&self, default_database: &str) -> Vec<DependencyEdge> {
         // No dependency info for NoOp
         let default_dependency_info = DependencyInfo::default();
         let dependency_info = self.dependency_info().unwrap_or(&default_dependency_info);
 
         // Get this operation's resource signature
-        let this_sig = self.resource_signature();
+        let this_sig = self.resource_signature(default_database);
 
         let mut edges = vec![];
 
@@ -470,7 +486,7 @@ impl AtomicOlapOperation {
     /// Returns edges representing teardown dependencies (dependent → dependency)
     ///
     /// These edges indicate that the dependent must be dropped before the dependency.
-    fn get_teardown_edges(&self) -> Vec<DependencyEdge> {
+    fn get_teardown_edges(&self, default_database: &str) -> Vec<DependencyEdge> {
         // No dependency info for NoOp
         let dependency_info = match self.dependency_info() {
             Some(info) => info,
@@ -478,7 +494,7 @@ impl AtomicOlapOperation {
         };
 
         // Get this operation's resource signature
-        let this_sig = self.resource_signature();
+        let this_sig = self.resource_signature(default_database);
 
         let mut edges = vec![];
 
@@ -956,6 +972,7 @@ fn handle_sql_resource_update(before: &SqlResource, after: &SqlResource) -> Oper
 ///   Tuple containing ordered teardown and setup operations
 pub fn order_olap_changes(
     changes: &[OlapChange],
+    default_database: &str,
 ) -> Result<(Vec<AtomicOlapOperation>, Vec<AtomicOlapOperation>), PlanOrderingError> {
     // First, collect all tables from the changes to provide context for SQL resource processing
     let mut tables = HashMap::new();
@@ -977,6 +994,10 @@ pub fn order_olap_changes(
                 }
                 TableChange::TtlChanged { table, .. } => {
                     tables.insert(table.name.clone(), table.clone());
+                }
+                TableChange::ValidationError { .. } => {
+                    // Validation errors should be caught by plan validator
+                    // before reaching this code. Skip processing.
                 }
             }
         } else if let OlapChange::PopulateMaterializedView { .. } = change {
@@ -1022,6 +1043,11 @@ pub fn order_olap_changes(
                     dependency_info: create_empty_dependency_info(),
                 });
                 plan
+            }
+            OlapChange::Table(TableChange::ValidationError { .. }) => {
+                // Validation errors should be caught by plan validator
+                // before reaching this code. Return empty plan.
+                OperationPlan::new()
             }
             OlapChange::PopulateMaterializedView {
                 view_name,
@@ -1074,8 +1100,10 @@ pub fn order_olap_changes(
     }
 
     // Now apply topological sorting to both the teardown and setup plans
-    let sorted_teardown_plan = order_operations_by_dependencies(&plan.teardown_ops, true)?;
-    let sorted_setup_plan = order_operations_by_dependencies(&plan.setup_ops, false)?;
+    let sorted_teardown_plan =
+        order_operations_by_dependencies(&plan.teardown_ops, true, default_database)?;
+    let sorted_setup_plan =
+        order_operations_by_dependencies(&plan.setup_ops, false, default_database)?;
 
     Ok((sorted_teardown_plan, sorted_setup_plan))
 }
@@ -1085,12 +1113,14 @@ pub fn order_olap_changes(
 /// # Arguments
 /// * `operations` - List of atomic operations to order
 /// * `is_teardown` - Whether we're ordering operations for teardown (true) or setup (false)
+/// * `default_database` - The default database name to use for table IDs
 ///
 /// # Returns
 /// * `Result<Vec<AtomicOlapOperation>, PlanOrderingError>` - Ordered list of operations
 fn order_operations_by_dependencies(
     operations: &[AtomicOlapOperation],
     is_teardown: bool,
+    default_database: &str,
 ) -> Result<Vec<AtomicOlapOperation>, PlanOrderingError> {
     if operations.is_empty() {
         return Ok(Vec::new());
@@ -1105,14 +1135,14 @@ fn order_operations_by_dependencies(
     let mut previous_idx: Option<NodeIndex> = None;
     // First pass: Create nodes for all operations
     for (i, op) in operations.iter().enumerate() {
-        let signature = op.resource_signature();
+        let signature = op.resource_signature(default_database);
 
         let node_idx = graph.add_node(i);
 
         let previous_signature = if i == 0 {
             None
         } else {
-            Some(operations[i - 1].resource_signature())
+            Some(operations[i - 1].resource_signature(default_database))
         };
         if previous_signature.as_ref() == Some(&signature) {
             // retain stable ordering within the same signature
@@ -1133,9 +1163,9 @@ fn order_operations_by_dependencies(
         let op = &operations[*i];
         // Get edges based on whether we're in teardown or setup mode
         let edges = if is_teardown {
-            op.get_teardown_edges()
+            op.get_teardown_edges(default_database)
         } else {
-            op.get_setup_edges()
+            op.get_setup_edges(default_database)
         };
         all_edges.extend(edges);
     }
@@ -1255,6 +1285,7 @@ mod tests {
             engine_params_hash: None,
             table_settings: None,
             indexes: vec![],
+            database: None,
             table_ttl_setting: None,
         };
 
@@ -1328,6 +1359,7 @@ mod tests {
             engine_params_hash: None,
             table_settings: None,
             indexes: vec![],
+            database: None,
             table_ttl_setting: None,
         };
 
@@ -1349,6 +1381,7 @@ mod tests {
             engine_params_hash: None,
             table_settings: None,
             indexes: vec![],
+            database: None,
             table_ttl_setting: None,
         };
 
@@ -1374,7 +1407,7 @@ mod tests {
             table: table_b.clone(),
             dependency_info: DependencyInfo {
                 pulls_data_from: vec![InfrastructureSignature::Table {
-                    id: "table_a".to_string(),
+                    id: table_a.id(DEFAULT_DATABASE_NAME),
                 }],
                 pushes_data_to: vec![],
             },
@@ -1384,7 +1417,7 @@ mod tests {
             view: view_c.clone(),
             dependency_info: DependencyInfo {
                 pulls_data_from: vec![InfrastructureSignature::Table {
-                    id: "table_b".to_string(),
+                    id: table_b.id(DEFAULT_DATABASE_NAME),
                 }],
                 pushes_data_to: vec![],
             },
@@ -1398,7 +1431,8 @@ mod tests {
         ];
 
         // Order the operations (setup mode - dependencies first)
-        let ordered = order_operations_by_dependencies(&operations, false).unwrap();
+        let ordered =
+            order_operations_by_dependencies(&operations, false, DEFAULT_DATABASE_NAME).unwrap();
 
         // Check that the order is correct: A, B, C
         assert_eq!(ordered.len(), 3);
@@ -1441,6 +1475,7 @@ mod tests {
             engine_params_hash: None,
             table_settings: None,
             indexes: vec![],
+            database: None,
             table_ttl_setting: None,
         };
 
@@ -1462,6 +1497,7 @@ mod tests {
             engine_params_hash: None,
             table_settings: None,
             indexes: vec![],
+            database: None,
             table_ttl_setting: None,
         };
 
@@ -1482,7 +1518,7 @@ mod tests {
                 pulls_data_from: vec![],
                 // Table A is a dependency for Table B
                 pushes_data_to: vec![InfrastructureSignature::Table {
-                    id: "table_b".to_string(),
+                    id: table_b.id(DEFAULT_DATABASE_NAME),
                 }],
             },
         };
@@ -1493,7 +1529,7 @@ mod tests {
             dependency_info: DependencyInfo {
                 // Table B depends on Table A
                 pulls_data_from: vec![InfrastructureSignature::Table {
-                    id: "table_a".to_string(),
+                    id: table_a.id(DEFAULT_DATABASE_NAME),
                 }],
                 // View C depends on Table B
                 pushes_data_to: vec![InfrastructureSignature::View {
@@ -1508,7 +1544,7 @@ mod tests {
             dependency_info: DependencyInfo {
                 // View C depends on Table B
                 pulls_data_from: vec![InfrastructureSignature::Table {
-                    id: "table_b".to_string(),
+                    id: table_b.id(DEFAULT_DATABASE_NAME),
                 }],
                 // View C doesn't push data to anything
                 pushes_data_to: vec![],
@@ -1519,7 +1555,8 @@ mod tests {
         let operations = vec![op_drop_a.clone(), op_drop_b.clone(), op_drop_c.clone()];
 
         // Order the operations (teardown mode - dependents first)
-        let ordered = order_operations_by_dependencies(&operations, true).unwrap();
+        let ordered =
+            order_operations_by_dependencies(&operations, true, DEFAULT_DATABASE_NAME).unwrap();
 
         // Print the actual order for debugging
         let actual_order: Vec<String> = ordered
@@ -1574,6 +1611,7 @@ mod tests {
             engine_params_hash: None,
             table_settings: None,
             indexes: vec![],
+            database: None,
             table_ttl_setting: None,
         };
 
@@ -1619,7 +1657,7 @@ mod tests {
             after_column: None,
             dependency_info: DependencyInfo {
                 pulls_data_from: vec![InfrastructureSignature::Table {
-                    id: table.name.clone(),
+                    id: table.id(DEFAULT_DATABASE_NAME),
                 }],
                 pushes_data_to: vec![],
             },
@@ -1630,7 +1668,7 @@ mod tests {
             view: view.clone(),
             dependency_info: DependencyInfo {
                 pulls_data_from: vec![InfrastructureSignature::Table {
-                    id: table.name.clone(),
+                    id: table.id(DEFAULT_DATABASE_NAME),
                 }],
                 pushes_data_to: vec![],
             },
@@ -1640,7 +1678,7 @@ mod tests {
 
         // Test 1: Just table and column - should work
         let operations1 = vec![op_create_table.clone(), op_add_column.clone()];
-        let result1 = order_operations_by_dependencies(&operations1, false);
+        let result1 = order_operations_by_dependencies(&operations1, false, DEFAULT_DATABASE_NAME);
         assert!(
             result1.is_ok(),
             "Table and column operations should order correctly"
@@ -1648,7 +1686,7 @@ mod tests {
 
         // Test 2: Just table and view - should work
         let operations2 = vec![op_create_view.clone(), op_create_table.clone()];
-        let result2 = order_operations_by_dependencies(&operations2, false);
+        let result2 = order_operations_by_dependencies(&operations2, false, DEFAULT_DATABASE_NAME);
         assert!(
             result2.is_ok(),
             "Table and view operations should order correctly"
@@ -1660,7 +1698,7 @@ mod tests {
             op_create_table.clone(),
             op_add_column.clone(),
         ];
-        let result3 = order_operations_by_dependencies(&operations3, false);
+        let result3 = order_operations_by_dependencies(&operations3, false, DEFAULT_DATABASE_NAME);
 
         // If operations3 fails, we need to see why
         match result3 {
@@ -1729,6 +1767,7 @@ mod tests {
             engine_params_hash: None,
             table_settings: None,
             indexes: vec![],
+            database: None,
             table_ttl_setting: None,
         };
 
@@ -1749,6 +1788,7 @@ mod tests {
             engine_params_hash: None,
             table_settings: None,
             indexes: vec![],
+            database: None,
             table_ttl_setting: None,
         };
 
@@ -1769,6 +1809,7 @@ mod tests {
             engine_params_hash: None,
             table_settings: None,
             indexes: vec![],
+            database: None,
             table_ttl_setting: None,
         };
 
@@ -1815,7 +1856,8 @@ mod tests {
         assert!(result.is_err(), "Expected toposort to detect cycle");
 
         // Try to order the operations using our function - should also fail
-        let order_result = order_operations_by_dependencies(&operations, false);
+        let order_result =
+            order_operations_by_dependencies(&operations, false, DEFAULT_DATABASE_NAME);
         println!("order_operations_by_dependencies result: {order_result:?}");
         assert!(
             order_result.is_err(),
@@ -1857,6 +1899,7 @@ mod tests {
             engine_params_hash: None,
             table_settings: None,
             indexes: vec![],
+            database: None,
             table_ttl_setting: None,
         };
 
@@ -1877,6 +1920,7 @@ mod tests {
             engine_params_hash: None,
             table_settings: None,
             indexes: vec![],
+            database: None,
             table_ttl_setting: None,
         };
 
@@ -1897,6 +1941,7 @@ mod tests {
             engine_params_hash: None,
             table_settings: None,
             indexes: vec![],
+            database: None,
             table_ttl_setting: None,
         };
 
@@ -1917,6 +1962,7 @@ mod tests {
             engine_params_hash: None,
             table_settings: None,
             indexes: vec![],
+            database: None,
             table_ttl_setting: None,
         };
 
@@ -1937,6 +1983,7 @@ mod tests {
             engine_params_hash: None,
             table_settings: None,
             indexes: vec![],
+            database: None,
             table_ttl_setting: None,
         };
 
@@ -1952,7 +1999,7 @@ mod tests {
             table: table_b.clone(),
             dependency_info: DependencyInfo {
                 pulls_data_from: vec![InfrastructureSignature::Table {
-                    id: "table_a".to_string(),
+                    id: table_a.id(DEFAULT_DATABASE_NAME),
                 }],
                 pushes_data_to: vec![],
             },
@@ -1962,7 +2009,7 @@ mod tests {
             table: table_c.clone(),
             dependency_info: DependencyInfo {
                 pulls_data_from: vec![InfrastructureSignature::Table {
-                    id: "table_a".to_string(),
+                    id: table_a.id(DEFAULT_DATABASE_NAME),
                 }],
                 pushes_data_to: vec![],
             },
@@ -1973,10 +2020,10 @@ mod tests {
             dependency_info: DependencyInfo {
                 pulls_data_from: vec![
                     InfrastructureSignature::Table {
-                        id: "table_b".to_string(),
+                        id: table_b.id(DEFAULT_DATABASE_NAME),
                     },
                     InfrastructureSignature::Table {
-                        id: "table_c".to_string(),
+                        id: table_c.id(DEFAULT_DATABASE_NAME),
                     },
                 ],
                 pushes_data_to: vec![],
@@ -1987,7 +2034,7 @@ mod tests {
             table: table_e.clone(),
             dependency_info: DependencyInfo {
                 pulls_data_from: vec![InfrastructureSignature::Table {
-                    id: "table_d".to_string(),
+                    id: table_d.id(DEFAULT_DATABASE_NAME),
                 }],
                 pushes_data_to: vec![],
             },
@@ -2003,7 +2050,8 @@ mod tests {
         ];
 
         // Order the operations
-        let ordered = order_operations_by_dependencies(&operations, false).unwrap();
+        let ordered =
+            order_operations_by_dependencies(&operations, false, DEFAULT_DATABASE_NAME).unwrap();
 
         // Verify the ordering is valid
         // A must come before B and C
@@ -2060,7 +2108,7 @@ mod tests {
     #[test]
     fn test_no_operations() {
         // Test empty operations list
-        let ordered = order_operations_by_dependencies(&[], false).unwrap();
+        let ordered = order_operations_by_dependencies(&[], false, DEFAULT_DATABASE_NAME).unwrap();
         assert!(ordered.is_empty());
     }
 
@@ -2088,6 +2136,7 @@ mod tests {
             engine_params_hash: None,
             table_settings: None,
             indexes: vec![],
+            database: None,
             table_ttl_setting: None,
         };
 
@@ -2109,6 +2158,7 @@ mod tests {
             engine_params_hash: None,
             table_settings: None,
             indexes: vec![],
+            database: None,
             table_ttl_setting: None,
         };
 
@@ -2121,10 +2171,10 @@ mod tests {
             ],
             teardown: vec!["DROP VIEW mv_a_to_b".to_string()],
             pulls_data_from: vec![InfrastructureSignature::Table {
-                id: "table_a".to_string(),
+                id: table_a.id(DEFAULT_DATABASE_NAME),
             }],
             pushes_data_to: vec![InfrastructureSignature::Table {
-                id: "table_b".to_string(),
+                id: table_b.id(DEFAULT_DATABASE_NAME),
             }],
         };
 
@@ -2149,10 +2199,10 @@ mod tests {
             resource: mv_sql_resource.clone(),
             dependency_info: DependencyInfo {
                 pulls_data_from: vec![InfrastructureSignature::Table {
-                    id: "table_a".to_string(),
+                    id: table_a.id(DEFAULT_DATABASE_NAME),
                 }],
                 pushes_data_to: vec![InfrastructureSignature::Table {
-                    id: "table_b".to_string(),
+                    id: table_b.id(DEFAULT_DATABASE_NAME),
                 }],
             },
         };
@@ -2165,7 +2215,8 @@ mod tests {
         ];
 
         // Order the operations (setup mode)
-        let ordered = order_operations_by_dependencies(&operations, false).unwrap();
+        let ordered =
+            order_operations_by_dependencies(&operations, false, DEFAULT_DATABASE_NAME).unwrap();
 
         // Check that the order is correct
         assert_eq!(ordered.len(), 3);
@@ -2228,6 +2279,7 @@ mod tests {
             engine_params_hash: None,
             table_settings: None,
             indexes: vec![],
+            database: None,
             table_ttl_setting: None,
         };
 
@@ -2249,6 +2301,7 @@ mod tests {
             engine_params_hash: None,
             table_settings: None,
             indexes: vec![],
+            database: None,
             table_ttl_setting: None,
         };
 
@@ -2261,10 +2314,10 @@ mod tests {
             ],
             teardown: vec!["DROP VIEW mv_a_to_b".to_string()],
             pulls_data_from: vec![InfrastructureSignature::Table {
-                id: "table_a".to_string(),
+                id: table_a.id(DEFAULT_DATABASE_NAME),
             }],
             pushes_data_to: vec![InfrastructureSignature::Table {
-                id: "table_b".to_string(),
+                id: table_b.id(DEFAULT_DATABASE_NAME),
             }],
         };
 
@@ -2305,7 +2358,8 @@ mod tests {
         let operations = vec![op_drop_a.clone(), op_drop_b.clone(), op_teardown_mv.clone()];
 
         // Order the operations (teardown mode)
-        let ordered = order_operations_by_dependencies(&operations, true).unwrap();
+        let ordered =
+            order_operations_by_dependencies(&operations, true, DEFAULT_DATABASE_NAME).unwrap();
 
         // Check that the order is correct
         assert_eq!(ordered.len(), 3);
@@ -2373,6 +2427,7 @@ mod tests {
             engine_params_hash: None,
             table_settings: None,
             indexes: vec![],
+            database: None,
             table_ttl_setting: None,
         };
 
@@ -2393,6 +2448,7 @@ mod tests {
             engine_params_hash: None,
             table_settings: None,
             indexes: vec![],
+            database: None,
             table_ttl_setting: None,
         };
 
@@ -2405,10 +2461,10 @@ mod tests {
             ],
             teardown: vec!["DROP VIEW mv_a_to_b".to_string()],
             pulls_data_from: vec![InfrastructureSignature::Table {
-                id: "table_a".to_string(),
+                id: table_a.id(DEFAULT_DATABASE_NAME),
             }],
             pushes_data_to: vec![InfrastructureSignature::Table {
-                id: "table_b".to_string(),
+                id: table_b.id(DEFAULT_DATABASE_NAME),
             }],
         };
 
@@ -2436,10 +2492,10 @@ mod tests {
             resource: resource.clone(),
             dependency_info: DependencyInfo {
                 pulls_data_from: vec![InfrastructureSignature::Table {
-                    id: "table_a".to_string(),
+                    id: table_a.id(DEFAULT_DATABASE_NAME),
                 }],
                 pushes_data_to: vec![InfrastructureSignature::Table {
-                    id: "table_b".to_string(),
+                    id: table_b.id(DEFAULT_DATABASE_NAME),
                 }],
             },
         };
@@ -2452,7 +2508,8 @@ mod tests {
         ];
 
         // Order the operations for setup
-        let ordered_setup = order_operations_by_dependencies(&operations, false).unwrap();
+        let ordered_setup =
+            order_operations_by_dependencies(&operations, false, DEFAULT_DATABASE_NAME).unwrap();
 
         // Print the actual setup order for debugging
         println!(
@@ -2526,7 +2583,8 @@ mod tests {
 
         // Order the operations for teardown
         let ordered_teardown =
-            order_operations_by_dependencies(&teardown_operations, true).unwrap();
+            order_operations_by_dependencies(&teardown_operations, true, DEFAULT_DATABASE_NAME)
+                .unwrap();
 
         // Print the actual teardown order for debugging
         println!(
@@ -2596,6 +2654,7 @@ mod tests {
             engine_params_hash: None,
             table_settings: None,
             indexes: vec![],
+            database: None,
             table_ttl_setting: None,
         };
 
@@ -2645,8 +2704,12 @@ mod tests {
         let setup_operations_2 = vec![create_table_op.clone(), op_add_column.clone()];
 
         // Order the operations and see which one preserves the order
-        let ordered_setup_1 = order_operations_by_dependencies(&setup_operations_1, false).unwrap();
-        let ordered_setup_2 = order_operations_by_dependencies(&setup_operations_2, false).unwrap();
+        let ordered_setup_1 =
+            order_operations_by_dependencies(&setup_operations_1, false, DEFAULT_DATABASE_NAME)
+                .unwrap();
+        let ordered_setup_2 =
+            order_operations_by_dependencies(&setup_operations_2, false, DEFAULT_DATABASE_NAME)
+                .unwrap();
 
         println!(
             "Ordered setup 1: {:?}",
@@ -2700,6 +2763,7 @@ mod tests {
             engine_params_hash: None,
             table_settings: None,
             indexes: vec![],
+            database: None,
             table_ttl_setting: None,
         };
 
@@ -2736,9 +2800,11 @@ mod tests {
 
         // Order the operations and see which one preserves the order
         let ordered_teardown_1 =
-            order_operations_by_dependencies(&teardown_operations_1, true).unwrap();
+            order_operations_by_dependencies(&teardown_operations_1, true, DEFAULT_DATABASE_NAME)
+                .unwrap();
         let ordered_teardown_2 =
-            order_operations_by_dependencies(&teardown_operations_2, true).unwrap();
+            order_operations_by_dependencies(&teardown_operations_2, true, DEFAULT_DATABASE_NAME)
+                .unwrap();
 
         println!(
             "Ordered teardown 1: {:?}",
@@ -2816,6 +2882,7 @@ mod tests {
             engine_params_hash: None,
             table_settings: None,
             indexes: vec![],
+            database: None,
             table_ttl_setting: None,
         };
 
@@ -2859,6 +2926,7 @@ mod tests {
             engine_params_hash: None,
             table_settings: None,
             indexes: vec![],
+            database: None,
             table_ttl_setting: None,
         };
 

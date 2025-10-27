@@ -169,6 +169,8 @@ interface TableJson {
   }[];
   /** Optional table-level TTL expression (without leading 'TTL'). */
   ttl?: string;
+  /** Optional database name for multi-database support. */
+  database?: string;
 }
 /**
  * Represents a target destination for data flow, typically a stream.
@@ -589,6 +591,7 @@ export const toInfraMap = (registry: typeof moose_internal) => {
           arguments: i.arguments === undefined ? [] : i.arguments,
         })) || [],
       ttl: table.config.ttl,
+      database: table.config.database,
     };
   });
 

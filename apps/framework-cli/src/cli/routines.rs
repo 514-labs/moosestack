@@ -1142,7 +1142,8 @@ pub async fn remote_gen_migration(
         },
     );
 
-    let mut db_migration = MigrationPlan::from_infra_plan(&changes)?;
+    let mut db_migration =
+        MigrationPlan::from_infra_plan(&changes, &project.clickhouse_config.db_name)?;
 
     // Filter out ignored operations based on project config
     db_migration.filter_ignored_operations(&project.migration_config.ignore_operations);

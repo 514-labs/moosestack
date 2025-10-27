@@ -9,13 +9,18 @@ use crate::utilities::clickhouse_url::convert_http_to_clickhouse;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
+/// Default database name used by ClickHouse when not otherwise specified.
+/// This is used as the default value for ClickHouseConfig::db_name and for
+/// normalizing table IDs when table.database is None.
+pub const DEFAULT_DATABASE_NAME: &str = "local";
+
 fn default_native_port() -> i32 {
     9000
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ClickHouseConfig {
-    pub db_name: String, // ex. local
+    pub db_name: String, // ex. local (primary database)
     pub user: String,
     pub password: String,
     pub use_ssl: bool,
@@ -27,12 +32,17 @@ pub struct ClickHouseConfig {
     /// If not specified, a Docker-managed volume will be used.
     #[serde(default)]
     pub host_data_path: Option<PathBuf>,
+    /// Additional databases to create and manage alongside the primary database.
+    /// Tables can specify which database they belong to using the database field.
+    /// Example: additional_databases = ["warehouse", "analytics", "logging"]
+    #[serde(default)]
+    pub additional_databases: Vec<String>,
 }
 
 impl Default for ClickHouseConfig {
     fn default() -> Self {
         Self {
-            db_name: "local".to_string(),
+            db_name: DEFAULT_DATABASE_NAME.to_string(),
             user: "panda".to_string(),
             password: "pandapass".to_string(),
             use_ssl: false,
@@ -40,6 +50,7 @@ impl Default for ClickHouseConfig {
             host_port: 18123,
             native_port: default_native_port(),
             host_data_path: None,
+            additional_databases: Vec::new(),
         }
     }
 }
@@ -84,6 +95,7 @@ pub fn parse_clickhouse_connection_string(conn_str: &str) -> anyhow::Result<Clic
         host_port: port,
         native_port: port,
         host_data_path: None,
+        additional_databases: Vec::new(),
     };
 
     Ok(config)

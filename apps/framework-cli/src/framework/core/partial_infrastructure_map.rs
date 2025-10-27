@@ -207,6 +207,9 @@ struct PartialTable {
     /// Optional table-level TTL expression (ClickHouse expression, without leading 'TTL')
     #[serde(alias = "ttl")]
     pub ttl: Option<String>,
+    /// Optional database name for multi-database support
+    #[serde(default)]
+    pub database: Option<String>,
 }
 
 /// Represents a topic definition from user code before it's converted into a complete [`Topic`].
@@ -492,12 +495,13 @@ impl PartialInfrastructureMap {
         self,
         language: SupportedLanguages,
         main_file: &Path,
+        default_database: &str,
     ) -> InfrastructureMap {
-        let tables = self.convert_tables();
+        let tables = self.convert_tables(default_database);
         let topics = self.convert_topics();
         let api_endpoints = self.convert_api_endpoints(main_file, &topics);
         let topic_to_table_sync_processes =
-            self.create_topic_to_table_sync_processes(&tables, &topics);
+            self.create_topic_to_table_sync_processes(&tables, &topics, default_database);
         let function_processes = self.create_function_processes(main_file, language, &topics);
         let workflows = self.convert_workflows(language);
         let web_apps = self.convert_web_apps();
@@ -508,6 +512,7 @@ impl PartialInfrastructureMap {
         orchestration_workers.insert(orchestration_worker.id(), orchestration_worker);
 
         InfrastructureMap {
+            default_database: default_database.to_string(),
             topics,
             api_endpoints,
             tables,
@@ -530,7 +535,7 @@ impl PartialInfrastructureMap {
     ///
     /// This method handles versioning and naming of tables, ensuring that versioned tables
     /// have appropriate suffixes in their names.
-    fn convert_tables(&self) -> HashMap<String, Table> {
+    fn convert_tables(&self, default_database: &str) -> HashMap<String, Table> {
         self.tables
             .values()
             .map(|partial_table| {
@@ -607,8 +612,9 @@ impl PartialInfrastructureMap {
                     },
                     indexes: partial_table.indexes.clone(),
                     table_ttl_setting,
+                    database: partial_table.database.clone(),
                 };
-                (table.id(), table)
+                (table.id(default_database), table)
             })
             .collect()
     }
@@ -910,6 +916,7 @@ impl PartialInfrastructureMap {
         &self,
         tables: &HashMap<String, Table>,
         topics: &HashMap<String, Topic>,
+        default_database: &str,
     ) -> HashMap<String, TopicToTableSyncProcess> {
         let mut sync_processes = self.topic_to_table_sync_processes.clone();
 
@@ -935,7 +942,8 @@ impl PartialInfrastructureMap {
                     .find(|table| table.matches(target_table_name, target_table_version.as_ref()))
                     .expect(table_not_found);
 
-                let sync_process = TopicToTableSyncProcess::new(source_topic, target_table);
+                let sync_process =
+                    TopicToTableSyncProcess::new(source_topic, target_table, default_database);
                 let sync_id = sync_process.id();
                 sync_processes.insert(sync_id.clone(), sync_process);
                 log::info!("<dmv2> Created topic_to_table_sync_processes {}", sync_id);

@@ -6,7 +6,6 @@
 use super::{RoutineFailure, RoutineSuccess};
 use crate::framework::core::infrastructure::api_endpoint::{APIType, ApiEndpoint};
 use crate::framework::core::infrastructure::function_process::FunctionProcess;
-use crate::framework::core::infrastructure::table::Table;
 use crate::framework::core::infrastructure::topic::Topic;
 use crate::framework::core::infrastructure::topic_sync_process::TopicToTableSyncProcess;
 use crate::framework::core::infrastructure_map::InfrastructureMap;
@@ -41,14 +40,8 @@ impl ResourceInfo for Vec<TableInfo> {
     }
 }
 
-impl From<Table> for TableInfo {
-    fn from(value: Table) -> Self {
-        Self {
-            name: value.id(),
-            schema_fields: value.columns.iter().map(|col| col.name.clone()).collect(),
-        }
-    }
-}
+// Note: From trait removed because Table::id() now requires default_database parameter.
+// TableInfo is constructed directly where needed with the appropriate default_database.
 
 #[derive(Debug, Serialize)]
 pub struct StreamInfo {
@@ -312,6 +305,8 @@ pub async fn ls_dmv2(
             )
         })?;
 
+    let default_database = infra_map.default_database.clone();
+
     let (ingestion_apis, consumption_apis): (Vec<_>, Vec<_>) = infra_map
         .api_endpoints
         .values()
@@ -322,7 +317,10 @@ pub async fn ls_dmv2(
             .tables
             .into_values()
             .filter(|api| name.is_none_or(|name| api.name.contains(name)))
-            .map(|t| t.into())
+            .map(|t| TableInfo {
+                name: t.id(&default_database),
+                schema_fields: t.columns.iter().map(|col| col.name.clone()).collect(),
+            })
             .collect(),
         streams: infra_map
             .topics
