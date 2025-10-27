@@ -119,6 +119,7 @@ use crate::framework::core::plan::plan_changes;
 use crate::framework::core::plan::InfraPlan;
 use crate::framework::core::primitive_map::PrimitiveMap;
 use crate::framework::core::state_storage::StateStorageBuilder;
+use crate::infrastructure::olap::clickhouse::config::parse_clickhouse_connection_string;
 use crate::infrastructure::olap::clickhouse::{check_ready, create_client};
 use crate::infrastructure::olap::OlapOperations;
 use crate::infrastructure::orchestration::temporal_client::{
@@ -1096,9 +1097,19 @@ pub enum RemoteSource<'a> {
 }
 
 pub async fn remote_gen_migration(
-    project: &Project,
+    project: &mut Project,
     remote: RemoteSource<'_>,
 ) -> anyhow::Result<MigrationPlanWithBeforeAfter> {
+    use anyhow::Context;
+
+    // For serverless migrations, override project config BEFORE loading local inframap
+    // This ensures the local inframap is built with the correct database from the CLI URL
+    if let RemoteSource::Serverless { clickhouse_url, .. } = remote {
+        project.clickhouse_config = parse_clickhouse_connection_string(clickhouse_url)
+            .context("Failed to parse ClickHouse URL")?;
+        info!("Aligned project clickhouse config with remote clickhouse url");
+    }
+
     // Build the inframap from the local project
     let local_infra_map = if project.features.data_model_v2 {
         debug!("Loading InfrastructureMap from user code (DMV2)");
@@ -1120,7 +1131,6 @@ pub async fn remote_gen_migration(
                 },
             );
 
-            use anyhow::Context;
             get_remote_inframap_protobuf(Some(url), token)
                 .await
                 .with_context(|| "Failed to retrieve infrastructure map".to_string())?

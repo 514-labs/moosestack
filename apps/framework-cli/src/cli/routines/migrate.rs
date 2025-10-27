@@ -18,6 +18,7 @@ use crate::utilities::constants::{
     MIGRATION_AFTER_STATE_FILE, MIGRATION_BEFORE_STATE_FILE, MIGRATION_FILE,
 };
 use anyhow::Result;
+use log::info;
 use std::collections::HashMap;
 
 /// Migration files loaded from disk
@@ -424,11 +425,12 @@ fn report_partial_failure(succeeded_count: usize, total_count: usize) {
 
 /// Execute migration plan from CLI (moose migrate command)
 pub async fn execute_migration(
-    project: &Project,
+    project: &mut Project,
     clickhouse_url: &str,
     redis_url: Option<&str>,
 ) -> Result<(), RoutineFailure> {
-    // Parse ClickHouse URL and create client
+    // Parse ClickHouse URL and override project config
+    // This ensures the CLI flag takes precedence over moose.config.toml
     let clickhouse_config = parse_clickhouse_connection_string(clickhouse_url).map_err(|e| {
         RoutineFailure::new(
             Message::new(
@@ -438,6 +440,9 @@ pub async fn execute_migration(
             e,
         )
     })?;
+
+    project.clickhouse_config = clickhouse_config.clone();
+    info!("Aligned project clickhouse config with remote clickhouse url");
 
     // Build state storage based on config
     let state_storage = StateStorageBuilder::from_config(project)
