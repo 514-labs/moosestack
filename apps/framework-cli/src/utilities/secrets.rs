@@ -26,10 +26,6 @@ use std::env;
 /// Prefix used to mark values that should be resolved from environment variables
 pub const MOOSE_RUNTIME_ENV_PREFIX: &str = "__MOOSE_RUNTIME_ENV__:";
 
-/// Legacy prefix for backwards compatibility
-#[deprecated(note = "Use MOOSE_RUNTIME_ENV_PREFIX instead")]
-pub const MOOSE_ENV_SECRET_PREFIX: &str = "__MOOSE_RUNTIME_ENV__:";
-
 /// Resolves a value that may contain a Moose runtime environment variable marker.
 ///
 /// If the value starts with `__MOOSE_RUNTIME_ENV__:`, extracts the variable name
@@ -111,20 +107,6 @@ pub fn resolve_optional_runtime_env(
     }
 }
 
-/// Legacy function for backwards compatibility
-#[deprecated(note = "Use resolve_runtime_env instead")]
-pub fn resolve_env_secret(value: &str) -> Result<String, RuntimeEnvResolutionError> {
-    resolve_runtime_env(value)
-}
-
-/// Legacy function for backwards compatibility
-#[deprecated(note = "Use resolve_optional_runtime_env instead")]
-pub fn resolve_optional_secret(
-    value: &Option<String>,
-) -> Result<Option<String>, RuntimeEnvResolutionError> {
-    resolve_optional_runtime_env(value)
-}
-
 /// Errors that can occur during runtime environment variable resolution
 #[derive(Debug, thiserror::Error)]
 pub enum RuntimeEnvResolutionError {
@@ -142,10 +124,6 @@ pub enum RuntimeEnvResolutionError {
         var_name: String,
     },
 }
-
-/// Legacy type alias for backwards compatibility
-#[deprecated(note = "Use RuntimeEnvResolutionError instead")]
-pub type SecretResolutionError = RuntimeEnvResolutionError;
 
 #[cfg(test)]
 mod tests {
