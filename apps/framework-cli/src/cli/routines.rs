@@ -864,7 +864,7 @@ fn calculate_plan_diff_local(
 
     let clickhouse_strategy = ClickHouseTableDiffStrategy;
     // planning about action on prod env, respect_life_cycle is true
-    current_map.diff_with_table_strategy(target_map, &clickhouse_strategy, true)
+    current_map.diff_with_table_strategy(target_map, &clickhouse_strategy, true, true)
 }
 
 /// Legacy implementation of remote_plan using the existing /admin/plan endpoint
@@ -1047,7 +1047,8 @@ pub async fn remote_plan(
     };
 
     // Calculate and display changes
-    let changes = calculate_plan_diff_local(&remote_infra_map, &local_infra_map);
+    let changes =
+        calculate_plan_diff_local(&remote_infra_map, &local_infra_map);
 
     display::show_message_wrapper(
         MessageType::Success,
@@ -1132,7 +1133,8 @@ pub async fn remote_gen_migration(
         }
     };
 
-    let changes = calculate_plan_diff_local(&remote_infra_map, &local_infra_map);
+    let changes =
+        calculate_plan_diff_local(&remote_infra_map, &local_infra_map);
 
     display::show_message_wrapper(
         MessageType::Success,
