@@ -170,6 +170,11 @@ enum Token {
         }
         result
     })]
+    #[regex(r"`[^`]*`", |lex| {
+        // Strip the backticks (ClickHouse quoted identifiers)
+        let content = lex.slice();
+        content[1..content.len()-1].to_string()
+    })]
     StringLiteral(String),
 
     /// A numeric literal
@@ -247,8 +252,8 @@ pub enum ClickHouseTypeNode {
     /// IPv6 type
     IPv6,
 
-    /// JSON type
-    JSON,
+    /// JSON type with optional parameters
+    JSON(Option<Vec<JsonParameter>>),
 
     /// Dynamic type (for dynamic objects)
     Dynamic,
@@ -308,6 +313,24 @@ pub enum TupleElement {
     Unnamed(ClickHouseTypeNode),
 }
 
+/// Represents a parameter in a JSON type definition
+#[derive(Debug, Clone, PartialEq)]
+pub enum JsonParameter {
+    /// max_dynamic_types = N
+    MaxDynamicTypes(u64),
+    /// max_dynamic_paths = N
+    MaxDynamicPaths(u64),
+    /// path.name TypeName (path type specification)
+    PathType {
+        path: String,
+        type_node: ClickHouseTypeNode,
+    },
+    /// SKIP path
+    SkipPath(String),
+    /// SKIP REGEXP 'pattern'
+    SkipRegexp(String),
+}
+
 impl fmt::Display for ClickHouseTypeNode {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -337,7 +360,33 @@ impl fmt::Display for ClickHouseTypeNode {
             ClickHouseTypeNode::BFloat16 => write!(f, "BFloat16"),
             ClickHouseTypeNode::IPv4 => write!(f, "IPv4"),
             ClickHouseTypeNode::IPv6 => write!(f, "IPv6"),
-            ClickHouseTypeNode::JSON => write!(f, "JSON"),
+            ClickHouseTypeNode::JSON(params) => match params {
+                Some(params) if !params.is_empty() => {
+                    write!(f, "JSON(")?;
+                    for (i, param) in params.iter().enumerate() {
+                        if i > 0 {
+                            write!(f, ", ")?;
+                        }
+                        match param {
+                            JsonParameter::MaxDynamicTypes(n) => {
+                                write!(f, "max_dynamic_types = {n}")?
+                            }
+                            JsonParameter::MaxDynamicPaths(n) => {
+                                write!(f, "max_dynamic_paths = {n}")?
+                            }
+                            JsonParameter::PathType { path, type_node } => {
+                                write!(f, "{path} {type_node}")?
+                            }
+                            JsonParameter::SkipPath(path) => write!(f, "SKIP {path}")?,
+                            JsonParameter::SkipRegexp(pattern) => {
+                                write!(f, "SKIP REGEXP '{pattern}'")?
+                            }
+                        }
+                    }
+                    write!(f, ")")
+                }
+                _ => write!(f, "JSON"),
+            },
             ClickHouseTypeNode::Dynamic => write!(f, "Dynamic"),
             ClickHouseTypeNode::Object(params) => match params {
                 Some(p) => write!(f, "Object({p})"),
@@ -582,7 +631,7 @@ impl Parser {
                     "BFloat16" => Ok(ClickHouseTypeNode::BFloat16),
                     "IPv4" => Ok(ClickHouseTypeNode::IPv4),
                     "IPv6" => Ok(ClickHouseTypeNode::IPv6),
-                    "JSON" => Ok(ClickHouseTypeNode::JSON),
+                    "JSON" => self.parse_json(),
                     "Dynamic" => Ok(ClickHouseTypeNode::Dynamic),
                     // Check for Interval types
                     name if name.starts_with("Interval") => {
@@ -1169,6 +1218,148 @@ impl Parser {
             Ok(ClickHouseTypeNode::Object(None))
         }
     }
+
+    /// Parse a JSON type with optional parameters
+    /// JSON can have parameters like:
+    /// - max_dynamic_types = N
+    /// - max_dynamic_paths = N
+    /// - path.name TypeName
+    /// - SKIP path
+    /// - SKIP REGEXP 'pattern'
+    fn parse_json(&mut self) -> Result<ClickHouseTypeNode, ParseError> {
+        // Check if there are parameters
+        if !matches!(self.current_token(), Token::LeftParen) {
+            return Ok(ClickHouseTypeNode::JSON(None));
+        }
+
+        self.consume(&Token::LeftParen)?;
+
+        // Handle empty parameter list
+        if matches!(self.current_token(), Token::RightParen) {
+            self.advance();
+            return Ok(ClickHouseTypeNode::JSON(Some(Vec::new())));
+        }
+
+        let mut parameters = Vec::new();
+
+        loop {
+            // Check for SKIP keyword
+            if let Token::Identifier(name) = self.current_token() {
+                if name == "SKIP" {
+                    self.advance();
+
+                    // Check if next is REGEXP
+                    if let Token::Identifier(next_name) = self.current_token() {
+                        if next_name == "REGEXP" {
+                            self.advance();
+
+                            // Parse the pattern string
+                            match self.current_token() {
+                                Token::StringLiteral(pattern) => {
+                                    let pattern_clone = pattern.clone();
+                                    self.advance();
+                                    parameters.push(JsonParameter::SkipRegexp(pattern_clone));
+                                }
+                                _ => {
+                                    return Err(ParseError::UnexpectedToken {
+                                        expected: "string literal for SKIP REGEXP pattern"
+                                            .to_string(),
+                                        found: format!("{:?}", self.current_token()),
+                                    });
+                                }
+                            }
+                        } else {
+                            // SKIP path (identifier that wasn't REGEXP)
+                            // We already consumed SKIP and saw an identifier that wasn't REGEXP
+                            // So we use the current identifier as the path
+                            parameters.push(JsonParameter::SkipPath(next_name.clone()));
+                            self.advance();
+                        }
+                    } else {
+                        // SKIP followed by string or identifier
+                        match self.current_token() {
+                            Token::StringLiteral(path) | Token::Identifier(path) => {
+                                let path_clone = path.clone();
+                                self.advance();
+                                parameters.push(JsonParameter::SkipPath(path_clone));
+                            }
+                            _ => {
+                                return Err(ParseError::UnexpectedToken {
+                                    expected: "path for SKIP".to_string(),
+                                    found: format!("{:?}", self.current_token()),
+                                });
+                            }
+                        }
+                    }
+                } else if name == "max_dynamic_types" {
+                    self.advance();
+                    self.consume(&Token::Equals)?;
+
+                    match self.current_token() {
+                        Token::NumberLiteral(n) => {
+                            let num = *n;
+                            self.advance();
+                            parameters.push(JsonParameter::MaxDynamicTypes(num));
+                        }
+                        _ => {
+                            return Err(ParseError::UnexpectedToken {
+                                expected: "number for max_dynamic_types".to_string(),
+                                found: format!("{:?}", self.current_token()),
+                            });
+                        }
+                    }
+                } else if name == "max_dynamic_paths" {
+                    self.advance();
+                    self.consume(&Token::Equals)?;
+
+                    match self.current_token() {
+                        Token::NumberLiteral(n) => {
+                            let num = *n;
+                            self.advance();
+                            parameters.push(JsonParameter::MaxDynamicPaths(num));
+                        }
+                        _ => {
+                            return Err(ParseError::UnexpectedToken {
+                                expected: "number for max_dynamic_paths".to_string(),
+                                found: format!("{:?}", self.current_token()),
+                            });
+                        }
+                    }
+                } else {
+                    // This might be a path type specification (path.name TypeName)
+                    let path = name.clone();
+                    self.advance();
+
+                    // Parse the type
+                    let type_node = self.parse_type()?;
+                    parameters.push(JsonParameter::PathType { path, type_node });
+                }
+            } else {
+                return Err(ParseError::UnexpectedToken {
+                    expected: "JSON parameter (identifier or SKIP)".to_string(),
+                    found: format!("{:?}", self.current_token()),
+                });
+            }
+
+            // Check for comma or end of parameters
+            match self.current_token() {
+                Token::Comma => {
+                    self.advance();
+                    continue;
+                }
+                Token::RightParen => break,
+                _ => {
+                    return Err(ParseError::UnexpectedToken {
+                        expected: "comma or ')'".to_string(),
+                        found: format!("{:?}", self.current_token()),
+                    });
+                }
+            }
+        }
+
+        self.consume(&Token::RightParen)?;
+        Ok(ClickHouseTypeNode::JSON(Some(parameters)))
+    }
 }
 
 // Parse a ClickHouse type string into an AST
@@ -1323,7 +1514,11 @@ pub fn convert_ast_to_column_type(
         ClickHouseTypeNode::IPv4 => Ok((ColumnType::IpV4, false)),
         ClickHouseTypeNode::IPv6 => Ok((ColumnType::IpV6, false)),
 
-        ClickHouseTypeNode::JSON => Ok((ColumnType::Json(Default::default()), false)),
+        ClickHouseTypeNode::JSON(_params) => {
+            // For now, we convert all JSON types to the framework's JSON type
+            // regardless of parameters, as these are ClickHouse-specific optimizations
+            Ok((ColumnType::Json(Default::default()), false))
+        }
 
         ClickHouseTypeNode::Dynamic => Err(ConversionError::UnsupportedType {
             type_name: "Dynamic".to_string(),
@@ -2318,7 +2513,7 @@ mod tests {
                 "BFloat16" => assert_eq!(result.unwrap(), ClickHouseTypeNode::BFloat16),
                 "IPv4" => assert_eq!(result.unwrap(), ClickHouseTypeNode::IPv4),
                 "IPv6" => assert_eq!(result.unwrap(), ClickHouseTypeNode::IPv6),
-                "JSON" => assert_eq!(result.unwrap(), ClickHouseTypeNode::JSON),
+                "JSON" => assert_eq!(result.unwrap(), ClickHouseTypeNode::JSON(None)),
                 "Dynamic" => assert_eq!(result.unwrap(), ClickHouseTypeNode::Dynamic),
                 _ => panic!("Unexpected type: {type_str}"),
             }
@@ -2465,6 +2660,125 @@ mod tests {
             let (actual, nullable) = convert_clickhouse_type_to_column_type(ch).unwrap();
             assert_eq!(actual, expected);
             assert!(!nullable);
+        }
+    }
+
+    #[test]
+    fn test_parse_json_with_parameters() {
+        // Test JSON without parameters
+        let result = parse_clickhouse_type("JSON").unwrap();
+        assert_eq!(result, ClickHouseTypeNode::JSON(None));
+
+        // Test JSON with empty parameters
+        let result = parse_clickhouse_type("JSON()").unwrap();
+        assert_eq!(result, ClickHouseTypeNode::JSON(Some(Vec::new())));
+
+        // Test JSON with basic path type specifications
+        let result = parse_clickhouse_type("JSON(count Int64, name String)").unwrap();
+        match result {
+            ClickHouseTypeNode::JSON(Some(params)) => {
+                assert_eq!(params.len(), 2);
+                assert!(matches!(
+                    params[0],
+                    JsonParameter::PathType { ref path, .. } if path == "count"
+                ));
+                assert!(matches!(
+                    params[1],
+                    JsonParameter::PathType { ref path, .. } if path == "name"
+                ));
+            }
+            _ => panic!("Expected JSON with parameters"),
+        }
+
+        // Test JSON with max_dynamic_types and max_dynamic_paths
+        let result =
+            parse_clickhouse_type("JSON(max_dynamic_types = 16, max_dynamic_paths = 256)").unwrap();
+        match result {
+            ClickHouseTypeNode::JSON(Some(params)) => {
+                assert_eq!(params.len(), 2);
+                assert_eq!(params[0], JsonParameter::MaxDynamicTypes(16));
+                assert_eq!(params[1], JsonParameter::MaxDynamicPaths(256));
+            }
+            _ => panic!("Expected JSON with parameters"),
+        }
+
+        // Test JSON with SKIP path (using string literal for paths with dots)
+        let result = parse_clickhouse_type("JSON(SKIP 'skip.me')").unwrap();
+        match result {
+            ClickHouseTypeNode::JSON(Some(params)) => {
+                assert_eq!(params.len(), 1);
+                assert_eq!(params[0], JsonParameter::SkipPath("skip.me".to_string()));
+            }
+            _ => panic!("Expected JSON with SKIP parameter"),
+        }
+
+        // Test JSON with SKIP path (using identifier for simple paths)
+        let result = parse_clickhouse_type("JSON(SKIP mypath)").unwrap();
+        match result {
+            ClickHouseTypeNode::JSON(Some(params)) => {
+                assert_eq!(params.len(), 1);
+                assert_eq!(params[0], JsonParameter::SkipPath("mypath".to_string()));
+            }
+            _ => panic!("Expected JSON with SKIP parameter"),
+        }
+
+        // Test JSON with SKIP path (using backticks for ClickHouse quoted identifiers)
+        let result = parse_clickhouse_type("JSON(SKIP `skip.me`)").unwrap();
+        match result {
+            ClickHouseTypeNode::JSON(Some(params)) => {
+                assert_eq!(params.len(), 1);
+                assert_eq!(params[0], JsonParameter::SkipPath("skip.me".to_string()));
+            }
+            _ => panic!("Expected JSON with SKIP parameter"),
+        }
+
+        // Test JSON with SKIP REGEXP
+        let result = parse_clickhouse_type("JSON(SKIP REGEXP '^tmp\\\\.')").unwrap();
+        match result {
+            ClickHouseTypeNode::JSON(Some(params)) => {
+                assert_eq!(params.len(), 1);
+                assert_eq!(params[0], JsonParameter::SkipRegexp("^tmp\\.".to_string()));
+            }
+            _ => panic!("Expected JSON with SKIP REGEXP parameter"),
+        }
+
+        // Test complex JSON with all parameter types (like the user's example)
+        let complex_json = "JSON(max_dynamic_types = 16, max_dynamic_paths = 256, count Int64, name String, SKIP 'skip.me', SKIP REGEXP '^tmp\\\\.')";
+        let result = parse_clickhouse_type(complex_json).unwrap();
+        match result {
+            ClickHouseTypeNode::JSON(Some(params)) => {
+                assert_eq!(params.len(), 6);
+                assert_eq!(params[0], JsonParameter::MaxDynamicTypes(16));
+                assert_eq!(params[1], JsonParameter::MaxDynamicPaths(256));
+                assert!(matches!(
+                    params[2],
+                    JsonParameter::PathType { ref path, .. } if path == "count"
+                ));
+                assert!(matches!(
+                    params[3],
+                    JsonParameter::PathType { ref path, .. } if path == "name"
+                ));
+                assert_eq!(params[4], JsonParameter::SkipPath("skip.me".to_string()));
+                assert_eq!(params[5], JsonParameter::SkipRegexp("^tmp\\.".to_string()));
+            }
+            _ => panic!("Expected JSON with multiple parameters"),
+        }
+
+        // Test that conversion still works
+        let (column_type, is_nullable) =
+            convert_clickhouse_type_to_column_type(complex_json).unwrap();
+        assert_eq!(column_type, ColumnType::Json(Default::default()));
+        assert!(!is_nullable);
+
+        // Test with backticks like in the user's example
+        let user_example = "JSON(max_dynamic_types = 16, max_dynamic_paths = 256, count Int64, name String, SKIP `skip.me`, SKIP REGEXP '^tmp\\\\.')";
+        let result = parse_clickhouse_type(user_example).unwrap();
+        match result {
+            ClickHouseTypeNode::JSON(Some(params)) => {
+                assert_eq!(params.len(), 6);
+                assert_eq!(params[4], JsonParameter::SkipPath("skip.me".to_string()));
+            }
+            _ => panic!("Expected JSON with parameters"),
         }
     }
 
