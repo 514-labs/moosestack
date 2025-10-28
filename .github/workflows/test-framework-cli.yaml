@@ -262,9 +262,66 @@ jobs:
         env:
           MOOSE_TELEMETRY_ENABLED: false
 
+  prepare-docker-images:
+    needs: [detect-changes, check, test-cli, test-ts-moose-lib, test-py-moose-lib]
+    if: needs.detect-changes.outputs.should_run == 'true'
+    name: Prepare and Cache Docker Images
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Define Docker images to cache
+        id: define-images
+        run: |
+          # List of images used by moose-cli infrastructure
+          cat > /tmp/images.txt << 'EOF'
+          redis:latest
+          docker.redpanda.com/redpandadata/redpanda:v24.3.11
+          docker.io/clickhouse/clickhouse-keeper:25.6
+          docker.io/clickhouse/clickhouse-server:25.6
+          postgres:13
+          temporalio/auto-setup:1.27
+          temporalio/admin-tools:1.27
+          temporalio/ui:2.37.0
+          EOF
+
+          echo "Images to cache:"
+          cat /tmp/images.txt
+
+      - name: Cache Docker images
+        id: cache-docker
+        uses: actions/cache@v4
+        with:
+          path: /tmp/docker-images
+          key: docker-images-${{ hashFiles('apps/framework-cli/src/utilities/docker-compose.yml.hbs') }}-v1
+
+      - name: Pull and save Docker images
+        if: steps.cache-docker.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p /tmp/docker-images
+
+          # Pull each image
+          while IFS= read -r image; do
+            echo "Pulling $image..."
+            docker pull "$image" || echo "Warning: Failed to pull $image"
+          done < /tmp/images.txt
+
+          # Save all pulled images to a tar file
+          echo "Saving images to tar file..."
+          docker save $(cat /tmp/images.txt) -o /tmp/docker-images/all-images.tar || echo "Warning: Some images may not have been saved"
+
+          echo "Cache size:"
+          du -h /tmp/docker-images/all-images.tar
+
   test-e2e-typescript-default:
     needs:
-      [detect-changes, check, test-cli, test-ts-moose-lib, test-py-moose-lib]
+      [detect-changes, check, test-cli, test-ts-moose-lib, test-py-moose-lib, prepare-docker-images]
     if: needs.detect-changes.outputs.should_run == 'true'
     name: Test E2E TypeScript Default Template (Node ${{ matrix.node-version }}, ${{ matrix.package-manager }})
     runs-on: ubuntu-latest
@@ -336,6 +393,22 @@ jobs:
           cache-all-crates: true
           cache-workspace-crates: true
 
+      - name: Restore Docker images cache
+        uses: actions/cache/restore@v4
+        with:
+          path: /tmp/docker-images
+          key: docker-images-${{ hashFiles('apps/framework-cli/src/utilities/docker-compose.yml.hbs') }}-v1
+
+      - name: Load Docker images
+        run: |
+          if [ -f /tmp/docker-images/all-images.tar ]; then
+            echo "Loading Docker images from cache..."
+            docker load -i /tmp/docker-images/all-images.tar
+            echo "Docker images loaded successfully"
+          else
+            echo "No cached images found, will pull on demand"
+          fi
+
       - name: Run TypeScript E2E Tests (Default Template)
         run: pnpm install --frozen-lockfile && pnpm --filter=framework-cli-e2e run test -- --grep "typescript template default"
         env:
@@ -349,7 +422,7 @@ jobs:
 
   test-e2e-typescript-tests:
     needs:
-      [detect-changes, check, test-cli, test-ts-moose-lib, test-py-moose-lib]
+      [detect-changes, check, test-cli, test-ts-moose-lib, test-py-moose-lib, prepare-docker-images]
     if: needs.detect-changes.outputs.should_run == 'true'
     name: Test E2E TypeScript Tests Template (Node ${{ matrix.node-version }}, ${{ matrix.package-manager }})
     runs-on: ubuntu-latest
@@ -403,6 +476,22 @@ jobs:
           cache-all-crates: true
           cache-workspace-crates: true
 
+      - name: Restore Docker images cache
+        uses: actions/cache/restore@v4
+        with:
+          path: /tmp/docker-images
+          key: docker-images-${{ hashFiles('apps/framework-cli/src/utilities/docker-compose.yml.hbs') }}-v1
+
+      - name: Load Docker images
+        run: |
+          if [ -f /tmp/docker-images/all-images.tar ]; then
+            echo "Loading Docker images from cache..."
+            docker load -i /tmp/docker-images/all-images.tar
+            echo "Docker images loaded successfully"
+          else
+            echo "No cached images found, will pull on demand"
+          fi
+
       - name: Run TypeScript E2E Tests (Tests Template)
         run: pnpm install --frozen-lockfile && pnpm --filter=framework-cli-e2e run test -- --grep "typescript template tests"
         env:
@@ -416,7 +505,7 @@ jobs:
 
   test-e2e-python-default:
     needs:
-      [detect-changes, check, test-cli, test-ts-moose-lib, test-py-moose-lib]
+      [detect-changes, check, test-cli, test-ts-moose-lib, test-py-moose-lib, prepare-docker-images]
     if: needs.detect-changes.outputs.should_run == 'true'
     name: Test E2E Python Default Template (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
@@ -473,6 +562,22 @@ jobs:
       - name: Upgrade Python build tools
         run: pip install --upgrade pip setuptools wheel
 
+      - name: Restore Docker images cache
+        uses: actions/cache/restore@v4
+        with:
+          path: /tmp/docker-images
+          key: docker-images-${{ hashFiles('apps/framework-cli/src/utilities/docker-compose.yml.hbs') }}-v1
+
+      - name: Load Docker images
+        run: |
+          if [ -f /tmp/docker-images/all-images.tar ]; then
+            echo "Loading Docker images from cache..."
+            docker load -i /tmp/docker-images/all-images.tar
+            echo "Docker images loaded successfully"
+          else
+            echo "No cached images found, will pull on demand"
+          fi
+
       - name: Run Python E2E Tests (Default Template)
         run: pnpm install --frozen-lockfile && pnpm --filter=framework-cli-e2e run test -- --grep "python template default"
         env:
@@ -486,7 +591,7 @@ jobs:
 
   test-e2e-python-tests:
     needs:
-      [detect-changes, check, test-cli, test-ts-moose-lib, test-py-moose-lib]
+      [detect-changes, check, test-cli, test-ts-moose-lib, test-py-moose-lib, prepare-docker-images]
     if: needs.detect-changes.outputs.should_run == 'true'
     name: Test E2E Python Tests Template (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
@@ -542,6 +647,22 @@ jobs:
 
       - name: Upgrade Python build tools
         run: pip install --upgrade pip setuptools wheel
+
+      - name: Restore Docker images cache
+        uses: actions/cache/restore@v4
+        with:
+          path: /tmp/docker-images
+          key: docker-images-${{ hashFiles('apps/framework-cli/src/utilities/docker-compose.yml.hbs') }}-v1
+
+      - name: Load Docker images
+        run: |
+          if [ -f /tmp/docker-images/all-images.tar ]; then
+            echo "Loading Docker images from cache..."
+            docker load -i /tmp/docker-images/all-images.tar
+            echo "Docker images loaded successfully"
+          else
+            echo "No cached images found, will pull on demand"
+          fi
 
       - name: Run Python E2E Tests (Tests Template)
         run: pnpm install --frozen-lockfile && pnpm --filter=framework-cli-e2e run test -- --grep "python template tests"
