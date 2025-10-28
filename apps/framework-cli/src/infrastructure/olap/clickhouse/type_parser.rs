@@ -1514,10 +1514,49 @@ pub fn convert_ast_to_column_type(
         ClickHouseTypeNode::IPv4 => Ok((ColumnType::IpV4, false)),
         ClickHouseTypeNode::IPv6 => Ok((ColumnType::IpV6, false)),
 
-        ClickHouseTypeNode::JSON(_params) => {
-            // For now, we convert all JSON types to the framework's JSON type
-            // regardless of parameters, as these are ClickHouse-specific optimizations
-            Ok((ColumnType::Json(Default::default()), false))
+        ClickHouseTypeNode::JSON(params) => {
+            use crate::framework::core::infrastructure::table::JsonOptions;
+
+            let json_options = if let Some(params) = params {
+                let mut max_dynamic_paths = None;
+                let mut max_dynamic_types = None;
+                let mut typed_paths = Vec::new();
+                let mut skip_paths = Vec::new();
+                let mut skip_regexps = Vec::new();
+
+                for param in params {
+                    match param {
+                        JsonParameter::MaxDynamicPaths(n) => {
+                            max_dynamic_paths = Some(*n);
+                        }
+                        JsonParameter::MaxDynamicTypes(n) => {
+                            max_dynamic_types = Some(*n);
+                        }
+                        JsonParameter::PathType { path, type_node } => {
+                            let (col_type, _nullable) = convert_ast_to_column_type(type_node)?;
+                            typed_paths.push((path.clone(), col_type));
+                        }
+                        JsonParameter::SkipPath(path) => {
+                            skip_paths.push(path.clone());
+                        }
+                        JsonParameter::SkipRegexp(pattern) => {
+                            skip_regexps.push(pattern.clone());
+                        }
+                    }
+                }
+
+                JsonOptions {
+                    max_dynamic_paths,
+                    max_dynamic_types,
+                    typed_paths,
+                    skip_paths,
+                    skip_regexps,
+                }
+            } else {
+                JsonOptions::default()
+            };
+
+            Ok((ColumnType::Json(json_options), false))
         }
 
         ClickHouseTypeNode::Dynamic => Err(ConversionError::UnsupportedType {
@@ -2669,6 +2708,20 @@ mod tests {
         let result = parse_clickhouse_type("JSON").unwrap();
         assert_eq!(result, ClickHouseTypeNode::JSON(None));
 
+        // Test that basic JSON converts to default JsonOptions
+        let (column_type, is_nullable) = convert_clickhouse_type_to_column_type("JSON").unwrap();
+        assert!(!is_nullable);
+        match column_type {
+            ColumnType::Json(opts) => {
+                assert_eq!(opts.max_dynamic_types, None);
+                assert_eq!(opts.max_dynamic_paths, None);
+                assert!(opts.typed_paths.is_empty());
+                assert!(opts.skip_paths.is_empty());
+                assert!(opts.skip_regexps.is_empty());
+            }
+            _ => panic!("Expected Json column type"),
+        }
+
         // Test JSON with empty parameters
         let result = parse_clickhouse_type("JSON()").unwrap();
         assert_eq!(result, ClickHouseTypeNode::JSON(Some(Vec::new())));
@@ -2764,11 +2817,25 @@ mod tests {
             _ => panic!("Expected JSON with multiple parameters"),
         }
 
-        // Test that conversion still works
+        // Test that conversion properly extracts all parameters
         let (column_type, is_nullable) =
             convert_clickhouse_type_to_column_type(complex_json).unwrap();
-        assert_eq!(column_type, ColumnType::Json(Default::default()));
         assert!(!is_nullable);
+
+        match column_type {
+            ColumnType::Json(opts) => {
+                assert_eq!(opts.max_dynamic_types, Some(16));
+                assert_eq!(opts.max_dynamic_paths, Some(256));
+                assert_eq!(opts.typed_paths.len(), 2);
+                assert_eq!(opts.typed_paths[0].0, "count");
+                assert_eq!(opts.typed_paths[0].1, ColumnType::Int(IntType::Int64));
+                assert_eq!(opts.typed_paths[1].0, "name");
+                assert_eq!(opts.typed_paths[1].1, ColumnType::String);
+                assert_eq!(opts.skip_paths, vec!["skip.me"]);
+                assert_eq!(opts.skip_regexps, vec!["^tmp\\."]);
+            }
+            _ => panic!("Expected Json column type"),
+        }
 
         // Test with backticks like in the user's example
         let user_example = "JSON(max_dynamic_types = 16, max_dynamic_paths = 256, count Int64, name String, SKIP `skip.me`, SKIP REGEXP '^tmp\\\\.')";
@@ -2779,6 +2846,29 @@ mod tests {
                 assert_eq!(params[4], JsonParameter::SkipPath("skip.me".to_string()));
             }
             _ => panic!("Expected JSON with parameters"),
+        }
+
+        // Test conversion with only max_dynamic_types
+        let (column_type, _) =
+            convert_clickhouse_type_to_column_type("JSON(max_dynamic_types = 32)").unwrap();
+        match column_type {
+            ColumnType::Json(opts) => {
+                assert_eq!(opts.max_dynamic_types, Some(32));
+                assert_eq!(opts.max_dynamic_paths, None);
+            }
+            _ => panic!("Expected Json column type"),
+        }
+
+        // Test conversion with only typed paths
+        let (column_type, _) =
+            convert_clickhouse_type_to_column_type("JSON(id UInt64, status String)").unwrap();
+        match column_type {
+            ColumnType::Json(opts) => {
+                assert_eq!(opts.typed_paths.len(), 2);
+                assert_eq!(opts.typed_paths[0].0, "id");
+                assert_eq!(opts.typed_paths[1].0, "status");
+            }
+            _ => panic!("Expected Json column type"),
         }
     }
 
