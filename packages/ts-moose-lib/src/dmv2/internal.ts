@@ -125,7 +125,6 @@ interface S3EngineConfig {
   engine: "S3";
   path: string;
   format: string;
-  noSign?: boolean;
   awsAccessKeyId?: string;
   awsSecretAccessKey?: string;
   compression?: string;
@@ -528,7 +527,6 @@ function convertS3EngineConfig(
     engine: "S3",
     path: config.path,
     format: config.format,
-    noSign: config.noSign,
     awsAccessKeyId: config.awsAccessKeyId,
     awsSecretAccessKey: config.awsSecretAccessKey,
     compression: config.compression,

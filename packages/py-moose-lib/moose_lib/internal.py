@@ -133,7 +133,6 @@ class S3ConfigDict(BaseEngineConfigDict):
     engine: Literal["S3"] = "S3"
     path: str
     format: str
-    no_sign: Optional[bool] = None
     aws_access_key_id: Optional[str] = None
     aws_secret_access_key: Optional[str] = None
     compression: Optional[str] = None
@@ -525,7 +524,6 @@ def _convert_engine_instance_to_config_dict(engine: "EngineConfig") -> EngineCon
         return S3ConfigDict(
             path=engine.path,
             format=engine.format,
-            no_sign=engine.no_sign,
             aws_access_key_id=engine.aws_access_key_id,
             aws_secret_access_key=engine.aws_secret_access_key,
             compression=engine.compression,

@@ -785,7 +785,6 @@ pub fn tables_to_python(tables: &[Table], life_cycle: Option<LifeCycle>) -> Stri
                 crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine::S3 {
                     path,
                     format,
-                    no_sign,
                     aws_access_key_id,
                     aws_secret_access_key,
                     compression,
@@ -795,9 +794,6 @@ pub fn tables_to_python(tables: &[Table], life_cycle: Option<LifeCycle>) -> Stri
                     writeln!(output, "    engine=S3Engine(").unwrap();
                     writeln!(output, "        path={:?},", path).unwrap();
                     writeln!(output, "        format={:?},", format).unwrap();
-                    if let Some(no_sign_val) = no_sign {
-                        writeln!(output, "        no_sign={},", no_sign_val).unwrap();
-                    }
                     if let Some(key_id) = aws_access_key_id {
                         writeln!(output, "        aws_access_key_id={:?},", key_id).unwrap();
                     }

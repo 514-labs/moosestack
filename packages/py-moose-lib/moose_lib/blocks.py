@@ -187,9 +187,8 @@ class S3Engine(EngineConfig):
     Args:
         path: S3 path to the data file(s) (e.g., 's3://bucket/path/file.json')
         format: Data format (e.g., 'JSONEachRow', 'CSV', 'Parquet')
-        no_sign: Use NOSIGN for public buckets (no authentication)
-        aws_access_key_id: AWS access key ID (optional if using no_sign)
-        aws_secret_access_key: AWS secret access key (optional if using no_sign)
+        aws_access_key_id: AWS access key ID (optional, omit for public buckets)
+        aws_secret_access_key: AWS secret access key (optional, omit for public buckets)
         compression: Compression type (e.g., 'gzip', 'zstd', 'auto')
         partition_strategy: Optional partition strategy
         partition_columns_in_data_file: Optional partition columns in data file
@@ -200,7 +199,6 @@ class S3Engine(EngineConfig):
     format: str
     
     # Optional fields
-    no_sign: Optional[bool] = None
     aws_access_key_id: Optional[str] = None
     aws_secret_access_key: Optional[str] = None
     compression: Optional[str] = None
