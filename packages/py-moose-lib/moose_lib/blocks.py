@@ -14,6 +14,9 @@ class ClickHouseEngines(Enum):
     VersionedCollapsingMergeTree = "VersionedCollapsingMergeTree"
     GraphiteMergeTree = "GraphiteMergeTree"
     S3Queue = "S3Queue"
+    S3 = "S3"
+    Buffer = "Buffer"
+    Distributed = "Distributed"
     ReplicatedMergeTree = "ReplicatedMergeTree"
     ReplicatedReplacingMergeTree = "ReplicatedReplacingMergeTree"
     ReplicatedAggregatingMergeTree = "ReplicatedAggregatingMergeTree"
@@ -176,6 +179,110 @@ class S3QueueEngine(EngineConfig):
             raise ValueError("S3Queue engine requires 's3_path'")
         if not self.format:
             raise ValueError("S3Queue engine requires 'format'")
+
+@dataclass
+class S3Engine(EngineConfig):
+    """Configuration for S3 engine - direct read/write from S3 storage.
+    
+    Args:
+        path: S3 path to the data file(s) (e.g., 's3://bucket/path/file.json')
+        format: Data format (e.g., 'JSONEachRow', 'CSV', 'Parquet')
+        aws_access_key_id: AWS access key ID (optional, omit for public buckets)
+        aws_secret_access_key: AWS secret access key (optional, omit for public buckets)
+        compression: Compression type (e.g., 'gzip', 'zstd', 'auto')
+        partition_strategy: Optional partition strategy
+        partition_columns_in_data_file: Optional partition columns in data file
+    """
+    
+    # Required fields
+    path: str
+    format: str
+    
+    # Optional fields
+    aws_access_key_id: Optional[str] = None
+    aws_secret_access_key: Optional[str] = None
+    compression: Optional[str] = None
+    partition_strategy: Optional[str] = None
+    partition_columns_in_data_file: Optional[str] = None
+    
+    def __post_init__(self):
+        """Validate required fields"""
+        if not self.path:
+            raise ValueError("S3 engine requires 'path'")
+        if not self.format:
+            raise ValueError("S3 engine requires 'format'")
+
+@dataclass
+class BufferEngine(EngineConfig):
+    """Configuration for Buffer engine - in-memory buffer that flushes to a destination table.
+    
+    Args:
+        target_database: Target database name for the destination table
+        target_table: Target table name where data will be flushed
+        num_layers: Number of buffer layers (typically 16)
+        min_time: Minimum time in seconds before flushing
+        max_time: Maximum time in seconds before flushing
+        min_rows: Minimum number of rows before flushing
+        max_rows: Maximum number of rows before flushing
+        min_bytes: Minimum bytes before flushing
+        max_bytes: Maximum bytes before flushing
+        flush_time: Optional flush time in seconds
+        flush_rows: Optional flush number of rows
+        flush_bytes: Optional flush number of bytes
+    """
+    
+    # Required fields
+    target_database: str
+    target_table: str
+    num_layers: int
+    min_time: int
+    max_time: int
+    min_rows: int
+    max_rows: int
+    min_bytes: int
+    max_bytes: int
+    
+    # Optional fields
+    flush_time: Optional[int] = None
+    flush_rows: Optional[int] = None
+    flush_bytes: Optional[int] = None
+    
+    def __post_init__(self):
+        """Validate required fields"""
+        if not self.target_database:
+            raise ValueError("Buffer engine requires 'target_database'")
+        if not self.target_table:
+            raise ValueError("Buffer engine requires 'target_table'")
+
+@dataclass
+class DistributedEngine(EngineConfig):
+    """Configuration for Distributed engine - distributed table across a cluster.
+    
+    Args:
+        cluster: Cluster name from the ClickHouse configuration
+        target_database: Database name on the cluster
+        target_table: Table name on the cluster
+        sharding_key: Optional sharding key expression for data distribution
+        policy_name: Optional policy name for data distribution
+    """
+    
+    # Required fields
+    cluster: str
+    target_database: str
+    target_table: str
+    
+    # Optional fields
+    sharding_key: Optional[str] = None
+    policy_name: Optional[str] = None
+    
+    def __post_init__(self):
+        """Validate required fields"""
+        if not self.cluster:
+            raise ValueError("Distributed engine requires 'cluster'")
+        if not self.target_database:
+            raise ValueError("Distributed engine requires 'target_database'")
+        if not self.target_table:
+            raise ValueError("Distributed engine requires 'target_table'")
 
 # ==========================
 # New Table Configuration (Recommended API)

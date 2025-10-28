@@ -108,15 +108,51 @@ impl LifeCycle {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct S3QueueConfig {
-    #[serde(alias = "s3Path")]
     s3_path: String,
     format: String,
-    #[serde(alias = "awsAccessKeyId")]
     aws_access_key_id: Option<String>,
-    #[serde(alias = "awsSecretAccessKey")]
     aws_secret_access_key: Option<String>,
     compression: Option<String>,
     headers: Option<std::collections::HashMap<String, String>>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct S3Config {
+    path: String,
+    format: String,
+    aws_access_key_id: Option<String>,
+    aws_secret_access_key: Option<String>,
+    compression: Option<String>,
+    partition_strategy: Option<String>,
+    partition_columns_in_data_file: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct BufferConfig {
+    target_database: String,
+    target_table: String,
+    num_layers: u32,
+    min_time: u32,
+    max_time: u32,
+    min_rows: u64,
+    max_rows: u64,
+    min_bytes: u64,
+    max_bytes: u64,
+    flush_time: Option<u32>,
+    flush_rows: Option<u64>,
+    flush_bytes: Option<u64>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct DistributedConfig {
+    cluster: String,
+    target_database: String,
+    target_table: String,
+    sharding_key: Option<String>,
+    policy_name: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -182,6 +218,15 @@ enum EngineConfig {
 
     #[serde(rename = "S3Queue")]
     S3Queue(Box<S3QueueConfig>),
+
+    #[serde(rename = "S3")]
+    S3(Box<S3Config>),
+
+    #[serde(rename = "Buffer")]
+    Buffer(Box<BufferConfig>),
+
+    #[serde(rename = "Distributed")]
+    Distributed(Box<DistributedConfig>),
 }
 
 #[derive(Debug, Deserialize)]
@@ -408,6 +453,34 @@ pub struct PartialInfrastructureMap {
     workflows: HashMap<String, PartialWorkflow>,
     #[serde(default)]
     web_apps: HashMap<String, PartialWebApp>,
+}
+
+/// Helper function to resolve S3 credentials from environment variables
+/// This ensures consistent credential handling between S3 and S3Queue engines
+fn resolve_s3_credentials(
+    aws_access_key_id: &Option<String>,
+    aws_secret_access_key: &Option<String>,
+    table_name: &str,
+) -> Result<(Option<String>, Option<String>), DmV2LoadingError> {
+    // Resolve environment variable markers for AWS credentials at runtime
+    // This must happen before the infrastructure diff to support credential rotation
+    let resolved_access_key = resolve_optional_runtime_env(aws_access_key_id).map_err(|e| {
+        DmV2LoadingError::RuntimeEnvResolution {
+            table_name: table_name.to_string(),
+            field: "awsAccessKeyId".to_string(),
+            error: e.to_string(),
+        }
+    })?;
+
+    let resolved_secret_key = resolve_optional_runtime_env(aws_secret_access_key).map_err(|e| {
+        DmV2LoadingError::RuntimeEnvResolution {
+            table_name: table_name.to_string(),
+            field: "awsSecretAccessKey".to_string(),
+            error: e.to_string(),
+        }
+    })?;
+
+    Ok((resolved_access_key, resolved_secret_key))
 }
 
 impl PartialInfrastructureMap {
@@ -712,23 +785,12 @@ impl PartialInfrastructureMap {
             })),
 
             Some(EngineConfig::S3Queue(config)) => {
-                // Resolve environment variable markers for AWS credentials at runtime
-                // This must happen before the infrastructure diff to support credential rotation
-                let resolved_access_key = resolve_optional_runtime_env(&config.aws_access_key_id)
-                    .map_err(|e| DmV2LoadingError::RuntimeEnvResolution {
-                    table_name: partial_table.name.clone(),
-                    field: "awsAccessKeyId".to_string(),
-                    error: e.to_string(),
-                })?;
-
-                let resolved_secret_key =
-                    resolve_optional_runtime_env(&config.aws_secret_access_key).map_err(|e| {
-                        DmV2LoadingError::RuntimeEnvResolution {
-                            table_name: partial_table.name.clone(),
-                            field: "awsSecretAccessKey".to_string(),
-                            error: e.to_string(),
-                        }
-                    })?;
+                // Resolve S3 credentials using shared helper
+                let (resolved_access_key, resolved_secret_key) = resolve_s3_credentials(
+                    &config.aws_access_key_id,
+                    &config.aws_secret_access_key,
+                    &partial_table.name,
+                )?;
 
                 // S3Queue settings are handled in table_settings, not in the engine
                 Ok(Some(ClickhouseEngine::S3Queue {
@@ -740,6 +802,48 @@ impl PartialInfrastructureMap {
                     aws_secret_access_key: resolved_secret_key,
                 }))
             }
+
+            Some(EngineConfig::S3(config)) => {
+                // Resolve S3 credentials using shared helper
+                let (resolved_access_key, resolved_secret_key) = resolve_s3_credentials(
+                    &config.aws_access_key_id,
+                    &config.aws_secret_access_key,
+                    &partial_table.name,
+                )?;
+
+                Ok(Some(ClickhouseEngine::S3 {
+                    path: config.path.clone(),
+                    format: config.format.clone(),
+                    aws_access_key_id: resolved_access_key,
+                    aws_secret_access_key: resolved_secret_key,
+                    compression: config.compression.clone(),
+                    partition_strategy: config.partition_strategy.clone(),
+                    partition_columns_in_data_file: config.partition_columns_in_data_file.clone(),
+                }))
+            }
+
+            Some(EngineConfig::Buffer(config)) => Ok(Some(ClickhouseEngine::Buffer {
+                target_database: config.target_database.clone(),
+                target_table: config.target_table.clone(),
+                num_layers: config.num_layers,
+                min_time: config.min_time,
+                max_time: config.max_time,
+                min_rows: config.min_rows,
+                max_rows: config.max_rows,
+                min_bytes: config.min_bytes,
+                max_bytes: config.max_bytes,
+                flush_time: config.flush_time,
+                flush_rows: config.flush_rows,
+                flush_bytes: config.flush_bytes,
+            })),
+
+            Some(EngineConfig::Distributed(config)) => Ok(Some(ClickhouseEngine::Distributed {
+                cluster: config.cluster.clone(),
+                target_database: config.target_database.clone(),
+                target_table: config.target_table.clone(),
+                sharding_key: config.sharding_key.clone(),
+                policy_name: config.policy_name.clone(),
+            })),
 
             None => Ok(None),
         }

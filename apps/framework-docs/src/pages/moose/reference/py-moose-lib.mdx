@@ -316,6 +316,48 @@ s3_table = OlapTable[MyData]("s3_events", OlapConfig(
         "loading_retries": "3"
     }
 ))
+
+# S3 engine for direct S3 access (not streaming)
+s3_direct_engine = S3Engine(
+    path="s3://bucket/data/file.json",
+    format="JSONEachRow",
+    aws_access_key_id="AKIA...",  # Optional
+    aws_secret_access_key="secret...",  # Optional
+    compression="gzip"  # Optional
+)
+
+s3_direct_table = OlapTable[MyData]("s3_data", OlapConfig(
+    engine=s3_direct_engine
+))
+
+# Buffer engine for high-throughput buffered writes
+buffer_engine = BufferEngine(
+    target_database="local",
+    target_table="destination_table",
+    num_layers=16,
+    min_time=10,
+    max_time=100,
+    min_rows=10000,
+    max_rows=1000000,
+    min_bytes=10485760,
+    max_bytes=104857600
+)
+
+buffer_table = OlapTable[MyData]("buffer", OlapConfig(
+    engine=buffer_engine
+))
+
+# Distributed engine for cluster-wide distributed tables
+distributed_engine = DistributedEngine(
+    cluster="my_cluster",
+    target_database="default",
+    target_table="local_table",
+    sharding_key="cityHash64(id)"  # Optional
+)
+
+distributed_table = OlapTable[MyData]("distributed", OlapConfig(
+    engine=distributed_engine
+))
 ```
 
 ## Task Management

@@ -793,6 +793,178 @@ moose prod up
 S3Queue requires ClickHouse 24.7+ and proper ZooKeeper/ClickHouse Keeper configuration for coordination between replicas. Files are processed exactly once across all replicas.
 </Callout>
 
+#### Direct S3 Access (`S3`)
+Use the `S3` engine for direct read/write access to S3 storage without streaming semantics:
+
+<TypeScript>
+```ts filename="S3Table.ts" copy
+import { OlapTable, ClickHouseEngines, mooseRuntimeEnv } from '@514labs/moose-lib';
+
+// S3 table with credentials (recommended with mooseRuntimeEnv)
+export const s3Data = new OlapTable<DataRecord>("s3_data", {
+  engine: ClickHouseEngines.S3,
+  path: "s3://my-bucket/data/file.json",
+  format: "JSONEachRow",
+  awsAccessKeyId: mooseRuntimeEnv.get("AWS_ACCESS_KEY_ID"),
+  awsSecretAccessKey: mooseRuntimeEnv.get("AWS_SECRET_ACCESS_KEY"),
+  compression: "gzip"
+});
+
+// Public S3 bucket (no authentication)
+export const publicS3 = new OlapTable<DataRecord>("public_s3", {
+  engine: ClickHouseEngines.S3,
+  path: "s3://public-bucket/data/*.parquet",
+  format: "Parquet",
+  noSign: true  // Use NOSIGN for public buckets
+});
+```
+</TypeScript>
+
+<Python>
+```py filename="S3Table.py" copy
+from moose_lib import OlapTable, OlapConfig, moose_runtime_env
+from moose_lib.blocks import S3Engine
+
+# S3 table with credentials (recommended with moose_runtime_env)
+s3_data = OlapTable[DataRecord]("s3_data", OlapConfig(
+    engine=S3Engine(
+        path="s3://my-bucket/data/file.json",
+        format="JSONEachRow",
+        aws_access_key_id=moose_runtime_env.get("AWS_ACCESS_KEY_ID"),
+        aws_secret_access_key=moose_runtime_env.get("AWS_SECRET_ACCESS_KEY"),
+        compression="gzip"
+    )
+))
+
+# Public S3 bucket (no authentication needed - just omit credentials)
+public_s3 = OlapTable[DataRecord]("public_s3", OlapConfig(
+    engine=S3Engine(
+        path="s3://public-bucket/data/*.parquet",
+        format="Parquet"
+    )
+))
+```
+</Python>
+
+<Callout type="info" title="S3 vs S3Queue">
+- **S3**: Direct read/write access to S3 files. Use for batch processing or querying static data.
+- **S3Queue**: Streaming engine that automatically processes new files as they arrive. Use for continuous data ingestion.
+
+Both engines support the same credential management and format options.
+</Callout>
+
+#### In-Memory Buffer (`Buffer`)
+The `Buffer` engine provides an in-memory buffer that flushes data to a destination table based on time, row count, or size thresholds:
+
+<TypeScript>
+```ts filename="BufferTable.ts" copy
+import { OlapTable, ClickHouseEngines } from '@514labs/moose-lib';
+
+// First create the destination table
+export const destinationTable = new OlapTable<Record>("destination", {
+  engine: ClickHouseEngines.MergeTree,
+  orderByFields: ["id", "timestamp"]
+});
+
+// Then create buffer that writes to it
+export const bufferTable = new OlapTable<Record>("buffer", {
+  engine: ClickHouseEngines.Buffer,
+  targetDatabase: "local",
+  targetTable: "destination",
+  numLayers: 16,
+  minTime: 10,        // Min 10 seconds before flush
+  maxTime: 100,       // Max 100 seconds before flush
+  minRows: 10000,     // Min 10k rows before flush
+  maxRows: 1000000,   // Max 1M rows before flush
+  minBytes: 10485760, // Min 10MB before flush
+  maxBytes: 104857600 // Max 100MB before flush
+});
+```
+</TypeScript>
+
+<Python>
+```py filename="BufferTable.py" copy
+from moose_lib import OlapTable, OlapConfig
+from moose_lib.blocks import MergeTreeEngine, BufferEngine
+
+# First create the destination table
+destination_table = OlapTable[Record]("destination", OlapConfig(
+    engine=MergeTreeEngine(),
+    order_by_fields=["id", "timestamp"]
+))
+
+# Then create buffer that writes to it
+buffer_table = OlapTable[Record]("buffer", OlapConfig(
+    engine=BufferEngine(
+        target_database="local",
+        target_table="destination",
+        num_layers=16,
+        min_time=10,        # Min 10 seconds before flush
+        max_time=100,       # Max 100 seconds before flush
+        min_rows=10000,     # Min 10k rows before flush
+        max_rows=1000000,   # Max 1M rows before flush
+        min_bytes=10485760, # Min 10MB before flush
+        max_bytes=104857600 # Max 100MB before flush
+    )
+))
+```
+</Python>
+
+<Callout type="warning" title="Buffer Engine Considerations">
+- Data in buffer is **lost if server crashes** before flush
+- Not suitable for critical data that must be durable
+- Best for high-throughput scenarios where minor data loss is acceptable
+- Buffer and destination table must have identical schemas
+- Cannot use `orderByFields`, `partitionBy`, or `sampleByExpression` on buffer tables
+
+For more details, see the [ClickHouse Buffer documentation](https://clickhouse.com/docs/en/engines/table-engines/special/buffer).
+</Callout>
+
+#### Distributed Tables (`Distributed`)
+The `Distributed` engine creates a distributed table across a ClickHouse cluster for horizontal scaling:
+
+<TypeScript>
+```ts filename="DistributedTable.ts" copy
+import { OlapTable, ClickHouseEngines } from '@514labs/moose-lib';
+
+// Distributed table across cluster
+export const distributedTable = new OlapTable<Record>("distributed_data", {
+  engine: ClickHouseEngines.Distributed,
+  cluster: "my_cluster",
+  targetDatabase: "default",
+  targetTable: "local_table",
+  shardingKey: "cityHash64(id)"  // Optional: how to distribute data
+});
+```
+</TypeScript>
+
+<Python>
+```py filename="DistributedTable.py" copy
+from moose_lib import OlapTable, OlapConfig
+from moose_lib.blocks import DistributedEngine
+
+# Distributed table across cluster
+distributed_table = OlapTable[Record]("distributed_data", OlapConfig(
+    engine=DistributedEngine(
+        cluster="my_cluster",
+        target_database="default",
+        target_table="local_table",
+        sharding_key="cityHash64(id)"  # Optional: how to distribute data
+    )
+))
+```
+</Python>
+
+<Callout type="info" title="Distributed Table Requirements">
+- Requires a configured ClickHouse cluster with remote_servers configuration
+- The local table must exist on all cluster nodes
+- Distributed tables are virtual - data is stored in local tables
+- Cannot use `orderByFields`, `partitionBy`, or `sampleByExpression` on distributed tables
+- The `cluster` name must match a cluster defined in your ClickHouse configuration
+
+For more details, see the [ClickHouse Distributed documentation](https://clickhouse.com/docs/en/engines/table-engines/special/distributed).
+</Callout>
+
 #### Replicated Engines
 Replicated engines provide high availability and data replication across multiple ClickHouse nodes. Moose supports all standard replicated MergeTree variants:
 

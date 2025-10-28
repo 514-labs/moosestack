@@ -396,6 +396,190 @@ interface S3QueueSettings {
 }
 ```
 
+### S3 Engine Tables
+
+The S3 engine provides direct read/write access to S3 storage without streaming semantics. Unlike S3Queue, it's designed for batch processing or querying static data.
+
+#### Modern API (Recommended)
+
+```typescript
+import { OlapTable, ClickHouseEngines, mooseRuntimeEnv } from '@514labs/moose-lib';
+
+interface S3DataSchema {
+  id: Key<string>;
+  timestamp: DateTime;
+  data: any;
+}
+
+// S3 table with credentials (recommended with mooseRuntimeEnv)
+export const S3Data = new OlapTable<S3DataSchema>("S3Data", {
+  engine: ClickHouseEngines.S3,
+  path: "s3://my-bucket/data/file.json",
+  format: "JSONEachRow",
+  // Credentials resolved from environment variables at runtime
+  awsAccessKeyId: mooseRuntimeEnv.get("AWS_ACCESS_KEY_ID"),
+  awsSecretAccessKey: mooseRuntimeEnv.get("AWS_SECRET_ACCESS_KEY"),
+  compression: "gzip"
+});
+
+// Public S3 bucket (no authentication needed)
+export const PublicS3 = new OlapTable<S3DataSchema>("PublicS3", {
+  engine: ClickHouseEngines.S3,
+  path: "s3://public-bucket/data/*.parquet",
+  format: "Parquet",
+  noSign: true  // Use NOSIGN for public buckets
+});
+```
+
+#### S3 Engine Configuration Options
+
+```typescript
+// S3 Engine Configuration (constructor parameters - cannot be changed after creation)
+interface S3EngineConfig {
+  path: string;                       // S3 path (e.g., 's3://bucket/data/file.json')
+  format: string;                     // Data format (e.g., 'JSONEachRow', 'CSV', 'Parquet')
+  noSign?: boolean;                   // Use NOSIGN for public buckets (no authentication)
+  awsAccessKeyId?: string;            // AWS access key (omit for public buckets or if using noSign)
+  awsSecretAccessKey?: string;        // AWS secret key (paired with access key)
+  compression?: string;               // Optional: 'gzip', 'brotli', 'xz', 'zstd', 'auto', etc.
+  partitionStrategy?: string;         // Optional: partitioning strategy
+  partitionColumnsInDataFile?: string; // Optional: partition columns
+}
+```
+
+#### S3 vs S3Queue
+
+- **S3**: Direct read/write access to S3 files. Use for batch processing, querying static data, or one-time imports.
+- **S3Queue**: Streaming engine that automatically processes new files as they arrive. Use for continuous data ingestion.
+
+Both engines support the same credential management and format options.
+
+### Buffer Engine Tables
+
+The Buffer engine provides an in-memory buffer that flushes data to a destination table based on time, row count, or size thresholds. This is useful for high-throughput scenarios where you want to batch writes.
+
+#### Modern API (Recommended)
+
+```typescript
+import { OlapTable, ClickHouseEngines } from '@514labs/moose-lib';
+
+interface RecordSchema {
+  id: Key<string>;
+  timestamp: DateTime;
+  value: number;
+}
+
+// First create the destination table
+export const DestinationTable = new OlapTable<RecordSchema>("DestinationTable", {
+  engine: ClickHouseEngines.MergeTree,
+  orderByFields: ["id", "timestamp"]
+});
+
+// Then create the buffer table that points to it
+export const BufferTable = new OlapTable<RecordSchema>("BufferTable", {
+  engine: ClickHouseEngines.Buffer,
+  targetDatabase: "local",
+  targetTable: "DestinationTable",
+  numLayers: 16,
+  minTime: 10,        // Minimum 10 seconds before flush
+  maxTime: 100,       // Maximum 100 seconds before flush
+  minRows: 10000,     // Minimum 10k rows before flush
+  maxRows: 1000000,   // Maximum 1M rows before flush
+  minBytes: 10485760, // Minimum 10MB before flush
+  maxBytes: 104857600 // Maximum 100MB before flush
+});
+```
+
+#### Buffer Engine Configuration Options
+
+```typescript
+// Buffer Engine Configuration
+interface BufferEngineConfig {
+  targetDatabase: string;  // Database name of destination table
+  targetTable: string;     // Name of destination table
+  numLayers: number;       // Number of buffer layers (typically 16)
+  minTime: number;         // Minimum time in seconds before flushing
+  maxTime: number;         // Maximum time in seconds before flushing
+  minRows: number;         // Minimum number of rows before flushing
+  maxRows: number;         // Maximum number of rows before flushing
+  minBytes: number;        // Minimum bytes before flushing
+  maxBytes: number;        // Maximum bytes before flushing
+  flushTime?: number;      // Optional: flush time override
+  flushRows?: number;      // Optional: flush rows override
+  flushBytes?: number;     // Optional: flush bytes override
+}
+```
+
+#### Buffer Engine Considerations
+
+**⚠️ Important Caveats:**
+- Data in buffer is **lost if server crashes** before flush
+- Not suitable for critical data that must be durable
+- Best for high-throughput scenarios where minor data loss is acceptable
+- Buffer and destination table must have identical schemas
+- Buffer tables don't support `orderByFields`, `partitionBy`, or `sampleByExpression`
+
+**Use Cases:**
+1. **High-throughput ingestion**: Reduce the overhead of many small inserts
+2. **Smoothing write load**: Buffer bursty writes and flush in larger batches
+3. **Real-time dashboards**: Trade durability for lower write latency
+
+For more details, see the [ClickHouse Buffer documentation](https://clickhouse.com/docs/en/engines/table-engines/special/buffer).
+
+### Distributed Engine Tables
+
+The Distributed engine creates a distributed table across a ClickHouse cluster for horizontal scaling and query parallelization.
+
+#### Modern API (Recommended)
+
+```typescript
+import { OlapTable, ClickHouseEngines } from '@514labs/moose-lib';
+
+interface RecordSchema {
+  id: Key<string>;
+  timestamp: DateTime;
+  value: number;
+}
+
+// Distributed table across cluster
+export const DistributedTable = new OlapTable<RecordSchema>("DistributedTable", {
+  engine: ClickHouseEngines.Distributed,
+  cluster: "my_cluster",
+  targetDatabase: "default",
+  targetTable: "local_table",
+  shardingKey: "cityHash64(id)"  // Optional: how to distribute data
+});
+```
+
+#### Distributed Engine Configuration Options
+
+```typescript
+// Distributed Engine Configuration
+interface DistributedEngineConfig {
+  cluster: string;         // Cluster name from ClickHouse configuration
+  targetDatabase: string;  // Database name on the cluster
+  targetTable: string;     // Table name on the cluster (must exist on all nodes)
+  shardingKey?: string;    // Optional: sharding key expression (e.g., 'cityHash64(id)')
+  policyName?: string;     // Optional: policy name for data distribution
+}
+```
+
+#### Distributed Table Requirements
+
+- Requires a configured ClickHouse cluster with `remote_servers` configuration
+- The local table must exist on all cluster nodes with identical schema
+- Distributed tables are virtual - actual data is stored in local tables
+- Distributed tables don't support `orderByFields`, `partitionBy`, or `sampleByExpression`
+- The `cluster` name must match a cluster defined in your ClickHouse configuration
+
+**Use Cases:**
+1. **Horizontal scaling**: Distribute data across multiple nodes for larger datasets
+2. **Query parallelization**: Speed up queries by executing them across cluster nodes
+3. **Load distribution**: Balance write and read load across multiple servers
+4. **Geographic distribution**: Place data closer to users in different regions
+
+For more details, see the [ClickHouse Distributed documentation](https://clickhouse.com/docs/en/engines/table-engines/special/distributed).
+
 ## Best Practices
 
 1. **Sorting Key Fields**:

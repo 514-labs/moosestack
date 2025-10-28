@@ -597,4 +597,227 @@ s3queue_settings = {
 1. **Real-time log processing**: Automatically process log files as they're uploaded to S3
 2. **Data ingestion pipelines**: Continuously ingest data from S3 without manual intervention
 3. **Event streaming**: Process event streams stored in S3 buckets
-4. **ETL workflows**: Build automated ETL pipelines with S3 as the source 
+4. **ETL workflows**: Build automated ETL pipelines with S3 as the source
+
+### S3 Engine Tables
+
+The S3 engine provides direct read/write access to S3 storage without streaming semantics. Unlike S3Queue, it's designed for batch processing or querying static data.
+
+#### Modern API (Recommended)
+
+```python
+from moose_lib import OlapConfig, S3Engine, OlapTable, moose_runtime_env
+from pydantic import BaseModel
+
+class S3Data(BaseModel):
+    id: str
+    timestamp: str
+    data: dict
+
+# S3 table with credentials (recommended with moose_runtime_env)
+s3_data_table = OlapTable[S3Data](
+    "S3DataTable",
+    OlapConfig(
+        engine=S3Engine(
+            path="s3://my-bucket/data/file.json",
+            format="JSONEachRow",
+            # Credentials resolved at runtime from environment variables
+            aws_access_key_id=moose_runtime_env.get("AWS_ACCESS_KEY_ID"),
+            aws_secret_access_key=moose_runtime_env.get("AWS_SECRET_ACCESS_KEY"),
+            compression="gzip"
+        )
+    )
+)
+
+# Public S3 bucket (no credentials needed - just omit them)
+public_s3_table = OlapTable[S3Data](
+    "PublicS3Table",
+    OlapConfig(
+        engine=S3Engine(
+            path="s3://public-bucket/data/*.parquet",
+            format="Parquet"
+        )
+    )
+)
+```
+
+#### S3 Engine Configuration Options
+
+```python
+from moose_lib.blocks import S3Engine
+from typing import Optional
+
+# S3Engine configuration (modern API)
+class S3Engine:
+    """Configuration for S3 engine - direct S3 access"""
+    def __init__(
+        self,
+        path: str,  # S3 path (e.g., 's3://bucket/data/file.json')
+        format: str,  # Data format (e.g., 'JSONEachRow', 'CSV', 'Parquet')
+        aws_access_key_id: Optional[str] = None,  # AWS access key (omit for public buckets)
+        aws_secret_access_key: Optional[str] = None,  # AWS secret key (paired with access key)
+        compression: Optional[str] = None,  # Optional: 'gzip', 'brotli', 'xz', 'zstd', 'auto', etc.
+        partition_strategy: Optional[str] = None,  # Optional: partitioning strategy
+        partition_columns_in_data_file: Optional[str] = None,  # Optional: partition columns
+    ):
+        pass
+```
+
+#### S3 vs S3Queue
+
+- **S3**: Direct read/write access to S3 files. Use for batch processing, querying static data, or one-time imports.
+- **S3Queue**: Streaming engine that automatically processes new files as they arrive. Use for continuous data ingestion.
+
+Both engines support the same credential management and format options.
+
+### Buffer Engine Tables
+
+The Buffer engine provides an in-memory buffer that flushes data to a destination table based on time, row count, or size thresholds. This is useful for high-throughput scenarios where you want to batch writes.
+
+#### Modern API (Recommended)
+
+```python
+from moose_lib import OlapConfig, OlapTable
+from moose_lib.blocks import MergeTreeEngine, BufferEngine
+from pydantic import BaseModel
+
+class Record(BaseModel):
+    id: str
+    timestamp: str
+    value: float
+
+# First create the destination table
+destination_table = OlapTable[Record](
+    "DestinationTable",
+    OlapConfig(
+        engine=MergeTreeEngine(),
+        order_by_fields=["id", "timestamp"]
+    )
+)
+
+# Then create the buffer table that points to it
+buffer_table = OlapTable[Record](
+    "BufferTable",
+    OlapConfig(
+        engine=BufferEngine(
+            target_database="local",
+            target_table="DestinationTable",
+            num_layers=16,
+            min_time=10,        # Minimum 10 seconds before flush
+            max_time=100,       # Maximum 100 seconds before flush
+            min_rows=10000,     # Minimum 10k rows before flush
+            max_rows=1000000,   # Maximum 1M rows before flush
+            min_bytes=10485760, # Minimum 10MB before flush
+            max_bytes=104857600 # Maximum 100MB before flush
+        )
+    )
+)
+```
+
+#### Buffer Engine Configuration Options
+
+```python
+from moose_lib.blocks import BufferEngine
+
+# BufferEngine configuration (modern API)
+class BufferEngine:
+    """Configuration for Buffer engine - in-memory buffered writes"""
+    def __init__(
+        self,
+        target_database: str,  # Database name of destination table
+        target_table: str,  # Name of destination table
+        num_layers: int,  # Number of buffer layers (typically 16)
+        min_time: int,  # Minimum time in seconds before flushing
+        max_time: int,  # Maximum time in seconds before flushing
+        min_rows: int,  # Minimum number of rows before flushing
+        max_rows: int,  # Maximum number of rows before flushing
+        min_bytes: int,  # Minimum bytes before flushing
+        max_bytes: int,  # Maximum bytes before flushing
+        flush_time: Optional[int] = None,  # Optional: flush time override
+        flush_rows: Optional[int] = None,  # Optional: flush rows override
+        flush_bytes: Optional[int] = None,  # Optional: flush bytes override
+    ):
+        pass
+```
+
+#### Buffer Engine Considerations
+
+**⚠️ Important Caveats:**
+- Data in buffer is **lost if server crashes** before flush
+- Not suitable for critical data that must be durable
+- Best for high-throughput scenarios where minor data loss is acceptable
+- Buffer and destination table must have identical schemas
+- Buffer tables don't support `order_by_fields`, `partition_by`, or `sample_by_expression`
+
+**Use Cases:**
+1. **High-throughput ingestion**: Reduce the overhead of many small inserts
+2. **Smoothing write load**: Buffer bursty writes and flush in larger batches
+3. **Real-time dashboards**: Trade durability for lower write latency
+
+For more details, see the [ClickHouse Buffer documentation](https://clickhouse.com/docs/en/engines/table-engines/special/buffer).
+
+### Distributed Engine Tables
+
+The Distributed engine creates a distributed table across a ClickHouse cluster for horizontal scaling and query parallelization.
+
+#### Modern API (Recommended)
+
+```python
+from moose_lib import OlapConfig, OlapTable
+from moose_lib.blocks import DistributedEngine
+from pydantic import BaseModel
+
+class Record(BaseModel):
+    id: str
+    timestamp: str
+    value: float
+
+# Distributed table across cluster
+distributed_table = OlapTable[Record](
+    "DistributedTable",
+    OlapConfig(
+        engine=DistributedEngine(
+            cluster="my_cluster",
+            target_database="default",
+            target_table="local_table",
+            sharding_key="cityHash64(id)"  # Optional: how to distribute data
+        )
+    )
+)
+```
+
+#### Distributed Engine Configuration Options
+
+```python
+from moose_lib.blocks import DistributedEngine
+from typing import Optional
+
+# DistributedEngine configuration (modern API)
+class DistributedEngine:
+    """Configuration for Distributed engine - cluster-wide distributed tables"""
+    def __init__(
+        self,
+        cluster: str,  # Cluster name from ClickHouse configuration
+        target_database: str,  # Database name on the cluster
+        target_table: str,  # Table name on the cluster (must exist on all nodes)
+        sharding_key: Optional[str] = None,  # Optional: sharding key expression (e.g., 'cityHash64(id)')
+        policy_name: Optional[str] = None,  # Optional: policy name for data distribution
+    ):
+        pass
+```
+
+#### Distributed Table Requirements
+
+- Requires a configured ClickHouse cluster with `remote_servers` configuration
+- The local table must exist on all cluster nodes with identical schema
+- Distributed tables are virtual - actual data is stored in local tables
+- Distributed tables don't support `order_by_fields`, `partition_by`, or `sample_by_expression`
+- The `cluster` name must match a cluster defined in your ClickHouse configuration
+
+**Use Cases:**
+1. **Horizontal scaling**: Distribute data across multiple nodes for larger datasets
+2. **Query parallelization**: Speed up queries by executing them across cluster nodes
+3. **Load distribution**: Balance write and read load across multiple servers
+4. **Geographic distribution**: Place data closer to users in different regions
+
+For more details, see the [ClickHouse Distributed documentation](https://clickhouse.com/docs/en/engines/table-engines/special/distributed). 
