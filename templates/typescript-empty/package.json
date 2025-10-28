@@ -9,6 +9,7 @@
   "dependencies": {
     "axios": "^1.7.7",
     "ts-patch": "^3.3.0",
+    "tsconfig-paths": "^4.2.0",
     "@514labs/moose-lib": "latest",
     "typia": "^9.6.1"
   },
