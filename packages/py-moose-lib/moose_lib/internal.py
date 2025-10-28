@@ -128,6 +128,45 @@ class S3QueueConfigDict(BaseEngineConfigDict):
     headers: Optional[Dict[str, str]] = None
 
 
+class S3ConfigDict(BaseEngineConfigDict):
+    """Configuration for S3 engine."""
+    engine: Literal["S3"] = "S3"
+    path: str
+    format: str
+    aws_access_key_id: Optional[str] = None
+    aws_secret_access_key: Optional[str] = None
+    compression: Optional[str] = None
+    partition_strategy: Optional[str] = None
+    partition_columns_in_data_file: Optional[str] = None
+
+
+class BufferConfigDict(BaseEngineConfigDict):
+    """Configuration for Buffer engine."""
+    engine: Literal["Buffer"] = "Buffer"
+    target_database: str
+    target_table: str
+    num_layers: int
+    min_time: int
+    max_time: int
+    min_rows: int
+    max_rows: int
+    min_bytes: int
+    max_bytes: int
+    flush_time: Optional[int] = None
+    flush_rows: Optional[int] = None
+    flush_bytes: Optional[int] = None
+
+
+class DistributedConfigDict(BaseEngineConfigDict):
+    """Configuration for Distributed engine."""
+    engine: Literal["Distributed"] = "Distributed"
+    cluster: str
+    target_database: str
+    target_table: str
+    sharding_key: Optional[str] = None
+    policy_name: Optional[str] = None
+
+
 # Discriminated union of all engine configurations
 EngineConfigDict = Union[
     MergeTreeConfigDict,
@@ -138,7 +177,10 @@ EngineConfigDict = Union[
     ReplicatedReplacingMergeTreeConfigDict,
     ReplicatedAggregatingMergeTreeConfigDict,
     ReplicatedSummingMergeTreeConfigDict,
-    S3QueueConfigDict
+    S3QueueConfigDict,
+    S3ConfigDict,
+    BufferConfigDict,
+    DistributedConfigDict
 ]
 
 
@@ -464,7 +506,7 @@ def _convert_engine_instance_to_config_dict(engine: "EngineConfig") -> EngineCon
     Returns:
         EngineConfigDict with engine-specific configuration
     """
-    from moose_lib.blocks import S3QueueEngine
+    from moose_lib.blocks import S3QueueEngine, S3Engine, BufferEngine, DistributedEngine
 
     # Try S3Queue first
     if isinstance(engine, S3QueueEngine):
@@ -475,6 +517,45 @@ def _convert_engine_instance_to_config_dict(engine: "EngineConfig") -> EngineCon
             aws_secret_access_key=engine.aws_secret_access_key,
             compression=engine.compression,
             headers=engine.headers
+        )
+    
+    # Try S3
+    if isinstance(engine, S3Engine):
+        return S3ConfigDict(
+            path=engine.path,
+            format=engine.format,
+            aws_access_key_id=engine.aws_access_key_id,
+            aws_secret_access_key=engine.aws_secret_access_key,
+            compression=engine.compression,
+            partition_strategy=engine.partition_strategy,
+            partition_columns_in_data_file=engine.partition_columns_in_data_file
+        )
+    
+    # Try Buffer
+    if isinstance(engine, BufferEngine):
+        return BufferConfigDict(
+            target_database=engine.target_database,
+            target_table=engine.target_table,
+            num_layers=engine.num_layers,
+            min_time=engine.min_time,
+            max_time=engine.max_time,
+            min_rows=engine.min_rows,
+            max_rows=engine.max_rows,
+            min_bytes=engine.min_bytes,
+            max_bytes=engine.max_bytes,
+            flush_time=engine.flush_time,
+            flush_rows=engine.flush_rows,
+            flush_bytes=engine.flush_bytes
+        )
+    
+    # Try Distributed
+    if isinstance(engine, DistributedEngine):
+        return DistributedConfigDict(
+            cluster=engine.cluster,
+            target_database=engine.target_database,
+            target_table=engine.target_table,
+            sharding_key=engine.sharding_key,
+            policy_name=engine.policy_name
         )
 
     # Try basic engines

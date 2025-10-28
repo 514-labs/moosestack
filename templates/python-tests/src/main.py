@@ -2,6 +2,7 @@
 from src.ingest import models, transforms
 from src.ingest import engine_tests  # Import engine tests to load all supported ClickHouse engines
 from src.ingest import s3_queue_tests  # Import S3Queue tests for runtime env resolution
+from src.ingest import s3_tests  # Import S3 engine tests for runtime env resolution
 import src.apis.bar as bar_api
 from src.apis.webapp_bar import bar_fastapi_app
 import src.views.bar_aggregated as bar_view

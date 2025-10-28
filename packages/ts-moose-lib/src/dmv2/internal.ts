@@ -121,6 +121,42 @@ interface S3QueueEngineConfig {
   headers?: { [key: string]: string };
 }
 
+interface S3EngineConfig {
+  engine: "S3";
+  path: string;
+  format: string;
+  awsAccessKeyId?: string;
+  awsSecretAccessKey?: string;
+  compression?: string;
+  partitionStrategy?: string;
+  partitionColumnsInDataFile?: string;
+}
+
+interface BufferEngineConfig {
+  engine: "Buffer";
+  targetDatabase: string;
+  targetTable: string;
+  numLayers: number;
+  minTime: number;
+  maxTime: number;
+  minRows: number;
+  maxRows: number;
+  minBytes: number;
+  maxBytes: number;
+  flushTime?: number;
+  flushRows?: number;
+  flushBytes?: number;
+}
+
+interface DistributedEngineConfig {
+  engine: "Distributed";
+  cluster: string;
+  targetDatabase: string;
+  targetTable: string;
+  shardingKey?: string;
+  policyName?: string;
+}
+
 /**
  * Union type for all supported engine configurations
  */
@@ -133,7 +169,10 @@ type EngineConfig =
   | ReplicatedReplacingMergeTreeEngineConfig
   | ReplicatedAggregatingMergeTreeEngineConfig
   | ReplicatedSummingMergeTreeEngineConfig
-  | S3QueueEngineConfig;
+  | S3QueueEngineConfig
+  | S3EngineConfig
+  | BufferEngineConfig
+  | DistributedEngineConfig;
 
 /**
  * JSON representation of an OLAP table configuration.
@@ -475,6 +514,78 @@ function convertS3QueueEngineConfig(
 }
 
 /**
+ * Convert S3 engine config
+ */
+function convertS3EngineConfig(
+  config: OlapConfig<any>,
+): EngineConfig | undefined {
+  if (!("engine" in config) || config.engine !== ClickHouseEngines.S3) {
+    return undefined;
+  }
+
+  return {
+    engine: "S3",
+    path: config.path,
+    format: config.format,
+    awsAccessKeyId: config.awsAccessKeyId,
+    awsSecretAccessKey: config.awsSecretAccessKey,
+    compression: config.compression,
+    partitionStrategy: config.partitionStrategy,
+    partitionColumnsInDataFile: config.partitionColumnsInDataFile,
+  };
+}
+
+/**
+ * Convert Buffer engine config
+ */
+function convertBufferEngineConfig(
+  config: OlapConfig<any>,
+): EngineConfig | undefined {
+  if (!("engine" in config) || config.engine !== ClickHouseEngines.Buffer) {
+    return undefined;
+  }
+
+  return {
+    engine: "Buffer",
+    targetDatabase: config.targetDatabase,
+    targetTable: config.targetTable,
+    numLayers: config.numLayers,
+    minTime: config.minTime,
+    maxTime: config.maxTime,
+    minRows: config.minRows,
+    maxRows: config.maxRows,
+    minBytes: config.minBytes,
+    maxBytes: config.maxBytes,
+    flushTime: config.flushTime,
+    flushRows: config.flushRows,
+    flushBytes: config.flushBytes,
+  };
+}
+
+/**
+ * Convert Distributed engine config
+ */
+function convertDistributedEngineConfig(
+  config: OlapConfig<any>,
+): EngineConfig | undefined {
+  if (
+    !("engine" in config) ||
+    config.engine !== ClickHouseEngines.Distributed
+  ) {
+    return undefined;
+  }
+
+  return {
+    engine: "Distributed",
+    cluster: config.cluster,
+    targetDatabase: config.targetDatabase,
+    targetTable: config.targetTable,
+    shardingKey: config.shardingKey,
+    policyName: config.policyName,
+  };
+}
+
+/**
  * Convert table configuration to engine config
  */
 function convertTableConfigToEngineConfig(
@@ -497,6 +608,21 @@ function convertTableConfigToEngineConfig(
   // Handle S3Queue
   if (engine === ClickHouseEngines.S3Queue) {
     return convertS3QueueEngineConfig(config);
+  }
+
+  // Handle S3
+  if (engine === ClickHouseEngines.S3) {
+    return convertS3EngineConfig(config);
+  }
+
+  // Handle Buffer
+  if (engine === ClickHouseEngines.Buffer) {
+    return convertBufferEngineConfig(config);
+  }
+
+  // Handle Distributed
+  if (engine === ClickHouseEngines.Distributed) {
+    return convertDistributedEngineConfig(config);
   }
 
   return undefined;
@@ -553,10 +679,13 @@ export const toInfraMap = (registry: typeof moose_internal) => {
     }
 
     // Determine ORDER BY from config
+    // Note: engines like Buffer and Distributed don't support orderBy/partitionBy/sampleBy
     const hasOrderByFields =
+      "orderByFields" in table.config &&
       Array.isArray(table.config.orderByFields) &&
       table.config.orderByFields.length > 0;
     const hasOrderByExpression =
+      "orderByExpression" in table.config &&
       typeof table.config.orderByExpression === "string" &&
       table.config.orderByExpression.length > 0;
     if (hasOrderByFields && hasOrderByExpression) {
@@ -565,16 +694,21 @@ export const toInfraMap = (registry: typeof moose_internal) => {
       );
     }
     const orderBy: string[] | string =
-      hasOrderByExpression ?
-        (table.config.orderByExpression as string)
-      : (table.config.orderByFields ?? []);
+      hasOrderByExpression && "orderByExpression" in table.config ?
+        (table.config.orderByExpression ?? "")
+      : "orderByFields" in table.config ? (table.config.orderByFields ?? [])
+      : [];
 
     tables[id] = {
       name: table.name,
       columns: table.columnArray,
       orderBy,
-      partitionBy: table.config.partitionBy,
-      sampleByExpression: table.config.sampleByExpression,
+      partitionBy:
+        "partitionBy" in table.config ? table.config.partitionBy : undefined,
+      sampleByExpression:
+        "sampleByExpression" in table.config ?
+          table.config.sampleByExpression
+        : undefined,
       engineConfig,
       version: table.config.version,
       metadata,

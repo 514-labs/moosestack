@@ -151,6 +151,39 @@ class OlapConfig(BaseModel):
         if has_fields and has_expr:
             raise ValueError("Provide either order_by_fields or order_by_expression, not both.")
 
+        # Validate that non-MergeTree engines don't have unsupported clauses
+        if self.engine:
+            from ..blocks import S3Engine, S3QueueEngine, BufferEngine, DistributedEngine
+
+            # All non-MergeTree engines don't support ORDER BY
+            non_mergetree_engines = (S3Engine, S3QueueEngine, BufferEngine, DistributedEngine)
+            if isinstance(self.engine, non_mergetree_engines):
+                engine_name = type(self.engine).__name__
+
+                if has_fields or has_expr:
+                    raise ValueError(
+                        f"{engine_name} does not support ORDER BY clauses. "
+                        f"Remove order_by_fields or order_by_expression from your configuration."
+                    )
+
+                if self.sample_by_expression:
+                    raise ValueError(
+                        f"{engine_name} does not support SAMPLE BY clause. "
+                        f"Remove sample_by_expression from your configuration."
+                    )
+
+            # Only S3QueueEngine, BufferEngine, and DistributedEngine don't support PARTITION BY
+            # S3Engine DOES support PARTITION BY
+            engines_without_partition_by = (S3QueueEngine, BufferEngine, DistributedEngine)
+            if isinstance(self.engine, engines_without_partition_by):
+                engine_name = type(self.engine).__name__
+
+                if self.partition_by:
+                    raise ValueError(
+                        f"{engine_name} does not support PARTITION BY clause. "
+                        f"Remove partition_by from your configuration."
+                    )
+
 
 class OlapTable(TypedMooseResource, Generic[T]):
     """Represents an OLAP table (e.g., a ClickHouse table) typed with a Pydantic model.
