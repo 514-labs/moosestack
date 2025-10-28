@@ -66,12 +66,10 @@ describe("typescript template tests - S3Queue Runtime Environment Variable Resol
         cwd: TEST_PROJECT_DIR,
         env: {
           ...process.env,
-          // Set dummy credentials for S3Queue testing
+          // Set dummy credentials for both S3Queue and S3 engine testing
+          // Both use the same env vars for consistency
           TEST_AWS_ACCESS_KEY_ID: "test-access-key-id",
           TEST_AWS_SECRET_ACCESS_KEY: "test-secret-access-key",
-          // Also set S3 engine env vars so those tests don't fail
-          TEST_S3_AWS_ACCESS_KEY_ID: "test-s3-access-key-id",
-          TEST_S3_AWS_SECRET_ACCESS_KEY: "test-s3-secret-access-key",
         },
       });
 
@@ -130,12 +128,10 @@ describe("typescript template tests - S3Queue Runtime Environment Variable Resol
         cwd: TEST_PROJECT_DIR,
         env: {
           ...process.env,
-          // Explicitly unset S3Queue environment variables
+          // Explicitly unset S3 credentials
+          // Both S3Queue and S3 engine use the same env vars
           TEST_AWS_ACCESS_KEY_ID: undefined,
           TEST_AWS_SECRET_ACCESS_KEY: undefined,
-          // Set S3 engine env vars so only S3Queue tests fail
-          TEST_S3_AWS_ACCESS_KEY_ID: "test-s3-access-key-id",
-          TEST_S3_AWS_SECRET_ACCESS_KEY: "test-s3-secret-access-key",
         },
       });
 
@@ -233,12 +229,10 @@ describe("python template tests - S3Queue Runtime Environment Variable Resolutio
           ...process.env,
           VIRTUAL_ENV: path.join(TEST_PROJECT_DIR, ".venv"),
           PATH: `${path.join(TEST_PROJECT_DIR, ".venv", "bin")}:${process.env.PATH}`,
-          // Set dummy credentials for S3Queue testing
+          // Set dummy credentials for both S3Queue and S3 engine testing
+          // Both use the same env vars for consistency
           TEST_AWS_ACCESS_KEY_ID: "test-access-key-id",
           TEST_AWS_SECRET_ACCESS_KEY: "test-secret-access-key",
-          // Also set S3 engine env vars so those tests don't fail
-          TEST_S3_AWS_ACCESS_KEY_ID: "test-s3-access-key-id",
-          TEST_S3_AWS_SECRET_ACCESS_KEY: "test-s3-secret-access-key",
         },
       });
 
@@ -298,12 +292,10 @@ describe("python template tests - S3Queue Runtime Environment Variable Resolutio
           ...process.env,
           VIRTUAL_ENV: path.join(TEST_PROJECT_DIR, ".venv"),
           PATH: `${path.join(TEST_PROJECT_DIR, ".venv", "bin")}:${process.env.PATH}`,
-          // Explicitly unset S3Queue environment variables
+          // Explicitly unset S3 credentials
+          // Both S3Queue and S3 engine use the same env vars
           TEST_AWS_ACCESS_KEY_ID: undefined,
           TEST_AWS_SECRET_ACCESS_KEY: undefined,
-          // Set S3 engine env vars so only S3Queue tests fail
-          TEST_S3_AWS_ACCESS_KEY_ID: "test-s3-access-key-id",
-          TEST_S3_AWS_SECRET_ACCESS_KEY: "test-s3-secret-access-key",
         },
       });
 

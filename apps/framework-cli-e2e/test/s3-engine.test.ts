@@ -175,7 +175,7 @@ describe("typescript template tests - S3 Engine Runtime Environment Variable Res
         expect(output).to.include("S3WithSecrets");
         expect(output).to.match(/awsAccessKeyId|awsSecretAccessKey/);
         expect(output).to.match(
-          /TEST_S3_AWS_ACCESS_KEY_ID|TEST_S3_AWS_SECRET_ACCESS_KEY/,
+          /TEST_AWS_ACCESS_KEY_ID|TEST_AWS_SECRET_ACCESS_KEY/,
         );
 
         console.log("Process exited with expected error message");
@@ -276,8 +276,8 @@ describe("python template tests - S3 Engine Runtime Environment Variable Resolut
         APP_NAMES.PYTHON_TESTS,
       );
 
-      // Start dev server WITHOUT the S3 engine environment variables set
-      // Only set S3Queue env vars to isolate S3 engine failures
+      // Start dev server WITHOUT the required environment variables set
+      // Both S3 engine and S3Queue use the same env vars
       devProcess = spawn(CLI_PATH, ["dev"], {
         stdio: "pipe",
         cwd: TEST_PROJECT_DIR,
@@ -285,12 +285,9 @@ describe("python template tests - S3 Engine Runtime Environment Variable Resolut
           ...process.env,
           VIRTUAL_ENV: path.join(TEST_PROJECT_DIR, ".venv"),
           PATH: `${path.join(TEST_PROJECT_DIR, ".venv", "bin")}:${process.env.PATH}`,
-          // Set S3Queue env vars so those tests don't fail
-          TEST_AWS_ACCESS_KEY_ID: "test-access-key-id",
-          TEST_AWS_SECRET_ACCESS_KEY: "test-secret-access-key",
-          // Explicitly unset S3 engine env vars
-          TEST_S3_AWS_ACCESS_KEY_ID: undefined,
-          TEST_S3_AWS_SECRET_ACCESS_KEY: undefined,
+          // Explicitly unset S3 credentials
+          TEST_AWS_ACCESS_KEY_ID: undefined,
+          TEST_AWS_SECRET_ACCESS_KEY: undefined,
         },
       });
 
@@ -335,7 +332,7 @@ describe("python template tests - S3 Engine Runtime Environment Variable Resolut
         expect(output).to.include("S3WithSecrets");
         expect(output).to.match(/awsAccessKeyId|awsSecretAccessKey/);
         expect(output).to.match(
-          /TEST_S3_AWS_ACCESS_KEY_ID|TEST_S3_AWS_SECRET_ACCESS_KEY/,
+          /TEST_AWS_ACCESS_KEY_ID|TEST_AWS_SECRET_ACCESS_KEY/,
         );
 
         console.log("Process exited with expected error message");
