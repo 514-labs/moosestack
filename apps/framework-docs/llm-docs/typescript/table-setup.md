@@ -254,6 +254,8 @@ export const S3Events = new OlapTable("S3Events", {
   s3Path: "s3://my-bucket/events/*.json",
   format: "JSONEachRow",
   // Optional authentication (omit for public buckets)
+  // ⚠️ WARNING: Never hardcode credentials directly!
+  // Use mooseRuntimeEnv for runtime environment variable resolution (see below)
   awsAccessKeyId: "AKIA...",
   awsSecretAccessKey: "secret...",
   // Optional compression
@@ -279,6 +281,52 @@ export const PublicS3Data = new OlapTable<any>("PublicS3Data", {
   }
 });
 ```
+
+#### Runtime Environment Variable Resolution (Recommended for Credentials)
+
+**⚠️ IMPORTANT: Never hardcode AWS credentials in your code!** Hardcoded credentials get embedded in Docker images and deployment artifacts, creating serious security risks.
+
+Instead, use `mooseRuntimeEnv` to defer credential resolution until runtime:
+
+```typescript
+import { OlapTable, ClickHouseEngines, mooseRuntimeEnv } from '@514labs/moose-lib';
+
+// ✅ RECOMMENDED: Runtime environment variable resolution
+export const SecureS3Events = new OlapTable("SecureS3Events", {
+  engine: ClickHouseEngines.S3Queue,
+  s3Path: "s3://my-bucket/events/*.json",
+  format: "JSONEachRow",
+  // Credentials resolved from environment variables at runtime
+  awsAccessKeyId: mooseRuntimeEnv.get("AWS_ACCESS_KEY_ID"),
+  awsSecretAccessKey: mooseRuntimeEnv.get("AWS_SECRET_ACCESS_KEY"),
+  settings: {
+    mode: "unordered",
+    keeper_path: "/clickhouse/s3queue/s3_events"
+  }
+});
+```
+
+**How it works:**
+1. `mooseRuntimeEnv.get("VAR_NAME")` creates a marker in your code
+2. When you build your application, these markers (not actual values) are serialized
+3. At runtime, the Moose CLI reads the environment variables and resolves the actual values
+4. Credentials never get embedded in Docker images or deployment artifacts
+
+**Setting environment variables:**
+```bash
+# In your deployment environment
+export AWS_ACCESS_KEY_ID="AKIA..."
+export AWS_SECRET_ACCESS_KEY="your-secret-key"
+
+# Then start Moose
+moose prod up
+```
+
+**Benefits:**
+- ✅ Credentials never embedded in Docker images
+- ✅ Supports credential rotation (changing passwords triggers table recreation)
+- ✅ Different credentials for different environments (dev/staging/prod)
+- ✅ Clear error messages if environment variables are missing
 
 #### Legacy API (Still Supported)
 

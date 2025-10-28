@@ -862,7 +862,14 @@ fn build_modify_column_sql(
     let default_clause = ch_col
         .default
         .as_ref()
-        .map(|d| format!(" DEFAULT {}", d))
+        .map(|d| {
+            format!(
+                " DEFAULT {}",
+                crate::infrastructure::olap::clickhouse::queries::format_clickhouse_setting_value(
+                    d
+                )
+            )
+        })
         .unwrap_or_default();
 
     // TTL clause: If omitted, ClickHouse KEEPS any existing TTL

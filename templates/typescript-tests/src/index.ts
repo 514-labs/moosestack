@@ -1,6 +1,7 @@
 export * from "./ingest/models";
 export * from "./ingest/transforms";
 export * from "./ingest/engineTests"; // Import engine tests to load all supported ClickHouse engines
+export * from "./ingest/s3QueueTests"; // Import S3Queue tests for runtime env resolution
 export * from "./ingest/drizzleInfer";
 export * from "./ingest/dateAggregationModels";
 

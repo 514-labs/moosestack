@@ -14,10 +14,10 @@ use crate::infrastructure::olap::clickhouse::model::{
 
 /// Format a ClickHouse setting value with proper quoting.
 /// - Numeric values (integers, floats) are not quoted
-/// - Boolean values (true, false) are not quoted  
+/// - Boolean values (true, false) are not quoted
 /// - String values are quoted with single quotes
 /// - Already quoted values are preserved as-is
-fn format_clickhouse_setting_value(value: &str) -> String {
+pub fn format_clickhouse_setting_value(value: &str) -> String {
     // If already quoted, use as-is
     if value.starts_with('\'') && value.ends_with('\'') {
         value.to_string()
@@ -2283,6 +2283,9 @@ pub fn create_table_query(
         (true, items)
     };
 
+    // S3Queue engine doesn't support PRIMARY_KEY, ORDER_BY, PARTITION_BY, or SAMPLE_BY clauses
+    let is_s3_queue = matches!(table.engine, ClickhouseEngine::S3Queue { .. });
+
     let template_context = json!({
         "db_name": db_name,
         "table_name": table.name,
@@ -2290,19 +2293,23 @@ pub fn create_table_query(
         "has_fields": !table.columns.is_empty(),
         "has_indexes": has_indexes,
         "indexes": index_strings,
-        "primary_key_string": if !primary_key.is_empty() {
+        "primary_key_string": if !is_s3_queue && !primary_key.is_empty() {
             Some(wrap_and_join_column_names(&primary_key, ","))
         } else {
             None
         },
-        "order_by_string": match &table.order_by {
-            OrderBy::Fields(v) if v.len() == 1 && v[0] == "tuple()" => Some("tuple()".to_string()),
-            OrderBy::Fields(v) if v.is_empty() => None,
-            OrderBy::Fields(v) => Some(wrap_and_join_column_names(v, ",")),
-            OrderBy::SingleExpr(expr) => Some(expr.clone()),
+        "order_by_string": if !is_s3_queue {
+            match &table.order_by {
+                OrderBy::Fields(v) if v.len() == 1 && v[0] == "tuple()" => Some("tuple()".to_string()),
+                OrderBy::Fields(v) if v.is_empty() => None,
+                OrderBy::Fields(v) => Some(wrap_and_join_column_names(v, ",")),
+                OrderBy::SingleExpr(expr) => Some(expr.clone()),
+            }
+        } else {
+            None
         },
-        "partition_by": table.partition_by.as_deref(),
-        "sample_by": table.sample_by.as_deref(),
+        "partition_by": if !is_s3_queue { table.partition_by.as_deref() } else { None },
+        "sample_by": if !is_s3_queue { table.sample_by.as_deref() } else { None },
         "engine": engine,
         "settings": settings,
         "ttl_clause": table.table_ttl_setting.as_deref()
@@ -2566,11 +2573,17 @@ fn builds_field_context(columns: &[ClickHouseColumn]) -> Result<Vec<Value>, Clic
 
             let field_ttl = column.ttl.as_ref();
 
+            // Format default value properly - quote strings, keep numbers/booleans unquoted
+            let formatted_default = column
+                .default
+                .as_ref()
+                .map(|d| format_clickhouse_setting_value(d));
+
             Ok(json!({
                 "field_name": column.name,
                 "field_type": field_type,
                 "field_ttl": field_ttl,
-                "field_default": column.default,
+                "field_default": formatted_default,
                 "field_nullable": if let ClickHouseColumnType::Nullable(_) = column.column_type {
                     // if type is Nullable, do not add extra specifier
                     "".to_string()
@@ -3292,7 +3305,6 @@ CREATE TABLE IF NOT EXISTS `test_db`.`test_table`
  `data` String NOT NULL
 )
 ENGINE = S3Queue('s3://my-bucket/data/*.json', NOSIGN, 'JSONEachRow')
-PRIMARY KEY (`id`)
 SETTINGS keeper_path = '/clickhouse/s3queue/test_table', mode = 'unordered', s3queue_loading_retries = 3"#;
         assert_eq!(query.trim(), expected.trim());
     }
@@ -3763,8 +3775,7 @@ CREATE TABLE IF NOT EXISTS `test_db`.`test_table`
 (
  `id` Int32 NOT NULL
 )
-ENGINE = S3Queue('s3://my-bucket/data/*.csv', NOSIGN, 'CSV')
-PRIMARY KEY (`id`)"#;
+ENGINE = S3Queue('s3://my-bucket/data/*.csv', NOSIGN, 'CSV')"#;
         assert_eq!(query.trim(), expected.trim());
     }
 
