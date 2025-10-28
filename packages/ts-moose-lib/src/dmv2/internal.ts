@@ -524,17 +524,16 @@ function convertS3EngineConfig(
     return undefined;
   }
 
-  const s3Config = config as any;
   return {
     engine: "S3",
-    path: s3Config.path,
-    format: s3Config.format,
-    noSign: s3Config.noSign,
-    awsAccessKeyId: s3Config.awsAccessKeyId,
-    awsSecretAccessKey: s3Config.awsSecretAccessKey,
-    compression: s3Config.compression,
-    partitionStrategy: s3Config.partitionStrategy,
-    partitionColumnsInDataFile: s3Config.partitionColumnsInDataFile,
+    path: config.path,
+    format: config.format,
+    noSign: config.noSign,
+    awsAccessKeyId: config.awsAccessKeyId,
+    awsSecretAccessKey: config.awsSecretAccessKey,
+    compression: config.compression,
+    partitionStrategy: config.partitionStrategy,
+    partitionColumnsInDataFile: config.partitionColumnsInDataFile,
   };
 }
 
@@ -548,21 +547,20 @@ function convertBufferEngineConfig(
     return undefined;
   }
 
-  const bufferConfig = config as any;
   return {
     engine: "Buffer",
-    targetDatabase: bufferConfig.targetDatabase,
-    targetTable: bufferConfig.targetTable,
-    numLayers: bufferConfig.numLayers,
-    minTime: bufferConfig.minTime,
-    maxTime: bufferConfig.maxTime,
-    minRows: bufferConfig.minRows,
-    maxRows: bufferConfig.maxRows,
-    minBytes: bufferConfig.minBytes,
-    maxBytes: bufferConfig.maxBytes,
-    flushTime: bufferConfig.flushTime,
-    flushRows: bufferConfig.flushRows,
-    flushBytes: bufferConfig.flushBytes,
+    targetDatabase: config.targetDatabase,
+    targetTable: config.targetTable,
+    numLayers: config.numLayers,
+    minTime: config.minTime,
+    maxTime: config.maxTime,
+    minRows: config.minRows,
+    maxRows: config.maxRows,
+    minBytes: config.minBytes,
+    maxBytes: config.maxBytes,
+    flushTime: config.flushTime,
+    flushRows: config.flushRows,
+    flushBytes: config.flushBytes,
   };
 }
 
@@ -579,14 +577,13 @@ function convertDistributedEngineConfig(
     return undefined;
   }
 
-  const distConfig = config as any;
   return {
     engine: "Distributed",
-    cluster: distConfig.cluster,
-    targetDatabase: distConfig.targetDatabase,
-    targetTable: distConfig.targetTable,
-    shardingKey: distConfig.shardingKey,
-    policyName: distConfig.policyName,
+    cluster: config.cluster,
+    targetDatabase: config.targetDatabase,
+    targetTable: config.targetTable,
+    shardingKey: config.shardingKey,
+    policyName: config.policyName,
   };
 }
 
