@@ -741,6 +741,7 @@ impl ClickhouseEngine {
                 Self::parse_regular_summing_merge_tree(s, value)
             }
             s if s.starts_with("S3Queue(") => Self::parse_regular_s3queue(s, value),
+            s if s.starts_with("S3(") => Self::parse_regular_s3(s, value),
             _ => Err(value),
         }
     }
@@ -770,6 +771,18 @@ impl ClickhouseEngine {
             .and_then(|s| s.strip_suffix(")"))
         {
             Self::parse_s3queue(content).map_err(|_| original_value)
+        } else {
+            Err(original_value)
+        }
+    }
+
+    /// Parse regular S3 with parameters
+    fn parse_regular_s3<'a>(engine_name: &str, original_value: &'a str) -> Result<Self, &'a str> {
+        if let Some(content) = engine_name
+            .strip_prefix("S3(")
+            .and_then(|s| s.strip_suffix(")"))
+        {
+            Self::parse_s3(content).map_err(|_| original_value)
         } else {
             Err(original_value)
         }
@@ -989,6 +1002,50 @@ impl ClickhouseEngine {
         }
     }
 
+    /// Helper function to format S3 credentials for DDL generation
+    /// Returns either credentials as two separate strings, or "NOSIGN" as a single string
+    fn format_s3_credentials_for_ddl(
+        aws_access_key_id: &Option<String>,
+        aws_secret_access_key: &Option<String>,
+    ) -> Vec<String> {
+        if let (Some(key_id), Some(secret)) = (aws_access_key_id, aws_secret_access_key) {
+            vec![format!("'{}'", key_id), format!("'{}'", secret)]
+        } else {
+            // Default to NOSIGN for public buckets or when credentials are not available
+            vec!["NOSIGN".to_string()]
+        }
+    }
+
+    /// Helper function to mask a secret for display
+    /// Shows the full access key ID and first 4 + last 4 chars of secret
+    fn mask_secret(secret: &str) -> String {
+        if secret.len() > 8 {
+            format!("{}...{}", &secret[..4], &secret[secret.len() - 4..])
+        } else {
+            // For very short secrets, just show partial
+            format!("{}...", &secret[..secret.len().min(3)])
+        }
+    }
+
+    /// Helper function to format masked S3 credentials for display
+    /// Returns a formatted auth string showing the key ID and a masked secret
+    fn format_s3_credentials_for_display(
+        aws_access_key_id: &Option<String>,
+        aws_secret_access_key: &Option<String>,
+    ) -> String {
+        match (aws_access_key_id, aws_secret_access_key) {
+            (Some(key_id), Some(secret)) => {
+                let masked_secret = Self::mask_secret(secret);
+                format!("auth='{}:{}'", key_id, masked_secret)
+            }
+            (None, None) => "auth=NOSIGN".to_string(),
+            _ => {
+                // Partial credentials (shouldn't happen but handle gracefully)
+                "auth=INVALID".to_string()
+            }
+        }
+    }
+
     /// Serialize S3Queue engine to string format for proto storage
     /// Format: S3Queue('path', 'format', 'compression'|null, 'headers_json'|null)
     fn serialize_s3queue(
@@ -1140,26 +1197,12 @@ impl ClickhouseEngine {
     ) -> String {
         let mut result = format!("S3Queue('{}', '{}'", s3_path, format);
 
-        // Add authentication info for display
-        match (aws_access_key_id, aws_secret_access_key) {
-            (Some(key_id), Some(secret)) => {
-                // Show the full access key ID and first 4 + last 4 chars of secret
-                let masked_secret = if secret.len() > 8 {
-                    format!("{}...{}", &secret[..4], &secret[secret.len() - 4..])
-                } else {
-                    // For very short secrets, just show partial
-                    format!("{}...", &secret[..secret.len().min(3)])
-                };
-                result.push_str(&format!(", auth='{}:{}'", key_id, masked_secret));
-            }
-            (None, None) => {
-                result.push_str(", auth=NOSIGN");
-            }
-            _ => {
-                // Partial credentials (shouldn't happen but handle gracefully)
-                result.push_str(", auth=INVALID");
-            }
-        }
+        // Add authentication info for display using shared helper
+        result.push_str(", ");
+        result.push_str(&Self::format_s3_credentials_for_display(
+            aws_access_key_id,
+            aws_secret_access_key,
+        ));
 
         // Add compression if present
         if let Some(comp) = compression {
@@ -1191,16 +1234,10 @@ impl ClickhouseEngine {
     ) -> String {
         let mut result = format!("S3('{}'", path);
 
-        // Add authentication info for display - same as S3Queue behavior
+        // Add authentication info for display - uses shared masking logic
         match (aws_access_key_id, aws_secret_access_key) {
             (Some(key_id), Some(secret)) => {
-                // Show the full access key ID and first 4 + last 4 chars of secret
-                let masked_secret = if secret.len() > 8 {
-                    format!("{}...{}", &secret[..4], &secret[secret.len() - 4..])
-                } else {
-                    // For very short secrets, just show partial
-                    format!("{}...", &secret[..secret.len().min(3)])
-                };
+                let masked_secret = Self::mask_secret(secret);
                 result.push_str(&format!(", '{}', '{}'", key_id, masked_secret));
             }
             _ => {
@@ -1528,6 +1565,97 @@ impl ClickhouseEngine {
             headers,
             aws_access_key_id,
             aws_secret_access_key,
+        })
+    }
+
+    /// Parse S3 engine from serialized string format
+    /// Expected format: S3('path', 'format'[, 'compression'][, 'partition_strategy'][, 'partition_columns'])
+    /// Or with credentials: S3('path', 'access_key_id', 'secret_access_key', 'format'[, ...])
+    /// Or with NOSIGN: S3('path', NOSIGN, 'format'[, ...])
+    fn parse_s3(content: &str) -> Result<ClickhouseEngine, &str> {
+        // Parse comma-separated quoted values with proper quote escaping
+        let parts = parse_quoted_csv(content);
+
+        if parts.len() < 2 {
+            return Err("S3 requires at least path and format parameters");
+        }
+
+        let path = parts[0].clone();
+
+        // Determine authentication method and format position (same logic as S3Queue)
+        // Possible formats:
+        // 1. S3('path', 'format', ...) - no auth
+        // 2. S3('path', NOSIGN, 'format', ...) - explicit no auth
+        // 3. S3('path', 'access_key_id', 'secret_access_key', 'format', ...) - with credentials
+        let (format, aws_access_key_id, aws_secret_access_key, extra_params_start) =
+            if parts.len() >= 2 && parts[1].to_uppercase() == "NOSIGN" {
+                // NOSIGN authentication - format is at position 2
+                if parts.len() < 3 {
+                    return Err("S3 with NOSIGN requires format parameter");
+                }
+                (parts[2].clone(), None, None, 3)
+            } else if parts.len() >= 4 && !parts[1].is_empty() && !parts[2].is_empty() {
+                // Check if parts[1] and parts[2] look like credentials (same logic as S3Queue)
+                let possible_format = &parts[3].to_uppercase();
+                if possible_format == "CSV"
+                    || possible_format == "TSV"
+                    || possible_format == "JSON"
+                    || possible_format == "PARQUET"
+                    || possible_format == "AVRO"
+                    || possible_format == "ORC"
+                    || possible_format == "ARROW"
+                    || possible_format == "NATIVE"
+                    || possible_format == "JSONCOMPACT"
+                    || possible_format == "JSONEACHROW"
+                {
+                    // parts[1] and parts[2] are likely credentials
+                    (
+                        parts[3].clone(),
+                        Some(parts[1].clone()),
+                        Some(parts[2].clone()),
+                        4,
+                    )
+                } else {
+                    // No credentials, parts[1] is the format
+                    (parts[1].clone(), None, None, 2)
+                }
+            } else {
+                // No credentials, parts[1] is the format
+                (parts[1].clone(), None, None, 2)
+            };
+
+        // Parse optional compression (next parameter after format)
+        let compression = if parts.len() > extra_params_start && parts[extra_params_start] != "null"
+        {
+            Some(parts[extra_params_start].clone())
+        } else {
+            None
+        };
+
+        // Parse optional partition strategy (parameter after compression)
+        let partition_strategy =
+            if parts.len() > extra_params_start + 1 && parts[extra_params_start + 1] != "null" {
+                Some(parts[extra_params_start + 1].clone())
+            } else {
+                None
+            };
+
+        // Parse optional partition columns (parameter after partition strategy)
+        let partition_columns_in_data_file =
+            if parts.len() > extra_params_start + 2 && parts[extra_params_start + 2] != "null" {
+                Some(parts[extra_params_start + 2].clone())
+            } else {
+                None
+            };
+
+        Ok(ClickhouseEngine::S3 {
+            path,
+            format,
+            aws_access_key_id,
+            aws_secret_access_key,
+            compression,
+            partition_strategy,
+            partition_columns_in_data_file,
         })
     }
 
@@ -2093,14 +2221,11 @@ pub fn create_table_query(
             // Build the engine string based on available parameters
             let mut engine_parts = vec![format!("'{}'", s3_path)];
 
-            // Handle credentials from the engine configuration
-            if let (Some(key_id), Some(secret)) = (aws_access_key_id, aws_secret_access_key) {
-                engine_parts.push(format!("'{}'", key_id));
-                engine_parts.push(format!("'{}'", secret));
-            } else {
-                // Default to NOSIGN for public buckets or when credentials are not available
-                engine_parts.push("NOSIGN".to_string());
-            }
+            // Handle credentials using shared helper
+            engine_parts.extend(ClickhouseEngine::format_s3_credentials_for_ddl(
+                aws_access_key_id,
+                aws_secret_access_key,
+            ));
 
             engine_parts.push(format!("'{}'", format));
 
@@ -2122,14 +2247,11 @@ pub fn create_table_query(
         } => {
             let mut engine_parts = vec![format!("'{}'", path)];
 
-            // Handle credentials - same as S3Queue behavior
-            if let (Some(key_id), Some(secret)) = (aws_access_key_id, aws_secret_access_key) {
-                engine_parts.push(format!("'{}'", key_id));
-                engine_parts.push(format!("'{}'", secret));
-            } else {
-                // Default to NOSIGN for public buckets or when credentials are not available
-                engine_parts.push("NOSIGN".to_string());
-            }
+            // Handle credentials using shared helper (same as S3Queue)
+            engine_parts.extend(ClickhouseEngine::format_s3_credentials_for_ddl(
+                aws_access_key_id,
+                aws_secret_access_key,
+            ));
 
             engine_parts.push(format!("'{}'", format));
 

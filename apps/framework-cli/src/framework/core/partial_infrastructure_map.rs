@@ -455,6 +455,34 @@ pub struct PartialInfrastructureMap {
     web_apps: HashMap<String, PartialWebApp>,
 }
 
+/// Helper function to resolve S3 credentials from environment variables
+/// This ensures consistent credential handling between S3 and S3Queue engines
+fn resolve_s3_credentials(
+    aws_access_key_id: &Option<String>,
+    aws_secret_access_key: &Option<String>,
+    table_name: &str,
+) -> Result<(Option<String>, Option<String>), DmV2LoadingError> {
+    // Resolve environment variable markers for AWS credentials at runtime
+    // This must happen before the infrastructure diff to support credential rotation
+    let resolved_access_key = resolve_optional_runtime_env(aws_access_key_id).map_err(|e| {
+        DmV2LoadingError::RuntimeEnvResolution {
+            table_name: table_name.to_string(),
+            field: "awsAccessKeyId".to_string(),
+            error: e.to_string(),
+        }
+    })?;
+
+    let resolved_secret_key = resolve_optional_runtime_env(aws_secret_access_key).map_err(|e| {
+        DmV2LoadingError::RuntimeEnvResolution {
+            table_name: table_name.to_string(),
+            field: "awsSecretAccessKey".to_string(),
+            error: e.to_string(),
+        }
+    })?;
+
+    Ok((resolved_access_key, resolved_secret_key))
+}
+
 impl PartialInfrastructureMap {
     /// Creates a new [`PartialInfrastructureMap`] by executing and reading from a subprocess.
     ///
@@ -757,23 +785,12 @@ impl PartialInfrastructureMap {
             })),
 
             Some(EngineConfig::S3Queue(config)) => {
-                // Resolve environment variable markers for AWS credentials at runtime
-                // This must happen before the infrastructure diff to support credential rotation
-                let resolved_access_key = resolve_optional_runtime_env(&config.aws_access_key_id)
-                    .map_err(|e| DmV2LoadingError::RuntimeEnvResolution {
-                    table_name: partial_table.name.clone(),
-                    field: "awsAccessKeyId".to_string(),
-                    error: e.to_string(),
-                })?;
-
-                let resolved_secret_key =
-                    resolve_optional_runtime_env(&config.aws_secret_access_key).map_err(|e| {
-                        DmV2LoadingError::RuntimeEnvResolution {
-                            table_name: partial_table.name.clone(),
-                            field: "awsSecretAccessKey".to_string(),
-                            error: e.to_string(),
-                        }
-                    })?;
+                // Resolve S3 credentials using shared helper
+                let (resolved_access_key, resolved_secret_key) = resolve_s3_credentials(
+                    &config.aws_access_key_id,
+                    &config.aws_secret_access_key,
+                    &partial_table.name,
+                )?;
 
                 // S3Queue settings are handled in table_settings, not in the engine
                 Ok(Some(ClickhouseEngine::S3Queue {
@@ -787,23 +804,12 @@ impl PartialInfrastructureMap {
             }
 
             Some(EngineConfig::S3(config)) => {
-                // Resolve environment variable markers for AWS credentials at runtime
-                // This must happen before the infrastructure diff to support credential rotation
-                let resolved_access_key = resolve_optional_runtime_env(&config.aws_access_key_id)
-                    .map_err(|e| DmV2LoadingError::RuntimeEnvResolution {
-                    table_name: partial_table.name.clone(),
-                    field: "awsAccessKeyId".to_string(),
-                    error: e.to_string(),
-                })?;
-
-                let resolved_secret_key =
-                    resolve_optional_runtime_env(&config.aws_secret_access_key).map_err(|e| {
-                        DmV2LoadingError::RuntimeEnvResolution {
-                            table_name: partial_table.name.clone(),
-                            field: "awsSecretAccessKey".to_string(),
-                            error: e.to_string(),
-                        }
-                    })?;
+                // Resolve S3 credentials using shared helper
+                let (resolved_access_key, resolved_secret_key) = resolve_s3_credentials(
+                    &config.aws_access_key_id,
+                    &config.aws_secret_access_key,
+                    &partial_table.name,
+                )?;
 
                 Ok(Some(ClickhouseEngine::S3 {
                     path: config.path.clone(),
