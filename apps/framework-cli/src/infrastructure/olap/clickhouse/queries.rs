@@ -2283,8 +2283,26 @@ pub fn create_table_query(
         (true, items)
     };
 
-    // S3Queue engine doesn't support PRIMARY_KEY, ORDER_BY, PARTITION_BY, or SAMPLE_BY clauses
-    let is_s3_queue = matches!(table.engine, ClickhouseEngine::S3Queue { .. });
+    // Different engines support different clauses:
+    // - MergeTree family: Supports all clauses (ORDER BY, PRIMARY KEY, PARTITION BY, SAMPLE BY)
+    // - S3: Supports PARTITION BY and SETTINGS, but not ORDER BY, PRIMARY KEY, or SAMPLE BY
+    // - S3Queue, Buffer, Distributed: Don't support any of these clauses
+
+    let supports_order_by = table.engine.is_merge_tree_family();
+    let supports_primary_key = table.engine.is_merge_tree_family();
+    let supports_sample_by = table.engine.is_merge_tree_family();
+    let supports_partition_by = matches!(
+        table.engine,
+        ClickhouseEngine::MergeTree
+            | ClickhouseEngine::ReplacingMergeTree { .. }
+            | ClickhouseEngine::AggregatingMergeTree
+            | ClickhouseEngine::SummingMergeTree { .. }
+            | ClickhouseEngine::ReplicatedMergeTree { .. }
+            | ClickhouseEngine::ReplicatedReplacingMergeTree { .. }
+            | ClickhouseEngine::ReplicatedAggregatingMergeTree { .. }
+            | ClickhouseEngine::ReplicatedSummingMergeTree { .. }
+            | ClickhouseEngine::S3 { .. }
+    );
 
     let template_context = json!({
         "db_name": db_name,
@@ -2293,12 +2311,12 @@ pub fn create_table_query(
         "has_fields": !table.columns.is_empty(),
         "has_indexes": has_indexes,
         "indexes": index_strings,
-        "primary_key_string": if !is_s3_queue && !primary_key.is_empty() {
+        "primary_key_string": if supports_primary_key && !primary_key.is_empty() {
             Some(wrap_and_join_column_names(&primary_key, ","))
         } else {
             None
         },
-        "order_by_string": if !is_s3_queue {
+        "order_by_string": if supports_order_by {
             match &table.order_by {
                 OrderBy::Fields(v) if v.len() == 1 && v[0] == "tuple()" => Some("tuple()".to_string()),
                 OrderBy::Fields(v) if v.is_empty() => None,
@@ -2308,8 +2326,8 @@ pub fn create_table_query(
         } else {
             None
         },
-        "partition_by": if !is_s3_queue { table.partition_by.as_deref() } else { None },
-        "sample_by": if !is_s3_queue { table.sample_by.as_deref() } else { None },
+        "partition_by": if supports_partition_by { table.partition_by.as_deref() } else { None },
+        "sample_by": if supports_sample_by { table.sample_by.as_deref() } else { None },
         "engine": engine,
         "settings": settings,
         "ttl_clause": table.table_ttl_setting.as_deref()
