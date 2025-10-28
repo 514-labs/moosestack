@@ -713,7 +713,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
           });
 
           const result = await clickhouse.query({
-            query: `SELECT * FROM local.LargeMessageDeadLetter WHERE JSONExtractString(originalRecord, 'id') = '${largeMessageId}' FORMAT JSONEachRow`,
+            query: `SELECT * FROM local.LargeMessageDeadLetter WHERE originalRecord.id = '${largeMessageId}' FORMAT JSONEachRow`,
           });
 
           const data = await result.json();
