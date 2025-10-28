@@ -1,7 +1,7 @@
 # Test all supported ClickHouse engines to ensure proper configuration
 # These tables verify that all engine types can be created and configured correctly
 
-from moose_lib import OlapTable, OlapConfig, Key, ClickHouseTTL
+from moose_lib import OlapTable, OlapConfig, Key, ClickHouseTTL, clickhouse_default
 from moose_lib.blocks import (
     MergeTreeEngine,
     ReplacingMergeTreeEngine,
@@ -40,6 +40,21 @@ ttl_table = OlapTable[TTLTestData](
         engine=MergeTreeEngine(),
         order_by_fields=["id", "timestamp"],
         ttl="timestamp + INTERVAL 90 DAY DELETE",
+    ),
+)
+
+# Table with DEFAULT values for testing DEFAULT removal
+class DefaultTestData(BaseModel):
+    id: Key[str]
+    timestamp: datetime
+    status: Annotated[str, clickhouse_default("'pending'")]
+    count: Annotated[int, clickhouse_default("0"), "uint32"]
+
+default_table = OlapTable[DefaultTestData](
+    "DefaultTable",
+    OlapConfig(
+        engine=MergeTreeEngine(),
+        order_by_fields=["id", "timestamp"],
     ),
 )
 
@@ -253,4 +268,5 @@ all_engine_test_tables = [
     ttl_table,
     buffer_destination_table,
     buffer_table,
+    default_table,
 ]

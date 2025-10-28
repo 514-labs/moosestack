@@ -250,11 +250,6 @@ fn validate_table_databases(
             } => {
                 validate_db(database, table);
             }
-            SerializableOlapOperation::ModifyColumnTtl {
-                table, database, ..
-            } => {
-                validate_db(database, table);
-            }
             SerializableOlapOperation::AddTableIndex {
                 table, database, ..
             } => {

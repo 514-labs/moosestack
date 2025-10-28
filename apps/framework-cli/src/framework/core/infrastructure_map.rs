@@ -314,14 +314,6 @@ pub enum TableChange {
         after: Option<String>,
         table: Table,
     },
-    /// Column-level TTL changed
-    ColumnTtlChanged {
-        name: String,
-        column: String,
-        before: Option<String>,
-        after: Option<String>,
-        table: Table,
-    },
     /// A validation error occurred - the requested change is not allowed
     ValidationError {
         /// Name of the table
@@ -1745,6 +1737,30 @@ impl InfrastructureMap {
                         // Detect index changes (secondary/data-skipping indexes)
                         let indexes_changed = table.indexes != target_table.indexes;
 
+                        // Detect and emit table-level TTL changes
+                        // Use normalized comparison to avoid false positives from ClickHouse's TTL normalization
+                        if !ttl_expressions_are_equivalent(
+                            &table.table_ttl_setting,
+                            &target_table.table_ttl_setting,
+                        ) {
+                            log::debug!(
+                                "Table '{}' has table-level TTL change: {:?} -> {:?}",
+                                table.name,
+                                table.table_ttl_setting,
+                                target_table.table_ttl_setting
+                            );
+                            olap_changes.push(OlapChange::Table(TableChange::TtlChanged {
+                                name: table.name.clone(),
+                                before: table.table_ttl_setting.clone(),
+                                after: target_table.table_ttl_setting.clone(),
+                                table: target_table.clone(),
+                            }));
+                            table_updates += 1;
+                        }
+
+                        // Column-level TTL changes are handled as regular column modifications
+                        // since ClickHouse requires the full column definition when modifying TTL
+
                         // Only process changes if there are actual differences to report
                         if !column_changes.is_empty()
                             || order_by_changed
@@ -1887,7 +1903,13 @@ impl InfrastructureMap {
         // Detect index changes
         let indexes_changed = table.indexes != target_table.indexes;
 
-        if !column_changes.is_empty() || order_by_changed || indexes_changed {
+        // Detect table-level TTL changes - use normalized comparison
+        let ttl_changed = !ttl_expressions_are_equivalent(
+            &table.table_ttl_setting,
+            &target_table.table_ttl_setting,
+        );
+
+        if !column_changes.is_empty() || order_by_changed || indexes_changed || ttl_changed {
             Some(TableChange::Updated {
                 name: table.name.clone(),
                 column_changes,
@@ -1984,8 +2006,14 @@ impl InfrastructureMap {
         // Detect index changes
         let indexes_changed = table.indexes != target_table.indexes;
 
+        // Detect table-level TTL changes - use normalized comparison
+        let ttl_changed = !ttl_expressions_are_equivalent(
+            &table.table_ttl_setting,
+            &target_table.table_ttl_setting,
+        );
+
         // Only return changes if there are actual differences to report
-        if !column_changes.is_empty() || order_by_changed || indexes_changed {
+        if !column_changes.is_empty() || order_by_changed || indexes_changed || ttl_changed {
             Some(TableChange::Updated {
                 name: table.name.clone(),
                 column_changes,
@@ -2430,10 +2458,33 @@ impl InfrastructureMap {
     }
 }
 
+/// Compare two optional TTL expressions for equivalence, accounting for ClickHouse normalization.
+///
+/// ClickHouse normalizes "INTERVAL N DAY" to "toIntervalDay(N)", so direct string comparison
+/// will always detect false differences. This function normalizes both expressions first.
+///
+/// # Arguments
+/// * `before` - The first TTL expression (or None)
+/// * `after` - The second TTL expression (or None)
+///
+/// # Returns
+/// `true` if the TTL expressions are semantically equivalent, `false` otherwise
+fn ttl_expressions_are_equivalent(before: &Option<String>, after: &Option<String>) -> bool {
+    use crate::infrastructure::olap::clickhouse::normalize_ttl_expression;
+    match (before, after) {
+        (None, None) => true,
+        (Some(before_ttl), Some(after_ttl)) => {
+            normalize_ttl_expression(before_ttl) == normalize_ttl_expression(after_ttl)
+        }
+        _ => false, // One has TTL, the other doesn't
+    }
+}
+
 /// Check if two columns are semantically equivalent
 ///
 /// This handles special cases like enum types where ClickHouse's representation
 /// may differ from the source TypeScript but is semantically the same.
+/// Also handles TTL expressions where ClickHouse normalizes INTERVAL syntax to toInterval* functions.
 ///
 /// # Arguments
 /// * `before` - The first column to compare
@@ -2442,7 +2493,7 @@ impl InfrastructureMap {
 /// # Returns
 /// `true` if the columns are semantically equivalent, `false` otherwise
 fn columns_are_equivalent(before: &Column, after: &Column) -> bool {
-    // Check all non-data_type fields first
+    // Check all non-data_type and non-ttl fields first
     if before.name != after.name
         || before.required != after.required
         || before.unique != after.unique
@@ -2451,6 +2502,11 @@ fn columns_are_equivalent(before: &Column, after: &Column) -> bool {
         || before.annotations != after.annotations
         || before.comment != after.comment
     {
+        return false;
+    }
+
+    // Special handling for TTL comparison: normalize both expressions before comparing
+    if !ttl_expressions_are_equivalent(&before.ttl, &after.ttl) {
         return false;
     }
 

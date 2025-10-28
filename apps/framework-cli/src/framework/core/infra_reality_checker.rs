@@ -227,7 +227,19 @@ impl<T: OlapOperations> InfraRealityChecker<T> {
                 }
 
                 // TTL: table-level diff
-                if actual_table.table_ttl_setting != mapped_table.table_ttl_setting {
+                // Use normalized comparison to avoid false positives from ClickHouse's TTL normalization
+                // ClickHouse converts "INTERVAL 30 DAY" to "toIntervalDay(30)"
+                use crate::infrastructure::olap::clickhouse::normalize_ttl_expression;
+                let actual_ttl_normalized = actual_table
+                    .table_ttl_setting
+                    .as_ref()
+                    .map(|t| normalize_ttl_expression(t));
+                let mapped_ttl_normalized = mapped_table
+                    .table_ttl_setting
+                    .as_ref()
+                    .map(|t| normalize_ttl_expression(t));
+
+                if actual_ttl_normalized != mapped_ttl_normalized {
                     mismatched_tables.push(OlapChange::Table(TableChange::TtlChanged {
                         name: name.clone(),
                         before: actual_table.table_ttl_setting.clone(),
@@ -236,37 +248,8 @@ impl<T: OlapOperations> InfraRealityChecker<T> {
                     }));
                 }
 
-                // TTL: column-level diffs (compare per-column ttl directly on columns)
-                let collect_ttls = |t: &crate::framework::core::infrastructure::table::Table| {
-                    let mut m = std::collections::HashMap::new();
-                    for c in &t.columns {
-                        if let Some(ttl) = &c.ttl {
-                            m.insert(c.name.clone(), ttl.clone());
-                        }
-                    }
-                    m
-                };
-                let actual_cols = collect_ttls(actual_table);
-                let desired_cols = collect_ttls(&mapped_table);
-                use std::collections::HashSet;
-                let keys: HashSet<_> = actual_cols
-                    .keys()
-                    .chain(desired_cols.keys())
-                    .cloned()
-                    .collect();
-                for col in keys {
-                    let actual_column = actual_cols.get(&col).cloned();
-                    let desired_column = desired_cols.get(&col).cloned();
-                    if actual_column != desired_column {
-                        mismatched_tables.push(OlapChange::Table(TableChange::ColumnTtlChanged {
-                            name: name.clone(),
-                            column: col.clone(),
-                            before: actual_column,
-                            after: desired_column,
-                            table: mapped_table.clone(),
-                        }));
-                    }
-                }
+                // Column-level TTL changes are detected as part of normal column diffs
+                // and handled via ModifyTableColumn operations
             }
         }
 
