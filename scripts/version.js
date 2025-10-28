@@ -20,12 +20,13 @@ const MINOR_COMMIT_MESSAGE = "[minor-release]";
 const printVersion = (major, minor, patch) => {
   console.log(`VERSION=${major}.${minor}.${patch}`);
 };
-// We check that the current commit is not tagged yet. If it is,
-// we return its value as the version
+// We check that the current commit is not tagged yet with a release tag. If it is,
+// we return its value as the version (excluding CI tags)
 execSync("git fetch --tags");
 const tags = execSync(`git tag --points-at ${commit}`).toString().trim();
 
-if (tags.length > 0 && tags.startsWith("v")) {
+// Only use tags that start with "v" and don't contain "-ci-"
+if (tags.length > 0 && tags.startsWith("v") && !tags.includes("-ci-")) {
   console.log(`VERSION=${tags.slice(1)}`);
   process.exit(0);
 }
