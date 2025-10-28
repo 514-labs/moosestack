@@ -35,7 +35,7 @@ s3_with_secrets = OlapTable[S3TestData](
 )
 
 # Test S3 engine with public bucket (no credentials needed)
-# Note: S3 engine doesn't have a noSign parameter in Python, so we just omit credentials
+# just omit credentials for NOSIGN
 s3_public = OlapTable[S3TestData](
     "S3Public",
     OlapConfig(

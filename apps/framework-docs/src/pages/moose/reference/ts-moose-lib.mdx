@@ -331,12 +331,11 @@ export const s3Data = new OlapTable<DataRecord>("s3_data", {
   compression: "gzip"
 });
 
-// Public bucket (no authentication)
+// Public bucket (no authentication) - omit credentials for NOSIGN
 export const publicS3 = new OlapTable<DataRecord>("public_s3", {
   engine: ClickHouseEngines.S3,
   path: "s3://public-bucket/data/*.parquet",
   format: "Parquet",
-  noSign: true
 });
 ```
 

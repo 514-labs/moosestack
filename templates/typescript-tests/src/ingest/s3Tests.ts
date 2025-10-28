@@ -38,7 +38,6 @@ export const S3Public = new OlapTable<S3TestData>("S3Public", {
   engine: ClickHouseEngines.S3,
   path: "s3://public-test-bucket/data/file.csv",
   format: "CSV",
-  noSign: true, // Use NOSIGN for public buckets
   compression: "auto",
 });
 
@@ -47,5 +46,4 @@ export const S3Parquet = new OlapTable<S3TestData>("S3Parquet", {
   engine: ClickHouseEngines.S3,
   path: "s3://public-test-bucket/data/*.parquet",
   format: "Parquet",
-  noSign: true,
 });

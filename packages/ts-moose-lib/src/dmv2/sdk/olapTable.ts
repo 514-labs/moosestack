@@ -369,11 +369,9 @@ export type S3Config<T> = BaseOlapConfig<T> & {
   path: string;
   /** Data format (e.g., 'JSONEachRow', 'CSV', 'Parquet') */
   format: string;
-  /** Use NOSIGN for public buckets (no authentication) */
-  noSign?: boolean;
-  /** AWS access key ID (optional, omit if using NOSIGN) */
+  /** AWS access key ID (optional, omit for NOSIGN/public buckets) */
   awsAccessKeyId?: string;
-  /** AWS secret access key (optional, omit if using NOSIGN) */
+  /** AWS secret access key */
   awsSecretAccessKey?: string;
   /** Compression type (e.g., 'gzip', 'zstd', 'auto') */
   compression?: string;
