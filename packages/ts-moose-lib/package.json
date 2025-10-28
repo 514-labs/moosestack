@@ -47,7 +47,6 @@
     "redis": "^4.6.13",
     "toml": "3.0.0",
     "ts-node": "^10.9.1",
-    "tsconfig-paths": "^4.2.0",
     "typescript": "~5.9.2"
   },
   "devDependencies": {
@@ -64,10 +63,14 @@
   },
   "peerDependencies": {
     "ts-patch": "^3.3.0",
+    "tsconfig-paths": "^4.2.0",
     "typia": "^9.6.1"
   },
   "peerDependenciesMeta": {
     "ts-patch": {
+      "optional": false
+    },
+    "tsconfig-paths": {
       "optional": false
     },
     "typia": {
