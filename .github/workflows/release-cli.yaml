@@ -74,8 +74,6 @@ jobs:
             echo "VERSION=${CI_VERSION}" >> "$GITHUB_OUTPUT"
             echo "PYTHON_VERSION=${PYTHON_VERSION}" >> "$GITHUB_OUTPUT"
             echo "IS_CI_BUILD=true" >> "$GITHUB_OUTPUT"
-            echo "Generated CI version: ${CI_VERSION}"
-            echo "Generated Python version: ${PYTHON_VERSION}"
           else
             # For release builds (main branch), use the existing version.js script
             ./scripts/version.js ${{ github.sha }} >> "$GITHUB_OUTPUT"
@@ -83,8 +81,10 @@ jobs:
             RELEASE_VERSION=$(./scripts/version.js ${{ github.sha }} | grep "VERSION=" | cut -d'=' -f2)
             echo "PYTHON_VERSION=${RELEASE_VERSION}" >> "$GITHUB_OUTPUT"
             echo "IS_CI_BUILD=false" >> "$GITHUB_OUTPUT"
-            echo "hello"
           fi
+          echo "IS_CI_BUILD = ${IS_CI_BUILD}"
+          echo "Generated Semantic Version: ${VERSION}"
+          echo "Generated Python Version: ${PYTHON_VERSION}"
 
       - name: Create Release/Tag
         uses: ncipollo/release-action@v1
