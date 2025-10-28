@@ -5,8 +5,8 @@ use crate::cli::routines::RoutineFailure;
 use crate::framework::core::infrastructure::table::Table;
 use crate::framework::core::infrastructure_map::InfrastructureMap;
 use crate::framework::core::migration_plan::MigrationPlan;
-use crate::framework::core::state_storage::{ClickHouseStateStorage, StateStorage};
-use crate::infrastructure::olap::clickhouse::config::parse_clickhouse_connection_string;
+use crate::framework::core::state_storage::{StateStorage, StateStorageBuilder};
+use crate::infrastructure::olap::clickhouse::config::ClickHouseConfig;
 use crate::infrastructure::olap::clickhouse::IgnorableOperation;
 use crate::infrastructure::olap::clickhouse::{
     check_ready, create_client, ConfiguredDBClient, SerializableOlapOperation,
@@ -418,44 +418,25 @@ fn report_partial_failure(succeeded_count: usize, total_count: usize) {
 /// Execute migration plan from CLI (moose migrate command)
 pub async fn execute_migration(
     project: &Project,
-    clickhouse_url: &str,
+    redis_url: Option<&str>,
 ) -> Result<(), RoutineFailure> {
-    // Validate that state storage is configured for ClickHouse
-    if project.state_config.storage != "clickhouse" {
-        return Err(RoutineFailure::error(Message {
-            action: "Configuration".to_string(),
-            details: format!(
-                "moose migrate requires state_config.storage = \"clickhouse\"\n\
-                 \n\
-                 Current setting: state_config.storage = \"{}\"\n",
-                project.state_config.storage
-            ),
-        }));
-    }
+    let clickhouse_config = &project.clickhouse_config;
 
-    // Parse URL and create client
-    let clickhouse_config = parse_clickhouse_connection_string(clickhouse_url).map_err(|e| {
-        RoutineFailure::new(
-            Message::new(
-                "ClickHouse".to_string(),
-                "Failed to parse connection URL".to_string(),
-            ),
-            e,
-        )
-    })?;
-    let client = create_client(clickhouse_config.clone());
-    check_ready(&client).await.map_err(|e| {
-        RoutineFailure::new(
-            Message::new(
-                "ClickHouse".to_string(),
-                "Failed to connect to ClickHouse".to_string(),
-            ),
-            e,
-        )
-    })?;
-
-    // Create state storage directly from CLI-provided ClickHouse URL
-    let state_storage = ClickHouseStateStorage::new(client, clickhouse_config.db_name.clone());
+    // Build state storage based on config
+    let state_storage = StateStorageBuilder::from_config(project)
+        .clickhouse_config(Some(clickhouse_config.clone()))
+        .redis_url(redis_url.map(String::from))
+        .build()
+        .await
+        .map_err(|e| {
+            RoutineFailure::new(
+                Message::new(
+                    "State Storage".to_string(),
+                    "Failed to build state storage".to_string(),
+                ),
+                e,
+            )
+        })?;
 
     // Acquire migration lock to prevent concurrent migrations
     state_storage.acquire_migration_lock().await.map_err(|e| {
@@ -529,18 +510,24 @@ pub async fn execute_migration(
                 )
             })?;
 
-        // Execute migration (moose migrate always uses ClickHouse state)
-        execute_migration_plan(project, current_tables, &target_infra_map, &state_storage)
-            .await
-            .map_err(|e| {
-                RoutineFailure::new(
-                    Message::new(
-                        "\nMigration".to_string(),
-                        "Failed to execute migration plan".to_string(),
-                    ),
-                    e,
-                )
-            })
+        // Execute migration
+        execute_migration_plan(
+            project,
+            clickhouse_config,
+            current_tables,
+            &target_infra_map,
+            state_storage.as_ref(),
+        )
+        .await
+        .map_err(|e| {
+            RoutineFailure::new(
+                Message::new(
+                    "\nMigration".to_string(),
+                    "Failed to execute migration plan".to_string(),
+                ),
+                e,
+            )
+        })
     }
     .await;
 
@@ -559,6 +546,7 @@ pub async fn execute_migration(
 /// it saves the new infrastructure state.
 pub async fn execute_migration_plan(
     project: &Project,
+    clickhouse_config: &ClickHouseConfig,
     current_tables: &HashMap<String, Table>,
     target_infra_map: &InfrastructureMap,
     state_storage: &dyn StateStorage,
@@ -605,7 +593,7 @@ pub async fn execute_migration_plan(
             println!("  ✓ Target = Code (plan is still valid)");
 
             // Execute operations
-            let client = create_client(project.clickhouse_config.clone());
+            let client = create_client(clickhouse_config.clone());
             check_ready(&client).await?;
             execute_operations(project, &files.plan, &client).await?;
         }
