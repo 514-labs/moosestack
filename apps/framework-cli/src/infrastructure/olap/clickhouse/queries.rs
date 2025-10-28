@@ -2296,10 +2296,10 @@ pub fn create_table_query(
             None
         },
         "order_by_string": match &table.order_by {
-            crate::framework::core::infrastructure::table::OrderBy::Fields(v) if v.len() == 1 && v[0] == "tuple()" => Some("tuple()".to_string()),
-            crate::framework::core::infrastructure::table::OrderBy::Fields(v) if !v.is_empty() => Some(wrap_and_join_column_names(v, ",")),
-            crate::framework::core::infrastructure::table::OrderBy::SingleExpr(expr) => Some(expr.clone()),
-            _ => None,
+            OrderBy::Fields(v) if v.len() == 1 && v[0] == "tuple()" => Some("tuple()".to_string()),
+            OrderBy::Fields(v) if v.is_empty() => None,
+            OrderBy::Fields(v) => Some(wrap_and_join_column_names(v, ",")),
+            OrderBy::SingleExpr(expr) => Some(expr.clone()),
         },
         "partition_by": table.partition_by.as_deref(),
         "sample_by": table.sample_by.as_deref(),
