@@ -573,24 +573,6 @@ pub fn show_olap_changes(olap_changes: &[OlapChange]) {
             }
             infra_updated_detailed(&format!("Table TTL: {name}"), &details);
         }
-        OlapChange::Table(TableChange::ColumnTtlChanged {
-            name,
-            column,
-            before,
-            after,
-            ..
-        }) => {
-            let mut details = Vec::new();
-            match (before, after) {
-                (None, Some(expr)) => details.push(format!("  + `{}` TTL {}", column, expr)),
-                (Some(_), None) => details.push(format!("  - `{}` TTL (removed)", column)),
-                (Some(b), Some(a)) if b != a => {
-                    details.push(format!("  ~ `{}` TTL {} -> {}", column, b, a));
-                }
-                _ => {}
-            }
-            infra_updated_detailed(&format!("Column TTL: {name}"), &details);
-        }
         OlapChange::SqlResource(Change::Added(sql_resource)) => {
             infra_added(&format!("SQL Resource: {}", sql_resource.name));
         }
