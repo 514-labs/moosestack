@@ -1537,8 +1537,14 @@ pub fn convert_ast_to_column_type(
                             max_dynamic_types = Some(*n);
                         }
                         JsonParameter::PathType { path, type_node } => {
-                            let (col_type, _nullable) = convert_ast_to_column_type(type_node)?;
-                            typed_paths.push((path.clone(), col_type));
+                            let (col_type, nullable) = convert_ast_to_column_type(type_node)?;
+                            let with_nullability =
+                                if nullable && !matches!(col_type, ColumnType::Nullable(_)) {
+                                    ColumnType::Nullable(Box::new(col_type))
+                                } else {
+                                    col_type
+                                };
+                            typed_paths.push((path.clone(), with_nullability));
                         }
                         JsonParameter::SkipPath(path) => {
                             skip_paths.push(path.clone());
