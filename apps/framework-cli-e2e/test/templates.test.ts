@@ -63,6 +63,7 @@ import {
 import { triggerWorkflow } from "./utils/workflow-utils";
 import { geoPayloadPy, geoPayloadTs } from "./utils/geo-payload";
 import { verifyTableIndexes, getTableDDL } from "./utils/database-utils";
+import { createClient } from "@clickhouse/client";
 
 const execAsync = promisify(require("child_process").exec);
 const setTimeoutAsync = (ms: number) =>
@@ -715,6 +716,113 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
           );
         });
 
+        it("should send large messages that exceed Kafka limit to DLQ (TS)", async function () {
+          this.timeout(TIMEOUTS.TEST_SETUP_MS);
+
+          const largeMessageId = randomUUID();
+
+          // Send a message that will generate ~2MB output (exceeds typical Kafka limit of 1MB)
+          await withRetries(
+            async () => {
+              const response = await fetch(
+                `${SERVER_CONFIG.url}/ingest/LargeMessageInput`,
+                {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    id: largeMessageId,
+                    timestamp: new Date().toISOString(),
+                    multiplier: 2, // Generate 2MB message
+                  }),
+                },
+              );
+              if (!response.ok) {
+                const text = await response.text();
+                throw new Error(`${response.status}: ${text}`);
+              }
+            },
+            { attempts: 5, delayMs: 500 },
+          );
+
+          // Wait for the message to be sent to DLQ (not to the output table)
+          await waitForDBWrite(
+            devProcess!,
+            "LargeMessageDeadLetter",
+            1,
+            60_000,
+            "local",
+          );
+
+          // Verify the DLQ received the failed message with the correct metadata
+          const clickhouse = createClient({
+            url: CLICKHOUSE_CONFIG.url,
+            username: CLICKHOUSE_CONFIG.username,
+            password: CLICKHOUSE_CONFIG.password,
+            database: CLICKHOUSE_CONFIG.database,
+          });
+
+          const result = await clickhouse.query({
+            query: `SELECT * FROM local.LargeMessageDeadLetter WHERE originalRecord.id = '${largeMessageId}'`,
+            format: "JSONEachRow",
+          });
+
+          const data = await result.json();
+
+          if (data.length === 0) {
+            throw new Error(
+              `Expected to find DLQ record for id ${largeMessageId}`,
+            );
+          }
+
+          const dlqRecord: any = data[0];
+
+          // Verify DLQ record has the expected fields
+          if (!dlqRecord.errorMessage) {
+            throw new Error("Expected errorMessage in DLQ record");
+          }
+
+          if (!dlqRecord.errorType) {
+            throw new Error("Expected errorType in DLQ record");
+          }
+
+          if (dlqRecord.source !== "transform") {
+            throw new Error(
+              `Expected source to be 'transform', got '${dlqRecord.source}'`,
+            );
+          }
+
+          // Verify the error is related to message size
+          if (
+            !dlqRecord.errorMessage.toLowerCase().includes("too large") &&
+            !dlqRecord.errorMessage.toLowerCase().includes("size")
+          ) {
+            console.warn(
+              `Warning: Error message might not be about size: ${dlqRecord.errorMessage}`,
+            );
+          }
+
+          console.log(
+            `✅ Large message successfully sent to DLQ: ${dlqRecord.errorMessage}`,
+          );
+
+          // Verify that the large message did NOT make it to the output table
+          const outputResult = await clickhouse.query({
+            query: `SELECT COUNT(*) as count FROM local.LargeMessageOutput WHERE id = '${largeMessageId}'`,
+            format: "JSONEachRow",
+          });
+
+          const outputData: any[] = await outputResult.json();
+          const outputCount = parseInt(outputData[0].count);
+
+          if (outputCount !== 0) {
+            throw new Error(
+              `Expected 0 records in output table, found ${outputCount}`,
+            );
+          }
+
+          await clickhouse.close();
+        });
+
         it("should serve WebApp at custom mountPath with Express framework", async function () {
           this.timeout(TIMEOUTS.TEST_SETUP_MS);
 
@@ -819,9 +927,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
           await waitForDBWrite(devProcess!, "JsonTest", 1);
 
           // Verify row exists and payload is present
-          const client = (await import("@clickhouse/client")).createClient(
-            CLICKHOUSE_CONFIG,
-          );
+          const client = createClient(CLICKHOUSE_CONFIG);
           const result = await client.query({
             query: `SELECT id, getSubcolumn(${fieldName}, 'name') as name FROM JsonTest WHERE id = '${id}'`,
             format: "JSONEachRow",
