@@ -94,6 +94,13 @@ url = "redis://127.0.0.1:6379"
 # Namespace prefix for all Redis keys (Default: "MS")
 key_prefix = "MS"
 
+# State storage configuration for migrations
+[state_config]
+# Storage backend: "clickhouse" (default) or "redis"
+# - "clickhouse": Store state in ClickHouse _MOOSE_STATE table (requires KeeperMap)
+# - "redis": Store state in Redis (best for existing Redis infra or multi-tenant setups)
+storage = "clickhouse"
+
 # Git configuration
 [git_config]
 # Name of the main branch (Default: "main")

@@ -14,6 +14,7 @@
     "koa": "^2.15.3",
     "koa-bodyparser": "^4.4.1",
     "ts-patch": "^3.3.0",
+    "tsconfig-paths": "^4.2.0",
     "typia": "^9.6.1",
     "drizzle-orm": "latest"
   },

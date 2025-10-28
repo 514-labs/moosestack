@@ -80,7 +80,12 @@ pub enum Commands {
         /// ClickHouse connection URL (e.g., clickhouse://user:pass@host:port/database or https://user:pass@host:port/database)
         /// Authentication credentials should be included in the URL
         #[arg(long)]
-        clickhouse_url: String,
+        clickhouse_url: Option<String>,
+
+        /// Redis connection URL for state storage (e.g., redis://host:port)
+        /// Required when state_config.storage = "redis"
+        #[arg(long)]
+        redis_url: Option<String>,
     },
 
     /// View some data from a table or stream
@@ -202,11 +207,7 @@ pub enum GenerateCommand {
     /// Generate migration files
     Migration {
         /// URL of the remote Moose instance (use with --token)
-        #[arg(
-            long,
-            conflicts_with = "clickhouse_url",
-            required_unless_present = "clickhouse_url"
-        )]
+        #[arg(long, conflicts_with = "clickhouse_url")]
         url: Option<String>,
 
         /// API token for authentication with the remote Moose instance
@@ -217,6 +218,11 @@ pub enum GenerateCommand {
         /// ClickHouse connection URL for serverless deployments
         #[arg(long, conflicts_with = "url")]
         clickhouse_url: Option<String>,
+
+        /// Redis connection URL for state storage (e.g., redis://host:port)
+        /// Required when state_config.storage = "redis"
+        #[arg(long)]
+        redis_url: Option<String>,
 
         /// Save the migration files in the migrations/ directory
         #[arg(long, default_value = "false")]
