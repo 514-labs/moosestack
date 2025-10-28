@@ -46,12 +46,13 @@ jobs:
         run: |
           # Determine if this is a CI build (any branch other than main)
           if [[ "${{ github.ref_name }}" != "main" ]]; then
+            echo "GENERATING CI VERSIONS"
             # For CI builds, use git describe but exclude any -ci- tags
             git fetch --tags
 
             # Use git describe with --match to only consider release tags (without -ci-)
             # This ensures we build from the last real release, not a CI tag
-            CI_VERSION=$(git describe --tags --exclude="*-ci-*" --always --match="v[0-9]*.[0-9]*.[0-9]*")
+            CI_VERSION=$(git describe --tags --exclude="*-ci-*")
             # Remove the 'v' prefix if present
             CI_VERSION=${CI_VERSION#v}
 
@@ -75,6 +76,7 @@ jobs:
             IS_CI_BUILD="true"
 
           else
+            echo "GENERATING RELEASE VERSIONS"
             # For release builds (main branch), use the existing version.js script
             VERSION_OUTPUT=$(./scripts/version.js ${{ github.sha }})
             VERSION=$(echo "$VERSION_OUTPUT" | grep "VERSION=" | cut -d'=' -f2)
