@@ -121,6 +121,43 @@ interface S3QueueEngineConfig {
   headers?: { [key: string]: string };
 }
 
+interface S3EngineConfig {
+  engine: "S3";
+  path: string;
+  format: string;
+  noSign?: boolean;
+  awsAccessKeyId?: string;
+  awsSecretAccessKey?: string;
+  compression?: string;
+  partitionStrategy?: string;
+  partitionColumnsInDataFile?: string;
+}
+
+interface BufferEngineConfig {
+  engine: "Buffer";
+  targetDatabase: string;
+  targetTable: string;
+  numLayers: number;
+  minTime: number;
+  maxTime: number;
+  minRows: number;
+  maxRows: number;
+  minBytes: number;
+  maxBytes: number;
+  flushTime?: number;
+  flushRows?: number;
+  flushBytes?: number;
+}
+
+interface DistributedEngineConfig {
+  engine: "Distributed";
+  cluster: string;
+  targetDatabase: string;
+  targetTable: string;
+  shardingKey?: string;
+  policyName?: string;
+}
+
 /**
  * Union type for all supported engine configurations
  */
@@ -133,7 +170,10 @@ type EngineConfig =
   | ReplicatedReplacingMergeTreeEngineConfig
   | ReplicatedAggregatingMergeTreeEngineConfig
   | ReplicatedSummingMergeTreeEngineConfig
-  | S3QueueEngineConfig;
+  | S3QueueEngineConfig
+  | S3EngineConfig
+  | BufferEngineConfig
+  | DistributedEngineConfig;
 
 /**
  * JSON representation of an OLAP table configuration.
@@ -475,6 +515,82 @@ function convertS3QueueEngineConfig(
 }
 
 /**
+ * Convert S3 engine config
+ */
+function convertS3EngineConfig(
+  config: OlapConfig<any>,
+): EngineConfig | undefined {
+  if (!("engine" in config) || config.engine !== ClickHouseEngines.S3) {
+    return undefined;
+  }
+
+  const s3Config = config as any;
+  return {
+    engine: "S3",
+    path: s3Config.path,
+    format: s3Config.format,
+    noSign: s3Config.noSign,
+    awsAccessKeyId: s3Config.awsAccessKeyId,
+    awsSecretAccessKey: s3Config.awsSecretAccessKey,
+    compression: s3Config.compression,
+    partitionStrategy: s3Config.partitionStrategy,
+    partitionColumnsInDataFile: s3Config.partitionColumnsInDataFile,
+  };
+}
+
+/**
+ * Convert Buffer engine config
+ */
+function convertBufferEngineConfig(
+  config: OlapConfig<any>,
+): EngineConfig | undefined {
+  if (!("engine" in config) || config.engine !== ClickHouseEngines.Buffer) {
+    return undefined;
+  }
+
+  const bufferConfig = config as any;
+  return {
+    engine: "Buffer",
+    targetDatabase: bufferConfig.targetDatabase,
+    targetTable: bufferConfig.targetTable,
+    numLayers: bufferConfig.numLayers,
+    minTime: bufferConfig.minTime,
+    maxTime: bufferConfig.maxTime,
+    minRows: bufferConfig.minRows,
+    maxRows: bufferConfig.maxRows,
+    minBytes: bufferConfig.minBytes,
+    maxBytes: bufferConfig.maxBytes,
+    flushTime: bufferConfig.flushTime,
+    flushRows: bufferConfig.flushRows,
+    flushBytes: bufferConfig.flushBytes,
+  };
+}
+
+/**
+ * Convert Distributed engine config
+ */
+function convertDistributedEngineConfig(
+  config: OlapConfig<any>,
+): EngineConfig | undefined {
+  if (
+    !("engine" in config) ||
+    config.engine !== ClickHouseEngines.Distributed
+  ) {
+    return undefined;
+  }
+
+  const distConfig = config as any;
+  return {
+    engine: "Distributed",
+    cluster: distConfig.cluster,
+    targetDatabase: distConfig.targetDatabase,
+    targetTable: distConfig.targetTable,
+    shardingKey: distConfig.shardingKey,
+    policyName: distConfig.policyName,
+  };
+}
+
+/**
  * Convert table configuration to engine config
  */
 function convertTableConfigToEngineConfig(
@@ -497,6 +613,21 @@ function convertTableConfigToEngineConfig(
   // Handle S3Queue
   if (engine === ClickHouseEngines.S3Queue) {
     return convertS3QueueEngineConfig(config);
+  }
+
+  // Handle S3
+  if (engine === ClickHouseEngines.S3) {
+    return convertS3EngineConfig(config);
+  }
+
+  // Handle Buffer
+  if (engine === ClickHouseEngines.Buffer) {
+    return convertBufferEngineConfig(config);
+  }
+
+  // Handle Distributed
+  if (engine === ClickHouseEngines.Distributed) {
+    return convertDistributedEngineConfig(config);
   }
 
   return undefined;
