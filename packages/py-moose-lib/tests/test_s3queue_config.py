@@ -41,8 +41,8 @@ def test_olap_config_accepts_engine_config():
         aws_secret_access_key="secret123"
     )
     config = OlapConfig(
-        engine=s3_engine,
-        order_by_fields=["timestamp"]
+        engine=s3_engine
+        # Note: S3QueueEngine does not support order_by_fields
     )
     assert isinstance(config.engine, S3QueueEngine)
     assert config.engine.s3_path == "s3://bucket/data/*.json"
@@ -58,7 +58,7 @@ def test_olap_table_with_s3queue_engine():
                 format="JSONEachRow",
                 compression="gzip"
             ),
-            order_by_fields=["timestamp", "id"],
+            # Note: S3QueueEngine does not support order_by_fields
             settings={
                 "s3queue_mode": "unordered",
                 "s3queue_keeper_path": "/clickhouse/s3queue/test"
@@ -203,7 +203,7 @@ def test_s3queue_with_all_options():
         "FullConfigTable",
         OlapConfig(
             engine=engine,
-            order_by_fields=["timestamp"],
+            # Note: S3QueueEngine does not support order_by_fields
             settings={
                 "s3queue_mode": "ordered",
                 "s3queue_keeper_path": "/clickhouse/s3queue/full",
@@ -230,8 +230,8 @@ def test_s3queue_public_bucket():
     table = OlapTable[SampleEvent](
         "PublicBucketTable",
         OlapConfig(
-            engine=engine,
-            order_by_fields=["id"]
+            engine=engine
+            # Note: S3QueueEngine does not support order_by_fields
         )
     )
     
@@ -241,18 +241,15 @@ def test_s3queue_public_bucket():
 
 def test_migration_from_legacy_to_new():
     """Test migration path from legacy to new API."""
-    # Legacy approach
+    # Legacy approach (with MergeTree, which supports order_by_fields)
     legacy_config = OlapConfig(
-        engine=ClickHouseEngines.S3Queue,
+        engine=ClickHouseEngines.MergeTree,
         order_by_fields=["timestamp"]
     )
     
-    # New approach - equivalent configuration
+    # New approach - equivalent configuration for MergeTree
     new_config = OlapConfig(
-        engine=S3QueueEngine(
-            s3_path="s3://bucket/data/*.json",
-            format="JSONEachRow"
-        ),
+        engine=MergeTreeEngine(),
         order_by_fields=["timestamp"]
     )
     
@@ -261,7 +258,17 @@ def test_migration_from_legacy_to_new():
     
     # Engine types should be different
     assert isinstance(legacy_config.engine, ClickHouseEngines)
-    assert isinstance(new_config.engine, S3QueueEngine)
+    assert isinstance(new_config.engine, MergeTreeEngine)
+    
+    # For S3Queue, the new API correctly prevents unsupported clauses
+    s3queue_config = OlapConfig(
+        engine=S3QueueEngine(
+            s3_path="s3://bucket/data/*.json",
+            format="JSONEachRow"
+        )
+        # Note: order_by_fields is not supported for S3QueueEngine
+    )
+    assert isinstance(s3queue_config.engine, S3QueueEngine)
 
 
 def test_engine_config_validation():
@@ -278,6 +285,104 @@ def test_engine_config_validation():
             s3_path="s3://bucket/data/*.json",
             format=""  # Empty format should fail
         )
+
+
+def test_non_mergetree_engines_reject_unsupported_clauses():
+    """Test that non-MergeTree engines reject unsupported ORDER BY, PARTITION BY, and SAMPLE BY clauses."""
+    from moose_lib.blocks import S3Engine, S3QueueEngine, BufferEngine, DistributedEngine
+    
+    # Test S3Engine rejects ORDER BY
+    with pytest.raises(ValueError, match="S3Engine does not support ORDER BY clauses"):
+        OlapConfig(
+            engine=S3Engine(path="s3://bucket/file.json", format="JSONEachRow"),
+            order_by_fields=["id"]
+        )
+    
+    with pytest.raises(ValueError, match="S3Engine does not support ORDER BY clauses"):
+        OlapConfig(
+            engine=S3Engine(path="s3://bucket/file.json", format="JSONEachRow"),
+            order_by_expression="(id, name)"
+        )
+    
+    # Test S3Engine rejects PARTITION BY
+    with pytest.raises(ValueError, match="S3Engine does not support PARTITION BY clause"):
+        OlapConfig(
+            engine=S3Engine(path="s3://bucket/file.json", format="JSONEachRow"),
+            partition_by="toYYYYMM(timestamp)"
+        )
+    
+    # Test S3Engine rejects SAMPLE BY
+    with pytest.raises(ValueError, match="S3Engine does not support SAMPLE BY clause"):
+        OlapConfig(
+            engine=S3Engine(path="s3://bucket/file.json", format="JSONEachRow"),
+            sample_by_expression="cityHash64(id)"
+        )
+    
+    # Test S3QueueEngine rejects ORDER BY
+    with pytest.raises(ValueError, match="S3QueueEngine does not support ORDER BY clauses"):
+        OlapConfig(
+            engine=S3QueueEngine(s3_path="s3://bucket/*.json", format="JSONEachRow"),
+            order_by_fields=["id"]
+        )
+    
+    # Test BufferEngine rejects ORDER BY
+    with pytest.raises(ValueError, match="BufferEngine does not support ORDER BY clauses"):
+        OlapConfig(
+            engine=BufferEngine(
+                target_database="default",
+                target_table="dest",
+                num_layers=16,
+                min_time=10,
+                max_time=100,
+                min_rows=10000,
+                max_rows=100000,
+                min_bytes=10000000,
+                max_bytes=100000000
+            ),
+            order_by_fields=["id"]
+        )
+    
+    # Test DistributedEngine rejects PARTITION BY
+    with pytest.raises(ValueError, match="DistributedEngine does not support PARTITION BY clause"):
+        OlapConfig(
+            engine=DistributedEngine(
+                cluster="my_cluster",
+                target_database="default",
+                target_table="local_table"
+            ),
+            partition_by="date"
+        )
+    
+    # Verify that S3Engine works without unsupported clauses
+    config = OlapConfig(
+        engine=S3Engine(path="s3://bucket/file.json", format="JSONEachRow")
+    )
+    assert isinstance(config.engine, S3Engine)
+
+
+def test_mergetree_engines_still_accept_clauses():
+    """Test that MergeTree engines still accept ORDER BY, PARTITION BY, and SAMPLE BY clauses."""
+    from moose_lib.blocks import MergeTreeEngine, ReplacingMergeTreeEngine
+    
+    # MergeTree should accept all clauses
+    config1 = OlapConfig(
+        engine=MergeTreeEngine(),
+        order_by_fields=["id", "timestamp"],
+        partition_by="toYYYYMM(timestamp)",
+        sample_by_expression="cityHash64(id)"
+    )
+    assert config1.order_by_fields == ["id", "timestamp"]
+    assert config1.partition_by == "toYYYYMM(timestamp)"
+    assert config1.sample_by_expression == "cityHash64(id)"
+    
+    # ReplacingMergeTree should also accept these clauses
+    config2 = OlapConfig(
+        engine=ReplacingMergeTreeEngine(ver="updated_at"),
+        order_by_expression="(id, name)",
+        partition_by="date"
+    )
+    assert config2.order_by_expression == "(id, name)"
+    assert config2.partition_by == "date"
 
 
 def test_multiple_engine_types():
