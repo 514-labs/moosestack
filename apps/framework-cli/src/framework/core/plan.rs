@@ -55,6 +55,10 @@ pub enum PlanningError {
     #[error("OLAP feature is disabled, but your project requires database operations. Please enable OLAP in your project configuration by setting 'olap = true' in your project features.")]
     OlapDisabledButRequired,
 
+    /// Error occurred while loading data model v2 infrastructure
+    #[error(transparent)]
+    DmV2Loading(#[from] crate::framework::core::partial_infrastructure_map::DmV2LoadingError),
+
     /// Other unspecified errors
     #[error("Unknown error")]
     Other(#[from] anyhow::Error),
