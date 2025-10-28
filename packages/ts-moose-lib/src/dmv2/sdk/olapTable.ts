@@ -363,7 +363,10 @@ export type S3QueueConfig<T> = Omit<
  * Configuration for S3 engine
  * @template T The data type of the records stored in the table.
  */
-export type S3Config<T> = BaseOlapConfig<T> & {
+export type S3Config<T> = Omit<
+  BaseOlapConfig<T>,
+  "orderByFields" | "orderByExpression" | "partitionBy" | "sampleByExpression"
+> & {
   engine: ClickHouseEngines.S3;
   /** S3 path (e.g., 's3://bucket/path/file.json') */
   path: string;
