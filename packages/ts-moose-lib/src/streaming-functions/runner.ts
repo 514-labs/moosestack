@@ -170,7 +170,10 @@ const sendChunkWithRetry = async (
         attempts++;
         // If it's not MESSAGE_TOO_LARGE or we can't split further, re-throw
         if (attempts >= maxRetries) {
-          // Before throwing, try to send to DLQ if we have a single message and DLQ is configured
+          // Before throwing, try to send all messages to DLQ if configured
+          let anyMessageSentToDLQ = false;
+          const dlqErrors: string[] = [];
+
           for (const failedMessage of currentMessages) {
             const dlqTopic = failedMessage.dlq;
 
@@ -191,8 +194,7 @@ const sendChunkWithRetry = async (
                 errorType:
                   error instanceof Error ? error.constructor.name : "Unknown",
                 failedAt: new Date(),
-                source: "send",
-                targetTopic: targetTopic.name,
+                source: "transform",
               };
 
               cliLog({
@@ -207,12 +209,11 @@ const sendChunkWithRetry = async (
                   messages: [{ value: JSON.stringify(deadLetterRecord) }],
                 });
                 logger.log(`Sent failed message to DLQ ${dlqTopicName}`);
-                return; // Successfully handled by sending to DLQ
+                anyMessageSentToDLQ = true;
               } catch (dlqError) {
-                logger.error(
-                  `Failed to send message to dead letter queue: ${dlqError}`,
-                );
-                // Fall through to throw original error
+                const errorMsg = `Failed to send message to DLQ: ${dlqError}`;
+                logger.error(errorMsg);
+                dlqErrors.push(errorMsg);
               }
             } else if (!dlqTopic) {
               logger.warn(`Cannot send to DLQ: no DLQ configured`);
@@ -221,6 +222,21 @@ const sendChunkWithRetry = async (
                 `Cannot send to DLQ: original message value not available`,
               );
             }
+          }
+
+          // If we successfully sent at least one message to DLQ, don't throw
+          if (anyMessageSentToDLQ && dlqErrors.length === 0) {
+            logger.log(
+              `All failed messages sent to DLQ, not throwing original error`,
+            );
+            return;
+          }
+
+          // If we had partial success or total failure, throw the original error
+          if (dlqErrors.length > 0) {
+            logger.error(
+              `Some messages failed to send to DLQ: ${dlqErrors.join(", ")}`,
+            );
           }
           throw error;
         }
@@ -508,7 +524,7 @@ const handleMessage = async (
       }),
     );
 
-    transformedData
+    return transformedData
       .map((userFunctionOutput, i) => {
         const [_, config] = streamingFunctionWithConfigList[i];
         if (userFunctionOutput) {
@@ -518,28 +534,29 @@ const handleMessage = async (
             // When a transform returns an array (e.g., [msg1, msg2] to emit multiple messages),
             // we get [[msg1, msg2]]. flat() unwraps one level so each item becomes its own message.
             // Without flat(), the entire array would be JSON.stringify'd as a single message.
-            return transformedData
+            return userFunctionOutput
               .flat()
               .filter((item) => item !== undefined && item !== null)
               .map((item) => ({
                 value: JSON.stringify(item),
                 originalValue: parsedData,
                 originalMessage: message,
-                dlq: config.deadLetterQueue,
+                dlq: config.deadLetterQueue ?? undefined,
               }));
           } else {
             return [
               {
-                value: JSON.stringify(transformedData),
+                value: JSON.stringify(userFunctionOutput),
                 originalValue: parsedData,
                 originalMessage: message,
-                dlq: config.deadLetterQueue,
+                dlq: config.deadLetterQueue ?? undefined,
               },
             ];
           }
         }
       })
-      .flat();
+      .flat()
+      .filter((item) => item !== undefined && item !== null);
   } catch (e) {
     // TODO: Track failure rate
     logger.error(`Failed to transform data`);

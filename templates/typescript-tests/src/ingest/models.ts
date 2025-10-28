@@ -592,3 +592,57 @@ export const arrayInputStream = new Stream<ArrayInput>("ArrayInput");
 export const ingestapi = new IngestApi<ArrayInput>("array-input", {
   destination: arrayInputStream,
 });
+
+/** =======Large Message Test Models========= */
+// Test models for verifying DLQ behavior with messages that exceed Kafka size limits
+
+/** Input model for large message test */
+export interface LargeMessageInput {
+  id: Key<string>;
+  timestamp: DateTime;
+  multiplier: number; // Controls output size
+}
+
+/** Output model that will be very large */
+export interface LargeMessageOutput {
+  id: Key<string>;
+  timestamp: DateTime;
+  largeData: string; // Will contain ~1MB of data
+}
+
+// Dead letter table for large message failures
+export const largeMessageDeadLetterTable = new OlapTable<DeadLetterModel>(
+  "LargeMessageDeadLetter",
+  {
+    orderByFields: ["failedAt"],
+  },
+);
+
+// Input pipeline with DLQ configured
+export const LargeMessageInputPipeline = new IngestPipeline<LargeMessageInput>(
+  "LargeMessageInput",
+  {
+    table: false,
+    stream: true,
+    ingestApi: true,
+    deadLetterQueue: {
+      destination: largeMessageDeadLetterTable,
+    },
+  },
+);
+
+// Output table
+export const LargeMessageOutputTable = new OlapTable<LargeMessageOutput>(
+  "LargeMessageOutput",
+  {
+    orderByFields: ["id", "timestamp"],
+  },
+);
+
+// Output stream
+export const largeMessageOutputStream = new Stream<LargeMessageOutput>(
+  "LargeMessageOutput",
+  {
+    destination: LargeMessageOutputTable,
+  },
+);

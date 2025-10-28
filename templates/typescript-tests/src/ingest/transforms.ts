@@ -86,3 +86,35 @@ arrayInputStream.addTransform(
     }));
   },
 );
+
+// Test transform that generates large messages to test DLQ for MESSAGE_TOO_LARGE errors
+import {
+  LargeMessageInputPipeline,
+  largeMessageOutputStream,
+  LargeMessageInput,
+  LargeMessageOutput,
+} from "./models";
+
+LargeMessageInputPipeline.stream!.addTransform(
+  largeMessageOutputStream,
+  (input: LargeMessageInput): LargeMessageOutput => {
+    // Generate a string that's approximately 1MB * multiplier
+    // This should trigger MESSAGE_TOO_LARGE error if multiplier is high enough
+    const oneMB = 1024 * 1024;
+    const targetSize = oneMB * input.multiplier;
+
+    // Create a large string by repeating a pattern
+    const pattern = "0123456789ABCDEF"; // 16 bytes
+    const repetitions = Math.floor(targetSize / pattern.length);
+    const largeData = pattern.repeat(repetitions);
+
+    return {
+      id: input.id,
+      timestamp: new Date(),
+      largeData: largeData,
+    };
+  },
+  {
+    deadLetterQueue: LargeMessageInputPipeline.deadLetterQueue,
+  },
+);
