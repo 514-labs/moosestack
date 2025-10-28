@@ -401,6 +401,7 @@ pub async fn start_development_mode(
 
     // Create state storage once based on project configuration
     let state_storage = StateStorageBuilder::from_config(&project)
+        .clickhouse_config(Some(project.clickhouse_config.clone()))
         .redis_client(Some(&redis_client))
         .build()
         .await?;
@@ -670,6 +671,7 @@ pub async fn start_production_mode(
 
     // Create state storage once based on project configuration
     let state_storage = StateStorageBuilder::from_config(&project)
+        .clickhouse_config(Some(project.clickhouse_config.clone()))
         .redis_client(Some(&redis_client))
         .build()
         .await?;
@@ -682,6 +684,7 @@ pub async fn start_production_mode(
     if execute_migration_yaml {
         migrate::execute_migration_plan(
             &project,
+            &project.clickhouse_config,
             &current_state.tables,
             &plan.target_infra_map,
             &*state_storage,
@@ -991,17 +994,17 @@ pub async fn remote_plan(
     };
 
     // Determine remote source based on provided arguments
-    let remote_infra_map = if let Some(ch_url) = clickhouse_url {
+    let remote_infra_map = if let Some(clickhouse_url) = clickhouse_url {
         // Serverless flow: connect directly to ClickHouse
         display::show_message_wrapper(
             MessageType::Info,
             Message {
                 action: "Remote Plan".to_string(),
-                details: "Comparing local project code with ClickHouse database".to_string(),
+                details: "Comparing local project code with deployed infrastructure".to_string(),
             },
         );
 
-        get_remote_inframap_from_clickhouse(project, ch_url).await?
+        get_remote_inframap_serverless(project, clickhouse_url, None).await?
     } else {
         // Moose server flow
         display::show_message_wrapper(
@@ -1085,14 +1088,19 @@ pub enum RemoteSource<'a> {
         url: &'a str,
         token: &'a Option<String>,
     },
-    /// Direct ClickHouse connection for serverless/CLI-only
-    ClickHouse { url: &'a str },
+    /// Serverless deployment (direct ClickHouse + optional Redis for state)
+    Serverless {
+        clickhouse_url: &'a str,
+        redis_url: &'a Option<String>,
+    },
 }
 
 pub async fn remote_gen_migration(
     project: &Project,
     remote: RemoteSource<'_>,
 ) -> anyhow::Result<MigrationPlanWithBeforeAfter> {
+    use anyhow::Context;
+
     // Build the inframap from the local project
     let local_infra_map = if project.features.data_model_v2 {
         debug!("Loading InfrastructureMap from user code (DMV2)");
@@ -1114,21 +1122,24 @@ pub async fn remote_gen_migration(
                 },
             );
 
-            use anyhow::Context;
             get_remote_inframap_protobuf(Some(url), token)
                 .await
                 .with_context(|| "Failed to retrieve infrastructure map".to_string())?
         }
-        RemoteSource::ClickHouse { url } => {
+        RemoteSource::Serverless {
+            clickhouse_url,
+            redis_url,
+        } => {
             display::show_message_wrapper(
                 MessageType::Info,
                 Message {
                     action: "Remote Plan".to_string(),
-                    details: "Comparing local project code with ClickHouse database".to_string(),
+                    details: "Comparing local project code with deployed infrastructure"
+                        .to_string(),
                 },
             );
 
-            get_remote_inframap_from_clickhouse(project, url).await?
+            get_remote_inframap_serverless(project, clickhouse_url, redis_url.as_deref()).await?
         }
     };
 
@@ -1155,22 +1166,28 @@ pub async fn remote_gen_migration(
     })
 }
 
-/// Get remote infrastructure map from ClickHouse directly (for serverless flow)
-async fn get_remote_inframap_from_clickhouse(
+/// Get remote infrastructure map for serverless deployments
+///
+/// Loads state from Redis or ClickHouse (based on config), then reconciles with actual ClickHouse schema
+async fn get_remote_inframap_serverless(
     project: &Project,
     clickhouse_url: &str,
+    redis_url: Option<&str>,
 ) -> anyhow::Result<InfrastructureMap> {
     use crate::framework::core::plan::reconcile_with_reality;
-    use crate::framework::core::state_storage::{ClickHouseStateStorage, StateStorage};
     use crate::infrastructure::olap::clickhouse::config::parse_clickhouse_connection_string;
-    use crate::infrastructure::olap::clickhouse::{check_ready, create_client};
+    use crate::infrastructure::olap::clickhouse::create_client;
     use std::collections::HashSet;
 
     let clickhouse_config = parse_clickhouse_connection_string(clickhouse_url)?;
-    let client = create_client(clickhouse_config.clone());
-    check_ready(&client).await?;
 
-    let state_storage = ClickHouseStateStorage::new(client, clickhouse_config.db_name.clone());
+    // Build state storage based on config
+    let state_storage = StateStorageBuilder::from_config(project)
+        .clickhouse_config(Some(clickhouse_config.clone()))
+        .redis_url(redis_url.map(String::from))
+        .build()
+        .await?;
+
     let remote_infra_map = state_storage
         .load_infrastructure_map()
         .await?
