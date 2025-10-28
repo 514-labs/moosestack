@@ -63,6 +63,7 @@ import {
 import { triggerWorkflow } from "./utils/workflow-utils";
 import { geoPayloadPy, geoPayloadTs } from "./utils/geo-payload";
 import { verifyTableIndexes, getTableDDL } from "./utils/database-utils";
+import { createClient } from "@clickhouse/client";
 
 const execAsync = promisify(require("child_process").exec);
 const setTimeoutAsync = (ms: number) =>
@@ -705,7 +706,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
           );
 
           // Verify the DLQ received the failed message with the correct metadata
-          const clickhouse = require("@clickhouse/client").createClient({
+          const clickhouse = createClient({
             url: CLICKHOUSE_CONFIG.url,
             username: CLICKHOUSE_CONFIG.username,
             password: CLICKHOUSE_CONFIG.password,
@@ -714,6 +715,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
 
           const result = await clickhouse.query({
             query: `SELECT * FROM local.LargeMessageDeadLetter WHERE originalRecord.id = '${largeMessageId}'`,
+            format: "JSONEachRow",
           });
 
           const data = await result.json();
@@ -724,7 +726,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
             );
           }
 
-          const dlqRecord = data[0];
+          const dlqRecord: any = data[0];
 
           // Verify DLQ record has the expected fields
           if (!dlqRecord.errorMessage) {
@@ -757,10 +759,11 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
 
           // Verify that the large message did NOT make it to the output table
           const outputResult = await clickhouse.query({
-            query: `SELECT COUNT(*) as count FROM local.LargeMessageOutput WHERE id = '${largeMessageId}' FORMAT JSONEachRow`,
+            query: `SELECT COUNT(*) as count FROM local.LargeMessageOutput WHERE id = '${largeMessageId}'`,
+            format: "JSONEachRow",
           });
 
-          const outputData = await outputResult.json();
+          const outputData: any[] = await outputResult.json();
           const outputCount = parseInt(outputData[0].count);
 
           if (outputCount !== 0) {
@@ -876,9 +879,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
           await waitForDBWrite(devProcess!, "JsonTest", 1);
 
           // Verify row exists and payload is present
-          const client = (await import("@clickhouse/client")).createClient(
-            CLICKHOUSE_CONFIG,
-          );
+          const client = createClient(CLICKHOUSE_CONFIG);
           const result = await client.query({
             query: `SELECT id, getSubcolumn(${fieldName}, 'name') as name FROM JsonTest WHERE id = '${id}'`,
             format: "JSONEachRow",
