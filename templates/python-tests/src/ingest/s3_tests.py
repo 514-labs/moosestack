@@ -19,6 +19,7 @@ class S3TestData(BaseModel):
 
 # Test S3 engine with runtime environment variable resolution using moose_runtime_env
 # This table will only be created if the required environment variables are set
+# Uses the same env vars as S3Queue for consistency
 s3_with_secrets = OlapTable[S3TestData](
     "S3WithSecrets",
     OlapConfig(
@@ -26,8 +27,8 @@ s3_with_secrets = OlapTable[S3TestData](
             path="s3://test-bucket/data/file.json",
             format="JSONEachRow",
             # Credentials resolved at runtime from environment variables
-            aws_access_key_id=moose_runtime_env.get("TEST_S3_AWS_ACCESS_KEY_ID"),
-            aws_secret_access_key=moose_runtime_env.get("TEST_S3_AWS_SECRET_ACCESS_KEY"),
+            aws_access_key_id=moose_runtime_env.get("TEST_AWS_ACCESS_KEY_ID"),
+            aws_secret_access_key=moose_runtime_env.get("TEST_AWS_SECRET_ACCESS_KEY"),
             compression="gzip",
         ),
     ),

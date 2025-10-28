@@ -66,10 +66,8 @@ describe("typescript template tests - S3 Engine Runtime Environment Variable Res
         cwd: TEST_PROJECT_DIR,
         env: {
           ...process.env,
-          // Set dummy credentials for S3 engine testing
-          TEST_S3_AWS_ACCESS_KEY_ID: "test-s3-access-key-id",
-          TEST_S3_AWS_SECRET_ACCESS_KEY: "test-s3-secret-access-key",
-          // Also set S3Queue env vars so those tests don't fail
+          // Set dummy credentials for both S3 engine and S3Queue testing
+          // Both use the same env vars for consistency
           TEST_AWS_ACCESS_KEY_ID: "test-access-key-id",
           TEST_AWS_SECRET_ACCESS_KEY: "test-secret-access-key",
         },
@@ -123,19 +121,16 @@ describe("typescript template tests - S3 Engine Runtime Environment Variable Res
         "npm",
       );
 
-      // Start dev server WITHOUT the S3 engine environment variables set
-      // Only set S3Queue env vars to isolate S3 engine failures
+      // Start dev server WITHOUT the required environment variables set
+      // Both S3 engine and S3Queue use the same env vars
       devProcess = spawn(CLI_PATH, ["dev"], {
         stdio: "pipe",
         cwd: TEST_PROJECT_DIR,
         env: {
           ...process.env,
-          // Set S3Queue env vars so those tests don't fail
-          TEST_AWS_ACCESS_KEY_ID: "test-access-key-id",
-          TEST_AWS_SECRET_ACCESS_KEY: "test-secret-access-key",
-          // Explicitly unset S3 engine env vars
-          TEST_S3_AWS_ACCESS_KEY_ID: undefined,
-          TEST_S3_AWS_SECRET_ACCESS_KEY: undefined,
+          // Explicitly unset S3 credentials
+          TEST_AWS_ACCESS_KEY_ID: undefined,
+          TEST_AWS_SECRET_ACCESS_KEY: undefined,
         },
       });
 
@@ -230,10 +225,8 @@ describe("python template tests - S3 Engine Runtime Environment Variable Resolut
           ...process.env,
           VIRTUAL_ENV: path.join(TEST_PROJECT_DIR, ".venv"),
           PATH: `${path.join(TEST_PROJECT_DIR, ".venv", "bin")}:${process.env.PATH}`,
-          // Set dummy credentials for S3 engine testing
-          TEST_S3_AWS_ACCESS_KEY_ID: "test-s3-access-key-id",
-          TEST_S3_AWS_SECRET_ACCESS_KEY: "test-s3-secret-access-key",
-          // Also set S3Queue env vars so those tests don't fail
+          // Set dummy credentials for both S3 engine and S3Queue testing
+          // Both use the same env vars for consistency
           TEST_AWS_ACCESS_KEY_ID: "test-access-key-id",
           TEST_AWS_SECRET_ACCESS_KEY: "test-secret-access-key",
         },

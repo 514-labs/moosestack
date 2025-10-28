@@ -22,13 +22,14 @@ export interface S3TestData {
 
 // Test S3 engine with runtime environment variable resolution using mooseRuntimeEnv
 // This table will only be created if the required environment variables are set
+// Uses the same env vars as S3Queue for consistency
 export const S3WithSecrets = new OlapTable<S3TestData>("S3WithSecrets", {
   engine: ClickHouseEngines.S3,
   path: "s3://test-bucket/data/file.json",
   format: "JSONEachRow",
   // Credentials resolved at runtime from environment variables
-  awsAccessKeyId: mooseRuntimeEnv.get("TEST_S3_AWS_ACCESS_KEY_ID"),
-  awsSecretAccessKey: mooseRuntimeEnv.get("TEST_S3_AWS_SECRET_ACCESS_KEY"),
+  awsAccessKeyId: mooseRuntimeEnv.get("TEST_AWS_ACCESS_KEY_ID"),
+  awsSecretAccessKey: mooseRuntimeEnv.get("TEST_AWS_SECRET_ACCESS_KEY"),
   compression: "gzip",
 });
 
