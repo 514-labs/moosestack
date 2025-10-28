@@ -319,6 +319,63 @@ export const s3Events = new OlapTable<S3Event>("s3_events", {
 });
 ```
 
+### S3 Configuration
+Configure S3 tables for direct read/write access to S3 storage:
+```ts
+export const s3Data = new OlapTable<DataRecord>("s3_data", {
+  engine: ClickHouseEngines.S3,
+  path: "s3://bucket/data/file.json",
+  format: "JSONEachRow",
+  awsAccessKeyId: mooseRuntimeEnv.get("AWS_ACCESS_KEY_ID"),
+  awsSecretAccessKey: mooseRuntimeEnv.get("AWS_SECRET_ACCESS_KEY"),
+  compression: "gzip"
+});
+
+// Public bucket (no authentication)
+export const publicS3 = new OlapTable<DataRecord>("public_s3", {
+  engine: ClickHouseEngines.S3,
+  path: "s3://public-bucket/data/*.parquet",
+  format: "Parquet",
+  noSign: true
+});
+```
+
+### Buffer Configuration
+Configure Buffer tables for high-throughput buffered writes (ORDER BY is not supported):
+```ts
+// First create destination table
+export const destination = new OlapTable<Record>("destination", {
+  engine: ClickHouseEngines.MergeTree,
+  orderByFields: ["id", "timestamp"]
+});
+
+// Then create buffer table
+export const buffer = new OlapTable<Record>("buffer", {
+  engine: ClickHouseEngines.Buffer,
+  targetDatabase: "local",
+  targetTable: "destination",
+  numLayers: 16,
+  minTime: 10,
+  maxTime: 100,
+  minRows: 10000,
+  maxRows: 1000000,
+  minBytes: 10485760,
+  maxBytes: 104857600
+});
+```
+
+### Distributed Configuration
+Configure Distributed tables for cluster-wide distributed queries (ORDER BY is not supported):
+```ts
+export const distributed = new OlapTable<Record>("distributed", {
+  engine: ClickHouseEngines.Distributed,
+  cluster: "my_cluster",
+  targetDatabase: "default",
+  targetTable: "local_table",
+  shardingKey: "cityHash64(id)"
+});
+```
+
 ## Task Management
 
 ### `Task<T, R>`
