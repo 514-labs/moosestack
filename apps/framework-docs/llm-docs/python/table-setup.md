@@ -421,6 +421,8 @@ s3_events_table = OlapTable[S3Event](
             s3_path="s3://my-bucket/events/*.json",
             format="JSONEachRow",
             # Optional authentication (omit for public buckets)
+            # ⚠️ WARNING: Never hardcode credentials directly!
+            # Use moose_runtime_env for runtime environment variable resolution (see below)
             aws_access_key_id="AKIA...",
             aws_secret_access_key="secret...",
             # Optional compression
@@ -456,6 +458,65 @@ public_s3_table = OlapTable[S3Event](
     )
 )
 ```
+
+#### Runtime Environment Variable Resolution (Recommended for Credentials)
+
+**⚠️ IMPORTANT: Never hardcode AWS credentials in your code!** Hardcoded credentials get embedded in Docker images and deployment artifacts, creating serious security risks.
+
+Instead, use `moose_runtime_env` to defer credential resolution until runtime:
+
+```python
+from moose_lib import OlapTable, OlapConfig, moose_runtime_env
+from moose_lib.blocks import S3QueueEngine
+from pydantic import BaseModel
+
+class S3Event(BaseModel):
+    id: str
+    event_type: str
+    timestamp: str
+    data: dict
+
+# ✅ RECOMMENDED: Runtime environment variable resolution
+secure_s3_events = OlapTable[S3Event](
+    "SecureS3Events",
+    OlapConfig(
+        # Note: S3Queue doesn't support ORDER BY as it's a streaming engine
+        engine=S3QueueEngine(
+            s3_path="s3://my-bucket/events/*.json",
+            format="JSONEachRow",
+            # Credentials resolved from environment variables at runtime
+            aws_access_key_id=moose_runtime_env.get("AWS_ACCESS_KEY_ID"),
+            aws_secret_access_key=moose_runtime_env.get("AWS_SECRET_ACCESS_KEY")
+        ),
+        settings={
+            "mode": "unordered",
+            "keeper_path": "/clickhouse/s3queue/s3_events"
+        }
+    )
+)
+```
+
+**How it works:**
+1. `moose_runtime_env.get("VAR_NAME")` creates a marker in your code
+2. When you build your application, these markers (not actual values) are serialized
+3. At runtime, the Moose CLI reads the environment variables and resolves the actual values
+4. Credentials never get embedded in Docker images or deployment artifacts
+
+**Setting environment variables:**
+```bash
+# In your deployment environment
+export AWS_ACCESS_KEY_ID="AKIA..."
+export AWS_SECRET_ACCESS_KEY="your-secret-key"
+
+# Then start Moose
+moose prod up
+```
+
+**Benefits:**
+- ✅ Credentials never embedded in Docker images
+- ✅ Supports credential rotation (changing passwords triggers table recreation)
+- ✅ Different credentials for different environments (dev/staging/prod)
+- ✅ Clear error messages if environment variables are missing
 
 #### Legacy API (Still Supported but Deprecated)
 
