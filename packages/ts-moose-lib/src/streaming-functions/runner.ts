@@ -34,7 +34,7 @@ import {
 } from "../commons";
 import { Cluster } from "../cluster-utils";
 import { getStreamingFunctions } from "../dmv2/internal";
-import type { ConsumerConfig, TransformConfig } from "../dmv2";
+import type { ConsumerConfig, TransformConfig, DeadLetterQueue } from "../dmv2";
 import { jsonDateReviver } from "../utilities/json";
 
 const HOSTNAME = process.env.HOSTNAME;
@@ -54,7 +54,11 @@ const KAFKAJS_BYTE_MESSAGE_OVERHEAD = 500;
  */
 const isMessageTooLargeError = (error: unknown): boolean => {
   // Check if it's a KafkaJS error first
-  if (KafkaJS.isKafkaJSError && KafkaJS.isKafkaJSError(error)) {
+  if (
+    KafkaJS.isKafkaJSError &&
+    error instanceof Error &&
+    KafkaJS.isKafkaJSError(error)
+  ) {
     return (
       (error as any).type === "ERR_MSG_SIZE_TOO_LARGE" ||
       (error as any).code === 10 ||
@@ -80,16 +84,16 @@ const isMessageTooLargeError = (error: unknown): boolean => {
  * Splits a batch of messages into smaller chunks when MESSAGE_TOO_LARGE error occurs
  */
 const splitBatch = (
-  messages: SlimKafkaMessage[],
+  messages: KafkaMessageWithLineage[],
   maxChunkSize: number,
-): SlimKafkaMessage[][] => {
+): KafkaMessageWithLineage[][] => {
   if (messages.length <= 1) {
     return [messages];
   }
 
   // If we have more than one message, split into smaller batches
-  const chunks: SlimKafkaMessage[][] = [];
-  let currentChunk: SlimKafkaMessage[] = [];
+  const chunks: KafkaMessageWithLineage[][] = [];
+  let currentChunk: KafkaMessageWithLineage[] = [];
   let currentSize = 0;
 
   for (const message of messages) {
@@ -122,7 +126,7 @@ const sendChunkWithRetry = async (
   logger: Logger,
   targetTopic: TopicConfig,
   producer: Producer,
-  messages: SlimKafkaMessage[],
+  messages: KafkaMessageWithLineage[],
   currentMaxSize: number,
   maxRetries: number = 3,
 ): Promise<void> => {
@@ -166,6 +170,95 @@ const sendChunkWithRetry = async (
         attempts++;
         // If it's not MESSAGE_TOO_LARGE or we can't split further, re-throw
         if (attempts >= maxRetries) {
+          // Before throwing, try to send all messages to DLQ if configured
+          // We can only avoid throwing if ALL messages are successfully sent to their DLQs
+          let messagesHandledByDLQ = 0;
+          let messagesWithoutDLQ = 0;
+          const dlqErrors: string[] = [];
+
+          for (const failedMessage of currentMessages) {
+            const dlqTopic = failedMessage.dlq;
+
+            // Use the original input message, not the transformed output
+            // to avoid making the DLQ message even larger
+            if (dlqTopic && failedMessage.originalValue) {
+              const dlqTopicName = dlqTopic.name;
+              const deadLetterRecord = {
+                originalRecord: {
+                  ...failedMessage.originalValue,
+                  // Include original Kafka message metadata
+                  __sourcePartition: failedMessage.originalMessage.partition,
+                  __sourceOffset: failedMessage.originalMessage.offset,
+                  __sourceTimestamp: failedMessage.originalMessage.timestamp,
+                },
+                errorMessage:
+                  error instanceof Error ? error.message : String(error),
+                errorType:
+                  error instanceof Error ? error.constructor.name : "Unknown",
+                failedAt: new Date(),
+                source: "transform",
+              };
+
+              cliLog({
+                action: "DeadLetter",
+                message: `Sending failed message to DLQ ${dlqTopicName}: ${error instanceof Error ? error.message : String(error)}`,
+                message_type: "Error",
+              });
+
+              try {
+                await producer.send({
+                  topic: dlqTopicName,
+                  messages: [{ value: JSON.stringify(deadLetterRecord) }],
+                });
+                logger.log(`Sent failed message to DLQ ${dlqTopicName}`);
+                messagesHandledByDLQ++;
+              } catch (dlqError) {
+                const errorMsg = `Failed to send message to DLQ: ${dlqError}`;
+                logger.error(errorMsg);
+                dlqErrors.push(errorMsg);
+              }
+            } else if (!dlqTopic) {
+              messagesWithoutDLQ++;
+              logger.warn(
+                `Cannot send to DLQ: no DLQ configured for message (batch has mixed DLQ configurations)`,
+              );
+            } else {
+              messagesWithoutDLQ++;
+              logger.warn(
+                `Cannot send to DLQ: original message value not available`,
+              );
+            }
+          }
+
+          // Only suppress the error if ALL messages were successfully sent to their DLQs
+          const allMessagesHandled =
+            messagesHandledByDLQ === currentMessages.length &&
+            messagesWithoutDLQ === 0 &&
+            dlqErrors.length === 0;
+
+          if (allMessagesHandled) {
+            logger.log(
+              `All ${messagesHandledByDLQ} failed message(s) sent to DLQ, not throwing original error`,
+            );
+            return;
+          }
+
+          // Otherwise, throw the original error because we couldn't handle all messages
+          if (messagesWithoutDLQ > 0) {
+            logger.error(
+              `Cannot handle batch failure: ${messagesWithoutDLQ} message(s) have no DLQ configured`,
+            );
+          }
+          if (dlqErrors.length > 0) {
+            logger.error(
+              `Some messages failed to send to DLQ: ${dlqErrors.join(", ")}`,
+            );
+          }
+          if (messagesHandledByDLQ > 0) {
+            logger.warn(
+              `Partial DLQ success: ${messagesHandledByDLQ}/${currentMessages.length} message(s) sent to DLQ, but throwing due to incomplete batch handling`,
+            );
+          }
           throw error;
         }
         logger.warn(
@@ -206,7 +299,12 @@ type StreamingFunction = (data: unknown) => unknown | Promise<unknown>;
 /**
  * Simplified Kafka message type containing only value
  */
-type SlimKafkaMessage = { value: string };
+type KafkaMessageWithLineage = {
+  value: string;
+  originalValue: object;
+  originalMessage: KafkaMessage;
+  dlq?: DeadLetterQueue<any>;
+};
 
 /**
  * Configuration interface for Kafka topics including namespace and version support
@@ -377,7 +475,7 @@ const handleMessage = async (
   streamingFunctionWithConfigList: [StreamingFunction, TransformConfig<any>][],
   message: KafkaMessage,
   producer: Producer,
-): Promise<SlimKafkaMessage[] | undefined> => {
+): Promise<KafkaMessageWithLineage[] | undefined> => {
   if (message.value === undefined || message.value === null) {
     logger.log(`Received message with no value, skipping...`);
     return undefined;
@@ -405,7 +503,13 @@ const handleMessage = async (
           if (deadLetterQueue) {
             // Create a dead letter record
             const deadLetterRecord = {
-              originalRecord: parsedData,
+              originalRecord: {
+                ...parsedData,
+                // Include original Kafka message metadata
+                __sourcePartition: message.partition,
+                __sourceOffset: message.offset,
+                __sourceTimestamp: message.timestamp,
+              },
               errorMessage: e instanceof Error ? e.message : String(e),
               errorType: e instanceof Error ? e.constructor.name : "Unknown",
               failedAt: new Date(),
@@ -441,21 +545,39 @@ const handleMessage = async (
       }),
     );
 
-    if (transformedData) {
-      if (Array.isArray(transformedData)) {
-        // We Promise.all streamingFunctionWithConfigList above.
-        // Promise.all always wraps results in an array, even for single transforms.
-        // When a transform returns an array (e.g., [msg1, msg2] to emit multiple messages),
-        // we get [[msg1, msg2]]. flat() unwraps one level so each item becomes its own message.
-        // Without flat(), the entire array would be JSON.stringify'd as a single message.
-        return transformedData
-          .flat()
-          .filter((item) => item !== undefined && item !== null)
-          .map((item) => ({ value: JSON.stringify(item) }));
-      } else {
-        return [{ value: JSON.stringify(transformedData) }];
-      }
-    }
+    return transformedData
+      .map((userFunctionOutput, i) => {
+        const [_, config] = streamingFunctionWithConfigList[i];
+        if (userFunctionOutput) {
+          if (Array.isArray(userFunctionOutput)) {
+            // We Promise.all streamingFunctionWithConfigList above.
+            // Promise.all always wraps results in an array, even for single transforms.
+            // When a transform returns an array (e.g., [msg1, msg2] to emit multiple messages),
+            // we get [[msg1, msg2]]. flat() unwraps one level so each item becomes its own message.
+            // Without flat(), the entire array would be JSON.stringify'd as a single message.
+            return userFunctionOutput
+              .flat()
+              .filter((item) => item !== undefined && item !== null)
+              .map((item) => ({
+                value: JSON.stringify(item),
+                originalValue: parsedData,
+                originalMessage: message,
+                dlq: config.deadLetterQueue ?? undefined,
+              }));
+          } else {
+            return [
+              {
+                value: JSON.stringify(userFunctionOutput),
+                originalValue: parsedData,
+                originalMessage: message,
+                dlq: config.deadLetterQueue ?? undefined,
+              },
+            ];
+          }
+        }
+      })
+      .flat()
+      .filter((item) => item !== undefined && item !== null);
   } catch (e) {
     // TODO: Track failure rate
     logger.error(`Failed to transform data`);
@@ -472,10 +594,9 @@ const handleMessage = async (
  *
  * @param logger - Logger instance for outputting send status and errors
  * @param metrics - Metrics object for tracking message counts and bytes sent
- * @param args - Configuration arguments containing target topic
+ * @param targetTopic - Target topic configuration
  * @param producer - KafkaJS Producer instance for sending messages
- * @param messages - Array of processed messages to send
- * @param maxMessageSize - Maximum allowed size in bytes for a message chunk
+ * @param messages - Array of processed messages to send (messages carry their own DLQ config)
  * @returns Promise that resolves when all messages are sent
  *
  * The function will:
@@ -483,16 +604,17 @@ const handleMessage = async (
  * 2. Send each chunk to the target topic
  * 3. Track metrics for bytes sent and message counts
  * 4. Log success/failure of sends
+ * 5. Send failed messages to DLQ if configured in message lineage
  */
 const sendMessages = async (
   logger: Logger,
   metrics: Metrics,
   targetTopic: TopicConfig,
   producer: Producer,
-  messages: SlimKafkaMessage[],
+  messages: KafkaMessageWithLineage[],
 ): Promise<void> => {
   try {
-    let chunk: SlimKafkaMessage[] = [];
+    let chunk: KafkaMessageWithLineage[] = [];
     let chunkSize = 0;
 
     const maxMessageSize = targetTopic.max_message_bytes || 1024 * 1024;
@@ -704,10 +826,7 @@ const startConsumer = async (
     eachBatchAutoResolve: true,
     // Enable parallel processing of partitions
     partitionsConsumedConcurrently: PARTITIONS_CONSUMED_CONCURRENTLY, // To be adjusted
-    // Note: Kafka client batch handler parameters are typed as 'any' because
-    // @confluentinc/kafka-javascript doesn't export proper TypeScript interfaces
-    // for these callback parameters
-    eachBatch: async ({ batch, heartbeat, isRunning, isStale }: any) => {
+    eachBatch: async ({ batch, heartbeat, isRunning, isStale }) => {
       if (!isRunning() || isStale()) {
         return;
       }
@@ -721,19 +840,9 @@ const startConsumer = async (
       logger.log(`Received ${batch.messages.length} message(s)`);
 
       let index = 0;
-      // Node.js 16.5.0+ added .map() and .toArray() methods to Readable streams,
-      // but TypeScript definitions may not include them yet. We extend the type
-      // to provide proper typing without using 'any'.
-      const readableStream = Readable.from(batch.messages) as Readable & {
-        map<T>(
-          // Note: 'any' used here because batch.messages can contain various
-          // Kafka message formats depending on the source topic structure
-          fn: (message: any) => Promise<T>,
-          options: { concurrency: number },
-        ): Readable & { toArray(): Promise<T[]> };
-      };
+      const readableStream = Readable.from(batch.messages);
 
-      const processedMessages: (SlimKafkaMessage[] | undefined)[] =
+      const processedMessages: (KafkaMessageWithLineage[] | undefined)[] =
         await readableStream
           .map(
             async (message) => {
@@ -769,12 +878,13 @@ const startConsumer = async (
       await heartbeat();
 
       if (filteredMessages.length > 0) {
+        // Messages now carry their own DLQ configuration in the lineage
         await sendMessages(
           logger,
           metrics,
           args.targetTopic,
           producer,
-          filteredMessages as SlimKafkaMessage[],
+          filteredMessages as KafkaMessageWithLineage[],
         );
       }
     },
