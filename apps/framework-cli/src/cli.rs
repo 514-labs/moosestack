@@ -51,6 +51,7 @@ use crate::cli::{
 use crate::framework::core::check::check_system_reqs;
 use crate::framework::core::infrastructure_map::InfrastructureMap;
 use crate::framework::core::primitive_map::PrimitiveMap;
+use crate::infrastructure::olap::clickhouse::config::parse_clickhouse_connection_string;
 use crate::metrics::TelemetryMetadata;
 use crate::project::Project;
 use crate::utilities::capture::{wait_for_usage_capture, ActivityType};
@@ -202,6 +203,32 @@ fn resolve_serverless_urls<'a>(
     }
 
     Ok((resolved_clickhouse_url, resolved_redis_url))
+}
+
+/// Override project's ClickHouse config from flag/env var url
+/// This allows the user to run these commands against other environments
+/// while keeping moose config focused on dev infrastructure
+fn override_project_config_from_url(
+    project: &mut Project,
+    clickhouse_url: &str,
+) -> Result<(), RoutineFailure> {
+    let clickhouse_config = parse_clickhouse_connection_string(clickhouse_url).map_err(|e| {
+        RoutineFailure::new(
+            Message::new(
+                "Configuration".to_string(),
+                "Failed to parse ClickHouse URL".to_string(),
+            ),
+            e,
+        )
+    })?;
+
+    project.clickhouse_config = clickhouse_config;
+    info!(
+        "Overriding project ClickHouse config from CLI: database = {}",
+        project.clickhouse_config.db_name
+    );
+
+    Ok(())
 }
 
 /// Runs local infrastructure with a configurable timeout
@@ -664,6 +691,10 @@ pub async fn top_command_handler(
                     redis_url.as_deref(),
                 )?;
 
+                if let Some(ref ch_url) = resolved_clickhouse_url {
+                    override_project_config_from_url(&mut project, ch_url)?;
+                }
+
                 // Validate that at least one remote source is configured
                 let remote = if let Some(ref ch_url) = resolved_clickhouse_url {
                     routines::RemoteSource::Serverless {
@@ -682,7 +713,7 @@ pub async fn top_command_handler(
                     }));
                 };
 
-                let result = routines::remote_gen_migration(&mut project, remote)
+                let result = routines::remote_gen_migration(&project, remote)
                     .await
                     .map_err(|e| {
                         RoutineFailure::new(
@@ -938,12 +969,9 @@ pub async fn top_command_handler(
                 })
             })?;
 
-            routines::migrate::execute_migration(
-                &mut project,
-                &resolved_clickhouse_url,
-                resolved_redis_url.as_deref(),
-            )
-            .await?;
+            override_project_config_from_url(&mut project, &resolved_clickhouse_url)?;
+
+            routines::migrate::execute_migration(&project, resolved_redis_url.as_deref()).await?;
 
             wait_for_usage_capture(capture_handle).await;
 

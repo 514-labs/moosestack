@@ -6,9 +6,7 @@ use crate::framework::core::infrastructure::table::Table;
 use crate::framework::core::infrastructure_map::InfrastructureMap;
 use crate::framework::core::migration_plan::MigrationPlan;
 use crate::framework::core::state_storage::{StateStorage, StateStorageBuilder};
-use crate::infrastructure::olap::clickhouse::config::{
-    parse_clickhouse_connection_string, ClickHouseConfig,
-};
+use crate::infrastructure::olap::clickhouse::config::ClickHouseConfig;
 use crate::infrastructure::olap::clickhouse::IgnorableOperation;
 use crate::infrastructure::olap::clickhouse::{
     check_ready, create_client, ConfiguredDBClient, SerializableOlapOperation,
@@ -18,7 +16,6 @@ use crate::utilities::constants::{
     MIGRATION_AFTER_STATE_FILE, MIGRATION_BEFORE_STATE_FILE, MIGRATION_FILE,
 };
 use anyhow::Result;
-use log::info;
 use std::collections::HashMap;
 
 /// Migration files loaded from disk
@@ -420,24 +417,10 @@ fn report_partial_failure(succeeded_count: usize, total_count: usize) {
 
 /// Execute migration plan from CLI (moose migrate command)
 pub async fn execute_migration(
-    project: &mut Project,
-    clickhouse_url: &str,
+    project: &Project,
     redis_url: Option<&str>,
 ) -> Result<(), RoutineFailure> {
-    // Parse ClickHouse URL and override project config
-    // This ensures the CLI flag takes precedence over moose.config.toml
-    let clickhouse_config = parse_clickhouse_connection_string(clickhouse_url).map_err(|e| {
-        RoutineFailure::new(
-            Message::new(
-                "ClickHouse".to_string(),
-                "Failed to parse connection URL".to_string(),
-            ),
-            e,
-        )
-    })?;
-
-    project.clickhouse_config = clickhouse_config.clone();
-    info!("Aligned project clickhouse config with remote clickhouse url");
+    let clickhouse_config = &project.clickhouse_config;
 
     // Build state storage based on config
     let state_storage = StateStorageBuilder::from_config(project)
@@ -530,7 +513,7 @@ pub async fn execute_migration(
         // Execute migration
         execute_migration_plan(
             project,
-            &clickhouse_config,
+            clickhouse_config,
             current_tables,
             &target_infra_map,
             state_storage.as_ref(),
