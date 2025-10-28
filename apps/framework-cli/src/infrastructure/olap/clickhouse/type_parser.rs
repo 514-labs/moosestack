@@ -137,7 +137,11 @@ enum Token {
                     Some('n') => result.push('\n'),
                     Some('r') => result.push('\r'),
                     Some('t') => result.push('\t'),
-                    Some(c) => result.push(c),
+                    Some(c) => {
+                        // For unrecognized escape sequences, preserve the backslash
+                        result.push('\\');
+                        result.push(c);
+                    }
                     None => break,
                 }
             } else {
@@ -161,7 +165,11 @@ enum Token {
                     Some('n') => result.push('\n'),
                     Some('r') => result.push('\r'),
                     Some('t') => result.push('\t'),
-                    Some(c) => result.push(c),
+                    Some(c) => {
+                        // For unrecognized escape sequences, preserve the backslash
+                        result.push('\\');
+                        result.push(c);
+                    }
                     None => break,
                 }
             } else {
@@ -1247,48 +1255,44 @@ impl Parser {
             if let Token::Identifier(name) = self.current_token() {
                 if name == "SKIP" {
                     self.advance();
-
-                    // Check if next is REGEXP
-                    if let Token::Identifier(next_name) = self.current_token() {
-                        if next_name == "REGEXP" {
-                            self.advance();
-
-                            // Parse the pattern string
-                            match self.current_token() {
-                                Token::StringLiteral(pattern) => {
-                                    let pattern_clone = pattern.clone();
-                                    self.advance();
-                                    parameters.push(JsonParameter::SkipRegexp(pattern_clone));
-                                }
-                                _ => {
-                                    return Err(ParseError::UnexpectedToken {
-                                        expected: "string literal for SKIP REGEXP pattern"
-                                            .to_string(),
-                                        found: format!("{:?}", self.current_token()),
-                                    });
-                                }
-                            }
-                        } else {
-                            // SKIP path (identifier that wasn't REGEXP)
-                            // We already consumed SKIP and saw an identifier that wasn't REGEXP
-                            // So we use the current identifier as the path
-                            parameters.push(JsonParameter::SkipPath(next_name.clone()));
-                            self.advance();
-                        }
-                    } else {
-                        // SKIP followed by string or identifier
-                        match self.current_token() {
-                            Token::StringLiteral(path) | Token::Identifier(path) => {
-                                let path_clone = path.clone();
+                    match self.current_token() {
+                        Token::Identifier(next_name) => {
+                            if next_name == "REGEXP" {
                                 self.advance();
-                                parameters.push(JsonParameter::SkipPath(path_clone));
+
+                                // Parse the pattern string
+                                match self.current_token() {
+                                    Token::StringLiteral(pattern) => {
+                                        let pattern_clone = pattern.clone();
+                                        self.advance();
+                                        parameters.push(JsonParameter::SkipRegexp(pattern_clone));
+                                    }
+                                    _ => {
+                                        return Err(ParseError::UnexpectedToken {
+                                            expected: "string literal for SKIP REGEXP pattern"
+                                                .to_string(),
+                                            found: format!("{:?}", self.current_token()),
+                                        });
+                                    }
+                                }
+                            } else {
+                                // SKIP path (identifier that wasn't REGEXP)
+                                // We already consumed SKIP and saw an identifier that wasn't REGEXP
+                                // So we use the current identifier as the path
+                                parameters.push(JsonParameter::SkipPath(next_name.clone()));
+                                self.advance();
                             }
-                            _ => {
-                                return Err(ParseError::UnexpectedToken {
-                                    expected: "path for SKIP".to_string(),
-                                    found: format!("{:?}", self.current_token()),
-                                });
-                            }
+                        }
+                        Token::StringLiteral(path) => {
+                            let path_clone = path.clone();
+                            self.advance();
+                            parameters.push(JsonParameter::SkipPath(path_clone));
+                        }
+                        _ => {
+                            return Err(ParseError::UnexpectedToken {
+                                expected: "path for SKIP".to_string(),
+                                found: format!("{:?}", self.current_token()),
+                            });
                         }
                     }
                 } else if name == "max_dynamic_types" {
@@ -2869,6 +2873,65 @@ mod tests {
                 assert_eq!(opts.typed_paths[1].0, "status");
             }
             _ => panic!("Expected Json column type"),
+        }
+    }
+
+    #[test]
+    fn test_unrecognized_escape_sequences() {
+        // Test that unrecognized escape sequences preserve the backslash
+        // This is important for regex patterns like `\.` which should not become just `.`
+
+        // Test with single quotes
+        let result = parse_clickhouse_type("JSON(SKIP 'test\\.pattern')").unwrap();
+        match result {
+            ClickHouseTypeNode::JSON(Some(params)) => {
+                assert_eq!(params.len(), 1);
+                // The `\.` should be preserved as `\.`, not reduced to `.`
+                assert_eq!(
+                    params[0],
+                    JsonParameter::SkipPath("test\\.pattern".to_string())
+                );
+            }
+            _ => panic!("Expected JSON with SKIP parameter"),
+        }
+
+        // Test with double quotes
+        let result = parse_clickhouse_type(r#"JSON(SKIP "test\.pattern")"#).unwrap();
+        match result {
+            ClickHouseTypeNode::JSON(Some(params)) => {
+                assert_eq!(params.len(), 1);
+                assert_eq!(
+                    params[0],
+                    JsonParameter::SkipPath("test\\.pattern".to_string())
+                );
+            }
+            _ => panic!("Expected JSON with SKIP parameter"),
+        }
+
+        // Test various unrecognized escape sequences
+        let test_cases = vec![
+            ("'\\.test'", "\\.test"),   // Escaped dot
+            ("'\\xAB'", "\\xAB"),       // Hex-like sequence
+            ("'\\uXXXX'", "\\uXXXX"),   // Unicode-like sequence
+            ("'\\d+'", "\\d+"),         // Regex digit class
+            ("'\\s*'", "\\s*"),         // Regex whitespace class
+            ("'\\w{2,5}'", "\\w{2,5}"), // Regex word class with quantifier
+        ];
+
+        for (input, expected) in test_cases {
+            let full_input = format!("JSON(SKIP {input})");
+            let result = parse_clickhouse_type(&full_input).unwrap();
+            match result {
+                ClickHouseTypeNode::JSON(Some(params)) => {
+                    assert_eq!(params.len(), 1);
+                    assert_eq!(
+                        params[0],
+                        JsonParameter::SkipPath(expected.to_string()),
+                        "Failed for input: {input}"
+                    );
+                }
+                _ => panic!("Expected JSON with SKIP parameter for input: {input}"),
+            }
         }
     }
 
