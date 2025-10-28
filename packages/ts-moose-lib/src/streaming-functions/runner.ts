@@ -171,7 +171,9 @@ const sendChunkWithRetry = async (
         // If it's not MESSAGE_TOO_LARGE or we can't split further, re-throw
         if (attempts >= maxRetries) {
           // Before throwing, try to send all messages to DLQ if configured
-          let anyMessageSentToDLQ = false;
+          // We can only avoid throwing if ALL messages are successfully sent to their DLQs
+          let messagesHandledByDLQ = 0;
+          let messagesWithoutDLQ = 0;
           const dlqErrors: string[] = [];
 
           for (const failedMessage of currentMessages) {
@@ -209,33 +211,52 @@ const sendChunkWithRetry = async (
                   messages: [{ value: JSON.stringify(deadLetterRecord) }],
                 });
                 logger.log(`Sent failed message to DLQ ${dlqTopicName}`);
-                anyMessageSentToDLQ = true;
+                messagesHandledByDLQ++;
               } catch (dlqError) {
                 const errorMsg = `Failed to send message to DLQ: ${dlqError}`;
                 logger.error(errorMsg);
                 dlqErrors.push(errorMsg);
               }
             } else if (!dlqTopic) {
-              logger.warn(`Cannot send to DLQ: no DLQ configured`);
+              messagesWithoutDLQ++;
+              logger.warn(
+                `Cannot send to DLQ: no DLQ configured for message (batch has mixed DLQ configurations)`,
+              );
             } else {
+              messagesWithoutDLQ++;
               logger.warn(
                 `Cannot send to DLQ: original message value not available`,
               );
             }
           }
 
-          // If we successfully sent at least one message to DLQ, don't throw
-          if (anyMessageSentToDLQ && dlqErrors.length === 0) {
+          // Only suppress the error if ALL messages were successfully sent to their DLQs
+          const allMessagesHandled =
+            messagesHandledByDLQ === currentMessages.length &&
+            messagesWithoutDLQ === 0 &&
+            dlqErrors.length === 0;
+
+          if (allMessagesHandled) {
             logger.log(
-              `All failed messages sent to DLQ, not throwing original error`,
+              `All ${messagesHandledByDLQ} failed message(s) sent to DLQ, not throwing original error`,
             );
             return;
           }
 
-          // If we had partial success or total failure, throw the original error
+          // Otherwise, throw the original error because we couldn't handle all messages
+          if (messagesWithoutDLQ > 0) {
+            logger.error(
+              `Cannot handle batch failure: ${messagesWithoutDLQ} message(s) have no DLQ configured`,
+            );
+          }
           if (dlqErrors.length > 0) {
             logger.error(
               `Some messages failed to send to DLQ: ${dlqErrors.join(", ")}`,
+            );
+          }
+          if (messagesHandledByDLQ > 0) {
+            logger.warn(
+              `Partial DLQ success: ${messagesHandledByDLQ}/${currentMessages.length} message(s) sent to DLQ, but throwing due to incomplete batch handling`,
             );
           }
           throw error;
