@@ -635,7 +635,6 @@ const sendMessages = async (
           producer,
           chunk,
           maxMessageSize,
-          3, // maxRetries
         );
         logger.log(
           `Sent ${chunk.length} transformed records to ${targetTopic.name}`,
@@ -665,7 +664,6 @@ const sendMessages = async (
         producer,
         chunk,
         maxMessageSize,
-        3, // maxRetries
       );
       logger.log(
         `Sent final ${chunk.length} transformed data to ${targetTopic.name}`,
