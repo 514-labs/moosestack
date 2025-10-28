@@ -51,13 +51,14 @@ use crate::cli::{
 use crate::framework::core::check::check_system_reqs;
 use crate::framework::core::infrastructure_map::InfrastructureMap;
 use crate::framework::core::primitive_map::PrimitiveMap;
+use crate::infrastructure::olap::clickhouse::config::parse_clickhouse_connection_string;
 use crate::metrics::TelemetryMetadata;
 use crate::project::Project;
 use crate::utilities::capture::{wait_for_usage_capture, ActivityType};
 use crate::utilities::constants::KEY_REMOTE_CLICKHOUSE_URL;
 use crate::utilities::constants::{
-    CLI_VERSION, MIGRATION_AFTER_STATE_FILE, MIGRATION_BEFORE_STATE_FILE, MIGRATION_FILE,
-    PROJECT_NAME_ALLOW_PATTERN,
+    CLI_VERSION, ENV_CLICKHOUSE_URL, MIGRATION_AFTER_STATE_FILE, MIGRATION_BEFORE_STATE_FILE,
+    MIGRATION_FILE, PROJECT_NAME_ALLOW_PATTERN,
 };
 use crate::utilities::keyring::{KeyringSecretRepository, SecretRepository};
 
@@ -170,6 +171,63 @@ fn check_project_name(name: &str) -> Result<(), RoutineFailure> {
             ),
         }));
     }
+    Ok(())
+}
+
+/// Resolves ClickHouse and Redis URLs from flags and environment variables, and validates Redis URL if needed
+fn resolve_serverless_urls<'a>(
+    project: &Project,
+    clickhouse_url: Option<&'a str>,
+    redis_url: Option<&'a str>,
+) -> Result<(Option<String>, Option<String>), RoutineFailure> {
+    use crate::utilities::constants::{ENV_CLICKHOUSE_URL, ENV_REDIS_URL};
+
+    // Resolve ClickHouse URL from flag or env var
+    let clickhouse_url_from_env = std::env::var(ENV_CLICKHOUSE_URL).ok();
+    let resolved_clickhouse_url = clickhouse_url.map(String::from).or(clickhouse_url_from_env);
+
+    // Resolve Redis URL from flag or env var
+    let redis_url_from_env = std::env::var(ENV_REDIS_URL).ok();
+    let resolved_redis_url = redis_url.map(String::from).or(redis_url_from_env);
+
+    // Validate Redis URL is provided when using Redis for state storage
+    if project.state_config.storage == "redis" && resolved_redis_url.is_none() {
+        return Err(RoutineFailure::error(Message {
+            action: "Configuration".to_string(),
+            details: format!(
+                "--redis-url required when state_config.storage = \"redis\" \
+                 (or set {} environment variable)",
+                ENV_REDIS_URL
+            ),
+        }));
+    }
+
+    Ok((resolved_clickhouse_url, resolved_redis_url))
+}
+
+/// Override project's ClickHouse config from flag/env var url
+/// This allows the user to run these commands against other environments
+/// while keeping moose config focused on dev infrastructure
+fn override_project_config_from_url(
+    project: &mut Project,
+    clickhouse_url: &str,
+) -> Result<(), RoutineFailure> {
+    let clickhouse_config = parse_clickhouse_connection_string(clickhouse_url).map_err(|e| {
+        RoutineFailure::new(
+            Message::new(
+                "Configuration".to_string(),
+                "Failed to parse ClickHouse URL".to_string(),
+            ),
+            e,
+        )
+    })?;
+
+    project.clickhouse_config = clickhouse_config;
+    info!(
+        "Overriding project ClickHouse config from CLI: database = {}",
+        project.clickhouse_config.db_name
+    );
+
     Ok(())
 }
 
@@ -609,11 +667,12 @@ pub async fn top_command_handler(
                 url,
                 token,
                 clickhouse_url,
+                redis_url,
                 save,
             }) => {
                 info!("Running generate migration command");
 
-                let project = load_project()?;
+                let mut project = load_project()?;
 
                 let capture_handle = crate::utilities::capture::capture_usage(
                     ActivityType::GenerateMigrationCommand,
@@ -625,15 +684,33 @@ pub async fn top_command_handler(
 
                 check_project_name(&project.name())?;
 
-                let remote = if let Some(clickhouse_url) = clickhouse_url {
-                    routines::RemoteSource::ClickHouse {
-                        url: clickhouse_url,
+                // Resolve URLs from flags or env vars
+                let (resolved_clickhouse_url, resolved_redis_url) = resolve_serverless_urls(
+                    &project,
+                    clickhouse_url.as_deref(),
+                    redis_url.as_deref(),
+                )?;
+
+                if let Some(ref ch_url) = resolved_clickhouse_url {
+                    override_project_config_from_url(&mut project, ch_url)?;
+                }
+
+                // Validate that at least one remote source is configured
+                let remote = if let Some(ref ch_url) = resolved_clickhouse_url {
+                    routines::RemoteSource::Serverless {
+                        clickhouse_url: ch_url,
+                        redis_url: &resolved_redis_url,
                     }
-                } else {
+                } else if let Some(ref moose_url) = url {
                     routines::RemoteSource::Moose {
-                        url: url.as_ref().unwrap(),
+                        url: moose_url,
                         token,
                     }
+                } else {
+                    return Err(RoutineFailure::error(Message {
+                        action: "Configuration".to_string(),
+                        details: "Either --url or --clickhouse-url is required (or set environment variables)".to_string(),
+                    }));
                 };
 
                 let result = routines::remote_gen_migration(&project, remote)
@@ -861,9 +938,12 @@ pub async fn top_command_handler(
                 "Successfully planned changes to the infrastructure".to_string(),
             )))
         }
-        Commands::Migrate { clickhouse_url } => {
+        Commands::Migrate {
+            clickhouse_url,
+            redis_url,
+        } => {
             info!("Running migrate command");
-            let project = load_project()?;
+            let mut project = load_project()?;
 
             let capture_handle = crate::utilities::capture::capture_usage(
                 ActivityType::MigrateCommand,
@@ -875,7 +955,23 @@ pub async fn top_command_handler(
 
             check_project_name(&project.name())?;
 
-            routines::migrate::execute_migration(&project, clickhouse_url).await?;
+            // Resolve URLs from flags or env vars
+            let (resolved_clickhouse_url, resolved_redis_url) =
+                resolve_serverless_urls(&project, clickhouse_url.as_deref(), redis_url.as_deref())?;
+
+            let resolved_clickhouse_url = resolved_clickhouse_url.ok_or_else(|| {
+                RoutineFailure::error(Message {
+                    action: "Configuration".to_string(),
+                    details: format!(
+                        "--clickhouse-url required (or set {} environment variable)",
+                        ENV_CLICKHOUSE_URL
+                    ),
+                })
+            })?;
+
+            override_project_config_from_url(&mut project, &resolved_clickhouse_url)?;
+
+            routines::migrate::execute_migration(&project, resolved_redis_url.as_deref()).await?;
 
             wait_for_usage_capture(capture_handle).await;
 

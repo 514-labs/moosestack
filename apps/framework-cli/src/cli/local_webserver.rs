@@ -3208,6 +3208,7 @@ async fn get_admin_reconciled_inframap(
 
     // Create state storage based on project configuration
     let state_storage = StateStorageBuilder::from_config(project)
+        .clickhouse_config(Some(project.clickhouse_config.clone()))
         .redis_client(Some(redis_client))
         .build()
         .await
