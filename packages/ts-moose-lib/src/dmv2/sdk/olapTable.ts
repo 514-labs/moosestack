@@ -365,7 +365,7 @@ export type S3QueueConfig<T> = Omit<
  */
 export type S3Config<T> = Omit<
   BaseOlapConfig<T>,
-  "orderByFields" | "orderByExpression" | "partitionBy" | "sampleByExpression"
+  "orderByFields" | "orderByExpression" | "sampleByExpression"
 > & {
   engine: ClickHouseEngines.S3;
   /** S3 path (e.g., 's3://bucket/path/file.json') */
