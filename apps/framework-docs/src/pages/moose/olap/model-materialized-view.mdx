@@ -621,6 +621,10 @@ Go to the [Advanced: Writing SELECT statements to Aggregated tables](#writing-se
 ## Backfill Destination Tables
 When the MaterializedView is created, Moose backfills the destination once by running your `SELECT` (so you start with a fully populated table).
 
+<Callout type="info" title="S3Queue sources are not backfilled" compact>
+Materialized views that source from S3Queue tables are **not backfilled** automatically. S3Queue tables only process new files added to S3 after the table is created - there is no historical data to backfill from. The MV will start populating as new files arrive in S3.
+</Callout>
+
 You can see the SQL that Moose will run to backfill the destination table when you generate the [Migration Plan](./migration-plan).
 
 During dev mode, as soon as you save the MaterializedView, Moose will run the backfill and you can see the results in the destination table by querying it in your local ClickHouse instance.
