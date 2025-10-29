@@ -1673,7 +1673,6 @@ impl InfrastructureMap {
         let mut table_additions = 0;
 
         for table in self_tables.values() {
-            // KEY NOTE: `id` here is from self_tables (local map key, could be OLD or NEW format)
             if let Some(target_table) = target_tables.get(&table.id(default_database)) {
                 if !tables_equal_ignore_metadata(table, target_table) {
                     // Respect lifecycle: ExternallyManaged tables are never modified
@@ -1830,7 +1829,7 @@ impl InfrastructureMap {
         }
 
         for table in target_tables.values() {
-            if find_table_from_infra_map(table, self_tables, default_database).is_some() {
+            if find_table_from_infra_map(table, self_tables, default_database).is_none() {
                 // Respect lifecycle: ExternallyManaged tables are never added automatically
                 if table.life_cycle == LifeCycle::ExternallyManaged && respect_life_cycle {
                     log::debug!(
