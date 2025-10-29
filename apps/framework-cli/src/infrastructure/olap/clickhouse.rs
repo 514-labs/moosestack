@@ -1337,6 +1337,7 @@ pub async fn check_table_size(
 }
 
 pub struct TableWithUnsupportedType {
+    pub database: String,
     pub name: String,
     pub col_name: String,
     pub col_type: String,
@@ -1548,6 +1549,7 @@ impl OlapOperations for ConfiguredDBClient {
                                         col_type, col_name, table_name
                                     );
                                     unsupported_tables.push(TableWithUnsupportedType {
+                                        database,
                                         name: table_name,
                                         col_name,
                                         col_type,
@@ -1566,6 +1568,7 @@ impl OlapOperations for ConfiguredDBClient {
                                     col_type, col_name, table_name
                                 );
                                 unsupported_tables.push(TableWithUnsupportedType {
+                                    database,
                                     name: table_name,
                                     col_name,
                                     col_type,
