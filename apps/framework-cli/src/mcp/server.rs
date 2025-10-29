@@ -12,7 +12,9 @@ use rmcp::{
 };
 use std::sync::Arc;
 
-use super::tools::{create_error_result, get_source, infra_map, logs, query_olap, sample_stream};
+use super::tools::{
+    create_error_result, get_source, infra_issues, infra_map, logs, query_olap, sample_stream,
+};
 use crate::cli::processing_coordinator::ProcessingCoordinator;
 use crate::infrastructure::olap::clickhouse::config::ClickHouseConfig;
 use crate::infrastructure::redis::redis_client::RedisClient;
@@ -81,6 +83,7 @@ impl ServerHandler for MooseMcpHandler {
             tools: vec![
                 logs::tool_definition(),
                 infra_map::tool_definition(),
+                infra_issues::tool_definition(),
                 query_olap::tool_definition(),
                 sample_stream::tool_definition(),
                 get_source::tool_definition(),
@@ -103,6 +106,12 @@ impl ServerHandler for MooseMcpHandler {
             "get_infra_map" => Ok(infra_map::handle_call(
                 param.arguments.as_ref(),
                 self.redis_client.clone(),
+            )
+            .await),
+            "diagnose_infrastructure" => Ok(infra_issues::handle_call(
+                param.arguments.as_ref(),
+                self.redis_client.clone(),
+                &self.clickhouse_config,
             )
             .await),
             "query_olap" => Ok(query_olap::handle_call(
