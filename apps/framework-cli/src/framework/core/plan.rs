@@ -119,7 +119,7 @@ pub async fn reconcile_with_reality<T: OlapOperations>(
     // If there are no discrepancies, return the original map
     if discrepancies.is_empty() {
         debug!("No discrepancies found between infrastructure map and actual database state");
-        return Ok(current_infra_map.clone());
+        return Ok(reconciled_map.clone());
     }
 
     debug!(
