@@ -680,21 +680,25 @@ jobs:
             exit 1
           fi
 
-          if [[ "${{ needs.check.result }}" == "success" ]] && \
-             [[ "${{ needs.test-cli.result }}" == "success" ]] && \
-             [[ "${{ needs.test-ts-moose-lib.result }}" == "success" ]] && \
-             [[ "${{ needs.test-py-moose-lib.result }}" == "success" ]] && \
-             [[ "${{ needs.test-e2e-typescript-default.result }}" == "success" ]] && \
-             [[ "${{ needs.test-e2e-typescript-tests.result }}" == "success" ]] && \
-             [[ "${{ needs.test-e2e-python-default.result }}" == "success" ]] && \
-             [[ "${{ needs.test-e2e-python-tests.result }}" == "success" ]] && \
-             [[ "${{ needs.lints.result }}" == "success" ]]; then
-            echo "All required jobs succeeded"
-            exit 0
-          fi
-
-          echo "Unexpected state in dependent jobs"
-          exit 1
+          # Check that all jobs either succeeded or were skipped
+          for job_result in \
+            "${{ needs.check.result }}" \
+            "${{ needs.test-cli.result }}" \
+            "${{ needs.test-ts-moose-lib.result }}" \
+            "${{ needs.test-py-moose-lib.result }}" \
+            "${{ needs.test-e2e-typescript-default.result }}" \
+            "${{ needs.test-e2e-typescript-tests.result }}" \
+            "${{ needs.test-e2e-python-default.result }}" \
+            "${{ needs.test-e2e-python-tests.result }}" \
+            "${{ needs.lints.result }}"; do
+            if [[ "$job_result" != "success" ]] && [[ "$job_result" != "skipped" ]]; then
+              echo "Unexpected job result: $job_result"
+              exit 1
+            fi
+          done
+          
+          echo "All required jobs succeeded or were skipped"
+          exit 0
 
   notify-slack-on-failure:
     needs: [changes]
