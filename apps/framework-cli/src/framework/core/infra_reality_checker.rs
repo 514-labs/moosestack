@@ -499,7 +499,10 @@ mod tests {
         });
 
         let mock_client = MockOlapClient {
-            tables: vec![actual_table],
+            tables: vec![Table {
+                database: Some(DEFAULT_DATABASE_NAME.to_string()),
+                ..actual_table.clone()
+            }],
         };
 
         let mut infra_map = InfrastructureMap {
@@ -521,7 +524,7 @@ mod tests {
 
         infra_map
             .tables
-            .insert(infra_table.name.clone(), infra_table);
+            .insert(infra_table.id(DEFAULT_DATABASE_NAME), infra_table);
 
         let checker = InfraRealityChecker::new(mock_client);
         let project = create_test_project();
@@ -570,7 +573,10 @@ mod tests {
         infra_table.order_by = OrderBy::Fields(vec!["id".to_string()]);
 
         let mock_client = MockOlapClient {
-            tables: vec![actual_table],
+            tables: vec![Table {
+                database: Some(DEFAULT_DATABASE_NAME.to_string()),
+                ..actual_table.clone()
+            }],
         };
 
         let mut infra_map = InfrastructureMap {
@@ -592,7 +598,7 @@ mod tests {
 
         infra_map
             .tables
-            .insert(infra_table.name.clone(), infra_table);
+            .insert(infra_table.id(DEFAULT_DATABASE_NAME), infra_table);
 
         let checker = InfraRealityChecker::new(mock_client);
         let project = create_test_project();
@@ -634,7 +640,10 @@ mod tests {
         infra_table.engine = None;
 
         let mock_client = MockOlapClient {
-            tables: vec![actual_table],
+            tables: vec![Table {
+                database: Some(DEFAULT_DATABASE_NAME.to_string()),
+                ..actual_table.clone()
+            }],
         };
 
         let mut infra_map = InfrastructureMap {
@@ -656,7 +665,7 @@ mod tests {
 
         infra_map
             .tables
-            .insert(infra_table.name.clone(), infra_table);
+            .insert(infra_table.id(DEFAULT_DATABASE_NAME), infra_table);
 
         let checker = InfraRealityChecker::new(mock_client);
         let project = create_test_project();

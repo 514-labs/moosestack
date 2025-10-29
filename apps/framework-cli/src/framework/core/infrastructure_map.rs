@@ -3231,10 +3231,17 @@ mod diff_tests {
         before.order_by = OrderBy::Fields(vec!["id".to_string()]);
         after.order_by = OrderBy::Fields(vec!["id".to_string(), "name".to_string()]);
 
+        // Set database field for both tables
+        before.database = Some(DEFAULT_DATABASE_NAME.to_string());
+        after.database = Some(DEFAULT_DATABASE_NAME.to_string());
+
+        let before_id = before.id(DEFAULT_DATABASE_NAME);
+        let after_id = after.id(DEFAULT_DATABASE_NAME);
+
         let mut changes = Vec::new();
         InfrastructureMap::diff_tables(
-            &HashMap::from([("test".to_string(), before)]),
-            &HashMap::from([("test".to_string(), after)]),
+            &HashMap::from([(before_id.clone(), before)]),
+            &HashMap::from([(after_id, after)]),
             &mut changes,
             true,
             DEFAULT_DATABASE_NAME,
@@ -3269,10 +3276,17 @@ mod diff_tests {
             is_deleted: None,
         });
 
+        // Set database field for both tables
+        before.database = Some(DEFAULT_DATABASE_NAME.to_string());
+        after.database = Some(DEFAULT_DATABASE_NAME.to_string());
+
+        let before_id = before.id(DEFAULT_DATABASE_NAME);
+        let after_id = after.id(DEFAULT_DATABASE_NAME);
+
         let mut changes = Vec::new();
         InfrastructureMap::diff_tables(
-            &HashMap::from([("test".to_string(), before)]),
-            &HashMap::from([("test".to_string(), after)]),
+            &HashMap::from([(before_id.clone(), before)]),
+            &HashMap::from([(after_id, after)]),
             &mut changes,
             true,
             DEFAULT_DATABASE_NAME,

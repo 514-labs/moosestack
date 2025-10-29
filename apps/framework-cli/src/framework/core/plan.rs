@@ -612,22 +612,28 @@ mod tests {
             ttl: None,
         });
 
+        // Create test project first to get the database name
+        let project = create_test_project();
+        let db_name = &project.clickhouse_config.db_name;
+
         // Create mock OLAP client with the actual table
         let mock_client = MockOlapClient {
-            tables: vec![actual_table.clone()],
+            tables: vec![Table {
+                database: Some(db_name.clone()),
+                ..actual_table.clone()
+            }],
         };
 
         // Create infrastructure map with the infra table (no extra column)
         let mut infra_map = InfrastructureMap::default();
-        infra_map
-            .tables
-            .insert(infra_table.id(DEFAULT_DATABASE_NAME), infra_table.clone());
+        infra_map.default_database = db_name.clone();
+        infra_map.tables.insert(
+            infra_table.id(&infra_map.default_database),
+            infra_table.clone(),
+        );
 
         // Replace the normal check_reality function with our mock
         let reality_checker = InfraRealityChecker::new(mock_client);
-
-        // Create test project
-        let project = create_test_project();
 
         // Get the discrepancies
         let discrepancies = reality_checker
@@ -640,7 +646,10 @@ mod tests {
 
         // Create another mock client for reconciliation
         let reconcile_mock_client = MockOlapClient {
-            tables: vec![actual_table.clone()],
+            tables: vec![Table {
+                database: Some(db_name.clone()),
+                ..actual_table.clone()
+            }],
         };
 
         let target_table_names = HashSet::new();
