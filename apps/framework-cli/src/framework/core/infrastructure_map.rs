@@ -2159,6 +2159,7 @@ impl InfrastructureMap {
     /// A protocol buffer representation of the infrastructure map
     pub fn to_proto(&self) -> ProtoInfrastructureMap {
         ProtoInfrastructureMap {
+            default_database: self.default_database.clone(),
             topics: self
                 .topics
                 .iter()
@@ -2234,7 +2235,7 @@ impl InfrastructureMap {
         let proto = ProtoInfrastructureMap::parse_from_bytes(&bytes)?;
 
         Ok(InfrastructureMap {
-            default_database: default_database_name(),
+            default_database: proto.default_database,
             topics: proto
                 .topics
                 .into_iter()

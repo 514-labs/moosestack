@@ -93,6 +93,7 @@ pub async fn reconcile_with_reality<T: OlapOperations>(
 
     // Clone the map so we can modify it
     let mut reconciled_map = current_infra_map.clone();
+    reconciled_map.default_database = project.clickhouse_config.db_name.clone();
 
     if current_infra_map
         .tables
