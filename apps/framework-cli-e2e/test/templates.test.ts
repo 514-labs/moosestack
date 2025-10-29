@@ -32,11 +32,9 @@ import {
 } from "./constants";
 
 import {
-  stopDevProcess,
   waitForServerStart,
   waitForKafkaReady,
   killRemainingProcesses,
-  cleanupDocker,
   globalDockerCleanup,
   cleanupClickhouseData,
   waitForDBWrite,
@@ -47,7 +45,6 @@ import {
   verifyConsumptionApi,
   verifyVersionedConsumptionApi,
   verifyConsumerLogs,
-  removeTestProject,
   createTempTestDirectory,
   cleanupLeftoverTestDirectories,
   setupTypeScriptProject,
@@ -59,6 +56,7 @@ import {
   verifyWebAppHealth,
   verifyWebAppQuery,
   verifyWebAppPostEndpoint,
+  cleanupTestSuite,
 } from "./utils";
 import { triggerWorkflow } from "./utils/workflow-utils";
 import { geoPayloadPy, geoPayloadTs } from "./utils/geo-payload";
@@ -236,24 +234,9 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
 
     after(async function () {
       this.timeout(TIMEOUTS.CLEANUP_MS);
-      try {
-        console.log(`Starting cleanup for ${config.displayName} test...`);
-        await stopDevProcess(devProcess);
-        await cleanupDocker(TEST_PROJECT_DIR, config.appName);
-        removeTestProject(TEST_PROJECT_DIR);
-        console.log(`Cleanup completed for ${config.displayName} test`);
-      } catch (error) {
-        console.error("Error during cleanup:", error);
-        // Force cleanup even if some steps fail
-        try {
-          if (devProcess && !devProcess.killed) {
-            devProcess.kill("SIGKILL");
-          }
-        } catch (killError) {
-          console.error("Error killing process:", killError);
-        }
-        removeTestProject(TEST_PROJECT_DIR);
-      }
+      await cleanupTestSuite(devProcess, TEST_PROJECT_DIR, config.appName, {
+        logPrefix: config.displayName,
+      });
     });
 
     // Schema validation test - runs for all templates
