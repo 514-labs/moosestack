@@ -150,11 +150,7 @@ impl<T: OlapOperations> InfraRealityChecker<T> {
         // For the mapped tables, use the keys from the infra_map as-is
         // This maintains backward compatibility with old infrastructure maps
         // that may use different key formats
-        let mapped_table_map: HashMap<_, _> = infra_map
-            .tables
-            .iter()
-            .map(|(key, t)| (key.clone(), t.clone()))
-            .collect();
+        let mapped_table_map: HashMap<_, _> = infra_map.tables.clone();
 
         debug!(
             "Infrastructure map table names: {:?}",
