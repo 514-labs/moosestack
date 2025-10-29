@@ -151,21 +151,9 @@ impl<T: OlapOperations> InfraRealityChecker<T> {
             .collect();
 
         debug!("Actual table names: {:?}", actual_table_map.keys());
-
-        // KEY FORMAT for mapped_table_map:
-        // - MIXED format for backward compatibility:
-        //   * OLD format (no database prefix): "tablename" or "tablename_1_0_0"
-        //   * NEW format (with database prefix): "database_tablename_1_0_0"
-        // - Uses keys from infra_map.tables as-is (preserves whatever format was saved)
-        // - Database prefix could be:
-        //   * None (old code before database prefixes were added)
-        //   * Local database name (for local infra maps)
-        //   * Remote database name (for production infra maps loaded from remote)
-        let mapped_table_map: HashMap<_, _> = infra_map.tables.clone();
-
         debug!(
-            "Infrastructure map table names: {:?}",
-            mapped_table_map.keys()
+            "Infrastructure map table ids: {:?}",
+            infra_map.tables.keys()
         );
 
         // Generic helper to find a table in a map with backward compatibility
@@ -202,7 +190,7 @@ impl<T: OlapOperations> InfraRealityChecker<T> {
         // Find unmapped tables (exist in reality but not in map)
         let unmapped_tables: Vec<Table> = actual_table_map
             .values()
-            .filter(|table| find_table_in_map(table, &mapped_table_map).is_none())
+            .filter(|table| find_table_in_map(table, &infra_map.tables).is_none())
             .cloned()
             .collect();
 
@@ -217,7 +205,8 @@ impl<T: OlapOperations> InfraRealityChecker<T> {
         // NOTE: We return table.name (NOT the map key/ID) for backward compatibility
         // - The name is consistent across all formats (no database prefix)
         // - Downstream code expects just the table name
-        let missing_tables: Vec<String> = mapped_table_map
+        let missing_tables: Vec<String> = infra_map
+            .tables
             .iter()
             .filter(|(_id, table)| {
                 find_table_in_map(table, &actual_table_map).is_none()
@@ -235,7 +224,7 @@ impl<T: OlapOperations> InfraRealityChecker<T> {
 
         // Find structural and TTL differences in tables that exist in both
         let mut mismatched_tables = Vec::new();
-        for (id, mapped_table) in mapped_table_map {
+        for (id, mapped_table) in &infra_map.tables {
             // KEY NOTE:
             // - `id` = map key from infra_map (OLD or NEW format, could have remote/local/no db prefix)
             // - `actual_id` = key in actual_table_map (NEW format with local db prefix)
@@ -244,7 +233,7 @@ impl<T: OlapOperations> InfraRealityChecker<T> {
             if let Some(actual_id) = find_table_in_map(&mapped_table, &actual_table_map) {
                 let actual_table = &actual_table_map[&actual_id];
                 debug!("Comparing table structure for: {}", id);
-                if actual_table != &mapped_table {
+                if actual_table != mapped_table {
                     debug!("Found structural mismatch in table: {}", id);
                     debug!("Actual table: {:?}", actual_table);
                     debug!("Mapped table: {:?}", mapped_table);
