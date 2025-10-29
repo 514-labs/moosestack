@@ -683,6 +683,10 @@ For more details, see the [ClickHouse documentation](https://clickhouse.com/docs
 #### Streaming from S3 (`S3Queue`)
 Use the `S3Queue` engine to automatically ingest data from S3 buckets as files are added:
 
+<Callout type="info" title="S3Queue with Materialized Views" compact>
+S3Queue tables only process **new files** added to S3 after table creation. When used as a source for materialized views, **no backfill occurs** - the MV will only start populating as new files arrive. See the [Materialized Views documentation](./model-materialized-view#backfill-destination-tables) for more details.
+</Callout>
+
 <TypeScript>
 ```ts filename="S3StreamingTable.ts" copy
 import { OlapTable, ClickHouseEngines } from '@514labs/moose-lib';
