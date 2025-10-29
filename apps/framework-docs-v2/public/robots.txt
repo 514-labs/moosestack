@@ -1,0 +1,9 @@
+# *
+User-agent: *
+Allow: /
+
+# Host
+Host: https://docs.moosestack.com
+
+# Sitemaps
+Sitemap: https://docs.moosestack.com/sitemap.xml
