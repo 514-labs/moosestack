@@ -131,6 +131,8 @@ pub enum AtomicOlapOperation {
         target_database: Option<String>,
         /// The SELECT statement to populate with
         select_statement: String,
+        /// Whether to truncate the target table before populating
+        should_truncate: bool,
         /// Dependency information
         dependency_info: DependencyInfo,
     },
@@ -265,9 +267,20 @@ impl AtomicOlapOperation {
                 target_table,
                 target_database,
                 select_statement,
+                should_truncate,
                 dependency_info: _,
             } => {
-                // Generate the INSERT statement for populating the MV
+                let mut sqls = Vec::new();
+
+                if *should_truncate {
+                    let truncate_sql = if let Some(database) = target_database {
+                        format!("TRUNCATE TABLE `{}`.`{}`", database, target_table)
+                    } else {
+                        format!("TRUNCATE TABLE `{}`", target_table)
+                    };
+                    sqls.push(truncate_sql);
+                }
+
                 let insert_sql = if let Some(database) = target_database {
                     format!(
                         "INSERT INTO `{}`.`{}` {}",
@@ -276,9 +289,18 @@ impl AtomicOlapOperation {
                 } else {
                     format!("INSERT INTO `{}` {}", target_table, select_statement)
                 };
+                sqls.push(insert_sql);
+
                 SerializableOlapOperation::RawSql {
-                    sql: vec![insert_sql],
-                    description: format!("Populating materialized view data into {}", target_table),
+                    sql: sqls,
+                    description: if *should_truncate {
+                        format!(
+                            "Populating materialized view data into {} (with truncate)",
+                            target_table
+                        )
+                    } else {
+                        format!("Populating materialized view data into {}", target_table)
+                    },
                 }
             }
             // views are not in DMV2, convert them to RawSql
@@ -1055,6 +1077,7 @@ pub fn order_olap_changes(
                 target_database,
                 select_statement,
                 source_tables,
+                should_truncate,
             } => {
                 // Create the PopulateMaterializedView operation with proper dependencies
                 let mut plan = OperationPlan::new();
@@ -1076,6 +1099,7 @@ pub fn order_olap_changes(
                         target_table: target_table.clone(),
                         target_database: target_database.clone(),
                         select_statement: select_statement.clone(),
+                        should_truncate: *should_truncate,
                         dependency_info: create_dependency_info(pulls_from, pushes_to),
                     });
                 plan
@@ -3006,6 +3030,42 @@ mod tests {
                 );
             }
             _ => panic!("Expected AddTableColumn operation"),
+        }
+    }
+
+    #[test]
+    fn test_populate_materialized_view_includes_truncate() {
+        let test_cases = vec![
+            (
+                None,
+                "TRUNCATE TABLE `target_table`",
+                "INSERT INTO `target_table`",
+            ),
+            (
+                Some("my_db".to_string()),
+                "TRUNCATE TABLE `my_db`.`target_table`",
+                "INSERT INTO `my_db`.`target_table`",
+            ),
+        ];
+
+        for (database, expected_truncate, expected_insert) in test_cases {
+            let populate_op = AtomicOlapOperation::PopulateMaterializedView {
+                view_name: "test_mv".to_string(),
+                target_table: "target_table".to_string(),
+                target_database: database,
+                select_statement: "SELECT id FROM source".to_string(),
+                should_truncate: true,
+                dependency_info: create_empty_dependency_info(),
+            };
+
+            match populate_op.to_minimal() {
+                SerializableOlapOperation::RawSql { sql, .. } => {
+                    assert_eq!(sql.len(), 2);
+                    assert!(sql[0].contains(expected_truncate));
+                    assert!(sql[1].contains(expected_insert));
+                }
+                _ => panic!("Expected RawSql operation"),
+            }
         }
     }
 }
