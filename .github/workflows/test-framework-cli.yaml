@@ -116,7 +116,7 @@ jobs:
           cache-workspace-crates: true
 
       - name: Setup sccache
-        uses: mozilla-actions/sccache-action@v0.0.3
+        uses: mozilla-actions/sccache-action@v0.0.9
 
       - name: Run cargo check
         run: cargo check
@@ -192,7 +192,7 @@ jobs:
           cache-workspace-crates: true
 
       - name: Setup sccache
-        uses: mozilla-actions/sccache-action@v0.0.3
+        uses: mozilla-actions/sccache-action@v0.0.9
 
       - name: Run pnpm install
         run: pnpm install --filter=@repo/scripts # for package-templates.js
@@ -351,7 +351,7 @@ jobs:
           cache-workspace-crates: true
 
       - name: Setup sccache
-        uses: mozilla-actions/sccache-action@v0.0.3
+        uses: mozilla-actions/sccache-action@v0.0.9
 
       - name: Run TypeScript E2E Tests (Default Template)
         run: pnpm install --frozen-lockfile && pnpm --filter=framework-cli-e2e run test -- --grep "typescript template default"
@@ -423,7 +423,7 @@ jobs:
           cache-workspace-crates: true
 
       - name: Setup sccache
-        uses: mozilla-actions/sccache-action@v0.0.3
+        uses: mozilla-actions/sccache-action@v0.0.9
 
       - name: Run TypeScript E2E Tests (Tests Template)
         run: pnpm install --frozen-lockfile && pnpm --filter=framework-cli-e2e run test -- --grep "typescript template tests"
@@ -490,7 +490,7 @@ jobs:
           cache-workspace-crates: true
 
       - name: Setup sccache
-        uses: mozilla-actions/sccache-action@v0.0.3
+        uses: mozilla-actions/sccache-action@v0.0.9
 
       - name: Setup Python ${{ matrix.python-version }} for E2E tests
         uses: actions/setup-python@v4
@@ -565,7 +565,7 @@ jobs:
           cache-workspace-crates: true
 
       - name: Setup sccache
-        uses: mozilla-actions/sccache-action@v0.0.3
+        uses: mozilla-actions/sccache-action@v0.0.9
 
       - name: Setup Python ${{ matrix.python-version }} for E2E tests
         uses: actions/setup-python@v4
