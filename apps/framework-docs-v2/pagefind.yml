@@ -1,0 +1,19 @@
+source: .next
+bundle_dir: public/pagefind
+
+glob: "**/*.html"
+
+exclude_selectors:
+  - "nav"
+  - "header"
+  - ".toc"
+  - "footer"
+
+custom_records:
+  - url: /typescript
+    content: TypeScript documentation
+    language: typescript
+  - url: /python
+    content: Python documentation
+    language: python
+
