@@ -115,14 +115,23 @@ jobs:
           cache-all-crates: true
           cache-workspace-crates: true
 
+      - name: Setup sccache
+        uses: mozilla-actions/sccache-action@v0.0.3
+
       - name: Run cargo check
         run: cargo check
+        env:
+          RUSTC_WRAPPER: sccache
+          SCCACHE_GHA_ENABLED: "true"
 
       - name: Check for unused dependencies
         uses: bnjbvr/cargo-machete@main
 
       - name: Run cargo Build in release mode
         run: cargo build --release --locked
+        env:
+          RUSTC_WRAPPER: sccache
+          SCCACHE_GHA_ENABLED: "true"
 
   test-cli:
     needs: detect-changes
@@ -182,6 +191,9 @@ jobs:
           cache-all-crates: true
           cache-workspace-crates: true
 
+      - name: Setup sccache
+        uses: mozilla-actions/sccache-action@v0.0.3
+
       - name: Run pnpm install
         run: pnpm install --filter=@repo/scripts # for package-templates.js
 
@@ -189,6 +201,8 @@ jobs:
         run: cargo test
         env:
           MOOSE_TELEMETRY_ENABLED: false
+          RUSTC_WRAPPER: sccache
+          SCCACHE_GHA_ENABLED: "true"
 
       - name: Inspect Logs
         if: always()
@@ -336,11 +350,16 @@ jobs:
           cache-all-crates: true
           cache-workspace-crates: true
 
+      - name: Setup sccache
+        uses: mozilla-actions/sccache-action@v0.0.3
+
       - name: Run TypeScript E2E Tests (Default Template)
         run: pnpm install --frozen-lockfile && pnpm --filter=framework-cli-e2e run test -- --grep "typescript template default"
         env:
           MOOSE_TELEMETRY_ENABLED: false
           TEST_PACKAGE_MANAGER: ${{ matrix.pm-name }}
+          RUSTC_WRAPPER: sccache
+          SCCACHE_GHA_ENABLED: "true"
 
       - name: Inspect Logs
         if: always()
@@ -403,11 +422,16 @@ jobs:
           cache-all-crates: true
           cache-workspace-crates: true
 
+      - name: Setup sccache
+        uses: mozilla-actions/sccache-action@v0.0.3
+
       - name: Run TypeScript E2E Tests (Tests Template)
         run: pnpm install --frozen-lockfile && pnpm --filter=framework-cli-e2e run test -- --grep "typescript template tests"
         env:
           MOOSE_TELEMETRY_ENABLED: false
           TEST_PACKAGE_MANAGER: ${{ matrix.pm-name }}
+          RUSTC_WRAPPER: sccache
+          SCCACHE_GHA_ENABLED: "true"
 
       - name: Inspect Logs
         if: always()
@@ -465,6 +489,9 @@ jobs:
           cache-all-crates: true
           cache-workspace-crates: true
 
+      - name: Setup sccache
+        uses: mozilla-actions/sccache-action@v0.0.3
+
       - name: Setup Python ${{ matrix.python-version }} for E2E tests
         uses: actions/setup-python@v4
         with:
@@ -478,6 +505,8 @@ jobs:
         env:
           MOOSE_TELEMETRY_ENABLED: false
           TEST_PACKAGE_MANAGER: pip
+          RUSTC_WRAPPER: sccache
+          SCCACHE_GHA_ENABLED: "true"
 
       - name: Inspect Logs
         if: always()
@@ -535,6 +564,9 @@ jobs:
           cache-all-crates: true
           cache-workspace-crates: true
 
+      - name: Setup sccache
+        uses: mozilla-actions/sccache-action@v0.0.3
+
       - name: Setup Python ${{ matrix.python-version }} for E2E tests
         uses: actions/setup-python@v4
         with:
@@ -548,6 +580,8 @@ jobs:
         env:
           MOOSE_TELEMETRY_ENABLED: false
           TEST_PACKAGE_MANAGER: pip
+          RUSTC_WRAPPER: sccache
+          SCCACHE_GHA_ENABLED: "true"
 
       - name: Inspect Logs
         if: always()
