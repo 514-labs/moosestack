@@ -88,19 +88,14 @@ pub fn find_table_from_infra_map(
         return Some(table_id);
     }
 
-    let old_format_id = match &table.version {
-        None => table.name.clone(),
-        Some(v) => format!("{}_{}", table.name, v.as_suffix()),
-    };
-
-    if let Some(table) = infra_map_tables.get(&old_format_id) {
-        if table.database.is_none() {
-            // the infra map is created before table can be in another database
-            return Some(old_format_id);
+    // handles the case where `infra_map_tables` has keys with a different db prefix, or not at all
+    infra_map_tables.iter().find_map(|(table_id, t)| {
+        if t.name == table.name && t.database.is_none() && t.version == table.version {
+            Some(table_id.clone())
+        } else {
+            None
         }
-    }
-
-    None
+    })
 }
 
 impl<T: OlapOperations> InfraRealityChecker<T> {

@@ -1673,6 +1673,9 @@ impl InfrastructureMap {
         let mut table_additions = 0;
 
         for table in self_tables.values() {
+            // self_tables can be from remote where the keys are IDs with another database prefix
+            // but they are then the default database,
+            //   the `database` field is None and we build the ID ourselves
             if let Some(target_table) = target_tables.get(&table.id(default_database)) {
                 if !tables_equal_ignore_metadata(table, target_table) {
                     // Respect lifecycle: ExternallyManaged tables are never modified
