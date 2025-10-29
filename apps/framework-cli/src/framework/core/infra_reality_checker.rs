@@ -140,6 +140,11 @@ impl<T: OlapOperations> InfraRealityChecker<T> {
         );
 
         // Create maps for easier comparison
+        //
+        // KEY FORMAT for actual_table_map:
+        // - Uses NEW format with local database prefix: "local_db_tablename_1_0_0"
+        // - Generated via table.id(&infra_map.default_database)
+        // - Reflects what exists in ClickHouse using the local database name
         let actual_table_map: HashMap<_, _> = actual_tables
             .into_iter()
             .map(|t| (t.id(&infra_map.default_database), t))
@@ -147,9 +152,15 @@ impl<T: OlapOperations> InfraRealityChecker<T> {
 
         debug!("Actual table names: {:?}", actual_table_map.keys());
 
-        // For the mapped tables, use the keys from the infra_map as-is
-        // This maintains backward compatibility with old infrastructure maps
-        // that may use different key formats
+        // KEY FORMAT for mapped_table_map:
+        // - MIXED format for backward compatibility:
+        //   * OLD format (no database prefix): "tablename" or "tablename_1_0_0"
+        //   * NEW format (with database prefix): "database_tablename_1_0_0"
+        // - Uses keys from infra_map.tables as-is (preserves whatever format was saved)
+        // - Database prefix could be:
+        //   * None (old code before database prefixes were added)
+        //   * Local database name (for local infra maps)
+        //   * Remote database name (for production infra maps loaded from remote)
         let mapped_table_map: HashMap<_, _> = infra_map.tables.clone();
 
         debug!(
@@ -158,11 +169,17 @@ impl<T: OlapOperations> InfraRealityChecker<T> {
         );
 
         // Generic helper to find a table in a map with backward compatibility
-        // Tries multiple lookup strategies:
-        // 1. Exact ID match (new format: database_name_version)
-        // 2. Name+version match (works across different key formats)
-        // 3. Name-only match for unversioned tables (old format)
+        //
+        // This handles lookup across different key formats since maps can contain:
+        // - OLD keys (no database prefix): "tablename" or "tablename_1_0_0"
+        // - NEW keys (with database prefix): "database_tablename_1_0_0"
+        // - REMOTE keys (remote database prefix): "prod_db_tablename_1_0_0"
+        //
+        // Lookup strategy:
+        // 1. Try exact ID match (O(1) - fast path when formats align)
+        // 2. Fall back to name+version match (O(n) - works across different database prefixes)
         let find_table_in_map = |table: &Table, map: &HashMap<String, Table>| -> Option<String> {
+            // Generate ID with local database prefix for comparison
             let table_id = table.id(&infra_map.default_database);
 
             // Try exact ID match first (fast path)
@@ -195,8 +212,11 @@ impl<T: OlapOperations> InfraRealityChecker<T> {
             unmapped_tables
         );
 
-        // Find missing tables (in map but don't exist)
-        // Note: We store table names (not IDs) for backward compatibility
+        // Find missing tables (in map but don't exist in reality)
+        //
+        // NOTE: We return table.name (NOT the map key/ID) for backward compatibility
+        // - The name is consistent across all formats (no database prefix)
+        // - Downstream code expects just the table name
         let missing_tables: Vec<String> = mapped_table_map
             .iter()
             .filter(|(_id, table)| {
@@ -216,7 +236,11 @@ impl<T: OlapOperations> InfraRealityChecker<T> {
         // Find structural and TTL differences in tables that exist in both
         let mut mismatched_tables = Vec::new();
         for (id, mapped_table) in mapped_table_map {
-            // Use the generic helper to find the table in actual_table_map
+            // KEY NOTE:
+            // - `id` = map key from infra_map (OLD or NEW format, could have remote/local/no db prefix)
+            // - `actual_id` = key in actual_table_map (NEW format with local db prefix)
+            //
+            // Use the generic helper to find the corresponding table in actual_table_map
             if let Some(actual_id) = find_table_in_map(&mapped_table, &actual_table_map) {
                 let actual_table = &actual_table_map[&actual_id];
                 debug!("Comparing table structure for: {}", id);

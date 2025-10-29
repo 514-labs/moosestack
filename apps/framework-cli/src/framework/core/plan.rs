@@ -133,11 +133,23 @@ pub async fn reconcile_with_reality<T: OlapOperations>(
     }
 
     // Helper function to migrate table from old key format to new key format
-    // This removes any old key and inserts the table with the new database-prefixed key
+    //
+    // KEY MIGRATION STRATEGY:
+    // - OLD format keys: "tablename" or "tablename_1_0_0" (no database prefix)
+    // - NEW format keys: "database_tablename_1_0_0" (includes database prefix)
+    //
+    // This function:
+    // 1. Generates the NEW key format using table.id(&default_database)
+    // 2. Finds any OLD key that points to the same table (by name+version)
+    // 3. Removes the OLD key if found
+    // 4. Inserts the table with the NEW key
+    //
+    // This ensures the map gradually migrates to the new key format during reconciliation
     let migrate_table_key = |map: &mut InfrastructureMap, table: Table| -> String {
+        // NEW format key with database prefix
         let new_id = table.id(&map.default_database);
 
-        // Find and remove any old key that references the same table (by name + version)
+        // Find and remove any OLD key that references the same table (by name + version)
         let old_key = map
             .tables
             .iter()
@@ -152,7 +164,7 @@ pub async fn reconcile_with_reality<T: OlapOperations>(
             map.tables.remove(&old_key);
         }
 
-        // Insert with new key
+        // Insert with NEW key format
         map.tables.insert(new_id.clone(), table);
         new_id
     };
@@ -184,7 +196,7 @@ pub async fn reconcile_with_reality<T: OlapOperations>(
                         // that might have authentication parameters.
                         table.engine_params_hash = infra_map_table.engine_params_hash.clone();
 
-                        // Migrate to new key format, removing any old keys
+                        // Migrate to NEW key format (database-prefixed), removing any OLD keys (no prefix)
                         migrate_table_key(&mut reconciled_map, table);
                     }
                     TableChange::TtlChanged {
@@ -198,13 +210,14 @@ pub async fn reconcile_with_reality<T: OlapOperations>(
                             name, reality_ttl
                         );
 
+                        // NEW format key with database prefix
                         let new_id = table.id(&reconciled_map.default_database);
 
-                        // Try to find and update the table with new key format first
+                        // Try to find and update the table using NEW key format first
                         if let Some(existing_table) = reconciled_map.tables.get_mut(&new_id) {
                             existing_table.table_ttl_setting = reality_ttl.clone();
                         } else {
-                            // Fallback: find by name+version with old key format and migrate
+                            // Fallback: find by name+version using OLD key format (no prefix) and migrate
                             let old_entry = reconciled_map
                                 .tables
                                 .iter()
@@ -217,7 +230,7 @@ pub async fn reconcile_with_reality<T: OlapOperations>(
 
                             if let Some((old_id, mut existing_table)) = old_entry {
                                 debug!(
-                                    "Migrating table '{}' from old key format '{}' to new key format '{}' during TTL update",
+                                    "Migrating table '{}' from OLD key format '{}' to NEW key format '{}' during TTL update",
                                     table.name, old_id, new_id
                                 );
                                 existing_table.table_ttl_setting = reality_ttl.clone();
@@ -237,13 +250,14 @@ pub async fn reconcile_with_reality<T: OlapOperations>(
                             name, reality_settings
                         );
 
+                        // NEW format key with database prefix
                         let new_id = table.id(&reconciled_map.default_database);
 
-                        // Try to find and update the table with new key format first
+                        // Try to find and update the table using NEW key format first
                         if let Some(existing_table) = reconciled_map.tables.get_mut(&new_id) {
                             existing_table.table_settings = reality_settings.clone();
                         } else {
-                            // Fallback: find by name+version with old key format and migrate
+                            // Fallback: find by name+version using OLD key format (no prefix) and migrate
                             let old_entry = reconciled_map
                                 .tables
                                 .iter()
@@ -256,7 +270,7 @@ pub async fn reconcile_with_reality<T: OlapOperations>(
 
                             if let Some((old_id, mut existing_table)) = old_entry {
                                 debug!(
-                                    "Migrating table '{}' from old key format '{}' to new key format '{}' during settings update",
+                                    "Migrating table '{}' from OLD key format '{}' to NEW key format '{}' during settings update",
                                     table.name, old_id, new_id
                                 );
                                 existing_table.table_settings = reality_settings.clone();
