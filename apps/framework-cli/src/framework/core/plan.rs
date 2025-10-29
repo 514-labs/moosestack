@@ -625,8 +625,10 @@ mod tests {
         };
 
         // Create infrastructure map with the infra table (no extra column)
-        let mut infra_map = InfrastructureMap::default();
-        infra_map.default_database = db_name.clone();
+        let mut infra_map = InfrastructureMap {
+            default_database: db_name.clone(),
+            ..InfrastructureMap::default()
+        };
         infra_map.tables.insert(
             infra_table.id(&infra_map.default_database),
             infra_table.clone(),
