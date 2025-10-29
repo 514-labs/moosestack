@@ -15,7 +15,6 @@
 use crate::framework::core::infra_reality_checker::{InfraRealityChecker, RealityCheckError};
 use crate::framework::core::infrastructure::consumption_webserver::ConsumptionApiWebServer;
 use crate::framework::core::infrastructure::olap_process::OlapProcess;
-use crate::framework::core::infrastructure::table::Table;
 use crate::framework::core::infrastructure_map::{
     InfraChanges, InfrastructureMap, OlapChange, TableChange,
 };
@@ -31,6 +30,7 @@ use log::{debug, error, info};
 use rdkafka::error::KafkaError;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
+use std::mem;
 use std::path::Path;
 
 /// Errors that can occur during the planning process.
@@ -91,12 +91,29 @@ pub async fn reconcile_with_reality<T: OlapOperations>(
 ) -> Result<InfrastructureMap, PlanningError> {
     info!("Reconciling infrastructure map with actual database state");
 
+    // Clone the map so we can modify it
+    let mut reconciled_map = current_infra_map.clone();
+
+    if current_infra_map
+        .tables
+        .iter()
+        .any(|(id, t)| id != &t.id(&project.clickhouse_config.db_name))
+    {
+        // fix up IDs where in the old version it does not contain the DB name
+        let existing_tables = mem::take(&mut reconciled_map.tables);
+        for (_, t) in existing_tables {
+            reconciled_map
+                .tables
+                .insert(t.id(&project.clickhouse_config.db_name), t);
+        }
+    }
+
     // Create the reality checker with the provided client
     let reality_checker = InfraRealityChecker::new(olap_client);
 
     // Get the discrepancies between the infra map and the actual database
     let discrepancies = reality_checker
-        .check_reality(project, current_infra_map)
+        .check_reality(project, &reconciled_map)
         .await?;
 
     // If there are no discrepancies, return the original map
@@ -110,9 +127,6 @@ pub async fn reconcile_with_reality<T: OlapOperations>(
         discrepancies.missing_tables.len(),
         discrepancies.mismatched_tables.len(),
     );
-
-    // Clone the map so we can modify it
-    let mut reconciled_map = current_infra_map.clone();
 
     // Remove missing tables from the map so that they can be re-created
     // if they are added to the codebase
@@ -131,43 +145,6 @@ pub async fn reconcile_with_reality<T: OlapOperations>(
             reconciled_map.tables.remove(&id);
         }
     }
-
-    // Helper function to migrate table from old key format to new key format
-    //
-    // KEY MIGRATION STRATEGY:
-    // - OLD format keys: "tablename" or "tablename_1_0_0" (no database prefix)
-    // - NEW format keys: "database_tablename_1_0_0" (includes database prefix)
-    //
-    // This function:
-    // 1. Generates the NEW key format using table.id(&default_database)
-    // 2. Finds any OLD key that points to the same table (by name+version)
-    // 3. Removes the OLD key if found
-    // 4. Inserts the table with the NEW key
-    //
-    // This ensures the map gradually migrates to the new key format during reconciliation
-    let migrate_table_key = |map: &mut InfrastructureMap, table: Table| -> String {
-        // NEW format key with database prefix
-        let new_id = table.id(&map.default_database);
-
-        // Find and remove any OLD key that references the same table (by name + version)
-        let old_key = map
-            .tables
-            .iter()
-            .find(|(id, t)| *id != &new_id && t.name == table.name && t.version == table.version)
-            .map(|(id, _)| id.clone());
-
-        if let Some(old_key) = old_key {
-            debug!(
-                "Migrating table '{}' from old key format '{}' to new key format '{}'",
-                table.name, old_key, new_id
-            );
-            map.tables.remove(&old_key);
-        }
-
-        // Insert with NEW key format
-        map.tables.insert(new_id.clone(), table);
-        new_id
-    };
 
     // Update mismatched tables
     for change in &discrepancies.mismatched_tables {
@@ -196,8 +173,9 @@ pub async fn reconcile_with_reality<T: OlapOperations>(
                         // that might have authentication parameters.
                         table.engine_params_hash = infra_map_table.engine_params_hash.clone();
 
-                        // Migrate to NEW key format (database-prefixed), removing any OLD keys (no prefix)
-                        migrate_table_key(&mut reconciled_map, table);
+                        reconciled_map
+                            .tables
+                            .insert(reality_table.id(&reconciled_map.default_database), table);
                     }
                     TableChange::TtlChanged {
                         name,
