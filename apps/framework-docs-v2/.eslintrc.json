@@ -1,0 +1,3 @@
+{
+  "extends": ["@repo/eslint-config-custom/next"]
+}
