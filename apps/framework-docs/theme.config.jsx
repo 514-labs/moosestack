@@ -12,10 +12,21 @@ import {
   BreadcrumbList,
   BreadcrumbSeparator,
 } from "@/components/ui/breadcrumb";
+import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuShortcut,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { useRouter } from "next/router";
 import { useConfig, useThemeConfig } from "nextra-theme-docs";
 import { PathConfig } from "./src/components/ctas";
 import { GitHubStarsButton } from "@/components";
+import { Bot, ChevronDown, FileText } from "lucide-react";
 
 // Base text styles that match your typography components
 const baseTextStyles = {
@@ -26,26 +37,50 @@ const baseTextStyles = {
   heading: "text-primary font-semibold",
 };
 
+const DEFAULT_SITE_URL =
+  process.env.NEXT_PUBLIC_SITE_URL || "https://docs.fiveonefour.com";
+
+function normalizePath(asPath) {
+  const safePath = asPath || "/";
+  const pathWithoutHash = safePath.split("#")[0];
+  const pathWithoutQuery = pathWithoutHash.split("?")[0] || "/";
+
+  if (!pathWithoutQuery || pathWithoutQuery === "/") {
+    return "/";
+  }
+
+  return pathWithoutQuery.endsWith("/") ?
+      pathWithoutQuery.slice(0, -1)
+    : pathWithoutQuery;
+}
+
+function resolveAbsoluteUrl(path, origin) {
+  if (!path) {
+    return origin;
+  }
+
+  if (/^https?:\/\//.test(path)) {
+    return path;
+  }
+
+  const base = origin.endsWith("/") ? origin.slice(0, -1) : origin;
+  const normalized = path.startsWith("/") ? path : `/${path}`;
+
+  return `${base}${normalized}`;
+}
+
 function buildLlmHref(asPath, suffix) {
   if (!suffix) {
     return "/";
   }
 
-  const safePath = asPath || "/";
+  const normalizedPath = normalizePath(asPath);
 
-  const pathWithoutHash = safePath.split("#")[0];
-  const pathWithoutQuery = pathWithoutHash.split("?")[0];
-
-  if (!pathWithoutQuery || pathWithoutQuery === "/") {
+  if (!normalizedPath || normalizedPath === "/") {
     return `/${suffix}`;
   }
 
-  const trimmedPath =
-    pathWithoutQuery.endsWith("/") ?
-      pathWithoutQuery.slice(0, -1)
-    : pathWithoutQuery;
-
-  return `${trimmedPath}/${suffix}`;
+  return `${normalizedPath}/${suffix}`;
 }
 
 function EditLinks({ filePath, href, className, children }) {
@@ -68,6 +103,38 @@ function EditLinks({ filePath, href, className, children }) {
 
   const tsHref = buildLlmHref(asPath, "llm-ts.txt");
   const pyHref = buildLlmHref(asPath, "llm-py.txt");
+  const normalizedPath = normalizePath(asPath);
+
+  const canonicalPageUrl =
+    !normalizedPath || normalizedPath === "/" ?
+      DEFAULT_SITE_URL
+    : resolveAbsoluteUrl(normalizedPath, DEFAULT_SITE_URL);
+
+  const handleOpenDoc = (target) => () => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const absoluteUrl = resolveAbsoluteUrl(target, window.location.origin);
+    window.open(absoluteUrl, "_blank", "noopener,noreferrer");
+  };
+
+  const handleOpenChatGpt = (languageLabel, docTarget) => () => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const docUrl = resolveAbsoluteUrl(docTarget, DEFAULT_SITE_URL);
+    const prompt =
+      `I'm looking at the Moose documentation: ${canonicalPageUrl}. ` +
+      `Use the ${languageLabel} LLM doc for additional context: ${docUrl}. ` +
+      "Help me understand how to use it. Be ready to explain concepts, give examples, or help debug based on it.";
+
+    const chatGptUrl =
+      "https://chatgpt.com/?prompt=" + encodeURIComponent(prompt);
+
+    window.open(chatGptUrl, "_blank", "noopener,noreferrer");
+  };
 
   return (
     <div className="flex flex-col items-start gap-2">
@@ -81,26 +148,39 @@ function EditLinks({ filePath, href, className, children }) {
           {children}
         </a>
       : <span className={className}>{children}</span>}
-      <span className={className}>
-        LLM docs:{" "}
-        <a
-          href={tsHref}
-          className={className}
-          target="_blank"
-          rel="noreferrer noopener"
-        >
-          TS
-        </a>{" "}
-        /{" "}
-        <a
-          href={pyHref}
-          className={className}
-          target="_blank"
-          rel="noreferrer noopener"
-        >
-          PY
-        </a>
-      </span>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button variant="outline" size="sm" className="font-medium">
+            LLM helpers
+            <ChevronDown className="h-4 w-4" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="start" className="w-64">
+          <DropdownMenuLabel>LLM docs</DropdownMenuLabel>
+          <DropdownMenuItem onSelect={handleOpenDoc(tsHref)}>
+            <FileText className="h-4 w-4" />
+            View TypeScript doc
+            <DropdownMenuShortcut>TS</DropdownMenuShortcut>
+          </DropdownMenuItem>
+          <DropdownMenuItem onSelect={handleOpenDoc(pyHref)}>
+            <FileText className="h-4 w-4" />
+            View Python doc
+            <DropdownMenuShortcut>PY</DropdownMenuShortcut>
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuLabel>Send to ChatGPT</DropdownMenuLabel>
+          <DropdownMenuItem onSelect={handleOpenChatGpt("TypeScript", tsHref)}>
+            <Bot className="h-4 w-4" />
+            ChatGPT · TypeScript
+            <DropdownMenuShortcut>TS</DropdownMenuShortcut>
+          </DropdownMenuItem>
+          <DropdownMenuItem onSelect={handleOpenChatGpt("Python", pyHref)}>
+            <Bot className="h-4 w-4" />
+            ChatGPT · Python
+            <DropdownMenuShortcut>PY</DropdownMenuShortcut>
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
     </div>
   );
 }
