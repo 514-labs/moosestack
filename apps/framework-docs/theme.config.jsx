@@ -1,4 +1,4 @@
-import { createContext, useContext, useMemo, useRef } from "react";
+import { useEffect, useState } from "react";
 import { Heading, HeadingLevel } from "@/components/typography";
 
 import { cn } from "@/lib/utils";
@@ -28,6 +28,7 @@ import { useConfig, useThemeConfig } from "nextra-theme-docs";
 import { PathConfig } from "./src/components/ctas";
 import { GitHubStarsButton } from "@/components";
 import { Bot, ChevronDown, Copy, FileText, Sparkles } from "lucide-react";
+import { createPortal } from "react-dom";
 
 // Base text styles that match your typography components
 const baseTextStyles = {
@@ -40,36 +41,6 @@ const baseTextStyles = {
 
 const DEFAULT_SITE_URL =
   process.env.NEXT_PUBLIC_SITE_URL || "https://docs.fiveonefour.com";
-
-const HeadingActionContext = createContext(null);
-
-function HeadingActionProvider({ children }) {
-  const usedRef = useRef(false);
-  const value = useMemo(() => ({ usedRef }), []);
-
-  return (
-    <HeadingActionContext.Provider value={value}>
-      {children}
-    </HeadingActionContext.Provider>
-  );
-}
-
-function usePrimaryHeadingFlag() {
-  const context = useContext(HeadingActionContext);
-
-  if (!context) {
-    throw new Error(
-      "usePrimaryHeadingFlag must be used within HeadingActionProvider",
-    );
-  }
-
-  if (context.usedRef.current) {
-    return false;
-  }
-
-  context.usedRef.current = true;
-  return true;
-}
 
 function normalizePath(asPath) {
   const safePath = asPath || "/";
@@ -310,6 +281,69 @@ function LlmHelperMenu({ buttonClassName, align = "start" } = {}) {
   );
 }
 
+function HeadingActionPortal() {
+  const { asPath } = useRouter();
+  const [slot, setSlot] = useState(null);
+
+  useEffect(() => {
+    if (typeof document === "undefined") {
+      return;
+    }
+
+    const article =
+      document.querySelector("article.nextra-content") ||
+      document.querySelector("article .nextra-content");
+
+    const heading =
+      article?.querySelector("h1") || document.querySelector("article h1");
+
+    if (!heading) {
+      setSlot(null);
+      return;
+    }
+
+    heading.classList.add("moose-heading-with-actions");
+
+    let existingSlot = heading.querySelector("[data-llm-action-slot]");
+
+    if (!existingSlot) {
+      existingSlot = document.createElement("span");
+      existingSlot.setAttribute("data-llm-action-slot", "true");
+      existingSlot.className = "moose-heading-actions-slot";
+      heading.appendChild(existingSlot);
+    }
+
+    setSlot(existingSlot);
+
+    return () => {
+      heading.classList.remove("moose-heading-with-actions");
+
+      if (
+        existingSlot &&
+        existingSlot.parentElement === heading &&
+        existingSlot.hasAttribute("data-llm-action-slot")
+      ) {
+        existingSlot.remove();
+      }
+      setSlot(null);
+    };
+  }, [asPath]);
+
+  if (!slot) {
+    return null;
+  }
+
+  return createPortal(
+    <div className="moose-heading-actions-menu">
+      <LlmHelperMenu
+        align="end"
+        buttonClassName="moose-heading-actions-button"
+      />
+    </div>,
+    slot,
+  );
+}
+
 function EditLinks({ filePath, href, className, children }) {
   const { pageOpts } = useConfig();
   const { docsRepositoryBase } = useThemeConfig();
@@ -339,29 +373,6 @@ function EditLinks({ filePath, href, className, children }) {
           {children}
         </a>
       : <span className={className}>{children}</span>}
-    </div>
-  );
-}
-
-function PrimaryHeading({ children, className, ...props }) {
-  const isPrimary = usePrimaryHeadingFlag();
-
-  const heading = (
-    <Heading {...props} className={className} level={HeadingLevel.l1}>
-      {children}
-    </Heading>
-  );
-
-  if (!isPrimary) {
-    return heading;
-  }
-
-  return (
-    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-      {heading}
-      <div className="flex-shrink-0 sm:pt-1">
-        <LlmHelperMenu align="end" buttonClassName="w-full sm:w-auto" />
-      </div>
     </div>
   );
 }
@@ -507,7 +518,10 @@ export default {
     extraContent: () => <GitHubStarsButton username="514-labs" repo="moose" />,
   },
   main: ({ children }) => (
-    <HeadingActionProvider>{children}</HeadingActionProvider>
+    <>
+      <HeadingActionPortal />
+      {children}
+    </>
   ),
   navigation: {
     prev: true,
@@ -520,7 +534,9 @@ export default {
   components: {
     // Heading components with stable rendering
     h1: ({ children, ...props }) => (
-      <PrimaryHeading {...props}>{children}</PrimaryHeading>
+      <Heading {...props} level={HeadingLevel.l1}>
+        {children}
+      </Heading>
     ),
     h2: ({ children, ...props }) => (
       <Heading {...props} level={HeadingLevel.l2}>

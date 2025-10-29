@@ -199,6 +199,49 @@ main > p {
   box-shadow: none;
 }
 
+.moose-heading-with-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+.moose-heading-actions-slot {
+  display: flex;
+  flex-grow: 1;
+  width: 100%;
+}
+
+@media (min-width: 640px) {
+  .moose-heading-actions-slot {
+    width: auto;
+    flex-grow: 0;
+    margin-left: auto;
+  }
+}
+
+.moose-heading-actions-menu {
+  display: flex;
+  width: 100%;
+  justify-content: flex-start;
+}
+
+@media (min-width: 640px) {
+  .moose-heading-actions-menu {
+    justify-content: flex-end;
+  }
+}
+
+.moose-heading-actions-button {
+  width: 100%;
+}
+
+@media (min-width: 640px) {
+  .moose-heading-actions-button {
+    width: auto;
+  }
+}
+
 [data-theme="dark"]#logo-path {
   color: white;
 }
