@@ -14,8 +14,18 @@ workflow_table = OlapTable[FooWorkflow]("foo_workflow")
 
 def run_task(ctx: TaskContext[None]) -> None:
     fake = Faker()
+    # Use three fixed timestamps for E2E tests to add variability
+    # while ensuring predictable results for consumption API tests
+    timestamps = [
+        1739865600,  # Feb 18, 2025 00:00:00 UTC (day 18 - should NOT appear in day 19 queries)
+        1739952000,  # Feb 19, 2025 00:00:00 UTC (day 19 - the target day for tests)
+        1740038400,  # Feb 20, 2025 00:00:00 UTC (day 20 - should NOT appear in day 19 queries)
+    ]
+
     for i in range(1000):
-        base_ts = fake.date_time_between(start_date='-1y', end_date='now').timestamp()
+        # Cycle through the three timestamps to distribute data across days
+        # This tests that aggregation and filtering work correctly
+        base_ts = timestamps[i % 3]
 
         # HTTP path payload
         foo_http = Foo(
