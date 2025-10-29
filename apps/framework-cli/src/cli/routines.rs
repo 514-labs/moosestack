@@ -867,7 +867,7 @@ fn calculate_plan_diff_local(
 
     let clickhouse_strategy = ClickHouseTableDiffStrategy;
     // planning about action on prod env, respect_life_cycle is true
-    current_map.diff_with_table_strategy(target_map, &clickhouse_strategy, true)
+    current_map.diff_with_table_strategy(target_map, &clickhouse_strategy, true, true)
 }
 
 /// Legacy implementation of remote_plan using the existing /admin/plan endpoint
