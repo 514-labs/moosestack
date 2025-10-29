@@ -83,7 +83,8 @@ jobs:
     name: Check
     # This is doing both checks and compilation hence why there is a
     # Bigger machine
-    runs-on: ubuntu-22-8-core
+    # TODO: Why is ubuntu-22-8-core unreliable?
+    runs-on: ubuntu-latest
     # Add explicit read-only permissions
     permissions:
       contents: read
