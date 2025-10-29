@@ -4,4 +4,6 @@ scripts/moose**
 
 *.tmp
 
+# Build-generated files
 src/proto/
+src/mcp/generated_docs.rs

@@ -1,3 +1,11 @@
+---
+title: TypeScript Schema Definition
+description: Define data schemas using TypeScript interfaces with type-safe field definitions and ClickHouse mappings
+priority: 0.95
+category: data-modeling
+language: typescript
+---
+
 # Schema Definition
 
 ## Overview

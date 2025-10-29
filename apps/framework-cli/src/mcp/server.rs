@@ -1,8 +1,9 @@
 use log::info;
 use rmcp::{
     model::{
-        CallToolRequestParam, CallToolResult, Implementation, ListToolsResult,
-        PaginatedRequestParam, ProtocolVersion, ServerCapabilities, ServerInfo,
+        CallToolRequestParam, CallToolResult, ErrorCode, Implementation, ListResourcesResult,
+        ListToolsResult, PaginatedRequestParam, ProtocolVersion, ReadResourceRequestParam,
+        ReadResourceResult, ServerCapabilities, ServerInfo,
     },
     service::RequestContext,
     transport::streamable_http_server::{
@@ -12,6 +13,7 @@ use rmcp::{
 };
 use std::sync::Arc;
 
+use super::embedded_docs;
 use super::tools::{create_error_result, get_source, infra_map, logs, query_olap, sample_stream};
 use crate::cli::processing_coordinator::ProcessingCoordinator;
 use crate::infrastructure::olap::clickhouse::config::ClickHouseConfig;
@@ -56,6 +58,7 @@ impl ServerHandler for MooseMcpHandler {
             protocol_version: ProtocolVersion::V_2024_11_05,
             capabilities: ServerCapabilities {
                 tools: Some(Default::default()),
+                resources: Some(Default::default()),
                 ..Default::default()
             },
             server_info: Implementation {
@@ -66,7 +69,7 @@ impl ServerHandler for MooseMcpHandler {
                 website_url: None,
             },
             instructions: Some(
-                "Moose MCP Server - Access dev server logs, infrastructure map, query the OLAP database, and sample streaming topics for debugging, monitoring, and data exploration"
+                "Moose MCP Server - Access dev server logs, infrastructure map, query the OLAP database, sample streaming topics, and browse embedded Moose documentation"
                     .to_string(),
             ),
         }
@@ -123,6 +126,26 @@ impl ServerHandler for MooseMcpHandler {
             .await),
             _ => Ok(create_error_result(format!("Unknown tool: {}", param.name))),
         }
+    }
+
+    async fn list_resources(
+        &self,
+        _pagination: Option<PaginatedRequestParam>,
+        _context: RequestContext<RoleServer>,
+    ) -> Result<ListResourcesResult, ErrorData> {
+        Ok(embedded_docs::list_resources())
+    }
+
+    async fn read_resource(
+        &self,
+        request: ReadResourceRequestParam,
+        _context: RequestContext<RoleServer>,
+    ) -> Result<ReadResourceResult, ErrorData> {
+        embedded_docs::read_resource(&request.uri).ok_or_else(|| ErrorData {
+            code: ErrorCode::INVALID_PARAMS,
+            message: format!("Resource not found: {}", request.uri).into(),
+            data: None,
+        })
     }
 }
 

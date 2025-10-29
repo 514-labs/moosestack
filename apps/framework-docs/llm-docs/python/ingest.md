@@ -1,3 +1,11 @@
+---
+title: Python Data Ingestion
+description: Ingest data into Moose using HTTP APIs, SDKs, and batch imports with automatic schema validation
+priority: 0.90
+category: data-ingestion
+language: python
+---
+
 # Ingestion APIs
 
 ## Overview

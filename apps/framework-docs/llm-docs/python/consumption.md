@@ -1,3 +1,11 @@
+---
+title: Python Analytics APIs
+description: Build type-safe analytics APIs for querying ClickHouse with automatic endpoint generation and query optimization
+priority: 0.90
+category: data-consumption
+language: python
+---
+
 # Analytics APIs
 
 ## Overview

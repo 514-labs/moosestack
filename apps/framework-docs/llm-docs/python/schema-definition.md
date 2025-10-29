@@ -1,3 +1,11 @@
+---
+title: Python Schema Definition
+description: Define data schemas using Python dataclasses with type annotations and ClickHouse mappings
+priority: 0.95
+category: data-modeling
+language: python
+---
+
 # Data Modeling
 
 ## Overview

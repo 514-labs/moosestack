@@ -1,3 +1,11 @@
+---
+title: TypeScript Streaming
+description: Process real-time data streams with Kafka/Redpanda integration and message handling
+priority: 0.75
+category: streaming
+language: typescript
+---
+
 # Streaming
 
 ## Overview
