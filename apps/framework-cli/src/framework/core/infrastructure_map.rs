@@ -1671,8 +1671,42 @@ impl InfrastructureMap {
         let mut table_removals = 0;
         let mut table_additions = 0;
 
+        // Helper to find a table in target_tables with backward compatibility
+        // This handles cases where remote and local infrastructure maps use different key formats:
+        // - Remote (prod) might use: "prod_db_tablename_1_0_0" or old format "tablename"
+        // - Local might use: "local_db_tablename_1_0_0" or old format "tablename"
+        //
+        // Strategy:
+        // 1. Try exact key match (O(1) - works if both use same format/database)
+        // 2. Fall back to name + version match (O(n) - works across different database prefixes)
+        let find_target_table = |key: &str, table: &Table| -> Option<&Table> {
+            // First try exact key match (fast path)
+            if let Some(target) = target_tables.get(key) {
+                return Some(target);
+            }
+
+            // Fall back to name-based lookup - this works regardless of database prefix
+            // This handles the case where remote uses "prod_db_users_1_0_0" and local uses "local_db_users_1_0_0"
+            target_tables
+                .values()
+                .find(|target| target.name == table.name && target.version == table.version)
+        };
+
+        // Helper to check if a table exists in self_tables with backward compatibility
+        let find_self_table = |key: &str, table: &Table| -> bool {
+            // First try exact key match (fast path)
+            if self_tables.contains_key(key) {
+                return true;
+            }
+
+            // Fall back to name-based lookup - this works regardless of database prefix
+            self_tables.values().any(|self_table| {
+                self_table.name == table.name && self_table.version == table.version
+            })
+        };
+
         for (id, table) in self_tables {
-            if let Some(target_table) = target_tables.get(id) {
+            if let Some(target_table) = find_target_table(id, table) {
                 if !tables_equal_ignore_metadata(table, target_table) {
                     // Respect lifecycle: ExternallyManaged tables are never modified
                     if target_table.life_cycle == LifeCycle::ExternallyManaged && respect_life_cycle
@@ -1826,7 +1860,7 @@ impl InfrastructureMap {
         }
 
         for (id, table) in target_tables {
-            if !self_tables.contains_key(id) {
+            if !find_self_table(id, table) {
                 // Respect lifecycle: ExternallyManaged tables are never added automatically
                 if table.life_cycle == LifeCycle::ExternallyManaged && respect_life_cycle {
                     log::debug!(

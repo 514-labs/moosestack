@@ -142,15 +142,18 @@ impl<T: OlapOperations> InfraRealityChecker<T> {
         // Create maps for easier comparison
         let actual_table_map: HashMap<_, _> = actual_tables
             .into_iter()
-            .map(|t| (t.name.clone(), t))
+            .map(|t| (t.id(&infra_map.default_database), t))
             .collect();
 
         debug!("Actual table names: {:?}", actual_table_map.keys());
 
+        // For the mapped tables, use the keys from the infra_map as-is
+        // This maintains backward compatibility with old infrastructure maps
+        // that may use different key formats
         let mapped_table_map: HashMap<_, _> = infra_map
             .tables
-            .values()
-            .map(|t| (t.name.clone(), t.clone()))
+            .iter()
+            .map(|(key, t)| (key.clone(), t.clone()))
             .collect();
 
         debug!(
@@ -158,10 +161,39 @@ impl<T: OlapOperations> InfraRealityChecker<T> {
             mapped_table_map.keys()
         );
 
+        // Helper function to find a table in the mapped_table_map
+        // Tries multiple lookup strategies for backward compatibility:
+        // 1. Exact ID match (new format: database_name_version)
+        // 2. By name match (old format: just name)
+        // 3. By name_version match (old format without database prefix)
+        let find_mapped_table = |table: &Table| -> Option<String> {
+            let table_id = table.id(&infra_map.default_database);
+
+            // Try exact ID match first
+            if mapped_table_map.contains_key(&table_id) {
+                return Some(table_id);
+            }
+
+            // Try by name only (old format)
+            if mapped_table_map.contains_key(&table.name) {
+                return Some(table.name.clone());
+            }
+
+            // Try by name_version without database prefix (old format)
+            if let Some(version) = &table.version {
+                let name_version = format!("{}_{}", table.name, version.as_suffix());
+                if mapped_table_map.contains_key(&name_version) {
+                    return Some(name_version);
+                }
+            }
+
+            None
+        };
+
         // Find unmapped tables (exist in reality but not in map)
         let unmapped_tables: Vec<Table> = actual_table_map
             .values()
-            .filter(|table| !mapped_table_map.contains_key(&table.name))
+            .filter(|table| find_mapped_table(table).is_none())
             .cloned()
             .collect();
 
@@ -171,16 +203,33 @@ impl<T: OlapOperations> InfraRealityChecker<T> {
             unmapped_tables
         );
 
+        // Helper function to find an actual table for a mapped table
+        // Tries multiple lookup strategies for backward compatibility
+        let find_actual_table = |mapped_table: &Table| -> Option<&Table> {
+            let table_id = mapped_table.id(&infra_map.default_database);
+
+            // Try exact ID match first
+            if let Some(actual) = actual_table_map.get(&table_id) {
+                return Some(actual);
+            }
+
+            // Fall back to name-based lookup for backward compatibility
+            actual_table_map.values().find(|actual| {
+                actual.name == mapped_table.name && actual.version == mapped_table.version
+            })
+        };
+
         // Find missing tables (in map but don't exist)
+        // Note: We store table names (not IDs) for backward compatibility
         let missing_tables: Vec<String> = mapped_table_map
-            .keys()
-            .filter(|name| {
-                !actual_table_map.contains_key(*name)
+            .iter()
+            .filter(|(_id, table)| {
+                find_actual_table(table).is_none()
                     && !tables_cannot_be_mapped_back
                         .iter()
-                        .any(|t| &&t.name == name)
+                        .any(|t| t.name == table.name)
             })
-            .cloned()
+            .map(|(_id, table)| table.name.clone())
             .collect();
         debug!(
             "Found {} missing tables: {:?}",
@@ -190,11 +239,11 @@ impl<T: OlapOperations> InfraRealityChecker<T> {
 
         // Find structural and TTL differences in tables that exist in both
         let mut mismatched_tables = Vec::new();
-        for (name, mapped_table) in mapped_table_map {
-            if let Some(actual_table) = actual_table_map.get(&name) {
-                debug!("Comparing table structure for: {}", name);
+        for (id, mapped_table) in mapped_table_map {
+            if let Some(actual_table) = find_actual_table(&mapped_table) {
+                debug!("Comparing table structure for: {}", id);
                 if actual_table != &mapped_table {
-                    debug!("Found structural mismatch in table: {}", name);
+                    debug!("Found structural mismatch in table: {}", id);
                     debug!("Actual table: {:?}", actual_table);
                     debug!("Mapped table: {:?}", mapped_table);
 
@@ -202,9 +251,9 @@ impl<T: OlapOperations> InfraRealityChecker<T> {
                     // Note: We flip the order here to make infra_map the reference
                     let mut changes = Vec::new();
                     let mut actual_tables = HashMap::new();
-                    actual_tables.insert(name.clone(), actual_table.clone());
+                    actual_tables.insert(id.clone(), actual_table.clone());
                     let mut mapped_tables = HashMap::new();
-                    mapped_tables.insert(name.clone(), mapped_table.clone());
+                    mapped_tables.insert(id.clone(), mapped_table.clone());
 
                     // Flip the order of arguments to make infra_map the reference
                     InfrastructureMap::diff_tables(
@@ -218,12 +267,12 @@ impl<T: OlapOperations> InfraRealityChecker<T> {
                     debug!(
                         "Found {} changes for table {}: {:?}",
                         changes.len(),
-                        name,
+                        id,
                         changes
                     );
                     mismatched_tables.extend(changes);
                 } else {
-                    debug!("Table {} matches infrastructure map", name);
+                    debug!("Table {} matches infrastructure map", id);
                 }
 
                 // TTL: table-level diff
@@ -241,7 +290,7 @@ impl<T: OlapOperations> InfraRealityChecker<T> {
 
                 if actual_ttl_normalized != mapped_ttl_normalized {
                     mismatched_tables.push(OlapChange::Table(TableChange::TtlChanged {
-                        name: name.clone(),
+                        name: mapped_table.name.clone(),
                         before: actual_table.table_ttl_setting.clone(),
                         after: mapped_table.table_ttl_setting.clone(),
                         table: mapped_table.clone(),
