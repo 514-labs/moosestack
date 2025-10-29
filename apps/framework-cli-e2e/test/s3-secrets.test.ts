@@ -27,6 +27,7 @@ import {
   setupTypeScriptProject,
   setupPythonProject,
   removeTestProject,
+  cleanupDocker,
 } from "./utils";
 
 const CLI_PATH = path.resolve(__dirname, "../../../target/debug/moose-cli");
@@ -83,8 +84,22 @@ describe("typescript template tests - S3Queue Runtime Environment Variable Resol
 
     after(async function () {
       this.timeout(TIMEOUTS.CLEANUP_MS);
-      await stopDevProcess(devProcess);
-      removeTestProject(TEST_PROJECT_DIR);
+      try {
+        await stopDevProcess(devProcess);
+        await cleanupDocker(TEST_PROJECT_DIR, APP_NAMES.TYPESCRIPT_TESTS);
+        removeTestProject(TEST_PROJECT_DIR);
+      } catch (error) {
+        console.error("Error during cleanup:", error);
+        // Force cleanup even if some steps fail
+        try {
+          if (devProcess && !devProcess.killed) {
+            devProcess.kill("SIGKILL");
+          }
+        } catch (killError) {
+          console.error("Error killing process:", killError);
+        }
+        removeTestProject(TEST_PROJECT_DIR);
+      }
     });
 
     it("should start successfully and resolve environment variables correctly", async function () {
@@ -123,16 +138,15 @@ describe("typescript template tests - S3Queue Runtime Environment Variable Resol
       );
 
       // Start dev server WITHOUT the required environment variables
+      // Create a clean environment without the test credentials
+      const envWithoutCredentials = { ...process.env };
+      delete envWithoutCredentials.TEST_AWS_ACCESS_KEY_ID;
+      delete envWithoutCredentials.TEST_AWS_SECRET_ACCESS_KEY;
+
       devProcess = spawn(CLI_PATH, ["dev"], {
         stdio: "pipe",
         cwd: TEST_PROJECT_DIR,
-        env: {
-          ...process.env,
-          // Explicitly unset S3 credentials
-          // Both S3Queue and S3 engine use the same env vars
-          TEST_AWS_ACCESS_KEY_ID: undefined,
-          TEST_AWS_SECRET_ACCESS_KEY: undefined,
-        },
+        env: envWithoutCredentials,
       });
 
       // Capture both stdout and stderr to check for error messages
@@ -246,8 +260,22 @@ describe("python template tests - S3Queue Runtime Environment Variable Resolutio
 
     after(async function () {
       this.timeout(TIMEOUTS.CLEANUP_MS);
-      await stopDevProcess(devProcess);
-      removeTestProject(TEST_PROJECT_DIR);
+      try {
+        await stopDevProcess(devProcess);
+        await cleanupDocker(TEST_PROJECT_DIR, APP_NAMES.PYTHON_TESTS);
+        removeTestProject(TEST_PROJECT_DIR);
+      } catch (error) {
+        console.error("Error during cleanup:", error);
+        // Force cleanup even if some steps fail
+        try {
+          if (devProcess && !devProcess.killed) {
+            devProcess.kill("SIGKILL");
+          }
+        } catch (killError) {
+          console.error("Error killing process:", killError);
+        }
+        removeTestProject(TEST_PROJECT_DIR);
+      }
     });
 
     it("should start successfully and resolve environment variables correctly", async function () {
@@ -285,18 +313,19 @@ describe("python template tests - S3Queue Runtime Environment Variable Resolutio
       );
 
       // Start dev server WITHOUT the required environment variables
+      // Create a clean environment without the test credentials
+      const envWithoutCredentials: NodeJS.ProcessEnv = {
+        ...process.env,
+        VIRTUAL_ENV: path.join(TEST_PROJECT_DIR, ".venv"),
+        PATH: `${path.join(TEST_PROJECT_DIR, ".venv", "bin")}:${process.env.PATH}`,
+      };
+      delete envWithoutCredentials.TEST_AWS_ACCESS_KEY_ID;
+      delete envWithoutCredentials.TEST_AWS_SECRET_ACCESS_KEY;
+
       devProcess = spawn(CLI_PATH, ["dev"], {
         stdio: "pipe",
         cwd: TEST_PROJECT_DIR,
-        env: {
-          ...process.env,
-          VIRTUAL_ENV: path.join(TEST_PROJECT_DIR, ".venv"),
-          PATH: `${path.join(TEST_PROJECT_DIR, ".venv", "bin")}:${process.env.PATH}`,
-          // Explicitly unset S3 credentials
-          // Both S3Queue and S3 engine use the same env vars
-          TEST_AWS_ACCESS_KEY_ID: undefined,
-          TEST_AWS_SECRET_ACCESS_KEY: undefined,
-        },
+        env: envWithoutCredentials,
       });
 
       // Capture both stdout and stderr to check for error messages

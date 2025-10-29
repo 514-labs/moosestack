@@ -27,6 +27,7 @@ import {
   setupTypeScriptProject,
   setupPythonProject,
   removeTestProject,
+  cleanupDocker,
 } from "./utils";
 
 const CLI_PATH = path.resolve(__dirname, "../../../target/debug/moose-cli");
@@ -83,8 +84,22 @@ describe("typescript template tests - S3 Engine Runtime Environment Variable Res
 
     after(async function () {
       this.timeout(TIMEOUTS.CLEANUP_MS);
-      await stopDevProcess(devProcess);
-      removeTestProject(TEST_PROJECT_DIR);
+      try {
+        await stopDevProcess(devProcess);
+        await cleanupDocker(TEST_PROJECT_DIR, APP_NAMES.TYPESCRIPT_TESTS);
+        removeTestProject(TEST_PROJECT_DIR);
+      } catch (error) {
+        console.error("Error during cleanup:", error);
+        // Force cleanup even if some steps fail
+        try {
+          if (devProcess && !devProcess.killed) {
+            devProcess.kill("SIGKILL");
+          }
+        } catch (killError) {
+          console.error("Error killing process:", killError);
+        }
+        removeTestProject(TEST_PROJECT_DIR);
+      }
     });
 
     it("should start successfully and resolve S3 engine environment variables correctly", async function () {
@@ -148,8 +163,22 @@ describe("python template tests - S3 Engine Runtime Environment Variable Resolut
 
     after(async function () {
       this.timeout(TIMEOUTS.CLEANUP_MS);
-      await stopDevProcess(devProcess);
-      removeTestProject(TEST_PROJECT_DIR);
+      try {
+        await stopDevProcess(devProcess);
+        await cleanupDocker(TEST_PROJECT_DIR, APP_NAMES.PYTHON_TESTS);
+        removeTestProject(TEST_PROJECT_DIR);
+      } catch (error) {
+        console.error("Error during cleanup:", error);
+        // Force cleanup even if some steps fail
+        try {
+          if (devProcess && !devProcess.killed) {
+            devProcess.kill("SIGKILL");
+          }
+        } catch (killError) {
+          console.error("Error killing process:", killError);
+        }
+        removeTestProject(TEST_PROJECT_DIR);
+      }
     });
 
     it("should start successfully and resolve S3 engine environment variables correctly", async function () {
