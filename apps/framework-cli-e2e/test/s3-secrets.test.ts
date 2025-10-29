@@ -21,13 +21,12 @@ import * as path from "path";
 import { TIMEOUTS, TEMPLATE_NAMES, APP_NAMES } from "./constants";
 
 import {
-  stopDevProcess,
   waitForServerStart,
   createTempTestDirectory,
   setupTypeScriptProject,
   setupPythonProject,
   removeTestProject,
-  cleanupDocker,
+  cleanupTestSuite,
 } from "./utils";
 
 const CLI_PATH = path.resolve(__dirname, "../../../target/debug/moose-cli");
@@ -84,22 +83,14 @@ describe("typescript template tests - S3Queue Runtime Environment Variable Resol
 
     after(async function () {
       this.timeout(TIMEOUTS.CLEANUP_MS);
-      try {
-        await stopDevProcess(devProcess);
-        await cleanupDocker(TEST_PROJECT_DIR, APP_NAMES.TYPESCRIPT_TESTS);
-        removeTestProject(TEST_PROJECT_DIR);
-      } catch (error) {
-        console.error("Error during cleanup:", error);
-        // Force cleanup even if some steps fail
-        try {
-          if (devProcess && !devProcess.killed) {
-            devProcess.kill("SIGKILL");
-          }
-        } catch (killError) {
-          console.error("Error killing process:", killError);
-        }
-        removeTestProject(TEST_PROJECT_DIR);
-      }
+      await cleanupTestSuite(
+        devProcess,
+        TEST_PROJECT_DIR,
+        APP_NAMES.TYPESCRIPT_TESTS,
+        {
+          logPrefix: "TypeScript S3Queue Test (With Env Vars)",
+        },
+      );
     });
 
     it("should start successfully and resolve environment variables correctly", async function () {
@@ -260,22 +251,14 @@ describe("python template tests - S3Queue Runtime Environment Variable Resolutio
 
     after(async function () {
       this.timeout(TIMEOUTS.CLEANUP_MS);
-      try {
-        await stopDevProcess(devProcess);
-        await cleanupDocker(TEST_PROJECT_DIR, APP_NAMES.PYTHON_TESTS);
-        removeTestProject(TEST_PROJECT_DIR);
-      } catch (error) {
-        console.error("Error during cleanup:", error);
-        // Force cleanup even if some steps fail
-        try {
-          if (devProcess && !devProcess.killed) {
-            devProcess.kill("SIGKILL");
-          }
-        } catch (killError) {
-          console.error("Error killing process:", killError);
-        }
-        removeTestProject(TEST_PROJECT_DIR);
-      }
+      await cleanupTestSuite(
+        devProcess,
+        TEST_PROJECT_DIR,
+        APP_NAMES.PYTHON_TESTS,
+        {
+          logPrefix: "Python S3Queue Test (With Env Vars)",
+        },
+      );
     });
 
     it("should start successfully and resolve environment variables correctly", async function () {
