@@ -157,29 +157,26 @@ impl<T: OlapOperations> InfraRealityChecker<T> {
             mapped_table_map.keys()
         );
 
-        // Helper function to find a table in the mapped_table_map
-        // Tries multiple lookup strategies for backward compatibility:
+        // Generic helper to find a table in a map with backward compatibility
+        // Tries multiple lookup strategies:
         // 1. Exact ID match (new format: database_name_version)
-        // 2. By name match (old format: just name)
-        // 3. By name_version match (old format without database prefix)
-        let find_mapped_table = |table: &Table| -> Option<String> {
+        // 2. Name+version match (works across different key formats)
+        // 3. Name-only match for unversioned tables (old format)
+        let find_table_in_map = |table: &Table, map: &HashMap<String, Table>| -> Option<String> {
             let table_id = table.id(&infra_map.default_database);
 
-            // Try exact ID match first
-            if mapped_table_map.contains_key(&table_id) {
+            // Try exact ID match first (fast path)
+            if map.contains_key(&table_id) {
                 return Some(table_id);
             }
 
-            // Try by name_version without database prefix (old format)
-            if let Some(version) = &table.version {
-                let id_in_old_format = format!("{}_{}", table.name, version.as_suffix());
-                if mapped_table_map.contains_key(&id_in_old_format) {
-                    return Some(id_in_old_format);
-                }
-            } else {
-                if mapped_table_map.contains_key(&table.name) {
-                    return Some(table.name.clone());
-                }
+            // Fall back to name+version matching (works across different key formats)
+            // This handles cases where keys use different database prefixes
+            if let Some((key, _)) = map
+                .iter()
+                .find(|(_, t)| t.name == table.name && t.version == table.version)
+            {
+                return Some(key.clone());
             }
 
             None
@@ -188,7 +185,7 @@ impl<T: OlapOperations> InfraRealityChecker<T> {
         // Find unmapped tables (exist in reality but not in map)
         let unmapped_tables: Vec<Table> = actual_table_map
             .values()
-            .filter(|table| find_mapped_table(table).is_none())
+            .filter(|table| find_table_in_map(table, &mapped_table_map).is_none())
             .cloned()
             .collect();
 
@@ -198,28 +195,12 @@ impl<T: OlapOperations> InfraRealityChecker<T> {
             unmapped_tables
         );
 
-        // Helper function to find an actual table for a mapped table
-        // Tries multiple lookup strategies for backward compatibility
-        let find_actual_table = |mapped_table: &Table| -> Option<&Table> {
-            let table_id = mapped_table.id(&infra_map.default_database);
-
-            // Try exact ID match first
-            if let Some(actual) = actual_table_map.get(&table_id) {
-                return Some(actual);
-            }
-
-            // Fall back to name-based lookup for backward compatibility
-            actual_table_map.values().find(|actual| {
-                actual.name == mapped_table.name && actual.version == mapped_table.version
-            })
-        };
-
         // Find missing tables (in map but don't exist)
         // Note: We store table names (not IDs) for backward compatibility
         let missing_tables: Vec<String> = mapped_table_map
             .iter()
             .filter(|(_id, table)| {
-                find_actual_table(table).is_none()
+                find_table_in_map(table, &actual_table_map).is_none()
                     && !tables_cannot_be_mapped_back
                         .iter()
                         .any(|t| t.name == table.name)
@@ -235,7 +216,9 @@ impl<T: OlapOperations> InfraRealityChecker<T> {
         // Find structural and TTL differences in tables that exist in both
         let mut mismatched_tables = Vec::new();
         for (id, mapped_table) in mapped_table_map {
-            if let Some(actual_table) = find_actual_table(&mapped_table) {
+            // Use the generic helper to find the table in actual_table_map
+            if let Some(actual_id) = find_table_in_map(&mapped_table, &actual_table_map) {
+                let actual_table = &actual_table_map[&actual_id];
                 debug!("Comparing table structure for: {}", id);
                 if actual_table != &mapped_table {
                     debug!("Found structural mismatch in table: {}", id);

@@ -15,6 +15,7 @@
 use crate::framework::core::infra_reality_checker::{InfraRealityChecker, RealityCheckError};
 use crate::framework::core::infrastructure::consumption_webserver::ConsumptionApiWebServer;
 use crate::framework::core::infrastructure::olap_process::OlapProcess;
+use crate::framework::core::infrastructure::table::Table;
 use crate::framework::core::infrastructure_map::{
     InfraChanges, InfrastructureMap, OlapChange, TableChange,
 };
@@ -131,6 +132,31 @@ pub async fn reconcile_with_reality<T: OlapOperations>(
         }
     }
 
+    // Helper function to migrate table from old key format to new key format
+    // This removes any old key and inserts the table with the new database-prefixed key
+    let migrate_table_key = |map: &mut InfrastructureMap, table: Table| -> String {
+        let new_id = table.id(&map.default_database);
+
+        // Find and remove any old key that references the same table (by name + version)
+        let old_key = map
+            .tables
+            .iter()
+            .find(|(id, t)| *id != &new_id && t.name == table.name && t.version == table.version)
+            .map(|(id, _)| id.clone());
+
+        if let Some(old_key) = old_key {
+            debug!(
+                "Migrating table '{}' from old key format '{}' to new key format '{}'",
+                table.name, old_key, new_id
+            );
+            map.tables.remove(&old_key);
+        }
+
+        // Insert with new key
+        map.tables.insert(new_id.clone(), table);
+        new_id
+    };
+
     // Update mismatched tables
     for change in &discrepancies.mismatched_tables {
         match change {
@@ -158,9 +184,8 @@ pub async fn reconcile_with_reality<T: OlapOperations>(
                         // that might have authentication parameters.
                         table.engine_params_hash = infra_map_table.engine_params_hash.clone();
 
-                        reconciled_map
-                            .tables
-                            .insert(reality_table.id(&reconciled_map.default_database), table);
+                        // Migrate to new key format, removing any old keys
+                        migrate_table_key(&mut reconciled_map, table);
                     }
                     TableChange::TtlChanged {
                         name,
@@ -172,12 +197,33 @@ pub async fn reconcile_with_reality<T: OlapOperations>(
                             "Updating table {} TTL in infrastructure map to match reality: {:?}",
                             name, reality_ttl
                         );
-                        // Update the table in the reconciled map with the actual TTL from reality
-                        if let Some(existing_table) = reconciled_map
-                            .tables
-                            .get_mut(&table.id(&reconciled_map.default_database))
-                        {
+
+                        let new_id = table.id(&reconciled_map.default_database);
+
+                        // Try to find and update the table with new key format first
+                        if let Some(existing_table) = reconciled_map.tables.get_mut(&new_id) {
                             existing_table.table_ttl_setting = reality_ttl.clone();
+                        } else {
+                            // Fallback: find by name+version with old key format and migrate
+                            let old_entry = reconciled_map
+                                .tables
+                                .iter()
+                                .find(|(id, t)| {
+                                    *id != &new_id
+                                        && t.name == table.name
+                                        && t.version == table.version
+                                })
+                                .map(|(id, t)| (id.clone(), t.clone()));
+
+                            if let Some((old_id, mut existing_table)) = old_entry {
+                                debug!(
+                                    "Migrating table '{}' from old key format '{}' to new key format '{}' during TTL update",
+                                    table.name, old_id, new_id
+                                );
+                                existing_table.table_ttl_setting = reality_ttl.clone();
+                                reconciled_map.tables.remove(&old_id);
+                                reconciled_map.tables.insert(new_id, existing_table);
+                            }
                         }
                     }
                     TableChange::SettingsChanged {
@@ -190,12 +236,33 @@ pub async fn reconcile_with_reality<T: OlapOperations>(
                             "Updating table {} settings in infrastructure map to match reality: {:?}",
                             name, reality_settings
                         );
-                        // Update the table in the reconciled map with the actual settings from reality
-                        if let Some(existing_table) = reconciled_map
-                            .tables
-                            .get_mut(&table.id(&reconciled_map.default_database))
-                        {
+
+                        let new_id = table.id(&reconciled_map.default_database);
+
+                        // Try to find and update the table with new key format first
+                        if let Some(existing_table) = reconciled_map.tables.get_mut(&new_id) {
                             existing_table.table_settings = reality_settings.clone();
+                        } else {
+                            // Fallback: find by name+version with old key format and migrate
+                            let old_entry = reconciled_map
+                                .tables
+                                .iter()
+                                .find(|(id, t)| {
+                                    *id != &new_id
+                                        && t.name == table.name
+                                        && t.version == table.version
+                                })
+                                .map(|(id, t)| (id.clone(), t.clone()));
+
+                            if let Some((old_id, mut existing_table)) = old_entry {
+                                debug!(
+                                    "Migrating table '{}' from old key format '{}' to new key format '{}' during settings update",
+                                    table.name, old_id, new_id
+                                );
+                                existing_table.table_settings = reality_settings.clone();
+                                reconciled_map.tables.remove(&old_id);
+                                reconciled_map.tables.insert(new_id, existing_table);
+                            }
                         }
                     }
 
