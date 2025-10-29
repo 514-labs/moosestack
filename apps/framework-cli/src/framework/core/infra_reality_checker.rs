@@ -74,6 +74,35 @@ pub struct InfraRealityChecker<T: OlapOperations> {
     olap_client: T,
 }
 
+pub fn find_table_from_infra_map(
+    table: &Table,
+    // the map may be from an old version where the key does not contain the DB name prefix
+    infra_map_tables: &HashMap<String, Table>,
+    default_database: &str,
+) -> Option<String> {
+    // Generate ID with local database prefix for comparison
+    let table_id = table.id(default_database);
+
+    // Try exact ID match first (fast path)
+    if infra_map_tables.contains_key(&table_id) {
+        return Some(table_id);
+    }
+
+    let old_format_id = match &table.version {
+        None => table.name.clone(),
+        Some(v) => format!("{}_{}", table.name, v.as_suffix()),
+    };
+
+    if let Some(table) = infra_map_tables.get(&old_format_id) {
+        if table.database.is_none() {
+            // the infra map is created before table can be in another database
+            return Some(old_format_id);
+        }
+    }
+
+    None
+}
+
 impl<T: OlapOperations> InfraRealityChecker<T> {
     /// Creates a new InfraRealityChecker with the provided OLAP client.
     ///
@@ -155,35 +184,13 @@ impl<T: OlapOperations> InfraRealityChecker<T> {
             infra_map.tables.keys()
         );
 
-        // the map may be from an old version where the key does not contain the DB name prefix
-        let find_table_from_infra_map = |table: &Table| -> Option<String> {
-            // Generate ID with local database prefix for comparison
-            let table_id = table.id(&infra_map.default_database);
-
-            // Try exact ID match first (fast path)
-            if infra_map.tables.contains_key(&table_id) {
-                return Some(table_id);
-            }
-
-            let old_format_id = match &table.version {
-                None => table.name.clone(),
-                Some(v) => format!("{}_{}", table.name, v.as_suffix()),
-            };
-
-            if let Some(table) = infra_map.tables.get(&old_format_id) {
-                if table.database.is_none() {
-                    // the infra map is created before table can be in another database
-                    return Some(old_format_id);
-                }
-            }
-
-            None
-        };
-
         // Find unmapped tables (exist in reality but not in map)
         let unmapped_tables: Vec<Table> = actual_table_map
             .values()
-            .filter(|table| find_table_from_infra_map(table).is_none())
+            .filter(|table| {
+                find_table_from_infra_map(table, &infra_map.tables, &infra_map.default_database)
+                    .is_none()
+            })
             .cloned()
             .collect();
 
