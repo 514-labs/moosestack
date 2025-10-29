@@ -174,11 +174,6 @@ impl<T: OlapOperations> InfraRealityChecker<T> {
                 return Some(table_id);
             }
 
-            // Try by name only (old format)
-            if mapped_table_map.contains_key(&table.name) {
-                return Some(table.name.clone());
-            }
-
             // Try by name_version without database prefix (old format)
             if let Some(version) = &table.version {
                 let name_version = format!("{}_{}", table.name, version.as_suffix());
