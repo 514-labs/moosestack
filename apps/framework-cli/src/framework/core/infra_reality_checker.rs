@@ -172,9 +172,9 @@ impl<T: OlapOperations> InfraRealityChecker<T> {
 
             // Try by name_version without database prefix (old format)
             if let Some(version) = &table.version {
-                let name_version = format!("{}_{}", table.name, version.as_suffix());
-                if mapped_table_map.contains_key(&name_version) {
-                    return Some(name_version);
+                let id_in_old_format = format!("{}_{}", table.name, version.as_suffix());
+                if mapped_table_map.contains_key(&id_in_old_format) {
+                    return Some(id_in_old_format);
                 }
             } else {
                 if mapped_table_map.contains_key(&table.name) {
