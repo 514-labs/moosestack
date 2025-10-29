@@ -207,6 +207,7 @@ impl ClickHouseTableDiffStrategy {
         sql_resource: &SqlResource,
         tables: &HashMap<String, Table>,
         is_new: bool,
+        is_production: bool,
         olap_changes: &mut Vec<OlapChange>,
     ) {
         use crate::infrastructure::olap::clickhouse::sql_parser::parse_create_materialized_view;
@@ -221,10 +222,11 @@ impl ClickHouseTableDiffStrategy {
                         .is_some_and(Self::is_s3queue_table)
                 });
 
-                // Only populate new MVs with non-S3Queue sources
-                if is_new && !has_s3queue_source {
+                // Skip population in production (user must handle manually)
+                // Only populate in dev for new MVs with non-S3Queue sources
+                if is_new && !has_s3queue_source && !is_production {
                     log::info!(
-                        "Adding population operation for new materialized view '{}'",
+                        "Adding population operation for materialized view '{}'",
                         sql_resource.name
                     );
 
@@ -238,6 +240,7 @@ impl ClickHouseTableDiffStrategy {
                             .into_iter()
                             .map(|t| t.qualified_name())
                             .collect(),
+                        should_truncate: true,
                     });
                 }
 

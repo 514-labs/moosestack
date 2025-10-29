@@ -336,6 +336,7 @@ pub async fn plan_changes(
         changes: reconciled_map.diff_with_table_strategy(
             &target_infra_map,
             &clickhouse_strategy,
+            true,
             project.is_production,
         ),
     };

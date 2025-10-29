@@ -382,6 +382,8 @@ pub enum OlapChange {
         select_statement: String,
         /// Source tables that data is pulled from
         source_tables: Vec<String>,
+        /// Whether to truncate the target table before populating
+        should_truncate: bool,
     },
 }
 
@@ -885,6 +887,7 @@ impl InfrastructureMap {
         target_map: &InfrastructureMap,
         table_diff_strategy: &dyn TableDiffStrategy,
         respect_life_cycle: bool,
+        is_production: bool,
     ) -> InfraChanges {
         let mut changes = InfraChanges::default();
 
@@ -934,6 +937,7 @@ impl InfrastructureMap {
             &self.sql_resources,
             &target_map.sql_resources,
             &target_map.tables, // Pass target tables for MV analysis
+            is_production,
             &mut changes.olap_changes,
         );
         let sql_resource_changes = changes.olap_changes.len() - olap_changes_len_before;
@@ -1556,11 +1560,13 @@ impl InfrastructureMap {
     /// * `self_sql_resources` - HashMap of source SQL resources to compare from
     /// * `target_sql_resources` - HashMap of target SQL resources to compare against
     /// * `target_tables` - Target tables for MV population analysis
+    /// * `is_production` - Whether running in production environment
     /// * `olap_changes` - Mutable vector to collect the identified changes
     pub fn diff_sql_resources(
         self_sql_resources: &HashMap<String, SqlResource>,
         target_sql_resources: &HashMap<String, SqlResource>,
         target_tables: &HashMap<String, Table>,
+        is_production: bool,
         olap_changes: &mut Vec<OlapChange>,
     ) {
         log::info!(
@@ -1583,6 +1589,16 @@ impl InfrastructureMap {
                         before: Box::new(sql_resource.clone()),
                         after: Box::new(target_sql_resource.clone()),
                     }));
+
+                    // Check if updated SQL resource is a materialized view that needs population
+                    use crate::infrastructure::olap::clickhouse::diff_strategy::ClickHouseTableDiffStrategy;
+                    ClickHouseTableDiffStrategy::check_materialized_view_population(
+                        target_sql_resource,
+                        target_tables,
+                        true,
+                        is_production,
+                        olap_changes,
+                    );
                 }
             } else {
                 log::debug!("SQL resource '{}' removed", id);
@@ -1607,6 +1623,7 @@ impl InfrastructureMap {
                     sql_resource,
                     target_tables,
                     true,
+                    is_production,
                     olap_changes,
                 );
             }
@@ -2914,7 +2931,7 @@ mod tests {
         externally_managed_topic.life_cycle = LifeCycle::ExternallyManaged;
         map2.add_topic(externally_managed_topic.clone());
 
-        let changes = map1.diff_with_table_strategy(&map2, &DefaultTableDiffStrategy, true);
+        let changes = map1.diff_with_table_strategy(&map2, &DefaultTableDiffStrategy, true, false);
 
         // Should have no OLAP changes (table removal filtered out)
         let table_removals = changes
@@ -3768,6 +3785,7 @@ mod diff_sql_resources_tests {
             &self_resources,
             &target_resources,
             &tables,
+            false,
             &mut olap_changes,
         );
         assert!(olap_changes.is_empty());
@@ -3788,6 +3806,7 @@ mod diff_sql_resources_tests {
             &self_resources,
             &target_resources,
             &tables,
+            false,
             &mut olap_changes,
         );
         assert!(olap_changes.is_empty());
@@ -3806,6 +3825,7 @@ mod diff_sql_resources_tests {
             &self_resources,
             &target_resources,
             &tables,
+            false,
             &mut olap_changes,
         );
 
@@ -3831,6 +3851,7 @@ mod diff_sql_resources_tests {
             &self_resources,
             &target_resources,
             &tables,
+            false,
             &mut olap_changes,
         );
 
@@ -3860,6 +3881,7 @@ mod diff_sql_resources_tests {
             &self_resources,
             &target_resources,
             &tables,
+            false,
             &mut olap_changes,
         );
 
@@ -3894,6 +3916,7 @@ mod diff_sql_resources_tests {
             &self_resources,
             &target_resources,
             &tables,
+            false,
             &mut olap_changes,
         );
 
@@ -3937,6 +3960,7 @@ mod diff_sql_resources_tests {
             &self_resources,
             &target_resources,
             &tables,
+            false,
             &mut olap_changes,
         );
 
@@ -3970,6 +3994,84 @@ mod diff_sql_resources_tests {
         assert!(update_found, "Update change not found");
         assert!(remove_found, "Remove change not found");
         assert!(add_found, "Add change not found");
+    }
+
+    #[test]
+    fn test_update_materialized_view_select_statement_should_trigger_backfill() {
+        use crate::framework::core::infrastructure::InfrastructureSignature;
+
+        let mv_before = SqlResource {
+            name: "events_summary_mv".to_string(),
+            setup: vec!["CREATE MATERIALIZED VIEW events_summary_mv TO events_summary_table AS SELECT id, name FROM events".to_string()],
+            teardown: vec!["DROP VIEW events_summary_mv".to_string()],
+            pulls_data_from: vec![InfrastructureSignature::Table {
+                id: "events".to_string(),
+            }],
+            pushes_data_to: vec![InfrastructureSignature::Table {
+                id: "events_summary_table".to_string(),
+            }],
+        };
+
+        let mv_after = SqlResource {
+            name: "events_summary_mv".to_string(),
+            setup: vec!["CREATE MATERIALIZED VIEW events_summary_mv TO events_summary_table AS SELECT id, name, timestamp FROM events".to_string()],
+            teardown: vec!["DROP VIEW events_summary_mv".to_string()],
+            pulls_data_from: vec![InfrastructureSignature::Table {
+                id: "events".to_string(),
+            }],
+            pushes_data_to: vec![InfrastructureSignature::Table {
+                id: "events_summary_table".to_string(),
+            }],
+        };
+
+        let mut self_resources = HashMap::new();
+        self_resources.insert(mv_before.name.clone(), mv_before.clone());
+
+        let mut target_resources = HashMap::new();
+        target_resources.insert(mv_after.name.clone(), mv_after.clone());
+
+        let mut olap_changes = Vec::new();
+        let tables = HashMap::new();
+
+        InfrastructureMap::diff_sql_resources(
+            &self_resources,
+            &target_resources,
+            &tables,
+            false,
+            &mut olap_changes,
+        );
+
+        assert_eq!(olap_changes.len(), 2);
+
+        let mut has_updated = false;
+        let mut has_populate = false;
+
+        for change in &olap_changes {
+            match change {
+                OlapChange::SqlResource(Change::Updated { before, after }) => {
+                    assert_eq!(before.name, "events_summary_mv");
+                    assert_eq!(after.name, "events_summary_mv");
+                    assert!(before.setup[0].contains("SELECT id, name FROM"));
+                    assert!(after.setup[0].contains("SELECT id, name, timestamp FROM"));
+                    has_updated = true;
+                }
+                OlapChange::PopulateMaterializedView {
+                    view_name,
+                    target_table,
+                    select_statement,
+                    ..
+                } => {
+                    assert_eq!(view_name, "events_summary_mv");
+                    assert_eq!(target_table, "events_summary_table");
+                    assert!(select_statement.contains("SELECT id, name, timestamp FROM events"));
+                    has_populate = true;
+                }
+                _ => panic!("Unexpected change type: {:?}", change),
+            }
+        }
+
+        assert!(has_updated);
+        assert!(has_populate);
     }
 }
 
@@ -4020,7 +4122,7 @@ mod diff_topic_tests {
         map1.add_topic(topic.clone());
         map2.add_topic(topic);
 
-        let changes = map1.diff_with_table_strategy(&map2, &DefaultTableDiffStrategy, true);
+        let changes = map1.diff_with_table_strategy(&map2, &DefaultTableDiffStrategy, true, false);
         assert!(
             changes.streaming_engine_changes.is_empty(),
             "Expected no streaming changes"
@@ -4038,7 +4140,7 @@ mod diff_topic_tests {
         let topic = create_test_topic("topic1", "1.0");
         map2.add_topic(topic.clone());
 
-        let changes = map1.diff_with_table_strategy(&map2, &DefaultTableDiffStrategy, true);
+        let changes = map1.diff_with_table_strategy(&map2, &DefaultTableDiffStrategy, true, false);
         assert_eq!(
             changes.streaming_engine_changes.len(),
             1,
@@ -4062,7 +4164,7 @@ mod diff_topic_tests {
         let topic = create_test_topic("topic1", "1.0");
         map1.add_topic(topic.clone());
 
-        let changes = map1.diff_with_table_strategy(&map2, &DefaultTableDiffStrategy, true);
+        let changes = map1.diff_with_table_strategy(&map2, &DefaultTableDiffStrategy, true, false);
         assert_eq!(
             changes.streaming_engine_changes.len(),
             1,
@@ -4103,7 +4205,7 @@ mod diff_topic_tests {
         map1.topics.insert(topic_before.id(), topic_before.clone());
         map2.topics.insert(topic_after.id(), topic_after.clone()); // Now uses the stable ID
 
-        let changes = map1.diff_with_table_strategy(&map2, &DefaultTableDiffStrategy, true);
+        let changes = map1.diff_with_table_strategy(&map2, &DefaultTableDiffStrategy, true, false);
         assert_eq!(
             changes.streaming_engine_changes.len(),
             1,
@@ -4163,7 +4265,7 @@ mod diff_view_tests {
         map1.views.insert(view.id(), view.clone());
         map2.views.insert(view.id(), view);
 
-        let changes = map1.diff_with_table_strategy(&map2, &DefaultTableDiffStrategy, true);
+        let changes = map1.diff_with_table_strategy(&map2, &DefaultTableDiffStrategy, true, false);
         assert!(changes.olap_changes.is_empty(), "Expected no OLAP changes");
         // Check other change types are also empty to be sure (except processes)
         assert!(changes.streaming_engine_changes.is_empty());
@@ -4177,7 +4279,7 @@ mod diff_view_tests {
         let view = create_test_view("view1", "1.0", "table1");
         map2.views.insert(view.id(), view.clone());
 
-        let changes = map1.diff_with_table_strategy(&map2, &DefaultTableDiffStrategy, true);
+        let changes = map1.diff_with_table_strategy(&map2, &DefaultTableDiffStrategy, true, false);
         assert_eq!(changes.olap_changes.len(), 1, "Expected one OLAP change");
         match &changes.olap_changes[0] {
             OlapChange::View(Change::Added(v)) => {
@@ -4197,7 +4299,7 @@ mod diff_view_tests {
         let view = create_test_view("view1", "1.0", "table1");
         map1.views.insert(view.id(), view.clone());
 
-        let changes = map1.diff_with_table_strategy(&map2, &DefaultTableDiffStrategy, true);
+        let changes = map1.diff_with_table_strategy(&map2, &DefaultTableDiffStrategy, true, false);
         assert_eq!(changes.olap_changes.len(), 1, "Expected one OLAP change");
         match &changes.olap_changes[0] {
             OlapChange::View(Change::Removed(v)) => {
@@ -4232,7 +4334,7 @@ mod diff_view_tests {
         map1.views.insert(view_before.id(), view_before.clone());
         map2.views.insert(view_after.id(), view_after.clone());
 
-        let changes = map1.diff_with_table_strategy(&map2, &DefaultTableDiffStrategy, true);
+        let changes = map1.diff_with_table_strategy(&map2, &DefaultTableDiffStrategy, true, false);
         assert_eq!(changes.olap_changes.len(), 1, "Expected one OLAP change");
         match &changes.olap_changes[0] {
             OlapChange::View(Change::Updated { before, after }) => {
@@ -4307,7 +4409,7 @@ mod diff_topic_to_table_sync_process_tests {
         map2.topic_to_table_sync_processes
             .insert(process.id(), process);
 
-        let changes = map1.diff_with_table_strategy(&map2, &DefaultTableDiffStrategy, true);
+        let changes = map1.diff_with_table_strategy(&map2, &DefaultTableDiffStrategy, true, false);
         // Check only process changes, as others should be empty
         let process_change_found = changes
             .processes_changes
@@ -4328,7 +4430,7 @@ mod diff_topic_to_table_sync_process_tests {
         map2.topic_to_table_sync_processes
             .insert(process.id(), process.clone());
 
-        let changes = map1.diff_with_table_strategy(&map2, &DefaultTableDiffStrategy, true);
+        let changes = map1.diff_with_table_strategy(&map2, &DefaultTableDiffStrategy, true, false);
         let process_change_found = changes
             .processes_changes
             .iter()
@@ -4354,7 +4456,7 @@ mod diff_topic_to_table_sync_process_tests {
         map1.topic_to_table_sync_processes
             .insert(process.id(), process.clone());
 
-        let changes = map1.diff_with_table_strategy(&map2, &DefaultTableDiffStrategy, true);
+        let changes = map1.diff_with_table_strategy(&map2, &DefaultTableDiffStrategy, true, false);
         let process_change_found = changes
             .processes_changes
             .iter()
@@ -4420,7 +4522,7 @@ mod diff_topic_to_table_sync_process_tests {
         map2.topic_to_table_sync_processes
             .insert(process_after.id(), process_after.clone());
 
-        let changes = map1.diff_with_table_strategy(&map2, &DefaultTableDiffStrategy, true);
+        let changes = map1.diff_with_table_strategy(&map2, &DefaultTableDiffStrategy, true, false);
         let process_change_found = changes
             .processes_changes
             .iter()
@@ -4481,7 +4583,7 @@ mod diff_topic_to_topic_sync_process_tests {
         map2.topic_to_topic_sync_processes
             .insert(process.id(), process);
 
-        let changes = map1.diff_with_table_strategy(&map2, &DefaultTableDiffStrategy, true);
+        let changes = map1.diff_with_table_strategy(&map2, &DefaultTableDiffStrategy, true, false);
         let process_change_found = changes
             .processes_changes
             .iter()
@@ -4501,7 +4603,7 @@ mod diff_topic_to_topic_sync_process_tests {
         map2.topic_to_topic_sync_processes
             .insert(process.id(), process.clone());
 
-        let changes = map1.diff_with_table_strategy(&map2, &DefaultTableDiffStrategy, true);
+        let changes = map1.diff_with_table_strategy(&map2, &DefaultTableDiffStrategy, true, false);
         let process_change_found = changes
             .processes_changes
             .iter()
@@ -4527,7 +4629,7 @@ mod diff_topic_to_topic_sync_process_tests {
         map1.topic_to_topic_sync_processes
             .insert(process.id(), process.clone());
 
-        let changes = map1.diff_with_table_strategy(&map2, &DefaultTableDiffStrategy, true);
+        let changes = map1.diff_with_table_strategy(&map2, &DefaultTableDiffStrategy, true, false);
         let process_change_found = changes
             .processes_changes
             .iter()
@@ -4574,7 +4676,7 @@ mod diff_topic_to_topic_sync_process_tests {
         map2.topic_to_topic_sync_processes
             .insert(process_after.id(), process_after.clone());
 
-        let changes = map1.diff_with_table_strategy(&map2, &DefaultTableDiffStrategy, true);
+        let changes = map1.diff_with_table_strategy(&map2, &DefaultTableDiffStrategy, true, false);
         let process_change_found = changes
             .processes_changes
             .iter()
@@ -4650,7 +4752,7 @@ mod diff_function_process_tests {
         map2.function_processes
             .insert(process.id(), process.clone()); // Identical process
 
-        let changes = map1.diff_with_table_strategy(&map2, &DefaultTableDiffStrategy, true);
+        let changes = map1.diff_with_table_strategy(&map2, &DefaultTableDiffStrategy, true, false);
         let process_change_found = changes
             .processes_changes
             .iter()
@@ -4677,7 +4779,7 @@ mod diff_function_process_tests {
         map2.function_processes
             .insert(process.id(), process.clone());
 
-        let changes = map1.diff_with_table_strategy(&map2, &DefaultTableDiffStrategy, true);
+        let changes = map1.diff_with_table_strategy(&map2, &DefaultTableDiffStrategy, true, false);
         let process_change_found = changes
             .processes_changes
             .iter()
@@ -4703,7 +4805,7 @@ mod diff_function_process_tests {
         map1.function_processes
             .insert(process.id(), process.clone());
 
-        let changes = map1.diff_with_table_strategy(&map2, &DefaultTableDiffStrategy, true);
+        let changes = map1.diff_with_table_strategy(&map2, &DefaultTableDiffStrategy, true, false);
         let process_change_found = changes
             .processes_changes
             .iter()
@@ -4752,7 +4854,7 @@ mod diff_function_process_tests {
         map2.function_processes
             .insert(process_after.id(), process_after.clone());
 
-        let changes = map1.diff_with_table_strategy(&map2, &DefaultTableDiffStrategy, true);
+        let changes = map1.diff_with_table_strategy(&map2, &DefaultTableDiffStrategy, true, false);
         let process_change_found = changes
             .processes_changes
             .iter()
@@ -4807,7 +4909,7 @@ mod diff_orchestration_worker_tests {
         map2.orchestration_workers
             .insert(id.clone(), worker.clone()); // Identical worker
 
-        let changes = map1.diff_with_table_strategy(&map2, &DefaultTableDiffStrategy, true);
+        let changes = map1.diff_with_table_strategy(&map2, &DefaultTableDiffStrategy, true, false);
         let process_change_found = changes
             .processes_changes
             .iter()
@@ -4838,7 +4940,7 @@ mod diff_orchestration_worker_tests {
         map2.orchestration_workers
             .insert(id.clone(), worker.clone());
 
-        let changes = map1.diff_with_table_strategy(&map2, &DefaultTableDiffStrategy, true);
+        let changes = map1.diff_with_table_strategy(&map2, &DefaultTableDiffStrategy, true, false);
         let process_change_found = changes
             .processes_changes
             .iter()
@@ -4866,7 +4968,7 @@ mod diff_orchestration_worker_tests {
         map1.orchestration_workers
             .insert(id.clone(), worker.clone());
 
-        let changes = map1.diff_with_table_strategy(&map2, &DefaultTableDiffStrategy, true);
+        let changes = map1.diff_with_table_strategy(&map2, &DefaultTableDiffStrategy, true, false);
         let process_change_found = changes
             .processes_changes
             .iter()
@@ -4899,7 +5001,7 @@ mod diff_orchestration_worker_tests {
         map2.orchestration_workers
             .insert(worker_ts.id(), worker_ts.clone());
 
-        let changes = map1.diff_with_table_strategy(&map2, &DefaultTableDiffStrategy, true);
+        let changes = map1.diff_with_table_strategy(&map2, &DefaultTableDiffStrategy, true, false);
 
         let mut removed_found = false;
         let mut added_found = false;
