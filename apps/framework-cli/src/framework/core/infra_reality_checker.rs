@@ -430,7 +430,10 @@ mod tests {
 
         // Create mock OLAP client with one table
         let mock_client = MockOlapClient {
-            tables: vec![table.clone()],
+            tables: vec![Table {
+                database: Some(DEFAULT_DATABASE_NAME.to_string()),
+                ..table.clone()
+            }],
         };
 
         // Create empty infrastructure map
@@ -466,7 +469,9 @@ mod tests {
         assert!(discrepancies.mismatched_tables.is_empty());
 
         // Add table to infrastructure map
-        infra_map.tables.insert(table.name.clone(), table);
+        infra_map
+            .tables
+            .insert(table.id(DEFAULT_DATABASE_NAME), table);
 
         // Check again
         let discrepancies = checker.check_reality(&project, &infra_map).await.unwrap();
