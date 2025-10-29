@@ -180,6 +180,10 @@ impl<T: OlapOperations> InfraRealityChecker<T> {
                 if mapped_table_map.contains_key(&name_version) {
                     return Some(name_version);
                 }
+            } else {
+                if mapped_table_map.contains_key(&table.name) {
+                    return Some(table.name.clone());
+                }
             }
 
             None
