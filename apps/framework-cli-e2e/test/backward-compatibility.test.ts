@@ -412,55 +412,67 @@ describe("Backward Compatibility Tests", function () {
             console.log("moose plan stderr:", stderr);
           }
 
-          // The plan should show no changes (or only minimal expected changes)
-          // Key assertion: we should NOT see table recreations or major schema changes
-          const output = stdout.toLowerCase();
+          // Strip ANSI color codes from the output for reliable parsing
+          const stripAnsi = (str: string) => str.replace(/\x1b\[[0-9;]*m/g, "");
+          const cleanOutput = stripAnsi(stdout);
 
-          // These would indicate breaking changes:
-          if (output.includes("drop table") || output.includes("droptable")) {
+          // The plan output uses the format:
+          // "- <Type>: Name" for removals (red)
+          // "+ <Type>: Name" for additions (green)
+          // "~ <Type>: Name" for updates (yellow)
+          // Where <Type> can be: Table, View, Topic, SQL Resource, Function, etc.
+
+          // Check for any infrastructure being removed (- prefix)
+          // This is a BREAKING CHANGE as existing infrastructure is being deleted
+          const removedItems = cleanOutput.match(
+            /^\s*-\s+(\w+(?:\s+\w+)*?):/gm,
+          );
+          if (removedItems) {
             throw new Error(
-              `Unexpected table drop detected in plan output. This indicates a backward incompatible change:\n${stdout}`,
+              `BREAKING CHANGE DETECTED: Infrastructure is being removed from the plan.\n` +
+                `This means the new CLI does not recognize infrastructure created by CLI 0.6.157.\n` +
+                `This is a backward incompatible change that would cause data loss.\n\n` +
+                `Removed items:\n${removedItems.join("\n")}\n\n` +
+                `Full plan output:\n${cleanOutput}`,
             );
           }
 
-          if (
-            output.includes("create table") ||
-            output.includes("createtable")
-          ) {
+          // Check for any infrastructure being added (+ prefix)
+          // This could mean the new CLI doesn't recognize existing infrastructure and wants to recreate it
+          const addedItems = cleanOutput.match(/^\s*\+\s+(\w+(?:\s+\w+)*?):/gm);
+          if (addedItems) {
             throw new Error(
-              `Unexpected table creation detected in plan output. This indicates tables weren't recognized:\n${stdout}`,
+              `BREAKING CHANGE DETECTED: Infrastructure is being added in the plan.\n` +
+                `This likely means the new CLI does not recognize existing infrastructure from CLI 0.6.157\n` +
+                `and wants to create it again, which is a backward incompatible change.\n\n` +
+                `Added items:\n${addedItems.join("\n")}\n\n` +
+                `Full plan output:\n${cleanOutput}`,
             );
           }
 
-          // Check for "no changes" message or empty operations
+          // Check for "no changes" message
+          const output = cleanOutput.toLowerCase();
           const hasNoChanges =
             output.includes("no changes") ||
-            output.includes("operations: []") ||
-            output.includes("0 changes") ||
-            output.match(/operations:\s*\[\s*\]/);
+            output.includes("no changes detected");
 
           if (!hasNoChanges) {
-            console.warn(
-              `Plan output shows some changes. Reviewing for acceptability:\n${stdout}`,
+            // If there are changes, they should only be updates (~ prefix), not additions/removals
+            // Check if there are any updates
+            const updatedItems = cleanOutput.match(
+              /^\s*~\s+(\w+(?:\s+\w+)*?):/gm,
             );
-
-            // Some changes might be acceptable (e.g., metadata updates)
-            // But we should not see structural changes
-            const hasStructuralChanges =
-              output.includes("alter table") ||
-              output.includes("add column") ||
-              output.includes("drop column") ||
-              output.includes("modify column");
-
-            if (hasStructuralChanges) {
-              throw new Error(
-                `Unexpected structural changes detected in plan output:\n${stdout}`,
+            if (updatedItems) {
+              console.warn(
+                `Plan shows infrastructure updates (~ prefix). These may be acceptable if they're metadata-only changes.`,
               );
+              console.log(`Updated items:\n${updatedItems.join("\n")}`);
+              console.log(
+                "⚠️  Infrastructure updates detected - review the changes to ensure they are backward compatible.",
+              );
+            } else {
+              console.warn(`Plan output shows some changes:\n${cleanOutput}`);
             }
-
-            console.log(
-              "Plan shows minor changes only, which may be acceptable.",
-            );
           } else {
             console.log(
               "✅ No changes detected - backward compatibility verified!",
