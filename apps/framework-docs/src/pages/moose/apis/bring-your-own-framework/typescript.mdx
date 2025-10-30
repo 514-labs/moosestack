@@ -303,7 +303,7 @@ You can use WebApp alongside standard Moose `Api` in the same file:
 
 ```ts filename="app/apis/combined.ts" copy
 import express from "express";
-import { WebApp, Api, getMooseUtils } from "@514labs/moose-lib";
+import { WebApp, Api, getMooseUtils, expressMiddleware } from "@514labs/moose-lib";
 
 // Standard Moose API
 interface Params {
@@ -328,6 +328,7 @@ export const standardApi = new Api<Params, Result[]>(
 // Custom Express WebApp
 const app = express();
 app.use(express.json());
+app.use(expressMiddleware()); // Required for Express
 
 app.get("/custom", async (req, res) => {
   const moose = getMooseUtils(req);
