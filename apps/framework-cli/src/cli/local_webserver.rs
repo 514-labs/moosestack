@@ -2363,6 +2363,7 @@ impl Webserver {
         process_registry: Arc<RwLock<ProcessRegistries>>,
         enable_mcp: bool,
         processing_coordinator: crate::cli::processing_coordinator::ProcessingCoordinator,
+        watcher_shutdown_tx: Option<tokio::sync::watch::Sender<bool>>,
     ) {
         //! Starts the local webserver
         let socket = self.socket().await;
@@ -2506,6 +2507,13 @@ impl Webserver {
             tokio::select! {
                 _ = sigint.recv() => {
                     info!("SIGINT received, shutting down");
+
+                    // Signal file watcher to stop processing events
+                    if let Some(ref tx) = watcher_shutdown_tx {
+                        let _ = tx.send(true);
+                        info!("Sent shutdown signal to file watcher");
+                    }
+
                     // Immediately show feedback to the user
                     super::display::show_message_wrapper(
                         MessageType::Highlight,
@@ -2518,6 +2526,13 @@ impl Webserver {
                 }
                 _ = sigterm.recv() => {
                     info!("SIGTERM received, shutting down");
+
+                    // Signal file watcher to stop processing events
+                    if let Some(ref tx) = watcher_shutdown_tx {
+                        let _ = tx.send(true);
+                        info!("Sent shutdown signal to file watcher");
+                    }
+
                     // Immediately show feedback to the user
                     super::display::show_message_wrapper(
                         MessageType::Highlight,

@@ -83,7 +83,6 @@ jobs:
     name: Check
     # This is doing both checks and compilation hence why there is a
     # Bigger machine
-    # TODO: Why does ubuntu-22-8-core sometime not have a runner?
     runs-on: ubuntu-22-8-core
     # Add explicit read-only permissions
     permissions:

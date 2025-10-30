@@ -78,30 +78,16 @@ impl EventBuckets {
 
     /// Processes a file system event and tracks it if it's relevant.
     /// Only processes events that are relevant (create, modify, remove) and
-    /// ignores metadata changes, access events, and spurious modify events.
+    /// ignores metadata changes and access events.
     pub fn insert(&mut self, event: Event) {
         match event.kind {
-            // Filter out access events, metadata changes, and ModifyKind::Any.
-            // ModifyKind::Any are spurious "something happened" events that can be
-            // triggered by multiple processes opening files simultaneously
-            // (e.g., during Python startup when importing modules)
-            EventKind::Access(_)
-            | EventKind::Modify(ModifyKind::Metadata(_))
-            | EventKind::Modify(ModifyKind::Any) => {
-                info!("Filtered out Modify(Any) event kind: {:?}", event.kind);
-                return;
-            }
+            EventKind::Access(_) | EventKind::Modify(ModifyKind::Metadata(_)) => return,
             EventKind::Any
             | EventKind::Create(_)
             | EventKind::Modify(_)
             | EventKind::Remove(_)
             | EventKind::Other => {}
         };
-
-        info!(
-            "Watcher received event: kind={:?}, paths={:?}",
-            event.kind, event.paths
-        );
 
         for path in event.paths {
             if !path.ext_is_supported_lang() {
@@ -131,6 +117,7 @@ impl EventBuckets {
 /// * `state_storage` - State storage for managing infrastructure state
 /// * `settings` - CLI settings configuration
 /// * `processing_coordinator` - Coordinator for synchronizing with MCP tools
+/// * `shutdown_rx` - Receiver to listen for shutdown signal
 #[allow(clippy::too_many_arguments)]
 async fn watch(
     project: Arc<Project>,
@@ -144,6 +131,7 @@ async fn watch(
     state_storage: Arc<Box<dyn StateStorage>>,
     settings: Settings,
     processing_coordinator: ProcessingCoordinator,
+    mut shutdown_rx: tokio::sync::watch::Receiver<bool>,
 ) -> Result<(), anyhow::Error> {
     log::debug!(
         "Starting file watcher for project: {:?}",
@@ -164,6 +152,10 @@ async fn watch(
 
     loop {
         tokio::select! {
+            _ = shutdown_rx.changed() => {
+                info!("Watcher received shutdown signal, stopping file monitoring");
+                break;
+            }
             Ok(()) = rx.changed() => {
                 log::debug!("Received change notification, current changes: {:?}", rx.borrow());
             }
@@ -265,6 +257,8 @@ async fn watch(
             }
         }
     }
+
+    Ok(())
 }
 
 /// File watcher that monitors project files for changes and triggers infrastructure updates.
@@ -293,6 +287,7 @@ impl FileWatcher {
     /// * `state_storage` - State storage for managing infrastructure state
     /// * `settings` - CLI settings configuration
     /// * `processing_coordinator` - Coordinator for synchronizing with MCP tools
+    /// * `shutdown_rx` - Receiver to listen for shutdown signal
     #[allow(clippy::too_many_arguments)]
     pub fn start(
         &self,
@@ -307,6 +302,7 @@ impl FileWatcher {
         state_storage: Arc<Box<dyn StateStorage>>,
         settings: Settings,
         processing_coordinator: ProcessingCoordinator,
+        shutdown_rx: tokio::sync::watch::Receiver<bool>,
     ) -> Result<(), Error> {
         show_message!(MessageType::Info, {
             Message {
@@ -327,6 +323,7 @@ impl FileWatcher {
                 state_storage,
                 settings,
                 processing_coordinator,
+                shutdown_rx,
             )
             .await
         };

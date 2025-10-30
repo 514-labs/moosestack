@@ -175,7 +175,7 @@ export const verifyClickhouseData = async (
     },
     {
       // 10 attempts with backoff = ~75s total, well under test timeout of 120s
-      // Too many attempts would make this go longer than the test because of exponential backoff.
+      // Too many attempts would make this go longer than the test timeout because of exponential backoff.
       attempts: RETRY_CONFIG.DEFAULT_ATTEMPTS,
       delayMs: RETRY_CONFIG.DEFAULT_DELAY_MS,
     },
