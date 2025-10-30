@@ -19,7 +19,7 @@ function formatStarCount(count: number): string {
 export function GitHubButtonGroup({ stars }: GitHubButtonGroupProps) {
   return (
     <ButtonGroup>
-      <Button variant="outline" size="sm" asChild className="gap-2">
+      <Button variant="outline" asChild className="gap-2">
         <Link
           href="https://github.com/514-labs/moose"
           target="_blank"
@@ -30,7 +30,7 @@ export function GitHubButtonGroup({ stars }: GitHubButtonGroupProps) {
         </Link>
       </Button>
       {stars !== null && (
-        <Button variant="outline" size="sm" className="gap-2" asChild>
+        <Button variant="outline" className="gap-2" asChild>
           <Link
             href="https://github.com/514-labs/moose/stargazers"
             target="_blank"

@@ -3,7 +3,6 @@
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { Menu } from "lucide-react";
-import { IconHistory } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useState } from "react";
@@ -80,7 +79,6 @@ export function TopNav({ stars }: TopNavProps) {
                   <Button
                     key={item.section}
                     variant={isActive ? "secondary" : "ghost"}
-                    size="sm"
                     asChild
                   >
                     <Link
@@ -96,14 +94,8 @@ export function TopNav({ stars }: TopNavProps) {
             </nav>
 
             <div className="flex items-center space-x-2">
-              <Button variant="ghost" size="sm" asChild className="gap-2">
-                <Link
-                  href={buildUrl("/moosestack/changelog")}
-                  className="flex items-center gap-2"
-                >
-                  <IconHistory className="h-4 w-4" />
-                  <span>Changelog</span>
-                </Link>
+              <Button variant="ghost" asChild>
+                <Link href={buildUrl("/moosestack/changelog")}>Changelog</Link>
               </Button>
               <GitHubButtonGroup stars={stars} />
               <ThemeToggle />
@@ -134,7 +126,6 @@ export function TopNav({ stars }: TopNavProps) {
                 <Button
                   key={item.section}
                   variant={isActive ? "secondary" : "ghost"}
-                  size="sm"
                   asChild
                   className="w-full justify-start"
                 >
