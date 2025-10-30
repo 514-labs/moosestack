@@ -33,6 +33,7 @@ import {
 
 import {
   waitForServerStart,
+  waitForStreamingFunctions,
   waitForKafkaReady,
   killRemainingProcesses,
   globalDockerCleanup,
@@ -228,8 +229,9 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
       await waitForKafkaReady(TIMEOUTS.KAFKA_READY_MS);
       console.log("Kafka ready, cleaning up old data...");
       await cleanupClickhouseData();
-      console.log("Waiting before running tests...");
-      await setTimeoutAsync(TIMEOUTS.PRE_TEST_WAIT_MS);
+      console.log("Waiting for streaming functions to be ready...");
+      await waitForStreamingFunctions();
+      console.log("All components ready, starting tests...");
     });
 
     after(async function () {

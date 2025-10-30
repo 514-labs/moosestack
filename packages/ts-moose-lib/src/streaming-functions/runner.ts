@@ -1098,6 +1098,7 @@ export const runStreamingFunctions = async (
             producer,
             streamingFuncId,
           );
+          logger.log("Streaming function started");
         } catch (e) {
           logger.error("Failed to start kafka consumer: ");
           if (e instanceof Error) {
