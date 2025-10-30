@@ -281,23 +281,21 @@ mod tests {
     use crate::framework::versions::Version;
     use crate::project::python_project::PythonProject;
     use crate::project::{LanguageProjectConfig, Project};
-    use lazy_static::lazy_static;
-    use std::path::PathBuf;
+    use tempfile::TempDir;
 
-    lazy_static! {
-        static ref PROJECT: Project = {
-            let manifest_location = env!("CARGO_MANIFEST_DIR");
-            Project::new(
-                &PathBuf::from(manifest_location).join("tests/test_project"),
-                "testing".to_string(),
-                SupportedLanguages::Typescript,
-            )
-        };
+    /// Helper function to create an isolated test project
+    /// Each test gets its own temporary directory to avoid shared state issues
+    fn create_test_project(language: SupportedLanguages) -> (TempDir, Project) {
+        let temp_dir = TempDir::new().unwrap();
+        let project = Project::new(temp_dir.path(), "testing".to_string(), language);
+        (temp_dir, project)
     }
 
     #[test]
     fn test_generate_no_data_model() {
-        let result = generate(&PROJECT, Either::Right("Foo"), Either::Right("Bar"));
+        let (_temp_dir, project) = create_test_project(SupportedLanguages::Typescript);
+
+        let result = generate(&project, Either::Right("Foo"), Either::Right("Bar"));
 
         println!("{result}");
         assert_eq!(
@@ -319,8 +317,10 @@ export default function run(source: Foo): Bar | null {
 
     #[test]
     fn test_generate_with_data_model() {
+        let (_temp_dir, project) = create_test_project(SupportedLanguages::Typescript);
+
         let result = generate(
-            &PROJECT,
+            &project,
             Either::Left(&DataModel {
                 columns: to_columns(vec![
                     ("eventId", ColumnType::String, true),
@@ -330,7 +330,7 @@ export default function run(source: Foo): Bar | null {
                 ]),
                 name: "UserActivity".to_string(),
                 config: Default::default(),
-                abs_file_path: PROJECT.data_models_dir().join("models.ts"),
+                abs_file_path: project.data_models_dir().join("models.ts"),
                 version: Version::from_string("0.0".to_string()),
             }),
             Either::Left(&DataModel {
@@ -342,7 +342,7 @@ export default function run(source: Foo): Bar | null {
                 ]),
                 name: "ParsedActivity".to_string(),
                 config: Default::default(),
-                abs_file_path: PROJECT.data_models_dir().join("models.ts"),
+                abs_file_path: project.data_models_dir().join("models.ts"),
                 version: Version::from_string("0.0".to_string()),
             }),
         );
@@ -372,7 +372,7 @@ export default function run(source: UserActivity): ParsedActivity | null {
 
     #[test]
     fn test_migration() {
-        let mut project = PROJECT.clone();
+        let (_temp_dir, mut project) = create_test_project(SupportedLanguages::Typescript);
         match project.language_project_config {
             LanguageProjectConfig::Typescript(ref mut t) => {
                 t.version = Version::from_string("0.1".to_string());
@@ -432,14 +432,13 @@ export default function run(source: UserActivityOld): UserActivity | null {
 
     #[test]
     fn test_migration_python() {
-        let mut project = PROJECT.clone();
+        let (_temp_dir, mut project) = create_test_project(SupportedLanguages::Python);
         project.language_project_config = LanguageProjectConfig::Python(PythonProject {
             name: "test".to_string(),
             version: Version::from_string("0.1".to_string()),
             dependencies: vec![],
             python_requires: ">=3.12".to_string(),
         });
-        project.language = SupportedLanguages::Python;
 
         let result = generate(
             &project,
