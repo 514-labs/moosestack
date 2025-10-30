@@ -528,7 +528,7 @@ def main():
     processing_thread.daemon = True
     processing_thread.start()
 
-    log(f"Streaming function Started")
+    log(f"Streaming function started")
 
     try:
         # Main thread waits for threads to complete
