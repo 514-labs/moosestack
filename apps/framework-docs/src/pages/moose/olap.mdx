@@ -1,0 +1,173 @@
+---
+title: Moose OLAP
+description: Create and manage ClickHouse tables, materialized views, and data migrations
+---
+
+import { Callout, BulletPointsCard, CheckmarkBullets, LanguageSwitcher, TypeScript, Python, CTACards, CTACard, PathConfig, ExportRequirement } from "@/components";
+import { Tabs } from "nextra/components";
+
+# Moose OLAP
+<LanguageSwitcher />
+
+## Overview
+
+The Moose OLAP module provides standalone ClickHouse database management with type-safe schemas. You can use this capability independently to create tables, materialized views, and manage your table schemas without requiring other MooseStack components.
+
+### Basic Example
+
+<ExportRequirement primitive="OlapTable" example="export { myTable }" />
+
+<TypeScript>
+```ts filename="FirstTable.ts" copy
+interface MyFirstTable {
+  id: Key<string>;
+  name: string;
+  age: number;
+}
+
+// Create a table named "first_table"
+export const myTable = new OlapTable<MyFirstTable>("first_table");
+```
+</TypeScript>
+
+<Python>
+```py filename="FirstTable.py" copy
+from pydantic import BaseModel
+from moose_lib import Key, OlapTable
+
+class MyFirstTable(BaseModel):
+    id: Key[str]
+    name: str
+    age: int
+
+# Create a table named "first_table"
+my_table = OlapTable[MyFirstTable]("first_table") 
+
+# No export needed - Python modules are automatically discovered
+```
+</Python>
+
+## Getting started
+
+If you’re new to Moose OLAP, choose one of these paths:
+
+### Import your schema from an existing ClickHouse database
+```bash filename="Terminal" copy
+moose init your-project-name --from-remote
+```
+<Callout type="info" title="Review the full guide" href="/moose/getting-started/from-clickhouse" ctaLabel="Get started" compact={true}>
+Review the full guide to learn more about how to bootstrap a new Moose OLAP project from an existing ClickHouse DB.
+</Callout>
+
+### Start from scratch
+Create a blank project, then model your first table:
+  ```bash filename="Terminal" copy
+  moose init your-project-name --language <typescript|python>
+  cd your-project-name
+  ```
+  <Callout type="info" title="Next steps: Model a table" href="/moose/olap/model-table" ctaLabel="Model a table" compact={true}>
+  Review the guide to learn more about how to model your first table.
+  </Callout>
+
+Working with ClickPipes/PeerDB? Read [External Tables](/moose/olap/external-tables) and keep them in sync with [DB Pull](/moose/olap/db-pull).
+
+## Enabling Moose OLAP
+
+In your `moose.config.toml` file, enable the OLAP Database capability:
+
+```toml
+[features]
+olap = true
+```
+
+## Core Capabilities
+
+- Model tables and views with TypeScript or Python
+- Automatic type mapping and support for advanced ClickHouse column types (e.g `JSON`, `LowCardinality`, `Nullable`, etc)
+- Create tables and views with one line of code
+- In-database transformations/materialized views
+- Migrations and schema evolution
+- Query with templated SQL strings and type-safe table and column references
+- Bulk insertion with failure handling and runtime validation
+
+
+### Managing your database
+
+<CTACards columns={2}>
+<CTACard
+  title="OLAP Tables"
+  description="Define and create ClickHouse tables with type-safe schemas"
+  ctaLink={`/moose/olap/model-table`}
+  ctaLabel="Learn More →"
+  badge={{ variant: "moose", text: "Tables" }}
+/>
+<CTACard
+  title="Materialized Views"
+  description="Pre-compute and store query results for faster analytics"
+  ctaLink={`/moose/olap/model-materialized-view`}
+  ctaLabel="Learn More →"
+  badge={{ variant: "moose", text: "Materialized Views" }}
+/>
+<CTACard
+  title="Schema Optimization"
+  description="Schema design best practices to optimize your queries"
+  ctaLink={`/moose/olap/schema-optimization`}
+  ctaLabel="Learn More →"
+  badge={{ variant: "moose", text: "Data Modeling" }}
+/>
+<CTACard
+  title="Dynamic Migrations"
+  description="Always keep your code and database in sync with dynamic migrations"
+  ctaLink={`/moose/olap/apply-migrations`}
+  ctaLabel="Learn More →"
+  badge={{ variant: "moose", text: "Migrations" }}
+/>
+</CTACards>
+
+### Accessing your data
+
+These capabilities are available from other MooseStack modules or even from your own client applications:
+
+
+<CTACards columns={1}>
+<CTACard
+  title="Read Data"
+  description="Write type-safe SQL queries with automatic interpolation"
+  ctaLink={`/moose/olap/read-data`}
+  ctaLabel="Learn More →"
+  orientation="horizontal"
+/>
+<CTACard
+  title="Insert Data"
+  description="Bulk insert and manage data in your OLAP tables"
+  ctaLink={`/moose/olap/insert-data`}
+  ctaLabel="Learn More →"
+  orientation="horizontal"
+/>
+</CTACards>
+
+### Connecting to your ClickHouse instance
+You can connect to your ClickHouse instance with your favorite database client. Your credentials are located in your `moose.config.toml` file:
+
+```toml filename="moose.config.toml" copy
+[clickhouse_config]
+db_name = "local"
+user = "panda"
+password = "pandapass"
+use_ssl = false
+host = "localhost"
+host_port = 18123
+native_port = 9000
+```
+
+<Callout type="info" title="Default Credentials">
+These are the default credentials for your local ClickHouse instance running in dev mode.
+</Callout>
+
+### Combining with other modules:
+
+Although designed to work independently, Moose OLAP can be combined with other modules to add additional capabilities surrounding your database:
+
+- Combine with Streaming and APIs to setup streaming ingestion into ClickHouse tables
+- Combine with Workflows to build ETL pipelines and data transformations
+- Combine with APIs to expose your ClickHouse queries to client applications via REST API

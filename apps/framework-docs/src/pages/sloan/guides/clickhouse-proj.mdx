@@ -1,0 +1,187 @@
+import { FeatureCard, FeatureGrid, Icons, Callout, ZoomImg, ToggleBlock } from "@/components";
+import { Steps, Tabs } from "nextra/components";
+
+## Quickstart: AI analytics engineering from your ClickHouse
+*Generate a local OLAP project from your ClickHouse deployment; Sloan MCP pre-configured for analytics engineering.*
+
+This will walk you through creating a new local Moose project reflecting the structure of your ClickHouse database. It will allow you to add data to your local dev environment from your remote ClickHouse database, and use Sloan MCP tools to enrich your project with metadata, or create new Moose primitives that you can use in your project (e.g.egress APIs). We'll use the ClickHouse Playground as our example database, but you can use any ClickHouse database.
+
+<Callout type="info" title="Prerequisites">
+- **OS**: macOS or Linux (WSL supported for Windows)
+- **Docker Desktop/Engine**: [24.0.0+](https://docs.docker.com/get-started/get-docker/)
+- **Node**: [version 20+](https://nodejs.org/en/download) (LTS recommended)
+- **Anthropic API Key**: [Get one here](https://docs.anthropic.com/en/docs/initial-setup)
+- **Client**: [Cursor](https://www.cursor.com/) or [Claude Desktop](https://claude.ai/download) or [Windsurf](https://windsurf.ai/download). For this particular use-case, we recommend Claude Desktop.
+</Callout>
+
+<Steps>
+### Install Moose and Sloan CLIs
+
+```bash filename="Terminal" copy
+bash -i <(curl -fsSL https://fiveonefour.com/install.sh) moose,sloan
+```
+
+We'll be using generative MCP tools here, so make sure you add your Anthropic API key in install. If you installed without adding it, you can add it later with `sloan config keys anthropic <your-api-key>`. If you need to create one, see: https://docs.anthropic.com/en/docs/initial-setup.
+
+### Create a new Moose project from your ClickHouse database
+
+```bash filename="Terminal" copy
+sloan init my_project_name --from-remote 'https://explorer:@play.clickhouse.com:443/?database=default' --language python --mcp cursor-project
+```
+
+<Callout type="info" title="Try with ClickHouse Playground">
+Want to test without your own ClickHouse? Use the [ClickHouse Playground](https://clickhouse.com/docs/getting-started/playground) with the connection string above. It has sample datasets (read-only) you can experiment with.
+
+```txt copy
+https://explorer:@play.clickhouse.com:443/?database=default
+```
+
+</Callout>
+
+
+<ToggleBlock openText="Need help finding credentials?" closeText="Hide credential help">
+  <Tabs items={["ClickHouse Cloud", "Self-Hosted", "Docker"]}>
+    <Tabs.Tab>
+      1. Log into your [ClickHouse Cloud console](https://clickhouse.cloud/)
+      2. Go to your service details page
+      3. Find "Connect" or "Connection Details" section
+      4. Copy the HTTPS endpoint and your username/password
+    </Tabs.Tab>
+    <Tabs.Tab>
+      - Check your ClickHouse config file (usually `/etc/clickhouse-server/config.xml`)
+      - Look for `<http_port>` (default: 8123) and `<https_port>` (default: 8443)
+      - Check users config in `/etc/clickhouse-server/users.xml` or users.d/ directory
+      - Default user is often `default` with no password
+    </Tabs.Tab>
+    <Tabs.Tab>
+      - Check your docker-compose.yml or docker run command for environment variables
+      - Look for `CLICKHOUSE_USER`, `CLICKHOUSE_PASSWORD`, `CLICKHOUSE_DB`
+      - Default is usually `http://default:@localhost:8123/?database=default`
+    </Tabs.Tab>
+  </Tabs>
+</ToggleBlock>
+
+<ToggleBlock openText="Common Issues" closeText="Hide Common Issues">
+
+- **Can't connect?** Try `curl http://your-host:8123/ping` to test connectivity
+- **Authentication failed?** Verify username/password with `clickhouse-client --user=username --password=password`
+- **Database not found?** Run `SHOW DATABASES` to see available databases
+- **Permission denied?** Check user permissions with `SHOW GRANTS FOR username`
+
+**Still stuck?** Check the [ClickHouse documentation](https://clickhouse.com/docs/en/getting-started/install) for your specific deployment method.
+
+</ToggleBlock>
+
+
+This will create a new Moose project from your ClickHouse database. [See Moose docs](https://docs.fiveonefour.com/moose) for more information about the project structure, and how it spins up your local development environment (including a local ClickHouse database).
+
+
+The new project is called "my_project_name" and is created in the current directory. the string after `--from-remote` is the connection string to your ClickHouse database, structured as `clickhouse://<username>:<password>@<host>:<port>/<database>` (note, the ClickHouse Playground has no password).
+
+
+### Install dependencies and run the dev server
+
+Before you can run Moose's local dev server, Docker Desktop must be running.
+
+Navigate into the project directory:
+
+```bash filename="Terminal" copy
+cd my_project_name
+```
+
+Install the dependencies: 
+
+```bash filename="Terminal" copy
+npm i
+```
+
+Run the dev server:
+
+```bash filename="Terminal" copy
+moose dev
+```
+
+### Get sample data
+
+```bash filename="Terminal" copy
+moose seed clickhouse --connection-string clickhouse://explorer:@play.clickhouse.com:9440/default --limit 100
+```
+
+This will seed your local ClickHouse database with 100 rows of sample data from your remote ClickHouse database—here, the ClickHouse Playground. You can change the number of rows with the `--limit` flag.
+
+This will improve the context provided to Sloan's MCP tools, and make it easier to validate analytic engineering tasks.
+
+### Set up your Client
+
+The `sloan init` command above configured Cursor to use Sloan MCP tools. You can check this by opening Cursor and looking at `cursor > settings > cursor settings > MCP` menu. You should see `sloan` in the list of MCPs, alongside a list of tools. 
+
+You may need to enable the MCP. Once you do so, you should see a green 🟢 status indicator next to it.
+
+<ZoomImg light="/cursor-mcp-settings.png" dark="/cursor-mcp-settings.png" alt="Claude search and tools, MCP running" />
+
+If you would like to use a different client, you can use the following command from within the project directory:
+
+```bash filename="Terminal" copy
+sloan setup --mcp <host>
+```
+
+### Enrich project with metadata [coming soon]
+
+Since we have a Moose project with sample data and some metadata, we can use this to create more metadata! 
+
+If we ask our client "Can you add a description to each Moose primitive in this project?", the LLM will use the `write_metadata` tool to add a description to each Moose primitive.
+
+```TypeScript filename="my_project_name/index.ts"
+const acPipeline = new IngestPipeline<AircraftTrackingProcessed>(
+    "AircraftTrackingProcessed",
+    {
+      table: true,
+      stream: true,
+      ingestApi: false,
+      metadata: {
+          description: "Pipeline for ingesting raw aircraft data" } // new description field!
+      }
+    
+);
+```
+
+### Chat with your data
+
+You can also now just chat with your client about your data! Try asking "Look at my MTA data in ClickHouse, tell me about the trains that ran in the last 24 hours."
+
+The client will use `read_moose_project`, `read_clickhouse_tables` and maybe `read_production_clickhouse` to answer your question.
+
+### Create new Egress APIs with Sloan MCP tools
+
+If you find a thread that you find interesting enough to want to productionize, try asking the client "can you create an egress API to furnish that data?"
+
+The client will use `create_egress_api` and `test_egress_api` to create an egress API primitives in Moose, that will automatically deploy in your local dev environment when you save.
+
+### What's next?
+
+Try adding new [ingestion scripts, data models, or materialized views to your project using Sloan's experimental tools](https://docs.fiveonefour.com/sloan/reference/tool-reference#experimental-moose-tools)!
+
+</Steps>
+## Other Quickstart Guides
+
+<FeatureGrid>
+  <FeatureCard
+    href="/sloan/guides/clickhouse-chat"
+    Icon={Icons.api}
+    title="AI Chat with ClickHouse"
+    description="
+    "
+    variant="sloan"
+  />
+  
+  
+  <FeatureCard
+    href="/sloan/guides/from-template"
+    Icon={Icons.db}
+    title="AI powered OLAP templates"
+    description="
+    "
+    variant="sloan"
+  />
+
+</FeatureGrid>

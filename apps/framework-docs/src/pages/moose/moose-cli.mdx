@@ -1,0 +1,263 @@
+---
+title: Moose CLI Reference
+description: Moose CLI Reference
+---
+
+# Moose CLI Reference
+
+## Installation
+
+```bash filename="Terminal" copy
+bash -i <(curl -fsSL https://fiveonefour.com/install.sh) moose
+```
+
+## Core Commands
+
+### Init
+Initializes a new Moose project.
+```bash
+moose init <name> --template <template> [--location <location>] [--no-fail-already-exists]
+```
+- `<name>`: Name of your app or service
+- `<template>`: Template to use for the project
+- `--location`: Optional location for your app or service
+- `--no-fail-already-exists`: Skip the directory existence check
+
+#### List Templates
+Lists available templates for project initialization.
+```bash
+moose template list
+```
+
+### Build
+Builds your Moose project.
+```bash
+moose build [--docker] [--amd64] [--arm64]
+```
+- `--docker`: Build for Docker
+- `--amd64`: Build for AMD64 architecture
+- `--arm64`: Build for ARM64 architecture
+
+### Dev
+Starts a local development environment with hot reload and automatic infrastructure management.
+```bash
+moose dev [--mcp] [--docker]
+```
+- `--mcp`: Enable or disable the MCP (Model Context Protocol) server (default: true). The MCP server provides AI-assisted development tools at `http://localhost:4000/mcp`. See [MCP Server documentation](/moose/mcp-server) for details.
+- `--docker`: Use Docker for infrastructure (default behavior in dev mode)
+
+The development server includes:
+- Hot reload for code changes
+- Automatic Docker container management (ClickHouse, Redpanda, Temporal, Redis)
+- Built-in MCP server for AI assistant integration
+- Health monitoring and metrics endpoints
+
+### Prod
+Starts Moose in production mode for cloud deployments.
+```bash
+moose prod
+```
+
+### Check
+Checks the project for non-runtime errors.
+```bash
+moose check [--write-infra-map]
+```
+
+### Clean
+Clears temporary data and stops development infrastructure.
+```bash
+moose clean
+```
+
+### Seed (ClickHouse)
+Seed your local ClickHouse from a remote ClickHouse instance.
+```bash
+moose seed clickhouse [--connection-string <CONNECTION_STRING>] [--table <name>] [--limit <n> | --all]
+```
+- `--connection-string`: Remote ClickHouse connection string. If omitted, the CLI uses `MOOSE_SEED_CLICKHOUSE_URL`.
+- `--table`: Seed only the specified table (default: all Moose tables).
+- `--limit`: Copy up to N rows (mutually exclusive with `--all`). Large limits are automatically batched.
+- `--all`: Copy entire table(s) in batches (mutually exclusive with `--limit`).
+
+**Connection String Format:**
+The connection string must use ClickHouse native protocol:
+```bash
+# ClickHouse native protocol (secure connection)
+clickhouse://username:password@host:9440/database
+```
+
+**Important:** 
+- The data transfer uses ClickHouse's native TCP protocol via `remoteSecure()` function. The remote ClickHouse server must have the native TCP port accessible (typically port 9440 for secure connections).
+- **Smart table matching**: The command automatically validates tables between local and remote databases. Tables that don't exist on the remote are gracefully skipped with warnings.
+- Use `--table <name>` to seed a specific table that exists in both local and remote databases.
+
+**User Experience:**
+- Progress indicator shows seeding status with spinner
+- Tables that don't exist on remote are automatically skipped with clear warnings
+- Final summary shows successful and skipped tables
+- Clean, streamlined output focused on results
+
+Notes:
+- Seeding is batched automatically for large datasets; Ctrl+C finishes the current batch gracefully.
+- Use env var fallback:
+```bash
+export MOOSE_SEED_CLICKHOUSE_URL='clickhouse://username:password@host:9440/database'
+```
+
+### Truncate
+Truncate tables or delete the last N rows from local ClickHouse tables.
+```bash
+moose truncate [TABLE[,TABLE...]] [--all] [--rows <n>]
+```
+- `TABLE[,TABLE...]`: One or more table names (comma-separated). Omit to use `--all`.
+- `--all`: Apply to all non-view tables in the current database (mutually exclusive with listing tables).
+- `--rows <n>`: Delete the last N rows per table; omit to remove all rows (TRUNCATE).
+
+Notes:
+- For `--rows`, the command uses the table ORDER BY when available; otherwise it falls back to a timestamp heuristic.
+
+## Monitoring Commands
+
+### Logs
+View Moose logs.
+```bash
+moose logs [--tail] [--filter <search_string>]
+```
+- `--tail`: Follow logs in real-time
+- `--filter`: Filter logs by specific string
+
+### Ps
+View Moose processes.
+```bash
+moose ps
+```
+
+### Ls
+View Moose primitives & infrastructure.
+```bash
+moose ls [--limit <n>] [--version <version>] [--streaming] [--type <type>] [--name <name>] [--json]
+```
+- `--limit`: Limit output (default: 10)
+- `--version`: View specific version
+- `--streaming`: View streaming topics
+- `--type`: Filter by infrastructure type (tables, streams, ingestion, sql_resource, consumption)
+- `--name`: Filter by name
+- `--json`: Output in JSON format
+
+### Metrics
+View live metrics from your Moose application.
+```bash
+moose metrics
+```
+
+### Peek
+View data from a table or stream.
+```bash
+moose peek <name> [--limit <n>] [--file <path>] [-t|--table] [-s|--stream]
+```
+- `<name>`: Name of the table or stream to peek
+- `--limit`: Number of rows to view (default: 5)
+- `--file`: Output to a file
+- `-t, --table`: View data from a table (default if neither flag specified)
+- `-s, --stream`: View data from a stream/topic
+
+## Generation Commands
+
+### Generate Hash Token
+Generate authentication tokens for API access.
+```bash
+moose generate hash-token
+```
+Generates both a plain-text Bearer token and its corresponding hashed version for authentication.
+
+### Generate Migration Plan (OLAP)
+Create an ordered ClickHouse DDL plan by comparing a remote instance with your local code.
+```bash
+moose generate migration --url https://<remote-env> --token <api-token> --save
+```
+- Writes `./migrations/plan.yaml` and snapshots `remote_state.json` and `local_infra_map.json`
+- Omit `--save` to output to stdout without writing files
+- Requires these feature flags in `moose.config.toml`:
+  ```toml filename="moose.config.toml" copy
+  [features]
+  olap = true
+  ddl_plan = true
+  ```
+
+### DB Pull (External Tables)
+Refresh `EXTERNALLY_MANAGED` table definitions from a remote ClickHouse instance.
+```bash
+moose db pull --connection-string <CONNECTION_STRING> [--file-path <OUTPUT_PATH>]
+```
+- `--connection-string`: ClickHouse URL; native `clickhouse://` is auto-converted to HTTP(S). Include `?database=` or the CLI will query the current database.
+- `--file-path`: Optional override for the generated external models file (defaults to `app/externalModels.ts` or `app/external_models.py`).
+
+Notes:
+- Only tables marked `EXTERNALLY_MANAGED` in your code are refreshed.
+- The command writes a single external models file and overwrites the file on each run.
+- See the full guide: [/moose/olap/db-pull](/moose/olap/db-pull)
+
+### Kafka
+
+#### Pull external topics and schemas
+Discover topics from a Kafka/Redpanda cluster and optionally fetch JSON Schemas from Schema Registry to emit typed external models.
+
+```bash
+moose kafka pull <bootstrap> [--path <PATH>] [--include <glob>] [--exclude <glob>] [--schema-registry <URL>]
+```
+- `<bootstrap>`: Kafka bootstrap servers, e.g. `localhost:19092`
+- `--path`: Output directory for generated files. Defaults to `app/external-topics` (TS) or `app/external_topics` (Python).
+- `--include`: Include pattern (glob). Default: `*`
+- `--exclude`: Exclude pattern (glob). Default: `{__consumer_offsets,_schemas}`
+- `--schema-registry`: Base URL for Schema Registry, e.g. `http://localhost:8081`
+
+Notes:
+- JSON Schema is supported initially; Avro/Protobuf planned.
+- Generated files will be overwritten on subsequent runs.
+
+## Workflow Management
+
+### Workflow
+```bash
+moose workflow <command> [options]
+```
+
+Available workflow commands:
+- `init <name> [--tasks <task-list>] [--task <task>...]`: Initialize a new workflow
+- `run <name> [--input <json>]`: Run a workflow
+- `resume <name> --from <task>`: Resume a workflow from a specific task
+- `list [--json]`: List registered workflows
+- `history [--status <status>] [--limit <n>] [--json]`: Show workflow history
+- `terminate <name>`: Terminate a workflow
+- `pause <name>`: Pause a workflow
+- `unpause <name>`: Unpause a workflow
+- `status <name> [--id <run-id>] [--verbose] [--json]`: Get workflow status
+
+## Planning and Deployment
+
+### Plan
+Display infrastructure changes for the next production deployment.
+
+**For Moose Server deployments:**
+```bash
+moose plan [--url <url>] [--token <token>]
+```
+- `--url`: Remote Moose instance URL (default: http://localhost:4000)
+- `--token`: API token for authentication
+
+**For Serverless deployments:**
+```bash
+moose plan --clickhouse-url <url>
+```
+- `--clickhouse-url`: ClickHouse connection URL (e.g., `clickhouse://user:pass@host:port/database`)
+
+### Refresh
+Integrate matching tables from a remote instance into the local project.
+```bash
+moose refresh [--url <url>] [--token <token>]
+```
+- `--url`: Remote Moose instance URL (default: http://localhost:4000)
+- `--token`: API token for authentication
+
+This reference reflects the current state of the Moose CLI based on the source code in the framework-cli directory. The commands are organized by their primary functions and include all available options and flags.

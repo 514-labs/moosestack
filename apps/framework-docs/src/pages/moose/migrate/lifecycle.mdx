@@ -1,0 +1,220 @@
+---
+title: LifeCycle Management
+description: Control how Moose manages database and streaming resources when your code changes
+---
+
+import { Callout, BulletPointsCard, LanguageSwitcher, TypeScript, Python } from "@/components";
+import { Tabs } from "nextra/components";
+
+# LifeCycle Management
+
+<LanguageSwitcher />
+
+## Overview
+
+The `LifeCycle` enum controls how Moose manages the lifecycle of database/streaming resources when your code changes.
+This feature gives you fine-grained control over whether Moose automatically updates your database schema or
+leaves it under external/manual control.
+
+<BulletPointsCard
+  title="LifeCycle management modes"
+  bullets={[
+    {
+      title: "FULLY_MANAGED (default)",
+      description: "Moose automatically modifies database resources to match your code, including destructive operations like dropping columns or tables"
+    },
+    {
+      title: "DELETION_PROTECTED",
+      description: "Moose will modify resources to match your code but avoids destructive actions like dropping columns or tables - only additive changes are applied"
+    },
+    {
+      title: "EXTERNALLY_MANAGED",
+      description: "Moose will not modify database resources at all - you are responsible for managing the schema manually"
+    }
+  ]}
+/>
+
+## LifeCycle Modes
+
+### `FULLY_MANAGED` (Default)
+
+This is the default behavior where Moose has complete control over your database resources. When you change your data models, Moose will automatically:
+
+- Add new columns or tables
+- Remove columns or tables that no longer exist in your code
+- Modify existing column types and constraints
+
+<Callout type="warning" title="Warning">
+This mode can perform destructive operations. Data may be lost if you remove fields from your data models or if you perform operations that require a destroy and recreate to be effective, like changing the <Python inline>`order_by_fields`</Python><TypeScript inline>`orderByFields`</TypeScript> field .  
+</Callout>
+
+<TypeScript>
+```ts filename="FullyManagedExample.ts" copy
+import { OlapTable, LifeCycle } from "@514labs/moose-lib";
+
+interface UserData {
+  id: string;
+  name: string;
+  email: string;
+}
+
+// Default behavior - fully managed
+const userTable = new OlapTable<UserData>("users");
+
+// Explicit fully managed configuration
+const explicitTable = new OlapTable<UserData>("users", {
+  orderByFields: ["id"],
+  lifeCycle: LifeCycle.FULLY_MANAGED
+});
+```
+</TypeScript>
+
+<Python>
+```py filename="FullyManagedExample.py" copy
+from moose_lib import OlapTable, OlapConfig, LifeCycle
+from pydantic import BaseModel
+
+class UserData(BaseModel):
+    id: str
+    name: str
+    email: str
+
+# Default behavior - fully managed
+user_table = OlapTable[UserData]("users")
+
+# Explicit fully managed configuration
+explicit_table = OlapTable[UserData]("users", OlapConfig(
+    order_by_fields=["id"],
+    life_cycle=LifeCycle.FULLY_MANAGED
+))
+```
+</Python>
+
+### `DELETION_PROTECTED`
+
+This mode allows Moose to automatically add new database structures but prevents it from removing existing ones.
+Perfect for production environments where you want to evolve your schema safely without risking data loss.
+
+**What Moose will do:**
+- Add new columns, tables
+- Modify column types (if compatible)
+- Update non-destructive configurations
+
+**What Moose won't do:**
+- Drop columns or tables
+- Perform destructive schema changes
+
+<TypeScript>
+```ts filename="DeletionProtectedExample.ts" copy
+import { IngestPipeline, LifeCycle } from "@514labs/moose-lib";
+
+interface ProductEvent {
+  id: string;
+  productId: string;
+  timestamp: Date;
+  action: string;
+}
+
+const productAnalytics = new IngestPipeline<ProductEvent>("product_analytics", {
+  table: {
+    orderByFields: ["timestamp", "productId"],
+    engine: ClickHouseEngines.ReplacingMergeTree,
+  },
+  stream: {
+    parallelism: 4,
+  },
+  ingestApi: true,
+  // automatically applied to the table and stream
+  lifeCycle: LifeCycle.DELETION_PROTECTED
+});
+```
+</TypeScript>
+
+<Python>
+```py filename="DeletionProtectedExample.py" copy
+from moose_lib import IngestPipeline, IngestPipelineConfig, OlapConfig, StreamConfig, LifeCycle
+from pydantic import BaseModel
+from datetime import datetime
+
+class ProductEvent(BaseModel):
+    id: str
+    product_id: str
+    timestamp: datetime
+    action: str
+
+product_analytics = IngestPipeline[ProductEvent]("product_analytics", IngestPipelineConfig(
+    table=OlapConfig(
+        order_by_fields=["timestamp", "product_id"],
+        engine=ClickHouseEngines.ReplacingMergeTree,
+    ),
+    stream=StreamConfig(
+        parallelism=4,
+    ),
+    ingest_api=True,
+  # automatically applied to the table and stream
+  life_cycle=LifeCycle.DELETION_PROTECTED
+))
+```
+</Python>
+
+### `EXTERNALLY_MANAGED`
+
+This mode tells Moose to completely hands-off your resources.
+You become responsible for creating and managing the database schema. This is useful when:
+
+- You have existing database tables managed by another team
+- You're integrating with another system (e.g. PeerDB)
+- You have strict database change management processes
+
+<Callout type="info" title="Note">
+With externally managed resources, you must ensure your database schema matches your data models exactly, or you may encounter runtime errors.
+</Callout>
+
+<TypeScript>
+```ts filename="ExternallyManagedExample.ts" copy
+import { Stream, OlapTable, LifeCycle, Key } from "@514labs/moose-lib";
+
+interface ExternalUserData {
+  userId: Key<string>;
+  fullName: string;
+  emailAddress: string;
+  createdAt: Date;
+}
+
+// Connect to existing database table
+const legacyUserTable = new OlapTable<ExternalUserData>("legacy_users", {
+  lifeCycle: LifeCycle.EXTERNALLY_MANAGED
+});
+
+// Connect to existing Kafka topic
+const legacyStream = new Stream<ExternalUserData>("legacy_user_stream", {
+  lifeCycle: LifeCycle.EXTERNALLY_MANAGED,
+  destination: legacyUserTable
+});
+```
+</TypeScript>
+
+<Python>
+```py filename="ExternallyManagedExample.py" copy
+from moose_lib import Stream, OlapTable, OlapConfig, StreamConfig, LifeCycle, Key
+from pydantic import BaseModel
+from datetime import datetime
+
+class ExternalUserData(BaseModel):
+    user_id: Key[str]
+    full_name: str
+    email_address: str
+    created_at: datetime
+
+# Connect to existing database table
+legacy_user_table = OlapTable[ExternalUserData]("legacy_users", OlapConfig(
+    life_cycle=LifeCycle.EXTERNALLY_MANAGED
+))
+
+# Connect to existing Kafka topic
+legacy_stream = Stream[ExternalUserData]("legacy_user_stream", StreamConfig(
+    life_cycle=LifeCycle.EXTERNALLY_MANAGED,
+    destination=legacy_user_table
+))
+```
+</Python>

@@ -1,0 +1,600 @@
+---
+title: Applying Migrations
+description: How to apply migrations to your database
+---
+
+import { Callout, LanguageSwitcher, TypeScript, Python, BulletPointsCard, PathConfig } from "@/components";
+import { ShieldCheck } from "lucide-react";
+
+# Applying Migrations
+
+
+<LanguageSwitcher />
+
+<Callout type="info" title="OLAP Migrations" href={`${PathConfig.migrate.path}/migration-types`} ctaLabel="View Docs" compact>
+This page covers OLAP migrations. For migrations across the MooseStack, see the Migrate docs.
+</Callout>
+
+## Overview
+
+Migrations are designed for two complementary goals:
+
+- Move fast locally by inferring changes from your code and applying them immediately to your local database.
+- Be deliberate in production by executing a reviewed, versioned plan that matches your intent and protects data.
+
+How to think about it:
+- Development mode: You edit code, MooseStack infers the SQL and immediately applies it to local ClickHouse. Great for rapid iteration; not guaranteed to infer intent (e.g., renames).
+- Production (planned) mode: You generate a plan from the target environment vs your code, review and commit the plan, and MooseStack executes it deterministically during deploy with drift checks.
+
+What you need to do:
+- In dev: just code. MooseStack handles local diffs automatically.
+- In prod (OLAP):
+  - Generate and save a plan:
+    ```bash
+    moose generate migration --url https://<remote-env> --token <api-token> --save
+    ```
+  - Review and edit the plan (`plan.yaml`) as needed
+  - Commit the plan to source control
+  - Deploy to production. MooseStack validates snapshots (current DB vs `remote_state.json`, desired code vs `local_infra_map.json`) and executes `plan.yaml` in order. If drift is detected, the deploy aborts; regenerate the plan and retry.
+
+
+## Development Workflow
+
+### Starting the Runtime
+
+Use `moose dev` to start the MooseStack runtime with automatic migration detection:
+
+```bash
+moose dev
+
+⡏ Starting local infrastructure
+  Successfully started containers
+     Validated clickhousedb-1 docker container
+     Validated redpanda-1 docker container
+  Successfully validated red panda cluster
+     Validated temporal docker container
+  Successfully ran local infrastructure
+```
+
+### Hot-Reloaded Migrations
+
+MooseStack continuously monitors your code changes and applies migrations automatically. All changes are applied to your **local database only**.
+
+<TypeScript>
+```ts filename="app/tables/events.ts" copy
+interface Event {
+  id: Key<string>;
+  name: string;
+  createdAt: Date;
+  status: string; // New field - will trigger migration
+}
+
+export const events = new OlapTable<Event>("events")
+```
+</TypeScript>
+
+<Python>
+```python filename="app/tables/events.py" copy
+class Event(BaseModel):
+    id: Key[str]
+    name: str
+    created_at: datetime
+    status: str  # New field - will trigger migration
+
+table = OlapTable[Event]("events")
+```
+</Python>
+
+When you save changes, you'll see live logs in the terminal showing the diffs being applied to your local database:
+
+```bash
+⢹ Processing Infrastructure changes from file watcher
+             ~ Table events:
+                  Column changes:
+                    + status: String
+```
+
+
+## Production Workflow
+
+<Callout type="info" title="Prefer a reviewed plan?" href={`${PathConfig.olap.path}/planned-migrations`} ctaLabel="Planned Migrations (OLAP)" compact>
+Use planned migrations to generate, review, and apply OLAP DDL plans deterministically.
+</Callout>
+
+
+### Generating Migration Plans
+
+When using planned migrations for OLAP, you need to generate a migration plan from the remote environment. This is done by running the following command:
+
+```bash
+moose generate migration --url https://<remote-env> --token <api-token> --save
+```
+
+This generates a few files in the `migrations` directory:
+
+- `plan.yaml`: The migration plan containing an ordered list of operations to apply to the remote database to bring it into alignment with your local code.
+- `remote_state.json`: A snapshot of the remote database state at the time the plan was generated
+- `local_infra_map.json`: A snapshot of the local database state at the time the plan was generated
+
+<Callout type="info" title="Why store the remote and local state?" compact>
+The remote and local state are used to validate that the plan is still valid at the time of deployment. If there have been schema changes made to your live remote database since the plan was generated, the deployment will abort and you will need to regenerate the plan. This is to prevent you from dropping data unintentionally.
+</Callout>
+
+### Reviewing and Editing the Plan
+
+You can review and edit the plan as needed. The plan is a YAML file that contains an ordered list of operations to apply to the remote database to bring it into alignment with your local code.
+
+```yaml filename="migrations/plan.yaml" copy
+
+```
+
+### Applying the Plan
+ 
+The plan is applied during deployment. MooseStack will validate that the remote database state matches the snapshot of the database state at the time the plan was generated, and applies `plan.yaml` in order; it aborts if snapshots don’t match current state.
+
+
+## Migration Types
+
+### Adding New Tables or Materialized Views
+
+<TypeScript>
+```typescript filename="index.ts" {4-7} copy
+import { newTable, newMaterializedView } from "./path/to/your/newObjects"
+
+// Export the new table and materialized view to apply changes
+export {
+  newTable, // New table
+  newMaterializedView // New materialized view
+}
+```
+</TypeScript>
+
+<Python>
+```python filename="main.py" {4-7} copy
+from app.db import newTable, newMaterializedView
+```
+</Python>
+
+The dev mode will automatically detect the new table or materialized view and apply the changes to your local database. You will see a log like this in the terminal:
+
+```bash filename="Terminal" copy
+$ moose dev
+⠋ Processing Infrastructure changes from file watcher
+             +  Table: new_table Version None - id: String, a_column: String, some_other_column: Float64 -  - deduplicate: false
+             +  Table: target_table Version None - id: String, a_column: String, some_other_column: Float64 - id - deduplicate: false
+             +  SQL Resource: mv_to_target
+              
+```
+
+The generated plan for this operation will look like this:
+
+```yaml filename="migrations/plan.yaml" copy
+- CreateTable:
+    table:
+      name: new_table
+      columns:
+      - name: id
+        data_type: String
+        required: true
+        unique: false
+        primary_key: true
+        default: null
+        annotations: []
+      - name: a_column
+        data_type: String
+        required: true
+        unique: false
+        primary_key: false
+        default: null
+        annotations: []
+      - name: some_other_column
+        data_type: Float64
+        required: true
+        unique: false
+        primary_key: false
+        default: null
+        annotations: []
+      order_by:
+      - id
+      deduplicate: false
+      engine: MergeTree
+      version: null
+      metadata:
+        description: null
+      life_cycle: FULLY_MANAGED
+- CreateTable:
+    table:
+      name: target_table
+      columns:
+      - name: id
+        data_type: String
+        required: true
+        unique: false
+        primary_key: true
+        default: null
+        annotations: []
+      - name: a_column
+        data_type: String
+        required: true
+        unique: false
+        primary_key: false
+        default: null
+        annotations: []
+      - name: some_other_column
+        data_type: Float64
+        required: true
+        unique: false
+        primary_key: false
+        default: null
+        annotations: []
+      order_by:
+      - id
+      deduplicate: false
+      engine: MergeTree
+      version: null
+      metadata:
+        description: null
+      life_cycle: FULLY_MANAGED
+- RawSQL:
+    sql: "CREATE MATERIALIZED VIEW mv_to_target TO target_table AS SELECT * FROM source_table"
+    description: Running setup SQL for resource mv_to_target
+```
+
+
+### Column Additions
+
+Adding new fields to your data models:
+
+<TypeScript>
+```ts filename="Before" copy
+interface AddedColumn {
+  id: Key<string>;
+  another_column: string;
+  some_column: string;
+}
+```
+
+```ts filename="After" copy
+interface AddedColumn {
+  id: Key<string>;
+  another_column: string;
+  some_column: string;
+  new_column: number; // New field - migration applied
+}
+```
+</TypeScript>
+
+<Python>
+```python filename="Before.py" copy
+class AddedColumn(BaseModel):
+    id: Key[str]
+    another_column: str
+    some_column: str
+
+table = OlapTable[AddedColumn]("events")
+```
+```python filename="After.py" copy
+class AddedColumn(BaseModel):
+    id: Key[str]
+    another_column: str
+    some_column: str
+    new_column: int  # New field - migration applied
+
+table = OlapTable[AddedColumn]("events")
+```
+</Python>
+
+In dev mode, you will see a log like this:
+
+```bash filename="Terminal" copy
+$ moose dev
+⢹ Processing Infrastructure changes from file watcher
+             ~ Table events:
+                  Column changes:
+                    + new_column: Int64
+```
+
+The generated plan for this operation will look like this:
+
+```yaml filename="migrations/plan.yaml" copy
+- AddTableColumn:
+    table: "events"
+    column:
+      name: "new_column"
+      data_type: "Int64"
+```
+
+
+### Column Removals
+
+Removing fields from your data models:
+
+<TypeScript>
+```ts filename="Before" copy
+interface RemovedColumn {
+  id: Key<string>;
+  another_column: string;
+  some_column: string;
+  old_column: number;
+}
+
+export const events = new OlapTable<RemovedColumn>("events")
+```
+
+```ts filename="After" copy
+interface RemovedColumn {
+  id: Key<string>;
+  another_column: string;
+  some_column: string;
+  // old_column field removed 
+}
+
+export const events = new OlapTable<RemovedColumn>("events")
+```
+</TypeScript>
+
+<Python>
+```python filename="Before.py" copy
+class RemovedColumn(BaseModel):
+    id: Key[str]
+    another_column: str
+    some_column: str
+    old_column: int
+
+
+table = OlapTable[RemovedColumn]("events")
+```
+```python filename="After.py" copy
+class RemovedColumn(BaseModel):
+    id: Key[str]
+    another_column: str
+    some_column: str
+    # old_column field removed
+
+table = OlapTable[RemovedColumn]("events")
+```
+</Python>
+
+In dev mode, you will see a log like this:
+
+```bash filename="Terminal" copy
+$ moose dev
+⢹ Processing Infrastructure changes from file watcher
+             ~ Table events:
+                  Column changes:
+                    - old_column: Int64
+```
+
+The generated plan for this operation will look like this:
+
+```yaml filename="migrations/plan.yaml" copy
+- DropTableColumn:
+    table: "events"
+    column_name: "old_column"
+```
+
+
+### Changing Column Data Types (use with caution)
+
+<TypeScript>
+```ts filename="Before" copy
+interface ChangedType {
+  id: Key<string>;
+  some_column: string; // String type
+}
+
+export const events = new OlapTable<ChangedType>("events")
+```
+
+```ts filename="After" copy
+interface ChangedType {
+  id: Key<string>;
+  some_column: string & LowCardinality; // Add LowCardinality for better performance
+}
+
+export const events = new OlapTable<ChangedType>("events")
+```
+</TypeScript>
+
+<Python>
+```python filename="Before.py" copy
+class ChangedType(BaseModel):
+    id: Key[str]
+    some_column: str
+
+table = OlapTable[ChangedType]("events")
+```
+```python filename="After.py" copy
+class ChangedType(BaseModel):
+    id: Key[str]
+    some_column: Annotated[str, "LowCardinality"]  # Add LowCardinality for better performance
+
+table = OlapTable[ChangedType]("events")
+```
+</Python>
+
+In dev mode, you will see a log like this:
+
+```bash filename="Terminal" copy
+$ moose dev
+⢹ Processing Infrastructure changes from file watcher
+             ~ Table events:
+                  Column changes:
+                    - some_column: String -> LowCardinality(String)
+```
+
+The generated plan for this operation will look like this:
+
+```yaml filename="migrations/plan.yaml" copy
+- ChangeTableColumn:
+    table: "events"
+    column_name: "some_column"
+    data_type: "LowCardinality(String)"
+```
+
+<Callout type="warning" title="Breaking type changes" href="/moose/olap/schema-changes" ctaLabel="Learn more">
+Some data type changes can be incompatible with existing data. Read the guide to learn more.
+</Callout>
+
+### Materialized View Changes
+
+Modifying the `SELECT` statement of a materialized view:
+
+<TypeScript>
+```ts filename="Before.ts" copy
+import { sql } from "@514-labs/moose-lib";
+
+interface TargetSchema {
+  day: Date;
+  count: number;
+  sum: number;
+}
+
+const selectStatement = sql`
+  SELECT 
+    toStartOfDay(${sourceTable.columns.a_date}) as day, 
+    uniq(${sourceTable.columns.id}) as count, 
+    SUM(${sourceTable.columns.a_number}) as sum 
+    FROM ${sourceTable} 
+    GROUP BY day
+`;
+
+const mv = new MaterializedView<Target>({
+  selectStatement,
+  selectTables: [sourceTable],
+  targetTable: {
+    name: "target_table",
+    engine: ClickHouseEngines.MergeTree,
+    orderByFields: ["day"],
+  },
+  materializedViewName: "mv_table_to_target,
+});
+```
+
+```ts filename="After.ts" copy
+import { sql } from "@514-labs/moose-lib";
+
+interface TargetSchema {
+  day: Date;
+  count: number;
+  sum: number;
+  avg: number; // New column - migration applied
+}
+
+const selectStatement = sql`
+  SELECT 
+    toStartOfDay(${sourceTable.columns.a_date}) as day, 
+    uniq(${sourceTable.columns.id}) as count, 
+    sum(${sourceTable.columns.a_number}) as sum,
+    avg(${sourceTable.columns.a_number}) as avg 
+    FROM ${sourceTable} 
+    GROUP BY day
+`;
+
+export const userStats = new MaterializedView<TargetSchema>({
+  selectStatement,
+  selectTables: [sourceTable],
+  targetTable: {
+    name: "target_table",
+    engine: ClickHouseEngines.MergeTree,
+    orderByFields: ["day"],
+  },
+  materializedViewName: "mv_table_to_target,
+});
+```
+</TypeScript>
+
+<Python>
+```python filename="Before.py" copy
+from pydantic import BaseModel
+
+class TargetSchema(BaseModel):
+  day: Date;
+  count: number;
+  sum: number;
+
+mv = MaterializedView[TargetSchema](MaterializedViewConfig(
+    select_statement="""
+    SELECT 
+        toStartOfDay(a_date) as day,
+        uniq(id) as count,
+        sum(a_number) as sum
+    FROM table
+    GROUP BY day
+    """
+    target_table=OlapConfig(
+        name="target_table",
+        engine=ClickHouseEngines.MergeTree,
+        order_by_fields=["day"],
+    ),
+    materialized_view_name="mv_table_to_target",
+))
+```
+
+```python filename="After.py" copy
+class TargetSchema(BaseModel):
+  day: Date;
+  count: number;
+  sum: number;
+  avg: number;
+
+mv = MaterializedView[TargetSchema](MaterializedViewConfig(
+    select_statement="""
+    SELECT 
+        toStartOfDay(a_date) as day,
+        uniq(id) as count,
+        sum(a_number) as sum,
+        avg(a_number) as avg
+    FROM table
+    GROUP BY day
+    """
+    target_table=OlapConfig(
+        name="target_table",
+        engine=ClickHouseEngines.MergeTree,
+        order_by_fields=["day"],
+    ),
+    materialized_view_name="mv_table_to_target",
+))
+```
+</Python>
+
+The dev mode diff:
+```bash filename="Terminal" copy
+$ moose dev
+⠋ Processing Infrastructure changes from file watcher
+             ~  Table target_table:
+                  Column changes:
+                    + avg: Float64
+             ~  SQL Resource: mv_to_target
+```
+
+<Callout type="info" title="What is a SQL Resource?" compact>
+Notice that the materialized view generates both a target table and a SQL resource. The target table creates a new table in the database to store the results of the materialized view `SELECT` statement. The `SQL Resource` is the SQL statement that is used to create the target table.
+</Callout>
+
+The generated plan for this operation will look like this:
+
+```yaml filename="migrations/plan.yaml" copy
+created_at: 2025-08-20T05:35:31.668353Z
+operations:
+  - RawSql:
+      sql:
+        - DROP VIEW IF EXISTS mv_table_to_target
+      description: Running teardown SQL for resource mv_table_to_target
+  - AddTableColumn:
+      table: target_table
+      column:
+        name: "avg"
+        data_type: "Float64"
+  - RawSql:
+      sql:
+        - "CREATE MATERIALIZED VIEW IF NOT EXISTS mv_table_to_target \n        TO target_table\n        AS \n  SELECT \n    toStartOfDay(`a_date`) as day, \n    uniq(`id`) as count, \n    sum(`a_number`) as sum, \n    avg(`a_number`) as avg\n  FROM `source_table` \n  GROUP BY day"
+        - "INSERT INTO target_table\n          \n  SELECT \n    toStartOfDay(`a_date`) as day, \n    uniq(`id`) as count, \n    sum(`a_number`) as sum, \n    avg(`a_number`) as avg\n  FROM `source_table` \n  GROUP BY day"
+      description: Running setup SQL for resource mv_table_to_target
+
+```
+
+
+<Callout type="warning" title="Note">
+Changing a materialized view's SELECT statement will recreate the entire view and repopulate all data. This can be time-consuming for large datasets.
+</Callout>

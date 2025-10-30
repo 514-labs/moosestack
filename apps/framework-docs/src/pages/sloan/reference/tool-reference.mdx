@@ -1,0 +1,673 @@
+---
+title: Tool Reference
+description: MCP tools and external tools for Sloan
+---
+
+import { ArgTable } from "@/components/ArgTable";
+import { Heading, HeadingLevel } from "@/components/typography";
+import { Callout } from "@/components/callout";
+import {
+  FeatureCard,
+  FeatureGrid,
+  Icons,
+  ToggleBlock,
+} from "@/components";
+import { Tabs } from "nextra/components";
+
+# Tool Reference
+
+Sloan CLI can allow you to use various Sloan MCP tool-sets, as well as install and configure certain external tools. See [CLI reference](../cli-reference.mdx) for more information. You can also configure the toolsets available in your Sloan MCP by manually editing your MCP.json file. See [MCP.json reference](../mcp-json-reference.mdx) for more information.
+
+Tools are grouped by their purpose into toolsets.
+
+<Callout type="info" title="Performance Tip">
+The fewer tools you enable, the higher performance the agent using the tool set will have, especially with respect to tool selection.
+</Callout>
+
+## Toolsets
+
+<FeatureGrid columns={4}>
+  <FeatureCard
+    href="#read-only-moose-tools"
+    title="Read Only Moose tools"
+    description="Default toolset. Public Beta."
+    variant="sloan"
+  />
+  
+  <FeatureCard
+    href="#write-moose-tools"
+    title="Write Moose tools"
+    description="Default toolset. Public Beta."
+    variant="sloan"
+  />
+  
+  <FeatureCard
+    href="#experimental-remote-clickhouse-tools"
+    title="Experimental: Remote ClickHouse Tools"
+    description="Experimental tool. Public Alpha."
+    variant="sloan"
+  />
+
+  <FeatureCard
+    href="#other-experimental-tools"
+    title="Other experimental tools"
+    description="Experimental tools. Research preview."
+    variant="sloan"
+  />
+
+</FeatureGrid>
+
+## Read Only Moose tools
+Tools needed to read the Moose project and its associated infrastructure.
+
+### Activate this toolset
+
+These tools are enabled by default.
+
+To enable them explicitly:
+
+<Tabs items={["Sloan CLI", "MCP.json"]}>
+  <Tabs.Tab>
+    Run the following command:
+    
+    ```bash filename="Terminal" copy
+    sloan config tools
+    ```
+    and enable `moose-read-tools`. e.g.:
+    ```txt filename="Terminal" copy
+    ? Select tools to enable (no selection defaults to moose-read-tools):  
+      [x] moose-read-tools - Enable moose read tools for data inspection
+      [ ] moose-write-tools - Enable moose write tools for full functionality (requires API key, auto-enables read tools)
+      [ ] remote-clickhouse-tools - Enable Remote Clickhouse integration
+    ```
+  </Tabs.Tab>
+  <Tabs.Tab>
+    If you are managing the Sloan MCP with `mcp.json`, you can enable this toolset by adding the following to your `mcp.json`:
+
+    ```json filename="MCP.json" copy
+    "args": [
+      ...
+      "--moose-read-tools", 
+      ...
+    ]
+    ```
+  </Tabs.Tab>
+</Tabs>
+
+### When is this toolset useful?
+
+<ToggleBlock openText="Data Exploration" closeText="Data Exploration">
+
+When you need to understand what data exists in your Moose project and how it's structured.
+
+**Sample prompts:**
+- *"Tell me about the data in my Moose project"*
+- *"Tell me about the data in my analytics table"* 
+- *"Tell me about the data streams in my Moose project"*
+- *"Describe my DLQ topic"*
+- *"Tell me about the data in my enrichment data stream"*
+
+**Tools used:** `read_moose_project`, `read_clickhouse_tables`, `read_redpanda_topic`
+
+</ToggleBlock>
+
+<ToggleBlock openText="Data Debugging & Validation" closeText="Data Debugging & Validation">
+
+When you need to verify data flow and check if your data transformations are working correctly. *(Also requires `write-moose-tools`)*
+
+**Sample prompts:**
+- *"Did data land in my analytics table?"*
+- *"Did the data in my analytics table change?"*
+- *"Did my materialized view update?"*
+- *"Show me recent data in my user_events stream"*
+
+**Tools used:** `read_clickhouse_tables`, `read_redpanda_topic`, `read_moose_project`
+
+</ToggleBlock>
+
+<ToggleBlock openText="Development Server Monitoring" closeText="Development Server Monitoring">
+
+When you need to check the health and status of your local Moose development environment.
+
+**Sample prompts:**
+- *"Is my Moose development server running?"*
+- *"Is my Moose development server healthy?"*
+- *"Did my new workflow kill my local dev server?"*
+- *"What's the status of my Moose infrastructure?"*
+
+**Tools used:** `check_moose_status`, `read_moose_project`
+
+</ToggleBlock>
+
+### Tools
+
+#### `read_moose_project`
+Retrieves an infrastructure map from the local Moose development server. Retrieves a list of all primitives in the project (e.g. Data Models, Workflows, Streaming Functions, Materialized Views, APIs), as well as their associated infrastructure (e.g. ClickHouse tables, Redpanda topics, etc.).
+
+#### `read_clickhouse_tables`
+Queries local ClickHouse.
+
+#### `read_redpanda_topic`
+Reads from local Redpanda. 
+
+#### `check_moose_status`
+Checks the status of the Moose project. Useful for debugging.
+
+## Write Moose tools 
+
+Tools needed to create and test Moose primitives. These are used to ingest data, transform data and create egress patterns for data in your project.
+
+### Activate this toolset
+
+These tools are enabled by default (except for in Claude Desktop, where these tools aren't recommended).
+These tools require that the `read-only-moose-tools` toolset is enabled.
+
+To enable them explicitly:
+
+<Tabs items={["Sloan CLI", "MCP.json"]}>
+  <Tabs.Tab>
+    Run the following command:
+
+    ```bash filename="Terminal" copy
+    sloan config tools
+    ```
+    and enable `moose-write-tools`. e.g.:
+    ```txt filename="Terminal" copy
+    ? Select tools to enable (no selection defaults to moose-read-tools):  
+      [ ] moose-read-tools - Enable moose read tools for data inspection
+      [x] moose-write-tools - Enable moose write tools for full functionality (requires API key, auto-enables read tools)
+      [ ] remote-clickhouse-tools - Enable Remote Clickhouse integration
+    ```
+  </Tabs.Tab>
+  <Tabs.Tab>
+    If you are managing the Sloan MCP with `mcp.json`, you can enable this toolset by adding the following to your `mcp.json`:
+
+    ```json filename="MCP.json" copy
+    "args": [
+      ...
+      "--moose-write-tools", 
+      ...
+    ]
+    ```
+  </Tabs.Tab>
+</Tabs>
+
+### Usage tips
+
+<Callout type="info" title="Consider Data Flow">
+Consider the flow of data through your Moose project when creating new primitives. For example, if you want to create a streaming function, the `write_stream_function` tool will have a much better chance of success if there is a data sample, a source and a destination data model in place. See [Moose Docs](../../moose) for best practices.
+</Callout>
+
+<Callout type="info" title="Use Testing Tools">
+Many of the tools have testing corollaries (and for the ones that don't, there are general purpose tools that can allow the agent to test the created primitive, like `read_moose_project`, `read_clickhouse_tables`, `read_redpanda_topic`). Use those testing tools to ensure that the agent is doing what you intend it to do.
+</Callout>
+
+<Callout type="info" title="Step-by-Step Approach">
+Step by step prompting (e.g. "Get sample data from X API", "Create an ingest data model", "Create a workflow to periodically grab data from the API", ...) has a higher success rate than trying to one-shot the entire project creation flow.
+</Callout>
+
+### When is this toolset useful?
+
+<ToggleBlock openText="Creating Moose Primitives" closeText="Creating Moose Primitives">
+
+When you need to build the core components of your data infrastructure.
+
+**Sample prompts:**
+- *"Create a new data model for the following API source: [API docs/schema]"*
+- *"Create a new workflow to ingest data from this API source every 5 minutes"*
+- *"Create a streaming function to enrich data from my user_events stream with user profile data"*
+- *"Create a materialized view that will improve the performance of the aircraft API"*
+
+**Tools used:** `write_ingestion_pipeline`, `write_workflow`, `write_stream_function`, `write_materialized_view`
+
+</ToggleBlock>
+
+<ToggleBlock openText="End-to-End Project Creation" closeText="End-to-End Project Creation">
+
+When you want to build a complete data product from ingestion to analytics.
+
+**Sample prompts:**
+- *"Create a new Moose project that ingests GitHub star data, enriches it with repository metadata, and creates APIs for analytics dashboards"*
+- *"Build a real-time analytics system for aircraft tracking data with location-based queries"*
+- *"Create a data pipeline that processes IoT sensor data and provides aggregated insights via REST APIs"*
+
+**Tools used:** `write_spec`, `write_ingestion_pipeline`, `write_workflow`, `write_stream_function`, `write_materialized_view`, `create_egress_api`
+
+</ToggleBlock>
+
+<ToggleBlock openText="Data Product Development" closeText="Data Product Development">
+
+When you want to create optimized data products for specific use cases.
+
+**Sample prompts:**
+- *"Create a data product for visualizing user engagement metrics with real-time updates"*
+- *"Build materialized views that improve query performance for my analytics dashboard"*
+- *"Create analytics APIs that support my frontend application's data needs"*
+
+**Tools used:** `write_materialized_view`, `create_egress_api`, `test_egress_api`
+
+</ToggleBlock>
+
+<ToggleBlock openText="Data Quality & Troubleshooting" closeText="Data Quality & Troubleshooting">
+
+When you need to fix data issues or improve data processing reliability.
+
+**Sample prompts:**
+- *"Look at my DLQ topic and create a streaming function to fix the data format issues"*
+- *"Create a data validation workflow that checks data quality before processing"*
+- *"Build error handling for my data ingestion pipeline"*
+
+**Tools used:** `read_redpanda_topic`, `write_stream_function`, `write_workflow`
+
+</ToggleBlock>
+
+<ToggleBlock openText="Performance Optimization" closeText="Performance Optimization">
+
+When you want to improve the speed and efficiency of your data products.
+
+**Sample prompts:**
+- *"Create materialized views that will improve the performance of my user analytics APIs"*
+- *"Analyze query patterns and optimize my data model for better performance"*
+- *"Create pre-computed aggregations for my most common dashboard queries"*
+
+**Tools used:** `write_materialized_view`, `create_egress_api`, `test_egress_api`
+
+</ToggleBlock>
+
+### Tools
+
+#### `write_spec`
+Generates a plan for an end to end Moose project (from ingest, through transformation and egress). 
+
+Files created:
+* *Creates a .md file in the current directory with the plan.*
+
+<ToggleBlock openText="Show sample specification output" closeText="Hide sample specification output">
+
+```txt filename="/project/app/specs/specification.md" copy
+# Technical Specification: ASD-B Aircraft Data Ingestion and Visualization
+
+## 1. Overview
+
+This specification outlines the implementation of a system to ...
+```
+
+</ToggleBlock>
+
+#### `write_and_run_temp_script`
+Creates and runs a temporary script, usually either for sampling or for API inspection.
+
+Files created:
+* *Creates a temporary script in the /project/.moose/sloan directory, and runs it, usually creating a sample data file in the same directory.*
+
+<ToggleBlock openText="Show sample tool output" closeText="Hide sample tool output">
+
+```js filename="/project/.moose/sloan-scratch/script.js" copy
+import fs from 'fs/promises';
+
+const ADSB_API_URL = 'https://api.adsb.lol/v2/mil';
+const INGEST_URL = 'http://localhost:4000/ingest/AircraftTransponder';
+const FETCH_INTERVAL = 5000; // 5 seconds
+const MAX_RUNTIME = 30000; // 30 seconds
+
+async function fetchAndIngestData() {
+  const startTime = Date.now();
+  const processedAircraft = [];
+
+  while (Date.now() - startTime < MAX_RUNTIME) {
+    try {
+      // Fetch data from ADSB API
+      const response = await fetch(ADSB_API_URL);
+      const data = await response.json();
+      
+      if (data && data.ac && Array.isArray(data.ac)) {
+        // Process each aircraft
+        for (const aircraft of data.ac) {
+          // Ingest aircraft data
+          const ingestResponse = await fetch(INGEST_URL, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(aircraft)
+          });
+          
+          if (ingestResponse.ok) {
+            processedAircraft.push({
+              icao: aircraft.hex,
+              timestamp: new Date().toISOString(),
+              status: 'ingested'
+            });
+          }
+        }
+      }
+    } catch (error) {
+      // Let errors crash the script
+      throw error;
+    }
+
+    // Wait for the next interval if we haven't exceeded MAX_RUNTIME
+    if (Date.now() - startTime + FETCH_INTERVAL < MAX_RUNTIME) {
+      await new Promise(resolve => setTimeout(resolve, FETCH_INTERVAL));
+    } else {
+      break;
+    }
+  }
+
+  return {
+    totalProcessed: processedAircraft.length,
+    processedAircraft,
+    startTime: new Date(startTime).toISOString(),
+    endTime: new Date().toISOString()
+  };
+}
+
+// Run the script and write results to output.json
+const result = await fetchAndIngestData();
+await fs.writeFile('output.json', JSON.stringify(result, null, 2));
+```
+
+```json filename="/project/.moose/sloan-scratch/output.json" copy
+{
+  "ac": [
+    {
+      "hex": "ae63c1",
+      "type": "tisb_icao",
+      ...remaining fields
+    },
+  ]
+}
+```
+
+</ToggleBlock>
+
+#### `write_workflow`
+Creates a Moose Workflow, typically run on a schedule, typically used to ingest data. [Moose documentation](../../moose/building/workflows.mdx). 
+
+Files created:
+* *Creates a script in the project directory with the workflow, and imports it into `index.ts` or `main.py`.*
+
+Infrastructure created:
+* *Creates a Moose managed temporal script, orchestrating the workflow that was created.*
+
+<ToggleBlock openText="Show sample workflow code" closeText="Hide sample workflow code">
+
+```ts filename="/project/app/scripts/script.ts" copy
+import { Task, Workflow } from "@514labs/moose-lib";
+
+/**
+ * Task to fetch and ingest aircraft transponder data
+ */
+export const fetchAndIngestAircraftTransponderTask = new Task<{}, TaskResult>("FetchAndIngestAircraftTransponder", {
+  run: async () => {
+    // Fetch data from external API and ingest into Moose
+    // ... see full code above ...
+  },
+  retries: 3,
+  timeout: "1h"
+});
+
+/**
+ * Workflow to ingest aircraft transponder data
+ */
+export const ingestAircraftTransponderWorkflow = new Workflow("IngestAircraftTransponder", {
+  startingTask: fetchAndIngestAircraftTransponderTask,
+  retries: 3,
+  timeout: "1h",
+  schedule: "@every 5s"
+});
+
+/**
+ * Default export function that returns the workflow instance
+ * Required by the Moose runtime
+ */
+export default function() {
+  return ingestAircraftTransponderWorkflow;
+}
+```
+
+```ts filename="/project/app/index.ts" copy
+export { ingestAircraftTransponderWorkflow } from "./scripts/IngestAircraftTransponder/IngestAircraftTransponder";
+```
+
+</ToggleBlock>
+
+#### `run_workflow`
+Runs a Moose workflow. Used as part of the `write_workflow` flow. [Moose documentation](../../moose/building/workflows.mdx).
+
+#### `write_ingestion_pipeline`
+Creates a Moose data model, typically used to define the schema of the data in your Moose project. [Moose documentation](../../moose/building/data-models.mdx). 
+
+Files created:
+* *Creates a data model in the project directory, and imports it into `index.ts` or `main.py`.*
+
+Infrastructure created:
+* *Depending on the configuration, creates a ClickHouse table, a Redpanda topic, and/or an ingest API.*
+
+<ToggleBlock openText="Show sample data model code" closeText="Hide sample data model code">
+
+```ts filename="/project/app/datamodels/<data-model-name>.ts" copy
+// Define aircraft tracking data interface
+export interface AircraftTrackingData {
+  hex: string;           // Unique aircraft identifier
+  flight: string;        // Flight number
+  // ... other fields
+}
+
+// Define ingest pipelines
+export const AircraftTrackingDataPipeline = new IngestPipeline<AircraftTrackingData>(
+  "AircraftTrackingData", 
+  { table: false, stream: true, ingestApi: true }
+);
+```
+
+```ts filename="/project/app/index.ts" copy
+export * from "./datamodels/models";
+```
+
+</ToggleBlock>
+
+#### `write_stream_function`
+Creates a Moose stream processing function. Runs on a per row basis as data is ingested into the stream. [Moose documentation](../../moose/building/streaming-functions.mdx). 
+
+Files created:
+* *Creates a stream function in the project directory, and imports it into `index.ts` or `main.py`.*
+
+Infrastructure created:
+* *Creates a streaming function.*
+
+<ToggleBlock openText="Show sample stream function code" closeText="Hide sample stream function code">
+
+```ts filename="/project/app/functions/<stream-function-name>.ts" copy
+
+// Transform raw aircraft data to processed format
+function transformAircraft(record: AircraftTrackingData): AircraftTrackingProcessed {
+  const zorderCoordinate = calculateZOrder(record.lat, record.lon);
+  const navFlags = parseNavModes(record.nav_modes);
+  
+  return {
+    ...record,
+    zorderCoordinate,
+    ...navFlags,
+    timestamp: new Date(record.timestamp),
+  };
+}
+
+// Connect the data pipeline
+AircraftTrackingDataPipeline.stream!.addTransform(
+  AircraftTrackingProcessedPipeline.stream!,
+  transformAircraft
+);
+```
+
+```ts filename="/project/app/index.ts" copy
+export * from "./functions/process_aircraft";
+```
+
+</ToggleBlock>
+
+#### `write_materialized_view`
+Creates a Moose materialized view. [Moose documentation](../../moose/building/materialized-views.mdx). 
+
+Files created:
+* *Creates a materialized view in the project directory, and imports it into `index.ts` or `main.py`.*
+
+Infrastructure created:
+* *Creates a materialized view in ClickHouse.*
+
+<ToggleBlock openText="Show sample materialized view code" closeText="Hide sample materialized view code">
+
+```ts filename="/project/app/views/<materialized-view-name>.ts" copy
+// Define schema for aggregated aircraft data near San Francisco
+interface AircraftTrackingProcessed_NearbySFSchema {
+  hex: string;
+  last_seen: string & Aggregated<"max", [Date]>;
+  count: string & Aggregated<"count", []>;
+  avg_lat: string & Aggregated<"avg", [number]>;
+  avg_lon: string & Aggregated<"avg", [number]>;
+}
+
+// SQL query to find aircraft within 50 miles of San Francisco
+const query = sql`
+  // SQL Query Here
+`;
+
+// Create materialized view for efficient querying
+export const AircraftTrackingProcessed_NearbySF = new MaterializedView<AircraftTrackingProcessed_NearbySFSchema>({
+  selectStatement: query,
+  selectTables: [AircraftTrackingProcessedPipeline.table!],
+  tableName: "aircraft_tracking_processed_nearby_sf",
+  materializedViewName: "AircraftTrackingProcessed_NearbySF",
+  engine: ClickHouseEngines.AggregatingMergeTree,
+  orderByFields: ["hex"]
+});
+```
+
+```ts filename="/project/app/index.ts" copy
+export * from './views/AircraftTrackingProcessed_NearbySF';
+```
+
+</ToggleBlock>
+
+
+#### `create_egress_api`
+Creates an egress API from Moose ClickHouse. Can utilize type safe parameters. [Moose documentation](../../moose/building/egress-apis.mdx). 
+
+Files created:
+* *Creates an egress API in the project directory, and imports it into `index.ts` or `main.py`.*  
+
+Infrastructure created:
+* *Creates an egress API.*
+
+<ToggleBlock openText="Show sample egress API code" closeText="Hide sample egress API code">
+
+```ts filename="/project/app/apis/<egress-api-name>.ts" copy
+import { Api } from "@514labs/moose-lib";
+import { tags } from "typia";
+
+interface AircraftRadiusParams {
+  lat: number; // Center latitude
+  lon: number; // Center longitude
+  radius: number; // Search radius in miles
+}
+
+export const getAircraftWithinRadius = new Api<AircraftRadiusParams>(
+  "getAircraftWithinRadius",
+  async (params, { client, sql }) => {
+    // Execute the query using the Haversine formula to calculate distances
+    const result = await client.query.execute(sql`
+      // SQL Query Here
+    `);
+    
+    return result;
+  },
+  {
+    metadata: {
+      description: "Returns all aircraft within a given radius (in miles) of a specified latitude and longitude"
+    }
+  }
+);
+```
+
+```ts filename="/project/app/index.ts" copy
+export * from './apis/getAircraftWithinRadius';
+```
+
+</ToggleBlock>
+
+#### `test_egress_api`
+Tests the specified APIs. Used as part of the `create_egress_api` flow.
+
+## Experimental: Remote ClickHouse Tools  (Alpha)
+
+Tools for reading data in your external ClickHouse database (e.g. those hosted in Boreal or ClickHouse Cloud). These are useful for iterating off a production project, for debugging production issues or for local testing of changes to production data.
+
+<Callout type="warning" title="Read-only credentials">
+  For an abundance of caution, we suggest using read-only credentials for this toolset. [ClickHouse documentation](https://clickhouse.com/docs/operations/access-rights). If you want to modify your ClickHouse database, we suggest using Moose to do so.
+</Callout>
+
+### Activate this toolset
+
+These tools are **not** enabled by default.
+
+To enable them explicitly:
+
+<Tabs items={["Sloan CLI", "MCP.json"]}>
+  <Tabs.Tab>
+    Run the following command:
+
+    ```bash filename="Terminal" copy
+    sloan config tools
+    ```
+    and enable `remote-clickhouse-tools`. e.g.:
+    ```txt filename="Terminal" copy
+    ? Select tools to enable (no selection defaults to moose-read-tools):  
+      [ ] moose-read-tools - Enable moose read tools for data inspection
+      [ ] moose-write-tools - Enable moose write tools for full functionality (requires API key, auto-enables read tools)
+      [x] remote-clickhouse-tools - Enable Remote Clickhouse integration
+    ```
+  </Tabs.Tab>
+  <Tabs.Tab>
+    If you are managing the Sloan MCP with `mcp.json` file, you can enable this toolset by adding the following to your `mcp.json` file:
+
+    ```json filename="MCP.json" copy
+    "args": [
+      ...
+      "--remote-clickhouse-tools", 
+      ...
+    ]
+    "env": {
+      ...
+      "BOREAL_CLICKHOUSE_HOST": "...",
+      "BOREAL_CLICKHOUSE_PORT": "...", 
+      "BOREAL_CLICKHOUSE_USER": "...",
+      "BOREAL_CLICKHOUSE_PASSWORD": "...",
+      "BOREAL_CLICKHOUSE_DATABASE": "...",
+    }
+    ```
+  </Tabs.Tab>
+</Tabs>
+
+## Other Experimental Tools
+
+These tools are in research preview, [let us know if you are interested in using them](mailto:sloan@fiveonefour.com).
+
+### Experimental: Context management tools (Research Preview)
+Tools for managing context related to your Moose project. 
+
+Useful for:
+
+- testing your data infrastructure against policy (e.g. data quality, data security, data governance)
+- ensuring metrics definition standardization for ad hoc queries of your data
+
+If you are interested in using these tools, please contact us at [support@moose.ai](mailto:sloan@fiveonefour.com).
+
+### Experimental: External tools (Research Preview)
+Tools for interacting with external data systems.
+
+Current supported external data systems:
+
+- DuckDB
+- Databricks
+
+If you are interested in using these tools, or any other external data tools, please contact us at [support@moose.ai](mailto:sloan@fiveonefour.com).

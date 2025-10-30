@@ -1,0 +1,306 @@
+---
+title: Sloan - Automated Data Engineering
+description: AI-powered tools and agents exposed through an easy to configure MCP server for data engineering and infrastructure
+---
+
+import { FeatureGrid, FeatureCard, Icons, BulletPointsCard, CTACards, CTACard } from "@/components";
+import { Tabs, Steps, Card, FileTree } from "nextra/components";
+import Link from "next/link";
+import { Button } from "@/components/ui/button";
+
+
+# Welcome to Sloan
+
+Install [Sloan](/sloan/reference/cli-reference) and [Moose](/moose/reference/cli-reference) CLIs:
+```
+bash -i <(curl -fsSL https://fiveonefour.com/install.sh) sloan,moose
+```
+
+<div className="flex flex-col md:flex-row gap-4 my-8">
+  <Link href="/sloan/guides">
+    <Button variant="default">Quick Start →</Button>
+  </Link>
+  <Link href="/sloan/guides/clickhouse-chat">
+    <Button variant="secondary">
+      Start from ClickHouse
+    </Button>
+  </Link>
+  <Link href="/templates">
+    <Button variant="secondary">
+      See Examples
+    </Button>
+  </Link>
+  <Link href="/sloan/reference/tool-reference">
+    <Button variant="outline">
+      Tools Reference
+    </Button>
+  </Link>
+
+</div>
+
+## What is Sloan?
+
+Sloan is a set of tools to make your chat, copilot or BI fluent in data engineering. Use the CLI to set up MCPs with the tools you need in the clients you use. Create new data engineering projects with a moose-managed ClickHouse based infrastructure or use these agents with your existing data infrastructure.
+
+## Quickstart Guides
+
+<FeatureGrid columns={3}>
+  <FeatureCard
+    href="/sloan/guides/clickhouse-chat"
+    Icon={Icons.api}
+    title="AI Chat with ClickHouse"
+    description="
+    "
+    variant="sloan"
+  />
+  
+  <FeatureCard
+    href="/sloan/guides/clickhouse-proj#quickstart-analytics-engineering-project-from-clickhouse-playground-or-your-own-clickhouse-database"
+    Icon={Icons.contact}
+    title="AI analytics engineering on ClickHouse"
+    description="
+    "
+    variant="sloan"
+  />
+  
+  <FeatureCard
+    href="/sloan/guides/from-template#quickstart-new-complete-local-olap-project-from-template"
+    Icon={Icons.db}
+    title="AI powered OLAP templates"
+    description="
+    "
+    variant="sloan"
+  />
+
+</FeatureGrid>
+
+## Core features
+Sloan offers a comprehensive suite of MCP tools and agents designed to streamline data engineering workflows, enabling faster and more efficient deployment and management.
+
+<FeatureGrid columns={1}>
+  <FeatureCard
+    href="/sloan/guides"
+    Icon={Icons.api}
+    title="CLI based deployment"
+    description={
+      <>
+        <ul>
+          <li>3 steps in CLI to chat with ClickHouse</li>
+          <li>5 minutes to build a full stack OLAP project</li>
+          <li>Template based new projects for building your own infrastructure</li>
+        </ul>
+      </>
+    }
+    variant="sloan"
+  />
+  
+  <FeatureCard
+    href="/sloan/reference/cli-reference#setup"
+    Icon={Icons.contact}
+    title="Client agnostic"
+    description={
+      <>
+        <ul>
+          <li>Data engineering in your IDE</li>
+          <li>Data analytics and analytics engineering in your chat client</li>
+          <li>BI in your BI tool of choice</li>
+        </ul>
+      </>
+    }
+    variant="sloan"
+  />
+  
+  <FeatureCard
+    href="/sloan/reference/cli-reference#init"
+    Icon={Icons.db}
+    title="Infrastructure agnostic, opinionated stack available"
+    description={
+      <>
+        <ul>
+          <li>Opinionated OLAP deployments with Moose: Optimized ClickHouse development and deployment</li>
+          <li>Direct integration with your architecture: DuckDB, Snowflake, Databricks</li>
+          <li>Integration with your enterprise: metadata, CICD, logging and more</li>
+        </ul>
+      </>
+    }
+    variant="sloan"
+  />
+
+  <FeatureCard
+    href="/sloan/reference/tool-reference#read-tools"
+    Icon={Icons.workflows}
+    title="Context-aware data engineering agents"
+    description={
+      <>
+        <ul>
+          <li>Full-stack context: code, logs, data, docs</li>
+          <li>Self-improving feedback loops</li>
+          <li>Embedded metadata for continuity</li>
+        </ul>
+      </>
+    }
+    variant="sloan"
+  />
+
+  <FeatureCard
+    href="/sloan/reference/tool-reference"
+    Icon={Icons.models}
+    title="Enterprise ready by default"
+    description={
+      <>
+        <ul>
+          <li>Each agent: context gathering → implementation → testing → doc workflows</li>
+          <li>Governance defaults, easily configurable: SDLC, data quality, reporting, privacy and security default practices</li>
+          <li>Learns your policies with minimal context, enforces them automatically</li>
+        </ul>
+      </>
+    }
+    variant="sloan"
+  />
+
+</FeatureGrid>
+
+## Why Sloan exists
+
+<BulletPointsCard
+  title="LLMs don't have the tools or context they need to be good data engineers, or to make good data engineering cyborgs."
+  bullets={[
+    {
+      title: "LLM tools are hard to set up, and usually small in scope",
+      description: "It takes me minutes to set up an MCP server, and I have to hold my breath every time I want to use it.",
+    },
+    {
+      title: "Shallow context makes bad data",
+      description: "If I'm just looking at the data, if I'm just looking at the code, if I'm just looking at the logs, if i'm just looking at the docs, I'm not going to make good decisions. I need all that context.",
+    },
+    {
+      title: "I don't want to start from scratch to use AI",
+      description: "I've already got an entire data infrastructure, why should I start from scratch to use AI?",
+    },
+    {
+      title: "Brittle data engineering agents make for annoying coworkers",
+      description: "I want my agents to be easy to prompt, to be able to test their work, and to be able to fit within my SDLC.",
+    },
+  ]}
+/>
+
+### The DIY Approach
+
+<BulletPointsCard
+  bulletStyle="number"
+  divider={false}
+  title="How would I prompt my LLM to create a new egress API on top of ClickHouse."
+  bullets={[
+    {
+      title: "Use an LLM to create a SQL query representing the data I want to expose",
+    },
+    {
+      title: "Iterate on that until I'm happy with the query, and ready to create the egress API",
+    },
+    {
+      title: "Write a SQL query to get the DDL for that database",
+    },
+    {
+      title: "Open my IDE to wherever I have my egress API code, and feed its LLM the DDL as context",
+    },
+    {
+      title: "Manually add sample data as further context",
+    },   
+    {
+      title: "Manually add code examples as further context",
+    },    
+    {
+      title: "Replicate my ClickHouse database locally",
+    },
+    {
+      title: "Prompt chat to create the egress API",
+    },
+    {
+      title: "Manually test the egress API",
+    },
+    {
+      title: "Deploy the egress API",
+    },
+  ]}
+/>
+
+### The Sloan Approach
+
+<BulletPointsCard
+  bulletStyle="number"
+  divider={false}
+  title="How would I use Sloan to create a new egress API on top of ClickHouse."
+  bullets={[
+    {
+      title: "Install Sloan and Moose",
+    },
+    {
+      title: "Create a project from my data in ClickHouse",
+    },
+    {
+      title: "Prompt Sloan to create the egress API with the given business requirements. Context added automatically. Used by Sloan to build egress API and test it.",
+    },
+    {
+      title: "Deploy",
+    },
+  ]}
+/>
+
+## What jobs can you do with Sloan?
+
+<div className="my-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+  <div className="p-5 border border-border rounded-lg bg-muted/30">
+    <p className="font-medium text-primary mb-2">Ad hoc analytics</p>
+    <p className="text-muted-foreground text-sm">Give your LLM client a way to chat with your data, in ClickHouse, Databricks, Snowflake, or wherever it lives</p>
+  </div>
+  <div className="p-5 border border-border rounded-lg bg-muted/30">
+    <p className="font-medium text-primary mb-2">Analytics Engineering</p>
+    <p className="text-muted-foreground text-sm">Agents that can build new data products, materialized views and egress methods</p>
+  </div>
+  <div className="p-5 border border-border rounded-lg bg-muted/30">
+    <p className="font-medium text-primary mb-2">Data Engineering</p>
+    <p className="text-muted-foreground text-sm">Have agents build and test end to end data pipelines</p>
+  </div>
+  <div className="p-5 border border-border rounded-lg bg-muted/30">
+    <p className="font-medium text-primary mb-2">Data Wrangling</p>
+    <p className="text-muted-foreground text-sm">Agents that interact with your data systems like DuckDB, Databricks, Snowflake and more to create scripts, clean data, and prepare data for use</p>
+  </div>
+  <div className="p-5 border border-border rounded-lg bg-muted/30">
+    <p className="font-medium text-primary mb-2">Data Migration</p>
+    <p className="text-muted-foreground text-sm">Automated creation of data pipelines to migrate data from legacy systems to a modern data backend</p>
+  </div>
+  <div className="p-5 border border-border rounded-lg bg-muted/30">
+    <p className="font-medium text-primary mb-2">Data quality, governance and reporting</p>
+    <p className="text-muted-foreground text-sm">Agents that can help you enforce data quality, governance and reporting during development and in run time</p>
+  </div>
+</div>
+
+## Getting Involved / Giving Feedback / Community
+
+<CTACards columns={3}>
+  <CTACard
+    title="Join our Slack"
+    description="Join our community, we'd love to hear from you!"
+    ctaLink="https://cal.com/team/514/talk-to-eng"
+    ctaLabel="Talk to the Team"
+    Icon={Icons.contact}
+    variant="sloan"
+  />
+  <CTACard
+    title="Talk to the Sloan Team"
+    description="We're always looking to improve Moose and would love to hear from you!"
+    ctaLink="https://cal.com/team/514/talk-to-eng"
+    ctaLabel="Talk to the Team"
+    Icon={Icons.contact}
+    variant="sloan"
+  />
+  <CTACard
+    title="GitHub"
+    description="Star, check out the code, and contribute on GitHub"
+    ctaLink="https://github.com/514-labs/moose"
+    ctaLabel="GitHub"
+    Icon={Icons.github}
+    variant="sloan"
+  />
+
+</CTACards>

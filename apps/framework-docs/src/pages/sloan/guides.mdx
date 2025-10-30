@@ -1,0 +1,55 @@
+---
+title: Quickstart
+description: Quickstart guide for Sloan
+---
+
+import { Callout } from "@/components";
+import { Tabs, Steps, Card, FileTree } from "nextra/components";
+import {
+  CTACard,
+  CTACards,
+  ZoomImg,
+  ChipButton,
+  Columns,
+  Column,
+  FeatureCard,
+  FeatureGrid,
+  BulletPointsCard,
+  QnABullets,
+  CheckmarkBullets,
+  Icons,
+} from "@/components";
+
+# Sloan Quickstart Guides
+
+Sloan exposes tools to your LLM client for reading, exploring, and building on ClickHouse data—locally or in production. Get started with one of our quickstart guides below:
+
+<FeatureGrid columns={3}>
+  <FeatureCard
+    href="/sloan/guides/clickhouse-chat"
+    Icon={Icons.api}
+    title="AI Chat with ClickHouse"
+    description="
+    "
+    variant="sloan"
+  />
+  
+  <FeatureCard
+    href="/sloan/guides/clickhouse-proj#quickstart-analytics-engineering-project-from-clickhouse-playground-or-your-own-clickhouse-database"
+    Icon={Icons.contact}
+    title="AI analytics engineering from your ClickHouse"
+    description="
+    "
+    variant="sloan"
+  />
+  
+  <FeatureCard
+    href="/sloan/guides/from-template#quickstart-new-complete-local-olap-project-from-template"
+    Icon={Icons.db}
+    title="AI powered OLAP templates"
+    description="
+    "
+    variant="sloan"
+  />
+
+</FeatureGrid>

@@ -1,0 +1,780 @@
+---
+title: 5-Minute Quickstart
+description: Build your first analytical backend with Moose in 5 minutes
+---
+
+import { Tabs, Steps, Card, FileTree } from "nextra/components";
+import { Callout, ToggleBlock, Python, TypeScript, LanguageSwitcher, MuxVideo, BulletPointsCard, IconBadge, CTACards, CTACard, PathConfig } from "@/components";
+import { CheckCircle, Clock, Laptop, Terminal } from "lucide-react";
+
+# 5-Minute Quickstart
+
+<div className="flex items-center gap-4 my-4 flex-wrap">
+<IconBadge Icon={Clock} label="5 minute setup" variant="moose" />
+<IconBadge Icon={CheckCircle} label="Zero config" variant="moose" />
+<IconBadge Icon={Laptop} label="Local ClickHouse, Redpanda, and APIs" variant="moose" />
+</div>
+
+<LanguageSwitcher />
+
+<TypeScript>
+<MuxVideo
+  playbackId="ayaB9Q00q9RIePJLfErDyRnCIOpGpHmVNSX7xy02SBGN8"
+  title="Moose Quickstart Video"
+  width="100%"
+  height="auto"
+  poster="https://image.mux.com/ayaB9Q00q9RIePJLfErDyRnCIOpGpHmVNSX7xy02SBGN8/thumbnail.png?width=214&height=121&time=28"
+/>
+</TypeScript>
+
+<Python>
+<MuxVideo
+  playbackId="7b6BmW9005WdBQnBrA1l2dHKNvLKyKIrlz9700k9NV71o"
+  title="Moose Quickstart Video"
+  width="100%"
+  height="auto"
+  poster="https://image.mux.com/7b6BmW9005WdBQnBrA1l2dHKNvLKyKIrlz9700k9NV71o/thumbnail.png?width=214&height=121&time=29"
+/>
+</Python>
+
+## Prerequisites
+Check that your pre-requisites are installed by running the following commands:
+
+<TypeScript>
+<BulletPointsCard
+  title="Before you start"
+  bulletStyle="check"
+  compact={true}
+  divider={false}
+  bullets={[
+    {
+      title: "Node.js 20+",
+      description: "Required for TypeScript development",
+      link: { text: "Download →", href: "https://nodejs.org/en/download", external: true }
+    },
+    {
+      title: "Docker Desktop",
+      description: "For local development environment",
+      link: { text: "Download →", href: "https://docs.docker.com/get-started/get-docker/", external: true }
+    },
+    {
+      title: "macOS/Linux",
+      description: "Windows works via WSL2"
+    }
+  ]}
+/>
+
+```bash filename="Terminal" copy
+node --version
+```
+
+```bash filename="Terminal" copy
+docker ps
+```
+
+</TypeScript>
+
+<Python>
+<BulletPointsCard
+  title="Before you start"
+  bulletStyle="check"
+  compact={true}
+  divider={false}
+  bullets={[
+    {
+      title: "Python 3.12+",
+      description: "Required for Python development",
+      link: { text: "Download →", href: "https://www.python.org/downloads/", external: true }
+    },
+    {
+      title: "Docker Desktop",
+      description: "For local development environment",
+      link: { text: "Download →", href: "https://docs.docker.com/get-started/get-docker/", external: true }
+    },
+    {
+      title: "macOS/Linux",
+      description: "Windows works via WSL2"
+    }
+  ]}
+/>
+
+```bash filename="Terminal" copy
+python --version
+```
+
+```bash filename="Terminal" copy
+docker ps
+```
+</Python>
+
+<Callout type="info" title="Already have ClickHouse running?" href={PathConfig.fromClickhouse.path} icon={PathConfig.fromClickhouse.icon} ctaLabel="Add to ClickHouse">
+Skip the tutorial and add Moose as a layer on top of your existing database
+</Callout>
+
+<br />
+
+## Step 1: Install Moose (30 seconds)
+
+<Steps>
+### Run the installation script
+
+```bash filename="Terminal" copy
+bash -i <(curl -fsSL https://fiveonefour.com/install.sh) moose
+```
+
+You should see this message: `Moose vX.X.X installed successfully!` (note that X.X.X is the actual version number)
+
+If you see an error instead, check [Troubleshooting](#need-help) below.
+
+### Reload your shell configuration
+
+**This step is required.** Your current terminal doesn't know about the `moose` command yet.
+
+<Tabs items={["Zsh (most macOS)", "Bash (most Linux)"]}>
+<Tabs.Tab>
+
+```bash filename="Terminal" copy
+source ~/.zshrc
+```
+
+</Tabs.Tab>
+<Tabs.Tab>
+
+If `echo $SHELL` showed `/bin/bash` or `/usr/bin/bash`:
+
+```bash filename="Terminal" copy
+source ~/.bashrc
+```
+
+</Tabs.Tab>
+</Tabs>
+
+### Verify moose command works
+
+```bash filename="Terminal" copy
+moose --version
+```
+
+You should see:
+```txt
+moose X.X.X
+```
+
+<Callout type="warning" title="If you see 'command not found'" compact={true}>
+
+**Try these steps in order:**
+
+1. Re-run the correct `source` command for your shell
+2. Close this terminal completely and open a new terminal window
+3. Run `moose --version` again
+4. If still failing, see [Troubleshooting](#need-help)
+
+</Callout>
+
+<Callout type="success" title="Checkpoint" icon={CheckCircle} compact={true}>
+You should see the moose version number. Do not proceed to Step 2 until `moose --version` works.
+</Callout>
+
+</Steps>
+
+<br />
+
+## Step 2: Create Your Project (1 minute)
+
+<Steps>
+### Initialize your project
+
+<TypeScript>
+```bash filename="Terminal" copy
+moose init my-analytics-app typescript
+```
+
+You should see output like:
+```txt
+✓ Created my-analytics-app
+✓ Initialized TypeScript project
+```
+</TypeScript>
+
+<Python>
+```bash filename="Terminal" copy
+moose init my-analytics-app python
+```
+
+You should see output like:
+```txt
+✓ Created my-analytics-app
+✓ Initialized Python project
+```
+</Python>
+
+### Navigate to your project directory
+
+```bash filename="Terminal" copy
+cd my-analytics-app
+```
+
+<Python>
+
+<Callout type="info" title="Recommended: Create a virtual environment" icon={CheckCircle} compact={true}>
+A virtual environment isolates your project's dependencies. We recommend creating one for your project.
+</Callout>
+
+
+**Create a virtual environment (Recommended)**
+
+```bash filename="Terminal" copy
+python3 -m venv .venv
+```
+
+**activate your virtual environment(Recommended)**
+```bash filename="Terminal" copy
+source .venv/bin/activate
+```
+
+This creates a `.venv` folder and activates it. Your terminal prompt should now look something like this:
+
+```txt
+(.venv) username@computer my-analytics-app %
+```
+
+</Python>
+### Install dependencies
+
+
+<TypeScript>
+
+
+```bash filename="Terminal" copy
+npm install
+```
+
+**Wait for installation to complete.**
+
+<Callout type="success" title="Checkpoint" icon={CheckCircle} compact={true}>
+Dependencies installed successfully with no errors.
+</Callout>
+
+</TypeScript>
+
+
+<Python>
+
+```bash filename="Terminal" copy
+pip install -r requirements.txt
+```
+
+**Wait for installation to complete.** You should see successful installation messages ending with:
+```txt
+Successfully installed [list of packages]
+```
+
+<Callout type="success" title="Checkpoint" icon={CheckCircle} compact={true}>
+You should see `(.venv)` in your prompt and dependencies installed with no errors.
+</Callout>
+
+</Python>
+
+### Start your development environment
+
+```bash filename="Terminal" copy
+moose dev
+```
+
+<Callout type="info" title="This may take a minute the first time." compact={true}>
+Moose is:
+- Downloading Docker images for ClickHouse, Redpanda, and Temporal
+- Starting containers
+- Initializing databases
+- Starting the development server
+</Callout>
+
+Do not proceed until you see the "Started Webserver" message.
+
+```txt
+       Created docker compose file
+⡗ Starting local infrastructure
+  Successfully started containers
+     Validated clickhousedb-1 docker container
+     Validated redpanda-1 docker container
+  Successfully validated red panda cluster
+     Validated temporal docker container
+  Successfully ran local infrastructure
+      Node Id: my-analytics-app::b15efaca-0c23-42b2-9b0c-642105f9c437
+      Starting development mode
+      Watching "/path/to/my-analytics-app/app"
+       Started Webserver.  👈 WAIT FOR THIS
+
+
+  Next Steps
+
+💻 Run the moose 👉 `ls` 👈 command for a bird's eye view of your application and infrastructure
+
+📥 Send Data to Moose
+	Your local development server is running at: http://localhost:4000/ingest
+```
+
+<Callout type="success" title="Checkpoint" icon={CheckCircle} compact={true}>
+Keep this terminal running. This is your Moose development server. You'll open a new terminal for the next step.
+</Callout>
+
+</Steps>
+
+## Step 3: Understand Your Project (1 minute)
+
+Your project includes a complete example pipeline:
+
+    <Python>
+        <FileTree>
+            <FileTree.Folder name="app" defaultOpen>
+                <FileTree.Folder name="apis">
+                    <FileTree.File name="bar.py" />
+                </FileTree.Folder>
+                <FileTree.Folder name="ingest" defaultOpen>
+                    <FileTree.File name="models.py" />
+                    <FileTree.File name="transform.py" />
+                </FileTree.Folder>
+                <FileTree.Folder name="views">
+                    <FileTree.File name="bar_aggregated.py" />
+                </FileTree.Folder>
+                <FileTree.Folder name="workflows">
+                    <FileTree.File name="generator.py" />
+                </FileTree.Folder>
+                <FileTree.File name="main.py" />
+            </FileTree.Folder>
+        </FileTree>
+    </Python>
+
+    <TypeScript>
+        <FileTree>
+            <FileTree.Folder name="app" defaultOpen>
+                <FileTree.Folder name="apis">
+                    <FileTree.File name="bar.ts" />
+                </FileTree.Folder>
+                <FileTree.Folder name="ingest" defaultOpen>
+                    <FileTree.File name="models.ts" />
+                    <FileTree.File name="transform.ts" />
+                </FileTree.Folder>
+                <FileTree.Folder name="views">
+                    <FileTree.File name="barAggregated.ts" />
+                </FileTree.Folder>
+                <FileTree.Folder name="workflows">
+                    <FileTree.File name="generator.ts" />
+                </FileTree.Folder>
+                <FileTree.File name="index.ts" />
+            </FileTree.Folder>
+        </FileTree>
+    </TypeScript>
+
+
+**Important:** While your pipeline objects are defined in the child folders, they **must be imported** into the root <TypeScript inline>`index.ts`</TypeScript><Python inline>`main.py`</Python> file for the Moose CLI to discover and use them.
+
+<TypeScript>
+```ts filename="app/index.ts"
+export * from "./ingest/models";      // Data models & pipelines
+export * from "./ingest/transforms";  // Transformation logic
+export * from "./apis/bar";           // API endpoints
+export * from "./views/barAggregated"; // Materialized views
+export * from "./workflows/generator"; // Background workflows
+```
+</TypeScript>
+
+<Python>
+```python filename="app/main.py"
+from app.ingest.models import *      # Data models & pipelines
+from app.ingest.transform import *   # Transformation logic
+from app.apis.bar import *           # API endpoints
+from app.views.bar_aggregated import * # Materialized views
+from app.workflows.generator import *  # Background workflows
+```
+</Python>
+
+
+## Step 4: Test Your Pipeline (2 minutes)
+
+<Callout type="info" title="Important: Open a second terminal window" compact={true}>
+**Keep your `moose dev` terminal running.** You need a second terminal for the next commands.
+</Callout>
+<ToggleBlock openText="How to open a new terminal window" closeText="Hide instructions">
+
+**macOS Terminal:**
+- Press `Cmd+N` for a new window, or
+- Right-click Terminal icon in dock → New Window
+
+**VSCode:**
+- Click the `+` button in the terminal panel, or
+- Press `Ctrl+Shift+` ` (backtick)
+
+**Linux Terminal:**
+- Press `Ctrl+Shift+N`, or
+- Use your terminal's File → New Window menu
+
+</ToggleBlock>
+
+<Steps>
+
+### Navigate to your project in the new terminal
+
+In your **new terminal window** (not the one running `moose dev`):
+
+```bash filename="Terminal 2 (New Window)" copy
+cd my-analytics-app
+```
+
+<Python>
+
+If not automatically activated, activate the virtual environment:
+```bash filename="Terminal 2 (New Window)" copy
+source .venv/bin/activate
+```
+</Python>
+
+
+### Run the data generator workflow
+
+Your project comes with a pre-built [Workflow](../workflows) called `generator` that acts as a **data simulator**:
+
+```bash filename="Terminal 2 (New Window)" copy
+moose workflow run generator
+```
+
+You should see:
+```txt
+Workflow 'generator' triggered successfully
+```
+
+<ToggleBlock openText="Understanding the generator workflow" closeText="Hide details">
+
+<Callout type="info" title="How it works" compact={true} icon={false}>
+- Generates 1000 fake records with realistic data (using the Faker library)
+- Sends each record to your ingestion API via HTTP POST
+- Runs as a background task managed by Temporal
+- Helps you test your entire pipeline without needing real data
+
+You can see the code in the <TypeScript inline>`/workflows/generator.ts`</TypeScript><Python inline>`/workflows/generator.py`</Python> file.
+</Callout>
+
+</ToggleBlock>
+
+### Watch for data processing logs
+
+**Switch to your first terminal** (where `moose dev` is running). You should see new logs streaming:
+
+```txt
+POST ingest/Foo
+[POST] Data received at ingest API sink for Foo
+Received Foo_0_0 -> Bar_0_0 1 message(s)
+[DB] 17 row(s) successfully written to DB table (Bar)
+```
+
+<Callout type="success" title="Data is flowing!" icon={CheckCircle} compact={true}>
+These logs show your pipeline working: Workflow generates data → Ingestion API receives it → Data transforms → Writes to ClickHouse
+</Callout>
+
+**If you don't see logs after 30 seconds:**
+- Verify `moose dev` is still running in Terminal 1
+- Check Terminal 2 for error messages from the workflow command
+- Run `docker ps` to verify containers are running
+
+<Callout type="info" title="View Temporal Dashboard" compact={true}>
+The workflow runs in the background, powered by [Temporal](https://temporal.io). You can see workflow status at `http://localhost:8080`.
+</Callout>
+
+<ToggleBlock openText="(Bonus) Peek at your data" closeText="Hide details">
+
+```bash filename="Terminal" copy
+moose peek Bar --limit 5 # This queries your Clickhouse database to show raw data; useful for debugging / verification
+```
+
+You should see output like:
+```txt
+┌─primaryKey─────────────────────────┬─utcTimestamp────────┬─hasText─┬─textLength─┐
+│ 123e4567-e89b-12d3-a456-426614174000 │ 2024-01-15 10:30:00 │       1 │         42 │
+│ 987fcdeb-51a2-43d1-b789-123456789abc │ 2024-01-15 10:31:00 │       0 │          0 │
+└────────────────────────────────────┴─────────────────────┴─────────┴────────────┘
+```
+
+If you see 0 rows, wait a few seconds for the workflow to process data, then try again.
+
+</ToggleBlock>
+
+### Query your data
+
+Your application has a pre-built [API](../apis) that reads from your database. The API runs on `localhost:4000`.
+
+**In Terminal 2**, call the API with `curl`:
+
+```bash filename="Terminal 2 (New Window)" copy
+curl "http://localhost:4000/api/bar"
+```
+
+You should see JSON data like:
+```json
+[
+  {
+    "dayOfMonth": 15,
+    "totalRows": 67,
+    "rowsWithText": 34,
+    "maxTextLength": 142,
+    "totalTextLength": 2847
+  },
+  {
+    "dayOfMonth": 14,
+    "totalRows": 43,
+    "rowsWithText": 21,
+    "maxTextLength": 98,
+    "totalTextLength": 1923
+  }
+]
+```
+
+<Callout type="success" title="Checkpoint" icon={CheckCircle} compact={true}>
+You should see JSON data with analytics results. Your complete data pipeline is working!
+</Callout>
+
+**Try query parameters:**
+```bash filename="Terminal 2 - Add filters and limits" copy
+curl "http://localhost:4000/api/bar?limit=5&orderBy=totalRows"
+```
+
+<Callout type="info" title="Port Reference" compact={true}>
+- **Port 4000**: Your Moose application webserver (all APIs are running on this port)
+- **Port 8080**: Temporal UI dashboard (workflow management)
+- **Port 18123**: ClickHouse HTTP interface (direct database access)
+</Callout>
+
+<ToggleBlock openText="Troubleshooting" closeText="Hide troubleshooting">
+**If the workflow command doesn't work:**
+- Make sure you're in the project directory (`cd my-analytics-app`)
+- Verify `moose dev` is still running in your first terminal
+- Check that Docker containers are running: `docker ps`
+
+**If curl returns an error:**
+- Verify the URL is `http://localhost:4000` (not 8080)
+- Make sure the workflow has had time to generate data (wait 30-60 seconds)
+- Check your `moose dev` terminal for error messages
+
+**If you get HTML instead of JSON:**
+- You might be hitting the wrong port - use 4000, not 8080
+- Port 8080 serves the Temporal UI (workflow dashboard), not your API
+
+**If `moose peek Bar` shows 0 rows:**
+- Wait for the workflow to complete (it processes 1000 records)
+- Check the workflow is running: look for "Ingested X records..." messages
+- Verify no errors in your `moose dev` terminal logs
+
+**If you see connection refused:**
+- Restart `moose dev` and wait for "Started Webserver" message
+- Check if another process is using port 4000: `lsof -i :4000`
+</ToggleBlock>
+
+<ToggleBlock openText="Explore with OpenAPI UI" closeText="Hide Explore with OpenAPI UI">
+
+1. Install the [OpenAPI (Swagger) Viewer extension](https://marketplace.cursorapi.com/items?itemName=42Crunch.vscode-openapi) in your IDE
+2. Open `.moose/openapi.yaml` in your IDE
+3. Click the "Preview" icon to launch the interactive API explorer
+4. Test the `POST /ingest/Foo` and `GET /api/bar` endpoints
+
+<MuxVideo
+  playbackId="66qLKy46JddIBcJWqestllPmBJBxWcOwbgw00WpKXO02M"
+  title="Using the OpenAPI Swagger UI for Moose APIs"
+  width="100%"
+  height="auto"
+  autoPlay={true}
+  muted={true}
+  loop={true}
+/>
+
+</ToggleBlock>
+
+</Steps>
+
+## Step 5: Hot Reload Schema Changes (1 minute)
+
+1. Open <TypeScript inline>`app/ingest/models.ts`</TypeScript><Python inline>`app/ingest/models.py`</Python>
+2. Add a new field to your data model:
+
+<TypeScript>
+```ts filename="app/ingest/models.ts" {5} copy
+/** Analyzed text metrics derived from Foo */
+export interface Bar {
+  primaryKey: Key<string>; // From Foo.primaryKey
+  utcTimestamp: DateTime; // From Foo.timestamp
+  hasText: boolean; // From Foo.optionalText?
+  textLength: number; // From Foo.optionalText.length
+  newField?: string; // Add this new optional field
+}
+```
+</TypeScript>
+
+<Python>
+```python filename="app/ingest/models.py" {16} copy
+from moose_lib import Key, StringToEnumMixin
+from typing import Optional, Annotated
+from enum import IntEnum, auto
+from pydantic import BaseModel
+
+class Baz(StringToEnumMixin, IntEnum):
+    QUX = auto()
+    QUUX = auto()
+
+
+class Bar(BaseModel):
+    primary_key: Key[str]
+    utc_timestamp: datetime
+    baz: Baz
+    has_text: bool
+    text_length: int
+    new_field: Optional[str] = None # New field
+```
+</Python>
+
+3. Save the file and watch your terminal
+
+**Switch to Terminal 1** (where `moose dev` is running). You should see Moose automatically update your infrastructure:
+
+<TypeScript>
+```txt
+⠋ Processing Infrastructure changes from file watcher
+             ~  Table Bar:
+                  Column changes:
+                    + newField: String
+```
+</TypeScript>
+
+<Python>
+```txt
+⠋ Processing Infrastructure changes from file watcher
+             ~  Table Bar:
+                  Column changes:
+                    + new_field: String
+```
+</Python>
+
+<Callout type="success" title="Checkpoint" icon={CheckCircle} compact={true}>
+You should see the column change logged. Your API, database schema, and streaming topic all updated automatically!
+</Callout>
+
+**Try it yourself:** Add another field with a different data type and watch the infrastructure update in real-time.
+
+## Recap
+
+You've built a complete analytical backend with:
+
+<BulletPointsCard
+  bulletStyle="check"
+  title="What's Working"
+  bullets={[
+    { title: "Type-safe ingestion pipeline with API and stream processing" },
+    { title: "ClickHouse database with dynamic schema management" },
+    { title: "Analytics API with filtering" },
+    { title: "Hot-reload development" }
+  ]}
+/>
+
+## Need Help?
+
+<ToggleBlock openText="Common Issues & Solutions" closeText="Hide troubleshooting">
+<Tabs items={["Docker Issues", "Version Issues", "Port Conflicts", "Permission Issues"]}>
+<Tabs.Tab>
+**Docker not running:**
+```bash filename="Terminal" copy
+# macOS
+open -a Docker
+
+# Linux
+sudo systemctl start docker
+
+# Verify Docker is running
+docker ps
+```
+
+**Docker out of space:**
+```bash filename="Terminal" copy
+docker system prune -a
+```
+</Tabs.Tab>
+
+<Tabs.Tab>
+<TypeScript>
+**Node.js version too old:**
+```bash filename="Terminal" copy
+# Check version
+node -v
+
+# Install Node 20+ with nvm
+curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.0/install.sh | bash
+nvm install 20
+nvm use 20
+```
+</TypeScript>
+
+<Python>
+**Python version too old:**
+```bash filename="Terminal" copy
+# Check version
+python3 --version
+
+# Install Python 3.12+ with pyenv
+curl https://pyenv.run | bash
+pyenv install 3.12
+pyenv local 3.12
+```
+</Python>
+</Tabs.Tab>
+
+<Tabs.Tab>
+**Port 4000 already in use:**
+```bash filename="Terminal" copy
+# Find what's using port 4000
+lsof -i :4000
+
+# Kill the process (replace PID)
+kill -9 <PID>
+
+# Or use a different port
+moose dev --port 4001
+```
+</Tabs.Tab>
+
+<Tabs.Tab>
+**Permission denied:**
+```bash filename="Terminal" copy
+# Fix Docker permissions (Linux)
+sudo usermod -aG docker $USER
+newgrp docker
+
+# Fix file permissions
+chmod +x ~/.moose/bin/moose
+```
+</Tabs.Tab>
+
+<Tabs.Tab>
+**Port 4000 already in use:**
+```bash filename="Terminal" copy
+# Find what's using port 4000
+lsof -i :4000
+
+# Kill the process (replace PID)
+kill -9 <PID>
+
+# Or use a different port
+moose dev --port 4001
+```
+</Tabs.Tab>
+
+<Tabs.Tab>
+**Permission denied:**
+```bash filename="Terminal" copy
+# Fix Docker permissions (Linux)
+sudo usermod -aG docker $USER
+newgrp docker
+
+# Fix file permissions
+chmod +x ~/.moose/bin/moose
+```
+</Tabs.Tab>
+</Tabs>
+
+**Still stuck?** Join our [Slack community](https://join.slack.com/t/moose-community/shared_invite/zt-2fjh5n3wz-cnOmM9Xe9DYAgQrNu8xKxg) or [open an issue](https://github.com/514-labs/moose/issues).
+</ToggleBlock>

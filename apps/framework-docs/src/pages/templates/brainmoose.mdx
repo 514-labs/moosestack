@@ -1,0 +1,199 @@
+---
+title: Live Brainwave Analytics Template
+description: Build a real-time brainwave monitoring and analytics platform using Moose, EEG devices, and advanced data processing
+---
+
+import { Callout, LanguageSwitcher, BulletPointsCard, CheckmarkBullets, TypeScript, Python , ToggleBlock } from "@/components";
+
+# Brainwaves Template
+
+## Overview
+
+The Brainwaves template demonstrates how to build a comprehensive brain mapping and movement analytics platform using Moose. It features real-time collection, analysis, and visualization of brainwave data from EEG devices like the Muse Headband, with support for both live device streaming and simulation using datasets.
+
+## Features
+
+- Real-time brainwave data collection and analysis from EEG devices
+- Live terminal dashboard with interactive charts and visualizations
+- Session-based data logging and tracking
+- Movement and relaxation state analysis
+- Dual-application architecture (DAS + Brainmoose backend)
+- Optional OpenAI-powered insights and analysis
+- Support for both live device streaming and CSV simulation
+
+## Architecture
+
+### DAS: Data Acquisition Server
+
+The Data Acquisition Server is a Node.js/TypeScript application that handles:
+
+1. **Real-time Data Ingestion**
+   - UDP/OSC data collection from Muse devices or simulators
+   - Session-based CSV logging with unique identifiers
+
+2. **Live Analysis & Visualization**
+   - Terminal dashboard with real-time charts and tables
+   - Brainwave band analysis (Alpha, Beta, Delta, Theta, Gamma)
+   - Movement detection using accelerometer and gyroscope data
+
+3. **Data Forwarding**
+   - Automatic forwarding to Moose backend for storage and analytics
+
+### Brainmoose: Analytics & API Backend
+
+The Moose-powered backend provides:
+
+- Modular data ingestion and storage pipeline
+- Advanced analytics blocks for movement scoring
+- RESTful APIs for querying session insights
+- Optional OpenAI GPT-4o integration for enhanced analysis
+- ClickHouse-based data warehouse for complex queries
+
+## Getting Started
+
+<Callout title="Prerequisites" type="info">
+Node.js 20+
+Moose CLI
+Optional: Muse Headband EEG device
+
+```bash
+bash -i <(curl -fsSL https://fiveonefour.com/install.sh) moose
+```
+</Callout>
+
+1. Create a new Moose project from the template:
+```bash
+moose init moose-brainwaves brainwaves
+cd moose-brainwaves
+```
+
+2. Install dependencies for both applications:
+```bash
+# Install DAS dependencies
+cd apps/das
+npm install
+
+# Install Brainmoose dependencies
+cd ../brainmoose
+npm install
+```
+
+3. Start with simulation (no device required):
+```bash
+# Download sample data
+cd ../das
+./download.sh
+
+# Start DAS
+npm run dev -- --sessionId=MyTestSession
+```
+
+4. In another terminal start the Moose analytics backend:
+```bash
+cd {project_root}/apps/brainmoose
+moose dev
+```
+
+5. In another terminal run the simulation (no device required):
+```bash
+cd {project_root}/apps/das
+./sim.sh brain_data_coding.csv
+```
+
+## API Endpoints
+
+The template exposes key API endpoints for accessing brainwave analytics:
+
+- `/api/sessionInsights`
+  - Parameters: sessions (comma-separated sessionId|sessionLabel pairs)
+  - Returns: Movement scores and session analytics for specified sessions
+
+## Data Models
+
+### Brain Data Schema
+```typescript
+interface BrainData {
+  timestamp: DateTime;
+  bandOn: boolean;
+  acc: {
+    x: number;
+    y: number;
+    z: number;
+  };
+  gyro: {
+    x: number;
+    y: number;
+    z: number;
+  };
+  alpha: number;
+  beta: number;
+  delta: number;
+  theta: number;
+  gamma: number;
+  ppm: {
+    channel1: number;
+    channel2: number;
+    channel3: number;
+  };
+  sessionId: string;
+}
+```
+
+## Analytics & Insights
+
+The template includes sophisticated analytics for:
+
+### Movement Analysis
+- Accelerometer-based movement scoring
+- Gyroscope rotation detection
+- Combined movement metrics calculation
+
+### Brainwave Band Analysis
+- Alpha wave relaxation indicators
+- Beta wave focus measurements
+- Delta, Theta, and Gamma band processing
+- Real-time state classification
+
+### Session Scoring
+Example movement score calculation:
+```sql
+SELECT
+    sessionId,
+    SUM(sqrt((arrayElement(acc, 1)^2) + (arrayElement(acc, 2)^2) + (arrayElement(acc, 3)^2))) AS acc_movement_score,
+    SUM(sqrt((arrayElement(gyro, 1)^2) + (arrayElement(gyro, 2)^2) + (arrayElement(gyro, 3)^2))) AS gyro_movement_score
+FROM Brain_0_0
+WHERE sessionId = '1735785243'
+GROUP BY sessionId;
+```
+
+## Device Support
+
+### Muse Headband Integration
+- Direct OSC data streaming support
+- Real-time EEG signal processing
+- Multi-channel brainwave analysis
+
+### Simulation Support
+- CSV data playback for testing
+- Sample datasets included
+- Configurable replay speeds
+
+## Customization
+
+You can customize the template by:
+
+- Extending brainwave analysis algorithms
+- Adding new visualization components to the terminal UI
+- Implementing custom movement detection logic
+- Integrating additional EEG devices or data sources
+- Enhancing the OpenAI analysis prompts and insights
+- Creating custom API endpoints for specific analytics needs
+
+## Educational Resources
+
+<Callout title="Learn More" type="info">
+Listen to these ~15 minute podcasts generated using NotebookLM:
+
+- [Muse Headband Overview](https://downloads.fiveonefour.com/moose/template-data/brainwaves/podcasts/MuseHeadband.mp3)
+- [Research Using Consumer EEG Devices](https://downloads.fiveonefour.com/moose/template-data/brainwaves/podcasts/ResearchUsingConsumerEEGDevices.mp3)
+</Callout> 

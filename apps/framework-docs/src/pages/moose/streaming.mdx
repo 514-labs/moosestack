@@ -1,0 +1,135 @@
+---
+title: Moose Streaming
+description: Build real-time data pipelines with Redpanda/Kafka streams, transformations, and event processing
+---
+
+import { Callout, BulletPointsCard, LanguageSwitcher, TypeScript, Python, CTACards, CTACard, ExportRequirement } from "@/components";
+import { Tabs } from "nextra/components";
+
+# Moose Streaming
+<LanguageSwitcher />
+
+## Overview
+
+The Streaming module provides standalone real-time data processing with Kafka/Redpanda topics. You can use this capability independently to build event-driven architectures, data transformations, and real-time pipelines without requiring other MooseStack components.
+
+## Basic Usage
+
+<ExportRequirement primitive="Stream" example="export { exampleStream }" />
+
+<TypeScript>
+```ts filename="Stream.ts" copy
+import { Stream } from "@514labs/moose-lib";
+
+interface ExampleEvent {
+  id: string;
+  userId: string;
+  timestamp: Date;
+  eventType: string;
+}
+
+// Create a standalone stream for events
+export const exampleStream = new Stream<ExampleEvent>("streaming-topic-name", {
+  // Optional: specify destination table
+  destination: new OlapTable<ExampleEvent>("table-name")
+});
+
+// Add consumers for real-time processing
+exampleStream.addConsumer((event) => {
+  console.log("Processing event:", event);
+  // Custom processing logic here
+});
+```
+</TypeScript>
+
+<Python>
+```py filename="Stream.py" copy
+from moose_lib import Stream
+from pydantic import BaseModel
+from datetime import datetime
+
+class ExampleEvent(BaseModel):
+    id: str
+    user_id: str
+    timestamp: datetime
+    event_type: str
+
+# Create a standalone stream for user events
+example_stream = Stream[ExampleEvent]("streaming-topic-name")
+
+# Add consumers for real-time processing
+def process_event(event: ExampleEvent):
+    print(f"Processing event: {event}")
+    # Custom processing logic here
+
+example_stream.add_consumer(process_event)
+
+# No export needed - Python modules are automatically discovered
+```
+</Python>
+
+### Enabling Streaming
+
+To enable streaming, you need to ensure that the `streaming_engine` feature flag is set to `true` in your `moose.config.toml` file:
+
+```toml
+[features]
+streaming_engine = true
+```
+
+
+## Core Capabilities
+
+<CTACards>
+<CTACard
+  title="Create Streams"
+  description="Define and create Kafka/Redpanda topics with type-safe schemas"
+  ctaLink="/moose/streaming/create-stream"
+  ctaLabel="Learn More →"
+  badge={{ variant: "moose", text: "Streams" }}
+/>
+<CTACard
+  title="Publish Data"
+  description="Write data to streams from applications, APIs, or external sources"
+  ctaLink="/moose/streaming/from-your-code"
+  ctaLabel="Learn More →"
+  badge={{ variant: "moose", text: "Publishing" }}
+/>
+<CTACard
+  title="Consumer Functions"
+  description="Read and process data from streams with consumers and processors"
+  ctaLink="/moose/streaming/consumer-functions"
+  ctaLabel="Learn More →"
+  badge={{ variant: "moose", text: "Consuming" }}
+/>
+<CTACard
+  title="Streaming Transformations"
+  description="Process and transform data in-flight between streams"
+  ctaLink="/moose/streaming/transform-functions"
+  ctaLabel="Learn More →"
+  badge={{ variant: "moose", text: "Transformation" }}
+/>
+</CTACards>
+
+## Integration with Other Capabilities
+
+The Streaming capability can be used independently, or in conjunction with other MooseStack modules:
+
+<CTACards>
+<CTACard
+  title="OLAP"
+  description="Sync data from streams to tables to persist data and enable fast analytical queries on top of it"
+  ctaLink="/moose/streaming/sync-to-table"
+  ctaLabel="Learn More →"
+  orientation="horizontal"
+  isMooseModule={true}
+/>
+<CTACard
+  title="APIs"
+  description="Create APIs to route data into streams from your other applications or webhooks"
+  ctaLink="/moose/streaming/from-your-code"
+  ctaLabel="Learn More →"
+  orientation="horizontal"
+  isMooseModule={true}
+/>
+</CTACards>

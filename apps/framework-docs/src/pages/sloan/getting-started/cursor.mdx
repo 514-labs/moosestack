@@ -1,0 +1,125 @@
+---
+title: Getting Started
+description: Getting started guide for Sloan
+---
+
+import { Callout } from "@/components";
+import { Tabs, Steps, Card, FileTree } from "nextra/components";
+import {
+  CTACard,
+  CTACards,
+  ZoomImg,
+  ChipButton,
+  Columns,
+  Column,
+  FeatureCard,
+  FeatureGrid,
+  BulletPointsCard,
+  QnABullets,
+  CheckmarkBullets,
+  Icons,
+} from "@/components";
+import { ArgTable } from "@/components/ArgTable";
+
+
+## Cursor
+
+<Steps>
+
+### Install 
+[Install Cursor here](https://www.cursor.com/).
+
+### Install Moose and Sloan CLI
+
+```bash filename="Terminal" copy
+bash -i <(curl -fsSL https://fiveonefour.com/install.sh) sloan,moose
+```
+
+### Configure Sloan MCP
+
+<Tabs items={['Sloan CLI', 'MCP.json']}>
+  <Tabs.Tab>
+    Create a new project with Cursor MCP preconfigured: 
+
+    ```bash filename="Terminal" copy
+    sloan init <project-name> <template-name> --mcp cursor-project
+    ```
+
+    If you want to use this as a global Cursor MCP, use `cursor-global` instead of `cursor-project`.
+
+    For other options, see [Sloan CLI docs](/sloan/getting-started/sloan-cli).
+  </Tabs.Tab>
+  <Tabs.Tab>
+    ```json filename="/path/to/your/project/.cursor/mcp.json" copy
+    {
+      "mcpServers": {
+        "sloan": {
+          "args": [
+            "@514labs/sloan-mcp@latest",
+            "--moose-read-tools",
+            "path/to/your/moose/project"
+          ],
+          "command": "npx",
+          "env": {
+            "ANTHROPIC_API_KEY": "<your-anthropic-api-key>",
+            "MOOSE_PATH": "path/to/your/moose/installation",
+            "NODE_PATH": "path/to/your/node/installation",
+            "PYTHON_PATH": "path/to/your/python/installation"
+          }
+        }
+      }
+    }
+    ```
+  </Tabs.Tab>
+</Tabs>
+
+### Adding other toolsets
+
+For more information on available toolsets, see [Sloan MCP toolsets](/sloan/reference/tool-reference). All toolsets are available for Cursor.
+
+### Using the MCP
+
+1. Open Cursor
+2. You will see a popup saying that an MCP is detected, and can be enabled. Our experience is that this is not always reliable, and the MCP is more stably launched if you go to `cursor > settings > cursor settings > tools and integrations` and enable the MCP there.
+3. If you are using Moose tools, you will need to run your moose dev server with `moose dev`.
+
+</Steps>
+
+### Warnings / Peculiarities
+
+* Every time you add an MCP or change its configuration, you will need to reload the MCP. You can do this by going to `cursor > settings > cursor settings > tools and integrations` and toggling the MCP off and on. If this doesn't work, you can also restart the Cursor application.
+* If you have configured the MCP globally, and want to change the Moose Project that the Sloan MCP is referring to, manually edit the MCP.JSON file or run `sloan config focus` and select a new project.
+
+### Common issues / troubleshooting
+
+* The MCP is running, but you aren't able to get your data? Look at the tool call response, it will tell you if your Moose dev server is running. If it is not, run `moose dev` in your Moose project directory.
+* The MCP is not running. Check your configuration and then restart the application.  
+
+## Reference
+<FeatureGrid columns={3}>
+  
+  <FeatureCard
+    href="/sloan/reference/cli-reference"
+    title="CLI reference"
+    description="
+    "
+    variant="sloan"
+  />
+
+    <FeatureCard
+    href="/sloan/reference/mcp-json-reference"
+    title="MCP.json reference"
+    description="
+    "
+    variant="sloan"
+  />
+
+    <FeatureCard
+    href="/sloan/reference/tool-reference"
+    title="Tools reference"
+    description="
+    "
+    variant="sloan"
+  />
+
+</FeatureGrid>

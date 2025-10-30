@@ -1,0 +1,128 @@
+import { FeatureCard, FeatureGrid, Icons, Callout, ZoomImg } from "@/components";
+import { Steps } from "nextra/components";
+
+## Quickstart: AI powered OLAP templates
+*Bootstrap a complete OLAP pipeline with a Moose template; with Sloan's AI tools already set up for you.*
+
+This will get you started with a Moose data engineering project ingesting Aircraft Transponder data that you can use to learn about Sloan's Analytics Engineering MCP toolset.
+
+<Callout type="info" title="Prerequisites">
+- **OS**: macOS or Linux (WSL supported for Windows)
+- **Docker Desktop/Engine**: [24.0.0+](https://docs.docker.com/get-started/get-docker/)
+- **Node**: [version 20+](https://nodejs.org/en/download) (LTS recommended)
+- **Anthropic API Key**: [Get one here](https://docs.anthropic.com/en/docs/initial-setup)
+- **Client**: [Cursor](https://www.cursor.com/) or [Claude Desktop](https://claude.ai/download) or [Windsurf](https://windsurf.ai/download). For this particular use-case, we recommend Claude Desktop.
+</Callout>
+
+<Steps>
+
+### Install Sloan and Moose CLIs
+
+```bash filename="Terminal" copy
+bash -i <(curl -fsSL https://fiveonefour.com/install.sh) sloan,moose
+```
+
+We'll be using generative MCP tools here, so make sure you add your Anthropic API key in install. If you installed without adding it, you can add it later with `sloan config keys anthropic <your-api-key>`.  If you need to create one, see: https://docs.anthropic.com/en/docs/initial-setup.
+
+
+### Create a new Moose project from the ADS-B template
+
+```bash filename="Terminal" copy
+sloan init <project-name> ads-b
+```
+
+This will create a new Moose project using the ADS-B template to gather ADS-B (aircraft transponder) data that you can use to explore Sloan's MCP offerings. By default, it will create the project configured for use with Cursor (by creating `~/.cursor/mcp.config`), but if you would like to use Claude Desktop, append `--mcp claude-desktop`.
+
+If you want to create an empty project, and build your own Data Models and ingestion, try `sloan init <project-name> typescript-empty` or `sloan init <project-name> python-empty`
+
+### Install dependencies and run the dev server
+
+Navigate into the created project directory: 
+
+```bash filename="Terminal" copy
+cd <project-name>
+```
+
+Install the dependencies: 
+
+```bash filename="Terminal" copy
+npm i
+```
+
+Run the dev server:
+
+```bash filename="Terminal" copy
+moose dev
+```
+
+### Set up your client: open Cursor and Enable the MCPs
+
+Then open your code editor (e.g. by `cursor .`).
+
+Cursor should prompt you to enable the MCP. If it doesn't, go to `cursor > settings > cursor settings > MCP` and enable the MCP called "sloan". Note, the tools will not all work until the dev server is run locally! Note, you might need to refresh the MCP until its status indicator shows 🟢.
+
+<ZoomImg light="/cursor-mcp-settings.png" dark="/cursor-mcp-settings.png" alt="Claude search and tools, MCP running" />
+
+
+### Start Ingesting Data
+
+Run the command to start ingesting data with the configured ingest scripts: `moose workflow run military_aircraft_tracking`
+
+You should start to see hundreds of live datapoints ingesting instantly!
+
+### Enrich project with metadata [coming soon]
+
+Since we have a Moose project with sample data and some metadata, we can use this to create more metadata! 
+
+If we ask our client "Can you add a description to each Moose primitive in this project?", the LLM will use the `write_metadata` tool to add a description to each Moose primitive.
+
+```TypeScript filename="my_project_name/index.ts"
+const acPipeline = new IngestPipeline<AircraftTrackingProcessed>(
+    "AircraftTrackingProcessed",
+    {
+      table: true,
+      stream: true,
+      ingestApi: false,
+      metadata: {
+          description: "Pipeline for ingesting raw aircraft data" } // new description field!
+      }
+    
+);
+```
+
+### Chat with your data
+
+You can also now just chat with your client about your data! Try asking "What aircraft are listed in the data I have available."
+
+The client will use `read_moose_project`, `read_clickhouse_tables` and maybe `read_production_clickhouse` to answer your question.
+
+### Create new Egress APIs with Sloan MCP tools
+
+If you find a thread that you find interesting enough to want to productionize, try asking the client "can you create an egress API to furnish that data?"
+
+The client will use `create_egress_api` and `test_egress_api` to create an egress API primitives in Moose, that will automatically deploy in your local dev environment when you save.
+
+</Steps>
+
+## Other Quickstart Guides
+
+<FeatureGrid>
+  <FeatureCard
+    href="/sloan/guides/clickhouse-chat"
+    Icon={Icons.api}
+    title="AI Chat with ClickHouse"
+    description="
+    "
+    variant="sloan"
+  />
+  
+  <FeatureCard
+    href="/sloan/guides/clickhouse-proj"
+    Icon={Icons.contact}
+    title="AI analytics engineering from your ClickHouse"
+    description="
+    "
+    variant="sloan"
+  />
+
+</FeatureGrid>

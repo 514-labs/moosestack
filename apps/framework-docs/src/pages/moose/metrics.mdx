@@ -1,0 +1,184 @@
+---
+title: Observability
+description: Unified observability for Moose across development and production—metrics console, health checks, Prometheus, OpenTelemetry, logging, and error tracking
+---
+
+import { Callout, PathConfig } from "@/components";
+import { ArrowUpDownIcon, Cloud } from "lucide-react";
+
+# Observability
+
+
+This page consolidates Moose observability for both local development and production environments.
+
+## Local Development
+
+### Metrics Console
+
+Moose provides a console to view live metrics from your Moose application. To launch the console, run:
+
+```bash filename="Terminal" copy
+moose metrics
+```
+
+<Callout type="info" title="Use Up/Down Arrows to Navigate" icon={ArrowUpDownIcon} compact>
+Use the arrow keys to move up and down rows in the endpoint table and press Enter to view more details about that endpoint.
+</Callout>
+
+
+#### Endpoint Metrics
+
+Aggregated metrics for all endpoints:
+
+| Metric                | Description                                                                         |
+| :-------------------- | :---------------------------------------------------------------------------------- |
+| `AVERAGE LATENCY`     | Average time in milliseconds it takes for a request to be processed by the endpoint |
+| `TOTAL # OF REQUESTS` | Total number of requests made to the endpoint                                       |
+| `REQUESTS PER SECOND` | Average number of requests made per second to the endpoint                          |
+| `DATA IN`             | Average number of bytes of data sent to all `/ingest` endpoints per second          |
+| `DATA OUT`            | Average number of bytes of data sent to all `/api` endpoints per second     |
+
+Individual endpoint metrics:
+
+| Metric                        | Description                                                                         |
+| :---------------------------- | :---------------------------------------------------------------------------------- |
+| `LATENCY`                     | Average time in milliseconds it takes for a request to be processed by the endpoint |
+| `# OF REQUESTS RECEIVED`      | Total number of requests made to the endpoint                                       |
+| `# OF MESSAGES SENT TO KAFKA` | Total number of messages sent to the Kafka topic                                    |
+
+#### Stream → Table Sync Metrics
+
+| Metric      | Description                                                                                         |
+| :---------- | :-------------------------------------------------------------------------------------------------- |
+| `MSG READ`  | Total number of messages sent from `/ingest` API endpoint to the Kafka topic                        |
+| `LAG`       | The number of messages that have been sent to the consumer but not yet received                     |
+| `MSG/SEC`   | Average number of messages sent from `/ingest` API endpoint to the Kafka topic per second           |
+| `BYTES/SEC` | Average number of bytes of data received by the ClickHouse consumer from the Kafka topic per second |
+
+#### Streaming Transformation Metrics
+For each streaming transformation:
+
+| Metric        | Description                                                                   |
+| :------------ | :---------------------------------------------------------------------------- |
+| `MSG IN`      | Total number of messages passed into the streaming function                   |
+| `MSG IN/SEC`  | Average number of messages passed into the streaming function per second      |
+| `MSG OUT`     | Total number of messages returned by the streaming function                   |
+| `MSG OUT/SEC` | Average number of messages returned by the streaming function per second      |
+| `BYTES/SEC`   | Average number of bytes of data returned by the streaming function per second |
+
+---
+
+## Production
+
+### Health Monitoring
+
+Moose applications expose a health check endpoint at `/health` that returns a 200 OK response when the application is operational. This endpoint is used by container orchestration systems like Kubernetes to determine the health of your application.
+
+In production environments, we recommend configuring three types of probes:
+
+1. Startup Probe: Gives Moose time to initialize before receiving traffic
+2. Readiness Probe: Determines when the application is ready to receive traffic
+3. Liveness Probe: Detects when the application is in a deadlocked state and needs to be restarted
+
+<Callout type="info" title="Read the Kubernetes Deployment Guide" href={`${PathConfig.deploying.path}/deploying-on-kubernetes`} ctaLabel="Learn More">
+Learn more about how to configure health checks in your Kubernetes deployment.
+</Callout>
+
+### Prometheus Metrics
+
+Moose applications expose metrics in Prometheus format at the `/metrics` endpoint. These metrics include:
+
+- HTTP request latency histograms for each endpoint
+- Request counts and error rates
+- System metrics for the Moose process
+
+Example metrics output:
+
+```
+# HELP latency Latency of HTTP requests.
+# TYPE latency histogram
+latency_sum{method="POST",path="ingest/UserActivity"} 0.025
+latency_count{method="POST",path="ingest/UserActivity"} 2
+latency_bucket{le="0.001",method="POST",path="ingest/UserActivity"} 0
+latency_bucket{le="0.01",method="POST",path="ingest/UserActivity"} 0
+latency_bucket{le="0.02",method="POST",path="ingest/UserActivity"} 1
+latency_bucket{le="0.05",method="POST",path="ingest/UserActivity"} 1
+latency_bucket{le="0.1",method="POST",path="ingest/UserActivity"} 1
+latency_bucket{le="0.25",method="POST",path="ingest/UserActivity"} 1
+latency_bucket{le="0.5",method="POST",path="ingest/UserActivity"} 1
+latency_bucket{le="1.0",method="POST",path="ingest/UserActivity"} 1
+latency_bucket{le="5.0",method="POST",path="ingest/UserActivity"} 1
+latency_bucket{le="10.0",method="POST",path="ingest/UserActivity"} 1
+latency_bucket{le="30.0",method="POST",path="ingest/UserActivity"} 1
+latency_bucket{le="60.0",method="POST",path="ingest/UserActivity"} 1
+latency_bucket{le="120.0",method="POST",path="ingest/UserActivity"} 1
+latency_bucket{le="240.0",method="POST",path="ingest/UserActivity"} 1
+latency_bucket{le="+Inf",method="POST",path="ingest/UserActivity"} 1
+```
+
+You can scrape these metrics using a Prometheus server or any compatible monitoring system.
+
+### OpenTelemetry Integration
+
+In production deployments, Moose can export telemetry data using OpenTelemetry. Enable via environment variables:
+
+```
+MOOSE_TELEMETRY__ENABLED=true
+MOOSE_TELEMETRY__EXPORT_METRICS=true
+```
+
+When running in Kubernetes with an OpenTelemetry operator, you can configure automatic sidecar injection by adding annotations to your deployment:
+
+```yaml
+metadata:
+  annotations:
+    "sidecar.opentelemetry.io/inject": "true"
+```
+
+### Logging
+
+Configure structured logging via environment variables:
+
+```
+MOOSE_LOGGER__LEVEL=Info
+MOOSE_LOGGER__STDOUT=true
+MOOSE_LOGGER__FORMAT=Json
+```
+
+The JSON format is ideal for log aggregation systems (ELK Stack, Graylog, Loki, or cloud logging solutions).
+
+### Production Monitoring Stack
+
+Recommended components:
+
+1. Metrics Collection: Prometheus or cloud-native monitoring services
+2. Log Aggregation: ELK Stack, Loki, or cloud logging solutions
+3. Distributed Tracing: Jaeger or other OpenTelemetry-compatible backends
+4. Alerting: Alertmanager or cloud provider alerting
+
+### Error Tracking
+
+Integrate with systems like Sentry via environment variables:
+
+```
+SENTRY_DSN=https://your-sentry-dsn
+RUST_BACKTRACE=1
+```
+
+<Callout type="success" title="Managed Moose in Production" href="https://www.fiveonefour.com/boreal" ctaLabel="Boreal Cloud" icon={Cloud}>
+Want this managed in production for you? Check out Boreal Cloud (from the makers of the Moose Stack).
+</Callout>
+
+
+## Feedback
+
+<Callout type="info" title="Join the Community" href={PathConfig.slack.path} ctaLabel="Join Slack" icon={PathConfig.slack.icon}>
+Join our Slack community to share feedback and get help with Moose.
+</Callout>
+
+
+
+
+
+
+

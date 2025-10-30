@@ -1,0 +1,207 @@
+---
+title: External Tables
+description: Connect to externally managed database tables and CDC services
+---
+
+import { Callout, LanguageSwitcher, TypeScript, Python, BulletPointsCard } from "@/components";
+
+# External Tables
+
+<LanguageSwitcher />
+
+## Overview
+
+External tables allow you to connect Moose to database tables that are managed outside of your application. This is essential when working with:
+
+- **CDC (Change Data Capture) services** like ClickPipes, Debezium, or AWS DMS
+- **Legacy database tables** managed by other teams
+- **Third-party data sources** with controlled schema evolution
+
+## When to Use External Tables
+
+<BulletPointsCard
+  title="External Table Use Cases"
+  bullets={[
+    {
+      title: "CDC Services",
+      description: "When schema is controlled by services like ClickPipes, Debezium, or AWS DMS"
+    },
+    {
+      title: "Legacy Integration",
+      description: "Connecting to existing tables managed by other teams or systems"
+    },
+    {
+      title: "Third-party Data",
+      description: "Working with data sources where you don't control schema evolution"
+    },
+    {
+      title: "Strict Change Management",
+      description: "Environments with formal database change approval processes"
+    }
+  ]}
+/>
+
+## Configuration
+
+<TypeScript>
+Set `lifeCycle: LifeCycle.EXTERNALLY_MANAGED` to tell Moose not to modify the table schema:
+
+
+```ts filename="ExternalTableExample.ts" copy
+import { OlapTable, LifeCycle } from "@514labs/moose-lib";
+
+interface CdcUserData {
+  id: string;
+  name: string;
+  email: string;
+  updated_at: Date;
+}
+
+// Connect to CDC-managed table
+const cdcUserTable = new OlapTable<CdcUserData>("cdc_users", {
+  lifeCycle: LifeCycle.EXTERNALLY_MANAGED
+});
+```
+</TypeScript>
+
+<Python>
+Set `life_cycle=LifeCycle.EXTERNALLY_MANAGED` to tell Moose not to modify the table schema:
+
+```py filename="ExternalTableExample.py" copy
+from moose_lib import OlapTable, OlapConfig, LifeCycle
+from pydantic import BaseModel
+from datetime import datetime
+
+class CdcUserData(BaseModel):
+    id: str
+    name: str
+    email: str
+    updated_at: datetime
+
+# Connect to CDC-managed table
+cdc_user_table = OlapTable[CdcUserData]("cdc_users", OlapConfig(
+    life_cycle=LifeCycle.EXTERNALLY_MANAGED
+))
+```
+</Python>
+
+## Getting Models for External Tables
+
+### New project: initialize from your existing ClickHouse
+
+If you don’t yet have a Moose project, use init-from-remote to bootstrap models from your existing ClickHouse:
+
+```bash filename="Terminal" copy
+moose init my-project --from-remote <YOUR_CLICKHOUSE_URL> --language <typescript|python>
+```
+
+What happens:
+
+- Moose introspects your database and generates table models in your project.
+- If Moose detects ClickPipes (or other CDC-managed) tables, it marks those as `EXTERNALLY_MANAGED` and writes them into a dedicated external models file:
+  - TypeScript: `app/externalModels.ts`
+  - Python: `app/external_models.py`
+- This is a best-effort detection to separate CDC-managed tables from those you may want Moose to manage in code.
+
+
+How detection works (ClickPipes/PeerDB example):
+
+- Moose looks for PeerDB-specific fields that indicate CDC ownership and versions, such as `_peerdb_synced_at`, `_peerdb_is_deleted`, `_peerdb_version`, and related metadata columns.
+- When these are present, the table will be marked `EXTERNALLY_MANAGED` and emitted into the external models file automatically.
+
+<TypeScript>
+```ts filename="externalModels.ts" copy
+import { OlapTable, LifeCycle, ClickHouseEngines } from "@514labs/moose-lib";
+import type { ClickHouseInt, ClickHouseDecimal, ClickHousePrecision, ClickHouseDefault } from "@514labs/moose-lib";
+import typia from "typia";
+
+export interface foo {
+  id: string & typia.tags.Format<"uuid">;
+  name: string;
+  description: string | undefined;
+  status: string;
+  priority: number & ClickHouseInt<"int32">;
+  is_active: boolean;
+  metadata: string | undefined;
+  tags: string[];
+  score: (string & ClickHouseDecimal<10, 2>) | undefined;
+  large_text: string | undefined;
+  created_at: string & typia.tags.Format<"date-time"> & ClickHousePrecision<6>;
+  updated_at: string & typia.tags.Format<"date-time"> & ClickHousePrecision<6>;
+  _peerdb_synced_at: string & typia.tags.Format<"date-time"> & ClickHousePrecision<9> & ClickHouseDefault<"now64()">;
+  _peerdb_is_deleted: number & ClickHouseInt<"int8">;
+  _peerdb_version: number & ClickHouseInt<"int64">;
+}
+
+export const FooTable = new OlapTable<foo>("foo", {
+  orderByFields: ["id"],
+  engine: ClickHouseEngines.ReplacingMergeTree,
+  ver: "_peerdb_version",
+  settings: { index_granularity: "8192" },
+  lifeCycle: LifeCycle.EXTERNALLY_MANAGED,
+});
+```
+</TypeScript>
+
+### Existing project: mark additional external tables
+
+If there are other tables in your DB that are not CDC-managed but you want Moose to treat as external (not managed by code):
+
+1) Mark them as external in code
+
+<TypeScript>
+```ts copy
+// In a file you control (not the external file yet)
+const table = new OlapTable<MySchema>("my_table", {
+  lifeCycle: LifeCycle.EXTERNALLY_MANAGED
+});
+```
+</TypeScript>
+
+<Python>
+```py copy
+table = OlapTable[MySchema](
+  "my_table",
+  OlapConfig(
+    life_cycle=LifeCycle.EXTERNALLY_MANAGED
+  )
+)
+```
+</Python>
+
+2) Move them into the external models file
+
+- Move the model definitions to your external file (`app/externalModels.ts` or `app/external_models.py`).
+- Ensure your root file still loads only the external models via a single import:
+  - Add <TypeScript inline>`import "./externalModels";`</TypeScript><Python inline>`from external_models import *`</Python> in your <TypeScript inline>`app/index.ts`</TypeScript><Python inline>`app/main.py`</Python> file.
+
+This keeps truly external tables out of your managed code path, while still making them available locally (and in tooling) without generating production DDL.
+
+## Important Considerations
+
+<Callout type="warning" title="Do not edit external data models">
+`EXTERNALLY_MANAGED` tables reflect schemas owned by your CDC/DBA/ETL processes. Do not change their field shapes in code.
+
+If you accidentally edited an external model, revert to the source of truth by running **DB Pull**: [/moose/olap/db-pull](/moose/olap/db-pull).
+</Callout>
+
+<Callout type="info" title="Local vs production behavior">
+Locally, externally managed tables are created/kept in sync in your development ClickHouse so you can develop against them and **seed data**. See **Seed (ClickHouse)** in the CLI: [/moose/moose-cli#seed-clickhouse](/moose/moose-cli#seed-clickhouse).
+
+Moose will **not** apply schema changes to `EXTERNALLY_MANAGED` tables in production. If you edit these table models in code, those edits will not produce DDL operations in the migration plan (they will not appear in `plan.yaml`).
+
+For more on how migration plans are generated and what shows up in `plan.yaml`, see [/moose/olap/planned-migrations](/moose/olap/planned-migrations).
+</Callout>
+
+## Staying in sync with remote schema
+
+For `EXTERNALLY_MANAGED` tables, keep your code in sync with the live database by running DB Pull. You can do it manually or automate it in dev.
+
+```bash filename="Terminal" copy
+moose db pull --connection-string <YOUR_CLICKHOUSE_URL>
+```
+
+<Callout type="info" title="Keep external models fresh" ctaLink="/moose/olap/db-pull">
+Use DB Pull to regenerate your external models file from the remote schema. To run it automatically during development, see the script hooks in [the local development guide](/moose/local-dev#script-execution-hooks).
+</Callout>
+

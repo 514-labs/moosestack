@@ -1,0 +1,160 @@
+---
+title: Moose APIs
+description: Create type-safe ingestion and analytics APIs for data access and integration
+---
+
+import { Callout, LanguageSwitcher, BulletPointsCard, CheckmarkBullets, TypeScript, Python, CTACards, CTACard, ExportRequirement } from "@/components";
+import { Tabs } from "nextra/components";
+
+# Moose APIs
+<LanguageSwitcher />
+
+## Overview
+
+The APIs module provides standalone HTTP endpoints for data ingestion and analytics. Unlike other modules of the MooseStack, APIs are meant to be paired with other MooseStack modules like OLAP tables and streams.
+
+
+## Core Capabilities
+
+<CTACards>
+<CTACard
+  title="Ingest New Data"
+  description="Create HTTP POST endpoints for data ingestion with validation and routing"
+  ctaLink="/moose/apis/ingest-api"
+  ctaLabel="Learn More →"
+  badge={{ variant: "moose", text: "Ingest" }}
+/>
+<CTACard
+  title="Expose Analytics"
+  description="Create HTTP GET endpoints for reading data from your OLAP database with query parameters"
+  ctaLink="/moose/apis/analytics-api"
+  ctaLabel="Learn More →"
+  badge={{ variant: "moose", text: "Analytics" }}
+/>
+<CTACard
+  title="Trigger Workflows"
+  description="Create HTTP POST endpoints to trigger workflows and other processes"
+  ctaLink="/moose/apis/trigger-api"
+  ctaLabel="Learn More →"
+  badge={{ variant: "moose", text: "Trigger" }}
+/>
+</CTACards>
+
+## Basic Examples
+
+<ExportRequirement primitive="API" example="export { userEventsApi, userDataApi }" />
+
+### Ingestion API
+
+<TypeScript>
+```ts filename="IngestApi.ts" copy
+import { IngestApi } from "@514labs/moose-lib";
+
+interface UserEvent {
+  id: string;
+  userId: string;
+  timestamp: Date;
+  eventType: string;
+}
+
+// Create a standalone ingestion API
+export const userEventsApi = new IngestApi<UserEvent>("user-events", {
+  destination: eventStream
+});
+```
+</TypeScript>
+
+<Python>
+```py filename="IngestApi.py" copy
+from moose_lib import IngestApi
+from pydantic import BaseModel
+from datetime import datetime
+
+class UserEvent(BaseModel):
+    id: str
+    user_id: str
+    timestamp: datetime
+    event_type: str
+
+# Create a standalone ingestion API
+user_events_api = IngestApi[UserEvent]("user-events", IngestConfig(destination=event_stream))
+
+# No export needed - Python modules are automatically discovered
+```
+</Python>
+
+### Analytics API
+
+<TypeScript>
+```ts filename="AnalyticsApi.ts" copy
+import { Api } from "@514labs/moose-lib";
+
+interface Params {
+  userId: string;
+  limit: number;
+}
+
+interface ResultData {
+  id: string;
+  name: string;
+  email: string;
+}
+
+// Create a standalone analytics API
+export const userDataApi = new Api<Params, ResultData[]>("user-data", 
+  async ({ userId, limit }, { client, sql }) => {
+    // Query external service or custom logic
+    return [
+      { id: userId, name: "John Doe", email: "john@example.com" }
+    ];
+  }
+);
+```
+</TypeScript>
+
+<Python>
+```py filename="AnalyticsApi.py" copy
+from moose_lib import Api, MooseClient
+from pydantic import BaseModel
+
+class Params(BaseModel):
+    user_id: str
+    limit: int
+
+class ResultData(BaseModel):
+    id: str
+    name: str
+    email: str
+
+def query_function(client: MooseClient, params: QueryParams) -> list[UserData]:
+    # Query external service or custom logic using parameter binding
+    query = "SELECT * FROM user_data WHERE user_id = {user_id} LIMIT {limit}"
+    return client.query.execute(query, {"user_id": params.user_id, "limit": params.limit})
+
+user_data_api = Api[Params, ResultData]("get-data", query_function)
+
+# No export needed - Python modules are automatically discovered
+```
+</Python>
+
+{/* ## When to Use Moose APIs vs. Existing Backends
+
+If you already have a FastAPI, Fastify, or other REST API backend and are using Moose OLAP and streaming modules, here's when to use Moose APIs versus integrating Moose functions into your existing backend:
+
+### Use Moose APIs When:
+
+- You need a standalone analytical backend service or microservice
+- You need to handle high-throughput data ingestion (Rust-level performance)
+- You want built in schema validation and Dead Letter Queue support
+- You want to re-use your table or stream schemas for API validation
+
+
+### Integrate Moose Functions into Existing Backend When:
+
+- You need to reuse your existing authentication middleware (JWT, OAuth, etc.)
+- You want to maintain consistent API patterns across your application (error handling, response formats, etc.)
+
+### Custom Webhook Authentication
+Moose Ingest APIs don't support custom authentication logic for third-party webhooks (e.g., GitHub webhooks with signature verification, Stripe webhooks with signing secrets).
+
+You can use your existing API framework to handle webhook authentication, then use MooseClient to insert validated data into ClickHouse. See the [Client Integrations](/stack/open-api) page for more information. */}

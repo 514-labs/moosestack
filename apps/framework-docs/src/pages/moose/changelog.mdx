@@ -1,0 +1,486 @@
+import { BulletPointsCard } from "@/components/bullet-points-card";
+import { 
+  ReleaseHighlights, 
+  Added, 
+  Changed, 
+  Deprecated, 
+  Fixed, 
+  Security, 
+  BreakingChanges 
+} from "@/components/changelog-category";
+
+# Moose Changelog
+
+## What is this page?
+This changelog tracks all meaningful changes to Moose. Each entry includes the PR link and contributor credit, organized by date (newest first). Use this page to stay informed about new features, fixes, and breaking changes that might affect your projects.
+
+## How to read this changelog:
+<div className="grid grid-cols-2 gap-2">
+
+<ReleaseHighlights>
+Key features, enhancements, or fixes for each release.
+</ReleaseHighlights>
+
+<Added>
+New features and capabilities.
+</Added>
+
+<Changed>
+Updates to existing functionality or improvements.
+</Changed>
+
+<Deprecated>
+Features that are no longer recommended for use and may be removed in the future.
+</Deprecated>
+
+<Fixed>
+Bug fixes and reliability improvements.
+</Fixed>
+
+<BreakingChanges>
+Changes that require user action or may break existing usage.
+</BreakingChanges>
+</div>
+---
+
+## 2025-08-21
+
+<ReleaseHighlights>
+  - **Analytics API Standardization** — Standardized naming of classes and utilities for analytics APIs
+  - **Complete S3Queue Engine Support** — Full implementation of ClickHouse S3Queue engine with comprehensive parameter support, modular architecture, and generic settings framework.
+</ReleaseHighlights>
+
+<Added>
+  - **S3Queue Engine Configuration** — Added complete support for all ClickHouse S3Queue engine parameters including authentication (`aws_access_key_id`, `aws_secret_access_key`), compression, custom headers, and NOSIGN for public buckets. [PR #2674](https://github.com/514-labs/moosestack/pull/2674) 
+  - **Generic Settings Framework** — Introduced a flexible settings system that allows any engine to use configuration settings, laying groundwork for future engine implementations.
+  - **Enhanced Documentation** — Added comprehensive documentation for OlapTable S3Queue configuration in both TypeScript and Python SDKs.
+</Added>
+
+<Changed>
+  - **Improved Architecture** — Moved ClickHouse-specific types from core infrastructure to ClickHouse module for better separation of concerns.
+  - **Settings Location** — Engine-specific settings are now properly encapsulated within their respective engine configurations (e.g., `s3QueueEngineConfig.settings` for S3Queue).
+  - **API Consistency** — Unified configuration APIs across TypeScript and Python SDKs for S3Queue engine.
+</Changed>
+
+<Fixed>
+  - **Compilation Issues** — Fixed struct patterns to handle new S3Queue parameter structure correctly.
+  - **Diff Strategy** — Enhanced diff strategy to properly handle S3Queue parameter changes.
+</Fixed>
+
+<BreakingChanges>
+ - `ConsumptionApi` renamed to `Api`
+ - `EgressConfig` renamed to `ApiConfig`
+ - `ConsumptionUtil` renamed to `ApiUtil`
+ - `ConsumptionHelpers` renamed to `ApiHelpers`
+ 
+    *[#2676](https://github.com/514-labs/moosestack/pull/2676) by [camelCasedAditya](https://github.com/camelCasedAditya)*
+</BreakingChanges>
+
+---
+
+## 2025-08-20
+
+<ReleaseHighlights>
+  - **Improved IngestPipeline API Clarity** — The confusing `ingest` parameter has been renamed to `ingestApi` (TypeScript) and `ingest_api` (Python) for better clarity. The old parameter names are still supported with deprecation warnings.
+</ReleaseHighlights>
+
+<Changed>
+  - **IngestPipeline Parameter Renamed** — The `ingest` parameter in IngestPipeline configurations has been renamed for clarity:
+    - **TypeScript**: `ingest: true` → `ingestApi: true`
+    - **Python**: `ingest=True` → `ingest_api=True`
+    
+    The old parameter names continue to work with deprecation warnings to ensure backwards compatibility. *[Current PR]*
+</Changed>
+
+<Deprecated>
+  - **IngestPipeline `ingest` parameter** — The `ingest` parameter in IngestPipeline configurations is deprecated:
+    - **TypeScript**: Use `ingestApi` instead of `ingest`
+    - **Python**: Use `ingest_api` instead of `ingest`
+    
+    The old parameter will be removed in a future major version. Please update your code to use the new parameter names. *[Current PR]*
+</Deprecated>
+
+<BreakingChanges>
+  None - Full backwards compatibility maintained
+</BreakingChanges>
+
+---
+## 2025-06-12
+
+<ReleaseHighlights>
+  - **Enhanced TypeScript Workflow Types** — Improved type safety for Tasks with optional input/output parameters, supporting `null` types for better flexibility.
+</ReleaseHighlights>
+
+<Fixed>
+  - TypeScript workflow Task types now properly support optional input/output with `null` types, enabling more flexible task definitions like `Task<Foo, null>` and `Task<null, Bar>`.  
+    *[#2442](https://github.com/514-labs/moose/pull/2442) by [DatGuyJonathan](https://github.com/DatGuyJonathan)*
+</Fixed>
+
+<BreakingChanges>
+  None
+</BreakingChanges>
+
+---
+
+## 2025-06-10
+
+<ReleaseHighlights>
+  - **OlapTable Direct Insert API** — New comprehensive insert API with advanced error handling, typia validation, and multiple failure strategies. Enables direct data insertion into ClickHouse tables with production-ready reliability features.
+  - **Python Workflows V2** — Replaces static file-based routing with explicit `Task` and `Workflow` classes, enabling dynamic task composition and programmatic workflow orchestration. No more reliance on `@task` decorators or file naming conventions.
+</ReleaseHighlights>
+
+<Added>
+  - OlapTable direct insert API with `insert()` method supporting arrays and Node.js streams. Features comprehensive typia-based validation, three error handling strategies (`fail-fast`, `discard`, `isolate`), configurable error thresholds, memoized ClickHouse connections, and detailed insertion results with failed record tracking.  
+    *[#2437](https://github.com/514-labs/moose/pull/2437) by [callicles](https://github.com/callicles)*
+  - Enhanced typia validation integration for OlapTable and IngestPipeline with `validateRecord()`, `isValidRecord()`, and `assertValidRecord()` methods providing compile-time type safety and runtime validation.  
+    *[#2437](https://github.com/514-labs/moose/pull/2437) by [callicles](https://github.com/callicles)*
+  - Python Workflows V2 with `Task[InputType, OutputType]` and `Workflow` classes for dynamic workflow orchestration. Replaces the legacy `@task` decorator approach with explicit task definitions, enabling flexible task composition, type-safe chaining via `on_complete`, retries, timeouts, and scheduling with cron expressions.  
+    *[#2439](https://github.com/514-labs/moose/pull/2439) by [DatGuyJonathan](https://github.com/DatGuyJonathan)*
+
+</Added>
+
+<BreakingChanges>
+  None
+</BreakingChanges>
+
+---
+
+## 2025-06-06
+
+<ReleaseHighlights>
+  - **TypeScript Workflows V2** — Replaces static file-based routing with explicit `Task` and `Workflow` classes, enabling dynamic task composition and programmatic workflow orchestration. No more reliance on file naming conventions for task execution order.
+</ReleaseHighlights>
+
+<Added>
+  - TypeScript Workflows V2 with `Task<InputType, OutputType>` and `Workflow` classes for dynamic workflow orchestration. Replaces the legacy file-based routing approach with explicit task definitions, enabling flexible task composition, type-safe chaining via `onComplete`, configurable retries and timeouts, and flexible scheduling with cron expressions.  
+    *[#2421](https://github.com/514-labs/moose/pull/2421) by [DatGuyJonathan](https://github.com/DatGuyJonathan)*
+</Added>
+
+<BreakingChanges>
+  None
+</BreakingChanges>
+
+---
+
+## 2025-05-23
+
+<ReleaseHighlights>
+  - **TypeScript `DeadLetterQueue<T>` support** — Handle failed streaming function messages with type-safe dead letter queues in TypeScript.
+  - **Improved Python `DeadLetterModel` API** — Renamed `as_t` to `as_typed` for better clarity.
+</ReleaseHighlights>
+
+<Added>
+  - TypeScript `DeadLetterQueue<T>` class with type guards and transform methods for handling failed streaming function messages with full type safety.  
+    *[#2356](https://github.com/514-labs/moose/pull/2356) by [phiSgr](https://github.com/phiSgr)*
+</Added>
+
+<Changed>
+  - Renamed `DeadLetterModel.as_t()` to `DeadLetterModel.as_typed()` in Python for better API clarity and consistency.  
+    *[#2356](https://github.com/514-labs/moose/pull/2356) by [phiSgr](https://github.com/phiSgr)*
+</Changed>
+
+<BreakingChanges>
+  - `DeadLetterModel.as_t()` method renamed to `as_typed()` in Python. Update your code to use the new method name.  
+    *[#2356](https://github.com/514-labs/moose/pull/2356) by [phiSgr](https://github.com/phiSgr)*
+</BreakingChanges>
+
+---
+
+## 2025-05-22
+
+<ReleaseHighlights>
+  - **Refactored CLI 'peek' command** — Now supports peeking into both tables and streams with unified parameters.
+  - **Simplified CLI experience** — Removed unused commands and routines for a cleaner interface.
+</ReleaseHighlights>
+
+<Changed>
+  - Updated CLI 'peek' command to use a unified 'name' parameter and new flags (`--table`, `--stream`) to specify resource type. Default is table. Documentation updated to match.  
+    *[#2361](https://github.com/514-labs/moose/pull/2361) by [callicles](https://github.com/callicles)*
+</Changed>
+
+<Deprecated>
+  - Removed unused CLI commands and routines including `Function`, `Block`, `Consumption`, `DataModel`, and `Import`. CLI is now simpler and easier to maintain.  
+    *[#2360](https://github.com/514-labs/moose/pull/2360) by [callicles](https://github.com/callicles)*
+</Deprecated>
+
+<BreakingChanges>
+  None
+</BreakingChanges>
+
+---
+
+## 2025-05-21
+
+<ReleaseHighlights>
+  - **Infrastructure state sync** — Auto-syncs DB state before changes, handling manual modifications and failed DDL runs.
+  - **Fixed nested data type support** — Use objects and arrays in your Moose models.
+</ReleaseHighlights>
+
+<Added>
+  - State reconciliation for infrastructure planning — Moose now checks and updates its in-memory infra map to match the real database state before planning changes. Makes infra planning robust to manual DB changes and failed runs.  
+    *[#2341](https://github.com/514-labs/moose/pull/2341) by [callicles](https://github.com/callicles)*
+</Added>
+
+<Fixed>
+  - Handling of nested data structures in Moose models for correct support of complex objects and arrays.  
+    *[#2357](https://github.com/514-labs/moose/pull/2357) by [georgevanderson](https://github.com/georgevanderson)*
+</Fixed>
+
+
+<BreakingChanges>
+  None
+</BreakingChanges>
+
+---
+
+## 2025-05-27
+
+<ReleaseHighlights>
+  - **IPv4 and IPv6 Type Support** — Added native support for IP address types in ClickHouse data models, enabling efficient storage and querying of network data.
+</ReleaseHighlights>
+
+<Added>
+  - IPv4 and IPv6 data types for ClickHouse integration, supporting native IP address storage and operations.  
+    *[#2373](https://github.com/514-labs/moose/pull/2373) by [phiSgr](https://github.com/phiSgr)*
+  - Enhanced type parser to handle IP address types across the Moose ecosystem.  
+    *[#2374](https://github.com/514-labs/moose/pull/2374) by [phiSgr](https://github.com/phiSgr)*
+</Added>
+
+<BreakingChanges>
+  None
+</BreakingChanges>
+
+---
+
+## 2025-05-20
+
+<ReleaseHighlights>
+  - **ClickHouse `Date` type support** — Store and query native date values in your schemas.
+</ReleaseHighlights>
+
+<Added>
+  - ClickHouse `Date` column support for native date types in Moose schemas and ingestion.  
+    *[#2352](https://github.com/514-labs/moose/pull/2352), [#2351](https://github.com/514-labs/moose/pull/2351) by [phiSgr](https://github.com/phiSgr)*
+</Added>
+
+<BreakingChanges>
+  None
+</BreakingChanges>
+
+---
+
+## 2025-05-19
+
+<ReleaseHighlights>
+  - **Metadata map propagation** — Metadata is now tracked and available in the infra map for both Python and TypeScript. Improves LLM accuracy and reliability when working with Moose objects.
+</ReleaseHighlights>
+
+<Added>
+  - Metadata map propagation to infra map for consistent tracking and availability in both Python and TypeScript.  
+    *[#2326](https://github.com/514-labs/moose/pull/2326) by [georgevanderson](https://github.com/georgevanderson)*
+</Added>
+
+<BreakingChanges>
+  None
+</BreakingChanges>
+
+---
+
+## 2025-05-16
+
+<ReleaseHighlights>
+  - **New `list[str]` support to Python `AggregateFunction`** — Enables more flexible aggregation logic in Materialized Views.
+  - **Python `DeadLetterQueue[T]` alpha release** — Automatically route exceptions to a dead letter queue in streaming functions.
+</ReleaseHighlights>
+
+<Changed>
+  - AggregateFunction in Python now accepts `list[str]` for more expressive and type-safe aggregations.  
+    *[#2321](https://github.com/514-labs/moose/pull/2321) by [phiSgr](https://github.com/phiSgr)*
+</Changed>
+
+<Added>
+  - Python dead letter queues for handling and retrying failed messages in Python streaming functions.  
+    *[#2324](https://github.com/514-labs/moose/pull/2324) by [phiSgr](https://github.com/phiSgr)*
+</Added>
+
+<BreakingChanges>
+  None
+</BreakingChanges>
+
+---
+
+## 2025-05-15
+
+<ReleaseHighlights>
+  - **Hotfix — casing fix for `JSON` columns in TypeScript.
+</ReleaseHighlights>
+
+<Fixed>
+  - TypeScript JSON columns to have consistent casing, avoiding confusion and errors in your code.  
+    *[#2320](https://github.com/514-labs/moose/pull/2320) by [phiSgr](https://github.com/phiSgr)*
+</Fixed>
+
+<BreakingChanges>
+  None
+</BreakingChanges>
+
+---
+
+## 2025-05-14
+
+<ReleaseHighlights>
+  - **Introduced TypeScript JSON columns** — Use `Record<string, any>` for type-safe JSON fields.
+  - **Ingestion config simplified** — Less config needed for ingestion setup.
+  - **Python `enum` support improved** — More robust data models.
+</ReleaseHighlights>
+
+<Added>
+  - TypeScript ClickHouse JSON columns to use `Record<string, any>` for type-safe JSON fields.
+    *[#2317](https://github.com/514-labs/moose/pull/2317) by [phiSgr](https://github.com/phiSgr)*
+  - Pydantic mixin for parsing integer enums by name for more robust Python data models.  
+    *[#2316](https://github.com/514-labs/moose/pull/2316) by [phiSgr](https://github.com/phiSgr)*
+  - Better Python enum handling in data models for easier enum usage.  
+    *[#2315](https://github.com/514-labs/moose/pull/2315) by [phiSgr](https://github.com/phiSgr)*
+</Added>
+
+<Deprecated>
+  - `IngestionFormat` from `IngestApi` config for simpler ingestion setup.  
+    *[#2306](https://github.com/514-labs/moose/pull/2306) by [georgevanderson](https://github.com/georgevanderson)*
+</Deprecated>
+
+<BreakingChanges>
+  None
+</BreakingChanges>
+
+---
+
+## 2025-05-13
+
+<ReleaseHighlights>
+  - **New `refresh` CLI command** — Quickly reload data and schema changes from changes applied directly to your database outside of Moose.
+  - **Python: `LowCardinality` type support** — Better performance for categorical data.
+</ReleaseHighlights>
+
+<Added>
+  - `refresh` command to reload data and schema with a single command.  
+    *[#2309](https://github.com/514-labs/moose/pull/2309) by [phiSgr](https://github.com/phiSgr)*
+  - Python support for `LowCardinality(T)` to improve performance for categorical columns.  
+    *[#2313](https://github.com/514-labs/moose/pull/2313) by [phiSgr](https://github.com/phiSgr)*
+</Added>
+
+<BreakingChanges>
+  None
+</BreakingChanges>
+
+---
+
+## 2025-05-10
+
+<ReleaseHighlights>
+  - **Dependency-based execution order for Materialized Views** — Reduces migration errors and improves reliability.
+</ReleaseHighlights>
+
+<Changed>
+  - Order changes for materialized views based on dependency to ensure correct execution order for dependent changes.  
+    *[#2294](https://github.com/514-labs/moose/pull/2294) by [callicles](https://github.com/callicles)*
+</Changed>
+
+<BreakingChanges>
+  None
+</BreakingChanges>
+
+---
+
+## 2025-05-07
+
+<ReleaseHighlights>
+  - **Python `datetime64` support** - Enables more precise datetime handling in Python data models.
+  - **Type mapping in Python `QueryClient`** - Automatically maps ClickHouse query result rows to the correct Pydantic model types.
+</ReleaseHighlights>
+
+<Added>
+  - Row parsing in QueryClient with type mapping for Python.  
+    *[#2299](https://github.com/514-labs/moose/pull/2299) by [phiSgr](https://github.com/phiSgr)*
+</Added>
+
+<Fixed>
+  - `datetime64` parsing and row parsing in QueryClient for more reliable data handling in Python.  
+    *[#2299](https://github.com/514-labs/moose/pull/2299) by [phiSgr](https://github.com/phiSgr)*
+</Fixed>
+
+<BreakingChanges>
+  None
+</BreakingChanges>
+
+---
+
+## 2025-05-06
+
+<ReleaseHighlights>
+  - **`uint` type support in TypeScript** — Enables type safety for unsigned integer fields in Typescript data models.
+</ReleaseHighlights>
+
+<Added>
+  - uint type support in TypeScript for unsigned integers in Moose models.  
+    *[#2295](https://github.com/514-labs/moose/pull/2295) by [phiSgr](https://github.com/phiSgr)*
+</Added>
+
+<BreakingChanges>
+  None
+</BreakingChanges>
+
+---
+
+## 2025-05-01
+
+<ReleaseHighlights>
+  - **Explicit dependency tracking for materialized views** — Improves data lineage, migration reliability, and documentation.
+</ReleaseHighlights>
+
+<Added>
+  - Explicit dependency tracking for materialized views to make migrations and data lineage more robust and easier to understand.  
+    *[#2282](https://github.com/514-labs/moose/pull/2282) by [callicles](https://github.com/callicles)*
+</Added>
+
+<BreakingChanges>
+  - Required `selectTables` field in `MaterializedView` config that must specify an array of `OlapTable` objects for the source tables.  
+    *[#2282](https://github.com/514-labs/moose/pull/2282) by [callicles](https://github.com/callicles)*
+</BreakingChanges>
+
+---
+
+## 2025-04-30
+
+<ReleaseHighlights>
+  - **More flexible `JSON_ARRAY` configuration for `IngestApi`** — Now accepts both arrays and single elements. Default config is now `JSON_ARRAY`.
+  - **Python rich ClickHouse type support** — Added support for advanced types in Python models:
+    - `Decimal`: `clickhouse_decimal(precision, scale)`
+    - `datetime` with precision: `clickhouse_datetime64(precision)`
+    - `date`: `date`
+    - `int` with size annotations: `Annotated[int, 'int8']`, `Annotated[int, 'int32']`, etc.
+    - `UUID`: `UUID`
+</ReleaseHighlights>
+
+<Changed>
+  - `JSON_ARRAY` to allow both array and single element ingestion for more flexible data handling.  
+    *[#2285](https://github.com/514-labs/moose/pull/2285) by [phiSgr](https://github.com/phiSgr)*
+</Changed>
+
+<Added>
+  - Python rich ClickHouse type support with:
+    - `Decimal`: `clickhouse_decimal(precision, scale)`
+    - `datetime` with precision: `clickhouse_datetime64(precision)`
+    - `date`: `date`
+    - `int` with size annotations: `Annotated[int, 'int8']`, `Annotated[int, 'int32']`, etc.
+    - `UUID`: `UUID`
+  for more expressive data modeling.  
+  *[#2284](https://github.com/514-labs/moose/pull/2284) by [phiSgr](https://github.com/phiSgr)*
+</Added>
+
+<BreakingChanges>
+  None
+</BreakingChanges>
+
+
+
+

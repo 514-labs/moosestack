@@ -1,0 +1,1252 @@
+---
+title: Modeling Tables
+description: Model your database schema in code using native TypeScript/Python typing
+---
+
+import { Callout, BulletPointsCard, CheckmarkBullets, LanguageSwitcher, TypeScript, Python } from "@/components";
+import { Tabs } from "nextra/components";
+
+# Modeling Tables
+
+<LanguageSwitcher />
+
+
+## Overview
+
+Tables in Moose let you define your database schema entirely in code using native TypeScript/Python typing.
+
+You can integrate tables into your pipelines as destinations for new data or as sources for analytics queries in your downstream transformations, APIs, and more.
+
+
+<TypeScript>
+```ts filename="FirstTable.ts" copy
+interface MyFirstTable {
+  id: Key<string>;
+  name: string;
+  age: number;
+}
+
+// Create a table named "first_table"
+export const myTable = new OlapTable<MyFirstTable>("first_table");
+```
+</TypeScript>
+
+<Python>
+```py filename="FirstTable.py" copy
+from pydantic import BaseModel
+from moose_lib import Key, OlapTable
+from pydantic import BaseModel
+
+class MyFirstTable(BaseModel):
+    id: Key[str]
+    name: str
+    age: int
+
+# Create a table named "first_table"
+my_table = OlapTable[MyFirstTable]("first_table")
+
+# No export needed - Python modules are automatically discovered
+```
+</Python>
+
+<BulletPointsCard
+  divider={false}
+  bulletStyle="check"
+  compact={true}
+  title="Benefits:"
+  bullets={[
+    "Boilerplate CREATE/ALTER TABLE statements handled for you",
+    "Automatic type mapping to ClickHouse types",
+    "Built-in type validation on insert",
+    "Version-controlled schema management"
+  ]}
+/>
+
+## Basic Usage
+
+
+### Standalone Tables
+
+Create a table directly for custom data flows or when you need fine-grained control:
+
+<TypeScript>
+```ts filename="StandaloneTable.ts"
+import { OlapTable, Key } from "@514labs/moose-lib";
+
+// Define your schema
+interface ExampleSchema {
+  id: Key<string>;
+  dateField: Date;
+  numericField: number;
+  booleanField: boolean;
+  floatField: number;
+  integerField: number & tags.Type<"int64">; // Moose supports native tagged types so you can use Integers in typescript
+}
+
+// Create a standalone table named "example_table"
+export const exampleTable = new OlapTable<ExampleSchema>("example_table", {
+  orderByFields: ["id", "dateField"] // Optional when using a primary key
+});
+
+// For deduplication, use the ReplacingMergeTree factory
+export const dedupTable = OlapTable.withReplacingMergeTree<ExampleSchema>("example_table", {
+  orderByFields: ["id", "dateField"],
+  ver: "updatedAt",  // Optional: version column (keeps highest value)
+  isDeleted: "deleted"  // Optional: soft delete flag (requires ver)
+});
+
+// Now you can:
+// - Write to this table from streams
+// - Query it directly
+// - Use it as a source for materialized views
+```
+</TypeScript>
+
+<Python>
+```py filename="StandaloneTable.py"
+from moose_lib import Key, OlapTable
+from pydantic import BaseModel
+
+class ExampleSchema(BaseModel):
+    id: Key[str]
+    date_field: Date
+    numeric_field: float
+    boolean_field: bool
+
+# Create a standalone table named "example_table"
+from moose_lib import OlapTable, OlapConfig
+from moose_lib.blocks import ReplacingMergeTreeEngine
+
+example_table = OlapTable[ExampleSchema]("example_table", OlapConfig(
+  order_by_fields=["id", "date_field"],
+  engine=ReplacingMergeTreeEngine()
+))
+```
+</Python>
+
+<BulletPointsCard
+  divider={false}
+  bulletStyle="check"
+  title="Use Standalone Tables When:"
+  bullets={[
+    "Use when you need to do a bulk import of data",
+    "Use when you have in-memory ETL/ELT workflows that need to write directly to a table as opposed to a streaming ingestion pipeline",
+    "Use when you have some external service that is maintaining and writing to the table, like a CDC or other external ETL service"
+  ]}
+/>
+
+### Creating Tables in Ingestion Pipelines
+
+For end-to-end data flows, create tables as part of an ingestion pipeline:
+
+<TypeScript>
+```ts filename="PipelineTable.ts"
+import { IngestPipeline, Key } from "@514labs/moose-lib";
+
+// Define your schema
+interface UserEvent {
+  id: Key<string>;
+  userId: string;
+  timestamp: Date;
+  eventType: string;
+}
+
+// Create a complete ingestion pipeline with a table
+const eventsPipeline = new IngestPipeline<UserEvent>("user_events", {
+  ingestApi: true,    // Creates a REST API endpoint at POST localhost:4000/ingest/user_events
+  stream: true,    // Creates Kafka/Redpanda topic
+  table: {         // Creates and configures the table named "user_events"
+    orderByFields: ["id", "timestamp"]
+  }
+});
+
+// Access the table component when needed
+const eventsTable = eventsPipeline.table;
+```
+</TypeScript>
+
+<Python>
+```py filename="PipelineTable.py"
+from moose_lib import IngestPipeline, Key, OlapTable
+from pydantic import BaseModel
+
+class UserEvent(BaseModel):
+    id: Key[str]
+    user_id: str
+    timestamp: Date
+    event_type: str
+
+from moose_lib import IngestPipeline, IngestPipelineConfig, OlapConfig
+from moose_lib.blocks import ReplacingMergeTreeEngine
+
+events_pipeline = IngestPipeline[UserEvent]("user_events", IngestPipelineConfig(
+  ingest_api=True, # Creates a REST API endpoint at POST localhost:4000/ingest/user_events
+  stream=True, # Creates a Kafka/Redpanda topic
+  table=OlapConfig(      # Creates and configures the table named "user_events"
+    order_by_fields=["id", "timestamp"],
+    engine=ReplacingMergeTreeEngine()
+  )
+))
+
+# Access the table component when needed:
+events_table = events_pipeline.get_table()
+```
+</Python>
+
+
+## Data Modeling
+
+### Special ClickHouse Types (LowCardinality, Nullable, etc)
+
+<TypeScript>
+```ts filename="ClickHouseTypes.ts" copy
+import { Key, Decimal, ClickHouseDecimal, LowCardinality, ClickHouseNamedTuple, tags } from "@514labs/moose-lib";
+
+export interface ClickHouseOptimizedExample {
+  id: Key<string>;
+  stringField: string;
+  numberField: number;
+  decimalField: Decimal<10, 2>;                         // Precise decimal storage
+  // Alternative: decimalField: string & ClickHouseDecimal<10, 2>; // Verbose syntax still works
+  lowCardinalityField: string & LowCardinality;         // Faster queries for enum-like data
+  nestedObject: {
+    innerString: string;
+    innerNumber: number;
+  };
+  namedTupleField: {
+    name: string;
+    value: number;
+  } & ClickHouseNamedTuple;                             // Optimized nested storage
+  numberArray: number[];
+  mapField: Record<string, number>;
+  literalField: "optionA" | "optionB";
+  optionalField?: string;                               // Nullable field
+  dateField: Date;
+}
+```
+</TypeScript>
+
+<Python>
+```py filename="ClickHouseTypes.py" copy
+from moose_lib import Key, clickhouse_decimal, ClickHouseNamedTuple
+from typing import Annotated
+from pydantic import BaseModel
+from datetime import datetime
+
+class Customer(BaseModel):
+    name: str
+    address: str
+
+class Order(BaseModel):
+    order_id: Key[str]
+    amount: clickhouse_decimal(10, 2)
+    status: Literal["Paid", "Shipped", "Delivered"] # translated to LowCardinality(String) in ClickHouse
+    created_at: datetime
+    customer: Annotated[Customer, "ClickHouseNamedTuple"]
+```
+</Python>
+
+### Default values
+
+Use defaults instead of nullable columns to keep queries fast and schemas simple. You can specify defaults at the column level so Moose generates ClickHouse defaults in your table DDL.
+
+<TypeScript>
+```ts filename="Defaults.ts" copy
+import { OlapTable, Key, ClickHouseDefault, Decimal, ClickHouseDecimal } from "@514labs/moose-lib";
+
+interface Event {
+  id: Key<string>;
+  // Static defaults (ClickHouse expression as a string literal)
+  status: string & ClickHouseDefault<"'pending'">;   // DEFAULT 'pending'
+  retries: number & ClickHouseDefault<"0">;          // DEFAULT 0
+  // Server-side timestamps
+  createdAt: Date & ClickHouseDefault<"now()">;      // DEFAULT now()
+  // Decimal with default
+  amount: Decimal<10, 2> & ClickHouseDefault<"0">;
+  // Alternative: amount: (string & ClickHouseDecimal<10, 2> & ClickHouseDefault<"0">); // Verbose syntax
+}
+
+export const events = new OlapTable<Event>("events", {
+  orderByFields: ["id", "createdAt"],
+});
+```
+
+The value passed into the `ClickHouseDefault<"">` tag can either be a string literal or a stringified ClickHouse SQL expression. If you run into typing issues specifically on `Date` fields with `ClickHouseDefault`, use `WithDefault<Date, "now()">` as a fallback workaround.
+</TypeScript>
+
+<Python>
+```py filename="Defaults.py" copy
+from typing import Annotated
+from pydantic import BaseModel
+from moose_lib import OlapTable, Key, clickhouse_default, clickhouse_decimal
+from datetime import datetime
+
+class Event(BaseModel):
+    id: Key[str]
+    # Static defaults
+    status: Annotated[str, clickhouse_default("'pending'")]  # DEFAULT 'pending'
+    retries: Annotated[int, clickhouse_default("0")]         # DEFAULT 0
+    # Server-side timestamps
+    created_at: Annotated[datetime, clickhouse_default("now()")]
+    # Decimal with default
+    amount: Annotated[float, clickhouse_decimal(10, 2)] = 0
+
+events = OlapTable[Event]("events", {
+    "orderByFields": ["id", "created_at"],
+})
+```
+The value passed into the `clickhouse_default` function can either be a string literal or a stringified ClickHouse SQL expression.
+
+</Python>
+
+<Callout type="info" title="ClickHouse defaults with optional fields">
+If a field is optional in your app model but you provide a ClickHouse default, Moose infers a non-nullable ClickHouse column with a DEFAULT clause.
+
+<TypeScript>
+  - Optional without default (e.g., `field?: number`) → ClickHouse Nullable type.
+  - Optional with default (e.g., `field?: number & ClickHouseDefault<"18">` or `WithDefault<number, "18">`) → non-nullable column with default `18`.
+
+</TypeScript>
+<Python>
+  - Optional without default → ClickHouse Nullable type.
+  - Optional with default (using `clickhouse_default("18")` in annotations) → non-nullable column with default `18`.
+</Python>
+
+This lets you keep optional fields at the application layer while avoiding Nullable columns in ClickHouse when a server-side default exists.
+</Callout>
+
+### Database Selection
+
+By default, tables are created in the database specified in your `moose.config.toml` ClickHouse configuration. You can override this on a per-table basis using the `database` field:
+
+<TypeScript>
+```ts filename="DatabaseOverride.ts" copy
+import { OlapTable } from "@514labs/moose-lib";
+
+interface UserData {
+  id: Key<string>;
+  name: string;
+  email: string;
+}
+
+// Table in default database (from moose.config.toml)
+const defaultTable = new OlapTable<UserData>("users");
+
+// Table in specific database (e.g., "analytics")
+const analyticsTable = new OlapTable<UserData>("users", {
+  database: "analytics",
+  orderByFields: ["id"]
+});
+```
+</TypeScript>
+
+<Python>
+```py filename="DatabaseOverride.py" copy
+from moose_lib import Key, OlapTable, OlapConfig
+from pydantic import BaseModel
+
+class UserData(BaseModel):
+    id: Key[str]
+    name: str
+    email: str
+
+# Table in default database (from moose.config.toml)
+default_table = OlapTable[UserData]("users")
+
+# Table in specific database (e.g., "analytics")
+analytics_table = OlapTable[UserData]("users", OlapConfig(
+    database="analytics",
+    order_by_fields=["id"]
+))
+```
+</Python>
+
+<Callout type="info" title="Multi-database setup">
+To use custom databases, configure them in your `moose.config.toml`:
+
+```toml
+[clickhouse_config]
+db_name = "local"
+additional_databases = ["analytics", "staging"]
+```
+
+The databases in `additional_databases` will be created automatically when you start your Moose application.
+</Callout>
+
+### Primary Keys and Sorting
+
+You must configure table indexing using one of these approaches:
+1. Define at least one `Key` in your table schema
+2. Specify `orderByFields` in the table config
+3. Use both (all `Key` fields must come first in the `orderByFields` array)
+
+<TypeScript>
+```ts filename="PrimaryKeyConfig.ts" copy
+import { OlapTable, Key } from '@514labs/moose-lib';
+
+// Approach 1: Using primary key only
+interface Record1 {
+  id: Key<string>;  // Primary key field
+  field1: string;
+  field2: number;
+}
+
+const table1 = new OlapTable<Record1>("table1");  // id is the primary key
+```
+</TypeScript>
+
+<Python>
+```py filename="PrimaryKeyConfig.py" copy
+from moose_lib import Key, OlapTable
+from pydantic import BaseModel
+
+class Record1(BaseModel):
+    id: Key[str] # Primary key field
+    field1: str
+    field2: int
+
+table1 = OlapTable[Record1]("table1") # id is the primary key
+```
+</Python>
+
+### Order By Fields Only
+
+<TypeScript>
+```ts filename="OrderByFieldsOnly.ts" copy
+// Approach 2: Using orderByFields only
+interface SchemaWithoutPrimaryKey {
+  field1: string;
+  field2: number;
+  field3: Date;
+}
+
+const tableWithOrderByFieldsOnly = new OlapTable<SchemaWithoutPrimaryKey>("table2", {
+  orderByFields: ["field1", "field2"]  // Specify ordering without primary key
+});
+```
+</TypeScript>
+
+<Python>
+Leverage the `OlapConfig` class to configure your table:
+
+```py filename="OrderByFieldsOnly.py" copy
+from moose_lib import Key, OlapTable, OlapConfig
+from pydantic import BaseModel
+from datetime import datetime
+
+class SchemaWithoutPrimaryKey(BaseModel):
+    field1: str
+    field2: int
+    field3: datetime
+
+table2 = OlapTable[SchemaWithoutPrimaryKey]("table2", OlapConfig(
+  order_by_fields=["field1", "field2"] # Specify ordering without primary key
+))
+```
+</Python>
+
+### Order By Expression
+
+Use a ClickHouse SQL expression to control ordering directly. This is useful for advanced patterns (functions, transformations) or when you want to disable sorting entirely.
+
+<TypeScript>
+```ts filename="OrderByExpression.ts" copy
+// Use a ClickHouse expression for ORDER BY
+interface Events {
+  userId: string;
+  createdAt: Date;
+  eventType: string;
+}
+
+const tableWithOrderByExpression = new OlapTable<Events>("events", {
+  // Equivalent to orderByFields: ["userId", "createdAt", "eventType"]
+  orderByExpression: "(userId, createdAt, eventType)",
+});
+
+// Advanced: functions inside expression
+const tableWithMonthBucketing = new OlapTable<Events>("events_by_month", {
+  orderByExpression: "(userId, toYYYYMM(createdAt))",
+});
+
+// No sorting (ClickHouse tuple() means empty ORDER BY)
+const unsortedTable = new OlapTable<Events>("events_unsorted", {
+  orderByExpression: "tuple()",
+});
+```
+</TypeScript>
+
+<Python>
+```py filename="OrderByExpression.py" copy
+from moose_lib import OlapTable, OlapConfig
+from pydantic import BaseModel
+from datetime import datetime
+
+class Events(BaseModel):
+    user_id: str
+    created_at: datetime
+    event_type: str
+
+# Equivalent to order_by_fields=["user_id", "created_at", "event_type"]
+events = OlapTable[Events]("events", OlapConfig(
+    order_by_expression="(user_id, created_at, event_type)",
+))
+
+# Advanced: functions inside expression
+events_by_month = OlapTable[Events]("events_by_month", OlapConfig(
+    order_by_expression="(user_id, toYYYYMM(created_at))",
+))
+
+# No sorting
+unsorted = OlapTable[Events]("events_unsorted", OlapConfig(
+    order_by_expression="tuple()",
+))
+```
+</Python>
+
+### Using Both Primary Key and Order By Fields
+
+<TypeScript>
+```ts filename="ComboKeyAndOrderByFields.ts" copy
+// Approach 3: Using both (primary key must be first)
+interface SchemaWithKey {
+  id: Key<string>;  // Primary key field
+  field1: string;
+  field2: number;
+}
+
+const tableWithKeyAndOrderByFields = new OlapTable<SchemaWithKey>("table3", {
+  orderByFields: ["id", "field1"]  // Primary key must be first
+});
+```
+</TypeScript>
+
+<Python>
+```py filename="ComboKeyAndOrderByFields.py" copy
+from moose_lib import Key, OlapTable, OlapConfig
+from pydantic import BaseModel
+
+class SchemaWithKey(BaseModel):
+    id: Key[str]
+    field1: str
+    field2: int
+
+table3 = OlapTable[SchemaWithKey]("table3", OlapConfig(
+  order_by_fields=["id", "field1"] # Primary key must be first
+))
+```
+</Python>
+
+### Using Multiple Primary Keys
+
+<TypeScript>
+```ts filename="MultiKeyTable.ts" copy
+interface MultiKeyRecord {
+  key1: Key<string>;
+  key2: Key<number>;
+  field1: string;
+}
+
+const multiKeyTable = new OlapTable<MultiKeyRecord>("multi_key_table", {
+  orderByFields: ["key1", "key2", "field1"]  // Multiple keys must come first
+});
+```
+</TypeScript>
+
+<Python>
+```py filename="MultiKeyTable.py" copy
+from moose_lib import Key, OlapTable, OlapConfig
+from pydantic import BaseModel
+
+class MultiKeyRecord(BaseModel):
+    key1: Key[str]
+    key2: Key[int]
+    field1: str
+
+multi_key_table = OlapTable[MultiKeyRecord]("multi_key_table", OlapConfig(
+  order_by_fields=["key1", "key2", "field1"] # Multiple keys must come first
+))
+```
+</Python>
+
+
+### Table engines
+By default, Moose will create tables with the `MergeTree` engine. You can use different engines by setting the `engine` in the table configuration.
+
+<TypeScript>
+```ts filename="TableEngine.ts" copy
+import { OlapTable } from "@514labs/moose-lib";
+
+// Default MergeTree engine
+const table = new OlapTable<Record>("table", {
+  orderByFields: ["id"]
+});
+
+// Use engine configuration for other engines
+const dedupTable = new OlapTable<Record>("table", {
+  engine: ClickHouseEngines.ReplacingMergeTree,
+  orderByFields: ["id"],
+  ver: "version",  // Optional: keeps row with highest version
+  isDeleted: "deleted"  // Optional: soft delete when deleted=1
+});
+```
+</TypeScript>
+
+<Python>
+```py filename="TableEngine.py" copy
+from moose_lib import OlapTable, OlapConfig
+from moose_lib.blocks import MergeTreeEngine, ReplacingMergeTreeEngine
+
+# Default MergeTree engine
+table = OlapTable[Record]("table", OlapConfig(
+  order_by_fields=["id"]
+))
+
+# Explicitly specify engine
+dedup_table = OlapTable[Record]("table", OlapConfig(
+  order_by_fields=["id"],
+  engine=ReplacingMergeTreeEngine()
+))
+```
+</Python>
+
+#### Deduplication (`ReplacingMergeTree`)
+Use the `ReplacingMergeTree` engine to keep only the latest record for your designated sort key:
+
+<TypeScript>
+```ts filename="DeduplicatedTable.ts" copy
+// Basic deduplication
+const table = new OlapTable<Record>("table", {
+  engine: ClickHouseEngines.ReplacingMergeTree,
+  orderByFields: ["id"]
+});
+
+// With version column (keeps record with highest version)
+const versionedTable = new OlapTable<Record>("table", {
+  engine: ClickHouseEngines.ReplacingMergeTree,
+  orderByFields: ["id"],
+  ver: "updated_at"  // Column that determines which version to keep
+});
+
+// With soft deletes (requires ver parameter)
+const softDeleteTable = new OlapTable<Record>("table", {
+  engine: ClickHouseEngines.ReplacingMergeTree,
+  orderByFields: ["id"],
+  ver: "updated_at",
+  isDeleted: "deleted"  // UInt8 column: 1 marks row for deletion
+});
+```
+</TypeScript>
+
+<Python>
+```py filename="DeduplicatedTable.py" copy
+from moose_lib import Key, OlapTable, OlapConfig
+from moose_lib.blocks import ReplacingMergeTreeEngine
+
+class Record(BaseModel):
+    id: Key[str]
+    updated_at: str  # Version column
+    deleted: int = 0  # Soft delete marker (UInt8)
+
+# Basic deduplication
+table = OlapTable[Record]("table", OlapConfig(
+  order_by_fields=["id"],
+  engine=ReplacingMergeTreeEngine()
+))
+
+# With version column (keeps record with highest version)
+versioned_table = OlapTable[Record]("table", OlapConfig(
+  order_by_fields=["id"],
+  engine=ReplacingMergeTreeEngine(ver="updated_at")
+))
+
+# With soft deletes (requires ver parameter)
+soft_delete_table = OlapTable[Record]("table", OlapConfig(
+  order_by_fields=["id"],
+  engine=ReplacingMergeTreeEngine(
+    ver="updated_at",
+    is_deleted="deleted"  # UInt8 column: 1 marks row for deletion
+  )
+))
+```
+</Python>
+
+<Callout type="warning" title="Deduplication Caveats">
+ClickHouse's ReplacingMergeTree engine runs deduplication in the background AFTER data is inserted into the table. This means that duplicate records may not be removed immediately.
+
+**Version Column (`ver`)**: When specified, ClickHouse keeps the row with the maximum version value for each unique sort key.
+
+**Soft Deletes (`is_deleted`)**: When specified along with `ver`, rows where this column equals 1 are deleted during merges. This column must be UInt8 type.
+
+For more details, see the [ClickHouse documentation](https://clickhouse.com/docs/en/engines/table-engines/mergetree-family/replacingmergetree).
+</Callout>
+
+#### Streaming from S3 (`S3Queue`)
+Use the `S3Queue` engine to automatically ingest data from S3 buckets as files are added:
+
+<Callout type="info" title="S3Queue with Materialized Views" compact>
+S3Queue tables only process **new files** added to S3 after table creation. When used as a source for materialized views, **no backfill occurs** - the MV will only start populating as new files arrive. See the [Materialized Views documentation](./model-materialized-view#backfill-destination-tables) for more details.
+</Callout>
+
+<TypeScript>
+```ts filename="S3StreamingTable.ts" copy
+import { OlapTable, ClickHouseEngines } from '@514labs/moose-lib';
+
+// Use direct configuration (S3Queue does not support orderByFields)
+export const s3Events = new OlapTable<S3Event>("s3_events", {
+  engine: ClickHouseEngines.S3Queue,
+  s3Path: "s3://my-bucket/data/*.json",
+  format: "JSONEachRow",
+  settings: {
+    mode: "unordered",
+    keeper_path: "/clickhouse/s3queue/events"
+  }
+});
+```
+<Callout type="warning" title="S3Queue ORDER BY not supported">
+S3Queue is a streaming engine and does not support `orderByFields` or ORDER BY clauses. Configure only engine-specific parameters like `s3Path`, `format`, and `settings`.
+</Callout>
+</TypeScript>
+
+<Python>
+```py filename="S3StreamingTable.py" copy
+from moose_lib import OlapTable, OlapConfig
+from moose_lib.blocks import S3QueueEngine
+
+class S3Event(BaseModel):
+    id: str
+    timestamp: datetime
+    data: dict
+
+# Modern API using engine configuration
+s3_events = OlapTable[S3Event]("s3_events", OlapConfig(
+    engine=S3QueueEngine(
+        s3_path="s3://my-bucket/data/*.json",
+        format="JSONEachRow",
+        # ⚠️ WARNING: See security callout below about credentials
+        aws_access_key_id="AKIA...",
+        aws_secret_access_key="secret..."
+    ),
+    settings={
+        "mode": "unordered",
+        "keeper_path": "/clickhouse/s3queue/events"
+    }
+))
+```
+</Python>
+
+<Callout type="danger" title="⚠️ NEVER hardcode AWS credentials!">
+**Security Risk**: Hardcoding credentials in your code embeds them in Docker images and deployment artifacts, creating serious security vulnerabilities.
+
+**Solution**: Use `mooseRuntimeEnv` for runtime credential resolution:
+
+<TypeScript>
+```ts filename="SecureS3Streaming.ts" copy
+import { OlapTable, ClickHouseEngines, mooseRuntimeEnv } from '@514labs/moose-lib';
+
+// ✅ RECOMMENDED: Runtime environment variable resolution
+export const secureS3Events = new OlapTable<S3Event>("s3_events", {
+  engine: ClickHouseEngines.S3Queue,
+  s3Path: "s3://my-bucket/data/*.json",
+  format: "JSONEachRow",
+  awsAccessKeyId: mooseRuntimeEnv.get("AWS_ACCESS_KEY_ID"),
+  awsSecretAccessKey: mooseRuntimeEnv.get("AWS_SECRET_ACCESS_KEY"),
+  settings: {
+    mode: "unordered",
+    keeper_path: "/clickhouse/s3queue/events"
+  }
+});
+```
+</TypeScript>
+
+<Python>
+```py filename="SecureS3Streaming.py" copy
+from moose_lib import OlapTable, OlapConfig, moose_runtime_env
+from moose_lib.blocks import S3QueueEngine
+
+# ✅ RECOMMENDED: Runtime environment variable resolution
+secure_s3_events = OlapTable[S3Event]("s3_events", OlapConfig(
+    engine=S3QueueEngine(
+        s3_path="s3://my-bucket/data/*.json",
+        format="JSONEachRow",
+        aws_access_key_id=moose_runtime_env.get("AWS_ACCESS_KEY_ID"),
+        aws_secret_access_key=moose_runtime_env.get("AWS_SECRET_ACCESS_KEY")
+    ),
+    settings={
+        "mode": "unordered",
+        "keeper_path": "/clickhouse/s3queue/events"
+    }
+))
+```
+</Python>
+
+**Then set environment variables:**
+```bash filename="Terminal" copy
+export AWS_ACCESS_KEY_ID="AKIA..."
+export AWS_SECRET_ACCESS_KEY="your-secret-key"
+moose prod up
+```
+
+**Benefits:**
+- Credentials never embedded in Docker images
+- Supports credential rotation (changing passwords triggers table recreation)
+- Different credentials per environment (dev/staging/prod)
+- Clear error messages if environment variables are missing
+</Callout>
+
+<Callout type="info" title="S3Queue Requirements">
+S3Queue requires ClickHouse 24.7+ and proper ZooKeeper/ClickHouse Keeper configuration for coordination between replicas. Files are processed exactly once across all replicas.
+</Callout>
+
+#### Direct S3 Access (`S3`)
+Use the `S3` engine for direct read/write access to S3 storage without streaming semantics:
+
+<TypeScript>
+```ts filename="S3Table.ts" copy
+import { OlapTable, ClickHouseEngines, mooseRuntimeEnv } from '@514labs/moose-lib';
+
+// S3 table with credentials (recommended with mooseRuntimeEnv)
+export const s3Data = new OlapTable<DataRecord>("s3_data", {
+  engine: ClickHouseEngines.S3,
+  path: "s3://my-bucket/data/file.json",
+  format: "JSONEachRow",
+  awsAccessKeyId: mooseRuntimeEnv.get("AWS_ACCESS_KEY_ID"),
+  awsSecretAccessKey: mooseRuntimeEnv.get("AWS_SECRET_ACCESS_KEY"),
+  compression: "gzip"
+});
+
+// Public S3 bucket (no authentication)
+export const publicS3 = new OlapTable<DataRecord>("public_s3", {
+  engine: ClickHouseEngines.S3,
+  path: "s3://public-bucket/data/*.parquet",
+  format: "Parquet",
+  noSign: true  // Use NOSIGN for public buckets
+});
+```
+</TypeScript>
+
+<Python>
+```py filename="S3Table.py" copy
+from moose_lib import OlapTable, OlapConfig, moose_runtime_env
+from moose_lib.blocks import S3Engine
+
+# S3 table with credentials (recommended with moose_runtime_env)
+s3_data = OlapTable[DataRecord]("s3_data", OlapConfig(
+    engine=S3Engine(
+        path="s3://my-bucket/data/file.json",
+        format="JSONEachRow",
+        aws_access_key_id=moose_runtime_env.get("AWS_ACCESS_KEY_ID"),
+        aws_secret_access_key=moose_runtime_env.get("AWS_SECRET_ACCESS_KEY"),
+        compression="gzip"
+    )
+))
+
+# Public S3 bucket (no authentication needed - just omit credentials)
+public_s3 = OlapTable[DataRecord]("public_s3", OlapConfig(
+    engine=S3Engine(
+        path="s3://public-bucket/data/*.parquet",
+        format="Parquet"
+    )
+))
+```
+</Python>
+
+<Callout type="info" title="S3 vs S3Queue">
+- **S3**: Direct read/write access to S3 files. Use for batch processing or querying static data.
+- **S3Queue**: Streaming engine that automatically processes new files as they arrive. Use for continuous data ingestion.
+
+Both engines support the same credential management and format options.
+</Callout>
+
+#### In-Memory Buffer (`Buffer`)
+The `Buffer` engine provides an in-memory buffer that flushes data to a destination table based on time, row count, or size thresholds:
+
+<TypeScript>
+```ts filename="BufferTable.ts" copy
+import { OlapTable, ClickHouseEngines } from '@514labs/moose-lib';
+
+// First create the destination table
+export const destinationTable = new OlapTable<Record>("destination", {
+  engine: ClickHouseEngines.MergeTree,
+  orderByFields: ["id", "timestamp"]
+});
+
+// Then create buffer that writes to it
+export const bufferTable = new OlapTable<Record>("buffer", {
+  engine: ClickHouseEngines.Buffer,
+  targetDatabase: "local",
+  targetTable: "destination",
+  numLayers: 16,
+  minTime: 10,        // Min 10 seconds before flush
+  maxTime: 100,       // Max 100 seconds before flush
+  minRows: 10000,     // Min 10k rows before flush
+  maxRows: 1000000,   // Max 1M rows before flush
+  minBytes: 10485760, // Min 10MB before flush
+  maxBytes: 104857600 // Max 100MB before flush
+});
+```
+</TypeScript>
+
+<Python>
+```py filename="BufferTable.py" copy
+from moose_lib import OlapTable, OlapConfig
+from moose_lib.blocks import MergeTreeEngine, BufferEngine
+
+# First create the destination table
+destination_table = OlapTable[Record]("destination", OlapConfig(
+    engine=MergeTreeEngine(),
+    order_by_fields=["id", "timestamp"]
+))
+
+# Then create buffer that writes to it
+buffer_table = OlapTable[Record]("buffer", OlapConfig(
+    engine=BufferEngine(
+        target_database="local",
+        target_table="destination",
+        num_layers=16,
+        min_time=10,        # Min 10 seconds before flush
+        max_time=100,       # Max 100 seconds before flush
+        min_rows=10000,     # Min 10k rows before flush
+        max_rows=1000000,   # Max 1M rows before flush
+        min_bytes=10485760, # Min 10MB before flush
+        max_bytes=104857600 # Max 100MB before flush
+    )
+))
+```
+</Python>
+
+<Callout type="warning" title="Buffer Engine Considerations">
+- Data in buffer is **lost if server crashes** before flush
+- Not suitable for critical data that must be durable
+- Best for high-throughput scenarios where minor data loss is acceptable
+- Buffer and destination table must have identical schemas
+- Cannot use `orderByFields`, `partitionBy`, or `sampleByExpression` on buffer tables
+
+For more details, see the [ClickHouse Buffer documentation](https://clickhouse.com/docs/en/engines/table-engines/special/buffer).
+</Callout>
+
+#### Distributed Tables (`Distributed`)
+The `Distributed` engine creates a distributed table across a ClickHouse cluster for horizontal scaling:
+
+<TypeScript>
+```ts filename="DistributedTable.ts" copy
+import { OlapTable, ClickHouseEngines } from '@514labs/moose-lib';
+
+// Distributed table across cluster
+export const distributedTable = new OlapTable<Record>("distributed_data", {
+  engine: ClickHouseEngines.Distributed,
+  cluster: "my_cluster",
+  targetDatabase: "default",
+  targetTable: "local_table",
+  shardingKey: "cityHash64(id)"  // Optional: how to distribute data
+});
+```
+</TypeScript>
+
+<Python>
+```py filename="DistributedTable.py" copy
+from moose_lib import OlapTable, OlapConfig
+from moose_lib.blocks import DistributedEngine
+
+# Distributed table across cluster
+distributed_table = OlapTable[Record]("distributed_data", OlapConfig(
+    engine=DistributedEngine(
+        cluster="my_cluster",
+        target_database="default",
+        target_table="local_table",
+        sharding_key="cityHash64(id)"  # Optional: how to distribute data
+    )
+))
+```
+</Python>
+
+<Callout type="info" title="Distributed Table Requirements">
+- Requires a configured ClickHouse cluster with remote_servers configuration
+- The local table must exist on all cluster nodes
+- Distributed tables are virtual - data is stored in local tables
+- Cannot use `orderByFields`, `partitionBy`, or `sampleByExpression` on distributed tables
+- The `cluster` name must match a cluster defined in your ClickHouse configuration
+
+For more details, see the [ClickHouse Distributed documentation](https://clickhouse.com/docs/en/engines/table-engines/special/distributed).
+</Callout>
+
+#### Replicated Engines
+Replicated engines provide high availability and data replication across multiple ClickHouse nodes. Moose supports all standard replicated MergeTree variants:
+
+- `ReplicatedMergeTree` - Replicated version of MergeTree
+- `ReplicatedReplacingMergeTree` - Replicated with deduplication
+- `ReplicatedAggregatingMergeTree` - Replicated with aggregation
+- `ReplicatedSummingMergeTree` - Replicated with summation
+
+<TypeScript>
+```ts filename="ReplicatedEngines.ts" copy
+import { OlapTable, ClickHouseEngines } from "@514labs/moose-lib";
+
+// Basic replicated table with explicit paths
+const replicatedTable = new OlapTable<Record>("records", {
+  engine: ClickHouseEngines.ReplicatedMergeTree,
+  keeperPath: "/clickhouse/tables/{database}/{shard}/records",
+  replicaName: "{replica}",
+  orderByFields: ["id"]
+});
+
+// Replicated with deduplication
+const replicatedDedup = new OlapTable<Record>("dedup_records", {
+  engine: ClickHouseEngines.ReplicatedReplacingMergeTree,
+  keeperPath: "/clickhouse/tables/{database}/{shard}/dedup_records",
+  replicaName: "{replica}",
+  ver: "updated_at",
+  isDeleted: "deleted",
+  orderByFields: ["id"]
+});
+
+// For ClickHouse Cloud or Boreal (no parameters needed)
+const cloudReplicated = new OlapTable<Record>("cloud_records", {
+  engine: ClickHouseEngines.ReplicatedMergeTree,
+  orderByFields: ["id"]
+});
+```
+</TypeScript>
+
+<Python>
+```py filename="ReplicatedEngines.py" copy
+from moose_lib import OlapTable, OlapConfig
+from moose_lib.blocks import (
+    ReplicatedMergeTreeEngine,
+    ReplicatedReplacingMergeTreeEngine,
+    ReplicatedAggregatingMergeTreeEngine,
+    ReplicatedSummingMergeTreeEngine
+)
+
+class Record(BaseModel):
+    id: Key[str]
+    updated_at: datetime
+    deleted: int = 0
+
+# Basic replicated table with explicit paths
+replicated_table = OlapTable[Record]("records", OlapConfig(
+    order_by_fields=["id"],
+    engine=ReplicatedMergeTreeEngine(
+        keeper_path="/clickhouse/tables/{database}/{shard}/records",
+        replica_name="{replica}"
+    )
+))
+
+# Replicated with deduplication
+replicated_dedup = OlapTable[Record]("dedup_records", OlapConfig(
+    order_by_fields=["id"],
+    engine=ReplicatedReplacingMergeTreeEngine(
+        keeper_path="/clickhouse/tables/{database}/{shard}/dedup_records",
+        replica_name="{replica}",
+        ver="updated_at",
+        is_deleted="deleted"
+    )
+))
+
+# For ClickHouse Cloud or Boreal (no parameters needed)
+cloud_replicated = OlapTable[Record]("cloud_records", OlapConfig(
+    order_by_fields=["id"],
+    engine=ReplicatedMergeTreeEngine()
+))
+```
+</Python>
+
+<Callout type="info" title="Replication Parameters">
+The `keeper_path` and `replica_name` parameters are **optional** for replicated engines:
+
+- **Omit both parameters** (recommended): Moose uses smart defaults that work in both ClickHouse Cloud and self-managed environments. The default path pattern `/clickhouse/tables/{uuid}/{shard}` with replica `{replica}` works automatically with Atomic databases (default in modern ClickHouse).
+  
+- **Provide custom paths**: You can still specify both parameters explicitly if you need custom replication paths for your self-managed cluster.
+
+**Note**: Both parameters must be provided together, or both omitted. The `{uuid}`, `{shard}`, and `{replica}` macros are automatically substituted by ClickHouse at runtime.
+
+For more details, see the [ClickHouse documentation on data replication](https://clickhouse.com/docs/en/engines/table-engines/mergetree-family/replication).
+</Callout>
+
+<Python>
+### Irregular column names and Python Aliases
+
+If a ClickHouse column name isn't a valid Python identifier or starts with an underscore,
+you can use a safe Python field name and set a Pydantic alias to the real column name.
+MooseOLAP then uses the alias for ClickHouse DDL and data mapping,
+so your model remains valid while preserving the true column name.
+
+```python
+from pydantic import BaseModel, Field
+
+class CHUser(BaseModel):
+    # ClickHouse: "_id" → safe Python attribute with alias
+    UNDERSCORE_PREFIXED_id: str = Field(alias="_id")
+
+    # ClickHouse: "user name" → replace spaces, keep alias
+    user_name: str = Field(alias="user name")
+```
+</Python>
+
+## Externally Managed Tables
+If you have a table that is managed by an external system (e.g Change Data Capture like ClickPipes), you can still use Moose to query it. You can set the config in the table config to set the lifecycle to `EXTERNALLY_MANAGED`.
+
+<TypeScript>
+```ts filename="ExternallyManagedTable.ts" copy
+import { OlapTable, LifeCycle } from "@514labs/moose-lib";
+
+// Table managed by external system
+const externalTable = new OlapTable<UserData>("external_users", {
+  orderByFields: ["id", "timestamp"],
+  lifeCycle: LifeCycle.EXTERNALLY_MANAGED  // Moose won't create or modify this table
+});
+```
+</TypeScript>
+
+<Python>
+```py filename="ExternallyManagedTable.py" copy
+from moose_lib import OlapTable, OlapConfig, LifeCycle
+
+# Table managed by external system
+external_table = OlapTable[UserData]("external_users", OlapConfig(
+    order_by_fields=["id", "timestamp"],
+    life_cycle=LifeCycle.EXTERNALLY_MANAGED  # Moose won't create or modify this table in prod mode
+))
+```
+</Python>
+
+<Callout type="info" title="Learn More About LifeCycle Management">
+Learn more about the different lifecycle options and how to use them in the [LifeCycle Management](/stack/olap/lifecycle) documentation.
+</Callout>
+
+
+
+## Invalid Configurations
+
+<TypeScript>
+```ts filename="InvalidConfig.ts" copy
+// Error: No primary key or orderByFields
+interface BadRecord1 {
+  field1: string;
+  field2: number;
+}
+const badTable1 = new OlapTable<BadRecord1>("bad_table1");
+
+// Error: Primary key not first in orderByFields
+interface BadRecord2 {
+  id: Key<string>;
+  field1: string;
+}
+const badTable2 = new OlapTable<BadRecord2>("bad_table2", {
+  orderByFields: ["field1", "id"]  // Wrong order - primary key must be first
+});
+
+// Error: Nullable field in orderByFields
+interface BadRecord3 {
+  id: Key<string>;
+  field1: string;
+  field2?: number;
+}
+const badTable3 = new OlapTable<BadRecord3>("bad_table3", {
+  orderByFields: ["id", "field2"]  // Can't have nullable field in orderByFields
+});
+```
+</TypeScript>
+
+<Python>
+```py filename="InvalidConfig.py" copy
+from moose_lib import Key, OlapTable, OlapConfig
+from typing import Optional
+
+class BadRecord1(BaseModel):
+    field1: str
+    field2: int
+
+bad_table1 = OlapTable[BadRecord1]("bad_table1") ## No primary key or orderByFields
+
+class BadRecord2(BaseModel):
+    id: Key[str]
+    field1: str
+
+bad_table2 = OlapTable[BadRecord2]("bad_table2", OlapConfig(
+  order_by_fields=["field1", "id"] # Wrong order - primary key must be first
+))
+
+class BadRecord3(BaseModel):
+    id: Key[str]
+    field1: str
+    field2: Optional[int]
+
+bad_table3 = OlapTable[BadRecord3]("bad_table3", OlapConfig(
+  order_by_fields=["id", "field2"] # Can't have nullable field in orderByFields
+))
+```
+</Python>
+
+## Development Workflow
+
+### Local Development with Hot Reloading
+
+One of the powerful features of Moose is its integration with the local development server:
+
+1. Start your local development server with `moose dev`
+2. When you define or modify an `OlapTable` in your code and save the file:
+   - The changes are automatically detected
+   - The TypeScript compiler plugin processes your schema definitions
+   - The infrastructure is updated in real-time to match your code changes
+   - Your tables are immediately available for testing
+
+For example, if you add a new field to your schema:
+
+<TypeScript>
+```ts filename="HotReloading.ts" copy
+// Before
+interface BasicSchema {
+  id: Key<string>;
+  name: string;
+}
+
+// After adding a field
+interface BasicSchema {
+  id: Key<string>;
+  name: string;
+  createdAt: Date;  // New field
+}
+```
+</TypeScript>
+
+<Python>
+```py filename="HotReloading.py" copy
+# Before
+class BasicSchema(BaseModel):
+    id: Key[str]
+    name: str
+
+# After adding a field
+class BasicSchema(BaseModel):
+    id: Key[str]
+    name: str
+    created_at: datetime
+```
+</Python>
+
+The Moose framework will:
+1. Detect the change when you save the file
+2. Update the table schema in the local ClickHouse instance
+3. Make the new field immediately available for use
+
+### Verifying Your Tables
+
+You can verify your tables were created correctly using:
+```bash filename="Terminal" copy
+# List all tables in your local environment
+moose ls
+```
+
+#### Connecting to your local ClickHouse instance
+You can connect to your local ClickHouse instance with your favorite database client. Your credentials are located in your `moose.config.toml` file:
+
+```toml filename="moose.config.toml" copy
+[clickhouse_config]
+db_name = "local"
+user = "panda"
+password = "pandapass"
+use_ssl = false
+host = "localhost"
+host_port = 18123
+native_port = 9000
+```

@@ -1,0 +1,27 @@
+{
+  "extends": "@repo/ts-config/nextjs.json",
+  "compilerOptions": {
+    "plugins": [
+      {
+        "name": "next"
+      }
+    ],
+    "forceConsistentCasingInFileNames": true,
+    "module": "NodeNext",
+    "resolveJsonModule": true,
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["./src/*"]
+    }
+  },
+  "include": [
+    "next-env.d.ts",
+    "**/*.ts",
+    "**/*.tsx",
+    ".next/types/**/*.ts",
+    "**/*.jsx",
+    "src/pages/moose/apis/admin-api.mdx",
+    "src/pages/moose/apis/trigger-api.mdx"
+  ],
+  "exclude": ["node_modules"]
+}

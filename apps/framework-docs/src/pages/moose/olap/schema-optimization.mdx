@@ -1,0 +1,474 @@
+import { TypeScript, Python, LanguageSwitcher, BulletPointsCard, Callout, PathConfig } from "@/components";
+
+# Schema Optimization
+
+<LanguageSwitcher />
+
+
+<Callout type="warning" title="Schema Optimization Matters">
+Choosing the right data types and column ordering for your tables is crucial for ClickHouse performance and storage efficiency. Poor schema design can lead to 10-100x slower queries and 2-5x larger storage requirements.
+</Callout>
+
+## Data Types
+
+Keep the following best practices in mind when defining your column types:
+
+### Avoid Nullable Columns
+
+Nullable columns in ClickHouse have significant performance overhead.
+
+<Callout type="info" title="Use ClickHouse defaults instead of nulls">
+<TypeScript inline>Instead of using `?` or `| undefined`, add the  `& ClickHouseDefault<"...">` to your column type</TypeScript>
+<Python inline>Instead of using `| None` or `Optional[type]`, add the `Annotated[type, clickhouse_default("...")]` to your column type</Python>.
+</Callout>
+
+<TypeScript>
+```ts filename="AvoidNullable.ts"
+import { OlapTable } from "@514labs/moose-lib";
+
+// ❌ Bad: Using nullable columns
+interface UserEvent {
+  id: string;
+  userId: string;
+  eventType: string;
+  description?: string;  // Nullable
+  createdAt: Date;
+}
+
+// ✅ Good: Use default values instead
+interface UserEvent {
+  id: string;
+  userId: string;
+  eventType: string;
+  description: string & ClickHouseDefault<"''">  // DEFAULT ''
+  createdAt: Date;
+}
+
+const userEventsTable = new OlapTable<UserEvent>("user_events", {
+  orderByFields: ["id", "createdAt"]
+});
+```
+</TypeScript>
+
+<Python>
+```py filename="AvoidNullable.py"
+from moose_lib import OlapTable
+from pydantic import BaseModel, Field
+
+# ❌ Bad: Using nullable columns
+class UserEvent(BaseModel):
+    id: str
+    user_id: str
+    event_type: str
+    description: str | None = None  # Nullable
+    metadata: dict | None = None    # Nullable
+    created_at: Date
+
+# ✅ Good: Use default values instead
+class UserEvent(BaseModel):
+    id: str
+    user_id: str
+    event_type: str
+    description: str = ""  # Default empty string
+    metadata: dict = Field(default_factory=dict)  # Default empty dict
+    created_at: Date
+
+user_events_table = OlapTable[UserEvent]("user_events", {
+    "orderByFields": ["id", "created_at"]
+})
+```
+</Python>
+
+### Use `LowCardinality` where possible
+
+`LowCardinality` is ClickHouse's most efficient string type for columns with limited unique values.
+
+<TypeScript>
+```ts filename="LowCardinality.ts"
+import { OlapTable, LowCardinality } from "@514labs/moose-lib";
+
+interface UserEvent {
+  id: string;
+  userId: string;
+  eventType: string & LowCardinality;  // ✅ Good for limited values
+  status: "active" | "inactive" | "pending"; // ✅ Literals become LowCardinality automatically
+  country: string & LowCardinality;    // ✅ Good for country codes
+  userAgent: string;                  // ❌ Keep as String for high cardinality
+  createdAt: Date;
+}
+
+const userEventsTable = new OlapTable<UserEvent>("user_events", {
+  orderByFields: ["id", "createdAt"]
+});
+```
+</TypeScript>
+
+<Python>
+```py filename="LowCardinality.py"
+from moose_lib import OlapTable, LowCardinality
+from pydantic import BaseModel
+from typing import Literal
+
+class UserEvent(BaseModel):
+    id: str
+    user_id: str
+    event_type: Annotated[str, "LowCardinality"]  # ✅ Good for limited values
+    status: Literal["active", "inactive", "pending"]# ✅ Literals become LowCardinality automatically
+    country: Annotated[str, "LowCardinality"]      # ✅ Good for country codes
+    user_agent: str                   # ❌ Keep as String for high cardinality
+    created_at: Date
+
+user_events_table = OlapTable[UserEvent]("user_events", {
+    "orderByFields": ["id", "created_at"]
+})
+```
+</Python>
+
+### Pick the right Integer types
+
+Choose the smallest integer type that fits your data range to save storage and improve performance.
+
+<TypeScript>
+```ts filename="IntegerTypes.ts"
+import { OlapTable, UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64 } from "@514labs/moose-lib";
+
+interface UserEvent {
+  id: string;
+  userId: string;
+  age: UInt8;                             // ✅ 0-255 (1 byte)
+  score: Int16;                           // ✅ -32,768 to 32,767 (2 bytes)
+  viewCount: UInt32;                      // ✅ 0 to ~4 billion (4 bytes)
+  timestamp: UInt64;                      // ✅ Unix timestamp (8 bytes)
+  eventType: string;
+  createdAt: Date;
+}
+
+// Integer type ranges:
+// UInt8:  0 to 255
+// UInt16: 0 to 65,535
+// UInt32: 0 to 4,294,967,295
+// UInt64: 0 to 18,446,744,073,709,551,615
+// Int8:   -128 to 127
+// Int16:  -32,768 to 32,767
+// Int32:  -2,147,483,648 to 2,147,483,647
+// Int64:  -9,223,372,036,854,775,808 to 9,223,372,036,854,775,807
+```
+</TypeScript>
+
+<Python>
+```py filename="IntegerTypes.py"
+from moose_lib import OlapTable, UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64
+from pydantic import BaseModel
+
+class UserEvent(BaseModel):
+    id: str
+    user_id: str
+    age: Annotated[int, "int8"]                     # ✅ 0-255 (1 byte)
+    score: Annotated[int, "uint16"]                   # ✅ -32,768 to 32,767 (2 bytes)
+    view_count: Annotated[int, "int32"]             # ✅ 0 to ~4 billion (4 bytes)
+    timestamp: Annotated[int, "int64"]              # ✅ Unix timestamp (8 bytes)
+    event_type: str
+    created_at: Date
+
+# Integer type ranges:
+# UInt8:  0 to 255
+# UInt16: 0 to 65,535
+# UInt32: 0 to 4,294,967,295
+# UInt64: 0 to 18,446,744,073,709,551,615
+# Int8:   -128 to 127
+# Int16:  -32,768 to 32,767
+# Int32:  -2,147,483,648 to 2,147,483,647
+# Int64:  -9,223,372,036,854,775,808 to 9,223,372,036,854,775,807
+```
+</Python>
+
+### Use the right precision for `DateTime`
+
+Choose appropriate DateTime precision based on your use case to balance storage and precision.
+
+<TypeScript>
+```ts filename="DateTimePrecision.ts"
+import { OlapTable, DateTime, DateTime64 } from "@514labs/moose-lib";
+
+interface UserEvent {
+  id: string;
+  userId: string;
+  eventType: string;
+  createdAt: DateTime;             // ✅ Second precision (default)
+  updatedAt: DateTime64<3>;        // ✅ Millisecond precision
+  processedAt: DateTime64<6>;      // ✅ Microsecond precision
+  loggedAt: DateTime64<9>;         // ✅ Nanosecond precision
+}
+
+const userEventsTable = new OlapTable<UserEvent>("user_events", {
+  orderByFields: ["id", "createdAt"]
+});
+```
+</TypeScript>
+
+<Python>
+```py filename="DateTimePrecision.py"
+from moose_lib import OlapTable, DateTime, DateTime64
+from pydantic import BaseModel
+from datetime import datetime
+
+class UserEvent(BaseModel):
+    id: str
+    user_id: str
+    event_type: str
+    created_at: datetime            # ✅ Second precision (default)
+    updated_at: clickhouse_datetime(3)      # ✅ Millisecond precision
+    processed_at: clickhouse_datetime(6)    # ✅ Microsecond precision
+    logged_at: clickhouse_datetime(9)       # ✅ Nanosecond precision
+
+user_events_table = OlapTable[UserEvent]("user_events", {
+    "orderByFields": ["id", "created_at"]
+})
+```
+</Python>
+
+### Use Decimal over Float
+
+Use `Decimal` for financial and precise calculations to avoid floating-point precision issues.
+
+<TypeScript>
+```ts filename="DecimalOverFloat.ts"
+import { OlapTable, Decimal } from "@514labs/moose-lib";
+
+interface Order {
+  id: string;
+  userId: string;
+  amount: Decimal<10, 2>;         // ✅ 10 total digits, 2 decimal places
+  tax: Decimal<8, 2>;             // ✅ 8 total digits, 2 decimal places
+  discount: Decimal<5, 2>;        // ✅ 5 total digits, 2 decimal places
+  total: Decimal<12, 2>;          // ✅ 12 total digits, 2 decimal places
+  createdAt: Date;
+}
+
+// ❌ Bad: Using float for financial data
+interface BadOrder {
+  id: string;
+  amount: number;  // Float - can cause precision issues
+  tax: number;     // Float - can cause precision issues
+}
+
+const ordersTable = new OlapTable<Order>("orders", {
+  orderByFields: ["id", "createdAt"]
+});
+```
+</TypeScript>
+
+<Python>
+```py filename="DecimalOverFloat.py"
+from moose_lib import OlapTable, Decimal
+from pydantic import BaseModel
+
+class Order(BaseModel):
+    id: str
+    user_id: str
+    amount: clickhouse_decimal(10, 2)         # ✅ 10 total digits, 2 decimal places
+    tax: clickhouse_decimal(8, 2)             # ✅ 8 total digits, 2 decimal places
+    discount: clickhouse_decimal(5, 2)        # ✅ 5 total digits, 2 decimal places
+    total: clickhouse_decimal(12, 2)          # ✅ 12 total digits, 2 decimal places
+    created_at: Date
+
+# ❌ Bad: Using float for financial data
+class BadOrder(BaseModel):
+    id: str
+    amount: float  # Float - can cause precision issues
+    tax: float     # Float - can cause precision issues
+
+orders_table = OlapTable[Order]("orders", {
+    "orderByFields": ["id", "created_at"]
+})
+```
+</Python>
+
+### Use `NamedTuple` over `Nested`
+
+`NamedTuple` is more efficient than `Nested` for structured data in ClickHouse.
+
+<TypeScript>
+```ts filename="NamedTupleOverNested.ts"
+import { OlapTable, ClickHouseNamedTuple } from "@514labs/moose-lib";
+
+interface UserEvent {
+  id: string;
+  userId: string;
+  eventType: string;
+  location: {
+    latitude: number;
+    longitude: number;
+    city: string;
+    country: string;
+  } & ClickHouseNamedTuple;
+  metadata: {
+    version: string;
+    source: string;
+    priority: number;
+  } & ClickHouseNamedTuple;
+  createdAt: Date;
+}
+
+// ❌ Bad: Using Nested (less efficient)
+interface BadUserEvent {
+  id: string;
+  location: {
+    latitude: number;
+    longitude: number;
+  };
+}
+
+const userEventsTable = new OlapTable<UserEvent>("user_events", {
+  orderByFields: ["id", "createdAt"]
+});
+```
+</TypeScript>
+
+<Python>
+```py filename="NamedTupleOverNested.py"
+from moose_lib import OlapTable, NamedTuple
+from pydantic import BaseModel
+
+class Location(BaseModel):
+    latitude: float
+    longitude: float
+    city: str
+    country: str
+
+class Metadata(BaseModel):
+    version: str
+    source: str
+    priority: int
+
+class UserEvent(BaseModel):
+    id: str
+    user_id: str
+    event_type: str
+    location: Annotated[Location, "ClickHouseNamedTuple"]  # lat, lon, city, country
+    metadata: Annotated[Metadata, "ClickHouseNamedTuple"]           # version, source, priority
+    created_at: Date
+
+# ❌ Bad: Using nested objects (less efficient)
+class BadUserEvent(BaseModel):
+    id: str
+    location: Location  # Nested - less efficient
+    metadata: Metadata  # Nested - less efficient
+
+user_events_table = OlapTable[UserEvent]("user_events", {
+    "orderByFields": ["id", "created_at"]
+})
+```
+</Python>
+
+## Ordering
+
+### Choose columns that you will use in WHERE and GROUP BY clauses
+
+Optimize your `orderByFields` (or `orderByExpression`) for your most common query patterns.
+
+<TypeScript>
+```ts filename="OrderByOptimization.ts"
+import { OlapTable } from "@514labs/moose-lib";
+
+interface UserEvent {
+  id: string;
+  userId: string;
+  eventType: string;
+  status: string;
+  createdAt: Date;
+  country: string;
+}
+
+// ✅ Good: Optimized for common query patterns
+const userEventsTable = new OlapTable<UserEvent>("user_events", {
+  orderByFields: ["userId", "createdAt", "eventType"]  // Most common filters first
+});
+
+// Common queries this optimizes for:
+// - WHERE userId = ? AND createdAt > ?
+// - WHERE userId = ? AND eventType = ?
+// - GROUP BY userId, eventType
+```
+</TypeScript>
+
+<Python>
+```py filename="OrderByOptimization.py"
+from moose_lib import OlapTable
+from pydantic import BaseModel
+
+class UserEvent(BaseModel):
+    id: str
+    user_id: str
+    event_type: str
+    status: str
+    created_at: Date
+    country: str
+
+# ✅ Good: Optimized for common query patterns
+user_events_table = OlapTable[UserEvent]("user_events", {
+    "orderByFields": ["user_id", "created_at", "event_type"]  # Most common filters first
+})
+
+# Common queries this optimizes for:
+# - WHERE user_id = ? AND created_at > ?
+# - WHERE user_id = ? AND event_type = ?
+# - GROUP BY user_id, event_type
+```
+</Python>
+
+### `ORDER BY` should prioritize LowCardinality columns first
+
+Place `LowCardinality` columns first in your <Python inline>`order_by_fields`</Python><TypeScript inline>`orderByFields`</TypeScript> (or reflect this priority in your <Python inline>`order_by_expression`</Python><TypeScript inline>`orderByExpression`</TypeScript>) for better compression and query performance.
+
+<TypeScript>
+```ts filename="LowCardinalityOrdering.ts"
+import { OlapTable, LowCardinality } from "@514labs/moose-lib";
+
+interface UserEvent {
+  id: string;
+  userId: string;
+  eventType: LowCardinality<string>;    // ✅ Low cardinality
+  status: LowCardinality<string>;       // ✅ Low cardinality
+  country: LowCardinality<string>;      // ✅ Low cardinality
+  createdAt: Date;                      // High cardinality
+  sessionId: string;                    // High cardinality
+}
+
+// ✅ Good: LowCardinality columns first
+const userEventsTable = new OlapTable<UserEvent>("user_events", {
+  orderByFields: ["eventType", "status", "country", "createdAt", "sessionId"]
+});
+
+// ❌ Bad: High cardinality columns first
+const badUserEventsTable = new OlapTable<UserEvent>("user_events", {
+  orderByFields: ["createdAt", "sessionId", "eventType", "status"]  // Less efficient
+});
+```
+</TypeScript>
+
+<Python>
+```py filename="LowCardinalityOrdering.py"
+from moose_lib import OlapTable, LowCardinality
+from pydantic import BaseModel
+
+class UserEvent(BaseModel):
+    id: str
+    user_id: str
+    event_type: LowCardinality[str]     # ✅ Low cardinality
+    status: LowCardinality[str]          # ✅ Low cardinality
+    country: LowCardinality[str]         # ✅ Low cardinality
+    created_at: Date                     # High cardinality
+    session_id: str                      # High cardinality
+
+# ✅ Good: LowCardinality columns first
+user_events_table = OlapTable[UserEvent]("user_events", {
+    "orderByFields": ["event_type", "status", "country", "created_at", "session_id"]
+})
+
+# ❌ Bad: High cardinality columns first
+bad_user_events_table = OlapTable[UserEvent]("user_events", {
+    "orderByFields": ["created_at", "session_id", "event_type", "status"]  # Less efficient
+})
+```
+</Python>

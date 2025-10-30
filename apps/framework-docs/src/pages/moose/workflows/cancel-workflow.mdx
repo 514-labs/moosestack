@@ -1,0 +1,60 @@
+# Cancel a Running Workflow
+
+To stop a workflow before it has finished running, use the `workflow cancel` command.
+
+```bash filename="Terminal" copy
+moose workflow cancel <workflow-name>
+```
+
+### Implementing Cancelation Callbacks
+
+For workflows that are running and have clean up operations to perform, you can implement a termination callback.
+
+This is especially useful for any long running tasks that have open connections or subscriptions to other services that need to be closed. 
+You may also use the `state` within the run/cancel context to supplement your business logic.
+
+<Python>
+```python filename="workflows/workflows.py" copy
+
+def run_task1(ctx: TaskContext[Foo]) -> None:
+    connection.open()
+
+def on_cancel(ctx: TaskContext[Foo]) -> None:
+    # Clean up any resources
+    connection.close()
+
+task1 = Task[Foo, None](
+    name="task1",
+    config=TaskConfig(run=run_task1, on_cancel=on_cancel)
+)
+
+myworkflow = Workflow(
+  name="myworkflow",
+  config=WorkflowConfig(starting_task=task1, retries=3)
+)
+```
+</Python>
+
+
+<TypeScript>
+```typescript filename="workflows/workflows.ts" copy
+
+const task1 = new Task<Foo, void>({
+  name: "task1",
+  run: async (ctx) => {
+    connection.open();
+  },
+  onCancel: async (ctx) => {
+    // Clean up any resources
+    connection.close();
+  },
+});
+
+const myworkflow = new Workflow({
+  name: "myworkflow",
+  startingTask: task1,
+  retries: 3,
+});
+```
+</TypeScript>
+

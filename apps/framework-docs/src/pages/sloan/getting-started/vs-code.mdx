@@ -1,0 +1,134 @@
+---
+title: Getting Started
+description: Getting started guide for Sloan
+---
+
+import { Callout } from "@/components";
+import { Tabs, Steps, Card, FileTree } from "nextra/components";
+import {
+  CTACard,
+  CTACards,
+  ZoomImg,
+  ChipButton,
+  Columns,
+  Column,
+  FeatureCard,
+  FeatureGrid,
+  BulletPointsCard,
+  QnABullets,
+  CheckmarkBullets,
+  Icons,
+} from "@/components";
+import { ArgTable } from "@/components/ArgTable";
+
+
+## VS Code
+
+<Steps>
+
+<Callout type="info" title="Additional requirements">
+- **VS Code**: [Install VS Code here](https://code.visualstudio.com/).
+- **GitHub Copilot in VS Code**: [See VS Code docs](https://code.visualstudio.com/docs/copilot/setup)
+</Callout>
+
+### Install VS Code and enable MCPs
+[Install VS Code here](https://code.visualstudio.com/). 
+
+[Enable MCPs](vscode://settings/chat.mcp.enabled) by toggling on the `chat.mcp.enabled` setting.
+
+### Install Moose and Sloan CLI
+
+```bash filename="Terminal" copy
+bash -i <(curl -fsSL https://fiveonefour.com/install.sh) sloan,moose
+```
+
+### Configure Sloan MCP
+
+<Tabs items={['Sloan CLI', 'MCP.json (settings.json)']}>
+  <Tabs.Tab>
+    Create a new project with Claude Desktop MCP preconfigured: 
+
+    ```bash filename="Terminal" copy
+    sloan init <project-name> <template-name> --mcp vscode-project
+    ```
+
+    If you want to use this as a global VS Code MCP, use `vscode-global` instead of `vscode-project`.
+
+    For other options, see [Sloan CLI docs](/sloan/getting-started/sloan-cli).
+  </Tabs.Tab>
+  <Tabs.Tab>
+    ```json filename="/path/to/your/project/.cursor/settings.json" copy
+    {
+      "mcp": {
+        "input": [],
+        "servers": {
+          "sloan": {
+            "args": [
+              "@514labs/sloan-mcp@latest",
+              "--moose-read-tools",
+              "path/to/your/moose/project"
+            ],
+            "command": "npx",
+            "env": {
+              "ANTHROPIC_API_KEY": "<your-anthropic-api-key>",
+              "MOOSE_PATH": "path/to/your/moose/installation",
+              "NODE_PATH": "path/to/your/node/installation",
+              "PYTHON_PATH": "path/to/your/python/installation"
+            }
+          }
+        }
+      }
+    }
+    ```
+  </Tabs.Tab>
+</Tabs>
+
+### Adding other toolsets
+
+For more information on available toolsets, see [Sloan MCP toolsets](/sloan/reference/tool-reference). All toolsets are available for Cursor.
+
+### Using the MCP
+
+[ ] TODO: Add instructions for running the MCP server in VS Code
+
+</Steps>
+
+### Warnings / Peculiarities
+
+<Callout type="warning">
+**Recommended Configuration Method**: While VS Code has a feature that allows you to use MCPs from other clients (like Claude Desktop), we strongly recommend using either the **Sloan CLI** or the **settings.json file** method shown above instead. These methods provide better reliability and configuration control specifically for VS Code environments.
+</Callout>
+
+### Common issues / troubleshooting
+
+* The MCP is running, but you aren't able to get your data? Look at the tool call response, it will tell you if your Moose dev server is running. If it is not, run `moose dev` in your Moose project directory.
+* The MCP is not running. Check your configuration and then restart the application.  
+
+## Reference
+<FeatureGrid columns={3}>
+  
+  <FeatureCard
+    href="/sloan/reference/cli-reference"
+    title="CLI reference"
+    description="
+    "
+    variant="sloan"
+  />
+
+    <FeatureCard
+    href="/sloan/reference/mcp-json-reference"
+    title="MCP.json reference"
+    description="
+    "
+    variant="sloan"
+  />
+
+    <FeatureCard
+    href="/sloan/reference/tool-reference"
+    title="Tools reference"
+    description="
+    "
+    variant="sloan"
+  />
+
+</FeatureGrid>
