@@ -105,10 +105,12 @@ The test has extended timeouts because it:
 
 ## CI Integration
 
-This test should be run:
-- ✅ On PRs that modify infrastructure code
-- ✅ Before releasing new versions
-- ✅ Regularly on main branch
+This test runs automatically in CI as the `test-e2e-backward-compatibility` job in `.github/workflows/test-framework-cli.yaml`.
+
+It runs:
+- ✅ On all PRs (when `detect-changes` determines tests should run)
+- ✅ After all library tests pass
+- ✅ Tests both TypeScript and Python templates in a single job
 
 ## Debugging
 

@@ -554,6 +554,71 @@ jobs:
         run: |
           cat ~/.moose/*-cli.log
 
+  test-e2e-backward-compatibility:
+    needs:
+      [detect-changes, check, test-cli, test-ts-moose-lib, test-py-moose-lib]
+    if: needs.detect-changes.outputs.should_run == 'true'
+    name: Test E2E Backward Compatibility (Node 20, Python 3.12)
+    runs-on: ubuntu-latest
+    # Add explicit read-only permissions
+    permissions:
+      contents: read
+    env:
+      RUST_BACKTRACE: full
+    steps:
+      - name: Install Protoc (Needed for Temporal)
+        uses: arduino/setup-protoc@v3
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+          version: "23.x"
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - uses: pnpm/action-setup@v4
+
+      - name: Install node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: "pnpm"
+
+      - name: Get system info
+        id: system
+        run: |
+          echo "version=$(lsb_release -rs)" >> $GITHUB_OUTPUT
+          echo "distro=$(lsb_release -is)" >> $GITHUB_OUTPUT
+
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+          cache: true
+          cache-shared-key: ${{ runner.os }}-${{ steps.system.outputs.distro }}-${{ steps.system.outputs.version }}-${{ runner.arch }}-rust
+          cache-on-failure: true
+          cache-all-crates: true
+          cache-workspace-crates: true
+
+      - name: Setup Python 3.12 for E2E tests
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.12"
+
+      - name: Upgrade Python build tools
+        run: pip install --upgrade pip setuptools wheel
+
+      - name: Run Backward Compatibility Tests
+        run: pnpm install --frozen-lockfile && pnpm --filter=framework-cli-e2e run test -- --grep "Backward Compatibility"
+        env:
+          MOOSE_TELEMETRY_ENABLED: false
+
+      - name: Inspect Logs
+        if: always()
+        run: |
+          cat ~/.moose/*-cli.log
+
   lints:
     needs: detect-changes
     if: needs.detect-changes.outputs.should_run == 'true'
