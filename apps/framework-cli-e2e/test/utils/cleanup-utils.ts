@@ -25,21 +25,6 @@ export interface CleanupOptions {
  * 3. Removes the test project directory
  *
  * On error, forces cleanup of process and directory even if Docker cleanup fails.
- *
- * @param devProcess - The moose dev process to stop
- * @param testProjectDir - Directory containing the test project
- * @param appName - Application name used for Docker resources
- * @param options - Optional cleanup configuration
- *
- * @example
- * ```typescript
- * after(async function () {
- *   this.timeout(TIMEOUTS.CLEANUP_MS);
- *   await cleanupTestSuite(devProcess, TEST_PROJECT_DIR, APP_NAMES.TYPESCRIPT_TESTS, {
- *     logPrefix: "TypeScript S3Queue Test"
- *   });
- * });
- * ```
  */
 export async function cleanupTestSuite(
   devProcess: ChildProcess | null,
