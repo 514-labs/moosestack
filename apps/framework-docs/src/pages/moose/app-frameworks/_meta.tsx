@@ -6,7 +6,7 @@ const rawMeta = {
   },
   __typescript__: {
     type: "separator",
-    title: "TypeScript / JavaScript / Node",
+    title: "TypeScript",
   },
   "typescript-native": {
     title: "Native (Api Class)",
