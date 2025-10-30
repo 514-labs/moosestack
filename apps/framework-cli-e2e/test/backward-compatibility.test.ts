@@ -153,7 +153,8 @@ async function setupPythonProjectWithLatestPypi(
     "Setting up Python virtual environment and installing dependencies (using latest moose-lib)...",
   );
   await new Promise<void>((resolve, reject) => {
-    const setupCmd = process.platform === "win32" ? "python" : "python3";
+    // Use python3.13 specifically to avoid Python 3.14 compatibility issues
+    const setupCmd = process.platform === "win32" ? "python" : "python3.13";
     const venvCmd = spawn(setupCmd, ["-m", "venv", ".venv"], {
       stdio: "inherit",
       cwd: projectDir,
@@ -268,9 +269,15 @@ describe("Backward Compatibility Tests", function () {
               ...process.env,
               VIRTUAL_ENV: path.join(TEST_PROJECT_DIR, ".venv"),
               PATH: `${path.join(TEST_PROJECT_DIR, ".venv", "bin")}:${process.env.PATH}`,
+              // Add test credentials for S3Queue tests
+              TEST_AWS_ACCESS_KEY_ID: "test-access-key-id",
+              TEST_AWS_SECRET_ACCESS_KEY: "test-secret-access-key",
             }
           : {
               ...process.env,
+              // Add test credentials for S3Queue tests
+              TEST_AWS_ACCESS_KEY_ID: "test-access-key-id",
+              TEST_AWS_SECRET_ACCESS_KEY: "test-secret-access-key",
             };
 
         // Use npx to run the latest published moose-cli

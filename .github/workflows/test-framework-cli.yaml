@@ -558,7 +558,7 @@ jobs:
     needs:
       [detect-changes, check, test-cli, test-ts-moose-lib, test-py-moose-lib]
     if: needs.detect-changes.outputs.should_run == 'true'
-    name: Test E2E Backward Compatibility (Node 20, Python 3.12)
+    name: Test E2E Backward Compatibility (Node 20, Python 3.13)
     runs-on: ubuntu-latest
     # Add explicit read-only permissions
     permissions:
@@ -601,10 +601,10 @@ jobs:
           cache-all-crates: true
           cache-workspace-crates: true
 
-      - name: Setup Python 3.12 for E2E tests
+      - name: Setup Python 3.13 for E2E tests
         uses: actions/setup-python@v4
         with:
-          python-version: "3.12"
+          python-version: "3.13"
 
       - name: Upgrade Python build tools
         run: pip install --upgrade pip setuptools wheel
