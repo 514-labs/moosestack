@@ -7,6 +7,7 @@ import remarkHtml from "remark-html";
 import rehypeSlug from "rehype-slug";
 import rehypeAutolinkHeadings from "rehype-autolink-headings";
 import rehypePrettyCode from "rehype-pretty-code";
+import { compileMDX } from "next-mdx-remote/rsc";
 import type {
   FrontMatter,
   Heading,
@@ -18,14 +19,14 @@ import type {
 const CONTENT_ROOT = path.join(process.cwd(), "content");
 
 /**
- * Get all content files for a specific language
+ * Get all content files from the content directory
+ * Scans recursively and returns all .md and .mdx files
  */
-export function getContentFiles(language: Language): string[] {
-  const contentDir = path.join(CONTENT_ROOT, language);
-  if (!fs.existsSync(contentDir)) {
+export function getContentFiles(): string[] {
+  if (!fs.existsSync(CONTENT_ROOT)) {
     return [];
   }
-  return getAllMarkdownFiles(contentDir, contentDir);
+  return getAllMarkdownFiles(CONTENT_ROOT, CONTENT_ROOT);
 }
 
 /**
@@ -55,18 +56,31 @@ function getAllMarkdownFiles(dir: string, baseDir: string): string[] {
  * Parse markdown content and extract metadata
  */
 export async function parseMarkdownContent(
-  language: Language,
   slug: string,
 ): Promise<ParsedContent> {
-  const contentDir = path.join(CONTENT_ROOT, language);
-  const filePath = path.join(contentDir, `${slug}.md`);
-  const mdxFilePath = path.join(contentDir, `${slug}.mdx`);
+  // Try direct file path first
+  const filePath = path.join(CONTENT_ROOT, `${slug}.md`);
+  const mdxFilePath = path.join(CONTENT_ROOT, `${slug}.mdx`);
+
+  // Also try index file in directory (e.g., moosestack -> moosestack/index.mdx)
+  const indexFilePath = path.join(CONTENT_ROOT, slug, "index.md");
+  const indexMdxFilePath = path.join(CONTENT_ROOT, slug, "index.mdx");
 
   let fullPath: string;
-  if (fs.existsSync(filePath)) {
-    fullPath = filePath;
-  } else if (fs.existsSync(mdxFilePath)) {
+  let isMDX = false;
+
+  // Prefer .mdx extension, fallback to .md if needed
+  // Try direct file first, then index file
+  if (fs.existsSync(mdxFilePath)) {
     fullPath = mdxFilePath;
+    isMDX = true;
+  } else if (fs.existsSync(filePath)) {
+    fullPath = filePath;
+  } else if (fs.existsSync(indexMdxFilePath)) {
+    fullPath = indexMdxFilePath;
+    isMDX = true;
+  } else if (fs.existsSync(indexFilePath)) {
+    fullPath = indexFilePath;
   } else {
     throw new Error(`Content file not found for slug: ${slug}`);
   }
@@ -74,23 +88,41 @@ export async function parseMarkdownContent(
   const fileContents = fs.readFileSync(fullPath, "utf8");
   const { data, content: rawContent } = matter(fileContents);
 
-  // Parse content to HTML
-  const processedContent = await remark()
-    .use(remarkGfm)
-    .use(remarkHtml, { sanitize: false })
-    .process(rawContent);
+  let content: string;
+  let mdxContent: any = null;
 
-  const content = processedContent.toString();
+  if (isMDX) {
+    // For MDX files, we'll return the raw content and let the component handle compilation
+    // Extract headings from raw content before MDX processing
+    const headings = extractHeadings(rawContent);
 
-  // Extract headings for TOC
-  const headings = extractHeadings(rawContent);
+    return {
+      frontMatter: data as FrontMatter,
+      content: rawContent, // Return raw MDX content
+      headings,
+      slug,
+      isMDX: true,
+    };
+  } else {
+    // Parse regular markdown to HTML
+    const processedContent = await remark()
+      .use(remarkGfm)
+      .use(remarkHtml, { sanitize: false })
+      .process(rawContent);
 
-  return {
-    frontMatter: data as FrontMatter,
-    content,
-    headings,
-    slug,
-  };
+    content = processedContent.toString();
+
+    // Extract headings for TOC
+    const headings = extractHeadings(rawContent);
+
+    return {
+      frontMatter: data as FrontMatter,
+      content,
+      headings,
+      slug,
+      isMDX: false,
+    };
+  }
 }
 
 /**
@@ -119,13 +151,12 @@ function extractHeadings(content: string): Heading[] {
 /**
  * Build navigation tree from content files
  */
-export function buildNavigationTree(language: Language): NavItem[] {
-  const files = getContentFiles(language);
+export function buildNavigationTree(): NavItem[] {
+  const files = getContentFiles();
   const navItems: NavItem[] = [];
-  const contentDir = path.join(CONTENT_ROOT, language);
 
   for (const file of files) {
-    const fullPath = path.join(contentDir, file);
+    const fullPath = path.join(CONTENT_ROOT, file);
     const fileContents = fs.readFileSync(fullPath, "utf8");
     const { data } = matter(fileContents);
     const frontMatter = data as FrontMatter;
@@ -194,8 +225,12 @@ function sortNavItems(items: NavItem[]): NavItem[] {
 
 /**
  * Get all slugs for static generation
+ * Returns unique slugs with full paths (e.g., moosestack/olap/model-table)
  */
-export function getAllSlugs(language: Language): string[] {
-  const files = getContentFiles(language);
-  return files.map((file) => file.replace(/\.(md|mdx)$/, ""));
+export function getAllSlugs(): string[] {
+  const files = getContentFiles();
+  const slugs = files.map((file) => file.replace(/\.(md|mdx)$/, ""));
+  // Remove duplicates (in case both .md and .mdx exist, prefer .mdx)
+  const uniqueSlugs = Array.from(new Set(slugs));
+  return uniqueSlugs;
 }

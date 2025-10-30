@@ -98,11 +98,11 @@
   }
 
   .prose h2 {
-    @apply text-3xl font-bold mt-6 mb-3;
+    @apply text-3xl font-bold mt-6 mb-3 scroll-mt-20;
   }
 
   .prose h3 {
-    @apply text-2xl font-semibold mt-4 mb-2;
+    @apply text-2xl font-semibold mt-4 mb-2 scroll-mt-20;
   }
 
   .prose p {

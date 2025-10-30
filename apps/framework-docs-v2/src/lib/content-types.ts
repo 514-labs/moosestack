@@ -22,6 +22,7 @@ export interface ParsedContent {
   content: string;
   headings: Heading[];
   slug: string;
+  isMDX?: boolean;
 }
 
 export interface NavItem {
