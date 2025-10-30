@@ -3435,7 +3435,7 @@ mod diff_tests {
         let mut before = create_test_table("test", "1.0");
         let mut after = create_test_table("test", "1.0");
 
-        let column_types = vec![
+        let column_types = [
             ColumnType::Int(IntType::Int64),
             ColumnType::BigInt,
             ColumnType::Float(FloatType::Float64),
