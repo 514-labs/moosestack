@@ -64,7 +64,9 @@ export const RETRY_CONFIG = {
 // Test data configuration
 export const TEST_DATA = {
   // Fixed timestamp for consistent testing (Feb 19, 2025 00:00:00 UTC)
-  TIMESTAMP: 1739952000000,
+  // This is in seconds. If typescript, make sure to convert to milliseconds for Date constructor.
+  // If python, datetime.fromtimestamp already expects seconds.
+  TIMESTAMP: 1739952000,
 
   // Number of records to send for batch testing
   BATCH_RECORD_COUNT: 50,

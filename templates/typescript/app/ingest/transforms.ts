@@ -37,7 +37,7 @@ FooPipeline.stream!.addTransform(
 
     const result: Bar = {
       primaryKey: foo.primaryKey,
-      utcTimestamp: new Date(foo.timestamp), // timestamp is already in milliseconds
+      utcTimestamp: new Date(foo.timestamp * 1000),
       hasText: foo.optionalText !== undefined,
       textLength: foo.optionalText?.length ?? 0,
     };
@@ -56,7 +56,7 @@ FooPipeline.stream!.addTransform(
 const printFooEvent = (foo: Foo): void => {
   console.log("Received Foo event:");
   console.log(`  Primary Key: ${foo.primaryKey}`);
-  console.log(`  Timestamp: ${new Date(foo.timestamp)}`); // timestamp is already in milliseconds
+  console.log(`  Timestamp: ${new Date(foo.timestamp * 1000)}`);
   console.log(`  Optional Text: ${foo.optionalText ?? "None"}`);
   console.log("---");
 };

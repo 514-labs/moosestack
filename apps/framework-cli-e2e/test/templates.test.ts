@@ -869,7 +869,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
                   headers: { "Content-Type": "application/json" },
                   body: JSON.stringify({
                     id,
-                    timestamp: new Date(TEST_DATA.TIMESTAMP),
+                    timestamp: new Date(TEST_DATA.TIMESTAMP * 1000),
                     payloadWithConfig: {
                       name: "alpha",
                       count: 3,
