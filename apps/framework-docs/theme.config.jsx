@@ -1,4 +1,3 @@
-import { useEffect, useState } from "react";
 import { Heading, HeadingLevel } from "@/components/typography";
 
 import { cn } from "@/lib/utils";
@@ -28,7 +27,6 @@ import { useConfig, useThemeConfig } from "nextra-theme-docs";
 import { PathConfig } from "./src/components/ctas";
 import { GitHubStarsButton } from "@/components";
 import { Bot, ChevronDown, Copy, FileText, Sparkles } from "lucide-react";
-import { createPortal } from "react-dom";
 
 // Base text styles that match your typography components
 const baseTextStyles = {
@@ -281,69 +279,6 @@ function LlmHelperMenu({ buttonClassName, align = "start" } = {}) {
   );
 }
 
-function HeadingActionPortal() {
-  const { asPath } = useRouter();
-  const [slot, setSlot] = useState(null);
-
-  useEffect(() => {
-    if (typeof document === "undefined") {
-      return;
-    }
-
-    const article =
-      document.querySelector("article.nextra-content") ||
-      document.querySelector("article .nextra-content");
-
-    const heading =
-      article?.querySelector("h1") || document.querySelector("article h1");
-
-    if (!heading) {
-      setSlot(null);
-      return;
-    }
-
-    heading.classList.add("moose-heading-with-actions");
-
-    let existingSlot = heading.querySelector("[data-llm-action-slot]");
-
-    if (!existingSlot) {
-      existingSlot = document.createElement("span");
-      existingSlot.setAttribute("data-llm-action-slot", "true");
-      existingSlot.className = "moose-heading-actions-slot";
-      heading.appendChild(existingSlot);
-    }
-
-    setSlot(existingSlot);
-
-    return () => {
-      heading.classList.remove("moose-heading-with-actions");
-
-      if (
-        existingSlot &&
-        existingSlot.parentElement === heading &&
-        existingSlot.hasAttribute("data-llm-action-slot")
-      ) {
-        existingSlot.remove();
-      }
-      setSlot(null);
-    };
-  }, [asPath]);
-
-  if (!slot) {
-    return null;
-  }
-
-  return createPortal(
-    <div className="moose-heading-actions-menu">
-      <LlmHelperMenu
-        align="end"
-        buttonClassName="moose-heading-actions-button"
-      />
-    </div>,
-    slot,
-  );
-}
-
 function EditLinks({ filePath, href, className, children }) {
   const { pageOpts } = useConfig();
   const { docsRepositoryBase } = useThemeConfig();
@@ -362,7 +297,7 @@ function EditLinks({ filePath, href, className, children }) {
     : undefined);
 
   return (
-    <div className="flex flex-col items-start">
+    <div className="flex flex-col items-start gap-2">
       {editHref ?
         <a
           href={editHref}
@@ -373,6 +308,7 @@ function EditLinks({ filePath, href, className, children }) {
           {children}
         </a>
       : <span className={className}>{children}</span>}
+      <LlmHelperMenu buttonClassName="w-full" align="start" />
     </div>
   );
 }
@@ -517,12 +453,7 @@ export default {
   navbar: {
     extraContent: () => <GitHubStarsButton username="514-labs" repo="moose" />,
   },
-  main: ({ children }) => (
-    <>
-      <HeadingActionPortal />
-      {children}
-    </>
-  ),
+  main: ({ children }) => <>{children}</>,
   navigation: {
     prev: true,
     next: true,
