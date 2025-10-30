@@ -617,7 +617,7 @@ jobs:
     needs:
       [detect-changes, check, test-cli, test-ts-moose-lib, test-py-moose-lib]
     if: needs.detect-changes.outputs.should_run == 'true'
-    name: Test E2E Backward Compatibility - Python (Node 20, Python 3.13)
+    name: Test E2E Backward Compatibility - Python (Python 3.13)
     runs-on: ubuntu-latest
     permissions:
       contents: read

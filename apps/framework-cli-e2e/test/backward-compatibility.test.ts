@@ -409,7 +409,7 @@ describe("Backward Compatibility Tests", function () {
           if (removedItems) {
             throw new Error(
               `BREAKING CHANGE DETECTED: Infrastructure is being removed from the plan.\n` +
-                `This means the new CLI does not recognize infrastructure created by CLI 0.6.157.\n` +
+                `This means the new CLI does not recognize infrastructure created by CLI latest.\n` +
                 `This is a backward incompatible change that would cause data loss.\n\n` +
                 `Removed items:\n${removedItems.join("\n")}\n\n` +
                 `Full plan output:\n${cleanOutput}`,
@@ -422,7 +422,7 @@ describe("Backward Compatibility Tests", function () {
           if (addedItems) {
             throw new Error(
               `BREAKING CHANGE DETECTED: Infrastructure is being added in the plan.\n` +
-                `This likely means the new CLI does not recognize existing infrastructure from CLI 0.6.157\n` +
+                `This likely means the new CLI does not recognize existing infrastructure from CLI latest\n` +
                 `and wants to create it again, which is a backward incompatible change.\n\n` +
                 `Added items:\n${addedItems.join("\n")}\n\n` +
                 `Full plan output:\n${cleanOutput}`,
@@ -431,9 +431,7 @@ describe("Backward Compatibility Tests", function () {
 
           // Check for "no changes" message
           const output = cleanOutput.toLowerCase();
-          const hasNoChanges =
-            output.includes("no changes") ||
-            output.includes("no changes detected");
+          const hasNoChanges = output.includes("no changes detected");
 
           if (!hasNoChanges) {
             // If there are changes, they should only be updates (~ prefix), not additions/removals

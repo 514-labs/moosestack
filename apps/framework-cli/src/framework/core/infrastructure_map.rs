@@ -923,7 +923,7 @@ impl InfrastructureMap {
             &mut changes.olap_changes,
             table_diff_strategy,
             respect_life_cycle,
-            &self.default_database,
+            &target_map.default_database,
         );
         let table_changes = changes.olap_changes.len() - olap_changes_len_before;
         log::info!("Table changes detected: {}", table_changes);
