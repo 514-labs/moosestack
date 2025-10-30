@@ -1,8 +1,11 @@
 import { ChildProcess } from "child_process";
 import { TIMEOUTS } from "../constants";
-import { stopDevProcess } from "./process-utils";
-import { cleanupDocker } from "./docker-utils";
-import { removeTestProject } from "./file-utils";
+import { stopDevProcess, killRemainingProcesses } from "./process-utils";
+import { cleanupDocker, globalDockerCleanup } from "./docker-utils";
+import {
+  removeTestProject,
+  cleanupLeftoverTestDirectories,
+} from "./file-utils";
 
 /**
  * Options for test suite cleanup
@@ -67,5 +70,29 @@ export async function cleanupTestSuite(
 
     // Always try to remove the test directory
     removeTestProject(testProjectDir);
+  }
+}
+
+/**
+ * Performs global cleanup of all Docker resources, processes, and test directories
+ */
+export async function performGlobalCleanup(
+  logMessage = "Running global cleanup...",
+): Promise<void> {
+  console.log(logMessage);
+
+  try {
+    // Kill any remaining moose-cli processes
+    await killRemainingProcesses();
+
+    // Clean up any remaining Docker resources
+    await globalDockerCleanup();
+
+    // Clean up any leftover test directories
+    cleanupLeftoverTestDirectories();
+
+    console.log("Global cleanup completed");
+  } catch (error) {
+    console.warn("Error during global cleanup:", error);
   }
 }

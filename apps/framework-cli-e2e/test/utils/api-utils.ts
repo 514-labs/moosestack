@@ -18,6 +18,8 @@ export const verifyConsumptionApi = async (
       console.log("Test request sent successfully");
       const json = (await response.json()) as any[];
 
+      console.log("API response:", json);
+
       if (!Array.isArray(json)) {
         throw new Error("Expected array response");
       }
