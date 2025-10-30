@@ -4,11 +4,11 @@
 /**
  * Backward Compatibility E2E Test
  *
- * Tests that upgrading from version n-1 (latest npm/pypi) to version n (current build)
+ * Tests that upgrading from version 0.6.157 (old version) to current build
  * does not break existing deployments.
  *
  * The test:
- * 1. Initializes projects using the LATEST published CLI version from npm/pypi
+ * 1. Initializes projects using CLI version 0.6.157 from npm/pypi
  * 2. Starts the project with `moose dev` to create infrastructure
  * 3. Stops the project
  * 4. Runs `moose plan` with the NEW CLI from this branch
@@ -55,7 +55,7 @@ const MOOSE_PY_LIB_PATH = path.resolve(
 );
 
 /**
- * Check the latest published version of moose-cli
+ * Check moose-cli version 0.6.157
  */
 async function checkLatestPublishedCLI(): Promise<void> {
   console.log("Checking moose-cli version 0.6.157 from npm...");
@@ -75,7 +75,7 @@ async function checkLatestPublishedCLI(): Promise<void> {
 }
 
 /**
- * Setup TypeScript project with latest npm moose-lib
+ * Setup TypeScript project with moose-cli 0.6.157 and moose-lib 0.6.165
  */
 async function setupTypeScriptProjectWithLatestNpm(
   projectDir: string,
@@ -100,12 +100,13 @@ async function setupTypeScriptProjectWithLatestNpm(
     throw error;
   }
 
-  // Install dependencies with latest moose-lib from npm
+  // Install dependencies with moose-lib version 0.6.165 from npm
+  // (0.6.157 CLI uses 0.6.165 moose-lib)
   console.log(
-    "Installing dependencies with npm (using latest @514labs/moose-lib)...",
+    "Installing dependencies with npm (using @514labs/moose-lib@0.6.165)...",
   );
   await new Promise<void>((resolve, reject) => {
-    const installCmd = spawn("npm", ["install"], {
+    const installCmd = spawn("npm", ["install", "@514labs/moose-lib@0.6.165"], {
       stdio: "inherit",
       cwd: projectDir,
     });
@@ -121,19 +122,19 @@ async function setupTypeScriptProjectWithLatestNpm(
 }
 
 /**
- * Setup Python project with latest pypi moose-lib
+ * Setup Python project with moose-cli 0.6.157 and moose-lib 0.6.165
  */
 async function setupPythonProjectWithLatestPypi(
   projectDir: string,
   templateName: string,
   appName: string,
 ): Promise<void> {
-  console.log(`Initializing Python project with latest pypi moose-cli...`);
+  console.log(`Initializing Python project with moose-cli 0.6.157...`);
 
-  // Initialize project with latest CLI via npx
+  // Initialize project with CLI version 0.6.157 via npx
   try {
     const result = await execAsync(
-      `npx -y @514labs/moose-cli@latest init ${appName} ${templateName} --location "${projectDir}"`,
+      `npx -y @514labs/moose-cli@0.6.157 init ${appName} ${templateName} --location "${projectDir}"`,
     );
     console.log("CLI init stdout:", result.stdout);
     if (result.stderr) {
@@ -146,9 +147,10 @@ async function setupPythonProjectWithLatestPypi(
     throw error;
   }
 
-  // Set up Python environment and install dependencies with latest moose-lib from pypi
+  // Set up Python environment and install dependencies with moose-lib version 0.6.165 from pypi
+  // (0.6.157 CLI uses 0.6.165 moose-lib)
   console.log(
-    "Setting up Python virtual environment and installing dependencies (using latest moose-lib)...",
+    "Setting up Python virtual environment and installing dependencies (using moose-lib==0.6.165)...",
   );
   await new Promise<void>((resolve, reject) => {
     // Use python3.13 specifically to avoid Python 3.14 compatibility issues
@@ -182,7 +184,28 @@ async function setupPythonProjectWithLatestPypi(
           );
           return;
         }
-        resolve();
+
+        // Install specific version of moose-lib to override requirements.txt
+        const pipLibCmd = spawn(
+          process.platform === "win32" ?
+            ".venv\\Scripts\\pip"
+          : ".venv/bin/pip",
+          ["install", "moose-lib==0.6.165"],
+          {
+            stdio: "inherit",
+            cwd: projectDir,
+          },
+        );
+
+        pipLibCmd.on("close", (libPipCode) => {
+          if (libPipCode !== 0) {
+            reject(
+              new Error(`moose-lib pip install failed with code ${libPipCode}`),
+            );
+            return;
+          }
+          resolve();
+        });
       });
     });
   });
@@ -217,7 +240,7 @@ describe("Backward Compatibility Tests", function () {
   before(async function () {
     this.timeout(TIMEOUTS.TEST_SETUP_MS);
 
-    // Check latest published CLI is available
+    // Check CLI version 0.6.157 is available
     await checkLatestPublishedCLI();
 
     // Verify new CLI is built
@@ -284,10 +307,8 @@ describe("Backward Compatibility Tests", function () {
         }
         fs.writeFileSync(mooseConfigPath, mooseConfig);
 
-        // Start dev server with LATEST published CLI via npx
-        console.log(
-          "Starting dev server with LATEST published CLI (via npx)...",
-        );
+        // Start dev server with CLI 0.6.157 via npx
+        console.log("Starting dev server with CLI 0.6.157 (via npx)...");
         const devEnv =
           config.language === "python" ?
             {
@@ -305,8 +326,8 @@ describe("Backward Compatibility Tests", function () {
               TEST_AWS_SECRET_ACCESS_KEY: "test-secret-access-key",
             };
 
-        // Use npx to run the latest published moose-cli
-        devProcess = spawn("npx", ["-y", "@514labs/moose-cli@latest", "dev"], {
+        // Use npx to run moose-cli version 0.6.157
+        devProcess = spawn("npx", ["-y", "@514labs/moose-cli@0.6.157", "dev"], {
           stdio: "pipe",
           cwd: TEST_PROJECT_DIR,
           env: devEnv,
@@ -318,7 +339,7 @@ describe("Backward Compatibility Tests", function () {
           SERVER_CONFIG.startupMessage,
           SERVER_CONFIG.url,
         );
-        console.log("Server started with latest CLI, infrastructure is ready");
+        console.log("Server started with CLI 0.6.157, infrastructure is ready");
         // Brief wait to ensure everything is fully settled
         await setTimeoutAsync(5000);
 
@@ -354,7 +375,7 @@ describe("Backward Compatibility Tests", function () {
         this.timeout(TIMEOUTS.TEST_SETUP_MS);
 
         console.log(
-          `\nRunning 'moose plan' with NEW CLI (${CLI_PATH}) on project initialized with latest published CLI...`,
+          `\nRunning 'moose plan' with NEW CLI (${CLI_PATH}) on project initialized with CLI 0.6.157...`,
         );
         console.log(
           "Querying running dev server (started with old CLI) to get infrastructure map",
