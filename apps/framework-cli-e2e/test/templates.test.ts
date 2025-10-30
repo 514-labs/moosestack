@@ -149,6 +149,15 @@ const TEMPLATE_CONFIGS: TemplateTestConfig[] = [
     isTestsVariant: true,
     packageManager: "pip",
   },
+  {
+    templateName: "typescript-mcp",
+    displayName: `TypeScript MCP Template (${TEST_PACKAGE_MANAGER})`,
+    projectDirSuffix: `ts-mcp-${TEST_PACKAGE_MANAGER}`,
+    appName: "typescript-mcp",
+    language: "typescript",
+    isTestsVariant: false,
+    packageManager: TEST_PACKAGE_MANAGER,
+  },
 ];
 
 const createTemplateTestSuite = (config: TemplateTestConfig) => {
@@ -1153,6 +1162,132 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
 describe("Moose Templates", () => {
   // Generate test suites for all template configurations
   TEMPLATE_CONFIGS.forEach(createTemplateTestSuite);
+
+  // Add custom MCP-specific tests
+  describe("typescript-mcp template with MCP server", () => {
+    it("should expose MCP tools at /tools endpoint", async function () {
+      this.timeout(TIMEOUTS.TEST_SETUP_MS);
+
+      // Test MCP initialize request
+      const initializeResponse = await fetch(`${SERVER_CONFIG.url}/tools`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: 1,
+          method: "initialize",
+          params: {
+            protocolVersion: "2024-11-05",
+            capabilities: {},
+            clientInfo: {
+              name: "test-client",
+              version: "1.0.0",
+            },
+          },
+        }),
+      });
+
+      if (!initializeResponse.ok) {
+        const text = await initializeResponse.text();
+        throw new Error(
+          `MCP initialize failed: ${initializeResponse.status}: ${text}`,
+        );
+      }
+
+      const initializeData = await initializeResponse.json();
+      console.log("MCP initialize response:", JSON.stringify(initializeData));
+
+      // Verify it's a valid JSON-RPC response
+      expect(initializeData.jsonrpc).to.equal("2.0");
+      expect(initializeData.id).to.equal(1);
+      expect(initializeData.result).to.exist;
+
+      // Test MCP tools/list request
+      const toolsListResponse = await fetch(`${SERVER_CONFIG.url}/tools`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: 2,
+          method: "tools/list",
+          params: {},
+        }),
+      });
+
+      if (!toolsListResponse.ok) {
+        const text = await toolsListResponse.text();
+        throw new Error(
+          `MCP tools/list failed: ${toolsListResponse.status}: ${text}`,
+        );
+      }
+
+      const toolsListData = await toolsListResponse.json();
+      console.log("MCP tools/list response:", JSON.stringify(toolsListData));
+
+      // Verify response structure
+      expect(toolsListData.jsonrpc).to.equal("2.0");
+      expect(toolsListData.id).to.equal(2);
+      expect(toolsListData.result).to.exist;
+      expect(toolsListData.result.tools).to.be.an("array");
+
+      // Verify query_clickhouse tool exists
+      const queryTool = toolsListData.result.tools.find(
+        (t: any) => t.name === "query_clickhouse",
+      );
+      expect(queryTool).to.exist;
+      expect(queryTool.description).to.be.a("string");
+      expect(queryTool.inputSchema).to.exist;
+
+      console.log("✅ MCP server endpoints verified successfully");
+    });
+
+    it("should execute query_clickhouse tool", async function () {
+      this.timeout(TIMEOUTS.TEST_SETUP_MS);
+
+      // Call the query_clickhouse tool
+      const toolCallResponse = await fetch(`${SERVER_CONFIG.url}/tools`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: 3,
+          method: "tools/call",
+          params: {
+            name: "query_clickhouse",
+            arguments: {
+              query: "SELECT 1 as test",
+            },
+          },
+        }),
+      });
+
+      if (!toolCallResponse.ok) {
+        const text = await toolCallResponse.text();
+        throw new Error(
+          `MCP tool call failed: ${toolCallResponse.status}: ${text}`,
+        );
+      }
+
+      const toolCallData = await toolCallResponse.json();
+      console.log("MCP tool call response:", JSON.stringify(toolCallData));
+
+      // Verify response structure
+      expect(toolCallData.jsonrpc).to.equal("2.0");
+      expect(toolCallData.id).to.equal(3);
+      expect(toolCallData.result).to.exist;
+      expect(toolCallData.result.content).to.be.an("array");
+      expect(toolCallData.result.content.length).to.be.greaterThan(0);
+
+      // Verify the content contains query results
+      const textContent = toolCallData.result.content.find(
+        (c: any) => c.type === "text",
+      );
+      expect(textContent).to.exist;
+      expect(textContent.text).to.be.a("string");
+
+      console.log("✅ MCP query_clickhouse tool executed successfully");
+    });
+  });
 });
 
 // Global cleanup to ensure no hanging processes
