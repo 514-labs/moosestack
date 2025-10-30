@@ -87,13 +87,21 @@ impl EventBuckets {
             // (e.g., during Python startup when importing modules)
             EventKind::Access(_)
             | EventKind::Modify(ModifyKind::Metadata(_))
-            | EventKind::Modify(ModifyKind::Any) => return,
+            | EventKind::Modify(ModifyKind::Any) => {
+                info!("Filtered out Modify(Any) event kind: {:?}", event.kind);
+                return;
+            }
             EventKind::Any
             | EventKind::Create(_)
             | EventKind::Modify(_)
             | EventKind::Remove(_)
             | EventKind::Other => {}
         };
+
+        info!(
+            "Watcher received event: kind={:?}, paths={:?}",
+            event.kind, event.paths
+        );
 
         for path in event.paths {
             if !path.ext_is_supported_lang() {
