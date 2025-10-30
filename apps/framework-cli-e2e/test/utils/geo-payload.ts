@@ -2,7 +2,7 @@ import { TEST_DATA } from "../constants";
 
 export const geoPayloadPy = (id: string) => ({
   id,
-  timestamp: new Date(TEST_DATA.TIMESTAMP * 1000).toISOString(),
+  timestamp: new Date(TEST_DATA.TIMESTAMP).toISOString(),
   point: [10, 20],
   ring: [
     [10, 20],
