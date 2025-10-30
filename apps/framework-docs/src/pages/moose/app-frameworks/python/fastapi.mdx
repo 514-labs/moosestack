@@ -1,0 +1,569 @@
+---
+title: FastAPI with MooseStack
+description: Use FastAPI framework with MooseStack
+---
+
+import { Callout } from "@/components";
+
+# FastAPI with MooseStack
+
+Mount FastAPI applications within your Moose project using the `WebApp` class. FastAPI is a modern, fast Python framework with automatic API documentation and async support.
+
+## Basic Example
+
+```python filename="app/apis/fastapi_app.py" copy
+from fastapi import FastAPI, Request, HTTPException
+from moose_lib.dmv2 import WebApp, WebAppConfig, WebAppMetadata
+from moose_lib.dmv2.web_app_helpers import get_moose_utils
+from app.tables.my_table import MyTable
+
+app = FastAPI()
+
+@app.get("/health")
+async def health():
+    return {"status": "ok"}
+
+@app.get("/data")
+async def get_data(request: Request, limit: int = 10):
+    moose = get_moose_utils(request)
+    if not moose:
+        raise HTTPException(
+            status_code=500,
+            detail="Moose utilities not available"
+        )
+
+    try:
+        query = """
+            SELECT * FROM {table}
+            LIMIT {limit}
+        """
+
+        result = moose.client.query.execute(query, {
+            "table": MyTable,
+            "limit": limit
+        })
+
+        return {"success": True, "data": result}
+    except Exception as error:
+        raise HTTPException(status_code=500, detail=str(error))
+
+# Register as WebApp
+fastapi_app = WebApp(
+    "fastApiApp",
+    app,
+    WebAppConfig(
+        mount_path="/fastapi",
+        metadata=WebAppMetadata(description="FastAPI application")
+    )
+)
+```
+
+**Access your API:**
+- `GET http://localhost:4000/fastapi/health`
+- `GET http://localhost:4000/fastapi/data?limit=20`
+
+## Complete Example with Features
+
+```python filename="app/apis/advanced_fastapi_app.py" copy
+from fastapi import FastAPI, Request, HTTPException, Depends, BackgroundTasks
+from fastapi.responses import JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
+from moose_lib.dmv2 import WebApp, WebAppConfig, WebAppMetadata
+from moose_lib.dmv2.web_app_helpers import get_moose_utils, ApiUtil
+from app.tables.user_events import UserEvents
+from app.tables.user_profile import UserProfile
+from pydantic import BaseModel, Field
+from datetime import datetime
+from typing import Optional
+
+app = FastAPI(
+    title="Advanced API",
+    description="Advanced FastAPI application with MooseStack",
+    version="1.0.0"
+)
+
+# CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Custom middleware
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    start_time = datetime.now()
+    response = await call_next(request)
+    duration = (datetime.now() - start_time).total_seconds()
+    print(f"{request.method} {request.url.path} - {duration:.3f}s")
+    return response
+
+# Request/Response models
+class EventQuery(BaseModel):
+    limit: int = Field(10, ge=1, le=100)
+    event_type: Optional[str] = None
+
+class EventData(BaseModel):
+    event_type: str = Field(..., min_length=1)
+    data: dict
+
+class EventResponse(BaseModel):
+    id: str
+    event_type: str
+    timestamp: datetime
+
+# Health check
+@app.get("/health")
+async def health():
+    return {
+        "status": "ok",
+        "timestamp": datetime.now().isoformat()
+    }
+
+# GET with path and query parameters
+@app.get("/users/{user_id}/events", response_model=dict)
+async def get_user_events(
+    request: Request,
+    user_id: str,
+    limit: int = 10,
+    event_type: Optional[str] = None
+):
+    moose = get_moose_utils(request)
+    if not moose:
+        raise HTTPException(status_code=500, detail="Moose utilities not available")
+
+    query = """
+        SELECT
+            id,
+            event_type,
+            timestamp
+        FROM {table}
+        WHERE user_id = {user_id}
+        {event_filter}
+        ORDER BY timestamp DESC
+        LIMIT {limit}
+    """
+
+    event_filter = "AND event_type = {event_type}" if event_type else ""
+    params = {
+        "table": UserEvents,
+        "user_id": user_id,
+        "limit": limit
+    }
+    if event_type:
+        params["event_type"] = event_type
+
+    try:
+        result = moose.client.query.execute(
+            query.format(event_filter=event_filter),
+            params
+        )
+        return {
+            "user_id": user_id,
+            "count": len(result),
+            "events": result
+        }
+    except Exception as error:
+        raise HTTPException(status_code=500, detail=str(error))
+
+# POST with validated body
+@app.post("/users/{user_id}/events", status_code=201)
+async def create_event(
+    request: Request,
+    user_id: str,
+    body: EventData,
+    background_tasks: BackgroundTasks
+):
+    moose = get_moose_utils(request)
+    if not moose:
+        raise HTTPException(status_code=500, detail="Moose utilities not available")
+
+    # Background task
+    def log_event_creation(user_id: str, event_type: str):
+        print(f"Event created: {user_id} - {event_type}")
+
+    background_tasks.add_task(log_event_creation, user_id, body.event_type)
+
+    return {
+        "success": True,
+        "user_id": user_id,
+        "event_type": body.event_type,
+        "data": body.data
+    }
+
+# Protected endpoint with dependency injection
+async def require_auth(request: Request) -> ApiUtil:
+    moose = get_moose_utils(request)
+    if not moose or not moose.jwt:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    return moose
+
+@app.get("/protected")
+async def protected(moose: ApiUtil = Depends(require_auth)):
+    return {
+        "message": "Authenticated",
+        "user": moose.jwt.get("sub"),
+        "claims": moose.jwt
+    }
+
+# Admin endpoint with role check
+async def require_admin(moose: ApiUtil = Depends(require_auth)) -> ApiUtil:
+    role = moose.jwt.get("role")
+    if role != "admin":
+        raise HTTPException(status_code=403, detail="Forbidden")
+    return moose
+
+@app.get("/admin/stats")
+async def admin_stats(moose: ApiUtil = Depends(require_admin)):
+    return {"message": "Admin access granted"}
+
+# WebSocket support
+from fastapi import WebSocket
+
+@app.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket):
+    await websocket.accept()
+    try:
+        while True:
+            data = await websocket.receive_text()
+            await websocket.send_text(f"Echo: {data}")
+    except Exception:
+        await websocket.close()
+
+# Global exception handler
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    return JSONResponse(
+        status_code=500,
+        content={"error": "Internal Server Error", "message": str(exc)}
+    )
+
+# Register as WebApp
+fastapi_app = WebApp(
+    "advancedFastApi",
+    app,
+    WebAppConfig(
+        mount_path="/api/v1",
+        metadata=WebAppMetadata(
+            description="Advanced FastAPI application with middleware and dependencies"
+        )
+    )
+)
+```
+
+## WebApp Configuration
+
+```python
+WebApp(name, app, config)
+```
+
+**Parameters:**
+- `name` (str): Unique identifier for your WebApp
+- `app` (FastAPI): Your FastAPI application instance
+- `config` (WebAppConfig): Configuration object
+
+**WebAppConfig:**
+```python
+@dataclass
+class WebAppConfig:
+    mount_path: str                              # Required: URL path
+    metadata: Optional[WebAppMetadata] = None    # Optional: Documentation
+    inject_moose_utils: bool = True              # Optional: Inject utilities
+
+@dataclass
+class WebAppMetadata:
+    description: Optional[str] = None
+```
+
+## Accessing Moose Utilities
+
+### Direct Access
+
+```python
+from moose_lib.dmv2.web_app_helpers import get_moose_utils
+
+@app.get("/data")
+async def get_data(request: Request):
+    moose = get_moose_utils(request)
+    if not moose:
+        raise HTTPException(status_code=500, detail="Utilities not available")
+
+    client = moose.client
+    jwt = moose.jwt
+```
+
+### Dependency Injection
+
+<Callout type="info" title="Recommended Pattern">
+Use FastAPI's dependency injection for cleaner code:
+
+```python
+from moose_lib.dmv2.web_app_helpers import get_moose_dependency, ApiUtil
+from fastapi import Depends
+
+@app.get("/data")
+async def get_data(moose: ApiUtil = Depends(get_moose_dependency())):
+    # moose is automatically injected and guaranteed to exist
+    result = moose.client.query.execute(...)
+    return result
+```
+</Callout>
+
+## Middleware
+
+FastAPI middleware works seamlessly:
+
+```python
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
+from starlette.middleware.sessions import SessionMiddleware
+
+app = FastAPI()
+
+# CORS
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["https://example.com"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Compression
+app.add_middleware(GZipMiddleware, minimum_size=1000)
+
+# Sessions
+app.add_middleware(SessionMiddleware, secret_key="your-secret-key")
+
+# Custom middleware
+@app.middleware("http")
+async def add_custom_header(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["X-Custom-Header"] = "Value"
+    return response
+```
+
+## Dependency Patterns
+
+### Reusable Dependencies
+
+```python
+from fastapi import Depends, HTTPException
+from typing import Optional
+
+# Auth dependency
+async def get_current_user(moose: ApiUtil = Depends(get_moose_dependency())) -> dict:
+    if not moose.jwt:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+
+    user_id = moose.jwt.get("sub")
+    # Fetch user from database
+    return {"id": user_id}
+
+# Admin dependency
+async def require_admin_user(user: dict = Depends(get_current_user)) -> dict:
+    if user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Not authorized")
+    return user
+
+# Use dependencies
+@app.get("/user/profile")
+async def get_profile(user: dict = Depends(get_current_user)):
+    return user
+
+@app.get("/admin/dashboard")
+async def admin_dashboard(user: dict = Depends(require_admin_user)):
+    return {"message": f"Welcome admin {user['id']}"}
+```
+
+### Dependency Classes
+
+```python
+from fastapi import Depends
+
+class Pagination:
+    def __init__(self, page: int = 1, size: int = 10):
+        self.page = page
+        self.size = size
+        self.skip = (page - 1) * size
+
+@app.get("/users")
+async def list_users(
+    pagination: Pagination = Depends(),
+    moose: ApiUtil = Depends(get_moose_dependency())
+):
+    query = f"""
+        SELECT * FROM users
+        LIMIT {pagination.size}
+        OFFSET {pagination.skip}
+    """
+    result = moose.client.query.execute(query, {})
+    return result
+```
+
+## Request Validation
+
+FastAPI uses Pydantic for powerful validation:
+
+```python
+from pydantic import BaseModel, Field, validator
+from datetime import datetime
+from typing import Optional, Literal
+
+class UserEventCreate(BaseModel):
+    event_type: Literal["click", "view", "purchase"]
+    timestamp: datetime = Field(default_factory=datetime.now)
+    properties: dict = Field(default_factory=dict)
+    value: Optional[float] = Field(None, ge=0, le=1000000)
+
+    @validator('properties')
+    def validate_properties(cls, v):
+        if len(v) > 50:
+            raise ValueError('Too many properties')
+        return v
+
+@app.post("/events")
+async def create_event(
+    event: UserEventCreate,
+    moose: ApiUtil = Depends(get_moose_dependency())
+):
+    # event is fully validated
+    return {"success": True, "event": event}
+```
+
+## Background Tasks
+
+```python
+from fastapi import BackgroundTasks
+
+def send_notification(user_id: str, message: str):
+    # Expensive operation
+    print(f"Sending notification to {user_id}: {message}")
+
+@app.post("/notify/{user_id}")
+async def notify_user(
+    user_id: str,
+    message: str,
+    background_tasks: BackgroundTasks
+):
+    # Add task to run after response is sent
+    background_tasks.add_task(send_notification, user_id, message)
+    return {"message": "Notification queued"}
+```
+
+## Authentication with JWT
+
+```python
+# Manual check
+@app.get("/protected")
+async def protected(request: Request):
+    moose = get_moose_utils(request)
+    if not moose or not moose.jwt:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+    user_id = moose.jwt.get("sub")
+    return {"message": "Authenticated", "user_id": user_id}
+
+# Dependency pattern (recommended)
+async def require_auth(request: Request) -> ApiUtil:
+    moose = get_moose_utils(request)
+    if not moose or not moose.jwt:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    return moose
+
+@app.get("/protected")
+async def protected(moose: ApiUtil = Depends(require_auth)):
+    return {"message": "Authenticated", "user": moose.jwt.get("sub")}
+```
+
+See [Authentication documentation](/moose/apis/auth) for JWT configuration.
+
+## Best Practices
+
+1. **Use dependency injection**: Leverage `Depends()` for cleaner code
+2. **Validate with Pydantic**: Use `BaseModel` and `Field()` for validation
+3. **Use response models**: Specify `response_model` for automatic validation
+4. **Handle async properly**: Use `async def` for I/O operations
+5. **Add type hints**: FastAPI uses types for validation and documentation
+6. **Use background tasks**: For operations that don't need to complete before response
+7. **Document with docstrings**: FastAPI includes docstrings in OpenAPI docs
+8. **Organize with routers**: Split large applications into APIRouter instances
+
+## Router Organization
+
+```python filename="app/apis/routers/users.py"
+from fastapi import APIRouter, Depends
+from moose_lib.dmv2.web_app_helpers import get_moose_dependency, ApiUtil
+
+router = APIRouter(prefix="/users", tags=["users"])
+
+@router.get("/{user_id}")
+async def get_user(
+    user_id: str,
+    moose: ApiUtil = Depends(get_moose_dependency())
+):
+    return {"user_id": user_id}
+```
+
+```python filename="app/apis/main_app.py"
+from fastapi import FastAPI
+from moose_lib.dmv2 import WebApp, WebAppConfig
+from .routers import users
+
+app = FastAPI()
+
+# Include routers
+app.include_router(users.router)
+
+webapp = WebApp("mainApp", app, WebAppConfig(mount_path="/api"))
+```
+
+## Troubleshooting
+
+### "Moose utilities not available"
+
+**Solution:** Verify `inject_moose_utils` is enabled (default):
+```python
+WebAppConfig(mount_path="/myapi", inject_moose_utils=True)
+```
+
+### Routes not responding
+
+**Solution:** Pass the FastAPI app instance, not a router:
+```python
+# Correct
+app = FastAPI()
+webapp = WebApp("name", app, config)
+
+# Incorrect
+router = APIRouter()
+webapp = WebApp("name", router, config)  # Won't work
+```
+
+### Dependency injection errors
+
+**Solution:** Ensure dependencies return correct types:
+```python
+# Correct
+async def get_moose(request: Request) -> ApiUtil:
+    moose = get_moose_utils(request)
+    if not moose:
+        raise HTTPException(500, "Not available")
+    return moose  # Return ApiUtil
+
+# Usage
+@app.get("/")
+async def handler(moose: ApiUtil = Depends(get_moose)):
+    # moose is ApiUtil type
+    pass
+```
+
+## Next Steps
+
+- [Native Python APIs](/moose/app-frameworks/python/native) - Simple GET endpoints
+- [TypeScript Frameworks](/moose/app-frameworks/typescript) - Express, Fastify, Koa
+- [Authentication](/moose/apis/auth) - Secure your APIs with JWT
+- [Python Frameworks](/moose/app-frameworks/python) - Compare all options

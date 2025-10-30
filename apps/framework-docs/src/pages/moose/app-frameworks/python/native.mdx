@@ -1,0 +1,373 @@
+---
+title: Native Python APIs
+description: Use Moose's built-in Api class for Python
+---
+
+import { Callout } from "@/components";
+
+# Native Python APIs
+
+The `Api` class provides simple, type-safe GET endpoints for querying your OLAP database with automatic Pydantic validation.
+
+## Basic Example
+
+```python filename="app/apis/example_api.py" copy
+from moose_lib import Api, MooseClient
+from pydantic import BaseModel
+from app.datamodels.source_pipeline import SourcePipeline
+
+# Define query parameters
+class QueryParams(BaseModel):
+    filter_field: str
+    max_results: int
+
+# Define response type
+class ResultItem(BaseModel):
+    id: int
+    name: str
+    value: float
+
+SourceTable = SourcePipeline.get_table()
+
+# Define query function
+def run(client: MooseClient, params: QueryParams) -> list[ResultItem]:
+    query = """
+    SELECT
+      id,
+      name,
+      value
+    FROM {table}
+    WHERE category = {category}
+    LIMIT {limit}
+    """
+
+    return client.query.execute(query, {
+        "table": SourceTable,
+        "category": params.filter_field,
+        "limit": params.max_results
+    })
+
+# Create the API
+example_api = Api[QueryParams, ResultItem](
+    name="example_endpoint",
+    query_function=run
+)
+```
+
+## Accessing the API
+
+Once deployed, your API is accessible at:
+
+```
+GET http://localhost:4000/api/example_endpoint?filter_field=value&max_results=10
+```
+
+The endpoint name becomes part of the URL path, and query parameters are passed as URL parameters.
+
+## Key Features
+
+### Automatic Pydantic Validation
+
+Query parameters are automatically validated against the Pydantic model:
+
+```python
+class QueryParams(BaseModel):
+    filter_field: str              # Required string
+    max_results: int               # Required integer
+    optional_flag: bool = False    # Optional boolean with default
+
+    @validator('max_results')
+    def validate_max_results(cls, v):
+        if v > 1000:
+            raise ValueError('max_results cannot exceed 1000')
+        return v
+```
+
+Invalid types or validation failures will return a 400 error with details.
+
+### Safe Query Parameterization
+
+Use dictionary-style parameter binding for safe queries:
+
+```python
+query = """
+    SELECT id, name
+    FROM {table}
+    WHERE status = {status}
+    LIMIT {limit}
+"""
+
+client.query.execute(query, {
+    "table": UserTable,
+    "status": status,
+    "limit": limit
+})
+```
+
+This prevents SQL injection while allowing table and value interpolation.
+
+### Automatic OpenAPI Documentation
+
+Your API is automatically documented and available in the Moose admin interface. No additional configuration needed.
+
+### Managed Database Connections
+
+The `MooseClient` is automatically provided and connection lifecycle is managed for you.
+
+## Advanced Example
+
+```python filename="app/apis/user_analytics_api.py" copy
+from moose_lib import Api, MooseClient
+from pydantic import BaseModel, Field, validator
+from datetime import datetime
+from typing import Optional
+from app.tables.user_events import UserEvents
+from app.tables.user_profile import UserProfile
+
+class AnalyticsParams(BaseModel):
+    user_id: str = Field(..., min_length=1, max_length=100)
+    start_date: str = Field(..., pattern=r'^\d{4}-\d{2}-\d{2}$')
+    end_date: str = Field(..., pattern=r'^\d{4}-\d{2}-\d{2}$')
+    event_type: Optional[str] = None
+
+    @validator('end_date')
+    def end_after_start(cls, v, values):
+        if 'start_date' in values and v < values['start_date']:
+            raise ValueError('end_date must be after start_date')
+        return v
+
+class TopEvent(BaseModel):
+    event_type: str
+    count: int
+
+class AnalyticsResult(BaseModel):
+    user_id: str
+    user_name: str
+    total_events: int
+    unique_days: int
+    top_events: list[TopEvent]
+
+def query_user_analytics(
+    client: MooseClient,
+    params: AnalyticsParams
+) -> AnalyticsResult:
+    # Query event statistics
+    events_query = """
+        SELECT
+            user_id,
+            count(*) as total_events,
+            uniqExact(toDate(timestamp)) as unique_days
+        FROM {events_table}
+        WHERE user_id = {user_id}
+          AND timestamp BETWEEN {start_date} AND {end_date}
+          {event_filter}
+        GROUP BY user_id
+    """
+
+    event_filter = ""
+    query_params = {
+        "events_table": UserEvents,
+        "user_id": params.user_id,
+        "start_date": params.start_date,
+        "end_date": params.end_date
+    }
+
+    if params.event_type:
+        event_filter = "AND event_type = {event_type}"
+        query_params["event_type"] = params.event_type
+
+    events_data = client.query.execute(
+        events_query.format(event_filter=event_filter),
+        query_params
+    )
+
+    # Query top events
+    top_events_query = """
+        SELECT
+            event_type,
+            count(*) as count
+        FROM {events_table}
+        WHERE user_id = {user_id}
+          AND timestamp BETWEEN {start_date} AND {end_date}
+        GROUP BY event_type
+        ORDER BY count DESC
+        LIMIT 5
+    """
+
+    top_events_data = client.query.execute(top_events_query, query_params)
+
+    # Query user profile
+    user_query = """
+        SELECT name as user_name
+        FROM {profile_table}
+        WHERE id = {user_id}
+    """
+
+    user_data = client.query.execute(user_query, {
+        "profile_table": UserProfile,
+        "user_id": params.user_id
+    })
+
+    return AnalyticsResult(
+        user_id=params.user_id,
+        user_name=user_data[0]["user_name"] if user_data else "Unknown",
+        total_events=events_data[0]["total_events"] if events_data else 0,
+        unique_days=events_data[0]["unique_days"] if events_data else 0,
+        top_events=[
+            TopEvent(event_type=e["event_type"], count=e["count"])
+            for e in top_events_data
+        ]
+    )
+
+# Create the API
+user_analytics_api = Api[AnalyticsParams, AnalyticsResult](
+    name="user_analytics",
+    query_function=query_user_analytics
+)
+```
+
+## Configuration
+
+### Api Constructor
+
+```python
+Api[QueryParams, ResponseType](name, query_function)
+```
+
+**Type Parameters:**
+- `QueryParams`: Pydantic model for query parameter validation
+- `ResponseType`: Pydantic model or primitive type for response
+
+**Parameters:**
+- `name` (str): Endpoint name, becomes `/api/{name}` in URL
+- `query_function`: Function that receives client and params
+
+**Query Function Signature:**
+```python
+def query_function(
+    client: MooseClient,
+    params: QueryParams
+) -> ResponseType:
+    ...
+```
+
+## Best Practices
+
+1. **Use Pydantic models**: Define clear validation for parameters and responses
+2. **Add field validators**: Use `@validator` for custom validation logic
+3. **Use Field constraints**: Leverage `Field()` for min/max, patterns, etc.
+4. **Parameterize queries safely**: Always use dictionary-style parameter binding
+5. **Handle empty results**: Check for empty lists before accessing indexes
+6. **Use type hints**: Specify return types for better IDE support
+7. **Keep queries focused**: One API per use case
+8. **Document with docstrings**: Add docstrings for better API documentation
+
+## Error Handling
+
+```python
+from moose_lib import Api, MooseClient
+from pydantic import BaseModel, validator
+
+class SafeParams(BaseModel):
+    limit: int
+
+    @validator('limit')
+    def validate_limit(cls, v):
+        if v > 1000:
+            raise ValueError('Limit cannot exceed 1000')
+        if v < 1:
+            raise ValueError('Limit must be at least 1')
+        return v
+
+def safe_query(client: MooseClient, params: SafeParams) -> list[dict]:
+    try:
+        query = "SELECT * FROM {table} LIMIT {limit}"
+        result = client.query.execute(query, {
+            "table": MyTable,
+            "limit": params.limit
+        })
+        return result
+    except Exception as error:
+        # Log error
+        print(f"Database query failed: {error}")
+        # Re-raise or return empty
+        raise RuntimeError("Failed to fetch data")
+
+safe_api = Api[SafeParams, list[dict]](
+    name="safe_endpoint",
+    query_function=safe_query
+)
+```
+
+## Pydantic Advanced Features
+
+### Field Validation
+
+```python
+from pydantic import BaseModel, Field, validator
+from datetime import datetime
+
+class AdvancedParams(BaseModel):
+    # Constrained types
+    user_id: str = Field(..., min_length=1, max_length=50, pattern=r'^[a-zA-Z0-9_]+$')
+    limit: int = Field(10, ge=1, le=100)  # Between 1 and 100, default 10
+    email: str = Field(..., regex=r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$')
+
+    # Custom validator
+    @validator('user_id')
+    def validate_user_id(cls, v):
+        if v.startswith('_'):
+            raise ValueError('user_id cannot start with underscore')
+        return v
+
+    # Dependent validation
+    @validator('limit')
+    def validate_limit_with_context(cls, v, values):
+        # Access other fields during validation
+        if 'user_id' in values and values['user_id'] == 'admin' and v > 50:
+            raise ValueError('Admin users limited to 50 results')
+        return v
+```
+
+### Computed Fields
+
+```python
+from pydantic import BaseModel, computed_field
+
+class SmartParams(BaseModel):
+    page: int = Field(1, ge=1)
+    page_size: int = Field(10, ge=1, le=100)
+
+    @computed_field
+    @property
+    def offset(self) -> int:
+        return (self.page - 1) * self.page_size
+
+    @computed_field
+    @property
+    def limit(self) -> int:
+        return self.page_size
+```
+
+## When to Use Native APIs
+
+**Ideal for:**
+- Simple GET endpoints with query parameters
+- Analytics and reporting endpoints
+- Data export APIs
+- Admin dashboards
+- Internal tools
+
+**Not ideal for:**
+- Complex routing (use FastAPI)
+- POST/PUT/DELETE operations (use FastAPI)
+- File uploads (use FastAPI)
+- WebSocket connections (use FastAPI)
+- Custom middleware requirements (use FastAPI)
+
+## Next Steps
+
+- [FastAPI](/moose/app-frameworks/python/fastapi) - For advanced routing and middleware
+- [Authentication](/moose/apis/auth) - Secure your APIs with JWT
+- [Analytics APIs Deep Dive](/moose/apis/analytics-api) - Comprehensive Api class documentation
+- [Python Frameworks](/moose/app-frameworks/python) - Compare all options

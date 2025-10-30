@@ -20,9 +20,6 @@ const rawMeta = {
   "openapi-sdk": {
     title: "OpenAPI SDK",
   },
-  "bring-your-own-api-framework": {
-    title: "Bring Your Own API Framework",
-  },
   "admin-api": {
     title: "Admin APIs",
     display: "hidden",

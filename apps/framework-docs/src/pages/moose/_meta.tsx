@@ -58,6 +58,14 @@ const rawMeta = {
     title: "In Your Stack",
     Icon: FileStack,
   },
+  __moosestack_in_your_app__: {
+    type: "separator",
+    title: "MooseStack in Your App",
+  },
+  "app-frameworks": {
+    title: "App / API Frameworks",
+    Icon: Code,
+  },
   __modules__: {
     type: "separator",
     title: "Modules",

@@ -1,0 +1,272 @@
+---
+title: Native TypeScript APIs
+description: Use Moose's built-in Api class for TypeScript
+---
+
+import { Callout } from "@/components";
+
+# Native TypeScript APIs
+
+The `Api` class provides simple, type-safe GET endpoints for querying your OLAP database.
+
+## Basic Example
+
+```ts filename="app/apis/ExampleApi.ts" copy
+import { Api } from "@514labs/moose-lib";
+import { SourcePipeline } from "../datamodels/SourcePipeline";
+
+// Define query parameters
+interface QueryParams {
+  filterField: string;
+  maxResults: number;
+}
+
+// Define response type
+interface ResultItem {
+  id: number;
+  name: string;
+  value: number;
+}
+
+const SourceTable = SourcePipeline.table!;
+const cols = SourceTable.columns;
+
+// Create the API
+export const exampleApi = new Api<QueryParams, ResultItem[]>("example_endpoint",
+  async ({ filterField, maxResults }: QueryParams, { client, sql }) => {
+    const query = sql`
+      SELECT
+        ${cols.id},
+        ${cols.name},
+        ${cols.value}
+      FROM ${SourceTable}
+      WHERE category = ${filterField}
+      LIMIT ${maxResults}`;
+
+    const resultSet = await client.query.execute<ResultItem>(query);
+    return await resultSet.json();
+  }
+);
+```
+
+## Accessing the API
+
+Once deployed, your API is accessible at:
+
+```
+GET http://localhost:4000/api/example_endpoint?filterField=value&maxResults=10
+```
+
+The endpoint name becomes part of the URL path, and query parameters are passed as URL parameters.
+
+## Key Features
+
+### Automatic Type Validation
+
+Query parameters are automatically validated against the `QueryParams` interface:
+
+```ts
+interface QueryParams {
+  filterField: string;     // Required string
+  maxResults: number;      // Required number
+  optional?: boolean;      // Optional boolean
+}
+```
+
+Invalid types or missing required parameters will return a 400 error with details.
+
+### Type-Safe SQL Queries
+
+Use the `sql` template tag for safe, type-checked queries:
+
+```ts
+const query = sql`
+  SELECT ${cols.id}, ${cols.name}
+  FROM ${SourceTable}
+  WHERE ${cols.status} = ${status}
+  LIMIT ${limit}
+`;
+```
+
+The `sql` tag:
+- Prevents SQL injection
+- Provides autocomplete for table and column names
+- Type-checks your query at compile time
+
+### Automatic OpenAPI Documentation
+
+Your API is automatically documented and available in the Moose admin interface. No additional configuration needed.
+
+### Managed Database Connections
+
+The `client` is automatically provided and connection lifecycle is managed for you. No need to handle connection pools or cleanup.
+
+## Advanced Example
+
+```ts filename="app/apis/UserAnalyticsApi.ts" copy
+import { Api } from "@514labs/moose-lib";
+import { UserEvents } from "../tables/UserEvents";
+import { UserProfile } from "../tables/UserProfile";
+
+interface AnalyticsParams {
+  userId: string;
+  startDate: string;
+  endDate: string;
+  eventType?: string;
+}
+
+interface AnalyticsResult {
+  userId: string;
+  userName: string;
+  totalEvents: number;
+  uniqueDays: number;
+  topEvents: { eventType: string; count: number }[];
+}
+
+export const userAnalyticsApi = new Api<AnalyticsParams, AnalyticsResult>(
+  "user-analytics",
+  async ({ userId, startDate, endDate, eventType }, { client, sql }) => {
+    // Join multiple tables with aggregations
+    const eventsQuery = sql`
+      SELECT
+        ${UserEvents.columns.user_id} as userId,
+        count(*) as totalEvents,
+        countDistinct(toDate(${UserEvents.columns.timestamp})) as uniqueDays
+      FROM ${UserEvents}
+      WHERE ${UserEvents.columns.user_id} = ${userId}
+        AND ${UserEvents.columns.timestamp} BETWEEN ${startDate} AND ${endDate}
+        ${eventType ? sql`AND ${UserEvents.columns.event_type} = ${eventType}` : sql``}
+      GROUP BY ${UserEvents.columns.user_id}
+    `;
+
+    const topEventsQuery = sql`
+      SELECT
+        ${UserEvents.columns.event_type} as eventType,
+        count(*) as count
+      FROM ${UserEvents}
+      WHERE ${UserEvents.columns.user_id} = ${userId}
+        AND ${UserEvents.columns.timestamp} BETWEEN ${startDate} AND ${endDate}
+      GROUP BY ${UserEvents.columns.event_type}
+      ORDER BY count DESC
+      LIMIT 5
+    `;
+
+    const userQuery = sql`
+      SELECT ${UserProfile.columns.name} as userName
+      FROM ${UserProfile}
+      WHERE ${UserProfile.columns.id} = ${userId}
+    `;
+
+    const [eventsResult, topEventsResult, userResult] = await Promise.all([
+      client.query.execute(eventsQuery),
+      client.query.execute(topEventsQuery),
+      client.query.execute(userQuery),
+    ]);
+
+    const eventsData = await eventsResult.json();
+    const topEvents = await topEventsResult.json();
+    const userData = await userResult.json();
+
+    return {
+      userId,
+      userName: userData[0]?.userName || "Unknown",
+      totalEvents: eventsData[0]?.totalEvents || 0,
+      uniqueDays: eventsData[0]?.uniqueDays || 0,
+      topEvents,
+    };
+  }
+);
+```
+
+## Configuration
+
+### Api Constructor
+
+```ts
+new Api<QueryParams, ResponseType>(name, queryFunction)
+```
+
+**Parameters:**
+- `name` (string): Endpoint name, becomes `/api/{name}` in URL
+- `queryFunction`: Async function that receives params and utilities
+
+**Query Function Signature:**
+```ts
+async (
+  params: QueryParams,
+  utilities: { client: MooseClient; sql: SqlTag; jwt?: JwtPayload }
+) => ResponseType
+```
+
+### Available Utilities
+
+**`client`**: MooseClient instance for database queries
+```ts
+const result = await client.query.execute(query);
+const data = await result.json();
+```
+
+**`sql`**: Template tag for safe SQL queries
+```ts
+const query = sql`SELECT * FROM ${table} WHERE id = ${id}`;
+```
+
+**`jwt`**: Parsed JWT payload (when authentication is configured)
+```ts
+const userId = utilities.jwt?.sub;
+```
+
+## Best Practices
+
+1. **Use TypeScript interfaces**: Define clear types for parameters and responses
+2. **Leverage sql template tag**: Always use `sql` tag for queries to prevent injection
+3. **Reference table columns**: Use `Table.columns.columnName` for autocomplete and safety
+4. **Handle errors**: Wrap database queries in try-catch for custom error handling
+5. **Keep queries focused**: One API per use case, avoid overly complex queries
+6. **Use async/await**: Always await database operations
+7. **Validate business logic**: Check for valid data beyond type validation
+
+## Error Handling
+
+```ts
+export const safeApi = new Api<Params, Response>("safe-endpoint",
+  async (params, { client, sql }) => {
+    // Validate business logic
+    if (params.limit > 1000) {
+      throw new Error("Limit cannot exceed 1000");
+    }
+
+    try {
+      const query = sql`SELECT * FROM ${table} LIMIT ${params.limit}`;
+      const result = await client.query.execute(query);
+      return await result.json();
+    } catch (error) {
+      console.error("Database query failed:", error);
+      throw new Error("Failed to fetch data");
+    }
+  }
+);
+```
+
+## When to Use Native APIs
+
+**Ideal for:**
+- Simple GET endpoints with query parameters
+- Analytics and reporting endpoints
+- Data export APIs
+- Admin dashboards
+- Internal tools
+
+**Not ideal for:**
+- Complex routing (use Express, Koa, etc.)
+- POST/PUT/DELETE operations (use custom frameworks)
+- File uploads (use custom frameworks)
+- WebSocket connections (use custom frameworks)
+- Custom middleware requirements (use custom frameworks)
+
+## Next Steps
+
+- [Express Framework](/moose/app-frameworks/typescript/express) - For complex routing and middleware
+- [Authentication](/moose/apis/auth) - Secure your APIs with JWT
+- [Analytics APIs Deep Dive](/moose/apis/analytics-api) - Comprehensive Api class documentation
+- [TypeScript Frameworks](/moose/app-frameworks/typescript) - Compare all options
