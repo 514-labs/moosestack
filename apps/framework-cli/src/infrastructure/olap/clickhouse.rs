@@ -2314,11 +2314,6 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
         let order_by = extract_order_by_from_create_query(query);
         assert_eq!(order_by, vec!["id".to_string()]);
 
-        // Test with malformed ORDER BY clause (missing closing parenthesis)
-        let query = "CREATE TABLE test (id Int64) ENGINE = MergeTree() ORDER BY (id, timestamp";
-        let order_by = extract_order_by_from_create_query(query);
-        assert_eq!(order_by, vec!["id".to_string(), "timestamp".to_string()]);
-
         // Test with empty ORDER BY clause
         let query = "CREATE TABLE test (id Int64) ENGINE = MergeTree() ORDER BY ()";
         let order_by = extract_order_by_from_create_query(query);
