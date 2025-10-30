@@ -22,6 +22,7 @@ import { TIMEOUTS, TEMPLATE_NAMES, APP_NAMES } from "./constants";
 
 import {
   waitForServerStart,
+  waitForStreamingFunctions,
   createTempTestDirectory,
   setupTypeScriptProject,
   setupPythonProject,
@@ -78,6 +79,10 @@ describe("typescript template tests - S3 Engine Runtime Environment Variable Res
         "started successfully",
         "http://localhost:4000",
       );
+
+      console.log("Server started, waiting for streaming functions...");
+      await waitForStreamingFunctions();
+      console.log("All components ready");
     });
 
     after(async function () {
@@ -149,6 +154,10 @@ describe("python template tests - S3 Engine Runtime Environment Variable Resolut
         "started successfully",
         "http://localhost:4000",
       );
+
+      console.log("Server started, waiting for streaming functions...");
+      await waitForStreamingFunctions();
+      console.log("All components ready");
     });
 
     after(async function () {
