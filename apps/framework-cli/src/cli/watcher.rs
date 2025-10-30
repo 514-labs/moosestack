@@ -78,10 +78,14 @@ impl EventBuckets {
 
     /// Processes a file system event and tracks it if it's relevant.
     /// Only processes events that are relevant (create, modify, remove) and
-    /// ignores metadata changes and access events.
+    /// ignores metadata changes, access events, and spurious modify events.
     pub fn insert(&mut self, event: Event) {
         match event.kind {
             EventKind::Access(_) | EventKind::Modify(ModifyKind::Metadata(_)) => return,
+            // Filter out ModifyKind::Any - these are spurious "something happened" events
+            // that can be triggered by multiple processes opening files simultaneously
+            // (e.g., during Python startup when importing modules)
+            EventKind::Modify(ModifyKind::Any) => return,
             EventKind::Any
             | EventKind::Create(_)
             | EventKind::Modify(_)
