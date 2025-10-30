@@ -17,9 +17,9 @@ def run_task(ctx: TaskContext[None]) -> None:
     # Use three fixed timestamps for E2E tests to add variability
     # while ensuring predictable results for consumption API tests
     timestamps = [
-        1739865600000,  # Feb 18, 2025 00:00:00 UTC (day 18 - should NOT appear in day 19 queries)
-        1739952000000,  # Feb 19, 2025 00:00:00 UTC (day 19 - the target day for tests)
-        1740038400000,  # Feb 20, 2025 00:00:00 UTC (day 20 - should NOT appear in day 19 queries)
+        1739865600,  # Feb 18, 2025 00:00:00 UTC (day 18 - should NOT appear in day 19 queries)
+        1739952000,  # Feb 19, 2025 00:00:00 UTC (day 19 - the target day for tests)
+        1740038400,  # Feb 20, 2025 00:00:00 UTC (day 20 - should NOT appear in day 19 queries)
     ]
 
     for i in range(1000):
