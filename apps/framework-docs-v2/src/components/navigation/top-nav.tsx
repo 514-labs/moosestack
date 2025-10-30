@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { Menu } from "lucide-react";
+import { IconHistory } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useState } from "react";
@@ -15,7 +16,11 @@ import {
   type DocumentationSection,
 } from "@/config/navigation";
 
-export function TopNav() {
+interface TopNavProps {
+  stars: number | null;
+}
+
+export function TopNav({ stars }: TopNavProps) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const { language } = useLanguage();
@@ -68,30 +73,39 @@ export function TopNav() {
 
           {/* Desktop Navigation */}
           <div className="hidden md:flex md:flex-1 md:items-center md:justify-between">
-            <nav className="flex items-center space-x-6 text-sm">
+            <nav className="flex items-center gap-2">
               {navItems.map((item) => {
                 const isActive = activeSection === item.section;
                 return (
-                  <Link
+                  <Button
                     key={item.section}
-                    href={item.external ? item.href : buildUrl(item.href)}
-                    target={item.external ? "_blank" : undefined}
-                    rel={item.external ? "noopener noreferrer" : undefined}
-                    className={cn(
-                      "transition-colors hover:text-foreground/80",
-                      isActive ?
-                        "text-foreground font-medium"
-                      : "text-foreground/60",
-                    )}
+                    variant={isActive ? "secondary" : "ghost"}
+                    size="sm"
+                    asChild
                   >
-                    {item.label}
-                  </Link>
+                    <Link
+                      href={item.external ? item.href : buildUrl(item.href)}
+                      target={item.external ? "_blank" : undefined}
+                      rel={item.external ? "noopener noreferrer" : undefined}
+                    >
+                      {item.label}
+                    </Link>
+                  </Button>
                 );
               })}
             </nav>
 
             <div className="flex items-center space-x-2">
-              <GitHubButtonGroup />
+              <Button variant="ghost" size="sm" asChild className="gap-2">
+                <Link
+                  href={buildUrl("/moosestack/changelog")}
+                  className="flex items-center gap-2"
+                >
+                  <IconHistory className="h-4 w-4" />
+                  <span>Changelog</span>
+                </Link>
+              </Button>
+              <GitHubButtonGroup stars={stars} />
               <ThemeToggle />
               <SidebarTrigger />
             </div>
@@ -113,20 +127,26 @@ export function TopNav() {
       {/* Mobile Menu */}
       {mobileMenuOpen && (
         <div className="md:hidden border-t">
-          <div className="px-4 py-4 space-y-4">
+          <div className="px-4 py-4 space-y-2">
             {navItems.map((item) => {
               const isActive = activeSection === item.section;
               return (
-                <Link
+                <Button
                   key={item.section}
-                  href={item.external ? item.href : buildUrl(item.href)}
-                  target={item.external ? "_blank" : undefined}
-                  rel={item.external ? "noopener noreferrer" : undefined}
-                  className={cn("block text-sm", isActive && "font-medium")}
-                  onClick={() => setMobileMenuOpen(false)}
+                  variant={isActive ? "secondary" : "ghost"}
+                  size="sm"
+                  asChild
+                  className="w-full justify-start"
                 >
-                  {item.label}
-                </Link>
+                  <Link
+                    href={item.external ? item.href : buildUrl(item.href)}
+                    target={item.external ? "_blank" : undefined}
+                    rel={item.external ? "noopener noreferrer" : undefined}
+                    onClick={() => setMobileMenuOpen(false)}
+                  >
+                    {item.label}
+                  </Link>
+                </Button>
               );
             })}
             <div className="flex items-center justify-center space-x-2 pt-2 border-t">
