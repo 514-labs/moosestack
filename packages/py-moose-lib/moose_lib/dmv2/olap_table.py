@@ -155,9 +155,10 @@ class OlapConfig(BaseModel):
         if self.engine:
             from ..blocks import S3Engine, S3QueueEngine, BufferEngine, DistributedEngine
 
-            # All non-MergeTree engines don't support ORDER BY
-            non_mergetree_engines = (S3Engine, S3QueueEngine, BufferEngine, DistributedEngine)
-            if isinstance(self.engine, non_mergetree_engines):
+            # S3QueueEngine, BufferEngine, and DistributedEngine don't support ORDER BY
+            # Note: S3Engine DOES support ORDER BY (unlike S3Queue)
+            engines_without_order_by = (S3QueueEngine, BufferEngine, DistributedEngine)
+            if isinstance(self.engine, engines_without_order_by):
                 engine_name = type(self.engine).__name__
 
                 if has_fields or has_expr:
@@ -165,6 +166,11 @@ class OlapConfig(BaseModel):
                         f"{engine_name} does not support ORDER BY clauses. "
                         f"Remove order_by_fields or order_by_expression from your configuration."
                     )
+
+            # All non-MergeTree engines don't support SAMPLE BY
+            engines_without_sample_by = (S3Engine, S3QueueEngine, BufferEngine, DistributedEngine)
+            if isinstance(self.engine, engines_without_sample_by):
+                engine_name = type(self.engine).__name__
 
                 if self.sample_by_expression:
                     raise ValueError(

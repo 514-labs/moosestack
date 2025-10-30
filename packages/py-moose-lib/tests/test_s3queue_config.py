@@ -291,18 +291,12 @@ def test_non_mergetree_engines_reject_unsupported_clauses():
     """Test that non-MergeTree engines reject unsupported ORDER BY and SAMPLE BY clauses."""
     from moose_lib.blocks import S3Engine, S3QueueEngine, BufferEngine, DistributedEngine
 
-    # Test S3Engine rejects ORDER BY
-    with pytest.raises(ValueError, match="S3Engine does not support ORDER BY clauses"):
-        OlapConfig(
-            engine=S3Engine(path="s3://bucket/file.json", format="JSONEachRow"),
-            order_by_fields=["id"]
-        )
-
-    with pytest.raises(ValueError, match="S3Engine does not support ORDER BY clauses"):
-        OlapConfig(
-            engine=S3Engine(path="s3://bucket/file.json", format="JSONEachRow"),
-            order_by_expression="(id, name)"
-        )
+    # Test S3Engine DOES support ORDER BY (should not raise)
+    config_s3_with_order_by = OlapConfig(
+        engine=S3Engine(path="s3://bucket/file.json", format="JSONEachRow"),
+        order_by_fields=["id"]
+    )
+    assert config_s3_with_order_by.order_by_fields == ["id"]
 
     # Test S3Engine rejects SAMPLE BY
     with pytest.raises(ValueError, match="S3Engine does not support SAMPLE BY clause"):

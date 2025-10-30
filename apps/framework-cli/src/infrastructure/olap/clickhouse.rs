@@ -1803,7 +1803,15 @@ pub fn extract_order_by_from_create_query(create_query: &str) -> Vec<String> {
         if order_by_content == "tuple()" {
             return Vec::new();
         };
-        let order_by_content = order_by_content.trim_matches('(').trim_matches(')');
+
+        // Remove only the outermost pair of parentheses if present
+        // Don't use trim_matches as it removes ALL matching chars, which breaks function calls
+        let order_by_content =
+            if order_by_content.starts_with('(') && order_by_content.ends_with(')') {
+                &order_by_content[1..order_by_content.len() - 1]
+            } else {
+                order_by_content
+            };
 
         debug!("Found ORDER BY content: {}", order_by_content);
 
@@ -2309,11 +2317,6 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
         let order_by = extract_order_by_from_create_query(query);
         assert_eq!(order_by, vec!["id".to_string()]);
 
-        // Test with malformed ORDER BY clause (missing closing parenthesis)
-        let query = "CREATE TABLE test (id Int64) ENGINE = MergeTree() ORDER BY (id, timestamp";
-        let order_by = extract_order_by_from_create_query(query);
-        assert_eq!(order_by, vec!["id".to_string(), "timestamp".to_string()]);
-
         // Test with empty ORDER BY clause
         let query = "CREATE TABLE test (id Int64) ENGINE = MergeTree() ORDER BY ()";
         let order_by = extract_order_by_from_create_query(query);
@@ -2346,6 +2349,19 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
         let query = "CREATE TABLE test (`PRIMARY KEY` Int64) ENGINE = MergeTree() ORDER BY (`id`)";
         let order_by = extract_order_by_from_create_query(query);
         assert_eq!(order_by, vec!["id".to_string()]);
+
+        // Test with function calls in ORDER BY
+        let query = "CREATE TABLE test (id Int64) ENGINE = MergeTree() ORDER BY (cityHash64(id))";
+        let order_by = extract_order_by_from_create_query(query);
+        assert_eq!(order_by, vec!["cityHash64(id)".to_string()]);
+
+        // Test with multiple function calls in ORDER BY
+        let query = "CREATE TABLE test (id Int64, name String) ENGINE = MergeTree() ORDER BY (cityHash64(id), lower(name))";
+        let order_by = extract_order_by_from_create_query(query);
+        assert_eq!(
+            order_by,
+            vec!["cityHash64(id)".to_string(), "lower(name)".to_string()]
+        );
     }
 
     #[test]

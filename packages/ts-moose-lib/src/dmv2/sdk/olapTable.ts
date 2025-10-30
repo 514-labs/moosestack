@@ -361,12 +361,10 @@ export type S3QueueConfig<T> = Omit<
 
 /**
  * Configuration for S3 engine
+ * Note: S3 engine supports ORDER BY clause, unlike S3Queue, Buffer, and Distributed engines
  * @template T The data type of the records stored in the table.
  */
-export type S3Config<T> = Omit<
-  BaseOlapConfig<T>,
-  "orderByFields" | "orderByExpression" | "sampleByExpression"
-> & {
+export type S3Config<T> = Omit<BaseOlapConfig<T>, "sampleByExpression"> & {
   engine: ClickHouseEngines.S3;
   /** S3 path (e.g., 's3://bucket/path/file.json') */
   path: string;
