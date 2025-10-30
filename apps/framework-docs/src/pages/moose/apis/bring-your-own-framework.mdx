@@ -1,0 +1,84 @@
+---
+title: Bring Your Own Framework
+description: Use your preferred web framework with MooseStack
+---
+
+import { Callout, CTACards, CTACard } from "@/components";
+
+# Bring Your Own Framework
+
+MooseStack provides flexible approaches for integrating with popular web frameworks, letting you leverage MooseStack's data infrastructure without being locked into a specific API pattern.
+
+## Overview
+
+Instead of using only Moose's built-in `Api` class, you can bring your own web framework:
+
+- **TypeScript**: Use Express, Koa, Fastify, or raw Node.js handlers
+- **Python**: Use FastAPI for full-featured web applications
+
+You can mount these frameworks within your Moose project (WebApp) or use MooseStack clients in external applications (getMooseClients for TypeScript).
+
+## When to Use BYOF
+
+Use Bring Your Own Framework when you need:
+
+- **Custom middleware**: Authentication, logging, rate limiting, request transformation
+- **Framework-specific features**: Plugins, extensions, routing patterns from your preferred framework
+- **Advanced HTTP features**: WebSockets, Server-Sent Events, file uploads, custom response handling
+- **Existing codebase integration**: Migrate existing endpoints into MooseStack or add MooseStack to existing apps
+- **Complex routing**: Dynamic routes, route groups, nested routers
+
+Stick with standard Moose `Api` when you need:
+
+- **Simple GET endpoints**: Query parameters with type validation and response formatting
+- **Automatic OpenAPI documentation**: Generated specs for all your endpoints
+- **Minimal setup**: Quick analytics endpoints without framework boilerplate
+
+## Language-Specific Documentation
+
+<CTACards>
+<CTACard
+  title="TypeScript"
+  description="Use Express, Koa, Fastify, or raw Node.js with WebApp. Use MooseStack clients in external apps with getMooseClients."
+  ctaLink="/moose/apis/bring-your-own-framework/typescript"
+  ctaLabel="TypeScript Guide →"
+  badge={{ variant: "moose", text: "TypeScript" }}
+/>
+<CTACard
+  title="Python"
+  description="Use FastAPI with WebApp for full-featured web applications with async support, dependency injection, and middleware."
+  ctaLink="/moose/apis/bring-your-own-framework/python"
+  ctaLabel="Python Guide →"
+  badge={{ variant: "moose", text: "Python" }}
+/>
+</CTACards>
+
+## Quick Comparison
+
+### WebApp (Framework in Moose)
+
+Available for both TypeScript and Python. Mount your framework within a Moose project:
+
+- MooseStack manages infrastructure lifecycle
+- Automatic database client injection
+- Built-in JWT authentication support
+- Coexists with standard Moose APIs
+- Framework runs on Moose's HTTP server
+
+### getMooseClients (Moose in Framework)
+
+Available for TypeScript only. Use MooseStack clients in external applications:
+
+- Self-managed infrastructure
+- Manual client initialization
+- Bring MooseStack to existing apps
+- Works outside Moose projects
+- Flexible configuration (code, env vars, moose.config.toml)
+
+---
+
+## Related Documentation
+
+- [Analytics APIs](/moose/apis/analytics-api) - Simple GET endpoints for data queries
+- [Authentication](/moose/apis/auth) - JWT configuration for securing APIs
+- [Configuration](/moose/configuration) - Infrastructure and service configuration
