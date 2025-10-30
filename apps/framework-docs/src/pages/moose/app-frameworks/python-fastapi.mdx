@@ -395,12 +395,15 @@ async def list_users(
     pagination: Pagination = Depends(),
     moose: ApiUtil = Depends(get_moose_dependency())
 ):
-    query = f"""
+    query = """
         SELECT * FROM users
-        LIMIT {pagination.size}
-        OFFSET {pagination.skip}
+        LIMIT {size}
+        OFFSET {skip}
     """
-    result = moose.client.query.execute(query, {})
+    result = moose.client.query.execute(query, {
+        "size": pagination.size,
+        "skip": pagination.skip
+    })
     return result
 ```
 

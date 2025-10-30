@@ -48,7 +48,7 @@ def run(client: MooseClient, params: QueryParams) -> list[ResultItem]:
     })
 
 # Create the API
-example_api = Api[QueryParams, ResultItem](
+example_api = Api[QueryParams, list[ResultItem]](
     name="example_endpoint",
     query_function=run
 )
