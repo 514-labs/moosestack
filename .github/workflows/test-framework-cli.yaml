@@ -554,6 +554,132 @@ jobs:
         run: |
           cat ~/.moose/*-cli.log
 
+  test-e2e-backward-compatibility-typescript:
+    needs:
+      [detect-changes, check, test-cli, test-ts-moose-lib, test-py-moose-lib]
+    if: needs.detect-changes.outputs.should_run == 'true'
+    name: Test E2E Backward Compatibility - TypeScript (Node 20)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      RUST_BACKTRACE: full
+    steps:
+      - name: Install Protoc (Needed for Temporal)
+        uses: arduino/setup-protoc@v3
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+          version: "23.x"
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - uses: pnpm/action-setup@v4
+
+      - name: Install node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: "pnpm"
+
+      - name: Get system info
+        id: system
+        run: |
+          echo "version=$(lsb_release -rs)" >> $GITHUB_OUTPUT
+          echo "distro=$(lsb_release -is)" >> $GITHUB_OUTPUT
+
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+          cache: true
+          cache-shared-key: ${{ runner.os }}-${{ steps.system.outputs.distro }}-${{ steps.system.outputs.version }}-${{ runner.arch }}-rust
+          cache-on-failure: true
+          cache-all-crates: true
+          cache-workspace-crates: true
+
+      - name: Run TypeScript Backward Compatibility Test
+        run: pnpm install --frozen-lockfile && pnpm --filter=framework-cli-e2e run test -- --grep "TypeScript Tests Template - Upgrade"
+        env:
+          MOOSE_TELEMETRY_ENABLED: false
+          # Add test credentials for S3Queue tests
+          TEST_AWS_ACCESS_KEY_ID: "test-access-key-id"
+          TEST_AWS_SECRET_ACCESS_KEY: "test-secret-access-key"
+
+      - name: Inspect Logs
+        if: always()
+        run: |
+          cat ~/.moose/*-cli.log
+
+  test-e2e-backward-compatibility-python:
+    needs:
+      [detect-changes, check, test-cli, test-ts-moose-lib, test-py-moose-lib]
+    if: needs.detect-changes.outputs.should_run == 'true'
+    name: Test E2E Backward Compatibility - Python (Node 20, Python 3.13)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      RUST_BACKTRACE: full
+    steps:
+      - name: Install Protoc (Needed for Temporal)
+        uses: arduino/setup-protoc@v3
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+          version: "23.x"
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - uses: pnpm/action-setup@v4
+
+      - name: Install node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: "pnpm"
+
+      - name: Get system info
+        id: system
+        run: |
+          echo "version=$(lsb_release -rs)" >> $GITHUB_OUTPUT
+          echo "distro=$(lsb_release -is)" >> $GITHUB_OUTPUT
+
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+          cache: true
+          cache-shared-key: ${{ runner.os }}-${{ steps.system.outputs.distro }}-${{ steps.system.outputs.version }}-${{ runner.arch }}-rust
+          cache-on-failure: true
+          cache-all-crates: true
+          cache-workspace-crates: true
+
+      - name: Setup Python 3.13 for E2E tests
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.13"
+
+      - name: Upgrade Python build tools
+        run: pip install --upgrade pip setuptools wheel
+
+      - name: Run Python Backward Compatibility Test
+        run: pnpm install --frozen-lockfile && pnpm --filter=framework-cli-e2e run test -- --grep "Python Tests Template - Upgrade"
+        env:
+          MOOSE_TELEMETRY_ENABLED: false
+          # Add test credentials for S3Queue tests
+          TEST_AWS_ACCESS_KEY_ID: "test-access-key-id"
+          TEST_AWS_SECRET_ACCESS_KEY: "test-secret-access-key"
+
+      - name: Inspect Logs
+        if: always()
+        run: |
+          cat ~/.moose/*-cli.log
+
   lints:
     needs: detect-changes
     if: needs.detect-changes.outputs.should_run == 'true'
@@ -614,6 +740,8 @@ jobs:
         test-e2e-typescript-tests,
         test-e2e-python-default,
         test-e2e-python-tests,
+        test-e2e-backward-compatibility-typescript,
+        test-e2e-backward-compatibility-python,
         lints,
       ]
     if: always()
@@ -641,6 +769,8 @@ jobs:
              [[ "${{ needs.test-e2e-typescript-tests.result }}" == "failure" ]] || \
              [[ "${{ needs.test-e2e-python-default.result }}" == "failure" ]] || \
              [[ "${{ needs.test-e2e-python-tests.result }}" == "failure" ]] || \
+             [[ "${{ needs.test-e2e-backward-compatibility-typescript.result }}" == "failure" ]] || \
+             [[ "${{ needs.test-e2e-backward-compatibility-python.result }}" == "failure" ]] || \
              [[ "${{ needs.lints.result }}" == "failure" ]]; then
             echo "One or more required jobs failed"
             exit 1
@@ -654,6 +784,8 @@ jobs:
              [[ "${{ needs.test-e2e-typescript-tests.result }}" == "success" ]] && \
              [[ "${{ needs.test-e2e-python-default.result }}" == "success" ]] && \
              [[ "${{ needs.test-e2e-python-tests.result }}" == "success" ]] && \
+             [[ "${{ needs.test-e2e-backward-compatibility-typescript.result }}" == "success" ]] && \
+             [[ "${{ needs.test-e2e-backward-compatibility-python.result }}" == "success" ]] && \
              [[ "${{ needs.lints.result }}" == "success" ]]; then
             echo "All required jobs succeeded"
             exit 0
