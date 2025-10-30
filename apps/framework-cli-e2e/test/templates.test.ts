@@ -35,8 +35,6 @@ import {
   waitForServerStart,
   waitForStreamingFunctions,
   waitForKafkaReady,
-  killRemainingProcesses,
-  globalDockerCleanup,
   cleanupClickhouseData,
   waitForDBWrite,
   waitForMaterializedViewUpdate,
@@ -47,7 +45,6 @@ import {
   verifyVersionedConsumptionApi,
   verifyConsumerLogs,
   createTempTestDirectory,
-  cleanupLeftoverTestDirectories,
   setupTypeScriptProject,
   setupPythonProject,
   getExpectedSchemas,
@@ -58,6 +55,7 @@ import {
   verifyWebAppQuery,
   verifyWebAppPostEndpoint,
   cleanupTestSuite,
+  performGlobalCleanup,
 } from "./utils";
 import { triggerWorkflow } from "./utils/workflow-utils";
 import { geoPayloadPy, geoPayloadTs } from "./utils/geo-payload";
@@ -1214,23 +1212,17 @@ describe("Moose Templates", () => {
   TEMPLATE_CONFIGS.forEach(createTemplateTestSuite);
 });
 
+// Global setup to clean Docker state from previous runs (useful for local dev)
+// Github hosted runners start with a clean slate.
+before(async function () {
+  this.timeout(TIMEOUTS.GLOBAL_CLEANUP_MS);
+  await performGlobalCleanup(
+    "Running global setup - cleaning Docker state from previous runs...",
+  );
+});
+
 // Global cleanup to ensure no hanging processes
 after(async function () {
   this.timeout(TIMEOUTS.GLOBAL_CLEANUP_MS);
-  console.log("Running global cleanup...");
-
-  try {
-    // Kill any remaining moose-cli processes
-    await killRemainingProcesses();
-
-    // Clean up any remaining Docker resources
-    await globalDockerCleanup();
-
-    // Clean up any leftover test directories
-    cleanupLeftoverTestDirectories();
-
-    console.log("Global cleanup completed");
-  } catch (error) {
-    console.warn("Error during global cleanup:", error);
-  }
+  await performGlobalCleanup();
 });
