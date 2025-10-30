@@ -81,11 +81,13 @@ impl EventBuckets {
     /// ignores metadata changes, access events, and spurious modify events.
     pub fn insert(&mut self, event: Event) {
         match event.kind {
-            EventKind::Access(_) | EventKind::Modify(ModifyKind::Metadata(_)) => return,
-            // Filter out ModifyKind::Any - these are spurious "something happened" events
-            // that can be triggered by multiple processes opening files simultaneously
+            // Filter out access events, metadata changes, and ModifyKind::Any.
+            // ModifyKind::Any are spurious "something happened" events that can be
+            // triggered by multiple processes opening files simultaneously
             // (e.g., during Python startup when importing modules)
-            EventKind::Modify(ModifyKind::Any) => return,
+            EventKind::Access(_)
+            | EventKind::Modify(ModifyKind::Metadata(_))
+            | EventKind::Modify(ModifyKind::Any) => return,
             EventKind::Any
             | EventKind::Create(_)
             | EventKind::Modify(_)
