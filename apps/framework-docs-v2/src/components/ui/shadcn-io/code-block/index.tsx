@@ -237,9 +237,11 @@ const wordHighlightClassNames = cn(
 );
 
 const codeBlockClassName = cn(
-  "mt-0 bg-background text-sm",
+  "mt-0 bg-transparent text-sm",
   "[&_pre]:py-4",
-  "[&_.shiki]:!bg-[var(--shiki-bg)]",
+  "[&_pre]:bg-transparent",
+  "[&_.shiki]:!bg-transparent",
+  "[&_.shiki]:[background:var(--shiki-bg)_!important]",
   "[&_code]:w-full",
   "[&_code]:grid",
   "[&_code]:overflow-x-auto",
@@ -291,7 +293,10 @@ export const CodeBlock = ({
   return (
     <CodeBlockContext.Provider value={{ value, onValueChange, data }}>
       <div
-        className={cn("size-full overflow-hidden rounded-md border", className)}
+        className={cn(
+          "size-full overflow-hidden rounded-lg border-0 bg-transparent",
+          className,
+        )}
         {...props}
       />
     </CodeBlockContext.Provider>

@@ -8,6 +8,8 @@ import {
   CodeBlockItem,
   CodeBlockContent,
 } from "@/components/ui/shadcn-io/code-block";
+import { CodeSnippet } from "./code-snippet";
+import { CodeEditorWrapper } from "./code-editor-wrapper";
 
 // Shell languages that should use Snippet component
 const SHELL_LANGUAGES = new Set([
@@ -25,6 +27,8 @@ interface MDXCodeBlockProps extends React.HTMLAttributes<HTMLPreElement> {
   "data-theme"?: string;
   "data-rehype-pretty-code-fragment"?: string;
   "data-rehype-pretty-code-title"?: string;
+  "data-filename"?: string;
+  "data-copy"?: string;
   children?: React.ReactNode;
 }
 
@@ -116,8 +120,34 @@ export function MDXPre({ children, ...props }: MDXCodeBlockProps) {
 
   const language = getLanguage(codeElement.props);
   const codeText = extractTextContent(codeElement.props.children).trim();
+  const filename =
+    props["data-rehype-pretty-code-title"] || props["data-filename"];
+  const hasCopy = props["data-copy"] !== undefined;
   const isShell = SHELL_LANGUAGES.has(language);
 
+  // Routing logic:
+  // 1. Shell languages with filename → Use CodeEditor (animated terminal)
+  // 2. Shell languages without filename → Use Snippet (copyable)
+  // 3. filename attribute + no copy → Use CodeEditor (animated, non-editable)
+  // 4. copy attribute → Use CodeSnippet (editable)
+  // 5. Default → Use CodeSnippet (editable by default)
+
+  // Shell commands with filename should be animated terminals
+  if (isShell && filename && !hasCopy) {
+    return (
+      <CodeEditorWrapper
+        code={codeText}
+        language={language}
+        filename={filename}
+        variant="terminal"
+        writing={true}
+        duration={3}
+        delay={0.3}
+      />
+    );
+  }
+
+  // Shell commands without filename should be copyable snippets
   if (isShell) {
     // Use Snippet for shell commands
     // Capitalize first letter for label
@@ -125,7 +155,7 @@ export function MDXPre({ children, ...props }: MDXCodeBlockProps) {
     return (
       <Snippet className="my-4">
         <SnippetTab value={language} label={label} copyText={codeText}>
-          <pre className="p-4 overflow-x-auto">
+          <pre className="p-4 overflow-x-auto bg-muted/30 rounded-md">
             <code className="text-sm font-mono whitespace-pre text-foreground">
               {codeText}
             </code>
@@ -135,42 +165,31 @@ export function MDXPre({ children, ...props }: MDXCodeBlockProps) {
     );
   }
 
-  // Use CodeBlock for language-specific code
-  // CodeBlock will handle syntax highlighting with Shiki (client-side)
+  // If filename is provided and no copy attribute, use animated CodeEditor
+  if (filename && !hasCopy) {
+    // Determine if this is a terminal based on language
+    const isTerminalLang = SHELL_LANGUAGES.has(language);
+    return (
+      <CodeEditorWrapper
+        code={codeText}
+        language={language || "typescript"}
+        filename={filename}
+        variant={isTerminalLang ? "terminal" : "ide"}
+        writing={true}
+        duration={isTerminalLang ? 3 : 5}
+        delay={isTerminalLang ? 0.3 : 0.5}
+      />
+    );
+  }
+
+  // Default to CodeSnippet for editable code blocks (with or without copy attribute)
   return (
-    <div className="my-4">
-      <CodeBlock
-        data={[
-          {
-            language: language || "typescript",
-            filename: "",
-            code: codeText,
-          },
-        ]}
-        defaultValue={language || "typescript"}
-      >
-        <CodeBlockBody>
-          {(item) => (
-            <CodeBlockItem
-              key={item.language}
-              value={item.language}
-              lineNumbers={true}
-            >
-              <CodeBlockContent
-                language={item.language as any}
-                themes={{
-                  light: "vitesse-light",
-                  dark: "vitesse-dark",
-                }}
-                syntaxHighlighting={true}
-              >
-                {item.code}
-              </CodeBlockContent>
-            </CodeBlockItem>
-          )}
-        </CodeBlockBody>
-      </CodeBlock>
-    </div>
+    <CodeSnippet
+      code={codeText}
+      language={language || "typescript"}
+      filename={filename}
+      copyButton={true}
+    />
   );
 }
 
@@ -191,7 +210,7 @@ export function MDXCode({ children, className, ...props }: MDXCodeProps) {
   // This is a code block - should normally be wrapped in pre by MDXPre
   // But handle it here as fallback
   const language = getLanguage({ className, ...props });
-  const codeText = extractTextContent(children);
+  const codeText = extractTextContent(children).trim();
   const isShell = SHELL_LANGUAGES.has(language);
 
   if (isShell) {
@@ -199,8 +218,8 @@ export function MDXCode({ children, className, ...props }: MDXCodeProps) {
     const label = language.charAt(0).toUpperCase() + language.slice(1);
     return (
       <Snippet className="my-4">
-        <SnippetTab value={language} label={label} copyText={codeText.trim()}>
-          <pre className="p-4 overflow-x-auto">
+        <SnippetTab value={language} label={label} copyText={codeText}>
+          <pre className="p-4 overflow-x-auto bg-muted/30 rounded-md">
             <code className="text-sm font-mono whitespace-pre text-foreground">
               {codeText}
             </code>
@@ -210,40 +229,12 @@ export function MDXCode({ children, className, ...props }: MDXCodeProps) {
     );
   }
 
-  // This is a code block without pre wrapper
+  // Default to CodeSnippet for editable code blocks
   return (
-    <div className="my-4">
-      <CodeBlock
-        data={[
-          {
-            language: language || "typescript",
-            filename: "",
-            code: codeText.trim(),
-          },
-        ]}
-        defaultValue={language || "typescript"}
-      >
-        <CodeBlockBody>
-          {(item) => (
-            <CodeBlockItem
-              key={item.language}
-              value={item.language}
-              lineNumbers={true}
-            >
-              <CodeBlockContent
-                language={item.language as any}
-                themes={{
-                  light: "vitesse-light",
-                  dark: "vitesse-dark",
-                }}
-                syntaxHighlighting={true}
-              >
-                {item.code}
-              </CodeBlockContent>
-            </CodeBlockItem>
-          )}
-        </CodeBlockBody>
-      </CodeBlock>
-    </div>
+    <CodeSnippet
+      code={codeText}
+      language={language || "typescript"}
+      copyButton={true}
+    />
   );
 }

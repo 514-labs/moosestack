@@ -10,6 +10,13 @@ import {
   Callout,
   LanguageTabs,
   LanguageTabContent,
+  ToggleBlock,
+  BulletPointsCard,
+  CompareBulletPointsCard,
+  ArgTable,
+  ZoomImg,
+  FeatureCard,
+  FeatureGrid,
 } from "@/components/mdx";
 import { MDXPre, MDXCode } from "@/components/mdx/code-block-wrapper";
 
@@ -26,6 +33,13 @@ export function useMDXComponents(components: MDXComponents): MDXComponents {
     Callout,
     LanguageTabs,
     LanguageTabContent,
+    ToggleBlock,
+    BulletPointsCard,
+    CompareBulletPointsCard,
+    ArgTable,
+    ZoomImg,
+    FeatureCard,
+    FeatureGrid,
     // Custom code block components
     pre: MDXPre,
     code: MDXCode,

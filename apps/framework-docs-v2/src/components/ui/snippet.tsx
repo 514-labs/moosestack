@@ -39,7 +39,7 @@ function SnippetTab({ value, label, copyText, children }: SnippetTabProps) {
   return (
     <div className="relative">
       <SnippetCopyButton copyText={copyText} />
-      <div className="overflow-hidden rounded-b-md bg-muted">{children}</div>
+      <div className="overflow-hidden rounded-b-md bg-muted/50">{children}</div>
     </div>
   );
 }
@@ -128,7 +128,7 @@ export function Snippet({ defaultValue, className, children }: SnippetProps) {
               </TabsTrigger>
             ))}
           </TabsList>
-          <div className="relative bg-muted">
+          <div className="relative bg-muted/50">
             <SnippetCopyButton copyText={copyText} />
             {tabs.map((tab) => (
               <TabsContent

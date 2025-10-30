@@ -2,12 +2,7 @@ import React from "react";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardFooter,
-} from "@/components/ui/card";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import {
   InfoIcon,
   Lightbulb,
@@ -30,31 +25,23 @@ interface CalloutProps {
 const calloutVariants = {
   success: {
     icon: PartyPopper,
-    color: "bg-muted/50",
-    border: "border-boreal-green/10",
+    variant: "success" as const,
     title: "Congrats!",
-    titleColor: "text-boreal-green/90",
   },
   info: {
     icon: InfoIcon,
-    color: "bg-muted/50",
-    border: "border",
+    variant: "default" as const,
     title: "MooseTip:",
-    titleColor: "text-primary",
   },
   warning: {
     icon: StopCircle,
-    color: "bg-muted/50",
-    border: "border-moose-yellow/20",
+    variant: "warning" as const,
     title: "Warning:",
-    titleColor: "text-primary",
   },
   danger: {
     icon: StopCircle,
-    color: "bg-muted/50",
-    border: "border-destructive/20",
+    variant: "destructive" as const,
     title: "Error:",
-    titleColor: "text-muted-foreground",
   },
 };
 
@@ -77,37 +64,23 @@ export function Callout({
       variantProps.icon
     : (icon as LucideIcon);
 
+  const displayTitle = title || variantProps.title;
+
   if (compact) {
     return (
-      <Card
-        className={cn(
-          "flex items-start my-2 p-3",
-          variantProps.color,
-          variantProps.border,
-          className,
-        )}
-      >
-        {icon && (
-          <div className="mr-3 bg-muted rounded-md p-2 shrink-0 flex items-center justify-center">
-            <Icon className={cn("h-4 w-4", variantProps.titleColor)} />
+      <Alert variant={variantProps.variant} className={cn("my-2", className)}>
+        {icon && <Icon className="h-4 w-4" />}
+        <div className="flex items-start justify-between gap-2">
+          <div className="flex-1 min-w-0">
+            {displayTitle && (
+              <AlertTitle className="mb-0.5 inline mr-1.5">
+                {displayTitle}
+              </AlertTitle>
+            )}
+            <AlertDescription className="inline">{children}</AlertDescription>
           </div>
-        )}
-        <CardContent className="flex-1 min-w-0 p-0">
-          <div>
-            <span
-              className={cn(
-                "text-sm font-medium mr-1.5",
-                variantProps.titleColor,
-              )}
-            >
-              {title || variantProps.title}
-            </span>
-            <span className="text-sm text-muted-foreground">{children}</span>
-          </div>
-        </CardContent>
-        {href && (
-          <CardFooter className="p-0 ml-2 self-center">
-            <Link href={href}>
+          {href && (
+            <Link href={href} className="shrink-0">
               <Button
                 variant="secondary"
                 size="sm"
@@ -116,38 +89,28 @@ export function Callout({
                 {ctaLabel}
               </Button>
             </Link>
-          </CardFooter>
-        )}
-      </Card>
+          )}
+        </div>
+      </Alert>
     );
   }
 
   return (
-    <Card
-      className={cn(
-        "flex flex-col md:flex-row items-start md:items-center my-4 p-4 gap-4",
-        variantProps.color,
-        variantProps.border,
-      )}
-    >
-      {icon && (
-        <div className="bg-muted rounded-lg p-4 shrink-0 flex items-start justify-center">
-          <Icon className={cn("h-6 w-6", variantProps.titleColor)} />
-        </div>
-      )}
-      <CardContent className="flex-1 min-w-0 p-0 items-start">
-        <p className={cn("mb-0 text-md", variantProps.titleColor)}>
-          {title || variantProps.title}
-        </p>
-        <CardDescription className="mt-2">{children}</CardDescription>
-      </CardContent>
-      {href && (
-        <CardFooter className="items-start p-0">
-          <Link href={href}>
-            <Button variant="secondary">{ctaLabel}</Button>
-          </Link>
-        </CardFooter>
-      )}
-    </Card>
+    <Alert variant={variantProps.variant} className={cn("my-4", className)}>
+      {icon && <Icon className="h-4 w-4" />}
+      {displayTitle && <AlertTitle>{displayTitle}</AlertTitle>}
+      <AlertDescription>
+        {children}
+        {href && (
+          <div className="mt-3">
+            <Link href={href}>
+              <Button variant="secondary" size="sm">
+                {ctaLabel}
+              </Button>
+            </Link>
+          </div>
+        )}
+      </AlertDescription>
+    </Alert>
   );
 }
