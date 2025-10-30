@@ -54,7 +54,7 @@ Check that your pre-requisites are installed by running the following commands:
     },
     {
       title: "Docker Desktop",
-      description: "For local development environment",
+      description: "For local development environment (requires at least 2.5GB memory)",
       link: { text: "Download →", href: "https://docs.docker.com/get-started/get-docker/", external: true }
     },
     {
@@ -88,7 +88,7 @@ docker ps
     },
     {
       title: "Docker Desktop",
-      description: "For local development environment",
+      description: "For local development environment (requires at least 2.5GB memory)",
       link: { text: "Download →", href: "https://docs.docker.com/get-started/get-docker/", external: true }
     },
     {
@@ -106,6 +106,10 @@ python --version
 docker ps
 ```
 </Python>
+
+<Callout type="warning" title="Docker Desktop Memory Requirements" compact={true}>
+Make sure Docker Desktop has at least **2.5GB of memory allocated**. To check or change this setting, open Docker Desktop, go to Settings → Resources → Memory, and adjust the slider if needed. [Learn more about Docker Desktop settings →](https://docs.docker.com/desktop/settings/)
+</Callout>
 
 <Callout type="info" title="Already have ClickHouse running?" href={PathConfig.fromClickhouse.path} icon={PathConfig.fromClickhouse.icon} ctaLabel="Add to ClickHouse">
 Skip the tutorial and add Moose as a layer on top of your existing database
