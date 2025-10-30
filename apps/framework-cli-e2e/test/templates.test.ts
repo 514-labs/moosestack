@@ -926,27 +926,40 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
     } else {
       it("should successfully ingest data and verify through consumption API", async function () {
         const eventId = randomUUID();
-        await withRetries(
-          async () => {
-            const response = await fetch(`${SERVER_CONFIG.url}/ingest/foo`, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                primary_key: eventId,
-                baz: "QUUX",
-                timestamp: TEST_DATA.TIMESTAMP,
-                optional_text: "Hello from Python",
-              }),
-            });
-            if (!response.ok) {
-              const text = await response.text();
-              throw new Error(`${response.status}: ${text}`);
-            }
-          },
-          { attempts: 5, delayMs: 500 },
-        );
+
+        // Send multiple records to trigger batch write like typescript tests
+        const recordsToSend = TEST_DATA.BATCH_RECORD_COUNT;
+        for (let i = 0; i < recordsToSend; i++) {
+          await withRetries(
+            async () => {
+              const response = await fetch(`${SERVER_CONFIG.url}/ingest/foo`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  primary_key: i === 0 ? eventId : randomUUID(),
+                  baz: "QUUX",
+                  timestamp: TEST_DATA.TIMESTAMP,
+                  optional_text:
+                    i === 0 ? "Hello from Python" : `Test message ${i}`,
+                }),
+              });
+              if (!response.ok) {
+                const text = await response.text();
+                throw new Error(`${response.status}: ${text}`);
+              }
+            },
+            { attempts: 5, delayMs: 500 },
+          );
+        }
+
         await triggerWorkflow("generator");
-        await waitForDBWrite(devProcess!, "Bar", 1, 60_000, "local");
+        await waitForDBWrite(
+          devProcess!,
+          "Bar",
+          recordsToSend,
+          60_000,
+          "local",
+        );
         await verifyClickhouseData("Bar", eventId, "primary_key", "local");
         await waitForMaterializedViewUpdate(
           "bar_aggregated",
