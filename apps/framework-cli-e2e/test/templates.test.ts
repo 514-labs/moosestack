@@ -38,6 +38,7 @@ import {
   killRemainingProcesses,
   globalDockerCleanup,
   cleanupClickhouseData,
+  cleanupMooseLogFile,
   waitForDBWrite,
   waitForMaterializedViewUpdate,
   verifyClickhouseData,
@@ -170,6 +171,9 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
         );
         throw err;
       }
+
+      // Clean up log file from previous test (in case it crashed without cleanup)
+      cleanupMooseLogFile();
 
       // Create temporary directory for this test
       TEST_PROJECT_DIR = createTempTestDirectory(config.projectDirSuffix);

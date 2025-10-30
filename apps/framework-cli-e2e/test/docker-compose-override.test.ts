@@ -17,6 +17,7 @@ import { promisify } from "util";
 import { TIMEOUTS, TEMPLATE_NAMES, APP_NAMES } from "./constants";
 import {
   waitForServerStart,
+  waitForStreamingFunctions,
   createTempTestDirectory,
   setupTypeScriptProject,
   cleanupClickhouseData,
@@ -88,7 +89,10 @@ services:
       "http://localhost:4000",
     );
 
-    console.log("Server started, cleaning up old data...");
+    console.log("Server started, waiting for streaming functions...");
+    await waitForStreamingFunctions();
+
+    console.log("All components ready, cleaning up old data...");
     await cleanupClickhouseData();
     console.log("Waiting before running tests...");
     await setTimeoutAsync(TIMEOUTS.PRE_TEST_WAIT_MS);

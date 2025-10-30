@@ -17,12 +17,40 @@ export interface CleanupOptions {
 }
 
 /**
+ * Delete today's moose CLI log file to ensure a clean state for testing.
+ * This is exported so tests can call it at the START of each test (before spawning moose dev)
+ * to handle cases where the previous test crashed without running cleanup.
+ */
+export function cleanupMooseLogFile(): void {
+  const fs = require("fs");
+  const os = require("os");
+  const path = require("path");
+
+  const today = new Date();
+  const year = today.getFullYear();
+  const month = String(today.getMonth() + 1).padStart(2, "0");
+  const day = String(today.getDate()).padStart(2, "0");
+  const dateStr = `${year}-${month}-${day}`;
+  const logFilePath = path.join(os.homedir(), ".moose", `${dateStr}-cli.log`);
+
+  try {
+    if (fs.existsSync(logFilePath)) {
+      fs.unlinkSync(logFilePath);
+      console.log(`Deleted log file: ${logFilePath}`);
+    }
+  } catch (error) {
+    console.warn(`Could not delete log file ${logFilePath}:`, error);
+  }
+}
+
+/**
  * Standardized cleanup for E2E test suites
  *
  * Performs cleanup in the following order:
  * 1. Stops the dev process gracefully (SIGINT), with SIGKILL fallback
  * 2. Cleans up Docker containers and volumes (if includeDocker is true)
  * 3. Removes the test project directory
+ * 4. Deletes the moose CLI log file (ensures next test starts fresh)
  *
  * On error, forces cleanup of process and directory even if Docker cleanup fails.
  *
@@ -65,6 +93,9 @@ export async function cleanupTestSuite(
     // Step 3: Remove test project directory
     removeTestProject(testProjectDir);
 
+    // Step 4: Clean up moose CLI log file (ensures next test starts fresh)
+    cleanupMooseLogFile();
+
     if (logPrefix) {
       console.log(`Cleanup completed for ${logPrefix}`);
     }
@@ -82,5 +113,12 @@ export async function cleanupTestSuite(
 
     // Always try to remove the test directory
     removeTestProject(testProjectDir);
+
+    // Always try to clean up log file
+    try {
+      cleanupMooseLogFile();
+    } catch (logError) {
+      console.error("Error cleaning up log file:", logError);
+    }
   }
 }
