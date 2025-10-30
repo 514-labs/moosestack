@@ -1729,7 +1729,11 @@ impl InfrastructureMap {
                         let order_by_changed = table.order_by != target_table.order_by
                             // target may leave order_by unspecified,
                             // but the implicit order_by from primary keys can be the same
+                            // ONLY for engines that support ORDER BY (MergeTree family and S3)
+                            // Buffer, S3Queue, and Distributed don't support ORDER BY
+                            // When engine is None, ClickHouse defaults to MergeTree
                             && !(target_table.order_by.is_empty()
+                                && target_table.engine.as_ref().is_none_or(|e| e.supports_order_by())
                                 && matches!(
                                     &table.order_by,
                                     OrderBy::Fields(v)
@@ -2001,7 +2005,11 @@ impl InfrastructureMap {
         let order_by_changed = table.order_by != target_table.order_by
             // target may leave order_by unspecified,
             // but the implicit order_by from primary keys can be the same
+            // ONLY for engines that support ORDER BY (MergeTree family and S3)
+            // Buffer, S3Queue, and Distributed don't support ORDER BY
+            // When engine is None, ClickHouse defaults to MergeTree
             && !(target_table.order_by.is_empty()
+                && target_table.engine.as_ref().is_none_or(|e| e.supports_order_by())
                 && matches!(
                     &table.order_by,
                     crate::framework::core::infrastructure::table::OrderBy::Fields(v)

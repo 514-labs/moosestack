@@ -877,6 +877,24 @@ impl ClickhouseEngine {
         )
     }
 
+    /// Returns true if this engine supports ORDER BY clause
+    /// MergeTree family and S3 support ORDER BY
+    /// Buffer, S3Queue, and Distributed do NOT support ORDER BY
+    pub fn supports_order_by(&self) -> bool {
+        matches!(
+            self,
+            ClickhouseEngine::MergeTree
+                | ClickhouseEngine::ReplacingMergeTree { .. }
+                | ClickhouseEngine::AggregatingMergeTree
+                | ClickhouseEngine::SummingMergeTree { .. }
+                | ClickhouseEngine::ReplicatedMergeTree { .. }
+                | ClickhouseEngine::ReplicatedReplacingMergeTree { .. }
+                | ClickhouseEngine::ReplicatedAggregatingMergeTree { .. }
+                | ClickhouseEngine::ReplicatedSummingMergeTree { .. }
+                | ClickhouseEngine::S3 { .. }
+        )
+    }
+
     /// Convert engine to string for proto storage (no sensitive data)
     pub fn to_proto_string(&self) -> String {
         match self {

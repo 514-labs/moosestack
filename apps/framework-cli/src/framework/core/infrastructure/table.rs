@@ -407,7 +407,11 @@ impl Table {
         self.order_by == target.order_by
             // target may leave order_by unspecified,
             // but the implicit order_by from primary keys can be the same
+            // ONLY for engines that support ORDER BY (MergeTree family and S3)
+            // Buffer, S3Queue, and Distributed don't support ORDER BY
+            // When engine is None, ClickHouse defaults to MergeTree
             || (target.order_by.is_empty()
+                && target.engine.as_ref().is_none_or(|e| e.supports_order_by())
                 && matches!(
                     &self.order_by,
                     OrderBy::Fields(v) if v.iter().map(String::as_str).collect::<Vec<_>>() == target.primary_key_columns()
