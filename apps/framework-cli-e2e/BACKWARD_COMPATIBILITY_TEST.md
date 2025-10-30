@@ -45,6 +45,8 @@ pnpm test -- --grep "TypeScript.*Backward Compatibility"
 pnpm test -- --grep "Python.*Backward Compatibility"
 ```
 
+**Note**: If running all tests sequentially encounters Docker resource conflicts (e.g., Redis state issues), run each language test individually. Both tests are designed to pass independently.
+
 ## Expected Behavior
 
 ### Success Case
