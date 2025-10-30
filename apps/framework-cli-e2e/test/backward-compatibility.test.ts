@@ -35,9 +35,7 @@ import {
 import {
   stopDevProcess,
   waitForServerStart,
-  waitForKafkaReady,
   cleanupDocker,
-  cleanupClickhouseData,
   removeTestProject,
   createTempTestDirectory,
 } from "./utils";
@@ -293,20 +291,12 @@ describe("Backward Compatibility Tests", function () {
           SERVER_CONFIG.startupMessage,
           SERVER_CONFIG.url,
         );
-        console.log(
-          "Server started with latest CLI, waiting for Kafka broker to be ready...",
-        );
-        await waitForKafkaReady(TIMEOUTS.KAFKA_READY_MS);
-        console.log("Kafka ready, waiting for infrastructure to stabilize...");
-        await setTimeoutAsync(TIMEOUTS.PRE_TEST_WAIT_MS);
-
-        // Stop the dev server
-        console.log("Stopping dev server with latest CLI...");
-        await stopDevProcess(devProcess);
-        devProcess = null;
-
-        // Wait a bit for cleanup
+        console.log("Server started with latest CLI, infrastructure is ready");
+        // Brief wait to ensure everything is fully settled
         await setTimeoutAsync(5000);
+
+        // Keep the server running so the new CLI can query its state
+        console.log("Keeping dev server running for moose plan test...");
       });
 
       after(async function () {
@@ -339,42 +329,33 @@ describe("Backward Compatibility Tests", function () {
         console.log(
           `\nRunning 'moose plan' with NEW CLI (${CLI_PATH}) on project initialized with latest published CLI...`,
         );
+        console.log(
+          "Querying running dev server (started with old CLI) to get infrastructure map",
+        );
 
-        // Update dependencies to use local moose-lib for the new CLI to work
-        if (config.language === "typescript") {
-          const packageJsonPath = path.join(TEST_PROJECT_DIR, "package.json");
-          const packageJson = JSON.parse(
-            fs.readFileSync(packageJsonPath, "utf-8"),
-          );
-          packageJson.dependencies["@514labs/moose-lib"] =
-            `file:${MOOSE_LIB_PATH}`;
-          fs.writeFileSync(
-            packageJsonPath,
-            JSON.stringify(packageJson, null, 2),
-          );
-
-          console.log("Reinstalling dependencies with local moose-lib...");
-          await execAsync("npm install", { cwd: TEST_PROJECT_DIR });
-        } else {
-          console.log("Installing local moose-lib...");
-          await execAsync(`.venv/bin/pip install -e "${MOOSE_PY_LIB_PATH}"`, {
-            cwd: TEST_PROJECT_DIR,
-          });
-        }
-
-        // Run moose plan with NEW CLI
+        // Run moose plan with NEW CLI (querying the running server)
+        // Use a dummy token - the old server doesn't enforce authentication in dev mode
         try {
-          const { stdout, stderr } = await execAsync(`"${CLI_PATH}" plan`, {
-            cwd: TEST_PROJECT_DIR,
-            env:
-              config.language === "python" ?
-                {
-                  ...process.env,
-                  VIRTUAL_ENV: path.join(TEST_PROJECT_DIR, ".venv"),
-                  PATH: `${path.join(TEST_PROJECT_DIR, ".venv", "bin")}:${process.env.PATH}`,
-                }
-              : process.env,
-          });
+          const { stdout, stderr } = await execAsync(
+            `"${CLI_PATH}" plan --url "http://localhost:4000" --token "test-token"`,
+            {
+              cwd: TEST_PROJECT_DIR,
+              env:
+                config.language === "python" ?
+                  {
+                    ...process.env,
+                    VIRTUAL_ENV: path.join(TEST_PROJECT_DIR, ".venv"),
+                    PATH: `${path.join(TEST_PROJECT_DIR, ".venv", "bin")}:${process.env.PATH}`,
+                    TEST_AWS_ACCESS_KEY_ID: "test-access-key-id",
+                    TEST_AWS_SECRET_ACCESS_KEY: "test-secret-access-key",
+                  }
+                : {
+                    ...process.env,
+                    TEST_AWS_ACCESS_KEY_ID: "test-access-key-id",
+                    TEST_AWS_SECRET_ACCESS_KEY: "test-secret-access-key",
+                  },
+            },
+          );
 
           console.log("moose plan stdout:", stdout);
           if (stderr) {
