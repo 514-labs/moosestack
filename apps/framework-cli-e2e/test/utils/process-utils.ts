@@ -161,124 +161,77 @@ export const killRemainingProcesses = async (): Promise<void> => {
 };
 
 /**
- * Wait for streaming functions to start by watching the moose CLI log file.
+ * Wait for streaming functions to start by checking Redpanda consumer groups.
+ *
+ * This approach directly verifies that streaming function consumers have:
+ * 1. Connected to Kafka/Redpanda
+ * 2. Joined their consumer groups
+ * 3. Reached a "Stable" state (ready to process messages)
+ *
+ * Streaming functions create consumer groups with names starting with "flow-".
+ * We poll `rpk group list` until we find at least one such group in Stable state.
  */
 export const waitForStreamingFunctions = async (
   timeoutMs: number = 120000,
 ): Promise<void> => {
-  const fs = require("fs");
-  const os = require("os");
-  const path = require("path");
-
-  // Log file is named with today's date in LOCAL time: YYYY-MM-DD-cli.log
-  // fern::DateBased uses local time, not UTC, so we must match that
-  const today = new Date();
-  const year = today.getFullYear();
-  const month = String(today.getMonth() + 1).padStart(2, "0");
-  const day = String(today.getDate()).padStart(2, "0");
-  const dateStr = `${year}-${month}-${day}`; // Local time YYYY-MM-DD
-  const logFilePath = path.join(os.homedir(), ".moose", `${dateStr}-cli.log`);
   console.log(
-    `Waiting for streaming functions to start (watching ${logFilePath})...`,
+    "Waiting for streaming functions to start (checking Redpanda consumer groups)...",
   );
+  const startTime = Date.now();
 
-  return new Promise<void>((resolve, reject) => {
-    let checkInterval: any = null;
-    let watcher: any = null;
-
-    const cleanup = () => {
-      if (checkInterval) {
-        clearInterval(checkInterval);
-        checkInterval = null;
-      }
-      if (watcher) {
-        clearInterval(watcher);
-        watcher = null;
-      }
-    };
-
-    const timeout = setTimeout(() => {
-      cleanup();
-      reject(
-        new Error(
-          `Streaming functions did not start within ${timeoutMs / 1000}s (log: ${logFilePath})`,
-        ),
+  while (Date.now() - startTime < timeoutMs) {
+    try {
+      // Find the Redpanda container (there's only one per test run)
+      const { stdout: containerName } = await execAsync(
+        `docker ps --filter "label=com.docker.compose.service=redpanda" --format '{{.Names}}'`,
       );
-    }, timeoutMs);
 
-    // Standardized log message emitted by both Python and TypeScript streaming functions
-    // when they're fully initialized and ready to process messages
-    const readyPattern = /Streaming function started/i;
-    let streamingFunctionsReady = 0;
+      if (!containerName.trim()) {
+        console.log("Waiting for Redpanda container to start...");
+        await setTimeoutAsync(1000);
+        continue;
+      }
 
-    // Check if log file exists
-    if (!fs.existsSync(logFilePath)) {
-      console.log(`Log file not found yet, waiting for it to be created...`);
-    }
+      // Check consumer groups using rpk
+      const { stdout: groupList } = await execAsync(
+        `docker exec ${containerName.trim()} rpk group list`,
+      );
 
-    // Watch for file creation and changes
-    checkInterval = setInterval(() => {
-      if (!fs.existsSync(logFilePath)) {
+      console.log("Redpanda consumer groups:");
+      console.log(groupList);
+
+      // Parse for Stable flow-* groups
+      // Expected format: "BROKER  GROUP  STATE"
+      // Example: "0  flow-Foo-  Stable"
+      const lines = groupList.split("\n").slice(1); // Skip header
+      const stableFlowGroups = lines
+        .filter((line) => line.includes("flow-"))
+        .filter((line) => line.includes("Stable"));
+
+      if (stableFlowGroups.length > 0) {
+        console.log(
+          `Found ${stableFlowGroups.length} active streaming function(s):`,
+        );
+        stableFlowGroups.forEach((g) => console.log(`  ${g.trim()}`));
+
+        // Grace period for consumer group to fully stabilize
+        console.log("Waiting for consumer groups to stabilize...");
+        await setTimeoutAsync(3000);
+        console.log("Streaming functions ready");
         return;
       }
 
-      // File exists, start watching it
-      clearInterval(checkInterval);
+      console.log("No stable streaming functions yet, retrying...");
+      await setTimeoutAsync(1000);
+    } catch (error) {
+      // Container might not be ready yet, or rpk command failed
+      // Continue polling until timeout
+      console.log(`Error checking consumer groups: ${error}, retrying...`);
+      await setTimeoutAsync(1000);
+    }
+  }
 
-      let lastSize = 0;
-
-      const checkLogFile = () => {
-        try {
-          const stats = fs.statSync(logFilePath);
-          if (stats.size > lastSize) {
-            // Read only the new content
-            const stream = fs.createReadStream(logFilePath, {
-              start: lastSize,
-              end: stats.size,
-            });
-
-            let newContent = "";
-            stream.on("data", (chunk: Buffer) => {
-              newContent += chunk.toString();
-            });
-
-            stream.on("end", () => {
-              lastSize = stats.size;
-
-              // Check for the standardized "ready" message
-              const readyMatches = newContent.match(
-                new RegExp(readyPattern, "gi"),
-              );
-
-              if (readyMatches) {
-                streamingFunctionsReady += readyMatches.length;
-                console.log(
-                  `Streaming function ready (${streamingFunctionsReady} total)`,
-                );
-              }
-
-              // Wait for at least one streaming function to be ready
-              // Then give it a bit more time for consumer group to stabilize
-              if (streamingFunctionsReady > 0) {
-                console.log(
-                  "Streaming functions initialized, waiting for consumer group to stabilize...",
-                );
-                setTimeout(() => {
-                  clearTimeout(timeout);
-                  cleanup();
-                  console.log("Streaming functions started");
-                  resolve();
-                }, 3000); // 3 second grace period for consumer group join
-              }
-            });
-          }
-        } catch (error) {
-          // File might not exist yet or be locked, continue waiting
-        }
-      };
-
-      // Poll the file every 500ms
-      watcher = setInterval(checkLogFile, 500);
-    }, 200); // Check for file existence every 200ms
-  });
+  throw new Error(
+    `Streaming functions did not reach Stable state within ${timeoutMs / 1000}s`,
+  );
 };
