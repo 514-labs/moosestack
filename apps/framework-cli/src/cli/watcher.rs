@@ -154,7 +154,7 @@ async fn watch(
         tokio::select! {
             _ = shutdown_rx.changed() => {
                 info!("Watcher received shutdown signal, stopping file monitoring");
-                break;
+                return Ok(());
             }
             Ok(()) = rx.changed() => {
                 log::debug!("Received change notification, current changes: {:?}", rx.borrow());
@@ -257,8 +257,6 @@ async fn watch(
             }
         }
     }
-
-    Ok(())
 }
 
 /// File watcher that monitors project files for changes and triggers infrastructure updates.
