@@ -3,7 +3,8 @@ title: Bring Your Own API Framework
 description: Use Express, Koa, Fastify, or FastAPI with MooseStack
 ---
 
-import { Callout, Card } from "@/components";
+import { Callout } from "@/components";
+import Link from "next/link";
 
 # Bring Your Own API Framework
 
@@ -37,40 +38,40 @@ Bring your own web framework to leverage advanced HTTP features, custom middlewa
 ### TypeScript
 
 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-6">
-  <Card href="/moose/app-frameworks/typescript#native-api-class">
+  <Link href="/moose/app-frameworks/typescript/native" className="rounded-xl border bg-card text-card-foreground shadow p-6 hover:bg-muted transition">
     <div className="font-semibold">Native (Api Class)</div>
     <div className="text-sm text-gray-600 dark:text-gray-400">
       Moose's built-in approach for simple GET endpoints
     </div>
-  </Card>
+  </Link>
 
-  <Card href="/moose/app-frameworks/typescript#express">
+  <Link href="/moose/app-frameworks/typescript/express" className="rounded-xl border bg-card text-card-foreground shadow p-6 hover:bg-muted transition">
     <div className="font-semibold">Express</div>
     <div className="text-sm text-gray-600 dark:text-gray-400">
       Most popular Node.js web framework
     </div>
-  </Card>
+  </Link>
 
-  <Card href="/moose/app-frameworks/typescript#fastify">
+  <Link href="/moose/app-frameworks/typescript/fastify" className="rounded-xl border bg-card text-card-foreground shadow p-6 hover:bg-muted transition">
     <div className="font-semibold">Fastify</div>
     <div className="text-sm text-gray-600 dark:text-gray-400">
       Fast and low overhead web framework
     </div>
-  </Card>
+  </Link>
 
-  <Card href="/moose/app-frameworks/typescript#koa">
+  <Link href="/moose/app-frameworks/typescript/koa" className="rounded-xl border bg-card text-card-foreground shadow p-6 hover:bg-muted transition">
     <div className="font-semibold">Koa</div>
     <div className="text-sm text-gray-600 dark:text-gray-400">
       Expressive middleware framework by Express team
     </div>
-  </Card>
+  </Link>
 
-  <Card href="/moose/app-frameworks/typescript#raw-nodejs">
+  <Link href="/moose/app-frameworks/typescript/raw-nodejs" className="rounded-xl border bg-card text-card-foreground shadow p-6 hover:bg-muted transition">
     <div className="font-semibold">Raw Node.js</div>
     <div className="text-sm text-gray-600 dark:text-gray-400">
       Use raw HTTP handlers without any framework
     </div>
-  </Card>
+  </Link>
 </div>
 
 [View TypeScript Documentation →](/moose/app-frameworks/typescript)
@@ -78,19 +79,19 @@ Bring your own web framework to leverage advanced HTTP features, custom middlewa
 ### Python
 
 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-6">
-  <Card href="/moose/app-frameworks/python#native-api-class">
+  <Link href="/moose/app-frameworks/python/native" className="rounded-xl border bg-card text-card-foreground shadow p-6 hover:bg-muted transition">
     <div className="font-semibold">Native (Api Class)</div>
     <div className="text-sm text-gray-600 dark:text-gray-400">
       Moose's built-in approach for simple GET endpoints
     </div>
-  </Card>
+  </Link>
 
-  <Card href="/moose/app-frameworks/python#fastapi">
+  <Link href="/moose/app-frameworks/python/fastapi" className="rounded-xl border bg-card text-card-foreground shadow p-6 hover:bg-muted transition">
     <div className="font-semibold">FastAPI</div>
     <div className="text-sm text-gray-600 dark:text-gray-400">
       Modern, fast Python web framework
     </div>
-  </Card>
+  </Link>
 </div>
 
 [View Python Documentation →](/moose/app-frameworks/python)

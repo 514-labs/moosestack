@@ -3,7 +3,7 @@ title: Python Frameworks
 description: Use Python web frameworks with MooseStack
 ---
 
-import { Card } from "@/components";
+import Link from "next/link";
 
 # Python Frameworks
 
@@ -12,19 +12,19 @@ Use Python web frameworks with MooseStack to build custom HTTP APIs with full ac
 ## Available Frameworks
 
 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-6">
-  <Card href="/moose/app-frameworks/python/native">
+  <Link href="/moose/app-frameworks/python/native" className="rounded-xl border bg-card text-card-foreground shadow p-6 hover:bg-muted transition">
     <div className="font-semibold">Native (Api Class)</div>
     <div className="text-sm text-gray-600 dark:text-gray-400">
       Moose's built-in approach for simple GET endpoints with Pydantic validation
     </div>
-  </Card>
+  </Link>
 
-  <Card href="/moose/app-frameworks/python/fastapi">
+  <Link href="/moose/app-frameworks/python/fastapi" className="rounded-xl border bg-card text-card-foreground shadow p-6 hover:bg-muted transition">
     <div className="font-semibold">FastAPI</div>
     <div className="text-sm text-gray-600 dark:text-gray-400">
       Modern, fast Python framework with automatic API documentation
     </div>
-  </Card>
+  </Link>
 </div>
 
 ## Key Concepts

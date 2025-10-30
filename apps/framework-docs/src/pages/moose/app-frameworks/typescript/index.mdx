@@ -3,7 +3,7 @@ title: TypeScript Frameworks
 description: Use TypeScript web frameworks with MooseStack
 ---
 
-import { Card } from "@/components";
+import Link from "next/link";
 
 # TypeScript Frameworks
 
@@ -12,40 +12,40 @@ Use TypeScript web frameworks with MooseStack to build custom HTTP APIs with ful
 ## Available Frameworks
 
 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-6">
-  <Card href="/moose/app-frameworks/typescript/native">
+  <Link href="/moose/app-frameworks/typescript/native" className="rounded-xl border bg-card text-card-foreground shadow p-6 hover:bg-muted transition">
     <div className="font-semibold">Native (Api Class)</div>
     <div className="text-sm text-gray-600 dark:text-gray-400">
       Moose's built-in approach for simple GET endpoints with automatic validation
     </div>
-  </Card>
+  </Link>
 
-  <Card href="/moose/app-frameworks/typescript/express">
+  <Link href="/moose/app-frameworks/typescript/express" className="rounded-xl border bg-card text-card-foreground shadow p-6 hover:bg-muted transition">
     <div className="font-semibold">Express</div>
     <div className="text-sm text-gray-600 dark:text-gray-400">
       Most popular Node.js web framework with extensive middleware ecosystem
     </div>
-  </Card>
+  </Link>
 
-  <Card href="/moose/app-frameworks/typescript/fastify">
+  <Link href="/moose/app-frameworks/typescript/fastify" className="rounded-xl border bg-card text-card-foreground shadow p-6 hover:bg-muted transition">
     <div className="font-semibold">Fastify</div>
     <div className="text-sm text-gray-600 dark:text-gray-400">
       Fast and low overhead web framework with schema-based validation
     </div>
-  </Card>
+  </Link>
 
-  <Card href="/moose/app-frameworks/typescript/koa">
+  <Link href="/moose/app-frameworks/typescript/koa" className="rounded-xl border bg-card text-card-foreground shadow p-6 hover:bg-muted transition">
     <div className="font-semibold">Koa</div>
     <div className="text-sm text-gray-600 dark:text-gray-400">
       Expressive middleware framework by the Express team
     </div>
-  </Card>
+  </Link>
 
-  <Card href="/moose/app-frameworks/typescript/raw-nodejs">
+  <Link href="/moose/app-frameworks/typescript/raw-nodejs" className="rounded-xl border bg-card text-card-foreground shadow p-6 hover:bg-muted transition">
     <div className="font-semibold">Raw Node.js</div>
     <div className="text-sm text-gray-600 dark:text-gray-400">
       Use raw HTTP handlers without any framework overhead
     </div>
-  </Card>
+  </Link>
 </div>
 
 ## Key Concepts
