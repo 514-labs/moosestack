@@ -1,0 +1,30 @@
+language = "typescript"
+description = "Minimal TypeScript project demonstrating MCP server integration using Express and WebApp."
+post_install_print = """
+Deploy on Boreal
+
+The easiest way to deploy your MooseStack Applications is to use Boreal
+from the creators of MooseStack.
+
+https://boreal.cloud
+
+---------------------------------------------------------
+
+📂 Go to your project directory:
+    $ cd {project_dir}
+
+📦 Install Dependencies:
+    $ npm install
+
+🛠️ Start dev server:
+    $ moose dev
+
+🔧 Test MCP Server:
+    The MCP server will be available at http://localhost:4000/tools
+
+    Send a tools/list request:
+    $ curl -X POST http://localhost:4000/tools \
+      -H "Content-Type: application/json" \
+      -d '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}'
+"""
+default_sloan_telemetry = "standard"
