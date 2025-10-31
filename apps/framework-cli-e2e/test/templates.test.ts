@@ -560,7 +560,6 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
           );
         }
 
-        await triggerWorkflow("generator");
         await waitForDBWrite(
           devProcess!,
           "Bar",
@@ -569,6 +568,8 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
           "local",
         );
         await verifyClickhouseData("Bar", eventId, "primaryKey", "local");
+
+        await triggerWorkflow("generator");
         await waitForMaterializedViewUpdate(
           "BarAggregated",
           1,
@@ -1011,7 +1012,6 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
           );
         }
 
-        await triggerWorkflow("generator");
         await waitForDBWrite(
           devProcess!,
           "Bar",
@@ -1020,6 +1020,8 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
           "local",
         );
         await verifyClickhouseData("Bar", eventId, "primary_key", "local");
+
+        await triggerWorkflow("generator");
         await waitForMaterializedViewUpdate(
           "bar_aggregated",
           1,
