@@ -1,5 +1,5 @@
 language = "typescript" # Must be typescript or python
-description = "Real-time aircraft transponder data, with a frontend."
+description = "Real-time aircraft transponder data, with a react frontend."
 post_install_print = """
 Deploy on Boreal
 
@@ -35,4 +35,4 @@ https://boreal.cloud
 """
 default_sloan_telemetry="comprehensive"
 
-visible=false
+visible=true

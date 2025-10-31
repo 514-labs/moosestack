@@ -24,3 +24,5 @@ https://boreal.cloud
     $ moose dev
 """
 default_sloan_telemetry="standard"
+
+visible=false

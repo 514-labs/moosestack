@@ -1,5 +1,5 @@
 language = "typescript" # Must be typescript or python
-description = "Typescript project using express for consumption API."
+description = "Typescript project using Express for serving analytical APIs."
 post_install_print = """
 Deploy on Boreal
 
