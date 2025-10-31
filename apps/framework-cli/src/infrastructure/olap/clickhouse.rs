@@ -2307,6 +2307,13 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
     }
 
     #[test]
+    fn test_extract_order_by_from_create_query_nested_objects() {
+        // Test with deeply nested structure
+        let order_by = extract_order_by_from_create_query(sql_parser::tests::NESTED_OBJECTS_SQL);
+        assert_eq!(order_by, vec!["id".to_string()]);
+    }
+
+    #[test]
     fn test_extract_order_by_from_create_query_edge_cases() {
         // Test with multiple ORDER BY clauses (should only use the first one)
         let query =
@@ -2451,6 +2458,20 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
         );
         assert!(!map.contains_key("z"));
         assert!(!map.contains_key("timestamp"));
+    }
+
+    #[test]
+    fn test_extract_column_ttls_from_create_query_nested_objects() {
+        // Test with deeply nested structure - should not find TTLs since none are present
+        let map = extract_column_ttls_from_create_query(NESTED_OBJECTS_SQL);
+        assert!(map.is_none());
+    }
+
+    #[test]
+    fn test_extract_table_ttl_from_create_query_nested_objects() {
+        // Test with deeply nested structure - should not find table TTL since none is present
+        let ttl = extract_table_ttl_from_create_query(NESTED_OBJECTS_SQL);
+        assert!(ttl.is_none());
     }
 
     #[test]
