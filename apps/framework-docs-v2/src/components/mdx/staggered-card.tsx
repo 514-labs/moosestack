@@ -28,7 +28,7 @@ export function StaggeredCard({
     <div>
       <div
         className={cn(
-          "grid grid-cols-1 gap-4 items-start",
+          "grid grid-cols-1 gap-8 items-start",
           stagger === "left" ?
             "md:grid-cols-[40%_60%]"
           : "md:grid-cols-[60%_40%]",
@@ -91,5 +91,5 @@ export function StaggeredCode({
   children,
   language = "ts",
 }: StaggeredCodeProps) {
-  return <div className="rounded-xl overflow-x-auto pr-4">{children}</div>;
+  return <div className="rounded-xl overflow-x-auto pr-8">{children}</div>;
 }
