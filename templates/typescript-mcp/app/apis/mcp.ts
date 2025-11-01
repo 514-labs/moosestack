@@ -3,7 +3,8 @@
  *
  * This file demonstrates how to integrate an MCP server with MooseStack using:
  * - Express.js for HTTP handling
- * - express-mcp-handler for MCP protocol implementation
+ * - @modelcontextprotocol/sdk for MCP protocol implementation
+ * - StreamableHTTPServerTransport with JSON responses (stateless mode)
  * - WebApp class to mount the server at a custom path (/tools)
  * - getMooseUtils() to access ClickHouse client and query utilities
  *
@@ -22,8 +23,9 @@ const app = express();
 app.use(express.json());
 
 /**
- * Server factory function that creates a fresh McpServer instance for each connection.
- * This is required by the SSE handlers for proper connection isolation.
+ * Server factory function that creates a fresh McpServer instance for each request.
+ * This is required for stateless mode where each request is fully independent.
+ * The mooseUtils parameter provides access to ClickHouse client and SQL helpers.
  */
 const serverFactory = (mooseUtils: ApiUtil | null) => {
   const server = new McpServer({
@@ -34,8 +36,9 @@ const serverFactory = (mooseUtils: ApiUtil | null) => {
   /**
    * Register the query_clickhouse tool
    *
-   * This tool allows AI assistants to execute read-only SQL queries
-   * against your ClickHouse database through the MCP protocol.
+   * This tool allows AI assistants to execute SQL queries against your ClickHouse
+   * database through the MCP protocol. Results are automatically limited to a maximum
+   * of 100 rows to prevent excessive data transfer.
    */
   server.registerTool(
     "query_clickhouse",
@@ -44,9 +47,7 @@ const serverFactory = (mooseUtils: ApiUtil | null) => {
       description:
         "Execute a SQL query against the ClickHouse OLAP database and return results as JSON",
       inputSchema: {
-        query: z
-          .string()
-          .describe("SQL query to execute (SELECT statements only)"),
+        query: z.string().describe("SQL query to execute against ClickHouse"),
         limit: z
           .number()
           .min(1)
@@ -150,25 +151,13 @@ const serverFactory = (mooseUtils: ApiUtil | null) => {
 };
 
 /**
- * Create StreamableHTTP transport handlers for MCP protocol
+ * MCP Transport Configuration
  *
- * This uses StreamableHTTP transport with JSON responses instead of SSE.
- * This is required because the Moose proxy doesn't support SSE properly.
- *
- * The StreamableHTTP transport supports:
- * - POST requests with JSON-RPC messages and JSON responses
- * - Stateful sessions with session IDs
- * - Works through proxies that don't support SSE
- */
-
-/**
- * Use STATELESS mode for MCP transport
- *
- * This is necessary because MooseStack uses multiple worker processes to handle requests,
- * and sessions cannot be shared across processes. In stateless mode:
- * - No session IDs are generated or tracked
- * - Each request is fully independent
- * - The server is initialized on every request
+ * Uses StreamableHTTPServerTransport in STATELESS mode with JSON responses.
+ * - No session ID generation or tracking (sessionIdGenerator: undefined)
+ * - JSON responses instead of Server-Sent Events (enableJsonResponse: true)
+ * - Fresh server instance created for every request
+ * - POST requests with JSON-RPC messages
  */
 
 // Single endpoint that handles all MCP requests
