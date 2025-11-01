@@ -15,7 +15,7 @@ import express from "express";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { z } from "zod";
-import { WebApp, getMooseUtils } from "@514labs/moose-lib";
+import { WebApp, getMooseUtils, ApiUtil, Sql } from "@514labs/moose-lib";
 
 // Create Express application
 const app = express();
@@ -25,7 +25,7 @@ app.use(express.json());
  * Server factory function that creates a fresh McpServer instance for each connection.
  * This is required by the SSE handlers for proper connection isolation.
  */
-const serverFactory = () => {
+const serverFactory = (mooseUtils: ApiUtil | null) => {
   const server = new McpServer({
     name: "moosestack-mcp-tools",
     version: "1.0.0",
@@ -47,6 +47,15 @@ const serverFactory = () => {
         query: z
           .string()
           .describe("SQL query to execute (SELECT statements only)"),
+        limit: z
+          .number()
+          .min(1)
+          .max(100)
+          .default(100)
+          .optional()
+          .describe(
+            "Maximum number of rows to return (default: 100, max: 100)",
+          ),
       },
       outputSchema: {
         rows: z
@@ -55,17 +64,61 @@ const serverFactory = () => {
         rowCount: z.number().describe("Number of rows returned"),
       },
     },
-    async ({ query }) => {
-      // Access MooseStack utilities from the request context
-      // Note: getMooseUtils() provides access to ClickHouse client and query utilities
-      // For production use, you'd want to add proper error handling and query validation
-
+    async ({ query, limit = 100 }) => {
       try {
-        // This is a simplified implementation for demonstration
-        // In production, you'd want to add proper error handling and query validation
+        // Check if MooseStack utilities are available
+        if (!mooseUtils) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: "Error: MooseStack utilities not available",
+              },
+            ],
+            isError: true,
+          };
+        }
+
+        const { client } = mooseUtils;
+
+        // Enforce maximum limit of 100
+        const enforcedLimit = Math.min(limit, 100);
+
+        // Apply limit to the query
+        let finalQuery = query.trim();
+
+        // Check if this is a query that doesn't support LIMIT
+        const isNonSelectQuery =
+          /^\s*(SHOW|DESCRIBE|DESC|EXPLAIN|EXISTS)\b/i.test(finalQuery);
+
+        if (!isNonSelectQuery) {
+          // Check if query already has a LIMIT clause
+          const hasLimit = /\bLIMIT\s+\d+/i.test(finalQuery);
+
+          if (hasLimit) {
+            // Wrap the query in a subquery to enforce our maximum limit
+            finalQuery = `SELECT * FROM (${finalQuery}) AS subquery LIMIT ${enforcedLimit}`;
+          } else {
+            // Simply append the LIMIT clause
+            finalQuery = `${finalQuery} LIMIT ${enforcedLimit}`;
+          }
+        }
+
+        // Create a Sql object manually for dynamic query execution
+        const sqlQuery: Sql = {
+          strings: [finalQuery],
+          values: [],
+        } as any;
+
+        const result = await client.query.execute(sqlQuery);
+
+        // Parse the JSON response from ClickHouse
+        const data = await result.json();
+        const rows = Array.isArray(data) ? data : [];
+
         const output = {
-          rows: [{ result: "Query execution would happen here" }],
-          rowCount: 1,
+          rows,
+          rowCount: rows.length,
         };
 
         return {
@@ -123,6 +176,13 @@ app.all("/", async (req, res) => {
   try {
     console.log(`[MCP] Handling ${req.method} request (stateless mode)`);
 
+    // Get MooseStack utilities (ClickHouse client and SQL helpers)
+    const mooseUtils = getMooseUtils(req);
+
+    if (!mooseUtils) {
+      throw new Error("MooseStack utilities not available");
+    }
+
     // Create a fresh transport and server for EVERY request (stateless)
     const transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: undefined, // Stateless mode - no session management
@@ -133,7 +193,7 @@ app.all("/", async (req, res) => {
       console.error(`[MCP Error]`, error);
     };
 
-    const server = serverFactory();
+    const server = serverFactory(mooseUtils);
     await server.connect(transport);
 
     // Handle the request
