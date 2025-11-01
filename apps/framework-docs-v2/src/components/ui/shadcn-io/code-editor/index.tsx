@@ -150,7 +150,9 @@ function CodeEditor({
       return;
     }
 
-    if (!code.length || !isInView) return;
+    if (!code.length || !isInView) {
+      return;
+    }
 
     const characters = Array.from(code);
     let index = 0;
@@ -161,11 +163,10 @@ function CodeEditor({
     const timeout = setTimeout(() => {
       intervalId = setInterval(() => {
         if (index < characters.length) {
-          setVisibleCode((prev) => {
-            const currentIndex = index;
-            index += 1;
-            return prev + characters[currentIndex];
-          });
+          const currentIndex = index;
+          const currentChar = characters[currentIndex];
+          index += 1;
+          setVisibleCode((prev) => prev + currentChar);
           editorRef.current?.scrollTo({
             top: editorRef.current?.scrollHeight,
             behavior: "smooth",
@@ -212,7 +213,7 @@ function CodeEditor({
             >
               {icon ?
                 <div
-                  className="text-muted-foreground [&_svg]:size-3.5"
+                  className="flex items-center text-muted-foreground [&_svg]:size-3.5 [&_svg]:shrink-0"
                   dangerouslySetInnerHTML={
                     typeof icon === "string" ? { __html: icon } : undefined
                   }
@@ -220,7 +221,7 @@ function CodeEditor({
                   {typeof icon !== "string" ? icon : null}
                 </div>
               : null}
-              <figcaption className="flex-1 truncate text-muted-foreground text-[13px]">
+              <figcaption className="flex items-center truncate text-muted-foreground text-[13px] leading-none mt-0">
                 {title}
               </figcaption>
             </div>
@@ -257,6 +258,7 @@ function CodeEditor({
               !isDone &&
               "[&_.line:last-of-type::after]:content-['|'] [&_.line:last-of-type::after]:animate-pulse [&_.line:last-of-type::after]:inline-block [&_.line:last-of-type::after]:w-[1ch] [&_.line:last-of-type::after]:-translate-px",
           )}
+          style={{ whiteSpace: "pre" }}
           dangerouslySetInnerHTML={{ __html: highlightedCode }}
         />
       </div>

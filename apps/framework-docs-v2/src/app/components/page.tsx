@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { ThemeToggle } from "@/components/theme-toggle";
 import {
   Callout,
@@ -21,7 +22,14 @@ import {
   FeatureCard,
   FeatureGrid,
 } from "@/components/mdx";
-import { Snippet, SnippetTab } from "@/components/ui/snippet";
+import {
+  Snippet,
+  SnippetCopyButton,
+  SnippetHeader,
+  SnippetTabsContent,
+  SnippetTabsList,
+  SnippetTabsTrigger,
+} from "@/components/ui/snippet";
 import {
   Card,
   CardContent,
@@ -31,6 +39,25 @@ import {
 } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { Database, Code } from "lucide-react";
+
+function MultiTabSnippet() {
+  const [value, setValue] = useState("bash");
+  const code = value === "bash" ? "pnpm dev" : "npm run dev";
+
+  return (
+    <Snippet value={value} onValueChange={setValue}>
+      <SnippetHeader>
+        <SnippetTabsList>
+          <SnippetTabsTrigger value="bash">Bash</SnippetTabsTrigger>
+          <SnippetTabsTrigger value="npm">npm</SnippetTabsTrigger>
+        </SnippetTabsList>
+        <SnippetCopyButton value={code} />
+      </SnippetHeader>
+      <SnippetTabsContent value="bash">pnpm dev</SnippetTabsContent>
+      <SnippetTabsContent value="npm">npm run dev</SnippetTabsContent>
+    </Snippet>
+  );
+}
 
 export default function ComponentsPage() {
   return (
@@ -59,32 +86,17 @@ export default function ComponentsPage() {
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <Snippet>
-              <SnippetTab value="bash" label="Bash" copyText="npm install">
-                <pre className="p-4 overflow-x-auto">
-                  <code className="text-sm font-mono whitespace-pre text-foreground">
-                    npm install
-                  </code>
-                </pre>
-              </SnippetTab>
+            <Snippet defaultValue="bash">
+              <SnippetHeader>
+                <SnippetTabsList>
+                  <SnippetTabsTrigger value="bash">Bash</SnippetTabsTrigger>
+                </SnippetTabsList>
+                <SnippetCopyButton value="npm install" />
+              </SnippetHeader>
+              <SnippetTabsContent value="bash">npm install</SnippetTabsContent>
             </Snippet>
 
-            <Snippet>
-              <SnippetTab value="bash" label="Bash" copyText="pnpm dev">
-                <pre className="p-4 overflow-x-auto">
-                  <code className="text-sm font-mono whitespace-pre text-foreground">
-                    pnpm dev
-                  </code>
-                </pre>
-              </SnippetTab>
-              <SnippetTab value="npm" label="npm" copyText="npm run dev">
-                <pre className="p-4 overflow-x-auto">
-                  <code className="text-sm font-mono whitespace-pre text-foreground">
-                    npm run dev
-                  </code>
-                </pre>
-              </SnippetTab>
-            </Snippet>
+            <MultiTabSnippet />
           </CardContent>
         </Card>
 

@@ -27,7 +27,7 @@
     "@radix-ui/react-select": "^2.0.0",
     "@radix-ui/react-separator": "^1.1.7",
     "@radix-ui/react-slot": "^1.2.3",
-    "@radix-ui/react-tabs": "^1.0.4",
+    "@radix-ui/react-tabs": "^1.1.12",
     "@radix-ui/react-toggle": "^1.1.10",
     "@radix-ui/react-toggle-group": "^1.1.11",
     "@radix-ui/react-tooltip": "^1.2.8",
@@ -61,6 +61,7 @@
   "devDependencies": {
     "@repo/eslint-config-custom": "workspace:*",
     "@repo/ts-config": "workspace:*",
+    "@tailwindcss/typography": "^0.5.19",
     "@types/node": "^22.10.2",
     "@types/react": "^19.0.1",
     "@types/react-dom": "^19.0.2",

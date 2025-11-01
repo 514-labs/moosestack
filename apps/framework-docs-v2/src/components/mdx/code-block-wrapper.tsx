@@ -1,17 +1,25 @@
 "use client";
 
 import React from "react";
-import { Snippet, SnippetTab } from "@/components/ui/snippet";
 import {
   CodeBlock,
   CodeBlockBody,
   CodeBlockItem,
   CodeBlockContent,
 } from "@/components/ui/shadcn-io/code-block";
+import {
+  Snippet,
+  SnippetCopyButton,
+  SnippetHeader,
+  SnippetTabsContent,
+  SnippetTabsList,
+  SnippetTabsTrigger,
+} from "@/components/ui/snippet";
 import { CodeSnippet } from "./code-snippet";
 import { CodeEditorWrapper } from "./code-editor-wrapper";
+import { cn } from "@/lib/utils";
 
-// Shell languages that should use Snippet component
+// Shell languages that should use Snippet (copyable) or CodeEditor (animated with filename)
 const SHELL_LANGUAGES = new Set([
   "bash",
   "sh",
@@ -21,6 +29,23 @@ const SHELL_LANGUAGES = new Set([
   "powershell",
   "cmd",
 ]);
+
+// Helper component for shell snippets using the new API
+function ShellSnippet({ code, language }: { code: string; language: string }) {
+  const [value, setValue] = React.useState("terminal");
+
+  return (
+    <Snippet value={value} onValueChange={setValue}>
+      <SnippetHeader>
+        <SnippetTabsList>
+          <SnippetTabsTrigger value="terminal">Terminal</SnippetTabsTrigger>
+        </SnippetTabsList>
+        <SnippetCopyButton value={code} />
+      </SnippetHeader>
+      <SnippetTabsContent value="terminal">{code}</SnippetTabsContent>
+    </Snippet>
+  );
+}
 
 interface MDXCodeBlockProps extends React.HTMLAttributes<HTMLPreElement> {
   "data-language"?: string;
@@ -105,7 +130,12 @@ export function MDXPre({ children, ...props }: MDXCodeBlockProps) {
 
   if (!isCodeBlock) {
     // Not a code block, render as-is
-    return <pre {...props}>{children}</pre>;
+    const { className, ...restProps } = props;
+    return (
+      <pre className={cn("not-prose", className)} {...restProps}>
+        {children}
+      </pre>
+    );
   }
 
   // Find the code element inside pre
@@ -115,7 +145,12 @@ export function MDXPre({ children, ...props }: MDXCodeBlockProps) {
 
   if (!codeElement) {
     // Fallback: render as-is if no code element
-    return <pre {...props}>{children}</pre>;
+    const { className, ...restProps } = props;
+    return (
+      <pre className={cn("not-prose", className)} {...restProps}>
+        {children}
+      </pre>
+    );
   }
 
   const language = getLanguage(codeElement.props);
@@ -127,7 +162,7 @@ export function MDXPre({ children, ...props }: MDXCodeBlockProps) {
 
   // Routing logic:
   // 1. Shell languages with filename → Use CodeEditor (animated terminal)
-  // 2. Shell languages without filename → Use Snippet (copyable)
+  // 2. Shell languages without filename → Use Snippet (copyable, clearly marked as Terminal)
   // 3. filename attribute + no copy → Use CodeEditor (animated, non-editable)
   // 4. copy attribute → Use CodeSnippet (editable)
   // 5. Default → Use CodeSnippet (editable by default)
@@ -147,22 +182,9 @@ export function MDXPre({ children, ...props }: MDXCodeBlockProps) {
     );
   }
 
-  // Shell commands without filename should be copyable snippets
+  // Shell commands without filename should be copyable snippets with Terminal label
   if (isShell) {
-    // Use Snippet for shell commands
-    // Capitalize first letter for label
-    const label = language.charAt(0).toUpperCase() + language.slice(1);
-    return (
-      <Snippet className="my-4">
-        <SnippetTab value={language} label={label} copyText={codeText}>
-          <pre className="p-4 overflow-x-auto bg-muted/30 rounded-md">
-            <code className="text-sm font-mono whitespace-pre text-foreground">
-              {codeText}
-            </code>
-          </pre>
-        </SnippetTab>
-      </Snippet>
-    );
+    return <ShellSnippet code={codeText} language={language} />;
   }
 
   // If filename is provided and no copy attribute, use animated CodeEditor
@@ -214,19 +236,8 @@ export function MDXCode({ children, className, ...props }: MDXCodeProps) {
   const isShell = SHELL_LANGUAGES.has(language);
 
   if (isShell) {
-    // Capitalize first letter for label
-    const label = language.charAt(0).toUpperCase() + language.slice(1);
-    return (
-      <Snippet className="my-4">
-        <SnippetTab value={language} label={label} copyText={codeText}>
-          <pre className="p-4 overflow-x-auto bg-muted/30 rounded-md">
-            <code className="text-sm font-mono whitespace-pre text-foreground">
-              {codeText}
-            </code>
-          </pre>
-        </SnippetTab>
-      </Snippet>
-    );
+    // Use Snippet for shell commands with Terminal label
+    return <ShellSnippet code={codeText} language={language} />;
   }
 
   // Default to CodeSnippet for editable code blocks

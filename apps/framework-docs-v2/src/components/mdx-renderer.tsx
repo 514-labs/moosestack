@@ -10,7 +10,10 @@ import {
   Callout,
   LanguageTabs,
   LanguageTabContent,
+  CodeEditorWrapper,
 } from "@/components/mdx";
+import { CodeEditor } from "@/components/ui/shadcn-io/code-editor";
+import { Terminal, FileCode } from "lucide-react";
 import { MDXPre, MDXCode } from "@/components/mdx/code-block-wrapper";
 import remarkGfm from "remark-gfm";
 import rehypeSlug from "rehype-slug";
@@ -34,6 +37,10 @@ export async function MDXRenderer({ source }: MDXRendererProps) {
     Callout,
     LanguageTabs,
     LanguageTabContent,
+    CodeEditorWrapper,
+    CodeEditor,
+    Terminal,
+    FileCode,
     // Custom code block components
     pre: MDXPre,
     code: MDXCode,

@@ -88,9 +88,81 @@ const config: Config = {
         "accordion-down": "accordion-down 0.2s ease-out",
         "accordion-up": "accordion-up 0.2s ease-out",
       },
+      typography: {
+        DEFAULT: {
+          css: {
+            maxWidth: "none",
+            color: "hsl(var(--foreground))",
+            h1: {
+              fontSize: "2.25rem",
+              fontWeight: "700",
+              marginTop: "2rem",
+              marginBottom: "1rem",
+            },
+            h2: {
+              fontSize: "1.875rem",
+              fontWeight: "700",
+              marginTop: "1.5rem",
+              marginBottom: "0.75rem",
+              scrollMarginTop: "5rem",
+            },
+            h3: {
+              fontSize: "1.5rem",
+              fontWeight: "600",
+              marginTop: "1rem",
+              marginBottom: "0.5rem",
+              scrollMarginTop: "5rem",
+            },
+            p: {
+              marginBottom: "1rem",
+              lineHeight: "1.75rem",
+            },
+            code: {
+              backgroundColor: "hsl(var(--muted))",
+              paddingLeft: "0.375rem",
+              paddingRight: "0.375rem",
+              paddingTop: "0.125rem",
+              paddingBottom: "0.125rem",
+              borderRadius: "0.25rem",
+              fontSize: "0.875rem",
+            },
+            pre: {
+              backgroundColor: "hsl(var(--muted))",
+              padding: "1rem",
+              borderRadius: "0.5rem",
+              overflowX: "auto",
+              marginBottom: "1rem",
+            },
+            "pre code": {
+              backgroundColor: "transparent",
+              padding: "0",
+            },
+            a: {
+              color: "hsl(var(--primary))",
+              textDecoration: "none",
+              "&:hover": {
+                textDecoration: "underline",
+              },
+            },
+            ul: {
+              listStyleType: "disc",
+              listStylePosition: "inside",
+              marginBottom: "1rem",
+            },
+            ol: {
+              listStyleType: "decimal",
+              listStylePosition: "inside",
+              marginBottom: "1rem",
+            },
+            li: {
+              marginBottom: "0.5rem",
+            },
+          },
+        },
+      },
     },
   },
-  plugins: [require("tailwindcss-animate")],
+  plugins: [require("tailwindcss-animate"), require("@tailwindcss/typography")],
 };
 
 export default config;

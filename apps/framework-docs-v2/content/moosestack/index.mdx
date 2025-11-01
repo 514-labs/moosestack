@@ -10,6 +10,7 @@ import { CTACard, CTACards } from "@/components/mdx/cta-card";
 import { StaggeredCard, StaggeredCards, StaggeredContent, StaggeredCode } from "@/components/mdx/staggered-card";
 import { Callout } from "@/components/mdx/callout";
 import { LanguageTabs, LanguageTabContent } from "@/components/mdx/language-tabs";
+import { CodeEditorWrapper } from "@/components/mdx/code-editor-wrapper";
 import { PathConfig } from "@/lib/path-config";
 
 # MooseStack
@@ -146,18 +147,24 @@ analytics_api = Api[RequestParams, DataModel]("get-api-route", query_function=ha
       }}
     />
     <StaggeredCode>
-```ts
-interface Event {
-  id: Key<string>;
-  name: string;
-  createdAt: Date;
-}
-
-interface AggregatedEvent {
-  count: number;
-  name: string;
-}
-```
+      <CodeEditorWrapper
+        language="ts"
+        filename="models.ts"
+        variant="ide"
+      >
+{[
+  "interface Event {",
+  "  id: Key<string>;",
+  "  name: string;",
+  "  createdAt: Date;",
+  "}",
+  "",
+  "interface AggregatedEvent {",
+  "  count: number;",
+  "  name: string;",
+  "}",
+].join("\n")}
+      </CodeEditorWrapper>
     </StaggeredCode>
   </StaggeredCard>
 
@@ -172,18 +179,24 @@ interface AggregatedEvent {
       }}
     />
     <StaggeredCode>
-```bash
-# Start local dev server
-moose dev
-
-⡏ Starting local infrastructure
-  Successfully started containers
-  Validated clickhousedb-1 docker container
-  Validated redpanda-1 docker container
-  Successfully validated red panda cluster
-  Validated temporal docker container
-  Successfully ran local infrastructure
-```
+      <CodeEditorWrapper
+        language="bash"
+        filename="Terminal"
+        variant="terminal"
+      >
+{[
+  "# Start local dev server",
+  "moose dev",
+  "",
+  "⡏ Starting local infrastructure",
+  "  Successfully started containers",
+  "  Validated clickhousedb-1 docker container",
+  "  Validated redpanda-1 docker container",
+  "  Successfully validated red panda cluster",
+  "  Validated temporal docker container",
+  "  Successfully ran local infrastructure",
+].join("\n")}
+      </CodeEditorWrapper>
     </StaggeredCode>
   </StaggeredCard>
 </StaggeredCards>
@@ -203,20 +216,26 @@ moose dev
       }}
     />
     <StaggeredCode>
-```ts
-const table = new OlapTable<Event>("events");
-
-const mv = new MaterializedView<AggregatedEvent>({
-  selectStatement: sql`
-    SELECT count(*) as count, name
-    FROM ${table}
-    GROUP BY name
-  `,
-  selectTables: [table],
-  tableName: "events",
-  materializedViewName: "aggregated_events"
-});
-```
+      <CodeEditorWrapper
+        language="ts"
+        filename="olap.ts"
+        variant="ide"
+      >
+{[
+  "const table = new OlapTable<Event>(\"events\");",
+  "",
+  "const mv = new MaterializedView<AggregatedEvent>({",
+  "  selectStatement: sql`",
+  "    SELECT count(*) as count, name",
+  "    FROM ${table}",
+  "    GROUP BY name",
+  "  `,",
+  "  selectTables: [table],",
+  "  tableName: \"events\",",
+  "  materializedViewName: \"aggregated_events\"",
+  "});",
+].join("\n")}
+      </CodeEditorWrapper>
     </StaggeredCode>
   </StaggeredCard>
 
@@ -232,15 +251,21 @@ const mv = new MaterializedView<AggregatedEvent>({
       }}
     />
     <StaggeredCode>
-```ts
-const stream = new Stream<Event>("events", {
-  destination: table,
-});
-
-stream.addConsumer((event) => {
-  console.log(event);
-});
-```
+      <CodeEditorWrapper
+        language="ts"
+        filename="streaming.ts"
+        variant="ide"
+      >
+{[
+  "const stream = new Stream<Event>(\"events\", {",
+  "  destination: table,",
+  "});",
+  "",
+  "stream.addConsumer((event) => {",
+  "  console.log(event);",
+  "});",
+].join("\n")}
+      </CodeEditorWrapper>
     </StaggeredCode>
   </StaggeredCard>
 
@@ -256,13 +281,19 @@ stream.addConsumer((event) => {
       }}
     />
     <StaggeredCode>
-```ts
-const etl = new Workflow("my_etl", {
-  startingTask: startEtl,
-  schedule: "@every 1h",
-  retries: 3,
-});
-```
+      <CodeEditorWrapper
+        language="ts"
+        filename="workflows.ts"
+        variant="ide"
+      >
+{[
+  "const etl = new Workflow(\"my_etl\", {",
+  "  startingTask: startEtl,",
+  "  schedule: \"@every 1h\",",
+  "  retries: 3,",
+  "});",
+].join("\n")}
+      </CodeEditorWrapper>
     </StaggeredCode>
   </StaggeredCard>
 
@@ -278,20 +309,26 @@ const etl = new Workflow("my_etl", {
       }}
     />
     <StaggeredCode>
-```ts
-const postEvent = new IngestApi<Event>("post-event", {
-  destination: stream,
-});
- 
-const getEvents = new Api<Params, Event>("get-events", {
-  async handler({limit = 10}, {client, sql}) {
-    // query database and return results
-    return await client.query.execute(sql`
-      SELECT * FROM events LIMIT ${limit}
-    `);
-  }
-});
-```
+      <CodeEditorWrapper
+        language="ts"
+        filename="apis.ts"
+        variant="ide"
+      >
+{[
+  "const postEvent = new IngestApi<Event>(\"post-event\", {",
+  "  destination: stream,",
+  "});",
+  "",
+  "const getEvents = new Api<Params, Event>(\"get-events\", {",
+  "  async handler({limit = 10}, {client, sql}) {",
+  "    // query database and return results",
+  "    return await client.query.execute(sql`",
+  "      SELECT * FROM events LIMIT ${limit}",
+  "    `);",
+  "  }",
+  "});",
+].join("\n")}
+      </CodeEditorWrapper>
     </StaggeredCode>
   </StaggeredCard>
 </StaggeredCards>
@@ -315,10 +352,16 @@ const getEvents = new Api<Params, Event>("get-events", {
       }}
     />
     <StaggeredCode>
-```bash
-# Build for production
-moose build
-```
+      <CodeEditorWrapper
+        language="bash"
+        filename="Terminal"
+        variant="terminal"
+      >
+{[
+  "# Build for production",
+  "moose build",
+].join("\n")}
+      </CodeEditorWrapper>
     </StaggeredCode>
   </StaggeredCard>
 
@@ -334,25 +377,31 @@ moose build
       }}
     />
     <StaggeredCode>
-```bash
-# Create a plan
-moose plan
-
-# Example plan output:
-  ~ Table events with column changes: [
-    Added(
-      Column { 
-        name: "status", 
-        data_type: String,
-        required: true, 
-        unique: false, 
-        primary_key: false, 
-        default: None 
-      })] 
-    and order by changes: OrderByChange { 
-      before: [], after: [] 
-    }
-```
+      <CodeEditorWrapper
+        language="bash"
+        filename="Terminal"
+        variant="terminal"
+      >
+{[
+  "# Create a plan",
+  "moose plan",
+  "",
+  "# Example plan output:",
+  "  ~ Table events with column changes: [",
+  "    Added(",
+  "      Column { ",
+  "        name: \"status\", ",
+  "        data_type: String,",
+  "        required: true, ",
+  "        unique: false, ",
+  "        primary_key: false, ",
+  "        default: None ",
+  "      })] ",
+  "    and order by changes: OrderByChange { ",
+  "      before: [], after: [] ",
+  "    }",
+].join("\n")}
+      </CodeEditorWrapper>
     </StaggeredCode>
   </StaggeredCard>
 </StaggeredCards>

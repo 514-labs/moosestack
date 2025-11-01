@@ -34,7 +34,7 @@ export function SnippetHeader({ className, children }: SnippetHeaderProps) {
   return (
     <div
       className={cn(
-        "flex items-center justify-between border-b bg-transparent px-3 h-12 rounded-t-lg",
+        "flex items-center justify-between border-b bg-transparent px-3 h-9 rounded-t-lg",
         className,
       )}
     >
