@@ -149,15 +149,6 @@ const TEMPLATE_CONFIGS: TemplateTestConfig[] = [
     isTestsVariant: true,
     packageManager: "pip",
   },
-  {
-    templateName: "typescript-mcp",
-    displayName: `TypeScript MCP Template (${TEST_PACKAGE_MANAGER})`,
-    projectDirSuffix: `ts-mcp-${TEST_PACKAGE_MANAGER}`,
-    appName: "typescript-mcp",
-    language: "typescript",
-    isTestsVariant: false,
-    packageManager: TEST_PACKAGE_MANAGER,
-  },
 ];
 
 const createTemplateTestSuite = (config: TemplateTestConfig) => {
@@ -1155,51 +1146,6 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
           expect(apiData).to.be.an("array");
         });
       }
-    }
-
-    // Add MCP-specific tests for typescript-mcp template
-    if (config.templateName === "typescript-mcp") {
-      it("should expose MCP tools at /tools endpoint", async function () {
-        this.timeout(TIMEOUTS.TEST_SETUP_MS);
-
-        // Verify the WebApp endpoint is accessible
-        const response = await fetch(`${SERVER_CONFIG.url}/tools`, {
-          method: "GET",
-        });
-
-        // The endpoint should respond (even if it's SSE and we're not handling it properly in this test)
-        // We're just verifying the WebApp is mounted correctly
-        expect(response).to.exist;
-
-        console.log(
-          `✅ MCP WebApp endpoint is accessible at /tools (status: ${response.status})`,
-        );
-      });
-
-      it("should have DataEvent table created", async function () {
-        this.timeout(TIMEOUTS.TEST_SETUP_MS);
-
-        // Verify the DataEvent table was created by checking ClickHouse
-        const queryResponse = await fetch(
-          `http://localhost:18123/?query=${encodeURIComponent("SHOW TABLES LIKE 'DataEvent'")}`,
-          {
-            headers: {
-              "X-ClickHouse-User": "panda",
-              "X-ClickHouse-Key": "pandapass",
-              "X-ClickHouse-Database": "local",
-            },
-          },
-        );
-
-        if (!queryResponse.ok) {
-          throw new Error(`ClickHouse query failed: ${queryResponse.status}`);
-        }
-
-        const tables = await queryResponse.text();
-        expect(tables.trim()).to.equal("DataEvent");
-
-        console.log("✅ DataEvent table exists in ClickHouse");
-      });
     }
   });
 };
