@@ -5,9 +5,12 @@ order: 1
 category: contribution
 ---
 
+import { Callout, CTACards, CTACard, LanguageTabs, LanguageTabContent } from "@/components/mdx";
+import { CodeEditorWrapper } from "@/components/mdx/code-editor-wrapper";
+
 # Contributing to Documentation
 
-Thank you for your interest in contributing to the MooseStack documentation! This guide will help you get started.
+Thank you for your interest in contributing to the MooseStack documentation! This guide will help you get started with writing clear, consistent documentation.
 
 ## Getting Started
 
@@ -24,16 +27,466 @@ The documentation is built using MDX files located in the `content/` directory. 
 
 - All content files are in the `content/` directory
 - Each MDX file has frontmatter with `title`, `description`, `order`, and `category`
-- Code examples should be language-agnostic when possible, or clearly marked for TypeScript or Python
+- Code examples should support both TypeScript and Python when applicable using `LanguageTabs`
+
+## Code Snippets
+
+### Basic Code Block with Title
+
+To add a code block with a filename displayed, use the `title` attribute in the language tag for **static** (non-animated) code blocks:
+
+````markdown
+```typescript title="MyFile.ts"
+const example = "Hello, World!";
+```
+````
+
+This will automatically:
+- Display the filename at the top of the code block
+- Show a copy button
+- Render with syntax highlighting
+- **Remain static** (no animation)
+
+### Animated Code Editor (for demonstrations)
+
+When you use the `filename` attribute instead, it becomes an **animated** code editor that types out the code. This is great for showcasing code:
+
+````markdown
+```typescript filename="example.ts"
+import { OlapTable } from "@514labs/moose-lib";
+
+const table = new OlapTable<MyModel>("my_table");
+```
+````
+
+**Rules for animated editors:**
+- ✅ Code blocks with `filename` attribute → Animated IDE/terminal
+- ✅ Terminal commands (bash, sh, shell) with `filename` → Animated terminal
+- ❌ Config files (toml, yaml, json) → Always static (never animated, even with `filename`)
+
+**Key difference:**
+- `title="..."` → Static code block with filename display
+- `filename="..."` → Animated code editor that types out the code
+
+### Static Code Block (with copy button)
+
+If you want a static code block with a copy button but no animation, use `title` instead of `filename`, or omit both:
+
+````markdown
+```typescript title="example.ts"
+const example = "Static code block with filename";
+```
+
+```typescript
+const example = "Static code block without filename";
+```
+````
+
+### Terminal Commands
+
+For terminal commands, simply use `bash`, `sh`, or `shell` as the language:
+
+**Animated terminal (uses `filename`):**
+
+````markdown
+```bash filename="Terminal"
+moose init my-project
+cd my-project
+moose dev
+```
+````
+
+**Static terminal snippet (no filename or title):**
+
+````markdown
+```bash
+npm install @514labs/moose-lib
+```
+````
+
+**Static terminal with title (uses `title`):**
+
+````markdown
+```bash title="Terminal"
+# This command sets up the project
+npm install @514labs/moose-lib
+```
+````
+
+### Config Files
+
+Config files (TOML, YAML, JSON, etc.) always render as static code blocks, never animated. Use `title` for config files:
+
+````markdown
+```toml title="moose.config.toml"
+[features]
+olap = true
+streaming = true
+```
+````
+
+**Note:** Config files ignore the `filename` attribute and always render statically.
+
+**Config file languages:** `toml`, `yaml`, `yml`, `json`, `jsonc`, `ini`, `properties`, `config`
+
+### Code Block Types Summary
+
+| Type | Syntax | Result |
+|------|--------|--------|
+| Animated IDE | ` ```ts filename="file.ts"` | Types out code, shows filename |
+| Animated Terminal | ` ```bash filename="Terminal"` | Types out command, terminal style |
+| Static with title | ` ```ts title="file.ts"` | Static code block with filename display |
+| Static without title | ` ```typescript` | Copyable code block, no filename |
+| Terminal snippet | ` ```bash` | Copyable terminal command, no filename |
+| Config file | ` ```toml title="config.toml"` | Static, never animated (ignores `filename`) |
+
+## Multi-Language Support
+
+### LanguageTabs Component
+
+Use `LanguageTabs` to show code examples in multiple languages side-by-side:
+
+<LanguageTabs items={["TypeScript", "Python"]}>
+  <LanguageTabContent value="typescript">
+```typescript
+import { OlapTable } from "@514labs/moose-lib";
+
+const table = new OlapTable<MyModel>("my_table");
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```python
+from moose_lib import OlapTable
+
+table = OlapTable[MyModel]("my_table")
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+**Important:** 
+- The `value` prop must match the lowercase language name (`typescript` or `python`)
+- LanguageTabs typically use simple code blocks without `title` or `filename` attributes - they render as static, copyable code blocks
+- Use `title` or `filename` attributes only when you need to show a filename or create animations in standalone code blocks (not within LanguageTabs)
+
+### Language-Specific Notes
+
+When documenting language-specific features, use `Callout` components within language tabs:
+
+<LanguageTabs items={["TypeScript", "Python"]}>
+  <LanguageTabContent value="typescript">
+    <Callout type="info" title="Export Requirement">
+      In TypeScript, you must export all primitives for Moose to discover them.
+    </Callout>
+```typescript
+export const myTable = new OlapTable("my_table");
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```python
+# No export needed - Python modules are automatically discovered
+my_table = OlapTable("my_table")
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+## Components Reference
+
+### Callout
+
+Display important information, warnings, or tips:
+
+```tsx
+<Callout type="info" title="Custom Title">
+  This is an informational callout with a custom title.
+</Callout>
+
+<Callout type="warning">
+  This warning uses the default title "Warning:".
+</Callout>
+
+<Callout type="success">
+  Success message with party popper icon!
+</Callout>
+```
+
+**Props:**
+- `type`: `"info" | "warning" | "danger" | "success"` (required)
+- `title`: Custom title text (optional, uses default if not provided)
+- `href`: Link URL (optional)
+- `ctaLabel`: Button label text (default: "Learn more")
+- `compact`: Use compact layout (default: `false`)
+- `icon`: Icon component or `true`/`false` to show/hide (default: `true`)
+
+**Example with link:**
+
+```tsx
+<Callout 
+  type="info" 
+  title="Review the full guide" 
+  href="/moosestack/getting-started/from-clickhouse" 
+  ctaLabel="Get started" 
+  compact={true}
+>
+  Review the full guide to learn more about how to bootstrap a new Moose OLAP project.
+</Callout>
+```
+
+### CTACard and CTACards
+
+Create call-to-action cards for linking to related documentation:
+
+```tsx
+<CTACards columns={2}>
+  <CTACard
+    title="OLAP Tables"
+    description="Define and create ClickHouse tables with type-safe schemas"
+    ctaLink="/moosestack/olap/model-table"
+    ctaLabel="Learn More →"
+    badge={{ variant: "moose", text: "Tables" }}
+  />
+  <CTACard
+    title="Materialized Views"
+    description="Pre-compute and store query results for faster analytics"
+    ctaLink="/moosestack/olap/model-materialized-view"
+    ctaLabel="Learn More →"
+    badge={{ variant: "moose", text: "Materialized Views" }}
+  />
+</CTACards>
+```
+
+**CTACard Props:**
+- `title`: Card title (required)
+- `description`: Card description (required)
+- `ctaLink`: Link URL (required)
+- `ctaLabel`: Button text (default: "Learn more")
+- `Icon`: Lucide icon name (string) or icon component (optional)
+- `badge`: Badge object with `variant` and `text` (optional)
+- `variant`: `"default" | "gradient" | "sloan"` (default: `"default"`)
+- `orientation`: `"vertical" | "horizontal"` (default: `"vertical"`)
+- `isMooseModule`: Prefix title with "Moose " (default: `false`)
+
+**CTACards Props:**
+- `columns`: Number of columns (1-4, default: `2`)
+- `rows`: Number of rows (default: `1`)
+
+**Horizontal CTACard:**
+
+```tsx
+<CTACards columns={1}>
+  <CTACard
+    title="Read Data"
+    description="Write type-safe SQL queries with automatic interpolation"
+    ctaLink="/moosestack/olap/read-data"
+    ctaLabel="Learn More →"
+    orientation="horizontal"
+    Icon="Database"
+  />
+</CTACards>
+```
+
+### StaggeredCard
+
+Create alternating left-right layouts for showcasing features:
+
+```tsx
+<StaggeredCards>
+  <StaggeredCard>
+    <StaggeredContent
+      title="Data Modeling"
+      description="Model all of your infrastructure in native TypeScript or Python."
+      cta={{
+        label: "Learn more",
+        href: "/moosestack/data-modeling",
+        variant: "outline",
+      }}
+    />
+    <StaggeredCode>
+      <CodeEditorWrapper
+        language="ts"
+        filename="models.ts"
+        variant="ide"
+      >
+{`interface Event {
+  id: Key<string>;
+  name: string;
+}`}
+      </CodeEditorWrapper>
+    </StaggeredCode>
+  </StaggeredCard>
+</StaggeredCards>
+```
+
+**StaggeredCard Props:**
+- `stagger`: `"left" | "right"` - Controls which side content appears on (default: `"left"`)
+- `className`: Additional CSS classes
+
+**StaggeredContent Props:**
+- `isMooseModule`: Prefix title with "Moose " (default: `false`)
+- `title`: Section title (required)
+- `description`: Section description (required)
+- `cta`: Call-to-action object with `label`, `href`, and `variant` (optional)
+
+**StaggeredCode Props:**
+- `children`: Code component (typically `CodeEditorWrapper`)
+- `language`: Language for syntax highlighting (default: `"ts"`)
+
+### IconBadge
+
+Small badges for highlighting features or technologies:
+
+```tsx
+import { IconBadge } from "@/components/mdx/icon-badge";
+
+<div className="flex items-center gap-4 my-8 flex-wrap">
+  <IconBadge Icon="Rocket" label="5 minute setup" variant="moose" />
+  <IconBadge Icon="Database" label="Pre-integrated ClickHouse" variant="moose" />
+</div>
+```
+
+**Props:**
+- `Icon`: Lucide icon name (string) or icon component (optional)
+- `label`: Badge text (required)
+- `variant`: `"moose" | "boreal" | "sloan" | "default"` (default: `"moose"`)
+- `rounded`: `"md" | "full"` (default: `"md"`)
+
+### CodeEditorWrapper
+
+For advanced use cases, you can use `CodeEditorWrapper` directly to create animated code editors:
+
+```tsx
+<CodeEditorWrapper
+  language="ts"
+  filename="example.ts"
+  variant="ide"
+  writing={true}
+  duration={5}
+  delay={0.5}
+>
+{`const example = "Hello, World!";`}
+</CodeEditorWrapper>
+```
+
+**Props:**
+- `code`: Code as string (alternatively, use `children`)
+- `children`: Code content (alternative to `code` prop)
+- `language`: Programming language (required)
+- `filename`: Display filename (optional)
+- `variant`: `"ide" | "terminal"` (default: `"ide"`)
+- `writing`: Enable typing animation (default: `true`)
+- `duration`: Animation duration in seconds (default: `5` for IDE, `3` for terminal)
+- `delay`: Initial delay in seconds (default: `0.5` for IDE, `0.3` for terminal)
+
+**Note:** In most cases, you don't need to use `CodeEditorWrapper` directly. Use code blocks with `filename` attribute instead.
 
 ## Style Guidelines
 
+### Writing Style
+
 - Use clear, concise language
+- Write in second person ("you") when giving instructions
+- Use active voice when possible
+- Keep sentences short and focused
+
+### Code Examples
+
+- Always include working code examples
+- Show both TypeScript and Python when applicable
+- Include necessary imports
+- Use descriptive variable names
+- Add comments to explain complex logic
+
+### Formatting
+
+- Use consistent heading levels (H1 for page title, H2 for main sections, H3 for subsections)
 - Include code examples where helpful
-- Link to related documentation
+- Link to related documentation using `CTACard` components
+- Use `Callout` components for important notes, warnings, or tips
 - Keep formatting consistent with existing pages
+
+### Code Block Best Practices
+
+1. **Use `title` for static code blocks** when you want to show a filename
+2. **Use `filename` for animated demonstrations** when you want the code to type out
+3. **Always include filenames** when showing file contents (using `title` for static, `filename` for animated)
+4. **Use appropriate language tags** (`ts`, `py`, `bash`, `toml`, etc.)
+5. **Use LanguageTabs** for multi-language examples
+6. **Keep code examples focused** - show only what's necessary
+7. **Add context** with callouts when code needs explanation
+
+### File Structure Best Practices
+
+```
+content/
+  moosestack/
+    getting-started/
+      quickstart.mdx       # H1: Quickstart
+    olap/
+      index.mdx            # H1: Moose OLAP
+      model-table.mdx      # H1: Model a Table
+```
+
+## Complete Example
+
+Here's a complete example combining multiple components. This shows the structure of a typical documentation page:
+
+**Frontmatter:**
+```yaml
+---
+title: Example Page
+description: An example documentation page
+order: 1
+---
+```
+
+**Imports:**
+```tsx
+import { Callout, CTACards, CTACard, LanguageTabs, LanguageTabContent } from "@/components/mdx";
+```
+
+**Page Content:**
+
+<Callout type="info">
+  This page demonstrates all available documentation components.
+</Callout>
+
+<LanguageTabs items={["TypeScript", "Python"]}>
+  <LanguageTabContent value="typescript">
+```typescript
+import { OlapTable, Key } from "@514labs/moose-lib";
+
+interface MyTable {
+  id: Key<string>;
+  name: string;
+}
+
+export const myTable = new OlapTable<MyTable>("my_table");
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```python
+from moose_lib import OlapTable, Key
+from pydantic import BaseModel
+
+class MyTable(BaseModel):
+    id: Key[str]
+    name: str
+
+my_table = OlapTable[MyTable]("my_table")
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+**Reference cards:**
+
+<CTACards columns={1}>
+  <CTACard
+    title="Learn More"
+    description="Continue learning about this topic"
+    ctaLink="/moosestack/example/advanced"
+    ctaLabel="Continue →"
+  />
+</CTACards>
 
 ## Questions?
 
 If you have questions about contributing, please open an issue or reach out to the maintainers.
-
