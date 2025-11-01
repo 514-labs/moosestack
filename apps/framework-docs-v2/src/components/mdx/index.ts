@@ -7,11 +7,7 @@ export {
   StaggeredCode,
 } from "./staggered-card";
 export { Callout } from "./callout";
-export {
-  LanguageTabs,
-  LanguageTabContent,
-  LanguageProvider,
-} from "./language-tabs";
+export { LanguageTabs, LanguageTabContent } from "./language-tabs";
 export { CodeSnippet } from "./code-snippet";
 export { CodeEditorWrapper } from "./code-editor-wrapper";
 export { ToggleBlock } from "./toggle-block";

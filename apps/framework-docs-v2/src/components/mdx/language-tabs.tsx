@@ -1,49 +1,8 @@
 "use client";
 
-import {
-  createContext,
-  useContext,
-  useState,
-  ReactNode,
-  Suspense,
-} from "react";
-import { useSearchParams } from "next/navigation";
+import { ReactNode, Suspense, useState, useEffect } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-
-type Language = "typescript" | "python";
-
-interface LanguageContextType {
-  language: Language;
-  setLanguage: (lang: Language) => void;
-}
-
-const LanguageContext = createContext<LanguageContextType | undefined>(
-  undefined,
-);
-
-export function LanguageProvider({
-  children,
-  initialLanguage = "typescript",
-}: {
-  children: ReactNode;
-  initialLanguage?: Language;
-}) {
-  const [language, setLanguage] = useState<Language>(initialLanguage);
-
-  return (
-    <LanguageContext.Provider value={{ language, setLanguage }}>
-      {children}
-    </LanguageContext.Provider>
-  );
-}
-
-export function useLanguage() {
-  const context = useContext(LanguageContext);
-  if (!context) {
-    throw new Error("useLanguage must be used within LanguageProvider");
-  }
-  return context;
-}
+import { useLanguage } from "@/hooks/use-language";
 
 interface LanguageTabsProps {
   children: ReactNode;
@@ -54,14 +13,29 @@ function LanguageTabsInner({
   children,
   items = ["TypeScript", "Python"],
 }: LanguageTabsProps) {
-  const searchParams = useSearchParams();
+  const { language } = useLanguage();
 
-  // Get language from URL query params, default to typescript
-  const langParam = searchParams?.get("lang");
-  const currentLanguage = langParam === "python" ? "python" : "typescript";
+  // Local state for this tab group - initializes from global language
+  const [localLanguage, setLocalLanguage] = useState<string>(
+    language.toLowerCase(),
+  );
+
+  // Sync local state when global language changes (from sidenav)
+  useEffect(() => {
+    setLocalLanguage(language.toLowerCase());
+  }, [language]);
+
+  const handleValueChange = (value: string) => {
+    // Only update local state, don't change global language
+    setLocalLanguage(value);
+  };
 
   return (
-    <Tabs defaultValue={currentLanguage} className="w-full my-4">
+    <Tabs
+      value={localLanguage}
+      onValueChange={handleValueChange}
+      className="w-full my-4"
+    >
       <TabsList className="grid w-full max-w-md grid-cols-2">
         {items.map((item) => (
           <TabsTrigger key={item} value={item.toLowerCase()}>
