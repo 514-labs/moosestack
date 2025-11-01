@@ -134,7 +134,7 @@ export function CTACards({ children, columns = 2, rows = 1 }: CTACardsProps) {
   return (
     <div
       className={cn(
-        "grid gap-5 mt-5",
+        "not-prose grid gap-5 mt-5",
         gridColumns[columns as keyof typeof gridColumns],
         `grid-rows-${rows}`,
         columns === 1 ? "justify-items-start" : "",

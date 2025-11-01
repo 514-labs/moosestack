@@ -12,6 +12,7 @@ import { Callout } from "@/components/mdx/callout";
 import { LanguageTabs, LanguageTabContent } from "@/components/mdx/language-tabs";
 import { CodeEditorWrapper } from "@/components/mdx/code-editor-wrapper";
 import { PathConfig } from "@/lib/path-config";
+import { Separator } from "@/components/ui/separator";
 
 # MooseStack
 
@@ -167,8 +168,8 @@ analytics_api = Api[RequestParams, DataModel]("get-api-route", query_function=ha
       </CodeEditorWrapper>
     </StaggeredCode>
   </StaggeredCard>
-
-  <StaggeredCard className="border-t">
+  <Separator />
+  <StaggeredCard>
     <StaggeredContent
       title="Local Development Environment"
       description="Run your entire analytical backend on your laptop, hot reloading schema migrations as you work."
@@ -238,8 +239,8 @@ analytics_api = Api[RequestParams, DataModel]("get-api-route", query_function=ha
       </CodeEditorWrapper>
     </StaggeredCode>
   </StaggeredCard>
-
-  <StaggeredCard className="border-t">
+  <Separator />
+  <StaggeredCard>
     <StaggeredContent
       isMooseModule={true}
       title="Streaming"
@@ -268,8 +269,8 @@ analytics_api = Api[RequestParams, DataModel]("get-api-route", query_function=ha
       </CodeEditorWrapper>
     </StaggeredCode>
   </StaggeredCard>
-
-  <StaggeredCard className="border-t">
+  <Separator />
+  <StaggeredCard>
     <StaggeredContent
       isMooseModule={true}
       title="Workflows"
@@ -296,8 +297,8 @@ analytics_api = Api[RequestParams, DataModel]("get-api-route", query_function=ha
       </CodeEditorWrapper>
     </StaggeredCode>
   </StaggeredCard>
-
-  <StaggeredCard className="border-t">
+  <Separator />
+  <StaggeredCard>
     <StaggeredContent
       isMooseModule={true}
       title="APIs"
@@ -364,8 +365,8 @@ analytics_api = Api[RequestParams, DataModel]("get-api-route", query_function=ha
       </CodeEditorWrapper>
     </StaggeredCode>
   </StaggeredCard>
-
-  <StaggeredCard className="border-t">
+  <Separator />
+  <StaggeredCard>
     <StaggeredContent
       isMooseModule={true}
       title="Migrate"

@@ -125,7 +125,7 @@ export function CodeEditorWrapper({
   const terminalWriting = isTerminal ? writing : writing;
 
   return (
-    <div className={cn("my-4 not-prose", className)}>
+    <div className={cn("not-prose", className)}>
       <CodeEditor
         lang={language}
         title={title}

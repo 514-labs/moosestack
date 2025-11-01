@@ -13,6 +13,7 @@ import {
   CodeEditorWrapper,
 } from "@/components/mdx";
 import { CodeEditor } from "@/components/ui/shadcn-io/code-editor";
+import { Separator } from "@/components/ui/separator";
 import { Terminal, FileCode } from "lucide-react";
 import {
   MDXPre,
@@ -43,6 +44,7 @@ export async function MDXRenderer({ source }: MDXRendererProps) {
     LanguageTabContent,
     CodeEditorWrapper,
     CodeEditor,
+    Separator,
     Terminal,
     FileCode,
 

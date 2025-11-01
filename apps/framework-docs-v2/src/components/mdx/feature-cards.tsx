@@ -25,7 +25,7 @@ export function FeatureCard({
   className,
 }: FeatureCardProps) {
   const cardClasses = cn(
-    "flex flex-col rounded-xl border border-border bg-card",
+    "not-prose flex flex-col rounded-xl border border-border bg-card",
     {
       "transition-colors cursor-pointer": !!href,
       "hover:border-primary hover:bg-primary/5":
@@ -126,7 +126,7 @@ export function FeatureGrid({
   }[columns];
 
   return (
-    <div className={cn("grid gap-6 my-8", gridClass, className)}>
+    <div className={cn("not-prose grid gap-6 my-8", gridClass, className)}>
       {children}
     </div>
   );

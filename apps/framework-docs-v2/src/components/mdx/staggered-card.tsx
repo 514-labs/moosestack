@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button";
 import Link from "next/link";
 
 export function StaggeredCards({ children }: { children: React.ReactNode }) {
-  return <Card className="space-y-8 my-8">{children}</Card>;
+  return <Card className="not-prose space-y-8 my-8 p-8">{children}</Card>;
 }
 
 interface StaggeredCardProps {
@@ -28,7 +28,7 @@ export function StaggeredCard({
     <div>
       <div
         className={cn(
-          "grid grid-cols-1 gap-4 mx-4 items-start pt-8",
+          "grid grid-cols-1 gap-4 items-start",
           stagger === "left" ?
             "md:grid-cols-[40%_60%]"
           : "md:grid-cols-[60%_40%]",
