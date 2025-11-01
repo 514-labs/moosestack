@@ -14,7 +14,11 @@ import {
 } from "@/components/mdx";
 import { CodeEditor } from "@/components/ui/shadcn-io/code-editor";
 import { Terminal, FileCode } from "lucide-react";
-import { MDXPre, MDXCode } from "@/components/mdx/code-block-wrapper";
+import {
+  MDXPre,
+  MDXCode,
+  MDXFigure,
+} from "@/components/mdx/code-block-wrapper";
 import remarkGfm from "remark-gfm";
 import rehypeSlug from "rehype-slug";
 import rehypeAutolinkHeadings from "rehype-autolink-headings";
@@ -41,7 +45,9 @@ export async function MDXRenderer({ source }: MDXRendererProps) {
     CodeEditor,
     Terminal,
     FileCode,
-    // Custom code block components
+
+    figure: MDXFigure,
+    // wrap with not-prose class
     pre: MDXPre,
     code: MDXCode,
   };

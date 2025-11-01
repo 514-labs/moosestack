@@ -43,7 +43,7 @@ export function TopNav({ stars }: TopNavProps) {
   }> = [
     {
       label: "MooseStack",
-      href: "/moosestack/overview",
+      href: "/moosestack",
       section: "moosestack",
     },
     {

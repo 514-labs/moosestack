@@ -625,6 +625,22 @@ const moosestackNavigationConfig: NavigationConfig = [
     icon: IconHistory,
     languages: ["typescript", "python"],
   },
+  { type: "separator" },
+  { type: "label", title: "Contribution" },
+  {
+    type: "page",
+    slug: "moosestack/contribution/documentation",
+    title: "Documentation",
+    icon: IconBook,
+    languages: ["typescript", "python"],
+  },
+  {
+    type: "page",
+    slug: "moosestack/contribution/framework",
+    title: "Framework",
+    icon: IconGitMerge,
+    languages: ["typescript", "python"],
+  },
 ];
 
 /**

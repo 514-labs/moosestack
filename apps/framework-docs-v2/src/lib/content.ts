@@ -31,6 +31,7 @@ export function getContentFiles(): string[] {
 
 /**
  * Recursively get all markdown files in a directory
+ * Excludes the 'shared' folder
  */
 function getAllMarkdownFiles(dir: string, baseDir: string): string[] {
   const files: string[] = [];
@@ -38,6 +39,10 @@ function getAllMarkdownFiles(dir: string, baseDir: string): string[] {
 
   for (const entry of entries) {
     const fullPath = path.join(dir, entry.name);
+    // Skip the shared folder
+    if (entry.isDirectory() && entry.name === "shared") {
+      continue;
+    }
     if (entry.isDirectory()) {
       files.push(...getAllMarkdownFiles(fullPath, baseDir));
     } else if (
@@ -58,13 +63,16 @@ function getAllMarkdownFiles(dir: string, baseDir: string): string[] {
 export async function parseMarkdownContent(
   slug: string,
 ): Promise<ParsedContent> {
+  // Handle empty slug - map to index
+  const normalizedSlug = slug === "" ? "index" : slug;
+
   // Try direct file path first
-  const filePath = path.join(CONTENT_ROOT, `${slug}.md`);
-  const mdxFilePath = path.join(CONTENT_ROOT, `${slug}.mdx`);
+  const filePath = path.join(CONTENT_ROOT, `${normalizedSlug}.md`);
+  const mdxFilePath = path.join(CONTENT_ROOT, `${normalizedSlug}.mdx`);
 
   // Also try index file in directory (e.g., moosestack -> moosestack/index.mdx)
-  const indexFilePath = path.join(CONTENT_ROOT, slug, "index.md");
-  const indexMdxFilePath = path.join(CONTENT_ROOT, slug, "index.mdx");
+  const indexFilePath = path.join(CONTENT_ROOT, normalizedSlug, "index.md");
+  const indexMdxFilePath = path.join(CONTENT_ROOT, normalizedSlug, "index.mdx");
 
   let fullPath: string;
   let isMDX = false;
@@ -82,7 +90,7 @@ export async function parseMarkdownContent(
   } else if (fs.existsSync(indexFilePath)) {
     fullPath = indexFilePath;
   } else {
-    throw new Error(`Content file not found for slug: ${slug}`);
+    throw new Error(`Content file not found for slug: ${normalizedSlug}`);
   }
 
   const fileContents = fs.readFileSync(fullPath, "utf8");

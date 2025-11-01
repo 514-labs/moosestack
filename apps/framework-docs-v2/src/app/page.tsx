@@ -23,7 +23,7 @@ export default async function HomePage({
       title: "MooseStack",
       description:
         "The core framework for building data applications with OLAP, streaming, workflows, and APIs.",
-      href: `/moosestack/overview${langParam}`,
+      href: `/moosestack${langParam}`,
       icon: IconDatabase,
     },
     {
