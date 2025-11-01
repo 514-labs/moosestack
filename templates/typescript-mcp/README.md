@@ -116,16 +116,10 @@ Executes SQL queries against the ClickHouse database with automatic result limit
 
 ## Using with Claude Code
 
-You can configure Claude Code to connect to your MCP server by adding it to your Claude Code configuration file (`~/.config/claude-code/settings.json`):
+You can configure Claude Code to connect to your MCP server by adding it to your Claude Code configuration:
 
-```json
-{
-  "mcpServers": {
-    "moosestack-tools": {
-      "url": "http://localhost:4000/tools"
-    }
-  }
-}
+```bash
+claude mcp add --transport http clickhouse http://localhost:4000/tools
 ```
 
 Once connected, you can ask Claude Code questions like:
