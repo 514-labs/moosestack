@@ -8,367 +8,126 @@ import { Callout } from "@/components";
 # November 1, 2025
 
 <Callout type="info" title="Highlights">
-* **New:** Add Nix development environment support
+- **New:** Support for ClickHouse table engines:
+  - [Buffer table engine](/moose/olap/model-table#in-memory-buffer-buffer): smooth ingest spikes before data lands in MergeTree ([ClickHouse docs](https://clickhouse.com/docs/en/engines/table-engines/special/buffer))
+  - [S3 table engine](/moose/olap/model-table#direct-s3-access-s3): keep data in S3 while ClickHouse reads and writes it on demand ([ClickHouse docs](https://clickhouse.com/docs/en/engines/table-engines/integrations/s3))
+  - Beta (self-hosted only): [Distributed table engine](/moose/olap/model-table#distributed-tables-distributed): serve cluster-wide queries through Moose-managed tables ([ClickHouse docs](https://clickhouse.com/docs/en/engines/table-engines/special/distributed))
+- **Improved:** Serverless migrations gain Redis-backed state storage plus per-table databases.
+- **Feature that will make a small number of people very happy:** `flake.nix` now ships a Moose devshell.
 </Callout>
 
+## Buffer tables for burst protection
+You can now model ClickHouse Buffer engines in MooseOLAP TypeScript and Python projects. 
 
+```ts filename="bufferTable.ts" copy
+import { ClickHouseEngines, Key, OlapTable } from "@514labs/moose-lib";
 
-## 🦌 Moose
+interface PaymentEvent {
+  eventId: Key<string>;
+  amount: number;
+  capturedAt: Date;
+}
 
-### New Features
-- **Add Nix development environment support**
-  Added flake.nix to enable developers to set up a complete MooseStack development environment using Nix. This provides a reproducible development setup with all required dependencies (Rust, Node.js, Python, build tools) and convenient test commands, making it easier for contributors to get started with local development.
+export const paymentBuffer = new OlapTable<PaymentEvent>("payment_buffer", {
+  engine: ClickHouseEngines.Buffer,
+  targetDatabase: "analytics",
+  targetTable: "payment_events_local",
+  minRows: 5_000,
+  maxRows: 500_000,
+});
+```
 
-  **Setting up MooseStack development with Nix**
-  ```bash
-  # Install Nix (if not already installed)
-  curl -L https://nixos.org/nix/install | sh
-  
-  # Clone your MooseStack project
-  git clone https://github.com/your-org/your-moose-project.git
-  cd your-moose-project
-  
-  # Enter the Nix development environment
-  nix develop
-  
-  # The environment automatically provides all dependencies:
-  # - Rust toolchain with clippy and rustfmt
-  # - Node.js 20 with PNPM
-  # - Python 3.12 with required packages
-  # - Build tools (protobuf, pkg-config, etc.)
-  
-  # Build your Moose application
-  pnpm build
-  cargo build
-  
-  # Run tests across all languages
-  cargo-test     # Run Rust tests
-  ts-test        # Run TypeScript tests  
-  py-test        # Run Python tests
-  test-all       # Run all tests at once
-  
-  # Start development
-  pnpm dev       # Start development servers
-  cargo clippy   # Run Rust linter
-  ```
-  
-  Shows how to use the new Nix flake to set up a complete MooseStack development environment with all required dependencies (Rust, Node.js, Python) and convenient test commands, eliminating manual dependency management.
+PR: [#2908](https://github.com/514-labs/moosestack/pull/2908) | Docs: [Buffer engine](/moose/olap/model-table#in-memory-buffer-buffer) • [ClickHouse Buffer engine docs](https://clickhouse.com/docs/en/engines/table-engines/special/buffer)
 
-- **Add support for Buffer, S3, and Distributed table engines**
-  Users can now create tables with Buffer, S3, and Distributed engines in their data models. Buffer engine allows for high-performance write buffering to destination tables, S3 engine enables direct querying of data stored in S3 buckets, and Distributed engine provides distributed query capabilities across multiple nodes. These engines expand the storage and performance options available when defining table schemas in TypeScript and Python projects.
+## S3 tables for object storage
+You can now model ClickHouse S3 engines in MooseOLAP TypeScript and Python projects. The CLI serializes engine settings, resolves runtime credentials, and enforces the S3 rule set (`PARTITION BY` allowed, `ORDER BY` rejected) so you can read or write datasets that live entirely in S3.
 
-  **Buffer and S3 Table Engines in MooseStack**
-  ```typescript
-  import { Key, Table } from "@514labs/moose-lib";
-  
-  // Define a data model for user events
-  export interface UserEvent extends Key<"userId"> {
-    userId: string;
-    eventType: string;
-    timestamp: Date;
-    metadata: string;
-  }
-  
-  // Buffer engine table - high-performance write buffering
-  export default Table(
-    {
-      columns: {
-        userId: "String",
-        eventType: "String", 
-        timestamp: "DateTime",
-        metadata: "String"
-      },
-      engine: {
-        engine: "Buffer",
-        targetDatabase: "analytics",
-        targetTable: "user_events_final",
-        numLayers: 16,
-        minTime: 10,
-        maxTime: 100,
-        minRows: 10000,
-        maxRows: 1000000,
-        minBytes: 10000000,
-        maxBytes: 100000000
-      }
-    },
-    {
-      name: "UserEventBuffer"
-    }
-  );
-  
-  // S3 engine table - query data directly from S3
-  export const S3UserLogs = Table(
-    {
-      columns: {
-        userId: "String",
-        action: "String",
-        timestamp: "DateTime"
-      },
-      engine: {
-        engine: "S3",
-        path: "s3://my-data-bucket/user-logs/{year}/{month}/{day}/",
-        format: "Parquet",
-        awsAccessKeyId: process.env.AWS_ACCESS_KEY_ID,
-        awsSecretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
-        partitionStrategy: "hive"
-      }
-    },
-    {
-      name: "S3UserLogs"
-    }
-  );
-  ```
-  
-  This example shows how to create tables with Buffer and S3 engines in MooseStack. The Buffer engine provides high-performance write buffering to a destination table, while the S3 engine enables direct querying of Parquet files stored in S3 buckets with automatic partitioning support.
+```ts filename="s3Archive.ts" copy
+import { ClickHouseEngines, OlapTable } from "@514labs/moose-lib";
 
-- **Automatic dead letter queue handling for oversized messages**
-  Messages that exceed Kafka size limits (typically 1MB) are now automatically sent to configured dead letter queues instead of causing pipeline failures. This improves pipeline reliability by gracefully handling large messages that would otherwise break streaming transforms.
+interface ArchivedOrder {
+  orderId: string;
+  status: string;
+  processedAt: Date;
+}
 
-- **Add Redis state storage support for serverless deployments**
-  Users can now configure Redis as the state storage backend for serverless deployments instead of relying solely on ClickHouse. This enables better state management in distributed serverless environments. The migrate and generate migration commands now accept a --redis-url flag, and Redis can be configured via the REDIS_URL environment variable when state_config.storage is set to "redis" in the project configuration.
+export const archivedOrders = new OlapTable<ArchivedOrder>("archived_orders", {
+  engine: ClickHouseEngines.S3,
+  path: "s3://company-archive/orders/{yyyy}/{MM}/",
+  format: "Parquet",
+});
+```
 
-  **Configure Redis state storage for serverless deployments**
-  ```typescript
-  // moose.config.ts - Configure Redis for state storage in serverless deployments
-  import { MooseConfig } from '@514labs/moose-lib';
-  
-  export default {
-    name: 'my-analytics-app',
-    version: '0.1.0',
-    
-    // Configure Redis as state storage backend for serverless
-    state_config: {
-      storage: 'redis' // Use Redis instead of ClickHouse for state
-    },
-    
-    // Your data models and other config...
-    models: {
-      // ... your data models
-    }
-  } satisfies MooseConfig;
-  
-  // Deploy with Redis state storage using CLI commands:
-  
-  // 1. Generate migration with Redis state storage
-  // moose generate migration --clickhouse-url="clickhouse://user:pass@prod.clickhouse.com:9000/analytics" --redis-url="redis://prod.redis.com:6379"
-  
-  // 2. Or use environment variables
-  // export CLICKHOUSE_URL="clickhouse://user:pass@prod.clickhouse.com:9000/analytics"
-  // export REDIS_URL="redis://prod.redis.com:6379"
-  // moose generate migration
-  
-  // 3. Execute migration in serverless environment
-  // moose migrate --clickhouse-url="clickhouse://user:pass@prod.clickhouse.com:9000/analytics" --redis-url="redis://prod.redis.com:6379"
-  ```
-  
-  Shows how to configure Redis as the state storage backend for serverless MooseStack deployments. The example demonstrates setting up the project configuration and using the new CLI flags to manage migrations with Redis state storage instead of relying solely on ClickHouse.
+PR: [#2908](https://github.com/514-labs/moosestack/pull/2908) | Docs: [S3 engine](/moose/olap/model-table#direct-s3-access-s3) • [ClickHouse S3 docs](https://clickhouse.com/docs/en/engines/table-engines/integrations/s3)
 
-- **Enhanced JSON type support with rich parameter configuration**
-  Added support for ClickHouse JSON types with advanced configuration options including max_dynamic_types, max_dynamic_paths, path type specifications, and skip patterns. This enables more precise control over JSON column behavior in data models, allowing users to optimize performance and define structured paths within JSON data.
+## Distributed tables for cluster fan-out
+Beta (self-hosted only): Not supported on Boreal or ClickHouse Cloud.
+You can now model ClickHouse Distributed engines in MooseOLAP TypeScript and Python projects. Plans capture the cluster, target database/table, and optional sharding key, while validation checks that the referenced local tables exist on every node before executing migrations.
 
-  **Enhanced JSON column with rich parameter configuration**
-  ```typescript
-  // data-models/UserActivity.ts
-  export interface UserActivity {
-    id: string;
-    userId: string;
-    timestamp: Date;
-    
-    // Enhanced JSON column with rich configuration
-    metadata: {
-      // Limit dynamic types and paths for performance
-      max_dynamic_types: 100;
-      max_dynamic_paths: 50;
-      
-      // Define typed paths for known structure
-      typed_paths: {
-        "user.profile.age": "UInt32";
-        "user.profile.name": "String";
-        "session.duration": "Float64";
-        "device.type": "String";
-      };
-      
-      // Skip sensitive or unnecessary paths
-      skip_paths: ["internal_debug", "temp_data"];
-      skip_regexps: [".*_internal$", "debug_.*"];
-    };
-    
-    // Standard fields
-    eventType: string;
-    source: string;
-  }
-  
-  // This generates ClickHouse table with:
-  // metadata JSON(
-  //   max_dynamic_types = 100,
-  //   max_dynamic_paths = 50,
-  //   user.profile.age UInt32,
-  //   user.profile.name String,
-  //   session.duration Float64,
-  //   device.type String,
-  //   SKIP internal_debug,
-  //   SKIP temp_data,
-  //   SKIP REGEXP '.*_internal$',
-  //   SKIP REGEXP 'debug_.*'
-  // )
-  ```
-  
-  This example shows how to define a data model with enhanced JSON type configuration in MooseStack. The JSON column includes performance optimizations (max_dynamic_types/paths), typed path specifications for known structure, and skip patterns to exclude unwanted data from indexing.
+```ts filename="distributedEvents.ts" copy
+import { ClickHouseEngines, Key, OlapTable } from "@514labs/moose-lib";
 
-- **Runtime environment variable resolution for S3Queue tables**
-  S3Queue tables can now use environment variables for AWS credentials at runtime. Use mooseRuntimeEnv.get() in TypeScript or moose_runtime_env.get() in Python to reference environment variables that will be resolved when the application starts. This enables secure credential management without hardcoding sensitive values in your data models.
+interface UserEvent {
+  userId: Key<string>;
+  eventType: string;
+  occurredAt: Date;
+}
 
-  **S3Queue with runtime environment variable credentials**
-  ```typescript
-  import { Key, S3Queue, mooseRuntimeEnv } from "@514labs/moose-lib";
-  
-  // Define a data model for processing S3 files
-  export interface UserActivityLog extends Key<"userId"> {
-    userId: string;
-    timestamp: Date;
-    action: string;
-    metadata: Record<string, any>;
-  }
-  
-  // S3Queue table with runtime environment variable resolution
-  export default {
-    tableName: "UserActivityLogs",
-    // Use runtime environment variables for AWS credentials
-    // These will be resolved when the application starts
-    awsAccessKeyId: mooseRuntimeEnv.get("AWS_ACCESS_KEY_ID"),
-    awsSecretAccessKey: mooseRuntimeEnv.get("AWS_SECRET_ACCESS_KEY"),
-    awsRegion: "us-east-1",
-    bucketName: "user-activity-logs",
-    // Optional: specify file pattern to match
-    keyPattern: "logs/year={year}/month={month}/day={day}/*.json",
-  } satisfies S3Queue<UserActivityLog>;
-  ```
-  
-  This example shows how to create an S3Queue table that uses runtime environment variables for AWS credentials. The mooseRuntimeEnv.get() function allows you to reference environment variables that will be securely resolved when the application starts, avoiding hardcoded credentials in your code.
+export const userEventsDistributed = new OlapTable<UserEvent>("user_events_distributed", {
+  engine: ClickHouseEngines.Distributed,
+  cluster: "analytics_cluster",
+  targetDatabase: "analytics",
+  targetTable: "user_events_local",
+  shardingKey: "cityHash64(userId)",
+});
+```
 
-- **Add multi-database support for tables**
-  Tables can now be configured to use different databases, enabling better data organization and isolation. This adds a database field to table configurations, allowing users to specify which database their tables should be created in rather than using a single default database.
+PR: [#2908](https://github.com/514-labs/moosestack/pull/2908) | Docs: [Distributed engine](/moose/olap/model-table#distributed-tables-distributed) • [ClickHouse Distributed docs](https://clickhouse.com/docs/en/engines/table-engines/special/distributed)
 
-  **Multi-database table configuration**
-  ```typescript
-  // datamodels/UserEvents.ts
-  import { Key } from "@514labs/moose-lib";
-  
-  export interface UserEvents {
-    @Key
-    userId: string;
-    eventType: string;
-    timestamp: Date;
-    metadata: string;
-  }
-  
-  // Configure this table to use the 'analytics' database
-  export const config = {
-    database: "analytics"
-  };
-  
-  // datamodels/SystemLogs.ts  
-  import { Key } from "@514labs/moose-lib";
-  
-  export interface SystemLogs {
-    @Key
-    logId: string;
-    level: string;
-    message: string;
-    timestamp: Date;
-  }
-  
-  // Configure this table to use the 'operations' database
-  export const config = {
-    database: "operations"
-  };
-  
-  // datamodels/Orders.ts
-  import { Key } from "@514labs/moose-lib";
-  
-  export interface Orders {
-    @Key
-    orderId: string;
-    customerId: string;
-    amount: number;
-    createdAt: Date;
-  }
-  
-  // No database config - uses default database
-  ```
-  
-  This example shows how to configure tables to use different databases in MooseStack. By adding a config export with a database field, tables can be organized into separate databases for better data isolation and organization.
+## Redis state storage for serverless migrations
+`moose generate migration` and `moose migrate` accept a Redis URL (flag or `MOOSE_REDIS_CONFIG__URL`) whenever `state_config.storage = "redis"`. The CLI resolves ClickHouse + Redis endpoints, acquires migration locks in Redis, and reuses the same builder across serverless tooling.
 
-- **Add data anonymization to Dutchie pipeline connector**
-  The Dutchie pipeline connector now anonymizes sensitive data by default to protect privacy. Users can disable anonymization by setting DUTCHIE_ANONYMIZE=false. The pipeline also splits into separate workflows for brands and discounts, making it easier to sync specific data types independently.
+```bash filename="Terminal" copy
+export MOOSE_CLICKHOUSE_CONFIG__URL="https://user:pass@ch.serverless.dev/main"
+export MOOSE_REDIS_CONFIG__URL="redis://redis.example.com:6379"
+moose migrate --clickhouse-url "$MOOSE_CLICKHOUSE_CONFIG__URL" --redis-url "$MOOSE_REDIS_CONFIG__URL"
+```
 
-  **Dutchie Pipeline with Data Anonymization**
-  ```typescript
-  import { Key, Task, Workflow } from "@514labs/moose-lib";
-  import { createDutchieConnector } from '../connectors/dutchie';
-  import { DiscountWithKey, DiscountPipeline } from '../ingest/models';
-  import { shouldAnonymize, anonymizeDiscount } from '../utils/anonymize';
-  
-  export const getDiscountsTask = new Task<null, void>("getDiscountsTask", {
-    run: async () => {
-      const apiKey = process.env.DUTCHIE_API_KEY;
-      if (!apiKey) throw new Error('DUTCHIE_API_KEY is required');
-  
-      const conn = createDutchieConnector();
-      conn.initialize({
-        auth: { type: 'basic', basic: { username: apiKey } },
-      });
-  
-      // Check if data anonymization is enabled (default: true)
-      const anonymize = shouldAnonymize();
-      console.log(`Getting discounts from Dutchie (anonymization: ${anonymize ? 'enabled' : 'disabled'})`);
-      
-      for await (const page of conn.discounts.getAll({ paging: { pageSize: 50 } })) {
-        let rows: DiscountWithKey[] = page
-          .filter(d => d.id != null)
-          .map(d => ({ ...d, id: d.id as Key<number> }));
-        
-        // Automatically anonymize sensitive data if enabled
-        if (anonymize) {
-          rows = rows.map(row => anonymizeDiscount(row));
-        }
-        
-        await DiscountPipeline.table!.insert(rows);
-      }
-  
-      console.log('Discounts inserted into ClickHouse');
-    },
-    retries: 1,
-    timeout: "30s",
-  });
-  
-  export const getDiscountsWorkflow = new Workflow("getDiscounts", {
-    startingTask: getDiscountsTask,
-    retries: 1,
-    timeout: "30s",
-  });
-  ```
-  
-  This example shows how to use the new data anonymization feature in the Dutchie pipeline connector. The pipeline automatically anonymizes sensitive data like discount codes and descriptions by default, protecting privacy while maintaining data structure. Users can disable anonymization by setting the DUTCHIE_ANONYMIZE environment variable to false.
+PR: [#2907](https://github.com/514-labs/moosestack/pull/2907) | Docs: [Redis state storage](/moose/migrate#state-storage-options)
 
-### Improvements
-- Improved Docker Desktop memory requirements documentation: Added clear memory requirements (2.5GB minimum) for Docker Desktop in the quickstart guide, including a warning callout with instructions on how to check and adjust memory settings. This helps users avoid common setup issues and ensures smooth local development.
-- Clarify S3Queue table backfill behavior in materialized views documentation: Added clear documentation explaining that materialized views sourced from S3Queue tables are not automatically backfilled, as S3Queue tables only process new files added after table creation. This helps users understand expected behavior when using S3Queue as a data source.
+## Multi-database tables
+Tables now carry a `database` field through the CLI, codegen, and infrastructure map. Moose will create any `additional_databases`, validate plans that attempt to move an existing table, and surface fully qualified names in `moose ls`.
 
-### Bug Fixes
-- Fix SQL parsing for tables with nested objects containing 'settings' fields: Fixed a bug where SQL table creation strings with deeply nested objects containing field names like 'settings' would fail to parse correctly. This ensures that complex nested data structures work properly when creating ClickHouse tables through Moose.
-- Fix ORDER BY clause handling for ClickHouse engines: Fixed incorrect ORDER BY clause validation that was preventing proper table configuration with certain ClickHouse engines. S3 engine now correctly supports ORDER BY clauses, while S3Queue, Buffer, and Distributed engines properly reject them. Also improved parsing of ORDER BY expressions containing function calls like cityHash64().
-- Fix materialized view not populating data after updates: Fixed a bug where materialized views would not automatically populate with data after being updated. When users modified a materialized view's SELECT statement, the system now correctly triggers a backfill operation to ensure the view contains the expected data based on the new query logic.
-- Fix TTL change detection and DEFAULT value removal in table migrations: Fixed issues where TTL (Time To Live) changes on tables and columns weren't being properly detected during migrations, and DEFAULT value removal wasn't working correctly. This ensures that when you modify TTL settings or remove DEFAULT values from your data models, the changes are properly applied to your ClickHouse tables during deployment.
+```ts filename="auditLogs.ts" copy
+import { Key, OlapTable } from "@514labs/moose-lib";
 
-## 🐻 Boreal
+interface AuditLog {
+  id: Key<string>;
+  recordedAt: Date;
+  message: string;
+}
 
-### Improvements
-- Improved blog post layout and metadata display: Reorganized blog post layout by moving publication date and reading time to the top of posts, simplified author information display, and improved overall visual hierarchy for better readability.
-- Improved branch settings UI and environment variable management: Enhanced the branch settings interface with better layout, clearer navigation labels, and improved environment variable form validation. Users now see "Branch Settings" instead of just "Settings" in navigation, and the environment variable creation form provides better error handling and validation feedback.
-- Improved banner animation with smooth collapse transition: Enhanced the OSA CON banner with smooth collapse animation when users close it, providing a more polished user experience. The banner now gracefully animates out instead of disappearing abruptly.
+export const auditLogs = new OlapTable<AuditLog>("audit_logs", {
+  database: "operations",
+  orderByFields: ["recordedAt", "id"],
+});
+```
 
-### Bug Fixes
-- Fix redirect loop after deleting organization: Fixed an issue where users would get stuck in an infinite redirect loop after deleting their organization. Users can now properly navigate to the organization creation page after deletion.
+PR: [#2876](https://github.com/514-labs/moosestack/pull/2876) | Docs: [Multi-database setup](/moose/olap/model-table#multi-database-setup)
 
+## Moose
+- **Buffer tables** – Burst-friendly Buffer engines ship with typed config, CLI validation, and template coverage. Docs: [Buffer engine](/moose/olap/model-table#in-memory-buffer-buffer) • [ClickHouse Buffer docs](https://clickhouse.com/docs/en/engines/table-engines/special/buffer) | PR [#2908](https://github.com/514-labs/moosestack/pull/2908)
+- **S3 tables** – Direct object storage workflows stay in code with S3 engine support and credential handling. Docs: [S3 engine](/moose/olap/model-table#direct-s3-access-s3) • [ClickHouse S3 docs](https://clickhouse.com/docs/en/engines/table-engines/integrations/s3) | PR [#2908](https://github.com/514-labs/moosestack/pull/2908)
+- **Distributed tables** – Cluster fan-out models emit the correct ClickHouse DDL and guard against missing local tables. Docs: [Distributed engine](/moose/olap/model-table#distributed-tables-distributed) • [ClickHouse Distributed docs](https://clickhouse.com/docs/en/engines/table-engines/special/distributed) | PR [#2908](https://github.com/514-labs/moosestack/pull/2908)
+- **Serverless migrations stay coordinated** – Redis-backed locks and state storage plug into the existing `moose migrate` flow with env-var overrides for CI/CD. Docs: [Redis state storage](/moose/migrate#state-storage-options) | PR [#2907](https://github.com/514-labs/moosestack/pull/2907)
+- **Per-table databases** – The migration planner now respects `database` overrides, auto-creates configured databases, and blocks accidental moves between them. Docs: [Multi-database setup](/moose/olap/model-table#multi-database-setup) | PR [#2876](https://github.com/514-labs/moosestack/pull/2876)
+- **Runtime S3Queue credentials** – Environment variable markers resolve at deploy time for S3Queue sources, keeping AWS keys out of source. Docs: [Streaming from S3](/moose/olap/model-table#streaming-from-s3-s3queue) | PR [#2875](https://github.com/514-labs/moosestack/pull/2875)
 
+## Boreal
+- Blog redesign.
+- Fixed the redirect loop after deleting an organization so users land back on the create-org screen instead of bouncing between routes.
+
+## Nix development environment
+`flake.nix` now bootstraps a full MooseStack toolchain (`nix develop` drops you into Rust, Node.js, and Python with shared test commands). If you use Nix, let us know!
+
+PR: [#2920](https://github.com/514-labs/moosestack/pull/2920)
