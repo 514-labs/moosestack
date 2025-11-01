@@ -84,8 +84,8 @@ async function setupTypeScriptProjectWithLatestNpm(
 ): Promise<void> {
   console.log(`Initializing TypeScript project with latest npm moose-cli...`);
 
-  // Initialize project with latest CLI via npx
   try {
+    // using npx for both languages as they are the same binary
     const result = await execAsync(
       `npx -y @514labs/moose-cli@latest init ${appName} ${templateName} --location "${projectDir}"`,
     );
@@ -305,7 +305,6 @@ describe("Backward Compatibility Tests", function () {
               TEST_AWS_SECRET_ACCESS_KEY: "test-secret-access-key",
             };
 
-        // Use npx to run the latest published moose-cli
         devProcess = spawn("npx", ["-y", "@514labs/moose-cli@latest", "dev"], {
           stdio: "pipe",
           cwd: TEST_PROJECT_DIR,
