@@ -13,7 +13,7 @@
 
 import express from "express";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { sseHandlers } from "express-mcp-handler";
+import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { z } from "zod";
 import { WebApp, getMooseUtils } from "@514labs/moose-lib";
 
@@ -97,24 +97,54 @@ const serverFactory = () => {
 };
 
 /**
- * Create SSE handlers for MCP protocol
+ * Create StreamableHTTP transport handlers for MCP protocol
  *
- * This uses Server-Sent Events (SSE) for bidirectional communication:
- * - GET /: Establishes the SSE stream and returns a session ID
- * - POST /: Sends MCP messages using the session ID from the query parameter
+ * This uses StreamableHTTP transport with JSON responses instead of SSE.
+ * This is required because the Moose proxy doesn't support SSE properly.
+ *
+ * The StreamableHTTP transport supports:
+ * - POST requests with JSON-RPC messages and JSON responses
+ * - Stateful sessions with session IDs
+ * - Works through proxies that don't support SSE
  */
-const handlers = sseHandlers(serverFactory, {
-  onError: (error: Error, sessionId?: string) => {
-    console.error(`[MCP Error][${sessionId || "unknown"}]`, error);
-  },
-  onClose: (sessionId: string) => {
-    console.log(`[MCP] Session closed: ${sessionId}`);
-  },
-});
 
-// Mount the SSE endpoints
-app.get("/", handlers.getHandler);
-app.post("/", handlers.postHandler);
+/**
+ * Use STATELESS mode for MCP transport
+ *
+ * This is necessary because MooseStack uses multiple worker processes to handle requests,
+ * and sessions cannot be shared across processes. In stateless mode:
+ * - No session IDs are generated or tracked
+ * - Each request is fully independent
+ * - The server is initialized on every request
+ */
+
+// Single endpoint that handles all MCP requests
+app.all("/", async (req, res) => {
+  try {
+    console.log(`[MCP] Handling ${req.method} request (stateless mode)`);
+
+    // Create a fresh transport and server for EVERY request (stateless)
+    const transport = new StreamableHTTPServerTransport({
+      sessionIdGenerator: undefined, // Stateless mode - no session management
+      enableJsonResponse: true, // Use JSON responses instead of SSE
+    });
+
+    transport.onerror = (error: Error) => {
+      console.error(`[MCP Error]`, error);
+    };
+
+    const server = serverFactory();
+    await server.connect(transport);
+
+    // Handle the request
+    await transport.handleRequest(req, res, req.body);
+  } catch (error) {
+    console.error("[MCP Error] Failed to handle request:", error);
+    if (!res.headersSent) {
+      res.status(500).json({ error: "Internal server error" });
+    }
+  }
+});
 
 /**
  * Export the WebApp instance
