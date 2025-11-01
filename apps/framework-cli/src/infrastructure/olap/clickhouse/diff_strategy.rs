@@ -321,7 +321,10 @@ impl TableDiffStrategy for ClickHouseTableDiffStrategy {
         // Check if primary key structure has changed
         let before_primary_keys = before.primary_key_columns();
         let after_primary_keys = after.primary_key_columns();
-        if before_primary_keys != after_primary_keys {
+        if before_primary_keys != after_primary_keys
+            // S3 allows specifying PK, but that information is not in system.columns
+            && after.engine.as_ref().is_none_or(|e| e.is_merge_tree_family())
+        {
             log::warn!(
                 "ClickHouse: Primary key structure changed for table '{}', requiring drop+create",
                 before.name
