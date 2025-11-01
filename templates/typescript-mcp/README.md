@@ -16,7 +16,7 @@ This template demonstrates how to integrate the **Model Context Protocol (MCP)**
 This template shows how to:
 
 1. **Create custom API endpoints** using Express within MooseStack
-2. **Implement an MCP server** using `express-mcp-handler`
+2. **Implement an MCP server** using `@modelcontextprotocol/sdk`
 3. **Mount custom web apps** at specific paths using the `WebApp` class
 4. **Define data models** with ClickHouse table creation
 5. **Expose tools** that AI assistants can use via MCP
@@ -25,18 +25,17 @@ This template shows how to:
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│ MooseStack Dev Server (Port 4000)                          │
+│ MooseStack Dev Server (Port 4000)                           │
 ├─────────────────────────────────────────────────────────────┤
 │                                                             │
-│  Built-in Routes:                                          │
-│  • /mcp          - MooseStack's built-in MCP server       │
-│  • /ingest/*     - Data ingestion endpoints               │
-│  • /admin/*      - Admin endpoints                        │
+│  Built-in Routes:                                           │
+│  • /mcp          - MooseStack's built-in MCP server         │
+│  • /ingest/*     - Data ingestion endpoints                 │
+│  • /admin/*      - Admin endpoints                          │
 │                                                             │
-│  Custom WebApp (this template):                           │
-│  • /tools        - Your custom MCP server                 │
-│    ├─ GET /      - Establish SSE connection               │
-│    └─ POST /     - Send MCP messages                      │
+│  Custom WebApp (this template):                             │
+│  • /tools        - Your custom MCP server                   │
+│    └─ ALL /      - Handle MCP JSON-RPC messages             │
 │                                                             │
 └─────────────────────────────────────────────────────────────┘
          │                                    │
@@ -57,7 +56,7 @@ This template shows how to:
 │   │   └── models.ts         # Data models with IngestPipeline
 │   └── apis/
 │       └── mcp.ts            # MCP server implementation
-├── package.json              # Dependencies including express-mcp-handler
+├── package.json              # Dependencies including @modelcontextprotocol/sdk
 ├── tsconfig.json             # TypeScript configuration
 ├── moose.config.toml         # MooseStack infrastructure config
 └── README.md                 # This file
@@ -67,44 +66,17 @@ This template shows how to:
 
 ### 1. Data Model (`app/ingest/models.ts`)
 
-Defines a minimal `DataEvent` model with ClickHouse table creation:
-
-```typescript
-export interface DataEvent {
-  eventId: Key<string>;  // Primary key for ClickHouse
-  timestamp: Date;
-  eventType: string;
-  data: string;
-}
-
-export const DataEventPipeline = new IngestPipeline<DataEvent>("DataEvent", {
-  table: true,    // Create ClickHouse table
-  stream: true,   // Enable Kafka streaming
-  ingestApi: true // Enable POST /ingest/DataEvent
-});
-```
+Defines a minimal `DataEvent` model with ClickHouse table creation. The IngestPipeline creates the ClickHouse table, enables Kafka streaming, and provides a POST endpoint at `/ingest/DataEvent`.
 
 ### 2. MCP Server (`app/apis/mcp.ts`)
 
-Implements an MCP server using `express-mcp-handler`:
+Implements an MCP server using `@modelcontextprotocol/sdk`:
 
-- Uses **Server-Sent Events (SSE)** for bidirectional communication
+- Uses **StreamableHTTPServerTransport** with JSON responses (stateless mode)
 - Registers a `query_clickhouse` tool for AI assistants
 - Mounts at `/tools` to avoid conflict with built-in `/mcp` endpoint
-
-```typescript
-const handlers = sseHandlers(serverFactory, {
-  onError: (error, sessionId) => console.error(`[MCP Error]`, error),
-  onClose: (sessionId) => console.log(`[MCP] Session closed: ${sessionId}`)
-});
-
-app.get("/", handlers.getHandler);   // SSE connection
-app.post("/", handlers.postHandler); // Message handling
-
-export const mcpServer = new WebApp("mcpServer", app, {
-  mountPath: "/tools"
-});
-```
+- Accesses ClickHouse via `getMooseUtils()` for query execution
+- Fresh server instance created for every request
 
 ## Getting Started
 
@@ -124,135 +96,80 @@ The MCP server will be available at `http://localhost:4000/tools`
 
 ### 3. Test the MCP Server
 
-Establish an SSE connection:
-
-```bash
-curl -N -H "Accept: text/event-stream" http://localhost:4000/tools
-```
-
-This will return a session ID that you can use to send MCP messages.
+The MCP server will be available at `http://localhost:4000/tools`. You can test it by sending JSON-RPC requests to list available tools or execute the `query_clickhouse` tool.
 
 ## MCP Tools Available
 
 ### `query_clickhouse`
 
-Executes SQL queries against the ClickHouse database.
+Executes SQL queries against the ClickHouse database with automatic result limiting.
 
-**Input Schema:**
-```json
-{
-  "query": "SELECT * FROM DataEvent LIMIT 10"
-}
-```
+**Input Parameters:**
 
-**Output Schema:**
-```json
-{
-  "rows": [{ "eventId": "...", "timestamp": "...", ... }],
-  "rowCount": 10
-}
-```
+- `query` (required): SQL query to execute against ClickHouse
+- `limit` (optional): Maximum number of rows to return (default: 100, max: 100)
 
-## Testing Data Ingestion
+**Output:**
 
-Send a test event to the DataEvent table:
+- `rows`: Array of row objects containing query results
+- `rowCount`: Number of rows returned
 
-```bash
-curl -X POST http://localhost:4000/ingest/DataEvent \
-  -H "Content-Type: application/json" \
-  -d '{
-    "eventId": "evt_001",
-    "timestamp": "2024-01-01T00:00:00Z",
-    "eventType": "test",
-    "data": "Hello MCP!"
-  }'
-```
+## Using with Claude Code
 
-## Using with AI Assistants
-
-This MCP server can be integrated with AI assistants that support the Model Context Protocol:
-
-1. **Claude Desktop**: Add to your MCP configuration
-2. **Custom Clients**: Connect via SSE protocol
-3. **Development Tools**: Use for testing and debugging
-
-Example configuration for Claude Desktop:
+You can configure Claude Code to connect to your MCP server by adding it to your Claude Code configuration file (`~/.config/claude-code/settings.json`):
 
 ```json
 {
   "mcpServers": {
-    "moosestack": {
+    "moosestack-tools": {
       "url": "http://localhost:4000/tools"
     }
   }
 }
 ```
 
+Once connected, you can ask Claude Code questions like:
+
+- "What tables exist in the database?"
+- "Show me the latest 10 events from the DataEvent table"
+- "How many events are in the DataEvent table?"
+
+Claude Code will automatically use the `query_clickhouse` tool to execute the appropriate SQL queries.
+
+### ⚠️ Security Warning
+
+**This is a non-production example.** The current implementation has no access controls and allows any SQL query to be executed, including destructive operations like `DROP TABLE` or `DELETE`. A production-ready version should include:
+
+- Authentication and authorization
+- Query validation (read-only operations only)
+- Rate limiting
+- Query timeouts
+- Audit logging
+- Proper error handling without exposing internal details
+
+## Testing Data Ingestion
+
+You can send test events to the DataEvent table via POST requests to `http://localhost:4000/ingest/DataEvent` with JSON payloads containing `eventId`, `timestamp`, `eventType`, and `data` fields.
+
 ## Extending This Template
 
 ### Adding More Tools
 
-Register additional tools in `app/apis/mcp.ts`:
-
-```typescript
-server.registerTool(
-  "your_tool_name",
-  {
-    title: "Your Tool Title",
-    description: "What your tool does",
-    inputSchema: {
-      param: z.string().describe("Parameter description")
-    },
-    outputSchema: {
-      result: z.any().describe("Result description")
-    }
-  },
-  async ({ param }) => {
-    // Your tool implementation
-    return {
-      content: [{ type: "text", text: "Result" }],
-      structuredContent: { result: "data" }
-    };
-  }
-);
-```
+Register additional tools in `app/apis/mcp.ts` using `server.registerTool()`. Each tool needs a name, title, description, input/output schemas (using Zod), and an async handler function.
 
 ### Accessing MooseStack Utilities
 
-Use `getMooseUtils()` to access ClickHouse client and other utilities:
-
-```typescript
-import { getMooseUtils } from "@514labs/moose-lib";
-
-async ({ query }) => {
-  const { clickhouseClient } = getMooseUtils();
-  const result = await clickhouseClient.query({ query });
-  // Process and return results
-}
-```
+Use `getMooseUtils(req)` in your endpoint handlers to access the ClickHouse client (`client.query.execute()`) and SQL template function (`sql`) for safe query execution.
 
 ### Adding More Data Models
 
-Create additional data models in `app/ingest/models.ts`:
-
-```typescript
-export interface AnotherModel {
-  id: Key<string>;
-  timestamp: DateTime;
-  // ... other fields
-}
-
-export const AnotherModelPipeline = new IngestPipeline<AnotherModel>(
-  "AnotherModel",
-  { table: true, stream: true, ingestApi: true }
-);
-```
+Create additional data models in `app/ingest/models.ts` by defining interfaces and creating IngestPipeline instances with options for `table`, `stream`, and `ingestApi`.
 
 ## Learn More
 
 - [MooseStack Documentation](https://docs.moosejs.com)
 - [Model Context Protocol](https://modelcontextprotocol.io)
-- [express-mcp-handler](https://www.npmjs.com/package/express-mcp-handler)
+- [MCP SDK (@modelcontextprotocol/sdk)](https://github.com/modelcontextprotocol/typescript-sdk)
 - [WebApp Class Reference](https://docs.moosejs.com/building-moose-apps/custom-apis)
 
 ## Troubleshooting
