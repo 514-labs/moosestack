@@ -19,14 +19,6 @@
     "turbo": "^2.5.5"
   },
   "packageManager": "pnpm@9.9.0",
-  "pnpm": {
-    "overrides": {
-      "docs@1.0.0>@types/react": "18.2.46",
-      "docs@1.0.0>@types/react-dom": "18.2.18",
-      "docs-v2@1.0.0>@types/react": "19.0.1",
-      "docs-v2@1.0.0>@types/react-dom": "19.0.2"
-    }
-  },
   "lint-staged": {
     "*.rs": "rustfmt --edition 2021",
     "**/*.{ts,tsx,js,jsx,json,md}": "prettier --write",

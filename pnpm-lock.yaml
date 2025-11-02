@@ -4,12 +4,6 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
-overrides:
-  docs@1.0.0>@types/react: 18.2.46
-  docs@1.0.0>@types/react-dom: 18.2.18
-  docs-v2@1.0.0>@types/react: 19.0.1
-  docs-v2@1.0.0>@types/react-dom: 19.0.2
-
 importers:
 
   .:
@@ -139,8 +133,8 @@ importers:
         specifier: ^2.1.1
         version: 2.1.1
       lucide-react:
-        specifier: 0.427.0
-        version: 0.427.0(react@18.3.1)
+        specifier: ^0.344.0
+        version: 0.344.0(react@18.3.1)
       mime-types:
         specifier: ^3.0.1
         version: 3.0.1
@@ -206,10 +200,10 @@ importers:
         specifier: ^18.19.4
         version: 18.19.130
       '@types/react':
-        specifier: 18.2.46
+        specifier: ^18.2.46
         version: 18.2.46
       '@types/react-dom':
-        specifier: 18.2.18
+        specifier: ^18.2.18
         version: 18.2.18
       autoprefixer:
         specifier: ^10.4.16
@@ -381,10 +375,10 @@ importers:
         specifier: ^22.10.2
         version: 22.18.13
       '@types/react':
-        specifier: 19.0.1
+        specifier: ^19.0.1
         version: 19.0.1
       '@types/react-dom':
-        specifier: 19.0.2
+        specifier: ^19.0.2
         version: 19.0.2(@types/react@19.0.1)
       autoprefixer:
         specifier: ^10.4.16
@@ -6615,15 +6609,15 @@ packages:
   lru-cache@5.1.1:
     resolution: {integrity: sha512-KpNARQA3Iwv+jTA0utUVVbrh+Jlrr1Fv0e56GGzAFOXN7dk/FviaDW8LHmK52DlcH4WP2n6gI8vN1aesBFgo9w==}
 
+  lucide-react@0.344.0:
+    resolution: {integrity: sha512-6YyBnn91GB45VuVT96bYCOKElbJzUHqp65vX8cDcu55MQL9T969v4dhGClpljamuI/+KMO9P6w9Acq1CVQGvIQ==}
+    peerDependencies:
+      react: ^16.5.1 || ^17.0.0 || ^18.0.0
+
   lucide-react@0.359.0:
     resolution: {integrity: sha512-bxVL+rM/wacjpT0BKShA6r5IIKb6LCRg+ltFG9pnnIwaRX8kK3hq8v5JwMpT7RC6XeqB5cSaaV6GapPWWmtliw==}
     peerDependencies:
       react: ^16.5.1 || ^17.0.0 || ^18.0.0
-
-  lucide-react@0.427.0:
-    resolution: {integrity: sha512-lv9s6c5BDF/ccuA0EgTdskTxIe11qpwBDmzRZHJAKtp8LTewAvDvOM+pTES9IpbBuTqkjiMhOmGpJ/CB+mKjFw==}
-    peerDependencies:
-      react: ^16.5.1 || ^17.0.0 || ^18.0.0 || ^19.0.0-rc
 
   lz-string@1.5.0:
     resolution: {integrity: sha512-h5bgJWpxJNswbU7qCrV0tIKQCaS3blPDrqKWx+QxzuzL1zGUzij9XCWLrSLsJPu5t+eWA/ycetzYAO5IOMcWAQ==}
@@ -13309,7 +13303,7 @@ snapshots:
 
   '@types/react-dom@18.2.18':
     dependencies:
-      '@types/react': 19.0.1
+      '@types/react': 19.2.2
 
   '@types/react-dom@19.0.2(@types/react@19.0.1)':
     dependencies:
@@ -16998,13 +16992,13 @@ snapshots:
     dependencies:
       yallist: 3.1.1
 
+  lucide-react@0.344.0(react@18.3.1):
+    dependencies:
+      react: 18.3.1
+
   lucide-react@0.359.0(react@19.2.0):
     dependencies:
       react: 19.2.0
-
-  lucide-react@0.427.0(react@18.3.1):
-    dependencies:
-      react: 18.3.1
 
   lz-string@1.5.0: {}
 

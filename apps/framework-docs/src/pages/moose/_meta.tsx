@@ -12,10 +12,10 @@ import {
   GitCompare,
   HelpCircle,
   Settings,
-  ChartBar,
+  BarChart3,
   Hammer,
   Terminal,
-  GanttChart,
+  LayoutGrid,
   FileCode,
   Laptop,
   FolderPlus,
@@ -32,7 +32,7 @@ const rawMeta = {
     theme: {
       breadcrumb: false,
     },
-    Icon: GanttChart,
+    Icon: LayoutGrid,
   },
   __fundamentals__: {
     title: "Getting Started",
@@ -93,7 +93,7 @@ const rawMeta = {
   },
   metrics: {
     title: "Observability",
-    Icon: ChartBar,
+    Icon: BarChart3,
     isMoose: true,
   },
   deploying: {
