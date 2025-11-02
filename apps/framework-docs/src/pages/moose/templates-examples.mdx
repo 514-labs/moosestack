@@ -1,0 +1,509 @@
+---
+title: Templates / Examples
+description: Browse templates and demo apps for MooseStack
+---
+
+import { CTACards, CTACard } from "@/components";
+import { Badge } from "@/components/ui/badge";
+import Link from "next/link";
+
+# Templates / Examples
+
+Moose provides two ways to get started: **templates** and **demo apps**. Templates are simple skeleton applications that you can initialize with `moose init`, while demo apps are more advanced examples available on GitHub that showcase real-world use cases and integrations.
+
+**Initialize a template:**
+```bash filename="Terminal" copy
+moose init PROJECT_NAME TEMPLATE_NAME
+```
+
+**List available templates:**
+```bash filename="Terminal" copy
+moose template list
+```
+
+## Browse Templates and Apps
+
+<CTACards columns={3}>
+  <CTACard
+    title="Nextjs + Express + MCP demo app: Aircraft data"
+    description="Complete demo application featuring real-time aircraft transponder data with MCP chat integration."
+    ctaLink="#plane-transponder-demo"
+    ctaLabel="Details"
+    secondaryCtaLink="https://github.com/514-labs/planes"
+    secondaryCtaLabel="Github →"
+    badge={{ variant: "default", text: "App" }}
+  />
+
+  <CTACard
+    title="Postgres to ClickHouse CDC with Debezium"
+    description="Easy-to-run demo of a CDC pipeline using Debezium, PostgreSQL, Redpanda, and ClickHouse."
+    ctaLink="#postgres-clickhouse-cdc"
+    ctaLabel="Details"
+    secondaryCtaLink="https://github.com/514-labs/debezium-cdc"
+    secondaryCtaLabel="Github →"
+    badge={{ variant: "default", text: "App" }}
+  />
+
+  <CTACard
+    title="User-facing analytics reference app (Postgres + Clickhouse + React)"
+    description="Complete reference architecture showing how to add a dedicated analytics microservice to an existing application."
+    ctaLink="#foobar-ufa"
+    ctaLabel="Details"
+    secondaryCtaLink="https://github.com/514-labs/area-code/tree/main/ufa"
+    secondaryCtaLabel="Github →"
+    badge={{ variant: "default", text: "App" }}
+  />
+
+  <CTACard
+    title="User-facing analytics reference app (Clickhouse Cloud + React)"
+    description="Simplified version of the UFA architecture using ClickHouse Cloud with React frontend and chat analytics."
+    ctaLink="#foobar-ufa-lite"
+    ctaLabel="Details"
+    secondaryCtaLink="https://github.com/514-labs/area-code/tree/main/ufa-lite"
+    secondaryCtaLabel="Github →"
+    badge={{ variant: "default", text: "App" }}
+  />
+
+  <CTACard
+    title="TypeScript (Default)"
+    description="Default TypeScript project, seeded with foobar example components."
+    ctaLink="#typescript-default"
+    ctaLabel="Details"
+    secondaryCtaLink="https://github.com/514-labs/moosestack/tree/main/templates/typescript"
+    secondaryCtaLabel="Github →"
+    badge={{ variant: "default", text: "TypeScript Template" }}
+  />
+
+  <CTACard
+    title="Python (Default)"
+    description="Default Python project, seeded with foobar example components."
+    ctaLink="#python-default"
+    ctaLabel="Details"
+    secondaryCtaLink="https://github.com/514-labs/moosestack/tree/main/templates/python"
+    secondaryCtaLabel="Github →"
+    badge={{ variant: "default", text: "Python Template" }}
+  />
+
+  <CTACard
+    title="TypeScript (Empty)"
+    description="Empty TypeScript project with minimal structure."
+    ctaLink="#typescript-empty"
+    ctaLabel="Details"
+    secondaryCtaLink="https://github.com/514-labs/moosestack/tree/main/templates/typescript-empty"
+    secondaryCtaLabel="Github →"
+    badge={{ variant: "default", text: "TypeScript Template" }}
+  />
+
+  <CTACard
+    title="Python (Empty)"
+    description="Empty Python project with minimal structure."
+    ctaLink="#python-empty"
+    ctaLabel="Details"
+    secondaryCtaLink="https://github.com/514-labs/moosestack/tree/main/templates/python-empty"
+    secondaryCtaLabel="Github →"
+    badge={{ variant: "default", text: "Python Template" }}
+  />
+
+  <CTACard
+    title="Next.js (Empty)"
+    description="TypeScript project with a Next.js frontend (empty)."
+    ctaLink="#nextjs-empty"
+    ctaLabel="Details"
+    secondaryCtaLink="https://github.com/514-labs/moosestack/tree/main/templates/next-app-empty"
+    secondaryCtaLabel="Github →"
+    badge={{ variant: "default", text: "TypeScript Template" }}
+  />
+
+  <CTACard
+    title="Express.js"
+    description="TypeScript project using Express for serving analytical APIs."
+    ctaLink="#express"
+    ctaLabel="Details"
+    secondaryCtaLink="https://github.com/514-labs/moosestack/tree/main/templates/typescript-express"
+    secondaryCtaLabel="Github →"
+    badge={{ variant: "default", text: "TypeScript Template" }}
+  />
+
+  <CTACard
+    title="FastAPI"
+    description="Python project using FastAPI for serving analytical APIs."
+    ctaLink="#fastapi"
+    ctaLabel="Details"
+    secondaryCtaLink="https://github.com/514-labs/moosestack/tree/main/templates/python-fastapi"
+    secondaryCtaLabel="Github →"
+    badge={{ variant: "default", text: "Python Template" }}
+  />
+
+  <CTACard
+    title="FastAPI (Client-Only)"
+    description="FastAPI client-only project using MooseStack libraries without requiring the Moose runtime."
+    ctaLink="#fastapi-client-only"
+    ctaLabel="Details"
+    secondaryCtaLink="https://github.com/514-labs/moosestack/tree/main/templates/python-fastapi-client-only"
+    secondaryCtaLabel="Github →"
+    badge={{ variant: "default", text: "Python Template" }}
+  />
+
+  <CTACard
+    title="ADS-B (Aircraft Tracking)"
+    description="Real-time aircraft transponder data tracking."
+    ctaLink="#adsb"
+    ctaLabel="Details"
+    secondaryCtaLink="https://github.com/514-labs/moosestack/tree/main/templates/ads-b"
+    secondaryCtaLabel="Github →"
+    badge={{ variant: "default", text: "Template" }}
+  />
+
+  <CTACard
+    title="ADS-B with Frontend"
+    description="Real-time aircraft transponder data with a React frontend."
+    ctaLink="#adsb-frontend"
+    ctaLabel="Details"
+    secondaryCtaLink="https://github.com/514-labs/moosestack/tree/main/templates/ads-b-frontend"
+    secondaryCtaLabel="Github →"
+    badge={{ variant: "default", text: "TypeScript Template" }}
+  />
+
+  <CTACard
+    title="Live Heart Rate Leaderboard"
+    description="Live heart rate leaderboard inspired by F45 with Streamlit frontend."
+    ctaLink="#heartrate"
+    ctaLabel="Details"
+    secondaryCtaLink="https://github.com/514-labs/moosestack/tree/main/templates/live-heartrate-leaderboard"
+    secondaryCtaLabel="Github →"
+    badge={{ variant: "default", text: "Python Template" }}
+  />
+</CTACards>
+
+---
+
+## Demo Apps
+
+### Nextjs + Express + MCP demo app: Aircraft data [#plane-transponder-demo]
+
+Complete demo application featuring real-time aircraft transponder data with MCP chat integration.
+
+**Repository:** [https://github.com/514-labs/planes](https://github.com/514-labs/planes)
+
+<div>
+  <p><strong>Key Features:</strong></p>
+  <div className="flex flex-wrap gap-2 mt-2 mb-4">
+  <Badge variant="outline">Next.js</Badge>
+  <Badge variant="outline">Express</Badge>
+  <Badge variant="outline">MCP</Badge>
+  <Badge variant="outline">Moose OLAP</Badge>
+  <Badge variant="outline">ClickHouse</Badge>
+  </div>
+</div>
+
+---
+
+### Postgres to ClickHouse CDC with Debezium [#postgres-clickhouse-cdc]
+
+Easy-to-run demo of a CDC pipeline using Debezium, PostgreSQL, Redpanda, and ClickHouse.
+
+**Repository:** [https://github.com/514-labs/debezium-cdc](https://github.com/514-labs/debezium-cdc)
+
+**Blog Post:** [Code-First CDC to ClickHouse with Debezium, Redpanda, and MooseStack](https://www.fiveonefour.com/blog/cdc-postgres-to-clickhouse-debezium-drizzle)
+
+<div>
+  <p><strong>Key Features:</strong></p>
+  <div className="flex flex-wrap gap-2 mt-2 mb-4">
+  <Badge variant="outline">CDC</Badge>
+  <Badge variant="outline">Debezium</Badge>
+  <Badge variant="outline">PostgreSQL</Badge>
+  <Badge variant="outline">Redpanda</Badge>
+  <Badge variant="outline">ClickHouse</Badge>
+  <Badge variant="outline">Drizzle ORM</Badge>
+  </div>
+</div>
+
+---
+
+### User-facing analytics reference app (Postgres + Clickhouse + React) [#foobar-ufa]
+
+A complete reference architecture showing how to add a dedicated analytics microservice to an existing application without impacting your primary database. Features Postgres + ClickHouse + React frontend with chat analytics.
+
+**Repository:** [https://github.com/514-labs/area-code/tree/main/ufa](https://github.com/514-labs/area-code/tree/main/ufa)
+
+<div>
+  <p><strong>Key Features:</strong></p>
+  <div className="flex flex-wrap gap-2 mt-2 mb-4">
+  <Badge variant="outline">PostgreSQL</Badge>
+  <Badge variant="outline">ClickHouse</Badge>
+  <Badge variant="outline">React</Badge>
+  <Badge variant="outline">TanStack Query</Badge>
+  <Badge variant="outline">Supabase</Badge>
+  <Badge variant="outline">Moose OLAP</Badge>
+  <Badge variant="outline">Moose Streaming</Badge>
+  <Badge variant="outline">Moose APIs</Badge>
+  <Badge variant="outline">Elasticsearch</Badge>
+  <Badge variant="outline">Temporal</Badge>
+  </div>
+</div>
+
+---
+
+### User-facing analytics reference app (Clickhouse Cloud + React) [#foobar-ufa-lite]
+
+A simplified version of the UFA architecture using ClickHouse Cloud + React frontend with chat analytics. This version demonstrates a cloud-native approach without local infrastructure dependencies.
+
+**Repository:** [https://github.com/514-labs/area-code/tree/main/ufa-lite](https://github.com/514-labs/area-code/tree/main/ufa-lite)
+
+<div>
+  <p><strong>Key Features:</strong></p>
+  <div className="flex flex-wrap gap-2 mt-2 mb-4">
+  <Badge variant="outline">ClickHouse Cloud</Badge>
+  <Badge variant="outline">React</Badge>
+  <Badge variant="outline">Moose OLAP</Badge>
+  <Badge variant="outline">Moose APIs</Badge>
+  </div>
+</div>
+
+---
+
+## Templates
+
+### TypeScript (Default) [#typescript-default]
+
+Default TypeScript project, seeded with foobar example components.
+
+```bash filename="Terminal" copy
+moose init PROJECT_NAME typescript
+```
+
+**Repository:** [https://github.com/514-labs/moosestack/tree/main/templates/typescript](https://github.com/514-labs/moosestack/tree/main/templates/typescript)
+
+<div>
+  <p><strong>Key Features:</strong></p>
+  <div className="flex flex-wrap gap-2 mt-2 mb-4">
+  <Badge variant="outline">Moose APIs</Badge>
+  <Badge variant="outline">Moose OLAP</Badge>
+  <Badge variant="outline">Moose Streaming</Badge>
+  <Badge variant="outline">Moose Workflows</Badge>
+  </div>
+</div>
+
+---
+
+### Python (Default) [#python-default]
+
+Default Python project, seeded with foobar example components.
+
+```bash filename="Terminal" copy
+moose init PROJECT_NAME python
+```
+
+**Repository:** [https://github.com/514-labs/moosestack/tree/main/templates/python](https://github.com/514-labs/moosestack/tree/main/templates/python)
+
+<div>
+  <p><strong>Key Features:</strong></p>
+  <div className="flex flex-wrap gap-2 mt-2 mb-4">
+  <Badge variant="outline">Moose APIs</Badge>
+  <Badge variant="outline">Moose OLAP</Badge>
+  <Badge variant="outline">Moose Streaming</Badge>
+  <Badge variant="outline">Moose Workflows</Badge>
+  </div>
+</div>
+
+---
+
+### TypeScript (Empty) [#typescript-empty]
+
+Empty TypeScript project with minimal structure.
+
+```bash filename="Terminal" copy
+moose init PROJECT_NAME typescript-empty
+```
+
+**Repository:** [https://github.com/514-labs/moosestack/tree/main/templates/typescript-empty](https://github.com/514-labs/moosestack/tree/main/templates/typescript-empty)
+
+<div>
+  <p><strong>Key Features:</strong></p>
+  <div className="flex flex-wrap gap-2 mt-2 mb-4">
+  <Badge variant="outline">TypeScript</Badge>
+  <Badge variant="outline">Moose OLAP</Badge>
+  </div>
+</div>
+
+---
+
+### Python (Empty) [#python-empty]
+
+Empty Python project with minimal structure.
+
+```bash filename="Terminal" copy
+moose init PROJECT_NAME python-empty
+```
+
+**Repository:** [https://github.com/514-labs/moosestack/tree/main/templates/python-empty](https://github.com/514-labs/moosestack/tree/main/templates/python-empty)
+
+<div>
+  <p><strong>Key Features:</strong></p>
+  <div className="flex flex-wrap gap-2 mt-2 mb-4">
+  <Badge variant="outline">Python</Badge>
+  <Badge variant="outline">Moose OLAP</Badge>
+  </div>
+</div>
+
+---
+
+### Next.js (Empty) [#nextjs-empty]
+
+TypeScript project with a Next.js frontend (empty).
+
+```bash filename="Terminal" copy
+moose init PROJECT_NAME next-app-empty
+```
+
+**Repository:** [https://github.com/514-labs/moosestack/tree/main/templates/next-app-empty](https://github.com/514-labs/moosestack/tree/main/templates/next-app-empty)
+
+<div>
+  <p><strong>Key Features:</strong></p>
+  <div className="flex flex-wrap gap-2 mt-2 mb-4">
+  <Badge variant="outline">Next.js</Badge>
+  <Badge variant="outline">TypeScript</Badge>
+  <Badge variant="outline">Moose APIs</Badge>
+  <Badge variant="outline">Moose OLAP</Badge>
+  <Badge variant="outline">Moose Streaming</Badge>
+  <Badge variant="outline">Moose Workflows</Badge>
+  </div>
+</div>
+
+---
+
+### Express.js [#express]
+
+TypeScript project using Express for serving analytical APIs.
+
+```bash filename="Terminal" copy
+moose init PROJECT_NAME typescript-express
+```
+
+**Repository:** [https://github.com/514-labs/moosestack/tree/main/templates/typescript-express](https://github.com/514-labs/moosestack/tree/main/templates/typescript-express)
+
+<div>
+  <p><strong>Key Features:</strong></p>
+  <div className="flex flex-wrap gap-2 mt-2 mb-4">
+  <Badge variant="outline">Express.js</Badge>
+  <Badge variant="outline">TypeScript</Badge>
+  <Badge variant="outline">Moose OLAP</Badge>
+  <Badge variant="outline">Moose Streaming</Badge>
+  <Badge variant="outline">Moose Workflows</Badge>
+  </div>
+</div>
+
+---
+
+### FastAPI [#fastapi]
+
+Python project using FastAPI for serving analytical APIs.
+
+```bash filename="Terminal" copy
+moose init PROJECT_NAME python-fastapi
+```
+
+**Repository:** [https://github.com/514-labs/moosestack/tree/main/templates/python-fastapi](https://github.com/514-labs/moosestack/tree/main/templates/python-fastapi)
+
+<div>
+  <p><strong>Key Features:</strong></p>
+  <div className="flex flex-wrap gap-2 mt-2 mb-4">
+  <Badge variant="outline">FastAPI</Badge>
+  <Badge variant="outline">Python</Badge>
+  <Badge variant="outline">Moose OLAP</Badge>
+  <Badge variant="outline">Moose Streaming</Badge>
+  <Badge variant="outline">Moose Workflows</Badge>
+  </div>
+</div>
+
+---
+
+### FastAPI (Client-Only) [#fastapi-client-only]
+
+FastAPI client-only project using MooseStack libraries without requiring the Moose runtime.
+
+```bash filename="Terminal" copy
+moose init PROJECT_NAME python-fastapi-client-only
+```
+
+**Repository:** [https://github.com/514-labs/moosestack/tree/main/templates/python-fastapi-client-only](https://github.com/514-labs/moosestack/tree/main/templates/python-fastapi-client-only)
+
+<div>
+  <p><strong>Key Features:</strong></p>
+  <div className="flex flex-wrap gap-2 mt-2 mb-4">
+  <Badge variant="outline">FastAPI</Badge>
+  <Badge variant="outline">Python</Badge>
+  <Badge variant="outline">Moose OLAP</Badge>
+  <Badge variant="outline">Moose Streaming</Badge>
+  <Badge variant="outline">Moose Workflows</Badge>
+  </div>
+</div>
+
+---
+
+### ADS-B (Aircraft Tracking) [#adsb]
+
+Real-time aircraft transponder data tracking.
+
+```bash filename="Terminal" copy
+moose init PROJECT_NAME ads-b
+```
+
+**Repository:** [https://github.com/514-labs/moosestack/tree/main/templates/ads-b](https://github.com/514-labs/moosestack/tree/main/templates/ads-b)
+
+<div>
+  <p><strong>Key Features:</strong></p>
+  <div className="flex flex-wrap gap-2 mt-2 mb-4">
+  <Badge variant="outline">Moose APIs</Badge>
+  <Badge variant="outline">Moose OLAP</Badge>
+  <Badge variant="outline">Moose Streaming</Badge>
+  <Badge variant="outline">Moose Workflows</Badge>
+  </div>
+</div>
+
+---
+
+### ADS-B with Frontend [#adsb-frontend]
+
+Real-time aircraft transponder data with a React frontend.
+
+```bash filename="Terminal" copy
+moose init PROJECT_NAME ads-b-frontend
+```
+
+**Repository:** [https://github.com/514-labs/moosestack/tree/main/templates/ads-b-frontend](https://github.com/514-labs/moosestack/tree/main/templates/ads-b-frontend)
+
+<div>
+  <p><strong>Key Features:</strong></p>
+  <div className="flex flex-wrap gap-2 mt-2 mb-4">
+  <Badge variant="outline">Next.js</Badge>
+  <Badge variant="outline">React</Badge>
+  <Badge variant="outline">Moose APIs</Badge>
+  <Badge variant="outline">Moose OLAP</Badge>
+  <Badge variant="outline">Moose Workflows</Badge>
+  </div>
+</div>
+
+---
+
+### Live Heart Rate Leaderboard [#heartrate]
+
+Live heart rate leaderboard inspired by F45 with Streamlit frontend.
+
+```bash filename="Terminal" copy
+moose init PROJECT_NAME live-heartrate-leaderboard
+```
+
+**Repository:** [https://github.com/514-labs/moosestack/tree/main/templates/live-heartrate-leaderboard](https://github.com/514-labs/moosestack/tree/main/templates/live-heartrate-leaderboard)
+
+<div>
+  <p><strong>Key Features:</strong></p>
+  <div className="flex flex-wrap gap-2 mt-2 mb-4">
+  <Badge variant="outline">Streamlit</Badge>
+  <Badge variant="outline">Python</Badge>
+  <Badge variant="outline">Moose APIs</Badge>
+  <Badge variant="outline">Moose OLAP</Badge>
+  <Badge variant="outline">Moose Streaming</Badge>
+  <Badge variant="outline">Moose Workflows</Badge>
+  </div>
+</div>

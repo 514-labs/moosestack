@@ -24,10 +24,10 @@ export default render({
     href: "https://www.fiveonefour.com/blog",
     newWindow: true,
   },
-  "in-your-stack": {
+  "templates-examples": {
     type: "page",
-    title: "Reference Architectures",
-    href: "/moose/in-your-stack",
+    title: "Templates / Examples",
+    href: "/moose/templates-examples",
   },
   "release-notes": {
     type: "page",
