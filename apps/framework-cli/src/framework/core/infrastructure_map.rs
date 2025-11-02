@@ -2529,7 +2529,7 @@ fn columns_are_equivalent(before: &Column, after: &Column) -> bool {
     if before.name != after.name
         || before.required != after.required
         || before.unique != after.unique
-        || before.primary_key != after.primary_key
+        // primary_key change is handled at the table level
         || before.default != after.default
         || before.annotations != after.annotations
         || before.comment != after.comment
