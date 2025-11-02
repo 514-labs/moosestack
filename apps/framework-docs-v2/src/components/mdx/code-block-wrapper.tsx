@@ -107,36 +107,86 @@ function getLanguage(props: MDXCodeProps | MDXCodeBlockProps): string {
 
 /**
  * Extracts text content from children, handling rehype-pretty-code's HTML structure
+ * This function recursively extracts all text content, handling fragments, arrays, and nested elements
+ * Uses React.Children utilities to ensure all children are processed
  */
 function extractTextContent(children: React.ReactNode): string {
+  if (children == null) {
+    return "";
+  }
+
   if (typeof children === "string") {
     return children;
   }
-  if (Array.isArray(children)) {
-    return children.map(extractTextContent).join("");
+
+  if (typeof children === "number" || typeof children === "boolean") {
+    return String(children);
   }
-  if (React.isValidElement(children)) {
-    const props = children.props as any;
-    // Handle rehype-pretty-code's span.line structure
-    if (children.type === "span" && props.className?.includes("line")) {
-      return extractTextContent(props.children) + "\n";
+
+  // Use React.Children utilities to handle all cases, including arrays and fragments
+  const parts: string[] = [];
+
+  React.Children.forEach(children, (child) => {
+    if (child == null) {
+      return;
     }
-    // Check if it's dangerouslySetInnerHTML (from rehype-pretty-code)
-    if (props.dangerouslySetInnerHTML?.__html) {
-      // For pre-rendered HTML, extract text by removing HTML tags
-      const html = props.dangerouslySetInnerHTML.__html;
-      return html
-        .replace(/<[^>]*>/g, "")
-        .replace(/&nbsp;/g, " ")
-        .replace(/&amp;/g, "&")
-        .replace(/&lt;/g, "<")
-        .replace(/&gt;/g, ">")
-        .replace(/&#39;/g, "'")
-        .replace(/&quot;/g, '"');
+
+    if (typeof child === "string") {
+      parts.push(child);
+      return;
     }
-    return extractTextContent(props.children);
-  }
-  return "";
+
+    if (typeof child === "number" || typeof child === "boolean") {
+      parts.push(String(child));
+      return;
+    }
+
+    if (React.isValidElement(child)) {
+      const props = child.props as any;
+      const childType = child.type;
+
+      // Handle React fragments
+      if (childType === React.Fragment) {
+        parts.push(extractTextContent(props.children));
+        return;
+      }
+
+      // Handle rehype-pretty-code's span.line structure
+      // Important: Add newline after the line content to preserve line breaks
+      if (childType === "span" && props.className?.includes("line")) {
+        const lineContent = extractTextContent(props.children);
+        parts.push(lineContent + "\n");
+        return;
+      }
+
+      // Check if it's dangerouslySetInnerHTML (from rehype-pretty-code)
+      if (props.dangerouslySetInnerHTML?.__html) {
+        // For pre-rendered HTML, extract text by removing HTML tags
+        const html = props.dangerouslySetInnerHTML.__html;
+        const htmlResult = html
+          .replace(/<[^>]*>/g, "")
+          .replace(/&nbsp;/g, " ")
+          .replace(/&amp;/g, "&")
+          .replace(/&lt;/g, "<")
+          .replace(/&gt;/g, ">")
+          .replace(/&#39;/g, "'")
+          .replace(/&quot;/g, '"');
+        parts.push(htmlResult);
+        return;
+      }
+
+      // For other elements (including other span types, divs, etc.),
+      // recursively extract from their children
+      // This ensures we don't miss any nested content
+      parts.push(extractTextContent(props.children));
+      return;
+    }
+
+    // Fallback for anything else
+    parts.push(String(child));
+  });
+
+  return parts.join("");
 }
 
 /**
@@ -293,12 +343,31 @@ export function MDXPre({ children, ...props }: MDXCodeBlockProps) {
       return undefined;
     }
 
+    // Handle arrays - search through all items
+    if (Array.isArray(node)) {
+      for (const item of node) {
+        const found = findCodeElement(item, depth + 1);
+        if (found) {
+          return found;
+        }
+      }
+      return undefined;
+    }
+
     if (!React.isValidElement(node)) {
       return undefined;
     }
 
     const nodeType = node.type;
     const nodeProps = (node.props as any) || {};
+
+    // Handle React fragments - search in their children
+    if (nodeType === React.Fragment) {
+      if (nodeProps.children) {
+        return findCodeElement(nodeProps.children, depth + 1);
+      }
+      return undefined;
+    }
 
     // Check if this element is a code element (native HTML or component)
     if (typeof nodeType === "string" && nodeType === "code") {
