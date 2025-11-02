@@ -13,7 +13,9 @@
         "CLICKHOUSE_USERNAME",
         "CLICKHOUSE_PASSWORD",
         "CLICKHOUSE_DB",
-        "NEXT_PUBLIC_RELEASE_VERSION"
+        "NEXT_PUBLIC_RELEASE_VERSION",
+        "NEXT_PUBLIC_POSTHOG_KEY",
+        "NEXT_PUBLIC_POSTHOG_HOST"
       ]
     },
     "@514labs/moose-proto#build": {
@@ -31,6 +33,10 @@
     "@514labs/moose-proto#gen": {
       "cache": false,
       "outputs": ["generated/**"]
+    },
+    "test:snippets": {
+      "cache": true,
+      "dependsOn": ["^build"]
     }
   }
 }
