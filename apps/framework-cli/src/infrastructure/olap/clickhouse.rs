@@ -764,7 +764,8 @@ async fn execute_modify_table_column(
     }
 
     log::info!(
-        "Executing ModifyTableColumn for table: {}, column: {} ({}→{})",
+        "Executing ModifyTableColumn for table: {}, column: {} ({}→{})\
+data_type_changed: {data_type_changed}, default_changed: {default_changed}, required_changed: {required_changed}, comment_changed: {comment_changed}, ttl_changed: {ttl_changed}",
         table_name,
         after_column.name,
         before_column.data_type,

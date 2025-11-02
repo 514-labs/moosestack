@@ -326,7 +326,11 @@ describe("Backward Compatibility Tests", function () {
       });
 
       after(async function () {
-        this.timeout(TIMEOUTS.CLEANUP_MS);
+        console.log("TEST_PROJECT_DIR", TEST_PROJECT_DIR);
+        this.timeout(TIMEOUTS.CLEANUP_MS * 100);
+        await new Promise((resolve) =>
+          setTimeout(resolve, TIMEOUTS.CLEANUP_MS * 100),
+        );
         try {
           console.log(`Starting cleanup for ${config.displayName} test...`);
           if (devProcess) {
