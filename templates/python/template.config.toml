@@ -1,5 +1,5 @@
 language = "python" # Must be typescript or python
-description = "Default python project, seeded with foobar example components."
+description = "Default Python project, seeded with foobar example components."
 post_install_print = """
 Deploy on Boreal
 
