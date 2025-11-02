@@ -14,7 +14,7 @@ import {
 } from "@/components/mdx";
 import { CodeEditor } from "@/components/ui/shadcn-io/code-editor";
 import { Separator } from "@/components/ui/separator";
-import { Terminal, FileCode } from "lucide-react";
+import { IconTerminal, IconFileCode } from "@tabler/icons-react";
 import {
   MDXPre,
   MDXCode,
@@ -45,8 +45,8 @@ export async function MDXRenderer({ source }: MDXRendererProps) {
     CodeEditorWrapper,
     CodeEditor,
     Separator,
-    Terminal,
-    FileCode,
+    Terminal: IconTerminal,
+    FileCode: IconFileCode,
 
     figure: MDXFigure,
     // wrap with not-prose class

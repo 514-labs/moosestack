@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
-import { Menu } from "lucide-react";
+import { IconMenu } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useState } from "react";
@@ -110,7 +110,7 @@ export function TopNav({ stars }: TopNavProps) {
               size="icon"
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
             >
-              <Menu className="h-5 w-5" />
+              <IconMenu className="h-5 w-5" />
             </Button>
           </div>
         </div>

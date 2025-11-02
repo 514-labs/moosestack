@@ -5,7 +5,7 @@ import { useInView, type UseInViewOptions } from "motion/react";
 import { useTheme } from "next-themes";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { Copy, Check } from "lucide-react";
+import { IconCopy, IconCheck } from "@tabler/icons-react";
 
 type CopyButtonProps = {
   content: string;
@@ -43,8 +43,8 @@ function CopyButton({
       className={cn("h-8 w-8 p-0", className)}
     >
       {copied ?
-        <Check className="h-3 w-3" />
-      : <Copy className="h-3 w-3" />}
+        <IconCheck className="h-3 w-3" />
+      : <IconCopy className="h-3 w-3" />}
     </Button>
   );
 }

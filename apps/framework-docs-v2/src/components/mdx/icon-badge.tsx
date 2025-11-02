@@ -1,9 +1,12 @@
 import { cn } from "@/lib/utils";
-import * as LucideIcons from "lucide-react";
-import type { LucideIcon } from "lucide-react";
+import type { IconProps } from "@tabler/icons-react";
+import * as TablerIcons from "@tabler/icons-react";
 
 interface IconBadgeProps {
-  Icon?: LucideIcon | React.FC<React.SVGProps<SVGSVGElement>> | string;
+  Icon?:
+    | React.ComponentType<IconProps>
+    | React.FC<React.SVGProps<SVGSVGElement>>
+    | string;
   label: string;
   variant?: "moose" | "boreal" | "sloan" | "default";
   rounded?: "md" | "full";
@@ -17,9 +20,9 @@ export function IconBadge({
   rounded = "md",
   className,
 }: IconBadgeProps) {
-  // If Icon is a string, look it up in Lucide icons
+  // If Icon is a string, look it up in Tabler icons
   const IconComponent =
-    typeof Icon === "string" ? (LucideIcons as any)[Icon] : Icon;
+    typeof Icon === "string" ? (TablerIcons as any)[`Icon${Icon}`] : Icon;
 
   return (
     <div

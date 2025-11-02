@@ -1,5 +1,5 @@
 import { cn } from "@/lib/utils";
-import { Check, X, ExternalLink } from "lucide-react";
+import { IconCheck, IconX, IconExternalLink } from "@tabler/icons-react";
 import { Card, CardContent } from "@/components/ui/card";
 import Link from "next/link";
 import React from "react";
@@ -69,7 +69,7 @@ export function BulletIcon({
             "p-1 bg-green-500/10 dark:bg-green-400/10 rounded-full",
           )}
         >
-          <Check className="w-4 h-4 text-green-600 dark:text-green-400" />
+          <IconCheck className="w-4 h-4 text-green-600 dark:text-green-400" />
         </div>
       );
     case "x":
@@ -77,7 +77,7 @@ export function BulletIcon({
         <div
           className={cn(baseIconClasses, "p-1 bg-destructive/10 rounded-full")}
         >
-          <X className="w-4 h-4 text-destructive" />
+          <IconX className="w-4 h-4 text-destructive" />
         </div>
       );
     default:
@@ -115,7 +115,7 @@ export function BulletPointContent({
                 rel="noopener noreferrer"
               >
                 {point.link.text}
-                <ExternalLink className="w-3 h-3" />
+                <IconExternalLink className="w-3 h-3" />
               </Link>
             : <Link
                 href={point.link.href}

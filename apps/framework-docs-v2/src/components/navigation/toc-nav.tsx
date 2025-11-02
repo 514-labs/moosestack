@@ -3,7 +3,7 @@
 import { useEffect, useState, useRef } from "react";
 import { cn } from "@/lib/utils";
 import type { Heading } from "@/lib/content-types";
-import { ExternalLink } from "lucide-react";
+import { IconExternalLink } from "@tabler/icons-react";
 
 interface TOCNavProps {
   headings: Heading[];
@@ -157,7 +157,7 @@ export function TOCNav({ headings, helpfulLinks }: TOCNavProps) {
                   className="flex items-center text-sm text-muted-foreground transition-colors hover:text-foreground"
                 >
                   {link.title}
-                  <ExternalLink className="ml-1 h-3 w-3" />
+                  <IconExternalLink className="ml-1 h-3 w-3" />
                 </a>
               ))}
             </nav>

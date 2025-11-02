@@ -1,37 +1,37 @@
 import {
-  Clock,
-  Database,
-  Waves,
-  HardDriveDownload,
-  RectangleEllipsis,
-  HardDriveUpload,
-  Slack,
-  Contact,
-  Github,
-  Youtube,
-  Rocket,
-  FolderTree,
-  PencilRuler,
-  Blocks,
-  Table,
-  Layers,
-  Terminal,
-  Library,
-  Calendar,
-  Linkedin,
-  List,
-  Settings,
-  HelpCircle,
-  FileJson,
-  Monitor,
-  Code,
-  GitCompare,
-  ChartBar,
-  Hammer,
-  Workflow,
-  Laptop,
-  type LucideIcon,
-} from "lucide-react";
+  IconClock,
+  IconDatabase,
+  IconBroadcast,
+  IconDownload,
+  IconRectangleVertical,
+  IconUpload,
+  IconBrandSlack,
+  IconMail,
+  IconBrandGithub,
+  IconBrandYoutube,
+  IconRocket,
+  IconFolder,
+  IconPencil,
+  IconBlocks,
+  IconTable,
+  IconStack,
+  IconTerminal,
+  IconLibrary,
+  IconCalendar,
+  IconBrandLinkedin,
+  IconList,
+  IconSettings,
+  IconHelpCircle,
+  IconFileCode,
+  IconDeviceDesktop,
+  IconCode,
+  IconGitCompare,
+  IconChartBar,
+  IconHammer,
+  IconGitBranch,
+  IconDeviceLaptop,
+} from "@tabler/icons-react";
+import type { IconProps } from "@tabler/icons-react";
 
 const XIcon = ({ className, ...props }: React.SVGProps<SVGSVGElement>) => (
   <svg
@@ -63,32 +63,32 @@ const ClickHouseIcon = (props: React.SVGProps<SVGSVGElement>) => (
 // Icon components mapping
 export const Icons = {
   // Getting Started
-  quickstart: Rocket,
+  quickstart: IconRocket,
   fromClickhouse: ClickHouseIcon,
-  dataModeling: PencilRuler,
-  localDev: Laptop,
+  dataModeling: IconPencil,
+  localDev: IconDeviceLaptop,
   // Modules
-  olap: Database,
-  streaming: Waves,
-  workflows: Workflow,
-  apis: Code,
+  olap: IconDatabase,
+  streaming: IconBroadcast,
+  workflows: IconGitBranch,
+  apis: IconCode,
   // Tools
-  migrate: GitCompare,
-  metrics: ChartBar,
-  deploying: Hammer,
+  migrate: IconGitCompare,
+  metrics: IconChartBar,
+  deploying: IconHammer,
   // Reference
-  mooseCli: Terminal,
-  mooseLibrary: Library,
-  configuration: Settings,
-  help: HelpCircle,
-  changelog: List,
+  mooseCli: IconTerminal,
+  mooseLibrary: IconLibrary,
+  configuration: IconSettings,
+  help: IconHelpCircle,
+  changelog: IconList,
   // Social
-  calendly: Calendar,
-  slack: Slack,
-  github: Github,
+  calendly: IconCalendar,
+  slack: IconBrandSlack,
+  github: IconBrandGithub,
   twitter: XIcon,
-  youtube: Youtube,
-  linkedin: Linkedin,
+  youtube: IconBrandYoutube,
+  linkedin: IconBrandLinkedin,
 };
 
 // Helper function to create language-specific paths (now uses query params)
@@ -134,14 +134,18 @@ type PathCategory =
 interface PathInfo {
   typescript: string;
   python: string;
-  icon: LucideIcon | React.FC<React.SVGProps<SVGSVGElement>>;
+  icon:
+    | React.ComponentType<IconProps>
+    | React.FC<React.SVGProps<SVGSVGElement>>;
   title: string;
   category: PathCategory;
 }
 
 interface SocialPathInfo {
   path: string;
-  icon: LucideIcon | React.FC<React.SVGProps<SVGSVGElement>>;
+  icon:
+    | React.ComponentType<IconProps>
+    | React.FC<React.SVGProps<SVGSVGElement>>;
   title: string;
   category: "social";
 }

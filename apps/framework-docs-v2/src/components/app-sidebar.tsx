@@ -2,17 +2,16 @@
 
 import * as React from "react";
 import {
-  BookOpen,
-  Bot,
-  Command,
-  Frame,
-  LifeBuoy,
-  Map,
-  PieChart,
-  Send,
-  Settings2,
-  SquareTerminal,
-} from "lucide-react";
+  IconBook,
+  IconBrain,
+  IconTerminal,
+  IconFrame,
+  IconHelp,
+  IconMap,
+  IconChartBar,
+  IconSend,
+  IconSettings,
+} from "@tabler/icons-react";
 
 import { NavMain } from "@/components/nav-main";
 import { NavProjects } from "@/components/nav-projects";
@@ -38,7 +37,7 @@ const data = {
     {
       title: "Playground",
       url: "#",
-      icon: SquareTerminal,
+      icon: IconTerminal,
       isActive: true,
       items: [
         {
@@ -58,7 +57,7 @@ const data = {
     {
       title: "Models",
       url: "#",
-      icon: Bot,
+      icon: IconBrain,
       items: [
         {
           title: "Genesis",
@@ -77,7 +76,7 @@ const data = {
     {
       title: "Documentation",
       url: "#",
-      icon: BookOpen,
+      icon: IconBook,
       items: [
         {
           title: "Introduction",
@@ -100,7 +99,7 @@ const data = {
     {
       title: "Settings",
       url: "#",
-      icon: Settings2,
+      icon: IconSettings,
       items: [
         {
           title: "General",
@@ -125,29 +124,29 @@ const data = {
     {
       title: "Support",
       url: "#",
-      icon: LifeBuoy,
+      icon: IconHelp,
     },
     {
       title: "Feedback",
       url: "#",
-      icon: Send,
+      icon: IconSend,
     },
   ],
   projects: [
     {
       name: "Design Engineering",
       url: "#",
-      icon: Frame,
+      icon: IconFrame,
     },
     {
       name: "Sales & Marketing",
       url: "#",
-      icon: PieChart,
+      icon: IconChartBar,
     },
     {
       name: "Travel",
       url: "#",
-      icon: Map,
+      icon: IconMap,
     },
   ],
 };
@@ -164,7 +163,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
             <SidebarMenuButton size="lg" asChild>
               <a href="#">
                 <div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground">
-                  <Command className="size-4" />
+                  <IconTerminal className="size-4" />
                 </div>
                 <div className="grid flex-1 text-left text-sm leading-tight">
                   <span className="truncate font-semibold">Acme Inc</span>

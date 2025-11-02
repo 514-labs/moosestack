@@ -1,13 +1,14 @@
 "use client";
 
-import React, { useState } from "react";
+import * as React from "react";
+import { useState } from "react";
 import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import { Button } from "@/components/ui/button";
-import { ChevronRight } from "lucide-react";
+import { IconChevronRight } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
 
 interface ToggleBlockProps {
@@ -39,7 +40,7 @@ export function ToggleBlock({
           size="sm"
           className="flex flex-row items-center justify-start mb-2 w-full text-sm text-muted-foreground hover:text-foreground"
         >
-          <ChevronRight
+          <IconChevronRight
             className={cn(
               "mr-2 h-4 w-4 transition-transform duration-200",
               isOpen && "rotate-90",

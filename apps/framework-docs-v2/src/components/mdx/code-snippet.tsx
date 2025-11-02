@@ -1,7 +1,7 @@
 "use client";
 
-import React from "react";
-import { Copy, Check } from "lucide-react";
+import * as React from "react";
+import { IconCopy, IconCheck } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import {
@@ -51,8 +51,8 @@ function CopyButton({
       variant="ghost"
     >
       {copied ?
-        <Check className="h-3 w-3" />
-      : <Copy className="h-3 w-3" />}
+        <IconCheck className="h-3 w-3" />
+      : <IconCopy className="h-3 w-3" />}
       <span className="sr-only">Copy code</span>
     </Button>
   );

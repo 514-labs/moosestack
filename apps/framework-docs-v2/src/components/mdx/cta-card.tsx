@@ -1,9 +1,10 @@
-import React from "react";
+import * as React from "react";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 import { IconBadge } from "./icon-badge";
-import * as LucideIcons from "lucide-react";
-import { ArrowRight, type LucideIcon } from "lucide-react";
+import { IconArrowRight } from "@tabler/icons-react";
+import type { IconProps } from "@tabler/icons-react";
+import * as TablerIcons from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -18,7 +19,10 @@ interface CTACardProps {
   description: string;
   ctaLink: string;
   ctaLabel?: string;
-  Icon?: LucideIcon | React.FC<React.SVGProps<SVGSVGElement>> | string;
+  Icon?:
+    | React.ComponentType<IconProps>
+    | React.FC<React.SVGProps<SVGSVGElement>>
+    | string;
   badge?: {
     variant: "boreal" | "sloan" | "moose" | "default";
     text: string;
@@ -41,9 +45,9 @@ export function CTACard({
   orientation = "vertical",
   isMooseModule = false,
 }: CTACardProps) {
-  // If Icon is a string, look it up in Lucide icons
+  // If Icon is a string, look it up in Tabler icons
   const IconComponent =
-    typeof Icon === "string" ? (LucideIcons as any)[Icon] : Icon;
+    typeof Icon === "string" ? (TablerIcons as any)[`Icon${Icon}`] : Icon;
 
   return orientation === "horizontal" ?
       <Link href={ctaLink} className={cn("w-full", className)}>
@@ -76,7 +80,7 @@ export function CTACard({
             </CardDescription>
           </CardContent>
           <div className="mr-6 rounded-lg p-4 shrink-0 flex items-center justify-center">
-            <ArrowRight className="h-6 w-6" />
+            <IconArrowRight className="h-6 w-6" />
             <span className="sr-only">{ctaLabel}</span>
           </div>
         </Card>

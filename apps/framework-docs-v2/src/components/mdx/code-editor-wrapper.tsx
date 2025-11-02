@@ -2,7 +2,7 @@
 
 import React from "react";
 import { CodeEditor } from "@/components/ui/shadcn-io/code-editor";
-import { Terminal, FileCode } from "lucide-react";
+import { IconTerminal, IconFileCode } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
 
 // Shell languages that should use terminal styling
@@ -113,8 +113,8 @@ export function CodeEditorWrapper({
   // Determine icon based on variant and filename
   const icon =
     isTerminal ?
-      <Terminal className="h-3.5 w-3.5 shrink-0" />
-    : <FileCode className="h-3.5 w-3.5 shrink-0" />;
+      <IconTerminal className="h-3.5 w-3.5 shrink-0" />
+    : <IconFileCode className="h-3.5 w-3.5 shrink-0" />;
 
   // Determine title
   const title = filename || (isTerminal ? "Terminal" : "Code");

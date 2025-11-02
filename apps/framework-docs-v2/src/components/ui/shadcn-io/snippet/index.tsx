@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { CheckIcon, CopyIcon } from "lucide-react";
+import { IconCheck, IconCopy } from "@tabler/icons-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -123,8 +123,8 @@ export function SnippetCopyButton({
       variant="ghost"
     >
       {isCopied ?
-        <CheckIcon className="h-3 w-3" />
-      : <CopyIcon className="h-3 w-3" />}
+        <IconCheck className="h-3 w-3" />
+      : <IconCopy className="h-3 w-3" />}
       <span className="sr-only">Copy code</span>
     </Button>
   );

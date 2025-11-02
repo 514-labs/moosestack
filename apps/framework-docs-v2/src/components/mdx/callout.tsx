@@ -1,21 +1,21 @@
-import React from "react";
+import * as React from "react";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import {
-  InfoIcon,
-  Lightbulb,
-  PartyPopper,
-  StopCircle,
-  type LucideIcon,
-} from "lucide-react";
+  IconInfoCircle,
+  IconBulb,
+  IconConfetti,
+  IconAlertCircle,
+} from "@tabler/icons-react";
+import type { IconProps } from "@tabler/icons-react";
 
 interface CalloutProps {
   type: CalloutType;
   title?: string;
   href?: string;
-  icon?: LucideIcon | boolean;
+  icon?: React.ComponentType<IconProps> | boolean;
   ctaLabel?: string;
   children: React.ReactNode;
   compact?: boolean;
@@ -24,22 +24,22 @@ interface CalloutProps {
 
 const calloutVariants = {
   success: {
-    icon: PartyPopper,
+    icon: IconConfetti,
     variant: "success" as const,
     title: "Congrats!",
   },
   info: {
-    icon: InfoIcon,
+    icon: IconInfoCircle,
     variant: "default" as const,
     title: "MooseTip:",
   },
   warning: {
-    icon: StopCircle,
+    icon: IconAlertCircle,
     variant: "warning" as const,
     title: "Warning:",
   },
   danger: {
-    icon: StopCircle,
+    icon: IconAlertCircle,
     variant: "destructive" as const,
     title: "Error:",
   },
@@ -62,7 +62,7 @@ export function Callout({
   const Icon =
     typeof icon === "boolean" && icon ?
       variantProps.icon
-    : (icon as LucideIcon);
+    : (icon as React.ComponentType<IconProps>);
 
   const displayTitle = title || variantProps.title;
 

@@ -38,7 +38,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
-import { Database, Code } from "lucide-react";
+import { IconDatabase, IconCode } from "@tabler/icons-react";
 
 function MultiTabSnippet() {
   const [value, setValue] = useState("bash");
@@ -231,7 +231,7 @@ print(greet("World"))`}
                 description="Browse the complete API documentation"
                 ctaLink="/moosestack/reference"
                 ctaLabel="View Docs"
-                Icon={Code}
+                Icon={IconCode}
               />
             </CTACards>
           </CardContent>
@@ -412,12 +412,12 @@ print(greet("World"))`}
           <CardContent>
             <FeatureGrid columns={2}>
               <FeatureCard
-                Icon={Database}
+                Icon={IconDatabase}
                 title="Database"
                 description="Connect to your database"
               />
               <FeatureCard
-                Icon={Code}
+                Icon={IconCode}
                 title="API"
                 description="Build REST APIs"
               />

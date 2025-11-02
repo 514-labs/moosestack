@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { Search } from "lucide-react";
+import { IconSearch } from "@tabler/icons-react";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 
@@ -126,7 +126,7 @@ export function SearchBar() {
         <div className="flex flex-col">
           {/* Search Input */}
           <div className="flex items-center border-b px-4">
-            <Search className="h-4 w-4 text-muted-foreground" />
+            <IconSearch className="h-4 w-4 text-muted-foreground" />
             <input
               value={query}
               onChange={(e) => setQuery(e.target.value)}

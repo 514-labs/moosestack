@@ -1,6 +1,6 @@
 "use client";
 
-import { SidebarIcon } from "lucide-react";
+import { IconLayoutSidebarLeftCollapse } from "@tabler/icons-react";
 
 import { SearchForm } from "@/components/search-form";
 import {
@@ -27,7 +27,7 @@ export function SiteHeader() {
           size="icon"
           onClick={toggleSidebar}
         >
-          <SidebarIcon />
+          <IconLayoutSidebarLeftCollapse />
         </Button>
         <Separator orientation="vertical" className="mr-2 h-4" />
         <Breadcrumb className="hidden sm:block">
