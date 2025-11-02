@@ -1,0 +1,133 @@
+---
+title: November 1, 2025
+description: Release notes for November 1, 2025
+---
+
+import { Callout } from "@/components";
+
+# November 1, 2025
+
+<Callout type="info" title="Highlights">
+- **New:** Support for ClickHouse table engines:
+  - [Buffer table engine](/moose/olap/model-table#in-memory-buffer-buffer): smooth ingest spikes before data lands in MergeTree ([ClickHouse docs](https://clickhouse.com/docs/en/engines/table-engines/special/buffer))
+  - [S3 table engine](/moose/olap/model-table#direct-s3-access-s3): keep data in S3 while ClickHouse reads and writes it on demand ([ClickHouse docs](https://clickhouse.com/docs/en/engines/table-engines/integrations/s3))
+  - Beta (self-hosted only): [Distributed table engine](/moose/olap/model-table#distributed-tables-distributed): serve cluster-wide queries through Moose-managed tables ([ClickHouse docs](https://clickhouse.com/docs/en/engines/table-engines/special/distributed))
+- **Improved:** Serverless migrations gain Redis-backed state storage plus per-table databases.
+- **Feature that will make a small number of people very happy:** `flake.nix` now ships a Moose devshell.
+</Callout>
+
+## Buffer tables for burst protection
+You can now model ClickHouse Buffer engines in MooseOLAP TypeScript and Python projects. 
+
+```ts filename="bufferTable.ts" copy
+import { ClickHouseEngines, Key, OlapTable } from "@514labs/moose-lib";
+
+interface PaymentEvent {
+  eventId: Key<string>;
+  amount: number;
+  capturedAt: Date;
+}
+
+export const paymentBuffer = new OlapTable<PaymentEvent>("payment_buffer", {
+  engine: ClickHouseEngines.Buffer,
+  targetDatabase: "analytics",
+  targetTable: "payment_events_local",
+  minRows: 5_000,
+  maxRows: 500_000,
+});
+```
+
+PR: [#2908](https://github.com/514-labs/moosestack/pull/2908) | Docs: [Buffer engine](/moose/olap/model-table#in-memory-buffer-buffer) • [ClickHouse Buffer engine docs](https://clickhouse.com/docs/en/engines/table-engines/special/buffer)
+
+## S3 tables for object storage
+You can now model ClickHouse S3 engines in MooseOLAP TypeScript and Python projects. The CLI serializes engine settings, resolves runtime credentials, and enforces the S3 rule set (`PARTITION BY` allowed, `ORDER BY` rejected) so you can read or write datasets that live entirely in S3.
+
+```ts filename="s3Archive.ts" copy
+import { ClickHouseEngines, OlapTable } from "@514labs/moose-lib";
+
+interface ArchivedOrder {
+  orderId: string;
+  status: string;
+  processedAt: Date;
+}
+
+export const archivedOrders = new OlapTable<ArchivedOrder>("archived_orders", {
+  engine: ClickHouseEngines.S3,
+  path: "s3://company-archive/orders/{yyyy}/{MM}/",
+  format: "Parquet",
+});
+```
+
+PR: [#2908](https://github.com/514-labs/moosestack/pull/2908) | Docs: [S3 engine](/moose/olap/model-table#direct-s3-access-s3) • [ClickHouse S3 docs](https://clickhouse.com/docs/en/engines/table-engines/integrations/s3)
+
+## Distributed tables for cluster fan-out
+Beta (self-hosted only): Not supported on Boreal or ClickHouse Cloud.
+You can now model ClickHouse Distributed engines in MooseOLAP TypeScript and Python projects. Plans capture the cluster, target database/table, and optional sharding key, while validation checks that the referenced local tables exist on every node before executing migrations.
+
+```ts filename="distributedEvents.ts" copy
+import { ClickHouseEngines, Key, OlapTable } from "@514labs/moose-lib";
+
+interface UserEvent {
+  userId: Key<string>;
+  eventType: string;
+  occurredAt: Date;
+}
+
+export const userEventsDistributed = new OlapTable<UserEvent>("user_events_distributed", {
+  engine: ClickHouseEngines.Distributed,
+  cluster: "analytics_cluster",
+  targetDatabase: "analytics",
+  targetTable: "user_events_local",
+  shardingKey: "cityHash64(userId)",
+});
+```
+
+PR: [#2908](https://github.com/514-labs/moosestack/pull/2908) | Docs: [Distributed engine](/moose/olap/model-table#distributed-tables-distributed) • [ClickHouse Distributed docs](https://clickhouse.com/docs/en/engines/table-engines/special/distributed)
+
+## Redis state storage for serverless migrations
+`moose generate migration` and `moose migrate` accept a Redis URL (flag or `MOOSE_REDIS_CONFIG__URL`) whenever `state_config.storage = "redis"`. The CLI resolves ClickHouse + Redis endpoints, acquires migration locks in Redis, and reuses the same builder across serverless tooling.
+
+```bash filename="Terminal" copy
+export MOOSE_CLICKHOUSE_CONFIG__URL="https://user:pass@ch.serverless.dev/main"
+export MOOSE_REDIS_CONFIG__URL="redis://redis.example.com:6379"
+moose migrate --clickhouse-url "$MOOSE_CLICKHOUSE_CONFIG__URL" --redis-url "$MOOSE_REDIS_CONFIG__URL"
+```
+
+PR: [#2907](https://github.com/514-labs/moosestack/pull/2907) | Docs: [Redis state storage](/moose/migrate#state-storage-options)
+
+## Multi-database tables
+Tables now carry a `database` field through the CLI, codegen, and infrastructure map. Moose will create any `additional_databases`, validate plans that attempt to move an existing table, and surface fully qualified names in `moose ls`.
+
+```ts filename="auditLogs.ts" copy
+import { Key, OlapTable } from "@514labs/moose-lib";
+
+interface AuditLog {
+  id: Key<string>;
+  recordedAt: Date;
+  message: string;
+}
+
+export const auditLogs = new OlapTable<AuditLog>("audit_logs", {
+  database: "operations",
+  orderByFields: ["recordedAt", "id"],
+});
+```
+
+PR: [#2876](https://github.com/514-labs/moosestack/pull/2876) | Docs: [Multi-database setup](/moose/olap/model-table#multi-database-setup)
+
+## Moose
+- **Buffer tables** – Burst-friendly Buffer engines ship with typed config, CLI validation, and template coverage. Docs: [Buffer engine](/moose/olap/model-table#in-memory-buffer-buffer) • [ClickHouse Buffer docs](https://clickhouse.com/docs/en/engines/table-engines/special/buffer) | PR [#2908](https://github.com/514-labs/moosestack/pull/2908)
+- **S3 tables** – Direct object storage workflows stay in code with S3 engine support and credential handling. Docs: [S3 engine](/moose/olap/model-table#direct-s3-access-s3) • [ClickHouse S3 docs](https://clickhouse.com/docs/en/engines/table-engines/integrations/s3) | PR [#2908](https://github.com/514-labs/moosestack/pull/2908)
+- **Distributed tables** – Cluster fan-out models emit the correct ClickHouse DDL and guard against missing local tables. Docs: [Distributed engine](/moose/olap/model-table#distributed-tables-distributed) • [ClickHouse Distributed docs](https://clickhouse.com/docs/en/engines/table-engines/special/distributed) | PR [#2908](https://github.com/514-labs/moosestack/pull/2908)
+- **Serverless migrations stay coordinated** – Redis-backed locks and state storage plug into the existing `moose migrate` flow with env-var overrides for CI/CD. Docs: [Redis state storage](/moose/migrate#state-storage-options) | PR [#2907](https://github.com/514-labs/moosestack/pull/2907)
+- **Per-table databases** – The migration planner now respects `database` overrides, auto-creates configured databases, and blocks accidental moves between them. Docs: [Multi-database setup](/moose/olap/model-table#multi-database-setup) | PR [#2876](https://github.com/514-labs/moosestack/pull/2876)
+- **Runtime S3Queue credentials** – Environment variable markers resolve at deploy time for S3Queue sources, keeping AWS keys out of source. Docs: [Streaming from S3](/moose/olap/model-table#streaming-from-s3-s3queue) | PR [#2875](https://github.com/514-labs/moosestack/pull/2875)
+
+## Boreal
+- Blog redesign.
+- Fixed the redirect loop after deleting an organization so users land back on the create-org screen instead of bouncing between routes.
+
+## Nix development environment
+`flake.nix` now bootstraps a full MooseStack toolchain (`nix develop` drops you into Rust, Node.js, and Python with shared test commands). If you use Nix, let us know!
+
+PR: [#2920](https://github.com/514-labs/moosestack/pull/2920)
