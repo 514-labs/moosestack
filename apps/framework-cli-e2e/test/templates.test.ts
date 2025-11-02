@@ -871,6 +871,67 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
           expect(apiData).to.be.an("array");
         });
 
+        it("should serve MCP server at /tools with proper header forwarding", async function () {
+          this.timeout(TIMEOUTS.TEST_SETUP_MS);
+
+          // Send an MCP tools/list request to verify the server is working
+          // This tests that the proxy properly forwards response headers
+          const mcpRequest = {
+            jsonrpc: "2.0",
+            id: 1,
+            method: "tools/list",
+            params: {},
+          };
+
+          const response = await fetch(`${SERVER_CONFIG.url}/tools`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Accept: "application/json, text/event-stream",
+            },
+            body: JSON.stringify(mcpRequest),
+          });
+
+          // Log response details for debugging
+          if (!response.ok) {
+            const errorText = await response.text();
+            console.error(`MCP request failed with status ${response.status}`);
+            console.error(`Response body: ${errorText}`);
+            throw new Error(
+              `MCP request failed: ${response.status} ${response.statusText} - ${errorText}`,
+            );
+          }
+
+          // Verify response status
+          expect(response.ok).to.be.true;
+          expect(response.status).to.equal(200);
+
+          // Verify Content-Type header is present (this is what the fix ensures)
+          const contentType = response.headers.get("content-type");
+          expect(contentType).to.exist;
+          expect(contentType).to.include("application/json");
+
+          // Verify response is valid JSON-RPC
+          const data = await response.json();
+          expect(data).to.be.an("object");
+          expect(data).to.have.property("jsonrpc", "2.0");
+          expect(data).to.have.property("id", 1);
+
+          // Verify the response contains tools
+          expect(data).to.have.property("result");
+          expect(data.result).to.have.property("tools");
+          expect(data.result.tools).to.be.an("array");
+
+          // Verify query_clickhouse tool is listed
+          const queryTool = data.result.tools.find(
+            (tool: any) => tool.name === "query_clickhouse",
+          );
+          expect(queryTool).to.exist;
+          expect(queryTool).to.have.property("description");
+
+          console.log("✅ MCP server works correctly through proxy");
+        });
+
         it("should create JSON table and accept extra fields in payload", async function () {
           this.timeout(TIMEOUTS.TEST_SETUP_MS);
 
