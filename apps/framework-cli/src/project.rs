@@ -5,6 +5,27 @@
 //! A project is initialized using the `moose init` command and is stored
 //!  in the `$PROJECT_PATH/.moose` directory.
 //!
+//! ## Configuration Loading
+//!
+//! Project configuration is loaded in the following order (later sources override earlier ones):
+//! 1. **Default values** in code
+//! 2. **`moose.config.toml`** (or legacy `project.toml`)
+//! 3. **`.env`** - Base environment variables (committed to git)
+//! 4. **`.env.{environment}`** - Environment-specific variables (e.g., `.env.development`, `.env.production`)
+//! 5. **`.env.local`** - Local overrides (gitignored, for developer secrets)
+//! 6. **System environment variables** with `MOOSE_` prefix (highest priority)
+//!
+//! ### Environment Variable Format
+//! Environment variables use the `MOOSE_` prefix with double underscores for nesting:
+//! - `MOOSE_CLICKHOUSE_CONFIG__URL` → `clickhouse_config.url`
+//! - `MOOSE_FEATURES__WORKFLOWS=true` → `features.workflows`
+//!
+//! ### Environment Detection
+//! The environment is automatically determined from the CLI command:
+//! - `moose dev` → loads `.env.development`
+//! - `moose prod` → loads `.env.production`
+//! - `moose build` → loads `.env.production`
+//!
 //! ## Infrastructure Loading (`load_infra` flag)
 //! - The `load_infra` flag in `moose.config.toml` determines if this Moose instance should load infrastructure (Docker) containers during `moose dev`.
 //! - If `load_infra` is **missing** from the config, the default is **true** (infra is loaded, for backward compatibility).
@@ -363,16 +384,34 @@ impl Project {
     }
 
     /// Loads a project from the specified directory
-    pub fn load(directory: &PathBuf) -> Result<Project, ConfigError> {
+    ///
+    /// # Arguments
+    ///
+    /// * `directory` - The project directory containing moose.config.toml and .env files
+    /// * `environment` - The runtime environment (development or production)
+    ///
+    /// # Configuration Loading Order
+    ///
+    /// 1. Load .env files (.env → .env.{dev|prod} → .env.local for dev only)
+    /// 2. Load moose.config.toml
+    /// 3. Apply MOOSE_* environment variable overrides
+    pub fn load(
+        directory: &PathBuf,
+        environment: crate::utilities::dotenv::MooseEnvironment,
+    ) -> Result<Project, ConfigError> {
+        // 1. Load .env files first (this populates environment variables)
+        crate::utilities::dotenv::load_dotenv_files(directory, environment);
+
         let mut project_file = directory.clone();
 
-        // Prioritize the new project file name
+        // 2. Prioritize the new project file name
         if directory.clone().join(PROJECT_CONFIG_FILE).exists() {
             project_file.push(PROJECT_CONFIG_FILE);
         } else {
             project_file.push(OLD_PROJECT_CONFIG_FILE);
         }
 
+        // 3. Build config with TOML file + environment variables
         let mut project_config: Project = Config::builder()
             .add_source(File::from(project_file).required(true))
             .add_source(
@@ -405,10 +444,16 @@ impl Project {
         Ok(project_config)
     }
 
-    /// Loads a project from the current directory
-    pub fn load_from_current_dir() -> Result<Project, ConfigError> {
+    /// Loads a project from the current directory with the specified environment
+    ///
+    /// # Arguments
+    ///
+    /// * `environment` - The runtime environment (development or production)
+    pub fn load_from_current_dir(
+        environment: crate::utilities::dotenv::MooseEnvironment,
+    ) -> Result<Project, ConfigError> {
         let current_dir = std::env::current_dir().expect("Failed to get the current directory");
-        Project::load(&current_dir)
+        Project::load(&current_dir, environment)
     }
 
     /// Writes the project configuration to disk
