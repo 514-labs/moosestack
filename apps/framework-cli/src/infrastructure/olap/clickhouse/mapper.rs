@@ -353,6 +353,7 @@ pub fn std_table_to_clickhouse_table(table: &Table) -> Result<ClickHouseTable, C
             })
             .collect(),
         table_ttl_setting: table.table_ttl_setting.clone(),
+        cluster_name: table.cluster_name.clone(),
     })
 }
 

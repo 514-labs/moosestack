@@ -295,6 +295,9 @@ pub struct Table {
     /// Table-level TTL expression (without leading 'TTL')
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub table_ttl_setting: Option<String>,
+    /// Optional cluster name for ON CLUSTER support in ClickHouse
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub cluster_name: Option<String>,
 }
 
 impl Table {
@@ -468,6 +471,7 @@ impl Table {
                 .or_else(|| self.compute_non_alterable_params_hash()),
             table_settings: self.table_settings.clone().unwrap_or_default(),
             table_ttl_setting: self.table_ttl_setting.clone(),
+            cluster_name: self.cluster_name.clone(),
             metadata: MessageField::from_option(self.metadata.as_ref().map(|m| {
                 infrastructure_map::Metadata {
                     description: m.description.clone().unwrap_or_default(),
@@ -574,6 +578,7 @@ impl Table {
                 .collect(),
             database: proto.database,
             table_ttl_setting: proto.table_ttl_setting,
+            cluster_name: proto.cluster_name,
         }
     }
 }
@@ -1558,6 +1563,7 @@ mod tests {
             indexes: vec![],
             database: None,
             table_ttl_setting: None,
+            cluster_name: None,
         };
         assert_eq!(table1.id(DEFAULT_DATABASE_NAME), "local_users");
 
