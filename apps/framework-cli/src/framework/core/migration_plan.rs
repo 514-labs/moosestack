@@ -181,6 +181,7 @@ mod tests {
             engine_params_hash: None,
             table_settings: None,
             table_ttl_setting: Some("timestamp + INTERVAL 90 DAY".to_string()),
+            cluster_name: None,
         }
     }
 
@@ -202,6 +203,7 @@ mod tests {
                 SerializableOlapOperation::DropTable {
                     table: "old_users".to_string(),
                     database: Some("local".to_string()),
+                    cluster_name: None,
                 },
             ],
         };
@@ -244,6 +246,7 @@ mod tests {
                 SerializableOlapOperation::DropTable {
                     table: "old_users".to_string(),
                     database: Some("local".to_string()),
+                    cluster_name: None,
                 },
             ],
         };

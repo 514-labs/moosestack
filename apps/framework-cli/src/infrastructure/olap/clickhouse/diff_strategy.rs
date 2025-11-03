@@ -517,6 +517,7 @@ mod tests {
             indexes: vec![],
             database: None,
             table_ttl_setting: None,
+            cluster_name: None,
         }
     }
 
@@ -1123,6 +1124,7 @@ mod tests {
             indexes: vec![],
             database: None,
             table_ttl_setting: None,
+            cluster_name: None,
         };
 
         assert!(ClickHouseTableDiffStrategy::is_s3queue_table(&s3_table));
