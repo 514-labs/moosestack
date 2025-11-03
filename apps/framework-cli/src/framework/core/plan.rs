@@ -158,6 +158,12 @@ pub async fn reconcile_with_reality<T: OlapOperations>(
                         // that might have authentication parameters.
                         table.engine_params_hash = infra_map_table.engine_params_hash.clone();
 
+                        // Keep the cluster_name from the infra map because it cannot be reliably detected
+                        // from ClickHouse's system tables. The ON CLUSTER clause is only used during
+                        // DDL execution and is not stored in the table schema. While it appears in
+                        // system.distributed_ddl_queue, those entries are ephemeral and get cleaned up.
+                        table.cluster_name = infra_map_table.cluster_name.clone();
+
                         reconciled_map
                             .tables
                             .insert(reality_table.id(&reconciled_map.default_database), table);
