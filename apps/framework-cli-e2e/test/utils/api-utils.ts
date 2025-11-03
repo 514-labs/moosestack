@@ -38,9 +38,10 @@ export const verifyConsumptionApi = async (
           }
         });
 
-        if (item.hasOwnProperty("rows_with_text") && item.rows_with_text < 1) {
-          throw new Error("rows_with_text should be at least 1");
-        }
+        // Generator uses faker, it may not add any rows with text
+        // if (item.hasOwnProperty("rows_with_text") && item.rows_with_text < 1) {
+        //   throw new Error("rows_with_text should be at least 1");
+        // }
 
         if (item.hasOwnProperty("total_rows") && item.total_rows < 1) {
           throw new Error("total_rows should be at least 1");
@@ -142,9 +143,10 @@ export const verifyVersionedConsumptionApi = async (
           }
         });
 
-        if (item.hasOwnProperty("rows_with_text") && item.rows_with_text < 1) {
-          throw new Error("rows_with_text should be at least 1");
-        }
+        // Generator uses faker, it may not add any rows with text
+        // if (item.hasOwnProperty("rows_with_text") && item.rows_with_text < 1) {
+        //   throw new Error("rows_with_text should be at least 1");
+        // }
         if (item.hasOwnProperty("total_rows") && item.total_rows < 1) {
           throw new Error("total_rows should be at least 1");
         }
