@@ -333,6 +333,12 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
           },
           { attempts: 10, delayMs: 1000 },
         );
+
+        // Wait for infrastructure to stabilize after file modification
+        console.log(
+          "Waiting for streaming functions to stabilize after index modification...",
+        );
+        await waitForStreamingFunctions();
       });
 
       it("should create Buffer engine table correctly", async function () {
@@ -455,6 +461,12 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
           },
           { attempts: 10, delayMs: 1000 },
         );
+
+        // Wait for infrastructure to stabilize after file modification
+        console.log(
+          "Waiting for streaming functions to stabilize after TTL modification...",
+        );
+        await waitForStreamingFunctions();
       });
 
       it("should plan/apply DEFAULT removal on existing tables", async function () {
@@ -529,6 +541,12 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
           },
           { attempts: 10, delayMs: 1000 },
         );
+
+        // Wait for infrastructure to stabilize after file modification
+        console.log(
+          "Waiting for streaming functions to stabilize after DEFAULT removal...",
+        );
+        await waitForStreamingFunctions();
       });
     }
 
