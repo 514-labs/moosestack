@@ -2,6 +2,9 @@
 .moose
 .sloan
 
+# Environment files with secrets
+.env.local
+
 # Python bytecode and cache
 __pycache__
 *.pyc
