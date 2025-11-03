@@ -8,32 +8,69 @@ import Link from "next/link";
 
 # Bring Your Own API Framework
 
-MooseStack provides flexible approaches for building HTTP APIs to expose your data. You can use Moose's built-in `Api` class for simple GET endpoints, or bring popular web frameworks like Express, Koa, Fastify, or FastAPI for advanced features and custom middleware.
+MooseStack gives you two complementary integration paths for HTTP workloads:
+
+- **Embed supported frameworks inside your Moose project.** Mount Express, Koa, Fastify, or raw Node.js with `WebApp` so Moose deploys everything together and injects auth, `client`, and `sql` helpers on every request.
+- **Call Moose from any framework using the client.** Keep an existing app (Next.js, Rails, etc.) in its current runtime and use the Moose TypeScript or Python client to query ClickHouse or trigger workflows.
 
 ## Overview
 
-### Native APIs
+### Embed a supported framework inside Moose
 
-Moose's built-in `Api` class provides simple GET endpoints with automatic type validation and OpenAPI documentation. This is ideal for straightforward data queries without complex routing or middleware requirements.
+Use the `WebApp` class when you want Moose to host your framework alongside tables, streams, and workflows.
 
-**Use Native `Api` class when you need:**
-- Simple GET endpoints with query parameters
-- Automatic type validation and conversion
-- Automatic OpenAPI documentation generation
-- Minimal setup and boilerplate
+**Why embed the framework:**
+- One deployment pipeline managed by the Moose CLI (dev hot reload + production config)
+- Access Moose utilities (`client`, `sql`, `jwt`) in every handler through `getMooseUtils`
+- Share auth, logging, and observability defaults with the rest of your Moose modules
+- Compose Moose APIs and framework routes under the same hostname
 
-### Custom Frameworks
+### Use the Moose client from any framework
 
-Bring your own web framework to leverage advanced HTTP features, custom middleware, and framework-specific ecosystems. MooseStack's `WebApp` class lets you mount any compatible framework at a custom path within your Moose project.
+If you already have an application server, call Moose directly with the client SDKs—no Moose deployment required. Works great for Next.js, Rails, Python microservices, or anything else that can make HTTP requests.
 
-**Use Custom Frameworks when you need:**
-- Custom middleware (authentication, logging, rate limiting)
-- Framework-specific features and plugins
-- Advanced HTTP features (WebSockets, file uploads, Server-Sent Events)
-- Complex routing patterns (route groups, dynamic routes)
-- Integration with existing framework-based applications
+Here’s the client pattern in both TypeScript and Python:
+
+<TypeScript>
+```ts filename="lib/moose.ts" copy
+import { MooseClient, sql } from "@514labs/moose-lib";
+
+const client = new MooseClient();
+
+export async function listUsers(limit = 25) {
+  const result = await client.query.execute(
+    sql`SELECT id, name, email FROM users LIMIT ${limit}`
+  );
+  return await result.json();
+}
+```
+</TypeScript>
+
+<Python>
+```py filename="lib/moose.py" copy
+from moose_lib import MooseClient
+
+client = MooseClient()
+
+def list_users(limit: int = 25):
+    query = """
+        SELECT id, name, email
+        FROM users
+        LIMIT {limit:UInt32}
+    """
+    return client.query.execute_raw(query, {"limit": limit})
+```
+</Python>
+
+<Callout type="info" title="Read data with the Moose client">
+  For more examples, see the [Querying Data guide](/moose/olap/read-data).
+</Callout>
 
 ## Supported Frameworks
+
+<Callout type="warning" title="Official Moose WebApp support">
+  `WebApp` currently ships adapters for Express, Koa, Fastify, raw Node.js, and FastAPI. Frameworks like Next.js can call Moose today through the client pattern above, but they are not yet first-class `WebApp` integrations.
+</Callout>
 
 ### TypeScript
 
@@ -136,8 +173,6 @@ Each WebApp must specify a unique mount path where it will be accessible. Mount 
 
 **Invalid:** `/`, `/myapi/`, `/api/myendpoint`
 
-## Next Steps
-
-- [Authentication](/moose/apis/auth) - Secure your APIs with JWT
-- [Analytics APIs](/moose/apis/analytics-api) - Deep dive into the native `Api` class
-- [Configuration](/moose/configuration) - Configure infrastructure and services
+<Callout type="info" title="Prefer Moose-managed APIs?">
+  Moose's native `Api` class provides built-in validation and OpenAPI documentation. See the [Analytics API documentation](/moose/apis/analytics-api) for a guided walkthrough.
+</Callout>

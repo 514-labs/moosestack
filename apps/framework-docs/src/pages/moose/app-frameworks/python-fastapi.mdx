@@ -9,6 +9,11 @@ import { Callout } from "@/components";
 
 Mount FastAPI applications within your Moose project using the `WebApp` class. FastAPI is a modern, fast Python framework with automatic API documentation and async support.
 
+<Callout type="info" title="Choose your integration path">
+  - Already operating FastAPI outside Moose? Keep it separate and call Moose data with the client SDK. The [Querying Data guide](/moose/olap/read-data) includes Python examples.  
+  - Want Moose to host FastAPI? Use the `WebApp` flow below so Moose handles deployment, auth, and logging for you.
+</Callout>
+
 ## Basic Example
 
 ```python filename="app/apis/fastapi_app.py" copy
@@ -563,10 +568,3 @@ async def handler(moose: ApiUtil = Depends(get_moose)):
     # moose is ApiUtil type
     pass
 ```
-
-## Next Steps
-
-- [Native Python APIs](/moose/app-frameworks/python-native) - Simple GET endpoints
-- [TypeScript Frameworks](/moose/app-frameworks) - Express, Fastify, Koa
-- [Authentication](/moose/apis/auth) - Secure your APIs with JWT
-- [Python Frameworks](/moose/app-frameworks) - Compare all options

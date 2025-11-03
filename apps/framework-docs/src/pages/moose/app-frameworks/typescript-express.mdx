@@ -9,6 +9,11 @@ import { Callout } from "@/components";
 
 Mount Express applications within your Moose project using the `WebApp` class. Express is the most popular Node.js web framework with a rich ecosystem of middleware.
 
+<Callout type="info" title="Choose your integration path">
+  - Already run Express elsewhere? Keep it outside Moose and query data with the Moose client. The [Querying Data guide](/moose/olap/read-data) shows how to use the SDK.  
+  - Want Moose to host Express? Follow the steps below to mount it with `WebApp` and share Moose auth, logging, and deployment tooling.
+</Callout>
+
 ## Basic Example
 
 ```ts filename="app/apis/expressApp.ts" copy
@@ -377,10 +382,3 @@ if (!moose) {
 **Solution:** Ensure your mount path doesn't conflict with reserved paths:
 - Avoid: `/api`, `/admin`, `/consumption`, `/health`, `/ingest`
 - Use: `/myapi`, `/v1`, `/custom`
-
-## Next Steps
-
-- [Fastify](/moose/app-frameworks/typescript-fastify) - High-performance alternative
-- [Koa](/moose/app-frameworks/typescript-koa) - Modern middleware framework
-- [Authentication](/moose/apis/auth) - Secure your APIs with JWT
-- [TypeScript Frameworks](/moose/app-frameworks) - Compare all options

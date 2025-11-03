@@ -9,6 +9,11 @@ import { Callout } from "@/components";
 
 Mount Fastify applications within your Moose project using the `WebApp` class. Fastify is a fast and low overhead web framework with powerful schema-based validation.
 
+<Callout type="info" title="Choose your integration path">
+  - Already running Fastify elsewhere? Keep it outside Moose and query data with the Moose client. The [Querying Data guide](/moose/olap/read-data) walks through the SDK.  
+  - Want Moose to host Fastify? Follow the setup below to mount it with `WebApp` and share Moose auth, logging, and deployment tooling.
+</Callout>
+
 ## Basic Example
 
 ```ts filename="app/apis/fastifyApp.ts" copy
@@ -231,6 +236,7 @@ import Fastify from "fastify";
 import cors from "@fastify/cors";
 import helmet from "@fastify/helmet";
 import rateLimit from "@fastify/rate-limit";
+import { MyTable } from "../tables/MyTable";
 
 const app = Fastify({ logger: true });
 
@@ -264,7 +270,7 @@ app.get("/data", async (request, reply) => {
     return { error: "Utilities not available" };
   }
 
-  const result = await moose.client.query.execute(sql`SELECT * FROM table LIMIT 10`);
+  const result = await moose.client.query.execute(sql`SELECT * FROM ${MyTable} LIMIT 10`);
   const data = await result.json();
 
   return app.utility.formatResponse(data);
@@ -359,10 +365,3 @@ export const fastifyApp = new WebApp("name", app, config);
 // TypeScript type
 interface Query { limit?: number }
 ```
-
-## Next Steps
-
-- [Express](/moose/app-frameworks/typescript-express) - Most popular framework
-- [Koa](/moose/app-frameworks/typescript-koa) - Modern middleware framework
-- [Authentication](/moose/apis/auth) - Secure your APIs with JWT
-- [TypeScript Frameworks](/moose/app-frameworks) - Compare all options

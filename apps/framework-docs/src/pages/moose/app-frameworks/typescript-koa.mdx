@@ -9,6 +9,11 @@ import { Callout } from "@/components";
 
 Mount Koa applications within your Moose project using the `WebApp` class. Koa is an expressive, minimalist framework by the Express team, designed for modern async/await patterns.
 
+<Callout type="info" title="Choose your integration path">
+  - Already running Koa outside Moose? Keep it separate and call Moose data with the client SDK. The [Querying Data guide](/moose/olap/read-data) has TypeScript examples.  
+  - Need Moose to host Koa? Continue below to mount it with `WebApp` so it shares Moose auth, logging, and deployment tooling.
+</Callout>
+
 ## Basic Example
 
 ```ts filename="app/apis/koaApp.ts" copy
@@ -265,6 +270,7 @@ router.get("/admin", requireAdmin, async (ctx) => {
 
 ```ts
 import Koa, { Context } from "koa";
+import { MyTable } from "../tables/MyTable";
 
 // Extend context type
 interface CustomContext extends Context {
@@ -288,7 +294,7 @@ router.get("/data", async (ctx: CustomContext) => {
     ctx.throw(500, "Utilities not available");
   }
 
-  const result = await moose.client.query.execute(sql`SELECT * FROM table LIMIT 10`);
+  const result = await moose.client.query.execute(sql`SELECT * FROM ${MyTable} LIMIT 10`);
   const data = await result.json();
 
   ctx.body = ctx.formatResponse(data);
@@ -423,11 +429,3 @@ router.get("/path", async (ctx: Context, next: Next) => {
   // ctx is properly typed
 });
 ```
-
-## Next Steps
-
-- [Express](/moose/app-frameworks/typescript-express) - Most popular framework
-- [Fastify](/moose/app-frameworks/typescript-fastify) - High-performance alternative
-- [Raw Node.js](/moose/app-frameworks/typescript-raw-nodejs) - Maximum control
-- [Authentication](/moose/apis/auth) - Secure your APIs with JWT
-- [TypeScript Frameworks](/moose/app-frameworks) - Compare all options
