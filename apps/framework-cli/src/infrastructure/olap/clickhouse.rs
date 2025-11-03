@@ -118,6 +118,8 @@ pub enum SerializableOlapOperation {
         table: String,
         /// The database containing the table (None means use global database)
         database: Option<String>,
+        /// Optional cluster name for ON CLUSTER support
+        cluster_name: Option<String>,
     },
     /// Add a column to a table
     AddTableColumn {
@@ -436,8 +438,19 @@ pub async fn execute_atomic_operation(
         SerializableOlapOperation::CreateTable { table } => {
             execute_create_table(db_name, table, client, is_dev).await?;
         }
-        SerializableOlapOperation::DropTable { table, database } => {
-            execute_drop_table(db_name, table, database.as_deref(), client).await?;
+        SerializableOlapOperation::DropTable {
+            table,
+            database,
+            cluster_name,
+        } => {
+            execute_drop_table(
+                db_name,
+                table,
+                database.as_deref(),
+                cluster_name.as_deref(),
+                client,
+            )
+            .await?;
         }
         SerializableOlapOperation::AddTableColumn {
             table,
@@ -662,12 +675,13 @@ async fn execute_drop_table(
     db_name: &str,
     table_name: &str,
     table_database: Option<&str>,
+    cluster_name: Option<&str>,
     client: &ConfiguredDBClient,
 ) -> Result<(), ClickhouseChangesError> {
     log::info!("Executing DropTable: {:?}", table_name);
     // Use table's database if specified, otherwise use global database
     let target_database = table_database.unwrap_or(db_name);
-    let drop_query = drop_table_query(target_database, table_name)?;
+    let drop_query = drop_table_query(target_database, table_name, cluster_name)?;
     run_query(&drop_query, client)
         .await
         .map_err(|e| ClickhouseChangesError::ClickhouseClient {
@@ -1767,6 +1781,7 @@ impl OlapOperations for ConfiguredDBClient {
                 indexes,
                 database: Some(database),
                 table_ttl_setting,
+                cluster_name: None, // Cluster info not extracted from introspection
             };
             debug!("Created table object: {:?}", table);
 
