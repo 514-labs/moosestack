@@ -128,6 +128,12 @@ PR: [#2876](https://github.com/514-labs/moosestack/pull/2876) | Docs: [Multi-dat
 - Fixed the redirect loop after deleting an organization so users land back on the create-org screen instead of bouncing between routes.
 
 ## Nix development environment
-`flake.nix` now bootstraps a full MooseStack toolchain (`nix develop` drops you into Rust, Node.js, and Python with shared test commands). If you use Nix, let us know!
+`flake.nix` now bootstraps a full MooseStack build environment (`nix develop` drops you into a development shell that will have everything you need to build all the components of moosestack). If you use Nix, let us know!
+
+Give it a go if you have nix installed on your machine with:
+
+```bash
+nix run github:514-labs/moosestack # -- to pass additional arguments to the cli
+```
 
 PR: [#2920](https://github.com/514-labs/moosestack/pull/2920)
