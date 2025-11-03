@@ -27,9 +27,8 @@ const setTimeoutAsync = (ms: number) =>
 export const stopDevProcess = async (devProcess: any): Promise<void> => {
   if (devProcess && !devProcess.killed) {
     console.log("Stopping dev process...");
-    devProcess.kill("SIGINT");
 
-    // Wait for graceful shutdown with timeout
+    // Set up exit handler before killing
     const gracefulShutdownPromise = new Promise<void>((resolve) => {
       devProcess!.on("exit", () => {
         console.log("Dev process has exited gracefully");
@@ -46,6 +45,9 @@ export const stopDevProcess = async (devProcess: any): Promise<void> => {
         resolve();
       }, TIMEOUTS.PROCESS_TERMINATION_MS);
     });
+
+    // Send SIGINT to trigger graceful shutdown
+    devProcess.kill("SIGINT");
 
     // Race between graceful shutdown and timeout
     await Promise.race([gracefulShutdownPromise, timeoutPromise]);
@@ -204,11 +206,16 @@ export const waitForStreamingFunctions = async (
       // Expected format: "BROKER  GROUP  STATE"
       // Example: "0  flow-Foo-  Stable"
       const lines = groupList.split("\n").slice(1); // Skip header
-      const stableFlowGroups = lines
-        .filter((line) => line.includes("flow-"))
-        .filter((line) => line.includes("Stable"));
+      const flowGroups = lines.filter((line) => line.includes("flow-"));
+      const stableFlowGroups = flowGroups.filter((line) =>
+        line.includes("Stable"),
+      );
 
-      if (stableFlowGroups.length > 0) {
+      // Wait for ALL flow- groups to be stable, not just ANY
+      if (
+        flowGroups.length > 0 &&
+        stableFlowGroups.length === flowGroups.length
+      ) {
         console.log(
           `Found ${stableFlowGroups.length} active streaming function(s):`,
         );
@@ -221,7 +228,9 @@ export const waitForStreamingFunctions = async (
         return;
       }
 
-      console.log("No stable streaming functions yet, retrying...");
+      console.log(
+        `Waiting for all streaming functions to be stable (${stableFlowGroups.length}/${flowGroups.length} ready)...`,
+      );
       await setTimeoutAsync(1000);
     } catch (error) {
       // Container might not be ready yet, or rpk command failed
