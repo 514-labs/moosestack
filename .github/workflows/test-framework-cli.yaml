@@ -301,6 +301,22 @@ jobs:
           repository: ${{ github.event.pull_request.head.repo.full_name }}
           ref: ${{ github.event.pull_request.head.sha }}
 
+      # Login to Docker hub to get higher rate limits when moose pulls images
+      - name: Load Docker Hub credentials from 1Password
+        id: op-load-secret
+        uses: 1password/load-secrets-action@v2
+        with:
+          export-env: false
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+          DOCKER_HUB_ACCESS_KEY: "op://drqe7p6legi6ug2ijq2fnrkmjq/Docker Hub - Bot/Access Token"
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: 514iceman
+          password: ${{ steps.op-load-secret.outputs.DOCKER_HUB_ACCESS_KEY }}
+
       # Update packageManager field to match matrix version for testing
       - name: Update pnpm version in package.json
         if: startsWith(matrix.package-manager, 'pnpm')
@@ -380,6 +396,22 @@ jobs:
           repository: ${{ github.event.pull_request.head.repo.full_name }}
           ref: ${{ github.event.pull_request.head.sha }}
 
+      # Login to Docker hub to get higher rate limits when moose pulls images
+      - name: Load Docker Hub credentials from 1Password
+        id: op-load-secret
+        uses: 1password/load-secrets-action@v2
+        with:
+          export-env: false
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+          DOCKER_HUB_ACCESS_KEY: "op://drqe7p6legi6ug2ijq2fnrkmjq/Docker Hub - Bot/Access Token"
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: 514iceman
+          password: ${{ steps.op-load-secret.outputs.DOCKER_HUB_ACCESS_KEY }}
+
       - uses: pnpm/action-setup@v4
 
       - name: Install node
@@ -441,6 +473,22 @@ jobs:
         with:
           repository: ${{ github.event.pull_request.head.repo.full_name }}
           ref: ${{ github.event.pull_request.head.sha }}
+
+      # Login to Docker hub to get higher rate limits when moose pulls images
+      - name: Load Docker Hub credentials from 1Password
+        id: op-load-secret
+        uses: 1password/load-secrets-action@v2
+        with:
+          export-env: false
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+          DOCKER_HUB_ACCESS_KEY: "op://drqe7p6legi6ug2ijq2fnrkmjq/Docker Hub - Bot/Access Token"
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: 514iceman
+          password: ${{ steps.op-load-secret.outputs.DOCKER_HUB_ACCESS_KEY }}
 
       - uses: pnpm/action-setup@v4
 
@@ -511,6 +559,22 @@ jobs:
         with:
           repository: ${{ github.event.pull_request.head.repo.full_name }}
           ref: ${{ github.event.pull_request.head.sha }}
+
+      # Login to Docker hub to get higher rate limits when moose pulls images
+      - name: Load Docker Hub credentials from 1Password
+        id: op-load-secret
+        uses: 1password/load-secrets-action@v2
+        with:
+          export-env: false
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+          DOCKER_HUB_ACCESS_KEY: "op://drqe7p6legi6ug2ijq2fnrkmjq/Docker Hub - Bot/Access Token"
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: 514iceman
+          password: ${{ steps.op-load-secret.outputs.DOCKER_HUB_ACCESS_KEY }}
 
       - uses: pnpm/action-setup@v4
 
