@@ -55,7 +55,7 @@ const rawMeta = {
     Icon: FileCode,
   },
   "templates-examples": {
-    title: "Templates / Examples",
+    title: "Templates & Apps",
     Icon: FileStack,
   },
   __modules__: {

@@ -1,5 +1,5 @@
 ---
-title: Templates / Examples
+title: Templates & Apps
 description: Browse templates and demo apps for MooseStack
 ---
 
@@ -7,7 +7,7 @@ import { CTACards, CTACard } from "@/components";
 import { Badge } from "@/components/ui/badge";
 import Link from "next/link";
 
-# Templates / Examples
+# Templates & Apps
 
 Moose provides two ways to get started: **templates** and **demo apps**. Templates are simple skeleton applications that you can initialize with `moose init`, while demo apps are more advanced examples available on GitHub that showcase real-world use cases and integrations.
 
@@ -21,9 +21,9 @@ moose init PROJECT_NAME TEMPLATE_NAME
 moose template list
 ```
 
-## Browse Templates and Apps
+## Popular Apps
 
-<CTACards columns={3}>
+<CTACards columns={2}>
   <CTACard
     title="Nextjs + Express + MCP demo app: Aircraft data"
     description="Complete demo application featuring real-time aircraft transponder data with MCP chat integration."
@@ -31,7 +31,7 @@ moose template list
     ctaLabel="Details"
     secondaryCtaLink="https://github.com/514-labs/planes"
     secondaryCtaLabel="Github →"
-    badge={{ variant: "default", text: "App" }}
+    badge={{ variant: "default", text: "Express APIs + MCP Demo" }}
   />
 
   <CTACard
@@ -41,7 +41,7 @@ moose template list
     ctaLabel="Details"
     secondaryCtaLink="https://github.com/514-labs/debezium-cdc"
     secondaryCtaLabel="Github →"
-    badge={{ variant: "default", text: "App" }}
+    badge={{ variant: "default", text: "CDC Demo" }}
   />
 
   <CTACard
@@ -51,143 +51,22 @@ moose template list
     ctaLabel="Details"
     secondaryCtaLink="https://github.com/514-labs/area-code/tree/main/ufa"
     secondaryCtaLabel="Github →"
-    badge={{ variant: "default", text: "App" }}
+    badge={{ variant: "default", text: "Reference Architecture" }}
   />
 
   <CTACard
     title="User-facing analytics reference app (Clickhouse Cloud + React)"
-    description="Simplified version of the UFA architecture using ClickHouse Cloud with React frontend and chat analytics."
+    description="Simplified version of the reference architecture using ClickHouse Cloud with React frontend and chat analytics."
     ctaLink="#foobar-ufa-lite"
     ctaLabel="Details"
     secondaryCtaLink="https://github.com/514-labs/area-code/tree/main/ufa-lite"
     secondaryCtaLabel="Github →"
-    badge={{ variant: "default", text: "App" }}
-  />
-
-  <CTACard
-    title="TypeScript (Default)"
-    description="Default TypeScript project, seeded with foobar example components."
-    ctaLink="#typescript-default"
-    ctaLabel="Details"
-    secondaryCtaLink="https://github.com/514-labs/moosestack/tree/main/templates/typescript"
-    secondaryCtaLabel="Github →"
-    badge={{ variant: "default", text: "Template" }}
-  />
-
-  <CTACard
-    title="Python (Default)"
-    description="Default Python project, seeded with foobar example components."
-    ctaLink="#python-default"
-    ctaLabel="Details"
-    secondaryCtaLink="https://github.com/514-labs/moosestack/tree/main/templates/python"
-    secondaryCtaLabel="Github →"
-    badge={{ variant: "default", text: "Template" }}
-  />
-
-  <CTACard
-    title="TypeScript (Empty)"
-    description="Empty TypeScript project with minimal structure."
-    ctaLink="#typescript-empty"
-    ctaLabel="Details"
-    secondaryCtaLink="https://github.com/514-labs/moosestack/tree/main/templates/typescript-empty"
-    secondaryCtaLabel="Github →"
-    badge={{ variant: "default", text: "Template" }}
-  />
-
-  <CTACard
-    title="Python (Empty)"
-    description="Empty Python project with minimal structure."
-    ctaLink="#python-empty"
-    ctaLabel="Details"
-    secondaryCtaLink="https://github.com/514-labs/moosestack/tree/main/templates/python-empty"
-    secondaryCtaLabel="Github →"
-    badge={{ variant: "default", text: "Template" }}
-  />
-
-  <CTACard
-    title="Next.js (Empty)"
-    description="TypeScript project with a Next.js frontend (empty)."
-    ctaLink="#nextjs-empty"
-    ctaLabel="Details"
-    secondaryCtaLink="https://github.com/514-labs/moosestack/tree/main/templates/next-app-empty"
-    secondaryCtaLabel="Github →"
-    badge={{ variant: "default", text: "Template" }}
-  />
-
-  <CTACard
-    title="Express.js"
-    description="TypeScript project using Express for serving analytical APIs."
-    ctaLink="#express"
-    ctaLabel="Details"
-    secondaryCtaLink="https://github.com/514-labs/moosestack/tree/main/templates/typescript-express"
-    secondaryCtaLabel="Github →"
-    badge={{ variant: "default", text: "Template" }}
-  />
-
-  <CTACard
-    title="TypeScript MCP"
-    description="TypeScript project with a custom MCP - example tool enables LLMs to query DB."
-    ctaLink="#typescript-mcp"
-    ctaLabel="Details"
-    secondaryCtaLink="https://github.com/514-labs/moosestack/tree/main/templates/typescript-mcp"
-    secondaryCtaLabel="Github →"
-    badge={{ variant: "default", text: "Template" }}
-  />
-
-  <CTACard
-    title="FastAPI"
-    description="Python project using FastAPI for serving analytical APIs."
-    ctaLink="#fastapi"
-    ctaLabel="Details"
-    secondaryCtaLink="https://github.com/514-labs/moosestack/tree/main/templates/python-fastapi"
-    secondaryCtaLabel="Github →"
-    badge={{ variant: "default", text: "Template" }}
-  />
-
-  <CTACard
-    title="FastAPI (Client-Only)"
-    description="FastAPI client-only project using MooseStack libraries without requiring the Moose runtime."
-    ctaLink="#fastapi-client-only"
-    ctaLabel="Details"
-    secondaryCtaLink="https://github.com/514-labs/moosestack/tree/main/templates/python-fastapi-client-only"
-    secondaryCtaLabel="Github →"
-    badge={{ variant: "default", text: "Template" }}
-  />
-
-  <CTACard
-    title="ADS-B (Aircraft Tracking)"
-    description="Real-time aircraft transponder data tracking."
-    ctaLink="#adsb"
-    ctaLabel="Details"
-    secondaryCtaLink="https://github.com/514-labs/moosestack/tree/main/templates/ads-b"
-    secondaryCtaLabel="Github →"
-    badge={{ variant: "default", text: "Template" }}
-  />
-
-  <CTACard
-    title="ADS-B with Frontend"
-    description="Real-time aircraft transponder data with a react frontend."
-    ctaLink="#adsb-frontend"
-    ctaLabel="Details"
-    secondaryCtaLink="https://github.com/514-labs/moosestack/tree/main/templates/ads-b-frontend"
-    secondaryCtaLabel="Github →"
-    badge={{ variant: "default", text: "Template" }}
-  />
-
-  <CTACard
-    title="Live Heart Rate Leaderboard"
-    description="Live heart rate leaderboard inspired by F45 with Streamlit frontend."
-    ctaLink="#heartrate"
-    ctaLabel="Details"
-    secondaryCtaLink="https://github.com/514-labs/moosestack/tree/main/templates/live-heartrate-leaderboard"
-    secondaryCtaLabel="Github →"
-    badge={{ variant: "default", text: "Template" }}
+    badge={{ variant: "default", text: "ClickHouse Cloud demo" }}
   />
 </CTACards>
-
 ---
 
-## Demo Apps
+## Browse Apps
 
 ### Nextjs + Express + MCP demo app: Aircraft data [#plane-transponder-demo]
 
@@ -272,7 +151,7 @@ A simplified version of the UFA architecture using ClickHouse Cloud + React fron
 
 ---
 
-## Templates
+## Browse Templates
 
 ### TypeScript (Default) [#typescript-default]
 

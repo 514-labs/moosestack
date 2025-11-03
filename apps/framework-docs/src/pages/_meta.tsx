@@ -26,7 +26,7 @@ export default render({
   },
   "templates-examples": {
     type: "page",
-    title: "Templates / Examples",
+    title: "Templates & Apps",
     href: "/moose/templates-examples",
   },
   "release-notes": {
