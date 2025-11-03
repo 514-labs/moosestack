@@ -218,7 +218,11 @@ fn validate_table_databases(
             SerializableOlapOperation::CreateTable { table } => {
                 validate_db(&table.database, &table.name);
             }
-            SerializableOlapOperation::DropTable { table, database } => {
+            SerializableOlapOperation::DropTable {
+                table,
+                database,
+                cluster_name: _,
+            } => {
                 validate_db(database, table);
             }
             SerializableOlapOperation::AddTableColumn {
@@ -664,6 +668,7 @@ mod tests {
             engine_params_hash: None,
             table_settings: None,
             table_ttl_setting: None,
+            cluster_name: None,
         }
     }
 
@@ -1004,6 +1009,7 @@ mod tests {
             SerializableOlapOperation::DropTable {
                 table: "test".to_string(),
                 database: Some("bad_db".to_string()),
+                cluster_name: None,
             },
             SerializableOlapOperation::AddTableColumn {
                 table: "test".to_string(),
