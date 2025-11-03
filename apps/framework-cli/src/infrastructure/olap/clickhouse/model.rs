@@ -657,6 +657,8 @@ pub struct ClickHouseTable {
     pub indexes: Vec<ClickHouseIndex>,
     /// Optional TTL expression at table level (without leading 'TTL')
     pub table_ttl_setting: Option<String>,
+    /// Optional cluster name for ON CLUSTER support
+    pub cluster_name: Option<String>,
 }
 
 impl ClickHouseTable {
