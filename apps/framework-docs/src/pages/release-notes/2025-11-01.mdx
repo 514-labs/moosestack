@@ -13,7 +13,7 @@ import { Callout } from "@/components";
   - [S3 table engine](/moose/olap/model-table#direct-s3-access-s3): keep data in S3 while ClickHouse reads and writes it on demand ([ClickHouse docs](https://clickhouse.com/docs/en/engines/table-engines/integrations/s3))
   - Beta (self-hosted only): [Distributed table engine](/moose/olap/model-table#distributed-tables-distributed): serve cluster-wide queries through Moose-managed tables ([ClickHouse docs](https://clickhouse.com/docs/en/engines/table-engines/special/distributed))
 - **Improved:** Serverless migrations gain Redis-backed state storage plus per-table databases.
-- **Feature that will make a small number of people very happy:** `flake.nix` now ships a Moose devshell.
+- **Feature that will make a small number of people very happy:** Moose now has a flake.nix to let users install the cli via nix run github:514-labs/moosestack (also provides a dev shell to make contributing easier!)
 </Callout>
 
 ## Buffer tables for burst protection
