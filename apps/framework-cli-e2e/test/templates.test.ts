@@ -34,6 +34,7 @@ import {
 import {
   waitForServerStart,
   waitForStreamingFunctions,
+  waitForInfrastructureReady,
   waitForKafkaReady,
   cleanupClickhouseData,
   waitForDBWrite,
@@ -229,6 +230,10 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
       await cleanupClickhouseData();
       console.log("Waiting for streaming functions to be ready...");
       await waitForStreamingFunctions();
+      console.log(
+        "Verifying all infrastructure is ready (Redis, Kafka, ClickHouse, Temporal)...",
+      );
+      await waitForInfrastructureReady();
       console.log("All components ready, starting tests...");
     });
 
