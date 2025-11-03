@@ -13,7 +13,7 @@ import { Callout } from "@/components";
   - [S3 table engine](/moose/olap/model-table#direct-s3-access-s3): keep data in S3 while ClickHouse reads and writes it on demand ([ClickHouse docs](https://clickhouse.com/docs/en/engines/table-engines/integrations/s3))
   - Beta (self-hosted only): [Distributed table engine](/moose/olap/model-table#distributed-tables-distributed): serve cluster-wide queries through Moose-managed tables ([ClickHouse docs](https://clickhouse.com/docs/en/engines/table-engines/special/distributed))
 - **Improved:** Serverless migrations gain Redis-backed state storage plus per-table databases.
-- **Feature that will make a small number of people very happy:** `flake.nix` now ships a Moose devshell.
+- **Feature that will make a small number of people very happy:** Moose now has a flake.nix to let users install the cli via nix run github:514-labs/moosestack (also provides a dev shell to make contributing easier!)
 </Callout>
 
 ## Buffer tables for burst protection
@@ -128,6 +128,12 @@ PR: [#2876](https://github.com/514-labs/moosestack/pull/2876) | Docs: [Multi-dat
 - Fixed the redirect loop after deleting an organization so users land back on the create-org screen instead of bouncing between routes.
 
 ## Nix development environment
-`flake.nix` now bootstraps a full MooseStack toolchain (`nix develop` drops you into Rust, Node.js, and Python with shared test commands). If you use Nix, let us know!
+`flake.nix` now bootstraps a full MooseStack build environment (`nix develop` drops you into a development shell that will have everything you need to build all the components of moosestack). If you use Nix, let us know!
+
+Give it a go if you have nix installed on your machine with:
+
+```bash
+nix run github:514-labs/moosestack # -- to pass additional arguments to the cli
+```
 
 PR: [#2920](https://github.com/514-labs/moosestack/pull/2920)
