@@ -17,8 +17,8 @@ export const TIMEOUTS = {
   // Global cleanup timeout (30 seconds)
   GLOBAL_CLEANUP_MS: 30_000,
 
-  // Process termination timeout (10 seconds)
-  PROCESS_TERMINATION_MS: 10_000,
+  // Process termination timeout (30 seconds)
+  PROCESS_TERMINATION_MS: 30_000,
 
   // Docker operations timeouts
   DOCKER_COMPOSE_DOWN_MS: 30_000,
