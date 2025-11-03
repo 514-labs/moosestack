@@ -143,8 +143,39 @@ pub struct Cli {
     pub command: Commands,
 }
 
-fn load_project() -> Result<Project, RoutineFailure> {
-    Project::load_from_current_dir().map_err(|e| match e {
+/// Determines the runtime environment from the CLI command
+fn determine_environment(command: &Commands) -> crate::utilities::dotenv::MooseEnvironment {
+    use crate::utilities::dotenv::MooseEnvironment;
+
+    match command {
+        // Production commands
+        Commands::Prod { .. } => MooseEnvironment::Production,
+        Commands::Build { .. } => MooseEnvironment::Production,
+
+        // All other commands default to development
+        _ => MooseEnvironment::Development,
+    }
+}
+
+pub fn load_project(command: &Commands) -> Result<Project, RoutineFailure> {
+    let environment = determine_environment(command);
+    Project::load_from_current_dir(environment).map_err(|e| match e {
+        ConfigError::Foreign(_) => RoutineFailure::error(Message {
+            action: "Loading".to_string(),
+            details: "No project found, please run `moose init` to create a project".to_string(),
+        }),
+        _ => RoutineFailure::error(Message {
+            action: "Loading".to_string(),
+            details: format!("Please validate the project's configs: {e:?}"),
+        }),
+    })
+}
+
+/// Load a project with a default development environment
+/// Used by internal routines that don't have access to the Commands enum
+pub fn load_project_dev() -> Result<Project, RoutineFailure> {
+    use crate::utilities::dotenv::MooseEnvironment;
+    Project::load_from_current_dir(MooseEnvironment::Development).map_err(|e| match e {
         ConfigError::Foreign(_) => RoutineFailure::error(Message {
             action: "Loading".to_string(),
             details: "No project found, please run `moose init` to create a project".to_string(),
@@ -428,7 +459,7 @@ pub async fn top_command_handler(
                 "Running check command with write_infra_map: {}",
                 *write_infra_map
             );
-            let project_arc = Arc::new(load_project()?);
+            let project_arc = Arc::new(load_project(commands)?);
 
             let capture_handle = crate::utilities::capture::capture_usage(
                 ActivityType::CheckCommand,
@@ -500,7 +531,7 @@ pub async fn top_command_handler(
             arm64,
         } => {
             info!("Running build command");
-            let project_arc = Arc::new(load_project()?);
+            let project_arc = Arc::new(load_project(commands)?);
 
             check_project_name(&project_arc.name())?;
 
@@ -561,7 +592,7 @@ pub async fn top_command_handler(
             info!("Running dev command");
             info!("Moose Version: {}", CLI_VERSION);
 
-            let mut project = load_project()?;
+            let mut project = load_project(commands)?;
             project.set_is_production_env(false);
             let project_arc = Arc::new(project);
 
@@ -642,7 +673,7 @@ pub async fn top_command_handler(
         Commands::Generate(generate) => match &generate.command {
             Some(GenerateCommand::HashToken {}) => {
                 info!("Running generate hash token command");
-                let project = load_project()?;
+                let project = load_project(commands)?;
                 let project_arc = Arc::new(project);
 
                 let capture_handle = crate::utilities::capture::capture_usage(
@@ -672,7 +703,7 @@ pub async fn top_command_handler(
             }) => {
                 info!("Running generate migration command");
 
-                let mut project = load_project()?;
+                let mut project = load_project(commands)?;
 
                 let capture_handle = crate::utilities::capture::capture_usage(
                     ActivityType::GenerateMigrationCommand,
@@ -834,7 +865,7 @@ pub async fn top_command_handler(
             info!("Running prod command");
             info!("Moose Version: {}", CLI_VERSION);
 
-            let mut project = load_project()?;
+            let mut project = load_project(commands)?;
 
             project.set_is_production_env(true);
             let project_arc = Arc::new(project);
@@ -910,7 +941,7 @@ pub async fn top_command_handler(
             clickhouse_url,
         } => {
             info!("Running plan command");
-            let project = load_project()?;
+            let project = load_project(commands)?;
 
             let capture_handle = crate::utilities::capture::capture_usage(
                 ActivityType::PlanCommand,
@@ -943,7 +974,7 @@ pub async fn top_command_handler(
             redis_url,
         } => {
             info!("Running migrate command");
-            let mut project = load_project()?;
+            let mut project = load_project(commands)?;
 
             let capture_handle = crate::utilities::capture::capture_usage(
                 ActivityType::MigrateCommand,
@@ -981,7 +1012,7 @@ pub async fn top_command_handler(
             )))
         }
         Commands::Clean {} => {
-            let project = load_project()?;
+            let project = load_project(commands)?;
             let project_arc = Arc::new(project);
 
             let capture_handle = crate::utilities::capture::capture_usage(
@@ -1007,7 +1038,7 @@ pub async fn top_command_handler(
         Commands::Logs { tail, filter } => {
             info!("Running logs command");
 
-            let project = load_project()?;
+            let project = load_project(commands)?;
 
             let capture_handle = crate::utilities::capture::capture_usage(
                 ActivityType::LogsCommand,
@@ -1044,7 +1075,7 @@ pub async fn top_command_handler(
         Commands::Ps {} => {
             info!("Running ps command");
 
-            let project = load_project()?;
+            let project = load_project(commands)?;
             let project_arc = Arc::new(project);
 
             let capture_handle = crate::utilities::capture::capture_usage(
@@ -1064,7 +1095,7 @@ pub async fn top_command_handler(
         Commands::Ls { _type, name, json } => {
             info!("Running ls command");
 
-            let project = load_project()?;
+            let project = load_project(commands)?;
             let project_arc = Arc::new(project);
 
             let capture_handle = crate::utilities::capture::capture_usage(
@@ -1097,7 +1128,7 @@ pub async fn top_command_handler(
         } => {
             info!("Running peek command");
 
-            let project = load_project()?;
+            let project = load_project(commands)?;
             let project_arc = Arc::new(project);
 
             let capture_handle = crate::utilities::capture::capture_usage(
@@ -1138,7 +1169,7 @@ pub async fn top_command_handler(
             result
         }
         Commands::Workflow(workflow_args) => {
-            let project = load_project()?;
+            let project = load_project(commands)?;
 
             if !(settings.features.scripts || project.features.workflows) {
                 return Err(RoutineFailure::error(Message {
@@ -1236,7 +1267,7 @@ pub async fn top_command_handler(
                 },
         }) => {
             info!("Running db pull command");
-            let project = load_project()?;
+            let project = load_project(commands)?;
 
             let capture_handle = crate::utilities::capture::capture_usage(
                 ActivityType::DbPullCommand,
@@ -1285,7 +1316,7 @@ pub async fn top_command_handler(
         Commands::Refresh { url, token } => {
             info!("Running refresh command");
 
-            let project = load_project()?;
+            let project = load_project(commands)?;
 
             let capture_handle = crate::utilities::capture::capture_usage(
                 ActivityType::RefreshListCommand,
@@ -1304,11 +1335,11 @@ pub async fn top_command_handler(
             output
         }
         Commands::Seed(seed_args) => {
-            let project = load_project()?;
+            let project = load_project(commands)?;
             seed_data::handle_seed_command(seed_args, &project).await
         }
         Commands::Truncate { tables, all, rows } => {
-            let project = load_project()?;
+            let project = load_project(commands)?;
             routines::truncate_table::truncate_tables(&project, tables.clone(), *all, *rows).await
         }
         Commands::Kafka(KafkaArgs { command }) => match command {
@@ -1319,7 +1350,7 @@ pub async fn top_command_handler(
                 exclude,
                 schema_registry,
             } => {
-                let project = load_project()?;
+                let project = load_project(commands)?;
                 let path = path.as_deref().unwrap_or(match project.language {
                     SupportedLanguages::Typescript => "app/external-topics",
                     SupportedLanguages::Python => "app/external_topics",
@@ -1397,7 +1428,9 @@ mod tests {
         let _ = run_project_init("python").await.unwrap();
         set_test_project_dir();
 
-        let project = Project::load_from_current_dir().unwrap();
+        let project =
+            Project::load_from_current_dir(crate::utilities::dotenv::MooseEnvironment::Development)
+                .unwrap();
 
         let data_model_path = project.app_dir().join("datamodels");
 
