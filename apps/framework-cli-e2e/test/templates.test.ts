@@ -344,10 +344,13 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
       it("should create Buffer engine table correctly", async function () {
         this.timeout(TIMEOUTS.TEST_SETUP_MS);
 
-        // Verify the destination table exists first
-        const destinationDDL = await getTableDDL(
-          "BufferDestinationTest",
-          "local",
+        // Wait for tables to be created after previous test's file modifications
+        // Use fixed 1-second delays (no exponential backoff) to avoid long waits on failure
+        const destinationDDL = await withRetries(
+          async () => {
+            return await getTableDDL("BufferDestinationTest", "local");
+          },
+          { attempts: 10, delayMs: 1000, backoffFactor: 1 },
         );
         console.log(`Destination table DDL: ${destinationDDL}`);
 
@@ -358,7 +361,12 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
         }
 
         // Verify the Buffer table exists and has correct configuration
-        const bufferDDL = await getTableDDL("BufferTest", "local");
+        const bufferDDL = await withRetries(
+          async () => {
+            return await getTableDDL("BufferTest", "local");
+          },
+          { attempts: 10, delayMs: 1000, backoffFactor: 1 },
+        );
         console.log(`Buffer table DDL: ${bufferDDL}`);
 
         // Check that it uses Buffer engine with correct parameters
