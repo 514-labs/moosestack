@@ -1,4 +1,4 @@
-import { SERVER_CONFIG, TEST_DATA } from "../constants";
+import { SERVER_CONFIG } from "../constants";
 import { withRetries } from "./retry-utils";
 
 export const triggerWorkflow = async (name: string) => {

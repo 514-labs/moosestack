@@ -1,4 +1,5 @@
-import { TIMEOUTS } from "../constants";
+import { TIMEOUTS, SERVER_CONFIG } from "../constants";
+import { withRetries } from "./retry-utils";
 
 declare const require: any;
 
@@ -255,5 +256,34 @@ export const waitForStreamingFunctions = async (
 
   throw new Error(
     `Streaming functions did not reach Stable state within ${timeoutMs / 1000}s`,
+  );
+};
+
+/**
+ * Waits for all infrastructure components to be ready
+ * Uses the /ready endpoint which checks Redis, Redpanda, ClickHouse, and Temporal
+ */
+export const waitForInfrastructureReady = async (
+  timeoutMs: number = 60_000,
+): Promise<void> => {
+  console.log("Waiting for all infrastructure to be ready...");
+
+  await withRetries(
+    async () => {
+      const response = await fetch(`${SERVER_CONFIG.url}/ready`);
+      // /ready returns 200 OK when all services are healthy, 503 otherwise
+      if (response.status !== 200) {
+        const body = await response.text();
+        throw new Error(
+          `Infrastructure not ready (${response.status}): ${body}`,
+        );
+      }
+      console.log("All infrastructure components are ready");
+    },
+    {
+      attempts: Math.floor(timeoutMs / 1000),
+      delayMs: 1000,
+      backoffFactor: 1,
+    },
   );
 };
