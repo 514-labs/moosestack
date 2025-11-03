@@ -1130,7 +1130,9 @@ impl ColumnType {
     pub fn to_proto(&self) -> ProtoColumnType {
         let t = match self {
             ColumnType::String => column_type::T::Simple(SimpleColumnType::STRING.into()),
-            ColumnType::FixedString { .. } => column_type::T::Simple(SimpleColumnType::STRING.into()),
+            ColumnType::FixedString { .. } => {
+                column_type::T::Simple(SimpleColumnType::STRING.into())
+            }
             ColumnType::Boolean => column_type::T::Simple(SimpleColumnType::BOOLEAN.into()),
             ColumnType::Int(int_type) => column_type::T::Int(
                 (match int_type {

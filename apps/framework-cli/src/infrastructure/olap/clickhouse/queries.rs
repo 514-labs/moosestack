@@ -2876,7 +2876,8 @@ mod tests {
         assert_eq!(result, "FixedString(32)");
 
         // Test Nullable(FixedString(16))
-        let col_type = ClickHouseColumnType::Nullable(Box::new(ClickHouseColumnType::FixedString(16)));
+        let col_type =
+            ClickHouseColumnType::Nullable(Box::new(ClickHouseColumnType::FixedString(16)));
         let result = basic_field_type_to_string(&col_type).unwrap();
         assert_eq!(result, "Nullable(FixedString(16))");
     }

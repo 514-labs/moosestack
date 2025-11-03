@@ -230,7 +230,9 @@ impl<'de, S: SerializeValue> Visitor<'de> for &mut ValueVisitor<'_, S> {
             ColumnType::Boolean => formatter.write_str("a boolean value"),
             ColumnType::Int(_) => formatter.write_str("an integer value"),
             ColumnType::Float(_) => formatter.write_str("a floating-point value"),
-            ColumnType::String | ColumnType::FixedString { .. } => formatter.write_str("a string value"),
+            ColumnType::String | ColumnType::FixedString { .. } => {
+                formatter.write_str("a string value")
+            }
             ColumnType::DateTime { .. } => formatter.write_str("a datetime value"),
             ColumnType::Enum(_) => formatter.write_str("an enum value"),
             ColumnType::Array { .. } => formatter.write_str("an array value"),

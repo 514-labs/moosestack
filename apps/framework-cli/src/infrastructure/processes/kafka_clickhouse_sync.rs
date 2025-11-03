@@ -1071,7 +1071,9 @@ fn map_json_value_to_clickhouse_value(
                                 ClickHouseValue::new_float_64(key_float)
                             }
                             // For string types, use the key as-is
-                            ColumnType::String | ColumnType::FixedString { .. } => ClickHouseValue::new_string(key_str.clone()),
+                            ColumnType::String | ColumnType::FixedString { .. } => {
+                                ClickHouseValue::new_string(key_str.clone())
+                            }
                             // For other types, convert via JSON value
                             _ => {
                                 let key_json_value = serde_json::Value::String(key_str.clone());
