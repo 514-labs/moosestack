@@ -181,6 +181,7 @@ impl AtomicOlapOperation {
             } => SerializableOlapOperation::DropTable {
                 table: table.name.clone(),
                 database: table.database.clone(),
+                cluster_name: table.cluster_name.clone(),
             },
             AtomicOlapOperation::AddTableColumn {
                 table,
@@ -1311,6 +1312,7 @@ mod tests {
             indexes: vec![],
             database: None,
             table_ttl_setting: None,
+            cluster_name: None,
         };
 
         // Create some atomic operations
@@ -1385,6 +1387,7 @@ mod tests {
             indexes: vec![],
             database: None,
             table_ttl_setting: None,
+            cluster_name: None,
         };
 
         // Create table B - depends on table A
@@ -1407,6 +1410,7 @@ mod tests {
             indexes: vec![],
             database: None,
             table_ttl_setting: None,
+            cluster_name: None,
         };
 
         // Create view C - depends on table B
@@ -1501,6 +1505,7 @@ mod tests {
             indexes: vec![],
             database: None,
             table_ttl_setting: None,
+            cluster_name: None,
         };
 
         // Create table B - target for materialized view
@@ -1523,6 +1528,7 @@ mod tests {
             indexes: vec![],
             database: None,
             table_ttl_setting: None,
+            cluster_name: None,
         };
 
         // Create view C - depends on table B
@@ -1637,6 +1643,7 @@ mod tests {
             indexes: vec![],
             database: None,
             table_ttl_setting: None,
+            cluster_name: None,
         };
 
         let view = View {
@@ -1793,6 +1800,7 @@ mod tests {
             indexes: vec![],
             database: None,
             table_ttl_setting: None,
+            cluster_name: None,
         };
 
         let table_b = Table {
@@ -1814,6 +1822,7 @@ mod tests {
             indexes: vec![],
             database: None,
             table_ttl_setting: None,
+            cluster_name: None,
         };
 
         let table_c = Table {
@@ -1835,6 +1844,7 @@ mod tests {
             indexes: vec![],
             database: None,
             table_ttl_setting: None,
+            cluster_name: None,
         };
 
         // Test operations
@@ -1925,6 +1935,7 @@ mod tests {
             indexes: vec![],
             database: None,
             table_ttl_setting: None,
+            cluster_name: None,
         };
 
         let table_b = Table {
@@ -1946,6 +1957,7 @@ mod tests {
             indexes: vec![],
             database: None,
             table_ttl_setting: None,
+            cluster_name: None,
         };
 
         let table_c = Table {
@@ -1967,6 +1979,7 @@ mod tests {
             indexes: vec![],
             database: None,
             table_ttl_setting: None,
+            cluster_name: None,
         };
 
         let table_d = Table {
@@ -1988,6 +2001,7 @@ mod tests {
             indexes: vec![],
             database: None,
             table_ttl_setting: None,
+            cluster_name: None,
         };
 
         let table_e = Table {
@@ -2009,6 +2023,7 @@ mod tests {
             indexes: vec![],
             database: None,
             table_ttl_setting: None,
+            cluster_name: None,
         };
 
         let op_create_a = AtomicOlapOperation::CreateTable {
@@ -2162,6 +2177,7 @@ mod tests {
             indexes: vec![],
             database: None,
             table_ttl_setting: None,
+            cluster_name: None,
         };
 
         // Create table B - target for materialized view
@@ -2184,6 +2200,7 @@ mod tests {
             indexes: vec![],
             database: None,
             table_ttl_setting: None,
+            cluster_name: None,
         };
 
         // Create SQL resource for a materialized view
@@ -2305,6 +2322,7 @@ mod tests {
             indexes: vec![],
             database: None,
             table_ttl_setting: None,
+            cluster_name: None,
         };
 
         // Create table B - target for materialized view
@@ -2327,6 +2345,7 @@ mod tests {
             indexes: vec![],
             database: None,
             table_ttl_setting: None,
+            cluster_name: None,
         };
 
         // Create SQL resource for a materialized view
@@ -2453,6 +2472,7 @@ mod tests {
             indexes: vec![],
             database: None,
             table_ttl_setting: None,
+            cluster_name: None,
         };
 
         let table_b = Table {
@@ -2474,6 +2494,7 @@ mod tests {
             indexes: vec![],
             database: None,
             table_ttl_setting: None,
+            cluster_name: None,
         };
 
         // Create SQL resource for materialized view
@@ -2680,6 +2701,7 @@ mod tests {
             indexes: vec![],
             database: None,
             table_ttl_setting: None,
+            cluster_name: None,
         };
 
         // Create a column
@@ -2789,6 +2811,7 @@ mod tests {
             indexes: vec![],
             database: None,
             table_ttl_setting: None,
+            cluster_name: None,
         };
 
         // Create operations with signatures that work with the current implementation
@@ -2908,6 +2931,7 @@ mod tests {
             indexes: vec![],
             database: None,
             table_ttl_setting: None,
+            cluster_name: None,
         };
 
         let after_table = Table {
@@ -2952,6 +2976,7 @@ mod tests {
             indexes: vec![],
             database: None,
             table_ttl_setting: None,
+            cluster_name: None,
         };
 
         // Create column changes (remove old_column, add new_column)

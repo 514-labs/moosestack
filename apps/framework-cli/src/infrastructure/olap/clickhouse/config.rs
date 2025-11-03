@@ -19,6 +19,11 @@ fn default_native_port() -> i32 {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct ClusterConfig {
+    pub name: String,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ClickHouseConfig {
     pub db_name: String, // ex. local (primary database)
     pub user: String,
@@ -37,6 +42,9 @@ pub struct ClickHouseConfig {
     /// Example: additional_databases = ["warehouse", "analytics", "logging"]
     #[serde(default)]
     pub additional_databases: Vec<String>,
+    /// Optional cluster configurations for ON CLUSTER support
+    #[serde(default)]
+    pub clusters: Option<Vec<ClusterConfig>>,
 }
 
 impl Default for ClickHouseConfig {
@@ -51,6 +59,7 @@ impl Default for ClickHouseConfig {
             native_port: default_native_port(),
             host_data_path: None,
             additional_databases: Vec::new(),
+            clusters: None,
         }
     }
 }
@@ -96,6 +105,7 @@ pub fn parse_clickhouse_connection_string(conn_str: &str) -> anyhow::Result<Clic
         native_port: port,
         host_data_path: None,
         additional_databases: Vec::new(),
+        clusters: None,
     };
 
     Ok(config)
