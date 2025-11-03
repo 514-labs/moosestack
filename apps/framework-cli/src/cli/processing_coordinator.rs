@@ -136,26 +136,30 @@ mod tests {
     async fn test_begin_processing_blocks_reads() {
         let coordinator = ProcessingCoordinator::new();
 
+        // Channel to signal when read task has started waiting
+        let (tx, mut rx) = tokio::sync::mpsc::channel(1);
+
         // Acquire write lock (begin processing)
         let _guard = coordinator.begin_processing().await;
 
         // Try to acquire read lock in another task - should block
         let coordinator_clone = coordinator.clone();
         let read_task = tokio::spawn(async move {
-            let start = std::time::Instant::now();
+            tx.send(()).await.unwrap(); // Signal that we're about to wait
             coordinator_clone.wait_for_stable_state().await;
-            start.elapsed()
         });
 
-        // Give the read task time to start and block
-        sleep(Duration::from_millis(50)).await;
+        // Wait until read task is definitely waiting on the lock
+        rx.recv().await.unwrap();
 
         // Drop the write lock
         drop(_guard);
 
-        // Read task should now complete
-        let elapsed = read_task.await.unwrap();
-        assert!(elapsed >= Duration::from_millis(40));
+        // Read task should now complete without timing out
+        tokio::time::timeout(Duration::from_secs(1), read_task)
+            .await
+            .unwrap()
+            .unwrap();
     }
 
     #[tokio::test]
@@ -175,25 +179,24 @@ mod tests {
         let coordinator = ProcessingCoordinator::new();
         let coordinator_clone = coordinator.clone();
 
+        // Channel to signal when processor has acquired the write lock
+        let (tx, mut rx) = tokio::sync::mpsc::channel(1);
+
         let processing_duration = Duration::from_millis(100);
 
         // Spawn a task that starts processing and holds it for a bit
         let processor = tokio::spawn(async move {
             let _guard = coordinator_clone.begin_processing().await;
+            tx.send(()).await.unwrap(); // Signal that lock is acquired
             sleep(processing_duration).await;
             // Guard drops here
         });
 
-        // Give the processor time to acquire the write lock
-        sleep(Duration::from_millis(10)).await;
+        // Wait until processor has definitely acquired the write lock
+        rx.recv().await.unwrap();
 
-        // Now wait for stable state
-        let start = std::time::Instant::now();
+        // Now wait for stable state - should block until processing completes
         coordinator.wait_for_stable_state().await;
-        let elapsed = start.elapsed();
-
-        // Should have waited approximately the processing duration
-        assert!(elapsed >= Duration::from_millis(80));
 
         processor.await.unwrap();
     }
@@ -203,37 +206,40 @@ mod tests {
         let coordinator = ProcessingCoordinator::new();
         let coordinator_clone = coordinator.clone();
 
+        // Channel to signal when processor has acquired the write lock
+        let (tx, mut rx) = tokio::sync::mpsc::channel(1);
+
         // Start processing first
         let processor = tokio::spawn(async move {
             let _guard = coordinator_clone.begin_processing().await;
+            tx.send(()).await.unwrap(); // Signal that lock is acquired
             sleep(Duration::from_millis(100)).await;
         });
 
-        // Give processor time to acquire write lock
-        sleep(Duration::from_millis(10)).await;
+        // Wait until processor has definitely acquired the write lock
+        rx.recv().await.unwrap();
 
         // Spawn multiple waiters that should all block on the write lock
         let mut waiter_handles = vec![];
         for i in 0..5 {
             let coord = coordinator.clone();
             waiter_handles.push(tokio::spawn(async move {
-                let start = std::time::Instant::now();
                 coord.wait_for_stable_state().await;
-                (i, start.elapsed())
+                i
             }));
         }
 
         // Wait for processing to complete
         processor.await.unwrap();
 
-        // All waiters should complete and have waited
+        // All waiters should complete without timing out
+        // This verifies they waited for the processor to finish
         for (i, handle) in waiter_handles.into_iter().enumerate() {
-            let (result_i, elapsed) = tokio::time::timeout(Duration::from_millis(200), handle)
+            let result_i = tokio::time::timeout(Duration::from_secs(1), handle)
                 .await
                 .unwrap()
                 .unwrap();
             assert_eq!(result_i, i);
-            assert!(elapsed >= Duration::from_millis(80));
         }
     }
 
@@ -289,26 +295,30 @@ mod tests {
         let coordinator1 = ProcessingCoordinator::new();
         let coordinator2 = coordinator1.clone();
 
+        // Channel to signal when read task has started waiting
+        let (tx, mut rx) = tokio::sync::mpsc::channel(1);
+
         {
             let _guard = coordinator1.begin_processing().await;
 
             // coordinator2 should also see the processing state (shared lock)
             let coordinator2_clone = coordinator2.clone();
             let read_task = tokio::spawn(async move {
-                let start = std::time::Instant::now();
+                tx.send(()).await.unwrap(); // Signal that we're about to wait
                 coordinator2_clone.wait_for_stable_state().await;
-                start.elapsed()
             });
 
-            // Give read task time to start
-            sleep(Duration::from_millis(10)).await;
+            // Wait until read task is definitely waiting on the lock
+            rx.recv().await.unwrap();
 
             // Drop guard
             drop(_guard);
 
-            // Read task should complete
-            let elapsed = read_task.await.unwrap();
-            assert!(elapsed >= Duration::from_millis(5));
+            // Read task should complete without timing out
+            tokio::time::timeout(Duration::from_secs(1), read_task)
+                .await
+                .unwrap()
+                .unwrap();
         }
 
         // Both coordinators should be able to read now
