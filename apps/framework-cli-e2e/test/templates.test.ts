@@ -338,16 +338,17 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
           },
           { attempts: 10, delayMs: 1000 },
         );
-
-        // Wait for infrastructure to stabilize after file modification
-        console.log(
-          "Waiting for streaming functions to stabilize after index modification...",
-        );
-        await waitForStreamingFunctions();
       });
 
       it("should create Buffer engine table correctly", async function () {
         this.timeout(TIMEOUTS.TEST_SETUP_MS);
+
+        // Wait for infrastructure to stabilize after previous test's file modification
+        console.log(
+          "Waiting for streaming functions to stabilize after index modification...",
+        );
+        // Table modifications trigger cascading function restarts, so use longer timeout
+        await waitForStreamingFunctions(180_000);
 
         // Wait for tables to be created after previous test's file modifications
         // Use fixed 1-second delays (no exponential backoff) to avoid long waits on failure
@@ -474,16 +475,17 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
           },
           { attempts: 10, delayMs: 1000 },
         );
-
-        // Wait for infrastructure to stabilize after file modification
-        console.log(
-          "Waiting for streaming functions to stabilize after TTL modification...",
-        );
-        await waitForStreamingFunctions();
       });
 
       it("should plan/apply DEFAULT removal on existing tables", async function () {
         this.timeout(TIMEOUTS.TEST_SETUP_MS);
+
+        // Wait for infrastructure to stabilize after previous test's file modification
+        console.log(
+          "Waiting for streaming functions to stabilize after TTL modification...",
+        );
+        // Table modifications trigger cascading function restarts, so use longer timeout
+        await waitForStreamingFunctions(180_000);
 
         // First, verify initial DEFAULT settings
         await withRetries(
@@ -554,18 +556,19 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
           },
           { attempts: 10, delayMs: 1000 },
         );
-
-        // Wait for infrastructure to stabilize after file modification
-        console.log(
-          "Waiting for streaming functions to stabilize after DEFAULT removal...",
-        );
-        await waitForStreamingFunctions();
       });
     }
 
     // Create test case based on language
     if (config.language === "typescript") {
       it("should successfully ingest data and verify through consumption API (DateTime support)", async function () {
+        // Wait for infrastructure to stabilize after previous test's file modification
+        console.log(
+          "Waiting for streaming functions to stabilize after DEFAULT removal...",
+        );
+        // Table modifications trigger cascading function restarts, so use longer timeout
+        await waitForStreamingFunctions(180_000);
+
         const eventId = randomUUID();
 
         // Send multiple records to trigger batch write
@@ -1016,6 +1019,13 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
       }
     } else {
       it("should successfully ingest data and verify through consumption API", async function () {
+        // Wait for infrastructure to stabilize after previous test's file modification
+        console.log(
+          "Waiting for streaming functions to stabilize after DEFAULT removal...",
+        );
+        // Table modifications trigger cascading function restarts, so use longer timeout
+        await waitForStreamingFunctions(180_000);
+
         const eventId = randomUUID();
 
         // Send multiple records to trigger batch write like typescript tests
