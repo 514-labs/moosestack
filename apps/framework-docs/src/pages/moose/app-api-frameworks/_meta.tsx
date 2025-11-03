@@ -6,12 +6,12 @@ const rawMeta = {
   },
   __typescript__: {
     type: "separator",
-    title: "TypeScript",
+    title: "Typescript / Javascript / Node",
   },
   "typescript-native": {
     title: "Native (Api Class)",
   },
-  "typescript-express": {
+  express: {
     title: "Express",
   },
   "typescript-fastify": {
@@ -30,7 +30,7 @@ const rawMeta = {
   "python-native": {
     title: "Native (Api Class)",
   },
-  "python-fastapi": {
+  fastapi: {
     title: "FastAPI",
   },
 };

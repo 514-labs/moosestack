@@ -23,6 +23,8 @@ import {
   UploadCloud,
   FileStack,
   Sparkles,
+  Package,
+  Blocks,
 } from "lucide-react";
 
 // Raw meta object - more concise without repetitive rendering logic
@@ -81,6 +83,14 @@ const rawMeta = {
     title: "APIs",
     Icon: Code,
     isMoose: true,
+  },
+  __moosestack_in_your_app__: {
+    type: "separator",
+    title: "MooseStack in your App",
+  },
+  "app-api-frameworks": {
+    title: "App / API frameworks",
+    Icon: Blocks,
   },
   __deployment__: {
     type: "separator",
