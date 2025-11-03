@@ -56,6 +56,9 @@ export const stopDevProcess = async (devProcess: any): Promise<void> => {
     if (!devProcess.killed) {
       await setTimeoutAsync(TIMEOUTS.BRIEF_CLEANUP_WAIT_MS);
     }
+
+    console.log("Ensuring all moose processes are terminated...");
+    await killRemainingProcesses();
   }
 };
 
@@ -157,6 +160,16 @@ export const killRemainingProcesses = async (): Promise<void> => {
       windowsHide: true,
     });
     console.log("Killed any remaining moose-cli processes");
+
+    await execAsync(
+      "pkill -9 -f 'streaming_function_runner|python_worker_wrapper|consumption.*localhost' || true",
+      {
+        timeout: TIMEOUTS.PROCESS_TERMINATION_MS,
+        killSignal: "SIGKILL",
+        windowsHide: true,
+      },
+    );
+    console.log("Killed any remaining Python processes");
   } catch (error) {
     console.warn("Error killing remaining processes:", error);
   }
