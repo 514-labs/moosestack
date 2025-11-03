@@ -371,6 +371,39 @@ impl DockerClient {
         Ok(())
     }
 
+    /// Generates ClickHouse clusters XML configuration for dev mode
+    ///
+    /// Creates single-node cluster definitions for all clusters defined in the project config.
+    /// This allows tables with ON CLUSTER clauses to work in dev mode.
+    fn generate_clickhouse_clusters_xml(project: &Project) -> Option<String> {
+        let clusters = project.clickhouse_config.clusters.as_ref()?;
+
+        if clusters.is_empty() {
+            return None;
+        }
+
+        let mut xml = String::from("<clickhouse>\n  <remote_servers>\n");
+
+        for cluster in clusters {
+            // Create a single-node cluster for dev mode
+            // In dev, we just point all clusters to the local ClickHouse instance
+            xml.push_str(&format!(
+                "    <{name}>\n\
+                       <shard>\n\
+                         <replica>\n\
+                           <host>clickhousedb</host>\n\
+                           <port>9000</port>\n\
+                         </replica>\n\
+                       </shard>\n\
+                     </{name}>\n",
+                name = cluster.name
+            ));
+        }
+
+        xml.push_str("  </remote_servers>\n</clickhouse>\n");
+        Some(xml)
+    }
+
     /// Creates the docker-compose file for the project
     pub fn create_compose_file(
         &self,
@@ -422,6 +455,23 @@ impl DockerClient {
             if let Some(path_str) = path.to_str() {
                 if let Some(obj) = data.as_object_mut() {
                     obj.insert("clickhouse_host_data_path".to_string(), json!(path_str));
+                }
+            }
+        }
+
+        // Generate and write ClickHouse clusters config if clusters are defined
+        if let Some(clusters_xml) = Self::generate_clickhouse_clusters_xml(project) {
+            let clusters_file = project.internal_dir()?.join("clickhouse_clusters.xml");
+            std::fs::write(&clusters_file, clusters_xml)?;
+            info!(
+                "Generated ClickHouse clusters configuration at: {:?}",
+                clusters_file
+            );
+
+            // Pass the file path to the template
+            if let Some(path_str) = clusters_file.to_str() {
+                if let Some(obj) = data.as_object_mut() {
+                    obj.insert("clickhouse_clusters_file".to_string(), json!(path_str));
                 }
             }
         }
