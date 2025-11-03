@@ -324,6 +324,7 @@ mod tests {
                 native_port: 9000,
                 host_data_path: None,
                 additional_databases: Vec::new(),
+                clusters: None,
             },
             http_server_config: LocalWebserverConfig {
                 proxy_port: crate::cli::local_webserver::default_proxy_port(),
@@ -380,6 +381,7 @@ mod tests {
             indexes: vec![],
             database: None,
             table_ttl_setting: None,
+            cluster_name: None,
         }
     }
 

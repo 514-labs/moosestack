@@ -149,6 +149,9 @@ message Table {
   // Optional database name for multi-database support
   // When not specified, uses the global ClickHouse config database
   optional string database = 17;
+
+  // Optional cluster name for ON CLUSTER support in ClickHouse
+  optional string cluster_name = 18;
 }
 
 // Structured representation of ORDER BY to support either explicit fields
