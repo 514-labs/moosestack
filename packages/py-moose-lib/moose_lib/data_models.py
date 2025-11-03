@@ -27,6 +27,11 @@ class ClickhouseSize:
 
 
 @dataclasses.dataclass(frozen=True)
+class ClickhouseFixedStringSize:
+    size: int
+
+
+@dataclasses.dataclass(frozen=True)
 class ClickhouseDefault:
     expression: str
 
@@ -59,6 +64,22 @@ def clickhouse_datetime64(precision: int) -> Type[datetime]:
     even if you write `timestamp: clickhouse_datetime64(9)
     """
     return Annotated[datetime, ClickhousePrecision(precision=precision)]
+
+
+def FixedString(size: int) -> ClickhouseFixedStringSize:
+    """
+    Creates a FixedString(N) annotation for fixed-length binary strings.
+
+    ClickHouse stores exactly N bytes, padding shorter values with null bytes.
+    Values exceeding N bytes will raise an exception.
+
+    Use for binary data like hashes, IPs, UUIDs, MAC addresses.
+
+    Example:
+        md5_hash: Annotated[bytes, FixedString(16)]  # 16-byte MD5
+        sha256: Annotated[bytes, FixedString(32)]    # 32-byte SHA256
+    """
+    return ClickhouseFixedStringSize(size=size)
 
 
 type Point = Annotated[tuple[float, float], "Point"]
@@ -280,6 +301,17 @@ def py_type_to_column_type(t: type, mds: list[Any]) -> Tuple[bool, list[Any], Da
 
     if t is str:
         data_type = "String"
+    elif t is bytes:
+        # Check for FixedString annotation
+        fixed_string_size = next(
+            (md.size for md in mds if isinstance(md, ClickhouseFixedStringSize)),
+            None
+        )
+        if fixed_string_size:
+            data_type = f"FixedString({fixed_string_size})"
+        else:
+            # Regular bytes without FixedString annotation
+            data_type = "String"
     elif t is int:
         # Check for int size annotations
         int_size = next((md for md in mds if isinstance(md, str) and re.match(r'^u?int\d+$', md)), None)

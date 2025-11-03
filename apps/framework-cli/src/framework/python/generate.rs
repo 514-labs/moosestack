@@ -58,6 +58,9 @@ fn map_column_type_to_python(
 ) -> String {
     match column_type {
         ColumnType::String => "str".to_string(),
+        ColumnType::FixedString { length } => {
+            format!("Annotated[bytes, FixedString({})]", length)
+        }
         ColumnType::Boolean => "bool".to_string(),
         ColumnType::Int(int_type) => match int_type {
             IntType::Int8 => "Annotated[int, \"int8\"]".to_string(),
