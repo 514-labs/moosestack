@@ -30,13 +30,10 @@ from .blocks import (
     # Legacy enum (already exported via .blocks import, but explicit for clarity)
     ClickHouseEngines
 )
-from .data_models import Key, AggregateFunction, StringToEnumMixin
 from .data_models import (
     Key,
     AggregateFunction,
     StringToEnumMixin,
-    FixedString,
-    ClickhouseFixedStringSize,
     # Integer types
     Int8,
     Int16,
