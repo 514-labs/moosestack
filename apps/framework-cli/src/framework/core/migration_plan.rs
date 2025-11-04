@@ -127,6 +127,10 @@ pub fn strip_ignored_fields(table: &Table, ignore_ops: &[IgnorableOperation]) ->
         }
     }
 
+    if ignore_ops.contains(&IgnorableOperation::ModifyPartitionBy) {
+        table.partition_by = None;
+    }
+
     table
 }
 
@@ -424,5 +428,41 @@ mod tests {
 
         assert!(stripped.table_ttl_setting.is_none());
         assert!(stripped.columns[1].ttl.is_none());
+    }
+
+    #[test]
+    fn test_strip_partition_by() {
+        let mut table = create_test_table();
+        table.partition_by = Some("toYYYYMM(timestamp)".to_string());
+        assert!(table.partition_by.is_some());
+
+        let stripped = strip_ignored_fields(&table, &[IgnorableOperation::ModifyPartitionBy]);
+
+        assert!(stripped.partition_by.is_none());
+        assert_eq!(stripped.table_ttl_setting, table.table_ttl_setting); // Table TTL unchanged
+        assert_eq!(stripped.columns[1].ttl, table.columns[1].ttl); // Column TTL unchanged
+    }
+
+    #[test]
+    fn test_strip_all_ignorable_fields() {
+        let mut table = create_test_table();
+        table.partition_by = Some("toYYYYMM(timestamp)".to_string());
+
+        assert!(table.table_ttl_setting.is_some());
+        assert!(table.columns[1].ttl.is_some());
+        assert!(table.partition_by.is_some());
+
+        let stripped = strip_ignored_fields(
+            &table,
+            &[
+                IgnorableOperation::ModifyTableTtl,
+                IgnorableOperation::ModifyColumnTtl,
+                IgnorableOperation::ModifyPartitionBy,
+            ],
+        );
+
+        assert!(stripped.table_ttl_setting.is_none());
+        assert!(stripped.columns[1].ttl.is_none());
+        assert!(stripped.partition_by.is_none());
     }
 }

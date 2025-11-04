@@ -214,6 +214,7 @@ pub enum SerializableOlapOperation {
 pub enum IgnorableOperation {
     ModifyTableTtl,
     ModifyColumnTtl,
+    ModifyPartitionBy,
 }
 
 impl IgnorableOperation {

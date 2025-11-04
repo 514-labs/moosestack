@@ -78,6 +78,7 @@ pub trait TableDiffStrategy {
     /// * `after` - The table after changes
     /// * `column_changes` - Detailed column-level changes
     /// * `order_by_change` - Changes to the ORDER BY clause
+    /// * `partition_by_change` - Changes to the PARTITION BY clause
     /// * `default_database` - The configured default database name for equivalence checks
     ///
     /// # Returns
@@ -88,6 +89,7 @@ pub trait TableDiffStrategy {
         after: &Table,
         column_changes: Vec<ColumnChange>,
         order_by_change: OrderByChange,
+        partition_by_change: PartitionByChange,
         default_database: &str,
     ) -> Vec<OlapChange>;
 }
@@ -109,6 +111,7 @@ impl TableDiffStrategy for DefaultTableDiffStrategy {
         after: &Table,
         column_changes: Vec<ColumnChange>,
         order_by_change: OrderByChange,
+        partition_by_change: PartitionByChange,
         _default_database: &str,
     ) -> Vec<OlapChange> {
         // Most databases can handle all changes via ALTER TABLE operations
@@ -117,6 +120,7 @@ impl TableDiffStrategy for DefaultTableDiffStrategy {
             name: before.name.clone(),
             column_changes,
             order_by_change,
+            partition_by_change,
             before: before.clone(),
             after: after.clone(),
         })]
@@ -273,6 +277,17 @@ pub struct OrderByChange {
     pub after: OrderBy,
 }
 
+/// Represents changes to the partition_by configuration of a table
+///
+/// Tracks the before and after states of the partition expression.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PartitionByChange {
+    /// Previous PARTITION BY configuration
+    pub before: Option<String>,
+    /// New PARTITION BY configuration
+    pub after: Option<String>,
+}
+
 /// Represents a change to a database table
 ///
 /// This captures the complete picture of table changes, including additions,
@@ -292,6 +307,8 @@ pub enum TableChange {
         column_changes: Vec<ColumnChange>,
         /// Changes to the ordering columns
         order_by_change: OrderByChange,
+        /// Changes to the partitioning expression
+        partition_by_change: PartitionByChange,
         /// Complete representation of the table before changes
         before: Table,
         /// Complete representation of the table after changes
@@ -1715,7 +1732,12 @@ impl InfrastructureMap {
                             }
                         }
 
-                        // TODO: PARTITION BY is not checked!
+                        // Compute PARTITION BY changes
+                        let partition_by_changed = table.partition_by != target_table.partition_by;
+                        let partition_by_change = PartitionByChange {
+                            before: table.partition_by.clone(),
+                            after: target_table.partition_by.clone(),
+                        };
 
                         // Compute ORDER BY changes
                         fn order_by_from_primary_key(target_table: &Table) -> Vec<String> {
@@ -1791,6 +1813,7 @@ impl InfrastructureMap {
                         // Only process changes if there are actual differences to report
                         if !column_changes.is_empty()
                             || order_by_changed
+                            || partition_by_changed
                             || engine_changed
                             || indexes_changed
                         {
@@ -1800,6 +1823,7 @@ impl InfrastructureMap {
                                 target_table,
                                 column_changes,
                                 order_by_change,
+                                partition_by_change,
                                 default_database,
                             );
 
@@ -1926,6 +1950,12 @@ impl InfrastructureMap {
             }
         };
 
+        let partition_by_changed = table.partition_by != target_table.partition_by;
+        let partition_by_change = PartitionByChange {
+            before: table.partition_by.clone(),
+            after: target_table.partition_by.clone(),
+        };
+
         // Only return changes if there are actual differences to report
         // Detect index changes
         let indexes_changed = table.indexes != target_table.indexes;
@@ -1936,11 +1966,17 @@ impl InfrastructureMap {
             &target_table.table_ttl_setting,
         );
 
-        if !column_changes.is_empty() || order_by_changed || indexes_changed || ttl_changed {
+        if !column_changes.is_empty()
+            || order_by_changed
+            || partition_by_changed
+            || indexes_changed
+            || ttl_changed
+        {
             Some(TableChange::Updated {
                 name: table.name.clone(),
                 column_changes,
                 order_by_change,
+                partition_by_change,
                 before: table.clone(),
                 after: target_table.clone(),
             })
@@ -2034,6 +2070,12 @@ impl InfrastructureMap {
             }
         };
 
+        let partition_by_changed = table.partition_by != target_table.partition_by;
+        let partition_by_change = PartitionByChange {
+            before: table.partition_by.clone(),
+            after: target_table.partition_by.clone(),
+        };
+
         // Detect index changes
         let indexes_changed = table.indexes != target_table.indexes;
 
@@ -2044,11 +2086,17 @@ impl InfrastructureMap {
         );
 
         // Only return changes if there are actual differences to report
-        if !column_changes.is_empty() || order_by_changed || indexes_changed || ttl_changed {
+        if !column_changes.is_empty()
+            || order_by_changed
+            || partition_by_changed
+            || indexes_changed
+            || ttl_changed
+        {
             Some(TableChange::Updated {
                 name: table.name.clone(),
                 column_changes,
                 order_by_change,
+                partition_by_change,
                 before: table.clone(),
                 after: target_table.clone(),
             })
