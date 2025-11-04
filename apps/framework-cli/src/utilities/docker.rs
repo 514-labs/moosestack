@@ -385,6 +385,15 @@ impl DockerClient {
         let mut xml = String::from("<clickhouse>\n  <remote_servers>\n");
 
         for cluster in clusters {
+            // Validate cluster name is a safe identifier to prevent XML injection
+            if !is_valid_clickhouse_identifier(&cluster.name) {
+                warn!(
+                    "Skipping cluster '{}': cluster names must be alphanumeric with underscores only and cannot start with a digit",
+                    cluster.name
+                );
+                continue;
+            }
+
             // Create a single-node cluster for dev mode
             // In dev, we just point all clusters to the local ClickHouse instance
             xml.push_str(&format!(
@@ -651,6 +660,20 @@ lazy_static! {
             .unwrap();
 }
 
+/// Validates that a string is a valid ClickHouse identifier
+///
+/// ClickHouse identifiers (table names, cluster names, etc.) must:
+/// - Be non-empty
+/// - Contain only alphanumeric characters and underscores
+/// - Not start with a digit
+///
+/// This prevents XML injection and ensures compatibility with ClickHouse's naming rules.
+fn is_valid_clickhouse_identifier(name: &str) -> bool {
+    !name.is_empty()
+        && name.chars().all(|c| c.is_alphanumeric() || c == '_')
+        && !name.chars().next().unwrap().is_numeric()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -884,5 +907,80 @@ mod tests {
         // Verify cluster name with underscores and numbers works
         assert!(xml.contains("<prod_cluster_01>"));
         assert!(xml.contains("</prod_cluster_01>"));
+    }
+
+    #[test]
+    fn test_is_valid_clickhouse_identifier() {
+        // Valid identifiers
+        assert!(is_valid_clickhouse_identifier("test_cluster"));
+        assert!(is_valid_clickhouse_identifier("cluster123"));
+        assert!(is_valid_clickhouse_identifier("_cluster"));
+        assert!(is_valid_clickhouse_identifier("prod_cluster_01"));
+        assert!(is_valid_clickhouse_identifier("default"));
+
+        // Invalid identifiers
+        assert!(!is_valid_clickhouse_identifier("")); // empty
+        assert!(!is_valid_clickhouse_identifier("123cluster")); // starts with digit
+        assert!(!is_valid_clickhouse_identifier("cluster-name")); // hyphen
+        assert!(!is_valid_clickhouse_identifier("cluster.name")); // dot
+        assert!(!is_valid_clickhouse_identifier("cluster name")); // space
+        assert!(!is_valid_clickhouse_identifier("cluster<test>")); // XML injection attempt
+        assert!(!is_valid_clickhouse_identifier("test</test><hack>")); // XML injection
+    }
+
+    #[test]
+    fn test_generate_xml_skips_invalid_cluster_names() {
+        let temp_dir = TempDir::new().unwrap();
+        let mut project = Project::new(
+            temp_dir.path(),
+            "test-project".to_string(),
+            SupportedLanguages::Typescript,
+        );
+        project.clickhouse_config.clusters = Some(vec![
+            crate::infrastructure::olap::clickhouse::config::ClusterConfig {
+                name: "valid_cluster".to_string(),
+            },
+            crate::infrastructure::olap::clickhouse::config::ClusterConfig {
+                name: "invalid-cluster".to_string(), // Has hyphen - invalid
+            },
+            crate::infrastructure::olap::clickhouse::config::ClusterConfig {
+                name: "another_valid".to_string(),
+            },
+        ]);
+
+        let xml = DockerClient::generate_clickhouse_clusters_xml(&project).unwrap();
+
+        // Valid clusters should be present
+        assert!(xml.contains("<valid_cluster>"));
+        assert!(xml.contains("<another_valid>"));
+
+        // Invalid cluster should be skipped
+        assert!(!xml.contains("invalid-cluster"));
+        assert!(!xml.contains("<invalid-cluster>"));
+    }
+
+    #[test]
+    fn test_generate_xml_all_invalid_returns_empty() {
+        let temp_dir = TempDir::new().unwrap();
+        let mut project = Project::new(
+            temp_dir.path(),
+            "test-project".to_string(),
+            SupportedLanguages::Typescript,
+        );
+        project.clickhouse_config.clusters = Some(vec![
+            crate::infrastructure::olap::clickhouse::config::ClusterConfig {
+                name: "invalid-name".to_string(),
+            },
+            crate::infrastructure::olap::clickhouse::config::ClusterConfig {
+                name: "123invalid".to_string(),
+            },
+        ]);
+
+        let xml = DockerClient::generate_clickhouse_clusters_xml(&project).unwrap();
+
+        // XML structure should exist but no clusters
+        assert!(xml.contains("<clickhouse>"));
+        assert!(xml.contains("<remote_servers>"));
+        assert!(!xml.contains("<shard>"));
     }
 }
