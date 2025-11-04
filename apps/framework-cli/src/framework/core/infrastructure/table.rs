@@ -314,11 +314,18 @@ impl Table {
             format!("{}_{}", self.name, v.as_suffix())
         });
 
-        // Only include database prefix if name doesn't already contain a dot (fully qualified name)
+        // Only include database prefix if:
+        // 1. Name already contains a dot (fully qualified: "db.table"), OR
+        // 2. Database was explicitly set by the user (not defaulted)
         if self.name.contains('.') {
+            // Legacy fully-qualified name format - return as-is
             base_id
-        } else {
+        } else if self.database.is_some() {
+            // User explicitly set a database - include it in the ID
             format!("{}_{}", db, base_id)
+        } else {
+            // No explicit database set - use name as-is for the ID
+            base_id
         }
     }
 
@@ -1559,19 +1566,19 @@ mod tests {
             database: None,
             table_ttl_setting: None,
         };
-        assert_eq!(table1.id(DEFAULT_DATABASE_NAME), "local_users");
+        assert_eq!(table1.id(DEFAULT_DATABASE_NAME), "users");
 
-        // Test 2: Table with explicit "local" database - should match table1
+        // Test 2: Table with explicit "local" database - should have database prefix
         let table2 = Table {
             name: "users".to_string(),
             database: Some("local".to_string()),
             ..table1.clone()
         };
         assert_eq!(table2.id(DEFAULT_DATABASE_NAME), "local_users");
-        assert_eq!(
+        assert_ne!(
             table1.id(DEFAULT_DATABASE_NAME),
             table2.id(DEFAULT_DATABASE_NAME),
-            "database: None and database: Some('local') should produce same ID"
+            "database: None and database: Some('local') should produce different IDs"
         );
 
         // Test 2b: Table with different database - should have different ID
@@ -1623,13 +1630,13 @@ mod tests {
         };
         assert_eq!(table6.id(DEFAULT_DATABASE_NAME), "analytics_users_1_0");
 
-        // Test 7: With version and default database
+        // Test 7: With version and no explicit database - should not have database prefix
         let table7 = Table {
             name: "users".to_string(),
             version: Some(Version::from_string("1.0".to_string())),
             database: None,
             ..table1.clone()
         };
-        assert_eq!(table7.id(DEFAULT_DATABASE_NAME), "local_users_1_0");
+        assert_eq!(table7.id(DEFAULT_DATABASE_NAME), "users_1_0");
     }
 }
