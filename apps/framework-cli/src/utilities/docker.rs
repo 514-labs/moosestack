@@ -426,6 +426,20 @@ impl DockerClient {
             }
         }
 
+        // Generate ClickHouse clusters XML if clusters are defined
+        if let Some(clusters) = &project.clickhouse_config.clusters {
+            if !clusters.is_empty() {
+                let clusters_xml = generate_clickhouse_clusters_xml(clusters);
+                let clusters_file = project.internal_dir()?.join("clickhouse_clusters.xml");
+                std::fs::write(clusters_file, clusters_xml)?;
+
+                // Signal to the template that clusters config exists
+                if let Some(obj) = data.as_object_mut() {
+                    obj.insert("clickhouse_has_clusters".to_string(), json!(true));
+                }
+            }
+        }
+
         if project.is_production {
             let rendered = handlebars
                 .render_template(PROD_COMPOSE_FILE, &data)
@@ -601,10 +615,33 @@ lazy_static! {
             .unwrap();
 }
 
+/// Generates ClickHouse cluster configuration XML from cluster configs
+fn generate_clickhouse_clusters_xml(
+    clusters: &[crate::infrastructure::olap::clickhouse::config::ClusterConfig],
+) -> String {
+    let mut xml = String::from("<clickhouse>\n  <remote_servers>\n");
+
+    for cluster in clusters {
+        xml.push_str(&format!("    <{}>\n", cluster.name));
+        xml.push_str("      <shard>\n");
+        xml.push_str("        <replica>\n");
+        xml.push_str("          <host>clickhouse</host>\n");
+        xml.push_str("          <port>9000</port>\n");
+        xml.push_str("        </replica>\n");
+        xml.push_str("      </shard>\n");
+        xml.push_str(&format!("    </{}>\n", cluster.name));
+    }
+
+    xml.push_str("  </remote_servers>\n");
+    xml.push_str("</clickhouse>\n");
+    xml
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::framework::languages::SupportedLanguages;
+    use crate::infrastructure::olap::clickhouse::config::ClusterConfig;
     use tempfile::TempDir;
 
     fn create_test_docker_client() -> DockerClient {
@@ -670,5 +707,30 @@ mod tests {
         assert_eq!(args[4], override_file.as_os_str());
         assert_eq!(args[5], "-p");
         assert_eq!(args[6], "test-project");
+    }
+
+    #[test]
+    fn test_generate_clickhouse_clusters_xml() {
+        let clusters = vec![
+            ClusterConfig {
+                name: "test_cluster".to_string(),
+            },
+            ClusterConfig {
+                name: "prod_cluster".to_string(),
+            },
+        ];
+
+        let xml = generate_clickhouse_clusters_xml(&clusters);
+
+        assert!(xml.contains("<clickhouse>"));
+        assert!(xml.contains("<remote_servers>"));
+        assert!(xml.contains("<test_cluster>"));
+        assert!(xml.contains("<prod_cluster>"));
+        assert!(xml.contains("<shard>"));
+        assert!(xml.contains("<replica>"));
+        assert!(xml.contains("<host>clickhouse</host>"));
+        assert!(xml.contains("<port>9000</port>"));
+        assert!(xml.contains("</remote_servers>"));
+        assert!(xml.contains("</clickhouse>"));
     }
 }
