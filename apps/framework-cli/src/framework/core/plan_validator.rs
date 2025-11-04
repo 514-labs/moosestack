@@ -70,58 +70,11 @@ fn validate_cluster_references(project: &Project, plan: &InfraPlan) -> Result<()
     Ok(())
 }
 
-/// Validates that replicated engines either have keeper path/replica name OR a cluster defined
-fn validate_replicated_engine_args(plan: &InfraPlan) -> Result<(), ValidationError> {
-    use crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine;
-
-    for table in plan.target_infra_map.tables.values() {
-        let needs_args = match &table.engine {
-            Some(ClickhouseEngine::ReplicatedMergeTree {
-                keeper_path,
-                replica_name,
-            }) => keeper_path.is_none() && replica_name.is_none(),
-            Some(ClickhouseEngine::ReplicatedReplacingMergeTree {
-                keeper_path,
-                replica_name,
-                ..
-            }) => keeper_path.is_none() && replica_name.is_none(),
-            Some(ClickhouseEngine::ReplicatedAggregatingMergeTree {
-                keeper_path,
-                replica_name,
-            }) => keeper_path.is_none() && replica_name.is_none(),
-            Some(ClickhouseEngine::ReplicatedSummingMergeTree {
-                keeper_path,
-                replica_name,
-                ..
-            }) => keeper_path.is_none() && replica_name.is_none(),
-            _ => false,
-        };
-
-        // If engine args are missing AND no cluster is defined, that's an error
-        if needs_args && table.cluster_name.is_none() {
-            return Err(ValidationError::TableValidation(format!(
-                "Table '{}' uses a replicated engine but neither cluster nor keeper path/replica name are specified.\n\
-                \n\
-                You must either:\n\
-                1. Specify a cluster in the table config: cluster = \"prod_cluster\"\n\
-                   (and define it in moose.config.toml)\n\
-                2. Or provide explicit keeper path and replica name in the engine config\n",
-                table.name
-            )));
-        }
-    }
-
-    Ok(())
-}
-
 pub fn validate(project: &Project, plan: &InfraPlan) -> Result<(), ValidationError> {
     stream::validate_changes(project, &plan.changes.streaming_engine_changes)?;
 
     // Validate cluster references
     validate_cluster_references(project, plan)?;
-
-    // Validate replicated engine args
-    validate_replicated_engine_args(plan)?;
 
     // Check for validation errors in OLAP changes
     for change in &plan.changes.olap_changes {
@@ -390,127 +343,6 @@ mod tests {
             database: None,
             table_ttl_setting: None,
             cluster_name,
-        }
-    }
-
-    #[test]
-    fn test_replicated_engine_without_args_or_cluster_fails() {
-        use crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine;
-
-        let project = create_test_project(None);
-        let table = create_table_with_engine(
-            "test_table",
-            None,
-            Some(ClickhouseEngine::ReplicatedMergeTree {
-                keeper_path: None,
-                replica_name: None,
-            }),
-        );
-        let plan = create_test_plan(vec![table]);
-
-        let result = validate(&project, &plan);
-
-        assert!(result.is_err());
-        match result {
-            Err(ValidationError::TableValidation(msg)) => {
-                assert!(msg.contains("test_table"));
-                assert!(msg.contains("replicated engine"));
-                assert!(msg.contains("cluster"));
-            }
-            _ => panic!("Expected TableValidation error"),
-        }
-    }
-
-    #[test]
-    fn test_replicated_engine_with_cluster_but_no_args_succeeds() {
-        use crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine;
-
-        let project = create_test_project(Some(vec![ClusterConfig {
-            name: "prod_cluster".to_string(),
-        }]));
-        let table = create_table_with_engine(
-            "test_table",
-            Some("prod_cluster".to_string()),
-            Some(ClickhouseEngine::ReplicatedMergeTree {
-                keeper_path: None,
-                replica_name: None,
-            }),
-        );
-        let plan = create_test_plan(vec![table]);
-
-        let result = validate(&project, &plan);
-
-        assert!(result.is_ok());
-    }
-
-    #[test]
-    fn test_replicated_engine_with_args_but_no_cluster_succeeds() {
-        use crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine;
-
-        let project = create_test_project(None);
-        let table = create_table_with_engine(
-            "test_table",
-            None,
-            Some(ClickhouseEngine::ReplicatedMergeTree {
-                keeper_path: Some("/clickhouse/tables/{database}/{table}".to_string()),
-                replica_name: Some("{replica}".to_string()),
-            }),
-        );
-        let plan = create_test_plan(vec![table]);
-
-        let result = validate(&project, &plan);
-
-        assert!(result.is_ok());
-    }
-
-    #[test]
-    fn test_replicated_engine_with_both_args_and_cluster_succeeds() {
-        use crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine;
-
-        let project = create_test_project(Some(vec![ClusterConfig {
-            name: "prod_cluster".to_string(),
-        }]));
-        let table = create_table_with_engine(
-            "test_table",
-            Some("prod_cluster".to_string()),
-            Some(ClickhouseEngine::ReplicatedMergeTree {
-                keeper_path: Some("/clickhouse/tables/{database}/{table}".to_string()),
-                replica_name: Some("{replica}".to_string()),
-            }),
-        );
-        let plan = create_test_plan(vec![table]);
-
-        let result = validate(&project, &plan);
-
-        assert!(result.is_ok());
-    }
-
-    #[test]
-    fn test_replicated_replacing_merge_tree_without_args_or_cluster_fails() {
-        use crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine;
-
-        let project = create_test_project(None);
-        let table = create_table_with_engine(
-            "test_table",
-            None,
-            Some(ClickhouseEngine::ReplicatedReplacingMergeTree {
-                keeper_path: None,
-                replica_name: None,
-                ver: Some("version".to_string()),
-                is_deleted: None,
-            }),
-        );
-        let plan = create_test_plan(vec![table]);
-
-        let result = validate(&project, &plan);
-
-        assert!(result.is_err());
-        match result {
-            Err(ValidationError::TableValidation(msg)) => {
-                assert!(msg.contains("test_table"));
-                assert!(msg.contains("replicated engine"));
-            }
-            _ => panic!("Expected TableValidation error"),
         }
     }
 
