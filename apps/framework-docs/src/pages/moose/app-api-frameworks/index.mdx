@@ -75,13 +75,6 @@ def list_users(limit: int = 25):
 ### TypeScript
 
 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-6">
-  <Link href="/moose/app-api-frameworks/typescript-native" className="rounded-xl border bg-card text-card-foreground shadow p-6 hover:bg-muted transition">
-    <div className="font-semibold">Native Moose APIs</div>
-    <div className="text-sm text-gray-600 dark:text-gray-400">
-      Moose's built-in approach for simple GET endpoints
-    </div>
-  </Link>
-
   <Link href="/moose/app-api-frameworks/express" className="rounded-xl border bg-card text-card-foreground shadow p-6 hover:bg-muted transition">
     <div className="font-semibold">Express</div>
     <div className="text-sm text-gray-600 dark:text-gray-400">
@@ -109,22 +102,29 @@ def list_users(limit: int = 25):
       Use raw HTTP handlers without any framework
     </div>
   </Link>
-</div>
 
-### Python
-
-<div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-6">
-  <Link href="/moose/app-api-frameworks/python-native" className="rounded-xl border bg-card text-card-foreground shadow p-6 hover:bg-muted transition">
+  <Link href="/moose/app-api-frameworks/typescript-native" className="rounded-xl border bg-card text-card-foreground shadow p-6 hover:bg-muted transition">
     <div className="font-semibold">Native Moose APIs</div>
     <div className="text-sm text-gray-600 dark:text-gray-400">
       Moose's built-in approach for simple GET endpoints
     </div>
   </Link>
+</div>
 
+### Python
+
+<div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-6">
   <Link href="/moose/app-api-frameworks/fastapi" className="rounded-xl border bg-card text-card-foreground shadow p-6 hover:bg-muted transition">
     <div className="font-semibold">FastAPI</div>
     <div className="text-sm text-gray-600 dark:text-gray-400">
       Modern, fast Python web framework
+    </div>
+  </Link>
+
+  <Link href="/moose/app-api-frameworks/python-native" className="rounded-xl border bg-card text-card-foreground shadow p-6 hover:bg-muted transition">
+    <div className="font-semibold">Native Moose APIs</div>
+    <div className="text-sm text-gray-600 dark:text-gray-400">
+      Moose's built-in approach for simple GET endpoints
     </div>
   </Link>
 </div>
