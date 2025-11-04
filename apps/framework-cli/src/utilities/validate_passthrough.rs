@@ -397,7 +397,9 @@ impl<'de, S: SerializeValue> Visitor<'de> for &mut ValueVisitor<'_, S> {
                 }
                 Err(Error::invalid_type(serde::de::Unexpected::Str(v), &self))
             }
-            ColumnType::String => self.write_to.serialize_value(v).map_err(Error::custom),
+            ColumnType::String | ColumnType::FixedString { .. } => {
+                self.write_to.serialize_value(v).map_err(Error::custom)
+            }
             ColumnType::DateTime { .. } => {
                 chrono::DateTime::parse_from_rfc3339(v).map_err(|_| {
                     E::custom(format!("Invalid date format at {}", self.get_path()))
