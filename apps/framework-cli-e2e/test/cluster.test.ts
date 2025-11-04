@@ -31,18 +31,17 @@ import {
 } from "./constants";
 
 import {
-  stopDevProcess,
   waitForServerStart,
-  cleanupDocker,
-  removeTestProject,
   createTempTestDirectory,
   setupTypeScriptProject,
   setupPythonProject,
+  cleanupTestSuite,
+  performGlobalCleanup,
+  cleanupClickhouseData,
+  waitForInfrastructureReady,
 } from "./utils";
 
 const execAsync = promisify(require("child_process").exec);
-const setTimeoutAsync = (ms: number) =>
-  new Promise<void>((resolve) => global.setTimeout(resolve, ms));
 
 const CLI_PATH = path.resolve(__dirname, "../../../target/debug/moose-cli");
 const MOOSE_LIB_PATH = path.resolve(
@@ -275,52 +274,35 @@ const createClusterTestSuite = (config: ClusterTestConfig) => {
         config.language === "python" ?
           {
             ...process.env,
-            MOOSE_TELEMETRY_ENABLED: "false",
-            PYTHONDONTWRITEBYTECODE: "1",
+            VIRTUAL_ENV: path.join(TEST_PROJECT_DIR, ".venv"),
+            PATH: `${path.join(TEST_PROJECT_DIR, ".venv", "bin")}:${process.env.PATH}`,
           }
-        : { ...process.env, MOOSE_TELEMETRY_ENABLED: "false" };
+        : { ...process.env };
 
       devProcess = spawn(CLI_PATH, ["dev"], {
-        cwd: TEST_PROJECT_DIR,
         stdio: "pipe",
+        cwd: TEST_PROJECT_DIR,
         env: devEnv,
       });
 
-      let serverOutput = "";
-      devProcess.stdout?.on("data", (data) => {
-        serverOutput += data.toString();
-        process.stdout.write(data);
-      });
-
-      devProcess.stderr?.on("data", (data) => {
-        serverOutput += data.toString();
-        process.stderr.write(data);
-      });
-
-      // Wait for server to start
       await waitForServerStart(
         devProcess,
         TIMEOUTS.SERVER_STARTUP_MS,
         SERVER_CONFIG.startupMessage,
         SERVER_CONFIG.url,
       );
-      await setTimeoutAsync(3000); // Additional wait for infrastructure setup
+      console.log("Server started, cleaning up old data...");
+      await cleanupClickhouseData();
+      console.log("Waiting for infrastructure to be ready...");
+      await waitForInfrastructureReady();
+      console.log("All components ready, starting tests...");
     });
 
     after(async function () {
       this.timeout(TIMEOUTS.CLEANUP_MS);
-
-      if (devProcess) {
-        await stopDevProcess(devProcess);
-        devProcess = null;
-      }
-
-      await cleanupDocker(TEST_PROJECT_DIR, config.appName);
-
-      // Clean up test directory
-      if (TEST_PROJECT_DIR && fs.existsSync(TEST_PROJECT_DIR)) {
-        removeTestProject(TEST_PROJECT_DIR);
-      }
+      await cleanupTestSuite(devProcess, TEST_PROJECT_DIR, config.appName, {
+        logPrefix: config.displayName,
+      });
     });
 
     it("should create tables with ON CLUSTER clauses", async function () {
@@ -382,6 +364,21 @@ const createClusterTestSuite = (config: ClusterTestConfig) => {
     });
   });
 };
+
+// Global setup to clean Docker state from previous runs (useful for local dev)
+// Github hosted runners start with a clean slate.
+before(async function () {
+  this.timeout(TIMEOUTS.GLOBAL_CLEANUP_MS);
+  await performGlobalCleanup(
+    "Running global setup for cluster tests - cleaning Docker state from previous runs...",
+  );
+});
+
+// Global cleanup to ensure no hanging processes
+after(async function () {
+  this.timeout(TIMEOUTS.GLOBAL_CLEANUP_MS);
+  await performGlobalCleanup();
+});
 
 // Test suite for Cluster Support
 describe("Cluster Support E2E Tests", function () {
