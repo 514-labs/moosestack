@@ -1,9 +1,6 @@
 import { render } from "@/components";
 
 const rawMeta = {
-  index: {
-    title: "Overview",
-  },
   __typescript__: {
     type: "separator",
     title: "Typescript",
