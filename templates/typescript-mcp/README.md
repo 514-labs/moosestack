@@ -21,47 +21,6 @@ This template shows how to:
 4. **Define data models** with ClickHouse table creation
 5. **Expose tools** that AI assistants can use via MCP
 
-## Architecture
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│ MooseStack Dev Server (Port 4000)                           │
-├─────────────────────────────────────────────────────────────┤
-│                                                             │
-│  Built-in Routes:                                           │
-│  • /mcp          - MooseStack's built-in MCP server         │
-│  • /ingest/*     - Data ingestion endpoints                 │
-│  • /admin/*      - Admin endpoints                          │
-│                                                             │
-│  Custom WebApp (this template):                             │
-│  • /tools        - Your custom MCP server                   │
-│    └─ ALL /      - Handle MCP JSON-RPC messages             │
-│                                                             │
-└─────────────────────────────────────────────────────────────┘
-         │                                    │
-         ▼                                    ▼
-   ┌──────────┐                         ┌──────────┐
-   │ClickHouse│                         │ Redpanda │
-   │  (OLAP)  │                         │ (Kafka)  │
-   └──────────┘                         └──────────┘
-```
-
-## Project Structure
-
-```
-.
-├── app/
-│   ├── index.ts              # Main entry point (exports all modules)
-│   ├── ingest/
-│   │   └── models.ts         # Data models with IngestPipeline
-│   └── apis/
-│       └── mcp.ts            # MCP server implementation
-├── package.json              # Dependencies including @modelcontextprotocol/sdk
-├── tsconfig.json             # TypeScript configuration
-├── moose.config.toml         # MooseStack infrastructure config
-└── README.md                 # This file
-```
-
 ## Key Components
 
 ### 1. Data Model (`app/ingest/models.ts`)
@@ -77,6 +36,23 @@ Implements an MCP server using `@modelcontextprotocol/sdk`:
 - Mounts at `/tools` to avoid conflict with built-in `/mcp` endpoint
 - Accesses ClickHouse via `getMooseUtils()` for query execution
 - Fresh server instance created for every request
+
+**Security Features:**
+
+- SQL query whitelist: Only SELECT, SHOW, DESCRIBE, EXPLAIN queries permitted
+- SQL query blocklist: Prevents INSERT, UPDATE, DELETE, DROP, CREATE, ALTER, TRUNCATE, etc.
+- Row limit enforcement: Results automatically capped at 100 rows maximum
+
+### 3. SQL Security (`app/apis/utils/sql.ts`)
+
+Provides SQL validation and sanitization utilities:
+
+- `validateQuery()`: Main validation function combining whitelist and blocklist checks
+- `validateQueryWhitelist()`: Ensures query starts with allowed SQL keywords
+- `validateQueryBlocklist()`: Blocks dangerous SQL operations
+- `applyLimitToQuery()`: Enforces maximum row limits on SELECT queries
+
+Uses regex-based pattern matching for ClickHouse SQL validation without external parser dependencies.
 
 ## Getting Started
 
@@ -102,17 +78,24 @@ The MCP server will be available at `http://localhost:4000/tools`. You can test 
 
 ### `query_clickhouse`
 
-Executes SQL queries against the ClickHouse database with automatic result limiting.
+Executes SQL queries against the ClickHouse database with security validation and automatic result limiting.
 
 **Input Parameters:**
 
-- `query` (required): SQL query to execute against ClickHouse
+- `query` (required): SQL query to execute against ClickHouse (must be SELECT, SHOW, DESCRIBE, or EXPLAIN)
 - `limit` (optional): Maximum number of rows to return (default: 100, max: 100)
 
 **Output:**
 
 - `rows`: Array of row objects containing query results
 - `rowCount`: Number of rows returned
+
+**Security:**
+
+- Only read-only queries are allowed (SELECT, SHOW, DESCRIBE, EXPLAIN)
+- Write operations (INSERT, UPDATE, DELETE) are blocked
+- DDL operations (DROP, CREATE, ALTER, TRUNCATE) are blocked
+- Results are automatically limited to 100 rows maximum
 
 ## Using with Claude Code
 
@@ -130,16 +113,30 @@ Once connected, you can ask Claude Code questions like:
 
 Claude Code will automatically use the `query_clickhouse` tool to execute the appropriate SQL queries.
 
-### ⚠️ Security Warning
+## Security Features
 
-**This is a non-production example.** The current implementation has no access controls and allows any SQL query to be executed, including destructive operations like `DROP TABLE` or `DELETE`. A production-ready version should include:
+This template implements several security measures for safe database querying:
 
-- Authentication and authorization
-- Query validation (read-only operations only)
-- Rate limiting
-- Query timeouts
-- Audit logging
-- Proper error handling without exposing internal details
+### ✅ Implemented
+
+- **SQL Query Validation**: Whitelist/blocklist validation ensures only safe, read-only queries
+  - Allowed: SELECT, SHOW, DESCRIBE, EXPLAIN
+  - Blocked: INSERT, UPDATE, DELETE, DROP, CREATE, ALTER, TRUNCATE, GRANT, REVOKE, EXECUTE, CALL
+- **Row Limiting**: Results automatically capped at 100 rows to prevent excessive data transfer
+- **Error Handling**: Security errors returned through MCP protocol without exposing internals
+
+### ⚠️ Production Considerations
+
+Before deploying to production, consider adding:
+
+- **Authentication & Authorization**: JWT authentication framework is in place (see TODO in mcp.ts)
+- **Rate Limiting**: Protect against abuse and DoS attacks
+- **Query Timeouts**: Prevent long-running queries from consuming resources
+- **Audit Logging**: Track who executed which queries and when
+- **IP Whitelisting**: Restrict access to known clients
+- **TLS/HTTPS**: Encrypt data in transit
+
+The current implementation provides a secure foundation for read-only database access but should be enhanced with additional production-grade features based on your deployment requirements.
 
 ## Testing Data Ingestion
 
