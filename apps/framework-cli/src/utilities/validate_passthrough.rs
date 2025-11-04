@@ -397,7 +397,20 @@ impl<'de, S: SerializeValue> Visitor<'de> for &mut ValueVisitor<'_, S> {
                 }
                 Err(Error::invalid_type(serde::de::Unexpected::Str(v), &self))
             }
-            ColumnType::String | ColumnType::FixedString { .. } => {
+            ColumnType::String => {
+                self.write_to.serialize_value(v).map_err(Error::custom)
+            }
+            ColumnType::FixedString { length } => {
+                let byte_length = v.len() as u64;
+                if byte_length > *length {
+                    return Err(E::custom(format!(
+                        "FixedString({}) value exceeds maximum length: got {} bytes, max {} bytes at {}",
+                        length,
+                        byte_length,
+                        length,
+                        self.get_path()
+                    )));
+                }
                 self.write_to.serialize_value(v).map_err(Error::custom)
             }
             ColumnType::DateTime { .. } => {
