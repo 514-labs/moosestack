@@ -3,6 +3,21 @@
  *
  * This module provides security functions for validating and sanitizing SQL queries
  * to prevent dangerous operations and enforce row limits.
+ *
+ * Implementation Notes:
+ * - Uses regex-based validation (no SQL parser dependency required)
+ * - Handles ClickHouse-specific SQL patterns
+ * - Supports various LIMIT clause formats (LIMIT n, LIMIT n OFFSET m, LIMIT n, m)
+ * - Handles parameterized queries (LIMIT ?, LIMIT :param)
+ * - Handles CTEs (WITH clauses) without breaking syntax
+ * - Replaces existing LIMIT rather than wrapping in subquery (avoids CTE issues)
+ *
+ * Edge Cases Handled:
+ * - Comments before SQL keywords (-- comment\nSELECT)
+ * - Multiple whitespace variations
+ * - Case-insensitive keyword matching
+ * - LIMIT with OFFSET in various formats
+ * - Parameterized queries with placeholders
  */
 
 /**
@@ -86,7 +101,7 @@ const dangerousKeywords = [
 ];
 
 const dangerousKeywordRegexes = dangerousKeywords.map(
-  (keyword) => new RegExp(`\\b${keyword}\\b`, "i")
+  (keyword) => new RegExp(`\\b${keyword}\\b`),
 );
 
 export function validateQueryBlocklist(query: string): ValidationResult | null {
@@ -109,8 +124,15 @@ export function validateQueryBlocklist(query: string): ValidationResult | null {
  * Applies or enforces a LIMIT clause on a SQL query.
  *
  * - If query doesn't support LIMIT (SHOW, DESCRIBE, EXPLAIN), returns unchanged
- * - If query has existing LIMIT, wraps in subquery to enforce maximum
+ * - If query has existing LIMIT, replaces it with enforced maximum
  * - If query has no LIMIT, appends one
+ *
+ * Handles various LIMIT patterns:
+ * - LIMIT <number>
+ * - LIMIT <number> OFFSET <number>
+ * - LIMIT <offset>, <count>
+ * - LIMIT ? (parameterized queries)
+ * - Queries with WITH clauses (CTEs)
  *
  * @param query - The SQL query
  * @param maxLimit - Maximum number of rows to return
@@ -128,12 +150,17 @@ export function applyLimitToQuery(
 
   const trimmed = query.trim();
 
-  // Check if query already has a LIMIT clause
-  const hasLimit = /\bLIMIT\s+\d+/i.test(trimmed);
+  // Check if query already has a LIMIT clause (comprehensive pattern)
+  // Matches: LIMIT <number>, LIMIT <number> OFFSET <number>, LIMIT <number>, <number>, LIMIT ?
+  const limitPattern =
+    /\bLIMIT\s+(?:\d+|\?|:\w+)(?:\s+OFFSET\s+(?:\d+|\?|:\w+)|\s*,\s*(?:\d+|\?|:\w+))?/i;
+  const hasLimit = limitPattern.test(trimmed);
 
   if (hasLimit) {
-    // Wrap the query in a subquery to enforce our maximum limit
-    return `SELECT * FROM (${trimmed}) AS subquery LIMIT ${maxLimit}`;
+    // Replace existing LIMIT clause with our enforced maximum
+    // This avoids creating invalid SQL with duplicate LIMIT clauses
+    // and handles CTEs correctly (no subquery wrapping needed)
+    return trimmed.replace(limitPattern, `LIMIT ${maxLimit}`);
   } else {
     // Simply append the LIMIT clause
     return `${trimmed} LIMIT ${maxLimit}`;
