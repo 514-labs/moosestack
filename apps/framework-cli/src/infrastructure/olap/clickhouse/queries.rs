@@ -2018,6 +2018,7 @@ fn build_summing_merge_tree_ddl(columns: &Option<Vec<String>>) -> String {
 fn build_replication_params(
     keeper_path: &Option<String>,
     replica_name: &Option<String>,
+    cluster_name: &Option<String>,
     engine_name: &str,
     table_name: &str,
     is_dev: bool,
@@ -2027,17 +2028,19 @@ fn build_replication_params(
             Ok(vec![format!("'{}'", path), format!("'{}'", name)])
         }
         (None, None) => {
-            if is_dev {
-                // In dev mode, inject default parameters for local ClickHouse
+            // Auto-inject parameters if cluster is defined, otherwise use defaults
+            // This supports both dev (local ClickHouse) and prod (with clusters)
+            if cluster_name.is_some() || is_dev {
+                // In dev mode OR when cluster is defined, inject default parameters
                 // Use table name to ensure unique paths per table, avoiding conflicts
-                // {shard}, {replica}, and {database} macros are configured in docker-compose
+                // {shard}, {replica}, and {database} macros are configured in docker-compose or cluster
                 // Note: {uuid} macro only works with ON CLUSTER queries, so we use table name instead
                 Ok(vec![
                     format!("'/clickhouse/tables/{{database}}/{{shard}}/{}'", table_name),
                     "'{replica}'".to_string(),
                 ])
             } else {
-                // In production, return empty parameters - let ClickHouse handle defaults
+                // In production without cluster, return empty parameters
                 // This works for ClickHouse Cloud and properly configured servers
                 Ok(vec![])
             }
@@ -2055,12 +2058,14 @@ fn build_replication_params(
 fn build_replicated_merge_tree_ddl(
     keeper_path: &Option<String>,
     replica_name: &Option<String>,
+    cluster_name: &Option<String>,
     table_name: &str,
     is_dev: bool,
 ) -> Result<String, ClickhouseError> {
     let params = build_replication_params(
         keeper_path,
         replica_name,
+        cluster_name,
         "ReplicatedMergeTree",
         table_name,
         is_dev,
@@ -2069,9 +2074,11 @@ fn build_replicated_merge_tree_ddl(
 }
 
 /// Generate DDL for ReplicatedReplacingMergeTree engine
+#[allow(clippy::too_many_arguments)]
 fn build_replicated_replacing_merge_tree_ddl(
     keeper_path: &Option<String>,
     replica_name: &Option<String>,
+    cluster_name: &Option<String>,
     ver: &Option<String>,
     is_deleted: &Option<String>,
     order_by_empty: bool,
@@ -2094,6 +2101,7 @@ fn build_replicated_replacing_merge_tree_ddl(
     let mut params = build_replication_params(
         keeper_path,
         replica_name,
+        cluster_name,
         "ReplicatedReplacingMergeTree",
         table_name,
         is_dev,
@@ -2116,12 +2124,14 @@ fn build_replicated_replacing_merge_tree_ddl(
 fn build_replicated_aggregating_merge_tree_ddl(
     keeper_path: &Option<String>,
     replica_name: &Option<String>,
+    cluster_name: &Option<String>,
     table_name: &str,
     is_dev: bool,
 ) -> Result<String, ClickhouseError> {
     let params = build_replication_params(
         keeper_path,
         replica_name,
+        cluster_name,
         "ReplicatedAggregatingMergeTree",
         table_name,
         is_dev,
@@ -2136,6 +2146,7 @@ fn build_replicated_aggregating_merge_tree_ddl(
 fn build_replicated_summing_merge_tree_ddl(
     keeper_path: &Option<String>,
     replica_name: &Option<String>,
+    cluster_name: &Option<String>,
     columns: &Option<Vec<String>>,
     table_name: &str,
     is_dev: bool,
@@ -2143,6 +2154,7 @@ fn build_replicated_summing_merge_tree_ddl(
     let mut params = build_replication_params(
         keeper_path,
         replica_name,
+        cluster_name,
         "ReplicatedSummingMergeTree",
         table_name,
         is_dev,
@@ -2182,7 +2194,13 @@ pub fn create_table_query(
         ClickhouseEngine::ReplicatedMergeTree {
             keeper_path,
             replica_name,
-        } => build_replicated_merge_tree_ddl(keeper_path, replica_name, &table.name, is_dev)?,
+        } => build_replicated_merge_tree_ddl(
+            keeper_path,
+            replica_name,
+            &table.cluster_name,
+            &table.name,
+            is_dev,
+        )?,
         ClickhouseEngine::ReplicatedReplacingMergeTree {
             keeper_path,
             replica_name,
@@ -2191,6 +2209,7 @@ pub fn create_table_query(
         } => build_replicated_replacing_merge_tree_ddl(
             keeper_path,
             replica_name,
+            &table.cluster_name,
             ver,
             is_deleted,
             table.order_by.is_empty(),
@@ -2203,6 +2222,7 @@ pub fn create_table_query(
         } => build_replicated_aggregating_merge_tree_ddl(
             keeper_path,
             replica_name,
+            &table.cluster_name,
             &table.name,
             is_dev,
         )?,
@@ -2213,6 +2233,7 @@ pub fn create_table_query(
         } => build_replicated_summing_merge_tree_ddl(
             keeper_path,
             replica_name,
+            &table.cluster_name,
             columns,
             &table.name,
             is_dev,
@@ -4531,5 +4552,138 @@ ENGINE = S3Queue('s3://my-bucket/data/*.csv', NOSIGN, 'CSV')"#;
 
         // Should still have DROP TABLE
         assert!(query.contains("DROP TABLE"));
+    }
+
+    #[test]
+    fn test_replication_params_dev_no_cluster_no_keeper_args_auto_injects() {
+        let result = build_replication_params(
+            &None,
+            &None,
+            &None,
+            "ReplicatedMergeTree",
+            "test_table",
+            true, // is_dev
+        );
+
+        assert!(result.is_ok());
+        let params = result.unwrap();
+        // Should auto-inject params in dev mode
+        assert_eq!(params.len(), 2);
+        assert!(params[0].contains("/clickhouse/tables/"));
+        assert!(params[1].contains("{replica}"));
+    }
+
+    #[test]
+    fn test_replication_params_dev_with_cluster_no_keeper_args_succeeds() {
+        let result = build_replication_params(
+            &None,
+            &None,
+            &Some("test_cluster".to_string()),
+            "ReplicatedMergeTree",
+            "test_table",
+            true, // is_dev
+        );
+
+        assert!(result.is_ok());
+        let params = result.unwrap();
+        // Should auto-inject params
+        assert_eq!(params.len(), 2);
+        assert!(params[0].contains("/clickhouse/tables/"));
+        assert!(params[1].contains("{replica}"));
+    }
+
+    #[test]
+    fn test_replication_params_dev_no_cluster_with_keeper_args_succeeds() {
+        let result = build_replication_params(
+            &Some("/clickhouse/tables/{database}/{table}".to_string()),
+            &Some("{replica}".to_string()),
+            &None,
+            "ReplicatedMergeTree",
+            "test_table",
+            true, // is_dev
+        );
+
+        assert!(result.is_ok());
+        let params = result.unwrap();
+        assert_eq!(params.len(), 2);
+        assert_eq!(params[0], "'/clickhouse/tables/{database}/{table}'");
+        assert_eq!(params[1], "'{replica}'");
+    }
+
+    #[test]
+    fn test_replication_params_prod_no_cluster_no_keeper_args_succeeds() {
+        let result = build_replication_params(
+            &None,
+            &None,
+            &None,
+            "ReplicatedMergeTree",
+            "test_table",
+            false, // is_dev = false (production)
+        );
+
+        assert!(result.is_ok());
+        let params = result.unwrap();
+        // Should return empty params for ClickHouse Cloud
+        assert_eq!(params.len(), 0);
+    }
+
+    #[test]
+    fn test_replication_params_dev_with_cluster_and_keeper_args_succeeds() {
+        let result = build_replication_params(
+            &Some("/clickhouse/tables/{database}/{table}".to_string()),
+            &Some("{replica}".to_string()),
+            &Some("test_cluster".to_string()),
+            "ReplicatedMergeTree",
+            "test_table",
+            true, // is_dev
+        );
+
+        assert!(result.is_ok());
+        let params = result.unwrap();
+        // Should use explicit params, not auto-inject
+        assert_eq!(params.len(), 2);
+        assert_eq!(params[0], "'/clickhouse/tables/{database}/{table}'");
+        assert_eq!(params[1], "'{replica}'");
+    }
+
+    #[test]
+    fn test_replication_params_prod_with_cluster_no_keeper_args_auto_injects() {
+        let result = build_replication_params(
+            &None,
+            &None,
+            &Some("test_cluster".to_string()),
+            "ReplicatedMergeTree",
+            "test_table",
+            false, // is_dev = false (production)
+        );
+
+        assert!(result.is_ok());
+        let params = result.unwrap();
+        // Should auto-inject params when cluster is defined, even in prod
+        assert_eq!(params.len(), 2);
+        assert!(params[0].contains("/clickhouse/tables/"));
+        assert!(params[1].contains("{replica}"));
+    }
+
+    #[test]
+    fn test_replication_params_mismatched_keeper_args_fails() {
+        // Only keeper_path, no replica_name
+        let result = build_replication_params(
+            &Some("/clickhouse/tables/{database}/{table}".to_string()),
+            &None,
+            &Some("test_cluster".to_string()),
+            "ReplicatedMergeTree",
+            "test_table",
+            true,
+        );
+
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        match err {
+            ClickhouseError::InvalidParameters { message } => {
+                assert!(message.contains("requires both keeper_path and replica_name"));
+            }
+            _ => panic!("Expected InvalidParameters error"),
+        }
     }
 }
