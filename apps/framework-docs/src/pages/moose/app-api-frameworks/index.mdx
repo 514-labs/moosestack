@@ -14,8 +14,8 @@ MooseStack provides flexible approaches for building HTTP APIs to expose your da
 
 These framework integrations give you two complementary integration paths:
 
-- **Embed supported frameworks inside your Moose project.** Mount Express, Koa, Fastify, or raw Node.js with `WebApp` so Moose deploys everything together and injects auth, `client`, and `sql` helpers on every request.
-- **Call Moose from any framework using the client.** Keep an existing app (Next.js, Rails, etc.) in its current runtime and use the Moose TypeScript or Python client to query ClickHouse or trigger workflows.
+- **Embed supported frameworks inside your MooseStack project.** Mount Express, Koa, Fastify, or raw Node.js with `WebApp` so MooseStack deploys everything together and injects auth, `client`, and `sql` helpers on every request.
+- **Call MooseStack from any framework using the client.** Keep an existing app (Next.js, Rails, etc.) in its current runtime and use the MooseStack TypeScript or Python client to query ClickHouse or trigger workflows.
 
 ## Overview
 
@@ -30,19 +30,19 @@ Moose's built-in [`Api` class](/moose/apis/analytics-api) provides simple GET en
 - Minimal setup and boilerplate
 
 
-### Embed a supported framework inside Moose
+### Embed a supported framework inside a MooseStack project
 
-Use the `WebApp` class when you want Moose to host your framework alongside tables, streams, and workflows.
+Use the `WebApp` class to mount your framework in your MooseStack project alongside tables, streams, and workflows.
 
 **Why embed the framework:**
-- One deployment pipeline managed by the Moose CLI (dev hot reload + production config)
-- Access Moose utilities (`client`, `sql`, `jwt`) in every handler through `getMooseUtils`
-- Share auth, logging, and observability defaults with the rest of your Moose modules
-- Compose Moose APIs and framework routes under the same hostname
+- One deployment pipeline managed by the MooseStack CLI (dev hot reload + production config)
+- Access MooseStack utilities (`client`, `sql`, `jwt`) in every handler through `getMooseUtils`
+- Optionally share auth, logging, and observability defaults with the rest of your MooseStack modules
+- Compose MooseStack APIs and framework routes under the same hostname
 
-### Use the Moose client from any framework
+### Use the MooseStack client from any framework
 
-If you already have an application server, call Moose directly with the client SDKs—no Moose deployment required. Works great for Next.js, Rails, Python microservices, or anything else that can make HTTP requests.
+If you already have an application server, call MooseStack directly with the client SDKs—no MooseStack deployment required. Works great for Next.js, Rails, Python microservices, or anything else that can make HTTP requests.
 
 Here's the client pattern:
 
@@ -91,18 +91,18 @@ def list_users(limit: int = 25):
 ```
 </Python>
 
-<Callout type="info" title="Read data with the Moose client">
+<Callout type="info" title="Read data with the MooseStack client">
   For more examples, see the [Querying Data guide](/moose/olap/read-data).
 </Callout>
 
 ## Supported Frameworks
 
 <Callout type="info" title="Need simple analytics endpoints?">
-  For basic GET endpoints that query your OLAP tables, Moose provides built-in [Analytics APIs](/moose/apis/analytics-api) using the `Api` class.
+  For basic GET endpoints that query your OLAP tables, MooseStack provides built-in [Analytics APIs](/moose/apis/analytics-api) using the `Api` class.
 </Callout>
 
 <Callout type="warning" title="Official Moose WebApp support">
-  `WebApp` currently ships adapters for [Express](/moose/app-api-frameworks/express), [Koa](/moose/app-api-frameworks/typescript-koa), [Fastify](/moose/app-api-frameworks/typescript-fastify), [raw Node.js](/moose/app-api-frameworks/typescript-raw-nodejs), and [FastAPI](/moose/app-api-frameworks/fastapi). Frameworks like Next.js can call Moose today through the client pattern above.
+  `WebApp` currently ships adapters for [Express](/moose/app-api-frameworks/express), [Koa](/moose/app-api-frameworks/typescript-koa), [Fastify](/moose/app-api-frameworks/typescript-fastify), [raw Node.js](/moose/app-api-frameworks/typescript-raw-nodejs), and [FastAPI](/moose/app-api-frameworks/fastapi). Frameworks like Next.js can call MooseStack today through the client pattern above.
 </Callout>
 
 ### TypeScript
@@ -188,12 +188,12 @@ Each WebApp must specify a unique mount path where it will be accessible. Mount 
 
 - Cannot be `/` (root path)
 - Cannot end with a trailing slash
-- Cannot start with reserved paths: `/admin`, `/api`, `/consumption`, `/health`, `/ingest`, `/moose`, `/ready`, `/workflows`
+- Cannot start with reserved paths: `/admin`, `/api`, `/consumption`, `/health`, `/ingest`, `/mcp`, `/moose`, `/ready`, `/workflows`
 
 **Valid:** `/myapi`, `/v1/analytics`, `/custom/endpoint`
 
 **Invalid:** `/`, `/myapi/`, `/api/myendpoint`
 
 <Callout type="info" title="Prefer Moose-managed APIs?">
-  Moose's native `Api` class provides built-in validation and OpenAPI documentation. See the [Analytics API documentation](/moose/apis/analytics-api) for a guided walkthrough.
+  MooseStack's native `Api` class provides built-in validation and OpenAPI documentation. See the [Analytics API documentation](/moose/apis/analytics-api) for a guided walkthrough.
 </Callout>
