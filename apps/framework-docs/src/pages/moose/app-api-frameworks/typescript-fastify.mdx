@@ -1,0 +1,384 @@
+---
+title: Fastify with MooseStack
+description: Use Fastify framework with MooseStack
+---
+
+import { Callout } from "@/components";
+
+# Fastify with MooseStack
+
+Mount Fastify applications within your MooseStack project using the `WebApp` class. Fastify is a fast and low overhead web framework with powerful schema-based validation.
+
+<Callout type="info" title="Choose your integration path">
+  - Already running Fastify elsewhere? Keep it outside your MooseStack project and query data with the MooseStack client. The [Querying Data guide](/moose/olap/read-data) walks through the SDK.  
+  - Want to mount Fastify in your MooseStack project? Follow the setup below with `WebApp` for unified deployment and access to MooseStack utilities.
+</Callout>
+
+## Basic Example
+
+```ts filename="app/apis/fastifyApp.ts" copy
+import Fastify from "fastify";
+import { WebApp, getMooseUtils } from "@514labs/moose-lib";
+import { MyTable } from "../tables/MyTable";
+
+const app = Fastify({ logger: true });
+
+app.get("/health", async (request, reply) => {
+  return { status: "ok" };
+});
+
+app.get("/data", async (request, reply) => {
+  const moose = getMooseUtils(request.raw);
+  if (!moose) {
+    reply.code(500);
+    return { error: "Moose utilities not available" };
+  }
+
+  const { client, sql } = moose;
+  const limit = parseInt((request.query as any).limit || "10");
+
+  try {
+    const query = sql`
+      SELECT 
+        ${MyTable.columns.id},
+        ${MyTable.columns.name},
+        ${MyTable.columns.createdAt}
+      FROM ${MyTable}
+      ORDER BY ${MyTable.columns.createdAt} DESC
+      LIMIT ${limit}
+    `;
+    const result = await client.query.execute(query);
+    return await result.json();
+  } catch (error) {
+    reply.code(500);
+    return { error: String(error) };
+  }
+});
+
+// Must call ready() before passing to WebApp
+await app.ready();
+
+export const fastifyApp = new WebApp("fastifyApp", app, {
+  mountPath: "/fastify",
+  metadata: { description: "Fastify API" }
+});
+```
+
+**Access your API:**
+- `GET http://localhost:4000/fastify/health`
+- `GET http://localhost:4000/fastify/data?limit=20`
+
+<Callout type="warning">
+Fastify apps must call `.ready()` before passing to WebApp.
+</Callout>
+
+## Complete Example with Schema Validation
+
+```ts filename="app/apis/advancedFastifyApp.ts" copy
+import Fastify, { FastifyRequest } from "fastify";
+import { WebApp, getMooseUtils } from "@514labs/moose-lib";
+import { UserEvents } from "../tables/UserEvents";
+
+const app = Fastify({
+  logger: true,
+  ajv: {
+    customOptions: {
+      removeAdditional: "all",
+      coerceTypes: true
+    }
+  }
+});
+
+// Schema definitions
+const getUserEventsSchema = {
+  querystring: {
+    type: "object",
+    properties: {
+      limit: { type: "integer", minimum: 1, maximum: 100, default: 10 },
+      eventType: { type: "string" }
+    }
+  },
+  params: {
+    type: "object",
+    required: ["userId"],
+    properties: {
+      userId: { type: "string", pattern: "^[a-zA-Z0-9-]+$" }
+    }
+  },
+  response: {
+    200: {
+      type: "object",
+      properties: {
+        userId: { type: "string" },
+        count: { type: "integer" },
+        events: { type: "array" }
+      }
+    }
+  }
+};
+
+// GET with schema validation
+app.get<{
+  Params: { userId: string };
+  Querystring: { limit?: number; eventType?: string };
+}>("/users/:userId/events", {
+  schema: getUserEventsSchema
+}, async (request, reply) => {
+  const moose = getMooseUtils(request.raw);
+  if (!moose) {
+    reply.code(500);
+    return { error: "Moose utilities not available" };
+  }
+
+  const { client, sql } = moose;
+  const { userId } = request.params;
+  const { limit = 10, eventType } = request.query;
+
+  const cols = UserEvents.columns;
+  const query = sql`
+    SELECT
+      ${cols.id},
+      ${cols.event_type},
+      ${cols.timestamp}
+    FROM ${UserEvents}
+    WHERE ${cols.user_id} = ${userId}
+      ${eventType ? sql`AND ${cols.event_type} = ${eventType}` : sql``}
+    ORDER BY ${cols.timestamp} DESC
+    LIMIT ${limit}
+  `;
+
+  const result = await client.query.execute(query);
+  const events = await result.json();
+
+  return {
+    userId,
+    count: events.length,
+    events
+  };
+});
+
+// POST with schema validation
+const createEventSchema = {
+  body: {
+    type: "object",
+    required: ["eventType", "data"],
+    properties: {
+      eventType: { type: "string", minLength: 1 },
+      data: { type: "object" }
+    }
+  }
+};
+
+app.post<{
+  Params: { userId: string };
+  Body: { eventType: string; data: object };
+}>("/users/:userId/events", {
+  schema: createEventSchema
+}, async (request, reply) => {
+  const { userId } = request.params;
+  const { eventType, data } = request.body;
+
+  // Handle POST logic
+  return {
+    success: true,
+    userId,
+    eventType,
+    data
+  };
+});
+
+// Protected route with JWT
+app.get("/protected", async (request, reply) => {
+  const moose = getMooseUtils(request.raw);
+
+  if (!moose?.jwt) {
+    reply.code(401);
+    return { error: "Unauthorized" };
+  }
+
+  return {
+    message: "Authenticated",
+    userId: moose.jwt.sub
+  };
+});
+
+// Error handler
+app.setErrorHandler((error, request, reply) => {
+  request.log.error(error);
+  reply.code(500).send({
+    error: "Internal Server Error",
+    message: error.message
+  });
+});
+
+await app.ready();
+
+export const advancedFastifyApp = new WebApp("advancedFastify", app, {
+  mountPath: "/api/v1",
+  metadata: {
+    description: "Advanced Fastify API with schema validation"
+  }
+});
+```
+
+## Accessing Moose Utilities
+
+Use `request.raw` to access the underlying Node.js request:
+
+```ts
+const moose = getMooseUtils(request.raw);
+if (!moose) {
+  reply.code(500);
+  return { error: "Utilities not available" };
+}
+
+const { client, sql, jwt } = moose;
+```
+
+## Plugins and Decorators
+
+Fastify plugins work seamlessly:
+
+```ts
+import Fastify from "fastify";
+import cors from "@fastify/cors";
+import helmet from "@fastify/helmet";
+import rateLimit from "@fastify/rate-limit";
+import { MyTable } from "../tables/MyTable";
+
+const app = Fastify({ logger: true });
+
+// CORS
+await app.register(cors, {
+  origin: true
+});
+
+// Security headers
+await app.register(helmet);
+
+// Rate limiting
+await app.register(rateLimit, {
+  max: 100,
+  timeWindow: "15 minutes"
+});
+
+// Custom decorator
+app.decorate("utility", {
+  formatResponse: (data: any) => ({
+    success: true,
+    timestamp: new Date().toISOString(),
+    data
+  })
+});
+
+app.get("/data", async (request, reply) => {
+  const moose = getMooseUtils(request.raw);
+  if (!moose) {
+    reply.code(500);
+    return { error: "Utilities not available" };
+  }
+
+  const { client, sql } = moose;
+  const result = await client.query.execute(sql`
+    SELECT 
+      ${MyTable.columns.id},
+      ${MyTable.columns.name},
+      ${MyTable.columns.status}
+    FROM ${MyTable}
+    WHERE ${MyTable.columns.status} = 'active'
+    LIMIT 10
+  `);
+  const data = await result.json();
+
+  return app.utility.formatResponse(data);
+});
+
+await app.ready();
+```
+
+## Type-Safe Routes
+
+Leverage TypeScript for type-safe routes:
+
+```ts
+interface UserQueryParams {
+  limit?: number;
+  offset?: number;
+  status?: "active" | "inactive";
+}
+
+interface UserResponse {
+  id: string;
+  name: string;
+  email: string;
+}
+
+app.get<{
+  Querystring: UserQueryParams;
+  Reply: UserResponse[]
+}>("/users", async (request, reply) => {
+  const { limit = 10, offset = 0, status } = request.query;
+
+  // TypeScript knows the shape of query params
+  const moose = getMooseUtils(request.raw);
+  // ... query logic
+
+  // Return type is checked
+  return [
+    { id: "1", name: "John", email: "john@example.com" }
+  ];
+});
+```
+
+## WebApp Configuration
+
+```ts
+new WebApp(name, app, config)
+```
+
+**WebAppConfig:**
+```ts
+interface WebAppConfig {
+  mountPath: string;
+  metadata?: { description?: string };
+  injectMooseUtils?: boolean; // default: true
+}
+```
+
+## Best Practices
+
+1. **Call .ready() before WebApp**: Always await `app.ready()` before creating WebApp
+2. **Use request.raw for utilities**: Access Moose utilities via `getMooseUtils(request.raw)`
+3. **Define schemas**: Use Fastify's JSON Schema validation for request/response
+4. **Type your routes**: Use TypeScript generics for type-safe route handlers
+5. **Leverage plugins**: Use Fastify's rich plugin ecosystem
+6. **Handle errors**: Use `setErrorHandler` for global error handling
+7. **Enable logging**: Use Fastify's built-in logger for debugging
+
+## Troubleshooting
+
+### "Moose utilities not available"
+
+**Solution:** Use `request.raw` to access the underlying request:
+```ts
+const moose = getMooseUtils(request.raw); // Not request!
+```
+
+### App not responding after mounting
+
+**Solution:** Ensure you called `.ready()`:
+```ts
+await app.ready(); // Must call before WebApp
+export const fastifyApp = new WebApp("name", app, config);
+```
+
+### Schema validation errors
+
+**Solution:** Match your TypeScript types with JSON schemas:
+```ts
+// JSON Schema
+{ querystring: { type: "object", properties: { limit: { type: "integer" } } } }
+
+// TypeScript type
+interface Query { limit?: number }
+```

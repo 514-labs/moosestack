@@ -2532,6 +2532,7 @@ pub fn basic_field_type_to_string(
     // Blowing out match statements here in case we need to customize the output string for some types.
     match field_type {
         ClickHouseColumnType::String => Ok(field_type.to_string()),
+        ClickHouseColumnType::FixedString(n) => Ok(format!("FixedString({n})")),
         ClickHouseColumnType::Boolean => Ok(field_type.to_string()),
         ClickHouseColumnType::ClickhouseInt(int) => match int {
             ClickHouseInt::Int8 => Ok(int.to_string()),
@@ -2860,6 +2861,25 @@ mod tests {
         };
         let sql4 = basic_field_type_to_string(&col_type4).unwrap();
         assert_eq!(sql4, "SimpleAggregateFunction(any, Nullable(Float64))");
+    }
+
+    #[test]
+    fn test_fixedstring_ddl_generation() {
+        // Test FixedString(16)
+        let col_type = ClickHouseColumnType::FixedString(16);
+        let result = basic_field_type_to_string(&col_type).unwrap();
+        assert_eq!(result, "FixedString(16)");
+
+        // Test FixedString(32)
+        let col_type = ClickHouseColumnType::FixedString(32);
+        let result = basic_field_type_to_string(&col_type).unwrap();
+        assert_eq!(result, "FixedString(32)");
+
+        // Test Nullable(FixedString(16))
+        let col_type =
+            ClickHouseColumnType::Nullable(Box::new(ClickHouseColumnType::FixedString(16)));
+        let result = basic_field_type_to_string(&col_type).unwrap();
+        assert_eq!(result, "Nullable(FixedString(16))");
     }
 
     #[test]
