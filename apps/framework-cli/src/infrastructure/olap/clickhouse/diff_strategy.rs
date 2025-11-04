@@ -267,7 +267,7 @@ impl TableDiffStrategy for ClickHouseTableDiffStrategy {
         // Check if ORDER BY has changed
         let order_by_changed = order_by_change.before != order_by_change.after;
         if order_by_changed {
-            log::debug!(
+            log::warn!(
                 "ClickHouse: ORDER BY changed for table '{}', requiring drop+create",
                 before.name
             );
@@ -306,7 +306,7 @@ impl TableDiffStrategy for ClickHouseTableDiffStrategy {
 
         // Check if PARTITION BY has changed
         if before.partition_by != after.partition_by {
-            log::debug!(
+            log::warn!(
                 "ClickHouse: PARTITION BY changed for table '{}', requiring drop+create",
                 before.name
             );
@@ -321,8 +321,11 @@ impl TableDiffStrategy for ClickHouseTableDiffStrategy {
         // Check if primary key structure has changed
         let before_primary_keys = before.primary_key_columns();
         let after_primary_keys = after.primary_key_columns();
-        if before_primary_keys != after_primary_keys {
-            log::debug!(
+        if before_primary_keys != after_primary_keys
+            // S3 allows specifying PK, but that information is not in system.columns
+            && after.engine.as_ref().is_none_or(|e| e.is_merge_tree_family())
+        {
+            log::warn!(
                 "ClickHouse: Primary key structure changed for table '{}', requiring drop+create",
                 before.name
             );
@@ -352,7 +355,7 @@ impl TableDiffStrategy for ClickHouseTableDiffStrategy {
 
         // Check if engine has changed (using hash comparison when available)
         if engine_changed {
-            log::debug!(
+            log::warn!(
                 "ClickHouse: engine changed for table '{}', requiring drop+create",
                 before.name
             );
@@ -385,7 +388,7 @@ impl TableDiffStrategy for ClickHouseTableDiffStrategy {
                 let after_value = after_settings.get(*readonly_setting);
 
                 if before_value != after_value {
-                    log::debug!(
+                    log::warn!(
                         "ClickHouse: Readonly setting '{}' changed for table '{}' (from {:?} to {:?}), requiring drop+create",
                         readonly_setting,
                         before.name,
@@ -417,7 +420,7 @@ impl TableDiffStrategy for ClickHouseTableDiffStrategy {
         if !column_changes.is_empty() {
             if let Some(engine) = &before.engine {
                 if matches!(engine, ClickhouseEngine::S3Queue { .. }) {
-                    log::debug!(
+                    log::warn!(
                         "ClickHouse: S3Queue table '{}' has column changes, requiring drop+create (S3Queue doesn't support ALTER TABLE for columns)",
                         before.name
                     );

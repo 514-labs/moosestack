@@ -680,6 +680,23 @@ impl PartialInfrastructureMap {
                     // Because they are modifiable and won't cause issues if not set
                 }
 
+                // Buffer, S3Queue, Distributed, and other non-MergeTree engines don't support PRIMARY KEY
+                // When engine is None, ClickHouse defaults to MergeTree which does support it
+                let supports_primary_key = engine.as_ref().is_none_or(|e| e.supports_order_by());
+                // Clear primary_key flag from columns if engine doesn't support it
+                let columns = if supports_primary_key {
+                    partial_table.columns.clone()
+                } else {
+                    partial_table
+                        .columns
+                        .iter()
+                        .map(|col| Column {
+                            primary_key: false,
+                            ..col.clone()
+                        })
+                        .collect()
+                };
+
                 // Extract table-level TTL from partial table
                 let table_ttl_setting = partial_table.ttl.clone();
 
@@ -689,7 +706,7 @@ impl PartialInfrastructureMap {
                         .map_or(partial_table.name.clone(), |version| {
                             format!("{}_{}", partial_table.name, version.as_suffix())
                         }),
-                    columns: partial_table.columns.clone(),
+                    columns,
                     order_by: partial_table.order_by.clone(),
                     partition_by: partial_table.partition_by.clone(),
                     sample_by: partial_table.sample_by.clone(),

@@ -881,18 +881,7 @@ impl ClickhouseEngine {
     /// MergeTree family and S3 support ORDER BY
     /// Buffer, S3Queue, and Distributed do NOT support ORDER BY
     pub fn supports_order_by(&self) -> bool {
-        matches!(
-            self,
-            ClickhouseEngine::MergeTree
-                | ClickhouseEngine::ReplacingMergeTree { .. }
-                | ClickhouseEngine::AggregatingMergeTree
-                | ClickhouseEngine::SummingMergeTree { .. }
-                | ClickhouseEngine::ReplicatedMergeTree { .. }
-                | ClickhouseEngine::ReplicatedReplacingMergeTree { .. }
-                | ClickhouseEngine::ReplicatedAggregatingMergeTree { .. }
-                | ClickhouseEngine::ReplicatedSummingMergeTree { .. }
-                | ClickhouseEngine::S3 { .. }
-        )
+        self.is_merge_tree_family() || matches!(self, ClickhouseEngine::S3 { .. })
     }
 
     /// Convert engine to string for proto storage (no sensitive data)
@@ -2401,8 +2390,8 @@ pub fn create_table_query(
     // - S3: Supports PARTITION BY and SETTINGS, but not ORDER BY, PRIMARY KEY, or SAMPLE BY
     // - S3Queue, Buffer, Distributed: Don't support any of these clauses
 
-    let supports_order_by = table.engine.is_merge_tree_family();
-    let supports_primary_key = table.engine.is_merge_tree_family();
+    let supports_order_by = table.engine.supports_order_by();
+    let supports_primary_key = table.engine.supports_order_by();
     let supports_sample_by = table.engine.is_merge_tree_family();
     let supports_partition_by = matches!(
         table.engine,

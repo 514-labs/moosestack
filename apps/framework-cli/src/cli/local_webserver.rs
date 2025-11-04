@@ -1795,10 +1795,17 @@ async fn router(
                 match request_builder.send().await {
                     Ok(response) => {
                         let status = response.status();
+                        let headers = response.headers().clone();
                         let body_bytes = response.bytes().await.unwrap_or_default();
-                        Response::builder()
-                            .status(status)
-                            .body(Full::new(body_bytes))
+
+                        let mut response_builder = Response::builder().status(status);
+
+                        // Copy all headers from backend response
+                        for (key, value) in headers.iter() {
+                            response_builder = response_builder.header(key, value);
+                        }
+
+                        response_builder.body(Full::new(body_bytes))
                     }
                     Err(e) => {
                         debug!("WebApp proxy error: {:?}", e);

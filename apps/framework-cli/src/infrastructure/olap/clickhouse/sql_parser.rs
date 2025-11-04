@@ -93,12 +93,17 @@ pub enum SqlParseError {
 pub fn extract_table_settings_from_create_table(
     sql: &str,
 ) -> Option<std::collections::HashMap<String, String>> {
-    // Find the SETTINGS keyword (case-insensitive)
+    // Find the ENGINE keyword first to avoid matching "settings" in column names
     let sql_upper = sql.to_uppercase();
-    let settings_pos = sql_upper.find("SETTINGS")?;
+    let engine_pos = sql_upper.find("ENGINE")?;
 
-    // Get the substring starting from SETTINGS
-    let settings_part = &sql[settings_pos + 8..]; // Skip "SETTINGS"
+    // Search for SETTINGS only after the ENGINE clause
+    let after_engine = &sql_upper[engine_pos..];
+    let settings_pos_relative = after_engine.find(" SETTINGS")?;
+    let settings_pos = engine_pos + settings_pos_relative;
+
+    // Get the substring starting from SETTINGS (skip " SETTINGS")
+    let settings_part = &sql[settings_pos + 9..]; // Skip " SETTINGS"
     let trimmed = settings_part.trim();
 
     // Parse key=value pairs
@@ -715,8 +720,10 @@ fn extract_tables_from_expr(
 }
 
 #[cfg(test)]
-mod tests {
+pub mod tests {
     use super::*;
+
+    pub const NESTED_OBJECTS_SQL: &str = "CREATE TABLE local.NestedObjects (`id` String, `timestamp` DateTime('UTC'), `address` Nested(street String, city String, coordinates Nested(lat Float64, lng Float64)), `metadata` Nested(tags Array(String), priority Int64, config Nested(enabled Bool, settings Nested(theme String, notifications Bool)))) ENGINE = MergeTree PRIMARY KEY id ORDER BY id SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_granularity_bytes = 10485760";
 
     // Tests for extract_engine_from_create_table
     #[test]
@@ -1096,6 +1103,26 @@ mod tests {
     }
 
     #[test]
+    fn test_extract_table_settings_nested_objects() {
+        // Test with deeply nested structure containing "settings" as a nested field name
+        let result = extract_table_settings_from_create_table(NESTED_OBJECTS_SQL);
+        assert!(
+            result.is_some(),
+            "Should extract settings from SQL with nested 'settings' field"
+        );
+        let settings = result.unwrap();
+        assert_eq!(
+            settings.get("enable_mixed_granularity_parts"),
+            Some(&"1".to_string())
+        );
+        assert_eq!(settings.get("index_granularity"), Some(&"8192".to_string()));
+        assert_eq!(
+            settings.get("index_granularity_bytes"),
+            Some(&"10485760".to_string())
+        );
+    }
+
+    #[test]
     fn test_is_materialized_view() {
         assert!(is_materialized_view(
             "CREATE MATERIALIZED VIEW mv TO table AS SELECT * FROM source"
@@ -1274,6 +1301,13 @@ mod tests {
     }
 
     #[test]
+    fn test_extract_engine_from_create_table_nested_objects() {
+        // Test with deeply nested structure
+        let result = extract_engine_from_create_table(NESTED_OBJECTS_SQL);
+        assert_eq!(result, Some("MergeTree".to_string()));
+    }
+
+    #[test]
     fn test_extract_clickhouse_cloud_real_example() {
         // Real example from ClickHouse Cloud as shown in the user's message
         let sql = r#"CREATE TABLE `f45-lionheart-backen-staging-408b5`.RawGCPData_0_0 (
@@ -1378,6 +1412,15 @@ mod tests {
     }
 
     #[test]
+    fn test_extract_sample_by_nested_objects() {
+        // Test with deeply nested structure - should not find SAMPLE BY since none is present
+        assert_eq!(
+            extract_sample_by_from_create_table(NESTED_OBJECTS_SQL),
+            None
+        );
+    }
+
+    #[test]
     fn test_extract_indexes_from_create_table_multiple() {
         let sql = "CREATE TABLE local.table_name (`u64` UInt64, `i32` Int32, `s` String, \
         INDEX idx1 u64 TYPE bloom_filter GRANULARITY 3, \
@@ -1472,5 +1515,12 @@ mod tests {
                 granularity: 1,
             }
         );
+    }
+
+    #[test]
+    fn test_extract_indexes_from_create_table_nested_objects() {
+        // Test with deeply nested structure - should not find indexes since none are present
+        let indexes = extract_indexes_from_create_table(NESTED_OBJECTS_SQL).unwrap();
+        assert_eq!(indexes.len(), 0);
     }
 }

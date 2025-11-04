@@ -764,7 +764,8 @@ async fn execute_modify_table_column(
     }
 
     log::info!(
-        "Executing ModifyTableColumn for table: {}, column: {} ({}→{})",
+        "Executing ModifyTableColumn for table: {}, column: {} ({}→{})\
+data_type_changed: {data_type_changed}, default_changed: {default_changed}, required_changed: {required_changed}, comment_changed: {comment_changed}, ttl_changed: {ttl_changed}",
         table_name,
         after_column.name,
         before_column.data_type,
@@ -1337,6 +1338,7 @@ pub async fn check_table_size(
 }
 
 pub struct TableWithUnsupportedType {
+    pub database: String,
     pub name: String,
     pub col_name: String,
     pub col_type: String,
@@ -1548,6 +1550,7 @@ impl OlapOperations for ConfiguredDBClient {
                                         col_type, col_name, table_name
                                     );
                                     unsupported_tables.push(TableWithUnsupportedType {
+                                        database,
                                         name: table_name,
                                         col_name,
                                         col_type,
@@ -1566,6 +1569,7 @@ impl OlapOperations for ConfiguredDBClient {
                                     col_type, col_name, table_name
                                 );
                                 unsupported_tables.push(TableWithUnsupportedType {
+                                    database,
                                     name: table_name,
                                     col_name,
                                     col_type,
@@ -2005,6 +2009,7 @@ pub fn extract_column_ttls_from_create_query(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::infrastructure::olap::clickhouse::sql_parser::tests::NESTED_OBJECTS_SQL;
 
     #[test]
     fn test_extract_version_from_table_name() {
@@ -2307,6 +2312,13 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
     }
 
     #[test]
+    fn test_extract_order_by_from_create_query_nested_objects() {
+        // Test with deeply nested structure
+        let order_by = extract_order_by_from_create_query(sql_parser::tests::NESTED_OBJECTS_SQL);
+        assert_eq!(order_by, vec!["id".to_string()]);
+    }
+
+    #[test]
     fn test_extract_order_by_from_create_query_edge_cases() {
         // Test with multiple ORDER BY clauses (should only use the first one)
         let query =
@@ -2451,6 +2463,20 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
         );
         assert!(!map.contains_key("z"));
         assert!(!map.contains_key("timestamp"));
+    }
+
+    #[test]
+    fn test_extract_column_ttls_from_create_query_nested_objects() {
+        // Test with deeply nested structure - should not find TTLs since none are present
+        let map = extract_column_ttls_from_create_query(NESTED_OBJECTS_SQL);
+        assert!(map.is_none());
+    }
+
+    #[test]
+    fn test_extract_table_ttl_from_create_query_nested_objects() {
+        // Test with deeply nested structure - should not find table TTL since none is present
+        let ttl = extract_table_ttl_from_create_query(NESTED_OBJECTS_SQL);
+        assert!(ttl.is_none());
     }
 
     #[test]

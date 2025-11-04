@@ -236,7 +236,7 @@ pub async fn db_to_dmv2(remote_url: &str, dir_path: &Path) -> Result<(), Routine
         )
     })?;
 
-    let mut project = crate::cli::load_project()?;
+    let mut project = crate::cli::load_project_dev()?;
 
     // Enable only Data Model v2 and OLAP; disable others
     project.features.data_model_v2 = true;

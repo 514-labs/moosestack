@@ -37,6 +37,9 @@ const nextConfig = {
     // Make Athena token available on the client side
     NEXT_PUBLIC_ATHENA_TRACKING_TOKEN:
       process.env.NEXT_PUBLIC_ATHENA_TRACKING_TOKEN,
+    // Make git branch available for source code links
+    NEXT_PUBLIC_VERCEL_GIT_COMMIT_REF:
+      process.env.VERCEL_GIT_COMMIT_REF || "main",
   },
   // Optional build-time configuration options
   async rewrites() {
