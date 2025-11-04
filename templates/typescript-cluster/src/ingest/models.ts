@@ -25,6 +25,13 @@ export interface TableC {
   timestamp: number;
 }
 
+/** Table with explicit keeper args but no cluster */
+export interface TableD {
+  id: Key<string>;
+  metric: number;
+  timestamp: number;
+}
+
 /** OLAP Tables */
 
 // TableA: Uses cluster_a with ReplicatedMergeTree
@@ -45,4 +52,12 @@ export const tableB = new OlapTable<TableB>("TableB", {
 export const tableC = new OlapTable<TableC>("TableC", {
   orderByFields: ["id"],
   engine: ClickHouseEngines.MergeTree,
+});
+
+// TableD: ReplicatedMergeTree with explicit keeper args, no cluster
+export const tableD = new OlapTable<TableD>("TableD", {
+  orderByFields: ["id"],
+  engine: ClickHouseEngines.ReplicatedMergeTree,
+  keeperPath: "/clickhouse/tables/{database}/{table}",
+  replicaName: "{replica}",
 });
