@@ -27,6 +27,11 @@ class ClickhouseSize:
 
 
 @dataclasses.dataclass(frozen=True)
+class ClickhouseFixedStringSize:
+    size: int
+
+
+@dataclasses.dataclass(frozen=True)
 class ClickhouseDefault:
     expression: str
 
@@ -59,6 +64,23 @@ def clickhouse_datetime64(precision: int) -> Type[datetime]:
     even if you write `timestamp: clickhouse_datetime64(9)
     """
     return Annotated[datetime, ClickhousePrecision(precision=precision)]
+
+
+def FixedString(size: int) -> ClickhouseFixedStringSize:
+    """
+    Creates a FixedString(N) annotation for fixed-length strings.
+
+    ClickHouse stores exactly N bytes, padding shorter values with null bytes.
+    Values exceeding N bytes will raise an exception.
+
+    Use for fixed-length data like hashes, IPs, UUIDs, MAC addresses.
+
+    Example:
+        md5_hash: Annotated[str, FixedString(16)]  # 16-byte MD5
+        sha256: Annotated[str, FixedString(32)]    # 32-byte SHA256
+        ipv6: Annotated[str, FixedString(16)]      # 16-byte IPv6
+    """
+    return ClickhouseFixedStringSize(size=size)
 
 
 type Point = Annotated[tuple[float, float], "Point"]
@@ -279,7 +301,26 @@ def py_type_to_column_type(t: type, mds: list[Any]) -> Tuple[bool, list[Any], Da
     data_type: DataType
 
     if t is str:
-        data_type = "String"
+        # Check for FixedString annotation
+        fixed_string_size = next(
+            (md.size for md in mds if isinstance(md, ClickhouseFixedStringSize)),
+            None
+        )
+        if fixed_string_size:
+            data_type = f"FixedString({fixed_string_size})"
+        else:
+            data_type = "String"
+    elif t is bytes:
+        # Check for FixedString annotation
+        fixed_string_size = next(
+            (md.size for md in mds if isinstance(md, ClickhouseFixedStringSize)),
+            None
+        )
+        if fixed_string_size:
+            data_type = f"FixedString({fixed_string_size})"
+        else:
+            # Regular bytes without FixedString annotation
+            data_type = "String"
     elif t is int:
         # Check for int size annotations
         int_size = next((md for md in mds if isinstance(md, str) and re.match(r'^u?int\d+$', md)), None)
@@ -437,9 +478,13 @@ def py_type_to_column_type(t: type, mds: list[Any]) -> Tuple[bool, list[Any], Da
 def _to_columns(model: type[BaseModel]) -> list[Column]:
     """Convert Pydantic model fields to Column definitions."""
     columns = []
+    # Get raw annotations from the model class to preserve type aliases
+    raw_annotations = getattr(model, '__annotations__', {})
+
     for field_name, field_info in model.model_fields.items():
-        # Get the field type annotation
-        field_type = field_info.annotation
+        # Use raw annotation if available (preserves type aliases and their metadata)
+        # Fall back to field_info.annotation if not found in __annotations__
+        field_type = raw_annotations.get(field_name, field_info.annotation)
         if field_type is None:
             raise ValueError(f"Missing type for {field_name}")
         primary_key, field_type = handle_key(field_type)

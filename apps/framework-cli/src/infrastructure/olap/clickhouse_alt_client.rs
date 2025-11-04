@@ -232,6 +232,7 @@ where
 fn column_type_to_enum_mapping(t: &ClickHouseColumnType) -> Option<Vec<&str>> {
     match t {
         ClickHouseColumnType::String
+        | ClickHouseColumnType::FixedString(_)
         | ClickHouseColumnType::Boolean
         | ClickHouseColumnType::ClickhouseInt(_)
         | ClickHouseColumnType::ClickhouseFloat(_)

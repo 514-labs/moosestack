@@ -1502,9 +1502,8 @@ pub fn convert_ast_to_column_type(
             ))
         }
 
-        ClickHouseTypeNode::FixedString(_) => {
-            // FixedString is mapped to regular String in our type system
-            Ok((ColumnType::String, false))
+        ClickHouseTypeNode::FixedString(length) => {
+            Ok((ColumnType::FixedString { length: *length }, false))
         }
 
         ClickHouseTypeNode::Nothing => Err(ConversionError::UnsupportedType {
@@ -2442,6 +2441,42 @@ mod tests {
                 assert_eq!(precision, Some(3));
             }
             _ => panic!("Expected DateTime type"),
+        }
+    }
+
+    #[test]
+    fn test_convert_fixedstring_type() {
+        // Test FixedString(16)
+        let (column_type, is_nullable) =
+            convert_clickhouse_type_to_column_type("FixedString(16)").unwrap();
+        assert!(!is_nullable);
+        match column_type {
+            ColumnType::FixedString { length } => {
+                assert_eq!(length, 16);
+            }
+            _ => panic!("Expected FixedString type"),
+        }
+
+        // Test FixedString(32)
+        let (column_type, is_nullable) =
+            convert_clickhouse_type_to_column_type("FixedString(32)").unwrap();
+        assert!(!is_nullable);
+        match column_type {
+            ColumnType::FixedString { length } => {
+                assert_eq!(length, 32);
+            }
+            _ => panic!("Expected FixedString type"),
+        }
+
+        // Test Nullable(FixedString(16))
+        let (column_type, is_nullable) =
+            convert_clickhouse_type_to_column_type("Nullable(FixedString(16))").unwrap();
+        assert!(is_nullable);
+        match column_type {
+            ColumnType::FixedString { length } => {
+                assert_eq!(length, 16);
+            }
+            _ => panic!("Expected FixedString type"),
         }
     }
 

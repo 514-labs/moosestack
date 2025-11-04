@@ -1,7 +1,7 @@
 # Test all supported ClickHouse engines to ensure proper configuration
 # These tables verify that all engine types can be created and configured correctly
 
-from moose_lib import OlapTable, OlapConfig, Key, ClickHouseTTL, clickhouse_default
+from moose_lib import OlapTable, OlapConfig, Key, ClickHouseTTL, clickhouse_default, FixedString
 from moose_lib.blocks import (
     MergeTreeEngine,
     ReplacingMergeTreeEngine,
@@ -16,7 +16,7 @@ from moose_lib.blocks import (
 )
 from pydantic import BaseModel
 from datetime import datetime
-from typing import Optional, Annotated
+from typing import Optional, Annotated, List
 
 
 class EngineTestData(BaseModel):
@@ -52,6 +52,28 @@ class DefaultTestData(BaseModel):
 
 default_table = OlapTable[DefaultTestData](
     "DefaultTable",
+    OlapConfig(
+        engine=MergeTreeEngine(),
+        order_by_fields=["id", "timestamp"],
+    ),
+)
+
+# Table with FixedString: test direct usage and type aliases
+# Type alias for MAC address (17 bytes for format "XX:XX:XX:XX:XX:XX")
+type MacAddress = Annotated[str, FixedString(17)]
+
+class FixedStringTestData(BaseModel):
+    id: Key[str]
+    timestamp: datetime
+    # Direct FixedString usage
+    md5_hash: Annotated[str, FixedString(16)]  # 16-byte MD5
+    ipv6_address: Annotated[str, FixedString(16)]  # 16-byte IPv6
+    # Type alias usage
+    mac_address: MacAddress  # Should become FixedString(17)
+    mac_addresses: List[MacAddress]  # Should become Array(FixedString(17))
+
+fixedstring_table = OlapTable[FixedStringTestData](
+    "FixedStringTest",
     OlapConfig(
         engine=MergeTreeEngine(),
         order_by_fields=["id", "timestamp"],
@@ -269,4 +291,5 @@ all_engine_test_tables = [
     buffer_destination_table,
     buffer_table,
     default_table,
+    fixedstring_table,
 ]
