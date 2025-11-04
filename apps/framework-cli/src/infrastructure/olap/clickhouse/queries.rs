@@ -4441,4 +4441,115 @@ ENGINE = S3Queue('s3://my-bucket/data/*.csv', NOSIGN, 'CSV')"#;
             _ => panic!("Expected ReplacingMergeTree"),
         }
     }
+
+    #[test]
+    fn test_create_table_with_cluster_includes_on_cluster() {
+        let table = ClickHouseTable {
+            version: Some(Version::from_string("1".to_string())),
+            name: "test_table".to_string(),
+            columns: vec![ClickHouseColumn {
+                name: "id".to_string(),
+                column_type: ClickHouseColumnType::ClickhouseInt(ClickHouseInt::Int32),
+                required: true,
+                primary_key: true,
+                unique: false,
+                default: None,
+                comment: None,
+                ttl: None,
+            }],
+            order_by: OrderBy::Fields(vec![]),
+            partition_by: None,
+            sample_by: None,
+            engine: ClickhouseEngine::ReplicatedMergeTree {
+                keeper_path: None,
+                replica_name: None,
+            },
+            table_settings: None,
+            indexes: vec![],
+            table_ttl_setting: None,
+            cluster_name: Some("test_cluster".to_string()),
+        };
+
+        let query = create_table_query("test_db", table, false).unwrap();
+
+        // Should include ON CLUSTER clause
+        assert!(
+            query.contains("ON CLUSTER test_cluster"),
+            "Query should contain ON CLUSTER clause"
+        );
+
+        // ON CLUSTER should come after CREATE TABLE but before column definitions
+        let create_idx = query.find("CREATE TABLE").unwrap();
+        let on_cluster_idx = query.find("ON CLUSTER").unwrap();
+        let engine_idx = query.find("ENGINE").unwrap();
+
+        assert!(
+            create_idx < on_cluster_idx && on_cluster_idx < engine_idx,
+            "ON CLUSTER should be between CREATE TABLE and ENGINE"
+        );
+    }
+
+    #[test]
+    fn test_create_table_without_cluster_no_on_cluster() {
+        let table = ClickHouseTable {
+            version: Some(Version::from_string("1".to_string())),
+            name: "test_table".to_string(),
+            columns: vec![ClickHouseColumn {
+                name: "id".to_string(),
+                column_type: ClickHouseColumnType::ClickhouseInt(ClickHouseInt::Int32),
+                required: true,
+                primary_key: true,
+                unique: false,
+                default: None,
+                comment: None,
+                ttl: None,
+            }],
+            order_by: OrderBy::Fields(vec![]),
+            partition_by: None,
+            sample_by: None,
+            engine: ClickhouseEngine::MergeTree,
+            table_settings: None,
+            indexes: vec![],
+            table_ttl_setting: None,
+            cluster_name: None,
+        };
+
+        let query = create_table_query("test_db", table, false).unwrap();
+
+        // Should NOT include ON CLUSTER clause
+        assert!(
+            !query.contains("ON CLUSTER"),
+            "Query should not contain ON CLUSTER clause when cluster_name is None"
+        );
+    }
+
+    #[test]
+    fn test_drop_table_with_cluster() {
+        let cluster_name = Some("test_cluster");
+        let query = drop_table_query("test_db", "test_table", cluster_name).unwrap();
+
+        // Should include ON CLUSTER clause
+        assert!(
+            query.contains("ON CLUSTER test_cluster"),
+            "DROP query should contain ON CLUSTER clause"
+        );
+
+        // ON CLUSTER should come after DROP TABLE but before the table name or right after table name
+        assert!(query.contains("DROP TABLE"));
+    }
+
+    #[test]
+    fn test_drop_table_without_cluster() {
+        let cluster_name = None;
+        let query = drop_table_query("test_db", "test_table", cluster_name).unwrap();
+
+        // Should NOT include ON CLUSTER clause
+        assert!(
+            !query.contains("ON CLUSTER"),
+            "DROP query should not contain ON CLUSTER clause when cluster_name is None"
+        );
+
+        // Should still have DROP TABLE
+        assert!(query.contains("DROP TABLE"));
+    }
 }
