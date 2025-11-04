@@ -42,7 +42,8 @@ fn validate_container_run(
     let mut container = find_container(project, container_name, docker_client)?;
 
     if let Some(expected) = health {
-        for _ in 0..20 {
+        // Make sure to account for CI environments slowness
+        for _ in 0..30 {
             if let Some(effective_health) = container.health {
                 if effective_health == expected {
                     break;
