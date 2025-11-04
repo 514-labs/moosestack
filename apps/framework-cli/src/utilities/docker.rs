@@ -402,10 +402,14 @@ impl DockerClient {
                          <replica>\n\
                            <host>clickhousedb</host>\n\
                            <port>9000</port>\n\
+                           <user>{user}</user>\n\
+                           <password>{password}</password>\n\
                          </replica>\n\
                        </shard>\n\
                      </{name}>\n",
-                name = cluster.name
+                name = cluster.name,
+                user = project.clickhouse_config.user,
+                password = project.clickhouse_config.password
             ));
         }
 
@@ -803,6 +807,8 @@ mod tests {
         assert!(xml.contains("<replica>"));
         assert!(xml.contains("<host>clickhousedb</host>"));
         assert!(xml.contains("<port>9000</port>"));
+        assert!(xml.contains("<user>panda</user>"));
+        assert!(xml.contains("<password>pandapass</password>"));
     }
 
     #[test]
@@ -872,6 +878,8 @@ mod tests {
         assert!(xml.contains("</replica>"));
         assert!(xml.contains("<host>clickhousedb</host>"));
         assert!(xml.contains("<port>9000</port>"));
+        assert!(xml.contains("<user>"));
+        assert!(xml.contains("<password>"));
 
         // Verify it's valid-looking XML (balanced tags)
         assert_eq!(
