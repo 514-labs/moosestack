@@ -173,6 +173,7 @@ fn std_field_type_to_clickhouse_type_mapper(
 
     match field_type {
         ColumnType::String => Ok(ClickHouseColumnType::String),
+        ColumnType::FixedString { length } => Ok(ClickHouseColumnType::FixedString(length)),
         ColumnType::Boolean => Ok(ClickHouseColumnType::Boolean),
         ColumnType::Int(IntType::Int8) => {
             Ok(ClickHouseColumnType::ClickhouseInt(ClickHouseInt::Int8))

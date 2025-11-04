@@ -30,7 +30,7 @@ from .blocks import (
     # Legacy enum (already exported via .blocks import, but explicit for clarity)
     ClickHouseEngines
 )
-from .data_models import Key, AggregateFunction, StringToEnumMixin
+from .data_models import Key, AggregateFunction, StringToEnumMixin, FixedString, ClickhouseFixedStringSize
 from .commons import Logger
 
 from .query_builder import *

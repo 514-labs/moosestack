@@ -187,6 +187,7 @@ fn std_field_type_to_typescript_field_mapper(
 ) -> Result<InterfaceFieldType, TypescriptGeneratorError> {
     match field_type {
         ColumnType::String => Ok(InterfaceFieldType::String),
+        ColumnType::FixedString { .. } => Ok(InterfaceFieldType::String),
         ColumnType::Boolean => Ok(InterfaceFieldType::Boolean),
         ColumnType::Int(_) => Ok(InterfaceFieldType::Number),
         ColumnType::Float(_) => Ok(InterfaceFieldType::Number),
