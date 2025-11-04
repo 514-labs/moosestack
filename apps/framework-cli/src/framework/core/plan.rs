@@ -30,6 +30,7 @@ use log::{debug, error, info};
 use rdkafka::error::KafkaError;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
+use std::mem;
 use std::path::Path;
 
 /// Errors that can occur during the planning process.
@@ -90,18 +91,36 @@ pub async fn reconcile_with_reality<T: OlapOperations>(
 ) -> Result<InfrastructureMap, PlanningError> {
     info!("Reconciling infrastructure map with actual database state");
 
+    // Clone the map so we can modify it
+    let mut reconciled_map = current_infra_map.clone();
+    reconciled_map.default_database = project.clickhouse_config.db_name.clone();
+
+    if current_infra_map
+        .tables
+        .iter()
+        .any(|(id, t)| id != &t.id(&project.clickhouse_config.db_name))
+    {
+        // fix up IDs where in the old version it does not contain the DB name
+        let existing_tables = mem::take(&mut reconciled_map.tables);
+        for (_, t) in existing_tables {
+            reconciled_map
+                .tables
+                .insert(t.id(&project.clickhouse_config.db_name), t);
+        }
+    }
+
     // Create the reality checker with the provided client
     let reality_checker = InfraRealityChecker::new(olap_client);
 
     // Get the discrepancies between the infra map and the actual database
     let discrepancies = reality_checker
-        .check_reality(project, current_infra_map)
+        .check_reality(project, &reconciled_map)
         .await?;
 
     // If there are no discrepancies, return the original map
     if discrepancies.is_empty() {
         debug!("No discrepancies found between infrastructure map and actual database state");
-        return Ok(current_infra_map.clone());
+        return Ok(reconciled_map.clone());
     }
 
     debug!(
@@ -109,9 +128,6 @@ pub async fn reconcile_with_reality<T: OlapOperations>(
         discrepancies.missing_tables.len(),
         discrepancies.mismatched_tables.len(),
     );
-
-    // Clone the map so we can modify it
-    let mut reconciled_map = current_infra_map.clone();
 
     // Remove missing tables from the map so that they can be re-created
     // if they are added to the codebase
@@ -190,6 +206,7 @@ pub async fn reconcile_with_reality<T: OlapOperations>(
                             "Updating table {} settings in infrastructure map to match reality: {:?}",
                             name, reality_settings
                         );
+
                         // Update the table in the reconciled map with the actual settings from reality
                         if let Some(existing_table) = reconciled_map
                             .tables
@@ -596,22 +613,30 @@ mod tests {
             ttl: None,
         });
 
+        // Create test project first to get the database name
+        let project = create_test_project();
+        let db_name = &project.clickhouse_config.db_name;
+
         // Create mock OLAP client with the actual table
         let mock_client = MockOlapClient {
-            tables: vec![actual_table.clone()],
+            tables: vec![Table {
+                database: Some(db_name.clone()),
+                ..actual_table.clone()
+            }],
         };
 
         // Create infrastructure map with the infra table (no extra column)
-        let mut infra_map = InfrastructureMap::default();
-        infra_map
-            .tables
-            .insert(infra_table.id(DEFAULT_DATABASE_NAME), infra_table.clone());
+        let mut infra_map = InfrastructureMap {
+            default_database: db_name.clone(),
+            ..InfrastructureMap::default()
+        };
+        infra_map.tables.insert(
+            infra_table.id(&infra_map.default_database),
+            infra_table.clone(),
+        );
 
         // Replace the normal check_reality function with our mock
         let reality_checker = InfraRealityChecker::new(mock_client);
-
-        // Create test project
-        let project = create_test_project();
 
         // Get the discrepancies
         let discrepancies = reality_checker
@@ -624,7 +649,10 @@ mod tests {
 
         // Create another mock client for reconciliation
         let reconcile_mock_client = MockOlapClient {
-            tables: vec![actual_table.clone()],
+            tables: vec![Table {
+                database: Some(db_name.clone()),
+                ..actual_table.clone()
+            }],
         };
 
         let target_table_names = HashSet::new();
