@@ -317,13 +317,6 @@ jobs:
               TARGET: aarch64-unknown-linux-gnu,
             }
           - {
-              # Intel laptops are older
-              NAME: darwin-x64,
-              OS: macos-13-large,
-              TOOLCHAIN: stable,
-              TARGET: x86_64-apple-darwin,
-            }
-          - {
               NAME: darwin-arm64,
               OS: macos-14-large,
               TOOLCHAIN: stable,
@@ -619,10 +612,6 @@ jobs:
       - name: Install dependencies
         shell: bash
         run: pnpm --filter ...create-moose-app  --filter ...@514labs/moose-cli install
-
-      - name: Wait for @514labs/moose-cli-darwin-x64 to be available
-        shell: bash
-        run: ./scripts/wait-for-npm-package.sh @514labs/moose-cli-darwin-x64 ${{ needs.version.outputs.version }}
 
       - name: Wait for @514labs/moose-cli-darwin-arm64 to be available
         shell: bash
