@@ -1,0 +1,26 @@
+{
+  "name": "moose-cluster-test-app",
+  "version": "0.0",
+  "description": "Test template for ClickHouse cluster support",
+  "scripts": {
+    "moose": "moose-cli",
+    "build": "moose-cli build --docker",
+    "dev": "moose-cli dev"
+  },
+  "dependencies": {
+    "@514labs/moose-lib": "latest",
+    "ts-patch": "^3.3.0",
+    "tsconfig-paths": "^4.2.0",
+    "typia": "^9.6.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "@confluentinc/kafka-javascript"
+    ]
+  }
+}
