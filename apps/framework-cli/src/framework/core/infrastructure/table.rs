@@ -843,6 +843,13 @@ impl<'de> Visitor<'de> for ColumnTypeVisitor {
     {
         let t = if v == "String" {
             ColumnType::String
+        } else if v.starts_with("FixedString(") {
+            let length = v
+                .strip_prefix("FixedString(")
+                .and_then(|s| s.strip_suffix(")"))
+                .and_then(|s| s.trim().parse::<u64>().ok())
+                .ok_or_else(|| E::custom(format!("Invalid FixedString length: {v}")))?;
+            ColumnType::FixedString { length }
         } else if v == "Boolean" {
             ColumnType::Boolean
         } else if v == "Int" {

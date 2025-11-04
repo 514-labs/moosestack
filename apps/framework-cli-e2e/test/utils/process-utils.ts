@@ -1,4 +1,5 @@
-import { TIMEOUTS } from "../constants";
+import { TIMEOUTS, SERVER_CONFIG } from "../constants";
+import { withRetries } from "./retry-utils";
 
 declare const require: any;
 
@@ -27,9 +28,8 @@ const setTimeoutAsync = (ms: number) =>
 export const stopDevProcess = async (devProcess: any): Promise<void> => {
   if (devProcess && !devProcess.killed) {
     console.log("Stopping dev process...");
-    devProcess.kill("SIGINT");
 
-    // Wait for graceful shutdown with timeout
+    // Set up exit handler before killing
     const gracefulShutdownPromise = new Promise<void>((resolve) => {
       devProcess!.on("exit", () => {
         console.log("Dev process has exited gracefully");
@@ -47,6 +47,9 @@ export const stopDevProcess = async (devProcess: any): Promise<void> => {
       }, TIMEOUTS.PROCESS_TERMINATION_MS);
     });
 
+    // Send SIGINT to trigger graceful shutdown
+    devProcess.kill("SIGINT");
+
     // Race between graceful shutdown and timeout
     await Promise.race([gracefulShutdownPromise, timeoutPromise]);
 
@@ -54,6 +57,9 @@ export const stopDevProcess = async (devProcess: any): Promise<void> => {
     if (!devProcess.killed) {
       await setTimeoutAsync(TIMEOUTS.BRIEF_CLEANUP_WAIT_MS);
     }
+
+    console.log("Ensuring all moose processes are terminated...");
+    await killRemainingProcesses();
   }
 };
 
@@ -155,7 +161,129 @@ export const killRemainingProcesses = async (): Promise<void> => {
       windowsHide: true,
     });
     console.log("Killed any remaining moose-cli processes");
+
+    await execAsync(
+      "pkill -9 -f 'streaming_function_runner|python_worker_wrapper|consumption.*localhost' || true",
+      {
+        timeout: TIMEOUTS.PROCESS_TERMINATION_MS,
+        killSignal: "SIGKILL",
+        windowsHide: true,
+      },
+    );
+    console.log("Killed any remaining Python processes");
   } catch (error) {
     console.warn("Error killing remaining processes:", error);
   }
+};
+
+/**
+ * Wait for streaming functions to start by checking Redpanda consumer groups.
+ *
+ * This approach directly verifies that streaming function consumers have:
+ * 1. Connected to Kafka/Redpanda
+ * 2. Joined their consumer groups
+ * 3. Reached a "Stable" state (ready to process messages)
+ *
+ * Streaming functions create consumer groups with names starting with "flow-".
+ * We poll `rpk group list` until we find at least one such group in Stable state.
+ */
+export const waitForStreamingFunctions = async (
+  timeoutMs: number = 120000,
+): Promise<void> => {
+  console.log(
+    "Waiting for streaming functions to start (checking Redpanda consumer groups)...",
+  );
+  const startTime = Date.now();
+
+  while (Date.now() - startTime < timeoutMs) {
+    try {
+      // Find the Redpanda container (there's only one per test run)
+      const { stdout: containerName } = await execAsync(
+        `docker ps --filter "label=com.docker.compose.service=redpanda" --format '{{.Names}}'`,
+      );
+
+      if (!containerName.trim()) {
+        console.log("Waiting for Redpanda container to start...");
+        await setTimeoutAsync(1000);
+        continue;
+      }
+
+      // Check consumer groups using rpk
+      const { stdout: groupList } = await execAsync(
+        `docker exec ${containerName.trim()} rpk group list`,
+      );
+
+      console.log("Redpanda consumer groups:");
+      console.log(groupList);
+
+      // Parse for Stable flow-* groups
+      // Expected format: "BROKER  GROUP  STATE"
+      // Example: "0  flow-Foo-  Stable"
+      const lines = groupList.split("\n").slice(1); // Skip header
+      const flowGroups = lines.filter((line) => line.includes("flow-"));
+      const stableFlowGroups = flowGroups.filter((line) =>
+        line.includes("Stable"),
+      );
+
+      // Wait for ALL flow- groups to be stable, not just ANY
+      if (
+        flowGroups.length > 0 &&
+        stableFlowGroups.length === flowGroups.length
+      ) {
+        console.log(
+          `Found ${stableFlowGroups.length} active streaming function(s):`,
+        );
+        stableFlowGroups.forEach((g) => console.log(`  ${g.trim()}`));
+
+        // Grace period for consumer group to fully stabilize
+        console.log("Waiting for consumer groups to stabilize...");
+        await setTimeoutAsync(3000);
+        console.log("Streaming functions ready");
+        return;
+      }
+
+      console.log(
+        `Waiting for all streaming functions to be stable (${stableFlowGroups.length}/${flowGroups.length} ready)...`,
+      );
+      await setTimeoutAsync(1000);
+    } catch (error) {
+      // Container might not be ready yet, or rpk command failed
+      // Continue polling until timeout
+      console.log(`Error checking consumer groups: ${error}, retrying...`);
+      await setTimeoutAsync(1000);
+    }
+  }
+
+  throw new Error(
+    `Streaming functions did not reach Stable state within ${timeoutMs / 1000}s`,
+  );
+};
+
+/**
+ * Waits for all infrastructure components to be ready
+ * Uses the /ready endpoint which checks Redis, Redpanda, ClickHouse, and Temporal
+ */
+export const waitForInfrastructureReady = async (
+  timeoutMs: number = 60_000,
+): Promise<void> => {
+  console.log("Waiting for all infrastructure to be ready...");
+
+  await withRetries(
+    async () => {
+      const response = await fetch(`${SERVER_CONFIG.url}/ready`);
+      // /ready returns 200 OK when all services are healthy, 503 otherwise
+      if (response.status !== 200) {
+        const body = await response.text();
+        throw new Error(
+          `Infrastructure not ready (${response.status}): ${body}`,
+        );
+      }
+      console.log("All infrastructure components are ready");
+    },
+    {
+      attempts: Math.floor(timeoutMs / 1000),
+      delayMs: 1000,
+      backoffFactor: 1,
+    },
+  );
 };

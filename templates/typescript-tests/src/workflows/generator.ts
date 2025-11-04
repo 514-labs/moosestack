@@ -14,8 +14,18 @@ const workflowTable = new OlapTable<FooWorkflow>("FooWorkflow");
 
 export const ingest = new Task<null, void>("ingest", {
   run: async () => {
+    // Use three fixed timestamps for E2E tests to add variability
+    // while ensuring predictable results for consumption API tests
+    const timestamps = [
+      1739865600, // Oct 19, 2025 00:00:00 UTC (day 19 - the target day for tests)
+      1739952000, // Oct 20, 2025 00:00:00 UTC (day 20 - should NOT appear in day 19 queries)
+      1740038400, // Oct 21, 2025 00:00:00 UTC (day 21 - should NOT appear in day 19 queries)
+    ];
+
     for (let i = 0; i < 1000; i++) {
-      const baseTimestamp = faker.date.recent({ days: 365 }).getTime();
+      // Cycle through the three timestamps to distribute data across days
+      // This tests that aggregation and filtering work correctly
+      const baseTimestamp = timestamps[i % 3];
       const fooHttp: Foo = {
         primaryKey: faker.string.uuid(),
         timestamp: baseTimestamp,

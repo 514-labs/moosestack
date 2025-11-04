@@ -1,5 +1,5 @@
 language = "python" # Must be typescript or python
-description = "default python project"
+description = "Python project using FastAPI for serving analytical APIs."
 post_install_print = """
 Deploy on Boreal
 
@@ -23,4 +23,4 @@ https://boreal.cloud
 🛠️ Start Moose Server:
     $ moose dev
 """
-default_sloan_telemetry="standard"
+default_sloan_telemetry = "standard"

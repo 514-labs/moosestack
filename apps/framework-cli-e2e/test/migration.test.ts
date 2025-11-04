@@ -26,12 +26,10 @@ import { createClient } from "@clickhouse/client";
 import { TIMEOUTS, CLICKHOUSE_CONFIG, SERVER_CONFIG } from "./constants";
 
 import {
-  stopDevProcess,
   waitForServerStart,
   cleanupClickhouseData,
-  cleanupDocker,
   createTempTestDirectory,
-  removeTestProject,
+  cleanupTestSuite,
 } from "./utils";
 
 const execAsync = promisify(require("child_process").exec);
@@ -105,32 +103,9 @@ describe("typescript template tests - migration", () => {
   after(async function () {
     this.timeout(TIMEOUTS.CLEANUP_MS);
     console.log("\n=== Cleaning up Migration Tests ===");
-
-    try {
-      // Stop the moose dev process
-      if (outerMooseProcess) {
-        await stopDevProcess(outerMooseProcess);
-        console.log("✓ Outer moose dev stopped");
-      }
-
-      // Clean up Docker containers and volumes
-      await cleanupDocker(outerMooseDir, "ts-migrate");
-      console.log("✓ Docker resources cleaned");
-
-      // Remove the entire temp directory (includes migration files, node_modules, etc.)
-      removeTestProject(testProjectDir);
-      console.log("✓ Test project directory removed");
-    } catch (error) {
-      console.error("Error during cleanup:", error);
-      // Force kill process if cleanup fails
-      try {
-        if (outerMooseProcess && !outerMooseProcess.killed) {
-          outerMooseProcess.kill("SIGKILL");
-        }
-      } catch (killError) {
-        console.warn("Failed to force kill process:", killError);
-      }
-    }
+    await cleanupTestSuite(outerMooseProcess, outerMooseDir, "ts-migrate", {
+      logPrefix: "Migration Tests",
+    });
   });
 
   describe("First-time migration (Happy Path)", () => {
