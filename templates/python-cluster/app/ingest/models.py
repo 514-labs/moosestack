@@ -27,6 +27,13 @@ class TableC(BaseModel):
     timestamp: float
 
 
+# Table with explicit keeper args but no cluster
+class TableD(BaseModel):
+    id: Key[str]
+    metric: int
+    timestamp: float
+
+
 # OLAP Tables
 
 # table_a: Uses cluster_a with ReplicatedMergeTree
@@ -55,6 +62,18 @@ table_c = OlapTable[TableC](
     OlapConfig(
         order_by_fields=["id"],
         engine=MergeTreeEngine(),
+    ),
+)
+
+# TableD: ReplicatedMergeTree with explicit keeper args, no cluster
+table_d = OlapTable[TableD](
+    "TableD",
+    OlapConfig(
+        order_by_fields=["id"],
+        engine=ReplicatedMergeTreeEngine(
+            keeper_path="/clickhouse/tables/{database}/{table}",
+            replica_name="{replica}",
+        ),
     ),
 )
 
