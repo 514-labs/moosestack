@@ -478,9 +478,13 @@ def py_type_to_column_type(t: type, mds: list[Any]) -> Tuple[bool, list[Any], Da
 def _to_columns(model: type[BaseModel]) -> list[Column]:
     """Convert Pydantic model fields to Column definitions."""
     columns = []
+    # Get raw annotations from the model class to preserve type aliases
+    raw_annotations = getattr(model, '__annotations__', {})
+
     for field_name, field_info in model.model_fields.items():
-        # Get the field type annotation
-        field_type = field_info.annotation
+        # Use raw annotation if available (preserves type aliases and their metadata)
+        # Fall back to field_info.annotation if not found in __annotations__
+        field_type = raw_annotations.get(field_name, field_info.annotation)
         if field_type is None:
             raise ValueError(f"Missing type for {field_name}")
         primary_key, field_type = handle_key(field_type)
