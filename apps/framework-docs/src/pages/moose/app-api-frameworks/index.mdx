@@ -8,9 +8,9 @@ import Link from "next/link";
 
 # Bring Your Own API Framework
 
-MooseStack provides flexible approaches for building HTTP APIs to expose your data. You can use Moose's built-in `Api` class for simple GET endpoints, or bring popular web frameworks like Express, Koa, Fastify, or FastAPI for advanced features and custom middleware.
+MooseStack provides flexible approaches for building HTTP APIs to expose your data. You can use Moose's built-in [`Api` class](/moose/apis/analytics-api) for simple GET endpoints, or bring popular web frameworks like [Express](/moose/app-api-frameworks/express), [Koa](/moose/app-api-frameworks/typescript-koa), [Fastify](/moose/app-api-frameworks/typescript-fastify), or [FastAPI](/moose/app-api-frameworks/fastapi) for advanced features and custom middleware.
 
-MooseStack gives you two complementary integration paths for HTTP workloads:
+These framework integrations give you two complementary integration paths:
 
 - **Embed supported frameworks inside your Moose project.** Mount Express, Koa, Fastify, or raw Node.js with `WebApp` so Moose deploys everything together and injects auth, `client`, and `sql` helpers on every request.
 - **Call Moose from any framework using the client.** Keep an existing app (Next.js, Rails, etc.) in its current runtime and use the Moose TypeScript or Python client to query ClickHouse or trigger workflows.
