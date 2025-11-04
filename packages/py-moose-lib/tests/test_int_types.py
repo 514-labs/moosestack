@@ -103,11 +103,12 @@ def test_integer_types_as_keys():
 
 def test_optional_integer_types():
     """Test that optional integer types work correctly."""
+    from typing import Optional
 
     class OptionalIntTest(BaseModel):
         required_count: UInt32
-        optional_count: UInt32 | None
-        optional_score: Int16 | None
+        optional_count: Optional[UInt32]
+        optional_score: Optional[Int16]
 
     columns = _to_columns(OptionalIntTest)
     by_name = {col.name: col for col in columns}
