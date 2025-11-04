@@ -405,6 +405,7 @@ async def list_users(
     pagination: Pagination = Depends(),
     moose: ApiUtil = Depends(get_moose_dependency())
 ):
+    # Using parameterized query for user input values
     query = f"""
         SELECT 
             {UserTable.columns.id},
@@ -412,8 +413,8 @@ async def list_users(
             {UserTable.columns.email}
         FROM {UserTable}
         WHERE {UserTable.columns.status} = 'active'
-        LIMIT {{size}}
-        OFFSET {{skip}}
+        LIMIT {{size:UInt32}}
+        OFFSET {{skip:UInt32}}
     """
     result = moose.client.query.execute_raw(query, {
         "size": pagination.size,
