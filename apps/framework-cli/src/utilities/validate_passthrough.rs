@@ -397,9 +397,7 @@ impl<'de, S: SerializeValue> Visitor<'de> for &mut ValueVisitor<'_, S> {
                 }
                 Err(Error::invalid_type(serde::de::Unexpected::Str(v), &self))
             }
-            ColumnType::String => {
-                self.write_to.serialize_value(v).map_err(Error::custom)
-            }
+            ColumnType::String => self.write_to.serialize_value(v).map_err(Error::custom),
             ColumnType::FixedString { length } => {
                 let byte_length = v.len() as u64;
                 if byte_length > *length {
