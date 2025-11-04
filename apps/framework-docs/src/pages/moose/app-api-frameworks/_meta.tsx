@@ -20,18 +20,12 @@ const rawMeta = {
   "typescript-raw-nodejs": {
     title: "Raw Node.js",
   },
-  "typescript-native": {
-    title: "Native Moose APIs",
-  },
   __python__: {
     type: "separator",
     title: "Python",
   },
   fastapi: {
     title: "FastAPI",
-  },
-  "python-native": {
-    title: "Native Moose APIs",
   },
 };
 

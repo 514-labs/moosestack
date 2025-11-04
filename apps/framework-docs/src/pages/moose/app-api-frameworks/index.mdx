@@ -68,6 +68,10 @@ def list_users(limit: int = 25):
 
 ## Supported Frameworks
 
+<Callout type="info" title="Need simple analytics endpoints?">
+  For basic GET endpoints that query your OLAP tables, Moose provides built-in [Analytics APIs](/moose/apis/analytics-api) using the `Api` class. No framework required—just export a query function and Moose handles the HTTP layer.
+</Callout>
+
 <Callout type="warning" title="Official Moose WebApp support">
   `WebApp` currently ships adapters for Express, Koa, Fastify, raw Node.js, and FastAPI. Frameworks like Next.js can call Moose today through the client pattern above, but they are not yet first-class `WebApp` integrations.
 </Callout>
@@ -102,13 +106,6 @@ def list_users(limit: int = 25):
       Use raw HTTP handlers without any framework
     </div>
   </Link>
-
-  <Link href="/moose/app-api-frameworks/typescript-native" className="rounded-xl border bg-card text-card-foreground shadow p-6 hover:bg-muted transition">
-    <div className="font-semibold">Native Moose APIs</div>
-    <div className="text-sm text-gray-600 dark:text-gray-400">
-      Moose's built-in approach for simple GET endpoints
-    </div>
-  </Link>
 </div>
 
 ### Python
@@ -118,13 +115,6 @@ def list_users(limit: int = 25):
     <div className="font-semibold">FastAPI</div>
     <div className="text-sm text-gray-600 dark:text-gray-400">
       Modern, fast Python web framework
-    </div>
-  </Link>
-
-  <Link href="/moose/app-api-frameworks/python-native" className="rounded-xl border bg-card text-card-foreground shadow p-6 hover:bg-muted transition">
-    <div className="font-semibold">Native Moose APIs</div>
-    <div className="text-sm text-gray-600 dark:text-gray-400">
-      Moose's built-in approach for simple GET endpoints
     </div>
   </Link>
 </div>
