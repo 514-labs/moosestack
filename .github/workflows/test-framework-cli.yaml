@@ -601,6 +601,12 @@ jobs:
           repository: ${{ github.event.pull_request.head.repo.full_name }}
           ref: ${{ github.event.pull_request.head.sha }}
 
+      # Login to Docker hub to get higher rate limits when moose pulls images
+      - name: Login to Docker Hub
+        uses: ./.github/actions/docker-login
+        with:
+          op-service-account-token: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+
       - uses: pnpm/action-setup@v4
 
       - name: Install node
@@ -659,6 +665,12 @@ jobs:
         with:
           repository: ${{ github.event.pull_request.head.repo.full_name }}
           ref: ${{ github.event.pull_request.head.sha }}
+
+      # Login to Docker hub to get higher rate limits when moose pulls images
+      - name: Login to Docker Hub
+        uses: ./.github/actions/docker-login
+        with:
+          op-service-account-token: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
 
       - uses: pnpm/action-setup@v4
 
@@ -808,11 +820,8 @@ jobs:
              [[ "${{ needs.test-e2e-typescript-tests.result }}" == "success" ]] && \
              [[ "${{ needs.test-e2e-python-default.result }}" == "success" ]] && \
              [[ "${{ needs.test-e2e-python-tests.result }}" == "success" ]] && \
-<<<<<<< HEAD
              [[ "${{ needs.test-e2e-backward-compatibility-typescript.result }}" == "success" ]] && \
              [[ "${{ needs.test-e2e-backward-compatibility-python.result }}" == "success" ]] && \
-=======
->>>>>>> 1bedef83 (hmm)
              [[ "${{ needs.lints.result }}" == "success" ]]; then
             echo "All required jobs succeeded"
             exit 0
