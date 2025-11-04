@@ -59,7 +59,7 @@ fn map_column_type_to_python(
     match column_type {
         ColumnType::String => "str".to_string(),
         ColumnType::FixedString { length } => {
-            format!("Annotated[bytes, FixedString({})]", length)
+            format!("Annotated[str, FixedString({})]", length)
         }
         ColumnType::Boolean => "bool".to_string(),
         ColumnType::Int(int_type) => match int_type {
