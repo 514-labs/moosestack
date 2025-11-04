@@ -17,6 +17,17 @@ These framework integrations give you two complementary integration paths:
 
 ## Overview
 
+### Native APIs
+
+Moose's built-in [`Api` class](/moose/apis/analytics-api) provides simple GET endpoints with automatic type validation and OpenAPI documentation. This is ideal for straightforward data queries without complex routing or middleware requirements.
+
+**Use Native `Api` class when you need:**
+- Simple GET endpoints with query parameters
+- Automatic type validation and conversion
+- Automatic OpenAPI documentation generation
+- Minimal setup and boilerplate
+
+
 ### Embed a supported framework inside Moose
 
 Use the `WebApp` class when you want Moose to host your framework alongside tables, streams, and workflows.
