@@ -6,7 +6,7 @@ const rawMeta = {
   },
   __typescript__: {
     type: "separator",
-    title: "Typescript / Javascript / Node",
+    title: "Typescript",
   },
   express: {
     title: "Express",
