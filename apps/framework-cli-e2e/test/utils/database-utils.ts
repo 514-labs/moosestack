@@ -83,6 +83,18 @@ export const waitForDBWrite = async (
         if (count >= expectedRecords) {
           return; // Success - exit retry loop
         }
+
+        // Log what's actually in the table before throwing
+        console.log(
+          `Expected ${expectedRecords} but found ${count}. Querying actual records...`,
+        );
+        const dataResult = await client.query({
+          query: `SELECT * FROM ${fullTableName}${whereCondition}`,
+          format: "JSONEachRow",
+        });
+        const actualRecords: any[] = await dataResult.json();
+        console.log(`Actual records in ${tableName}:`, actualRecords);
+
         throw new Error(
           `Expected ${expectedRecords} records, but found ${count}`,
         );
