@@ -260,7 +260,7 @@ const authMiddleware = async (ctx: Context, next: Next) => {
 
 const adminMiddleware = async (ctx: Context, next: Next) => {
   const moose = getMooseUtils(ctx.req);
-  if (moose.jwt?.role !== "admin") {
+  if (!moose?.jwt || moose.jwt.role !== "admin") {
     ctx.throw(403, "Forbidden");
   }
   await next();
