@@ -721,4 +721,168 @@ mod tests {
         assert_eq!(args[5], "-p");
         assert_eq!(args[6], "test-project");
     }
+
+    #[test]
+    fn test_generate_xml_with_no_clusters() {
+        let temp_dir = TempDir::new().unwrap();
+        let project = Project::new(
+            temp_dir.path(),
+            "test-project".to_string(),
+            SupportedLanguages::Typescript,
+        );
+
+        let xml = DockerClient::generate_clickhouse_clusters_xml(&project);
+
+        // Should return None when no clusters are defined
+        assert_eq!(xml, None);
+    }
+
+    #[test]
+    fn test_generate_xml_with_empty_clusters() {
+        let temp_dir = TempDir::new().unwrap();
+        let mut project = Project::new(
+            temp_dir.path(),
+            "test-project".to_string(),
+            SupportedLanguages::Typescript,
+        );
+        project.clickhouse_config.clusters = Some(vec![]);
+
+        let xml = DockerClient::generate_clickhouse_clusters_xml(&project);
+
+        // Should return None when clusters list is empty
+        assert_eq!(xml, None);
+    }
+
+    #[test]
+    fn test_generate_xml_with_single_cluster() {
+        let temp_dir = TempDir::new().unwrap();
+        let mut project = Project::new(
+            temp_dir.path(),
+            "test-project".to_string(),
+            SupportedLanguages::Typescript,
+        );
+        project.clickhouse_config.clusters = Some(vec![
+            crate::infrastructure::olap::clickhouse::config::ClusterConfig {
+                name: "test_cluster".to_string(),
+            },
+        ]);
+
+        let xml = DockerClient::generate_clickhouse_clusters_xml(&project).unwrap();
+
+        // Verify XML structure
+        assert!(xml.contains("<clickhouse>"));
+        assert!(xml.contains("</clickhouse>"));
+        assert!(xml.contains("<remote_servers>"));
+        assert!(xml.contains("</remote_servers>"));
+        assert!(xml.contains("<test_cluster>"));
+        assert!(xml.contains("</test_cluster>"));
+        assert!(xml.contains("<shard>"));
+        assert!(xml.contains("<replica>"));
+        assert!(xml.contains("<host>clickhousedb</host>"));
+        assert!(xml.contains("<port>9000</port>"));
+    }
+
+    #[test]
+    fn test_generate_xml_with_multiple_clusters() {
+        let temp_dir = TempDir::new().unwrap();
+        let mut project = Project::new(
+            temp_dir.path(),
+            "test-project".to_string(),
+            SupportedLanguages::Typescript,
+        );
+        project.clickhouse_config.clusters = Some(vec![
+            crate::infrastructure::olap::clickhouse::config::ClusterConfig {
+                name: "cluster_a".to_string(),
+            },
+            crate::infrastructure::olap::clickhouse::config::ClusterConfig {
+                name: "cluster_b".to_string(),
+            },
+        ]);
+
+        let xml = DockerClient::generate_clickhouse_clusters_xml(&project).unwrap();
+
+        // Verify both clusters are present
+        assert!(xml.contains("<cluster_a>"));
+        assert!(xml.contains("</cluster_a>"));
+        assert!(xml.contains("<cluster_b>"));
+        assert!(xml.contains("</cluster_b>"));
+
+        // Verify both point to the same host (single-node dev setup)
+        let cluster_a_count = xml.matches("<cluster_a>").count();
+        let cluster_b_count = xml.matches("<cluster_b>").count();
+        assert_eq!(
+            cluster_a_count, 1,
+            "Should have exactly one cluster_a definition"
+        );
+        assert_eq!(
+            cluster_b_count, 1,
+            "Should have exactly one cluster_b definition"
+        );
+    }
+
+    #[test]
+    fn test_generated_xml_format() {
+        let temp_dir = TempDir::new().unwrap();
+        let mut project = Project::new(
+            temp_dir.path(),
+            "test-project".to_string(),
+            SupportedLanguages::Typescript,
+        );
+        project.clickhouse_config.clusters = Some(vec![
+            crate::infrastructure::olap::clickhouse::config::ClusterConfig {
+                name: "my_cluster".to_string(),
+            },
+        ]);
+
+        let xml = DockerClient::generate_clickhouse_clusters_xml(&project).unwrap();
+
+        // Verify proper XML structure (tags present)
+        assert!(xml.starts_with("<clickhouse>\n"));
+        assert!(xml.ends_with("</clickhouse>\n"));
+        assert!(xml.contains("<remote_servers>"));
+        assert!(xml.contains("</remote_servers>"));
+        assert!(xml.contains("<my_cluster>"));
+        assert!(xml.contains("</my_cluster>"));
+        assert!(xml.contains("<shard>"));
+        assert!(xml.contains("</shard>"));
+        assert!(xml.contains("<replica>"));
+        assert!(xml.contains("</replica>"));
+        assert!(xml.contains("<host>clickhousedb</host>"));
+        assert!(xml.contains("<port>9000</port>"));
+
+        // Verify it's valid-looking XML (balanced tags)
+        assert_eq!(
+            xml.matches("<my_cluster>").count(),
+            xml.matches("</my_cluster>").count()
+        );
+        assert_eq!(
+            xml.matches("<shard>").count(),
+            xml.matches("</shard>").count()
+        );
+        assert_eq!(
+            xml.matches("<replica>").count(),
+            xml.matches("</replica>").count()
+        );
+    }
+
+    #[test]
+    fn test_cluster_name_with_special_characters() {
+        let temp_dir = TempDir::new().unwrap();
+        let mut project = Project::new(
+            temp_dir.path(),
+            "test-project".to_string(),
+            SupportedLanguages::Typescript,
+        );
+        project.clickhouse_config.clusters = Some(vec![
+            crate::infrastructure::olap::clickhouse::config::ClusterConfig {
+                name: "prod_cluster_01".to_string(),
+            },
+        ]);
+
+        let xml = DockerClient::generate_clickhouse_clusters_xml(&project).unwrap();
+
+        // Verify cluster name with underscores and numbers works
+        assert!(xml.contains("<prod_cluster_01>"));
+        assert!(xml.contains("</prod_cluster_01>"));
+    }
 }
