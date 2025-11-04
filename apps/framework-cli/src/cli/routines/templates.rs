@@ -610,7 +610,10 @@ mod tests {
         assert!(result.is_ok());
         let config = result.unwrap();
         assert_eq!(config.language, "typescript");
-        assert_eq!(config.description, "Default typescript project.");
+        assert_eq!(
+            config.description,
+            "Default TypeScript project, seeded with foobar example components."
+        );
         // Add more assertions if needed for post_install_print etc.
     }
 

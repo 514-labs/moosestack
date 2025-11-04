@@ -54,8 +54,8 @@ const rawMeta = {
     title: "Data Modeling",
     Icon: FileCode,
   },
-  "in-your-stack": {
-    title: "In Your Stack",
+  "templates-examples": {
+    title: "Templates & Apps",
     Icon: FileStack,
   },
   __modules__: {

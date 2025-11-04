@@ -1,93 +1,36 @@
-# Python FastAPI Template
+This is a [Moose](https://docs.fiveonefour.com/moose) project bootstrapped with [`moose init`](https://docs.fiveonefour.com/moose/reference/moose-cli#init) or [`sloan init`](https://docs.fiveonefour.com/sloan/cli-reference#init)
 
-A Python FastAPI-based Moose template for building analytical backend services with ClickHouse
+<a href="https://docs.fiveonefour.com/moose/"><img src="https://raw.githubusercontent.com/514-labs/moose/main/logo-m-light.png" alt="moose logo" height="100px"></a>
 
-[![PyPI Version](https://img.shields.io/pypi/v/moose-cli?logo=python)](https://pypi.org/project/moose-cli/)
+[![PyPI Version](https://img.shields.io/pypi/v/moose-lib?logo=python)](https://pypi.org/project/moose-lib/)
 [![Moose Community](https://img.shields.io/badge/slack-moose_community-purple.svg?logo=slack)](https://join.slack.com/t/moose-community/shared_invite/zt-2fjh5n3wz-cnOmM9Xe9DYAgQrNu8xKxg)
 [![Docs](https://img.shields.io/badge/quick_start-docs-blue.svg)](https://docs.fiveonefour.com/moose/getting-started/quickstart)
 [![MIT license](https://img.shields.io/badge/license-MIT-yellow.svg)](LICENSE)
 
-## Quick Start
+[Moose](https://docs.fiveonefour.com/moose) is an open-source data engineering framework designed to drastically accelerate AI-enabled software developers, as you prototype and scale data-intensive features and applications.
 
-### Prerequisites
-- [Docker Desktop](https://www.docker.com/products/docker-desktop/) (for ClickHouse, Redis)
-- [Python 3.12+](https://www.python.org/downloads/)
+# Get started with Moose
 
-### Running the Application
+Get up and running with your own Moose project in minutes by using our [Quick Start Tutorial](https://docs.fiveonefour.com/moose/getting-started/quickstart). We also have our [Docs](https://docs.fiveonefour.com/moose) where you can pick your path, learn more about Moose, and learn what types of applications can be built with Moose.
 
-This template requires **two separate servers** to run:
+# Beta release
 
-#### 1. Start the Moose Development Environment
-```bash
-moose dev
-```
-**Purpose:** This starts the data infrastructure services:
-- **ClickHouse database** (port 18123) - for analytical queries
-- **Redis cache** (port 6379) - for performance optimization
-- **Moose management services** (port 5001) - for data model management
-
-Keep this terminal running - the services need to stay active.
-
-#### 2. Start the FastAPI Server
-In a **new terminal window**:
-```bash
-fastapi dev app/main.py
-```
-
-Make sure you have run `pip install fastapi["standard"]` to install the FastAPI CLI.
-
-**Purpose:** This starts your actual API server:
-- **FastAPI application** (port 8000) - your REST API endpoints
-- **Auto-reload enabled** - restarts when you make code changes
-- **Interactive API docs** - available at http://localhost:8000/docs
-
-#### 3. Access Your Application
-- **API Server:** http://localhost:8000
-- **API Documentation:** http://localhost:8000/docs (Swagger UI)
-- **Moose Admin Server:** http://localhost:5001
-
-### What's Included
-
-This template provides:
-- **FastAPI server** with data models and API endpoints
-- **ClickHouse integration** for analytics queries
-- **Redis caching** for performance
-- **Pydantic models** for data validation
-- **Auto-generated API docs** at `/docs`
-
-### Project Structure
-
-```
-app/
-├── main.py          # Application entry point
-├── api.py           # FastAPI routes and endpoints
-├── db/
-│   ├── models.py    # Pydantic data models
-│   └── views.py     # Database views and aggregations
-```
-
-### Development
-
-- Edit `app/api.py` to add new API endpoints
-- Modify `app/db/models.py` to update data models
-- The FastAPI server auto-reloads when you make changes
-- Check both terminals for logs and any errors
-
-## Learn More
-
-- [Moose Documentation](https://docs.fiveonefour.com/moose) - learn about Moose
+Moose is beta software and is in active development. Multiple public companies across the globe are using Moose in production. We'd love for you to [get your hands on it and try it out](https://docs.fiveonefour.com/moose/getting-started/quickstart). If you're interested in using Moose in production, or if you just want to chat, you can reach us at [hello@moosejs.dev](mailto:hello@moosejs.dev) or in the Moose developer community below.
 
 ## Community
 
-Join the Moose community [on Slack](https://join.slack.com/t/moose-community/shared_invite/zt-2fjh5n3wz-cnOmM9Xe9DYAgQrNu8xKxg). Check out the [MooseStack repo on GitHub](https://github.com/514-labs/moosestack).
+You can join the Moose community [on Slack](https://join.slack.com/t/moose-community/shared_invite/zt-2fjh5n3wz-cnOmM9Xe9DYAgQrNu8xKxg). Check out the [MooseStack repo on GitHub](https://github.com/514-labs/moosestack).
 
-## Deploy on Boreal
+# Deploy on Boreal
 
 The easiest way to deploy your MooseStack Applications is to use [Boreal](https://www.fiveonefour.com/boreal) from 514 Labs, the creators of Moose.
 
-[Sign up](https://www.boreal.cloud/sign-up).
+Check out our [Moose deployment documentation](https://docs.fiveonefour.com/moose/deploying) for more details.
 
-## License
+# Contributing
 
-This template is MIT licensed.
+We welcome contributions to Moose! Please check out the [contribution guidelines](https://github.com/514-labs/moose/blob/main/CONTRIBUTING.md).
 
+# Made by 514
+
+Our mission at [fiveonefour](https://www.fiveonefour.com/) is to bring incredible developer experiences to the data stack. If you're interested in enterprise solutions, commercial support, or design partnerships, then we'd love to chat with you: [hello@moosejs.dev](mailto:hello@moosejs.dev)

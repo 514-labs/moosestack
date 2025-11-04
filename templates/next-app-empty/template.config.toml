@@ -30,4 +30,4 @@ https://boreal.cloud
 	$ npm run dev
 """
 default_sloan_telemetry="standard"
-visible=false
+visible=true
