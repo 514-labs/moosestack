@@ -101,6 +101,7 @@ pub fn run_python_command(
             project.http_server_config.management_port.to_string(),
         )
         .env("MOOSE_SOURCE_DIR", &project.source_dir)
+        .arg("-u")
         .arg("-m")
         .arg(library_module)
         .args(get_args)

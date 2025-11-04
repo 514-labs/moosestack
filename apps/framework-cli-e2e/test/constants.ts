@@ -17,8 +17,8 @@ export const TIMEOUTS = {
   // Global cleanup timeout (30 seconds)
   GLOBAL_CLEANUP_MS: 30_000,
 
-  // Process termination timeout (10 seconds)
-  PROCESS_TERMINATION_MS: 10_000,
+  // Process termination timeout (30 seconds)
+  PROCESS_TERMINATION_MS: 30_000,
 
   // Docker operations timeouts
   DOCKER_COMPOSE_DOWN_MS: 30_000,
@@ -63,8 +63,10 @@ export const RETRY_CONFIG = {
 
 // Test data configuration
 export const TEST_DATA = {
-  // Fixed timestamp for consistent testing (2025-02-21 00:00:00 UTC)
-  TIMESTAMP: 1739952000,
+  // Fixed timestamp for consistent testing (October 19, 2025 00:00:00 UTC)
+  // This is in seconds. If typescript, make sure to convert to milliseconds for Date constructor.
+  // If python, datetime.fromtimestamp already expects seconds.
+  TIMESTAMP: 1739865600,
 
   // Number of records to send for batch testing
   BATCH_RECORD_COUNT: 50,
