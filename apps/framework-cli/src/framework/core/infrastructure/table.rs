@@ -572,7 +572,6 @@ impl Table {
                 .into_iter()
                 .map(TableIndex::from_proto)
                 .collect(),
-            // Load database from proto
             database: proto.database,
             table_ttl_setting: proto.table_ttl_setting,
         }
