@@ -89,7 +89,7 @@ const rawMeta = {
     type: "separator",
     title: "MooseStack in your App",
   },
-  "api-frameworks": {
+  "app-api-frameworks": {
     title: "API frameworks",
     Icon: Blocks,
   },
