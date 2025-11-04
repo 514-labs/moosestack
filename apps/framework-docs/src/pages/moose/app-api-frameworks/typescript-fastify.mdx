@@ -270,7 +270,8 @@ app.get("/data", async (request, reply) => {
     return { error: "Utilities not available" };
   }
 
-  const result = await moose.client.query.execute(sql`SELECT * FROM ${MyTable} LIMIT 10`);
+  const { client, sql } = moose;
+  const result = await client.query.execute(sql`SELECT * FROM ${MyTable} LIMIT 10`);
   const data = await result.json();
 
   return app.utility.formatResponse(data);

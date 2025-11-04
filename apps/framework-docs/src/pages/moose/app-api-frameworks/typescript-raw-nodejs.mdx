@@ -309,13 +309,15 @@ const handleStreamData = async (req: IncomingMessage, res: ServerResponse) => {
     return sendError(res, 500, "Utilities not available");
   }
 
+  const { client, sql } = moose;
+
   res.writeHead(200, {
     "Content-Type": "application/x-ndjson",
     "Transfer-Encoding": "chunked"
   });
 
   const query = sql`SELECT * FROM ${MyTable} LIMIT 1000`;
-  const result = await moose.client.query.execute(query);
+  const result = await client.query.execute(query);
   const data = await result.json();
 
   // Stream data in chunks

@@ -3,10 +3,11 @@ title: Bring Your Own API Framework
 description: Use Express, Koa, Fastify, or FastAPI with MooseStack
 ---
 
-import { Callout, TypeScript, Python, LanguageSwitcher } from "@/components";
+import { Callout, LanguageSwitcher, TypeScript, Python } from "@/components";
 import Link from "next/link";
 
 # Bring Your Own API Framework
+
 <LanguageSwitcher />
 
 MooseStack provides flexible approaches for building HTTP APIs to expose your data. You can use Moose's built-in [`Api` class](/moose/apis/analytics-api) for simple GET endpoints, or bring popular web frameworks like [Express](/moose/app-api-frameworks/express), [Koa](/moose/app-api-frameworks/typescript-koa), [Fastify](/moose/app-api-frameworks/typescript-fastify), or [FastAPI](/moose/app-api-frameworks/fastapi) for advanced features and custom middleware.
@@ -43,7 +44,7 @@ Use the `WebApp` class when you want Moose to host your framework alongside tabl
 
 If you already have an application server, call Moose directly with the client SDKs—no Moose deployment required. Works great for Next.js, Rails, Python microservices, or anything else that can make HTTP requests.
 
-Here’s the client pattern:
+Here's the client pattern:
 
 <TypeScript>
 ```ts filename="lib/moose.ts" copy
@@ -148,15 +149,16 @@ The `WebApp` class is the bridge between your web framework and MooseStack. It h
 
 All frameworks can access your OLAP database through MooseStack's injected utilities:
 
-**TypeScript:**
+<TypeScript>
 ```ts
 import { getMooseUtils } from "@514labs/moose-lib";
 
 const moose = getMooseUtils(req);
 const { client, sql, jwt } = moose;
 ```
+</TypeScript>
 
-**Python:**
+<Python>
 ```python
 from moose_lib.dmv2.web_app_helpers import get_moose_utils
 
@@ -164,6 +166,7 @@ moose = get_moose_utils(request)
 client = moose.client
 jwt = moose.jwt
 ```
+</Python>
 
 ### Mount Paths
 
