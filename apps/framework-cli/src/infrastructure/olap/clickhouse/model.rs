@@ -38,6 +38,7 @@ pub struct AggregationFunction<T> {
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum ClickHouseColumnType {
     String,
+    FixedString(u64),
     Boolean,
     ClickhouseInt(ClickHouseInt),
     ClickhouseFloat(ClickHouseFloat),

@@ -34,6 +34,9 @@ fn map_column_type_to_typescript(
 ) -> String {
     match column_type {
         ColumnType::String => "string".to_string(),
+        ColumnType::FixedString { length } => {
+            format!("string & FixedString<{length}>")
+        }
         ColumnType::Boolean => "boolean".to_string(),
         ColumnType::Int(int_type) => {
             let lowercase_int_type = format!("{int_type:?}").to_lowercase();

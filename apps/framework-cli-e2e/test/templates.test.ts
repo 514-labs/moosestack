@@ -290,6 +290,40 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
       }
     });
 
+    it("should generate FixedString types in DDL including type aliases", async function () {
+      if (config.isTestsVariant && config.language === "python") {
+        const ddl = await getTableDDL("FixedStringTest", "local");
+
+        // Verify direct FixedString usage
+        if (!ddl.includes("`md5_hash` FixedString(16)")) {
+          throw new Error(
+            `Expected md5_hash to be FixedString(16). DDL: ${ddl}`,
+          );
+        }
+        if (!ddl.includes("`ipv6_address` FixedString(16)")) {
+          throw new Error(
+            `Expected ipv6_address to be FixedString(16). DDL: ${ddl}`,
+          );
+        }
+
+        // Verify type alias generates FixedString
+        if (!ddl.includes("`mac_address` FixedString(17)")) {
+          throw new Error(
+            `Expected mac_address (type alias) to be FixedString(17). DDL: ${ddl}`,
+          );
+        }
+
+        // Verify array of type alias generates Array(FixedString(...))
+        if (!ddl.includes("`mac_addresses` Array(FixedString(17))")) {
+          throw new Error(
+            `Expected mac_addresses to be Array(FixedString(17)). DDL: ${ddl}`,
+          );
+        }
+
+        console.log("✅ FixedString DDL validation passed");
+      }
+    });
+
     // Add versioned tables test for tests templates
     if (config.isTestsVariant) {
       it("should create versioned OlapTables correctly", async function () {

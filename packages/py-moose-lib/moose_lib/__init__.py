@@ -34,6 +34,8 @@ from .data_models import (
     Key,
     AggregateFunction,
     StringToEnumMixin,
+    FixedString,
+    ClickhouseFixedStringSize
     # Integer types
     Int8,
     Int16,
