@@ -117,6 +117,7 @@ impl EventBuckets {
 /// * `state_storage` - State storage for managing infrastructure state
 /// * `settings` - CLI settings configuration
 /// * `processing_coordinator` - Coordinator for synchronizing with MCP tools
+/// * `shutdown_rx` - Receiver to listen for shutdown signal
 #[allow(clippy::too_many_arguments)]
 async fn watch(
     project: Arc<Project>,
@@ -130,6 +131,7 @@ async fn watch(
     state_storage: Arc<Box<dyn StateStorage>>,
     settings: Settings,
     processing_coordinator: ProcessingCoordinator,
+    mut shutdown_rx: tokio::sync::watch::Receiver<bool>,
 ) -> Result<(), anyhow::Error> {
     log::debug!(
         "Starting file watcher for project: {:?}",
@@ -150,6 +152,10 @@ async fn watch(
 
     loop {
         tokio::select! {
+            _ = shutdown_rx.changed() => {
+                info!("Watcher received shutdown signal, stopping file monitoring");
+                return Ok(());
+            }
             Ok(()) = rx.changed() => {
                 log::debug!("Received change notification, current changes: {:?}", rx.borrow());
             }
@@ -279,6 +285,7 @@ impl FileWatcher {
     /// * `state_storage` - State storage for managing infrastructure state
     /// * `settings` - CLI settings configuration
     /// * `processing_coordinator` - Coordinator for synchronizing with MCP tools
+    /// * `shutdown_rx` - Receiver to listen for shutdown signal
     #[allow(clippy::too_many_arguments)]
     pub fn start(
         &self,
@@ -293,6 +300,7 @@ impl FileWatcher {
         state_storage: Arc<Box<dyn StateStorage>>,
         settings: Settings,
         processing_coordinator: ProcessingCoordinator,
+        shutdown_rx: tokio::sync::watch::Receiver<bool>,
     ) -> Result<(), Error> {
         show_message!(MessageType::Info, {
             Message {
@@ -313,6 +321,7 @@ impl FileWatcher {
                 state_storage,
                 settings,
                 processing_coordinator,
+                shutdown_rx,
             )
             .await
         };

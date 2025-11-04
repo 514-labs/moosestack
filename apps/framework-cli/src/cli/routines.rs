@@ -567,6 +567,9 @@ pub async fn start_development_mode(
     use crate::cli::processing_coordinator::ProcessingCoordinator;
     let processing_coordinator = ProcessingCoordinator::new();
 
+    // Create shutdown channel for graceful watcher termination
+    let (watcher_shutdown_tx, watcher_shutdown_rx) = tokio::sync::watch::channel(false);
+
     let file_watcher = FileWatcher::new();
     file_watcher.start(
         project.clone(),
@@ -578,6 +581,7 @@ pub async fn start_development_mode(
         Arc::new(state_storage),
         settings.clone(),
         processing_coordinator.clone(),
+        watcher_shutdown_rx,
     )?;
 
     // Log MCP server status
@@ -611,6 +615,7 @@ pub async fn start_development_mode(
             process_registry,
             enable_mcp,
             processing_coordinator,
+            Some(watcher_shutdown_tx),
         )
         .await;
 
@@ -735,6 +740,7 @@ pub async fn start_production_mode(
             Arc::new(RwLock::new(process_registry)),
             false, // MCP is disabled in production mode
             processing_coordinator,
+            None, // No file watcher in production mode
         )
         .await;
 
