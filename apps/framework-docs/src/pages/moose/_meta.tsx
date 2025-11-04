@@ -90,7 +90,7 @@ const rawMeta = {
     title: "MooseStack in your App",
   },
   "app-api-frameworks": {
-    title: "App / API frameworks",
+    title: "API frameworks",
     Icon: Blocks,
   },
   __deployment__: {
