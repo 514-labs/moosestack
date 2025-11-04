@@ -613,10 +613,6 @@ jobs:
         shell: bash
         run: pnpm --filter ...create-moose-app  --filter ...@514labs/moose-cli install
 
-      - name: Wait for @514labs/moose-cli-darwin-x64 to be available
-        shell: bash
-        run: ./scripts/wait-for-npm-package.sh @514labs/moose-cli-darwin-x64 ${{ needs.version.outputs.version }}
-
       - name: Wait for @514labs/moose-cli-darwin-arm64 to be available
         shell: bash
         run: ./scripts/wait-for-npm-package.sh @514labs/moose-cli-darwin-arm64 ${{ needs.version.outputs.version }}
