@@ -31,6 +31,25 @@ from .blocks import (
     ClickHouseEngines
 )
 from .data_models import Key, AggregateFunction, StringToEnumMixin
+from .data_models import (
+    Key,
+    AggregateFunction,
+    StringToEnumMixin,
+    FixedString,
+    ClickhouseFixedStringSize,
+    # Integer types
+    Int8,
+    Int16,
+    Int32,
+    Int64,
+    UInt8,
+    UInt16,
+    UInt32,
+    UInt64,
+    # Float types
+    Float32,
+    Float64,
+)
 from .commons import Logger
 
 from .query_builder import *

@@ -15,6 +15,20 @@ import ipaddress
 type Key[T: (str, int)] = T
 type JWT[T] = T
 
+# Integer type aliases for ClickHouse integer types
+type Int8 = Annotated[int, "int8"]
+type Int16 = Annotated[int, "int16"]
+type Int32 = Annotated[int, "int32"]
+type Int64 = Annotated[int, "int64"]
+type UInt8 = Annotated[int, "uint8"]
+type UInt16 = Annotated[int, "uint16"]
+type UInt32 = Annotated[int, "uint32"]
+type UInt64 = Annotated[int, "uint64"]
+
+# Float type aliases for ClickHouse float types
+type Float32 = Annotated[float, "float32"]
+type Float64 = Annotated[float, "float64"]
+
 
 @dataclasses.dataclass(frozen=True)  # a BaseModel in the annotations will confuse pydantic
 class ClickhousePrecision:
