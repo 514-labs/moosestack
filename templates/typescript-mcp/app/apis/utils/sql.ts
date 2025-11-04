@@ -70,29 +70,33 @@ export function validateQueryWhitelist(query: string): ValidationResult | null {
  * @param query - The SQL query to validate
  * @returns ValidationResult or null if valid
  */
-export function validateQueryBlocklist(query: string): ValidationResult | null {
-  const dangerousKeywords = [
-    "INSERT",
-    "UPDATE",
-    "DELETE",
-    "DROP",
-    "CREATE",
-    "ALTER",
-    "TRUNCATE",
-    "GRANT",
-    "REVOKE",
-    "EXECUTE",
-    "CALL",
-  ];
+// Blocklist keywords and their regexes (precompiled once)
+const dangerousKeywords = [
+  "INSERT",
+  "UPDATE",
+  "DELETE",
+  "DROP",
+  "CREATE",
+  "ALTER",
+  "TRUNCATE",
+  "GRANT",
+  "REVOKE",
+  "EXECUTE",
+  "CALL",
+];
 
+const dangerousKeywordRegexes = dangerousKeywords.map(
+  (keyword) => new RegExp(`\\b${keyword}\\b`, "i")
+);
+
+export function validateQueryBlocklist(query: string): ValidationResult | null {
   const upperQuery = query.toUpperCase();
-  for (const keyword of dangerousKeywords) {
-    // Match keyword as a whole word (with word boundaries)
-    const regex = new RegExp(`\\b${keyword}\\b`, "i");
+  for (let i = 0; i < dangerousKeywordRegexes.length; i++) {
+    const regex = dangerousKeywordRegexes[i];
     if (regex.test(upperQuery)) {
       return {
         valid: false,
-        error: `Dangerous operation '${keyword}' not allowed in queries`,
+        error: `Dangerous operation '${dangerousKeywords[i]}' not allowed in queries`,
         supportsLimit: false,
       };
     }
