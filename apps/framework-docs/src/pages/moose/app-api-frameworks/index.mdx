@@ -49,12 +49,21 @@ Here's the client pattern:
 <TypeScript>
 ```ts filename="lib/moose.ts" copy
 import { MooseClient, sql } from "@514labs/moose-lib";
+import { UserTable } from "./tables/UserTable";
 
 const client = new MooseClient();
 
 export async function listUsers(limit = 25) {
   const result = await client.query.execute(
-    sql`SELECT id, name, email FROM users LIMIT ${limit}`
+    sql`
+      SELECT 
+        ${UserTable.columns.id}, 
+        ${UserTable.columns.name}, 
+        ${UserTable.columns.email}
+      FROM ${UserTable}
+      WHERE ${UserTable.columns.status} = 'active'
+      LIMIT ${limit}
+    `
   );
   return await result.json();
 }
@@ -64,14 +73,19 @@ export async function listUsers(limit = 25) {
 <Python>
 ```py filename="lib/moose.py" copy
 from moose_lib import MooseClient
+from app.tables.user_table import UserTable
 
 client = MooseClient()
 
 def list_users(limit: int = 25):
-    query = """
-        SELECT id, name, email
-        FROM users
-        LIMIT {limit:UInt32}
+    query = f"""
+        SELECT 
+          {UserTable.columns.id}, 
+          {UserTable.columns.name}, 
+          {UserTable.columns.email}
+        FROM {UserTable}
+        WHERE {UserTable.columns.status} = 'active'
+        LIMIT {{limit:UInt32}}
     """
     return client.query.execute_raw(query, {"limit": limit})
 ```

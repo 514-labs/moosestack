@@ -40,7 +40,15 @@ app.get("/data", async (req, res) => {
   const limit = parseInt(req.query.limit as string) || 10;
 
   try {
-    const query = sql`SELECT * FROM ${MyTable} LIMIT ${limit}`;
+    const query = sql`
+      SELECT 
+        ${MyTable.columns.id},
+        ${MyTable.columns.name},
+        ${MyTable.columns.createdAt}
+      FROM ${MyTable} 
+      ORDER BY ${MyTable.columns.createdAt} DESC
+      LIMIT ${limit}
+    `;
     const result = await client.query.execute(query);
     const data = await result.json();
     res.json(data);
@@ -288,7 +296,12 @@ usersRouter.get("/:userId", async (req, res) => {
   const { userId } = req.params;
 
   const query = sql`
-    SELECT * FROM ${UserProfile}
+    SELECT 
+      ${UserProfile.columns.id},
+      ${UserProfile.columns.name},
+      ${UserProfile.columns.email},
+      ${UserProfile.columns.createdAt}
+    FROM ${UserProfile}
     WHERE ${UserProfile.columns.id} = ${userId}
   `;
 

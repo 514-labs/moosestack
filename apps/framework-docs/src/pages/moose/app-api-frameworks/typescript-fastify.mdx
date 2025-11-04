@@ -38,7 +38,15 @@ app.get("/data", async (request, reply) => {
   const limit = parseInt((request.query as any).limit || "10");
 
   try {
-    const query = sql`SELECT * FROM ${MyTable} LIMIT ${limit}`;
+    const query = sql`
+      SELECT 
+        ${MyTable.columns.id},
+        ${MyTable.columns.name},
+        ${MyTable.columns.createdAt}
+      FROM ${MyTable}
+      ORDER BY ${MyTable.columns.createdAt} DESC
+      LIMIT ${limit}
+    `;
     const result = await client.query.execute(query);
     return await result.json();
   } catch (error) {
@@ -271,7 +279,15 @@ app.get("/data", async (request, reply) => {
   }
 
   const { client, sql } = moose;
-  const result = await client.query.execute(sql`SELECT * FROM ${MyTable} LIMIT 10`);
+  const result = await client.query.execute(sql`
+    SELECT 
+      ${MyTable.columns.id},
+      ${MyTable.columns.name},
+      ${MyTable.columns.status}
+    FROM ${MyTable}
+    WHERE ${MyTable.columns.status} = 'active'
+    LIMIT 10
+  `);
   const data = await result.json();
 
   return app.utility.formatResponse(data);

@@ -38,13 +38,17 @@ async def get_data(request: Request, limit: int = 10):
         )
 
     try:
-        query = """
-            SELECT * FROM {table}
-            LIMIT {limit}
+        query = f"""
+            SELECT 
+                {MyTable.columns.id},
+                {MyTable.columns.name},
+                {MyTable.columns.created_at}
+            FROM {MyTable}
+            ORDER BY {MyTable.columns.created_at} DESC
+            LIMIT {{limit}}
         """
 
-        result = moose.client.query.execute(query, {
-            "table": MyTable,
+        result = moose.client.query.execute_raw(query, {
             "limit": limit
         })
 
@@ -388,6 +392,7 @@ async def admin_dashboard(user: dict = Depends(require_admin_user)):
 
 ```python
 from fastapi import Depends
+from app.tables.user_table import UserTable
 
 class Pagination:
     def __init__(self, page: int = 1, size: int = 10):
@@ -400,12 +405,17 @@ async def list_users(
     pagination: Pagination = Depends(),
     moose: ApiUtil = Depends(get_moose_dependency())
 ):
-    query = """
-        SELECT * FROM users
-        LIMIT {size}
-        OFFSET {skip}
+    query = f"""
+        SELECT 
+            {UserTable.columns.id},
+            {UserTable.columns.name},
+            {UserTable.columns.email}
+        FROM {UserTable}
+        WHERE {UserTable.columns.status} = 'active'
+        LIMIT {{size}}
+        OFFSET {{skip}}
     """
-    result = moose.client.query.execute(query, {
+    result = moose.client.query.execute_raw(query, {
         "size": pagination.size,
         "skip": pagination.skip
     })

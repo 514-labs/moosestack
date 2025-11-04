@@ -44,7 +44,15 @@ const handler = async (req: IncomingMessage, res: ServerResponse) => {
     const limit = parseInt((url.query.limit as string) || "10");
 
     try {
-      const query = sql`SELECT * FROM ${MyTable} LIMIT ${limit}`;
+      const query = sql`
+        SELECT 
+          ${MyTable.columns.id},
+          ${MyTable.columns.name},
+          ${MyTable.columns.createdAt}
+        FROM ${MyTable}
+        ORDER BY ${MyTable.columns.createdAt} DESC
+        LIMIT ${limit}
+      `;
       const result = await client.query.execute(query);
       const data = await result.json();
 
@@ -316,7 +324,15 @@ const handleStreamData = async (req: IncomingMessage, res: ServerResponse) => {
     "Transfer-Encoding": "chunked"
   });
 
-  const query = sql`SELECT * FROM ${MyTable} LIMIT 1000`;
+  const query = sql`
+    SELECT 
+      ${MyTable.columns.id},
+      ${MyTable.columns.name},
+      ${MyTable.columns.data}
+    FROM ${MyTable}
+    ORDER BY ${MyTable.columns.createdAt} DESC
+    LIMIT 1000
+  `;
   const result = await client.query.execute(query);
   const data = await result.json();
 
