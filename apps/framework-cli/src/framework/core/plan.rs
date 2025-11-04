@@ -458,6 +458,7 @@ mod tests {
                 native_port: 9000,
                 host_data_path: None,
                 additional_databases: Vec::new(),
+                clusters: None,
             },
             http_server_config: crate::cli::local_webserver::LocalWebserverConfig::default(),
             redis_config: crate::infrastructure::redis::redis_client::RedisConfig::default(),
