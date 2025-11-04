@@ -9,7 +9,7 @@ const rawMeta = {
     title: "Typescript / Javascript / Node",
   },
   "typescript-native": {
-    title: "Native (Api Class)",
+    title: "Native Moose APIs",
   },
   express: {
     title: "Express",
@@ -28,7 +28,7 @@ const rawMeta = {
     title: "Python",
   },
   "python-native": {
-    title: "Native (Api Class)",
+    title: "Native Moose APIs",
   },
   fastapi: {
     title: "FastAPI",
