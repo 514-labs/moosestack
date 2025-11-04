@@ -1,0 +1,199 @@
+---
+title: Bring Your Own API Framework
+description: Use Express, Koa, Fastify, or FastAPI with MooseStack
+---
+
+import { Callout, LanguageSwitcher, TypeScript, Python } from "@/components";
+import Link from "next/link";
+
+# Bring Your Own API Framework
+
+<LanguageSwitcher />
+
+MooseStack provides flexible approaches for building HTTP APIs to expose your data. You can use Moose's built-in [`Api` class](/moose/apis/analytics-api) for simple GET endpoints, or bring popular web frameworks like [Express](/moose/app-api-frameworks/express), [Koa](/moose/app-api-frameworks/typescript-koa), [Fastify](/moose/app-api-frameworks/typescript-fastify), or [FastAPI](/moose/app-api-frameworks/fastapi) for advanced features and custom middleware.
+
+These framework integrations give you two complementary integration paths:
+
+- **Embed supported frameworks inside your MooseStack project.** Mount Express, Koa, Fastify, or raw Node.js with `WebApp` so MooseStack deploys everything together and injects auth, `client`, and `sql` helpers on every request.
+- **Call MooseStack from any framework using the client.** Keep an existing app (Next.js, Rails, etc.) in its current runtime and use the MooseStack TypeScript or Python client to query ClickHouse or trigger workflows.
+
+## Overview
+
+### Native APIs
+
+Moose's built-in [`Api` class](/moose/apis/analytics-api) provides simple GET endpoints with automatic type validation and OpenAPI documentation. This is ideal for straightforward data queries without complex routing or middleware requirements.
+
+**Use Native `Api` class when you need:**
+- Simple GET endpoints with query parameters
+- Automatic type validation and conversion
+- Automatic OpenAPI documentation generation
+- Minimal setup and boilerplate
+
+
+### Embed a supported framework inside a MooseStack project
+
+Use the `WebApp` class to mount your framework in your MooseStack project alongside tables, streams, and workflows.
+
+**Why embed the framework:**
+- One deployment pipeline managed by the MooseStack CLI (dev hot reload + production config)
+- Access MooseStack utilities (`client`, `sql`, `jwt`) in every handler through `getMooseUtils`
+- Optionally share auth, logging, and observability defaults with the rest of your MooseStack modules
+- Compose MooseStack APIs and framework routes under the same hostname
+
+### Use the MooseStack client from any framework
+
+If you already have an application server, call MooseStack directly with the client SDKs—no MooseStack deployment required. Works great for Next.js, Rails, Python microservices, or anything else that can make HTTP requests.
+
+Here's the client pattern:
+
+<TypeScript>
+```ts filename="lib/moose.ts" copy
+import { MooseClient, sql } from "@514labs/moose-lib";
+import { UserTable } from "./tables/UserTable";
+
+const client = new MooseClient();
+
+export async function listUsers(limit = 25) {
+  const result = await client.query.execute(
+    sql`
+      SELECT 
+        ${UserTable.columns.id}, 
+        ${UserTable.columns.name}, 
+        ${UserTable.columns.email}
+      FROM ${UserTable}
+      WHERE ${UserTable.columns.status} = 'active'
+      LIMIT ${limit}
+    `
+  );
+  return await result.json();
+}
+```
+</TypeScript>
+
+<Python>
+```py filename="lib/moose.py" copy
+from moose_lib import MooseClient
+from app.tables.user_table import UserTable
+
+client = MooseClient()
+
+def list_users(limit: int = 25):
+    query = f"""
+        SELECT 
+          {UserTable.columns.id}, 
+          {UserTable.columns.name}, 
+          {UserTable.columns.email}
+        FROM {UserTable}
+        WHERE {UserTable.columns.status} = 'active'
+        LIMIT {{limit:UInt32}}
+    """
+    return client.query.execute_raw(query, {"limit": limit})
+```
+</Python>
+
+<Callout type="info" title="Read data with the MooseStack client">
+  For more examples, see the [Querying Data guide](/moose/olap/read-data).
+</Callout>
+
+## Supported Frameworks
+
+<Callout type="info" title="Need simple analytics endpoints?">
+  For basic GET endpoints that query your OLAP tables, MooseStack provides built-in [Analytics APIs](/moose/apis/analytics-api) using the `Api` class.
+</Callout>
+
+<Callout type="warning" title="Official Moose WebApp support">
+  `WebApp` currently ships adapters for [Express](/moose/app-api-frameworks/express), [Koa](/moose/app-api-frameworks/typescript-koa), [Fastify](/moose/app-api-frameworks/typescript-fastify), [raw Node.js](/moose/app-api-frameworks/typescript-raw-nodejs), and [FastAPI](/moose/app-api-frameworks/fastapi). Frameworks like Next.js can call MooseStack today through the client pattern above.
+</Callout>
+
+### TypeScript
+
+<div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-6">
+  <Link href="/moose/app-api-frameworks/express" className="rounded-xl border bg-card text-card-foreground shadow p-6 hover:bg-muted transition">
+    <div className="font-semibold">Express</div>
+    <div className="text-sm text-gray-600 dark:text-gray-400">
+      Most popular Node.js web framework
+    </div>
+  </Link>
+
+  <Link href="/moose/app-api-frameworks/typescript-fastify" className="rounded-xl border bg-card text-card-foreground shadow p-6 hover:bg-muted transition">
+    <div className="font-semibold">Fastify</div>
+    <div className="text-sm text-gray-600 dark:text-gray-400">
+      Fast and low overhead web framework
+    </div>
+  </Link>
+
+  <Link href="/moose/app-api-frameworks/typescript-koa" className="rounded-xl border bg-card text-card-foreground shadow p-6 hover:bg-muted transition">
+    <div className="font-semibold">Koa</div>
+    <div className="text-sm text-gray-600 dark:text-gray-400">
+      Expressive middleware framework by Express team
+    </div>
+  </Link>
+
+  <Link href="/moose/app-api-frameworks/typescript-raw-nodejs" className="rounded-xl border bg-card text-card-foreground shadow p-6 hover:bg-muted transition">
+    <div className="font-semibold">Raw Node.js</div>
+    <div className="text-sm text-gray-600 dark:text-gray-400">
+      Use raw HTTP handlers without any framework
+    </div>
+  </Link>
+</div>
+
+### Python
+
+<div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-6">
+  <Link href="/moose/app-api-frameworks/fastapi" className="rounded-xl border bg-card text-card-foreground shadow p-6 hover:bg-muted transition">
+    <div className="font-semibold">FastAPI</div>
+    <div className="text-sm text-gray-600 dark:text-gray-400">
+      Modern, fast Python web framework
+    </div>
+  </Link>
+</div>
+
+## Key Concepts
+
+### WebApp Class
+
+The `WebApp` class is the bridge between your web framework and MooseStack. It handles:
+
+- Mounting your framework at a custom URL path
+- Injecting MooseStack utilities (database clients, SQL helpers, JWT)
+- Validating JWT tokens when authentication is configured
+- Managing the request/response lifecycle
+
+### Accessing Data
+
+All frameworks can access your OLAP database through MooseStack's injected utilities:
+
+<TypeScript>
+```ts
+import { getMooseUtils } from "@514labs/moose-lib";
+
+const moose = getMooseUtils(req);
+const { client, sql, jwt } = moose;
+```
+</TypeScript>
+
+<Python>
+```python
+from moose_lib.dmv2.web_app_helpers import get_moose_utils
+
+moose = get_moose_utils(request)
+client = moose.client
+jwt = moose.jwt
+```
+</Python>
+
+### Mount Paths
+
+Each WebApp must specify a unique mount path where it will be accessible. Mount paths have specific rules:
+
+- Cannot be `/` (root path)
+- Cannot end with a trailing slash
+- Cannot start with reserved paths: `/admin`, `/api`, `/consumption`, `/health`, `/ingest`, `/mcp`, `/moose`, `/ready`, `/workflows`
+
+**Valid:** `/myapi`, `/v1/analytics`, `/custom/endpoint`
+
+**Invalid:** `/`, `/myapi/`, `/api/myendpoint`
+
+<Callout type="info" title="Prefer Moose-managed APIs?">
+  MooseStack's native `Api` class provides built-in validation and OpenAPI documentation. See the [Analytics API documentation](/moose/apis/analytics-api) for a guided walkthrough.
+</Callout>
