@@ -764,7 +764,8 @@ async fn execute_modify_table_column(
     }
 
     log::info!(
-        "Executing ModifyTableColumn for table: {}, column: {} ({}→{})",
+        "Executing ModifyTableColumn for table: {}, column: {} ({}→{})\
+data_type_changed: {data_type_changed}, default_changed: {default_changed}, required_changed: {required_changed}, comment_changed: {comment_changed}, ttl_changed: {ttl_changed}",
         table_name,
         after_column.name,
         before_column.data_type,
@@ -1337,6 +1338,7 @@ pub async fn check_table_size(
 }
 
 pub struct TableWithUnsupportedType {
+    pub database: String,
     pub name: String,
     pub col_name: String,
     pub col_type: String,
@@ -1548,6 +1550,7 @@ impl OlapOperations for ConfiguredDBClient {
                                         col_type, col_name, table_name
                                     );
                                     unsupported_tables.push(TableWithUnsupportedType {
+                                        database,
                                         name: table_name,
                                         col_name,
                                         col_type,
@@ -1566,6 +1569,7 @@ impl OlapOperations for ConfiguredDBClient {
                                     col_type, col_name, table_name
                                 );
                                 unsupported_tables.push(TableWithUnsupportedType {
+                                    database,
                                     name: table_name,
                                     col_name,
                                     col_type,
