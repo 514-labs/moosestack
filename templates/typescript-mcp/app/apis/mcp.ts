@@ -191,6 +191,16 @@ app.all("/", async (req, res) => {
       console.error(`[MCP Error]`, error);
     };
 
+    // Create a fresh MCP server instance for this request
+    //
+    // Why per-request instantiation?
+    // - MCP transports and servers are completely decoupled
+    // - Tools need access to request-specific mooseUtils (ClickHouse client, JWT, etc.)
+    // - The only way to pass mooseUtils to tool handlers is via closure in serverFactory()
+    // - Creating the server per-request ensures each request has isolated utilities
+    //
+    // Performance note: Server instantiation + tool registration is lightweight.
+    // The overhead is minimal compared to database queries.
     const server = serverFactory(mooseUtils);
     await server.connect(transport);
 
