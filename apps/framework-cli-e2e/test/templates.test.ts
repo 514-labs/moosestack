@@ -32,12 +32,10 @@ import {
 } from "./constants";
 
 import {
-  stopDevProcess,
   waitForServerStart,
+  waitForStreamingFunctions,
+  waitForInfrastructureReady,
   waitForKafkaReady,
-  killRemainingProcesses,
-  cleanupDocker,
-  globalDockerCleanup,
   cleanupClickhouseData,
   waitForDBWrite,
   waitForMaterializedViewUpdate,
@@ -47,9 +45,7 @@ import {
   verifyConsumptionApi,
   verifyVersionedConsumptionApi,
   verifyConsumerLogs,
-  removeTestProject,
   createTempTestDirectory,
-  cleanupLeftoverTestDirectories,
   setupTypeScriptProject,
   setupPythonProject,
   getExpectedSchemas,
@@ -59,6 +55,8 @@ import {
   verifyWebAppHealth,
   verifyWebAppQuery,
   verifyWebAppPostEndpoint,
+  cleanupTestSuite,
+  performGlobalCleanup,
 } from "./utils";
 import { triggerWorkflow } from "./utils/workflow-utils";
 import { geoPayloadPy, geoPayloadTs } from "./utils/geo-payload";
@@ -230,30 +228,20 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
       await waitForKafkaReady(TIMEOUTS.KAFKA_READY_MS);
       console.log("Kafka ready, cleaning up old data...");
       await cleanupClickhouseData();
-      console.log("Waiting before running tests...");
-      await setTimeoutAsync(TIMEOUTS.PRE_TEST_WAIT_MS);
+      console.log("Waiting for streaming functions to be ready...");
+      await waitForStreamingFunctions();
+      console.log(
+        "Verifying all infrastructure is ready (Redis, Kafka, ClickHouse, Temporal)...",
+      );
+      await waitForInfrastructureReady();
+      console.log("All components ready, starting tests...");
     });
 
     after(async function () {
       this.timeout(TIMEOUTS.CLEANUP_MS);
-      try {
-        console.log(`Starting cleanup for ${config.displayName} test...`);
-        await stopDevProcess(devProcess);
-        await cleanupDocker(TEST_PROJECT_DIR, config.appName);
-        removeTestProject(TEST_PROJECT_DIR);
-        console.log(`Cleanup completed for ${config.displayName} test`);
-      } catch (error) {
-        console.error("Error during cleanup:", error);
-        // Force cleanup even if some steps fail
-        try {
-          if (devProcess && !devProcess.killed) {
-            devProcess.kill("SIGKILL");
-          }
-        } catch (killError) {
-          console.error("Error killing process:", killError);
-        }
-        removeTestProject(TEST_PROJECT_DIR);
-      }
+      await cleanupTestSuite(devProcess, TEST_PROJECT_DIR, config.appName, {
+        logPrefix: config.displayName,
+      });
     });
 
     // Schema validation test - runs for all templates
@@ -355,10 +343,20 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
       it("should create Buffer engine table correctly", async function () {
         this.timeout(TIMEOUTS.TEST_SETUP_MS);
 
-        // Verify the destination table exists first
-        const destinationDDL = await getTableDDL(
-          "BufferDestinationTest",
-          "local",
+        // Wait for infrastructure to stabilize after previous test's file modification
+        console.log(
+          "Waiting for streaming functions to stabilize after index modification...",
+        );
+        // Table modifications trigger cascading function restarts, so use longer timeout
+        await waitForStreamingFunctions(180_000);
+
+        // Wait for tables to be created after previous test's file modifications
+        // Use fixed 1-second delays (no exponential backoff) to avoid long waits on failure
+        const destinationDDL = await withRetries(
+          async () => {
+            return await getTableDDL("BufferDestinationTest", "local");
+          },
+          { attempts: 10, delayMs: 1000, backoffFactor: 1 },
         );
         console.log(`Destination table DDL: ${destinationDDL}`);
 
@@ -369,7 +367,12 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
         }
 
         // Verify the Buffer table exists and has correct configuration
-        const bufferDDL = await getTableDDL("BufferTest", "local");
+        const bufferDDL = await withRetries(
+          async () => {
+            return await getTableDDL("BufferTest", "local");
+          },
+          { attempts: 10, delayMs: 1000, backoffFactor: 1 },
+        );
         console.log(`Buffer table DDL: ${bufferDDL}`);
 
         // Check that it uses Buffer engine with correct parameters
@@ -477,6 +480,13 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
       it("should plan/apply DEFAULT removal on existing tables", async function () {
         this.timeout(TIMEOUTS.TEST_SETUP_MS);
 
+        // Wait for infrastructure to stabilize after previous test's file modification
+        console.log(
+          "Waiting for streaming functions to stabilize after TTL modification...",
+        );
+        // Table modifications trigger cascading function restarts, so use longer timeout
+        await waitForStreamingFunctions(180_000);
+
         // First, verify initial DEFAULT settings
         await withRetries(
           async () => {
@@ -552,6 +562,13 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
     // Create test case based on language
     if (config.language === "typescript") {
       it("should successfully ingest data and verify through consumption API (DateTime support)", async function () {
+        // Wait for infrastructure to stabilize after previous test's file modification
+        console.log(
+          "Waiting for streaming functions to stabilize after DEFAULT removal...",
+        );
+        // Table modifications trigger cascading function restarts, so use longer timeout
+        await waitForStreamingFunctions(180_000);
+
         const eventId = randomUUID();
 
         // Send multiple records to trigger batch write
@@ -577,7 +594,6 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
           );
         }
 
-        await triggerWorkflow("generator");
         await waitForDBWrite(
           devProcess!,
           "Bar",
@@ -586,6 +602,8 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
           "local",
         );
         await verifyClickhouseData("Bar", eventId, "primaryKey", "local");
+
+        await triggerWorkflow("generator");
         await waitForMaterializedViewUpdate(
           "BarAggregated",
           1,
@@ -945,7 +963,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
                   headers: { "Content-Type": "application/json" },
                   body: JSON.stringify({
                     id,
-                    timestamp: new Date(TEST_DATA.TIMESTAMP),
+                    timestamp: new Date(TEST_DATA.TIMESTAMP * 1000),
                     payloadWithConfig: {
                       name: "alpha",
                       count: 3,
@@ -1001,29 +1019,50 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
       }
     } else {
       it("should successfully ingest data and verify through consumption API", async function () {
-        const eventId = randomUUID();
-        await withRetries(
-          async () => {
-            const response = await fetch(`${SERVER_CONFIG.url}/ingest/foo`, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                primary_key: eventId,
-                baz: "QUUX",
-                timestamp: TEST_DATA.TIMESTAMP,
-                optional_text: "Hello from Python",
-              }),
-            });
-            if (!response.ok) {
-              const text = await response.text();
-              throw new Error(`${response.status}: ${text}`);
-            }
-          },
-          { attempts: 5, delayMs: 500 },
+        // Wait for infrastructure to stabilize after previous test's file modification
+        console.log(
+          "Waiting for streaming functions to stabilize after DEFAULT removal...",
         );
-        await triggerWorkflow("generator");
-        await waitForDBWrite(devProcess!, "Bar", 1, 60_000, "local");
+        // Table modifications trigger cascading function restarts, so use longer timeout
+        await waitForStreamingFunctions(180_000);
+
+        const eventId = randomUUID();
+
+        // Send multiple records to trigger batch write like typescript tests
+        const recordsToSend = TEST_DATA.BATCH_RECORD_COUNT;
+        for (let i = 0; i < recordsToSend; i++) {
+          await withRetries(
+            async () => {
+              const response = await fetch(`${SERVER_CONFIG.url}/ingest/foo`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  primary_key: i === 0 ? eventId : randomUUID(),
+                  baz: "QUUX",
+                  timestamp: TEST_DATA.TIMESTAMP,
+                  optional_text:
+                    i === 0 ? "Hello from Python" : `Test message ${i}`,
+                }),
+              });
+              if (!response.ok) {
+                const text = await response.text();
+                throw new Error(`${response.status}: ${text}`);
+              }
+            },
+            { attempts: 5, delayMs: 500 },
+          );
+        }
+
+        await waitForDBWrite(
+          devProcess!,
+          "Bar",
+          recordsToSend,
+          60_000,
+          "local",
+        );
         await verifyClickhouseData("Bar", eventId, "primary_key", "local");
+
+        await triggerWorkflow("generator");
         await waitForMaterializedViewUpdate(
           "bar_aggregated",
           1,
@@ -1036,9 +1075,8 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
             {
               day_of_month: 19,
               total_rows: 1,
-              rows_with_text: 1,
-              max_text_length: 17,
-              total_text_length: 17,
+              // Just verify structure - don't check exact values since generator adds random data
+              // Similar to typescript test
             },
           ],
         );
@@ -1050,9 +1088,8 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
             {
               day_of_month: 19,
               total_rows: 1,
-              rows_with_text: 1,
-              max_text_length: 17,
-              total_text_length: 17,
+              // Just verify structure - don't check exact values since generator adds random data
+              // Similar to typescript test
               metadata: {
                 version: "1.0",
                 query_params: {
@@ -1216,23 +1253,17 @@ describe("Moose Templates", () => {
   TEMPLATE_CONFIGS.forEach(createTemplateTestSuite);
 });
 
+// Global setup to clean Docker state from previous runs (useful for local dev)
+// Github hosted runners start with a clean slate.
+before(async function () {
+  this.timeout(TIMEOUTS.GLOBAL_CLEANUP_MS);
+  await performGlobalCleanup(
+    "Running global setup - cleaning Docker state from previous runs...",
+  );
+});
+
 // Global cleanup to ensure no hanging processes
 after(async function () {
   this.timeout(TIMEOUTS.GLOBAL_CLEANUP_MS);
-  console.log("Running global cleanup...");
-
-  try {
-    // Kill any remaining moose-cli processes
-    await killRemainingProcesses();
-
-    // Clean up any remaining Docker resources
-    await globalDockerCleanup();
-
-    // Clean up any leftover test directories
-    cleanupLeftoverTestDirectories();
-
-    console.log("Global cleanup completed");
-  } catch (error) {
-    console.warn("Error during global cleanup:", error);
-  }
+  await performGlobalCleanup();
 });
