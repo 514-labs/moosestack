@@ -3,10 +3,11 @@ title: Bring Your Own API Framework
 description: Use Express, Koa, Fastify, or FastAPI with MooseStack
 ---
 
-import { Callout } from "@/components";
+import { Callout, TypeScript, Python, LanguageSwitcher } from "@/components";
 import Link from "next/link";
 
 # Bring Your Own API Framework
+<LanguageSwitcher />
 
 MooseStack provides flexible approaches for building HTTP APIs to expose your data. You can use Moose's built-in [`Api` class](/moose/apis/analytics-api) for simple GET endpoints, or bring popular web frameworks like [Express](/moose/app-api-frameworks/express), [Koa](/moose/app-api-frameworks/typescript-koa), [Fastify](/moose/app-api-frameworks/typescript-fastify), or [FastAPI](/moose/app-api-frameworks/fastapi) for advanced features and custom middleware.
 
@@ -42,7 +43,7 @@ Use the `WebApp` class when you want Moose to host your framework alongside tabl
 
 If you already have an application server, call Moose directly with the client SDKs—no Moose deployment required. Works great for Next.js, Rails, Python microservices, or anything else that can make HTTP requests.
 
-Here’s the client pattern in both TypeScript and Python:
+Here’s the client pattern:
 
 <TypeScript>
 ```ts filename="lib/moose.ts" copy
