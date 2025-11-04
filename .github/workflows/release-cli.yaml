@@ -317,13 +317,6 @@ jobs:
               TARGET: aarch64-unknown-linux-gnu,
             }
           - {
-              # Intel laptops are older
-              NAME: darwin-x64,
-              OS: macos-13-large,
-              TOOLCHAIN: stable,
-              TARGET: x86_64-apple-darwin,
-            }
-          - {
               NAME: darwin-arm64,
               OS: macos-14-large,
               TOOLCHAIN: stable,
