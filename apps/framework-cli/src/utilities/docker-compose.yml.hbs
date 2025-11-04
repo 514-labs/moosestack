@@ -136,8 +136,8 @@ services:
       {{/if}}
       - clickhouse-0-logs:/var/log/clickhouse-server/
       - clickhouse-0-users:/etc/clickhouse-server/users.d
-      {{#if clickhouse_has_clusters}}
-      - ./clickhouse_clusters.xml:/etc/clickhouse-server/config.d/clusters.xml:ro
+      {{#if clickhouse_clusters_file}}
+      - "{{clickhouse_clusters_file}}:/etc/clickhouse-server/config.d/clusters.xml:ro"
       {{/if}}
     environment:
       - CLICKHOUSE_DB=${DB_NAME:-local}
