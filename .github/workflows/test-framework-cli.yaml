@@ -301,6 +301,12 @@ jobs:
           repository: ${{ github.event.pull_request.head.repo.full_name }}
           ref: ${{ github.event.pull_request.head.sha }}
 
+      # Login to Docker hub to get higher rate limits when moose pulls images
+      - name: Login to Docker Hub
+        uses: ./.github/actions/docker-login
+        with:
+          op-service-account-token: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+
       # Update packageManager field to match matrix version for testing
       - name: Update pnpm version in package.json
         if: startsWith(matrix.package-manager, 'pnpm')
@@ -380,6 +386,12 @@ jobs:
           repository: ${{ github.event.pull_request.head.repo.full_name }}
           ref: ${{ github.event.pull_request.head.sha }}
 
+      # Login to Docker hub to get higher rate limits when moose pulls images
+      - name: Login to Docker Hub
+        uses: ./.github/actions/docker-login
+        with:
+          op-service-account-token: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+
       - uses: pnpm/action-setup@v4
 
       - name: Install node
@@ -441,6 +453,12 @@ jobs:
         with:
           repository: ${{ github.event.pull_request.head.repo.full_name }}
           ref: ${{ github.event.pull_request.head.sha }}
+
+      # Login to Docker hub to get higher rate limits when moose pulls images
+      - name: Login to Docker Hub
+        uses: ./.github/actions/docker-login
+        with:
+          op-service-account-token: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
 
       - uses: pnpm/action-setup@v4
 
@@ -512,6 +530,12 @@ jobs:
           repository: ${{ github.event.pull_request.head.repo.full_name }}
           ref: ${{ github.event.pull_request.head.sha }}
 
+      # Login to Docker hub to get higher rate limits when moose pulls images
+      - name: Login to Docker Hub
+        uses: ./.github/actions/docker-login
+        with:
+          op-service-account-token: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+
       - uses: pnpm/action-setup@v4
 
       - name: Install node
@@ -577,6 +601,12 @@ jobs:
           repository: ${{ github.event.pull_request.head.repo.full_name }}
           ref: ${{ github.event.pull_request.head.sha }}
 
+      # Login to Docker hub to get higher rate limits when moose pulls images
+      - name: Login to Docker Hub
+        uses: ./.github/actions/docker-login
+        with:
+          op-service-account-token: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+
       - uses: pnpm/action-setup@v4
 
       - name: Install node
@@ -635,6 +665,12 @@ jobs:
         with:
           repository: ${{ github.event.pull_request.head.repo.full_name }}
           ref: ${{ github.event.pull_request.head.sha }}
+
+      # Login to Docker hub to get higher rate limits when moose pulls images
+      - name: Login to Docker Hub
+        uses: ./.github/actions/docker-login
+        with:
+          op-service-account-token: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
 
       - uses: pnpm/action-setup@v4
 

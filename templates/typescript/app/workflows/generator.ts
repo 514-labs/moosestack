@@ -17,7 +17,9 @@ export const ingest = new Task<null, void>("ingest", {
     for (let i = 0; i < 1000; i++) {
       const foo: Foo = {
         primaryKey: faker.string.uuid(),
-        timestamp: faker.date.recent({ days: 365 }).getTime(),
+        timestamp: Math.floor(
+          faker.date.recent({ days: 365 }).getTime() / 1000,
+        ), // Convert milliseconds to seconds
         optionalText: Math.random() < 0.5 ? faker.lorem.text() : undefined,
       };
 

@@ -33,6 +33,8 @@ interface CTACardProps {
   variant?: "default" | "gradient" | "sloan";
   orientation?: "vertical" | "horizontal";
   isMooseModule?: boolean;
+  secondaryCtaLink?: string;
+  secondaryCtaLabel?: string;
 }
 
 export function CTACard({
@@ -47,6 +49,8 @@ export function CTACard({
   variant = "default",
   orientation = "vertical",
   isMooseModule = false,
+  secondaryCtaLink,
+  secondaryCtaLabel,
 }: CTACardProps) {
   return orientation == "horizontal" ?
       <Link href={ctaLink} className={cn("w-full", className)}>
@@ -113,12 +117,19 @@ export function CTACard({
           </Heading>
           <CardDescription className="mt-2">{description}</CardDescription>
         </CardContent>
-        <CardFooter>
+        <CardFooter className="flex gap-2">
           <Link href={ctaLink}>
             <Button className="font-normal" variant="secondary">
               {ctaLabel}
             </Button>
           </Link>
+          {secondaryCtaLink && secondaryCtaLabel && (
+            <Link href={secondaryCtaLink}>
+              <Button className="font-normal" variant="secondary">
+                {secondaryCtaLabel}
+              </Button>
+            </Link>
+          )}
         </CardFooter>
       </Card>;
 }
