@@ -74,6 +74,30 @@ pub struct InfraRealityChecker<T: OlapOperations> {
     olap_client: T,
 }
 
+pub fn find_table_from_infra_map(
+    table: &Table,
+    // the map may be from an old version where the key does not contain the DB name prefix
+    infra_map_tables: &HashMap<String, Table>,
+    default_database: &str,
+) -> Option<String> {
+    // Generate ID with local database prefix for comparison
+    let table_id = table.id(default_database);
+
+    // Try exact ID match first (fast path)
+    if infra_map_tables.contains_key(&table_id) {
+        return Some(table_id);
+    }
+
+    // handles the case where `infra_map_tables` has keys with a different db prefix, or not at all
+    infra_map_tables.iter().find_map(|(table_id, t)| {
+        if t.name == table.name && t.database.is_none() && t.version == table.version {
+            Some(table_id.clone())
+        } else {
+            None
+        }
+    })
+}
+
 impl<T: OlapOperations> InfraRealityChecker<T> {
     /// Creates a new InfraRealityChecker with the provided OLAP client.
     ///
@@ -140,28 +164,28 @@ impl<T: OlapOperations> InfraRealityChecker<T> {
         );
 
         // Create maps for easier comparison
+        //
+        // KEY FORMAT for actual_table_map:
+        // - Uses NEW format with database prefix: "local_db_tablename_1_0_0"
+        // - Generated via table.id(&infra_map.default_database)
         let actual_table_map: HashMap<_, _> = actual_tables
             .into_iter()
-            .map(|t| (t.name.clone(), t))
+            .map(|t| (t.id(&infra_map.default_database), t))
             .collect();
 
         debug!("Actual table names: {:?}", actual_table_map.keys());
-
-        let mapped_table_map: HashMap<_, _> = infra_map
-            .tables
-            .values()
-            .map(|t| (t.name.clone(), t.clone()))
-            .collect();
-
         debug!(
-            "Infrastructure map table names: {:?}",
-            mapped_table_map.keys()
+            "Infrastructure map table ids: {:?}",
+            infra_map.tables.keys()
         );
 
         // Find unmapped tables (exist in reality but not in map)
         let unmapped_tables: Vec<Table> = actual_table_map
             .values()
-            .filter(|table| !mapped_table_map.contains_key(&table.name))
+            .filter(|table| {
+                find_table_from_infra_map(table, &infra_map.tables, &infra_map.default_database)
+                    .is_none()
+            })
             .cloned()
             .collect();
 
@@ -171,16 +195,21 @@ impl<T: OlapOperations> InfraRealityChecker<T> {
             unmapped_tables
         );
 
-        // Find missing tables (in map but don't exist)
-        let missing_tables: Vec<String> = mapped_table_map
-            .keys()
-            .filter(|name| {
-                !actual_table_map.contains_key(*name)
-                    && !tables_cannot_be_mapped_back
-                        .iter()
-                        .any(|t| &&t.name == name)
+        let missing_tables: Vec<String> = infra_map
+            .tables
+            .values()
+            .filter(|table| {
+                !actual_table_map.contains_key(&table.id(&infra_map.default_database))
+                    && !tables_cannot_be_mapped_back.iter().any(|t| {
+                        t.name == table.name
+                            && t.database
+                                == table
+                                    .database
+                                    .as_deref()
+                                    .unwrap_or(&infra_map.default_database)
+                    })
             })
-            .cloned()
+            .map(|table| table.name.clone())
             .collect();
         debug!(
             "Found {} missing tables: {:?}",
@@ -190,26 +219,32 @@ impl<T: OlapOperations> InfraRealityChecker<T> {
 
         // Find structural and TTL differences in tables that exist in both
         let mut mismatched_tables = Vec::new();
-        for (name, mapped_table) in mapped_table_map {
-            if let Some(actual_table) = actual_table_map.get(&name) {
-                debug!("Comparing table structure for: {}", name);
-                if actual_table != &mapped_table {
-                    debug!("Found structural mismatch in table: {}", name);
+        // the keys here are created in memory - they must be in the new format
+        for (id, mapped_table) in &infra_map.tables {
+            if let Some(actual_table) = actual_table_map.get(id) {
+                // actual_table always have a database because it's mapped back by list_tables
+                let table_with_db = {
+                    let mut table = mapped_table.clone();
+                    if table.database.is_none() {
+                        table.database = Some(infra_map.default_database.clone());
+                    }
+                    table
+                };
+
+                debug!("Comparing table structure for: {}", id);
+                if actual_table != &table_with_db {
+                    debug!("Found structural mismatch in table: {}", id);
                     debug!("Actual table: {:?}", actual_table);
-                    debug!("Mapped table: {:?}", mapped_table);
+                    debug!("Mapped table: {:?}", table_with_db);
 
                     // Use the existing diff_tables function to compute differences
                     // Note: We flip the order here to make infra_map the reference
                     let mut changes = Vec::new();
-                    let mut actual_tables = HashMap::new();
-                    actual_tables.insert(name.clone(), actual_table.clone());
-                    let mut mapped_tables = HashMap::new();
-                    mapped_tables.insert(name.clone(), mapped_table.clone());
 
                     // Flip the order of arguments to make infra_map the reference
                     InfrastructureMap::diff_tables(
-                        &actual_tables,
-                        &mapped_tables,
+                        &HashMap::from([(id.clone(), actual_table.clone())]),
+                        &HashMap::from([(id.clone(), table_with_db.clone())]),
                         &mut changes,
                         // respect_life_cycle is false to not hide the difference
                         false,
@@ -218,12 +253,12 @@ impl<T: OlapOperations> InfraRealityChecker<T> {
                     debug!(
                         "Found {} changes for table {}: {:?}",
                         changes.len(),
-                        name,
+                        id,
                         changes
                     );
                     mismatched_tables.extend(changes);
                 } else {
-                    debug!("Table {} matches infrastructure map", name);
+                    debug!("Table {} matches infrastructure map", id);
                 }
 
                 // TTL: table-level diff
@@ -241,7 +276,7 @@ impl<T: OlapOperations> InfraRealityChecker<T> {
 
                 if actual_ttl_normalized != mapped_ttl_normalized {
                     mismatched_tables.push(OlapChange::Table(TableChange::TtlChanged {
-                        name: name.clone(),
+                        name: mapped_table.name.clone(),
                         before: actual_table.table_ttl_setting.clone(),
                         after: mapped_table.table_ttl_setting.clone(),
                         table: mapped_table.clone(),
@@ -390,7 +425,10 @@ mod tests {
 
         // Create mock OLAP client with one table
         let mock_client = MockOlapClient {
-            tables: vec![table.clone()],
+            tables: vec![Table {
+                database: Some(DEFAULT_DATABASE_NAME.to_string()),
+                ..table.clone()
+            }],
         };
 
         // Create empty infrastructure map
@@ -426,7 +464,9 @@ mod tests {
         assert!(discrepancies.mismatched_tables.is_empty());
 
         // Add table to infrastructure map
-        infra_map.tables.insert(table.name.clone(), table);
+        infra_map
+            .tables
+            .insert(table.id(DEFAULT_DATABASE_NAME), table);
 
         // Check again
         let discrepancies = checker.check_reality(&project, &infra_map).await.unwrap();
@@ -454,7 +494,10 @@ mod tests {
         });
 
         let mock_client = MockOlapClient {
-            tables: vec![actual_table],
+            tables: vec![Table {
+                database: Some(DEFAULT_DATABASE_NAME.to_string()),
+                ..actual_table.clone()
+            }],
         };
 
         let mut infra_map = InfrastructureMap {
@@ -476,7 +519,7 @@ mod tests {
 
         infra_map
             .tables
-            .insert(infra_table.name.clone(), infra_table);
+            .insert(infra_table.id(DEFAULT_DATABASE_NAME), infra_table);
 
         let checker = InfraRealityChecker::new(mock_client);
         let project = create_test_project();
@@ -525,7 +568,10 @@ mod tests {
         infra_table.order_by = OrderBy::Fields(vec!["id".to_string()]);
 
         let mock_client = MockOlapClient {
-            tables: vec![actual_table],
+            tables: vec![Table {
+                database: Some(DEFAULT_DATABASE_NAME.to_string()),
+                ..actual_table.clone()
+            }],
         };
 
         let mut infra_map = InfrastructureMap {
@@ -547,7 +593,7 @@ mod tests {
 
         infra_map
             .tables
-            .insert(infra_table.name.clone(), infra_table);
+            .insert(infra_table.id(DEFAULT_DATABASE_NAME), infra_table);
 
         let checker = InfraRealityChecker::new(mock_client);
         let project = create_test_project();
@@ -589,7 +635,10 @@ mod tests {
         infra_table.engine = None;
 
         let mock_client = MockOlapClient {
-            tables: vec![actual_table],
+            tables: vec![Table {
+                database: Some(DEFAULT_DATABASE_NAME.to_string()),
+                ..actual_table.clone()
+            }],
         };
 
         let mut infra_map = InfrastructureMap {
@@ -611,7 +660,7 @@ mod tests {
 
         infra_map
             .tables
-            .insert(infra_table.name.clone(), infra_table);
+            .insert(infra_table.id(DEFAULT_DATABASE_NAME), infra_table);
 
         let checker = InfraRealityChecker::new(mock_client);
         let project = create_test_project();

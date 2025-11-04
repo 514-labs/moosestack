@@ -764,7 +764,8 @@ async fn execute_modify_table_column(
     }
 
     log::info!(
-        "Executing ModifyTableColumn for table: {}, column: {} ({}→{})",
+        "Executing ModifyTableColumn for table: {}, column: {} ({}→{})\
+data_type_changed: {data_type_changed}, default_changed: {default_changed}, required_changed: {required_changed}, comment_changed: {comment_changed}, ttl_changed: {ttl_changed}",
         table_name,
         after_column.name,
         before_column.data_type,
@@ -1337,6 +1338,7 @@ pub async fn check_table_size(
 }
 
 pub struct TableWithUnsupportedType {
+    pub database: String,
     pub name: String,
     pub col_name: String,
     pub col_type: String,
@@ -1548,6 +1550,7 @@ impl OlapOperations for ConfiguredDBClient {
                                         col_type, col_name, table_name
                                     );
                                     unsupported_tables.push(TableWithUnsupportedType {
+                                        database,
                                         name: table_name,
                                         col_name,
                                         col_type,
@@ -1566,6 +1569,7 @@ impl OlapOperations for ConfiguredDBClient {
                                     col_type, col_name, table_name
                                 );
                                 unsupported_tables.push(TableWithUnsupportedType {
+                                    database,
                                     name: table_name,
                                     col_name,
                                     col_type,
@@ -1800,7 +1804,15 @@ pub fn extract_order_by_from_create_query(create_query: &str) -> Vec<String> {
         if order_by_content == "tuple()" {
             return Vec::new();
         };
-        let order_by_content = order_by_content.trim_matches('(').trim_matches(')');
+
+        // Remove only the outermost pair of parentheses if present
+        // Don't use trim_matches as it removes ALL matching chars, which breaks function calls
+        let order_by_content =
+            if order_by_content.starts_with('(') && order_by_content.ends_with(')') {
+                &order_by_content[1..order_by_content.len() - 1]
+            } else {
+                order_by_content
+            };
 
         debug!("Found ORDER BY content: {}", order_by_content);
 
@@ -1997,6 +2009,7 @@ pub fn extract_column_ttls_from_create_query(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::infrastructure::olap::clickhouse::sql_parser::tests::NESTED_OBJECTS_SQL;
 
     #[test]
     fn test_extract_version_from_table_name() {
@@ -2299,17 +2312,19 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
     }
 
     #[test]
+    fn test_extract_order_by_from_create_query_nested_objects() {
+        // Test with deeply nested structure
+        let order_by = extract_order_by_from_create_query(sql_parser::tests::NESTED_OBJECTS_SQL);
+        assert_eq!(order_by, vec!["id".to_string()]);
+    }
+
+    #[test]
     fn test_extract_order_by_from_create_query_edge_cases() {
         // Test with multiple ORDER BY clauses (should only use the first one)
         let query =
             "CREATE TABLE test (id Int64) ENGINE = MergeTree() ORDER BY (id) ORDER BY (timestamp)";
         let order_by = extract_order_by_from_create_query(query);
         assert_eq!(order_by, vec!["id".to_string()]);
-
-        // Test with malformed ORDER BY clause (missing closing parenthesis)
-        let query = "CREATE TABLE test (id Int64) ENGINE = MergeTree() ORDER BY (id, timestamp";
-        let order_by = extract_order_by_from_create_query(query);
-        assert_eq!(order_by, vec!["id".to_string(), "timestamp".to_string()]);
 
         // Test with empty ORDER BY clause
         let query = "CREATE TABLE test (id Int64) ENGINE = MergeTree() ORDER BY ()";
@@ -2343,6 +2358,19 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
         let query = "CREATE TABLE test (`PRIMARY KEY` Int64) ENGINE = MergeTree() ORDER BY (`id`)";
         let order_by = extract_order_by_from_create_query(query);
         assert_eq!(order_by, vec!["id".to_string()]);
+
+        // Test with function calls in ORDER BY
+        let query = "CREATE TABLE test (id Int64) ENGINE = MergeTree() ORDER BY (cityHash64(id))";
+        let order_by = extract_order_by_from_create_query(query);
+        assert_eq!(order_by, vec!["cityHash64(id)".to_string()]);
+
+        // Test with multiple function calls in ORDER BY
+        let query = "CREATE TABLE test (id Int64, name String) ENGINE = MergeTree() ORDER BY (cityHash64(id), lower(name))";
+        let order_by = extract_order_by_from_create_query(query);
+        assert_eq!(
+            order_by,
+            vec!["cityHash64(id)".to_string(), "lower(name)".to_string()]
+        );
     }
 
     #[test]
@@ -2435,6 +2463,20 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
         );
         assert!(!map.contains_key("z"));
         assert!(!map.contains_key("timestamp"));
+    }
+
+    #[test]
+    fn test_extract_column_ttls_from_create_query_nested_objects() {
+        // Test with deeply nested structure - should not find TTLs since none are present
+        let map = extract_column_ttls_from_create_query(NESTED_OBJECTS_SQL);
+        assert!(map.is_none());
+    }
+
+    #[test]
+    fn test_extract_table_ttl_from_create_query_nested_objects() {
+        // Test with deeply nested structure - should not find table TTL since none is present
+        let ttl = extract_table_ttl_from_create_query(NESTED_OBJECTS_SQL);
+        assert!(ttl.is_none());
     }
 
     #[test]

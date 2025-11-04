@@ -6,6 +6,7 @@ pub mod clickhouse_url;
 pub mod constants;
 pub mod decode_object;
 pub mod docker;
+pub mod dotenv;
 pub mod git;
 pub mod identifiers;
 pub mod keyring;

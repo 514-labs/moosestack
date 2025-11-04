@@ -47,6 +47,7 @@ use super::partial_infrastructure_map::LifeCycle;
 use super::partial_infrastructure_map::PartialInfrastructureMap;
 use super::primitive_map::PrimitiveMap;
 use crate::cli::display::{show_message_wrapper, Message, MessageType};
+use crate::framework::core::infra_reality_checker::find_table_from_infra_map;
 use crate::framework::core::infrastructure_map::Change::Added;
 use crate::framework::languages::SupportedLanguages;
 use crate::framework::python::datamodel_config::load_main_py;
@@ -922,7 +923,7 @@ impl InfrastructureMap {
             &mut changes.olap_changes,
             table_diff_strategy,
             respect_life_cycle,
-            &self.default_database,
+            &target_map.default_database,
         );
         let table_changes = changes.olap_changes.len() - olap_changes_len_before;
         log::info!("Table changes detected: {}", table_changes);
@@ -1671,8 +1672,11 @@ impl InfrastructureMap {
         let mut table_removals = 0;
         let mut table_additions = 0;
 
-        for (id, table) in self_tables {
-            if let Some(target_table) = target_tables.get(id) {
+        for table in self_tables.values() {
+            // self_tables can be from remote where the keys are IDs with another database prefix
+            // but they are then the default database,
+            //   the `database` field is None and we build the ID ourselves
+            if let Some(target_table) = target_tables.get(&table.id(default_database)) {
                 if !tables_equal_ignore_metadata(table, target_table) {
                     // Respect lifecycle: ExternallyManaged tables are never modified
                     if target_table.life_cycle == LifeCycle::ExternallyManaged && respect_life_cycle
@@ -1711,6 +1715,8 @@ impl InfrastructureMap {
                             }
                         }
 
+                        // TODO: PARTITION BY is not checked!
+
                         // Compute ORDER BY changes
                         fn order_by_from_primary_key(target_table: &Table) -> Vec<String> {
                             target_table
@@ -1729,7 +1735,11 @@ impl InfrastructureMap {
                         let order_by_changed = table.order_by != target_table.order_by
                             // target may leave order_by unspecified,
                             // but the implicit order_by from primary keys can be the same
+                            // ONLY for engines that support ORDER BY (MergeTree family and S3)
+                            // Buffer, S3Queue, and Distributed don't support ORDER BY
+                            // When engine is None, ClickHouse defaults to MergeTree
                             && !(target_table.order_by.is_empty()
+                                && target_table.engine.as_ref().is_none_or(|e| e.supports_order_by())
                                 && matches!(
                                     &table.order_by,
                                     OrderBy::Fields(v)
@@ -1825,8 +1835,8 @@ impl InfrastructureMap {
             }
         }
 
-        for (id, table) in target_tables {
-            if !self_tables.contains_key(id) {
+        for table in target_tables.values() {
+            if find_table_from_infra_map(table, self_tables, default_database).is_none() {
                 // Respect lifecycle: ExternallyManaged tables are never added automatically
                 if table.life_cycle == LifeCycle::ExternallyManaged && respect_life_cycle {
                     log::debug!(
@@ -2001,7 +2011,11 @@ impl InfrastructureMap {
         let order_by_changed = table.order_by != target_table.order_by
             // target may leave order_by unspecified,
             // but the implicit order_by from primary keys can be the same
+            // ONLY for engines that support ORDER BY (MergeTree family and S3)
+            // Buffer, S3Queue, and Distributed don't support ORDER BY
+            // When engine is None, ClickHouse defaults to MergeTree
             && !(target_table.order_by.is_empty()
+                && target_table.engine.as_ref().is_none_or(|e| e.supports_order_by())
                 && matches!(
                     &table.order_by,
                     crate::framework::core::infrastructure::table::OrderBy::Fields(v)
@@ -2153,6 +2167,7 @@ impl InfrastructureMap {
     /// A protocol buffer representation of the infrastructure map
     pub fn to_proto(&self) -> ProtoInfrastructureMap {
         ProtoInfrastructureMap {
+            default_database: self.default_database.clone(),
             topics: self
                 .topics
                 .iter()
@@ -2228,7 +2243,7 @@ impl InfrastructureMap {
         let proto = ProtoInfrastructureMap::parse_from_bytes(&bytes)?;
 
         Ok(InfrastructureMap {
-            default_database: default_database_name(),
+            default_database: proto.default_database,
             topics: proto
                 .topics
                 .into_iter()
@@ -2514,7 +2529,7 @@ fn columns_are_equivalent(before: &Column, after: &Column) -> bool {
     if before.name != after.name
         || before.required != after.required
         || before.unique != after.unique
-        || before.primary_key != after.primary_key
+        // primary_key change is handled at the table level
         || before.default != after.default
         || before.annotations != after.annotations
         || before.comment != after.comment
@@ -3228,10 +3243,17 @@ mod diff_tests {
         before.order_by = OrderBy::Fields(vec!["id".to_string()]);
         after.order_by = OrderBy::Fields(vec!["id".to_string(), "name".to_string()]);
 
+        // Set database field for both tables
+        before.database = Some(DEFAULT_DATABASE_NAME.to_string());
+        after.database = Some(DEFAULT_DATABASE_NAME.to_string());
+
+        let before_id = before.id(DEFAULT_DATABASE_NAME);
+        let after_id = after.id(DEFAULT_DATABASE_NAME);
+
         let mut changes = Vec::new();
         InfrastructureMap::diff_tables(
-            &HashMap::from([("test".to_string(), before)]),
-            &HashMap::from([("test".to_string(), after)]),
+            &HashMap::from([(before_id.clone(), before)]),
+            &HashMap::from([(after_id, after)]),
             &mut changes,
             true,
             DEFAULT_DATABASE_NAME,
@@ -3266,10 +3288,17 @@ mod diff_tests {
             is_deleted: None,
         });
 
+        // Set database field for both tables
+        before.database = Some(DEFAULT_DATABASE_NAME.to_string());
+        after.database = Some(DEFAULT_DATABASE_NAME.to_string());
+
+        let before_id = before.id(DEFAULT_DATABASE_NAME);
+        let after_id = after.id(DEFAULT_DATABASE_NAME);
+
         let mut changes = Vec::new();
         InfrastructureMap::diff_tables(
-            &HashMap::from([("test".to_string(), before)]),
-            &HashMap::from([("test".to_string(), after)]),
+            &HashMap::from([(before_id.clone(), before)]),
+            &HashMap::from([(after_id, after)]),
             &mut changes,
             true,
             DEFAULT_DATABASE_NAME,
@@ -3435,7 +3464,7 @@ mod diff_tests {
         let mut before = create_test_table("test", "1.0");
         let mut after = create_test_table("test", "1.0");
 
-        let column_types = vec![
+        let column_types = [
             ColumnType::Int(IntType::Int64),
             ColumnType::BigInt,
             ColumnType::Float(FloatType::Float64),
