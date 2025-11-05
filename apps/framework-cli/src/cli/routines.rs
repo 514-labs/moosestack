@@ -994,7 +994,7 @@ pub async fn remote_plan(
     // Don't resolve credentials - only sending structure to remote for comparison
     let local_infra_map = if project.features.data_model_v2 {
         debug!("Loading InfrastructureMap from user code (DMV2)");
-        InfrastructureMap::load_from_user_code(project, false).await?
+        InfrastructureMap::load_from_user_code(project, true).await?
     } else {
         debug!("Loading InfrastructureMap from primitives");
         let primitive_map = PrimitiveMap::load(project).await?;
