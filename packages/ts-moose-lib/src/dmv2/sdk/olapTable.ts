@@ -534,6 +534,20 @@ export class OlapTable<T> extends TypedBase<T, OlapConfig<T>> {
       );
     }
 
+    // Validate cluster and explicit replication params are not both specified
+    const hasCluster = typeof (resolvedConfig as any).cluster === "string";
+    const hasKeeperPath =
+      typeof (resolvedConfig as any).keeperPath === "string";
+    const hasReplicaName =
+      typeof (resolvedConfig as any).replicaName === "string";
+
+    if (hasCluster && (hasKeeperPath || hasReplicaName)) {
+      throw new Error(
+        `OlapTable ${name}: Cannot specify both 'cluster' and explicit replication params ('keeperPath' or 'replicaName'). ` +
+          `Use 'cluster' for auto-injected params, or use explicit 'keeperPath' and 'replicaName' without 'cluster'.`,
+      );
+    }
+
     super(name, resolvedConfig, schema, columns, validators);
     this.name = name;
 
