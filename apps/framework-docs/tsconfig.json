@@ -1,18 +1,27 @@
 {
-  "extends": "@repo/ts-config/nextjs.json",
+  "extends": "@repo/ts-config/base.json",
   "compilerOptions": {
     "plugins": [
       {
         "name": "next"
       }
     ],
-    "forceConsistentCasingInFileNames": true,
-    "module": "NodeNext",
-    "resolveJsonModule": true,
     "baseUrl": ".",
     "paths": {
       "@/*": ["./src/*"]
-    }
+    },
+    "lib": ["dom", "dom.iterable", "esnext"],
+    "allowJs": true,
+    "skipLibCheck": true,
+    "strict": true,
+    "noEmit": true,
+    "esModuleInterop": true,
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "jsx": "preserve",
+    "incremental": true
   },
   "include": [
     "next-env.d.ts",
