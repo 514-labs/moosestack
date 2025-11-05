@@ -2098,6 +2098,8 @@ impl InfrastructureMap {
         use crate::utilities::secrets::resolve_optional_runtime_env;
 
         for table in self.tables.values_mut() {
+            let mut should_recalc_hash = false;
+
             if let Some(engine) = &mut table.engine {
                 match engine {
                     ClickhouseEngine::S3Queue {
@@ -2124,6 +2126,7 @@ impl InfrastructureMap {
 
                         *aws_access_key_id = resolved_access_key;
                         *aws_secret_access_key = resolved_secret_key;
+                        should_recalc_hash = true;
 
                         log::debug!(
                             "Resolved S3Queue credentials for table '{}' at runtime",
@@ -2154,6 +2157,7 @@ impl InfrastructureMap {
 
                         *aws_access_key_id = resolved_access_key;
                         *aws_secret_access_key = resolved_secret_key;
+                        should_recalc_hash = true;
 
                         log::debug!(
                             "Resolved S3 credentials for table '{}' at runtime",
@@ -2164,6 +2168,16 @@ impl InfrastructureMap {
                         // No credentials to resolve for other engine types
                     }
                 }
+            }
+
+            // Recalculate engine_params_hash after resolving credentials
+            if should_recalc_hash {
+                table.engine_params_hash =
+                    table.engine.as_ref().map(|e| e.non_alterable_params_hash());
+                log::debug!(
+                    "Recalculated engine_params_hash for table '{}' after credential resolution",
+                    table.name
+                );
             }
         }
 
