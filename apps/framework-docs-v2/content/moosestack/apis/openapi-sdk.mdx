@@ -1,9 +1,105 @@
 ---
-title: OpenAPI SDK
-description: Generate OpenAPI SDKs for your APIs
-order: 5
+title: OpenAPI SDK Generation
+description: Generate type-safe client SDKs from your Moose APIs
+order: 6
+category: apis
 ---
 
-# OpenAPI SDK
+import { Callout, LanguageTabs, LanguageTabContent, ToggleBlock } from "@/components/mdx";
 
-This page is a placeholder. Content migration pending.
+# OpenAPI SDK Generation
+
+Moose automatically generates OpenAPI specifications for all your APIs, enabling you to create type-safe client SDKs in any language. This allows you to integrate your Moose APIs into any application with full type safety and IntelliSense support.
+
+## Overview
+
+While `moose dev` is running, Moose emits an OpenAPI spec at `.moose/openapi.yaml` covering:
+
+- **Ingestion endpoints** with request/response schemas
+- **Analytics APIs** with query parameters and response types
+
+Every time you make a change to your Moose APIs, the OpenAPI spec is updated automatically.
+
+## Generating Typed SDKs from OpenAPI
+
+You can use your preferred generator to create a client from that spec. Below are minimal, tool-agnostic examples you can copy into your project scripts.
+
+### Setup
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+The following example uses Kubb to generate the SDK. Kubb can be installed into your project without any dependencies on the Java runtime (unlike the OpenAPI Generator which requires Java).
+
+Follow the setup instructions for Kubb [here](https://kubb.dev/docs/getting-started/installation).
+
+Then, in your project's package.json, add the following script:
+```json filename="package.json" copy
+{
+  "scripts": {
+    "generate-sdk": "kubb generate"
+  }
+}
+```
+Finally, configure the `on_reload_complete_script` hook in your `moose.config.toml`:
+
+```toml filename="moose.config.toml" copy
+[http_server_config]
+on_reload_complete_script = "npm run generate-sdk"
+```
+
+This will trigger the generation CLI command after each reload.
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+The following example uses `openapi-python-client` to generate the SDK. Follow the setup instructions here: [openapi-python-client on PyPI](https://pypi.org/project/openapi-python-client/).
+
+Add a generation script in your repository:
+```bash filename="scripts/generate_python_sdk.sh" copy
+#!/usr/bin/env bash
+set -euo pipefail
+openapi-python-client generate --path .moose/openapi.yaml --output ./generated/python --overwrite
+```
+
+Then configure Moose to run it after each dev reload:
+```toml filename="moose.config.toml" copy
+[http_server_config]
+on_reload_complete_script = "bash scripts/generate_python_sdk.sh"
+```
+
+This will regenerate the Python client from the live spec on every reload.
+  </LanguageTabContent>
+</LanguageTabs>
+
+### Hooks for automatic SDK generation
+
+The `on_reload_complete_script` hook is available in your `moose.config.toml` file. It runs after each dev server reload when code/infra changes have been fully applied. This allows you to keep your SDKs continuously up to date as you make changes to your Moose APIs.
+
+Notes:
+- The script runs in your project root using your `$SHELL` (falls back to `/bin/sh`).
+- Paths like `.moose/openapi.yaml` and `./generated/...` are relative to the project root.
+- You can combine multiple generators with `&&` (as shown) or split into a shell script if preferred.
+
+<Callout type="info">
+These hooks only affect local development (`moose dev`). The reload hook runs after Moose finishes applying your changes, ensuring `.moose/openapi.yaml` is fresh before regeneration.
+</Callout>
+
+## Integration
+
+Import from the output path your generator writes to (see your chosen example repo). The Moose side is unchanged: the spec lives at `.moose/openapi.yaml` during `moose dev`.
+
+## Generators
+
+Use any OpenAPI-compatible generator:
+
+### TypeScript projects
+- [OpenAPI Generator (typescript-fetch)](https://github.com/OpenAPITools/openapi-generator) — mature, broad options; generates Fetch-based client
+- [Kubb](https://github.com/kubb-project/kubb) — generates types + fetch client with simple config
+- [Orval](https://orval.dev/) — flexible output (client + schemas), good DX
+- [openapi-typescript](https://github.com/openapi-ts/openapi-typescript) — generates types only (pair with your own client)
+- [swagger-typescript-api](https://github.com/acacode/swagger-typescript-api) — codegen for TS clients from OpenAPI
+- [openapi-typescript-codegen](https://github.com/ferdikoomen/openapi-typescript-codegen) — TS client + models
+- [oazapfts](https://github.com/oazapfts/oazapfts) — minimal TS client based on fetch
+- [openapi-zod-client](https://github.com/astahmer/openapi-zod-client) — Zod schema-first client generation
+
+### Python projects
+- [openapi-python-client](https://pypi.org/project/openapi-python-client/) — modern typed client for OpenAPI 3.0/3.1
+- [OpenAPI Generator (python)](https://github.com/OpenAPITools/openapi-generator) — multiple Python generators (python, python-nextgen)
