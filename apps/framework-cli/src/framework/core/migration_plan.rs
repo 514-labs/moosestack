@@ -1,6 +1,5 @@
-use crate::framework::core::infrastructure::table::Table;
 use crate::framework::core::infrastructure_map::{InfraChanges, InfrastructureMap};
-use crate::infrastructure::olap::clickhouse::{IgnorableOperation, SerializableOlapOperation};
+use crate::infrastructure::olap::clickhouse::SerializableOlapOperation;
 use crate::infrastructure::olap::ddl_ordering::{order_olap_changes, PlanOrderingError};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -63,26 +62,4 @@ pub struct MigrationPlanWithBeforeAfter {
     pub remote_state: InfrastructureMap,
     pub local_infra_map: InfrastructureMap,
     pub db_migration: MigrationPlan,
-}
-
-/// Strips fields from a table that correspond to ignored operations
-/// This is used during drift detection to ignore differences in fields that the user has configured to ignore
-pub fn strip_ignored_fields(table: &Table, ignore_ops: &[IgnorableOperation]) -> Table {
-    let mut table = table.clone();
-
-    if ignore_ops.contains(&IgnorableOperation::ModifyTableTtl) {
-        table.table_ttl_setting = None;
-    }
-
-    if ignore_ops.contains(&IgnorableOperation::ModifyColumnTtl) {
-        for col in &mut table.columns {
-            col.ttl = None;
-        }
-    }
-
-    if ignore_ops.contains(&IgnorableOperation::ModifyPartitionBy) {
-        table.partition_by = None;
-    }
-
-    table
 }
