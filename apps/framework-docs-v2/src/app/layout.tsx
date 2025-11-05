@@ -17,7 +17,7 @@ export default async function RootLayout({
   children,
 }: Readonly<{
   children: ReactNode;
-}>): Promise<ReactNode> {
+}>) {
   // Fetch GitHub stars on the server with caching
   const stars = await getGitHubStars();
 

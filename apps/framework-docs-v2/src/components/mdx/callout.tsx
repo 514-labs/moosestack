@@ -11,18 +11,20 @@ import {
 } from "@tabler/icons-react";
 import type { IconProps } from "@tabler/icons-react";
 
-interface CalloutProps {
-  type: CalloutType;
-  title?: string;
-  href?: string;
-  icon?: React.ComponentType<IconProps> | boolean;
-  ctaLabel?: string;
-  children: React.ReactNode;
-  compact?: boolean;
-  className?: string;
-}
+type CalloutVariant = {
+  icon: React.ComponentType<IconProps>;
+  variant: "success" | "default" | "warning" | "destructive";
+  title: string;
+};
 
-const calloutVariants = {
+type CalloutVariants = {
+  success: CalloutVariant;
+  info: CalloutVariant;
+  warning: CalloutVariant;
+  danger: CalloutVariant;
+};
+
+const calloutVariants: CalloutVariants = {
   success: {
     icon: IconConfetti,
     variant: "success" as const,
@@ -46,6 +48,17 @@ const calloutVariants = {
 };
 
 type CalloutType = keyof typeof calloutVariants;
+
+interface CalloutProps {
+  type: CalloutType;
+  title?: string;
+  href?: string;
+  icon?: React.ComponentType<IconProps> | boolean;
+  ctaLabel?: string;
+  children: React.ReactNode;
+  compact?: boolean;
+  className?: string;
+}
 
 export function Callout({
   type,

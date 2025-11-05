@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import React from "react";
 
 // Hide this page from search engines and sitemap
 export const metadata: Metadata = {
@@ -13,5 +14,5 @@ export default function ComponentsLayout({
 }: {
   children: React.ReactNode;
 }) {
-  return children;
+  return <>{children}</>;
 }

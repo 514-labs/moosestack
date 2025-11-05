@@ -33,7 +33,7 @@ import {
 } from "@tabler/icons-react";
 import type { IconProps } from "@tabler/icons-react";
 
-const XIcon = ({ className, ...props }: React.SVGProps<SVGSVGElement>) => (
+const XIcon = ({ className, ...props }: React.SVGAttributes<SVGSVGElement>) => (
   <svg
     className={className}
     fill="currentColor"
@@ -45,7 +45,7 @@ const XIcon = ({ className, ...props }: React.SVGProps<SVGSVGElement>) => (
   </svg>
 );
 
-const ClickHouseIcon = (props: React.SVGProps<SVGSVGElement>) => (
+const ClickHouseIcon = (props: React.SVGAttributes<SVGSVGElement>) => (
   <svg
     xmlns="http://www.w3.org/2000/svg"
     viewBox="0 0 50.6 50.6"
@@ -61,7 +61,10 @@ const ClickHouseIcon = (props: React.SVGProps<SVGSVGElement>) => (
 );
 
 // Icon components mapping
-export const Icons = {
+type IconComponent =
+  | React.ComponentType<IconProps>
+  | React.FC<React.SVGAttributes<SVGSVGElement>>;
+export const Icons: Record<string, IconComponent> = {
   // Getting Started
   quickstart: IconRocket,
   fromClickhouse: ClickHouseIcon,
@@ -134,18 +137,14 @@ type PathCategory =
 interface PathInfo {
   typescript: string;
   python: string;
-  icon:
-    | React.ComponentType<IconProps>
-    | React.FC<React.SVGProps<SVGSVGElement>>;
+  icon: IconComponent | undefined;
   title: string;
   category: PathCategory;
 }
 
 interface SocialPathInfo {
   path: string;
-  icon:
-    | React.ComponentType<IconProps>
-    | React.FC<React.SVGProps<SVGSVGElement>>;
+  icon: IconComponent | undefined;
   title: string;
   category: "social";
 }

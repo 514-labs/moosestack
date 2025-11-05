@@ -11,10 +11,7 @@ interface DocLayoutProps {
   }>;
 }
 
-export default async function DocLayout({
-  children,
-  params,
-}: DocLayoutProps): Promise<ReactNode> {
+export default async function DocLayout({ children, params }: DocLayoutProps) {
   // SideNav now handles language filtering internally using the declarative config
   return (
     <AnalyticsProvider>
