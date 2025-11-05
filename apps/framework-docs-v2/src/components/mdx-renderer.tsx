@@ -39,6 +39,7 @@ import {
   MDXCode,
   MDXFigure,
 } from "@/components/mdx/code-block-wrapper";
+import { PathConfig } from "@/lib/path-config";
 import remarkGfm from "remark-gfm";
 import rehypeSlug from "rehype-slug";
 import rehypeAutolinkHeadings from "rehype-autolink-headings";
@@ -93,7 +94,7 @@ export async function MDXRenderer({ source }: MDXRendererProps) {
     code: MDXCode,
   };
 
-  // Make icons available in MDX scope
+  // Make icons and other utilities available in MDX scope
   const scope = {
     IconRocket,
     IconDatabase,
@@ -104,6 +105,7 @@ export async function MDXRenderer({ source }: MDXRendererProps) {
     IconClock,
     IconTerminal,
     IconFileCode,
+    PathConfig,
   };
 
   return (
