@@ -237,9 +237,11 @@ const wordHighlightClassNames = cn(
 );
 
 const codeBlockClassName = cn(
-  "mt-0 bg-transparent text-sm",
+  "mt-0 bg-transparent text-sm min-w-0 w-full",
   "[&_pre]:py-4",
   "[&_pre]:bg-transparent",
+  "[&_pre]:overflow-x-auto",
+  "[&_pre]:min-w-0",
   "[&_.shiki]:!bg-transparent",
   "[&_.shiki]:[background:var(--shiki-bg)_!important]",
   "[&_code]:w-full",
@@ -294,7 +296,7 @@ export const CodeBlock = ({
     <CodeBlockContext.Provider value={{ value, onValueChange, data }}>
       <div
         className={cn(
-          "size-full overflow-hidden rounded-lg border-0 bg-transparent",
+          "w-full overflow-x-auto overflow-y-hidden rounded-lg border-0 bg-transparent",
           className,
         )}
         {...props}
@@ -494,8 +496,8 @@ type CodeBlockFallbackProps = HTMLAttributes<HTMLDivElement>;
 
 const CodeBlockFallback = ({ children, ...props }: CodeBlockFallbackProps) => (
   <div {...props}>
-    <pre className="w-full">
-      <code>
+    <pre className="overflow-x-auto">
+      <code className="whitespace-pre">
         {children
           ?.toString()
           .split("\n")
@@ -619,6 +621,10 @@ export const CodeBlockContent = ({
   }
 
   return (
-    <div dangerouslySetInnerHTML={{ __html: highlightedCode }} {...props} />
+    <div
+      className="min-w-0 w-full"
+      dangerouslySetInnerHTML={{ __html: highlightedCode }}
+      {...props}
+    />
   );
 };
