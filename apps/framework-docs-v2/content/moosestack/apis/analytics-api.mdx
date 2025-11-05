@@ -1,9 +1,1077 @@
 ---
-title: Expose Analytics
-description: Expose analytics data through APIs
-order: 3
+title: APIs
+description: APIs for Moose
+order: 1
+category: apis
 ---
 
-# Expose Analytics
+import { Callout, LanguageTabs, LanguageTabContent, BulletPointsCard, ToggleBlock, CTACards, CTACard, Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/mdx";
 
-This page is a placeholder. Content migration pending.
+# APIs
+
+## Overview
+
+APIs are functions that run on your server and automatically exposed as HTTP `GET` endpoints.
+They are designed to read data from your OLAP database. Out of the box, these APIs provide:
+
+- Automatic type validation and type conversion for your query parameters, which are sent in the URL, and response body
+- Managed database client connection
+- Automatic OpenAPI documentation generation
+
+Common use cases include:
+- Powering user-facing analytics, dashboards and other front-end components
+- Enabling AI tools to interact with your data
+- Building custom APIs for your internal tools
+
+### Enabling APIs
+
+Analytics APIs are enabled by default. To explicitly control this feature in your `moose.config.toml`:
+
+```toml filename="moose.config.toml" copy
+[features]
+apis = true
+```
+
+### Basic Usage
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```ts filename="ExampleApi.ts" copy
+import { Api } from "@514labs/moose-lib";
+import { SourcePipeline } from "path/to/SourcePipeline"; 
+
+// Define the query parameters
+interface QueryParams {
+  filterField: string;
+  maxResults: number;
+}
+
+// Model the query result type
+interface ResultItem {
+  id: number;
+  name: string;
+  value: number;
+}
+
+
+const SourceTable = SourcePipeline.table!; // Use `!` to assert that the table is not null
+const cols = SourceTable.columns;
+
+// Define the result type as an array of the result item type
+export const exampleApi = new Api<QueryParams, ResultItem[]>("example_endpoint",  
+    async ({ filterField, maxResults }: QueryParams, { client, sql }) => {
+        const query = sql`
+        SELECT 
+          ${cols.id},
+          ${cols.name},
+          ${cols.value}
+        FROM ${SourceTable}
+        WHERE category = ${filterField}
+        LIMIT ${maxResults}`;
+        
+        // Set the result type to the type of the each row in the result set
+        const resultSet = await client.query.execute<ResultItem>(query);
+
+        // Return the result set as an array of the result item type
+        return await resultSet.json();
+    });
+```
+
+<ToggleBlock openText="Show Source Pipeline" closeText="Hide Source Pipeline">
+```ts filename="SourcePipeline.ts" copy
+import { IngestPipeline } from "@514labs/moose-lib";
+
+interface SourceSchema {
+  id: number;
+  name: string;
+  value: number;
+}
+
+export const SourcePipeline = new IngestPipeline<SourceSchema>("Source", {
+  ingestApi: false,
+  stream: true,
+  table: true,
+});
+```
+</ToggleBlock>
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+<Tabs>
+  <TabsList>
+    <TabsTrigger value="execute">execute</TabsTrigger>
+    <TabsTrigger value="execute_raw">execute_raw</TabsTrigger>
+  </TabsList>
+  <TabsContent value="execute">
+`execute` is the recommended way to execute queries. It provides a thin wrapper around the ClickHouse Python client so that you can safely pass `OlapTable` and `Column` objects to your query without needing to worry about ClickHouse identifiers:
+
+```python filename="ExampleApi.py" copy
+from moose_lib import Api, MooseClient
+from pydantic import BaseModel
+
+# Import the source pipeline
+from app.path.to.SourcePipeline import SourcePipeline
+
+# Define the query parameters
+class QueryParams(BaseModel):
+    filter_field: str
+    max_results: int
+
+# Define the response body
+class ResponseBody(BaseModel):
+    id: int
+    name: str
+    value: float
+
+
+SourceTable = SourcePipeline.get_table()
+
+# Define the route handler function (parameterized)
+def run(client: MooseClient, params: QueryParams) -> list[ResponseBody]:
+    query = """
+    SELECT 
+      id,
+      name,
+      value
+    FROM {table}
+    WHERE category = {category}
+    LIMIT {limit}
+    """
+
+    return client.query.execute(query, {"table": SourceTable, "category": params.filter_field, "limit": params.max_results})
+
+# Create the API
+example_api = Api[QueryParams, ResponseBody](name="example_endpoint", query_function=run)
+```
+  </TabsContent>
+  <TabsContent value="execute_raw">
+Use `execute_raw` with parameter binding for safe, typed queries:
+
+```python filename="ExampleApi.py" copy
+from moose_lib import Api, MooseClient
+from pydantic import BaseModel
+
+# Import the source pipeline
+from app.path.to.SourcePipeline import SourcePipeline
+
+# Define the query parameters
+class QueryParams(BaseModel):
+    filterField: str
+    maxResults: int
+
+# Define the response body
+class ResponseBody(BaseModel):
+    id: int
+    name: str
+    value: float
+
+
+SourceTable = SourcePipeline.get_table()
+
+# Define the route handler function (using execute_raw with typed parameters)
+def run(client: MooseClient, params: QueryParams) -> list[ResponseBody]:
+    query = """
+    SELECT 
+      id,
+      name,
+      value
+    FROM Source
+    WHERE category = {category:String}
+    LIMIT {limit:UInt32}
+    """
+
+    return client.query.execute_raw(query, {"category": params.filterField, "limit": params.maxResults})
+
+# Create the API
+example_api = Api[QueryParams, ResponseBody](name="example_endpoint", query_function=run)
+```
+  </TabsContent>
+</Tabs>
+
+<ToggleBlock openText="Show Source Pipeline" closeText="Hide Source Pipeline">
+```python filename="SourcePipeline.py" copy
+from moose_lib import IngestPipeline, IngestPipelineConfig, Key
+from pydantic import BaseModel
+
+class SourceSchema(BaseModel):
+  id: Key[int]
+  name: str
+  value: float
+
+SourcePipeline = IngestPipeline[SourceSchema]("Source", IngestPipelineConfig(
+  ingest_api=False,
+  stream=True,
+  table=True,
+))
+```
+</ToggleBlock>
+  </LanguageTabContent>
+</LanguageTabs>
+
+The `Api` class takes:
+- Route name: The URL path to access your API (e.g., `"example_endpoint"`)
+- Handler function: Processes requests with typed parameters and returns the result
+
+The generic type parameters specify:
+- `QueryParams`: The structure of accepted URL parameters
+- `ResponseBody`: The exact shape of your API's response data
+
+<Callout type="info">
+You can name these types anything you want. The first type generates validation for query parameters, while the second defines the response structure for OpenAPI documentation.
+</Callout>
+
+<BulletPointsCard
+  bulletStyle="check"
+  divider={false}
+  title="Moose automatically handles:"
+  bullets={[
+    "URL parameter validation and type conversion",
+    "SQL query interpolation and execution",
+    "Response formatting",
+    "Automated OpenAPI documentation"
+  ]}
+/>
+
+## Type Validation
+
+You can also model the query parameters and response body as interfaces (TypeScript) or Pydantic models (Python), which Moose will use to provide automatic type validation and type conversion for your query parameters, which are sent in the URL, and response body.
+
+### Modeling Query Parameters
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+Define your API's parameters as a TypeScript interface:
+
+```ts filename="ExampleQueryParams.ts" copy
+interface QueryParams {
+  filterField: string;
+  maxResults: number;
+  optionalParam?: string; // Not required for client to provide
+}
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+Define your API's parameters as a Pydantic model:
+
+```python filename="ExampleQueryParams.py" copy
+from pydantic import BaseModel
+from typing import Optional
+
+class QueryParams(BaseModel):
+    filterField: str = Field(..., description="The field to filter by")
+    maxResults: int = Field(..., description="The maximum number of results to return")
+    optionalParam: Optional[str] = Field(None, description="An optional parameter")
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+Moose automatically handles:
+- Runtime validation
+- Clear error messages for invalid parameters
+- OpenAPI documentation generation
+
+<Callout type="warning">
+Complex nested objects and arrays are not supported. Analytics APIs are `GET` endpoints designed to be simple and lightweight.
+</Callout>
+
+### Adding Advanced Type Validation
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+Moose uses [Typia](https://typia.io/) to extract type definitions and provide runtime validation. Use Typia's tags for more complex validation:
+
+```ts filename="ExampleQueryParams.ts" copy
+interface QueryParams {
+  filterField: string;
+  // Ensure maxResults is a positive integer
+  maxResults: number & tags.Type<"int64"> & tags.Minimum<"1">; 
+}
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+Moose uses Pydantic for runtime validation. Use Pydantic's `Field` class for more complex validation:
+
+```python filename="ExampleQueryParams.py" copy
+from pydantic import BaseModel, Field
+
+class QueryParams(BaseModel):
+    filterField: str = Field(pattern=r"^(id|name|email)$", description="The field to filter by") ## Only allow valid column names from the UserTable
+    maxResults: int = Field(gt=0, description="The maximum number of results to return") ## Positive integer
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+### Common Validation Options
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```ts filename="ValidationExamples.ts" copy
+interface QueryParams {
+  // Numeric validations
+  id: number & tags.Type<"uint32">;  // Positive integer (0 to 4,294,967,295)
+  age: number & tags.Minimum<18> & tags.Maximum<120>;  // Range: 18 <= age <= 120
+  price: number & tags.ExclusiveMinimum<0> & tags.ExclusiveMaximum<1000>;  // Range: 0 < price < 1000
+  discount: number & tags.MultipleOf<0.5>;  // Must be multiple of 0.5
+  
+  // String validations
+  username: string & tags.MinLength<3> & tags.MaxLength<20>;  // Length between 3-20 characters
+  email: string & tags.Format<"email">;  // Valid email format
+  zipCode: string & tags.Pattern<"^[0-9]{5}$">;  // 5 digits
+  uuid: string & tags.Format<"uuid">;  // Valid UUID
+  ipAddress: string & tags.Format<"ipv4">; // Valid IPv4 address
+  
+  // Date validations
+  startDate: string & tags.Format<"date">;  // YYYY-MM-DD format
+  
+  // Literal validation
+  status: "active" | "pending" | "inactive";  // Must be one of these values
+
+  // Optional parameters
+  limit?: number & tags.Type<"uint32"> & tags.Maximum<100>;  // Optional, if provided: positive integer <= 100
+  
+  // Combined validations
+  searchTerm?: (string & tags.MinLength<3>) | null;  // Either null or string with ≥3 characters
+}
+```
+
+Notice its just regular TypeScript union types. For a full list of validation options, see the [Typia documentation](https://typia.io/api/tags).
+
+You can derive a safe orderBy union from your actual table columns and use it directly in SQL:
+```ts filename="ValidationExamples.ts" copy
+interface MyTableSchema {
+  column1: string;
+  column2: number;
+  column3: string;
+}
+
+const MyTable = new OlapTable<MyTableSchema>("my_table");
+
+interface QueryParams {
+  orderByColumn: keyof MyTableSchema; // validates against the column names in "my_table"
+}
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```python filename="ValidationExamples.py" copy
+from pydantic import BaseModel, Field
+
+class QueryParams(BaseModel):
+    # Numeric validations
+    id: int = Field(..., gt=0)
+    age: int = Field(..., gt=0, lt=120)
+    price: float = Field(..., gt=0, lt=1000)
+    discount: float = Field(..., gt=0, multiple_of=0.5)
+    
+    # String validations
+    username: str = Field(..., min_length=3, max_length=20)
+    email: str = Field(..., format="email") 
+    zipCode: str = Field(..., pattern=r"^[0-9]{5}$")
+    uuid: str = Field(..., format="uuid")
+    ipAddress: str = Field(..., format="ipv4")
+    
+    # Date validations
+    startDate: str = Field(..., format="date")
+    
+    # Enum validation
+    status: str = Field(..., enum=["active", "pending", "inactive"])
+    
+    # Optional parameters
+    limit: int = Field(None, gt=0, lt=100)
+```
+For a full list of validation options, see the [Pydantic documentation](https://docs.pydantic.dev/latest/concepts/types/#customizing-validation-with-fields).
+  </LanguageTabContent>
+</LanguageTabs>
+
+### Setting Default Values
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+You can set default values for parameters by setting values for each parameter in the API route handler function signature:
+
+```ts filename="ExampleQueryParams.ts" copy
+interface QueryParams {
+  filterField: string;
+  maxResults: number;
+  optionalParam?: string; // Not required for client to provide
+}
+
+const api = new Api<QueryParams, ResponseBody>("example_endpoint",
+  async ({ filterField = "example", maxResults = 10, optionalParam = "default" }, { client, sql }) => {
+    // Your logic here...
+  }
+);
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+You can set default values for parameters by setting values for each parameter in your Pydantic model:
+
+```python filename="ExampleQueryParams.py" copy
+from pydantic import BaseModel
+
+class QueryParams(BaseModel):
+    filterField: str = "example"
+    maxResults: int = 10
+    optionalParam: str | None = "default"
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+## Implementing Route Handler
+
+API route handlers are regular functions, so you can implement whatever arbitrary logic you want inside these functions. Most of the time you will be use APIs to expose your data to your front-end applications or other tools:
+
+### Connecting to the Database
+
+Moose provides a managed `MooseClient` to your function execution context. This client provides access to the database and other Moose resources, and handles connection pooling/lifecycle management for you:
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```ts filename="ExampleApi.ts" copy
+import { ApiUtil } from "@514labs/moose-lib";
+import { UserTable } from "./UserTable";
+
+async function handler({ client, sql }: ApiUtil) {
+  const query = sql`SELECT * FROM ${UserTable}`;
+  const data = await client.query.execute<UserSchema>(query);
+}
+```
+
+Pass the type of the result to the `client.query.execute<T>()` method to ensure type safety.
+
+<ToggleBlock openText="Show UserTable" closeText="Hide UserTable">
+```ts filename="UserTable.ts" copy
+import { OlapTable } from "@514labs/moose-lib";
+
+interface UserSchema {
+  id: Key<number>
+  name: string
+  email: string
+}
+
+export const UserTable = new OlapTable<UserSchema>("users")
+```
+</ToggleBlock>
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+<Tabs>
+  <TabsList>
+    <TabsTrigger value="execute">execute</TabsTrigger>
+    <TabsTrigger value="execute_raw">execute_raw</TabsTrigger>
+  </TabsList>
+  <TabsContent value="execute">
+```python filename="ExampleApi.py" copy
+from moose_lib import MooseClient
+from app.UserTable import UserTable
+
+
+def run(client: MooseClient, params: QueryParams):
+  # You can use a formatted string for simple static query
+  query = """
+    SELECT COUNT(*) FROM {table}
+  """
+
+  ## You can optionally pass the table object to the query
+  return client.query.execute(query, {"table": UserTable})
+
+# Create the API
+example_api = Api[QueryParams, ResponseBody](name="example_endpoint", query_function=run)
+```
+  </TabsContent>
+  <TabsContent value="execute_raw">
+Use `execute_raw` with parameter binding:
+
+```python filename="ExampleApi.py" copy
+from moose_lib import MooseClient
+
+def run(params: QueryParams, client: MooseClient):
+  # Using execute_raw for safe queries
+  query = """
+    SELECT COUNT(*) FROM {table: Identifier}
+  """
+
+  ## Must be the name of the table, not the table object
+  return client.query.execute_raw(query, {"table": UserTable.name})
+
+## Create the API
+example_api = Api[QueryParams, ResponseBody](name="example_endpoint", query_function=run)
+```
+  </TabsContent>
+</Tabs>
+  </LanguageTabContent>
+</LanguageTabs>
+
+### Constructing Safe SQL Queries
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+The `sql` template literal in Moose provides type-safe query construction with protection against SQL injection. Below are some examples of common patterns for builing safe queries:
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+<Tabs>
+  <TabsList>
+    <TabsTrigger value="execute">execute</TabsTrigger>
+    <TabsTrigger value="execute_raw">execute_raw</TabsTrigger>
+  </TabsList>
+  <TabsContent value="execute">
+```python filename="SafeQueries.py" copy
+from pydantic import BaseModel, Field
+
+class QueryParams(BaseModel):
+    min_age: int = Field(ge=0, le=150)
+    status: str = Field(pattern=r"^(active|inactive)$")
+    limit: int = Field(default=10, ge=1, le=1000)
+    search_text: str = Field(pattern=r'^[a-zA-Z0-9\s]*$')
+
+def run(client: MooseClient, params: QueryParams):
+    query = """
+        SELECT *
+        FROM users
+        WHERE age >= {min_age}
+        AND status = '{status}'
+        AND name ILIKE '%{search_text}%'
+        LIMIT {limit}
+    """
+    return client.query.execute(query, {"min_age": params.min_age, "status": params.status, "search_text": params.search_text, "limit": params.limit})
+```
+  </TabsContent>
+  <TabsContent value="execute_raw">
+```python filename="SafeQueries.py" copy
+from pydantic import BaseModel, Field
+
+class QueryParams(BaseModel):
+    min_age: int = Field(ge=0, le=150)
+    status: str = Field(pattern=r"^(active|inactive)$")
+    limit: int = Field(default=10, ge=1, le=1000)
+    search_text: str = Field(pattern=r'^[a-zA-Z0-9\s]*$')
+
+def run(client: MooseClient, params: QueryParams):
+    query = """
+        SELECT *
+        FROM users
+        WHERE age >= {minAge:UInt32}
+        AND status = {status:String}
+        AND name ILIKE {searchPattern:String}
+        LIMIT {limit:UInt32}
+    """
+    return client.query.execute_raw(query, {
+        "minAge": params.min_age,
+        "status": params.status,
+        "searchPattern": f"%{params.search_text}%",
+        "limit": params.limit
+    })
+```
+  </TabsContent>
+</Tabs>
+  </LanguageTabContent>
+</LanguageTabs>
+
+#### Basic Query Parameter Interpolation
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```ts filename="BasicInterpolation.ts" copy
+import { UserTable } from "./UserTable";
+
+const minAge = 18;
+const userRole = "admin";
+
+const query = sql`
+  SELECT * FROM ${UserTable}
+  WHERE age > ${minAge} 
+  AND role = ${userRole}
+`;
+
+// MooseClient handles type conversion and escaping
+const data = await client.query.execute<UserSchema>(query);
+
+// EXECUTION: SELECT * FROM users WHERE age > 18 AND role = 'admin'
+```
+<ToggleBlock openText="Show UserTable" closeText="Hide UserTable">
+```ts filename="UserTable.ts" copy
+import { OlapTable } from "@514labs/moose-lib";
+
+interface UserSchema {
+  id: Key<number>
+  name: string
+  email: string
+}
+
+export const UserTable = new OlapTable<UserSchema>("users")
+```
+</ToggleBlock>
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```python filename="ValidatedQueries.py" copy
+from moose_lib import Api, MooseClient
+from pydantic import BaseModel, Field, constr
+from typing import Literal, Optional
+from enum import Enum
+from app.UserTable import UserTable
+
+class QueryParams(BaseModel):
+    # When using f-strings, we need extremely strict validation
+    column: str = Field(pattern=r"^(id|name|email)$", description="Uses a regex pattern to only allow valid column names")
+    
+    search_term: str = Field(
+        pattern=r'^[\w\s\'-]{1,50}$',  # Allows letters, numbers, spaces, hyphens, apostrophes; Does not allow special characters that could be used in SQL injection
+        strip_whitespace=True,
+        min_length=1,
+        max_length=50
+    )
+    
+    limit: int = Field(
+        default=10,
+        ge=1,
+        le=100,
+        description="Number of results to return"
+    )
+
+def run(client: MooseClient, params: QueryParams):
+    query = """
+        SELECT {column}
+        FROM {table}
+        WHERE name ILIKE '%{search_term}%'
+        LIMIT {limit}
+    """
+    
+    return client.query.execute(query, {"column": UserTable.cols[params.column], "table": UserTable, "search_term": params.search_term, "limit": params.limit})
+
+```
+
+<ToggleBlock openText="Show UserTable" closeText="Hide UserTable">
+```python filename="UserTable.py" copy
+from moose_lib import OlapTable, Key
+from pydantic import BaseModel
+
+class UserSchema(BaseModel):
+  id: Key[int]
+  name: str
+  email: str
+
+UserTable = OlapTable[UserSchema]("users")
+```
+</ToggleBlock>
+  </LanguageTabContent>
+</LanguageTabs>
+
+#### Table and Column References
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+Reference tables and columns directly from your Moose objects as variables in your `sql` template literals:
+```ts filename="ExampleTableColumnQuery.ts" copy
+import { userTable } from "../tables/userTable";
+
+const query = sql`
+  SELECT 
+    ${UserTable.columns.id},
+    ${UserTable.columns.name},
+    ${UserTable.columns.email}
+  FROM ${UserTable}
+  WHERE ${UserTable.columns.isActive} = true
+`;
+
+// EXECUTION: SELECT id, name, email FROM users WHERE is_active = true
+```
+<ToggleBlock openText="Show UserTable" closeText="Hide UserTable">
+```ts filename="UserTable.ts" copy
+import { OlapTable } from "@514labs/moose-lib";
+
+interface UserSchema {
+  id: Key<number>
+  name: string
+  email: string
+}
+
+export const UserTable = new OlapTable<UserSchema>("users")
+```
+</ToggleBlock>
+
+<Callout type="info" title="Type Safety">
+Static type checking ensures you only reference columns that actually exist.
+</Callout>
+  </LanguageTabContent>
+</LanguageTabs>
+
+### Advanced Query Patterns
+
+#### Dynamic Column & Table Selection
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+Use `ApiHelpers` to handle dynamic column and table references in your queries:
+
+```ts filename="DynamicColumns.ts" copy
+import { ApiHelpers as CH } from "@514labs/moose-lib";
+
+interface QueryParams {
+  sortBy: string;  // Column to sort by
+  fields: string;  // Comma-separated list of columns to select (e.g., "id,name,email")
+}
+
+const queryHandler = async ({ sortBy = "id", fields = "id,name" }: QueryParams, { client, sql }) => {
+  // Split the comma-separated string into individual fields
+  const fieldList = fields.split(',').map(f => f.trim());
+  
+  // Build the query by selecting each column individually
+  const query = sql`
+    SELECT 
+      ${fieldList.map(field => sql`${CH.column(field)}`).join(', ')}
+    FROM ${userTable}
+    ORDER BY ${CH.column(sortBy)}
+  `;
+  
+  // MooseClient converts fieldList to valid ClickHouse identifiers
+  return client.query.execute(query);
+
+  // EXECUTION: `SELECT id, name FROM users ORDER BY id`
+};
+```
+
+```ts filename="DynamicTables.ts" copy
+import { ApiHelpers as CH } from "@514labs/moose-lib";
+
+interface QueryParams {
+  tableName: string;
+}
+
+const queryHandler = async ({ tableName = "users" }: QueryParams, { client, sql }) => {
+  const query = sql`
+    SELECT * FROM ${CH.table(tableName)}
+  `;
+
+  // MooseClient converts tableName to a valid ClickHouse identifier
+  return client.query.execute(query);
+
+  // EXECUTION: `SELECT * FROM users`
+};
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```python filename="DynamicColumns.py" copy
+from app.UserTable import UserTable
+
+class QueryParams(BaseModel):
+    colName: str = Field(pattern=r"^(id|name|email)$", description="Uses a regex pattern to only allow valid column names from the UserTable")
+
+class QueryResult(BaseModel):
+    id: Optional[int]
+    name: Optional[str]
+    email: Optional[str]
+
+def run(client: MooseClient, params: QueryParams):
+    # Put column and table in the dict for variables
+    query = "SELECT {column} FROM {table}"
+    return client.query.execute(query, {"column": UserTable.cols[params.colName], "table": UserTable})
+
+# Create the API
+bar = Api[QueryParams, QueryResult](name="bar", query_function=run)
+
+# Call the API
+# HTTP Request: GET http://localhost:4000/api/bar?colName=id
+# EXECUTED QUERY: SELECT id FROM users
+```
+<ToggleBlock openText="Show UserTable" closeText="Hide UserTable">
+```python filename="UserTable.py" copy
+from moose_lib import OlapTable, Key
+from pydantic import BaseModel
+
+class UserSchema(BaseModel):
+  id: Key[int]
+  name: str
+  email: str
+
+UserTable = OlapTable[UserSchema]("users")
+```
+</ToggleBlock>
+  </LanguageTabContent>
+</LanguageTabs>
+
+#### Conditional `WHERE` Clauses
+
+Build `WHERE` clauses based on provided parameters:
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```ts filename="ConditionalColumns.ts" copy
+interface FilterParams {
+  minAge?: number;
+  status?: "active" | "inactive";
+  searchText?: string;
+}
+
+const buildQuery = ({ minAge, status, searchText }: FilterParams, { sql }) => {
+  let conditions = [];
+  
+  if (minAge !== undefined) {
+    conditions.push(sql`age >= ${minAge}`);
+  }
+  
+  if (status) {
+    conditions.push(sql`status = ${status}`);
+  }
+  
+  if (searchText) {
+    conditions.push(sql`(name ILIKE ${'%' + searchText + '%'} OR email ILIKE ${'%' + searchText + '%'})`);
+  }
+  
+  // Build the full query with conditional WHERE clause
+  let query = sql`SELECT * FROM ${userTable}`;
+  
+  if (conditions.length > 0) {
+    // Join conditions with AND operator
+    let whereClause = conditions.join(' AND ');
+    query = sql`${query} WHERE ${whereClause}`;
+  }
+  
+  query = sql`${query} ORDER BY created_at DESC`;
+  return query;
+};
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```python filename="ConditionalColumns.py" copy
+
+class FilterParams(BaseModel):
+    min_age: Optional[int]
+    status: Optional[str] = Field(pattern=r"^(active|inactive)$")
+    search_text: Optional[str] = Field(pattern=r"^[a-zA-Z0-9\s]+$", description="Alphanumeric search text without special characters to prevent SQL injection")
+
+class QueryResult(BaseModel):
+    id: int
+    name: str
+    email: str
+
+def build_query(client: MooseClient, params: FilterParams) -> QueryResult:
+    # Using f-strings with validated parameters
+    conditions = []
+    if params.min_age:
+        conditions.append("age >= {min_age}")
+        parameters["min_age"] = params.min_age
+    
+    if params.status:
+        conditions.append("status = {status}")
+        parameters["status"] = params.status
+    
+    if params.search_text:
+        conditions.append("(name ILIKE {search_text} OR email ILIKE {search_text})")
+        parameters["search_text"] = params.search_text
+
+    where_clause = f" WHERE {' AND '.join(conditions)}" if conditions else ""
+    query = f"""SELECT * FROM users {where_clause} ORDER BY created_at DESC"""
+    return client.query.execute(query, parameters)
+
+# Create the API
+bar = Api[FilterParams, QueryResult](name="bar", query_function=build_query)
+
+# Call the API
+# HTTP Request: GET http://localhost:4000/api/bar?min_age=20&status=active&search_text=John
+# EXECUTED QUERY: SELECT * FROM users WHERE age >= 20 AND status = 'active' AND (name ILIKE '%John%' OR email ILIKE '%John%') ORDER BY created_at DESC
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+### Adding Authentication
+
+Moose supports authentication via JSON web tokens (JWTs). When your client makes a request to your Analytics API, Moose will automatically parse the JWT and pass the **authenticated** payload to your handler function as the `jwt` object:
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```typescript filename="Authentication.ts" copy
+async (
+  { orderBy = "totalRows", limit = 5 },
+  { client, sql, jwt }
+) => {
+  // Use jwt.userId to filter data for the current user
+  const query = sql`
+    SELECT * FROM userReports 
+    WHERE user_id = ${jwt.userId}
+    LIMIT ${limit}
+  `;
+  
+  return client.query.execute(query);
+}
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```python filename="Authentication.py" copy
+
+def run(client: MooseClient, params: QueryParams, jwt: dict):
+    # Use parameter binding with JWT data
+    query = """SELECT * FROM userReports WHERE user_id = {user_id} LIMIT 5"""
+    return client.query.execute(query, {"user_id": jwt["userId"]})
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+<Callout type="warning" title="JWT Error Handling">
+Moose validates the JWT signature and ensures the JWT is properly formatted. If the JWT authentication fails, Moose will return a `401 Unauthorized error`.
+</Callout>
+
+## Understanding Response Codes
+
+Moose automatically provides standard HTTP responses:
+
+| Status Code | Meaning                 | Response Body                    |
+|-------------|-------------------------|---------------------------------|
+| 200         | Success                 | Your API's result data          |
+| 400         | Validation error        | `{ "error": "Detailed message"}`|
+| 401         | Unauthorized            | `{ "error": "Unauthorized"}`     |
+| 500         | Internal server error   | `{ "error": "Internal server error"}` |
+
+## Post-Processing Query Results
+
+After executing your database query, you can transform the data before returning it to the client. This allows you to:
+
+<BulletPointsCard
+  bulletStyle="check"
+  divider={false}
+  title="Common post-processing operations:"
+  bullets={[
+    "Transform field names or data formats",
+    "Calculate derived values",
+    "Filter or sort results",
+    "Aggregate or group data",
+    "Apply business logic"
+  ]}
+/>
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```ts filename="PostProcessingExample.ts" copy
+interface QueryParams {
+  category: string;
+  maxResults: number;
+}
+
+interface ResponseBody {
+  itemId: number;
+  displayName: string;
+  formattedValue: string;
+  isHighValue: boolean;
+  date: string;
+}
+
+const processDataApi = new Api<QueryParams, ResponseBody>(
+  "process_data_endpoint",
+  async ({ category, maxResults = 10 }, { client, sql }) => {
+    // 1. Fetch raw data
+    const query = sql`
+      SELECT id, name, value, timestamp
+      FROM data_table
+      WHERE category = ${category}
+      LIMIT ${maxResults}
+    `;
+    
+    const rawResults = await client.query.execute<{
+      id: number;
+      name: string;
+      value: number;
+      timestamp: string;
+    }>(query);
+    
+    // 2. Post-process the results
+    return rawResults.map(row => ({
+      // Transform field names
+      itemId: row.id,
+      displayName: row.name.toUpperCase(),
+      
+      // Add derived fields
+      formattedValue: `$${row.value.toFixed(2)}`,
+      isHighValue: row.value > 1000,
+      
+      // Format dates
+      date: new Date(row.timestamp).toISOString().split('T')[0]
+    }));
+  }
+);
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```python filename="PostProcessingExample.py" copy
+from datetime import datetime
+from moose_lib import Api
+from pydantic import BaseModel
+
+class QueryParams(BaseModel):
+    category: str
+    max_results: int = 10
+
+class ResponseItem(BaseModel):
+    itemId: int
+    displayName: str
+    formattedValue: str
+    isHighValue: bool
+    date: str
+
+def run(client: MooseClient, params: QueryParams):
+    # 1. Fetch raw data using parameter binding
+    query = """
+    SELECT id, name, value, timestamp
+    FROM data_table
+    WHERE category = {category}
+    LIMIT {limit}
+    """
+    
+    raw_results = client.query.execute(query, {"category": params.category, "limit": params.max_results})
+    
+    # 2. Post-process the results
+    processed_results = []
+    for row in raw_results:
+        processed_results.append(ResponseItem(
+            # Transform field names
+            itemId=row['id'],
+            displayName=row['name'].upper(),
+            
+            # Add derived fields
+            formattedValue=f"${row['value']:.2f}",
+            isHighValue=row['value'] > 1000,
+            
+            # Format dates
+            date=datetime.fromisoformat(row['timestamp']).date().isoformat()
+        ))
+    
+    return processed_results
+
+# Create the API
+process_data_api = Api[QueryParams, ResponseItem](name="process_data_endpoint", query_function=run)
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+### Best Practices
+
+<BulletPointsCard
+  title="Post-Processing Best Practices"
+  bullets={[
+    {
+      title: "Prefer database processing for large datasets",
+      description: "When working with large amounts of data, perform as much filtering, grouping, and aggregation as possible in your SQL query"
+    },
+    {
+      title: "Keep response size reasonable",
+      description: "Post-process to reduce response size when needed, especially for user-facing APIs"
+    },
+    {
+      title: "Format dates and numbers consistently",
+      description: "Ensure consistent formatting for dates, currencies, and other values in your responses"
+    },
+    {
+      title: "Handle sensitive data appropriately",
+      description: "Use post-processing to remove or mask sensitive information before returning data to clients"
+    },
+    {
+      title: "Add clear error handling",
+      description: "Include appropriate error handling in your post-processing logic"
+    }
+  ]}
+/>
+
+<Callout type="info">
+While post-processing gives you flexibility, remember that database operations are typically more efficient for heavy data manipulation. Reserve post-processing for transformations that are difficult to express in SQL or that involve application-specific logic.
+</Callout>
+
+## Client Integration
+
+By default, all API endpoints are automatically integrated with OpenAPI/Swagger documentation. You can integrate your OpenAPI SDK generator of choice to generate client libraries for your APIs.
+
+Please refer to the [OpenAPI](/moosestack/apis/openapi-sdk) page for more information on how to integrate your APIs with OpenAPI.

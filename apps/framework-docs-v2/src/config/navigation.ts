@@ -199,6 +199,24 @@ const moosestackNavigationConfig: NavigationConfig = [
       },
       {
         type: "page",
+        slug: "moosestack/app-api-frameworks/fastify",
+        title: "Fastify",
+        languages: ["typescript"],
+      },
+      {
+        type: "page",
+        slug: "moosestack/app-api-frameworks/koa",
+        title: "Koa",
+        languages: ["typescript"],
+      },
+      {
+        type: "page",
+        slug: "moosestack/app-api-frameworks/raw-nodejs",
+        title: "Raw Node.js",
+        languages: ["typescript"],
+      },
+      {
+        type: "page",
         slug: "moosestack/app-api-frameworks/fastapi",
         title: "FastAPI",
         languages: ["python"],
@@ -568,20 +586,6 @@ const moosestackNavigationConfig: NavigationConfig = [
     title: "API Reference",
     icon: IconBook,
     languages: ["typescript", "python"],
-    children: [
-      {
-        type: "page",
-        slug: "moosestack/reference/ts-moose-lib",
-        title: "TypeScript",
-        languages: ["typescript"],
-      },
-      {
-        type: "page",
-        slug: "moosestack/reference/py-moose-lib",
-        title: "Python",
-        languages: ["python"],
-      },
-    ],
   },
   {
     type: "page",
@@ -871,10 +875,19 @@ export function getNavigationConfig(
 
 /**
  * Get the documentation section from a pathname
+ * Returns null for the root path (/)
  */
-export function getSectionFromPathname(pathname: string): DocumentationSection {
+export function getSectionFromPathname(
+  pathname: string,
+): DocumentationSection | null {
   // Remove leading slash and split
   const path = pathname.startsWith("/") ? pathname.slice(1) : pathname;
+
+  // Return null for root path
+  if (path === "" || path === "/") {
+    return null;
+  }
+
   const segments = path.split("/");
 
   // Check if path starts with a section prefix
