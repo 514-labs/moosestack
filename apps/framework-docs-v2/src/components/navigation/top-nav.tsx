@@ -40,6 +40,7 @@ export function TopNav({ stars }: TopNavProps) {
     href: string;
     section: DocumentationSection;
     external?: boolean;
+    isActive?: (pathname: string) => boolean;
   }> = [
     {
       label: "MooseStack",
@@ -56,11 +57,17 @@ export function TopNav({ stars }: TopNavProps) {
       href: "/ai/overview",
       section: "ai",
     },
+    {
+      label: "Templates",
+      href: "/moosestack/templates-examples",
+      section: "moosestack",
+      isActive: (pathname) => pathname.includes("/templates-examples"),
+    },
   ];
 
   return (
     <>
-      <nav className="sticky top-0 z-50 w-full border-b bg-background">
+      <nav className="sticky top-0 z-50 w-full bg-background">
         <div className="flex h-[--header-height] items-center px-4">
           <div className="mr-4 flex">
             <Link href="/" className="mr-6 flex items-center space-x-2">
@@ -73,11 +80,14 @@ export function TopNav({ stars }: TopNavProps) {
           {/* Desktop Navigation */}
           <div className="hidden md:flex md:flex-1 md:items-center md:justify-between">
             <nav className="flex items-center gap-2">
-              {navItems.map((item) => {
-                const isActive = activeSection === item.section;
+              {navItems.map((item, index) => {
+                const isActive =
+                  item.isActive ?
+                    item.isActive(pathname)
+                  : activeSection !== null && activeSection === item.section;
                 return (
                   <Button
-                    key={item.section}
+                    key={`${item.section}-${index}`}
                     variant={isActive ? "secondary" : "ghost"}
                     asChild
                   >
@@ -120,11 +130,14 @@ export function TopNav({ stars }: TopNavProps) {
       {mobileMenuOpen && (
         <div className="md:hidden border-t">
           <div className="px-4 py-4 space-y-2">
-            {navItems.map((item) => {
-              const isActive = activeSection === item.section;
+            {navItems.map((item, index) => {
+              const isActive =
+                item.isActive ?
+                  item.isActive(pathname)
+                : activeSection !== null && activeSection === item.section;
               return (
                 <Button
-                  key={item.section}
+                  key={`${item.section}-${index}`}
                   variant={isActive ? "secondary" : "ghost"}
                   asChild
                   className="w-full justify-start"

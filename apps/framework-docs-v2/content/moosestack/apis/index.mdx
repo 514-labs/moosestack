@@ -1,9 +1,150 @@
 ---
-title: APIs
-description: Build type-safe ingestion and query endpoints
-order: 1
+title: Moose APIs
+description: Create type-safe ingestion and analytics APIs for data access and integration
+order: 0
+category: apis
 ---
 
-# APIs
+import { Callout, LanguageTabs, LanguageTabContent, BulletPointsCard, CTACards, CTACard, ExportRequirement } from "@/components/mdx";
 
-This page is a placeholder. Content migration pending.
+# Moose APIs
+
+## Overview
+
+The APIs module provides standalone HTTP endpoints for data ingestion and analytics. Unlike other modules of the MooseStack, APIs are meant to be paired with other MooseStack modules like OLAP tables and streams.
+
+<Callout type="info" title="Bring Your Own API Framework">
+  If you'd prefer to use your own API framework of choice, instead of Moose APIs, see the [Bring Your Own API Framework documentation](/moosestack/app-api-frameworks) for comprehensive examples and patterns using frameworks such as Express, Koa, Fastify, or FastAPI.
+</Callout>
+
+## Core Capabilities
+
+<CTACards>
+<CTACard
+  title="Ingest New Data"
+  description="Create HTTP POST endpoints for data ingestion with validation and routing"
+  ctaLink="/moosestack/apis/ingest-api"
+  ctaLabel="Learn More →"
+  badge={{ variant: "moose", text: "Ingest" }}
+/>
+<CTACard
+  title="Expose Analytics"
+  description="Create HTTP GET endpoints for reading data from your OLAP database with query parameters"
+  ctaLink="/moosestack/apis/analytics-api"
+  ctaLabel="Learn More →"
+  badge={{ variant: "moose", text: "Analytics" }}
+/>
+<CTACard
+  title="Trigger Workflows"
+  description="Create HTTP POST endpoints to trigger workflows and other processes"
+  ctaLink="/moosestack/apis/trigger-api"
+  ctaLabel="Learn More →"
+  badge={{ variant: "moose", text: "Trigger" }}
+/>
+<CTACard
+  title="Bring Your Own API Framework"
+  description="Use Express, Koa, Fastify, or FastAPI with MooseStack for advanced HTTP features and custom middleware"
+  ctaLink="/moosestack/app-api-frameworks"
+  ctaLabel="Learn More →"
+  badge={{ variant: "moose", text: "Custom" }}
+/>
+</CTACards>
+
+## Basic Examples
+
+<ExportRequirement primitive="API" example="export { userEventsApi, userDataApi }" />
+
+### Ingestion API
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```ts filename="IngestApi.ts" copy
+import { IngestApi } from "@514labs/moose-lib";
+
+interface UserEvent {
+  id: string;
+  userId: string;
+  timestamp: Date;
+  eventType: string;
+}
+
+// Create a standalone ingestion API
+export const userEventsApi = new IngestApi<UserEvent>("user-events", {
+  destination: eventStream
+});
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```py filename="IngestApi.py" copy
+from moose_lib import IngestApi
+from pydantic import BaseModel
+from datetime import datetime
+
+class UserEvent(BaseModel):
+    id: str
+    user_id: str
+    timestamp: datetime
+    event_type: str
+
+# Create a standalone ingestion API
+user_events_api = IngestApi[UserEvent]("user-events", IngestConfig(destination=event_stream))
+
+# No export needed - Python modules are automatically discovered
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+### Analytics API
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```ts filename="AnalyticsApi.ts" copy
+import { Api } from "@514labs/moose-lib";
+
+interface Params {
+  userId: string;
+  limit: number;
+}
+
+interface ResultData {
+  id: string;
+  name: string;
+  email: string;
+}
+
+// Create a standalone analytics API
+export const userDataApi = new Api<Params, ResultData[]>("user-data", 
+  async ({ userId, limit }, { client, sql }) => {
+    // Query external service or custom logic
+    return [
+      { id: userId, name: "John Doe", email: "john@example.com" }
+    ];
+  }
+);
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```py filename="AnalyticsApi.py" copy
+from moose_lib import Api, MooseClient
+from pydantic import BaseModel
+
+class Params(BaseModel):
+    user_id: str
+    limit: int
+
+class ResultData(BaseModel):
+    id: str
+    name: str
+    email: str
+
+def query_function(client: MooseClient, params: QueryParams) -> list[UserData]:
+    # Query external service or custom logic using parameter binding
+    query = "SELECT * FROM user_data WHERE user_id = {user_id} LIMIT {limit}"
+    return client.query.execute(query, {"user_id": params.user_id, "limit": params.limit})
+
+user_data_api = Api[Params, ResultData]("get-data", query_function)
+
+# No export needed - Python modules are automatically discovered
+```
+  </LanguageTabContent>
+</LanguageTabs>
