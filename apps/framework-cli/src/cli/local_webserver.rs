@@ -3354,11 +3354,18 @@ async fn admin_plan_route(
     // Use ClickHouse-specific strategy for table diffing
     let clickhouse_strategy =
         crate::infrastructure::olap::clickhouse::diff_strategy::ClickHouseTableDiffStrategy;
+    let ignore_ops: &[crate::infrastructure::olap::clickhouse::IgnorableOperation] =
+        if project.is_production {
+            &project.migration_config.ignore_operations
+        } else {
+            &[]
+        };
     let changes = current_infra_map.diff_with_table_strategy(
         &plan_request.infra_map,
         &clickhouse_strategy,
         true,
         project.is_production,
+        ignore_ops,
     );
 
     // Prepare the response
