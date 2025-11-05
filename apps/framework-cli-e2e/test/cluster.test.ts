@@ -13,6 +13,7 @@
  * 4. Mixed environments (some tables with cluster, some without) work correctly
  * 5. Both TypeScript and Python SDKs support cluster configuration
  * 6. ReplicatedMergeTree with explicit keeper_path/replica_name (no cluster) works correctly
+ * 7. ReplicatedMergeTree with auto-injected params (ClickHouse Cloud mode) works correctly
  */
 
 import { spawn, ChildProcess } from "child_process";
@@ -320,7 +321,7 @@ const createClusterTestSuite = (config: ClusterTestConfig) => {
       try {
         const result = await client.query({
           query:
-            "SELECT name FROM system.tables WHERE database = 'local' AND name IN ('TableA', 'TableB', 'TableC', 'TableD') ORDER BY name",
+            "SELECT name FROM system.tables WHERE database = 'local' AND name IN ('TableA', 'TableB', 'TableC', 'TableD', 'TableE') ORDER BY name",
           format: "JSONEachRow",
         });
 
@@ -331,6 +332,7 @@ const createClusterTestSuite = (config: ClusterTestConfig) => {
         expect(tableNames).to.include("TableB");
         expect(tableNames).to.include("TableC");
         expect(tableNames).to.include("TableD");
+        expect(tableNames).to.include("TableE");
       } finally {
         await client.close();
       }
@@ -353,6 +355,7 @@ const createClusterTestSuite = (config: ClusterTestConfig) => {
         { name: "TableB", cluster: "cluster_b" },
         { name: "TableC", cluster: null },
         { name: "TableD", cluster: null },
+        { name: "TableE", cluster: null },
       ]);
     });
 
@@ -365,6 +368,7 @@ const createClusterTestSuite = (config: ClusterTestConfig) => {
       await verifyTableExists("TableB");
       await verifyTableExists("TableC");
       await verifyTableExists("TableD");
+      await verifyTableExists("TableE");
     });
 
     it("should create TableD with explicit keeper args and no cluster", async function () {
@@ -396,6 +400,39 @@ const createClusterTestSuite = (config: ClusterTestConfig) => {
         // Verify it has explicit replica name
         expect(createStatement).to.include("{replica}");
         // Verify it does NOT have ON CLUSTER (since no cluster is specified)
+        expect(createStatement).to.not.include("ON CLUSTER");
+      } finally {
+        await client.close();
+      }
+    });
+
+    it("should create TableE with auto-injected params (ClickHouse Cloud mode)", async function () {
+      this.timeout(TIMEOUTS.SCHEMA_VALIDATION_MS);
+
+      // Verify TableE was created with ReplicatedMergeTree and auto-injected params
+      const client = createClient({
+        url: CLICKHOUSE_CONFIG.url,
+        username: CLICKHOUSE_CONFIG.username,
+        password: CLICKHOUSE_CONFIG.password,
+        database: CLICKHOUSE_CONFIG.database,
+      });
+
+      try {
+        const result = await client.query({
+          query: "SHOW CREATE TABLE local.TableE",
+          format: "JSONEachRow",
+        });
+
+        const data = await result.json<{ statement: string }>();
+        const createStatement = data[0].statement;
+
+        console.log(`TableE CREATE statement: ${createStatement}`);
+
+        // Verify it's ReplicatedMergeTree
+        expect(createStatement).to.include("ReplicatedMergeTree");
+        // Verify it has auto-injected params (Moose injects these in dev mode)
+        expect(createStatement).to.match(/ReplicatedMergeTree\(/);
+        // Verify it does NOT have ON CLUSTER (no cluster specified)
         expect(createStatement).to.not.include("ON CLUSTER");
       } finally {
         await client.close();
