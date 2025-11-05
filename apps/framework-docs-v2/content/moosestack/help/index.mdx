@@ -1,9 +1,72 @@
 ---
 title: Help
 description: Get help with MooseStack
-order: 1
+order: 0
+category: help
 ---
+
+import { CTACards, CTACard } from "@/components/mdx";
 
 # Help
 
-This page is a placeholder. Content migration pending.
+Need assistance with MooseStack? You've come to the right place. This section provides resources to help you get started, troubleshoot issues, and find answers to common questions.
+
+## Quick Links
+
+<CTACards columns={2}>
+  <CTACard
+    title="Troubleshooting"
+    description="Common issues and their solutions"
+    ctaLink="/moosestack/help/troubleshooting"
+    ctaLabel="View Troubleshooting Guide →"
+    badge={{ variant: "moose", text: "Help" }}
+  />
+  <CTACard
+    title="Minimum Requirements"
+    description="System requirements for development and production"
+    ctaLink="/moosestack/help/minimum-requirements"
+    ctaLabel="View Requirements →"
+    badge={{ variant: "moose", text: "Setup" }}
+  />
+</CTACards>
+
+## Common Topics
+
+### Development Environment
+- Port conflicts and how to resolve them
+- Docker setup and configuration
+- Missing dependencies troubleshooting
+
+### Data Ingestion
+- Data validation errors
+- Stream processing issues
+- Database connectivity problems
+
+### Performance
+- Slow query optimization
+- Stream parallelism tuning
+- Database indexing strategies
+
+### Deployment
+- Configuration validation
+- Resource allocation
+- Migration lock issues
+
+## Community Resources
+
+- **Slack Community**: Join our [Moose community Slack channel](https://join.slack.com/t/moose-community/shared_invite/zt-2fjh5n3wz-cnOmM9Xe9DYAgQrNu8xKxg) for real-time help
+- **GitHub Issues**: Search or create issues on [GitHub](https://github.com/514-labs/moose/issues)
+- **Documentation**: Browse our comprehensive documentation for detailed guides
+
+## Still Need Help?
+
+If you can't find what you're looking for:
+
+1. Check the [Troubleshooting Guide](/moosestack/help/troubleshooting) for common issues
+2. Search existing [GitHub issues](https://github.com/514-labs/moose/issues) for similar problems
+3. Join our [Slack community](https://join.slack.com/t/moose-community/shared_invite/zt-2fjh5n3wz-cnOmM9Xe9DYAgQrNu8xKxg) and ask for help
+4. Open a new GitHub issue with:
+   - Moose version (`moose --version`)
+   - Error messages and logs
+   - Steps to reproduce
+   - Expected vs. actual behavior

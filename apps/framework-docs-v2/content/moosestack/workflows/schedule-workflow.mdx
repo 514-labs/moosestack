@@ -1,9 +1,316 @@
 ---
-title: Scheduling
-description: Schedule workflows to run automatically
+title: Schedule Workflows
+description: Set up recurring and scheduled workflow execution
 order: 2
+category: workflows
 ---
 
-# Scheduling
+import { Callout, LanguageTabs, LanguageTabContent } from "@/components/mdx";
 
-This page is a placeholder. Content migration pending.
+# Schedule Workflows
+
+## Overview
+
+Moose workflows can be configured to run automatically on a schedule using cron expressions or interval-based scheduling. This enables you to automate recurring tasks, data processing jobs, and maintenance operations.
+
+## Scheduling Workflows
+
+Workflows can be configured to run on a schedule using the `schedule` field in `Workflow`. This field is optional and blank by default.
+
+### Cron Expressions
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```typescript filename="app/scheduled-workflow.ts" copy
+import { Task, Workflow } from "@514labs/moose-lib";
+
+export const myworkflow = new Workflow("myworkflow", {
+  startingTask: task1,
+  schedule: "0 12 * * *" // Runs at 12:00 PM every day
+});
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```python filename="app/scheduled_workflow.py" copy
+from moose_lib import Task, TaskConfig, Workflow, WorkflowConfig
+
+myworkflow = Workflow(
+  name="myworkflow",
+  config=WorkflowConfig(starting_task=task1, schedule="0 12 * * *") # Runs at 12:00 PM every day
+)
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+#### Cron Expression Format
+
+```text
+|------------------------------- Minute (0-59)
+|     |------------------------- Hour (0-23)
+|     |     |------------------- Day of the month (1-31)
+|     |     |     |------------- Month (1-12; or JAN to DEC)
+|     |     |     |     |------- Day of the week (0-6; or SUN to SAT; or 7 for Sunday)
+|     |     |     |     |
+|     |     |     |     |
+*     *     *     *     *
+```
+
+#### Common Cron Examples
+
+| Cron Expression | Description |
+|-----------------|-------------|
+| `0 12 * * *` | Runs at 12:00 PM every day |
+| `0 0 * * 0` | Runs at 12:00 AM every Sunday |
+| `0 8 * * 1-5` | Runs at 8:00 AM on weekdays (Monday to Friday) |
+| `* * * * *` | Runs every minute |
+| `0 */6 * * *` | Runs every 6 hours |
+| `0 9 1 * *` | Runs at 9:00 AM on the first day of every month |
+| `0 0 1 1 *` | Runs at midnight on January 1st every year |
+
+<Callout type="info" title="Cron Expression Visualizer">
+Use an online cron expression visualizer like [crontab.guru](https://crontab.guru/) to help you understand how the cron expression will schedule your workflow.
+</Callout>
+
+### Interval Schedules
+
+Interval schedules can be specified as a string `"@every <interval>"`. The interval follows standard duration format:
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```typescript filename="app/interval-workflow.ts" copy
+import { Task, Workflow } from "@514labs/moose-lib";
+
+export const myworkflow = new Workflow("myworkflow", {
+  startingTask: task1,
+  schedule: "@every 1h" // Runs every hour
+});
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```python filename="app/interval_workflow.py" copy
+from moose_lib import Task, TaskConfig, Workflow, WorkflowConfig
+
+myworkflow = Workflow(
+  name="myworkflow",
+  config=WorkflowConfig(starting_task=task1, schedule="@every 1h") # Runs every hour
+)
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+#### Interval Examples
+
+| Interval | Description |
+|----------|-------------|
+| `@every 30s` | Every 30 seconds |
+| `@every 5m` | Every 5 minutes |
+| `@every 1h` | Every hour |
+| `@every 12h` | Every 12 hours |
+| `@every 24h` | Every 24 hours |
+| `@every 7d` | Every 7 days |
+
+## Practical Scheduling Examples
+
+### Daily Data Processing
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```typescript filename="app/daily-etl.ts" copy
+import { Task, Workflow } from "@514labs/moose-lib";
+
+export const dailyDataProcessing = new Workflow("daily-data-processing", {
+  startingTask: extractDataTask,
+  schedule: "0 2 * * *", // Run at 2 AM every day
+  retries: 2,
+  timeout: "2h",
+});
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```python filename="app/daily_etl.py" copy
+from moose_lib import Workflow, WorkflowConfig
+
+daily_data_processing = Workflow(
+  name="daily-data-processing",
+  config=WorkflowConfig(
+    starting_task=extract_data_task,
+    schedule="0 2 * * *",  # Run at 2 AM every day
+    retries=2,
+    timeout="2h"
+  )
+)
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+### Weekly Reports
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```typescript filename="app/weekly-reports.ts" copy
+export const weeklyReports = new Workflow("weekly-reports", {
+  startingTask: generateReportTask,
+  schedule: "0 9 * * 1", // Run at 9 AM every Monday
+  retries: 1,
+  timeout: "1h",
+});
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```python filename="app/weekly_reports.py" copy
+weekly_reports = Workflow(
+  name="weekly-reports",
+  config=WorkflowConfig(
+    starting_task=generate_report_task,
+    schedule="0 9 * * 1",  # Run at 9 AM every Monday
+    retries=1,
+    timeout="1h"
+  )
+)
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+### High-Frequency Monitoring
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```typescript filename="app/monitoring.ts" copy
+export const systemMonitoring = new Workflow("system-monitoring", {
+  startingTask: checkSystemHealthTask,
+  schedule: "@every 5m", // Check every 5 minutes
+  retries: 0, // Don't retry monitoring checks
+  timeout: "30s",
+});
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```python filename="app/monitoring.py" copy
+system_monitoring = Workflow(
+  name="system-monitoring",
+  config=WorkflowConfig(
+    starting_task=check_system_health_task,
+    schedule="@every 5m",  # Check every 5 minutes
+    retries=0,  # Don't retry monitoring checks
+    timeout="30s"
+  )
+)
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+## Monitoring Scheduled Workflows
+
+### Development Environment
+
+If your dev server is running, you should see logs in the terminal when your scheduled workflow is executed:
+
+```bash filename="Terminal" copy
+moose dev
+```
+
+```txt filename="Terminal"
+[2024-01-15 12:00:00] Scheduled workflow 'daily-data-processing' started
+[2024-01-15 12:00:01] Task 'extract' completed successfully
+[2024-01-15 12:00:15] Task 'transform' completed successfully
+[2024-01-15 12:00:30] Task 'load' completed successfully
+[2024-01-15 12:00:30] Workflow 'daily-data-processing' completed successfully
+```
+
+### Checking Workflow Status
+
+You can check the status of scheduled workflows using the CLI:
+
+```bash filename="Terminal" copy
+# List all workflows defined in your project
+moose workflow list
+
+# Alternative command to list all workflows
+moose ls --type workflows
+
+# View workflow execution history
+moose workflow history
+
+# Check specific workflow status
+moose workflow status daily-data-processing
+
+# Get detailed execution history
+moose workflow status daily-data-processing --verbose
+```
+
+### Temporal Dashboard
+
+Access the Temporal dashboard to view scheduled workflow executions:
+
+```bash filename="Terminal" copy
+# Open Temporal dashboard (typically at http://localhost:8080)
+open http://localhost:8080
+```
+
+The dashboard shows:
+- Scheduled workflow definitions
+- Execution history and timing
+- Success/failure rates
+- Retry attempts and errors
+
+## Best Practices for Scheduled Workflows
+
+### Timeout and Retry Configuration
+
+Configure appropriate timeouts and retries for scheduled workflows:
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```typescript filename="app/robust-scheduled-workflow.ts" copy
+export const robustScheduledWorkflow = new Workflow("robust-scheduled", {
+  startingTask: mainTask,
+  schedule: "0 3 * * *", // Run at 3 AM daily
+  retries: 2, // Retry failed workflows
+  timeout: "4h", // Allow sufficient time
+});
+
+export const mainTask = new Task<void, void>("main", {
+  run: async () => {
+    // Long-running task logic
+  },
+  retries: 3, // Retry individual tasks
+  timeout: "1h", // Task-level timeout
+});
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```python filename="app/robust_scheduled_workflow.py" copy
+def run_main_task() -> None:
+    # Long-running task logic
+    pass
+
+main_task = Task[None, None](
+  name="main",
+  config=TaskConfig(
+    run=run_main_task,
+    retries=3,  # Retry individual tasks
+    timeout="1h"  # Task-level timeout
+  )
+)
+
+robust_scheduled_workflow = Workflow(
+  name="robust-scheduled",
+  config=WorkflowConfig(
+    starting_task=main_task,
+    schedule="0 3 * * *",  # Run at 3 AM daily
+    retries=2,  # Retry failed workflows
+    timeout="4h"  # Allow sufficient time
+  )
+)
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+## Troubleshooting Scheduled Workflows
+
+### Common Issues
+
+- **Timezone considerations**: Cron schedules use UTC by default
+- **Resource conflicts**: Ensure scheduled workflows don't compete for resources
+- **Long-running tasks**: Set appropriate timeouts for lengthy operations
+- **Error handling**: Implement proper error handling and logging

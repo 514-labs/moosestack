@@ -4,10 +4,390 @@ description: Configure your MooseStack project
 order: 1
 ---
 
+import { Callout } from "@/components/mdx";
+
 # Project Configuration
 
-This page is a placeholder. Content migration pending.
+Moose provides flexible configuration through multiple sources, allowing you to customize your application for different environments while keeping sensitive data secure.
 
+## Configuration Precedence
 
+Moose loads configuration from multiple sources in the following order (highest to lowest priority):
 
+1. **System environment variables** (`MOOSE_*`) - Highest priority, never overwritten
+2. **`.env.local`** - Local development secrets (gitignored, only loaded in dev mode)
+3. **`.env.{environment}`** - Environment-specific files (`.env.dev`, `.env.prod`)
+4. **`.env`** - Base environment defaults (committed to git)
+5. **`moose.config.toml`** - Structured configuration file
+6. **Default values** - Built-in defaults from Moose
 
+This precedence allows you to:
+- Store safe defaults in `moose.config.toml`
+- Override with environment-specific `.env` files
+- Keep local secrets in `.env.local` (development only)
+- Use system env vars for production secrets
+
+<Callout type="info" title="Implementation Details">
+See the configuration loading implementation in the source code:
+- <SourceCodeLink path="apps/framework-cli/src/utilities/dotenv.rs">dotenv.rs</SourceCodeLink> - See `load_dotenv_files` function
+- <SourceCodeLink path="apps/framework-cli/src/project.rs">project.rs</SourceCodeLink> - See `load` function in the `Project` impl block
+</Callout>
+
+## Environment Variables & .env Files
+
+### Overview
+
+Moose automatically loads `.env` files based on the command you run:
+
+- `moose dev` → Loads `.env` → `.env.dev` → `.env.local`
+- `moose prod` → Loads `.env` → `.env.prod` (`.env.local` is NOT loaded)
+- `moose build` → Loads `.env` → `.env.prod` (production mode)
+
+<Callout type="warning" title="Important Security Note">
+`.env.local` is only loaded in development mode. In production, use system environment variables or `.env.prod` for configuration. This prevents accidentally exposing local development credentials in production.
+</Callout>
+
+### File Naming Convention
+
+| File | Purpose | Committed? | When Loaded |
+|:-----|:--------|:-----------|:------------|
+| `.env` | Base defaults for all environments | ✅ Yes | Always |
+| `.env.dev` | Development-specific config | ✅ Yes | `moose dev` |
+| `.env.prod` | Production-specific config | ✅ Yes | `moose prod`, `moose build` |
+| `.env.local` | Local secrets and overrides | ❌ No (gitignored) | `moose dev` only |
+
+### Setting Up .env Files
+
+**1. Create a `.env` file** with safe, non-secret defaults:
+
+```bash
+# .env - Committed to git
+MOOSE_HTTP_SERVER_CONFIG__PORT=4000
+MOOSE_CLICKHOUSE_CONFIG__DB_NAME=local
+```
+
+**2. Create environment-specific files:**
+
+```bash
+# .env.dev - Development settings
+MOOSE_LOGGER__LEVEL=debug
+MOOSE_FEATURES__WORKFLOWS=false
+```
+
+```bash
+# .env.prod - Production settings  
+MOOSE_LOGGER__LEVEL=info
+MOOSE_LOGGER__FORMAT=Json
+MOOSE_FEATURES__WORKFLOWS=true
+```
+
+**3. Create `.env.local`** for your local secrets (gitignored):
+
+```bash
+# .env.local - NOT committed to git
+MOOSE_CLICKHOUSE_CONFIG__PASSWORD=my-local-password
+MOOSE_REDIS_CONFIG__URL=redis://localhost:6380
+```
+
+**4. Update `.gitignore`:**
+
+```gitignore
+# Environment files with secrets
+.env.local
+```
+
+### Environment Variable Naming
+
+All Moose environment variables use the `MOOSE_` prefix with double underscores (`__`) to separate nested configuration sections:
+
+```bash
+MOOSE_<SECTION>__<KEY>=value
+```
+
+**Examples:**
+
+| Config in moose.config.toml | Environment Variable |
+|:----------------------------|:---------------------|
+| `clickhouse_config.host` | `MOOSE_CLICKHOUSE_CONFIG__HOST` |
+| `clickhouse_config.port` | `MOOSE_CLICKHOUSE_CONFIG__PORT` |
+| `http_server_config.port` | `MOOSE_HTTP_SERVER_CONFIG__PORT` |
+| `features.workflows` | `MOOSE_FEATURES__WORKFLOWS` |
+| `redis_config.url` | `MOOSE_REDIS_CONFIG__URL` |
+
+### Complete Example
+
+**File structure:**
+```
+my-moose-project/
+├── .env                 # Base config
+├── .env.dev            # Dev overrides  
+├── .env.prod           # Prod overrides
+├── .env.local          # Local secrets (gitignored)
+└── moose.config.toml   # Structured config
+```
+
+**.env** (committed):
+```bash
+# Base configuration for all environments
+MOOSE_HTTP_SERVER_CONFIG__PORT=4000
+MOOSE_CLICKHOUSE_CONFIG__DB_NAME=moose_db
+```
+
+**.env.dev** (committed):
+```bash
+# Development environment
+MOOSE_LOGGER__LEVEL=debug
+MOOSE_CLICKHOUSE_CONFIG__HOST=localhost
+MOOSE_REDIS_CONFIG__URL=redis://localhost:6379
+```
+
+**.env.prod** (committed):
+```bash
+# Production environment
+MOOSE_LOGGER__LEVEL=info
+MOOSE_LOGGER__FORMAT=Json
+MOOSE_CLICKHOUSE_CONFIG__USE_SSL=true
+```
+
+**.env.local** (gitignored):
+```bash
+# Local development secrets
+MOOSE_CLICKHOUSE_CONFIG__PASSWORD=my-dev-password
+MOOSE_TEMPORAL_CONFIG__API_KEY=my-temporal-key
+```
+
+**Usage:**
+```bash
+# Development - loads .env → .env.dev → .env.local
+moose dev
+
+# Production - loads .env → .env.prod (NOT .env.local)
+moose prod
+```
+
+## moose.config.toml Reference
+
+<Callout type="info" title="Primary Configuration Method">
+The `moose.config.toml` file is the primary way to configure all Moose infrastructure including ClickHouse, Redpanda, Redis, Temporal, and HTTP servers.
+
+Do not use docker-compose overrides to modify Moose-managed services. See [Development Mode](/moosestack/local-dev#extending-docker-infrastructure) for guidelines on when to use docker-compose extensions.
+</Callout>
+
+```toml
+# Programming language used in the project (`Typescript` or `Python`)
+language = "Typescript"
+
+# Map of supported old versions and their locations (Default: {})
+# supported_old_versions = { "0.1.0" = "path/to/old/version" }
+
+#Telemetry configuration for usage tracking and metrics
+[telemetry]
+# Whether telemetry collection is enabled
+enabled = true
+# Whether to export metrics to external systems
+export_metrics = true
+# Flag indicating if the user is a Moose developer
+is_moose_developer = false
+
+# Redpanda streaming configuration (also aliased as `kafka_config`)
+[redpanda_config]
+# Broker connection string (e.g., "host:port") (Default: "localhost:19092")
+broker = "localhost:19092"
+# Confluent Schema Registry URL (optional)
+# schema_registry_url = "http://localhost:8081"
+# Message timeout in milliseconds (Default: 1000)
+message_timeout_ms = 1000
+# Default retention period in milliseconds (Default: 30000)
+retention_ms = 30000
+# Replication factor for topics (Default: 1)
+replication_factor = 1
+# SASL username for authentication (Default: None)
+# sasl_username = "user"
+# SASL password for authentication (Default: None)
+# sasl_password = "password"
+# SASL mechanism (e.g., "PLAIN", "SCRAM-SHA-256") (Default: None)
+# sasl_mechanism = "PLAIN"
+# Security protocol (e.g., "SASL_SSL", "PLAINTEXT") (Default: None)
+# security_protocol = "SASL_SSL"
+# Namespace for topic isolation (Default: None)
+# namespace = "my_namespace"
+
+# ClickHouse database configuration
+[clickhouse_config]
+# Database name (Default: "local")
+db_name = "local"
+# ClickHouse user (Default: "panda")
+user = "panda"
+# ClickHouse password (Default: "pandapass")
+password = "pandapass"
+# Whether to use SSL for connection (Default: false)
+use_ssl = false
+# ClickHouse host (Default: "localhost")
+host = "localhost"
+# ClickHouse HTTP port (Default: 18123)
+host_port = 18123
+# ClickHouse native protocol port (Default: 9000)
+native_port = 9000
+# Optional host path to mount as the ClickHouse data volume (uses Docker volume if None) (Default: None)
+# host_data_path = "/path/on/host/clickhouse_data"
+# Optional list of additional databases to create on startup (Default: [])
+# additional_databases = ["analytics", "staging"]
+
+# HTTP server configuration for local development
+[http_server_config]
+# Host to bind the webserver to (Default: "localhost")
+host = "localhost"
+# Port for the main API server (Default: 4000)
+port = 4000
+# Port for the management server (Default: 5001)
+management_port = 5001
+# Optional path prefix for all routes (Default: None)
+# path_prefix = "api"
+# Number of worker processes for consumption API cluster (TypeScript only) (Default: Auto-calculated - 70% of CPU cores)
+# Python projects always use 1 worker regardless of this setting
+# api_workers = 2
+
+# Redis configuration
+[redis_config]
+# Redis connection URL (Default: "redis://127.0.0.1:6379")
+url = "redis://127.0.0.1:6379"
+# Namespace prefix for all Redis keys (Default: "MS")
+key_prefix = "MS"
+
+# State storage configuration for migrations
+[state_config]
+# Storage backend: "clickhouse" (default) or "redis"
+# - "clickhouse": Store state in ClickHouse _MOOSE_STATE table (requires KeeperMap)
+# - "redis": Store state in Redis (best for existing Redis infra or multi-tenant setups)
+storage = "clickhouse"
+
+# Git configuration
+[git_config]
+# Name of the main branch (Default: "main")
+main_branch_name = "main"
+
+# Temporal workflow configuration
+[temporal_config]
+# Temporal database user (Default: "temporal")
+db_user = "temporal"
+# Temporal database password (Default: "temporal")
+db_password = "temporal"
+# Temporal database port (Default: 5432)
+db_port = 5432
+# Temporal server host (Default: "localhost")
+temporal_host = "localhost"
+# Temporal server port (Default: 7233)
+temporal_port = 7233
+# Temporal server scheme - "http" or "https" (Default: auto-detect based on host)
+# temporal_scheme = "https"
+# Temporal server version (Default: "1.22.3")
+temporal_version = "1.22.3"
+# Temporal admin tools version (Default: "1.22.3")
+admin_tools_version = "1.22.3"
+# Temporal UI version (Default: "2.21.3")
+ui_version = "2.21.3"
+# Temporal UI port (Default: 8080)
+ui_port = 8080
+# Temporal UI CORS origins (Default: "http://localhost:3000")
+ui_cors_origins = "http://localhost:3000"
+# Temporal dynamic config path (Default: "config/dynamicconfig/development-sql.yaml")
+config_path = "config/dynamicconfig/development-sql.yaml"
+# PostgreSQL version for Temporal database (Default: "13")
+postgresql_version = "13"
+# Path to Temporal client certificate (mTLS) (Default: "")
+client_cert = ""
+# Path to Temporal client key (mTLS) (Default: "")
+client_key = ""
+# Path to Temporal CA certificate (mTLS) (Default: "")
+ca_cert = ""
+# API key for Temporal Cloud connection (Default: "")
+api_key = ""
+
+# JWT (JSON Web Token) authentication configuration (Optional)
+[jwt]
+# Enforce JWT on all consumption APIs (Default: false)
+enforce_on_all_consumptions_apis = false
+# Enforce JWT on all ingestion APIs (Default: false)
+enforce_on_all_ingest_apis = false
+# Secret key for JWT signing (Required if jwt section is present)
+# secret = "your-jwt-secret"
+# JWT issuer (Required if jwt section is present)
+# issuer = "your-issuer-name"
+# JWT audience (Required if jwt section is present)
+# audience = "your-audience-name"
+
+# General authentication configuration
+[authentication]
+# Optional hashed admin API key for auth (Default: None)
+# admin_api_key = "hashed_api_key"
+
+# Migration configuration
+[migration_config]
+# Operations to ignore during migration plan generation and drift detection
+# Useful for managing TTL changes outside of Moose or when you don't want
+# migration failures due to TTL drift
+# ignore_operations = ["ModifyTableTtl", "ModifyColumnTtl"]
+
+# Feature flags
+[features]
+# Enable the streaming engine (Default: true)
+streaming_engine = true
+# Enable Temporal workflows (Default: false)
+workflows = false
+# Enable OLAP database (Default: true)
+olap = true
+# Enable Analytics APIs server (Default: true)
+apis = true
+```
+
+## Common Environment Variables
+
+Here are the most commonly used environment variables for overriding `moose.config.toml` settings:
+
+### HTTP Server
+```bash
+MOOSE_HTTP_SERVER_CONFIG__HOST=0.0.0.0
+MOOSE_HTTP_SERVER_CONFIG__PORT=4000
+MOOSE_HTTP_SERVER_CONFIG__MANAGEMENT_PORT=5001
+```
+
+### ClickHouse
+```bash
+MOOSE_CLICKHOUSE_CONFIG__HOST=localhost
+MOOSE_CLICKHOUSE_CONFIG__PORT=9000
+MOOSE_CLICKHOUSE_CONFIG__DB_NAME=local
+MOOSE_CLICKHOUSE_CONFIG__USER=panda
+MOOSE_CLICKHOUSE_CONFIG__PASSWORD=pandapass
+MOOSE_CLICKHOUSE_CONFIG__USE_SSL=false
+```
+
+### Redis
+```bash
+MOOSE_REDIS_CONFIG__URL=redis://localhost:6379
+MOOSE_REDIS_CONFIG__KEY_PREFIX=MS
+```
+
+### Redpanda/Kafka
+```bash
+MOOSE_REDPANDA_CONFIG__BROKER=localhost:19092
+MOOSE_REDPANDA_CONFIG__NAMESPACE=my_namespace
+MOOSE_REDPANDA_CONFIG__SASL_USERNAME=user
+MOOSE_REDPANDA_CONFIG__SASL_PASSWORD=password
+```
+
+### Feature Flags
+```bash
+MOOSE_FEATURES__STREAMING_ENGINE=true
+MOOSE_FEATURES__WORKFLOWS=false
+MOOSE_FEATURES__OLAP=true
+MOOSE_FEATURES__APIS=true
+```
+
+### Logging
+```bash
+MOOSE_LOGGER__LEVEL=info
+MOOSE_LOGGER__STDOUT=true
+MOOSE_LOGGER__FORMAT=Json
+```
+
+For a complete list of all available configuration options, see the [moose.config.toml Reference](#mooseconfigtoml-reference) above.
