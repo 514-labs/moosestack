@@ -639,6 +639,7 @@ dependencies = [
  "futures-util",
  "http-body-util",
  "hyper 1.7.0",
+ "hyper-tls 0.6.0",
  "hyper-util",
  "lz4_flex",
  "replace_with",
