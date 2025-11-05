@@ -885,6 +885,93 @@ impl ClickhouseEngine {
         self.is_merge_tree_family() || matches!(self, ClickhouseEngine::S3 { .. })
     }
 
+    /// Normalize auto-injected replication parameters back to None
+    ///
+    /// When Moose auto-injects replication params in dev mode or with clusters,
+    /// it uses a standard pattern. When reading tables back from ClickHouse,
+    /// we normalize these back to None so they match the user's code (which
+    /// doesn't specify params) and don't show spurious diffs.
+    ///
+    /// Auto-injected pattern:
+    /// - keeper_path: `/clickhouse/tables/{database}/{shard}/{table_name}`
+    /// - replica_name: `{replica}`
+    pub fn normalize_auto_injected_params(&self, table_name: &str) -> Self {
+        let expected_keeper_path =
+            format!("/clickhouse/tables/{{database}}/{{shard}}/{}", table_name);
+        let expected_replica_name = "{replica}";
+
+        match self {
+            ClickhouseEngine::ReplicatedMergeTree {
+                keeper_path,
+                replica_name,
+            } => {
+                if keeper_path.as_deref() == Some(&expected_keeper_path)
+                    && replica_name.as_deref() == Some(expected_replica_name)
+                {
+                    ClickhouseEngine::ReplicatedMergeTree {
+                        keeper_path: None,
+                        replica_name: None,
+                    }
+                } else {
+                    self.clone()
+                }
+            }
+            ClickhouseEngine::ReplicatedReplacingMergeTree {
+                keeper_path,
+                replica_name,
+                ver,
+                is_deleted,
+            } => {
+                if keeper_path.as_deref() == Some(&expected_keeper_path)
+                    && replica_name.as_deref() == Some(expected_replica_name)
+                {
+                    ClickhouseEngine::ReplicatedReplacingMergeTree {
+                        keeper_path: None,
+                        replica_name: None,
+                        ver: ver.clone(),
+                        is_deleted: is_deleted.clone(),
+                    }
+                } else {
+                    self.clone()
+                }
+            }
+            ClickhouseEngine::ReplicatedAggregatingMergeTree {
+                keeper_path,
+                replica_name,
+            } => {
+                if keeper_path.as_deref() == Some(&expected_keeper_path)
+                    && replica_name.as_deref() == Some(expected_replica_name)
+                {
+                    ClickhouseEngine::ReplicatedAggregatingMergeTree {
+                        keeper_path: None,
+                        replica_name: None,
+                    }
+                } else {
+                    self.clone()
+                }
+            }
+            ClickhouseEngine::ReplicatedSummingMergeTree {
+                keeper_path,
+                replica_name,
+                columns,
+            } => {
+                if keeper_path.as_deref() == Some(&expected_keeper_path)
+                    && replica_name.as_deref() == Some(expected_replica_name)
+                {
+                    ClickhouseEngine::ReplicatedSummingMergeTree {
+                        keeper_path: None,
+                        replica_name: None,
+                        columns: columns.clone(),
+                    }
+                } else {
+                    self.clone()
+                }
+            }
+            // Non-replicated engines don't need normalization
+            _ => self.clone(),
+        }
+    }
+
     /// Convert engine to string for proto storage (no sensitive data)
     pub fn to_proto_string(&self) -> String {
         match self {
@@ -2462,7 +2549,7 @@ pub fn create_table_query(
 }
 
 pub static DROP_TABLE_TEMPLATE: &str = r#"
-DROP TABLE IF EXISTS `{{db_name}}`.`{{table_name}}`{{#if cluster_name}} ON CLUSTER {{cluster_name}}{{/if}};
+DROP TABLE IF EXISTS `{{db_name}}`.`{{table_name}}`{{#if cluster_name}} ON CLUSTER {{cluster_name}}{{/if}} SYNC;
 "#;
 
 pub fn drop_table_query(
@@ -4617,7 +4704,10 @@ ENGINE = S3Queue('s3://my-bucket/data/*.csv', NOSIGN, 'CSV')"#;
             "DROP query should contain ON CLUSTER clause"
         );
 
-        // ON CLUSTER should come after DROP TABLE but before the table name or right after table name
+        // Should have SYNC (always present)
+        assert!(query.contains("SYNC"), "DROP query should contain SYNC");
+
+        // Should have DROP TABLE
         assert!(query.contains("DROP TABLE"));
     }
 
@@ -4631,6 +4721,9 @@ ENGINE = S3Queue('s3://my-bucket/data/*.csv', NOSIGN, 'CSV')"#;
             !query.contains("ON CLUSTER"),
             "DROP query should not contain ON CLUSTER clause when cluster_name is None"
         );
+
+        // Should still have SYNC (for replicated tables)
+        assert!(query.contains("SYNC"), "DROP query should contain SYNC");
 
         // Should still have DROP TABLE
         assert!(query.contains("DROP TABLE"));
@@ -4767,5 +4860,83 @@ ENGINE = S3Queue('s3://my-bucket/data/*.csv', NOSIGN, 'CSV')"#;
             }
             _ => panic!("Expected InvalidParameters error"),
         }
+    }
+
+    #[test]
+    fn test_normalize_auto_injected_params_replicated_merge_tree() {
+        // Test auto-injected params are normalized to None
+        let engine = ClickhouseEngine::ReplicatedMergeTree {
+            keeper_path: Some("/clickhouse/tables/{database}/{shard}/MyTable".to_string()),
+            replica_name: Some("{replica}".to_string()),
+        };
+
+        let normalized = engine.normalize_auto_injected_params("MyTable");
+
+        assert!(matches!(
+            normalized,
+            ClickhouseEngine::ReplicatedMergeTree {
+                keeper_path: None,
+                replica_name: None,
+            }
+        ));
+    }
+
+    #[test]
+    fn test_normalize_auto_injected_params_custom_params_unchanged() {
+        // Test custom params are NOT normalized
+        let engine = ClickhouseEngine::ReplicatedMergeTree {
+            keeper_path: Some("/custom/path/MyTable".to_string()),
+            replica_name: Some("custom_replica".to_string()),
+        };
+
+        let normalized = engine.normalize_auto_injected_params("MyTable");
+
+        // Should remain unchanged
+        match normalized {
+            ClickhouseEngine::ReplicatedMergeTree {
+                keeper_path,
+                replica_name,
+            } => {
+                assert_eq!(keeper_path, Some("/custom/path/MyTable".to_string()));
+                assert_eq!(replica_name, Some("custom_replica".to_string()));
+            }
+            _ => panic!("Expected ReplicatedMergeTree"),
+        }
+    }
+
+    #[test]
+    fn test_normalize_auto_injected_params_replicated_replacing_merge_tree() {
+        // Test ReplicatedReplacingMergeTree with auto-injected params
+        let engine = ClickhouseEngine::ReplicatedReplacingMergeTree {
+            keeper_path: Some("/clickhouse/tables/{database}/{shard}/MyTable".to_string()),
+            replica_name: Some("{replica}".to_string()),
+            ver: Some("version_col".to_string()),
+            is_deleted: None,
+        };
+
+        let normalized = engine.normalize_auto_injected_params("MyTable");
+
+        match normalized {
+            ClickhouseEngine::ReplicatedReplacingMergeTree {
+                keeper_path,
+                replica_name,
+                ver,
+                is_deleted,
+            } => {
+                assert_eq!(keeper_path, None);
+                assert_eq!(replica_name, None);
+                assert_eq!(ver, Some("version_col".to_string()));
+                assert_eq!(is_deleted, None);
+            }
+            _ => panic!("Expected ReplicatedReplacingMergeTree"),
+        }
+    }
+
+    #[test]
+    fn test_normalize_auto_injected_params_non_replicated_unchanged() {
+        // Test non-replicated engines are unchanged
+        let engine = ClickhouseEngine::MergeTree;
+        let normalized = engine.normalize_auto_injected_params("MyTable");
+        assert!(matches!(normalized, ClickhouseEngine::MergeTree));
     }
 }

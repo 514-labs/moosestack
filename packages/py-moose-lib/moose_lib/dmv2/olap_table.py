@@ -234,6 +234,29 @@ class OlapTable(TypedMooseResource, Generic[T]):
             )
         _tables[registry_key] = self
 
+        # Validate cluster and explicit replication params are not both specified
+        if config.cluster:
+            from moose_lib.blocks import (
+                ReplicatedMergeTreeEngine,
+                ReplicatedReplacingMergeTreeEngine,
+                ReplicatedAggregatingMergeTreeEngine,
+                ReplicatedSummingMergeTreeEngine,
+            )
+
+            if isinstance(config.engine, (
+                ReplicatedMergeTreeEngine,
+                ReplicatedReplacingMergeTreeEngine,
+                ReplicatedAggregatingMergeTreeEngine,
+                ReplicatedSummingMergeTreeEngine,
+            )):
+                if config.engine.keeper_path is not None or config.engine.replica_name is not None:
+                    raise ValueError(
+                        f"OlapTable {name}: Cannot specify both 'cluster' and explicit replication params "
+                        f"('keeper_path' or 'replica_name'). "
+                        f"Use 'cluster' for auto-injected params, or use explicit 'keeper_path' and "
+                        f"'replica_name' without 'cluster'."
+                    )
+
         # Check if using legacy enum-based engine configuration
         if config.engine and isinstance(config.engine, ClickHouseEngines):
             logger = Logger(action="OlapTable")

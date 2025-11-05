@@ -50,49 +50,6 @@ fn format_database_change_error(table_name: &str, before_db: &str, after_db: &st
     )
 }
 
-/// Generates a formatted error message for cluster field changes.
-///
-/// This function creates a user-friendly error message explaining that cluster field
-/// changes require manual intervention to prevent data loss. Cluster changes are even
-/// more critical than database changes because they affect replication topology.
-///
-/// # Arguments
-/// * `table_name` - The name of the table being changed
-/// * `before_cluster` - The original cluster name (or "<none>" if None)
-/// * `after_cluster` - The new cluster name (or "<none>" if None)
-///
-/// # Returns
-/// A formatted string with migration instructions
-fn format_cluster_change_error(
-    table_name: &str,
-    before_cluster: &str,
-    after_cluster: &str,
-) -> String {
-    format!(
-        "\n\n\
-        ERROR: Cluster field change detected for table '{}'\n\
-        \n\
-        The cluster field changed from '{}' to '{}'\n\
-        \n\
-        Changing the cluster field is a destructive operation that requires\n\
-        manual intervention to ensure data safety and proper replication.\n\
-        \n\
-        The cluster name is embedded in the table's replication path and cannot\n\
-        be changed without recreating the table. This would cause data loss.\n\
-        \n\
-        To migrate this table to a different cluster:\n\
-        \n\
-        1. Export your existing data\n\
-        2. Delete the old table definition from your code\n\
-        3. Create a new table definition with the target cluster\n\
-        4. Re-import your data if needed\n\
-        \n\
-        This ensures you maintain control over data migration and prevents\n\
-        accidental data loss.\n",
-        table_name, before_cluster, after_cluster
-    )
-}
-
 /// ClickHouse-specific table diff strategy
 ///
 /// ClickHouse has several limitations that require drop+create operations instead of ALTER:
@@ -516,25 +473,15 @@ impl TableDiffStrategy for ClickHouseTableDiffStrategy {
         }
 
         // Check if cluster has changed
-        // Cluster name cannot be changed after table creation for replicated tables
-        // as it's embedded in the replication path
-        let cluster_changed = before.cluster_name != after.cluster_name;
-
-        if cluster_changed {
-            let before_cluster = before.cluster_name.as_deref().unwrap_or("<none>");
-            let after_cluster = after.cluster_name.as_deref().unwrap_or("<none>");
-
-            let error_message =
-                format_cluster_change_error(&before.name, before_cluster, after_cluster);
-
-            log::error!("{}", error_message);
-
-            return vec![OlapChange::Table(TableChange::ValidationError {
-                table_name: before.name.clone(),
-                message: error_message,
-                before: Box::new(before.clone()),
-                after: Box::new(after.clone()),
-            })];
+        if before.cluster_name != after.cluster_name {
+            log::warn!(
+                "ClickHouse: cluster changed for table '{}' (from {:?} to {:?}), requiring drop+create",
+                before.name, before.cluster_name, after.cluster_name
+            );
+            return vec![
+                OlapChange::Table(TableChange::Removed(before.clone())),
+                OlapChange::Table(TableChange::Added(after.clone())),
+            ];
         }
 
         // Check if PARTITION BY has changed
@@ -1707,27 +1654,16 @@ mod tests {
 
         let changes = strategy.diff_table_update(&before, &after, vec![], order_by_change, "local");
 
-        // Should return exactly one ValidationError
-        assert_eq!(changes.len(), 1);
+        // Should return DROP + CREATE (like ORDER BY changes)
+        assert_eq!(changes.len(), 2);
         assert!(matches!(
             changes[0],
-            OlapChange::Table(TableChange::ValidationError { .. })
+            OlapChange::Table(TableChange::Removed(_))
         ));
-
-        // Check the error message contains expected information
-        if let OlapChange::Table(TableChange::ValidationError {
-            table_name,
-            message,
-            ..
-        }) = &changes[0]
-        {
-            assert_eq!(table_name, "test");
-            assert!(message.contains("<none>"));
-            assert!(message.contains("test_cluster"));
-            assert!(message.contains("manual intervention"));
-        } else {
-            panic!("Expected ValidationError variant");
-        }
+        assert!(matches!(
+            changes[1],
+            OlapChange::Table(TableChange::Added(_))
+        ));
     }
 
     #[test]
@@ -1748,27 +1684,16 @@ mod tests {
 
         let changes = strategy.diff_table_update(&before, &after, vec![], order_by_change, "local");
 
-        // Should return exactly one ValidationError
-        assert_eq!(changes.len(), 1);
+        // Should return DROP + CREATE (like ORDER BY changes)
+        assert_eq!(changes.len(), 2);
         assert!(matches!(
             changes[0],
-            OlapChange::Table(TableChange::ValidationError { .. })
+            OlapChange::Table(TableChange::Removed(_))
         ));
-
-        // Check the error message contains expected information
-        if let OlapChange::Table(TableChange::ValidationError {
-            table_name,
-            message,
-            ..
-        }) = &changes[0]
-        {
-            assert_eq!(table_name, "test");
-            assert!(message.contains("test_cluster"));
-            assert!(message.contains("<none>"));
-            assert!(message.contains("manual intervention"));
-        } else {
-            panic!("Expected ValidationError variant");
-        }
+        assert!(matches!(
+            changes[1],
+            OlapChange::Table(TableChange::Added(_))
+        ));
     }
 
     #[test]
@@ -1789,27 +1714,16 @@ mod tests {
 
         let changes = strategy.diff_table_update(&before, &after, vec![], order_by_change, "local");
 
-        // Should return exactly one ValidationError
-        assert_eq!(changes.len(), 1);
+        // Should return DROP + CREATE (like ORDER BY changes)
+        assert_eq!(changes.len(), 2);
         assert!(matches!(
             changes[0],
-            OlapChange::Table(TableChange::ValidationError { .. })
+            OlapChange::Table(TableChange::Removed(_))
         ));
-
-        // Check the error message contains expected information
-        if let OlapChange::Table(TableChange::ValidationError {
-            table_name,
-            message,
-            ..
-        }) = &changes[0]
-        {
-            assert_eq!(table_name, "test");
-            assert!(message.contains("cluster_a"));
-            assert!(message.contains("cluster_b"));
-            assert!(message.contains("replication path"));
-        } else {
-            panic!("Expected ValidationError variant");
-        }
+        assert!(matches!(
+            changes[1],
+            OlapChange::Table(TableChange::Added(_))
+        ));
     }
 
     #[test]
