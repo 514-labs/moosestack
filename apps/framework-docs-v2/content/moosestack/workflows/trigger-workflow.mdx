@@ -1,9 +1,126 @@
 ---
-title: Triggers
-description: Trigger workflows from events
+title: Trigger Workflows
+description: Start workflows from events, APIs, or external triggers
 order: 3
+category: workflows
 ---
 
-# Triggers
+import { Callout } from "@/components/mdx";
 
-This page is a placeholder. Content migration pending.
+# Trigger Workflows
+
+## Overview
+
+Moose workflows can be triggered programmatically from various sources including APIs, events, external systems, or manual execution. This enables you to build reactive data processing pipelines and on-demand task execution.
+
+## Manual Workflow Execution
+
+The simplest way to trigger a workflow is using the Moose CLI:
+
+```bash filename="Terminal" copy
+# Run a workflow manually
+moose workflow run example
+
+# Run with input parameters
+moose workflow run example --input '{"name": "John", "email": "john@example.com"}'
+```
+
+### Passing Input to Workflows
+
+When triggering workflows, you can pass input data that will be passed to the starting task:
+
+```bash filename="Terminal" copy
+moose workflow run data-processing --input '{
+  "sourceUrl": "https://api.example.com/data",
+  "apiKey": "your-api-key",
+  "batchSize": 100
+}'
+```
+
+The input is parsed as JSON and passed to the workflow's starting task.
+
+## API-Triggered Workflows
+
+Trigger workflows directly via an HTTP POST endpoint exposed by the webserver.
+
+- Endpoint: `/workflows/{workflowName}/trigger`
+
+### Trigger Request
+
+- Body: optional JSON payload passed to the workflow's starting task.
+
+Example:
+
+```bash filename="Terminal" copy
+curl -X POST 'http://localhost:4000/workflows/data-processing/trigger' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "inputValue": "process-user-data",
+    "priority": "high"
+  }'
+```
+
+### Authentication
+
+- Local development: no auth required.
+- Production: protect the endpoint using an API key. Follow these steps:
+  1. Generate a token and hashed key (see the Token Generation section in the API Auth docs):
+     ```bash filename="Terminal" copy
+     moose generate hash-token
+     # Outputs:
+     # - ENV API Key (hashed) → for environment/config
+     # - Bearer Token (plain) → for Authorization header
+     ```
+  2. Configure the server with the hashed key:
+     ```bash copy
+     MOOSE_CONSUMPTION_API_KEY="<hashed_key_from_output>"
+     ```
+  3. Call the endpoint using the plain Bearer token from step 1:
+     ```bash filename="Terminal" copy
+     curl -X POST 'https://your-host/workflows/data-processing/trigger' \
+       -H 'Authorization: Bearer <plain_token_from_output>' \
+       -H 'Content-Type: application/json' \
+       -d '{"inputValue":"process-user-data"}'
+     ```
+
+For details, see the API Auth page under "Token Generation" and "API Endpoints".
+
+### Response
+
+```json filename="Response"
+{
+  "workflowId": "data-processing-<hash>",
+  "runId": "<id>",
+}
+```
+
+In local development, the response also includes a `dashboardUrl` to Temporal UI:
+
+```json filename="Response (dev)"
+{
+  "workflowId": "data-processing-<hash>",
+  "runId": "<id>",
+  "dashboardUrl": "http://localhost:8080/namespaces/<namespace>/workflows/data-processing-<hash>/<runId>/history"
+}
+```
+
+## Terminate a Running Workflow
+
+After triggering a workflow, you can terminate it via an HTTP endpoint.
+
+- Endpoint: `POST /workflows/{workflowId}/terminate`
+
+### Terminate Request
+
+- Local development (no auth):
+
+```bash filename="Terminal" copy
+curl -X POST 'http://localhost:4000/workflows/data-processing-<hash>/terminate'
+```
+
+- Production (Bearer token required):
+
+```bash filename="Terminal" copy
+curl -X POST 'https://your-host/workflows/data-processing-<hash>/terminate' \
+  -H 'Authorization: Bearer <plain_token_from_output>''
+```
