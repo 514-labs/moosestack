@@ -2109,7 +2109,7 @@ impl InfrastructureMap {
                         let resolved_access_key = resolve_optional_runtime_env(aws_access_key_id)
                             .map_err(|e| {
                             format!(
-                                "Failed to resolve AWS access key ID for table '{}': {}",
+                                "Failed to resolve awsAccessKeyId for table '{}': {}",
                                 table.name, e
                             )
                         })?;
@@ -2117,7 +2117,7 @@ impl InfrastructureMap {
                         let resolved_secret_key =
                             resolve_optional_runtime_env(aws_secret_access_key).map_err(|e| {
                                 format!(
-                                    "Failed to resolve AWS secret access key for table '{}': {}",
+                                    "Failed to resolve awsSecretAccessKey for table '{}': {}",
                                     table.name, e
                                 )
                             })?;
@@ -2139,7 +2139,7 @@ impl InfrastructureMap {
                         let resolved_access_key = resolve_optional_runtime_env(aws_access_key_id)
                             .map_err(|e| {
                             format!(
-                                "Failed to resolve AWS access key ID for table '{}': {}",
+                                "Failed to resolve awsAccessKeyId for table '{}': {}",
                                 table.name, e
                             )
                         })?;
@@ -2147,7 +2147,7 @@ impl InfrastructureMap {
                         let resolved_secret_key =
                             resolve_optional_runtime_env(aws_secret_access_key).map_err(|e| {
                                 format!(
-                                    "Failed to resolve AWS secret access key for table '{}': {}",
+                                    "Failed to resolve awsSecretAccessKey for table '{}': {}",
                                     table.name, e
                                 )
                             })?;
