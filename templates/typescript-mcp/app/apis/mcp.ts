@@ -17,6 +17,10 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { z } from "zod";
 import { WebApp, getMooseUtils, ApiUtil, Sql } from "@514labs/moose-lib";
+import { validateQuery, applyLimitToQuery } from "./utils/sql";
+
+// TODO:
+// auth using getMooseUtils() jwt
 
 // Create Express application
 const app = express();
@@ -37,8 +41,12 @@ const serverFactory = (mooseUtils: ApiUtil | null) => {
    * Register the query_clickhouse tool
    *
    * This tool allows AI assistants to execute SQL queries against your ClickHouse
-   * database through the MCP protocol. Results are automatically limited to a maximum
-   * of 100 rows to prevent excessive data transfer.
+   * database through the MCP protocol.
+   *
+   * Security features:
+   * - Query whitelist: Only SELECT, SHOW, DESCRIBE, EXPLAIN queries permitted
+   * - Query blocklist: Prevents INSERT, UPDATE, DELETE, DROP, CREATE, ALTER, etc.
+   * - Row limit enforcement: Results automatically limited to maximum of 100 rows
    */
   server.registerTool(
     "query_clickhouse",
@@ -80,30 +88,31 @@ const serverFactory = (mooseUtils: ApiUtil | null) => {
           };
         }
 
+        // Validate query for security
+        const validation = validateQuery(query);
+        if (!validation.valid) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: `Security error: ${validation.error}`,
+              },
+            ],
+            isError: true,
+          };
+        }
+
         const { client } = mooseUtils;
 
         // Enforce maximum limit of 100
         const enforcedLimit = Math.min(limit, 100);
 
-        // Apply limit to the query
-        let finalQuery = query.trim();
-
-        // Check if this is a query that doesn't support LIMIT
-        const isNonSelectQuery =
-          /^\s*(SHOW|DESCRIBE|DESC|EXPLAIN|EXISTS)\b/i.test(finalQuery);
-
-        if (!isNonSelectQuery) {
-          // Check if query already has a LIMIT clause
-          const hasLimit = /\bLIMIT\s+\d+/i.test(finalQuery);
-
-          if (hasLimit) {
-            // Wrap the query in a subquery to enforce our maximum limit
-            finalQuery = `SELECT * FROM (${finalQuery}) AS subquery LIMIT ${enforcedLimit}`;
-          } else {
-            // Simply append the LIMIT clause
-            finalQuery = `${finalQuery} LIMIT ${enforcedLimit}`;
-          }
-        }
+        // Apply limit to the query using our dedicated function
+        const finalQuery = applyLimitToQuery(
+          query,
+          enforcedLimit,
+          validation.supportsLimit,
+        );
 
         // Create a Sql object manually for dynamic query execution
         const sqlQuery: Sql = {
@@ -182,6 +191,16 @@ app.all("/", async (req, res) => {
       console.error(`[MCP Error]`, error);
     };
 
+    // Create a fresh MCP server instance for this request
+    //
+    // Why per-request instantiation?
+    // - MCP transports and servers are completely decoupled
+    // - Tools need access to request-specific mooseUtils (ClickHouse client, JWT, etc.)
+    // - The only way to pass mooseUtils to tool handlers is via closure in serverFactory()
+    // - Creating the server per-request ensures each request has isolated utilities
+    //
+    // Performance note: Server instantiation + tool registration is lightweight.
+    // The overhead is minimal compared to database queries.
     const server = serverFactory(mooseUtils);
     await server.connect(transport);
 
