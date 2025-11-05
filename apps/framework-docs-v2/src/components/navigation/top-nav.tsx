@@ -60,7 +60,7 @@ export function TopNav({ stars }: TopNavProps) {
 
   return (
     <>
-      <nav className="sticky top-0 z-50 w-full border-b bg-background">
+      <nav className="sticky top-0 z-50 w-full bg-background">
         <div className="flex h-[--header-height] items-center px-4">
           <div className="mr-4 flex">
             <Link href="/" className="mr-6 flex items-center space-x-2">
@@ -74,7 +74,8 @@ export function TopNav({ stars }: TopNavProps) {
           <div className="hidden md:flex md:flex-1 md:items-center md:justify-between">
             <nav className="flex items-center gap-2">
               {navItems.map((item) => {
-                const isActive = activeSection === item.section;
+                const isActive =
+                  activeSection !== null && activeSection === item.section;
                 return (
                   <Button
                     key={item.section}
@@ -121,7 +122,8 @@ export function TopNav({ stars }: TopNavProps) {
         <div className="md:hidden border-t">
           <div className="px-4 py-4 space-y-2">
             {navItems.map((item) => {
-              const isActive = activeSection === item.section;
+              const isActive =
+                activeSection !== null && activeSection === item.section;
               return (
                 <Button
                   key={item.section}

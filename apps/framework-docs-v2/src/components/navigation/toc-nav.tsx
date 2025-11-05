@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
 import type { Heading } from "@/lib/content-types";
 import { IconExternalLink } from "@tabler/icons-react";
@@ -15,102 +15,106 @@ interface TOCNavProps {
 
 export function TOCNav({ headings, helpfulLinks }: TOCNavProps) {
   const [activeId, setActiveId] = useState<string>("");
-  const intersectingIdRef = useRef<string>("");
-  const isAtBottomRef = useRef<boolean>(false);
-  const intersectingIdsRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     if (headings.length === 0) return;
 
-    // Reset intersecting IDs when headings change
-    intersectingIdsRef.current.clear();
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        // Update the set of intersecting headings
-        entries.forEach((entry) => {
-          if (entry.isIntersecting) {
-            intersectingIdsRef.current.add(entry.target.id);
-          } else {
-            intersectingIdsRef.current.delete(entry.target.id);
-          }
-        });
-
-        // Find the most recently intersecting heading (last in DOM order)
-        // This ensures we highlight the heading closest to the viewport top
-        let mostRecentId = "";
-        let mostRecentIndex = -1;
-
-        intersectingIdsRef.current.forEach((id) => {
-          const index = headings.findIndex((h) => h.id === id);
-          if (index > mostRecentIndex) {
-            mostRecentIndex = index;
-            mostRecentId = id;
-          }
-        });
-
-        intersectingIdRef.current = mostRecentId;
-
-        // Only update activeId from IntersectionObserver if we're not in bottom mode
-        // or if there are intersecting headings
-        if (mostRecentId && !isAtBottomRef.current) {
-          setActiveId(mostRecentId);
-        }
-      },
-      { rootMargin: "0% 0% -80% 0%" },
-    );
-
-    headings.forEach(({ id }) => {
-      const element = document.getElementById(id);
-      if (element) {
-        observer.observe(element);
-      }
-    });
-
-    // Check if we're at the bottom of the page
-    const checkBottomScroll = () => {
+    // Find the active heading based on scroll position
+    const findActiveHeading = () => {
+      const root = document.documentElement;
       const windowHeight = window.innerHeight;
-      const documentHeight = document.documentElement.scrollHeight;
-      const scrollTop = window.scrollY || document.documentElement.scrollTop;
+      const documentHeight = root.scrollHeight;
+      const scrollTop = window.scrollY || root.scrollTop;
 
-      const lastHeading = headings[headings.length - 1];
-      if (!lastHeading) return;
+      // Get the scroll margin top from headings (matches CSS scrollMarginTop: 5rem)
+      // This is the offset used when clicking anchor links, so we need to match it
+      let scrollMarginTop = 80; // Default to 5rem (80px) if we can't detect it
+      for (const h of headings) {
+        const el = document.getElementById(h.id);
+        if (el) {
+          const computedStyle = getComputedStyle(el);
+          const scrollMarginTopValue = computedStyle.scrollMarginTop;
+          if (scrollMarginTopValue && scrollMarginTopValue !== "0px") {
+            // Handle both px and rem units
+            if (scrollMarginTopValue.endsWith("px")) {
+              const parsed = parseFloat(scrollMarginTopValue.replace("px", ""));
+              if (!Number.isNaN(parsed)) {
+                scrollMarginTop = parsed;
+                break; // Use the first valid value
+              }
+            } else if (scrollMarginTopValue.endsWith("rem")) {
+              // Convert rem to px (1rem = 16px typically, but use root font size)
+              const rootFontSize =
+                parseFloat(getComputedStyle(root).fontSize) || 16;
+              const remValue = parseFloat(
+                scrollMarginTopValue.replace("rem", ""),
+              );
+              if (!Number.isNaN(remValue)) {
+                scrollMarginTop = remValue * rootFontSize;
+                break; // Use the first valid value
+              }
+            }
+          }
+        }
+      }
 
-      const lastElement = document.getElementById(lastHeading.id);
-      if (!lastElement) return;
+      // If truly at the bottom, always highlight the last heading
+      const isAtDocumentBottom = scrollTop + windowHeight >= documentHeight - 2;
+      if (isAtDocumentBottom) {
+        const last = [...headings]
+          .reverse()
+          .find((h) => document.getElementById(h.id));
+        return last ? last.id : "";
+      }
 
-      // Check if the last heading is currently intersecting
-      const isLastHeadingIntersecting = intersectingIdsRef.current.has(
-        lastHeading.id,
-      );
+      // Check which heading is currently visible in the viewport
+      // We use viewport coordinates (getBoundingClientRect) to check visibility
+      // A heading is active if its top is at or above the scrollMarginTop line in the viewport
+      const activeThreshold = scrollMarginTop;
 
-      // Check if we're near the document bottom
-      const isNearDocumentBottom =
-        scrollTop + windowHeight >= documentHeight - 100;
+      // Check headings from bottom to top to find the one that's currently in view
+      // We want the heading whose top is closest to but above the threshold
+      let activeIdLocal = headings[0]?.id || "";
+      let closestDistance = Infinity;
 
-      // Only activate bottom mode if:
-      // 1. We're near the document bottom
-      // 2. AND the last heading is NOT currently intersecting (we've scrolled past it)
-      isAtBottomRef.current =
-        isNearDocumentBottom && !isLastHeadingIntersecting;
+      for (let i = headings.length - 1; i >= 0; i--) {
+        const heading = headings[i]!;
+        const el = document.getElementById(heading.id);
+        if (!el) continue;
 
-      if (isAtBottomRef.current) {
-        setActiveId(lastHeading.id);
-      } else if (intersectingIdRef.current) {
-        // If not at bottom and we have an intersecting heading, use it
-        setActiveId(intersectingIdRef.current);
+        const rect = el.getBoundingClientRect();
+        const headingTopInViewport = rect.top;
+
+        // Check if this heading is above or at the threshold
+        if (headingTopInViewport <= activeThreshold) {
+          // Calculate distance from threshold (negative means above, which is what we want)
+          const distance = activeThreshold - headingTopInViewport;
+          // We want the heading closest to the threshold (smallest positive distance)
+          if (distance >= 0 && distance < closestDistance) {
+            closestDistance = distance;
+            activeIdLocal = heading.id;
+          }
+        }
+      }
+
+      return activeIdLocal;
+    };
+
+    const updateActiveHeading = () => {
+      const newActiveId = findActiveHeading();
+      if (newActiveId) {
+        setActiveId(newActiveId);
       }
     };
 
-    // Check on mount and scroll
-    checkBottomScroll();
-    window.addEventListener("scroll", checkBottomScroll, { passive: true });
-    window.addEventListener("resize", checkBottomScroll, { passive: true });
+    // Update on mount and scroll
+    updateActiveHeading();
+    window.addEventListener("scroll", updateActiveHeading, { passive: true });
+    window.addEventListener("resize", updateActiveHeading, { passive: true });
 
     return () => {
-      observer.disconnect();
-      window.removeEventListener("scroll", checkBottomScroll);
-      window.removeEventListener("resize", checkBottomScroll);
+      window.removeEventListener("scroll", updateActiveHeading);
+      window.removeEventListener("resize", updateActiveHeading);
     };
   }, [headings]);
 
@@ -119,8 +123,8 @@ export function TOCNav({ headings, helpfulLinks }: TOCNavProps) {
   }
 
   return (
-    <aside className="fixed top-14 right-0 z-30 hidden h-[calc(100vh-3.5rem)] w-64 shrink-0 overflow-y-auto xl:block">
-      <div className="py-6 px-4">
+    <aside className="fixed top-[--header-height] right-0 z-30 hidden h-[calc(100vh-var(--header-height))] w-64 shrink-0 overflow-y-auto xl:block">
+      <div className="pt-6 lg:pt-8 pb-6 px-4">
         {headings.length > 0 && (
           <div className="mb-6">
             <h4 className="mb-3 text-sm font-semibold">On this page</h4>

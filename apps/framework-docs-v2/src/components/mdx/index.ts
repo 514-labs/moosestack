@@ -27,3 +27,15 @@ export {
   type FeatureCardProps,
   type FeatureGridProps,
 } from "./feature-cards";
+export { ExportRequirement } from "./export-requirement";
+export { MuxVideo } from "./mux-video";
+export { FileTree } from "./file-tree";
+export {
+  ReleaseHighlights,
+  Added,
+  Changed,
+  Deprecated,
+  Fixed,
+  Security,
+  BreakingChanges,
+} from "./changelog-category";
