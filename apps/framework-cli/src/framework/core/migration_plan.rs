@@ -199,6 +199,7 @@ mod tests {
                     database: Some("local".to_string()),
                     before: None,
                     after: Some("timestamp + INTERVAL 30 DAY".to_string()),
+                    cluster_name: None,
                 },
                 SerializableOlapOperation::DropTable {
                     table: "old_users".to_string(),
@@ -242,6 +243,7 @@ mod tests {
                     table: "users".to_string(),
                     before_column,
                     after_column,
+                    cluster_name: None,
                 },
                 SerializableOlapOperation::DropTable {
                     table: "old_users".to_string(),
@@ -285,12 +287,14 @@ mod tests {
                     database: Some("local".to_string()),
                     before: None,
                     after: Some("ttl1".to_string()),
+                    cluster_name: None,
                 },
                 SerializableOlapOperation::ModifyTableColumn {
                     database: Some("local".to_string()),
                     table: "users".to_string(),
                     before_column,
                     after_column,
+                    cluster_name: None,
                 },
                 SerializableOlapOperation::CreateTable {
                     table: test_table.clone(),
@@ -330,6 +334,7 @@ mod tests {
                 before_column: before_column.clone(),
                 after_column,
                 database: None,
+                cluster_name: None,
             }],
         };
 
@@ -376,6 +381,7 @@ mod tests {
                 before_column,
                 after_column,
                 database: None,
+                cluster_name: None,
             }],
         };
 

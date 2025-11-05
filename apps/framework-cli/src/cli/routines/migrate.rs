@@ -1025,6 +1025,7 @@ mod tests {
                 },
                 after_column: None,
                 database: Some("bad_db".to_string()),
+                cluster_name: None,
             },
             SerializableOlapOperation::ModifyTableColumn {
                 table: "test".to_string(),
@@ -1051,6 +1052,7 @@ mod tests {
                     ttl: None,
                 },
                 database: Some("another_bad_db".to_string()),
+                cluster_name: None,
             },
         ];
 
