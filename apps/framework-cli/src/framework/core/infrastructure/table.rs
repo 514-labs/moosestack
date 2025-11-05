@@ -578,6 +578,49 @@ impl Table {
     }
 }
 
+// Legacy enum kept for backward compatibility with v0.5.9-v0.6.11
+// This is no longer used for new functionality, but needed for deserializing old data
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "PascalCase")]
+enum LegacyColumnDefaults {
+    AutoIncrement,
+    #[serde(alias = "CUID")]
+    Cuid,
+    #[serde(alias = "UUID")]
+    Uuid,
+    Now,
+}
+
+impl LegacyColumnDefaults {
+    fn to_sql_expression(&self) -> String {
+        match self {
+            LegacyColumnDefaults::AutoIncrement => "auto_increment()".to_string(),
+            LegacyColumnDefaults::Cuid => "generateUUIDv4()".to_string(), // CUID approximation
+            LegacyColumnDefaults::Uuid => "generateUUIDv4()".to_string(),
+            LegacyColumnDefaults::Now => "now()".to_string(),
+        }
+    }
+}
+
+// Custom deserializer to handle both old enum format and new string format
+fn deserialize_column_default<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum StringOrEnum {
+        String(String),
+        Enum(LegacyColumnDefaults),
+    }
+
+    let value = Option::<StringOrEnum>::deserialize(deserializer)?;
+    Ok(value.map(|v| match v {
+        StringOrEnum::String(s) => s,
+        StringOrEnum::Enum(e) => e.to_sql_expression(),
+    }))
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
 pub struct Column {
     pub name: String,
@@ -586,6 +629,7 @@ pub struct Column {
     pub required: bool,
     pub unique: bool,
     pub primary_key: bool,
+    #[serde(deserialize_with = "deserialize_column_default")]
     pub default: Option<String>,
     #[serde(default)]
     pub annotations: Vec<(String, Value)>, // workaround for needing to Hash
