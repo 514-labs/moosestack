@@ -219,9 +219,6 @@ pub enum IgnorableOperation {
 
 impl IgnorableOperation {
     pub fn matches(&self, op: &SerializableOlapOperation) -> bool {
-        // Simple pattern matching for operations that can be entirely filtered
-        // Note: ModifyColumnTtl is handled specially in filter_ignored_operations
-        // where we strip TTL changes from ModifyTableColumn operations
         matches!(
             (self, op),
             (
@@ -230,6 +227,44 @@ impl IgnorableOperation {
             )
         )
     }
+}
+
+/// Normalizes a table by stripping fields that should be ignored during comparison.
+///
+/// This prevents the diff strategy from detecting changes in ignored fields and
+/// generating unnecessary drop+create operations.
+///
+/// # Arguments
+/// * `table` - The table to normalize
+/// * `ignore_ops` - Slice of operations to ignore
+///
+/// # Returns
+/// A new table with ignored fields stripped/normalized to match the "before" state
+pub fn normalize_table_for_diff(table: &Table, ignore_ops: &[IgnorableOperation]) -> Table {
+    if ignore_ops.is_empty() {
+        return table.clone();
+    }
+
+    let mut normalized = table.clone();
+
+    // Strip table-level TTL if ignored
+    if ignore_ops.contains(&IgnorableOperation::ModifyTableTtl) {
+        normalized.table_ttl_setting = None;
+    }
+
+    // Strip partition_by if ignored
+    if ignore_ops.contains(&IgnorableOperation::ModifyPartitionBy) {
+        normalized.partition_by = None;
+    }
+
+    // Strip column-level TTL if ignored
+    if ignore_ops.contains(&IgnorableOperation::ModifyColumnTtl) {
+        for column in &mut normalized.columns {
+            column.ttl = None;
+        }
+    }
+
+    normalized
 }
 
 /// Executes a series of changes to the ClickHouse database schema
@@ -2570,6 +2605,127 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
         assert_eq!(
             add_column_query,
             "ALTER TABLE `test_db`.`test_table` ADD COLUMN `description` Nullable(String) DEFAULT 'default text' AFTER `id`"
+        );
+    }
+
+    #[test]
+    fn test_normalize_table_for_diff_strips_ignored_fields() {
+        use crate::framework::core::infrastructure::table::{Column, ColumnType, OrderBy, Table};
+        use crate::framework::core::infrastructure_map::{PrimitiveSignature, PrimitiveTypes};
+        use crate::framework::core::partial_infrastructure_map::LifeCycle;
+        use crate::infrastructure::olap::clickhouse::IgnorableOperation;
+
+        let table = Table {
+            name: "test_table".to_string(),
+            columns: vec![Column {
+                name: "id".to_string(),
+                data_type: ColumnType::String,
+                required: true,
+                unique: false,
+                primary_key: true,
+                default: None,
+                annotations: vec![],
+                comment: None,
+                ttl: Some("created_at + INTERVAL 7 DAY".to_string()),
+            }],
+            order_by: OrderBy::Fields(vec!["id".to_string()]),
+            partition_by: Some("toYYYYMM(created_at)".to_string()),
+            sample_by: None,
+            engine: None,
+            version: None,
+            source_primitive: PrimitiveSignature {
+                name: "Test".to_string(),
+                primitive_type: PrimitiveTypes::DataModel,
+            },
+            metadata: None,
+            life_cycle: LifeCycle::default_for_deserialization(),
+            engine_params_hash: None,
+            table_settings: None,
+            indexes: vec![],
+            database: None,
+            table_ttl_setting: Some("created_at + INTERVAL 30 DAY".to_string()),
+        };
+
+        let ignore_ops = vec![
+            IgnorableOperation::ModifyTableTtl,
+            IgnorableOperation::ModifyColumnTtl,
+            IgnorableOperation::ModifyPartitionBy,
+        ];
+
+        let normalized = super::normalize_table_for_diff(&table, &ignore_ops);
+
+        // Check that all ignored fields were stripped
+        assert_eq!(
+            normalized.table_ttl_setting, None,
+            "Table TTL should be stripped"
+        );
+        assert_eq!(
+            normalized.partition_by, None,
+            "Partition BY should be stripped"
+        );
+        assert_eq!(
+            normalized.columns[0].ttl, None,
+            "Column TTL should be stripped"
+        );
+
+        // Check that other fields remain unchanged
+        assert_eq!(normalized.name, table.name);
+        assert_eq!(normalized.columns[0].name, "id");
+        assert_eq!(normalized.order_by, table.order_by);
+    }
+
+    #[test]
+    fn test_normalize_table_for_diff_empty_ignore_list() {
+        use crate::framework::core::infrastructure::table::{Column, ColumnType, OrderBy, Table};
+        use crate::framework::core::infrastructure_map::{PrimitiveSignature, PrimitiveTypes};
+        use crate::framework::core::partial_infrastructure_map::LifeCycle;
+
+        let table = Table {
+            name: "test_table".to_string(),
+            columns: vec![Column {
+                name: "id".to_string(),
+                data_type: ColumnType::String,
+                required: true,
+                unique: false,
+                primary_key: true,
+                default: None,
+                annotations: vec![],
+                comment: None,
+                ttl: Some("created_at + INTERVAL 7 DAY".to_string()),
+            }],
+            order_by: OrderBy::Fields(vec!["id".to_string()]),
+            partition_by: Some("toYYYYMM(created_at)".to_string()),
+            sample_by: None,
+            engine: None,
+            version: None,
+            source_primitive: PrimitiveSignature {
+                name: "Test".to_string(),
+                primitive_type: PrimitiveTypes::DataModel,
+            },
+            metadata: None,
+            life_cycle: LifeCycle::default_for_deserialization(),
+            engine_params_hash: None,
+            table_settings: None,
+            indexes: vec![],
+            database: None,
+            table_ttl_setting: Some("created_at + INTERVAL 30 DAY".to_string()),
+        };
+
+        let ignore_ops = vec![];
+        let normalized = super::normalize_table_for_diff(&table, &ignore_ops);
+
+        // With empty ignore list, table should be unchanged
+        assert_eq!(
+            normalized.table_ttl_setting, table.table_ttl_setting,
+            "Table TTL should remain unchanged"
+        );
+        assert_eq!(
+            normalized.partition_by, table.partition_by,
+            "Partition BY should remain unchanged"
+        );
+        assert_eq!(
+            normalized.columns[0].ttl, table.columns[0].ttl,
+            "Column TTL should remain unchanged"
         );
     }
 }

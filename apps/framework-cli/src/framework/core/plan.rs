@@ -346,12 +346,42 @@ pub async fn plan_changes(
             .unwrap_or("Could not serialize reconciled infrastructure map".to_string())
     );
 
+    // In production mode, normalize tables before diffing to prevent ignored fields
+    // from triggering drop+create operations
+    let (diff_reconciled_map, diff_target_map) = if project.is_production {
+        let ignore_ops = &project.migration_config.ignore_operations;
+        if !ignore_ops.is_empty() {
+            info!(
+                "Production mode: Normalizing tables before diff. Ignore list: {:?}",
+                ignore_ops
+            );
+
+            // Normalize tables in both maps
+            let mut normalized_reconciled = reconciled_map.clone();
+            let mut normalized_target = target_infra_map.clone();
+
+            for table in normalized_reconciled.tables.values_mut() {
+                *table = clickhouse::normalize_table_for_diff(table, ignore_ops);
+            }
+
+            for table in normalized_target.tables.values_mut() {
+                *table = clickhouse::normalize_table_for_diff(table, ignore_ops);
+            }
+
+            (normalized_reconciled, normalized_target)
+        } else {
+            (reconciled_map.clone(), target_infra_map.clone())
+        }
+    } else {
+        (reconciled_map.clone(), target_infra_map.clone())
+    };
+
     // Use the reconciled map for diffing with ClickHouse-specific strategy
     let clickhouse_strategy = ClickHouseTableDiffStrategy;
     let plan = InfraPlan {
         target_infra_map: target_infra_map.clone(),
-        changes: reconciled_map.diff_with_table_strategy(
-            &target_infra_map,
+        changes: diff_reconciled_map.diff_with_table_strategy(
+            &diff_target_map,
             &clickhouse_strategy,
             true,
             project.is_production,
