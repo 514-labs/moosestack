@@ -1779,11 +1779,14 @@ impl InfrastructureMap {
                             }
                         }
 
-                        // Compute PARTITION BY changes
-                        let partition_by_changed = table.partition_by != target_table.partition_by;
+                        // Compute PARTITION BY changes from normalized tables to respect ignore_ops
+                        // Using normalized tables ensures that ignored operations don't incorrectly
+                        // trigger drop+create when only non-ignored changes exist
+                        let partition_by_changed =
+                            normalized_table.partition_by != normalized_target.partition_by;
                         let partition_by_change = PartitionByChange {
-                            before: table.partition_by.clone(),
-                            after: target_table.partition_by.clone(),
+                            before: normalized_table.partition_by.clone(),
+                            after: normalized_target.partition_by.clone(),
                         };
 
                         // Compute ORDER BY changes
