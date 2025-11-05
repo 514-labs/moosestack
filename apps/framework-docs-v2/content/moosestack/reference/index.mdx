@@ -1,9 +1,834 @@
 ---
 title: API Reference
-description: API reference documentation
-order: 1
+description: Complete API reference for MooseStack libraries
+order: 0
+category: reference
 ---
+
+import { LanguageTabs, LanguageTabContent, ExportRequirement } from "@/components/mdx";
 
 # API Reference
 
-This page is a placeholder. Content migration pending.
+<LanguageTabs>
+  <LanguageTabContent value="typescript" label="TypeScript">
+This is a comprehensive reference for `@514labs/moose-lib`, detailing all exported components, types, and utilities.
+  </LanguageTabContent>
+  <LanguageTabContent value="python" label="Python">
+This is a comprehensive reference for `moose_lib`, detailing all exported components, types, and utilities.
+  </LanguageTabContent>
+</LanguageTabs>
+
+## Core Types
+
+### `Key`
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript" label="TypeScript">
+A type for marking fields as primary keys in data models.
+
+```ts
+// Example
+interface MyModel {
+  id: Key<string>; // Marks 'id' as a primary key of type string
+}
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python" label="Python">
+A type annotation for marking fields as primary keys in data models. Used with Pydantic.
+
+```python
+from moose_lib import Key
+from pydantic import BaseModel
+
+class MyModel(BaseModel):
+    id: Key[str]  # Marks 'id' as a primary key of type string
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+### `JWT`
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript" label="TypeScript">
+A type for working with JSON Web Tokens.
+
+```ts
+// Example
+type UserJWT = JWT<{ userId: string, role: string }>;
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python" label="Python">
+Not applicable in Python - JWT handling is done through standard Python types.
+  </LanguageTabContent>
+</LanguageTabs>
+
+### `ApiUtil`
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript" label="TypeScript">
+Interface providing utilities for analytics APIs.
+
+```ts
+interface ApiUtil {
+  client: MooseClient;  // Client for interacting with the database
+  sql: typeof sql;      // SQL template tag function
+  jwt: JWTPayload | undefined;  // Current JWT if available
+}
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python" label="Python">
+Utilities for analytics APIs are provided directly through function parameters in Python.
+  </LanguageTabContent>
+</LanguageTabs>
+
+### `BaseModel`
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript" label="TypeScript">
+Not applicable in TypeScript - use TypeScript interfaces instead.
+  </LanguageTabContent>
+  <LanguageTabContent value="python" label="Python">
+Pydantic base model used for data modeling in Moose.
+
+```python
+from pydantic import BaseModel
+
+class MyDataModel(BaseModel):
+    id: str
+    name: str
+    count: int
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+### `MooseClient`
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript" label="TypeScript">
+Client for interacting with ClickHouse and Temporal.
+
+```ts
+class MooseClient {
+  query: QueryClient;      // For database queries
+  workflow: WorkflowClient; // For workflow operations
+}
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python" label="Python">
+Client for interacting with ClickHouse and Temporal.
+
+```python
+class MooseClient:
+    query: QueryClient  # For database queries
+    workflow: Optional[WorkflowClient]  # For workflow operations
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+### `ApiResult`
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript" label="TypeScript">
+Not applicable in TypeScript - APIs return values directly.
+  </LanguageTabContent>
+  <LanguageTabContent value="python" label="Python">
+Class representing the result of a analytics API call.
+
+```python
+@dataclass
+class ApiResult:
+    status: int  # HTTP status code
+    body: Any    # Response body
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+## Configuration Types
+
+### `OlapConfig` / `BaseOlapConfig`
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript" label="TypeScript">
+Base configuration interface for `OlapTable` with common table configuration options.
+
+```ts
+interface BaseOlapConfig<T> {
+  // Optional database name (defaults to moose.config.toml clickhouse_config.db_name)
+  database?: string;
+
+  // Optional array of field names to order by
+  orderByFields?: (keyof T & string)[];
+
+  // Optional SQL expression for ORDER BY clause (alternative to orderByFields)
+  orderByExpression?: string;
+
+  // Optional table engine (defaults to MergeTree)
+  engine?: ClickHouseEngines;
+
+  // Optional settings for table configuration
+  settings?: { [key: string]: string };
+
+  // Optional lifecycle mode (defaults to MOOSE_MANAGED)
+  lifeCycle?: LifeCycle;
+
+  // Additional engine-specific fields (ver, isDeleted, keeperPath, etc.)
+  // depend on the engine type
+}
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python" label="Python">
+Configuration for OLAP tables.
+
+```python
+from typing import Union, Optional
+from moose_lib.blocks import EngineConfig
+
+class OlapConfig(BaseModel):
+    database: Optional[str] = None  # Optional database name (defaults to moose.config.toml clickhouse_config.db_name)
+    order_by_fields: list[str] = []  # Fields to order by
+    engine: Optional[EngineConfig] = None  # Table engine configuration
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+## Infrastructure Components
+
+### `OlapTable<T>`
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript" label="TypeScript">
+Creates a ClickHouse table with the schema of type T.
+
+```ts
+// Basic usage with MergeTree (default)
+export const myTable = new OlapTable<UserProfile>("user_profiles");
+
+// With sorting configuration (fields)
+export const myConfiguredTable = new OlapTable<UserProfile>("user_profiles", {
+  orderByFields: ["id", "timestamp"]
+});
+
+// With sorting configuration (expression)
+export const myConfiguredTableExpr = new OlapTable<UserProfile>("user_profiles_expr", {
+  // Equivalent to orderByFields: ["id", "timestamp"]
+  orderByExpression: "(id, timestamp)"
+});
+
+// Disable sorting entirely
+export const myUnsortedTable = new OlapTable<UserProfile>("user_profiles_unsorted", {
+  orderByExpression: "tuple()"
+});
+
+// For deduplication, explicitly set the ReplacingMergeTree engine
+export const dedupTable = new OlapTable<UserProfile>("user_profiles", {
+  engine: ClickHouseEngines.ReplacingMergeTree,
+  orderByFields: ["id", "timestamp"],
+  ver: "updated_at",  // Optional: version column for keeping latest
+  isDeleted: "deleted"  // Optional: soft delete marker (requires ver)
+});
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python" label="Python">
+Creates a ClickHouse table with the schema of type T.
+
+```python
+from moose_lib import OlapTable, OlapConfig
+from moose_lib.blocks import ReplacingMergeTreeEngine
+
+# Basic usage
+my_table = OlapTable[UserProfile]("user_profiles")
+
+# With configuration (fields)
+my_table = OlapTable[UserProfile]("user_profiles", OlapConfig(
+    order_by_fields=["id", "timestamp"],
+    engine=ReplacingMergeTreeEngine(),
+))
+
+# With configuration (expression)
+my_table_expr = OlapTable[UserProfile]("user_profiles_expr", OlapConfig(
+    order_by_expression="(id, timestamp)",
+    engine=ReplacingMergeTreeEngine(),
+))
+
+# Disable sorting entirely
+my_table_unsorted = OlapTable[UserProfile]("user_profiles_unsorted", OlapConfig(
+    order_by_expression="tuple()",
+))
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+### `Stream<T>`
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript" label="TypeScript">
+Creates a Redpanda topic with the schema of type T.
+
+```ts
+// Basic usage
+export const myStream = new Stream<UserEvent>("user_events");
+
+// With configuration
+export const myConfiguredStream = new Stream<UserEvent>("user_events", {
+  parallelism: 3,
+  retentionPeriod: 86400 // 1 day in seconds
+});
+
+// Adding transformations
+myConfiguredStream.addTransform(
+  destinationStream,
+  (record) => transformFunction(record)
+);
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python" label="Python">
+Creates a Redpanda topic with the schema of type T.
+
+```python
+# Basic usage
+my_stream = Stream[UserEvent]("user_events")
+
+# With configuration
+my_stream = Stream[UserEvent]("user_events", StreamConfig(
+    parallelism=3,
+    retention_period=86400  # 1 day in seconds
+))
+
+# Adding transformations
+def transform_user_event(event: UserEvent) -> ProfileUpdate:
+    return ProfileUpdate(user_id=event.user_id, update_type="event")
+
+my_stream.add_transform(profile_stream, transform_user_event)
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+### `IngestApi<T>`
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript" label="TypeScript">
+Creates an HTTP endpoint for ingesting data of type T.
+
+```ts
+// Basic usage with destination stream
+export const myIngestApi = new IngestApi<UserEvent>("user_events", {
+  destination: myUserEventStream
+});
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python" label="Python">
+Creates an HTTP endpoint for ingesting data of type T.
+
+```python
+# Basic usage with destination stream
+my_ingest_api = IngestApi[UserEvent]("user_events", IngestConfigWithDestination(
+    destination=my_user_event_stream
+))
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+### `Api<T, R>`
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript" label="TypeScript">
+Creates an HTTP endpoint for querying data with request type T and response type R.
+
+```ts
+// Basic usage
+export const myApi = new Api<UserQuery, UserProfile[]>(
+  "getUserProfiles",
+  async (params, { client, sql }) => {
+    const result = await client.query.execute(
+      sql`SELECT * FROM user_profiles WHERE age > ${params.minAge} LIMIT 10`
+    );
+    return result;
+  }
+);
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python" label="Python">
+Creates an HTTP endpoint for querying data with request type T and response type U.
+
+```python
+# Basic usage
+def get_user_profiles(params: UserQuery) -> list[UserProfile]:
+    # Query implementation
+    return [UserProfile(...), UserProfile(...)]
+
+my_api = Api[UserQuery, list[UserProfile]](
+    "get_user_profiles",
+    get_user_profiles
+)
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+### `IngestPipeline<T>`
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript" label="TypeScript">
+Combines ingest API, stream, and table creation in a single component.
+
+```ts
+// Basic usage
+export const pipeline = new IngestPipeline<UserEvent>("user_pipeline", {
+  ingestApi: true,
+  stream: true,
+  table: true
+});
+
+// With advanced configuration
+export const advancedPipeline = new IngestPipeline<UserEvent>("advanced_pipeline", {
+  ingestApi: true,
+  stream: { parallelism: 3 },
+  table: { 
+    orderByFields: ["id", "timestamp"]
+  }
+});
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python" label="Python">
+Combines ingest API, stream, and table creation in a single component.
+
+```python
+from moose_lib import IngestPipeline, IngestPipelineConfig, StreamConfig, OlapConfig
+from moose_lib.blocks import ReplacingMergeTreeEngine
+
+# Basic usage
+pipeline = IngestPipeline[UserEvent]("user_pipeline", IngestPipelineConfig(
+    ingest_api=True,
+    stream=True,
+    table=True
+))
+
+# With advanced configuration
+pipeline = IngestPipeline[UserEvent]("user_pipeline", IngestPipelineConfig(
+    ingest_api=True,
+    stream=StreamConfig(parallelism=3),
+    table=OlapConfig(
+        order_by_fields=["id", "timestamp"],
+        engine=ReplacingMergeTreeEngine(),
+    )
+))
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+### `MaterializedView<T>`
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript" label="TypeScript">
+Creates a materialized view in ClickHouse.
+
+```ts
+// Basic usage
+export const view = new MaterializedView<UserStatistics>({
+  selectStatement: "SELECT user_id, COUNT(*) as event_count FROM user_events GROUP BY user_id",
+  tableName: "user_events",
+  materializedViewName: "user_statistics",
+  orderByFields: ["user_id"]
+});
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python" label="Python">
+Creates a materialized view in ClickHouse.
+
+```python
+# Basic usage
+view = MaterializedView[UserStatistics](MaterializedViewOptions(
+    select_statement="SELECT user_id, COUNT(*) as event_count FROM user_events GROUP BY user_id",
+    table_name="user_events",
+    materialized_view_name="user_statistics",
+    order_by_fields=["user_id"]
+))
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+## SQL Utilities
+
+### `sql` Template Tag
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript" label="TypeScript">
+Template tag for creating type-safe SQL queries with parameters.
+
+```ts
+// Basic usage
+const query = sql`SELECT * FROM users WHERE id = ${userId}`;
+
+// With multiple parameters
+const query = sql`
+  SELECT * FROM users 
+  WHERE age > ${minAge} 
+  AND country = ${country}
+  LIMIT ${limit}
+`;
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python" label="Python">
+Python uses formatted strings with parameter substitution for SQL queries.
+
+```python
+# Python uses formatted strings with execute method
+query = """
+  SELECT * FROM users 
+  WHERE age > {min_age} 
+  AND country = {country}
+  LIMIT {limit}
+"""
+rows = client.query.execute(query, {"min_age": min_age, "country": country, "limit": limit})
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+## ClickHouse Utilities
+
+### Table Engine Configurations
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript" label="TypeScript">
+#### `ClickHouseEngines` Enum
+Available table engines:
+
+```ts
+enum ClickHouseEngines {
+  MergeTree = "MergeTree",
+  ReplacingMergeTree = "ReplacingMergeTree",
+  AggregatingMergeTree = "AggregatingMergeTree",
+  SummingMergeTree = "SummingMergeTree",
+  ReplicatedMergeTree = "ReplicatedMergeTree",
+  ReplicatedReplacingMergeTree = "ReplicatedReplacingMergeTree",
+  ReplicatedAggregatingMergeTree = "ReplicatedAggregatingMergeTree",
+  ReplicatedSummingMergeTree = "ReplicatedSummingMergeTree",
+  S3Queue = "S3Queue"
+}
+```
+
+#### `ReplacingMergeTreeConfig<T>`
+Configuration for ReplacingMergeTree tables:
+
+```ts
+type ReplacingMergeTreeConfig<T> = {
+  engine: ClickHouseEngines.ReplacingMergeTree;
+  orderByFields?: (keyof T & string)[];
+  ver?: keyof T & string;  // Optional: version column for keeping latest
+  isDeleted?: keyof T & string;  // Optional: soft delete marker (requires ver)
+  settings?: { [key: string]: string };
+}
+```
+
+#### Replicated Engine Configurations
+Configuration for replicated table engines:
+
+```ts
+// ReplicatedMergeTree
+type ReplicatedMergeTreeConfig<T> = {
+  engine: ClickHouseEngines.ReplicatedMergeTree;
+  keeperPath?: string;  // Optional: ZooKeeper/Keeper path (omit for Cloud)
+  replicaName?: string; // Optional: replica name (omit for Cloud)
+  orderByFields?: (keyof T & string)[];
+  settings?: { [key: string]: string };
+}
+
+// ReplicatedReplacingMergeTree
+type ReplicatedReplacingMergeTreeConfig<T> = {
+  engine: ClickHouseEngines.ReplicatedReplacingMergeTree;
+  keeperPath?: string;  // Optional: ZooKeeper/Keeper path (omit for Cloud)
+  replicaName?: string; // Optional: replica name (omit for Cloud)
+  ver?: keyof T & string;  // Optional: version column
+  isDeleted?: keyof T & string;  // Optional: soft delete marker
+  orderByFields?: (keyof T & string)[];
+  settings?: { [key: string]: string };
+}
+
+// ReplicatedAggregatingMergeTree
+type ReplicatedAggregatingMergeTreeConfig<T> = {
+  engine: ClickHouseEngines.ReplicatedAggregatingMergeTree;
+  keeperPath?: string;  // Optional: ZooKeeper/Keeper path (omit for Cloud)
+  replicaName?: string; // Optional: replica name (omit for Cloud)
+  orderByFields?: (keyof T & string)[];
+  settings?: { [key: string]: string };
+}
+
+// ReplicatedSummingMergeTree
+type ReplicatedSummingMergeTreeConfig<T> = {
+  engine: ClickHouseEngines.ReplicatedSummingMergeTree;
+  keeperPath?: string;  // Optional: ZooKeeper/Keeper path (omit for Cloud)
+  replicaName?: string; // Optional: replica name (omit for Cloud)
+  columns?: string[];   // Optional: columns to sum
+  orderByFields?: (keyof T & string)[];
+  settings?: { [key: string]: string };
+}
+```
+
+**Note**: The `keeperPath` and `replicaName` parameters are optional. When omitted, Moose uses smart defaults that work in both ClickHouse Cloud and self-managed environments (default path: `/clickhouse/tables/{uuid}/{shard}` with replica `{replica}`). You can still provide both parameters explicitly if you need custom replication paths.
+  </LanguageTabContent>
+  <LanguageTabContent value="python" label="Python">
+#### Engine Configuration Classes
+Type-safe configuration classes for table engines:
+
+```python
+from moose_lib.blocks import (
+    MergeTreeEngine,
+    ReplacingMergeTreeEngine,
+    AggregatingMergeTreeEngine,
+    SummingMergeTreeEngine,
+    ReplicatedMergeTreeEngine,
+    ReplicatedReplacingMergeTreeEngine,
+    ReplicatedAggregatingMergeTreeEngine,
+    ReplicatedSummingMergeTreeEngine,
+    S3QueueEngine
+)
+
+# ReplacingMergeTree with version control and soft deletes
+dedup_engine = ReplacingMergeTreeEngine(
+    ver="updated_at",  # Optional: version column for keeping latest
+    is_deleted="deleted"  # Optional: soft delete marker (requires ver)
+)
+
+# ReplicatedMergeTree with explicit keeper paths (self-managed ClickHouse)
+replicated_engine = ReplicatedMergeTreeEngine(
+    keeper_path="/clickhouse/tables/{database}/{shard}/my_table",
+    replica_name="{replica}"
+)
+
+# ReplicatedReplacingMergeTree with deduplication
+replicated_dedup_engine = ReplicatedReplacingMergeTreeEngine(
+    keeper_path="/clickhouse/tables/{database}/{shard}/my_dedup_table",
+    replica_name="{replica}",
+    ver="updated_at",
+    is_deleted="deleted"
+)
+
+# For ClickHouse Cloud or Boreal - omit keeper parameters
+cloud_replicated = ReplicatedMergeTreeEngine()  # No parameters needed
+```
+
+**Note**: The `keeper_path` and `replica_name` parameters are optional. When omitted, Moose uses smart defaults that work in both ClickHouse Cloud and self-managed environments. You can still provide both parameters explicitly if you need custom replication paths.
+  </LanguageTabContent>
+</LanguageTabs>
+
+## Task Management
+
+### `Task<T, R>`
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript" label="TypeScript">
+A class that represents a single task within a workflow system.
+
+```ts
+// No input, no output
+export const task1 = new Task<null, void>("task1", {
+  run: async () => {
+    console.log("No input/output");
+  },
+  retries: 3,
+  timeout: "30s"
+});
+
+// With input and output
+export const task2 = new Task<InputType, OutputType>("task2", {
+  run: async (ctx) => {
+    return process(ctx.input);
+  },
+  onComplete: [nextTask]
+});
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python" label="Python">
+A class that represents a single task within a workflow system, with typed input and output.
+
+```python
+from moose_lib import Task, TaskConfig, TaskContext
+from pydantic import BaseModel
+
+# Define input and output models
+class InputData(BaseModel):
+    user_id: str
+    
+class OutputData(BaseModel):
+    result: str
+    status: bool
+
+# Task with input and output
+def process_user(ctx: TaskContext[InputData]) -> OutputData:
+    # Process the user data
+    return OutputData(result=f"Processed {ctx.input.user_id}", status=True)
+
+user_task = Task[InputData, OutputData](
+    name="process_user",
+    config=TaskConfig(
+        run=process_user,
+        retries=3,
+        timeout="30s"
+    )
+)
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+### `TaskConfig<T, R>`
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript" label="TypeScript">
+Configuration options for tasks.
+
+```ts
+interface TaskConfig<T, R> {
+  // The main function that executes the task logic
+  run: (context: TaskContext<T>) => Promise<R>;
+  
+  // Optional array of tasks to execute after this task completes
+  onComplete?: (Task<R extends void ? null : R, any> | Task<R extends void ? null : R, void>)[];
+
+  // Optional function that is called when the task is cancelled.
+  onCancel?: (context: TaskContext<T>) => Promise<void>;
+  
+  // Optional timeout duration (e.g., "30s", "5m", "never")
+  timeout?: string;
+  
+  // Optional number of retry attempts
+  retries?: number;
+}
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python" label="Python">
+Configuration for a Task.
+
+```python
+@dataclasses.dataclass
+class TaskConfig(Generic[T, U]):
+    # The handler function that executes the task logic
+    # Can be any of: () -> None, () -> U, (T) -> None, or (T) -> U depending on input/output types
+    run: TaskRunFunc[T, U]
+    
+    # Optional list of tasks to run after this task completes
+    on_complete: Optional[list[Task[U, Any]]] = None
+
+    # Optional function that is called when the task is cancelled
+    on_cancel: Optional[Callable[[TaskContext[T_none]], Union[None, Awaitable[None]]]] = None
+    
+    # Optional timeout string (e.g. "5m", "1h", "never")
+    timeout: Optional[str] = None
+    
+    # Optional number of retry attempts
+    retries: Optional[int] = None
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+### `Workflow`
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript" label="TypeScript">
+A class that represents a complete workflow composed of interconnected tasks.
+
+```ts
+const myWorkflow = new Workflow("getData", {
+  startingTask: callAPI,
+  schedule: "@every 5s", // Run every 5 seconds
+  timeout: "1h",
+  retries: 3
+});
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python" label="Python">
+Represents a workflow composed of one or more tasks.
+
+```python
+from moose_lib import Workflow, WorkflowConfig
+
+# Create a workflow that starts with the fetch_task
+data_workflow = Workflow(
+    name="data_processing",
+    config=WorkflowConfig(
+        starting_task=fetch_task,
+        schedule="@every 1h",  # Run every hour
+        timeout="10m",         # Timeout after 10 minutes
+        retries=2              # Retry up to 2 times if it fails
+    )
+)
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+### `WorkflowConfig`
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript" label="TypeScript">
+Configuration options for defining a workflow.
+
+```ts
+interface WorkflowConfig {
+  // The initial task that begins the workflow execution
+  startingTask: Task<null, any> | Task<null, void> | Task<any, any> | Task<any, void>;
+  
+  // Optional number of retry attempts
+  retries?: number;
+  
+  // Optional timeout duration (e.g., "10m", "1h", "never")
+  timeout?: string;
+  
+  // Optional cron-style schedule string
+  schedule?: string;
+}
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python" label="Python">
+Configuration for a workflow.
+
+```python
+@dataclasses.dataclass
+class WorkflowConfig:
+    # The first task to execute in the workflow
+    starting_task: Task[Any, Any]
+    
+    # Optional number of retry attempts for the entire workflow
+    retries: Optional[int] = None
+    
+    # Optional timeout string for the entire workflow
+    timeout: Optional[str] = None
+    
+    # Optional cron-like schedule string for recurring execution
+    schedule: Optional[str] = None
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+---
+
+<ExportRequirement 
+  primitive="Infrastructure Components" 
+  example="export { myTable, myStream, myApi, myWorkflow, myTask, myPipeline, myView }" 
+/>
+
+**Important:** The following components must be exported from your `app/index.ts` (TypeScript) or imported into `main.py` (Python) for Moose to detect them:
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript" label="TypeScript">
+- `OlapTable` instances
+- `Stream` instances  
+- `IngestApi` instances
+- `Api` instances
+- `IngestPipeline` instances
+- `MaterializedView` instances
+- `Task` instances
+- `Workflow` instances
+
+**Configuration objects and utilities** (like `DeadLetterQueue`, `Key`, `sql`) do not need to be exported as they are used as dependencies of the main components.
+  </LanguageTabContent>
+  <LanguageTabContent value="python" label="Python">
+- `OlapTable` instances
+- `Stream` instances  
+- `IngestApi` instances
+- `Api` instances
+- `IngestPipeline` instances
+- `MaterializedView` instances
+- `Task` instances
+- `Workflow` instances
+
+**Configuration objects and utilities** (like `DeadLetterQueue`, `Key`) do not need to be imported as they are used as dependencies of the main components.
+  </LanguageTabContent>
+</LanguageTabs>

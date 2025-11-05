@@ -4,10 +4,108 @@ description: Integrating MooseStack into your application stack
 order: 6
 ---
 
-# In Your Stack
+import { ZoomImg, Callout } from "@/components/mdx";
 
-This page is a placeholder. Content migration pending.
+# Moose In Your Dev Stack
 
+Moose handles the analytical layer of your application stack. The [Area Code](https://github.com/514-labs/area-code) repository contains two working implementations that show how to integrate Moose with existing applications.
 
+## User Facing Analytics (UFA)
 
+<ZoomImg dark="/ufa-dark.svg" light="/ufa-dark.svg" alt="User Facing Analytics Architecture" />
 
+UFA shows how to add a dedicated analytics microservice to an existing application without impacting your primary database.
+
+<Callout type="info" title="UFA Implementation" href="https://github.com/514-labs/area-code/tree/main/ufa" ctaLabel="View code" icon="BrandGithub">
+View the open source repository to see the full implementation and clone it on your own machine.
+</Callout>
+
+### UFA Data Flow
+
+1. Application writes to Supabase (transactional backend)
+2. Supabase Realtime streams changes to Analytical Backend and Retrieval Backend
+3. Moose ingest pipeline syncs change events from Redpanda into ClickHouse
+4. Frontend queries analytics APIs for dashboards
+
+### UFA Architecture Components
+
+The UFA template demonstrates a microservices architecture with specialized components for different data access patterns:
+
+<div className="grid grid-cols-3 gap-x-4 gap-y-0">
+
+<Callout type="info" title="Frontend Layer" icon={false} compact className="col-span-3">
+The user interface for dashboards and application interactions
+
+Technologies: [Vite](https://vite.dev), [React](https://react.dev), [TanStack Query](https://tanstack.com/query), [TanStack Router](https://tanstack.com/router), [Tailwind CSS](https://tailwindcss.com)
+</Callout>
+
+<Callout type="info" title="Transactional Backend" icon={false} compact>
+Handles CRUD operations and maintains application state
+
+Technologies: [Supabase](https://supabase.com), [Fastify](https://fastify.dev), [Drizzle ORM](https://orm.drizzle.team/)
+</Callout>
+
+<Callout type="info" title="Retrieval Backend" icon={false} compact>
+Fast text search and complex queries across large datasets
+
+Technologies: [Elasticsearch](https://www.elastic.co/) + [Fastify](https://fastify.dev)
+</Callout>
+
+<Callout type="info" title="Analytics Backend" icon={false} compact>
+High-performance analytical queries and aggregations
+
+Technologies: [ClickHouse](https://clickhouse.com/) + [Moose OLAP](/moosestack/olap), [Redpanda](https://redpanda.com/) + [Moose Streaming](/moosestack/streaming), [Moose APIs](/moosestack/apis)
+</Callout>
+
+<Callout type="info" title="Sync Layer" icon={false} compact className="col-span-3">
+Keep data synchronized between transactional, retrieval, and analytics systems
+
+Technologies: [Supabase Realtime](https://supabase.com/docs/guides/realtime), [Temporal](https://temporal.io/) + [Moose Workflows](/moosestack/workflows)
+</Callout>
+</div>
+
+## Operational Data Warehouse (ODW)
+
+<ZoomImg dark="/odw-dark.svg" light="/odw-dark.svg" alt="Operational Data Warehouse Architecture" />
+
+ODW shows how to build a centralized data platform that ingests from multiple sources for business intelligence and reporting.
+
+<Callout type="info" title="ODW Implementation" href="https://github.com/514-labs/area-code/tree/main/odw" ctaLabel="View code" icon="BrandGithub">
+View the open source repository to see the full implementation and clone it on your own machine.
+</Callout>
+
+### ODW Data Flow
+
+1. Sources send data to Moose ingestion endpoints
+2. Streaming functions validate and transform data
+3. Data lands in ClickHouse tables
+4. BI tools query via generated APIs or direct SQL
+
+### ODW Architecture Components
+
+<div className="grid grid-cols-2 gap-x-4 gap-y-0">
+
+<Callout type="info" title="Data Ingestion Sinks" icon={false} compact>
+Handles incoming data from push-based sources (webhooks, application logs) with validation and transformation
+
+Technologies: [Moose APIs](/moosestack/apis), [Redpanda](https://redpanda.com/) + [Moose Streaming](/moosestack/streaming)
+</Callout>
+
+<Callout type="info" title="Connectors & ETL Pipelines" icon={false} compact>
+Connects to your existing databases, object storage, or third-party APIs
+
+Technologies: [Temporal](https://temporal.io/) + [Moose Workflows](/moosestack/workflows)
+</Callout>
+
+<Callout type="info" title="Data Warehouse" icon={false} compact className="col-span-2">
+Centralized analytical database for raw and transformed data
+
+Technologies: [ClickHouse](https://clickhouse.com/) + [Moose OLAP](/moosestack/olap)
+</Callout>
+
+<Callout type="info" title="BI Dashboard" icon={false} compact className="col-span-2">
+Query interface for business intelligence and reporting
+
+Technologies: [Streamlit](https://streamlit.io/) dashboards, [Moose APIs](/moosestack/apis), [ClickHouse Connect](https://clickhouse.com/docs/en/interfaces/http/connect)
+</Callout>
+</div>

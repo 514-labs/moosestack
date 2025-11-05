@@ -1,9 +1,862 @@
 ---
-title: Supported Types
-description: Supported data types in ClickHouse
+title: Supported Column Types
+description: Complete guide to defining columns for ClickHouse tables in Moose
 order: 4
+category: olap
 ---
 
-# Supported Types
+import { Callout, LanguageTabs, LanguageTabContent } from "@/components/mdx";
 
-This page is a placeholder. Content migration pending.
+# Supported Column Types
+
+Moose supports a comprehensive set of ClickHouse column types across both TypeScript and Python libraries. This guide covers all supported types, their syntax, and best practices for defining table schemas.
+
+## Basic Types
+
+### String Types
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```typescript
+interface User {
+  string: string;                             // String
+  lowCardinality: string & LowCardinality;    // LowCardinality(String)
+  uuid: string & tags.Format<"uuid">;         // UUID (with typia tags)
+}
+```
+
+| ClickHouse Type | TypeScript | Description |
+|------|------------|--------|
+| `String` | `string` | Variable-length string |
+| `LowCardinality(String)` | `string & LowCardinality` | Optimized for repeated values |
+| `UUID` | `string & tags.Format<"uuid">` | UUID format strings |
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```python
+from typing import Literal
+from uuid import UUID
+
+class User(BaseModel):
+    string: str                                         # String
+    low_cardinality: Annotated[str, "LowCardinality"]   # LowCardinality(String)
+    uuid: UUID                                          # UUID
+```
+
+| ClickHouse Type | Python | Description |
+|------|------------|--------|
+| `String` | `str` | Variable-length string |
+| `LowCardinality(String)` | `str` with `Literal[str]` | Optimized for repeated values |
+| `UUID` | `UUID` | UUID format strings |
+  </LanguageTabContent>
+</LanguageTabs>
+
+### Numeric Types
+
+#### Integer Types
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```typescript
+import { Int8, Int16, Int32, Int64, UInt8, UInt16, UInt32, UInt64 } from "@514labs/moose-lib";
+
+interface Metrics {
+  user_id: Int32;           // Int32
+  count: UInt64;            // UInt64
+  small_value: Int8;        // Int8
+}
+
+// Alternative: You can still use the verbose syntax if preferred
+interface MetricsVerbose {
+  user_id: number & ClickHouseInt<"int32">;
+  count: number & ClickHouseInt<"uint64">;
+  small_value: number & ClickHouseInt<"int8">;
+}
+```
+
+| ClickHouse Type | TypeScript (New Helper) | TypeScript (Verbose) | Description |
+|------|------------|------------|--------|
+| `Int8` | `Int8` | `number & ClickHouseInt<"int8">` | -128 to 127 |
+| `Int16` | `Int16` | `number & ClickHouseInt<"int16">` | -32,768 to 32,767 |
+| `Int32` | `Int32` | `number & ClickHouseInt<"int32">` | -2,147,483,648 to 2,147,483,647 |
+| `Int64` | `Int64` | `number & ClickHouseInt<"int64">` | -9,223,372,036,854,775,808 to 9,223,372,036,854,775,807 |
+| `UInt8` | `UInt8` | `number & ClickHouseInt<"uint8">` | 0 to 255 |
+| `UInt16` | `UInt16` | `number & ClickHouseInt<"uint16">` | 0 to 65,535 |
+| `UInt32` | `UInt32` | `number & ClickHouseInt<"uint32">` | 0 to 4,294,967,295 |
+| `UInt64` | `UInt64` | `number & ClickHouseInt<"uint64">` | 0 to 18,446,744,073,709,551,615 |
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```python
+from typing import Annotated
+
+class Metrics(BaseModel):
+    user_id: Annotated[int, "int32"]          # Int32
+    count: Annotated[int, "int64"]            # Int64
+    small_value: Annotated[int, "uint8"]       # UInt8
+```
+
+| ClickHouse Type | Python | Description |
+|------|------------|--------|
+| `Int8` | `Annotated[int, "int8"]` | -128 to 127 |
+| `Int16` | `Annotated[int, "int16"]` | -32,768 to 32,767 |
+| `Int32` | `Annotated[int, "int32"]` | -2,147,483,648 to 2,147,483,647 |
+| `Int64` | `Annotated[int, "int64"]` | -9,223,372,036,854,775,808 to 9,223,372,036,854,775,807 |
+| `UInt8` | `Annotated[int, "uint8"]` | 0 to 255 |
+| `UInt16` | `Annotated[int, "uint16"]` | 0 to 65,535 |
+| `UInt32` | `Annotated[int, "uint32"]` | 0 to 4,294,967,295 |
+| `UInt64` | `Annotated[int, "uint64"]` | 0 to 18,446,744,073,709,551,615 |
+  </LanguageTabContent>
+</LanguageTabs>
+
+### Floating Point Types
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```typescript
+import { Float32, Float64 } from "@514labs/moose-lib";
+import { tags } from "typia";
+
+interface SensorData {
+  temperature: Float32;                     // Float32
+  humidity: Float64;                        // Float64
+  pressure: number;                         // Default Float64
+}
+
+// Alternative: You can still use the verbose syntax if preferred
+interface SensorDataVerbose {
+  temperature: number & tags.Type<"float">; // Float32
+  humidity: number;                         // Float64
+}
+```
+
+| ClickHouse Type | TypeScript (New Helper) | TypeScript (Verbose) | Description |
+|-----------------|------------|------------|---------------------|
+| `Float32`       | `Float32` | `number & tags.Type<"float">` | 32-bit floating point |
+| `Float64`       | `Float64` or `number` | `number` | 64-bit floating point (default) |
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```python
+from moose_lib import ClickhouseSize
+
+class SensorData(BaseModel):
+    temperature: float                                    # Float64
+    humidity: Annotated[float, ClickhouseSize(4)]       # Float32
+```
+
+| ClickHouse Type | Python | Description |
+|------|------------|--------|
+| `Float64` | `float` | floating point number |
+  </LanguageTabContent>
+</LanguageTabs>
+
+### Decimal Types
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```typescript
+import { Decimal, ClickHouseDecimal } from "@514labs/moose-lib";
+
+interface FinancialData {
+  amount: Decimal<10, 2>;                     // Decimal(10,2)
+  rate: Decimal<5, 4>;                        // Decimal(5,4)
+  fee: Decimal<8, 3>;                         // Decimal(8,3)
+}
+
+// Alternative: You can still use the verbose syntax if preferred
+interface FinancialDataVerbose {
+  amount: string & ClickHouseDecimal<10, 2>;  // Decimal(10,2)
+  rate: string & ClickHouseDecimal<5, 4>;     // Decimal(5,4)
+}
+```
+
+| ClickHouse Type | TypeScript (New Helper) | TypeScript (Verbose) | Description |
+|------|------------|------------|---------------------|
+| `Decimal(P,S)` | `Decimal<P,S>` | `string & ClickHouseDecimal<P,S>` | Fixed-point decimal with P total digits, S decimal places |
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```python
+from moose_lib import clickhouse_decimal
+
+class FinancialData(BaseModel):
+    amount: clickhouse_decimal(10, 2)  # Decimal(10,2)
+    rate: clickhouse_decimal(5, 4)     # Decimal(5,4)
+```
+
+| ClickHouse Type | Python | Description |
+|------|------------|--------|
+| `Decimal(P,S)` | `clickhouse_decimal(P,S)` | Fixed-point decimal |
+  </LanguageTabContent>
+</LanguageTabs>
+
+### Boolean Type
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```typescript
+interface User {
+  is_active: boolean;
+  verified: boolean;
+}
+```
+
+| ClickHouse Type | TypeScript | Description |
+|------|------------|--------|
+| `Boolean` | `boolean` | `boolean` |
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```python
+class User(BaseModel):
+    is_active: bool
+    verified: bool
+```
+
+| ClickHouse Type | Python | Description |
+|------|------------|--------|
+| `Boolean` | `bool` | `bool` |
+  </LanguageTabContent>
+</LanguageTabs>
+
+### Date and Time Types
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```typescript
+import { DateTime, DateTime64, ClickHousePrecision } from "@514labs/moose-lib";
+
+interface Event {
+  created_at: DateTime;                               // DateTime
+  updated_at: DateTime64<3>;                         // DateTime(3)
+  logged_at: DateTime64<6>;                          // DateTime(6) - microsecond precision
+  birth_date: Date;                                   // Date
+}
+
+// Alternative: You can still use the verbose syntax if preferred
+interface EventVerbose {
+  created_at: Date;                                   // DateTime
+  updated_at: Date & ClickHousePrecision<3>;         // DateTime(3)
+  birth_date: Date;                                   // Date
+}
+```
+
+| ClickHouse Type | TypeScript (New Helper) | TypeScript (Verbose) | Description |
+|-----------------|------------|------------|-------------|
+| `Date`          | `Date`     | `Date`     | Date only   |
+| `Date16`        | `Date`     | `Date`     | Compact date format |
+| `DateTime`      | `DateTime` | `Date`     | Date and time |
+| `DateTime(P)`   | `DateTime64<P>` | `Date & ClickHousePrecision<P>` | DateTime with precision (P=0-9) |
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```python
+from datetime import date, datetime
+from moose_lib import ClickhouseSize, clickhouse_datetime64
+
+class Event(BaseModel):
+    created_at: datetime                               # DateTime
+    updated_at: clickhouse_datetime64(3)              # DateTime(3)
+    birth_date: date                                   # Date
+    compact_date: Annotated[date, ClickhouseSize(2)]  # Date16
+```
+
+| ClickHouse Type | Python | Description |
+|------|------------|--------|
+| `Date` | `date` | Date only |
+| `Date16` | `date` | `Annotated[date, ClickhouseSize(2)]` | Compact date format |
+| `DateTime` | `datetime` | Date and time |
+  </LanguageTabContent>
+</LanguageTabs>
+
+### Network Types
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```typescript
+import { tags } from "typia";
+
+interface NetworkEvent {
+  source_ip: string & tags.Format<"ipv4">;
+  dest_ip: string & tags.Format<"ipv6">;
+}
+```
+
+| ClickHouse Type | TypeScript | Description |
+|------|------------|--------|
+| `IPv4` | `string & tags.Format<"ipv4">` | IPv4 addresses |
+| `IPv6` | `string & tags.Format<"ipv6">` | IPv6 addresses |
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```python
+from ipaddress import IPv4Address, IPv6Address
+
+class NetworkEvent(BaseModel):
+    source_ip: IPv4Address
+    dest_ip: IPv6Address
+```
+
+| ClickHouse Type | Python | Description |
+|------|------------|--------|
+| `IPv4` | `ipaddress.IPv4Address` | IPv4 addresses |
+| `IPv6` | `ipaddress.IPv6Address` | IPv6 addresses |
+  </LanguageTabContent>
+</LanguageTabs>
+
+## Complex Types
+
+### Geometry Types
+
+Moose supports ClickHouse geometry types. Use the helpers in each language to get type-safe models and correct ClickHouse mappings.
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```typescript
+import {
+  ClickHousePoint,
+  ClickHouseRing,
+  ClickHouseLineString,
+  ClickHouseMultiLineString,
+  ClickHousePolygon,
+  ClickHouseMultiPolygon,
+} from "@514labs/moose-lib";
+
+interface GeoTypes {
+  point: ClickHousePoint;                 // Point → [number, number]
+  ring: ClickHouseRing;                   // Ring → Array<[number, number]>
+  lineString: ClickHouseLineString;       // LineString → Array<[number, number]>
+  multiLineString: ClickHouseMultiLineString; // MultiLineString → Array<Array<[number, number]>>
+  polygon: ClickHousePolygon;             // Polygon → Array<Array<[number, number]>>
+  multiPolygon: ClickHouseMultiPolygon;   // MultiPolygon → Array<Array<Array<[number, number]>>>
+}
+```
+
+| ClickHouse Type | TypeScript |
+|------|------------|
+| `Point` | `ClickHousePoint` |
+| `Ring` | `ClickHouseRing` |
+| `LineString` | `ClickHouseLineString` |
+| `MultiLineString` | `ClickHouseMultiLineString` |
+| `Polygon` | `ClickHousePolygon` |
+| `MultiPolygon` | `ClickHouseMultiPolygon` |
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```python
+from moose_lib import Point, Ring, LineString, MultiLineString, Polygon, MultiPolygon
+
+class GeoTypes(BaseModel):
+    point: Point                         # tuple[float, float]
+    ring: Ring                           # list[tuple[float, float]]
+    line_string: LineString              # list[tuple[float, float]]
+    multi_line_string: MultiLineString   # list[list[tuple[float, float]]]
+    polygon: Polygon                     # list[list[tuple[float, float]]]
+    multi_polygon: MultiPolygon          # list[list[list[tuple[float, float]]]]
+```
+
+| ClickHouse Type | Python |
+|------|------------|
+| `Point` | `Point` (tuple[float, float]) |
+| `Ring` | `Ring` (list[tuple[float, float]]) |
+| `LineString` | `LineString` (list[tuple[float, float]]) |
+| `MultiLineString` | `MultiLineString` (list[list[tuple[float, float]]]) |
+| `Polygon` | `Polygon` (list[list[tuple[float, float]]]) |
+| `MultiPolygon` | `MultiPolygon` (list[list[list[tuple[float, float]]]]) |
+  </LanguageTabContent>
+</LanguageTabs>
+
+<Callout type="info" title="Coordinate order">
+Geometry coordinates are represented as numeric pairs `[x, y]` (TypeScript) or `tuple[float, float]` (Python).
+</Callout>
+
+### Array Types
+
+Arrays are supported for all basic types and some complex types.
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```typescript
+interface User {
+  tags: string[];           // Array(String)
+  scores: number[];         // Array(Float64)
+  metadata: Record<string, any>[];  // Array(Json)
+  tuple: {
+    name: string;
+    age: number;
+  } & ClickHouseNamedTuple[]; // Array(Tuple(String, Int32))
+}
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```python
+from typing import List, Dict, Any
+
+class User(BaseModel):
+    tags: List[str]                    # Array(String)
+    scores: List[float]                # Array(Float64)
+    metadata: List[Dict[str, Any]]     # Array(Json)
+    tuple: List[Tuple[str, int]]       # Array(Tuple(String, Int32))
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+### Map Types
+
+Maps store key-value pairs with specified key and value types.
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```typescript
+interface User {
+  preferences: Record<string, string>;     // Map(String, String)
+  metrics: Record<string, number>;         // Map(String, Float64)
+}
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```python
+from typing import Dict
+
+class User(BaseModel):
+    preferences: Dict[str, str]     # Map(String, String)
+    metrics: Dict[str, float]       # Map(String, Float64)
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+### Nested Types
+
+Nested types allow embedding complex objects within tables.
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```typescript
+interface Address {
+  street: string;
+  city: string;
+  zip: string;
+}
+
+interface User {
+  name: string;
+  address: Address;  // Nested type
+}
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```python
+class Address(BaseModel):
+    street: str
+    city: str
+    zip: str
+
+class User(BaseModel):
+    name: str
+    address: Address  # Nested type
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+### Named Tuple Types
+
+Named tuples provide structured data with named fields.
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```typescript
+import { ClickHouseNamedTuple } from "@514labs/moose-lib";
+
+interface Point {
+  x: number;
+  y: number;
+}
+
+interface Shape {
+  center: Point & ClickHouseNamedTuple;  // Named tuple
+  radius: number;
+}
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```python
+from typing import Annotated
+
+class Point(BaseModel):
+    x: float
+    y: float
+
+class Shape(BaseModel):
+    center: Annotated[Point, "ClickHouseNamedTuple"]  # Named tuple
+    radius: float
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+### Enum Types
+
+Enums map to ClickHouse enums with string or integer values.
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```typescript
+enum UserRole {
+  ADMIN = "admin",
+  USER = "user",
+  GUEST = "guest"
+}
+
+interface User {
+  role: UserRole;  // Enum with string values
+}
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```python
+from enum import Enum
+
+class UserRole(str, Enum):
+    ADMIN = "admin"
+    USER = "user"
+    GUEST = "guest"
+
+class User(BaseModel):
+    role: UserRole  # Enum with string values
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+## Special Types
+
+### JSON Type
+
+The `Json` type stores arbitrary JSON data with optional schema configuration for performance and type safety.
+
+#### Basic JSON (Unstructured)
+
+For completely dynamic JSON data without any schema:
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```typescript
+interface Event {
+  metadata: Record<string, any>;  // Basic JSON - accepts any structure
+  config: any;                    // Basic JSON - fully dynamic
+}
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```python
+from typing import Any, Dict
+
+class Event(BaseModel):
+    metadata: Dict[str, Any]  # Basic JSON - accepts any structure
+    config: Any               # Basic JSON - fully dynamic
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+#### Rich JSON with Type Configuration
+
+For better performance and validation, you can define typed fields within your JSON using `ClickHouseJson`. This creates a ClickHouse `JSON` column with explicit type hints for specific paths.
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```typescript
+import { ClickHouseJson } from "@514labs/moose-lib";
+
+// Define the structure for your JSON payload
+interface PayloadStructure {
+  name: string;
+  count: number;
+  timestamp?: Date;
+}
+
+interface Event {
+  id: string;
+  // JSON with typed paths - better performance, allows extra fields
+  payload: PayloadStructure & ClickHouseJson;
+  
+  // JSON with performance tuning options
+  metadata: PayloadStructure & ClickHouseJson<
+    256,      // max_dynamic_paths: limit tracked paths (default: no limit)
+    16,       // max_dynamic_types: limit type variations (default: no limit)
+    ["skip.me"],           // skip_paths: exclude specific paths
+    ["^tmp\\."]            // skip_regexps: exclude paths matching regex
+  >;
+}
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```python
+from typing import Annotated
+from pydantic import BaseModel, ConfigDict
+from moose_lib.data_models import ClickHouseJson
+
+# Define the structure for your JSON payload
+class PayloadStructure(BaseModel):
+    model_config = ConfigDict(extra='allow')  # Required for JSON types
+    name: str
+    count: int
+    timestamp: Optional[datetime] = None
+
+class Event(BaseModel):
+    id: str
+    # JSON with typed paths - better performance, allows extra fields
+    payload: Annotated[PayloadStructure, ClickHouseJson()]
+    
+    # JSON with performance tuning options
+    metadata: Annotated[PayloadStructure, ClickHouseJson(
+        max_dynamic_paths=256,         # Limit tracked paths
+        max_dynamic_types=16,          # Limit type variations
+        skip_paths=("skip.me",),       # Exclude specific paths
+        skip_regexes=(r"^tmp\\.",)     # Exclude paths matching regex
+    )]
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+#### Configuration Options
+
+| Option | Type | Description |
+|--------|------|-------------|
+| `max_dynamic_paths` | `number` | Maximum number of unique JSON paths to track. Helps control memory usage for highly variable JSON structures. |
+| `max_dynamic_types` | `number` | Maximum number of type variations allowed per path. Useful when paths may contain different types. |
+| `skip_paths` | `string[]` | Array of exact JSON paths to ignore during ingestion (e.g., `["temp", "debug.info"]`). |
+| `skip_regexps` | `string[]` | Array of regex patterns for paths to exclude (e.g., `["^tmp\\.", ".*_internal$"]`). |
+
+#### Benefits of Typed JSON
+
+1. **Better Performance**: ClickHouse can optimize storage and queries for known paths
+2. **Type Safety**: Validates that specified paths match expected types
+3. **Flexible Schema**: Allows additional fields beyond typed paths
+4. **Memory Control**: Configure limits to prevent unbounded resource usage
+
+<Callout type="info" title="When to use each approach">
+- **Basic JSON** (`any`, `Dict[str, Any]`): Use when JSON structure is completely unknown or rarely queried
+- **Rich JSON** (`ClickHouseJson`): Use when you have known fields that need indexing/querying, but want to allow additional dynamic fields
+</Callout>
+
+#### Example: Product Event Tracking
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```typescript
+import { ClickHouseJson, Key } from "@514labs/moose-lib";
+
+interface ProductProperties {
+  category: string;
+  price: number;
+  inStock: boolean;
+}
+
+interface ProductEvent {
+  eventId: Key<string>;
+  timestamp: DateTime;
+  // Typed paths for common fields, but allows custom properties
+  properties: ProductProperties & ClickHouseJson<
+    128,                    // Track up to 128 unique paths
+    8,                      // Allow up to 8 type variations per path
+    ["_internal"],          // Ignore internal fields
+    ["^debug_"]             // Ignore debug fields
+  >;
+}
+```
+
+With this schema, you can send events like:
+```json
+{
+  "eventId": "evt_123",
+  "timestamp": "2025-10-22T12:00:00Z",
+  "properties": {
+    "category": "electronics",     // Typed field ✓
+    "price": 99.99,                // Typed field ✓
+    "inStock": true,               // Typed field ✓
+    "customTag": "holiday-sale",   // Extra field - accepted ✓
+    "brandId": 42,                 // Extra field - accepted ✓
+    "_internal": "ignored"         // Skipped by skip_paths ✓
+  }
+}
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```python
+from typing import Annotated, Optional
+from pydantic import BaseModel, ConfigDict
+from moose_lib import Key, ClickHouseJson
+from datetime import datetime
+
+class ProductProperties(BaseModel):
+    model_config = ConfigDict(extra='allow')
+    category: str
+    price: float
+    in_stock: bool
+
+class ProductEvent(BaseModel):
+    event_id: Key[str]
+    timestamp: datetime
+    # Typed paths for common fields, but allows custom properties
+    properties: Annotated[ProductProperties, ClickHouseJson(
+        max_dynamic_paths=128,         # Track up to 128 unique paths
+        max_dynamic_types=8,           # Allow up to 8 type variations per path
+        skip_paths=("_internal",),     # Ignore internal fields
+        skip_regexes=(r"^debug_",)     # Ignore debug fields
+    )]
+```
+
+With this schema, you can send events like:
+```python
+{
+    "event_id": "evt_123",
+    "timestamp": "2025-10-22T12:00:00Z",
+    "properties": {
+        "category": "electronics",     # Typed field ✓
+        "price": 99.99,                # Typed field ✓
+        "in_stock": True,              # Typed field ✓
+        "custom_tag": "holiday-sale",  # Extra field - accepted ✓
+        "brand_id": 42,                # Extra field - accepted ✓
+        "_internal": "ignored"         # Skipped by skip_paths ✓
+    }
+}
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+### Nullable Types
+
+All types support nullable variants using optional types.
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```typescript
+interface User {
+  name: string;           // Required
+  email?: string;         // Nullable
+  age?: number;           // Nullable
+}
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```python
+from typing import Optional
+
+class User(BaseModel):
+    name: str                    # Required
+    email: Optional[str] = None  # Nullable
+    age: Optional[int] = None    # Nullable
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+<Callout type="info" title="ClickHouse defaults with optional fields">
+If a field is optional in your app model but you provide a ClickHouse default, Moose infers a non-nullable ClickHouse column with a DEFAULT clause.
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+  - Optional without default (e.g., `field?: number`) → ClickHouse Nullable type.
+  - Optional with default (e.g., `field?: number & ClickHouseDefault<"18">` or `WithDefault<number, "18">`) → non-nullable column with default `18`.
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+  - Optional without default → ClickHouse Nullable type.
+  - Optional with default (using `clickhouse_default("18")` in annotations) → non-nullable column with default `18`.
+  </LanguageTabContent>
+</LanguageTabs>
+
+This lets you keep optional fields at the application layer while avoiding Nullable columns in ClickHouse when a server-side default exists.
+</Callout>
+
+### SimpleAggregateFunction
+
+`SimpleAggregateFunction` is designed for use with `AggregatingMergeTree` tables. It stores pre-aggregated values that are automatically merged when ClickHouse combines rows with the same primary key.
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```typescript
+import { SimpleAggregated, OlapTable, ClickHouseEngines, Key, DateTime } from "@514labs/moose-lib";
+
+interface DailyStats {
+  date: DateTime;
+  userId: string;
+  totalViews: number & SimpleAggregated<"sum", number>;
+  maxScore: number & SimpleAggregated<"max", number>;
+  lastSeen: DateTime & SimpleAggregated<"anyLast", DateTime>;
+}
+
+const statsTable = new OlapTable<DailyStats>("daily_stats", {
+  engine: ClickHouseEngines.AggregatingMergeTree,
+  orderByFields: ["date", "userId"],
+});
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```python
+from moose_lib import simple_aggregated, Key, OlapTable, OlapConfig, AggregatingMergeTreeEngine
+from pydantic import BaseModel
+from datetime import datetime
+
+class DailyStats(BaseModel):
+    date: datetime
+    user_id: str
+    total_views: simple_aggregated('sum', int)
+    max_score: simple_aggregated('max', float)
+    last_seen: simple_aggregated('anyLast', datetime)
+
+stats_table = OlapTable[DailyStats](
+    "daily_stats",
+    OlapConfig(
+        engine=AggregatingMergeTreeEngine(),
+        order_by_fields=["date", "user_id"]
+    )
+)
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+See [ClickHouse docs](https://clickhouse.com/docs/en/sql-reference/data-types/simpleaggregatefunction) for the complete list of functions.
+
+## Table Engines
+
+Moose supports all common ClickHouse table engines:
+
+| Engine | Python | Description |
+|--------|------------|-------------|
+| `MergeTree` | `ClickHouseEngines.MergeTree` | Default engine |
+| `ReplacingMergeTree` | `ClickHouseEngines.ReplacingMergeTree` | Deduplication |
+| `SummingMergeTree` | `ClickHouseEngines.SummingMergeTree` | Aggregates numeric columns |
+| `AggregatingMergeTree` | `ClickHouseEngines.AggregatingMergeTree` | Advanced aggregation |
+| `ReplicatedMergeTree` | `ClickHouseEngines.ReplicatedMergeTree` | Replicated version of MergeTree |
+| `ReplicatedReplacingMergeTree` | `ClickHouseEngines.ReplicatedReplacingMergeTree` | Replicated with deduplication |
+| `ReplicatedSummingMergeTree` | `ClickHouseEngines.ReplicatedSummingMergeTree` | Replicated with aggregation |
+| `ReplicatedAggregatingMergeTree` | `ClickHouseEngines.ReplicatedAggregatingMergeTree` | Replicated with advanced aggregation |
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```typescript
+import { ClickHouseEngines } from "@514labs/moose-lib";
+
+const userTable = new OlapTable<User>("users", {
+  engine: ClickHouseEngines.ReplacingMergeTree,
+  orderByFields: ["id", "updated_at"]
+});
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```python
+from moose_lib import ClickHouseEngines
+
+user_table = OlapTable("users", {
+    "engine": ClickHouseEngines.ReplacingMergeTree,
+    "orderByFields": ["id", "updated_at"]
+})
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+## Best Practices
+
+### Type Selection
+
+- **Use specific integer types** when you know the value ranges to save storage
+- **Prefer `Float64`** for most floating-point calculations unless storage is critical
+- **Use `LowCardinality`** for string columns with repeated values
+- **Choose appropriate DateTime precision** based on your accuracy needs
+
+### Performance Considerations
+
+- **Order columns by cardinality** (low to high) for better compression
+- **Use `ReplacingMergeTree`** for tables with frequent updates
+- **Specify `orderByFields` or `orderByExpression`** for optimal query performance
+- **Consider `LowCardinality`** for string columns with < 10,000 unique values
