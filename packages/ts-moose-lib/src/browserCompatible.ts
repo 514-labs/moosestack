@@ -38,6 +38,7 @@ export {
   ClickHousePrecision,
   ClickHouseDecimal,
   ClickHouseByteSize,
+  ClickHouseFixedStringSize,
   ClickHouseFloat,
   ClickHouseInt,
   ClickHouseJson,
@@ -49,6 +50,7 @@ export {
   // Added friendly aliases and numeric helpers
   DateTime,
   DateTime64,
+  FixedString,
   Float32,
   Float64,
   Int8,

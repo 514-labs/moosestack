@@ -12,6 +12,27 @@ export type ClickHouseDecimal<P extends number, S extends number> = {
   _clickhouse_scale?: S;
 } & Pattern<typeof DecimalRegex>;
 
+export type ClickHouseFixedStringSize<N extends number> = {
+  _clickhouse_fixed_string_size?: N;
+};
+
+/**
+ * FixedString(N) - Fixed-length string of exactly N bytes.
+ *
+ * ClickHouse stores exactly N bytes, padding shorter values with null bytes.
+ * Values exceeding N bytes will throw an exception.
+ *
+ * Use for binary data: hashes, IP addresses, UUIDs, MAC addresses.
+ *
+ * @example
+ * interface BinaryData {
+ *   md5_hash: string & FixedString<16>;    // 16-byte MD5
+ *   sha256_hash: string & FixedString<32>; // 32-byte SHA256
+ * }
+ */
+export type FixedString<N extends number> = string &
+  ClickHouseFixedStringSize<N>;
+
 export type ClickHouseByteSize<N extends number> = {
   _clickhouse_byte_size?: N;
 };

@@ -773,7 +773,7 @@ fn map_json_value_to_clickhouse_value(
     value: &Value,
 ) -> Result<ClickHouseValue, MappingError> {
     match column_type {
-        ColumnType::String => {
+        ColumnType::String | ColumnType::FixedString { .. } => {
             if let Some(value_str) = value.as_str() {
                 Ok(ClickHouseValue::new_string(value_str.to_string()))
             } else {
@@ -1071,7 +1071,9 @@ fn map_json_value_to_clickhouse_value(
                                 ClickHouseValue::new_float_64(key_float)
                             }
                             // For string types, use the key as-is
-                            ColumnType::String => ClickHouseValue::new_string(key_str.clone()),
+                            ColumnType::String | ColumnType::FixedString { .. } => {
+                                ClickHouseValue::new_string(key_str.clone())
+                            }
                             // For other types, convert via JSON value
                             _ => {
                                 let key_json_value = serde_json::Value::String(key_str.clone());

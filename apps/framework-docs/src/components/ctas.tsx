@@ -3,7 +3,7 @@ import {
   Database,
   Waves,
   HardDriveDownload,
-  RectangleEllipsis,
+  MoreHorizontal,
   HardDriveUpload,
   Slack,
   Contact,
@@ -26,7 +26,7 @@ import {
   Monitor,
   Code,
   GitCompare,
-  ChartBar,
+  BarChart3,
   Hammer,
   Workflow,
   Laptop,
@@ -96,7 +96,7 @@ export const Icons = {
   apis: Code,
   // Tools
   migrate: GitCompare,
-  metrics: ChartBar,
+  metrics: BarChart3,
   deploying: Hammer,
   // Reference
   mooseCli: Terminal,
@@ -112,7 +112,7 @@ export const Icons = {
   youtube: Youtube,
   linkedin: Linkedin,
   // Legacy mappings for backward compatibility
-  models: RectangleEllipsis,
+  models: MoreHorizontal,
   db: Database,
   api: HardDriveUpload,
   contact: Contact,

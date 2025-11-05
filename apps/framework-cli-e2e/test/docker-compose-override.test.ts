@@ -16,13 +16,12 @@ import { promisify } from "util";
 
 import { TIMEOUTS, TEMPLATE_NAMES, APP_NAMES } from "./constants";
 import {
-  stopDevProcess,
   waitForServerStart,
-  cleanupDocker,
-  removeTestProject,
+  waitForStreamingFunctions,
   createTempTestDirectory,
   setupTypeScriptProject,
   cleanupClickhouseData,
+  cleanupTestSuite,
 } from "./utils";
 
 const execAsync = promisify(require("child_process").exec);
@@ -92,29 +91,17 @@ services:
 
     console.log("Server started, cleaning up old data...");
     await cleanupClickhouseData();
+    console.log("Waiting for streaming functions...");
+    await waitForStreamingFunctions();
     console.log("Waiting before running tests...");
     await setTimeoutAsync(TIMEOUTS.PRE_TEST_WAIT_MS);
   });
 
   after(async function () {
     this.timeout(TIMEOUTS.CLEANUP_MS);
-    try {
-      console.log("Starting cleanup for docker-compose override test...");
-      await stopDevProcess(devProcess);
-      await cleanupDocker(TEST_PROJECT_DIR, APP_NAME);
-      removeTestProject(TEST_PROJECT_DIR);
-      console.log("Cleanup completed for docker-compose override test");
-    } catch (error) {
-      console.error("Error during cleanup:", error);
-      try {
-        if (devProcess && !devProcess.killed) {
-          devProcess.kill("SIGKILL");
-        }
-      } catch (killError) {
-        console.error("Error killing process:", killError);
-      }
-      removeTestProject(TEST_PROJECT_DIR);
-    }
+    await cleanupTestSuite(devProcess, TEST_PROJECT_DIR, APP_NAME, {
+      logPrefix: "Docker Compose Override Test",
+    });
   });
 
   it("should start custom nginx service from override file", async function () {

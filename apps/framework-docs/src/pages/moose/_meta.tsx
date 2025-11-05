@@ -12,10 +12,10 @@ import {
   GitCompare,
   HelpCircle,
   Settings,
-  ChartBar,
+  BarChart3,
   Hammer,
   Terminal,
-  GanttChart,
+  LayoutGrid,
   FileCode,
   Laptop,
   FolderPlus,
@@ -23,6 +23,8 @@ import {
   UploadCloud,
   FileStack,
   Sparkles,
+  Package,
+  Blocks,
 } from "lucide-react";
 
 // Raw meta object - more concise without repetitive rendering logic
@@ -32,7 +34,7 @@ const rawMeta = {
     theme: {
       breadcrumb: false,
     },
-    Icon: GanttChart,
+    Icon: LayoutGrid,
   },
   __fundamentals__: {
     title: "Getting Started",
@@ -54,6 +56,7 @@ const rawMeta = {
     title: "Data Modeling",
     Icon: FileCode,
   },
+
   "templates-examples": {
     title: "Templates & Apps",
     Icon: FileStack,
@@ -82,6 +85,14 @@ const rawMeta = {
     Icon: Code,
     isMoose: true,
   },
+  __moosestack_in_your_app__: {
+    type: "separator",
+    title: "MooseStack in your App",
+  },
+  "app-api-frameworks": {
+    title: "API frameworks",
+    Icon: Blocks,
+  },
   __deployment__: {
     type: "separator",
     title: "Deployment Tools & Guides",
@@ -93,7 +104,7 @@ const rawMeta = {
   },
   metrics: {
     title: "Observability",
-    Icon: ChartBar,
+    Icon: BarChart3,
     isMoose: true,
   },
   deploying: {

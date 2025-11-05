@@ -136,6 +136,9 @@ services:
       {{/if}}
       - clickhouse-0-logs:/var/log/clickhouse-server/
       - clickhouse-0-users:/etc/clickhouse-server/users.d
+      {{#if clickhouse_clusters_file}}
+      - "{{clickhouse_clusters_file}}:/etc/clickhouse-server/config.d/clusters.xml:ro"
+      {{/if}}
     environment:
       - CLICKHOUSE_DB=${DB_NAME:-local}
       - CLICKHOUSE_USER=${CLICKHOUSE_USER:-panda}
@@ -199,10 +202,17 @@ services:
       - ${TEMPORAL_DB_PORT:-5432}:5432
     volumes:
       - postgresql-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
 
   temporal:
     depends_on:
-      - postgresql
+      postgresql:
+        condition: service_healthy
     environment:
       - DB=postgres12
       - DB_PORT=5432

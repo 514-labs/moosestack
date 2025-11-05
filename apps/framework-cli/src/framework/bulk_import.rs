@@ -57,6 +57,7 @@ pub async fn import_csv_file(
                             | ColumnType::IpV4
                             | ColumnType::IpV6
                             | ColumnType::String
+                            | ColumnType::FixedString { .. }
                             | ColumnType::DateTime { .. }
                             | ColumnType::Enum(_) => {
                                 json_map.insert(key, json!(value));
