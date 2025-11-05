@@ -378,14 +378,110 @@ pub async fn plan_changes(
 
     // Use the reconciled map for diffing with ClickHouse-specific strategy
     let clickhouse_strategy = ClickHouseTableDiffStrategy;
+    let mut changes = diff_reconciled_map.diff_with_table_strategy(
+        &diff_target_map,
+        &clickhouse_strategy,
+        true,
+        project.is_production,
+    );
+
+    // CRITICAL: If we normalized tables before diff, the changes will reference
+    // the normalized tables. We must replace them with original tables so that
+    // CREATE TABLE statements include all fields (TTL, partition_by, etc.)
+    if project.is_production && !project.migration_config.ignore_operations.is_empty() {
+        for change in &mut changes.olap_changes {
+            if let OlapChange::Table(table_change) = change {
+                *table_change = match table_change {
+                    TableChange::Added(normalized_table) => {
+                        // Look up the original table from target_infra_map
+                        let original_table = target_infra_map
+                            .tables
+                            .get(&normalized_table.name)
+                            .cloned()
+                            .unwrap_or_else(|| normalized_table.clone());
+                        TableChange::Added(original_table)
+                    }
+                    TableChange::Removed(normalized_table) => {
+                        // For removals, use current map
+                        let original_table = reconciled_map
+                            .tables
+                            .get(&normalized_table.name)
+                            .cloned()
+                            .unwrap_or_else(|| normalized_table.clone());
+                        TableChange::Removed(original_table)
+                    }
+                    TableChange::Updated {
+                        name,
+                        column_changes,
+                        order_by_change,
+                        partition_by_change,
+                        before,
+                        after,
+                    } => {
+                        let original_before = reconciled_map
+                            .tables
+                            .get(&before.name)
+                            .cloned()
+                            .unwrap_or_else(|| before.clone());
+                        let original_after = target_infra_map
+                            .tables
+                            .get(&after.name)
+                            .cloned()
+                            .unwrap_or_else(|| after.clone());
+                        TableChange::Updated {
+                            name: name.clone(),
+                            column_changes: column_changes.clone(),
+                            order_by_change: order_by_change.clone(),
+                            partition_by_change: partition_by_change.clone(),
+                            before: original_before,
+                            after: original_after,
+                        }
+                    }
+                    TableChange::SettingsChanged {
+                        name,
+                        before_settings,
+                        after_settings,
+                        table,
+                    } => {
+                        let original_table = target_infra_map
+                            .tables
+                            .get(&table.name)
+                            .cloned()
+                            .unwrap_or_else(|| table.clone());
+                        TableChange::SettingsChanged {
+                            name: name.clone(),
+                            before_settings: before_settings.clone(),
+                            after_settings: after_settings.clone(),
+                            table: original_table,
+                        }
+                    }
+                    TableChange::TtlChanged {
+                        name,
+                        before,
+                        after,
+                        table,
+                    } => {
+                        let original_table = target_infra_map
+                            .tables
+                            .get(&table.name)
+                            .cloned()
+                            .unwrap_or_else(|| table.clone());
+                        TableChange::TtlChanged {
+                            name: name.clone(),
+                            before: before.clone(),
+                            after: after.clone(),
+                            table: original_table,
+                        }
+                    }
+                    TableChange::ValidationError { .. } => table_change.clone(),
+                };
+            }
+        }
+    }
+
     let plan = InfraPlan {
         target_infra_map: target_infra_map.clone(),
-        changes: diff_reconciled_map.diff_with_table_strategy(
-            &diff_target_map,
-            &clickhouse_strategy,
-            true,
-            project.is_production,
-        ),
+        changes,
     };
 
     // Validate that OLAP is enabled if OLAP changes are required
