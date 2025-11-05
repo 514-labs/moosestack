@@ -279,7 +279,7 @@ pub async fn plan_changes(
     project: &Project,
 ) -> Result<(InfrastructureMap, InfraPlan), PlanningError> {
     let json_path = Path::new(".moose/infrastructure_map.json");
-    let target_infra_map = if project.is_production && json_path.exists() {
+    let mut target_infra_map = if project.is_production && json_path.exists() {
         InfrastructureMap::load_from_json(json_path).map_err(|e| PlanningError::Other(e.into()))?
     } else {
         if project.is_production && project.is_docker_image() {
@@ -293,6 +293,14 @@ pub async fn plan_changes(
             InfrastructureMap::new(project, primitive_map)
         }
     };
+
+    // Resolve S3 credentials from environment variables at runtime
+    // This ensures credentials are not baked into Docker images and can be rotated
+    target_infra_map
+        .resolve_s3_credentials_from_env()
+        .map_err(|e| {
+            PlanningError::Other(anyhow::anyhow!("Failed to resolve S3 credentials: {}", e))
+        })?;
 
     let current_infra_map = state_storage.load_infrastructure_map().await?;
 

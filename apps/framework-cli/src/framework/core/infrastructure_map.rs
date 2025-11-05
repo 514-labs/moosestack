@@ -2082,6 +2082,94 @@ impl InfrastructureMap {
         Ok(infra_map)
     }
 
+    /// Resolves S3 credentials from environment variables at runtime.
+    ///
+    /// This method iterates through all tables in the infrastructure map and resolves
+    /// any environment variable markers (like `MOOSE_ENV::AWS_ACCESS_KEY_ID`) in S3 and S3Queue
+    /// engine configurations to their actual values from the environment.
+    ///
+    /// This MUST be called at runtime (dev/prod mode start) rather than at build time
+    /// to avoid baking credentials into Docker images.
+    ///
+    /// # Returns
+    /// A Result indicating success or containing an error message if credential resolution fails
+    pub fn resolve_s3_credentials_from_env(&mut self) -> Result<(), String> {
+        use crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine;
+        use crate::utilities::secrets::resolve_optional_runtime_env;
+
+        for table in self.tables.values_mut() {
+            if let Some(engine) = &mut table.engine {
+                match engine {
+                    ClickhouseEngine::S3Queue {
+                        aws_access_key_id,
+                        aws_secret_access_key,
+                        ..
+                    } => {
+                        // Resolve environment variable markers for AWS credentials
+                        let resolved_access_key = resolve_optional_runtime_env(aws_access_key_id)
+                            .map_err(|e| {
+                            format!(
+                                "Failed to resolve AWS access key ID for table '{}': {}",
+                                table.name, e
+                            )
+                        })?;
+
+                        let resolved_secret_key =
+                            resolve_optional_runtime_env(aws_secret_access_key).map_err(|e| {
+                                format!(
+                                    "Failed to resolve AWS secret access key for table '{}': {}",
+                                    table.name, e
+                                )
+                            })?;
+
+                        *aws_access_key_id = resolved_access_key;
+                        *aws_secret_access_key = resolved_secret_key;
+
+                        log::debug!(
+                            "Resolved S3Queue credentials for table '{}' at runtime",
+                            table.name
+                        );
+                    }
+                    ClickhouseEngine::S3 {
+                        aws_access_key_id,
+                        aws_secret_access_key,
+                        ..
+                    } => {
+                        // Resolve environment variable markers for AWS credentials
+                        let resolved_access_key = resolve_optional_runtime_env(aws_access_key_id)
+                            .map_err(|e| {
+                            format!(
+                                "Failed to resolve AWS access key ID for table '{}': {}",
+                                table.name, e
+                            )
+                        })?;
+
+                        let resolved_secret_key =
+                            resolve_optional_runtime_env(aws_secret_access_key).map_err(|e| {
+                                format!(
+                                    "Failed to resolve AWS secret access key for table '{}': {}",
+                                    table.name, e
+                                )
+                            })?;
+
+                        *aws_access_key_id = resolved_access_key;
+                        *aws_secret_access_key = resolved_secret_key;
+
+                        log::debug!(
+                            "Resolved S3 credentials for table '{}' at runtime",
+                            table.name
+                        );
+                    }
+                    _ => {
+                        // No credentials to resolve for other engine types
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }
+
     /// Stores the infrastructure map in Redis for persistence and sharing
     ///
     /// Serializes the map to protocol buffers and stores it in Redis using
