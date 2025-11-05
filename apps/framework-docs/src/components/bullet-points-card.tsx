@@ -1,4 +1,4 @@
-import { cn } from "@/lib/utils";
+import * as React from "react";
 import { Check, X } from "lucide-react";
 import {
   Card,
@@ -8,7 +8,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import Link from "next/link";
-import React from "react";
+import { cn } from "@/lib/utils";
 
 export type BulletStyle = "default" | "number" | "check" | "x";
 

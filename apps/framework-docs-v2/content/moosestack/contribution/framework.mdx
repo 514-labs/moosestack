@@ -1,0 +1,61 @@
+---
+title: Framework
+description: How to contribute to the MooseStack framework codebase
+order: 2
+category: contribution
+---
+
+# Contributing to the Framework
+
+Thank you for your interest in contributing to the MooseStack framework! This guide covers how to contribute to the core framework codebase.
+
+## Getting Started
+
+The MooseStack framework is a monorepo containing:
+- Rust CLI components
+- TypeScript library (`ts-moose-lib`)
+- Python library (`py-moose-lib`)
+- Protocol buffer definitions
+
+## Development Setup
+
+1. **Clone the repository**
+2. **Install dependencies** - Use `pnpm install` for JS/TS packages and `cargo build` for Rust
+3. **Run tests** - Ensure all tests pass before making changes
+4. **Make your changes** - Follow existing code patterns and conventions
+
+## Code Standards
+
+### Rust
+- Must pass `cargo clippy --all-targets -- -D warnings`
+- Use `thiserror` for error definitions
+- Follow existing patterns for error handling
+
+### TypeScript
+- Must pass linting checks
+- Follow existing type patterns
+- Keep API compatibility in mind when making breaking changes
+
+### Python
+- Follow PEP 8 style guidelines
+- Ensure type hints are included
+- Run tests with `pytest`
+
+## Submitting Changes
+
+1. **Create a branch** - Branch from the main development branch
+2. **Make your changes** - Ensure all tests pass
+3. **Submit a PR** - Include a clear description of changes
+
+## Areas for Contribution
+
+- Bug fixes
+- Performance improvements
+- New features (please discuss in an issue first)
+- Documentation improvements
+- Test coverage
+
+## Questions?
+
+If you have questions about contributing to the framework, please open an issue to discuss your proposed changes.
+
