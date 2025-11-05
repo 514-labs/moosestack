@@ -140,7 +140,7 @@ pub fn generate(
 
 fn get_default_value_for_type(column_type: &ColumnType, lang: SupportedLanguages) -> String {
     match (column_type, lang) {
-        (ColumnType::String, _) => "\"\"".to_string(),
+        (ColumnType::String | ColumnType::FixedString { .. }, _) => "\"\"".to_string(),
         (ColumnType::Boolean, _) => "false".to_string(),
         (ColumnType::Int(_), _) => "0".to_string(),
         (ColumnType::BigInt, _) => "0".to_string(),

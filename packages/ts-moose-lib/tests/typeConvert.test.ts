@@ -229,4 +229,31 @@ describe("typeConvert mappings for helper types", function () {
     expect((lastAgg as any)[1].functionName).to.equal("anyLast");
     expect((lastAgg as any)[1].argumentType).to.equal("DateTime");
   });
+
+  it("maps FixedString with size parameter", function () {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "moose-typeconv-"));
+    const source = `
+      import { FixedString, Key, DateTime } from "@514labs/moose-lib";
+
+      export interface TestModel {
+        id: Key<string>;
+        created_at: DateTime;
+        md5_hash: string & FixedString<16>;
+        sha256_hash: string & FixedString<32>;
+        ipv6_address: string & FixedString<16>;
+      }
+    `;
+
+    const { checker, type } = createProgramWithSource(tempDir, source);
+    const columns = toColumns(type, checker);
+    const byName = Object.fromEntries(columns.map((c) => [c.name, c]));
+
+    expect(byName.md5_hash.data_type).to.equal("FixedString(16)");
+    expect(byName.sha256_hash.data_type).to.equal("FixedString(32)");
+    expect(byName.ipv6_address.data_type).to.equal("FixedString(16)");
+
+    // Verify other fields still work
+    expect(byName.id.data_type).to.equal("String");
+    expect(byName.created_at.data_type).to.equal("DateTime");
+  });
 });

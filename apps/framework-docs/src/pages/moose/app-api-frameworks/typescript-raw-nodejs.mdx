@@ -1,0 +1,492 @@
+---
+title: Raw Node.js with MooseStack
+description: Use raw Node.js HTTP handlers with MooseStack
+---
+
+import { Callout } from "@/components";
+
+# Raw Node.js with MooseStack
+
+Use raw Node.js HTTP handlers without any framework. This gives you maximum control and minimal dependencies, ideal for performance-critical applications or when you want to avoid framework overhead.
+
+<Callout type="info" title="Choose your integration path">
+  - Running standalone Node.js elsewhere? Keep it separate and query Moose with the client SDK—see the [Querying Data guide](/moose/olap/read-data) for examples.  
+  - Want to mount your raw handlers in your MooseStack project? Follow the `WebApp` approach below so your endpoints deploy alongside the rest of your Moose project.
+</Callout>
+
+## Basic Example
+
+```ts filename="app/apis/rawApp.ts" copy
+import { WebApp, getMooseUtils } from "@514labs/moose-lib";
+import { MyTable } from "../tables/MyTable";
+import { IncomingMessage, ServerResponse } from "http";
+import { parse as parseUrl } from "url";
+
+const handler = async (req: IncomingMessage, res: ServerResponse) => {
+  const url = parseUrl(req.url || "", true);
+  const pathname = url.pathname || "/";
+
+  if (pathname === "/health" && req.method === "GET") {
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ status: "ok" }));
+    return;
+  }
+
+  if (pathname === "/data" && req.method === "GET") {
+    const moose = getMooseUtils(req);
+    if (!moose) {
+      res.writeHead(500, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "Moose utilities not available" }));
+      return;
+    }
+
+    const { client, sql } = moose;
+    const limit = parseInt((url.query.limit as string) || "10");
+
+    try {
+      const query = sql`
+        SELECT 
+          ${MyTable.columns.id},
+          ${MyTable.columns.name},
+          ${MyTable.columns.createdAt}
+        FROM ${MyTable}
+        ORDER BY ${MyTable.columns.createdAt} DESC
+        LIMIT ${limit}
+      `;
+      const result = await client.query.execute(query);
+      const data = await result.json();
+
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify(data));
+    } catch (error) {
+      res.writeHead(500, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: String(error) }));
+    }
+    return;
+  }
+
+  res.writeHead(404, { "Content-Type": "application/json" });
+  res.end(JSON.stringify({ error: "Not found" }));
+};
+
+export const rawApp = new WebApp("rawApp", handler, {
+  mountPath: "/raw",
+  metadata: { description: "Raw Node.js handler" }
+});
+```
+
+**Access your API:**
+- `GET http://localhost:4000/raw/health`
+- `GET http://localhost:4000/raw/data?limit=20`
+
+## Complete Example with Advanced Features
+
+```ts filename="app/apis/advancedRawApp.ts" copy
+import { WebApp, getMooseUtils } from "@514labs/moose-lib";
+import { UserEvents } from "../tables/UserEvents";
+import { IncomingMessage, ServerResponse } from "http";
+import { parse as parseUrl } from "url";
+
+// Helper to parse request body
+const parseBody = (req: IncomingMessage): Promise<any> => {
+  return new Promise((resolve, reject) => {
+    let body = "";
+    req.on("data", chunk => body += chunk.toString());
+    req.on("end", () => {
+      try {
+        resolve(body ? JSON.parse(body) : {});
+      } catch (error) {
+        reject(new Error("Invalid JSON"));
+      }
+    });
+    req.on("error", reject);
+  });
+};
+
+// Helper to send JSON response
+const sendJSON = (res: ServerResponse, status: number, data: any) => {
+  res.writeHead(status, {
+    "Content-Type": "application/json",
+    "X-Powered-By": "MooseStack"
+  });
+  res.end(JSON.stringify(data));
+};
+
+// Helper to send error
+const sendError = (res: ServerResponse, status: number, message: string) => {
+  sendJSON(res, status, { error: message });
+};
+
+// Route handlers
+const handleHealth = (req: IncomingMessage, res: ServerResponse) => {
+  sendJSON(res, 200, {
+    status: "ok",
+    timestamp: new Date().toISOString()
+  });
+};
+
+const handleGetUserEvents = async (
+  req: IncomingMessage,
+  res: ServerResponse,
+  userId: string,
+  query: any
+) => {
+  const moose = getMooseUtils(req);
+  if (!moose) {
+    return sendError(res, 500, "Moose utilities not available");
+  }
+
+  const { client, sql } = moose;
+  const limit = parseInt(query.limit || "10");
+  const eventType = query.eventType;
+
+  try {
+    const cols = UserEvents.columns;
+    const querySQL = sql`
+      SELECT
+        ${cols.id},
+        ${cols.event_type},
+        ${cols.timestamp}
+      FROM ${UserEvents}
+      WHERE ${cols.user_id} = ${userId}
+        ${eventType ? sql`AND ${cols.event_type} = ${eventType}` : sql``}
+      ORDER BY ${cols.timestamp} DESC
+      LIMIT ${limit}
+    `;
+
+    const result = await client.query.execute(querySQL);
+    const events = await result.json();
+
+    sendJSON(res, 200, {
+      userId,
+      count: events.length,
+      events
+    });
+  } catch (error) {
+    sendError(res, 500, String(error));
+  }
+};
+
+const handleCreateEvent = async (
+  req: IncomingMessage,
+  res: ServerResponse,
+  userId: string
+) => {
+  try {
+    const body = await parseBody(req);
+    const { eventType, data } = body;
+
+    if (!eventType || !data) {
+      return sendError(res, 400, "eventType and data are required");
+    }
+
+    // Handle POST logic
+    sendJSON(res, 201, {
+      success: true,
+      userId,
+      eventType,
+      data
+    });
+  } catch (error) {
+    sendError(res, 400, "Invalid request body");
+  }
+};
+
+const handleProtected = (req: IncomingMessage, res: ServerResponse) => {
+  const moose = getMooseUtils(req);
+
+  if (!moose?.jwt) {
+    return sendError(res, 401, "Unauthorized");
+  }
+
+  sendJSON(res, 200, {
+    message: "Authenticated",
+    userId: moose.jwt.sub,
+    claims: moose.jwt
+  });
+};
+
+// Main handler with routing
+const handler = async (req: IncomingMessage, res: ServerResponse) => {
+  const url = parseUrl(req.url || "", true);
+  const pathname = url.pathname || "/";
+  const method = req.method || "GET";
+
+  // CORS headers
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+
+  // Handle preflight
+  if (method === "OPTIONS") {
+    res.writeHead(204);
+    res.end();
+    return;
+  }
+
+  // Route matching
+  if (pathname === "/health" && method === "GET") {
+    return handleHealth(req, res);
+  }
+
+  // Match /users/:userId/events
+  const userEventsMatch = pathname.match(/^\/users\/([^\/]+)\/events$/);
+  if (userEventsMatch) {
+    const userId = userEventsMatch[1];
+
+    if (method === "GET") {
+      return handleGetUserEvents(req, res, userId, url.query);
+    }
+
+    if (method === "POST") {
+      return handleCreateEvent(req, res, userId);
+    }
+
+    return sendError(res, 405, "Method not allowed");
+  }
+
+  if (pathname === "/protected" && method === "GET") {
+    return handleProtected(req, res);
+  }
+
+  // 404
+  sendError(res, 404, "Not found");
+};
+
+export const advancedRawApp = new WebApp("advancedRaw", handler, {
+  mountPath: "/api/v1",
+  metadata: {
+    description: "Advanced raw Node.js handler with routing"
+  }
+});
+```
+
+## Pattern Matching for Routes
+
+```ts
+// Simple pattern matching
+const matchRoute = (pathname: string, pattern: string): { [key: string]: string } | null => {
+  const patternParts = pattern.split("/");
+  const pathParts = pathname.split("/");
+
+  if (patternParts.length !== pathParts.length) {
+    return null;
+  }
+
+  const params: { [key: string]: string } = {};
+
+  for (let i = 0; i < patternParts.length; i++) {
+    if (patternParts[i].startsWith(":")) {
+      const paramName = patternParts[i].slice(1);
+      params[paramName] = pathParts[i];
+    } else if (patternParts[i] !== pathParts[i]) {
+      return null;
+    }
+  }
+
+  return params;
+};
+
+// Usage
+const handler = async (req: IncomingMessage, res: ServerResponse) => {
+  const url = parseUrl(req.url || "", true);
+  const pathname = url.pathname || "/";
+
+  const userParams = matchRoute(pathname, "/users/:userId");
+  if (userParams) {
+    const { userId } = userParams;
+    // Handle user route
+    return;
+  }
+
+  const eventParams = matchRoute(pathname, "/users/:userId/events/:eventId");
+  if (eventParams) {
+    const { userId, eventId } = eventParams;
+    // Handle event route
+    return;
+  }
+};
+```
+
+## Streaming Responses
+
+```ts
+const handleStreamData = async (req: IncomingMessage, res: ServerResponse) => {
+  const moose = getMooseUtils(req);
+  if (!moose) {
+    return sendError(res, 500, "Utilities not available");
+  }
+
+  const { client, sql } = moose;
+
+  res.writeHead(200, {
+    "Content-Type": "application/x-ndjson",
+    "Transfer-Encoding": "chunked"
+  });
+
+  const query = sql`
+    SELECT 
+      ${MyTable.columns.id},
+      ${MyTable.columns.name},
+      ${MyTable.columns.data}
+    FROM ${MyTable}
+    ORDER BY ${MyTable.columns.createdAt} DESC
+    LIMIT 1000
+  `;
+  const result = await client.query.execute(query);
+  const data = await result.json();
+
+  // Stream data in chunks
+  for (const row of data) {
+    res.write(JSON.stringify(row) + "\n");
+    await new Promise(resolve => setTimeout(resolve, 10));
+  }
+
+  res.end();
+};
+```
+
+## WebApp Configuration
+
+```ts
+new WebApp(name, handler, config)
+```
+
+**WebAppConfig:**
+```ts
+interface WebAppConfig {
+  mountPath: string;
+  metadata?: { description?: string };
+  injectMooseUtils?: boolean; // default: true
+}
+```
+
+## Accessing Moose Utilities
+
+```ts
+const moose = getMooseUtils(req);
+if (!moose) {
+  res.writeHead(500, { "Content-Type": "application/json" });
+  res.end(JSON.stringify({ error: "Utilities not available" }));
+  return;
+}
+
+const { client, sql, jwt } = moose;
+```
+
+## Best Practices
+
+1. **Parse URL with url module**: Use `url.parse()` for query parameters and pathname
+2. **Set Content-Type headers**: Always set appropriate response headers
+3. **Handle errors gracefully**: Wrap async operations in try-catch
+4. **Use helper functions**: Extract common patterns (sendJSON, parseBody)
+5. **Implement routing logic**: Use pattern matching for dynamic routes
+6. **Handle CORS**: Set CORS headers if needed for browser clients
+7. **Stream large responses**: Use chunked encoding for large datasets
+
+## Middleware Pattern
+
+Create your own middleware pattern:
+
+```ts
+type Middleware = (
+  req: IncomingMessage,
+  res: ServerResponse,
+  next: () => Promise<void>
+) => Promise<void>;
+
+const createMiddlewareChain = (...middlewares: Middleware[]) => {
+  return async (req: IncomingMessage, res: ServerResponse) => {
+    let index = 0;
+
+    const next = async (): Promise<void> => {
+      if (index < middlewares.length) {
+        const middleware = middlewares[index++];
+        await middleware(req, res, next);
+      }
+    };
+
+    await next();
+  };
+};
+
+// Example middleware
+const loggerMiddleware: Middleware = async (req, res, next) => {
+  console.log(`${req.method} ${req.url}`);
+  await next();
+};
+
+const authMiddleware: Middleware = async (req, res, next) => {
+  const moose = getMooseUtils(req);
+  if (!moose?.jwt) {
+    sendError(res, 401, "Unauthorized");
+    return;
+  }
+  await next();
+};
+
+const routeHandler: Middleware = async (req, res, next) => {
+  sendJSON(res, 200, { message: "Success" });
+};
+
+// Create handler with middleware chain
+const handler = createMiddlewareChain(
+  loggerMiddleware,
+  authMiddleware,
+  routeHandler
+);
+```
+
+## When to Use Raw Node.js
+
+**Ideal for:**
+- Maximum control over request/response
+- Performance-critical applications
+- Minimal dependencies
+- Custom protocols or streaming
+- Learning HTTP fundamentals
+
+**Not ideal for:**
+- Rapid development (frameworks are faster)
+- Complex routing (use Express/Koa instead)
+- Large teams (frameworks provide structure)
+- Standard REST APIs (frameworks have better DX)
+
+## Troubleshooting
+
+### Response not closing
+
+**Solution:** Always call `res.end()`:
+```ts
+res.writeHead(200, { "Content-Type": "application/json" });
+res.end(JSON.stringify(data)); // Don't forget this!
+```
+
+### Query parameters not parsing
+
+**Solution:** Use `url.parse()` with `true` for query parsing:
+```ts
+import { parse as parseUrl } from "url";
+const url = parseUrl(req.url || "", true); // true enables query parsing
+const limit = url.query.limit;
+```
+
+### POST body not available
+
+**Solution:** Manually parse the request stream:
+```ts
+const parseBody = (req: IncomingMessage): Promise<any> => {
+  return new Promise((resolve, reject) => {
+    let body = "";
+    req.on("data", chunk => body += chunk.toString());
+    req.on("end", () => {
+      try {
+        resolve(body ? JSON.parse(body) : {});
+      } catch (error) {
+        reject(new Error("Invalid JSON"));
+      }
+    });
+    req.on("error", reject);
+  });
+};
+```
