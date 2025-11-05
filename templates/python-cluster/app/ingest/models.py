@@ -34,6 +34,13 @@ class TableD(BaseModel):
     timestamp: float
 
 
+# Table with ReplicatedMergeTree but no cluster or explicit params (ClickHouse Cloud mode)
+class TableE(BaseModel):
+    id: Key[str]
+    status: str
+    timestamp: float
+
+
 # OLAP Tables
 
 # table_a: Uses cluster_a with ReplicatedMergeTree
@@ -74,6 +81,16 @@ table_d = OlapTable[TableD](
             keeper_path="/clickhouse/tables/{database}/{table}",
             replica_name="{replica}",
         ),
+    ),
+)
+
+# TableE: ReplicatedMergeTree with auto-injected params (ClickHouse Cloud mode)
+table_e = OlapTable[TableE](
+    "TableE",
+    OlapConfig(
+        order_by_fields=["id"],
+        engine=ReplicatedMergeTreeEngine(),
+        # No cluster, no keeper_path, no replica_name - Moose will auto-inject in dev
     ),
 )
 
