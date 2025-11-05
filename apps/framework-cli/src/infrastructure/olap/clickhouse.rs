@@ -1700,6 +1700,12 @@ impl OlapOperations for ConfiguredDBClient {
                 debug!("Could not extract engine from CREATE TABLE query, falling back to system.tables engine column");
                 engine.as_str().try_into().ok()
             };
+
+            // Normalize auto-injected replication params so they match user code
+            // This prevents spurious diffs when comparing tables from the DB with code
+            let engine_parsed = engine_parsed
+                .map(|e: ClickhouseEngine| e.normalize_auto_injected_params(&table_name));
+
             let engine_params_hash = engine_parsed
                 .as_ref()
                 .map(|e: &ClickhouseEngine| e.non_alterable_params_hash());

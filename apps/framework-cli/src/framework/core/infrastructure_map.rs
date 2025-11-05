@@ -1749,6 +1749,9 @@ impl InfrastructureMap {
                         // Detect engine change (e.g., MergeTree -> ReplacingMergeTree)
                         let engine_changed = table.engine != target_table.engine;
 
+                        // Detect cluster name change
+                        let cluster_changed = table.cluster_name != target_table.cluster_name;
+
                         let order_by_change = if order_by_changed {
                             OrderByChange {
                                 before: table.order_by.clone(),
@@ -1793,6 +1796,7 @@ impl InfrastructureMap {
                             || order_by_changed
                             || engine_changed
                             || indexes_changed
+                            || cluster_changed
                         {
                             // Use the strategy to determine the appropriate changes
                             let strategy_changes = strategy.diff_table_update(
