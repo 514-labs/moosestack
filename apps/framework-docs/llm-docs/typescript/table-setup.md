@@ -237,7 +237,54 @@ export const ReplicatedDedup = new OlapTable<ReplicatedSchema>("ReplicatedDedup"
 **Note**: The `keeperPath` and `replicaName` parameters are optional:
 - **Self-managed ClickHouse**: Both parameters are required for configuring ZooKeeper/ClickHouse Keeper paths
 - **ClickHouse Cloud / Boreal**: Omit both parameters - the platform manages replication automatically
+
+### Cluster-Aware Replicated Tables
+
+For multi-node ClickHouse deployments, you can specify a cluster name to use `ON CLUSTER` DDL operations:
+
+```typescript
+import { OlapTable, ClickHouseEngines, Key } from '@514labs/moose-lib';
+
+interface ReplicatedSchema {
+  id: Key<string>;
+  data: string;
+  timestamp: Date;
+}
+
+// Replicated table on a cluster
+export const ClusteredTable = new OlapTable<ReplicatedSchema>("ClusteredTable", {
+  engine: ClickHouseEngines.ReplicatedMergeTree,
+  orderByFields: ["id"],
+  cluster: "default"  // References cluster from moose.config.toml
+});
 ```
+
+**Configuration in `moose.config.toml`:**
+```toml
+[[clickhouse_config.clusters]]
+name = "default"
+```
+
+**When to omit all parameters (recommended):**
+- ✅ **ClickHouse Cloud** - Platform manages replication automatically
+- ✅ **Local development** - Moose auto-injects params: `/clickhouse/tables/{database}/{shard}/{table_name}`
+- ✅ **Most production deployments** - Works out of the box
+
+**When to use `cluster`:**
+- ✅ Multi-node self-managed ClickHouse with cluster configuration
+- ✅ Need `ON CLUSTER` DDL for distributed operations
+- ✅ Works without explicit `keeperPath`/`replicaName` parameters
+
+**When to use explicit `keeperPath`/`replicaName`:**
+- ✅ Custom replication topology required
+- ✅ Advanced ZooKeeper/Keeper configuration
+- ✅ Specific self-managed deployment requirements
+
+**Important:** Cannot specify both `cluster` and explicit `keeperPath`/`replicaName` - choose one approach.
+
+**Local Development:** Moose configures cluster names to point to your local ClickHouse instance, letting you develop with `ON CLUSTER` DDL without running multiple nodes.
+
+**Production:** Cluster names must match your ClickHouse `remote_servers` configuration.
 
 ### S3Queue Engine Tables
 

@@ -243,6 +243,14 @@ native_port = 9000
 # Optional list of additional databases to create on startup (Default: [])
 # additional_databases = ["analytics", "staging"]
 
+# ClickHouse cluster configuration for replicated tables (optional)
+# Define clusters for use with ON CLUSTER DDL operations and distributed tables
+# In local dev, Moose creates single-node clusters. In production, names must match your ClickHouse remote_servers config.
+# [[clickhouse_config.clusters]]
+# name = "default"
+# [[clickhouse_config.clusters]]
+# name = "my_cluster"
+
 # HTTP server configuration for local development
 [http_server_config]
 # Host to bind the webserver to (Default: "localhost")
