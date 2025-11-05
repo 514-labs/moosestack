@@ -94,25 +94,10 @@ export async function MDXRenderer({ source }: MDXRendererProps) {
     code: MDXCode,
   };
 
-  // Make icons and other utilities available in MDX scope
-  const scope = {
-    IconRocket,
-    IconDatabase,
-    IconDeviceLaptop,
-    IconBrandGithub,
-    IconInfoCircle,
-    IconCheck,
-    IconClock,
-    IconTerminal,
-    IconFileCode,
-    PathConfig,
-  };
-
   return (
     <MDXRemote
       source={source}
       components={components}
-      scope={scope}
       options={{
         mdxOptions: {
           remarkPlugins: [remarkGfm],
