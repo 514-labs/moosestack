@@ -884,9 +884,10 @@ async fn legacy_remote_plan_logic(
     token: &Option<String>,
 ) -> anyhow::Result<()> {
     // Build the inframap from the local project
+    // Don't resolve credentials - only sending structure to remote for comparison
     let local_infra_map = if project.features.data_model_v2 {
         debug!("Loading InfrastructureMap from user code (DMV2)");
-        InfrastructureMap::load_from_user_code(project).await?
+        InfrastructureMap::load_from_user_code(project, false).await?
     } else {
         debug!("Loading InfrastructureMap from primitives");
         let primitive_map = PrimitiveMap::load(project).await?;
@@ -990,9 +991,10 @@ pub async fn remote_plan(
     clickhouse_url: &Option<String>,
 ) -> anyhow::Result<()> {
     // Build the inframap from the local project
+    // Don't resolve credentials - only sending structure to remote for comparison
     let local_infra_map = if project.features.data_model_v2 {
         debug!("Loading InfrastructureMap from user code (DMV2)");
-        InfrastructureMap::load_from_user_code(project).await?
+        InfrastructureMap::load_from_user_code(project, false).await?
     } else {
         debug!("Loading InfrastructureMap from primitives");
         let primitive_map = PrimitiveMap::load(project).await?;
@@ -1108,9 +1110,10 @@ pub async fn remote_gen_migration(
     use anyhow::Context;
 
     // Build the inframap from the local project
+    // Resolve credentials for generating migration DDL with S3 tables
     let local_infra_map = if project.features.data_model_v2 {
         debug!("Loading InfrastructureMap from user code (DMV2)");
-        InfrastructureMap::load_from_user_code(project).await?
+        InfrastructureMap::load_from_user_code(project, true).await?
     } else {
         debug!("Loading InfrastructureMap from primitives");
         let primitive_map = PrimitiveMap::load(project).await?;
@@ -1226,9 +1229,10 @@ pub async fn remote_refresh(
     token: &Option<String>,
 ) -> anyhow::Result<RoutineSuccess> {
     // Build the inframap from the local project
+    // Don't resolve credentials - only sending structure to remote for comparison
     let local_infra_map = if project.features.data_model_v2 {
         debug!("Loading InfrastructureMap from user code (DMV2)");
-        InfrastructureMap::load_from_user_code(project).await?
+        InfrastructureMap::load_from_user_code(project, false).await?
     } else {
         debug!("Loading InfrastructureMap from primitives");
         let primitive_map = PrimitiveMap::load(project).await?;

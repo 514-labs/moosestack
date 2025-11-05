@@ -280,6 +280,7 @@ pub async fn plan_changes(
 ) -> Result<(InfrastructureMap, InfraPlan), PlanningError> {
     let json_path = Path::new(".moose/infrastructure_map.json");
     let mut target_infra_map = if project.is_production && json_path.exists() {
+        // Load from prebuilt JSON (created by moose check without credentials)
         InfrastructureMap::load_from_json(json_path).map_err(|e| PlanningError::Other(e.into()))?
     } else {
         if project.is_production && project.is_docker_image() {
@@ -287,15 +288,16 @@ pub async fn plan_changes(
         }
 
         if project.features.data_model_v2 {
-            InfrastructureMap::load_from_user_code(project).await?
+            // Resolve credentials at runtime for dev/prod mode
+            InfrastructureMap::load_from_user_code(project, true).await?
         } else {
             let primitive_map = PrimitiveMap::load(project).await?;
             InfrastructureMap::new(project, primitive_map)
         }
     };
 
-    // Resolve S3 credentials from environment variables at runtime
-    // This ensures credentials are not baked into Docker images and can be rotated
+    // ALWAYS resolve S3 credentials at runtime in prod mode
+    // The JSON was created by moose check without credentials to avoid baking them into Docker
     target_infra_map
         .resolve_s3_credentials_from_env()
         .map_err(|e| {

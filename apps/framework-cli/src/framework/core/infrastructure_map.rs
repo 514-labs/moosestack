@@ -2420,10 +2420,16 @@ impl InfrastructureMap {
     ///
     /// # Arguments
     /// * `project` - The project to load the infrastructure map from
+    /// * `resolve_credentials` - Whether to resolve S3 credentials from environment variables.
+    ///   Set to `false` for build-time operations like `moose check` to avoid baking credentials
+    ///   into Docker images. Set to `true` for runtime operations that need to interact with infrastructure.
     ///
     /// # Returns
     /// A Result containing the infrastructure map or an error
-    pub async fn load_from_user_code(project: &Project) -> anyhow::Result<Self> {
+    pub async fn load_from_user_code(
+        project: &Project,
+        resolve_credentials: bool,
+    ) -> anyhow::Result<Self> {
         let partial = if project.language == SupportedLanguages::Typescript {
             let process = crate::framework::typescript::export_collectors::collect_from_index(
                 project,
@@ -2434,11 +2440,18 @@ impl InfrastructureMap {
         } else {
             load_main_py(project, &project.project_location).await?
         };
-        let infra_map = partial.into_infra_map(
+        let mut infra_map = partial.into_infra_map(
             project.language,
             &project.main_file(),
             &project.clickhouse_config.db_name,
         )?;
+
+        // Resolve S3 credentials at runtime if requested
+        if resolve_credentials {
+            infra_map
+                .resolve_s3_credentials_from_env()
+                .map_err(|e| anyhow::anyhow!("Failed to resolve S3 credentials: {}", e))?;
+        }
 
         // Provide explicit feedback when streams are defined but streaming engine is disabled
         if !project.features.streaming_engine && infra_map.uses_streaming() {
