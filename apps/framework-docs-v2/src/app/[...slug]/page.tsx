@@ -4,6 +4,8 @@ import { getAllSlugs, parseMarkdownContent } from "@/lib/content";
 import { TOCNav } from "@/components/navigation/toc-nav";
 import { MDXRenderer } from "@/components/mdx-renderer";
 
+export const dynamic = "force-dynamic";
+
 interface PageProps {
   params: Promise<{
     slug: string[];
@@ -85,7 +87,7 @@ export default async function DocPage({ params }: PageProps) {
 
   return (
     <>
-      <article className="prose prose-slate dark:prose-invert max-w-none">
+      <article className="prose prose-slate dark:prose-invert max-w-none w-full min-w-0">
         {content.isMDX ?
           <MDXRenderer source={content.content} />
         : <div dangerouslySetInnerHTML={{ __html: content.content }} />}

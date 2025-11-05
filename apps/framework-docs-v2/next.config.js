@@ -6,6 +6,8 @@ const withMDX = require("@next/mdx")({
   },
 });
 
+const createWithVercelToolbar = require("@vercel/toolbar/plugins/next");
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
@@ -35,4 +37,6 @@ const nextConfig = {
   },
 };
 
-module.exports = withMDX(nextConfig);
+const withVercelToolbar = createWithVercelToolbar();
+
+module.exports = withVercelToolbar(withMDX(nextConfig));

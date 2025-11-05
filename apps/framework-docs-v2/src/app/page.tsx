@@ -7,38 +7,32 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { IconDatabase, IconDeviceLaptop, IconAtom } from "@tabler/icons-react";
+import { IconDatabase, IconCloud, IconSparkles } from "@tabler/icons-react";
 
-export default async function HomePage({
-  searchParams,
-}: {
-  searchParams: Promise<{ lang?: string }>;
-}) {
-  const resolvedSearchParams = await searchParams;
-  const lang = resolvedSearchParams.lang || "typescript";
-  const langParam = `?lang=${lang}`;
+export const dynamic = "force-dynamic";
 
+export default function HomePage() {
   const sections = [
     {
       title: "MooseStack",
       description:
         "The core framework for building data applications with OLAP, streaming, workflows, and APIs.",
-      href: `/moosestack${langParam}`,
+      href: `/moosestack`,
       icon: IconDatabase,
     },
     {
       title: "Hosting",
       description:
         "Deploy and host your MooseStack applications with our managed hosting platform.",
-      href: `/hosting/overview${langParam}`,
-      icon: IconDeviceLaptop,
+      href: `/hosting/overview`,
+      icon: IconCloud,
     },
     {
       title: "AI",
       description:
         "AI-powered features and integrations for enhancing your MooseStack applications.",
-      href: `/ai/overview${langParam}`,
-      icon: IconAtom,
+      href: `/ai/overview`,
+      icon: IconSparkles,
     },
   ];
 
