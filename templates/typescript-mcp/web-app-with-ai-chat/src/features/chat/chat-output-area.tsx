@@ -117,6 +117,15 @@ function AIOutput({
               );
 
             default:
+              // Handle tool calls (tool-*)
+              if (part.type.startsWith("tool-")) {
+                const timing =
+                  part.toolCallId ? toolTimings[part.toolCallId] : undefined;
+                return (
+                  <ToolInvocation key={index} part={part} timing={timing} />
+                );
+              }
+
               console.log("unknown part type", part.type);
               return null;
           }

@@ -14,6 +14,19 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { CodeBlock } from "./code-block";
 import { useState } from "react";
+import { ClickHouseToolInvocation } from "./clickhouse-tool-invocation";
+
+const MILLISECONDS_THRESHOLD = 5000;
+
+function formatDuration(milliseconds: number): string {
+  if (milliseconds < MILLISECONDS_THRESHOLD) {
+    return `${Math.round(milliseconds)}ms`;
+  }
+
+  // For longer durations, show seconds with 2 decimal places
+  const seconds = milliseconds / 1000;
+  return `${seconds.toFixed(2)}s`;
+}
 
 // Correct AI SDK 5 ToolUIPart structure
 // to get better type inference, we need to define for each tool
@@ -52,6 +65,11 @@ export function ToolInvocation({
   const toolName =
     part.toolName ||
     (part.type.startsWith("tool-") ? part.type.slice(5) : part.type);
+
+  // Use custom ClickHouse component for query_clickhouse tool
+  if (toolName === "query_clickhouse") {
+    return <ClickHouseToolInvocation part={part} timing={timing} />;
+  }
 
   const isLoading = part.state === "input-streaming";
 
@@ -111,6 +129,12 @@ export function ToolInvocation({
             </span>
 
             <div className="flex-1" />
+
+            {part.state === "output-available" && timing && (
+              <Badge variant="secondary" className="text-xs mr-2">
+                {formatDuration(timing)}
+              </Badge>
+            )}
 
             {getStatusIcon()}
           </div>
