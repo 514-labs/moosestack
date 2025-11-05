@@ -54,6 +54,8 @@ Provides SQL validation and sanitization utilities:
 
 Uses regex-based pattern matching for ClickHouse SQL validation without external parser dependencies.
 
+**Note:** This is a demonstration implementation. A production-ready MCP server would require more robust query sanitization beyond regex pattern matching, such as a proper SQL parser, parameterized queries, and comprehensive injection prevention mechanisms.
+
 ## Getting Started
 
 ### 1. Install Dependencies
