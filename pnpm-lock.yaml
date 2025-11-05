@@ -238,6 +238,9 @@ importers:
       '@mdx-js/react':
         specifier: ^3.1.1
         version: 3.1.1(@types/react@19.2.2)(react@19.2.0)
+      '@mux/mux-player-react':
+        specifier: ^3.3.0
+        version: 3.8.0(@types/react-dom@19.2.2(@types/react@19.2.2))(@types/react@19.2.2)(react-dom@19.2.0(react@19.2.0))(react@19.2.0)
       '@next/mdx':
         specifier: ^16.0.1
         version: 16.0.1(@mdx-js/loader@3.1.1(webpack@5.102.1))(@mdx-js/react@3.1.1(@types/react@19.2.2)(react@19.2.0))
@@ -10616,12 +10619,32 @@ snapshots:
       '@types/react': 18.3.26
       '@types/react-dom': 18.3.7(@types/react@18.3.26)
 
+  '@mux/mux-player-react@3.8.0(@types/react-dom@19.2.2(@types/react@19.2.2))(@types/react@19.2.2)(react-dom@19.2.0(react@19.2.0))(react@19.2.0)':
+    dependencies:
+      '@mux/mux-player': 3.8.0(react@19.2.0)
+      '@mux/playback-core': 0.31.2
+      prop-types: 15.8.1
+      react: 19.2.0
+      react-dom: 19.2.0(react@19.2.0)
+    optionalDependencies:
+      '@types/react': 19.2.2
+      '@types/react-dom': 19.2.2(@types/react@19.2.2)
+
   '@mux/mux-player@3.8.0(react@18.3.1)':
     dependencies:
       '@mux/mux-video': 0.27.2
       '@mux/playback-core': 0.31.2
       media-chrome: 4.15.1(react@18.3.1)
       player.style: 0.3.0(react@18.3.1)
+    transitivePeerDependencies:
+      - react
+
+  '@mux/mux-player@3.8.0(react@19.2.0)':
+    dependencies:
+      '@mux/mux-video': 0.27.2
+      '@mux/playback-core': 0.31.2
+      media-chrome: 4.15.1(react@19.2.0)
+      player.style: 0.3.0(react@19.2.0)
     transitivePeerDependencies:
       - react
 
@@ -13899,6 +13922,10 @@ snapshots:
     dependencies:
       react: 18.3.1
 
+  ce-la-react@0.3.1(react@19.2.0):
+    dependencies:
+      react: 19.2.0
+
   chai@4.5.0:
     dependencies:
       assertion-error: 1.1.0
@@ -16981,9 +17008,21 @@ snapshots:
     transitivePeerDependencies:
       - react
 
+  media-chrome@4.14.0(react@19.2.0):
+    dependencies:
+      ce-la-react: 0.3.1(react@19.2.0)
+    transitivePeerDependencies:
+      - react
+
   media-chrome@4.15.1(react@18.3.1):
     dependencies:
       ce-la-react: 0.3.1(react@18.3.1)
+    transitivePeerDependencies:
+      - react
+
+  media-chrome@4.15.1(react@19.2.0):
+    dependencies:
+      ce-la-react: 0.3.1(react@19.2.0)
     transitivePeerDependencies:
       - react
 
@@ -17907,6 +17946,12 @@ snapshots:
   player.style@0.3.0(react@18.3.1):
     dependencies:
       media-chrome: 4.14.0(react@18.3.1)
+    transitivePeerDependencies:
+      - react
+
+  player.style@0.3.0(react@19.2.0):
+    dependencies:
+      media-chrome: 4.14.0(react@19.2.0)
     transitivePeerDependencies:
       - react
 

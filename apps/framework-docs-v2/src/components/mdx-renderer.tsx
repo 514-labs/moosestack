@@ -11,10 +11,29 @@ import {
   LanguageTabs,
   LanguageTabContent,
   CodeEditorWrapper,
+  ExportRequirement,
+  MuxVideo,
+  FileTree,
+  BulletPointsCard,
+  CompareBulletPointsCard,
+  ToggleBlock,
+  ZoomImg,
 } from "@/components/mdx";
+import { FileTreeFolder, FileTreeFile } from "@/components/mdx/file-tree";
 import { CodeEditor } from "@/components/ui/shadcn-io/code-editor";
 import { Separator } from "@/components/ui/separator";
-import { IconTerminal, IconFileCode } from "@tabler/icons-react";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import {
+  IconTerminal,
+  IconFileCode,
+  IconRocket,
+  IconDatabase,
+  IconDeviceLaptop,
+  IconBrandGithub,
+  IconInfoCircle,
+  IconCheck,
+  IconClock,
+} from "@tabler/icons-react";
 import {
   MDXPre,
   MDXCode,
@@ -30,6 +49,12 @@ interface MDXRendererProps {
 }
 
 export async function MDXRenderer({ source }: MDXRendererProps) {
+  // Create FileTree with nested components
+  const FileTreeWithSubcomponents = Object.assign(FileTree, {
+    Folder: FileTreeFolder,
+    File: FileTreeFile,
+  });
+
   const components = {
     // Provide custom components to all MDX files
     IconBadge,
@@ -43,8 +68,22 @@ export async function MDXRenderer({ source }: MDXRendererProps) {
     LanguageTabs,
     LanguageTabContent,
     CodeEditorWrapper,
+    ExportRequirement,
+    MuxVideo,
+    FileTree: FileTreeWithSubcomponents,
+    // Also expose sub-components directly for dot notation access
+    "FileTree.Folder": FileTreeFolder,
+    "FileTree.File": FileTreeFile,
+    BulletPointsCard,
+    CompareBulletPointsCard,
+    ToggleBlock,
+    ZoomImg,
     CodeEditor,
     Separator,
+    Tabs,
+    TabsList,
+    TabsTrigger,
+    TabsContent,
     Terminal: IconTerminal,
     FileCode: IconFileCode,
 
@@ -54,10 +93,24 @@ export async function MDXRenderer({ source }: MDXRendererProps) {
     code: MDXCode,
   };
 
+  // Make icons available in MDX scope
+  const scope = {
+    IconRocket,
+    IconDatabase,
+    IconDeviceLaptop,
+    IconBrandGithub,
+    IconInfoCircle,
+    IconCheck,
+    IconClock,
+    IconTerminal,
+    IconFileCode,
+  };
+
   return (
     <MDXRemote
       source={source}
       components={components}
+      scope={scope}
       options={{
         mdxOptions: {
           remarkPlugins: [remarkGfm],

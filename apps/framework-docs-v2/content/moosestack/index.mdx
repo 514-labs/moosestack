@@ -5,12 +5,7 @@ order: 1
 category: getting-started
 ---
 
-import { IconBadge } from "@/components/mdx/icon-badge";
-import { CTACard, CTACards } from "@/components/mdx/cta-card";
-import { StaggeredCard, StaggeredCards, StaggeredContent, StaggeredCode } from "@/components/mdx/staggered-card";
-import { Callout } from "@/components/mdx/callout";
-import { LanguageTabs, LanguageTabContent } from "@/components/mdx/language-tabs";
-import { CodeEditorWrapper } from "@/components/mdx/code-editor-wrapper";
+import { IconBadge, CTACard, CTACards, StaggeredCard, StaggeredCards, StaggeredContent, StaggeredCode, Callout, LanguageTabs, LanguageTabContent, CodeEditorWrapper } from "@/components/mdx";
 import { PathConfig } from "@/lib/path-config";
 import { Separator } from "@/components/ui/separator";
 
@@ -19,7 +14,7 @@ import { Separator } from "@/components/ui/separator";
 <div className="flex items-center gap-4 my-8 flex-wrap">
   <IconBadge Icon="Rocket" label="5 minute setup" variant="moose" />
   <IconBadge Icon="Database" label="Pre-integrated ClickHouse, Redpanda, Temporal" variant="moose" />
-  <IconBadge Icon="Laptop" label="Hot-reload development" variant="moose" />
+  <IconBadge Icon="DeviceLaptop" label="Hot-reload development" variant="moose" />
 </div>
 
 Type-safe, code-first tooling for building real-time analytical backends--OLAP Databases, Data Streaming, ETL Workflows, Query APIs, and more.
@@ -51,7 +46,7 @@ bash -i <(curl -fsSL https://fiveonefour.com/install.sh) moose
     title="Bootstrap with a Reference Application"
     description="Start with a reference application for integrating Moose with complex microservices architectures"
     ctaLink="https://github.com/514-labs/area-code"
-    Icon="Github"
+    Icon="BrandGithub"
     variant="default"
     orientation="horizontal"
   />
