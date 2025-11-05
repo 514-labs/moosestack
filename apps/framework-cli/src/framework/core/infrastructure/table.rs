@@ -514,6 +514,10 @@ impl Table {
                     })
             });
 
+        // Normalize auto-injected replication params so they match user code
+        // This prevents spurious diffs when comparing tables from inframap with code
+        let engine = engine.map(|e| e.normalize_auto_injected_params(&proto.name));
+
         // Engine settings are now handled via table_settings field
 
         let fallback = || -> OrderBy {

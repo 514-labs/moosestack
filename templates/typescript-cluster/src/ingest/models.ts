@@ -32,6 +32,13 @@ export interface TableD {
   timestamp: number;
 }
 
+/** Table with ReplicatedMergeTree but no cluster or explicit params (ClickHouse Cloud mode) */
+export interface TableE {
+  id: Key<string>;
+  status: string;
+  timestamp: number;
+}
+
 /** OLAP Tables */
 
 // TableA: Uses cluster_a with ReplicatedMergeTree
@@ -60,4 +67,11 @@ export const tableD = new OlapTable<TableD>("TableD", {
   engine: ClickHouseEngines.ReplicatedMergeTree,
   keeperPath: "/clickhouse/tables/{database}/{table}",
   replicaName: "{replica}",
+});
+
+// TableE: ReplicatedMergeTree with auto-injected params (ClickHouse Cloud mode)
+export const tableE = new OlapTable<TableE>("TableE", {
+  orderByFields: ["id"],
+  engine: ClickHouseEngines.ReplicatedMergeTree,
+  // No cluster, no keeperPath, no replicaName - Moose will auto-inject in dev
 });
