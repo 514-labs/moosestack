@@ -404,6 +404,59 @@ Available replicated engines:
 - `ReplicatedAggregatingMergeTreeEngine` - Replicated with aggregation
 - `ReplicatedSummingMergeTreeEngine` - Replicated with summation
 
+### Cluster-Aware Replicated Tables
+
+For multi-node ClickHouse deployments, you can specify a cluster name to use `ON CLUSTER` DDL operations:
+
+```python
+from moose_lib import OlapTable, OlapConfig
+from moose_lib.blocks import ReplicatedMergeTreeEngine
+from pydantic import BaseModel
+from datetime import datetime
+
+class ReplicatedData(BaseModel):
+    id: str
+    data: str
+    timestamp: datetime
+
+# Replicated table on a cluster
+clustered_table = OlapTable[ReplicatedData](
+    "ClusteredTable",
+    OlapConfig(
+        order_by_fields=["id"],
+        engine=ReplicatedMergeTreeEngine(),
+        cluster="default"  # References cluster from moose.config.toml
+    )
+)
+```
+
+**Configuration in `moose.config.toml`:**
+```toml
+[[clickhouse_config.clusters]]
+name = "default"
+```
+
+**When to omit all parameters (recommended):**
+- ✅ **ClickHouse Cloud** - Platform manages replication automatically
+- ✅ **Local development** - Moose auto-injects params: `/clickhouse/tables/{database}/{shard}/{table_name}`
+- ✅ **Most production deployments** - Works out of the box
+
+**When to use `cluster`:**
+- ✅ Multi-node self-managed ClickHouse with cluster configuration
+- ✅ Need `ON CLUSTER` DDL for distributed operations
+- ✅ Works without explicit `keeper_path`/`replica_name` parameters
+
+**When to use explicit `keeper_path`/`replica_name`:**
+- ✅ Custom replication topology required
+- ✅ Advanced ZooKeeper/Keeper configuration
+- ✅ Specific self-managed deployment requirements
+
+**Important:** Cannot specify both `cluster` and explicit `keeper_path`/`replica_name` - choose one approach.
+
+**Local Development:** Moose configures cluster names to point to your local ClickHouse instance, letting you develop with `ON CLUSTER` DDL without running multiple nodes.
+
+**Production:** Cluster names must match your ClickHouse `remote_servers` configuration.
+
 ### S3Queue Engine Tables
 
 The S3Queue engine enables automatic processing of files from S3 buckets as they arrive.
