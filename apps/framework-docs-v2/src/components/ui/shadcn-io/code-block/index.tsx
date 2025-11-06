@@ -594,8 +594,16 @@ export const CodeBlockContent = ({
       try {
         const { codeToHtml } = await import("shiki");
 
+        // Map unsupported languages to supported ones
+        const languageMap: Record<string, string> = {
+          gitignore: "text",
+          env: "text",
+          dotenv: "text",
+        };
+        const mappedLanguage = languageMap[language.toLowerCase()] || language;
+
         const html = await codeToHtml(children, {
-          lang: language,
+          lang: mappedLanguage,
           themes: {
             light: themes.light,
             dark: themes.dark,
@@ -605,10 +613,23 @@ export const CodeBlockContent = ({
         setHighlightedCode(html);
         setIsLoading(false);
       } catch (error) {
-        console.error(
-          `Failed to highlight code for language "${language}":`,
-          error,
-        );
+        // If language is still not supported, fall back to text
+        try {
+          const { codeToHtml } = await import("shiki");
+          const html = await codeToHtml(children, {
+            lang: "text",
+            themes: {
+              light: themes.light,
+              dark: themes.dark,
+            },
+          });
+          setHighlightedCode(html);
+        } catch (fallbackError) {
+          console.error(
+            `Failed to highlight code for language "${language}":`,
+            error,
+          );
+        }
         setIsLoading(false);
       }
     };

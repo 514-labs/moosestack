@@ -1,3 +1,4 @@
+import { type ReactNode } from "react";
 import { MDXRemote } from "next-mdx-remote/rsc";
 import {
   IconBadge,
@@ -40,6 +41,7 @@ import {
   MDXFigure,
 } from "@/components/mdx/code-block-wrapper";
 import { PathConfig } from "@/lib/path-config";
+import Link from "next/link";
 import remarkGfm from "remark-gfm";
 import rehypeSlug from "rehype-slug";
 import rehypeAutolinkHeadings from "rehype-autolink-headings";
@@ -55,6 +57,28 @@ export async function MDXRenderer({ source }: MDXRendererProps) {
     Folder: FileTreeFolder,
     File: FileTreeFile,
   });
+
+  // SourceCodeLink component for linking to GitHub source code
+  const SourceCodeLink = ({
+    path,
+    children,
+  }: {
+    path: string;
+    children: ReactNode;
+  }) => {
+    const branch = process.env.NEXT_PUBLIC_VERCEL_GIT_COMMIT_REF || "main";
+    const url = `https://github.com/514-labs/moose/blob/${branch}/${path}`;
+    return (
+      <Link
+        href={url}
+        className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 underline"
+        target="_blank"
+        rel="noopener noreferrer"
+      >
+        {children as any}
+      </Link>
+    );
+  };
 
   const components = {
     // Provide custom components to all MDX files
@@ -87,6 +111,7 @@ export async function MDXRenderer({ source }: MDXRendererProps) {
     TabsContent,
     Terminal: IconTerminal,
     FileCode: IconFileCode,
+    SourceCodeLink,
 
     figure: MDXFigure,
     // wrap with not-prose class
