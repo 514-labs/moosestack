@@ -99,7 +99,7 @@ fn strip_metadata_and_ignored_fields(
         .map(|(name, table)| {
             let mut table = table.clone();
             table.metadata = None;
-            // Also normalize ignored fields
+            // Also strip ignored fields
             let table = crate::infrastructure::olap::clickhouse::normalize_table_for_diff(
                 &table, ignore_ops,
             );
