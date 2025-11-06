@@ -533,6 +533,42 @@ pub struct InfrastructureMap {
 }
 
 impl InfrastructureMap {
+    /// Creates an empty infrastructure map from project configuration.
+    ///
+    /// This is used when loading state from storage returns None (first migration scenario).
+    /// All fields are initialized to empty/default values except `default_database`,
+    /// which is extracted from the project's ClickHouse configuration.
+    ///
+    /// # Why explicit field listing?
+    /// This method explicitly lists all fields instead of using `..Default::default()`
+    /// to force compiler errors when new fields are added to InfrastructureMap.
+    /// This ensures developers must consciously decide: does this new field need
+    /// project configuration (like default_database), or can it safely default to empty?
+    ///
+    /// # Arguments
+    /// * `project` - The project context containing configuration
+    ///
+    /// # Returns
+    /// An empty infrastructure map with the database name from project configuration
+    pub fn empty_from_project(project: &Project) -> Self {
+        Self {
+            default_database: project.clickhouse_config.db_name.clone(),
+            topics: Default::default(),
+            api_endpoints: Default::default(),
+            tables: Default::default(),
+            views: Default::default(),
+            topic_to_table_sync_processes: Default::default(),
+            topic_to_topic_sync_processes: Default::default(),
+            function_processes: Default::default(),
+            block_db_processes: OlapProcess {},
+            consumption_api_web_server: ConsumptionApiWebServer {},
+            orchestration_workers: Default::default(),
+            sql_resources: Default::default(),
+            workflows: Default::default(),
+            web_apps: Default::default(),
+        }
+    }
+
     /// Creates a new infrastructure map from a project and primitive map
     ///
     /// This is the primary constructor for creating an infrastructure map. It transforms
