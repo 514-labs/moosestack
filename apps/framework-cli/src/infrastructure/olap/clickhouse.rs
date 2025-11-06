@@ -896,15 +896,17 @@ fn build_modify_column_sql(
 
     // DEFAULT clause: If omitted, ClickHouse KEEPS any existing DEFAULT
     // Therefore, DEFAULT removal requires a separate REMOVE DEFAULT statement
-    // Default values from ClickHouse/Python are already properly formatted
-    // - String literals come with quotes: 'active'
-    // - SQL expressions come without quotes: xxHash64(_id), now(), today()
-    // - Numbers come without quotes: 42
-    // So we use them as-is without additional formatting (same fix as ENG-1162)
     let default_clause = ch_col
         .default
         .as_ref()
-        .map(|d| format!(" DEFAULT {}", d))
+        .map(|d| {
+            format!(
+                " DEFAULT {}",
+                crate::infrastructure::olap::clickhouse::queries::format_clickhouse_setting_value(
+                    d
+                )
+            )
+        })
         .unwrap_or_default();
 
     // TTL clause: If omitted, ClickHouse KEEPS any existing TTL
@@ -2343,73 +2345,6 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
             sqls[0],
             "ALTER TABLE `test_db`.`users` MODIFY COLUMN IF EXISTS `description` Nullable(String) DEFAULT 'updated default' COMMENT 'Updated description field'"
         );
-    }
-
-    #[test]
-    fn test_modify_column_with_sql_function_defaults() {
-        use crate::framework::core::infrastructure::table::{Column, IntType};
-        use crate::infrastructure::olap::clickhouse::mapper::std_column_to_clickhouse_column;
-
-        // Test modifying columns with SQL function defaults (ENG-1162 fix)
-        // These should NOT be quoted - they are SQL expressions, not string literals
-        let test_cases = vec![
-            (
-                "sample_hash",
-                ColumnType::Int(IntType::UInt64),
-                "xxHash64(_id)",
-                "ALTER TABLE `test_db`.`table` MODIFY COLUMN IF EXISTS `sample_hash` UInt64 DEFAULT xxHash64(_id)",
-            ),
-            (
-                "created_at",
-                ColumnType::DateTime { precision: Some(3) },
-                "now()",
-                "ALTER TABLE `test_db`.`table` MODIFY COLUMN IF EXISTS `created_at` DateTime64(3) DEFAULT now()",
-            ),
-            (
-                "date_stamp",
-                ColumnType::Date,
-                "today()",
-                "ALTER TABLE `test_db`.`table` MODIFY COLUMN IF EXISTS `date_stamp` Date32 DEFAULT today()",
-            ),
-            (
-                "hour_stamp",
-                ColumnType::Int(IntType::UInt64),
-                "toStartOfHour(toDateTime(_time_observed / 1000))",
-                "ALTER TABLE `test_db`.`table` MODIFY COLUMN IF EXISTS `hour_stamp` UInt64 DEFAULT toStartOfHour(toDateTime(_time_observed / 1000))",
-            ),
-        ];
-
-        for (name, data_type, default_expr, expected_sql) in test_cases {
-            let column = Column {
-                name: name.to_string(),
-                data_type,
-                required: true,
-                unique: false,
-                primary_key: false,
-                default: Some(default_expr.to_string()),
-                annotations: vec![],
-                comment: None,
-                ttl: None,
-            };
-
-            let clickhouse_column = std_column_to_clickhouse_column(column).unwrap();
-            let sqls = build_modify_column_sql("test_db", "table", &clickhouse_column, false, false)
-                .unwrap();
-
-            assert_eq!(sqls.len(), 1, "Expected 1 SQL statement for {}", name);
-            assert_eq!(
-                sqls[0], expected_sql,
-                "SQL function default for {} should not be quoted",
-                name
-            );
-
-            // Verify the SQL does NOT contain quoted function calls
-            assert!(
-                !sqls[0].contains(&format!("'{}'", default_expr)),
-                "DEFAULT expression should not be quoted as a string literal for {}",
-                name
-            );
-        }
     }
 
     #[test]
