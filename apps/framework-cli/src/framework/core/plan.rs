@@ -630,11 +630,9 @@ mod tests {
         let db_name = &project.clickhouse_config.db_name;
 
         // Create mock OLAP client with the actual table
+        // database: None simulates list_tables behavior for default database tables
         let mock_client = MockOlapClient {
-            tables: vec![Table {
-                database: Some(db_name.clone()),
-                ..actual_table.clone()
-            }],
+            tables: vec![actual_table.clone()],
         };
 
         // Create infrastructure map with the infra table (no extra column)
@@ -660,11 +658,9 @@ mod tests {
         assert_eq!(discrepancies.mismatched_tables.len(), 1);
 
         // Create another mock client for reconciliation
+        // database: None simulates list_tables behavior for default database tables
         let reconcile_mock_client = MockOlapClient {
-            tables: vec![Table {
-                database: Some(db_name.clone()),
-                ..actual_table.clone()
-            }],
+            tables: vec![actual_table.clone()],
         };
 
         let target_table_names = HashSet::new();

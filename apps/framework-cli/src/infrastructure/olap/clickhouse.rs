@@ -1765,10 +1765,10 @@ impl OlapOperations for ConfiguredDBClient {
                 engine_params_hash,
                 table_settings,
                 indexes,
-                // Only set database if it differs from the query database (db_name)
+                // Only set database if it differs from the project's default database
                 // This ensures consistency with user-created tables which have database: None
                 // when using the default database
-                database: if database == db_name {
+                database: if database == project.clickhouse_config.db_name {
                     None
                 } else {
                     Some(database)

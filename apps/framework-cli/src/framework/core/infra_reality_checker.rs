@@ -166,7 +166,9 @@ impl<T: OlapOperations> InfraRealityChecker<T> {
         // Create maps for easier comparison
         //
         // KEY FORMAT for actual_table_map:
-        // - Uses NEW format with database prefix: "local_db_tablename_1_0_0"
+        // - After PR #2943: tables in default database have database: None
+        // - ID format: "tablename_1_0_0" (no database prefix for default database)
+        // - Tables in non-default databases: "otherdatabase_tablename_1_0_0"
         // - Generated via table.id(&infra_map.default_database)
         let actual_table_map: HashMap<_, _> = actual_tables
             .into_iter()
@@ -222,20 +224,13 @@ impl<T: OlapOperations> InfraRealityChecker<T> {
         // the keys here are created in memory - they must be in the new format
         for (id, mapped_table) in &infra_map.tables {
             if let Some(actual_table) = actual_table_map.get(id) {
-                // actual_table always have a database because it's mapped back by list_tables
-                let table_with_db = {
-                    let mut table = mapped_table.clone();
-                    if table.database.is_none() {
-                        table.database = Some(infra_map.default_database.clone());
-                    }
-                    table
-                };
-
+                // After PR #2943, both actual_table and mapped_table have database: None
+                // for tables in the default database, ensuring consistent IDs
                 debug!("Comparing table structure for: {}", id);
-                if actual_table != &table_with_db {
+                if actual_table != mapped_table {
                     debug!("Found structural mismatch in table: {}", id);
                     debug!("Actual table: {:?}", actual_table);
-                    debug!("Mapped table: {:?}", table_with_db);
+                    debug!("Mapped table: {:?}", mapped_table);
 
                     // Use the existing diff_tables function to compute differences
                     // Note: We flip the order here to make infra_map the reference
@@ -244,7 +239,7 @@ impl<T: OlapOperations> InfraRealityChecker<T> {
                     // Flip the order of arguments to make infra_map the reference
                     InfrastructureMap::diff_tables(
                         &HashMap::from([(id.clone(), actual_table.clone())]),
-                        &HashMap::from([(id.clone(), table_with_db.clone())]),
+                        &HashMap::from([(id.clone(), mapped_table.clone())]),
                         &mut changes,
                         // respect_life_cycle is false to not hide the difference
                         false,
@@ -425,11 +420,10 @@ mod tests {
         let table = create_base_table("test_table");
 
         // Create mock OLAP client with one table
+        // database: None simulates the behavior of list_tables when the table
+        // is in the default database (matching user-created tables)
         let mock_client = MockOlapClient {
-            tables: vec![Table {
-                database: Some(DEFAULT_DATABASE_NAME.to_string()),
-                ..table.clone()
-            }],
+            tables: vec![table.clone()],
         };
 
         // Create empty infrastructure map
@@ -494,11 +488,9 @@ mod tests {
             ttl: None,
         });
 
+        // database: None simulates list_tables behavior for default database tables
         let mock_client = MockOlapClient {
-            tables: vec![Table {
-                database: Some(DEFAULT_DATABASE_NAME.to_string()),
-                ..actual_table.clone()
-            }],
+            tables: vec![actual_table.clone()],
         };
 
         let mut infra_map = InfrastructureMap {
@@ -568,11 +560,9 @@ mod tests {
         actual_table.order_by = OrderBy::Fields(vec!["id".to_string(), "timestamp".to_string()]);
         infra_table.order_by = OrderBy::Fields(vec!["id".to_string()]);
 
+        // database: None simulates list_tables behavior for default database tables
         let mock_client = MockOlapClient {
-            tables: vec![Table {
-                database: Some(DEFAULT_DATABASE_NAME.to_string()),
-                ..actual_table.clone()
-            }],
+            tables: vec![actual_table.clone()],
         };
 
         let mut infra_map = InfrastructureMap {
@@ -635,11 +625,9 @@ mod tests {
         });
         infra_table.engine = None;
 
+        // database: None simulates list_tables behavior for default database tables
         let mock_client = MockOlapClient {
-            tables: vec![Table {
-                database: Some(DEFAULT_DATABASE_NAME.to_string()),
-                ..actual_table.clone()
-            }],
+            tables: vec![actual_table.clone()],
         };
 
         let mut infra_map = InfrastructureMap {
