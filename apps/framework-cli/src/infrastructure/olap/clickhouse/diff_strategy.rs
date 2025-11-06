@@ -1479,7 +1479,19 @@ mod tests {
             after: after.order_by.clone(),
         };
 
-        let changes = strategy.diff_table_update(&before, &after, vec![], order_by_change, "local");
+        let partition_by_change = PartitionByChange {
+            before: before.partition_by.clone(),
+            after: after.partition_by.clone(),
+        };
+
+        let changes = strategy.diff_table_update(
+            &before,
+            &after,
+            vec![],
+            order_by_change,
+            partition_by_change,
+            "local",
+        );
 
         // cluster_name is a deployment directive, not a schema property
         // Changing it should not trigger any operations
@@ -1502,7 +1514,19 @@ mod tests {
             after: after.order_by.clone(),
         };
 
-        let changes = strategy.diff_table_update(&before, &after, vec![], order_by_change, "local");
+        let partition_by_change = PartitionByChange {
+            before: before.partition_by.clone(),
+            after: after.partition_by.clone(),
+        };
+
+        let changes = strategy.diff_table_update(
+            &before,
+            &after,
+            vec![],
+            order_by_change,
+            partition_by_change,
+            "local",
+        );
 
         // cluster_name is a deployment directive, not a schema property
         // Changing it should not trigger any operations
@@ -1525,7 +1549,19 @@ mod tests {
             after: after.order_by.clone(),
         };
 
-        let changes = strategy.diff_table_update(&before, &after, vec![], order_by_change, "local");
+        let partition_by_change = PartitionByChange {
+            before: before.partition_by.clone(),
+            after: after.partition_by.clone(),
+        };
+
+        let changes = strategy.diff_table_update(
+            &before,
+            &after,
+            vec![],
+            order_by_change,
+            partition_by_change,
+            "local",
+        );
 
         // cluster_name is a deployment directive, not a schema property
         // Changing it should not trigger any operations
@@ -1548,7 +1584,19 @@ mod tests {
             after: after.order_by.clone(),
         };
 
-        let changes = strategy.diff_table_update(&before, &after, vec![], order_by_change, "local");
+        let partition_by_change = PartitionByChange {
+            before: before.partition_by.clone(),
+            after: after.partition_by.clone(),
+        };
+
+        let changes = strategy.diff_table_update(
+            &before,
+            &after,
+            vec![],
+            order_by_change,
+            partition_by_change,
+            "local",
+        );
 
         // Should not trigger a validation error - no changes at all
         assert_eq!(changes.len(), 0);
@@ -1570,7 +1618,19 @@ mod tests {
             after: after.order_by.clone(),
         };
 
-        let changes = strategy.diff_table_update(&before, &after, vec![], order_by_change, "local");
+        let partition_by_change = PartitionByChange {
+            before: before.partition_by.clone(),
+            after: after.partition_by.clone(),
+        };
+
+        let changes = strategy.diff_table_update(
+            &before,
+            &after,
+            vec![],
+            order_by_change,
+            partition_by_change,
+            "local",
+        );
 
         // Should not trigger a validation error - no changes at all
         assert_eq!(changes.len(), 0);
