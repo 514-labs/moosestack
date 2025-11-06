@@ -100,8 +100,9 @@ fn strip_metadata_and_ignored_fields(
             let mut table = table.clone();
             table.metadata = None;
             // Also strip ignored fields
-            let table =
-                crate::framework::core::migration_plan::strip_ignored_fields(&table, ignore_ops);
+            let table = crate::infrastructure::olap::clickhouse::normalize_table_for_diff(
+                &table, ignore_ops,
+            );
             (name.clone(), table)
         })
         .collect()
