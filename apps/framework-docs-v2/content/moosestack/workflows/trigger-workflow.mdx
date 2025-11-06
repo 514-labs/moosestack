@@ -45,7 +45,7 @@ Trigger workflows directly via an HTTP POST endpoint exposed by the webserver.
 
 - Endpoint: `/workflows/{workflowName}/trigger`
 
-### Request
+### Trigger Request
 
 - Body: optional JSON payload passed to the workflow's starting task.
 
@@ -110,7 +110,7 @@ After triggering a workflow, you can terminate it via an HTTP endpoint.
 
 - Endpoint: `POST /workflows/{workflowId}/terminate`
 
-### Request
+### Terminate Request
 
 - Local development (no auth):
 
