@@ -211,7 +211,7 @@ describe("python template tests - db-pull with SQL function defaults", () => {
     console.log("\n--- Generating migration plan ---");
 
     const { stdout: planOutput } = await execAsync(
-      `"${CLI_PATH}" generate migration --clickhouse-url "${CLICKHOUSE_URL}" --save`,
+      `"${CLI_PATH}" generate migration --clickhouse-url "${CLICKHOUSE_URL}" --redis-url "redis://127.0.0.1:6379" --save`,
       { cwd: testProjectDir },
     );
 
@@ -515,7 +515,7 @@ describe("typescript template tests - db-pull with SQL function defaults", () =>
     console.log("\n--- Generating migration plan ---");
 
     const { stdout: planOutput } = await execAsync(
-      `"${CLI_PATH}" generate migration --clickhouse-url "${CLICKHOUSE_URL}" --save`,
+      `"${CLI_PATH}" generate migration --clickhouse-url "${CLICKHOUSE_URL}" --redis-url "redis://127.0.0.1:6379" --save`,
       { cwd: testProjectDir },
     );
 
