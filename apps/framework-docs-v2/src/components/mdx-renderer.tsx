@@ -112,6 +112,7 @@ export async function MDXRenderer({ source }: MDXRendererProps) {
     Terminal: IconTerminal,
     FileCode: IconFileCode,
     SourceCodeLink,
+    Link,
 
     figure: MDXFigure,
     // wrap with not-prose class

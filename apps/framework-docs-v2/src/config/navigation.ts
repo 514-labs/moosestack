@@ -199,6 +199,24 @@ const moosestackNavigationConfig: NavigationConfig = [
       },
       {
         type: "page",
+        slug: "moosestack/app-api-frameworks/fastify",
+        title: "Fastify",
+        languages: ["typescript"],
+      },
+      {
+        type: "page",
+        slug: "moosestack/app-api-frameworks/koa",
+        title: "Koa",
+        languages: ["typescript"],
+      },
+      {
+        type: "page",
+        slug: "moosestack/app-api-frameworks/raw-nodejs",
+        title: "Raw Node.js",
+        languages: ["typescript"],
+      },
+      {
+        type: "page",
         slug: "moosestack/app-api-frameworks/fastapi",
         title: "FastAPI",
         languages: ["python"],
