@@ -300,9 +300,8 @@ pub async fn plan_changes(
             .unwrap_or("Could not serialize current infrastructure map".to_string())
     );
 
-    let current_map_or_empty = current_infra_map.unwrap_or_else(|| {
-        InfrastructureMap::empty_from_project(project)
-    });
+    let current_map_or_empty =
+        current_infra_map.unwrap_or_else(|| InfrastructureMap::empty_from_project(project));
 
     // Reconcile the current map with reality before diffing, but only if OLAP is enabled
     let reconciled_map = if project.features.olap {
@@ -370,7 +369,6 @@ mod tests {
     use crate::framework::core::infrastructure::table::{
         Column, ColumnType, IntType, OrderBy, Table,
     };
-    use protobuf::Message;
     use crate::framework::core::infrastructure_map::{PrimitiveSignature, PrimitiveTypes};
     use crate::framework::core::partial_infrastructure_map::LifeCycle;
     use crate::framework::versions::Version;
@@ -378,6 +376,7 @@ mod tests {
     use crate::infrastructure::olap::OlapChangesError;
     use crate::infrastructure::olap::OlapOperations;
     use async_trait::async_trait;
+    use protobuf::Message;
 
     // Mock OLAP client for testing
     struct MockOlapClient {
@@ -740,10 +739,7 @@ mod tests {
 
         // Add a test table to make it realistic
         let table = create_test_table("test_table");
-        target_map.tables.insert(
-            table.id(CUSTOM_DB_NAME),
-            table,
-        );
+        target_map.tables.insert(table.id(CUSTOM_DB_NAME), table);
 
         // Simulate storing to Redis (serialize to protobuf)
         let proto_bytes = target_map.to_proto().write_to_bytes().unwrap();
@@ -753,34 +749,24 @@ mod tests {
 
         // ASSERTION: The custom database name should be preserved after round-trip
         assert_eq!(
-            loaded_map.default_database,
-            CUSTOM_DB_NAME,
+            loaded_map.default_database, CUSTOM_DB_NAME,
             "Custom database name '{}' was not preserved after serialization round-trip. Got: '{}'",
-            CUSTOM_DB_NAME,
-            loaded_map.default_database
+            CUSTOM_DB_NAME, loaded_map.default_database
         );
 
         // Also verify that reconciliation preserves the database name
-        let mock_client = MockOlapClient {
-            tables: vec![],
-        };
+        let mock_client = MockOlapClient { tables: vec![] };
 
         let target_table_names = HashSet::new();
-        let reconciled = reconcile_with_reality(
-            &project,
-            &loaded_map,
-            &target_table_names,
-            mock_client,
-        )
-        .await
-        .unwrap();
+        let reconciled =
+            reconcile_with_reality(&project, &loaded_map, &target_table_names, mock_client)
+                .await
+                .unwrap();
 
         assert_eq!(
-            reconciled.default_database,
-            CUSTOM_DB_NAME,
+            reconciled.default_database, CUSTOM_DB_NAME,
             "Custom database name '{}' was not preserved after reconciliation. Got: '{}'",
-            CUSTOM_DB_NAME,
-            reconciled.default_database
+            CUSTOM_DB_NAME, reconciled.default_database
         );
     }
 
@@ -808,7 +794,10 @@ mod tests {
 
         // BUG: When loading an old proto, the default_database will be empty string ""
         // This should fail if the bug exists
-        println!("Loaded map default_database: '{}'", loaded_map.default_database);
+        println!(
+            "Loaded map default_database: '{}'",
+            loaded_map.default_database
+        );
 
         // The bug manifests here: loading an old proto results in empty string for default_database
         // which might get replaced with DEFAULT_DATABASE_NAME ("local") somewhere
@@ -819,24 +808,17 @@ mod tests {
         );
 
         // Now test reconciliation - this is where the fix should be applied
-        let mock_client = MockOlapClient {
-            tables: vec![],
-        };
+        let mock_client = MockOlapClient { tables: vec![] };
 
         let target_table_names = HashSet::new();
-        let reconciled = reconcile_with_reality(
-            &project,
-            &loaded_map,
-            &target_table_names,
-            mock_client,
-        )
-        .await
-        .unwrap();
+        let reconciled =
+            reconcile_with_reality(&project, &loaded_map, &target_table_names, mock_client)
+                .await
+                .unwrap();
 
         // After reconciliation, the database name should be set from the project config
         assert_eq!(
-            reconciled.default_database,
-            CUSTOM_DB_NAME,
+            reconciled.default_database, CUSTOM_DB_NAME,
             "After reconciliation, custom database name should be set from project. Got: '{}'",
             reconciled.default_database
         );
@@ -859,25 +841,21 @@ mod tests {
 
         // BUG: This will use "local" instead of "my_custom_database"
         assert_eq!(
-            buggy_map.default_database,
-            "local",
+            buggy_map.default_database, "local",
             "BUG REPRODUCED: default() returns 'local' instead of project's db_name"
         );
         assert_ne!(
-            buggy_map.default_database,
-            CUSTOM_DB_NAME,
+            buggy_map.default_database, CUSTOM_DB_NAME,
             "Bug confirmed: custom database name is lost"
         );
 
         // CORRECT PATTERN: Create InfrastructureMap with project's config
         let loaded_map_correct: Option<InfrastructureMap> = None;
-        let correct_map = loaded_map_correct.unwrap_or_else(|| {
-            InfrastructureMap::empty_from_project(&project)
-        });
+        let correct_map =
+            loaded_map_correct.unwrap_or_else(|| InfrastructureMap::empty_from_project(&project));
 
         assert_eq!(
-            correct_map.default_database,
-            CUSTOM_DB_NAME,
+            correct_map.default_database, CUSTOM_DB_NAME,
             "Correct pattern: InfrastructureMap uses project's db_name"
         );
     }
@@ -898,8 +876,10 @@ mod tests {
         let infra_map = InfrastructureMap::new(&project, primitive_map);
 
         // Critical: default_database must be set from project config
-        assert_eq!(infra_map.default_database, CUSTOM_DB_NAME,
-            "default_database must use project's clickhouse_config.db_name, not hardcoded 'local'");
+        assert_eq!(
+            infra_map.default_database, CUSTOM_DB_NAME,
+            "default_database must use project's clickhouse_config.db_name, not hardcoded 'local'"
+        );
 
         // Note: Other fields may be populated based on project properties
         // (e.g., orchestration_workers is created based on project.language)
