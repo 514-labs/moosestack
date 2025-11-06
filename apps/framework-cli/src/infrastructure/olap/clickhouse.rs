@@ -1935,7 +1935,10 @@ impl OlapOperations for ConfiguredDBClient {
                 indexes,
                 database: Some(database),
                 table_ttl_setting,
-                cluster_name: None, // Cluster info not extracted from introspection
+                // cluster_name is always None from introspection because ClickHouse doesn't store
+                // the ON CLUSTER clause - it's only used during DDL execution and isn't persisted
+                // in system tables. Users must manually specify cluster in their table configs.
+                cluster_name: None,
             };
             debug!("Created table object: {:?}", table);
 
