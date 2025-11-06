@@ -347,15 +347,26 @@ pub async fn plan_changes(
     );
 
     // Use the reconciled map for diffing with ClickHouse-specific strategy
+    // Pass ignore_ops so the diff can normalize tables internally for comparison
+    // while using original tables for the actual change operations
     let clickhouse_strategy = ClickHouseTableDiffStrategy;
+    let ignore_ops: &[clickhouse::IgnorableOperation] = if project.is_production {
+        &project.migration_config.ignore_operations
+    } else {
+        &[]
+    };
+
+    let changes = reconciled_map.diff_with_table_strategy(
+        &target_infra_map,
+        &clickhouse_strategy,
+        true,
+        project.is_production,
+        ignore_ops,
+    );
+
     let plan = InfraPlan {
         target_infra_map: target_infra_map.clone(),
-        changes: reconciled_map.diff_with_table_strategy(
-            &target_infra_map,
-            &clickhouse_strategy,
-            true,
-            project.is_production,
-        ),
+        changes,
     };
 
     // Validate that OLAP is enabled if OLAP changes are required

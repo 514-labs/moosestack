@@ -9,7 +9,7 @@ use crate::framework::core::infrastructure::table::{
     Column, ColumnType, DataEnum, EnumValue, Table,
 };
 use crate::framework::core::infrastructure_map::{
-    ColumnChange, OlapChange, OrderByChange, TableChange, TableDiffStrategy,
+    ColumnChange, OlapChange, OrderByChange, PartitionByChange, TableChange, TableDiffStrategy,
 };
 use crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine;
 use std::collections::HashMap;
@@ -253,7 +253,7 @@ impl ClickHouseTableDiffStrategy {
 
 impl TableDiffStrategy for ClickHouseTableDiffStrategy {
     /// This function is only called when there are actual changes to the table
-    /// (column changes, ORDER BY changes, or deduplication changes).
+    /// (column changes, ORDER BY changes, PARTITION BY changes, or deduplication changes).
     /// It determines whether those changes can be handled via ALTER TABLE
     /// or require a drop+create operation.
     fn diff_table_update(
@@ -262,6 +262,7 @@ impl TableDiffStrategy for ClickHouseTableDiffStrategy {
         after: &Table,
         column_changes: Vec<ColumnChange>,
         order_by_change: OrderByChange,
+        partition_by_change: PartitionByChange,
         default_database: &str,
     ) -> Vec<OlapChange> {
         // Check if ORDER BY has changed
@@ -305,7 +306,8 @@ impl TableDiffStrategy for ClickHouseTableDiffStrategy {
         }
 
         // Check if PARTITION BY has changed
-        if before.partition_by != after.partition_by {
+        let partition_by_changed = partition_by_change.before != partition_by_change.after;
+        if partition_by_changed {
             log::warn!(
                 "ClickHouse: PARTITION BY changed for table '{}', requiring drop+create",
                 before.name
@@ -455,6 +457,7 @@ impl TableDiffStrategy for ClickHouseTableDiffStrategy {
                 name: before.name.clone(),
                 column_changes,
                 order_by_change,
+                partition_by_change,
                 before: before.clone(),
                 after: after.clone(),
             })]
@@ -536,7 +539,19 @@ mod tests {
             after: OrderBy::Fields(vec!["id".to_string(), "timestamp".to_string()]),
         };
 
-        let changes = strategy.diff_table_update(&before, &after, vec![], order_by_change, "local");
+        let partition_by_change = PartitionByChange {
+            before: None,
+            after: None,
+        };
+
+        let changes = strategy.diff_table_update(
+            &before,
+            &after,
+            vec![],
+            order_by_change,
+            partition_by_change,
+            "local",
+        );
 
         assert_eq!(changes.len(), 2);
         assert!(matches!(
@@ -561,7 +576,19 @@ mod tests {
             after: after.order_by.clone(),
         };
 
-        let changes = strategy.diff_table_update(&before, &after, vec![], order_by_change, "local");
+        let partition_by_change = PartitionByChange {
+            before: before.partition_by.clone(),
+            after: after.partition_by.clone(),
+        };
+
+        let changes = strategy.diff_table_update(
+            &before,
+            &after,
+            vec![],
+            order_by_change,
+            partition_by_change,
+            "local",
+        );
 
         assert_eq!(changes.len(), 2);
         assert!(matches!(
@@ -601,8 +628,19 @@ mod tests {
             after: after.order_by.clone(),
         };
 
-        let changes =
-            strategy.diff_table_update(&before, &after, column_changes, order_by_change, "local");
+        let partition_by_change = PartitionByChange {
+            before: before.partition_by.clone(),
+            after: after.partition_by.clone(),
+        };
+
+        let changes = strategy.diff_table_update(
+            &before,
+            &after,
+            column_changes,
+            order_by_change,
+            partition_by_change,
+            "local",
+        );
 
         assert_eq!(changes.len(), 1);
         assert!(matches!(
@@ -647,8 +685,19 @@ mod tests {
             after: OrderBy::Fields(vec!["id".to_string(), "timestamp".to_string()]),
         };
 
-        let changes =
-            strategy.diff_table_update(&before, &after, column_changes, order_by_change, "local");
+        let partition_by_change = PartitionByChange {
+            before: before.partition_by.clone(),
+            after: after.partition_by.clone(),
+        };
+
+        let changes = strategy.diff_table_update(
+            &before,
+            &after,
+            column_changes,
+            order_by_change,
+            partition_by_change,
+            "local",
+        );
 
         // With identical ORDER BY but column changes, should use ALTER (not drop+create)
         assert_eq!(changes.len(), 1);
@@ -681,8 +730,19 @@ mod tests {
             after: OrderBy::Fields(vec!["id".to_string(), "timestamp".to_string()]),
         };
 
-        let changes =
-            strategy.diff_table_update(&before, &after, column_changes, order_by_change, "local");
+        let partition_by_change = PartitionByChange {
+            before: before.partition_by.clone(),
+            after: after.partition_by.clone(),
+        };
+
+        let changes = strategy.diff_table_update(
+            &before,
+            &after,
+            column_changes,
+            order_by_change,
+            partition_by_change,
+            "local",
+        );
 
         // With no actual changes, should return empty vector
         assert_eq!(changes.len(), 0);
@@ -702,8 +762,19 @@ mod tests {
             after: OrderBy::Fields(vec!["timestamp".to_string()]),
         };
 
-        let changes =
-            strategy.diff_table_update(&before, &after, column_changes, order_by_change, "local");
+        let partition_by_change = PartitionByChange {
+            before: before.partition_by.clone(),
+            after: after.partition_by.clone(),
+        };
+
+        let changes = strategy.diff_table_update(
+            &before,
+            &after,
+            column_changes,
+            order_by_change,
+            partition_by_change,
+            "local",
+        );
 
         // Should still require drop+create even with no column changes
         assert_eq!(changes.len(), 2);
@@ -733,7 +804,19 @@ mod tests {
             after: after.order_by.clone(),
         };
 
-        let changes = strategy.diff_table_update(&before, &after, vec![], order_by_change, "local");
+        let partition_by_change = PartitionByChange {
+            before: before.partition_by.clone(),
+            after: after.partition_by.clone(),
+        };
+
+        let changes = strategy.diff_table_update(
+            &before,
+            &after,
+            vec![],
+            order_by_change,
+            partition_by_change,
+            "local",
+        );
 
         // SAMPLE BY change is handled via ALTER TABLE, expect an Updated change
         assert!(changes
@@ -757,12 +840,108 @@ mod tests {
             after: after.order_by.clone(),
         };
 
-        let changes = strategy.diff_table_update(&before, &after, vec![], order_by_change, "local");
+        let partition_by_change = PartitionByChange {
+            before: before.partition_by.clone(),
+            after: after.partition_by.clone(),
+        };
+
+        let changes = strategy.diff_table_update(
+            &before,
+            &after,
+            vec![],
+            order_by_change,
+            partition_by_change,
+            "local",
+        );
 
         // SAMPLE BY modification is handled via ALTER TABLE, expect an Updated change
         assert!(changes
             .iter()
             .any(|c| matches!(c, OlapChange::Table(TableChange::Updated { .. }))));
+    }
+
+    #[test]
+    fn test_partition_by_change_requires_drop_create() {
+        let strategy = ClickHouseTableDiffStrategy;
+
+        let mut before = create_test_table("test", vec!["id".to_string()], false);
+        let mut after = create_test_table("test", vec!["id".to_string()], false);
+
+        // Set different PARTITION BY values
+        before.partition_by = None;
+        after.partition_by = Some("toYYYYMM(timestamp)".to_string());
+
+        let order_by_change = OrderByChange {
+            before: before.order_by.clone(),
+            after: after.order_by.clone(),
+        };
+
+        let partition_by_change = PartitionByChange {
+            before: before.partition_by.clone(),
+            after: after.partition_by.clone(),
+        };
+
+        let changes = strategy.diff_table_update(
+            &before,
+            &after,
+            vec![],
+            order_by_change,
+            partition_by_change,
+            "local",
+        );
+
+        // PARTITION BY change requires drop+create
+        assert_eq!(changes.len(), 2);
+        assert!(matches!(
+            changes[0],
+            OlapChange::Table(TableChange::Removed(_))
+        ));
+        assert!(matches!(
+            changes[1],
+            OlapChange::Table(TableChange::Added(_))
+        ));
+    }
+
+    #[test]
+    fn test_partition_by_modification_requires_drop_create() {
+        let strategy = ClickHouseTableDiffStrategy;
+
+        let mut before = create_test_table("test", vec!["id".to_string()], false);
+        let mut after = create_test_table("test", vec!["id".to_string()], false);
+
+        // Change PARTITION BY from one expression to another
+        before.partition_by = Some("toYYYYMM(timestamp)".to_string());
+        after.partition_by = Some("toYYYYMMDD(timestamp)".to_string());
+
+        let order_by_change = OrderByChange {
+            before: before.order_by.clone(),
+            after: after.order_by.clone(),
+        };
+
+        let partition_by_change = PartitionByChange {
+            before: before.partition_by.clone(),
+            after: after.partition_by.clone(),
+        };
+
+        let changes = strategy.diff_table_update(
+            &before,
+            &after,
+            vec![],
+            order_by_change,
+            partition_by_change,
+            "local",
+        );
+
+        // PARTITION BY modification requires drop+create
+        assert_eq!(changes.len(), 2);
+        assert!(matches!(
+            changes[0],
+            OlapChange::Table(TableChange::Removed(_))
+        ));
+        assert!(matches!(
+            changes[1],
+            OlapChange::Table(TableChange::Added(_))
+        ));
     }
 
     #[test]
@@ -781,7 +960,19 @@ mod tests {
             after: after.order_by.clone(),
         };
 
-        let changes = strategy.diff_table_update(&before, &after, vec![], order_by_change, "local");
+        let partition_by_change = PartitionByChange {
+            before: before.partition_by.clone(),
+            after: after.partition_by.clone(),
+        };
+
+        let changes = strategy.diff_table_update(
+            &before,
+            &after,
+            vec![],
+            order_by_change,
+            partition_by_change,
+            "local",
+        );
 
         // Should return exactly one ValidationError
         assert_eq!(changes.len(), 1);
@@ -822,7 +1013,19 @@ mod tests {
             after: after.order_by.clone(),
         };
 
-        let changes = strategy.diff_table_update(&before, &after, vec![], order_by_change, "local");
+        let partition_by_change = PartitionByChange {
+            before: before.partition_by.clone(),
+            after: after.partition_by.clone(),
+        };
+
+        let changes = strategy.diff_table_update(
+            &before,
+            &after,
+            vec![],
+            order_by_change,
+            partition_by_change,
+            "local",
+        );
 
         // Should return exactly one ValidationError
         assert_eq!(changes.len(), 1);
