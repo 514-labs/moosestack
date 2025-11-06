@@ -472,17 +472,11 @@ impl TableDiffStrategy for ClickHouseTableDiffStrategy {
             })];
         }
 
-        // Check if cluster has changed
-        if before.cluster_name != after.cluster_name {
-            log::warn!(
-                "ClickHouse: cluster changed for table '{}' (from {:?} to {:?}), requiring drop+create",
-                before.name, before.cluster_name, after.cluster_name
-            );
-            return vec![
-                OlapChange::Table(TableChange::Removed(before.clone())),
-                OlapChange::Table(TableChange::Added(after.clone())),
-            ];
-        }
+        // Note: cluster_name changes are intentionally NOT treated as requiring drop+create.
+        // cluster_name is a deployment directive (how to run DDL) rather than a schema property
+        // (what the table looks like). When cluster_name changes, future DDL operations will
+        // automatically use the new cluster_name via the ON CLUSTER clause, but the table
+        // itself doesn't need to be recreated.
 
         // Check if PARTITION BY has changed
         let partition_by_changed = partition_by_change.before != partition_by_change.after;
@@ -1654,16 +1648,9 @@ mod tests {
 
         let changes = strategy.diff_table_update(&before, &after, vec![], order_by_change, "local");
 
-        // Should return DROP + CREATE (like ORDER BY changes)
-        assert_eq!(changes.len(), 2);
-        assert!(matches!(
-            changes[0],
-            OlapChange::Table(TableChange::Removed(_))
-        ));
-        assert!(matches!(
-            changes[1],
-            OlapChange::Table(TableChange::Added(_))
-        ));
+        // cluster_name is a deployment directive, not a schema property
+        // Changing it should not trigger any operations
+        assert_eq!(changes.len(), 0);
     }
 
     #[test]
@@ -1684,16 +1671,9 @@ mod tests {
 
         let changes = strategy.diff_table_update(&before, &after, vec![], order_by_change, "local");
 
-        // Should return DROP + CREATE (like ORDER BY changes)
-        assert_eq!(changes.len(), 2);
-        assert!(matches!(
-            changes[0],
-            OlapChange::Table(TableChange::Removed(_))
-        ));
-        assert!(matches!(
-            changes[1],
-            OlapChange::Table(TableChange::Added(_))
-        ));
+        // cluster_name is a deployment directive, not a schema property
+        // Changing it should not trigger any operations
+        assert_eq!(changes.len(), 0);
     }
 
     #[test]
@@ -1714,16 +1694,9 @@ mod tests {
 
         let changes = strategy.diff_table_update(&before, &after, vec![], order_by_change, "local");
 
-        // Should return DROP + CREATE (like ORDER BY changes)
-        assert_eq!(changes.len(), 2);
-        assert!(matches!(
-            changes[0],
-            OlapChange::Table(TableChange::Removed(_))
-        ));
-        assert!(matches!(
-            changes[1],
-            OlapChange::Table(TableChange::Added(_))
-        ));
+        // cluster_name is a deployment directive, not a schema property
+        // Changing it should not trigger any operations
+        assert_eq!(changes.len(), 0);
     }
 
     #[test]
