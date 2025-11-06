@@ -411,6 +411,17 @@ const handleStringType = (
   fieldName: string,
   annotations: [string, any][],
 ): string => {
+  // Check for FixedString(N) annotation
+  const fixedStringSizeSymbol = getPropertyDeep(t, "_clickhouse_fixed_string_size");
+  if (fixedStringSizeSymbol !== undefined) {
+    const sizeType = checker.getNonNullableType(
+      checker.getTypeOfSymbol(fixedStringSizeSymbol),
+    );
+    if (sizeType.isNumberLiteral()) {
+      return `FixedString(${sizeType.value})`;
+    }
+  }
+
   const tagSymbol = t.getProperty("typia.tag");
   if (tagSymbol === undefined) {
     if (t.isUnion() && t.types.every((v) => v.isStringLiteral())) {

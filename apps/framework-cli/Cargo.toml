@@ -27,7 +27,7 @@ toml = "0.5.8"
 serde = { version = "1.0", features = ["derive"] }
 config = { version = "0.13.1", features = ["toml"] }
 home = "0.5.5"
-clickhouse = { version = "0.11.5", features = ["uuid"] }
+clickhouse = { version = "0.14.0", features = ["uuid", "native-tls"] }
 clickhouse-rs = { version = "1.1.0-alpha.1", features = ["tls"] }
 handlebars = "5.1"
 rdkafka = { version = "0.38", features = ["ssl"] }
@@ -120,7 +120,7 @@ percent-encoding = "2.3.2"
 dotenvy = "0.15"
 
 [dev-dependencies]
-clickhouse = { version = "0.11.5", features = ["uuid", "test-util"] }
+clickhouse = { version = "0.14.0", features = ["uuid", "test-util"] }
 assert_cmd = "2.0.12"
 assert_fs = "1.0.13"
 predicates = "3.0.4"

@@ -627,6 +627,9 @@ pub enum FloatType {
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub enum ColumnType {
     String,
+    FixedString {
+        length: u64,
+    },
     Boolean,
     Int(IntType),
     BigInt,
@@ -674,6 +677,7 @@ impl fmt::Display for ColumnType {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             ColumnType::String => write!(f, "String"),
+            ColumnType::FixedString { length } => write!(f, "FixedString({length})"),
             ColumnType::Boolean => write!(f, "Boolean"),
             ColumnType::Int(int_type) => int_type.fmt(f),
             ColumnType::BigInt => write!(f, "BigInt"),
@@ -731,6 +735,9 @@ impl Serialize for ColumnType {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         match self {
             ColumnType::String => serializer.serialize_str("String"),
+            ColumnType::FixedString { length } => {
+                serializer.serialize_str(&format!("FixedString({length})"))
+            }
             ColumnType::Boolean => serializer.serialize_str("Boolean"),
             ColumnType::Int(int_type) => serializer.serialize_str(&format!("{int_type:?}")),
             ColumnType::BigInt => serializer.serialize_str("BigInt"),
@@ -843,6 +850,13 @@ impl<'de> Visitor<'de> for ColumnTypeVisitor {
     {
         let t = if v == "String" {
             ColumnType::String
+        } else if v.starts_with("FixedString(") {
+            let length = v
+                .strip_prefix("FixedString(")
+                .and_then(|s| s.strip_suffix(")"))
+                .and_then(|s| s.trim().parse::<u64>().ok())
+                .ok_or_else(|| E::custom(format!("Invalid FixedString length: {v}")))?;
+            ColumnType::FixedString { length }
         } else if v == "Boolean" {
             ColumnType::Boolean
         } else if v == "Int" {
@@ -1129,6 +1143,9 @@ impl ColumnType {
     pub fn to_proto(&self) -> ProtoColumnType {
         let t = match self {
             ColumnType::String => column_type::T::Simple(SimpleColumnType::STRING.into()),
+            ColumnType::FixedString { .. } => {
+                column_type::T::Simple(SimpleColumnType::STRING.into())
+            }
             ColumnType::Boolean => column_type::T::Simple(SimpleColumnType::BOOLEAN.into()),
             ColumnType::Int(int_type) => column_type::T::Int(
                 (match int_type {

@@ -3,9 +3,11 @@
   "version": "0.0.1",
   "dependencies": {
     "mixpanel": "^0.18.0",
-    "next": "14.2.32",
-    "react": "^18",
-    "react-dom": "^18"
+    "next": "^16.0.1"
+  },
+  "peerDependencies": {
+    "react": "^18.0.0 || ^19.0.0",
+    "react-dom": "^18.0.0 || ^19.0.0"
   },
   "exports": {
     "./client-event": "./events/sendClientEvent.ts",
@@ -14,6 +16,8 @@
     "./event-library": "./events/eventLibrary.ts"
   },
   "devDependencies": {
-    "@types/react": "^18.2.74"
+    "@types/react": "^19.0.1",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
   }
 }
