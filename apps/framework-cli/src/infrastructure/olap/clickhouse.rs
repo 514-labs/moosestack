@@ -1765,7 +1765,14 @@ impl OlapOperations for ConfiguredDBClient {
                 engine_params_hash,
                 table_settings,
                 indexes,
-                database: Some(database),
+                // Only set database if it differs from the query database (db_name)
+                // This ensures consistency with user-created tables which have database: None
+                // when using the default database
+                database: if database == db_name {
+                    None
+                } else {
+                    Some(database)
+                },
                 table_ttl_setting,
             };
             debug!("Created table object: {:?}", table);
