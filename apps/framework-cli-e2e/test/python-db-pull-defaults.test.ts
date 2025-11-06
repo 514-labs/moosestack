@@ -39,7 +39,10 @@ import {
 const execAsync = promisify(require("child_process").exec);
 
 const CLI_PATH = path.resolve(__dirname, "../../../target/debug/moose-cli");
-const MOOSE_PY_LIB_PATH = path.resolve(__dirname, "../../../packages/py-moose-lib");
+const MOOSE_PY_LIB_PATH = path.resolve(
+  __dirname,
+  "../../../packages/py-moose-lib",
+);
 const CLICKHOUSE_URL = `http://${CLICKHOUSE_CONFIG.username}:${CLICKHOUSE_CONFIG.password}@localhost:18123?database=${CLICKHOUSE_CONFIG.database}`;
 
 describe("Python db-pull with SQL function defaults (ENG-1162)", () => {
