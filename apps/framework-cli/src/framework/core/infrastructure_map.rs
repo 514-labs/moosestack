@@ -1749,8 +1749,10 @@ impl InfrastructureMap {
                         // Detect engine change (e.g., MergeTree -> ReplacingMergeTree)
                         let engine_changed = table.engine != target_table.engine;
 
-                        // Detect cluster name change
-                        let cluster_changed = table.cluster_name != target_table.cluster_name;
+                        // Note: We intentionally do NOT check for cluster_name changes here.
+                        // cluster_name is a deployment directive (how to run DDL), not a schema property.
+                        // The inframap will be updated with the new cluster_name value, and future DDL
+                        // operations will use it, but changing cluster_name doesn't trigger operations.
 
                         let order_by_change = if order_by_changed {
                             OrderByChange {
@@ -1792,11 +1794,11 @@ impl InfrastructureMap {
                         // since ClickHouse requires the full column definition when modifying TTL
 
                         // Only process changes if there are actual differences to report
+                        // Note: cluster_name changes are intentionally excluded - they don't trigger operations
                         if !column_changes.is_empty()
                             || order_by_changed
                             || engine_changed
                             || indexes_changed
-                            || cluster_changed
                         {
                             // Use the strategy to determine the appropriate changes
                             let strategy_changes = strategy.diff_table_update(
