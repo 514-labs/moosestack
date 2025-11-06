@@ -24,6 +24,7 @@ import { FileTreeFolder, FileTreeFile } from "@/components/mdx/file-tree";
 import { CodeEditor } from "@/components/ui/shadcn-io/code-editor";
 import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { Badge } from "@/components/ui/badge";
 import {
   IconTerminal,
   IconFileCode,
@@ -109,6 +110,7 @@ export async function MDXRenderer({ source }: MDXRendererProps) {
     TabsList,
     TabsTrigger,
     TabsContent,
+    Badge,
     Terminal: IconTerminal,
     FileCode: IconFileCode,
     SourceCodeLink,
