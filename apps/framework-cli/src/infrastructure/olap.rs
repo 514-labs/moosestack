@@ -56,6 +56,12 @@ pub trait OlapOperations {
 
 /// This method dispatches the execution of the changes to the right olap storage.
 /// When we have multiple storages (DuckDB, ...) this is where it goes.
+///
+/// # Note on Filtering
+/// Filtering based on `migration_config.ignore_operations` happens BEFORE this function
+/// is called, during the diff computation in `plan_changes()`. Tables are normalized
+/// before diffing to prevent ignored fields (like partition_by, TTL) from triggering
+/// unnecessary drop+create operations.
 pub async fn execute_changes(
     project: &Project,
     changes: &[OlapChange],
@@ -67,4 +73,12 @@ pub async fn execute_changes(
     // Execute the ordered changes
     clickhouse::execute_changes(project, &teardown_plan, &setup_plan).await?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    // Filtering logic is tested in:
+    // - framework/core/migration_plan.rs for operation-level filtering
+    // - framework/core/plan.rs integration with normalize_table_for_diff
+    // - integration tests for end-to-end validation
 }

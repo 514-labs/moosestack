@@ -39,11 +39,11 @@ use crate::framework::versions::Version;
 use crate::metrics::Metrics;
 use crate::utilities::auth::{get_claims, validate_jwt};
 
-use crate::infrastructure::stream::kafka;
-use crate::infrastructure::stream::kafka::models::ConfiguredProducer;
-
 use crate::framework::core::infrastructure::topic::{KafkaSchemaKind, SchemaRegistryReference};
 use crate::framework::typescript::bin::CliMessage;
+use crate::infrastructure::olap::clickhouse;
+use crate::infrastructure::stream::kafka;
+use crate::infrastructure::stream::kafka::models::ConfiguredProducer;
 use crate::project::{JwtConfig, Project};
 use crate::utilities::docker::DockerClient;
 use bytes::Buf;
@@ -850,9 +850,7 @@ async fn health_route(
 
     // Check ClickHouse connectivity only if OLAP is enabled
     if project.features.olap {
-        let olap_client = crate::infrastructure::olap::clickhouse::create_client(
-            project.clickhouse_config.clone(),
-        );
+        let olap_client = clickhouse::create_client(project.clickhouse_config.clone());
         match olap_client.client.query("SELECT 1").execute().await {
             Ok(_) => healthy.push("ClickHouse"),
             Err(e) => {
@@ -910,10 +908,8 @@ async fn ready_route(
 
     // ClickHouse: run a small query using the configured client (ensures HTTP pool is ready)
     if project.features.olap {
-        let ch = crate::infrastructure::olap::clickhouse::create_client(
-            project.clickhouse_config.clone(),
-        );
-        match crate::infrastructure::olap::clickhouse::check_ready(&ch).await {
+        let ch = clickhouse::create_client(project.clickhouse_config.clone());
+        match clickhouse::check_ready(&ch).await {
             Ok(_) => healthy.push("ClickHouse"),
             Err(e) => {
                 warn!("Ready check: ClickHouse not ready: {}", e);
@@ -986,7 +982,7 @@ async fn admin_reality_check_route(
     // Load infrastructure map from Redis
     let infra_map = match InfrastructureMap::load_from_redis(redis_client).await {
         Ok(Some(map)) => map,
-        Ok(None) => InfrastructureMap::default(),
+        Ok(None) => InfrastructureMap::empty_from_project(project),
         Err(e) => {
             return Response::builder()
                 .status(StatusCode::INTERNAL_SERVER_ERROR)
@@ -999,9 +995,7 @@ async fn admin_reality_check_route(
     // Perform reality check (storage is guaranteed to be enabled at this point)
     let discrepancies = {
         // Create OLAP client and reality checker
-        let olap_client = crate::infrastructure::olap::clickhouse::create_client(
-            project.clickhouse_config.clone(),
-        );
+        let olap_client = clickhouse::create_client(project.clickhouse_config.clone());
         let reality_checker =
             crate::framework::core::infra_reality_checker::InfraRealityChecker::new(olap_client);
 
@@ -3119,14 +3113,13 @@ async fn admin_integrate_changes_route(
     }
 
     // Get reality check
-    let olap_client =
-        crate::infrastructure::olap::clickhouse::create_client(project.clickhouse_config.clone());
+    let olap_client = clickhouse::create_client(project.clickhouse_config.clone());
     let reality_checker =
         crate::framework::core::infra_reality_checker::InfraRealityChecker::new(olap_client);
 
     let mut infra_map = match InfrastructureMap::load_from_redis(redis_client).await {
         Ok(Some(infra_map)) => infra_map,
-        Ok(None) => InfrastructureMap::default(),
+        Ok(None) => InfrastructureMap::empty_from_project(project),
         Err(e) => {
             return IntegrationError::InternalError(format!(
                 "Failed to load infrastructure map: {e}"
@@ -3243,7 +3236,7 @@ async fn get_admin_reconciled_inframap(
     // Load current map from state storage (these are the tables under Moose management)
     let current_map = match state_storage.load_infrastructure_map().await {
         Ok(Some(infra_map)) => infra_map,
-        Ok(None) => InfrastructureMap::default(),
+        Ok(None) => InfrastructureMap::empty_from_project(project),
         Err(e) => {
             return Err(crate::framework::core::plan::PlanningError::Other(
                 anyhow::anyhow!("Failed to load infrastructure map from state storage: {e}"),
@@ -3352,13 +3345,18 @@ async fn admin_plan_route(
 
     // Calculate the changes between the submitted infrastructure map and the current one
     // Use ClickHouse-specific strategy for table diffing
-    let clickhouse_strategy =
-        crate::infrastructure::olap::clickhouse::diff_strategy::ClickHouseTableDiffStrategy;
+    let clickhouse_strategy = clickhouse::diff_strategy::ClickHouseTableDiffStrategy;
+    let ignore_ops: &[clickhouse::IgnorableOperation] = if project.is_production {
+        &project.migration_config.ignore_operations
+    } else {
+        &[]
+    };
     let changes = current_infra_map.diff_with_table_strategy(
         &plan_request.infra_map,
         &clickhouse_strategy,
         true,
         project.is_production,
+        ignore_ops,
     );
 
     // Prepare the response

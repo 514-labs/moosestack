@@ -13,8 +13,6 @@
 ///
 /// The resulting plan is then used by the execution module to apply the changes.
 use crate::framework::core::infra_reality_checker::{InfraRealityChecker, RealityCheckError};
-use crate::framework::core::infrastructure::consumption_webserver::ConsumptionApiWebServer;
-use crate::framework::core::infrastructure::olap_process::OlapProcess;
 use crate::framework::core::infrastructure_map::{
     InfraChanges, InfrastructureMap, OlapChange, TableChange,
 };
@@ -312,22 +310,8 @@ pub async fn plan_changes(
             .unwrap_or("Could not serialize current infrastructure map".to_string())
     );
 
-    let current_map_or_empty = current_infra_map.unwrap_or_else(|| InfrastructureMap {
-        default_database: project.clickhouse_config.db_name.clone(),
-        topics: Default::default(),
-        api_endpoints: Default::default(),
-        tables: Default::default(),
-        views: Default::default(),
-        topic_to_table_sync_processes: Default::default(),
-        topic_to_topic_sync_processes: Default::default(),
-        function_processes: Default::default(),
-        block_db_processes: OlapProcess {},
-        consumption_api_web_server: ConsumptionApiWebServer {},
-        orchestration_workers: Default::default(),
-        sql_resources: Default::default(),
-        workflows: Default::default(),
-        web_apps: Default::default(),
-    });
+    let current_map_or_empty =
+        current_infra_map.unwrap_or_else(|| InfrastructureMap::empty_from_project(project));
 
     // Reconcile the current map with reality before diffing, but only if OLAP is enabled
     let reconciled_map = if project.features.olap {
@@ -357,15 +341,26 @@ pub async fn plan_changes(
     );
 
     // Use the reconciled map for diffing with ClickHouse-specific strategy
+    // Pass ignore_ops so the diff can normalize tables internally for comparison
+    // while using original tables for the actual change operations
     let clickhouse_strategy = ClickHouseTableDiffStrategy;
+    let ignore_ops: &[clickhouse::IgnorableOperation] = if project.is_production {
+        &project.migration_config.ignore_operations
+    } else {
+        &[]
+    };
+
+    let changes = reconciled_map.diff_with_table_strategy(
+        &target_infra_map,
+        &clickhouse_strategy,
+        true,
+        project.is_production,
+        ignore_ops,
+    );
+
     let plan = InfraPlan {
         target_infra_map: target_infra_map.clone(),
-        changes: reconciled_map.diff_with_table_strategy(
-            &target_infra_map,
-            &clickhouse_strategy,
-            true,
-            project.is_production,
-        ),
+        changes,
     };
 
     // Validate that OLAP is enabled if OLAP changes are required
@@ -402,6 +397,7 @@ mod tests {
     use crate::infrastructure::olap::OlapChangesError;
     use crate::infrastructure::olap::OlapOperations;
     use async_trait::async_trait;
+    use protobuf::Message;
 
     // Mock OLAP client for testing
     struct MockOlapClient {
@@ -742,5 +738,173 @@ mod tests {
             .any(|t| t.name == "unchanged_table"));
         // Compare the tables to ensure they are identical
         assert_eq!(reconciled.tables.values().next().unwrap(), &table);
+    }
+
+    #[tokio::test]
+    async fn test_custom_database_name_preserved_on_first_migration() {
+        // This test reproduces ENG-1160: custom database name should be preserved
+        // on first migration when no prior state exists
+
+        const CUSTOM_DB_NAME: &str = "my_custom_database";
+
+        // Create a project with a CUSTOM database name (not "local")
+        let mut project = create_test_project();
+        project.clickhouse_config.db_name = CUSTOM_DB_NAME.to_string();
+
+        // Create an infrastructure map as if it's the target map
+        // (this simulates what InfrastructureMap::new would create)
+        let mut target_map = InfrastructureMap {
+            default_database: CUSTOM_DB_NAME.to_string(),
+            ..Default::default()
+        };
+
+        // Add a test table to make it realistic
+        let table = create_test_table("test_table");
+        target_map.tables.insert(table.id(CUSTOM_DB_NAME), table);
+
+        // Simulate storing to Redis (serialize to protobuf)
+        let proto_bytes = target_map.to_proto().write_to_bytes().unwrap();
+
+        // Simulate loading from Redis (deserialize from protobuf)
+        let loaded_map = InfrastructureMap::from_proto(proto_bytes).unwrap();
+
+        // ASSERTION: The custom database name should be preserved after round-trip
+        assert_eq!(
+            loaded_map.default_database, CUSTOM_DB_NAME,
+            "Custom database name '{}' was not preserved after serialization round-trip. Got: '{}'",
+            CUSTOM_DB_NAME, loaded_map.default_database
+        );
+
+        // Also verify that reconciliation preserves the database name
+        let mock_client = MockOlapClient { tables: vec![] };
+
+        let target_table_names = HashSet::new();
+        let reconciled =
+            reconcile_with_reality(&project, &loaded_map, &target_table_names, mock_client)
+                .await
+                .unwrap();
+
+        assert_eq!(
+            reconciled.default_database, CUSTOM_DB_NAME,
+            "Custom database name '{}' was not preserved after reconciliation. Got: '{}'",
+            CUSTOM_DB_NAME, reconciled.default_database
+        );
+    }
+
+    #[tokio::test]
+    async fn test_loading_old_proto_without_default_database_field() {
+        // This test simulates loading an infrastructure map from an old proto
+        // that was serialized before the default_database field was added (field #15)
+
+        const CUSTOM_DB_NAME: &str = "my_custom_database";
+
+        // Create a project with a CUSTOM database name
+        let mut project = create_test_project();
+        project.clickhouse_config.db_name = CUSTOM_DB_NAME.to_string();
+
+        // Manually create a proto WITHOUT the default_database field
+        // by creating an empty proto (which won't have default_database set)
+        use crate::proto::infrastructure_map::InfrastructureMap as ProtoInfrastructureMap;
+        let old_proto = ProtoInfrastructureMap::new();
+        // Note: NOT setting old_proto.default_database - simulates old proto
+
+        let proto_bytes = old_proto.write_to_bytes().unwrap();
+
+        // Load it back
+        let loaded_map = InfrastructureMap::from_proto(proto_bytes).unwrap();
+
+        // BUG: When loading an old proto, the default_database will be empty string ""
+        // This should fail if the bug exists
+        println!(
+            "Loaded map default_database: '{}'",
+            loaded_map.default_database
+        );
+
+        // The bug manifests here: loading an old proto results in empty string for default_database
+        // which might get replaced with DEFAULT_DATABASE_NAME ("local") somewhere
+        assert_eq!(
+            loaded_map.default_database, "",
+            "Old proto should have empty default_database, got: '{}'",
+            loaded_map.default_database
+        );
+
+        // Now test reconciliation - this is where the fix should be applied
+        let mock_client = MockOlapClient { tables: vec![] };
+
+        let target_table_names = HashSet::new();
+        let reconciled =
+            reconcile_with_reality(&project, &loaded_map, &target_table_names, mock_client)
+                .await
+                .unwrap();
+
+        // After reconciliation, the database name should be set from the project config
+        assert_eq!(
+            reconciled.default_database, CUSTOM_DB_NAME,
+            "After reconciliation, custom database name should be set from project. Got: '{}'",
+            reconciled.default_database
+        );
+    }
+
+    #[tokio::test]
+    #[allow(clippy::unnecessary_literal_unwrap)] // Test intentionally demonstrates buggy pattern
+    async fn test_bug_eng_1160_default_overwrites_custom_db_name() {
+        // This test demonstrates the actual bug pattern found in local_webserver.rs
+        // where `Ok(None) => InfrastructureMap::default()` is used instead of
+        // creating an InfrastructureMap with the project's db_name.
+
+        const CUSTOM_DB_NAME: &str = "my_custom_database";
+        let mut project = create_test_project();
+        project.clickhouse_config.db_name = CUSTOM_DB_NAME.to_string();
+
+        // Simulate the buggy pattern: when no state exists, use default()
+        let loaded_map_buggy: Option<InfrastructureMap> = None;
+        let buggy_map = loaded_map_buggy.unwrap_or_default();
+
+        // BUG: This will use "local" instead of "my_custom_database"
+        assert_eq!(
+            buggy_map.default_database, "local",
+            "BUG REPRODUCED: default() returns 'local' instead of project's db_name"
+        );
+        assert_ne!(
+            buggy_map.default_database, CUSTOM_DB_NAME,
+            "Bug confirmed: custom database name is lost"
+        );
+
+        // CORRECT PATTERN: Create InfrastructureMap with project's config
+        let loaded_map_correct: Option<InfrastructureMap> = None;
+        let correct_map =
+            loaded_map_correct.unwrap_or_else(|| InfrastructureMap::empty_from_project(&project));
+
+        assert_eq!(
+            correct_map.default_database, CUSTOM_DB_NAME,
+            "Correct pattern: InfrastructureMap uses project's db_name"
+        );
+    }
+
+    #[test]
+    fn test_only_default_database_field_is_config_driven() {
+        // Verify that default_database is the ONLY field in InfrastructureMap
+        // that comes directly from project clickhouse_config.db_name.
+        // This is the critical field for ENG-1160: when InfrastructureMap::default()
+        // is used instead of InfrastructureMap::new(), default_database gets "local"
+        // instead of the project's configured database name.
+
+        const CUSTOM_DB_NAME: &str = "custom_db";
+        let mut project = create_test_project();
+        project.clickhouse_config.db_name = CUSTOM_DB_NAME.to_string();
+
+        let primitive_map = PrimitiveMap::default();
+        let infra_map = InfrastructureMap::new(&project, primitive_map);
+
+        // Critical: default_database must be set from project config
+        assert_eq!(
+            infra_map.default_database, CUSTOM_DB_NAME,
+            "default_database must use project's clickhouse_config.db_name, not hardcoded 'local'"
+        );
+
+        // Note: Other fields may be populated based on project properties
+        // (e.g., orchestration_workers is created based on project.language)
+        // but they don't directly use clickhouse_config.db_name.
+        // The bug in ENG-1160 is specifically about default_database being hardcoded to "local".
     }
 }
