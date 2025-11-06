@@ -982,7 +982,7 @@ async fn admin_reality_check_route(
     // Load infrastructure map from Redis
     let infra_map = match InfrastructureMap::load_from_redis(redis_client).await {
         Ok(Some(map)) => map,
-        Ok(None) => InfrastructureMap::default(),
+        Ok(None) => InfrastructureMap::empty_from_project(project),
         Err(e) => {
             return Response::builder()
                 .status(StatusCode::INTERNAL_SERVER_ERROR)
@@ -3119,7 +3119,7 @@ async fn admin_integrate_changes_route(
 
     let mut infra_map = match InfrastructureMap::load_from_redis(redis_client).await {
         Ok(Some(infra_map)) => infra_map,
-        Ok(None) => InfrastructureMap::default(),
+        Ok(None) => InfrastructureMap::empty_from_project(project),
         Err(e) => {
             return IntegrationError::InternalError(format!(
                 "Failed to load infrastructure map: {e}"
@@ -3236,7 +3236,7 @@ async fn get_admin_reconciled_inframap(
     // Load current map from state storage (these are the tables under Moose management)
     let current_map = match state_storage.load_infrastructure_map().await {
         Ok(Some(infra_map)) => infra_map,
-        Ok(None) => InfrastructureMap::default(),
+        Ok(None) => InfrastructureMap::empty_from_project(project),
         Err(e) => {
             return Err(crate::framework::core::plan::PlanningError::Other(
                 anyhow::anyhow!("Failed to load infrastructure map from state storage: {e}"),

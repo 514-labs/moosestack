@@ -465,7 +465,7 @@ pub async fn execute_migration(
                     e,
                 )
             })?
-            .unwrap_or_default();
+            .unwrap_or_else(|| InfrastructureMap::empty_from_project(project));
 
         let current_infra_map = if project.features.olap {
             use crate::framework::core::plan::reconcile_with_reality;

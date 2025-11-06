@@ -1204,7 +1204,7 @@ async fn get_remote_inframap_serverless(
     let remote_infra_map = state_storage
         .load_infrastructure_map()
         .await?
-        .unwrap_or_default();
+        .unwrap_or_else(|| InfrastructureMap::empty_from_project(project));
 
     // Reconcile with actual database state to detect manual changes
     let reconciled_infra_map = if project.features.olap {
