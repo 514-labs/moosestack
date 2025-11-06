@@ -2887,6 +2887,7 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
             table_settings: None,
             indexes: vec![],
             database: None,
+            cluster_name: None,
             table_ttl_setting: Some("created_at + INTERVAL 30 DAY".to_string()),
         };
 
@@ -2952,6 +2953,7 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
             table_settings: None,
             indexes: vec![],
             database: None,
+            cluster_name: None,
             table_ttl_setting: Some("created_at + INTERVAL 30 DAY".to_string()),
         };
 
