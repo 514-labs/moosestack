@@ -212,7 +212,14 @@ describe("python template tests - db-pull with SQL function defaults", () => {
 
     const { stdout: planOutput } = await execAsync(
       `"${CLI_PATH}" generate migration --clickhouse-url "${CLICKHOUSE_URL}" --redis-url "redis://127.0.0.1:6379" --save`,
-      { cwd: testProjectDir },
+      {
+        cwd: testProjectDir,
+        env: {
+          ...process.env,
+          VIRTUAL_ENV: path.join(testProjectDir, ".venv"),
+          PATH: `${path.join(testProjectDir, ".venv", "bin")}:${process.env.PATH}`,
+        },
+      },
     );
 
     console.log("Migration plan output:", planOutput);
@@ -226,7 +233,14 @@ describe("python template tests - db-pull with SQL function defaults", () => {
     try {
       const { stdout: migrateOutput } = await execAsync(
         `"${CLI_PATH}" migrate --clickhouse-url "${CLICKHOUSE_URL}"`,
-        { cwd: testProjectDir },
+        {
+          cwd: testProjectDir,
+          env: {
+            ...process.env,
+            VIRTUAL_ENV: path.join(testProjectDir, ".venv"),
+            PATH: `${path.join(testProjectDir, ".venv", "bin")}:${process.env.PATH}`,
+          },
+        },
       );
       console.log("Migration output:", migrateOutput);
       console.log("✓ Migration applied successfully (bug is fixed!)");
@@ -516,7 +530,14 @@ describe("typescript template tests - db-pull with SQL function defaults", () =>
 
     const { stdout: planOutput } = await execAsync(
       `"${CLI_PATH}" generate migration --clickhouse-url "${CLICKHOUSE_URL}" --redis-url "redis://127.0.0.1:6379" --save`,
-      { cwd: testProjectDir },
+      {
+        cwd: testProjectDir,
+        env: {
+          ...process.env,
+          VIRTUAL_ENV: path.join(testProjectDir, ".venv"),
+          PATH: `${path.join(testProjectDir, ".venv", "bin")}:${process.env.PATH}`,
+        },
+      },
     );
 
     console.log("Migration plan output:", planOutput);
@@ -530,7 +551,14 @@ describe("typescript template tests - db-pull with SQL function defaults", () =>
     try {
       const { stdout: migrateOutput } = await execAsync(
         `"${CLI_PATH}" migrate --clickhouse-url "${CLICKHOUSE_URL}"`,
-        { cwd: testProjectDir },
+        {
+          cwd: testProjectDir,
+          env: {
+            ...process.env,
+            VIRTUAL_ENV: path.join(testProjectDir, ".venv"),
+            PATH: `${path.join(testProjectDir, ".venv", "bin")}:${process.env.PATH}`,
+          },
+        },
       );
       console.log("Migration output:", migrateOutput);
       console.log("✓ Migration applied successfully (bug is fixed!)");
