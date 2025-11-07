@@ -341,7 +341,7 @@ const handleNumberType = (
 
   const tagSymbol = t.getProperty("typia.tag");
   if (tagSymbol === undefined) {
-    return "Float";
+    return "Float64";
   } else {
     const typiaProps = checker.getNonNullableType(
       checker.getTypeOfSymbol(tagSymbol),
@@ -385,7 +385,7 @@ const handleNumberType = (
       }
     }
 
-    return "Float";
+    return "Float64";
   }
 };
 
@@ -412,7 +412,10 @@ const handleStringType = (
   annotations: [string, any][],
 ): string => {
   // Check for FixedString(N) annotation
-  const fixedStringSizeSymbol = getPropertyDeep(t, "_clickhouse_fixed_string_size");
+  const fixedStringSizeSymbol = getPropertyDeep(
+    t,
+    "_clickhouse_fixed_string_size",
+  );
   if (fixedStringSizeSymbol !== undefined) {
     const sizeType = checker.getNonNullableType(
       checker.getTypeOfSymbol(fixedStringSizeSymbol),

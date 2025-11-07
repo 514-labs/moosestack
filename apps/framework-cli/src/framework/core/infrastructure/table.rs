@@ -115,7 +115,10 @@ impl<T> JsonOptions<T> {
             parts.push(format!("SKIP {}", path));
         }
         for re in &self.skip_regexps {
-            parts.push(format!("SKIP REGEXP '{}'", re.replace('\'', "\\'")));
+            let escaped = format!("{:?}", re);
+            assert!(escaped.starts_with('\"'));
+            assert!(escaped.ends_with('\"'));
+            parts.push(format!("SKIP REGEXP '{}'", &escaped[1..escaped.len() - 1]));
         }
         Ok(parts)
     }
@@ -1136,9 +1139,7 @@ impl ColumnType {
     pub fn to_proto(&self) -> ProtoColumnType {
         let t = match self {
             ColumnType::String => column_type::T::Simple(SimpleColumnType::STRING.into()),
-            ColumnType::FixedString { .. } => {
-                column_type::T::Simple(SimpleColumnType::STRING.into())
-            }
+            ColumnType::FixedString { length } => column_type::T::FixedString(*length),
             ColumnType::Boolean => column_type::T::Simple(SimpleColumnType::BOOLEAN.into()),
             ColumnType::Int(int_type) => column_type::T::Int(
                 (match int_type {
@@ -1335,6 +1336,7 @@ impl ColumnType {
                 skip_paths: json.skip_paths,
                 skip_regexps: json.skip_regexps,
             }),
+            T::FixedString(length) => ColumnType::FixedString { length },
         }
     }
 }

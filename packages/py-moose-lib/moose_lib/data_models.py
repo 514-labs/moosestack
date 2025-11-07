@@ -341,7 +341,7 @@ def py_type_to_column_type(t: type, mds: list[Any]) -> Tuple[bool, list[Any], Da
         if int_size:
             data_type = int_size.replace("u", "U").replace("i", "I")
         else:
-            data_type = "Int"
+            data_type = "Int64"
     elif t is float:
         size = next((md for md in mds if isinstance(md, ClickhouseSize)), None)
         if size is None:
@@ -504,7 +504,10 @@ def _to_columns(model: type[BaseModel]) -> list[Column]:
         primary_key, field_type = handle_key(field_type)
         is_jwt, field_type = handle_jwt(field_type)
 
-        optional, mds, data_type = py_type_to_column_type(field_type, field_info.metadata)
+        # Don't pass field_info.metadata when we have raw annotations,
+        # as the metadata is already in the Annotated type????????
+        metadata = [] if field_name in raw_annotations else field_info.metadata
+        optional, mds, data_type = py_type_to_column_type(field_type, metadata)
 
         annotations = []
         for md in mds:

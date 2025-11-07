@@ -384,6 +384,19 @@ fn collect_types<'a>(
                     }
                 };
                 nested_models.insert(nested, name);
+
+                // Recursively collect types from nested columns
+                for nested_column in &nested.columns {
+                    collect_types(
+                        &nested_column.data_type,
+                        &nested_column.name,
+                        enums,
+                        extra_class_names,
+                        nested_models,
+                        named_tuples,
+                        json_types,
+                    );
+                }
             }
         }
         ColumnType::NamedTuple(fields) => {
@@ -400,6 +413,19 @@ fn collect_types<'a>(
                     }
                 };
                 named_tuples.insert(fields, name);
+
+                // Recursively collect types from tuple fields
+                for (field_name, field_type) in fields {
+                    collect_types(
+                        field_type,
+                        field_name,
+                        enums,
+                        extra_class_names,
+                        nested_models,
+                        named_tuples,
+                        json_types,
+                    );
+                }
             }
         }
         ColumnType::Json(opts) => {
@@ -416,6 +442,19 @@ fn collect_types<'a>(
                     }
                 };
                 json_types.insert(opts, name);
+
+                // Recursively collect types from typed paths
+                for (path_name, path_type) in &opts.typed_paths {
+                    collect_types(
+                        path_type,
+                        path_name,
+                        enums,
+                        extra_class_names,
+                        nested_models,
+                        named_tuples,
+                        json_types,
+                    );
+                }
             }
         }
         ColumnType::Array {
@@ -430,6 +469,38 @@ fn collect_types<'a>(
             named_tuples,
             json_types,
         ),
+        ColumnType::Nullable(inner) => collect_types(
+            inner,
+            name,
+            enums,
+            extra_class_names,
+            nested_models,
+            named_tuples,
+            json_types,
+        ),
+        ColumnType::Map {
+            key_type,
+            value_type,
+        } => {
+            collect_types(
+                key_type,
+                name,
+                enums,
+                extra_class_names,
+                nested_models,
+                named_tuples,
+                json_types,
+            );
+            collect_types(
+                value_type,
+                name,
+                enums,
+                extra_class_names,
+                nested_models,
+                named_tuples,
+                json_types,
+            );
+        }
         _ => {}
     }
 }

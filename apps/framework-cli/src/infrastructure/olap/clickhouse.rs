@@ -1891,11 +1891,13 @@ pub fn extract_table_ttl_from_create_query(create_query: &str) -> Option<String>
 
 /// Normalize a TTL expression to match ClickHouse's canonical form.
 /// Converts SQL INTERVAL syntax to toInterval* function calls that ClickHouse uses internally.
+/// Also removes trailing DELETE since it's the default action and ClickHouse may delete it implicitly.
 ///
 /// # Examples
 /// - "timestamp + INTERVAL 30 DAY" → "timestamp + toIntervalDay(30)"
 /// - "timestamp + INTERVAL 1 MONTH" → "timestamp + toIntervalMonth(1)"
-/// - "timestamp + INTERVAL 90 DAY DELETE" → "timestamp + toIntervalDay(90) DELETE"
+/// - "timestamp + INTERVAL 90 DAY DELETE" → "timestamp + toIntervalDay(90)"
+/// - "timestamp + toIntervalDay(90) DELETE" → "timestamp + toIntervalDay(90)"
 pub fn normalize_ttl_expression(expr: &str) -> String {
     use regex::Regex;
 
@@ -1905,7 +1907,7 @@ pub fn normalize_ttl_expression(expr: &str) -> String {
         Regex::new(r"(?i)INTERVAL\s+(\d+)\s+(SECOND|MINUTE|HOUR|DAY|WEEK|MONTH|QUARTER|YEAR)")
             .expect("Valid regex pattern");
 
-    interval_pattern
+    let normalized = interval_pattern
         .replace_all(expr, |caps: &regex::Captures| {
             let number = &caps[1];
             let unit = caps[2].to_uppercase();
@@ -1924,7 +1926,12 @@ pub fn normalize_ttl_expression(expr: &str) -> String {
 
             format!("{}({})", func_name, number)
         })
-        .to_string()
+        .to_string();
+
+    // Remove trailing DELETE since it's the default action
+    // ClickHouse may add it implicitly, but it's redundant for comparison purposes
+    let delete_pattern = Regex::new(r"(?i)\s+DELETE\s*$").expect("Valid regex pattern");
+    delete_pattern.replace(&normalized, "").to_string()
 }
 
 /// Extract column-level TTL expressions from the CREATE TABLE column list.
@@ -2459,10 +2466,28 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
             "timestamp + toIntervalQuarter(1)"
         );
 
-        // Test with DELETE clause
+        // Test with DELETE clause - should be stripped since it's the default
         assert_eq!(
             normalize_ttl_expression("timestamp + INTERVAL 90 DAY DELETE"),
-            "timestamp + toIntervalDay(90) DELETE"
+            "timestamp + toIntervalDay(90)"
+        );
+
+        // Test with already normalized expression with DELETE
+        assert_eq!(
+            normalize_ttl_expression("timestamp + toIntervalDay(90) DELETE"),
+            "timestamp + toIntervalDay(90)"
+        );
+
+        // Test with DELETE in lowercase
+        assert_eq!(
+            normalize_ttl_expression("timestamp + INTERVAL 90 DAY delete"),
+            "timestamp + toIntervalDay(90)"
+        );
+
+        // Test with extra spaces before DELETE
+        assert_eq!(
+            normalize_ttl_expression("timestamp + INTERVAL 90 DAY  DELETE"),
+            "timestamp + toIntervalDay(90)"
         );
 
         // Test case insensitivity

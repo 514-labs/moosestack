@@ -6,7 +6,7 @@
 
 use crate::framework::core::infrastructure::sql_resource::SqlResource;
 use crate::framework::core::infrastructure::table::{
-    Column, ColumnType, DataEnum, EnumValue, Table,
+    Column, ColumnType, DataEnum, EnumValue, JsonOptions, Nested, Table,
 };
 use crate::framework::core::infrastructure_map::{
     ColumnChange, OlapChange, OrderByChange, PartitionByChange, TableChange, TableDiffStrategy,
@@ -151,6 +151,173 @@ pub fn enums_are_equivalent(actual: &DataEnum, target: &DataEnum) -> bool {
                     return false;
                 }
             }
+        }
+    }
+
+    true
+}
+
+/// Checks if two Nested types are semantically equivalent.
+///
+/// ClickHouse may generate generic names like "nested_3" for nested types, while
+/// user-defined code uses meaningful names like "Metadata". This function compares
+/// the structure (columns) and jwt field, ignoring name differences when the columns match.
+///
+/// # Arguments
+/// * `actual` - The first Nested type to compare (typically from ClickHouse)
+/// * `target` - The second Nested type to compare (typically from user code)
+///
+/// # Returns
+/// `true` if the Nested types are semantically equivalent, `false` otherwise
+pub fn nested_are_equivalent(actual: &Nested, target: &Nested) -> bool {
+    // First check direct equality (fast path)
+    if actual == target {
+        return true;
+    }
+
+    // jwt field must match
+    if actual.jwt != target.jwt {
+        return false;
+    }
+
+    // Check if both have the same number of columns
+    if actual.columns.len() != target.columns.len() {
+        return false;
+    }
+
+    // Compare each column recursively
+    // Note: We assume columns are in the same order. If ClickHouse reorders nested columns,
+    // we may need to add order-independent comparison here as well.
+    for (actual_col, target_col) in actual.columns.iter().zip(target.columns.iter()) {
+        // Use columns_are_equivalent for full semantic comparison
+        // We need to be careful here to avoid infinite recursion
+        // So we'll do a simpler comparison for now
+        if actual_col.name != target_col.name
+            || actual_col.required != target_col.required
+            || actual_col.unique != target_col.unique
+            || actual_col.default != target_col.default
+            || actual_col.annotations != target_col.annotations
+            || actual_col.comment != target_col.comment
+            || actual_col.ttl != target_col.ttl
+        {
+            return false;
+        }
+
+        // Recursively compare data types
+        if !column_types_are_equivalent(&actual_col.data_type, &target_col.data_type) {
+            return false;
+        }
+    }
+
+    true
+}
+
+/// Checks if two ColumnTypes are semantically equivalent.
+///
+/// This is used for comparing nested types within JsonOptions, handling special cases
+/// like enums, nested JSON types, and Nested column types. Also recursively handles
+/// container types (Array, Nullable, Map, NamedTuple) to ensure nested comparisons work.
+///
+/// # Arguments
+/// * `a` - The first ColumnType to compare
+/// * `b` - The second ColumnType to compare
+///
+/// # Returns
+/// `true` if the ColumnTypes are semantically equivalent, `false` otherwise
+pub fn column_types_are_equivalent(a: &ColumnType, b: &ColumnType) -> bool {
+    match (a, b) {
+        (ColumnType::Enum(a_enum), ColumnType::Enum(b_enum)) => {
+            enums_are_equivalent(a_enum, b_enum)
+        }
+        (ColumnType::Json(a_opts), ColumnType::Json(b_opts)) => {
+            json_options_are_equivalent(a_opts, b_opts)
+        }
+        (ColumnType::Nested(a_nested), ColumnType::Nested(b_nested)) => {
+            nested_are_equivalent(a_nested, b_nested)
+        }
+        // Recursively handle Array types
+        (
+            ColumnType::Array {
+                element_type: a_elem,
+                element_nullable: a_nullable,
+            },
+            ColumnType::Array {
+                element_type: b_elem,
+                element_nullable: b_nullable,
+            },
+        ) => a_nullable == b_nullable && column_types_are_equivalent(a_elem, b_elem),
+        // Recursively handle Nullable types
+        (ColumnType::Nullable(a_inner), ColumnType::Nullable(b_inner)) => {
+            column_types_are_equivalent(a_inner, b_inner)
+        }
+        // Recursively handle Map types
+        (
+            ColumnType::Map {
+                key_type: a_key,
+                value_type: a_val,
+            },
+            ColumnType::Map {
+                key_type: b_key,
+                value_type: b_val,
+            },
+        ) => column_types_are_equivalent(a_key, b_key) && column_types_are_equivalent(a_val, b_val),
+        // Recursively handle NamedTuple types
+        (ColumnType::NamedTuple(a_fields), ColumnType::NamedTuple(b_fields)) => {
+            if a_fields.len() != b_fields.len() {
+                return false;
+            }
+            a_fields
+                .iter()
+                .zip(b_fields.iter())
+                .all(|((a_name, a_type), (b_name, b_type))| {
+                    a_name == b_name && column_types_are_equivalent(a_type, b_type)
+                })
+        }
+        // For all other types, use standard equality
+        _ => a == b,
+    }
+}
+
+/// Checks if two JsonOptions are semantically equivalent.
+///
+/// This is important because the order of `typed_paths` shouldn't matter for equivalence.
+/// Two JsonOptions are considered equivalent if they have the same set of typed paths
+/// (path-type pairs), regardless of the order they appear in the Vec.
+///
+/// # Arguments
+/// * `a` - The first JsonOptions to compare
+/// * `b` - The second JsonOptions to compare
+///
+/// # Returns
+/// `true` if the JsonOptions are semantically equivalent, `false` otherwise
+pub fn json_options_are_equivalent(a: &JsonOptions, b: &JsonOptions) -> bool {
+    // First check direct equality (fast path)
+    if a == b {
+        return true;
+    }
+
+    // Check non-ordered fields
+    if a.max_dynamic_paths != b.max_dynamic_paths
+        || a.max_dynamic_types != b.max_dynamic_types
+        || a.skip_paths != b.skip_paths
+        || a.skip_regexps != b.skip_regexps
+    {
+        return false;
+    }
+
+    // Check typed_paths length
+    if a.typed_paths.len() != b.typed_paths.len() {
+        return false;
+    }
+
+    // For each path in a, find a matching path-type pair in b
+    // We need semantic comparison for the types to handle nested JSON
+    for (a_path, a_type) in &a.typed_paths {
+        let found = b.typed_paths.iter().any(|(b_path, b_type)| {
+            a_path == b_path && column_types_are_equivalent(a_type, b_type)
+        });
+        if !found {
+            return false;
         }
     }
 
