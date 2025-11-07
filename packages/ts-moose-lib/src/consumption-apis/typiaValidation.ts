@@ -1,4 +1,4 @@
-import ts, { factory } from "typescript";
+import ts, { factory, SyntaxKind } from "typescript";
 import {
   avoidTypiaNameClash,
   isMooseFile,
@@ -7,6 +7,7 @@ import {
 } from "../compilerPluginHelper";
 import { toColumns } from "../dataModels/typeConvert";
 import { parseAsAny } from "../dmv2/dataModelMetadata";
+import type { ApiUtil } from "./helpers";
 
 const iife = (statements: ts.Statement[]): ts.CallExpression =>
   factory.createCallExpression(
@@ -38,9 +39,7 @@ export const isCreateApi = (
     return false;
   }
 
-  const { name } = checker.getTypeAtLocation(declaration).symbol;
-
-  return name == "createApi";
+  return checker.getTypeAtLocation(declaration).symbol?.name == "createApi";
 };
 
 export const isCreateApiV2 = (
@@ -444,10 +443,51 @@ const transformNewApi = (
             ts.NodeFlags.Const,
           ),
         ),
+        factory.createVariableStatement(
+          undefined,
+          factory.createVariableDeclarationList(
+            [
+              factory.createVariableDeclaration(
+                factory.createIdentifier("originalHandler"),
+                undefined,
+                factory.createFunctionTypeNode(
+                  undefined,
+                  [
+                    factory.createParameterDeclaration(
+                      undefined,
+                      undefined,
+                      "params",
+                      undefined,
+                      typeNode,
+                    ),
+                    factory.createParameterDeclaration(
+                      undefined,
+                      undefined,
+                      "utils",
+                      undefined,
+                      factory.createImportTypeNode(
+                        factory.createLiteralTypeNode(
+                          factory.createStringLiteral("@514labs/moose-lib"),
+                        ),
+                        undefined,
+                        factory.createIdentifier("ApiUtil"),
+                        [],
+                        false,
+                      ),
+                    ),
+                  ],
+                  factory.createKeywordTypeNode(SyntaxKind.AnyKeyword),
+                ),
+                factory.createParenthesizedExpression(handlerFunc),
+              ),
+            ],
+            ts.NodeFlags.Const,
+          ),
+        ),
         // return originalHandler(processedParams, utils)
         factory.createReturnStatement(
           factory.createCallExpression(
-            factory.createParenthesizedExpression(handlerFunc),
+            factory.createIdentifier("originalHandler"),
             undefined,
             [
               factory.createIdentifier("processedParams"),
