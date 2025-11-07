@@ -2536,8 +2536,15 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
             ttl: None,
         };
 
-        let sqls = build_modify_column_sql("test_db", "test_table", &sample_hash_col, false, false)
-            .unwrap();
+        let sqls = build_modify_column_sql(
+            "test_db",
+            "test_table",
+            &sample_hash_col,
+            false,
+            false,
+            None,
+        )
+        .unwrap();
 
         assert_eq!(sqls.len(), 1);
         // The fix ensures xxHash64(_id) is NOT quoted - if it were quoted, ClickHouse would treat it as a string literal
@@ -2558,8 +2565,9 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
             ttl: None,
         };
 
-        let sqls = build_modify_column_sql("test_db", "test_table", &created_at_col, false, false)
-            .unwrap();
+        let sqls =
+            build_modify_column_sql("test_db", "test_table", &created_at_col, false, false, None)
+                .unwrap();
 
         assert_eq!(sqls.len(), 1);
         // The fix ensures now() is NOT quoted
@@ -2581,7 +2589,8 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
         };
 
         let sqls =
-            build_modify_column_sql("test_db", "test_table", &status_col, false, false).unwrap();
+            build_modify_column_sql("test_db", "test_table", &status_col, false, false, None)
+                .unwrap();
 
         assert_eq!(sqls.len(), 1);
         // String literals should preserve their quotes
