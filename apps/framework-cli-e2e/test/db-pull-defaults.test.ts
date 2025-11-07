@@ -207,6 +207,18 @@ describe("python template tests - db-pull with SQL function defaults", () => {
 
     console.log("✓ Generated Python code has correct default syntax");
 
+    // ============ STEP 3.5: Move external model to datamodels for migration ============
+    console.log("\n--- Moving external model to datamodels ---");
+    // Migration system only processes models in datamodels/, not external_models.py
+    // We need to move the generated code to test the roundtrip
+    const datamodelsDir = path.join(testProjectDir, "app", "datamodels");
+    if (!fs.existsSync(datamodelsDir)) {
+      fs.mkdirSync(datamodelsDir, { recursive: true });
+    }
+    const datamodelPath = path.join(datamodelsDir, "test_defaults_model.py");
+    fs.copyFileSync(externalModelsPath, datamodelPath);
+    console.log("✓ Model copied to datamodels");
+
     // ============ STEP 4: Generate Migration Plan ============
     console.log("\n--- Generating migration plan ---");
 
@@ -232,7 +244,7 @@ describe("python template tests - db-pull with SQL function defaults", () => {
 
     try {
       const { stdout: migrateOutput } = await execAsync(
-        `"${CLI_PATH}" migrate --clickhouse-url "${CLICKHOUSE_URL}"`,
+        `"${CLI_PATH}" migrate --clickhouse-url "${CLICKHOUSE_URL}" --redis-url "redis://127.0.0.1:6379"`,
         {
           cwd: testProjectDir,
           env: {
@@ -245,7 +257,10 @@ describe("python template tests - db-pull with SQL function defaults", () => {
       console.log("Migration output:", migrateOutput);
       console.log("✓ Migration applied successfully (bug is fixed!)");
     } catch (error: any) {
-      console.log("Migration failed:", error.stdout || error.message);
+      console.log("Migration failed!");
+      console.log("stdout:", error.stdout || "(empty)");
+      console.log("stderr:", error.stderr || "(empty)");
+      console.log("message:", error.message);
 
       // Check if it's the expected bug error
       if (error.stdout && error.stdout.includes("Cannot parse string")) {
@@ -262,16 +277,17 @@ describe("python template tests - db-pull with SQL function defaults", () => {
     console.log("\n--- Verifying table schema after migration ---");
 
     const schema = await getTableSchema(TEST_TABLE_NAME);
-    console.log("Table schema:", schema);
+    console.log("Table schema:", JSON.stringify(schema, null, 2));
 
     const sampleHashCol = schema.find((col) => col.name === "sample_hash");
+    console.log("sample_hash column:", JSON.stringify(sampleHashCol, null, 2));
     expect(sampleHashCol).to.exist;
-    expect(sampleHashCol!.default_kind).to.equal("DEFAULT");
+    expect(sampleHashCol!.default_type).to.equal("DEFAULT");
     expect(sampleHashCol!.default_expression).to.equal("xxHash64(_id)");
 
     const hourStampCol = schema.find((col) => col.name === "hour_stamp");
     expect(hourStampCol).to.exist;
-    expect(hourStampCol!.default_kind).to.equal("DEFAULT");
+    expect(hourStampCol!.default_type).to.equal("DEFAULT");
     expect(hourStampCol!.default_expression).to.equal(
       "toStartOfHour(toDateTime(_time_observed / 1000))",
     );
@@ -493,9 +509,8 @@ describe("typescript template tests - db-pull with SQL function defaults", () =>
 
     const externalModelsPath = path.join(
       testProjectDir,
-      "src",
-      "datamodels",
-      "external_models.ts",
+      "app",
+      "externalModels.ts",
     );
 
     expect(fs.existsSync(externalModelsPath)).to.be.true;
@@ -516,14 +531,27 @@ describe("typescript template tests - db-pull with SQL function defaults", () =>
     );
     expect(generatedCode).to.not.include('ClickHouseDefault<"\\"toStartOfHour');
 
-    expect(generatedCode).to.include('ClickHouseDefault<"now()">');
-    expect(generatedCode).to.include('ClickHouseDefault<"today()">');
+    // For Date/DateTime columns, TypeScript uses WithDefault<Date, "..."> instead of ClickHouseDefault
+    expect(generatedCode).to.include('WithDefault<Date, "now()">');
+    expect(generatedCode).to.include('WithDefault<Date, "today()">');
 
     // Literal values should preserve quotes
     expect(generatedCode).to.include("ClickHouseDefault<\"'active'\">");
     expect(generatedCode).to.include('ClickHouseDefault<"42">');
 
     console.log("✓ Generated TypeScript code has correct default syntax");
+
+    // ============ STEP 3.5: Move external model to datamodels for migration ============
+    console.log("\n--- Moving external model to datamodels ---");
+    // Migration system only processes models in datamodels/, not external_models.ts
+    // We need to move the generated code to test the roundtrip
+    const datamodelsDir = path.join(testProjectDir, "app", "datamodels");
+    if (!fs.existsSync(datamodelsDir)) {
+      fs.mkdirSync(datamodelsDir, { recursive: true });
+    }
+    const datamodelPath = path.join(datamodelsDir, "TestDefaultsModel.ts");
+    fs.copyFileSync(externalModelsPath, datamodelPath);
+    console.log("✓ Model copied to datamodels");
 
     // ============ STEP 4: Generate Migration Plan ============
     console.log("\n--- Generating migration plan ---");
@@ -550,7 +578,7 @@ describe("typescript template tests - db-pull with SQL function defaults", () =>
 
     try {
       const { stdout: migrateOutput } = await execAsync(
-        `"${CLI_PATH}" migrate --clickhouse-url "${CLICKHOUSE_URL}"`,
+        `"${CLI_PATH}" migrate --clickhouse-url "${CLICKHOUSE_URL}" --redis-url "redis://127.0.0.1:6379"`,
         {
           cwd: testProjectDir,
           env: {
@@ -563,7 +591,10 @@ describe("typescript template tests - db-pull with SQL function defaults", () =>
       console.log("Migration output:", migrateOutput);
       console.log("✓ Migration applied successfully (bug is fixed!)");
     } catch (error: any) {
-      console.log("Migration failed:", error.stdout || error.message);
+      console.log("Migration failed!");
+      console.log("stdout:", error.stdout || "(empty)");
+      console.log("stderr:", error.stderr || "(empty)");
+      console.log("message:", error.message);
 
       // Check if it's the expected bug error
       if (error.stdout && error.stdout.includes("Cannot parse string")) {
@@ -580,16 +611,17 @@ describe("typescript template tests - db-pull with SQL function defaults", () =>
     console.log("\n--- Verifying table schema after migration ---");
 
     const schema = await getTableSchema(TEST_TABLE_NAME);
-    console.log("Table schema:", schema);
+    console.log("Table schema:", JSON.stringify(schema, null, 2));
 
     const sampleHashCol = schema.find((col) => col.name === "sample_hash");
+    console.log("sample_hash column:", JSON.stringify(sampleHashCol, null, 2));
     expect(sampleHashCol).to.exist;
-    expect(sampleHashCol!.default_kind).to.equal("DEFAULT");
+    expect(sampleHashCol!.default_type).to.equal("DEFAULT");
     expect(sampleHashCol!.default_expression).to.equal("xxHash64(_id)");
 
     const hourStampCol = schema.find((col) => col.name === "hour_stamp");
     expect(hourStampCol).to.exist;
-    expect(hourStampCol!.default_kind).to.equal("DEFAULT");
+    expect(hourStampCol!.default_type).to.equal("DEFAULT");
     expect(hourStampCol!.default_expression).to.equal(
       "toStartOfHour(toDateTime(_time_observed / 1000))",
     );
@@ -670,7 +702,7 @@ describe("typescript template tests - db-pull with SQL function defaults", () =>
     );
 
     const code = fs.readFileSync(
-      path.join(testProjectDir, "src", "datamodels", "external_models.ts"),
+      path.join(testProjectDir, "app", "externalModels.ts"),
       "utf-8",
     );
 
