@@ -1,0 +1,520 @@
+---
+title: November 7, 2025
+description: Release notes for November 7, 2025
+---
+
+import { Callout } from "@/components";
+
+# November 7, 2025
+
+<Callout type="info" title="Highlights">
+* **Breaking:** Update HubSpot connector configuration parameters
+* **New:** Add support for ignoring partition changes during migrations
+* **New:** Added Nix syntax highlighting support
+</Callout>
+
+
+
+## 🦌 Moose
+
+### ⚠️ Breaking Changes
+- **Update HubSpot connector configuration parameters**
+  Updated HubSpot connector to use 'ingestApi' parameter instead of 'ingest' and changed environment variable from HUBSPOT_ACCESS_TOKEN to HUBSPOT_TOKEN. Users will need to update their configuration and environment variables when upgrading.
+
+  **Updated IngestPipeline with ingestApi parameter**
+  ```typescript
+  import { IngestPipeline, OlapTable, ClickHouseEngines } from "@514labs/moose-lib";
+  
+  // Define your data model
+  interface CustomerData {
+    id: string;
+    email: string;
+    firstName: string;
+    lastName: string;
+    createdAt: Date;
+  }
+  
+  // Create a dead letter table for failed records
+  const customerDeadLetterTable = new OlapTable<any>("CustomerDeadLetter", {
+    engine: ClickHouseEngines.MergeTree,
+    orderByFields: ["timestamp"]
+  });
+  
+  // Updated configuration: use 'ingestApi' instead of 'ingest'
+  export const CustomerPipeline = new IngestPipeline<CustomerData>("Customer", {
+    table: {
+      engine: ClickHouseEngines.MergeTree, 
+      orderByFields: ["id"]
+    },
+    stream: true,
+    ingestApi: true, // ✅ New parameter name
+    deadLetterQueue: { 
+      destination: customerDeadLetterTable 
+    },
+  });
+  
+  // For derived/processed data pipelines, set ingestApi to false
+  export const ProcessedCustomerPipeline = new IngestPipeline<CustomerData>("ProcessedCustomer", {
+    table: {
+      engine: ClickHouseEngines.MergeTree,
+      orderByFields: ["id"]
+    },
+    stream: true,
+    ingestApi: false, // No direct API endpoint needed
+  });
+  ```
+  
+  Shows how to update IngestPipeline configurations to use the new 'ingestApi' parameter instead of the deprecated 'ingest' parameter. The example demonstrates both enabling and disabling the ingest API for different pipeline types.
+
+### New Features
+- **Add support for ignoring partition changes during migrations**
+  Users can now configure the migration system to ignore PARTITION BY changes when comparing database schemas. This prevents unnecessary table recreations when partition changes are intentionally ignored, making migrations more flexible and reducing downtime during deployments.
+
+  **Configure migrations to ignore partition changes**
+  ```typescript
+  // moose.config.ts - Configure migration to ignore partition changes
+  import { MooseConfig } from '@514labs/moose-lib';
+  
+  export default {
+    // ... other config options
+    
+    migration: {
+      // Ignore partition changes during migrations to prevent table recreations
+      ignoreOperations: ['ModifyPartitionBy']
+    },
+    
+    // Production environment settings
+    production: {
+      // Migration config is only applied in production mode
+      migration: {
+        ignoreOperations: [
+          'ModifyPartitionBy',  // Ignore partition changes
+          // Add other operations to ignore as needed
+        ]
+      }
+    }
+  } satisfies MooseConfig;
+  
+  // models/UserEvents.ts - Data model with partition configuration
+  export interface UserEvents {
+    userId: string;
+    eventType: string;
+    timestamp: Date;
+    metadata: Record<string, any>;
+  }
+  
+  // The partition configuration can be changed without triggering
+  // table recreation when ModifyPartitionBy is in ignoreOperations
+  export const UserEventsTable = {
+    partitionBy: 'toYYYYMM(timestamp)', // This can be modified safely
+    orderBy: ['userId', 'timestamp']
+  };
+  ```
+  
+  This example shows how to configure MooseStack to ignore partition changes during migrations. When ModifyPartitionBy is added to ignoreOperations, changing the partition configuration won't trigger expensive table recreations, reducing deployment downtime.
+
+- **New documentation site with language-specific docs and AI integration**
+  Launched a completely redesigned documentation site (framework-docs-v2) with separate TypeScript and Python documentation paths, full-text search, AI assistant integration via llms.txt generation, and improved navigation. The new site provides better developer experience with language-specific examples and enhanced search capabilities.
+  
+  📸 *[Screenshot needed: Launched a completely redesigned documentation site (framework-docs-v2) with separate TypeScript and Python documentation paths, full-text search, AI assistant integration via llms.txt generation, and improved navigation. The new site provides better developer experience with language-specific examples and enhanced search capabilities.]*
+
+- **Add ClickHouse cluster configuration support for ON CLUSTER operations**
+  Users can now define ClickHouse clusters in their project configuration to enable ON CLUSTER SQL operations. This allows for distributed table operations and queries across multiple ClickHouse nodes. In development mode, clusters are automatically configured as single-node setups for local testing.
+
+  **Configure ClickHouse clusters for distributed operations**
+  ```typescript
+  // moose.config.ts - Configure ClickHouse clusters for distributed operations
+  import { MooseConfig } from "@514labs/moose-lib";
+  
+  export default {
+    clickHouseConfig: {
+      // Standard ClickHouse connection settings
+      host: "localhost",
+      port: 8123,
+      username: "default",
+      password: "",
+      database: "analytics",
+      
+      // Define clusters for ON CLUSTER operations
+      clusters: [
+        { name: "analytics_cluster" },
+        { name: "warehouse_cluster" },
+        { name: "reporting_cluster" }
+      ]
+    }
+  } satisfies MooseConfig;
+  
+  // models/UserEvent.ts - Data model that will use clustered tables
+  export interface UserEvent {
+    user_id: string;
+    event_type: string;
+    timestamp: Date;
+    properties: Record<string, any>;
+  }
+  
+  // aggregations/user_metrics.sql - Use ON CLUSTER for distributed aggregations
+  CREATE TABLE user_daily_metrics ON CLUSTER analytics_cluster (
+    date Date,
+    user_id String,
+    event_count UInt64,
+    unique_events UInt32
+  ) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{shard}/user_daily_metrics', '{replica}')
+  PARTITION BY toYYYYMM(date)
+  ORDER BY (date, user_id);
+  
+  -- Create materialized view across the cluster
+  CREATE MATERIALIZED VIEW user_metrics_mv ON CLUSTER analytics_cluster
+  TO user_daily_metrics
+  AS SELECT
+    toDate(timestamp) as date,
+    user_id,
+    count() as event_count,
+    uniq(event_type) as unique_events
+  FROM UserEvent
+  GROUP BY date, user_id;
+  ```
+  
+  This example shows how to configure ClickHouse clusters in a MooseStack project to enable distributed table operations. The clusters are defined in the config file and then used with ON CLUSTER clauses in SQL to create tables and views across multiple ClickHouse nodes. In development mode, these clusters automatically work as single-node setups.
+
+- **Add utility types for Python numeric data types**
+  Added new type aliases for ClickHouse numeric types in Python: Int8, Int16, Int32, Int64, UInt8, UInt16, UInt32, UInt64, Float32, and Float64. These provide better type safety and clearer intent when defining data models, allowing users to specify exact numeric precision requirements for their ClickHouse columns instead of using generic int/float types.
+
+  **Using precise numeric types in MooseStack data models**
+  ```python
+  from moose_lib import (
+      Key, IngestPipeline, IngestPipelineConfig,
+      # Import the new numeric type aliases
+      Int8, Int16, Int32, Int64,
+      UInt8, UInt16, UInt32, UInt64,
+      Float32, Float64
+  )
+  from pydantic import BaseModel
+  from datetime import datetime
+  from typing import Optional
+  
+  class UserActivity(BaseModel):
+      """User activity tracking with precise numeric types for ClickHouse optimization."""
+      
+      # Primary key
+      user_id: Key[UInt64]  # User IDs are always positive, use UInt64 for large scale
+      event_time: datetime
+      
+      # Counters - always positive values
+      page_views: UInt32      # Daily page views (0 to 4 billion)
+      session_duration: UInt16  # Session length in seconds (0 to 65K seconds)
+      clicks: UInt8           # Clicks per session (0 to 255)
+      
+      # Metrics that can be negative
+      score_delta: Int32      # Score changes can be positive or negative
+      temperature: Int16      # Device temperature in celsius (-32K to +32K)
+      
+      # High precision coordinates and measurements
+      latitude: Float64       # GPS coordinates need high precision
+      longitude: Float64      # GPS coordinates need high precision
+      confidence: Float32     # ML confidence scores (lower precision acceptable)
+      
+      # Optional fields with specific numeric types
+      revenue_cents: Optional[Int64]  # Revenue in cents (can be negative for refunds)
+      device_battery: Optional[UInt8]  # Battery percentage (0-100)
+  
+  # Create the data pipeline
+  user_activity_pipeline = IngestPipeline[UserActivity](
+      "UserActivity",
+      IngestPipelineConfig(
+          ingest_api=True,    # Enable REST API ingestion
+          stream=True,        # Enable streaming processing
+          table=True          # Create ClickHouse table with optimized column types
+      )
+  )
+  ```
+  
+  This example shows how to use the new numeric type aliases (Int8, UInt32, Float64, etc.) in a MooseStack data model for user activity tracking. The specific numeric types provide better ClickHouse optimization and clearer intent compared to generic int/float types.
+
+- **Add "Bring Your Own Framework" documentation for Express, Fastify, Koa, and FastAPI**
+  Added comprehensive documentation showing how to integrate popular API frameworks (Express, Fastify, Koa, FastAPI) with MooseStack. Users can now use their preferred web framework while leveraging MooseStack's data capabilities through the WebApp class and MooseClient utilities.
+
+  **Express.js integration with MooseStack WebApp**
+  ```typescript
+  import express from "express";
+  import { WebApp, expressMiddleware, getMooseUtils } from "@514labs/moose-lib";
+  import { UserEvents } from "../tables/UserEvents";
+  
+  const app = express();
+  
+  // Required middleware setup
+  app.use(express.json());
+  app.use(expressMiddleware()); // Required for accessing MooseStack utilities
+  
+  // Health check endpoint
+  app.get("/health", (req, res) => {
+    res.json({ status: "ok", timestamp: new Date().toISOString() });
+  });
+  
+  // Query user events with MooseStack integration
+  app.get("/users/:userId/events", async (req, res) => {
+    const moose = getMooseUtils(req);
+    if (!moose) {
+      return res.status(500).json({ error: "MooseStack utilities not available" });
+    }
+  
+    const { client, sql } = moose;
+    const { userId } = req.params;
+    const limit = parseInt(req.query.limit as string) || 10;
+  
+    try {
+      // Use type-safe SQL queries with MooseStack
+      const query = sql`
+        SELECT 
+          ${UserEvents.columns.id},
+          ${UserEvents.columns.event_type},
+          ${UserEvents.columns.timestamp}
+        FROM ${UserEvents}
+        WHERE ${UserEvents.columns.user_id} = ${userId}
+        ORDER BY ${UserEvents.columns.timestamp} DESC
+        LIMIT ${limit}
+      `;
+      
+      const result = await client.query.execute(query);
+      const events = await result.json();
+      
+      res.json({ userId, count: events.length, events });
+    } catch (error) {
+      res.status(500).json({ error: String(error) });
+    }
+  });
+  
+  // Register Express app with MooseStack
+  export const userEventsAPI = new WebApp("userEventsAPI", app, {
+    mountPath: "/api/v1",
+    metadata: { description: "Express API for querying user events" }
+  });
+  ```
+  
+  This example shows how to integrate Express.js with MooseStack using the WebApp class. It demonstrates setting up Express routes that can query ClickHouse data using MooseStack's type-safe SQL utilities, while maintaining Express's familiar middleware and routing patterns.
+
+- **Add FixedString(N) data type support**
+  Added support for FixedString(N) data type in data models, allowing users to define fixed-length string columns for optimized storage of data like hashes, IP addresses, and MAC addresses. This type maps to ClickHouse's FixedString type and is available in both TypeScript and Python data models with proper type annotations.
+
+  **Using FixedString for network data with fixed-length fields**
+  ```typescript
+  // datamodels/NetworkEvent.ts
+  export interface NetworkEvent {
+    id: string;
+    timestamp: Date;
+    
+    // Fixed-length string for MD5 hash (32 hex chars = 16 bytes)
+    md5_hash: string & FixedString<16>;
+    
+    // Fixed-length string for IPv6 address (16 bytes)
+    ipv6_address: string & FixedString<16>;
+    
+    // Fixed-length string for MAC address (17 chars: XX:XX:XX:XX:XX:XX)
+    mac_address: string & FixedString<17>;
+    
+    // Array of MAC addresses for network devices
+    connected_devices: (string & FixedString<17>)[];
+    
+    // Regular string for variable-length data
+    user_agent: string;
+    
+    // Other fields
+    bytes_transferred: number;
+    is_encrypted: boolean;
+  }
+  ```
+  
+  This example shows how to use the new FixedString(N) data type in a TypeScript data model for network event logging. The FixedString type is ideal for data with known fixed lengths like hashes, IP addresses, and MAC addresses, providing optimized storage in ClickHouse.
+
+- **Added .env file support for configuration management**
+  Users can now configure their Moose projects using .env files with proper precedence (.env < .env.dev < .env.local). This makes it easier to manage different configurations across environments without hardcoding values. The CLI automatically loads these files during development and production commands.
+
+  **Configure Moose projects with .env files**
+  ```bash
+  # Create .env files in your Moose project root
+  # Base configuration (lowest precedence)
+  echo "MOOSE_HTTP_SERVER_CONFIG__PORT=3000
+  MOOSE_CLICKHOUSE_CONFIG__HOST=localhost
+  MOOSE_CLICKHOUSE_CONFIG__PORT=9000" > .env
+  
+  # Development-specific overrides
+  echo "MOOSE_HTTP_SERVER_CONFIG__PORT=3001
+  MOOSE_LOGGER__LEVEL=debug
+  MOOSE_CLICKHOUSE_CONFIG__DB_NAME=myproject_dev" > .env.dev
+  
+  # Local overrides (highest precedence, gitignored)
+  echo "MOOSE_HTTP_SERVER_CONFIG__PORT=3002
+  MOOSE_CLICKHOUSE_CONFIG__HOST=127.0.0.1
+  MOOSE_REDIS_CONFIG__URL=redis://localhost:6380" > .env.local
+  
+  # Start development server - automatically loads .env files
+  # Precedence: .env < .env.dev < .env.local
+  moose dev
+  
+  # For production deployment, only .env is loaded
+  moose prod
+  ```
+  
+  Shows how to configure a Moose project using .env files with proper precedence. The CLI automatically loads these files during development (.env.local overrides .env.dev which overrides .env) and production (only .env is loaded).
+
+- **New TypeScript MCP template for AI assistant integration**
+  Added a new TypeScript template that demonstrates how to create custom MCP (Model Context Protocol) servers within MooseStack applications. This template shows users how to expose their data to AI assistants like Claude through standardized tools, enabling AI-powered data querying and analysis. The template includes a working MCP server with ClickHouse query capabilities and comprehensive documentation for extending it with additional tools.
+
+  **Custom MCP Server for AI Data Querying**
+  ```typescript
+  import express from "express";
+  import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+  import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
+  import { z } from "zod";
+  import { WebApp, getMooseUtils } from "@514labs/moose-lib";
+  
+  // Create Express app for your custom MCP server
+  const app = express();
+  app.use(express.json());
+  
+  // Factory function creates fresh MCP server for each request
+  const serverFactory = (mooseUtils: any) => {
+    const server = new McpServer({
+      name: "my-data-assistant",
+      version: "1.0.0",
+    });
+  
+    // Register a tool that AI assistants can use to query your data
+    server.registerTool(
+      "query_sales_data",
+      {
+        title: "Query Sales Database",
+        description: "Execute SQL queries against sales data in ClickHouse",
+        inputSchema: {
+          query: z.string().describe("SQL query to execute"),
+          limit: z.number().max(100).default(50).optional(),
+        },
+      },
+      async (args) => {
+        const { query, limit = 50 } = args;
+        
+        // Use MooseStack's ClickHouse client to execute queries
+        const result = await mooseUtils.client.query.execute(
+          mooseUtils.sql`${query} LIMIT ${limit}`
+        );
+        
+        return {
+          content: [{
+            type: "text",
+            text: JSON.stringify({
+              rows: result.data,
+              rowCount: result.data.length
+            }, null, 2)
+          }]
+        };
+      }
+    );
+  
+    return server;
+  };
+  
+  // Handle all MCP requests at /tools endpoint
+  app.all("/", async (req, res) => {
+    const mooseUtils = getMooseUtils(req);
+    const server = serverFactory(mooseUtils);
+    const transport = new StreamableHTTPServerTransport(req, res);
+    await server.connect(transport);
+  });
+  
+  // Export as WebApp to mount at custom path
+  export default new WebApp("/tools", app);
+  ```
+  
+  This example shows how to create a custom MCP server within MooseStack that exposes your data to AI assistants like Claude. The server registers tools that AI can use to query your ClickHouse database, enabling natural language data analysis through the Model Context Protocol.
+
+- **Add release notes for November 1, 2025**
+  Published comprehensive release notes documenting new ClickHouse table engine support (Buffer, S3, Distributed), serverless migration improvements with Redis state storage, multi-database table support, and Boreal UI enhancements. These notes help users understand and adopt the latest features and improvements.
+
+- **Add comprehensive connector development guide and GitHub agent**
+  Added a detailed connector implementation guide that walks developers through the complete process of creating connectors for the Registry, from API research to production deployment. The guide includes code examples, authentication patterns, pagination strategies, and testing approaches. Also includes a GitHub agent to provide automated guidance during connector development.
+
+  **Building a Shopify connector for MooseStack data ingestion**
+  ```typescript
+  import { createConnector } from '@workspace/connector-shopify'
+  
+  // Initialize Shopify connector with API credentials
+  const shopifyConnector = createConnector()
+  shopifyConnector.init({
+    apiKey: process.env.SHOPIFY_API_KEY!,
+    domain: 'mystore.myshopify.com',
+    environment: 'production'
+  })
+  
+  // Stream orders data into MooseStack pipeline
+  export async function ingestShopifyOrders() {
+    console.log('Starting Shopify orders ingestion...')
+    
+    let totalOrders = 0
+    
+    // Paginate through all orders with automatic cursor handling
+    for await (const orderBatch of shopifyConnector.orders.list({
+      status: 'fulfilled',
+      pageSize: 100,
+      maxItems: 10000
+    })) {
+      // Transform and send each batch to your data pipeline
+      const transformedOrders = orderBatch.map(order => ({
+        orderId: order.id,
+        customerId: order.customer_id,
+        totalAmount: parseFloat(order.total_price),
+        orderDate: new Date(order.created_at),
+        status: order.fulfillment_status
+      }))
+      
+      // Send to MooseStack streaming pipeline
+      await sendToMoose('orders', transformedOrders)
+      
+      totalOrders += orderBatch.length
+      console.log(`Processed ${totalOrders} orders so far...`)
+    }
+    
+    console.log(`✅ Ingested ${totalOrders} orders from Shopify`)
+  }
+  
+  // Helper function to send data to MooseStack
+  async function sendToMoose(topic: string, data: any[]) {
+    // Your MooseStack ingestion logic here
+    console.log(`Sending ${data.length} records to ${topic}`)
+  }
+  ```
+  
+  This example shows how to use the new connector development framework to create a Shopify data connector that integrates with MooseStack pipelines. It demonstrates the complete pattern of initializing a connector, configuring authentication, and streaming paginated API data into a data pipeline with automatic error handling and progress tracking.
+
+### Improvements
+- Enable real-time Docker build logs in CLI: Docker build commands now stream logs directly to the console in real-time, providing better visibility into build progress and making it easier to debug build issues. Previously, logs were only shown after the build completed.
+- Enhanced MCP template with SQL security validation and improved documentation: The TypeScript MCP template now includes comprehensive SQL security features to prevent dangerous database operations. Added query validation that only allows safe read-only operations (SELECT, SHOW, DESCRIBE, EXPLAIN) while blocking write operations (INSERT, UPDATE, DELETE) and DDL operations (DROP, CREATE, ALTER). Results are automatically limited to 100 rows maximum. Updated documentation provides clearer guidance on security considerations and production deployment best practices.
+- Updated templates and documentation with better descriptions and examples: Reorganized template documentation into a new "Templates & Apps" section with clearer descriptions, added demo applications like aircraft data and CDC examples, and improved template metadata with more descriptive text. The documentation now better showcases available templates and reference architectures for getting started with MooseStack.
+- Improved Nix flake documentation with installation instructions: Enhanced the release notes for Nix flake support with clearer installation instructions. Users can now easily install the Moose CLI via 'nix run github:514-labs/moosestack' and get better guidance on using the development environment.
+
+### Bug Fixes
+- Fix db-pull command incorrectly importing ClickHouse default column functions: Fixed a bug where the `moose db-pull` command would incorrectly generate code for ClickHouse tables with default column functions. Previously, function defaults like `DEFAULT xxHash64(_id)` were generated with extra quotes, causing migration failures. Now generates correct syntax that works properly in both Python and TypeScript projects.
+- Fix FastAPI OpenAPI documentation paths for mounted web applications: Fixed an issue where FastAPI web applications mounted at custom paths had incorrect OpenAPI documentation URLs. The OpenAPI schema and Swagger UI docs now correctly reflect the mounted path prefix, ensuring API documentation is accessible and accurate for FastAPI applications deployed with custom mount paths.
+- Fix custom database name being overridden during first migration: Fixed a bug where custom database names configured in projects were being overridden with the default "local" database name during the first migration. This ensures that projects with custom ClickHouse database configurations maintain their specified database names throughout the migration process.
+- Fix table diffing to maintain backward compatibility during upgrades: Fixed an issue where upgrading the Moose CLI could incorrectly detect infrastructure changes in existing projects, potentially causing unnecessary table recreations. This ensures smooth upgrades from previous versions without disrupting existing deployments.
+- Fix SQL parsing for tables with nested objects containing 'settings' fields: Fixed a bug where SQL table creation strings with deeply nested objects containing field names like 'settings' would fail to parse correctly. This ensures that complex nested data structures work properly when creating ClickHouse tables through Moose.
+
+## 🐻 Boreal
+
+### New Features
+- **Added Nix syntax highlighting support**
+  Code blocks in the dashboard now support syntax highlighting for Nix configuration files, making it easier to read and work with Nix-based configurations in documentation and code examples.
+
+- **Add branch delete button in branch settings**
+  Added a delete button to the branch settings section, allowing users to delete branches directly from the settings page. Also improved loading states for environment variables pages and fixed commit message display formatting.
+  
+  📸 *[Screenshot needed: Added a delete button to the branch settings section, allowing users to delete branches directly from the settings page. Also improved loading states for environment variables pages and fixed commit message display formatting.]*
+
+- **Added branch settings page with branch removal capability**
+  Added a new General settings tab for branches that allows users to remove non-default branches. Default branches are protected and cannot be removed. Also improved commit message display formatting to preserve line breaks across deployment views.
+  
+  📸 *[Screenshot needed: Added a new General settings tab for branches that allows users to remove non-default branches. Default branches are protected and cannot be removed. Also improved commit message display formatting to preserve line breaks across deployment views.]*
+
+### Bug Fixes
+- Fixed Google Tag Manager loading issues on marketing website: Resolved Content Security Policy restrictions that were preventing Google Tag Manager from loading properly on the marketing website. This ensures analytics tracking and marketing tools function correctly for visitors.
+- Fixed CORS issues preventing browser requests to Moose applications: Resolved Cross-Origin Resource Sharing (CORS) errors that were blocking web browsers from making requests to deployed Moose applications. This fix ensures that browser-based applications and dashboards can properly communicate with Moose endpoints without CORS-related failures.
+
+
