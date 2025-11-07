@@ -3085,6 +3085,7 @@ ENGINE = MergeTree
             table_settings: None,
             indexes: vec![],
             table_ttl_setting: None,
+            cluster_name: None,
         };
 
         let query = create_table_query("test_db", table, false).unwrap();
