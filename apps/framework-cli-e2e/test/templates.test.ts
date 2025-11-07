@@ -1263,6 +1263,42 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
           );
         });
 
+        it("should serve OpenAPI documentation for FastAPI WebApp", async function () {
+          this.timeout(TIMEOUTS.TEST_SETUP_MS);
+
+          // Test OpenAPI JSON schema endpoint
+          await verifyWebAppEndpoint("/fastapi/openapi.json", 200, (json) => {
+            if (!json.openapi) {
+              throw new Error(
+                "Expected OpenAPI schema to have 'openapi' field",
+              );
+            }
+            if (!json.info) {
+              throw new Error("Expected OpenAPI schema to have 'info' field");
+            }
+            if (!json.paths) {
+              throw new Error("Expected OpenAPI schema to have 'paths' field");
+            }
+            // Verify that paths include the mount_path prefix
+            const paths = Object.keys(json.paths);
+            if (paths.length === 0) {
+              throw new Error(
+                "Expected OpenAPI schema to have at least one path",
+              );
+            }
+            // Check that at least one path includes /health (should be /fastapi/health or just /health)
+            const hasHealthPath = paths.some((p) => p.includes("/health"));
+            if (!hasHealthPath) {
+              throw new Error(
+                `Expected OpenAPI schema to include /health path. Found paths: ${paths.join(", ")}`,
+              );
+            }
+          });
+
+          // Test interactive docs endpoint (Swagger UI)
+          await verifyWebAppEndpoint("/fastapi/docs", 200, undefined);
+        });
+
         it("should handle multiple WebApp endpoints independently (PY)", async function () {
           this.timeout(TIMEOUTS.TEST_SETUP_MS);
 
