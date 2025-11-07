@@ -240,7 +240,7 @@ export const verifyRecordCount = async (
 export interface ClickHouseColumn {
   name: string;
   type: string;
-  default_kind: string;
+  default_type: string;
   default_expression: string;
   comment: string;
   codec_expression: string;

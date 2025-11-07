@@ -2694,11 +2694,12 @@ fn builds_field_context(columns: &[ClickHouseColumn]) -> Result<Vec<Value>, Clic
 
             let field_ttl = column.ttl.as_ref();
 
-            // Format default value properly - quote strings, keep numbers/booleans unquoted
-            let formatted_default = column
-                .default
-                .as_ref()
-                .map(|d| format_clickhouse_setting_value(d));
+            // Default values from ClickHouse/Python are already properly formatted
+            // - String literals come with quotes: 'active'
+            // - SQL expressions come without quotes: xxHash64(_id), now(), today()
+            // - Numbers come without quotes: 42
+            // So we use them as-is without additional formatting
+            let formatted_default = column.default.as_ref();
 
             Ok(json!({
                 "field_name": column.name,
@@ -2996,6 +2997,67 @@ ENGINE = MergeTree
 CREATE TABLE IF NOT EXISTS `test_db`.`test_table`
 (
  `count` Int32 NOT NULL DEFAULT 42
+)
+ENGINE = MergeTree
+"#;
+        assert_eq!(query.trim(), expected.trim());
+    }
+
+    #[test]
+    fn test_create_table_query_with_sql_function_defaults() {
+        // Test that SQL function defaults (like xxHash64, now(), today()) are not quoted
+        // This is the fix for ENG-1162
+        let table = ClickHouseTable {
+            version: Some(Version::from_string("1".to_string())),
+            name: "test_table".to_string(),
+            columns: vec![
+                ClickHouseColumn {
+                    name: "_id".to_string(),
+                    column_type: ClickHouseColumnType::String,
+                    required: true,
+                    primary_key: false,
+                    unique: false,
+                    default: None,
+                    comment: None,
+                    ttl: None,
+                },
+                ClickHouseColumn {
+                    name: "sample_hash".to_string(),
+                    column_type: ClickHouseColumnType::ClickhouseInt(ClickHouseInt::UInt64),
+                    required: true,
+                    primary_key: false,
+                    unique: false,
+                    default: Some("xxHash64(_id)".to_string()), // SQL function - no quotes
+                    comment: None,
+                    ttl: None,
+                },
+                ClickHouseColumn {
+                    name: "created_at".to_string(),
+                    column_type: ClickHouseColumnType::DateTime64 { precision: 3 },
+                    required: true,
+                    primary_key: false,
+                    unique: false,
+                    default: Some("now()".to_string()), // SQL function - no quotes
+                    comment: None,
+                    ttl: None,
+                },
+            ],
+            order_by: OrderBy::Fields(vec![]),
+            partition_by: None,
+            sample_by: None,
+            engine: ClickhouseEngine::MergeTree,
+            table_settings: None,
+            indexes: vec![],
+            table_ttl_setting: None,
+        };
+
+        let query = create_table_query("test_db", table, false).unwrap();
+        let expected = r#"
+CREATE TABLE IF NOT EXISTS `test_db`.`test_table`
+(
+ `_id` String NOT NULL,
+ `sample_hash` UInt64 NOT NULL DEFAULT xxHash64(_id),
+ `created_at` DateTime64(3) NOT NULL DEFAULT now()
 )
 ENGINE = MergeTree
 "#;
