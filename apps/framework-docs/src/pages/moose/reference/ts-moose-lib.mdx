@@ -475,3 +475,153 @@ interface WorkflowConfig {
 
 **Configuration objects and utilities** (like `DeadLetterQueue`, `Key`, `sql`) do not need to be exported as they are used as dependencies of the main components.
 
+## Registry Functions
+
+The registry functions allow you to programmatically access all registered Moose resources at runtime. This is useful for inspecting resources, building dynamic tools, meta-programming, and testing.
+
+### `getTables()`
+Get all registered OLAP tables.
+```ts
+import { getTables } from "@514labs/moose-lib";
+
+const tables = getTables();  // Returns Map<string, OlapTable<any>>
+for (const [name, table] of tables) {
+  console.log(`Table: ${name}`);
+}
+```
+
+### `getTable(name)`
+Get a specific OLAP table by name.
+```ts
+import { getTable } from "@514labs/moose-lib";
+
+const userTable = getTable("Users");
+if (userTable) {
+  console.log(`Found table: ${userTable.name}`);
+}
+```
+
+### `getStreams()`
+Get all registered streams.
+```ts
+import { getStreams } from "@514labs/moose-lib";
+
+const streams = getStreams();  // Returns Map<string, Stream<any>>
+```
+
+### `getStream(name)`
+Get a specific stream by name.
+```ts
+import { getStream } from "@514labs/moose-lib";
+
+const eventStream = getStream("UserEvents");
+```
+
+### `getIngestApis()`
+Get all registered ingestion APIs.
+```ts
+import { getIngestApis } from "@514labs/moose-lib";
+
+const ingestApis = getIngestApis();  // Returns Map<string, IngestApi<any>>
+```
+
+### `getIngestApi(name)`
+Get a specific ingestion API by name.
+```ts
+import { getIngestApi } from "@514labs/moose-lib";
+
+const userApi = getIngestApi("IngestUsers");
+```
+
+### `getApis()`
+Get all registered consumption/egress APIs.
+```ts
+import { getApis } from "@514labs/moose-lib";
+
+const apis = getApis();  // Returns Map<string, Api<any>>
+```
+
+### `getApi(nameOrPath)`
+Get a registered API by name, version, or custom path.
+
+Supports multiple lookup strategies:
+- Direct lookup by full key (`name` or `name:version`)
+- Alias lookup by base name when only one versioned API exists
+- Lookup by custom path (if configured)
+
+```ts
+import { getApi } from "@514labs/moose-lib";
+
+// Direct lookup
+const api = getApi("QueryUsers");
+
+// Version lookup
+const apiV1 = getApi("QueryUsers:1.0");
+
+// Path lookup
+const apiByPath = getApi("/custom/query");
+
+// Automatic aliasing: if only one version exists, unversioned lookup works
+const api = getApi("QueryUsers");  // Returns QueryUsers:1.0 if it's the only version
+```
+
+### `getSqlResources()`
+Get all registered SQL resources (views, etc.).
+```ts
+import { getSqlResources } from "@514labs/moose-lib";
+
+const resources = getSqlResources();  // Returns Map<string, SqlResource>
+```
+
+### `getSqlResource(name)`
+Get a specific SQL resource by name.
+```ts
+import { getSqlResource } from "@514labs/moose-lib";
+
+const view = getSqlResource("UserSummaryView");
+```
+
+### `getWorkflows()`
+Get all registered workflows.
+```ts
+import { getWorkflows } from "@514labs/moose-lib";
+
+const workflows = getWorkflows();  // Returns Map<string, Workflow>
+```
+
+### `getWorkflow(name)`
+Get a specific workflow by name.
+```ts
+import { getWorkflow } from "@514labs/moose-lib";
+
+const etlWorkflow = getWorkflow("DailyETL");
+```
+
+### `getWebApps()`
+Get all registered web apps.
+```ts
+import { getWebApps } from "@514labs/moose-lib";
+
+const webApps = getWebApps();  // Returns Map<string, WebApp>
+```
+
+### `getWebApp(name)`
+Get a specific web app by name.
+```ts
+import { getWebApp } from "@514labs/moose-lib";
+
+const adminApp = getWebApp("AdminPanel");
+if (adminApp) {
+  console.log(`Mounted at: ${adminApp.config.mountPath}`);
+}
+```
+
+### Backward Compatibility
+```ts
+// Deprecated: Use getApis and getApi instead
+import { getConsumptionApis, getConsumptionApi } from "@514labs/moose-lib";
+
+const apis = getConsumptionApis();  // Same as getApis()
+const api = getConsumptionApi("name");  // Same as getApi("name")
+```
+

@@ -82,3 +82,23 @@ export {
   WebAppHandler,
   FrameworkApp,
 } from "./sdk/webApp";
+
+export {
+  getTables,
+  getTable,
+  getStreams,
+  getStream,
+  getIngestApis,
+  getIngestApi,
+  getApis,
+  getApi,
+  getSqlResources,
+  getSqlResource,
+  getWorkflows,
+  getWorkflow,
+  getWebApps,
+  getWebApp,
+  // Backward compatibility aliases
+  getConsumptionApis,
+  getConsumptionApi,
+} from "./registry";
