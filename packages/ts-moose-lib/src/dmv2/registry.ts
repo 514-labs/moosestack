@@ -173,14 +173,3 @@ export function getWebApps(): Map<string, WebApp> {
 export function getWebApp(name: string): WebApp | undefined {
   return getMooseInternal().webApps.get(name);
 }
-
-// Backward compatibility aliases (deprecated)
-/**
- * @deprecated Use getApis instead of getConsumptionApis
- */
-export const getConsumptionApis = getApis;
-
-/**
- * @deprecated Use getApi instead of getConsumptionApi
- */
-export const getConsumptionApi = getApi;

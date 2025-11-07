@@ -615,13 +615,3 @@ if (adminApp) {
   console.log(`Mounted at: ${adminApp.config.mountPath}`);
 }
 ```
-
-### Backward Compatibility
-```ts
-// Deprecated: Use getApis and getApi instead
-import { getConsumptionApis, getConsumptionApi } from "@514labs/moose-lib";
-
-const apis = getConsumptionApis();  // Same as getApis()
-const api = getConsumptionApi("name");  // Same as getApi("name")
-```
-

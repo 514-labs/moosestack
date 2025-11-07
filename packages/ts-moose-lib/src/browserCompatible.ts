@@ -47,8 +47,6 @@ export {
   getWorkflow,
   getWebApps,
   getWebApp,
-  getConsumptionApis,
-  getConsumptionApi,
 } from "./dmv2";
 
 export {

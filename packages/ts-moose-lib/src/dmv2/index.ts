@@ -98,7 +98,4 @@ export {
   getWorkflow,
   getWebApps,
   getWebApp,
-  // Backward compatibility aliases
-  getConsumptionApis,
-  getConsumptionApi,
 } from "./registry";

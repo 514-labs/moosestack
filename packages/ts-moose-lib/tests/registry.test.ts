@@ -26,8 +26,6 @@ import {
   getWorkflow,
   getWebApps,
   getWebApp,
-  getConsumptionApis,
-  getConsumptionApi,
 } from "../src/dmv2/index";
 import { getMooseInternal } from "../src/dmv2/internal";
 
@@ -217,11 +215,6 @@ describe("Registry Functions", () => {
 
       const retrieved = getApi("/custom/path");
       expect(retrieved).to.equal(api);
-    });
-
-    it("should support backward compatibility aliases", () => {
-      expect(getConsumptionApis).to.equal(getApis);
-      expect(getConsumptionApi).to.equal(getApi);
     });
 
     it("should return undefined for non-existent API", () => {
