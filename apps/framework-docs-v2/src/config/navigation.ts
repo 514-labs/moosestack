@@ -875,10 +875,19 @@ export function getNavigationConfig(
 
 /**
  * Get the documentation section from a pathname
+ * Returns null for the root path (/)
  */
-export function getSectionFromPathname(pathname: string): DocumentationSection {
+export function getSectionFromPathname(
+  pathname: string,
+): DocumentationSection | null {
   // Remove leading slash and split
   const path = pathname.startsWith("/") ? pathname.slice(1) : pathname;
+
+  // Return null for root path
+  if (path === "" || path === "/") {
+    return null;
+  }
+
   const segments = path.split("/");
 
   // Check if path starts with a section prefix

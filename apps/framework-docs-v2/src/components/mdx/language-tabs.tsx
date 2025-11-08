@@ -1,6 +1,6 @@
 "use client";
 
-import { ReactNode, Suspense, useState, useEffect } from "react";
+import { ReactNode, Suspense } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useLanguage } from "@/hooks/use-language";
 
@@ -13,26 +13,19 @@ function LanguageTabsInner({
   children,
   items = ["TypeScript", "Python"],
 }: LanguageTabsProps) {
-  const { language } = useLanguage();
-
-  // Local state for this tab group - initializes from global language
-  const [localLanguage, setLocalLanguage] = useState<string>(
-    language.toLowerCase(),
-  );
-
-  // Sync local state when global language changes (from sidenav)
-  useEffect(() => {
-    setLocalLanguage(language.toLowerCase());
-  }, [language]);
+  const { language, setLanguage } = useLanguage();
 
   const handleValueChange = (value: string) => {
-    // Only update local state, don't change global language
-    setLocalLanguage(value);
+    // Update global language, which will sync all tabs across the page
+    const lang = value.toLowerCase() as "typescript" | "python";
+    if (lang === "typescript" || lang === "python") {
+      setLanguage(lang);
+    }
   };
 
   return (
     <Tabs
-      value={localLanguage}
+      value={language.toLowerCase()}
       onValueChange={handleValueChange}
       className="w-full my-4"
     >
