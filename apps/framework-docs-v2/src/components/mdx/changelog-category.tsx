@@ -12,6 +12,7 @@ import {
 } from "@tabler/icons-react";
 import type { IconProps } from "@tabler/icons-react";
 import { Card, CardContent } from "@/components/ui/card";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
 type ChangelogCategoryType =
   | "highlights"
@@ -74,7 +75,7 @@ interface TitleWithIconProps {
 
 function TitleWithIcon({ title, Icon, children }: TitleWithIconProps) {
   return (
-    <Card className="bg-transparent border-x-0 my-4">
+    <Card className="my-4">
       <CardContent className="flex items-start gap-4 py-4">
         <div className="bg-muted rounded-lg p-2 shrink-0 flex items-center justify-center">
           <Icon className="h-5 w-5 text-muted-foreground" />
@@ -95,7 +96,7 @@ export function ChangelogCategory({
 }: ChangelogCategoryProps) {
   const config = categoryConfig[type];
 
-  if (type === "highlights" || type === "breaking-changes") {
+  if (type === "highlights") {
     return (
       <Callout
         type={config.calloutType}
@@ -106,6 +107,29 @@ export function ChangelogCategory({
       </Callout>
     );
   }
+
+  // Breaking changes styled as destructive alert
+  if (type === "breaking-changes") {
+    return (
+      <Alert variant="destructive" className="my-4">
+        <config.Icon className="h-4 w-4" />
+        <AlertTitle>{title || config.defaultTitle}</AlertTitle>
+        <AlertDescription>{children}</AlertDescription>
+      </Alert>
+    );
+  }
+
+  // Deprecated styled as warning alert
+  if (type === "deprecated") {
+    return (
+      <Alert variant="warning" className="my-4">
+        <config.Icon className="h-4 w-4" />
+        <AlertTitle>{title || config.defaultTitle}</AlertTitle>
+        <AlertDescription>{children}</AlertDescription>
+      </Alert>
+    );
+  }
+
   return (
     <TitleWithIcon title={title || config.defaultTitle} Icon={config.Icon}>
       {children}
