@@ -26,8 +26,8 @@ def test_simple_aggregate_function_to_dict():
 
     assert result['functionName'] == 'sum'
     assert 'argumentType' in result
-    # Python int maps to "Int" by default (not "Int64")
-    assert result['argumentType'] == 'Int'
+    # unless Annotated, Python int becomes `Int64`
+    assert result['argumentType'] == 'Int64'
 
 
 def test_simple_aggregate_function_to_dict_with_different_types():
@@ -57,8 +57,8 @@ def test_dataclass_with_simple_aggregated():
     # Find the row_count column
     row_count_col = next(c for c in columns if c.name == 'row_count')
 
-    # Check basic type - Python int maps to "Int"
-    assert row_count_col.data_type == 'Int'
+    # Check basic type - Python int maps to "Int64" by default
+    assert row_count_col.data_type == 'Int64'
 
     # Check annotation
     simple_agg_annotation = next(
@@ -67,7 +67,7 @@ def test_dataclass_with_simple_aggregated():
     )
     assert simple_agg_annotation is not None
     assert simple_agg_annotation[1]['functionName'] == 'sum'
-    assert simple_agg_annotation[1]['argumentType'] == 'Int'
+    assert simple_agg_annotation[1]['argumentType'] == 'Int64'
 
 
 def test_multiple_simple_aggregated_fields():
