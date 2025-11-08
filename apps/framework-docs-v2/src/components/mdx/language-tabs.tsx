@@ -1,8 +1,9 @@
 "use client";
 
-import { ReactNode, Suspense } from "react";
+import { ReactNode, Suspense, useState, useEffect, useRef } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useLanguage } from "@/hooks/use-language";
+import { toast } from "sonner";
 
 interface LanguageTabsProps {
   children: ReactNode;
@@ -15,17 +16,46 @@ function LanguageTabsInner({
 }: LanguageTabsProps) {
   const { language, setLanguage } = useLanguage();
 
+  // Local state for this tab group - initializes from global language
+  const [localLanguage, setLocalLanguage] = useState<string>(
+    language.toLowerCase(),
+  );
+
+  // Track if this is the initial mount to avoid showing toast on mount
+  const isInitialMount = useRef(true);
+
+  // Sync local state when global language changes (from top nav)
+  useEffect(() => {
+    setLocalLanguage(language.toLowerCase());
+    // Reset initial mount flag after first sync
+    if (isInitialMount.current) {
+      isInitialMount.current = false;
+    }
+  }, [language]);
+
   const handleValueChange = (value: string) => {
-    // Update global language, which will sync all tabs across the page
-    const lang = value.toLowerCase() as "typescript" | "python";
-    if (lang === "typescript" || lang === "python") {
-      setLanguage(lang);
+    const newLang = value.toLowerCase() as "typescript" | "python";
+    setLocalLanguage(newLang);
+
+    // Only show toast if the language is different from global language
+    if (newLang !== language.toLowerCase()) {
+      const languageName = newLang === "typescript" ? "TypeScript" : "Python";
+      toast(`Switched to ${languageName}`, {
+        description: "Would you like to set this as your default language?",
+        action: {
+          label: "Set as default",
+          onClick: () => {
+            setLanguage(newLang);
+          },
+        },
+        duration: 5000,
+      });
     }
   };
 
   return (
     <Tabs
-      value={language.toLowerCase()}
+      value={localLanguage}
       onValueChange={handleValueChange}
       className="w-full my-4"
     >

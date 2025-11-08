@@ -1,7 +1,22 @@
 "use client";
 
 import React from "react";
-import MuxPlayer from "@mux/mux-player-react";
+import dynamic from "next/dynamic";
+
+// Dynamically import MuxPlayer with SSR disabled to avoid web component initialization issues
+// Mux Player uses custom elements that need to be initialized in the browser
+const MuxPlayer = dynamic(
+  // @ts-expect-error - React type version mismatch between Next.js and @mux/mux-player-react
+  () => import("@mux/mux-player-react").then((mod) => mod.default),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="w-full h-64 flex items-center justify-center bg-muted rounded-lg">
+        <p className="text-muted-foreground">Loading video player...</p>
+      </div>
+    ),
+  },
+);
 
 interface MuxVideoProps {
   playbackId: string;
