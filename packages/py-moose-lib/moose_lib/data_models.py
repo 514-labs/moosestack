@@ -504,18 +504,15 @@ def _to_columns(model: type[BaseModel]) -> list[Column]:
         primary_key, field_type = handle_key(field_type)
         is_jwt, field_type = handle_jwt(field_type)
 
-        # Don't pass field_info.metadata when we have raw annotations,
-        # as the metadata is already in the Annotated type????????
-        metadata = [] if field_name in raw_annotations else field_info.metadata
-        optional, mds, data_type = py_type_to_column_type(field_type, metadata)
+        optional, mds, data_type = py_type_to_column_type(field_type, field_info.metadata)
 
         annotations = []
         for md in mds:
-            if isinstance(md, AggregateFunction):
+            if isinstance(md, AggregateFunction) and all(key != "aggregationFunction" for (key, _) in annotations):
                 annotations.append(
                     ("aggregationFunction", md.to_dict())
                 )
-            if isinstance(md, SimpleAggregateFunction):
+            if isinstance(md, SimpleAggregateFunction) and all(key != "simpleAggregationFunction" for (key, _) in annotations):
                 annotations.append(
                     ("simpleAggregationFunction", md.to_dict())
                 )
