@@ -8,7 +8,6 @@ interface FileTreeProps {
 
 interface FileTreeFolderProps {
   name: string;
-  defaultOpen?: boolean;
   children?: React.ReactNode;
 }
 
@@ -20,11 +19,7 @@ export function FileTree({ children }: FileTreeProps) {
   return <div className="my-4 font-mono text-sm">{children}</div>;
 }
 
-export function FileTreeFolder({
-  name,
-  defaultOpen,
-  children,
-}: FileTreeFolderProps) {
+export function FileTreeFolder({ name, children }: FileTreeFolderProps) {
   return (
     <div className="ml-0">
       <div className="text-muted-foreground">{name}/</div>

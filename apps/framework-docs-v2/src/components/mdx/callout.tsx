@@ -73,9 +73,11 @@ export function Callout({
 }: CalloutProps) {
   const variantProps = calloutVariants[type];
 
-  // Resolve icon: boolean -> default, string -> lookup from Tabler icons, component -> use directly
+  // Resolve icon: boolean -> default/undefined, string -> lookup from Tabler icons, component -> use directly
   const Icon =
-    typeof icon === "boolean" && icon ? variantProps.icon
+    typeof icon === "boolean" ?
+      icon ? variantProps.icon
+      : undefined
     : typeof icon === "string" ?
       (TablerIcons as any)[`Icon${icon}`] || variantProps.icon
     : (icon as React.ComponentType<IconProps>) || variantProps.icon;

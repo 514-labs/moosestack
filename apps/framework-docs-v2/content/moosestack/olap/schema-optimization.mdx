@@ -162,14 +162,15 @@ interface UserEvent {
   </LanguageTabContent>
   <LanguageTabContent value="python">
 ```py filename="IntegerTypes.py" copy
+from typing import Annotated
 from moose_lib import OlapTable, UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64
 from pydantic import BaseModel
 
 class UserEvent(BaseModel):
     id: str
     user_id: str
-    age: Annotated[int, "int8"]                     # ✅ 0-255 (1 byte)
-    score: Annotated[int, "uint16"]                   # ✅ -32,768 to 32,767 (2 bytes)
+    age: Annotated[int, "uint8"]                     # ✅ 0-255 (1 byte)
+    score: Annotated[int, "int16"]                   # ✅ -32,768 to 32,767 (2 bytes)
     view_count: Annotated[int, "int32"]             # ✅ 0 to ~4 billion (4 bytes)
     timestamp: Annotated[int, "int64"]              # ✅ Unix timestamp (8 bytes)
     event_type: str

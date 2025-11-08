@@ -344,9 +344,9 @@ in_query = """
 """
 
 # Execute examples
-filter_rows = client.query.execute(filter_query, {"table": UserTable, "status": status, "startDate": start_date, "searchPattern": search_pattern})
-range_rows = client.query.execute(range_query, {"table": UserTable, "minAge": min_age, "maxAge": max_age})
-in_rows = client.query.execute(in_query, {"table": UserTable, "userIds": user_ids})
+filter_rows = client.query.execute(filter_query, {"table": UserTable, "status": status, "start_date": start_date, "search_pattern": search_pattern})
+range_rows = client.query.execute(range_query, {"table": UserTable, "min_age": min_age, "max_age": max_age})
+in_rows = client.query.execute(in_query, {"table": UserTable, "user_ids": user_ids})
 ```
       </TabsContent>
       <TabsContent value="execute-raw">

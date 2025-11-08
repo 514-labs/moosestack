@@ -246,6 +246,7 @@ import Fastify from "fastify";
 import cors from "@fastify/cors";
 import helmet from "@fastify/helmet";
 import rateLimit from "@fastify/rate-limit";
+import { getMooseUtils } from "@514labs/moose-lib";
 import { MyTable } from "../tables/MyTable";
 
 const app = Fastify({ logger: true });
