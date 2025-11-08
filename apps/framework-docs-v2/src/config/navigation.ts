@@ -586,20 +586,6 @@ const moosestackNavigationConfig: NavigationConfig = [
     title: "API Reference",
     icon: IconBook,
     languages: ["typescript", "python"],
-    children: [
-      {
-        type: "page",
-        slug: "moosestack/reference/ts-moose-lib",
-        title: "TypeScript",
-        languages: ["typescript"],
-      },
-      {
-        type: "page",
-        slug: "moosestack/reference/py-moose-lib",
-        title: "Python",
-        languages: ["python"],
-      },
-    ],
   },
   {
     type: "page",

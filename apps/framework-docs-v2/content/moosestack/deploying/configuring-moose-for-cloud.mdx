@@ -2,8 +2,132 @@
 title: Cloud Configuration
 description: Configure MooseStack for cloud deployment
 order: 3
+category: deployment
 ---
 
-# Cloud Configuration
+# Configuring Moose for cloud environments
 
-This page is a placeholder. Content migration pending.
+In the [Packaging Moose for deployment](/moosestack/deploying/packaging-moose-for-deployment) page, we looked at how to package your moose
+application into Docker containers (using the `moose build --docker` command), and you've pushed them to your container repository.
+
+We can connect and configure your container image with remote ClickHouse and Redis-hosted services. You can also optionally
+use Redpanda for event streaming and Temporal for workflow orchestration.
+
+The methods used to accomplish this are generally similar, but the specific details depend on your target cloud infrastructure.
+So, we'll look at the overarching concepts and provide some common examples.
+
+## Specifying your repository container
+
+Earlier, we created two local containers and pushed them to a docker repository.
+
+```txt filename="Terminal" copy
+>docker images
+REPOSITORY                                              TAG               IMAGE ID       CREATED              SIZE
+moose-df-deployment-aarch64-unknown-linux-gnu           0.3.175           c50674c7a68a   About a minute ago   155MB
+moose-df-deployment-x86_64-unknown-linux-gnu            0.3.175           e5b449d3dea3   About a minute ago   163MB
+```
+
+We pushed the containers to the `514labs` Docker Hub account. So, we have these two containers available for use:
+
+```
+514labs/moose-df-deployment-aarch64-unknown-linux-gnu:0.3.175
+514labs/moose-df-deployment-x86_64-unknown-linux-gnu:0.3.175
+```
+
+In later examples, we'll use an AMD64 (x86_64) based machine, so we'll stick to using the following container image: `514labs/moose-df-deployment-x86_64-unknown-linux-gnu:0.3.175`
+
+We'll also examine how the container image name can be used in various cloud providers and scenarios.
+
+## General overview
+
+The general approach is to use a cloud provider that supports specifying a container image to launch your application. Examples include the Google Kubernetes Engine (GKE), Amazon's Elastic Kubernetes Service (EKS), and Elastic Container Service (ECS). Each provider also offers a way of configuring container environment variables that your container application will have access to.
+
+## Essential Environment Variables
+
+Based on our production deployments, here are the essential environment variables you'll need to configure for your Moose application in cloud environments:
+
+### Logging and Telemetry
+
+```
+# Logger configuration
+MOOSE_LOGGER__LEVEL=Info
+MOOSE_LOGGER__STDOUT=true
+MOOSE_LOGGER__FORMAT=Json
+
+# Telemetry configuration
+MOOSE_TELEMETRY__ENABLED=false
+MOOSE_TELEMETRY__EXPORT_METRICS=true
+
+# For debugging
+RUST_BACKTRACE=1
+```
+
+### HTTP Server Configuration
+
+```
+# HTTP server settings
+MOOSE_HTTP_SERVER_CONFIG__HOST=0.0.0.0
+MOOSE_HTTP_SERVER_CONFIG__PORT=4000
+```
+
+### External Service Connections
+
+For detailed configuration of the external services, refer to the [Preparing ClickHouse and Redpanda](/moosestack/deploying/preparing-clickhouse-redpanda) page.
+
+#### ClickHouse
+
+```
+MOOSE_CLICKHOUSE_CONFIG__DB_NAME=<your_database_name>
+MOOSE_CLICKHOUSE_CONFIG__USER=<your_clickhouse_user>
+MOOSE_CLICKHOUSE_CONFIG__PASSWORD=<your_clickhouse_password>
+MOOSE_CLICKHOUSE_CONFIG__HOST=<your_clickhouse_host>
+MOOSE_CLICKHOUSE_CONFIG__HOST_PORT=8443
+MOOSE_CLICKHOUSE_CONFIG__USE_SSL=1
+MOOSE_CLICKHOUSE_CONFIG__NATIVE_PORT=9440
+```
+
+#### Redis
+
+Moose requires Redis for caching and message passing:
+
+```
+MOOSE_REDIS_CONFIG__URL=<your_redis_url>
+MOOSE_REDIS_CONFIG__KEY_PREFIX=<your_key_prefix>
+```
+
+#### Redpanda (Optional)
+
+If you choose to use Redpanda for event streaming:
+
+```
+MOOSE_REDPANDA_CONFIG__BROKER=<your_redpanda_broker>
+MOOSE_REDPANDA_CONFIG__NAMESPACE=<your_namespace>
+MOOSE_REDPANDA_CONFIG__MESSAGE_TIMEOUT_MS=10043
+MOOSE_REDPANDA_CONFIG__SASL_USERNAME=<your_redpanda_username>
+MOOSE_REDPANDA_CONFIG__SASL_PASSWORD=<your_redpanda_password>
+MOOSE_REDPANDA_CONFIG__SASL_MECHANISM=SCRAM-SHA-256
+MOOSE_REDPANDA_CONFIG__SECURITY_PROTOCOL=SASL_SSL
+MOOSE_REDPANDA_CONFIG__REPLICATION_FACTOR=3
+```
+
+#### Temporal (Optional)
+
+If you choose to use Temporal for workflow orchestration:
+
+```
+MOOSE_TEMPORAL_CONFIG__CA_CERT=/etc/ssl/certs/ca-certificates.crt
+MOOSE_TEMPORAL_CONFIG__API_KEY=<your_temporal_api_key>
+MOOSE_TEMPORAL_CONFIG__TEMPORAL_HOST=<your_temporal_namespace>.tmprl.cloud
+```
+
+## Securing Sensitive Information
+
+When deploying to cloud environments, it's important to handle sensitive information like passwords and API keys securely. Each cloud provider offers mechanisms for this:
+
+- **Kubernetes**: Use Secrets to store sensitive data. See our [Kubernetes deployment guide](/moosestack/deploying/deploying-on-kubernetes) for examples.
+- **Amazon ECS**: Use AWS Secrets Manager or Parameter Store to securely inject environment variables.
+- **Other platforms**: Use the platform's recommended secrets management approach.
+
+Never hardcode sensitive values directly in your deployment configuration files.
+
+Please share your feedback about Moose monitoring capabilities through [our GitHub repository](https://github.com/514-labs/moose/issues/new?title=Feedback%20for%20%E2%80%9CMonitoring%E2%80%9D&labels=feedback).

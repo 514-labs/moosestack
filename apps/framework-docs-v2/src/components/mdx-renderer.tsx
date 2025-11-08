@@ -19,6 +19,13 @@ import {
   CompareBulletPointsCard,
   ToggleBlock,
   ZoomImg,
+  ReleaseHighlights,
+  Added,
+  Changed,
+  Deprecated,
+  Fixed,
+  Security,
+  BreakingChanges,
 } from "@/components/mdx";
 import { FileTreeFolder, FileTreeFile } from "@/components/mdx/file-tree";
 import { CodeEditor } from "@/components/ui/shadcn-io/code-editor";
@@ -104,6 +111,13 @@ export async function MDXRenderer({ source }: MDXRendererProps) {
     CompareBulletPointsCard,
     ToggleBlock,
     ZoomImg,
+    ReleaseHighlights,
+    Added,
+    Changed,
+    Deprecated,
+    Fixed,
+    Security,
+    BreakingChanges,
     CodeEditor,
     Separator,
     Tabs,
