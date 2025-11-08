@@ -242,7 +242,7 @@ def handler_with_client(moose_client):
                                 'scheme': 'http',
                                 'path': proxied_path,
                                 'query_string': parsed_path.query.encode() if parsed_path.query else b'',
-                                'root_path': '',
+                                'root_path': normalized_mount,
                                 'headers': [(k.lower().encode(), v.encode()) for k, v in self.headers.items()],
                                 'server': (server_name, server_port),
                                 'client': self.client_address,

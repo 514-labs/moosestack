@@ -896,17 +896,15 @@ fn build_modify_column_sql(
 
     // DEFAULT clause: If omitted, ClickHouse KEEPS any existing DEFAULT
     // Therefore, DEFAULT removal requires a separate REMOVE DEFAULT statement
+    // Default values from ClickHouse/Python are already properly formatted
+    // - String literals come with quotes: 'active'
+    // - SQL expressions come without quotes: xxHash64(_id), now(), today()
+    // - Numbers come without quotes: 42
+    // So we use them as-is without additional formatting
     let default_clause = ch_col
         .default
         .as_ref()
-        .map(|d| {
-            format!(
-                " DEFAULT {}",
-                crate::infrastructure::olap::clickhouse::queries::format_clickhouse_setting_value(
-                    d
-                )
-            )
-        })
+        .map(|d| format!(" DEFAULT {}", d))
         .unwrap_or_default();
 
     // TTL clause: If omitted, ClickHouse KEEPS any existing TTL
@@ -2052,6 +2050,7 @@ pub fn extract_column_ttls_from_create_query(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::infrastructure::olap::clickhouse::model::{ClickHouseColumnType, ClickHouseInt};
     use crate::infrastructure::olap::clickhouse::sql_parser::tests::NESTED_OBJECTS_SQL;
 
     #[test]
@@ -2351,6 +2350,78 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
         assert_eq!(
             sqls[0],
             "ALTER TABLE `test_db`.`users` MODIFY COLUMN IF EXISTS `description` Nullable(String) DEFAULT 'updated default' COMMENT 'Updated description field'"
+        );
+    }
+
+    #[test]
+    fn test_modify_column_with_sql_function_defaults() {
+        // Test that SQL function defaults (like xxHash64, now(), today()) are not quoted
+        // in MODIFY COLUMN statements. This complements the CREATE TABLE test.
+        // Related to ENG-1162.
+
+        let sample_hash_col = ClickHouseColumn {
+            name: "sample_hash".to_string(),
+            column_type: ClickHouseColumnType::ClickhouseInt(ClickHouseInt::UInt64),
+            required: true,
+            primary_key: false,
+            unique: false,
+            default: Some("xxHash64(_id)".to_string()), // SQL function - no quotes
+            comment: Some("Hash of the ID".to_string()),
+            ttl: None,
+        };
+
+        let sqls = build_modify_column_sql("test_db", "test_table", &sample_hash_col, false, false)
+            .unwrap();
+
+        assert_eq!(sqls.len(), 1);
+        // The fix ensures xxHash64(_id) is NOT quoted - if it were quoted, ClickHouse would treat it as a string literal
+        assert_eq!(
+            sqls[0],
+            "ALTER TABLE `test_db`.`test_table` MODIFY COLUMN IF EXISTS `sample_hash` UInt64 DEFAULT xxHash64(_id) COMMENT 'Hash of the ID'"
+        );
+
+        // Test with now() function
+        let created_at_col = ClickHouseColumn {
+            name: "created_at".to_string(),
+            column_type: ClickHouseColumnType::DateTime64 { precision: 3 },
+            required: true,
+            primary_key: false,
+            unique: false,
+            default: Some("now()".to_string()), // SQL function - no quotes
+            comment: None,
+            ttl: None,
+        };
+
+        let sqls = build_modify_column_sql("test_db", "test_table", &created_at_col, false, false)
+            .unwrap();
+
+        assert_eq!(sqls.len(), 1);
+        // The fix ensures now() is NOT quoted
+        assert_eq!(
+            sqls[0],
+            "ALTER TABLE `test_db`.`test_table` MODIFY COLUMN IF EXISTS `created_at` DateTime64(3) DEFAULT now()"
+        );
+
+        // Test that literal string defaults still work correctly (with quotes preserved)
+        let status_col = ClickHouseColumn {
+            name: "status".to_string(),
+            column_type: ClickHouseColumnType::String,
+            required: true,
+            primary_key: false,
+            unique: false,
+            default: Some("'active'".to_string()), // String literal - quotes preserved
+            comment: None,
+            ttl: None,
+        };
+
+        let sqls =
+            build_modify_column_sql("test_db", "test_table", &status_col, false, false).unwrap();
+
+        assert_eq!(sqls.len(), 1);
+        // String literals should preserve their quotes
+        assert_eq!(
+            sqls[0],
+            "ALTER TABLE `test_db`.`test_table` MODIFY COLUMN IF EXISTS `status` String DEFAULT 'active'"
         );
     }
 
