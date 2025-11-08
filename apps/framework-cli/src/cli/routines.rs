@@ -888,7 +888,7 @@ async fn legacy_remote_plan_logic(
     // Build the inframap from the local project
     let local_infra_map = if project.features.data_model_v2 {
         debug!("Loading InfrastructureMap from user code (DMV2)");
-        InfrastructureMap::load_from_user_code(project).await?
+        InfrastructureMap::load_from_user_code(project, true).await?
     } else {
         debug!("Loading InfrastructureMap from primitives");
         let primitive_map = PrimitiveMap::load(project).await?;
@@ -994,7 +994,7 @@ pub async fn remote_plan(
     // Build the inframap from the local project
     let local_infra_map = if project.features.data_model_v2 {
         debug!("Loading InfrastructureMap from user code (DMV2)");
-        InfrastructureMap::load_from_user_code(project).await?
+        InfrastructureMap::load_from_user_code(project, true).await?
     } else {
         debug!("Loading InfrastructureMap from primitives");
         let primitive_map = PrimitiveMap::load(project).await?;
@@ -1114,9 +1114,10 @@ pub async fn remote_gen_migration(
     use anyhow::Context;
 
     // Build the inframap from the local project
+    // Resolve credentials for generating migration DDL with S3 tables
     let local_infra_map = if project.features.data_model_v2 {
         debug!("Loading InfrastructureMap from user code (DMV2)");
-        InfrastructureMap::load_from_user_code(project).await?
+        InfrastructureMap::load_from_user_code(project, true).await?
     } else {
         debug!("Loading InfrastructureMap from primitives");
         let primitive_map = PrimitiveMap::load(project).await?;
@@ -1235,7 +1236,7 @@ pub async fn remote_refresh(
     // Build the inframap from the local project
     let local_infra_map = if project.features.data_model_v2 {
         debug!("Loading InfrastructureMap from user code (DMV2)");
-        InfrastructureMap::load_from_user_code(project).await?
+        InfrastructureMap::load_from_user_code(project, true).await?
     } else {
         debug!("Loading InfrastructureMap from primitives");
         let primitive_map = PrimitiveMap::load(project).await?;

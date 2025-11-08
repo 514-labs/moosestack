@@ -2222,6 +2222,108 @@ impl InfrastructureMap {
         Ok(infra_map)
     }
 
+    /// Resolves S3 credentials from environment variables at runtime.
+    ///
+    /// This method iterates through all tables in the infrastructure map and resolves
+    /// any environment variable markers (like `MOOSE_ENV::AWS_ACCESS_KEY_ID`) in S3 and S3Queue
+    /// engine configurations to their actual values from the environment.
+    ///
+    /// This MUST be called at runtime (dev/prod mode start) rather than at build time
+    /// to avoid baking credentials into Docker images.
+    ///
+    /// # Returns
+    /// A Result indicating success or containing an error message if credential resolution fails
+    pub fn resolve_s3_credentials_from_env(&mut self) -> Result<(), String> {
+        use crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine;
+        use crate::utilities::secrets::resolve_optional_runtime_env;
+
+        for table in self.tables.values_mut() {
+            let mut should_recalc_hash = false;
+
+            if let Some(engine) = &mut table.engine {
+                match engine {
+                    ClickhouseEngine::S3Queue {
+                        aws_access_key_id,
+                        aws_secret_access_key,
+                        ..
+                    } => {
+                        // Resolve environment variable markers for AWS credentials
+                        let resolved_access_key = resolve_optional_runtime_env(aws_access_key_id)
+                            .map_err(|e| {
+                            format!(
+                                "Failed to resolve runtime environment variable for table '{}' field 'awsAccessKeyId': {}",
+                                table.name, e
+                            )
+                        })?;
+
+                        let resolved_secret_key =
+                            resolve_optional_runtime_env(aws_secret_access_key).map_err(|e| {
+                                format!(
+                                    "Failed to resolve runtime environment variable for table '{}' field 'awsSecretAccessKey': {}",
+                                    table.name, e
+                                )
+                            })?;
+
+                        *aws_access_key_id = resolved_access_key;
+                        *aws_secret_access_key = resolved_secret_key;
+                        should_recalc_hash = true;
+
+                        log::debug!(
+                            "Resolved S3Queue credentials for table '{}' at runtime",
+                            table.name
+                        );
+                    }
+                    ClickhouseEngine::S3 {
+                        aws_access_key_id,
+                        aws_secret_access_key,
+                        ..
+                    } => {
+                        // Resolve environment variable markers for AWS credentials
+                        let resolved_access_key = resolve_optional_runtime_env(aws_access_key_id)
+                            .map_err(|e| {
+                            format!(
+                                "Failed to resolve runtime environment variable for table '{}' field 'awsAccessKeyId': {}",
+                                table.name, e
+                            )
+                        })?;
+
+                        let resolved_secret_key =
+                            resolve_optional_runtime_env(aws_secret_access_key).map_err(|e| {
+                                format!(
+                                    "Failed to resolve runtime environment variable for table '{}' field 'awsSecretAccessKey': {}",
+                                    table.name, e
+                                )
+                            })?;
+
+                        *aws_access_key_id = resolved_access_key;
+                        *aws_secret_access_key = resolved_secret_key;
+                        should_recalc_hash = true;
+
+                        log::debug!(
+                            "Resolved S3 credentials for table '{}' at runtime",
+                            table.name
+                        );
+                    }
+                    _ => {
+                        // No credentials to resolve for other engine types
+                    }
+                }
+            }
+
+            // Recalculate engine_params_hash after resolving credentials
+            if should_recalc_hash {
+                table.engine_params_hash =
+                    table.engine.as_ref().map(|e| e.non_alterable_params_hash());
+                log::debug!(
+                    "Recalculated engine_params_hash for table '{}' after credential resolution",
+                    table.name
+                );
+            }
+        }
+
+        Ok(())
+    }
+
     /// Stores the infrastructure map in Redis for persistence and sharing
     ///
     /// Serializes the map to protocol buffers and stores it in Redis using
@@ -2472,10 +2574,16 @@ impl InfrastructureMap {
     ///
     /// # Arguments
     /// * `project` - The project to load the infrastructure map from
+    /// * `resolve_credentials` - Whether to resolve S3 credentials from environment variables.
+    ///   Set to `false` for build-time operations like `moose check` to avoid baking credentials
+    ///   into Docker images. Set to `true` for runtime operations that need to interact with infrastructure.
     ///
     /// # Returns
     /// A Result containing the infrastructure map or an error
-    pub async fn load_from_user_code(project: &Project) -> anyhow::Result<Self> {
+    pub async fn load_from_user_code(
+        project: &Project,
+        resolve_credentials: bool,
+    ) -> anyhow::Result<Self> {
         let partial = if project.language == SupportedLanguages::Typescript {
             let process = crate::framework::typescript::export_collectors::collect_from_index(
                 project,
@@ -2486,11 +2594,18 @@ impl InfrastructureMap {
         } else {
             load_main_py(project, &project.project_location).await?
         };
-        let infra_map = partial.into_infra_map(
+        let mut infra_map = partial.into_infra_map(
             project.language,
             &project.main_file(),
             &project.clickhouse_config.db_name,
         )?;
+
+        // Resolve S3 credentials at runtime if requested
+        if resolve_credentials {
+            infra_map
+                .resolve_s3_credentials_from_env()
+                .map_err(|e| anyhow::anyhow!("Failed to resolve S3 credentials: {}", e))?;
+        }
 
         // Provide explicit feedback when streams are defined but streaming engine is disabled
         if !project.features.streaming_engine && infra_map.uses_streaming() {

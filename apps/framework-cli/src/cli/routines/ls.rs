@@ -293,7 +293,8 @@ pub async fn ls_dmv2(
     name: Option<&str>,
     json: bool,
 ) -> Result<RoutineSuccess, RoutineFailure> {
-    let infra_map = InfrastructureMap::load_from_user_code(project)
+    // Don't resolve credentials for ls command - only inspects structure
+    let infra_map = InfrastructureMap::load_from_user_code(project, false)
         .await
         .map_err(|e| {
             RoutineFailure::new(
