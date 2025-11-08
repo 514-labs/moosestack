@@ -3,7 +3,6 @@ use lazy_static::lazy_static;
 use log::{error, info, warn};
 use regex::Regex;
 use serde::Deserialize;
-use serde_json::from_str;
 use serde_json::json;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
@@ -619,8 +618,8 @@ impl DockerClient {
         version: &str,
         architecture: &str,
         binarylabel: &str,
-    ) -> std::io::Result<Vec<String>> {
-        let child = self
+    ) -> std::io::Result<()> {
+        let mut child = self
             .create_command()
             .current_dir(directory)
             .arg("buildx")
@@ -636,25 +635,20 @@ impl DockerClient {
             .arg("-t")
             .arg(format!("moose-df-deployment-{binarylabel}:latest"))
             .arg(".")
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
+            .stdout(Stdio::inherit())  // ✅ Stream stdout directly to console
+            .stderr(Stdio::inherit())  // ✅ Stream stderr directly to console
             .spawn()?;
 
-        let output = child.wait_with_output()?;
+        let status = child.wait()?;
 
-        if !output.status.success() {
-            return Err(std::io::Error::other(String::from_utf8_lossy(
-                &output.stderr,
+        if !status.success() {
+            return Err(std::io::Error::other(format!(
+                "Docker buildx command failed with exit code: {}",
+                status.code().unwrap_or(-1)
             )));
         }
 
-        let output_str = String::from_utf8_lossy(&output.stdout);
-        let containers: Vec<String> = output_str
-            .split('\n')
-            .filter(|line| !line.is_empty())
-            .map(|line| from_str(line).expect("Failed to parse container row"))
-            .collect();
-        Ok(containers)
+        Ok(())
     }
 }
 
