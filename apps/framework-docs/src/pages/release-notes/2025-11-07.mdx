@@ -8,7 +8,6 @@ import { Callout } from "@/components";
 # November 7, 2025
 
 <Callout type="info" title="Highlights">
-* **Breaking:** Update HubSpot connector configuration parameters
 * **New:** Add support for ignoring partition changes during migrations
 * **New:** Added Nix syntax highlighting support
 </Callout>
@@ -17,142 +16,55 @@ import { Callout } from "@/components";
 
 ## 🦌 Moose
 
-### ⚠️ Breaking Changes
-- **Update HubSpot connector configuration parameters**
-  Updated HubSpot connector to use 'ingestApi' parameter instead of 'ingest' and changed environment variable from HUBSPOT_ACCESS_TOKEN to HUBSPOT_TOKEN. Users will need to update their configuration and environment variables when upgrading.
-
-  **Updated IngestPipeline with ingestApi parameter**
-  ```typescript
-  import { IngestPipeline, OlapTable, ClickHouseEngines } from "@514labs/moose-lib";
-  
-  // Define your data model
-  interface CustomerData {
-    id: string;
-    email: string;
-    firstName: string;
-    lastName: string;
-    createdAt: Date;
-  }
-  
-  // Create a dead letter table for failed records
-  const customerDeadLetterTable = new OlapTable<any>("CustomerDeadLetter", {
-    engine: ClickHouseEngines.MergeTree,
-    orderByFields: ["timestamp"]
-  });
-  
-  // Updated configuration: use 'ingestApi' instead of 'ingest'
-  export const CustomerPipeline = new IngestPipeline<CustomerData>("Customer", {
-    table: {
-      engine: ClickHouseEngines.MergeTree, 
-      orderByFields: ["id"]
-    },
-    stream: true,
-    ingestApi: true, // ✅ New parameter name
-    deadLetterQueue: { 
-      destination: customerDeadLetterTable 
-    },
-  });
-  
-  // For derived/processed data pipelines, set ingestApi to false
-  export const ProcessedCustomerPipeline = new IngestPipeline<CustomerData>("ProcessedCustomer", {
-    table: {
-      engine: ClickHouseEngines.MergeTree,
-      orderByFields: ["id"]
-    },
-    stream: true,
-    ingestApi: false, // No direct API endpoint needed
-  });
-  ```
-  
-  Shows how to update IngestPipeline configurations to use the new 'ingestApi' parameter instead of the deprecated 'ingest' parameter. The example demonstrates both enabling and disabling the ingest API for different pipeline types.
-
 ### New Features
 - **Add support for ignoring partition changes during migrations**
   Users can now configure the migration system to ignore PARTITION BY changes when comparing database schemas. This prevents unnecessary table recreations when partition changes are intentionally ignored, making migrations more flexible and reducing downtime during deployments.
 
   **Configure migrations to ignore partition changes**
-  ```typescript
-  // moose.config.ts - Configure migration to ignore partition changes
-  import { MooseConfig } from '@514labs/moose-lib';
-  
-  export default {
-    // ... other config options
-    
-    migration: {
-      // Ignore partition changes during migrations to prevent table recreations
-      ignoreOperations: ['ModifyPartitionBy']
-    },
-    
-    // Production environment settings
-    production: {
-      // Migration config is only applied in production mode
-      migration: {
-        ignoreOperations: [
-          'ModifyPartitionBy',  // Ignore partition changes
-          // Add other operations to ignore as needed
-        ]
-      }
-    }
-  } satisfies MooseConfig;
-  
-  // models/UserEvents.ts - Data model with partition configuration
-  export interface UserEvents {
-    userId: string;
-    eventType: string;
-    timestamp: Date;
-    metadata: Record<string, any>;
-  }
-  
-  // The partition configuration can be changed without triggering
-  // table recreation when ModifyPartitionBy is in ignoreOperations
-  export const UserEventsTable = {
-    partitionBy: 'toYYYYMM(timestamp)', // This can be modified safely
-    orderBy: ['userId', 'timestamp']
-  };
-  ```
-  
-  This example shows how to configure MooseStack to ignore partition changes during migrations. When ModifyPartitionBy is added to ignoreOperations, changing the partition configuration won't trigger expensive table recreations, reducing deployment downtime.
+  ```toml
+  # moose.config.toml - Configure migration to ignore partition changes
 
-- **New documentation site with language-specific docs and AI integration**
-  Launched a completely redesigned documentation site (framework-docs-v2) with separate TypeScript and Python documentation paths, full-text search, AI assistant integration via llms.txt generation, and improved navigation. The new site provides better developer experience with language-specific examples and enhanced search capabilities.
-  
-  📸 *[Screenshot needed: Launched a completely redesigned documentation site (framework-docs-v2) with separate TypeScript and Python documentation paths, full-text search, AI assistant integration via llms.txt generation, and improved navigation. The new site provides better developer experience with language-specific examples and enhanced search capabilities.]*
+  # ... other config options (language, clickhouse_config, etc.)
+
+  [migration_config]
+  # Ignore partition changes during migrations to prevent table recreations
+  ignore_operations = ["ModifyPartitionBy"]
+  ```
+
+  This example shows how to configure MooseStack to ignore partition changes during migrations. When ModifyPartitionBy is added to ignore_operations, changing the partition configuration won't trigger expensive table recreations, reducing deployment downtime. Add this configuration to your moose.config.toml file.
 
 - **Add ClickHouse cluster configuration support for ON CLUSTER operations**
   Users can now define ClickHouse clusters in their project configuration to enable ON CLUSTER SQL operations. This allows for distributed table operations and queries across multiple ClickHouse nodes. In development mode, clusters are automatically configured as single-node setups for local testing.
 
   **Configure ClickHouse clusters for distributed operations**
-  ```typescript
-  // moose.config.ts - Configure ClickHouse clusters for distributed operations
-  import { MooseConfig } from "@514labs/moose-lib";
-  
-  export default {
-    clickHouseConfig: {
-      // Standard ClickHouse connection settings
-      host: "localhost",
-      port: 8123,
-      username: "default",
-      password: "",
-      database: "analytics",
-      
-      // Define clusters for ON CLUSTER operations
-      clusters: [
-        { name: "analytics_cluster" },
-        { name: "warehouse_cluster" },
-        { name: "reporting_cluster" }
-      ]
-    }
-  } satisfies MooseConfig;
-  
-  // models/UserEvent.ts - Data model that will use clustered tables
-  export interface UserEvent {
-    user_id: string;
-    event_type: string;
-    timestamp: Date;
-    properties: Record<string, any>;
-  }
-  
-  // aggregations/user_metrics.sql - Use ON CLUSTER for distributed aggregations
+  ```toml
+  # moose.config.toml - Configure ClickHouse clusters for distributed operations
+
+  [clickhouse_config]
+  # Standard ClickHouse connection settings
+  host = "localhost"
+  host_port = 18123
+  user = "default"
+  password = ""
+  db_name = "analytics"
+  use_ssl = false
+  native_port = 9000
+
+  # Define clusters for ON CLUSTER operations
+  [[clickhouse_config.clusters]]
+  name = "analytics_cluster"
+
+  [[clickhouse_config.clusters]]
+  name = "warehouse_cluster"
+
+  [[clickhouse_config.clusters]]
+  name = "reporting_cluster"
+  ```
+
+  Once configured, you can use the clusters in your SQL files with ON CLUSTER clauses:
+
+  ```sql
+  -- aggregations/user_metrics.sql - Use ON CLUSTER for distributed aggregations
   CREATE TABLE user_daily_metrics ON CLUSTER analytics_cluster (
     date Date,
     user_id String,
@@ -161,7 +73,7 @@ import { Callout } from "@/components";
   ) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{shard}/user_daily_metrics', '{replica}')
   PARTITION BY toYYYYMM(date)
   ORDER BY (date, user_id);
-  
+
   -- Create materialized view across the cluster
   CREATE MATERIALIZED VIEW user_metrics_mv ON CLUSTER analytics_cluster
   TO user_daily_metrics
@@ -173,8 +85,8 @@ import { Callout } from "@/components";
   FROM UserEvent
   GROUP BY date, user_id;
   ```
-  
-  This example shows how to configure ClickHouse clusters in a MooseStack project to enable distributed table operations. The clusters are defined in the config file and then used with ON CLUSTER clauses in SQL to create tables and views across multiple ClickHouse nodes. In development mode, these clusters automatically work as single-node setups.
+
+  This example shows how to configure ClickHouse clusters in a MooseStack project to enable distributed table operations. The clusters are defined in the moose.config.toml file and then used with ON CLUSTER clauses in SQL to create tables and views across multiple ClickHouse nodes. In development mode, these clusters automatically work as single-node setups.
 
 - **Add utility types for Python numeric data types**
   Added new type aliases for ClickHouse numeric types in Python: Int8, Int16, Int32, Int64, UInt8, UInt16, UInt32, UInt64, Float32, and Float64. These provide better type safety and clearer intent when defining data models, allowing users to specify exact numeric precision requirements for their ClickHouse columns instead of using generic int/float types.
@@ -429,8 +341,8 @@ import { Callout } from "@/components";
 - **Add release notes for November 1, 2025**
   Published comprehensive release notes documenting new ClickHouse table engine support (Buffer, S3, Distributed), serverless migration improvements with Redis state storage, multi-database table support, and Boreal UI enhancements. These notes help users understand and adopt the latest features and improvements.
 
-- **Add comprehensive connector development guide and GitHub agent**
-  Added a detailed connector implementation guide that walks developers through the complete process of creating connectors for the Registry, from API research to production deployment. The guide includes code examples, authentication patterns, pagination strategies, and testing approaches. Also includes a GitHub agent to provide automated guidance during connector development.
+- **Add comprehensive connector development guide**
+  Added a detailed connector implementation guide that walks developers through the complete process of creating connectors for the Registry, from API research to production deployment. The guide includes code examples, authentication patterns, pagination strategies, and testing approaches.
 
   **Building a Shopify connector for MooseStack data ingestion**
   ```typescript
