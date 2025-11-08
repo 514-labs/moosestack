@@ -124,7 +124,9 @@ export function SideNav({ items }: SideNavProps) {
       collapsible="icon"
       variant="sidebar"
     >
-      <SidebarContent>{renderNavItems()}</SidebarContent>
+      <SidebarContent className="pt-6 lg:pt-8">
+        {renderNavItems()}
+      </SidebarContent>
     </Sidebar>
   );
 }
