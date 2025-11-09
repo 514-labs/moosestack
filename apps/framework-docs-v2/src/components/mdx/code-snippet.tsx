@@ -16,6 +16,7 @@ interface CodeSnippetProps {
   language?: string;
   filename?: string;
   copyButton?: boolean;
+  lineNumbers?: boolean;
   className?: string;
 }
 
@@ -63,12 +64,13 @@ export function CodeSnippet({
   language = "typescript",
   filename,
   copyButton = true,
+  lineNumbers = true,
   className,
 }: CodeSnippetProps) {
   return (
     <div
       className={cn(
-        "relative my-4 rounded-lg border bg-muted/50 overflow-hidden",
+        "relative my-4 rounded-lg border bg-muted/50 overflow-hidden w-full max-w-full",
         className,
       )}
     >
@@ -78,7 +80,7 @@ export function CodeSnippet({
           {filename}
         </div>
       )}
-      <div className="bg-muted/30 rounded-b-lg overflow-x-auto min-w-0">
+      <div className="bg-muted/30 rounded-b-lg overflow-x-auto min-w-0 max-w-full">
         <CodeBlock
           data={[
             {
@@ -95,7 +97,7 @@ export function CodeSnippet({
               <CodeBlockItem
                 key={item.language}
                 value={item.language}
-                lineNumbers={true}
+                lineNumbers={lineNumbers}
               >
                 <CodeBlockContent
                   language={item.language as any}

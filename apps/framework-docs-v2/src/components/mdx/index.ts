@@ -39,3 +39,6 @@ export {
   Security,
   BreakingChanges,
 } from "./changelog-category";
+export { TemplateCard } from "./template-card";
+export { TemplateGrid } from "./template-grid";
+export { TemplatesGridServer } from "./templates-grid-server";
