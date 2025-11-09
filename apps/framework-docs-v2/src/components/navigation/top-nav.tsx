@@ -40,6 +40,7 @@ export function TopNav({ stars }: TopNavProps) {
     href: string;
     section: DocumentationSection;
     external?: boolean;
+    isActive?: (pathname: string) => boolean;
   }> = [
     {
       label: "MooseStack",
@@ -55,6 +56,12 @@ export function TopNav({ stars }: TopNavProps) {
       label: "AI",
       href: "/ai/overview",
       section: "ai",
+    },
+    {
+      label: "Templates",
+      href: "/moosestack/templates-examples",
+      section: "moosestack",
+      isActive: (pathname) => pathname.includes("/templates-examples"),
     },
   ];
 
@@ -73,12 +80,14 @@ export function TopNav({ stars }: TopNavProps) {
           {/* Desktop Navigation */}
           <div className="hidden md:flex md:flex-1 md:items-center md:justify-between">
             <nav className="flex items-center gap-2">
-              {navItems.map((item) => {
+              {navItems.map((item, index) => {
                 const isActive =
-                  activeSection !== null && activeSection === item.section;
+                  item.isActive ?
+                    item.isActive(pathname)
+                  : activeSection !== null && activeSection === item.section;
                 return (
                   <Button
-                    key={item.section}
+                    key={`${item.section}-${index}`}
                     variant={isActive ? "secondary" : "ghost"}
                     asChild
                   >
@@ -121,12 +130,14 @@ export function TopNav({ stars }: TopNavProps) {
       {mobileMenuOpen && (
         <div className="md:hidden border-t">
           <div className="px-4 py-4 space-y-2">
-            {navItems.map((item) => {
+            {navItems.map((item, index) => {
               const isActive =
-                activeSection !== null && activeSection === item.section;
+                item.isActive ?
+                  item.isActive(pathname)
+                : activeSection !== null && activeSection === item.section;
               return (
                 <Button
-                  key={item.section}
+                  key={`${item.section}-${index}`}
                   variant={isActive ? "secondary" : "ghost"}
                   asChild
                   className="w-full justify-start"

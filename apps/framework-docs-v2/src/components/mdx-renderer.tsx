@@ -26,6 +26,7 @@ import {
   Fixed,
   Security,
   BreakingChanges,
+  TemplatesGridServer,
 } from "@/components/mdx";
 import { FileTreeFolder, FileTreeFile } from "@/components/mdx/file-tree";
 import { CodeEditor } from "@/components/ui/shadcn-io/code-editor";
@@ -118,6 +119,7 @@ export async function MDXRenderer({ source }: MDXRendererProps) {
     Fixed,
     Security,
     BreakingChanges,
+    TemplatesGridServer,
     CodeEditor,
     Separator,
     Tabs,

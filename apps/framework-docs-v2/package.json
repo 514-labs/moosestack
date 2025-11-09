@@ -39,6 +39,7 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "cmdk": "^1.0.0",
+    "@iarna/toml": "^2.2.5",
     "gray-matter": "^4.0.3",
     "html-to-text": "^9.0.5",
     "motion": "^12.23.12",
