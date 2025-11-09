@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { TemplateCard } from "./template-card";
-import type { ItemMetadata, TemplateMetadata } from "@/lib/templates";
+import type { ItemMetadata, TemplateMetadata } from "@/lib/template-types";
 import { IconSearch, IconX } from "@tabler/icons-react";
 
 interface TemplateGridProps {

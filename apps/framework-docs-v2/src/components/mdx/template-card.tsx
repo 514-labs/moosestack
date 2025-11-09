@@ -24,7 +24,7 @@ import type {
   ItemMetadata,
   TemplateMetadata,
   AppMetadata,
-} from "@/lib/templates";
+} from "@/lib/template-types";
 
 interface TemplateCardProps {
   item: ItemMetadata;
