@@ -164,7 +164,7 @@ async function formatCatalogSummary(
   tables: Array<{ name: string; engine: string }>,
   materializedViews: Array<{ name: string; engine: string }>,
 ): Promise<string> {
-  let output = "# Commvault Data Catalog (Summary)\n\n";
+  let output = "# Data Catalog (Summary)\n\n";
 
   // Format tables
   if (tables.length > 0) {
