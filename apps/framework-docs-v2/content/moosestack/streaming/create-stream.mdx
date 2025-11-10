@@ -122,10 +122,10 @@ class RawData(BaseModel):
 
 raw_table = OlapTable[RawData]("raw_data")
 raw_stream = Stream[RawData]("raw_data", StreamConfig(
-  destination: raw_table # Optional: Specify a destination table for the stream, sets up a process to sync data from the stream to the table
+  destination=raw_table # Optional: Specify a destination table for the stream, sets up a process to sync data from the stream to the table
 ))
 raw_ingest_api = IngestApi[RawData]("raw_data", IngestConfig(
-  destination: raw_stream # Configure Moose to write all validated data to the stream
+  destination=raw_stream # Configure Moose to write all validated data to the stream
 ))
 ```
   </LanguageTabContent>

@@ -41,6 +41,15 @@ export const MuxVideo: React.FC<MuxVideoProps> = ({
   className = "",
   poster = "",
 }) => {
+  // Build style object for width/height
+  // When height is "auto", we omit it to let the player maintain aspect ratio
+  const style: React.CSSProperties = {
+    width: typeof width === "number" ? `${width}px` : width,
+    ...(height !== "auto" && {
+      height: typeof height === "number" ? `${height}px` : height,
+    }),
+  };
+
   return (
     <div className="border border-border rounded-xl p-5 flex justify-center items-center">
       <MuxPlayer
@@ -55,6 +64,7 @@ export const MuxVideo: React.FC<MuxVideoProps> = ({
         loop={loop}
         className={className}
         poster={poster}
+        style={style}
       />
     </div>
   );
