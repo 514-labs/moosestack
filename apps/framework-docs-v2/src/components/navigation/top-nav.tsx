@@ -2,10 +2,10 @@
 
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
-import { IconMenu } from "@tabler/icons-react";
+import { IconMenu, IconSearch } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { GitHubButtonGroup } from "@/components/github-button-group";
@@ -14,6 +14,7 @@ import {
   getSectionFromPathname,
   type DocumentationSection,
 } from "@/config/navigation";
+import { CommandSearch } from "@/components/search/command-search";
 
 interface TopNavProps {
   stars: number | null;
@@ -24,6 +25,20 @@ export function TopNav({ stars }: TopNavProps) {
   const searchParams = useSearchParams();
   const { language } = useLanguage();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+
+  // Handle keyboard shortcut for search
+  useEffect(() => {
+    const down = (e: KeyboardEvent) => {
+      if (e.key === "k" && (e.metaKey || e.ctrlKey)) {
+        e.preventDefault();
+        setSearchOpen((open) => !open);
+      }
+    };
+
+    document.addEventListener("keydown", down);
+    return () => document.removeEventListener("keydown", down);
+  }, []);
 
   // Determine active section from pathname
   const activeSection = getSectionFromPathname(pathname);
@@ -104,6 +119,20 @@ export function TopNav({ stars }: TopNavProps) {
             </nav>
 
             <div className="flex items-center space-x-2">
+              <Button
+                variant="outline"
+                className="relative h-9 w-full justify-start text-sm text-muted-foreground sm:pr-12 md:w-40 lg:w-64"
+                onClick={() => setSearchOpen(true)}
+              >
+                <IconSearch className="mr-2 h-4 w-4" />
+                <span className="hidden lg:inline-flex">
+                  Search documentation...
+                </span>
+                <span className="inline-flex lg:hidden">Search...</span>
+                <kbd className="pointer-events-none absolute right-1.5 top-1.5 hidden h-5 select-none items-center gap-1 rounded border bg-muted px-1.5 font-mono text-[10px] font-medium opacity-100 sm:flex">
+                  <span className="text-xs">⌘</span>K
+                </kbd>
+              </Button>
               <Button variant="ghost" asChild>
                 <Link href={buildUrl("/moosestack/changelog")}>Changelog</Link>
               </Button>
@@ -160,6 +189,8 @@ export function TopNav({ stars }: TopNavProps) {
           </div>
         </div>
       )}
+
+      <CommandSearch open={searchOpen} onOpenChange={setSearchOpen} />
     </>
   );
 }

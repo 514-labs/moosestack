@@ -9,35 +9,30 @@ import {
 import { Button } from "@/components/ui/button";
 import { IconDatabase, IconDeviceLaptop, IconAtom } from "@tabler/icons-react";
 
-export default async function HomePage({
-  searchParams,
-}: {
-  searchParams: Promise<{ lang?: string }>;
-}) {
-  const resolvedSearchParams = await searchParams;
-  const lang = resolvedSearchParams.lang || "typescript";
-  const langParam = `?lang=${lang}`;
+// Force static generation
+export const dynamic = "force-static";
 
+export default function HomePage() {
   const sections = [
     {
       title: "MooseStack",
       description:
         "The core framework for building data applications with OLAP, streaming, workflows, and APIs.",
-      href: `/moosestack${langParam}`,
+      href: `/moosestack`,
       icon: IconDatabase,
     },
     {
       title: "Hosting",
       description:
         "Deploy and host your MooseStack applications with our managed hosting platform.",
-      href: `/hosting/overview${langParam}`,
+      href: `/hosting/overview`,
       icon: IconDeviceLaptop,
     },
     {
       title: "AI",
       description:
         "AI-powered features and integrations for enhancing your MooseStack applications.",
-      href: `/ai/overview${langParam}`,
+      href: `/ai/overview`,
       icon: IconAtom,
     },
   ];
