@@ -20,11 +20,13 @@ MOOSE_RUNTIME_ENV_PREFIX = "__MOOSE_RUNTIME_ENV__:"
 
 
 def get(env_var_name: str) -> str:
-    """Marks a value to be resolved from an environment variable at runtime.
+    """Gets a value from an environment variable, with behavior depending on context.
 
-    When you use this function, the value is not read immediately. Instead,
-    a special marker is created that the Moose CLI will resolve when it
-    processes your infrastructure configuration.
+    When IS_LOADING_INFRA_MAP=true (infrastructure loading):
+      Returns a marker string that Moose CLI will resolve later
+
+    When IS_LOADING_INFRA_MAP is unset (function/workflow runtime):
+      Returns the actual value from the environment variable
 
     This is useful for:
     - Credentials that should never be embedded in Docker images
@@ -36,10 +38,11 @@ def get(env_var_name: str) -> str:
         env_var_name: Name of the environment variable to resolve
 
     Returns:
-        A marker string that Moose CLI will resolve at runtime
+        Either a marker string or the actual environment variable value
 
     Raises:
         ValueError: If the environment variable name is empty
+        KeyError: If the environment variable is not set (runtime mode only)
 
     Example:
         >>> # Instead of this (evaluated at build time):
@@ -49,9 +52,26 @@ def get(env_var_name: str) -> str:
         >>> # Use this (evaluated at runtime):
         >>> aws_key = moose_runtime_env.get("AWS_ACCESS_KEY_ID")
     """
+    import os
+    
     if not env_var_name or not env_var_name.strip():
         raise ValueError("Environment variable name cannot be empty")
-    return f"{MOOSE_RUNTIME_ENV_PREFIX}{env_var_name}"
+    
+    # Check if we're loading infrastructure map
+    is_loading_infra_map = os.environ.get("IS_LOADING_INFRA_MAP") == "true"
+    
+    if is_loading_infra_map:
+        # Return marker string for later resolution by Moose CLI
+        return f"{MOOSE_RUNTIME_ENV_PREFIX}{env_var_name}"
+    else:
+        # Return actual value from environment for runtime execution
+        value = os.environ.get(env_var_name)
+        if value is None:
+            raise KeyError(
+                f"Environment variable '{env_var_name}' is not set. "
+                f"This is required for runtime execution of functions/workflows."
+            )
+        return value
 
 
 class MooseRuntimeEnv:

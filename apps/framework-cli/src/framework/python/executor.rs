@@ -87,21 +87,29 @@ pub fn run_python_command(
     project_location: &Path,
     command: PythonCommand,
 ) -> Result<Child, std::io::Error> {
-    let (get_args, library_module) = match command {
-        PythonCommand::DmV2Serializer => (Vec::<String>::new(), "moose_lib.dmv2_serializer"),
+    let (get_args, library_module, is_loading_infra_map) = match command {
+        PythonCommand::DmV2Serializer => (Vec::<String>::new(), "moose_lib.dmv2_serializer", true),
         PythonCommand::StreamingFunctionRunner { args } => {
-            (args, "moose_lib.streaming.streaming_function_runner")
+            (args, "moose_lib.streaming.streaming_function_runner", false)
         }
     };
 
-    Command::new("python3")
-        .env(PYTHON_PATH, python_path_with_lib(project_location))
+    let mut cmd = Command::new("python3");
+    cmd.env(PYTHON_PATH, python_path_with_lib(project_location))
         .env(
             "MOOSE_MANAGEMENT_PORT",
             project.http_server_config.management_port.to_string(),
         )
-        .env("MOOSE_SOURCE_DIR", &project.source_dir)
-        .arg("-u")
+        .env("MOOSE_SOURCE_DIR", &project.source_dir);
+
+    // Set IS_LOADING_INFRA_MAP=true only when loading infrastructure map
+    // This allows moose_runtime_env.get() to return markers for later resolution
+    // For runtime execution (functions/workflows), it will return actual env var values
+    if is_loading_infra_map {
+        cmd.env("IS_LOADING_INFRA_MAP", "true");
+    }
+
+    cmd.arg("-u")
         .arg("-m")
         .arg(library_module)
         .args(get_args)

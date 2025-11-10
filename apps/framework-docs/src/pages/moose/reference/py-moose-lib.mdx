@@ -478,3 +478,150 @@ class WorkflowConfig:
     # Optional cron-like schedule string for recurring execution
     schedule: Optional[str] = None
 ```
+
+## Registry Functions
+
+The registry functions allow you to programmatically access all registered Moose resources at runtime. This is useful for inspecting resources, building dynamic tools, meta-programming, and testing.
+
+### `get_tables()`
+Get all registered OLAP tables.
+```python
+from moose_lib import get_tables
+
+tables = get_tables()  # Returns Dict[str, OlapTable]
+for name, table in tables.items():
+    print(f"Table: {name}")
+```
+
+### `get_table(name)`
+Get a specific OLAP table by name.
+```python
+from moose_lib import get_table
+
+user_table = get_table("Users")
+if user_table:
+    print(f"Found table: {user_table.name}")
+```
+
+### `get_streams()`
+Get all registered streams.
+```python
+from moose_lib import get_streams
+
+streams = get_streams()  # Returns Dict[str, Stream]
+```
+
+### `get_stream(name)`
+Get a specific stream by name.
+```python
+from moose_lib import get_stream
+
+event_stream = get_stream("UserEvents")
+```
+
+### `get_ingest_apis()`
+Get all registered ingestion APIs.
+```python
+from moose_lib import get_ingest_apis
+
+ingest_apis = get_ingest_apis()  # Returns Dict[str, IngestApi]
+```
+
+### `get_ingest_api(name)`
+Get a specific ingestion API by name.
+```python
+from moose_lib import get_ingest_api
+
+user_api = get_ingest_api("IngestUsers")
+```
+
+### `get_apis()`
+Get all registered consumption/egress APIs.
+```python
+from moose_lib import get_apis
+
+apis = get_apis()  # Returns Dict[str, Api]
+```
+
+### `get_api(name)`
+Get a registered API by name, version, or custom path.
+
+Supports multiple lookup strategies:
+- Direct lookup by full key (`name` or `name:version`)
+- Alias lookup by base name when only one versioned API exists
+- Lookup by custom path (if configured)
+
+```python
+from moose_lib import get_api
+
+# Direct lookup
+api = get_api("QueryUsers")
+
+# Version lookup
+api_v1 = get_api("QueryUsers:1.0")
+
+# Path lookup
+api_by_path = get_api("/custom/query")
+
+# Automatic aliasing: if only one version exists, unversioned lookup works
+api = get_api("QueryUsers")  # Returns QueryUsers:1.0 if it's the only version
+```
+
+### `get_sql_resources()`
+Get all registered SQL resources (views, etc.).
+```python
+from moose_lib import get_sql_resources
+
+resources = get_sql_resources()  # Returns Dict[str, SqlResource]
+```
+
+### `get_sql_resource(name)`
+Get a specific SQL resource by name.
+```python
+from moose_lib import get_sql_resource
+
+view = get_sql_resource("UserSummaryView")
+```
+
+### `get_workflows()`
+Get all registered workflows.
+```python
+from moose_lib import get_workflows
+
+workflows = get_workflows()  # Returns Dict[str, Workflow]
+```
+
+### `get_workflow(name)`
+Get a specific workflow by name.
+```python
+from moose_lib import get_workflow
+
+etl_workflow = get_workflow("DailyETL")
+```
+
+### `get_web_apps()`
+Get all registered web apps.
+```python
+from moose_lib import get_web_apps
+
+web_apps = get_web_apps()  # Returns Dict[str, WebApp]
+```
+
+### `get_web_app(name)`
+Get a specific web app by name.
+```python
+from moose_lib import get_web_app
+
+admin_app = get_web_app("AdminPanel")
+if admin_app:
+    print(f"Mounted at: {admin_app.config.mount_path}")
+```
+
+### Backward Compatibility
+```python
+# Deprecated: Use get_apis and get_api instead
+from moose_lib import get_consumption_apis, get_consumption_api
+
+apis = get_consumption_apis()  # Same as get_apis()
+api = get_consumption_api("name")  # Same as get_api("name")
+```

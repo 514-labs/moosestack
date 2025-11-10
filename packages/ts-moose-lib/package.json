@@ -28,7 +28,7 @@
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "build": "tsup",
-    "test": "mocha -r ts-node/register 'tests/**/*.test.ts'"
+    "test": "tsup && mocha -r './ts-node-patch-for-mocha' 'tests/**/*.test.ts'"
   },
   "dependencies": {
     "@clickhouse/client": "1.8.1",

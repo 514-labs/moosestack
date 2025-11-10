@@ -2,6 +2,15 @@ import { expect } from "chai";
 import { mooseRuntimeEnv, MOOSE_RUNTIME_ENV_PREFIX } from "../src/secrets";
 
 describe("mooseRuntimeEnv Utility", function () {
+  // Set IS_LOADING_INFRA_MAP=true for these tests so mooseRuntimeEnv.get() returns markers
+  before(function () {
+    process.env.IS_LOADING_INFRA_MAP = "true";
+  });
+
+  after(function () {
+    delete process.env.IS_LOADING_INFRA_MAP;
+  });
+
   describe("mooseRuntimeEnv.get", () => {
     it("should create a marker string with the correct prefix", () => {
       const varName = "AWS_ACCESS_KEY_ID";

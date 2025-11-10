@@ -106,7 +106,8 @@ fn build_count_query(
 /// Loads the infrastructure map based on project configuration
 async fn load_infrastructure_map(project: &Project) -> Result<InfrastructureMap, RoutineFailure> {
     if project.features.data_model_v2 {
-        InfrastructureMap::load_from_user_code(project)
+        // Resolve credentials for seeding data into S3-backed tables
+        InfrastructureMap::load_from_user_code(project, true)
             .await
             .map_err(|e| {
                 RoutineFailure::error(Message {
