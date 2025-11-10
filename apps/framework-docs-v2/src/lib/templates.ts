@@ -164,7 +164,7 @@ export function getAllTemplates(): TemplateMetadata[] {
 
     try {
       const configContent = fs.readFileSync(configPath, "utf-8");
-      const config = parse(configContent) as TemplateConfig;
+      const config = parse(configContent) as unknown as TemplateConfig;
 
       // Skip if visible is explicitly false
       if (config.visible === false) {
@@ -186,7 +186,7 @@ export function getAllTemplates(): TemplateMetadata[] {
         slug: templateName,
         language: config.language,
         description: config.description,
-        visible: config.visible !== false,
+        visible: config.visible ?? true,
         category,
         frameworks,
         features,
