@@ -131,8 +131,14 @@ export function CommandSearch({ open, onOpenChange }: CommandSearchProps) {
           return;
         }
         const searchResults: PagefindSearchResult =
-          await window.pagefind.search(searchQuery);
+          await window.pagefind.search(searchQuery, {
+            // Limit to one result per page to avoid sub-results
+            // We'll deduplicate further by URL normalization
+            filters: {},
+          });
         const processedResults: SearchResult[] = [];
+        // Map to deduplicate results by normalized URL (Pagefind can return multiple results per page)
+        const urlMap = new Map<string, SearchResult>();
 
         for (const result of searchResults.results) {
           try {
@@ -143,20 +149,46 @@ export function CommandSearch({ open, onOpenChange }: CommandSearchProps) {
               .replace(/^\/_next\/static\/chunks\/app\/server\/app/, "")
               .replace(/^\/\.next\/server\/app/, "")
               .replace(/\.html$/, "")
-              .replace(/\/index$/, "/");
+              .replace(/\/index$/, "/")
+              // Handle Next.js dynamic route patterns
+              .replace(/\/\[.*?\]/g, "")
+              // Remove any double slashes
+              .replace(/\/+/g, "/");
 
-            // Ensure URL starts with /
-            if (!normalizedUrl.startsWith("/")) {
-              normalizedUrl = "/" + normalizedUrl;
+            // Remove URL fragments (hash) and query parameters for deduplication
+            // e.g., /page#section and /page?param=value should be treated as the same page
+            const urlWithoutFragment =
+              normalizedUrl.split("#")[0] || normalizedUrl;
+            const urlWithoutQuery =
+              urlWithoutFragment.split("?")[0] || urlWithoutFragment;
+
+            // Normalize trailing slashes (except for root)
+            let finalUrl = urlWithoutQuery;
+            if (finalUrl !== "/" && finalUrl.endsWith("/")) {
+              finalUrl = finalUrl.slice(0, -1);
             }
 
-            processedResults.push({
-              id: data.url,
-              url: normalizedUrl,
-              title: data.title || data.meta?.title || "Untitled",
-              excerpt: data.excerpt || "",
-              language: data.meta?.language,
-            });
+            // Ensure URL starts with /
+            if (!finalUrl.startsWith("/")) {
+              finalUrl = "/" + finalUrl;
+            }
+
+            // Normalize to lowercase for case-insensitive comparison
+            const normalizedKey = finalUrl.toLowerCase();
+
+            // Only add if we haven't seen this URL before
+            // Keep the first result for each unique page
+            if (!urlMap.has(normalizedKey)) {
+              const searchResult: SearchResult = {
+                id: finalUrl, // Use normalized URL as ID for React key
+                url: finalUrl,
+                title: data.title || data.meta?.title || "Untitled",
+                excerpt: data.excerpt || "",
+                language: data.meta?.language,
+              };
+              urlMap.set(normalizedKey, searchResult);
+              processedResults.push(searchResult);
+            }
           } catch (error) {
             // Skip invalid results
           }
@@ -212,7 +244,14 @@ export function CommandSearch({ open, onOpenChange }: CommandSearchProps) {
   );
 
   return (
-    <CommandDialog open={open} onOpenChange={onOpenChange}>
+    <CommandDialog
+      open={open}
+      onOpenChange={onOpenChange}
+      commandProps={{
+        shouldFilter: false,
+        filter: () => 1, // Disable cmdk's internal filtering since we're using Pagefind
+      }}
+    >
       <CommandInput
         placeholder="Search documentation..."
         value={query}
