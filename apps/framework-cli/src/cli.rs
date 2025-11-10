@@ -588,9 +588,19 @@ pub async fn top_command_handler(
                 )))
             }
         }
-        Commands::Dev { no_infra, mcp } => {
+        Commands::Dev {
+            no_infra,
+            mcp,
+            log_payloads,
+        } => {
             info!("Running dev command");
             info!("Moose Version: {}", CLI_VERSION);
+
+            // Set environment variable for payload logging if flag is enabled
+            if *log_payloads {
+                std::env::set_var("MOOSE_LOG_PAYLOADS", "true");
+                info!("Payload logging enabled");
+            }
 
             let mut project = load_project(commands)?;
             project.set_is_production_env(false);
