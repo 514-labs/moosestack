@@ -28,11 +28,14 @@ const Command: React.ForwardRefExoticComponent<
 ));
 Command.displayName = CommandPrimitive.displayName;
 
+// Extract the children type that Command expects to avoid React type conflicts
+type CommandChildren = React.ComponentProps<typeof Command>["children"];
+
 const CommandDialog = ({
   children,
   ...props
 }: Omit<DialogProps, "children"> & {
-  children?: React.ReactNode;
+  children?: CommandChildren;
 }) => {
   return (
     <Dialog {...props}>
