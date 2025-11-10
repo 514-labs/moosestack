@@ -518,6 +518,10 @@ def main():
                                 streaming_function_input_type, message.value
                             )
 
+                            # Log payload before transformation if enabled
+                            if os.getenv('MOOSE_LOG_PAYLOADS') == 'true':
+                                log(f"[PAYLOAD:STREAM_IN] {log_prefix}: {json.dumps(input_data, cls=EnhancedJSONEncoder)}")
+
                             # Run the flow
                             all_outputs = []
                             for (
@@ -581,6 +585,15 @@ def main():
                                         message=f"{log_prefix} {len(output_data_list)} message(s)",
                                     )
                                 )
+
+                            # Log payload after transformation if enabled (what we're actually sending to Kafka)
+                            if os.getenv('MOOSE_LOG_PAYLOADS') == 'true':
+                                # Filter out None values to match what actually gets sent
+                                outgoing_data = [item for item in all_outputs if item is not None]
+                                if len(outgoing_data) > 0:
+                                    log(f"[PAYLOAD:STREAM_OUT] {log_prefix}: {json.dumps(outgoing_data, cls=EnhancedJSONEncoder)}")
+                                else:
+                                    log(f"[PAYLOAD:STREAM_OUT] {log_prefix}: (no output from streaming function)")
 
                             if producer is not None:
                                 for item in all_outputs:
