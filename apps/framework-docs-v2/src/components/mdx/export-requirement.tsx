@@ -22,6 +22,11 @@ export function ExportRequirement({
             Ensure your {primitive} is correctly exported from your{" "}
             <code>app/index.ts</code> file.
           </p>
+          {example && (
+            <p className="mt-2">
+              Example: <code className="text-sm">{example}</code>
+            </p>
+          )}
           <p>
             Learn more about export pattern:{" "}
             <Link
@@ -46,6 +51,12 @@ export function ExportRequirement({
             Ensure your {primitive} is correctly imported into your{" "}
             <code>main.py</code> file.
           </p>
+          {example && (
+            <p className="mt-2">
+              Example (TypeScript equivalent):{" "}
+              <code className="text-sm">{example}</code>
+            </p>
+          )}
           <p>
             Learn more about export pattern:{" "}
             <Link

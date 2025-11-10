@@ -844,6 +844,7 @@ class QueryResult(BaseModel):
 def build_query(client: MooseClient, params: FilterParams) -> QueryResult:
     # Using f-strings with validated parameters
     conditions = []
+    parameters = {}
     if params.min_age:
         conditions.append("age >= {min_age}")
         parameters["min_age"] = params.min_age
