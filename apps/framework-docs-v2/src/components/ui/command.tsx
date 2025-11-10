@@ -20,7 +20,10 @@ const Command = React.forwardRef<
     )}
     {...props}
   />
-));
+)) as React.ForwardRefExoticComponent<
+  React.ComponentPropsWithoutRef<typeof CommandPrimitive> &
+    React.RefAttributes<React.ElementRef<typeof CommandPrimitive>>
+>;
 Command.displayName = CommandPrimitive.displayName;
 
 const CommandDialog = ({ children, ...props }: DialogProps) => {
