@@ -8,10 +8,10 @@ import { Callout } from "@/components";
 # November 7, 2025
 
 <Callout type="info" title="Highlights">
-- **New:** [Environment file support](/moose/config#environment-variables) with proper precedence (.env < .env.dev < .env.local)
-- **New:** [FixedString(N)](/moose/datamodels#fixed-string) data type support for optimized storage
-- **New:** [Ignore partition changes](/moose/migrate#ignoring-operations) during migrations to prevent unnecessary table recreations
-- **New:** [Precise numeric types](/moose/datamodels#numeric-types) for Python (Int8, UInt32, Float64, etc.)
+- **New:** [Environment file support](/moose/configuration#environment-variables--env-files) with proper precedence (.env < .env.dev < .env.local)
+- **New:** [FixedString(N)](/moose/olap/supported-types) data type support for optimized storage
+- **New:** [Ignore partition changes](/moose/migrate#managing-ttl-outside-moose) during migrations to prevent unnecessary table recreations
+- **New:** [Precise numeric types](/moose/olap/supported-types#numeric-types) for Python (Int8, UInt32, Float64, etc.)
 </Callout>
 
 ## Environment file support
@@ -42,7 +42,7 @@ moose dev
 moose prod
 ```
 
-PR: [#2936](https://github.com/514-labs/moosestack/pull/2936) | Docs: [Environment variables](/moose/config#environment-variables) | Linear: [ENG-1159](https://linear.app/514labs/issue/ENG-1159)
+PR: [#2936](https://github.com/514-labs/moosestack/pull/2936) | Docs: [Environment variables](/moose/configuration#environment-variables--env-files)
 
 ## FixedString(N) data type support
 Support for FixedString(N) data type in data models, allowing you to define fixed-length string columns for optimized storage of data like hashes, IP addresses, and MAC addresses.
@@ -73,7 +73,7 @@ export interface NetworkEvent {
 }
 ```
 
-PR: [#2939](https://github.com/514-labs/moosestack/pull/2939) | Docs: [FixedString type](/moose/datamodels#fixed-string) • [ClickHouse FixedString](https://clickhouse.com/docs/en/sql-reference/data-types/fixedstring) | Linear: [ENG-902](https://linear.app/514labs/issue/ENG-902)
+PR: [#2939](https://github.com/514-labs/moosestack/pull/2939) | Docs: [FixedString type](/moose/olap/supported-types) • [ClickHouse FixedString](https://clickhouse.com/docs/en/sql-reference/data-types/fixedstring)
 
 ## Ignore partition changes during migrations
 Configure the migration system to ignore PARTITION BY changes when comparing database schemas. This prevents unnecessary table recreations when partition changes are intentionally ignored.
@@ -83,7 +83,7 @@ Configure the migration system to ignore PARTITION BY changes when comparing dat
 ignore_operations = ["ModifyPartitionBy"]
 ```
 
-PR: [#2928](https://github.com/514-labs/moosestack/pull/2928) | Docs: [Ignoring operations](/moose/migrate#ignoring-operations)
+PR: [#2928](https://github.com/514-labs/moosestack/pull/2928) | Docs: [Ignoring operations](/moose/migrate#managing-ttl-outside-moose)
 
 ## Precise numeric types for Python
 New type aliases for ClickHouse numeric types in Python: Int8, Int16, Int32, Int64, UInt8, UInt16, UInt32, UInt64, Float32, and Float64. These provide better type safety and clearer intent when defining data models.
@@ -110,13 +110,13 @@ class UserActivity(BaseModel):
     confidence: Float32     # ML confidence scores (lower precision acceptable)
 ```
 
-PR: [#2945](https://github.com/514-labs/moosestack/pull/2945) | Docs: [Numeric types](/moose/datamodels#numeric-types)
+PR: [#2945](https://github.com/514-labs/moosestack/pull/2945) | Docs: [Numeric types](/moose/olap/supported-types#numeric-types)
 
 ## Other MooseStack Features and Improvements
 - **Real-time Docker logs** – Build commands now stream progress in real-time for better debugging. PR [#2958](https://github.com/514-labs/moosestack/pull/2958)
-- **ClickHouse cluster configuration** – Define clusters for ON CLUSTER operations in distributed environments. Docs: [Cluster configuration](/moose/olap/clickhouse-config#cluster-configuration) | PR [#2931](https://github.com/514-labs/moosestack/pull/2931)
-- **TypeScript MCP template** – Create AI assistants that can query your ClickHouse data via Model Context Protocol. Docs: [MCP template](/moose/templates#typescript-mcp) | PR [#2953](https://github.com/514-labs/moosestack/pull/2953)
-- **BYOF documentation** – Integration guides for Express, Fastify, Koa, and FastAPI with MooseStack. Docs: [BYOF guide](/moose/webapps/byof) | PR [#2935](https://github.com/514-labs/moosestack/pull/2935)
+- **ClickHouse cluster configuration** – Define clusters for ON CLUSTER operations in distributed environments. PR [#2931](https://github.com/514-labs/moosestack/pull/2931)
+- **TypeScript MCP template** – Create AI assistants that can query your ClickHouse data via Model Context Protocol. Docs: [MCP template](/moose/templates-examples#typescript-mcp) | PR [#2953](https://github.com/514-labs/moosestack/pull/2953)
+- **BYOF documentation** – Integration guides for Express, Fastify, Koa, and FastAPI with MooseStack. Docs: [BYOF guide](/moose/app-api-frameworks) | PR [#2935](https://github.com/514-labs/moosestack/pull/2935)
 
 ## MooseStack Bug Fixes
 - **Bug fixes**: (db-pull defaults) [#2956](https://github.com/514-labs/moosestack/pull/2956), (FastAPI OpenAPI paths) [#2957](https://github.com/514-labs/moosestack/pull/2957), (custom database names) [#2955](https://github.com/514-labs/moosestack/pull/2955), (table diffing compatibility) [#2918](https://github.com/514-labs/moosestack/pull/2918)
