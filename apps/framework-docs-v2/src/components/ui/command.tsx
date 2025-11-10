@@ -9,12 +9,11 @@ import { cn } from "@/lib/utils";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 
 // Explicit type annotation to prevent TypeScript from inferring types that reference nested React types
-type CommandComponent = React.ForwardRefExoticComponent<
+// This prevents TypeScript from finding React 18 types in nested node_modules
+const Command: React.ForwardRefExoticComponent<
   React.ComponentPropsWithoutRef<typeof CommandPrimitive> &
     React.RefAttributes<React.ElementRef<typeof CommandPrimitive>>
->;
-
-const Command = React.forwardRef<
+> = React.forwardRef<
   React.ElementRef<typeof CommandPrimitive>,
   React.ComponentPropsWithoutRef<typeof CommandPrimitive>
 >(({ className, ...props }, ref) => (
@@ -26,7 +25,7 @@ const Command = React.forwardRef<
     )}
     {...props}
   />
-)) satisfies CommandComponent;
+));
 Command.displayName = CommandPrimitive.displayName;
 
 const CommandDialog = ({ children, ...props }: DialogProps) => {
