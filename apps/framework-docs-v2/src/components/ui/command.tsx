@@ -8,19 +8,23 @@ import { IconSearch } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 
-const Command = React.forwardRef<
-  React.ElementRef<typeof CommandPrimitive>,
-  React.ComponentPropsWithoutRef<typeof CommandPrimitive>
->(({ className, ...props }, ref) => (
-  <CommandPrimitive
-    ref={ref}
-    className={cn(
-      "flex h-full w-full flex-col overflow-hidden rounded-md bg-popover text-popover-foreground",
-      className,
-    )}
-    {...props}
-  />
-));
+type CommandProps = React.ComponentPropsWithoutRef<typeof CommandPrimitive>;
+type CommandRef = React.ElementRef<typeof CommandPrimitive>;
+
+const Command = React.forwardRef<CommandRef, CommandProps>(
+  ({ className, ...props }, ref) => (
+    <CommandPrimitive
+      ref={ref}
+      className={cn(
+        "flex h-full w-full flex-col overflow-hidden rounded-md bg-popover text-popover-foreground",
+        className,
+      )}
+      {...props}
+    />
+  ),
+) as React.ForwardRefExoticComponent<
+  CommandProps & React.RefAttributes<CommandRef>
+>;
 Command.displayName = CommandPrimitive.displayName;
 
 const CommandDialog = ({ children, ...props }: DialogProps) => {
