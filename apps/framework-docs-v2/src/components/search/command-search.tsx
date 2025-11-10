@@ -77,18 +77,17 @@ export function CommandSearch({ open, onOpenChange }: CommandSearchProps) {
       // Load Pagefind module if not already loaded
       if (typeof window.pagefind === "undefined") {
         try {
-          // @ts-expect-error pagefind.js generated after build
           // webpackIgnore prevents Webpack from bundling this file
-          const pagefindModule = await import(
+          const pagefindModule = (await import(
+            // @ts-expect-error - pagefind.js is generated at build time
             /* webpackIgnore: true */ "/pagefind/pagefind.js"
-          );
+          )) as typeof window.pagefind;
           window.pagefind = pagefindModule;
         } catch (e) {
           // Empty or dummy results for local dev (when index doesn't exist)
           window.pagefind = {
-            init: async () => ({
-              search: async () => ({ results: [] }),
-            }),
+            init: async () => {},
+            search: async () => ({ results: [] }),
           };
           return;
         }
@@ -127,6 +126,10 @@ export function CommandSearch({ open, onOpenChange }: CommandSearchProps) {
 
       setLoading(true);
       try {
+        if (!window.pagefind?.search) {
+          setResults([]);
+          return;
+        }
         const searchResults: PagefindSearchResult =
           await window.pagefind.search(searchQuery);
         const processedResults: SearchResult[] = [];
