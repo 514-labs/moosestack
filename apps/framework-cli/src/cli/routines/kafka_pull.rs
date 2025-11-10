@@ -63,7 +63,8 @@ pub async fn write_external_topics(
         .filter(|n| inc.is_match(n) && !exc.is_match(n))
         .collect();
 
-    let infra_map = InfrastructureMap::load_from_user_code(project)
+    // Don't resolve credentials - only checking which topics are managed
+    let infra_map = InfrastructureMap::load_from_user_code(project, false)
         .await
         .map_err(|e| {
             RoutineFailure::error(Message::new(

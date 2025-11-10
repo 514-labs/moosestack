@@ -65,7 +65,7 @@ use crate::{
         scripts::Workflow, versions::Version,
     },
     infrastructure::olap::clickhouse::queries::ClickhouseEngine,
-    utilities::{constants, secrets::resolve_optional_runtime_env},
+    utilities::constants,
 };
 
 /// Defines how Moose manages the lifecycle of database resources when code changes.
@@ -455,34 +455,6 @@ pub struct PartialInfrastructureMap {
     web_apps: HashMap<String, PartialWebApp>,
 }
 
-/// Helper function to resolve S3 credentials from environment variables
-/// This ensures consistent credential handling between S3 and S3Queue engines
-fn resolve_s3_credentials(
-    aws_access_key_id: &Option<String>,
-    aws_secret_access_key: &Option<String>,
-    table_name: &str,
-) -> Result<(Option<String>, Option<String>), DmV2LoadingError> {
-    // Resolve environment variable markers for AWS credentials at runtime
-    // This must happen before the infrastructure diff to support credential rotation
-    let resolved_access_key = resolve_optional_runtime_env(aws_access_key_id).map_err(|e| {
-        DmV2LoadingError::RuntimeEnvResolution {
-            table_name: table_name.to_string(),
-            field: "awsAccessKeyId".to_string(),
-            error: e.to_string(),
-        }
-    })?;
-
-    let resolved_secret_key = resolve_optional_runtime_env(aws_secret_access_key).map_err(|e| {
-        DmV2LoadingError::RuntimeEnvResolution {
-            table_name: table_name.to_string(),
-            field: "awsSecretAccessKey".to_string(),
-            error: e.to_string(),
-        }
-    })?;
-
-    Ok((resolved_access_key, resolved_secret_key))
-}
-
 impl PartialInfrastructureMap {
     /// Creates a new [`PartialInfrastructureMap`] by executing and reading from a subprocess.
     ///
@@ -802,37 +774,25 @@ impl PartialInfrastructureMap {
             })),
 
             Some(EngineConfig::S3Queue(config)) => {
-                // Resolve S3 credentials using shared helper
-                let (resolved_access_key, resolved_secret_key) = resolve_s3_credentials(
-                    &config.aws_access_key_id,
-                    &config.aws_secret_access_key,
-                    &partial_table.name,
-                )?;
-
+                // Keep environment variable markers as-is - credentials will be resolved at runtime
                 // S3Queue settings are handled in table_settings, not in the engine
                 Ok(Some(ClickhouseEngine::S3Queue {
                     s3_path: config.s3_path.clone(),
                     format: config.format.clone(),
                     compression: config.compression.clone(),
                     headers: config.headers.clone(),
-                    aws_access_key_id: resolved_access_key,
-                    aws_secret_access_key: resolved_secret_key,
+                    aws_access_key_id: config.aws_access_key_id.clone(),
+                    aws_secret_access_key: config.aws_secret_access_key.clone(),
                 }))
             }
 
             Some(EngineConfig::S3(config)) => {
-                // Resolve S3 credentials using shared helper
-                let (resolved_access_key, resolved_secret_key) = resolve_s3_credentials(
-                    &config.aws_access_key_id,
-                    &config.aws_secret_access_key,
-                    &partial_table.name,
-                )?;
-
+                // Keep environment variable markers as-is - credentials will be resolved at runtime
                 Ok(Some(ClickhouseEngine::S3 {
                     path: config.path.clone(),
                     format: config.format.clone(),
-                    aws_access_key_id: resolved_access_key,
-                    aws_secret_access_key: resolved_secret_key,
+                    aws_access_key_id: config.aws_access_key_id.clone(),
+                    aws_secret_access_key: config.aws_secret_access_key.clone(),
                     compression: config.compression.clone(),
                     partition_strategy: config.partition_strategy.clone(),
                     partition_columns_in_data_file: config.partition_columns_in_data_file.clone(),

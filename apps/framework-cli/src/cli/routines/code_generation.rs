@@ -493,7 +493,8 @@ pub async fn db_pull(
     let (client, db) = create_client_and_db(remote_url).await?;
 
     debug!("Loading InfrastructureMap from user code (DMV2)");
-    let infra_map = InfrastructureMap::load_from_user_code(project)
+    // Don't resolve credentials for code generation - only needs structure
+    let infra_map = InfrastructureMap::load_from_user_code(project, false)
         .await
         .map_err(|e| {
             RoutineFailure::error(Message::new(

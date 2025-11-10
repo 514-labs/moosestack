@@ -32,6 +32,21 @@ export {
   WebAppConfig,
   WebAppHandler,
   FrameworkApp,
+  // Registry functions
+  getTables,
+  getTable,
+  getStreams,
+  getStream,
+  getIngestApis,
+  getIngestApi,
+  getApis,
+  getApi,
+  getSqlResources,
+  getSqlResource,
+  getWorkflows,
+  getWorkflow,
+  getWebApps,
+  getWebApp,
 } from "./dmv2";
 
 export {

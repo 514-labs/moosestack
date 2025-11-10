@@ -5,8 +5,18 @@ which allows users to defer secret resolution until runtime rather than
 embedding secrets at build time.
 """
 
+import os
 import pytest
 from moose_lib.secrets import moose_runtime_env, get, MOOSE_RUNTIME_ENV_PREFIX
+
+
+@pytest.fixture(scope="module", autouse=True)
+def set_infra_map_loading_for_secrets_tests():
+    """Set IS_LOADING_INFRA_MAP=true for secrets tests so moose_runtime_env.get() returns markers."""
+    os.environ["IS_LOADING_INFRA_MAP"] = "true"
+    yield
+    # Clean up after all tests in this module
+    os.environ.pop("IS_LOADING_INFRA_MAP", None)
 
 
 class TestMooseRuntimeEnvGet:
