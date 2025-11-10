@@ -1318,6 +1318,25 @@ async fn handle_json_array_body(
 
     debug!("parsed json array for {}", topic_name);
 
+    // Log payload if enabled (compact JSON on one line)
+    if std::env::var("MOOSE_LOG_PAYLOADS").is_ok() {
+        match serde_json::from_slice::<serde_json::Value>(&body) {
+            Ok(json_value) => {
+                if let Ok(compact_json) = serde_json::to_string(&json_value) {
+                    info!("[PAYLOAD:INGEST] {}: {}", topic_name, compact_json);
+                }
+            }
+            Err(_) => {
+                // If we can't parse it, log the raw body (shouldn't happen since we already parsed it above)
+                info!(
+                    "[PAYLOAD:INGEST] {}: {}",
+                    topic_name,
+                    String::from_utf8_lossy(&body)
+                );
+            }
+        }
+    }
+
     let mut records = match parsed {
         Err(e) => {
             if let Some(dlq) = dead_letter_queue {
