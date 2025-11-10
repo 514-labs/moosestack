@@ -17631,7 +17631,7 @@ snapshots:
     dependencies:
       '@tootallnate/once': 2.0.0
       agent-base: 6.0.2
-      debug: 4.4.3(supports-color@8.1.1)
+      debug: 4.4.3
     transitivePeerDependencies:
       - supports-color
 
@@ -18390,7 +18390,7 @@ snapshots:
 
   jest-worker@27.5.1:
     dependencies:
-      '@types/node': 20.19.24
+      '@types/node': 22.19.0
       merge-stream: 2.0.0
       supports-color: 8.1.1
 
@@ -21917,7 +21917,7 @@ snapshots:
   vite-node@2.1.9(@types/node@22.19.0)(lightningcss@1.30.2)(terser@5.44.0):
     dependencies:
       cac: 6.7.14
-      debug: 4.4.3(supports-color@8.1.1)
+      debug: 4.4.3
       es-module-lexer: 1.7.0
       pathe: 1.1.2
       vite: 5.4.21(@types/node@22.19.0)(lightningcss@1.30.2)(terser@5.44.0)
@@ -21953,7 +21953,7 @@ snapshots:
       '@vitest/spy': 2.1.9
       '@vitest/utils': 2.1.9
       chai: 5.3.3
-      debug: 4.4.3(supports-color@8.1.1)
+      debug: 4.4.3
       expect-type: 1.2.2
       magic-string: 0.30.21
       pathe: 1.1.2
