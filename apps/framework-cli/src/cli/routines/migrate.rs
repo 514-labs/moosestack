@@ -412,7 +412,7 @@ fn validate_table_databases_and_clusters(
             missing_clusters.dedup();
 
             for cluster in &missing_clusters {
-                error_message.push_str(&format!("[[clickhouse_config.clusters]]\n"));
+                error_message.push_str("[[clickhouse_config.clusters]]\n");
                 error_message.push_str(&format!("name = \"{}\"\n\n", cluster));
             }
         }
