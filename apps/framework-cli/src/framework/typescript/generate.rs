@@ -365,60 +365,156 @@ pub fn tables_to_typescript(tables: &[Table], life_cycle: Option<LifeCycle>) -> 
     let mut nested_models: HashMap<&Nested, String> = HashMap::new();
     let mut json_types: HashMap<&JsonOptions, String> = HashMap::new();
 
+    // Helper function to recursively collect all nested types
+    fn collect_all_types<'a>(
+        column_type: &'a ColumnType,
+        column_name: &str,
+        enums: &mut HashMap<&'a DataEnum, String>,
+        extra_type_names: &mut HashMap<String, usize>,
+        nested_models: &mut HashMap<&'a Nested, String>,
+        json_types: &mut HashMap<&'a JsonOptions, String>,
+    ) {
+        match column_type {
+            ColumnType::Enum(data_enum) => {
+                if !enums.contains_key(data_enum) {
+                    let name = sanitize_typescript_identifier(column_name);
+                    let name = match extra_type_names.entry(name.clone()) {
+                        Entry::Occupied(mut entry) => {
+                            *entry.get_mut() = entry.get() + 1;
+                            format!("{}{}", name, entry.get())
+                        }
+                        Entry::Vacant(entry) => {
+                            entry.insert(0);
+                            name
+                        }
+                    };
+                    enums.insert(data_enum, name);
+                }
+            }
+            ColumnType::Nested(nested) => {
+                if !nested_models.contains_key(nested) {
+                    let name = sanitize_typescript_identifier(column_name);
+                    let name = match extra_type_names.entry(name.clone()) {
+                        Entry::Occupied(mut entry) => {
+                            *entry.get_mut() = entry.get() + 1;
+                            format!("{}{}", name, entry.get())
+                        }
+                        Entry::Vacant(entry) => {
+                            entry.insert(0);
+                            name
+                        }
+                    };
+                    nested_models.insert(nested, name);
+
+                    // Recursively collect types from nested columns
+                    for nested_column in &nested.columns {
+                        collect_all_types(
+                            &nested_column.data_type,
+                            &nested_column.name,
+                            enums,
+                            extra_type_names,
+                            nested_models,
+                            json_types,
+                        );
+                    }
+                }
+            }
+            ColumnType::Json(opts) => {
+                if !opts.typed_paths.is_empty() && !json_types.contains_key(opts) {
+                    let name = format!("{}Json", sanitize_typescript_identifier(column_name));
+                    let name = match extra_type_names.entry(name.clone()) {
+                        Entry::Occupied(mut entry) => {
+                            *entry.get_mut() = entry.get() + 1;
+                            format!("{}{}", name, entry.get())
+                        }
+                        Entry::Vacant(entry) => {
+                            entry.insert(0);
+                            name
+                        }
+                    };
+                    json_types.insert(opts, name);
+
+                    // Recursively collect types from typed paths
+                    for (path_name, path_type) in &opts.typed_paths {
+                        collect_all_types(
+                            path_type,
+                            path_name,
+                            enums,
+                            extra_type_names,
+                            nested_models,
+                            json_types,
+                        );
+                    }
+                }
+            }
+            ColumnType::Array { element_type, .. } => {
+                collect_all_types(
+                    element_type,
+                    column_name,
+                    enums,
+                    extra_type_names,
+                    nested_models,
+                    json_types,
+                );
+            }
+            ColumnType::Nullable(inner) => {
+                collect_all_types(
+                    inner,
+                    column_name,
+                    enums,
+                    extra_type_names,
+                    nested_models,
+                    json_types,
+                );
+            }
+            ColumnType::NamedTuple(fields) => {
+                for (field_name, field_type) in fields {
+                    collect_all_types(
+                        field_type,
+                        field_name,
+                        enums,
+                        extra_type_names,
+                        nested_models,
+                        json_types,
+                    );
+                }
+            }
+            ColumnType::Map {
+                key_type,
+                value_type,
+            } => {
+                collect_all_types(
+                    key_type,
+                    column_name,
+                    enums,
+                    extra_type_names,
+                    nested_models,
+                    json_types,
+                );
+                collect_all_types(
+                    value_type,
+                    column_name,
+                    enums,
+                    extra_type_names,
+                    nested_models,
+                    json_types,
+                );
+            }
+            _ => {}
+        }
+    }
+
     // First pass: collect all nested types, enums, and json types
     for table in tables {
         for column in &table.columns {
-            match &column.data_type {
-                ColumnType::Enum(data_enum) => {
-                    if !enums.contains_key(data_enum) {
-                        let name = sanitize_typescript_identifier(&column.name);
-                        let name = match extra_type_names.entry(name.clone()) {
-                            Entry::Occupied(mut entry) => {
-                                *entry.get_mut() = entry.get() + 1;
-                                format!("{}{}", name, entry.get())
-                            }
-                            Entry::Vacant(entry) => {
-                                entry.insert(0);
-                                name
-                            }
-                        };
-                        enums.insert(data_enum, name);
-                    }
-                }
-                ColumnType::Nested(nested) => {
-                    if !nested_models.contains_key(nested) {
-                        let name = sanitize_typescript_identifier(&column.name);
-                        let name = match extra_type_names.entry(name.clone()) {
-                            Entry::Occupied(mut entry) => {
-                                *entry.get_mut() = entry.get() + 1;
-                                format!("{}{}", name, entry.get())
-                            }
-                            Entry::Vacant(entry) => {
-                                entry.insert(0);
-                                name
-                            }
-                        };
-                        nested_models.insert(nested, name);
-                    }
-                }
-                ColumnType::Json(opts) => {
-                    if !opts.typed_paths.is_empty() && !json_types.contains_key(opts) {
-                        let name = format!("{}Json", sanitize_typescript_identifier(&column.name));
-                        let name = match extra_type_names.entry(name.clone()) {
-                            Entry::Occupied(mut entry) => {
-                                *entry.get_mut() = entry.get() + 1;
-                                format!("{}{}", name, entry.get())
-                            }
-                            Entry::Vacant(entry) => {
-                                entry.insert(0);
-                                name
-                            }
-                        };
-                        json_types.insert(opts, name);
-                    }
-                }
-                _ => {}
-            }
+            collect_all_types(
+                &column.data_type,
+                &column.name,
+                &mut enums,
+                &mut extra_type_names,
+                &mut nested_models,
+                &mut json_types,
+            );
         }
     }
 

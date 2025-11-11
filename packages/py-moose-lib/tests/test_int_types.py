@@ -183,7 +183,7 @@ def test_default_int_still_works():
     by_name = {col.name: col for col in columns}
 
     # Plain int should still map to "Int" (default behavior)
-    assert by_name["plain_int"].data_type == "Int"
+    assert by_name["plain_int"].data_type == "Int64"
     # Typed int should map to specific type
     assert by_name["typed_int"].data_type == "UInt32"
 

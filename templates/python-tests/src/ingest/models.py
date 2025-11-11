@@ -233,7 +233,7 @@ class JsonTest(BaseModel):
         max_dynamic_paths=256,
         max_dynamic_types=16,
         skip_paths=("skip.me",),
-        skip_regexps=(r"^tmp\\.",)
+        skip_regexps=("^tmp\\.",)
     )]
     # Test JSON with paths but without configuration
     payload_basic: Annotated[JsonInner, ClickHouseJson()]

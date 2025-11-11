@@ -281,7 +281,9 @@ fn parse_json_options(inner: &str) -> Option<JsonOptions<ClickHouseColumnType>> 
             // Extract regex pattern from quotes
             let rest = rest.trim();
             if let Some(pattern) = rest.strip_prefix('\'').and_then(|s| s.strip_suffix('\'')) {
-                opts.skip_regexps.push(pattern.to_string());
+                // Unescape the SQL string literal: \\ -> \ and \' -> '
+                let unescaped = pattern.replace("\\'", "'").replace("\\\\", "\\");
+                opts.skip_regexps.push(unescaped);
             } else {
                 // Pattern not quoted, use as-is
                 opts.skip_regexps.push(rest.to_string());
@@ -356,7 +358,8 @@ mod tests {
         match t {
             Some(ClickHouseColumnType::Json(opts)) => {
                 assert_eq!(opts.skip_regexps.len(), 1);
-                assert_eq!(opts.skip_regexps[0], "^tmp\\\\.");
+                // After unescaping SQL string: \\\\ -> \\, then \\ -> \
+                assert_eq!(opts.skip_regexps[0], "^tmp\\.");
                 assert_eq!(opts.skip_paths.len(), 0);
             }
             _ => panic!("Failed to parse JSON options with SKIP REGEXP"),
@@ -374,7 +377,8 @@ mod tests {
                 assert_eq!(opts.typed_paths.len(), 1);
                 assert_eq!(opts.typed_paths[0].0, "a.b");
                 assert_eq!(opts.skip_paths, vec!["a.e".to_string()]);
-                assert_eq!(opts.skip_regexps, vec!["^tmp\\\\.".to_string()]);
+                // After unescaping SQL string: \\\\ -> \\, then \\ -> \
+                assert_eq!(opts.skip_regexps, vec!["^tmp\\.".to_string()]);
             }
             _ => panic!("Failed to parse JSON options with mixed configuration"),
         }

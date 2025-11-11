@@ -2797,17 +2797,10 @@ fn columns_are_equivalent(before: &Column, after: &Column) -> bool {
         return false;
     }
 
-    // Special handling for enum types
-    use crate::framework::core::infrastructure::table::ColumnType;
-    match (&before.data_type, &after.data_type) {
-        (ColumnType::Enum(before_enum), ColumnType::Enum(after_enum)) => {
-            // Try to use ClickHouse-specific enum comparison for string enums
-            use crate::infrastructure::olap::clickhouse::diff_strategy::enums_are_equivalent;
-            enums_are_equivalent(before_enum, after_enum)
-        }
-        // For all other types, use standard equality
-        _ => before.data_type == after.data_type,
-    }
+    // Use ClickHouse-specific semantic comparison for data types
+    // This handles special cases like enums and JSON types with order-independent typed_paths
+    use crate::infrastructure::olap::clickhouse::diff_strategy::column_types_are_equivalent;
+    column_types_are_equivalent(&before.data_type, &after.data_type)
 }
 
 /// Check if two topics are equal, ignoring metadata
@@ -4040,6 +4033,461 @@ mod diff_tests {
         };
 
         assert!(!columns_are_equivalent(&int_col1, &int_col2));
+    }
+
+    #[test]
+    fn test_columns_are_equivalent_with_json_typed_paths() {
+        use crate::framework::core::infrastructure::table::IntType;
+        use crate::framework::core::infrastructure::table::{Column, ColumnType, JsonOptions};
+
+        // Test: JSON columns with typed_paths in different order should be equivalent
+        let json_col1 = Column {
+            name: "data".to_string(),
+            data_type: ColumnType::Json(JsonOptions {
+                max_dynamic_paths: Some(10),
+                max_dynamic_types: Some(5),
+                typed_paths: vec![
+                    ("path1".to_string(), ColumnType::Int(IntType::Int64)),
+                    ("path2".to_string(), ColumnType::String),
+                    ("path3".to_string(), ColumnType::Boolean),
+                ],
+                skip_paths: vec!["skip1".to_string()],
+                skip_regexps: vec!["^temp".to_string()],
+            }),
+            required: true,
+            unique: false,
+            primary_key: false,
+            default: None,
+            annotations: vec![],
+            comment: None,
+            ttl: None,
+        };
+
+        let json_col2 = Column {
+            name: "data".to_string(),
+            data_type: ColumnType::Json(JsonOptions {
+                max_dynamic_paths: Some(10),
+                max_dynamic_types: Some(5),
+                typed_paths: vec![
+                    ("path3".to_string(), ColumnType::Boolean),
+                    ("path1".to_string(), ColumnType::Int(IntType::Int64)),
+                    ("path2".to_string(), ColumnType::String),
+                ],
+                skip_paths: vec!["skip1".to_string()],
+                skip_regexps: vec!["^temp".to_string()],
+            }),
+            required: true,
+            unique: false,
+            primary_key: false,
+            default: None,
+            annotations: vec![],
+            comment: None,
+            ttl: None,
+        };
+
+        // These should be equivalent - order of typed_paths doesn't matter
+        assert!(columns_are_equivalent(&json_col1, &json_col2));
+
+        // Test: Different typed_paths should not be equivalent
+        let json_col3 = Column {
+            name: "data".to_string(),
+            data_type: ColumnType::Json(JsonOptions {
+                max_dynamic_paths: Some(10),
+                max_dynamic_types: Some(5),
+                typed_paths: vec![
+                    ("path1".to_string(), ColumnType::Int(IntType::Int64)),
+                    ("path2".to_string(), ColumnType::Int(IntType::Int32)), // Different type
+                ],
+                skip_paths: vec!["skip1".to_string()],
+                skip_regexps: vec!["^temp".to_string()],
+            }),
+            required: true,
+            unique: false,
+            primary_key: false,
+            default: None,
+            annotations: vec![],
+            comment: None,
+            ttl: None,
+        };
+
+        assert!(!columns_are_equivalent(&json_col1, &json_col3));
+
+        // Test: Different max_dynamic_paths should not be equivalent
+        let json_col4 = Column {
+            name: "data".to_string(),
+            data_type: ColumnType::Json(JsonOptions {
+                max_dynamic_paths: Some(20), // Different value
+                max_dynamic_types: Some(5),
+                typed_paths: vec![
+                    ("path1".to_string(), ColumnType::Int(IntType::Int64)),
+                    ("path2".to_string(), ColumnType::String),
+                    ("path3".to_string(), ColumnType::Boolean),
+                ],
+                skip_paths: vec!["skip1".to_string()],
+                skip_regexps: vec!["^temp".to_string()],
+            }),
+            required: true,
+            unique: false,
+            primary_key: false,
+            default: None,
+            annotations: vec![],
+            comment: None,
+            ttl: None,
+        };
+
+        assert!(!columns_are_equivalent(&json_col1, &json_col4));
+    }
+
+    #[test]
+    fn test_columns_are_equivalent_with_nested_json() {
+        use crate::framework::core::infrastructure::table::IntType;
+        use crate::framework::core::infrastructure::table::{Column, ColumnType, JsonOptions};
+
+        // Test: Nested JSON columns with typed_paths in different order should be equivalent
+        let nested_json_col1 = Column {
+            name: "data".to_string(),
+            data_type: ColumnType::Json(JsonOptions {
+                max_dynamic_paths: None,
+                max_dynamic_types: None,
+                typed_paths: vec![
+                    (
+                        "nested".to_string(),
+                        ColumnType::Json(JsonOptions {
+                            max_dynamic_paths: None,
+                            max_dynamic_types: None,
+                            typed_paths: vec![
+                                ("a".to_string(), ColumnType::Int(IntType::Int64)),
+                                ("b".to_string(), ColumnType::String),
+                            ],
+                            skip_paths: vec![],
+                            skip_regexps: vec![],
+                        }),
+                    ),
+                    ("simple".to_string(), ColumnType::Boolean),
+                ],
+                skip_paths: vec![],
+                skip_regexps: vec![],
+            }),
+            required: true,
+            unique: false,
+            primary_key: false,
+            default: None,
+            annotations: vec![],
+            comment: None,
+            ttl: None,
+        };
+
+        let nested_json_col2 = Column {
+            name: "data".to_string(),
+            data_type: ColumnType::Json(JsonOptions {
+                max_dynamic_paths: None,
+                max_dynamic_types: None,
+                typed_paths: vec![
+                    ("simple".to_string(), ColumnType::Boolean),
+                    (
+                        "nested".to_string(),
+                        ColumnType::Json(JsonOptions {
+                            max_dynamic_paths: None,
+                            max_dynamic_types: None,
+                            typed_paths: vec![
+                                ("b".to_string(), ColumnType::String),
+                                ("a".to_string(), ColumnType::Int(IntType::Int64)),
+                            ],
+                            skip_paths: vec![],
+                            skip_regexps: vec![],
+                        }),
+                    ),
+                ],
+                skip_paths: vec![],
+                skip_regexps: vec![],
+            }),
+            required: true,
+            unique: false,
+            primary_key: false,
+            default: None,
+            annotations: vec![],
+            comment: None,
+            ttl: None,
+        };
+
+        // These should be equivalent - order doesn't matter at any level
+        assert!(columns_are_equivalent(&nested_json_col1, &nested_json_col2));
+    }
+
+    #[test]
+    fn test_columns_are_equivalent_with_nested_types() {
+        use crate::framework::core::infrastructure::table::IntType;
+        use crate::framework::core::infrastructure::table::{Column, ColumnType, Nested};
+
+        // Test: Nested types with different names but same structure should be equivalent
+        // This simulates ClickHouse returning "nested_3" while user code defines "Metadata"
+        let col_with_generated_name = Column {
+            name: "metadata".to_string(),
+            data_type: ColumnType::Nested(Nested {
+                name: "nested_3".to_string(), // ClickHouse-generated name
+                columns: vec![
+                    Column {
+                        name: "tags".to_string(),
+                        data_type: ColumnType::Array {
+                            element_type: Box::new(ColumnType::String),
+                            element_nullable: false,
+                        },
+                        required: true,
+                        unique: false,
+                        primary_key: false,
+                        default: None,
+                        annotations: vec![],
+                        comment: None,
+                        ttl: None,
+                    },
+                    Column {
+                        name: "priority".to_string(),
+                        data_type: ColumnType::Int(IntType::Int64),
+                        required: true,
+                        unique: false,
+                        primary_key: false,
+                        default: None,
+                        annotations: vec![],
+                        comment: None,
+                        ttl: None,
+                    },
+                ],
+                jwt: false,
+            }),
+            required: true,
+            unique: false,
+            primary_key: false,
+            default: None,
+            annotations: vec![],
+            comment: None,
+            ttl: None,
+        };
+
+        let col_with_user_name = Column {
+            name: "metadata".to_string(),
+            data_type: ColumnType::Nested(Nested {
+                name: "Metadata".to_string(), // User-defined name
+                columns: vec![
+                    Column {
+                        name: "tags".to_string(),
+                        data_type: ColumnType::Array {
+                            element_type: Box::new(ColumnType::String),
+                            element_nullable: false,
+                        },
+                        required: true,
+                        unique: false,
+                        primary_key: false,
+                        default: None,
+                        annotations: vec![],
+                        comment: None,
+                        ttl: None,
+                    },
+                    Column {
+                        name: "priority".to_string(),
+                        data_type: ColumnType::Int(IntType::Int64),
+                        required: true,
+                        unique: false,
+                        primary_key: false,
+                        default: None,
+                        annotations: vec![],
+                        comment: None,
+                        ttl: None,
+                    },
+                ],
+                jwt: false,
+            }),
+            required: true,
+            unique: false,
+            primary_key: false,
+            default: None,
+            annotations: vec![],
+            comment: None,
+            ttl: None,
+        };
+
+        // These should be equivalent - name difference doesn't matter if structure matches
+        assert!(columns_are_equivalent(
+            &col_with_generated_name,
+            &col_with_user_name
+        ));
+
+        // Test: Different column structures should not be equivalent
+        let col_different_structure = Column {
+            name: "metadata".to_string(),
+            data_type: ColumnType::Nested(Nested {
+                name: "Metadata".to_string(),
+                columns: vec![Column {
+                    name: "tags".to_string(),
+                    data_type: ColumnType::Array {
+                        element_type: Box::new(ColumnType::String),
+                        element_nullable: false,
+                    },
+                    required: true,
+                    unique: false,
+                    primary_key: false,
+                    default: None,
+                    annotations: vec![],
+                    comment: None,
+                    ttl: None,
+                }], // Missing priority column
+                jwt: false,
+            }),
+            required: true,
+            unique: false,
+            primary_key: false,
+            default: None,
+            annotations: vec![],
+            comment: None,
+            ttl: None,
+        };
+
+        assert!(!columns_are_equivalent(
+            &col_with_user_name,
+            &col_different_structure
+        ));
+    }
+
+    #[test]
+    fn test_columns_are_equivalent_with_deeply_nested_types() {
+        use crate::framework::core::infrastructure::table::{Column, ColumnType, Nested};
+
+        // Test deeply nested structures with different names at each level
+        let col_generated = Column {
+            name: "metadata".to_string(),
+            data_type: ColumnType::Nested(Nested {
+                name: "nested_3".to_string(),
+                columns: vec![Column {
+                    name: "config".to_string(),
+                    data_type: ColumnType::Nested(Nested {
+                        name: "nested_2".to_string(),
+                        columns: vec![Column {
+                            name: "settings".to_string(),
+                            data_type: ColumnType::Nested(Nested {
+                                name: "nested_1".to_string(),
+                                columns: vec![
+                                    Column {
+                                        name: "theme".to_string(),
+                                        data_type: ColumnType::String,
+                                        required: true,
+                                        unique: false,
+                                        primary_key: false,
+                                        default: None,
+                                        annotations: vec![],
+                                        comment: None,
+                                        ttl: None,
+                                    },
+                                    Column {
+                                        name: "notifications".to_string(),
+                                        data_type: ColumnType::Boolean,
+                                        required: true,
+                                        unique: false,
+                                        primary_key: false,
+                                        default: None,
+                                        annotations: vec![],
+                                        comment: None,
+                                        ttl: None,
+                                    },
+                                ],
+                                jwt: false,
+                            }),
+                            required: true,
+                            unique: false,
+                            primary_key: false,
+                            default: None,
+                            annotations: vec![],
+                            comment: None,
+                            ttl: None,
+                        }],
+                        jwt: false,
+                    }),
+                    required: true,
+                    unique: false,
+                    primary_key: false,
+                    default: None,
+                    annotations: vec![],
+                    comment: None,
+                    ttl: None,
+                }],
+                jwt: false,
+            }),
+            required: true,
+            unique: false,
+            primary_key: false,
+            default: None,
+            annotations: vec![],
+            comment: None,
+            ttl: None,
+        };
+
+        let col_user = Column {
+            name: "metadata".to_string(),
+            data_type: ColumnType::Nested(Nested {
+                name: "Metadata".to_string(),
+                columns: vec![Column {
+                    name: "config".to_string(),
+                    data_type: ColumnType::Nested(Nested {
+                        name: "Config".to_string(),
+                        columns: vec![Column {
+                            name: "settings".to_string(),
+                            data_type: ColumnType::Nested(Nested {
+                                name: "Settings".to_string(),
+                                columns: vec![
+                                    Column {
+                                        name: "theme".to_string(),
+                                        data_type: ColumnType::String,
+                                        required: true,
+                                        unique: false,
+                                        primary_key: false,
+                                        default: None,
+                                        annotations: vec![],
+                                        comment: None,
+                                        ttl: None,
+                                    },
+                                    Column {
+                                        name: "notifications".to_string(),
+                                        data_type: ColumnType::Boolean,
+                                        required: true,
+                                        unique: false,
+                                        primary_key: false,
+                                        default: None,
+                                        annotations: vec![],
+                                        comment: None,
+                                        ttl: None,
+                                    },
+                                ],
+                                jwt: false,
+                            }),
+                            required: true,
+                            unique: false,
+                            primary_key: false,
+                            default: None,
+                            annotations: vec![],
+                            comment: None,
+                            ttl: None,
+                        }],
+                        jwt: false,
+                    }),
+                    required: true,
+                    unique: false,
+                    primary_key: false,
+                    default: None,
+                    annotations: vec![],
+                    comment: None,
+                    ttl: None,
+                }],
+                jwt: false,
+            }),
+            required: true,
+            unique: false,
+            primary_key: false,
+            default: None,
+            annotations: vec![],
+            comment: None,
+            ttl: None,
+        };
+
+        // These should be equivalent - name differences at all levels don't matter
+        assert!(columns_are_equivalent(&col_generated, &col_user));
     }
 }
 

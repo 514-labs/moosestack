@@ -25,7 +25,7 @@ class QueryParamPydantic(BaseModel):
 query_fields = [
     QueryField(
         name='optional_field',
-        data_type='Int',
+        data_type='Int64',
         has_default=False,
         required=False,
     ),
@@ -45,7 +45,7 @@ query_fields = [
     ),
     QueryField(
         name='int_field',
-        data_type='Int',
+        data_type='Int64',
         has_default=True,
         required=False,
     ),
