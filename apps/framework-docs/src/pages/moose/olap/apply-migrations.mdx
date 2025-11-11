@@ -23,8 +23,10 @@ Migrations are designed for two complementary goals:
 - Be deliberate in production by executing a reviewed, versioned plan that matches your intent and protects data.
 
 How to think about it:
-- Development mode: You edit code, MooseStack infers the SQL and immediately applies it to local ClickHouse. Great for rapid iteration; not guaranteed to infer intent (e.g., renames).
-- Production (planned) mode: You generate a plan from the target environment vs your code, review and commit the plan, and MooseStack executes it deterministically during deploy with drift checks.
+- Development mode: You edit code, MooseStack infers the SQL and immediately applies it to local ClickHouse.
+Great for rapid iteration; not guaranteed to infer intent (e.g., renames).
+- Production (planned) mode: You generate a plan from the target environment vs your code, review and commit the plan, and
+MooseStack executes it deterministically during deploy with drift checks.
 
 What you need to do:
 - In dev: just code. MooseStack handles local diffs automatically.
@@ -117,20 +119,21 @@ This generates a few files in the `migrations` directory:
 - `local_infra_map.json`: A snapshot of the local database state at the time the plan was generated
 
 <Callout type="info" title="Why store the remote and local state?" compact>
-The remote and local state are used to validate that the plan is still valid at the time of deployment. If there have been schema changes made to your live remote database since the plan was generated, the deployment will abort and you will need to regenerate the plan. This is to prevent you from dropping data unintentionally.
+The remote and local state are used to validate that the plan is still valid at the time of deployment.
+If there have been schema changes made to your live remote database since the plan was generated,
+the deployment will abort and you will need to regenerate the plan. This is to prevent you from dropping data unintentionally.
 </Callout>
 
 ### Reviewing and Editing the Plan
 
-You can review and edit the plan as needed. The plan is a YAML file that contains an ordered list of operations to apply to the remote database to bring it into alignment with your local code.
-
-```yaml filename="migrations/plan.yaml" copy
-
-```
+You can review and edit the plan as needed.
+The plan is a YAML file that contains an ordered list of operations to apply to the remote database to bring it into alignment with your local code.
 
 ### Applying the Plan
  
-The plan is applied during deployment. MooseStack will validate that the remote database state matches the snapshot of the database state at the time the plan was generated, and applies `plan.yaml` in order; it aborts if snapshots don’t match current state.
+The plan is applied during deployment.
+MooseStack will validate that the remote database state matches the snapshot of the database state
+at the time the plan was generated, and applies `plan.yaml` in order; it aborts if snapshots don’t match current state.
 
 
 ## Migration Types
