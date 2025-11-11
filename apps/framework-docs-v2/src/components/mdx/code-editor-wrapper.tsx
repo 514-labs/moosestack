@@ -63,7 +63,7 @@ export function CodeEditorWrapper({
 
   return (
     <div className={cn("not-prose overflow-hidden min-w-0", className)}>
-      <div className="overflow-x-auto min-w-0">
+      <div className="overflow-x-auto min-w-0 h-full">
         <CodeEditor
           lang={language}
           title={title}
@@ -78,6 +78,7 @@ export function CodeEditorWrapper({
           inViewMargin="-100px"
           inViewOnce={true}
           cursor={terminalWriting}
+          className="h-full"
           themes={{
             light: "vitesse-light",
             dark: "vitesse-dark",
