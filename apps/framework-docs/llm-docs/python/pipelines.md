@@ -1,3 +1,11 @@
+---
+title: Python Data Pipelines
+description: Transform and process data streams using type-safe pipeline functions with automatic schema inference
+priority: 0.85
+category: data-transformation
+language: python
+---
+
 # Ingest Pipelines
 
 ## Overview

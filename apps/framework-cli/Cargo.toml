@@ -129,6 +129,10 @@ serial_test = "3.1.1"
 
 [build-dependencies]
 protobuf-codegen = "3.7"
+serde = { version = "1.0", features = ["derive"] }
+serde_yaml = "0.9"
+regex = "1.10"
+walkdir = "2"
 
 [features]
 used_linker = []

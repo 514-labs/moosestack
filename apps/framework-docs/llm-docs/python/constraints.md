@@ -1,3 +1,11 @@
+---
+title: Python Data Constraints
+description: Define data validation rules and constraints for schema enforcement
+priority: 0.70
+category: data-validation
+language: python
+---
+
 # Configuration Constraints and Materialized Views
 
 ## Overview
