@@ -140,6 +140,15 @@ const config: Config = {
             a: {
               color: "hsl(var(--primary))",
               textDecoration: "none",
+            },
+            "p a": {
+              textDecoration: "underline",
+              "&:hover": {
+                textDecoration: "underline",
+              },
+            },
+            "li a": {
+              textDecoration: "underline",
               "&:hover": {
                 textDecoration: "underline",
               },

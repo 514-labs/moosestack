@@ -87,7 +87,8 @@ export function Callout({
   if (compact) {
     return (
       <Alert variant={variantProps.variant} className={cn("my-2", className)}>
-        {icon && <Icon className="h-4 w-4" />}
+        {!href && icon && <Icon className="h-4 w-4" />}
+        {href && icon && <Icon className="h-4 w-4 mt-0.5" />}
         <div className="flex items-start justify-between gap-2">
           <div className="flex-1 min-w-0">
             {displayTitle && (

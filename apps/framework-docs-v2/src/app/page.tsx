@@ -7,7 +7,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { IconDatabase, IconDeviceLaptop, IconAtom } from "@tabler/icons-react";
+import { IconDatabase, IconCloud, IconSparkles } from "@tabler/icons-react";
 
 // Force static generation
 export const dynamic = "force-static";
@@ -26,14 +26,14 @@ export default function HomePage() {
       description:
         "Deploy and host your MooseStack applications with our managed hosting platform.",
       href: `/hosting/overview`,
-      icon: IconDeviceLaptop,
+      icon: IconCloud,
     },
     {
       title: "AI",
       description:
         "AI-powered features and integrations for enhancing your MooseStack applications.",
       href: `/ai/overview`,
-      icon: IconAtom,
+      icon: IconSparkles,
     },
   ];
 
