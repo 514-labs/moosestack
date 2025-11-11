@@ -6,7 +6,7 @@ use crate::framework::core::infrastructure::table::Table;
 use crate::framework::core::infrastructure_map::InfrastructureMap;
 use crate::framework::core::migration_plan::MigrationPlan;
 use crate::framework::core::state_storage::{StateStorage, StateStorageBuilder};
-use crate::infrastructure::olap::clickhouse::config::ClickHouseConfig;
+use crate::infrastructure::olap::clickhouse::config::{ClickHouseConfig, ClusterConfig};
 use crate::infrastructure::olap::clickhouse::IgnorableOperation;
 use crate::infrastructure::olap::clickhouse::{
     check_ready, create_client, ConfiguredDBClient, SerializableOlapOperation,
@@ -196,19 +196,48 @@ fn report_drift(drift: &DriftStatus) {
     }
 }
 
-/// Validates that all table databases specified in operations are configured
-fn validate_table_databases(
+/// Validates that all table databases and clusters specified in operations are configured
+fn validate_table_databases_and_clusters(
     operations: &[SerializableOlapOperation],
     primary_database: &str,
     additional_databases: &[String],
+    clusters: &Option<Vec<ClusterConfig>>,
 ) -> Result<()> {
     let mut invalid_tables = Vec::new();
+    let mut invalid_clusters = Vec::new();
 
-    // Helper to validate a database option
-    let mut validate_db = |db_opt: &Option<String>, table_name: &str| {
+    // Get configured cluster names
+    let cluster_names: Vec<String> = clusters
+        .as_ref()
+        .map(|cs| cs.iter().map(|c| c.name.clone()).collect())
+        .unwrap_or_default();
+
+    log::info!("Configured cluster names: {:?}", cluster_names);
+
+    // Helper to validate database and cluster options
+    let mut validate = |db_opt: &Option<String>, cluster_opt: &Option<String>, table_name: &str| {
+        log::info!(
+            "Validating table '{}' with cluster: {:?}",
+            table_name,
+            cluster_opt
+        );
+        // Validate database
         if let Some(db) = db_opt {
             if db != primary_database && !additional_databases.contains(db) {
                 invalid_tables.push((table_name.to_string(), db.clone()));
+            }
+        }
+        // Validate cluster
+        if let Some(cluster) = cluster_opt {
+            log::info!(
+                "Checking if cluster '{}' is in {:?}",
+                cluster,
+                cluster_names
+            );
+            // Fail if cluster is not in the configured list (or if list is empty)
+            if cluster_names.is_empty() || !cluster_names.contains(cluster) {
+                log::info!("Cluster '{}' not found in configured clusters!", cluster);
+                invalid_clusters.push((table_name.to_string(), cluster.clone()));
             }
         }
     };
@@ -216,104 +245,177 @@ fn validate_table_databases(
     for operation in operations {
         match operation {
             SerializableOlapOperation::CreateTable { table } => {
-                validate_db(&table.database, &table.name);
+                validate(&table.database, &table.cluster_name, &table.name);
             }
             SerializableOlapOperation::DropTable {
                 table,
                 database,
-                cluster_name: _,
+                cluster_name,
             } => {
-                validate_db(database, table);
+                validate(database, cluster_name, table);
             }
             SerializableOlapOperation::AddTableColumn {
-                table, database, ..
+                table,
+                database,
+                cluster_name,
+                ..
             } => {
-                validate_db(database, table);
+                validate(database, cluster_name, table);
             }
             SerializableOlapOperation::DropTableColumn {
-                table, database, ..
+                table,
+                database,
+                cluster_name,
+                ..
             } => {
-                validate_db(database, table);
+                validate(database, cluster_name, table);
             }
             SerializableOlapOperation::ModifyTableColumn {
-                table, database, ..
+                table,
+                database,
+                cluster_name,
+                ..
             } => {
-                validate_db(database, table);
+                validate(database, cluster_name, table);
             }
             SerializableOlapOperation::RenameTableColumn {
-                table, database, ..
+                table,
+                database,
+                cluster_name,
+                ..
             } => {
-                validate_db(database, table);
+                validate(database, cluster_name, table);
             }
             SerializableOlapOperation::ModifyTableSettings {
-                table, database, ..
+                table,
+                database,
+                cluster_name,
+                ..
             } => {
-                validate_db(database, table);
+                validate(database, cluster_name, table);
             }
             SerializableOlapOperation::ModifyTableTtl {
-                table, database, ..
+                table,
+                database,
+                cluster_name,
+                ..
             } => {
-                validate_db(database, table);
+                validate(database, cluster_name, table);
             }
             SerializableOlapOperation::AddTableIndex {
-                table, database, ..
+                table,
+                database,
+                cluster_name,
+                ..
             } => {
-                validate_db(database, table);
+                validate(database, cluster_name, table);
             }
             SerializableOlapOperation::DropTableIndex {
-                table, database, ..
+                table,
+                database,
+                cluster_name,
+                ..
             } => {
-                validate_db(database, table);
+                validate(database, cluster_name, table);
             }
             SerializableOlapOperation::ModifySampleBy {
-                table, database, ..
+                table,
+                database,
+                cluster_name,
+                ..
             } => {
-                validate_db(database, table);
+                validate(database, cluster_name, table);
             }
             SerializableOlapOperation::RemoveSampleBy {
-                table, database, ..
+                table,
+                database,
+                cluster_name,
+                ..
             } => {
-                validate_db(database, table);
+                validate(database, cluster_name, table);
             }
             SerializableOlapOperation::RawSql { .. } => {
-                // RawSql doesn't reference specific tables/databases, skip validation
+                // RawSql doesn't reference specific tables/databases/clusters, skip validation
             }
         }
     }
 
-    if !invalid_tables.is_empty() {
-        let mut error_message = String::from(
-            "One or more tables specify databases that are not configured in moose.config.toml:\n\n"
-        );
+    // Build error message if we found any issues
+    let has_errors = !invalid_tables.is_empty() || !invalid_clusters.is_empty();
+    if has_errors {
+        let mut error_message = String::new();
 
-        for (table_name, database) in &invalid_tables {
-            error_message.push_str(&format!(
-                "  • Table '{}' specifies database '{}'\n",
-                table_name, database
-            ));
+        // Report database errors
+        if !invalid_tables.is_empty() {
+            error_message.push_str(
+                "One or more tables specify databases that are not configured in moose.config.toml:\n\n",
+            );
+
+            for (table_name, database) in &invalid_tables {
+                error_message.push_str(&format!(
+                    "  • Table '{}' specifies database '{}'\n",
+                    table_name, database
+                ));
+            }
+
+            error_message.push_str(
+                "\nTo fix this, add the missing database(s) to your moose.config.toml:\n\n",
+            );
+            error_message.push_str("[clickhouse_config]\n");
+            error_message.push_str(&format!("db_name = \"{}\"\n", primary_database));
+            error_message.push_str("additional_databases = [");
+
+            let mut all_databases: Vec<String> = additional_databases.to_vec();
+            for (_, db) in &invalid_tables {
+                if !all_databases.contains(db) {
+                    all_databases.push(db.clone());
+                }
+            }
+            all_databases.sort();
+
+            let db_list = all_databases
+                .iter()
+                .map(|db| format!("\"{}\"", db))
+                .collect::<Vec<_>>()
+                .join(", ");
+            error_message.push_str(&db_list);
+            error_message.push_str("]\n");
         }
 
-        error_message
-            .push_str("\nTo fix this, add the missing database(s) to your moose.config.toml:\n\n");
-        error_message.push_str("[clickhouse_config]\n");
-        error_message.push_str(&format!("db_name = \"{}\"\n", primary_database));
-        error_message.push_str("additional_databases = [");
+        // Report cluster errors
+        if !invalid_clusters.is_empty() {
+            if !invalid_tables.is_empty() {
+                error_message.push('\n');
+            }
 
-        let mut all_databases: Vec<String> = additional_databases.to_vec();
-        for (_, db) in &invalid_tables {
-            if !all_databases.contains(db) {
-                all_databases.push(db.clone());
+            error_message.push_str(
+                "One or more tables specify clusters that are not configured in moose.config.toml:\n\n",
+            );
+
+            for (table_name, cluster) in &invalid_clusters {
+                error_message.push_str(&format!(
+                    "  • Table '{}' specifies cluster '{}'\n",
+                    table_name, cluster
+                ));
+            }
+
+            error_message.push_str(
+                "\nTo fix this, add the missing cluster(s) to your moose.config.toml:\n\n",
+            );
+
+            // Only show the missing clusters in the error message, not the already configured ones
+            let mut missing_clusters: Vec<String> = invalid_clusters
+                .iter()
+                .map(|(_, cluster)| cluster.clone())
+                .collect();
+            missing_clusters.sort();
+            missing_clusters.dedup();
+
+            for cluster in &missing_clusters {
+                error_message.push_str(&format!("[[clickhouse_config.clusters]]\n"));
+                error_message.push_str(&format!("name = \"{}\"\n\n", cluster));
             }
         }
-        all_databases.sort();
-
-        let db_list = all_databases
-            .iter()
-            .map(|db| format!("\"{}\"", db))
-            .collect::<Vec<_>>()
-            .join(", ");
-        error_message.push_str(&db_list);
-        error_message.push_str("]\n");
 
         anyhow::bail!(error_message);
     }
@@ -345,11 +447,16 @@ async fn execute_operations(
         migration_plan.operations.len()
     );
 
-    // Validate that all table databases are configured
-    validate_table_databases(
+    // Validate that all table databases and clusters are configured
+    log::info!(
+        "Validating operations against config. Clusters: {:?}",
+        project.clickhouse_config.clusters
+    );
+    validate_table_databases_and_clusters(
         &migration_plan.operations,
         &project.clickhouse_config.db_name,
         &project.clickhouse_config.additional_databases,
+        &project.clickhouse_config.clusters,
     )?;
 
     let is_dev = !project.is_production;
@@ -969,7 +1076,7 @@ mod tests {
         }];
 
         // Primary database matches - should pass
-        let result = validate_table_databases(&operations, "local", &[]);
+        let result = validate_table_databases_and_clusters(&operations, "local", &[], &None);
         assert!(result.is_ok());
 
         // Database in additional_databases - should pass
@@ -978,7 +1085,12 @@ mod tests {
         let operations = vec![SerializableOlapOperation::CreateTable {
             table: table_analytics,
         }];
-        let result = validate_table_databases(&operations, "local", &["analytics".to_string()]);
+        let result = validate_table_databases_and_clusters(
+            &operations,
+            "local",
+            &["analytics".to_string()],
+            &None,
+        );
         assert!(result.is_ok());
     }
 
@@ -990,7 +1102,7 @@ mod tests {
         let operations = vec![SerializableOlapOperation::CreateTable { table }];
 
         // Database not in config - should fail
-        let result = validate_table_databases(&operations, "local", &[]);
+        let result = validate_table_databases_and_clusters(&operations, "local", &[], &None);
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
         assert!(err.contains("unconfigured_db"));
@@ -1052,7 +1164,7 @@ mod tests {
             },
         ];
 
-        let result = validate_table_databases(&operations, "local", &[]);
+        let result = validate_table_databases_and_clusters(&operations, "local", &[], &None);
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
         // Should report both bad databases
@@ -1068,7 +1180,108 @@ mod tests {
             description: "test".to_string(),
         }];
 
-        let result = validate_table_databases(&operations, "local", &[]);
+        let result = validate_table_databases_and_clusters(&operations, "local", &[], &None);
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_validate_cluster_valid() {
+        let mut table = create_test_table("users");
+        table.cluster_name = Some("my_cluster".to_string());
+
+        let operations = vec![SerializableOlapOperation::CreateTable {
+            table: table.clone(),
+        }];
+
+        let clusters = Some(vec![ClusterConfig {
+            name: "my_cluster".to_string(),
+        }]);
+
+        // Cluster is configured - should pass
+        let result = validate_table_databases_and_clusters(&operations, "local", &[], &clusters);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_validate_cluster_invalid() {
+        let mut table = create_test_table("users");
+        table.cluster_name = Some("unconfigured_cluster".to_string());
+
+        let operations = vec![SerializableOlapOperation::CreateTable { table }];
+
+        let clusters = Some(vec![
+            ClusterConfig {
+                name: "my_cluster".to_string(),
+            },
+            ClusterConfig {
+                name: "another_cluster".to_string(),
+            },
+        ]);
+
+        // Cluster not in config - should fail and show available clusters
+        let result = validate_table_databases_and_clusters(&operations, "local", &[], &clusters);
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(
+            err.contains("unconfigured_cluster"),
+            "Error should mention the invalid cluster"
+        );
+        assert!(
+            err.contains("moose.config.toml"),
+            "Error should reference config file"
+        );
+    }
+
+    #[test]
+    fn test_validate_cluster_no_clusters_configured() {
+        let mut table = create_test_table("users");
+        table.cluster_name = Some("some_cluster".to_string());
+
+        let operations = vec![SerializableOlapOperation::CreateTable { table }];
+
+        // No clusters configured but table references one - should fail
+        let result = validate_table_databases_and_clusters(&operations, "local", &[], &None);
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("some_cluster"));
+    }
+
+    #[test]
+    fn test_validate_both_database_and_cluster_invalid() {
+        let mut table = create_test_table("users");
+        table.database = Some("bad_db".to_string());
+        table.cluster_name = Some("bad_cluster".to_string());
+
+        let operations = vec![SerializableOlapOperation::CreateTable { table }];
+
+        let clusters = Some(vec![ClusterConfig {
+            name: "good_cluster".to_string(),
+        }]);
+
+        // Both database and cluster invalid - should report both errors
+        let result = validate_table_databases_and_clusters(&operations, "local", &[], &clusters);
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("bad_db"));
+        assert!(err.contains("bad_cluster"));
+    }
+
+    #[test]
+    fn test_validate_cluster_in_drop_table_operation() {
+        let operations = vec![SerializableOlapOperation::DropTable {
+            table: "users".to_string(),
+            database: None,
+            cluster_name: Some("unconfigured_cluster".to_string()),
+        }];
+
+        let clusters = Some(vec![ClusterConfig {
+            name: "my_cluster".to_string(),
+        }]);
+
+        // DropTable with invalid cluster - should fail
+        let result = validate_table_databases_and_clusters(&operations, "local", &[], &clusters);
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("unconfigured_cluster"));
     }
 }
