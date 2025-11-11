@@ -63,7 +63,7 @@ export function validateQueryWhitelist(query: string): ValidationResult | null {
   // Whitelist: Only allow specific read-only operations
   const allowedKeywords = ["SELECT", "SHOW", "DESCRIBE", "DESC", "EXPLAIN"];
 
-  if (!allowedKeywords.includes(firstKeyword)) {
+  if (allowedKeywords.indexOf(firstKeyword) === -1) {
     return {
       valid: false,
       error: `Query type '${firstKeyword}' not allowed. Only SELECT, SHOW, DESCRIBE, EXPLAIN queries are permitted`,
