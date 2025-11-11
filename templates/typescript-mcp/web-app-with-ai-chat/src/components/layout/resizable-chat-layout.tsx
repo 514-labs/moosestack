@@ -44,7 +44,7 @@ export default function ResizableChatLayout({
   children,
   minChatWidthPX = 400,
   maxChatWidthPercent = 40,
-  defaultChatWidthPercent = 30,
+  defaultChatWidthPercent = 40,
   className = "h-full",
 }: ResizableChatLayoutProps) {
   // Chat state management
