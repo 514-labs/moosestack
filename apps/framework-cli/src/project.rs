@@ -543,10 +543,6 @@ impl Project {
     pub fn consumption_dir(&self) -> PathBuf {
         let apis_dir = self.app_dir().join(CONSUMPTION_DIR);
 
-        if !apis_dir.exists() {
-            std::fs::create_dir_all(&apis_dir).expect("Failed to create consumption directory");
-        }
-
         debug!("Consumptions dir: {:?}", apis_dir);
         apis_dir
     }
