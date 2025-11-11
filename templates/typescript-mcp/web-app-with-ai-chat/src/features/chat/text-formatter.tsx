@@ -9,7 +9,7 @@ type TextFormatterProps = {
 
 export function TextFormatter({ text }: TextFormatterProps) {
   return (
-    <div className="max-w-none">
+    <div className="max-w-[400px] min-w-full">
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         components={{
