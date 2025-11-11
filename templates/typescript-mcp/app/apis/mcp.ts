@@ -31,7 +31,7 @@ function clickhouseReadonlyQuery(
     format: "JSONEachRow",
     clickhouse_settings: {
       readonly: "2",
-      limit: limit.toString() ?? "100",
+      limit: limit.toString(),
     },
   });
 }
