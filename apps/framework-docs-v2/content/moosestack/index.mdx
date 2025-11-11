@@ -147,6 +147,7 @@ analytics_api = Api[RequestParams, DataModel]("get-api-route", query_function=ha
         language="ts"
         filename="models.ts"
         variant="ide"
+        className="h-[320px]"
       >
 {[
   "interface Event {",
@@ -179,6 +180,7 @@ analytics_api = Api[RequestParams, DataModel]("get-api-route", query_function=ha
         language="bash"
         filename="Terminal"
         variant="terminal"
+        className="h-[320px]"
       >
 {[
   "# Start local dev server",
@@ -216,6 +218,7 @@ analytics_api = Api[RequestParams, DataModel]("get-api-route", query_function=ha
         language="ts"
         filename="olap.ts"
         variant="ide"
+        className="h-[320px]"
       >
 {[
   "const table = new OlapTable<Event>(\"events\");",
@@ -251,6 +254,7 @@ analytics_api = Api[RequestParams, DataModel]("get-api-route", query_function=ha
         language="ts"
         filename="streaming.ts"
         variant="ide"
+        className="h-[320px]"
       >
 {[
   "const stream = new Stream<Event>(\"events\", {",
@@ -281,6 +285,7 @@ analytics_api = Api[RequestParams, DataModel]("get-api-route", query_function=ha
         language="ts"
         filename="workflows.ts"
         variant="ide"
+        className="h-[320px]"
       >
 {[
   "const etl = new Workflow(\"my_etl\", {",
@@ -308,7 +313,8 @@ analytics_api = Api[RequestParams, DataModel]("get-api-route", query_function=ha
       <CodeEditorWrapper
         language="ts"
         filename="apis.ts"
-        variant="ide"
+        variant="ide" 
+        className="h-[320px]"
       >
 {[
   "const postEvent = new IngestApi<Event>(\"post-event\", {",
@@ -352,6 +358,7 @@ analytics_api = Api[RequestParams, DataModel]("get-api-route", query_function=ha
         language="bash"
         filename="Terminal"
         variant="terminal"
+        className="h-[320px]"
       >
 {[
   "# Build for production",
@@ -376,7 +383,8 @@ analytics_api = Api[RequestParams, DataModel]("get-api-route", query_function=ha
       <CodeEditorWrapper
         language="bash"
         filename="Terminal"
-        variant="terminal"
+        variant="terminal"  
+        className="h-[320px]"
       >
 {[
   "# Create a plan",
