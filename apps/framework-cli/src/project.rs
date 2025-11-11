@@ -73,9 +73,7 @@ use crate::utilities::constants::CLI_INTERNAL_VERSIONS_DIR;
 use crate::utilities::constants::ENVIRONMENT_VARIABLE_PREFIX;
 use crate::utilities::constants::PROJECT_CONFIG_FILE;
 use crate::utilities::constants::{APP_DIR, CLI_PROJECT_INTERNAL_DIR, SCHEMAS_DIR};
-use crate::utilities::constants::{
-    CONSUMPTION_DIR, FUNCTIONS_DIR, OLD_PROJECT_CONFIG_FILE, TS_FLOW_FILE,
-};
+use crate::utilities::constants::{FUNCTIONS_DIR, OLD_PROJECT_CONFIG_FILE, TS_FLOW_FILE};
 use crate::utilities::git::GitConfig;
 use crate::utilities::PathExt;
 use crate::utilities::_true;
@@ -537,14 +535,6 @@ impl Project {
 
         debug!("Blocks dir: {:?}", blocks_dir);
         blocks_dir
-    }
-
-    /// Returns the path to the consumption directory
-    pub fn consumption_dir(&self) -> PathBuf {
-        let apis_dir = self.app_dir().join(CONSUMPTION_DIR);
-
-        debug!("Consumptions dir: {:?}", apis_dir);
-        apis_dir
     }
 
     /// Returns the path to the internal directory

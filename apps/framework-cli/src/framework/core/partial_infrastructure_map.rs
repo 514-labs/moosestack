@@ -448,7 +448,6 @@ pub struct PartialInfrastructureMap {
     #[serde(default)]
     function_processes: HashMap<String, FunctionProcess>,
     block_db_processes: Option<OlapProcess>,
-    consumption_api_web_server: Option<ConsumptionApiWebServer>,
     #[serde(default)]
     workflows: HashMap<String, PartialWorkflow>,
     #[serde(default)]
@@ -582,9 +581,6 @@ impl PartialInfrastructureMap {
             topic_to_topic_sync_processes: self.topic_to_topic_sync_processes,
             function_processes,
             block_db_processes: self.block_db_processes.unwrap_or(OlapProcess {}),
-            consumption_api_web_server: self
-                .consumption_api_web_server
-                .unwrap_or(ConsumptionApiWebServer {}),
             orchestration_workers,
             workflows,
             web_apps,

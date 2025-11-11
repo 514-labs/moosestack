@@ -17,7 +17,6 @@ use crate::{
 };
 
 pub mod blocks_registry;
-pub mod consumption_registry;
 pub mod functions_registry;
 pub mod kafka_clickhouse_sync;
 pub mod orchestration_workers_registry;
@@ -176,22 +175,6 @@ pub async fn execute_changes(
                 before: _,
                 after: _,
             }) => {}
-            ProcessChange::ConsumptionApiWebServer(Change::Added(_)) => {
-                log::info!("Starting analytics api webserver process");
-                process_registry.consumption.start()?;
-            }
-            ProcessChange::ConsumptionApiWebServer(Change::Removed(_)) => {
-                log::info!("Stopping analytics api webserver process");
-                process_registry.consumption.stop().await?;
-            }
-            ProcessChange::ConsumptionApiWebServer(Change::Updated {
-                before: _,
-                after: _,
-            }) => {
-                log::info!("Re-Starting analytics api webserver process");
-                process_registry.consumption.stop().await?;
-                process_registry.consumption.start()?;
-            }
             ProcessChange::OrchestrationWorker(Change::Added(new_orchestration_worker)) => {
                 log::info!("Starting Orchestration worker process");
                 process_registry

@@ -2,7 +2,6 @@ use clap::Subcommand;
 
 pub mod blocks;
 pub mod bulk_import;
-pub mod consumption;
 pub mod core;
 pub mod data_model;
 pub mod languages;

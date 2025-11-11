@@ -34,7 +34,6 @@
 //! This module is essential for maintaining consistency between the defined infrastructure
 //! and the actual deployed components.
 use super::infrastructure::api_endpoint::{APIType, ApiEndpoint};
-use super::infrastructure::consumption_webserver::ConsumptionApiWebServer;
 use super::infrastructure::function_process::FunctionProcess;
 use super::infrastructure::olap_process::OlapProcess;
 use super::infrastructure::orchestration_worker::OrchestrationWorker;
@@ -443,8 +442,6 @@ pub enum ProcessChange {
     FunctionProcess(Change<FunctionProcess>),
     /// Change to an OLAP process
     OlapProcess(Change<OlapProcess>),
-    /// Change to a consumption API web server
-    ConsumptionApiWebServer(Change<ConsumptionApiWebServer>),
     /// Change to an orchestration worker
     OrchestrationWorker(Change<OrchestrationWorker>),
 }
@@ -527,11 +524,6 @@ pub struct InfrastructureMap {
     // TODO change to a hashmap of processes when we have several
     pub block_db_processes: OlapProcess,
 
-    /// Web server handling consumption API endpoints
-    // Not sure if we will want to change that or not in the future to be able to tell
-    // the new consumption endpoints that were added or removed.
-    pub consumption_api_web_server: ConsumptionApiWebServer,
-
     /// Collection of orchestration workers indexed by worker ID
     #[serde(default = "HashMap::new")]
     pub orchestration_workers: HashMap<String, OrchestrationWorker>,
@@ -578,7 +570,6 @@ impl InfrastructureMap {
             topic_to_topic_sync_processes: Default::default(),
             function_processes: Default::default(),
             block_db_processes: OlapProcess {},
-            consumption_api_web_server: ConsumptionApiWebServer {},
             orchestration_workers: Default::default(),
             sql_resources: Default::default(),
             workflows: Default::default(),
@@ -720,27 +711,6 @@ impl InfrastructureMap {
         // TODO update here when we have several blocks processes
         let block_db_processes = OlapProcess::from_blocks(&primitive_map.blocks);
 
-        // consumption api endpoints
-        let consumption_api_web_server = ConsumptionApiWebServer {};
-        if !project.features.apis && !primitive_map.consumption.endpoint_files.is_empty() {
-            log::error!("Analytics APIs disabled. API endpoints will not be available.");
-            show_message_wrapper(
-                MessageType::Error,
-                Message {
-                    action: "Disabled".to_string(),
-                    details: format!(
-                        "Analytics APIs feature is disabled but {} API endpoint(s) found. Enable 'apis = true' in moose.config.toml.",
-                        primitive_map.consumption.endpoint_files.len()
-                    ),
-                },
-            );
-        } else {
-            for api_endpoint in primitive_map.consumption.endpoint_files {
-                let api_endpoint_infra = ApiEndpoint::from(api_endpoint);
-                api_endpoints.insert(api_endpoint_infra.id(), api_endpoint_infra);
-            }
-        }
-
         // Orchestration workers
         let mut orchestration_workers = HashMap::new();
         let orchestration_worker = OrchestrationWorker::new(project.language);
@@ -756,7 +726,6 @@ impl InfrastructureMap {
             views,
             function_processes,
             block_db_processes,
-            consumption_api_web_server,
             orchestration_workers,
             sql_resources: Default::default(),
             workflows: Default::default(),
@@ -901,15 +870,6 @@ impl InfrastructureMap {
         if project.features.olap {
             process_changes.push(ProcessChange::OlapProcess(Change::<OlapProcess>::Added(
                 Box::new(OlapProcess {}),
-            )));
-        }
-
-        // Only add Analytics API server if apis feature is enabled
-        if project.features.apis {
-            process_changes.push(ProcessChange::ConsumptionApiWebServer(Change::<
-                ConsumptionApiWebServer,
-            >::Added(
-                Box::new(ConsumptionApiWebServer {}),
             )));
         }
 
@@ -1324,12 +1284,6 @@ impl InfrastructureMap {
             process_changes,
         );
 
-        Self::diff_consumption_api_processes(
-            &self.consumption_api_web_server,
-            &target_map.consumption_api_web_server,
-            process_changes,
-        );
-
         Self::diff_orchestration_workers(
             &self.orchestration_workers,
             &target_map.orchestration_workers,
@@ -1513,25 +1467,6 @@ impl InfrastructureMap {
         // TODO: Once we refactor to have multiple processes, we should compare actual changes
         log::debug!("OLAP Process updated (assumed for now)");
         process_changes.push(ProcessChange::OlapProcess(Change::<OlapProcess>::Updated {
-            before: Box::new(self_process.clone()),
-            after: Box::new(target_process.clone()),
-        }));
-    }
-
-    /// Compare Consumption API process changes between two infrastructure maps
-    fn diff_consumption_api_processes(
-        self_process: &ConsumptionApiWebServer,
-        target_process: &ConsumptionApiWebServer,
-        process_changes: &mut Vec<ProcessChange>,
-    ) {
-        log::info!("Analyzing changes in Analytics API processes...");
-
-        // We are currently not tracking individual consumption endpoints, so we will just restart
-        // the consumption web server when something changed
-        log::debug!("Analytics API Web Server updated (assumed for now)");
-        process_changes.push(ProcessChange::ConsumptionApiWebServer(Change::<
-            ConsumptionApiWebServer,
-        >::Updated {
             before: Box::new(self_process.clone()),
             after: Box::new(target_process.clone()),
         }));
@@ -2526,7 +2461,6 @@ impl InfrastructureMap {
                 .into_iter()
                 .map(|(k, v)| (k, OrchestrationWorker::from_proto(v)))
                 .collect(),
-            consumption_api_web_server: ConsumptionApiWebServer {},
             block_db_processes: OlapProcess {},
             sql_resources: proto
                 .sql_resources
@@ -2946,7 +2880,6 @@ impl Default for InfrastructureMap {
             topic_to_topic_sync_processes: HashMap::new(),
             function_processes: HashMap::new(),
             block_db_processes: OlapProcess {},
-            consumption_api_web_server: ConsumptionApiWebServer {},
             orchestration_workers: HashMap::new(),
             sql_resources: HashMap::new(),
             workflows: HashMap::new(),

@@ -2,7 +2,6 @@ use crate::framework::versions::Version;
 
 pub mod blocks;
 pub mod checker;
-pub mod consumption;
 pub mod datamodel_config;
 pub mod executor;
 pub mod generate;
