@@ -55,7 +55,7 @@ async function getTableColumns(
     ORDER BY position
   `;
 
-  // No limit for catalog queries - these are small metadata tables
+  // High limit for catalog queries - metadata tables are typically small
   const result = await clickhouseReadonlyQuery(client, query, 10000);
   const data = (await result.json()) as any[];
 
@@ -92,7 +92,7 @@ async function getTablesAndMaterializedViews(
     ORDER BY name
   `;
 
-  // No limit for catalog queries - these are small metadata tables
+  // High limit for catalog queries - metadata tables are typically small
   const result = await clickhouseReadonlyQuery(client, query, 10000);
   const data = (await result.json()) as any[];
 
@@ -275,10 +275,8 @@ const serverFactory = (mooseUtils: ApiUtil | null) => {
     "query_clickhouse",
     /**
      * Type assertion needed here due to MCP SDK type limitations.
-     * The SDK expects Record<string, ZodTypeAny> but wrapped Zod objects with
-     * passthrough() provide additional methods. Runtime validation still works correctly.
-     * Using z.object().passthrough() ensures we can accept additional properties
-     * that might be added by the MCP protocol layer.
+     * The SDK expects Record<string, ZodTypeAny> but our schema structure
+     * doesn't match that exact type. Runtime validation still works correctly.
      */
     {
       title: "Query ClickHouse Database",
