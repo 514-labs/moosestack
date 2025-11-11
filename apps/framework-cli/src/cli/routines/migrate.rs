@@ -100,8 +100,9 @@ fn strip_metadata_and_ignored_fields(
             let mut table = table.clone();
             table.metadata = None;
             // Also strip ignored fields
-            let table =
-                crate::framework::core::migration_plan::strip_ignored_fields(&table, ignore_ops);
+            let table = crate::infrastructure::olap::clickhouse::normalize_table_for_diff(
+                &table, ignore_ops,
+            );
             (name.clone(), table)
         })
         .collect()
@@ -464,7 +465,7 @@ pub async fn execute_migration(
                     e,
                 )
             })?
-            .unwrap_or_default();
+            .unwrap_or_else(|| InfrastructureMap::empty_from_project(project));
 
         let current_infra_map = if project.features.olap {
             use crate::framework::core::plan::reconcile_with_reality;
@@ -497,8 +498,8 @@ pub async fn execute_migration(
 
         let current_tables = &current_infra_map.tables;
 
-        // Load target state from current code
-        let target_infra_map = InfrastructureMap::load_from_user_code(project)
+        // Load target state from current code with credentials resolved for migration DDL
+        let target_infra_map = InfrastructureMap::load_from_user_code(project, true)
             .await
             .map_err(|e| {
                 RoutineFailure::new(

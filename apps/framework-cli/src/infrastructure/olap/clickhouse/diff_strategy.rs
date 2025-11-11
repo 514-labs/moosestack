@@ -6,10 +6,10 @@
 
 use crate::framework::core::infrastructure::sql_resource::SqlResource;
 use crate::framework::core::infrastructure::table::{
-    Column, ColumnType, DataEnum, EnumValue, Table,
+    Column, ColumnType, DataEnum, EnumValue, JsonOptions, Nested, Table,
 };
 use crate::framework::core::infrastructure_map::{
-    ColumnChange, OlapChange, OrderByChange, TableChange, TableDiffStrategy,
+    ColumnChange, OlapChange, OrderByChange, PartitionByChange, TableChange, TableDiffStrategy,
 };
 use crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine;
 use std::collections::HashMap;
@@ -157,6 +157,173 @@ pub fn enums_are_equivalent(actual: &DataEnum, target: &DataEnum) -> bool {
     true
 }
 
+/// Checks if two Nested types are semantically equivalent.
+///
+/// ClickHouse may generate generic names like "nested_3" for nested types, while
+/// user-defined code uses meaningful names like "Metadata". This function compares
+/// the structure (columns) and jwt field, ignoring name differences when the columns match.
+///
+/// # Arguments
+/// * `actual` - The first Nested type to compare (typically from ClickHouse)
+/// * `target` - The second Nested type to compare (typically from user code)
+///
+/// # Returns
+/// `true` if the Nested types are semantically equivalent, `false` otherwise
+pub fn nested_are_equivalent(actual: &Nested, target: &Nested) -> bool {
+    // First check direct equality (fast path)
+    if actual == target {
+        return true;
+    }
+
+    // jwt field must match
+    if actual.jwt != target.jwt {
+        return false;
+    }
+
+    // Check if both have the same number of columns
+    if actual.columns.len() != target.columns.len() {
+        return false;
+    }
+
+    // Compare each column recursively
+    // Note: We assume columns are in the same order. If ClickHouse reorders nested columns,
+    // we may need to add order-independent comparison here as well.
+    for (actual_col, target_col) in actual.columns.iter().zip(target.columns.iter()) {
+        // Use columns_are_equivalent for full semantic comparison
+        // We need to be careful here to avoid infinite recursion
+        // So we'll do a simpler comparison for now
+        if actual_col.name != target_col.name
+            || actual_col.required != target_col.required
+            || actual_col.unique != target_col.unique
+            || actual_col.default != target_col.default
+            || actual_col.annotations != target_col.annotations
+            || actual_col.comment != target_col.comment
+            || actual_col.ttl != target_col.ttl
+        {
+            return false;
+        }
+
+        // Recursively compare data types
+        if !column_types_are_equivalent(&actual_col.data_type, &target_col.data_type) {
+            return false;
+        }
+    }
+
+    true
+}
+
+/// Checks if two ColumnTypes are semantically equivalent.
+///
+/// This is used for comparing nested types within JsonOptions, handling special cases
+/// like enums, nested JSON types, and Nested column types. Also recursively handles
+/// container types (Array, Nullable, Map, NamedTuple) to ensure nested comparisons work.
+///
+/// # Arguments
+/// * `a` - The first ColumnType to compare
+/// * `b` - The second ColumnType to compare
+///
+/// # Returns
+/// `true` if the ColumnTypes are semantically equivalent, `false` otherwise
+pub fn column_types_are_equivalent(a: &ColumnType, b: &ColumnType) -> bool {
+    match (a, b) {
+        (ColumnType::Enum(a_enum), ColumnType::Enum(b_enum)) => {
+            enums_are_equivalent(a_enum, b_enum)
+        }
+        (ColumnType::Json(a_opts), ColumnType::Json(b_opts)) => {
+            json_options_are_equivalent(a_opts, b_opts)
+        }
+        (ColumnType::Nested(a_nested), ColumnType::Nested(b_nested)) => {
+            nested_are_equivalent(a_nested, b_nested)
+        }
+        // Recursively handle Array types
+        (
+            ColumnType::Array {
+                element_type: a_elem,
+                element_nullable: a_nullable,
+            },
+            ColumnType::Array {
+                element_type: b_elem,
+                element_nullable: b_nullable,
+            },
+        ) => a_nullable == b_nullable && column_types_are_equivalent(a_elem, b_elem),
+        // Recursively handle Nullable types
+        (ColumnType::Nullable(a_inner), ColumnType::Nullable(b_inner)) => {
+            column_types_are_equivalent(a_inner, b_inner)
+        }
+        // Recursively handle Map types
+        (
+            ColumnType::Map {
+                key_type: a_key,
+                value_type: a_val,
+            },
+            ColumnType::Map {
+                key_type: b_key,
+                value_type: b_val,
+            },
+        ) => column_types_are_equivalent(a_key, b_key) && column_types_are_equivalent(a_val, b_val),
+        // Recursively handle NamedTuple types
+        (ColumnType::NamedTuple(a_fields), ColumnType::NamedTuple(b_fields)) => {
+            if a_fields.len() != b_fields.len() {
+                return false;
+            }
+            a_fields
+                .iter()
+                .zip(b_fields.iter())
+                .all(|((a_name, a_type), (b_name, b_type))| {
+                    a_name == b_name && column_types_are_equivalent(a_type, b_type)
+                })
+        }
+        // For all other types, use standard equality
+        _ => a == b,
+    }
+}
+
+/// Checks if two JsonOptions are semantically equivalent.
+///
+/// This is important because the order of `typed_paths` shouldn't matter for equivalence.
+/// Two JsonOptions are considered equivalent if they have the same set of typed paths
+/// (path-type pairs), regardless of the order they appear in the Vec.
+///
+/// # Arguments
+/// * `a` - The first JsonOptions to compare
+/// * `b` - The second JsonOptions to compare
+///
+/// # Returns
+/// `true` if the JsonOptions are semantically equivalent, `false` otherwise
+pub fn json_options_are_equivalent(a: &JsonOptions, b: &JsonOptions) -> bool {
+    // First check direct equality (fast path)
+    if a == b {
+        return true;
+    }
+
+    // Check non-ordered fields
+    if a.max_dynamic_paths != b.max_dynamic_paths
+        || a.max_dynamic_types != b.max_dynamic_types
+        || a.skip_paths != b.skip_paths
+        || a.skip_regexps != b.skip_regexps
+    {
+        return false;
+    }
+
+    // Check typed_paths length
+    if a.typed_paths.len() != b.typed_paths.len() {
+        return false;
+    }
+
+    // For each path in a, find a matching path-type pair in b
+    // We need semantic comparison for the types to handle nested JSON
+    for (a_path, a_type) in &a.typed_paths {
+        let found = b.typed_paths.iter().any(|(b_path, b_type)| {
+            a_path == b_path && column_types_are_equivalent(a_type, b_type)
+        });
+        if !found {
+            return false;
+        }
+    }
+
+    true
+}
+
 /// Checks if an enum needs metadata comment to be added.
 ///
 /// Returns true if the enum appears to be from a TypeScript string enum
@@ -253,7 +420,7 @@ impl ClickHouseTableDiffStrategy {
 
 impl TableDiffStrategy for ClickHouseTableDiffStrategy {
     /// This function is only called when there are actual changes to the table
-    /// (column changes, ORDER BY changes, or deduplication changes).
+    /// (column changes, ORDER BY changes, PARTITION BY changes, or deduplication changes).
     /// It determines whether those changes can be handled via ALTER TABLE
     /// or require a drop+create operation.
     fn diff_table_update(
@@ -262,6 +429,7 @@ impl TableDiffStrategy for ClickHouseTableDiffStrategy {
         after: &Table,
         column_changes: Vec<ColumnChange>,
         order_by_change: OrderByChange,
+        partition_by_change: PartitionByChange,
         default_database: &str,
     ) -> Vec<OlapChange> {
         // Check if ORDER BY has changed
@@ -305,7 +473,8 @@ impl TableDiffStrategy for ClickHouseTableDiffStrategy {
         }
 
         // Check if PARTITION BY has changed
-        if before.partition_by != after.partition_by {
+        let partition_by_changed = partition_by_change.before != partition_by_change.after;
+        if partition_by_changed {
             log::warn!(
                 "ClickHouse: PARTITION BY changed for table '{}', requiring drop+create",
                 before.name
@@ -455,6 +624,7 @@ impl TableDiffStrategy for ClickHouseTableDiffStrategy {
                 name: before.name.clone(),
                 column_changes,
                 order_by_change,
+                partition_by_change,
                 before: before.clone(),
                 after: after.clone(),
             })]
@@ -536,7 +706,19 @@ mod tests {
             after: OrderBy::Fields(vec!["id".to_string(), "timestamp".to_string()]),
         };
 
-        let changes = strategy.diff_table_update(&before, &after, vec![], order_by_change, "local");
+        let partition_by_change = PartitionByChange {
+            before: None,
+            after: None,
+        };
+
+        let changes = strategy.diff_table_update(
+            &before,
+            &after,
+            vec![],
+            order_by_change,
+            partition_by_change,
+            "local",
+        );
 
         assert_eq!(changes.len(), 2);
         assert!(matches!(
@@ -561,7 +743,19 @@ mod tests {
             after: after.order_by.clone(),
         };
 
-        let changes = strategy.diff_table_update(&before, &after, vec![], order_by_change, "local");
+        let partition_by_change = PartitionByChange {
+            before: before.partition_by.clone(),
+            after: after.partition_by.clone(),
+        };
+
+        let changes = strategy.diff_table_update(
+            &before,
+            &after,
+            vec![],
+            order_by_change,
+            partition_by_change,
+            "local",
+        );
 
         assert_eq!(changes.len(), 2);
         assert!(matches!(
@@ -601,8 +795,19 @@ mod tests {
             after: after.order_by.clone(),
         };
 
-        let changes =
-            strategy.diff_table_update(&before, &after, column_changes, order_by_change, "local");
+        let partition_by_change = PartitionByChange {
+            before: before.partition_by.clone(),
+            after: after.partition_by.clone(),
+        };
+
+        let changes = strategy.diff_table_update(
+            &before,
+            &after,
+            column_changes,
+            order_by_change,
+            partition_by_change,
+            "local",
+        );
 
         assert_eq!(changes.len(), 1);
         assert!(matches!(
@@ -647,8 +852,19 @@ mod tests {
             after: OrderBy::Fields(vec!["id".to_string(), "timestamp".to_string()]),
         };
 
-        let changes =
-            strategy.diff_table_update(&before, &after, column_changes, order_by_change, "local");
+        let partition_by_change = PartitionByChange {
+            before: before.partition_by.clone(),
+            after: after.partition_by.clone(),
+        };
+
+        let changes = strategy.diff_table_update(
+            &before,
+            &after,
+            column_changes,
+            order_by_change,
+            partition_by_change,
+            "local",
+        );
 
         // With identical ORDER BY but column changes, should use ALTER (not drop+create)
         assert_eq!(changes.len(), 1);
@@ -681,8 +897,19 @@ mod tests {
             after: OrderBy::Fields(vec!["id".to_string(), "timestamp".to_string()]),
         };
 
-        let changes =
-            strategy.diff_table_update(&before, &after, column_changes, order_by_change, "local");
+        let partition_by_change = PartitionByChange {
+            before: before.partition_by.clone(),
+            after: after.partition_by.clone(),
+        };
+
+        let changes = strategy.diff_table_update(
+            &before,
+            &after,
+            column_changes,
+            order_by_change,
+            partition_by_change,
+            "local",
+        );
 
         // With no actual changes, should return empty vector
         assert_eq!(changes.len(), 0);
@@ -702,8 +929,19 @@ mod tests {
             after: OrderBy::Fields(vec!["timestamp".to_string()]),
         };
 
-        let changes =
-            strategy.diff_table_update(&before, &after, column_changes, order_by_change, "local");
+        let partition_by_change = PartitionByChange {
+            before: before.partition_by.clone(),
+            after: after.partition_by.clone(),
+        };
+
+        let changes = strategy.diff_table_update(
+            &before,
+            &after,
+            column_changes,
+            order_by_change,
+            partition_by_change,
+            "local",
+        );
 
         // Should still require drop+create even with no column changes
         assert_eq!(changes.len(), 2);
@@ -733,7 +971,19 @@ mod tests {
             after: after.order_by.clone(),
         };
 
-        let changes = strategy.diff_table_update(&before, &after, vec![], order_by_change, "local");
+        let partition_by_change = PartitionByChange {
+            before: before.partition_by.clone(),
+            after: after.partition_by.clone(),
+        };
+
+        let changes = strategy.diff_table_update(
+            &before,
+            &after,
+            vec![],
+            order_by_change,
+            partition_by_change,
+            "local",
+        );
 
         // SAMPLE BY change is handled via ALTER TABLE, expect an Updated change
         assert!(changes
@@ -757,12 +1007,108 @@ mod tests {
             after: after.order_by.clone(),
         };
 
-        let changes = strategy.diff_table_update(&before, &after, vec![], order_by_change, "local");
+        let partition_by_change = PartitionByChange {
+            before: before.partition_by.clone(),
+            after: after.partition_by.clone(),
+        };
+
+        let changes = strategy.diff_table_update(
+            &before,
+            &after,
+            vec![],
+            order_by_change,
+            partition_by_change,
+            "local",
+        );
 
         // SAMPLE BY modification is handled via ALTER TABLE, expect an Updated change
         assert!(changes
             .iter()
             .any(|c| matches!(c, OlapChange::Table(TableChange::Updated { .. }))));
+    }
+
+    #[test]
+    fn test_partition_by_change_requires_drop_create() {
+        let strategy = ClickHouseTableDiffStrategy;
+
+        let mut before = create_test_table("test", vec!["id".to_string()], false);
+        let mut after = create_test_table("test", vec!["id".to_string()], false);
+
+        // Set different PARTITION BY values
+        before.partition_by = None;
+        after.partition_by = Some("toYYYYMM(timestamp)".to_string());
+
+        let order_by_change = OrderByChange {
+            before: before.order_by.clone(),
+            after: after.order_by.clone(),
+        };
+
+        let partition_by_change = PartitionByChange {
+            before: before.partition_by.clone(),
+            after: after.partition_by.clone(),
+        };
+
+        let changes = strategy.diff_table_update(
+            &before,
+            &after,
+            vec![],
+            order_by_change,
+            partition_by_change,
+            "local",
+        );
+
+        // PARTITION BY change requires drop+create
+        assert_eq!(changes.len(), 2);
+        assert!(matches!(
+            changes[0],
+            OlapChange::Table(TableChange::Removed(_))
+        ));
+        assert!(matches!(
+            changes[1],
+            OlapChange::Table(TableChange::Added(_))
+        ));
+    }
+
+    #[test]
+    fn test_partition_by_modification_requires_drop_create() {
+        let strategy = ClickHouseTableDiffStrategy;
+
+        let mut before = create_test_table("test", vec!["id".to_string()], false);
+        let mut after = create_test_table("test", vec!["id".to_string()], false);
+
+        // Change PARTITION BY from one expression to another
+        before.partition_by = Some("toYYYYMM(timestamp)".to_string());
+        after.partition_by = Some("toYYYYMMDD(timestamp)".to_string());
+
+        let order_by_change = OrderByChange {
+            before: before.order_by.clone(),
+            after: after.order_by.clone(),
+        };
+
+        let partition_by_change = PartitionByChange {
+            before: before.partition_by.clone(),
+            after: after.partition_by.clone(),
+        };
+
+        let changes = strategy.diff_table_update(
+            &before,
+            &after,
+            vec![],
+            order_by_change,
+            partition_by_change,
+            "local",
+        );
+
+        // PARTITION BY modification requires drop+create
+        assert_eq!(changes.len(), 2);
+        assert!(matches!(
+            changes[0],
+            OlapChange::Table(TableChange::Removed(_))
+        ));
+        assert!(matches!(
+            changes[1],
+            OlapChange::Table(TableChange::Added(_))
+        ));
     }
 
     #[test]
@@ -781,7 +1127,19 @@ mod tests {
             after: after.order_by.clone(),
         };
 
-        let changes = strategy.diff_table_update(&before, &after, vec![], order_by_change, "local");
+        let partition_by_change = PartitionByChange {
+            before: before.partition_by.clone(),
+            after: after.partition_by.clone(),
+        };
+
+        let changes = strategy.diff_table_update(
+            &before,
+            &after,
+            vec![],
+            order_by_change,
+            partition_by_change,
+            "local",
+        );
 
         // Should return exactly one ValidationError
         assert_eq!(changes.len(), 1);
@@ -822,7 +1180,19 @@ mod tests {
             after: after.order_by.clone(),
         };
 
-        let changes = strategy.diff_table_update(&before, &after, vec![], order_by_change, "local");
+        let partition_by_change = PartitionByChange {
+            before: before.partition_by.clone(),
+            after: after.partition_by.clone(),
+        };
+
+        let changes = strategy.diff_table_update(
+            &before,
+            &after,
+            vec![],
+            order_by_change,
+            partition_by_change,
+            "local",
+        );
 
         // Should return exactly one ValidationError
         assert_eq!(changes.len(), 1);

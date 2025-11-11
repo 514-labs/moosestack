@@ -1,3 +1,11 @@
+---
+title: Python Workflows
+description: Build async workflows with Temporal for long-running tasks, scheduled jobs, and distributed processing
+priority: 0.80
+category: async-processing
+language: python
+---
+
 # Workflow Orchestration
 
 ## Overview

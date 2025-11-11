@@ -1,3 +1,11 @@
+---
+title: TypeScript Workflows
+description: Build async workflows with Temporal for long-running tasks, scheduled jobs, and distributed processing
+priority: 0.80
+category: async-processing
+language: typescript
+---
+
 # Workflow Orchestration
 
 Moose workflows enable developers to automate sequences of tasks in a maintainable, reliable way. A workflow is a series of tasks that execute in order. Each workflow follows these conventions:

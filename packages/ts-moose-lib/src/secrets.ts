@@ -33,9 +33,9 @@ export const MOOSE_RUNTIME_ENV_PREFIX = "__MOOSE_RUNTIME_ENV__:";
 /**
  * Utilities for marking values to be resolved from environment variables at runtime.
  *
- * When you use `mooseRuntimeEnv.get()`, the value is not read immediately.
- * Instead, a special marker is created that the Moose CLI will resolve when
- * it processes your infrastructure configuration.
+ * When you use `mooseRuntimeEnv.get()`, the behavior depends on the context:
+ * - During infrastructure map loading: Returns a marker string for later resolution
+ * - During function/workflow execution: Returns the actual environment variable value
  *
  * This is useful for:
  * - Credentials that should never be embedded in Docker images
@@ -45,11 +45,18 @@ export const MOOSE_RUNTIME_ENV_PREFIX = "__MOOSE_RUNTIME_ENV__:";
  */
 export const mooseRuntimeEnv = {
   /**
-   * Marks a value to be resolved from an environment variable at runtime.
+   * Gets a value from an environment variable, with behavior depending on context.
+   *
+   * When IS_LOADING_INFRA_MAP=true (infrastructure loading):
+   *   Returns a marker string that Moose CLI will resolve later
+   *
+   * When IS_LOADING_INFRA_MAP is unset (function/workflow runtime):
+   *   Returns the actual value from the environment variable
    *
    * @param envVarName - Name of the environment variable to resolve
-   * @returns A marker string that Moose CLI will resolve at runtime
+   * @returns Either a marker string or the actual environment variable value
    * @throws {Error} If the environment variable name is empty
+   * @throws {Error} If the environment variable is not set (runtime mode only)
    *
    * @example
    * ```typescript
@@ -64,7 +71,24 @@ export const mooseRuntimeEnv = {
     if (!envVarName || envVarName.trim() === "") {
       throw new Error("Environment variable name cannot be empty");
     }
-    return `${MOOSE_RUNTIME_ENV_PREFIX}${envVarName}`;
+
+    // Check if we're loading infrastructure map
+    const isLoadingInfraMap = process.env.IS_LOADING_INFRA_MAP === "true";
+
+    if (isLoadingInfraMap) {
+      // Return marker string for later resolution by Moose CLI
+      return `${MOOSE_RUNTIME_ENV_PREFIX}${envVarName}`;
+    } else {
+      // Return actual value from environment for runtime execution
+      const value = process.env[envVarName];
+      if (value === undefined) {
+        throw new Error(
+          `Environment variable '${envVarName}' is not set. ` +
+            `This is required for runtime execution of functions/workflows.`,
+        );
+      }
+      return value;
+    }
   },
 };
 

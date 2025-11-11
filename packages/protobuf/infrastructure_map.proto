@@ -343,6 +343,8 @@ message ColumnType {
     // JSON with settings (non-breaking addition). Keep legacy `simple = JSON_COLUMN` for back-compat.
     Json json = 9;
 
+    uint64 fixed_string = 11;
+
     DateType date_time = 12;
     Decimal decimal = 13;
     FloatType float = 14;

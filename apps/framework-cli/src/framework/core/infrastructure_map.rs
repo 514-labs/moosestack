@@ -78,6 +78,7 @@ pub trait TableDiffStrategy {
     /// * `after` - The table after changes
     /// * `column_changes` - Detailed column-level changes
     /// * `order_by_change` - Changes to the ORDER BY clause
+    /// * `partition_by_change` - Changes to the PARTITION BY clause
     /// * `default_database` - The configured default database name for equivalence checks
     ///
     /// # Returns
@@ -88,6 +89,7 @@ pub trait TableDiffStrategy {
         after: &Table,
         column_changes: Vec<ColumnChange>,
         order_by_change: OrderByChange,
+        partition_by_change: PartitionByChange,
         default_database: &str,
     ) -> Vec<OlapChange>;
 }
@@ -109,6 +111,7 @@ impl TableDiffStrategy for DefaultTableDiffStrategy {
         after: &Table,
         column_changes: Vec<ColumnChange>,
         order_by_change: OrderByChange,
+        partition_by_change: PartitionByChange,
         _default_database: &str,
     ) -> Vec<OlapChange> {
         // Most databases can handle all changes via ALTER TABLE operations
@@ -117,6 +120,7 @@ impl TableDiffStrategy for DefaultTableDiffStrategy {
             name: before.name.clone(),
             column_changes,
             order_by_change,
+            partition_by_change,
             before: before.clone(),
             after: after.clone(),
         })]
@@ -273,6 +277,17 @@ pub struct OrderByChange {
     pub after: OrderBy,
 }
 
+/// Represents changes to the partition_by configuration of a table
+///
+/// Tracks the before and after states of the partition expression.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PartitionByChange {
+    /// Previous PARTITION BY configuration
+    pub before: Option<String>,
+    /// New PARTITION BY configuration
+    pub after: Option<String>,
+}
+
 /// Represents a change to a database table
 ///
 /// This captures the complete picture of table changes, including additions,
@@ -292,6 +307,8 @@ pub enum TableChange {
         column_changes: Vec<ColumnChange>,
         /// Changes to the ordering columns
         order_by_change: OrderByChange,
+        /// Changes to the partitioning expression
+        partition_by_change: PartitionByChange,
         /// Complete representation of the table before changes
         before: Table,
         /// Complete representation of the table after changes
@@ -533,6 +550,42 @@ pub struct InfrastructureMap {
 }
 
 impl InfrastructureMap {
+    /// Creates an empty infrastructure map from project configuration.
+    ///
+    /// This is used when loading state from storage returns None (first migration scenario).
+    /// All fields are initialized to empty/default values except `default_database`,
+    /// which is extracted from the project's ClickHouse configuration.
+    ///
+    /// # Why explicit field listing?
+    /// This method explicitly lists all fields instead of using `..Default::default()`
+    /// to force compiler errors when new fields are added to InfrastructureMap.
+    /// This ensures developers must consciously decide: does this new field need
+    /// project configuration (like default_database), or can it safely default to empty?
+    ///
+    /// # Arguments
+    /// * `project` - The project context containing configuration
+    ///
+    /// # Returns
+    /// An empty infrastructure map with the database name from project configuration
+    pub fn empty_from_project(project: &Project) -> Self {
+        Self {
+            default_database: project.clickhouse_config.db_name.clone(),
+            topics: Default::default(),
+            api_endpoints: Default::default(),
+            tables: Default::default(),
+            views: Default::default(),
+            topic_to_table_sync_processes: Default::default(),
+            topic_to_topic_sync_processes: Default::default(),
+            function_processes: Default::default(),
+            block_db_processes: OlapProcess {},
+            consumption_api_web_server: ConsumptionApiWebServer {},
+            orchestration_workers: Default::default(),
+            sql_resources: Default::default(),
+            workflows: Default::default(),
+            web_apps: Default::default(),
+        }
+    }
+
     /// Creates a new infrastructure map from a project and primitive map
     ///
     /// This is the primary constructor for creating an infrastructure map. It transforms
@@ -889,6 +942,7 @@ impl InfrastructureMap {
         table_diff_strategy: &dyn TableDiffStrategy,
         respect_life_cycle: bool,
         is_production: bool,
+        ignore_ops: &[crate::infrastructure::olap::clickhouse::IgnorableOperation],
     ) -> InfraChanges {
         let mut changes = InfraChanges::default();
 
@@ -924,6 +978,7 @@ impl InfrastructureMap {
             table_diff_strategy,
             respect_life_cycle,
             &target_map.default_database,
+            ignore_ops,
         );
         let table_changes = changes.olap_changes.len() - olap_changes_len_before;
         log::info!("Table changes detected: {}", table_changes);
@@ -1654,6 +1709,7 @@ impl InfrastructureMap {
     /// * `olap_changes` - Mutable vector to collect the identified changes
     /// * `strategy` - Strategy for handling database-specific table diffing logic
     /// * `default_database` - The configured default database name
+    /// * `ignore_ops` - Operations to ignore during comparison (e.g., ModifyPartitionBy)
     pub fn diff_tables_with_strategy(
         self_tables: &HashMap<String, Table>,
         target_tables: &HashMap<String, Table>,
@@ -1661,6 +1717,7 @@ impl InfrastructureMap {
         strategy: &dyn TableDiffStrategy,
         respect_life_cycle: bool,
         default_database: &str,
+        ignore_ops: &[crate::infrastructure::olap::clickhouse::IgnorableOperation],
     ) {
         log::info!(
             "Analyzing table differences between {} source tables and {} target tables",
@@ -1668,16 +1725,59 @@ impl InfrastructureMap {
             target_tables.len()
         );
 
+        // Normalize tables for comparison if ignore_ops is provided
+        let (normalized_self, normalized_target) = if !ignore_ops.is_empty() {
+            log::info!(
+                "Normalizing tables before comparison. Ignore list: {:?}",
+                ignore_ops
+            );
+            let normalized_self: HashMap<String, Table> = self_tables
+                .iter()
+                .map(|(name, table)| {
+                    (
+                        name.clone(),
+                        crate::infrastructure::olap::clickhouse::normalize_table_for_diff(
+                            table, ignore_ops,
+                        ),
+                    )
+                })
+                .collect();
+            let normalized_target: HashMap<String, Table> = target_tables
+                .iter()
+                .map(|(name, table)| {
+                    (
+                        name.clone(),
+                        crate::infrastructure::olap::clickhouse::normalize_table_for_diff(
+                            table, ignore_ops,
+                        ),
+                    )
+                })
+                .collect();
+            (normalized_self, normalized_target)
+        } else {
+            (self_tables.clone(), target_tables.clone())
+        };
+
         let mut table_updates = 0;
         let mut table_removals = 0;
         let mut table_additions = 0;
 
-        for table in self_tables.values() {
+        // Use normalized tables for comparison, but original tables for changes
+        for normalized_table in normalized_self.values() {
             // self_tables can be from remote where the keys are IDs with another database prefix
             // but they are then the default database,
             //   the `database` field is None and we build the ID ourselves
-            if let Some(target_table) = target_tables.get(&table.id(default_database)) {
-                if !tables_equal_ignore_metadata(table, target_table) {
+            if let Some(normalized_target) =
+                normalized_target.get(&normalized_table.id(default_database))
+            {
+                if !tables_equal_ignore_metadata(normalized_table, normalized_target) {
+                    // Get original tables for use in changes
+                    let table = self_tables
+                        .get(&normalized_table.id(default_database))
+                        .unwrap();
+                    let target_table = target_tables
+                        .get(&normalized_target.id(default_database))
+                        .unwrap();
                     // Respect lifecycle: ExternallyManaged tables are never modified
                     if target_table.life_cycle == LifeCycle::ExternallyManaged && respect_life_cycle
                     {
@@ -1715,7 +1815,15 @@ impl InfrastructureMap {
                             }
                         }
 
-                        // TODO: PARTITION BY is not checked!
+                        // Compute PARTITION BY changes from normalized tables to respect ignore_ops
+                        // Using normalized tables ensures that ignored operations don't incorrectly
+                        // trigger drop+create when only non-ignored changes exist
+                        let partition_by_changed =
+                            normalized_table.partition_by != normalized_target.partition_by;
+                        let partition_by_change = PartitionByChange {
+                            before: normalized_table.partition_by.clone(),
+                            after: normalized_target.partition_by.clone(),
+                        };
 
                         // Compute ORDER BY changes
                         fn order_by_from_primary_key(target_table: &Table) -> Vec<String> {
@@ -1791,6 +1899,7 @@ impl InfrastructureMap {
                         // Only process changes if there are actual differences to report
                         if !column_changes.is_empty()
                             || order_by_changed
+                            || partition_by_changed
                             || engine_changed
                             || indexes_changed
                         {
@@ -1800,6 +1909,7 @@ impl InfrastructureMap {
                                 target_table,
                                 column_changes,
                                 order_by_change,
+                                partition_by_change,
                                 default_database,
                             );
 
@@ -1812,6 +1922,10 @@ impl InfrastructureMap {
                     }
                 }
             } else {
+                // Get original table for removal
+                let table = self_tables
+                    .get(&normalized_table.id(default_database))
+                    .unwrap();
                 // Respect lifecycle: DeletionProtected and ExternallyManaged tables are never removed
                 match (table.life_cycle, respect_life_cycle) {
                     (LifeCycle::FullyManaged, _) | (_, false) => {
@@ -1835,8 +1949,9 @@ impl InfrastructureMap {
             }
         }
 
+        // Check for additions using normalized tables for comparison, but add original tables
         for table in target_tables.values() {
-            if find_table_from_infra_map(table, self_tables, default_database).is_none() {
+            if find_table_from_infra_map(table, &normalized_self, default_database).is_none() {
                 // Respect lifecycle: ExternallyManaged tables are never added automatically
                 if table.life_cycle == LifeCycle::ExternallyManaged && respect_life_cycle {
                     log::debug!(
@@ -1891,6 +2006,7 @@ impl InfrastructureMap {
             &default_strategy,
             respect_life_cycle,
             default_database,
+            &[], // No ignore operations for backward compatibility
         );
     }
 
@@ -1926,6 +2042,12 @@ impl InfrastructureMap {
             }
         };
 
+        let partition_by_changed = table.partition_by != target_table.partition_by;
+        let partition_by_change = PartitionByChange {
+            before: table.partition_by.clone(),
+            after: target_table.partition_by.clone(),
+        };
+
         // Only return changes if there are actual differences to report
         // Detect index changes
         let indexes_changed = table.indexes != target_table.indexes;
@@ -1936,11 +2058,17 @@ impl InfrastructureMap {
             &target_table.table_ttl_setting,
         );
 
-        if !column_changes.is_empty() || order_by_changed || indexes_changed || ttl_changed {
+        if !column_changes.is_empty()
+            || order_by_changed
+            || partition_by_changed
+            || indexes_changed
+            || ttl_changed
+        {
             Some(TableChange::Updated {
                 name: table.name.clone(),
                 column_changes,
                 order_by_change,
+                partition_by_change,
                 before: table.clone(),
                 after: target_table.clone(),
             })
@@ -2034,6 +2162,12 @@ impl InfrastructureMap {
             }
         };
 
+        let partition_by_changed = table.partition_by != target_table.partition_by;
+        let partition_by_change = PartitionByChange {
+            before: table.partition_by.clone(),
+            after: target_table.partition_by.clone(),
+        };
+
         // Detect index changes
         let indexes_changed = table.indexes != target_table.indexes;
 
@@ -2044,11 +2178,17 @@ impl InfrastructureMap {
         );
 
         // Only return changes if there are actual differences to report
-        if !column_changes.is_empty() || order_by_changed || indexes_changed || ttl_changed {
+        if !column_changes.is_empty()
+            || order_by_changed
+            || partition_by_changed
+            || indexes_changed
+            || ttl_changed
+        {
             Some(TableChange::Updated {
                 name: table.name.clone(),
                 column_changes,
                 order_by_change,
+                partition_by_change,
                 before: table.clone(),
                 after: target_table.clone(),
             })
@@ -2080,6 +2220,108 @@ impl InfrastructureMap {
         let json = fs::read_to_string(path)?;
         let infra_map = serde_json::from_str(&json)?;
         Ok(infra_map)
+    }
+
+    /// Resolves S3 credentials from environment variables at runtime.
+    ///
+    /// This method iterates through all tables in the infrastructure map and resolves
+    /// any environment variable markers (like `MOOSE_ENV::AWS_ACCESS_KEY_ID`) in S3 and S3Queue
+    /// engine configurations to their actual values from the environment.
+    ///
+    /// This MUST be called at runtime (dev/prod mode start) rather than at build time
+    /// to avoid baking credentials into Docker images.
+    ///
+    /// # Returns
+    /// A Result indicating success or containing an error message if credential resolution fails
+    pub fn resolve_s3_credentials_from_env(&mut self) -> Result<(), String> {
+        use crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine;
+        use crate::utilities::secrets::resolve_optional_runtime_env;
+
+        for table in self.tables.values_mut() {
+            let mut should_recalc_hash = false;
+
+            if let Some(engine) = &mut table.engine {
+                match engine {
+                    ClickhouseEngine::S3Queue {
+                        aws_access_key_id,
+                        aws_secret_access_key,
+                        ..
+                    } => {
+                        // Resolve environment variable markers for AWS credentials
+                        let resolved_access_key = resolve_optional_runtime_env(aws_access_key_id)
+                            .map_err(|e| {
+                            format!(
+                                "Failed to resolve runtime environment variable for table '{}' field 'awsAccessKeyId': {}",
+                                table.name, e
+                            )
+                        })?;
+
+                        let resolved_secret_key =
+                            resolve_optional_runtime_env(aws_secret_access_key).map_err(|e| {
+                                format!(
+                                    "Failed to resolve runtime environment variable for table '{}' field 'awsSecretAccessKey': {}",
+                                    table.name, e
+                                )
+                            })?;
+
+                        *aws_access_key_id = resolved_access_key;
+                        *aws_secret_access_key = resolved_secret_key;
+                        should_recalc_hash = true;
+
+                        log::debug!(
+                            "Resolved S3Queue credentials for table '{}' at runtime",
+                            table.name
+                        );
+                    }
+                    ClickhouseEngine::S3 {
+                        aws_access_key_id,
+                        aws_secret_access_key,
+                        ..
+                    } => {
+                        // Resolve environment variable markers for AWS credentials
+                        let resolved_access_key = resolve_optional_runtime_env(aws_access_key_id)
+                            .map_err(|e| {
+                            format!(
+                                "Failed to resolve runtime environment variable for table '{}' field 'awsAccessKeyId': {}",
+                                table.name, e
+                            )
+                        })?;
+
+                        let resolved_secret_key =
+                            resolve_optional_runtime_env(aws_secret_access_key).map_err(|e| {
+                                format!(
+                                    "Failed to resolve runtime environment variable for table '{}' field 'awsSecretAccessKey': {}",
+                                    table.name, e
+                                )
+                            })?;
+
+                        *aws_access_key_id = resolved_access_key;
+                        *aws_secret_access_key = resolved_secret_key;
+                        should_recalc_hash = true;
+
+                        log::debug!(
+                            "Resolved S3 credentials for table '{}' at runtime",
+                            table.name
+                        );
+                    }
+                    _ => {
+                        // No credentials to resolve for other engine types
+                    }
+                }
+            }
+
+            // Recalculate engine_params_hash after resolving credentials
+            if should_recalc_hash {
+                table.engine_params_hash =
+                    table.engine.as_ref().map(|e| e.non_alterable_params_hash());
+                log::debug!(
+                    "Recalculated engine_params_hash for table '{}' after credential resolution",
+                    table.name
+                );
+            }
+        }
+
+        Ok(())
     }
 
     /// Stores the infrastructure map in Redis for persistence and sharing
@@ -2332,10 +2574,16 @@ impl InfrastructureMap {
     ///
     /// # Arguments
     /// * `project` - The project to load the infrastructure map from
+    /// * `resolve_credentials` - Whether to resolve S3 credentials from environment variables.
+    ///   Set to `false` for build-time operations like `moose check` to avoid baking credentials
+    ///   into Docker images. Set to `true` for runtime operations that need to interact with infrastructure.
     ///
     /// # Returns
     /// A Result containing the infrastructure map or an error
-    pub async fn load_from_user_code(project: &Project) -> anyhow::Result<Self> {
+    pub async fn load_from_user_code(
+        project: &Project,
+        resolve_credentials: bool,
+    ) -> anyhow::Result<Self> {
         let partial = if project.language == SupportedLanguages::Typescript {
             let process = crate::framework::typescript::export_collectors::collect_from_index(
                 project,
@@ -2346,11 +2594,18 @@ impl InfrastructureMap {
         } else {
             load_main_py(project, &project.project_location).await?
         };
-        let infra_map = partial.into_infra_map(
+        let mut infra_map = partial.into_infra_map(
             project.language,
             &project.main_file(),
             &project.clickhouse_config.db_name,
         )?;
+
+        // Resolve S3 credentials at runtime if requested
+        if resolve_credentials {
+            infra_map
+                .resolve_s3_credentials_from_env()
+                .map_err(|e| anyhow::anyhow!("Failed to resolve S3 credentials: {}", e))?;
+        }
 
         // Provide explicit feedback when streams are defined but streaming engine is disabled
         if !project.features.streaming_engine && infra_map.uses_streaming() {
@@ -2542,17 +2797,10 @@ fn columns_are_equivalent(before: &Column, after: &Column) -> bool {
         return false;
     }
 
-    // Special handling for enum types
-    use crate::framework::core::infrastructure::table::ColumnType;
-    match (&before.data_type, &after.data_type) {
-        (ColumnType::Enum(before_enum), ColumnType::Enum(after_enum)) => {
-            // Try to use ClickHouse-specific enum comparison for string enums
-            use crate::infrastructure::olap::clickhouse::diff_strategy::enums_are_equivalent;
-            enums_are_equivalent(before_enum, after_enum)
-        }
-        // For all other types, use standard equality
-        _ => before.data_type == after.data_type,
-    }
+    // Use ClickHouse-specific semantic comparison for data types
+    // This handles special cases like enums and JSON types with order-independent typed_paths
+    use crate::infrastructure::olap::clickhouse::diff_strategy::column_types_are_equivalent;
+    column_types_are_equivalent(&before.data_type, &after.data_type)
 }
 
 /// Check if two topics are equal, ignoring metadata
@@ -2946,7 +3194,8 @@ mod tests {
         externally_managed_topic.life_cycle = LifeCycle::ExternallyManaged;
         map2.add_topic(externally_managed_topic.clone());
 
-        let changes = map1.diff_with_table_strategy(&map2, &DefaultTableDiffStrategy, true, false);
+        let changes =
+            map1.diff_with_table_strategy(&map2, &DefaultTableDiffStrategy, true, false, &[]);
 
         // Should have no OLAP changes (table removal filtered out)
         let table_removals = changes
@@ -3785,6 +4034,461 @@ mod diff_tests {
 
         assert!(!columns_are_equivalent(&int_col1, &int_col2));
     }
+
+    #[test]
+    fn test_columns_are_equivalent_with_json_typed_paths() {
+        use crate::framework::core::infrastructure::table::IntType;
+        use crate::framework::core::infrastructure::table::{Column, ColumnType, JsonOptions};
+
+        // Test: JSON columns with typed_paths in different order should be equivalent
+        let json_col1 = Column {
+            name: "data".to_string(),
+            data_type: ColumnType::Json(JsonOptions {
+                max_dynamic_paths: Some(10),
+                max_dynamic_types: Some(5),
+                typed_paths: vec![
+                    ("path1".to_string(), ColumnType::Int(IntType::Int64)),
+                    ("path2".to_string(), ColumnType::String),
+                    ("path3".to_string(), ColumnType::Boolean),
+                ],
+                skip_paths: vec!["skip1".to_string()],
+                skip_regexps: vec!["^temp".to_string()],
+            }),
+            required: true,
+            unique: false,
+            primary_key: false,
+            default: None,
+            annotations: vec![],
+            comment: None,
+            ttl: None,
+        };
+
+        let json_col2 = Column {
+            name: "data".to_string(),
+            data_type: ColumnType::Json(JsonOptions {
+                max_dynamic_paths: Some(10),
+                max_dynamic_types: Some(5),
+                typed_paths: vec![
+                    ("path3".to_string(), ColumnType::Boolean),
+                    ("path1".to_string(), ColumnType::Int(IntType::Int64)),
+                    ("path2".to_string(), ColumnType::String),
+                ],
+                skip_paths: vec!["skip1".to_string()],
+                skip_regexps: vec!["^temp".to_string()],
+            }),
+            required: true,
+            unique: false,
+            primary_key: false,
+            default: None,
+            annotations: vec![],
+            comment: None,
+            ttl: None,
+        };
+
+        // These should be equivalent - order of typed_paths doesn't matter
+        assert!(columns_are_equivalent(&json_col1, &json_col2));
+
+        // Test: Different typed_paths should not be equivalent
+        let json_col3 = Column {
+            name: "data".to_string(),
+            data_type: ColumnType::Json(JsonOptions {
+                max_dynamic_paths: Some(10),
+                max_dynamic_types: Some(5),
+                typed_paths: vec![
+                    ("path1".to_string(), ColumnType::Int(IntType::Int64)),
+                    ("path2".to_string(), ColumnType::Int(IntType::Int32)), // Different type
+                ],
+                skip_paths: vec!["skip1".to_string()],
+                skip_regexps: vec!["^temp".to_string()],
+            }),
+            required: true,
+            unique: false,
+            primary_key: false,
+            default: None,
+            annotations: vec![],
+            comment: None,
+            ttl: None,
+        };
+
+        assert!(!columns_are_equivalent(&json_col1, &json_col3));
+
+        // Test: Different max_dynamic_paths should not be equivalent
+        let json_col4 = Column {
+            name: "data".to_string(),
+            data_type: ColumnType::Json(JsonOptions {
+                max_dynamic_paths: Some(20), // Different value
+                max_dynamic_types: Some(5),
+                typed_paths: vec![
+                    ("path1".to_string(), ColumnType::Int(IntType::Int64)),
+                    ("path2".to_string(), ColumnType::String),
+                    ("path3".to_string(), ColumnType::Boolean),
+                ],
+                skip_paths: vec!["skip1".to_string()],
+                skip_regexps: vec!["^temp".to_string()],
+            }),
+            required: true,
+            unique: false,
+            primary_key: false,
+            default: None,
+            annotations: vec![],
+            comment: None,
+            ttl: None,
+        };
+
+        assert!(!columns_are_equivalent(&json_col1, &json_col4));
+    }
+
+    #[test]
+    fn test_columns_are_equivalent_with_nested_json() {
+        use crate::framework::core::infrastructure::table::IntType;
+        use crate::framework::core::infrastructure::table::{Column, ColumnType, JsonOptions};
+
+        // Test: Nested JSON columns with typed_paths in different order should be equivalent
+        let nested_json_col1 = Column {
+            name: "data".to_string(),
+            data_type: ColumnType::Json(JsonOptions {
+                max_dynamic_paths: None,
+                max_dynamic_types: None,
+                typed_paths: vec![
+                    (
+                        "nested".to_string(),
+                        ColumnType::Json(JsonOptions {
+                            max_dynamic_paths: None,
+                            max_dynamic_types: None,
+                            typed_paths: vec![
+                                ("a".to_string(), ColumnType::Int(IntType::Int64)),
+                                ("b".to_string(), ColumnType::String),
+                            ],
+                            skip_paths: vec![],
+                            skip_regexps: vec![],
+                        }),
+                    ),
+                    ("simple".to_string(), ColumnType::Boolean),
+                ],
+                skip_paths: vec![],
+                skip_regexps: vec![],
+            }),
+            required: true,
+            unique: false,
+            primary_key: false,
+            default: None,
+            annotations: vec![],
+            comment: None,
+            ttl: None,
+        };
+
+        let nested_json_col2 = Column {
+            name: "data".to_string(),
+            data_type: ColumnType::Json(JsonOptions {
+                max_dynamic_paths: None,
+                max_dynamic_types: None,
+                typed_paths: vec![
+                    ("simple".to_string(), ColumnType::Boolean),
+                    (
+                        "nested".to_string(),
+                        ColumnType::Json(JsonOptions {
+                            max_dynamic_paths: None,
+                            max_dynamic_types: None,
+                            typed_paths: vec![
+                                ("b".to_string(), ColumnType::String),
+                                ("a".to_string(), ColumnType::Int(IntType::Int64)),
+                            ],
+                            skip_paths: vec![],
+                            skip_regexps: vec![],
+                        }),
+                    ),
+                ],
+                skip_paths: vec![],
+                skip_regexps: vec![],
+            }),
+            required: true,
+            unique: false,
+            primary_key: false,
+            default: None,
+            annotations: vec![],
+            comment: None,
+            ttl: None,
+        };
+
+        // These should be equivalent - order doesn't matter at any level
+        assert!(columns_are_equivalent(&nested_json_col1, &nested_json_col2));
+    }
+
+    #[test]
+    fn test_columns_are_equivalent_with_nested_types() {
+        use crate::framework::core::infrastructure::table::IntType;
+        use crate::framework::core::infrastructure::table::{Column, ColumnType, Nested};
+
+        // Test: Nested types with different names but same structure should be equivalent
+        // This simulates ClickHouse returning "nested_3" while user code defines "Metadata"
+        let col_with_generated_name = Column {
+            name: "metadata".to_string(),
+            data_type: ColumnType::Nested(Nested {
+                name: "nested_3".to_string(), // ClickHouse-generated name
+                columns: vec![
+                    Column {
+                        name: "tags".to_string(),
+                        data_type: ColumnType::Array {
+                            element_type: Box::new(ColumnType::String),
+                            element_nullable: false,
+                        },
+                        required: true,
+                        unique: false,
+                        primary_key: false,
+                        default: None,
+                        annotations: vec![],
+                        comment: None,
+                        ttl: None,
+                    },
+                    Column {
+                        name: "priority".to_string(),
+                        data_type: ColumnType::Int(IntType::Int64),
+                        required: true,
+                        unique: false,
+                        primary_key: false,
+                        default: None,
+                        annotations: vec![],
+                        comment: None,
+                        ttl: None,
+                    },
+                ],
+                jwt: false,
+            }),
+            required: true,
+            unique: false,
+            primary_key: false,
+            default: None,
+            annotations: vec![],
+            comment: None,
+            ttl: None,
+        };
+
+        let col_with_user_name = Column {
+            name: "metadata".to_string(),
+            data_type: ColumnType::Nested(Nested {
+                name: "Metadata".to_string(), // User-defined name
+                columns: vec![
+                    Column {
+                        name: "tags".to_string(),
+                        data_type: ColumnType::Array {
+                            element_type: Box::new(ColumnType::String),
+                            element_nullable: false,
+                        },
+                        required: true,
+                        unique: false,
+                        primary_key: false,
+                        default: None,
+                        annotations: vec![],
+                        comment: None,
+                        ttl: None,
+                    },
+                    Column {
+                        name: "priority".to_string(),
+                        data_type: ColumnType::Int(IntType::Int64),
+                        required: true,
+                        unique: false,
+                        primary_key: false,
+                        default: None,
+                        annotations: vec![],
+                        comment: None,
+                        ttl: None,
+                    },
+                ],
+                jwt: false,
+            }),
+            required: true,
+            unique: false,
+            primary_key: false,
+            default: None,
+            annotations: vec![],
+            comment: None,
+            ttl: None,
+        };
+
+        // These should be equivalent - name difference doesn't matter if structure matches
+        assert!(columns_are_equivalent(
+            &col_with_generated_name,
+            &col_with_user_name
+        ));
+
+        // Test: Different column structures should not be equivalent
+        let col_different_structure = Column {
+            name: "metadata".to_string(),
+            data_type: ColumnType::Nested(Nested {
+                name: "Metadata".to_string(),
+                columns: vec![Column {
+                    name: "tags".to_string(),
+                    data_type: ColumnType::Array {
+                        element_type: Box::new(ColumnType::String),
+                        element_nullable: false,
+                    },
+                    required: true,
+                    unique: false,
+                    primary_key: false,
+                    default: None,
+                    annotations: vec![],
+                    comment: None,
+                    ttl: None,
+                }], // Missing priority column
+                jwt: false,
+            }),
+            required: true,
+            unique: false,
+            primary_key: false,
+            default: None,
+            annotations: vec![],
+            comment: None,
+            ttl: None,
+        };
+
+        assert!(!columns_are_equivalent(
+            &col_with_user_name,
+            &col_different_structure
+        ));
+    }
+
+    #[test]
+    fn test_columns_are_equivalent_with_deeply_nested_types() {
+        use crate::framework::core::infrastructure::table::{Column, ColumnType, Nested};
+
+        // Test deeply nested structures with different names at each level
+        let col_generated = Column {
+            name: "metadata".to_string(),
+            data_type: ColumnType::Nested(Nested {
+                name: "nested_3".to_string(),
+                columns: vec![Column {
+                    name: "config".to_string(),
+                    data_type: ColumnType::Nested(Nested {
+                        name: "nested_2".to_string(),
+                        columns: vec![Column {
+                            name: "settings".to_string(),
+                            data_type: ColumnType::Nested(Nested {
+                                name: "nested_1".to_string(),
+                                columns: vec![
+                                    Column {
+                                        name: "theme".to_string(),
+                                        data_type: ColumnType::String,
+                                        required: true,
+                                        unique: false,
+                                        primary_key: false,
+                                        default: None,
+                                        annotations: vec![],
+                                        comment: None,
+                                        ttl: None,
+                                    },
+                                    Column {
+                                        name: "notifications".to_string(),
+                                        data_type: ColumnType::Boolean,
+                                        required: true,
+                                        unique: false,
+                                        primary_key: false,
+                                        default: None,
+                                        annotations: vec![],
+                                        comment: None,
+                                        ttl: None,
+                                    },
+                                ],
+                                jwt: false,
+                            }),
+                            required: true,
+                            unique: false,
+                            primary_key: false,
+                            default: None,
+                            annotations: vec![],
+                            comment: None,
+                            ttl: None,
+                        }],
+                        jwt: false,
+                    }),
+                    required: true,
+                    unique: false,
+                    primary_key: false,
+                    default: None,
+                    annotations: vec![],
+                    comment: None,
+                    ttl: None,
+                }],
+                jwt: false,
+            }),
+            required: true,
+            unique: false,
+            primary_key: false,
+            default: None,
+            annotations: vec![],
+            comment: None,
+            ttl: None,
+        };
+
+        let col_user = Column {
+            name: "metadata".to_string(),
+            data_type: ColumnType::Nested(Nested {
+                name: "Metadata".to_string(),
+                columns: vec![Column {
+                    name: "config".to_string(),
+                    data_type: ColumnType::Nested(Nested {
+                        name: "Config".to_string(),
+                        columns: vec![Column {
+                            name: "settings".to_string(),
+                            data_type: ColumnType::Nested(Nested {
+                                name: "Settings".to_string(),
+                                columns: vec![
+                                    Column {
+                                        name: "theme".to_string(),
+                                        data_type: ColumnType::String,
+                                        required: true,
+                                        unique: false,
+                                        primary_key: false,
+                                        default: None,
+                                        annotations: vec![],
+                                        comment: None,
+                                        ttl: None,
+                                    },
+                                    Column {
+                                        name: "notifications".to_string(),
+                                        data_type: ColumnType::Boolean,
+                                        required: true,
+                                        unique: false,
+                                        primary_key: false,
+                                        default: None,
+                                        annotations: vec![],
+                                        comment: None,
+                                        ttl: None,
+                                    },
+                                ],
+                                jwt: false,
+                            }),
+                            required: true,
+                            unique: false,
+                            primary_key: false,
+                            default: None,
+                            annotations: vec![],
+                            comment: None,
+                            ttl: None,
+                        }],
+                        jwt: false,
+                    }),
+                    required: true,
+                    unique: false,
+                    primary_key: false,
+                    default: None,
+                    annotations: vec![],
+                    comment: None,
+                    ttl: None,
+                }],
+                jwt: false,
+            }),
+            required: true,
+            unique: false,
+            primary_key: false,
+            default: None,
+            annotations: vec![],
+            comment: None,
+            ttl: None,
+        };
+
+        // These should be equivalent - name differences at all levels don't matter
+        assert!(columns_are_equivalent(&col_generated, &col_user));
+    }
 }
 
 #[cfg(test)]
@@ -4151,7 +4855,8 @@ mod diff_topic_tests {
         map1.add_topic(topic.clone());
         map2.add_topic(topic);
 
-        let changes = map1.diff_with_table_strategy(&map2, &DefaultTableDiffStrategy, true, false);
+        let changes =
+            map1.diff_with_table_strategy(&map2, &DefaultTableDiffStrategy, true, false, &[]);
         assert!(
             changes.streaming_engine_changes.is_empty(),
             "Expected no streaming changes"
@@ -4169,7 +4874,8 @@ mod diff_topic_tests {
         let topic = create_test_topic("topic1", "1.0");
         map2.add_topic(topic.clone());
 
-        let changes = map1.diff_with_table_strategy(&map2, &DefaultTableDiffStrategy, true, false);
+        let changes =
+            map1.diff_with_table_strategy(&map2, &DefaultTableDiffStrategy, true, false, &[]);
         assert_eq!(
             changes.streaming_engine_changes.len(),
             1,
@@ -4193,7 +4899,8 @@ mod diff_topic_tests {
         let topic = create_test_topic("topic1", "1.0");
         map1.add_topic(topic.clone());
 
-        let changes = map1.diff_with_table_strategy(&map2, &DefaultTableDiffStrategy, true, false);
+        let changes =
+            map1.diff_with_table_strategy(&map2, &DefaultTableDiffStrategy, true, false, &[]);
         assert_eq!(
             changes.streaming_engine_changes.len(),
             1,
@@ -4234,7 +4941,8 @@ mod diff_topic_tests {
         map1.topics.insert(topic_before.id(), topic_before.clone());
         map2.topics.insert(topic_after.id(), topic_after.clone()); // Now uses the stable ID
 
-        let changes = map1.diff_with_table_strategy(&map2, &DefaultTableDiffStrategy, true, false);
+        let changes =
+            map1.diff_with_table_strategy(&map2, &DefaultTableDiffStrategy, true, false, &[]);
         assert_eq!(
             changes.streaming_engine_changes.len(),
             1,
@@ -4294,7 +5002,8 @@ mod diff_view_tests {
         map1.views.insert(view.id(), view.clone());
         map2.views.insert(view.id(), view);
 
-        let changes = map1.diff_with_table_strategy(&map2, &DefaultTableDiffStrategy, true, false);
+        let changes =
+            map1.diff_with_table_strategy(&map2, &DefaultTableDiffStrategy, true, false, &[]);
         assert!(changes.olap_changes.is_empty(), "Expected no OLAP changes");
         // Check other change types are also empty to be sure (except processes)
         assert!(changes.streaming_engine_changes.is_empty());
@@ -4308,7 +5017,8 @@ mod diff_view_tests {
         let view = create_test_view("view1", "1.0", "table1");
         map2.views.insert(view.id(), view.clone());
 
-        let changes = map1.diff_with_table_strategy(&map2, &DefaultTableDiffStrategy, true, false);
+        let changes =
+            map1.diff_with_table_strategy(&map2, &DefaultTableDiffStrategy, true, false, &[]);
         assert_eq!(changes.olap_changes.len(), 1, "Expected one OLAP change");
         match &changes.olap_changes[0] {
             OlapChange::View(Change::Added(v)) => {
@@ -4328,7 +5038,8 @@ mod diff_view_tests {
         let view = create_test_view("view1", "1.0", "table1");
         map1.views.insert(view.id(), view.clone());
 
-        let changes = map1.diff_with_table_strategy(&map2, &DefaultTableDiffStrategy, true, false);
+        let changes =
+            map1.diff_with_table_strategy(&map2, &DefaultTableDiffStrategy, true, false, &[]);
         assert_eq!(changes.olap_changes.len(), 1, "Expected one OLAP change");
         match &changes.olap_changes[0] {
             OlapChange::View(Change::Removed(v)) => {
@@ -4363,7 +5074,8 @@ mod diff_view_tests {
         map1.views.insert(view_before.id(), view_before.clone());
         map2.views.insert(view_after.id(), view_after.clone());
 
-        let changes = map1.diff_with_table_strategy(&map2, &DefaultTableDiffStrategy, true, false);
+        let changes =
+            map1.diff_with_table_strategy(&map2, &DefaultTableDiffStrategy, true, false, &[]);
         assert_eq!(changes.olap_changes.len(), 1, "Expected one OLAP change");
         match &changes.olap_changes[0] {
             OlapChange::View(Change::Updated { before, after }) => {
@@ -4438,7 +5150,8 @@ mod diff_topic_to_table_sync_process_tests {
         map2.topic_to_table_sync_processes
             .insert(process.id(), process);
 
-        let changes = map1.diff_with_table_strategy(&map2, &DefaultTableDiffStrategy, true, false);
+        let changes =
+            map1.diff_with_table_strategy(&map2, &DefaultTableDiffStrategy, true, false, &[]);
         // Check only process changes, as others should be empty
         let process_change_found = changes
             .processes_changes
@@ -4459,7 +5172,8 @@ mod diff_topic_to_table_sync_process_tests {
         map2.topic_to_table_sync_processes
             .insert(process.id(), process.clone());
 
-        let changes = map1.diff_with_table_strategy(&map2, &DefaultTableDiffStrategy, true, false);
+        let changes =
+            map1.diff_with_table_strategy(&map2, &DefaultTableDiffStrategy, true, false, &[]);
         let process_change_found = changes
             .processes_changes
             .iter()
@@ -4485,7 +5199,8 @@ mod diff_topic_to_table_sync_process_tests {
         map1.topic_to_table_sync_processes
             .insert(process.id(), process.clone());
 
-        let changes = map1.diff_with_table_strategy(&map2, &DefaultTableDiffStrategy, true, false);
+        let changes =
+            map1.diff_with_table_strategy(&map2, &DefaultTableDiffStrategy, true, false, &[]);
         let process_change_found = changes
             .processes_changes
             .iter()
@@ -4551,7 +5266,8 @@ mod diff_topic_to_table_sync_process_tests {
         map2.topic_to_table_sync_processes
             .insert(process_after.id(), process_after.clone());
 
-        let changes = map1.diff_with_table_strategy(&map2, &DefaultTableDiffStrategy, true, false);
+        let changes =
+            map1.diff_with_table_strategy(&map2, &DefaultTableDiffStrategy, true, false, &[]);
         let process_change_found = changes
             .processes_changes
             .iter()
@@ -4612,7 +5328,8 @@ mod diff_topic_to_topic_sync_process_tests {
         map2.topic_to_topic_sync_processes
             .insert(process.id(), process);
 
-        let changes = map1.diff_with_table_strategy(&map2, &DefaultTableDiffStrategy, true, false);
+        let changes =
+            map1.diff_with_table_strategy(&map2, &DefaultTableDiffStrategy, true, false, &[]);
         let process_change_found = changes
             .processes_changes
             .iter()
@@ -4632,7 +5349,8 @@ mod diff_topic_to_topic_sync_process_tests {
         map2.topic_to_topic_sync_processes
             .insert(process.id(), process.clone());
 
-        let changes = map1.diff_with_table_strategy(&map2, &DefaultTableDiffStrategy, true, false);
+        let changes =
+            map1.diff_with_table_strategy(&map2, &DefaultTableDiffStrategy, true, false, &[]);
         let process_change_found = changes
             .processes_changes
             .iter()
@@ -4658,7 +5376,8 @@ mod diff_topic_to_topic_sync_process_tests {
         map1.topic_to_topic_sync_processes
             .insert(process.id(), process.clone());
 
-        let changes = map1.diff_with_table_strategy(&map2, &DefaultTableDiffStrategy, true, false);
+        let changes =
+            map1.diff_with_table_strategy(&map2, &DefaultTableDiffStrategy, true, false, &[]);
         let process_change_found = changes
             .processes_changes
             .iter()
@@ -4705,7 +5424,8 @@ mod diff_topic_to_topic_sync_process_tests {
         map2.topic_to_topic_sync_processes
             .insert(process_after.id(), process_after.clone());
 
-        let changes = map1.diff_with_table_strategy(&map2, &DefaultTableDiffStrategy, true, false);
+        let changes =
+            map1.diff_with_table_strategy(&map2, &DefaultTableDiffStrategy, true, false, &[]);
         let process_change_found = changes
             .processes_changes
             .iter()
@@ -4781,7 +5501,8 @@ mod diff_function_process_tests {
         map2.function_processes
             .insert(process.id(), process.clone()); // Identical process
 
-        let changes = map1.diff_with_table_strategy(&map2, &DefaultTableDiffStrategy, true, false);
+        let changes =
+            map1.diff_with_table_strategy(&map2, &DefaultTableDiffStrategy, true, false, &[]);
         let process_change_found = changes
             .processes_changes
             .iter()
@@ -4808,7 +5529,8 @@ mod diff_function_process_tests {
         map2.function_processes
             .insert(process.id(), process.clone());
 
-        let changes = map1.diff_with_table_strategy(&map2, &DefaultTableDiffStrategy, true, false);
+        let changes =
+            map1.diff_with_table_strategy(&map2, &DefaultTableDiffStrategy, true, false, &[]);
         let process_change_found = changes
             .processes_changes
             .iter()
@@ -4834,7 +5556,8 @@ mod diff_function_process_tests {
         map1.function_processes
             .insert(process.id(), process.clone());
 
-        let changes = map1.diff_with_table_strategy(&map2, &DefaultTableDiffStrategy, true, false);
+        let changes =
+            map1.diff_with_table_strategy(&map2, &DefaultTableDiffStrategy, true, false, &[]);
         let process_change_found = changes
             .processes_changes
             .iter()
@@ -4883,7 +5606,8 @@ mod diff_function_process_tests {
         map2.function_processes
             .insert(process_after.id(), process_after.clone());
 
-        let changes = map1.diff_with_table_strategy(&map2, &DefaultTableDiffStrategy, true, false);
+        let changes =
+            map1.diff_with_table_strategy(&map2, &DefaultTableDiffStrategy, true, false, &[]);
         let process_change_found = changes
             .processes_changes
             .iter()
@@ -4938,7 +5662,8 @@ mod diff_orchestration_worker_tests {
         map2.orchestration_workers
             .insert(id.clone(), worker.clone()); // Identical worker
 
-        let changes = map1.diff_with_table_strategy(&map2, &DefaultTableDiffStrategy, true, false);
+        let changes =
+            map1.diff_with_table_strategy(&map2, &DefaultTableDiffStrategy, true, false, &[]);
         let process_change_found = changes
             .processes_changes
             .iter()
@@ -4969,7 +5694,8 @@ mod diff_orchestration_worker_tests {
         map2.orchestration_workers
             .insert(id.clone(), worker.clone());
 
-        let changes = map1.diff_with_table_strategy(&map2, &DefaultTableDiffStrategy, true, false);
+        let changes =
+            map1.diff_with_table_strategy(&map2, &DefaultTableDiffStrategy, true, false, &[]);
         let process_change_found = changes
             .processes_changes
             .iter()
@@ -4997,7 +5723,8 @@ mod diff_orchestration_worker_tests {
         map1.orchestration_workers
             .insert(id.clone(), worker.clone());
 
-        let changes = map1.diff_with_table_strategy(&map2, &DefaultTableDiffStrategy, true, false);
+        let changes =
+            map1.diff_with_table_strategy(&map2, &DefaultTableDiffStrategy, true, false, &[]);
         let process_change_found = changes
             .processes_changes
             .iter()
@@ -5030,7 +5757,8 @@ mod diff_orchestration_worker_tests {
         map2.orchestration_workers
             .insert(worker_ts.id(), worker_ts.clone());
 
-        let changes = map1.diff_with_table_strategy(&map2, &DefaultTableDiffStrategy, true, false);
+        let changes =
+            map1.diff_with_table_strategy(&map2, &DefaultTableDiffStrategy, true, false, &[]);
 
         let mut removed_found = false;
         let mut added_found = false;

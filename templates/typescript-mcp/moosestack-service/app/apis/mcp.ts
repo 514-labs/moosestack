@@ -16,7 +16,222 @@ import express from "express";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { z } from "zod";
-import { WebApp, getMooseUtils, ApiUtil, Sql } from "@514labs/moose-lib";
+import { WebApp, getMooseUtils, ApiUtil, Sql, sql } from "@514labs/moose-lib";
+import { validateQuery, applyLimitToQuery } from "./utils/sql";
+
+// TODO:
+// auth using getMooseUtils() jwt
+
+/**
+ * Parameters for the get_data_catalog tool
+ */
+interface DataCatalogParams {
+  component_type?: "tables" | "materialized_views";
+  search?: string;
+  format?: "summary" | "detailed";
+}
+
+/**
+ * Column information from ClickHouse system.columns
+ */
+interface ColumnInfo {
+  name: string;
+  type: string;
+  nullable: boolean;
+  comment?: string;
+}
+
+/**
+ * Table information from ClickHouse system.tables
+ */
+interface TableInfo {
+  name: string;
+  engine: string;
+  total_rows?: number;
+  total_bytes?: number;
+  columns: ColumnInfo[];
+}
+
+/**
+ * Catalog response structure
+ */
+interface DataCatalogResponse {
+  tables?: Record<string, TableInfo>;
+  materialized_views?: Record<string, TableInfo>;
+}
+
+/**
+ * Query ClickHouse to get column information for a specific table
+ */
+async function getTableColumns(
+  client: any,
+  dbName: string,
+  tableName: string,
+): Promise<ColumnInfo[]> {
+  const query = sql`
+    SELECT
+      name,
+      type,
+      type LIKE '%Nullable%' as nullable,
+      comment
+    FROM system.columns
+    WHERE database = ${dbName} AND table = ${tableName}
+    ORDER BY position
+  `;
+
+  const result = await client.query.execute(query);
+  const data = (await result.json()) as any[];
+
+  return data.map((row: any) => ({
+    name: row.name,
+    type: row.type,
+    nullable: row.nullable === 1,
+    comment: row.comment || undefined,
+  }));
+}
+
+/**
+ * Query ClickHouse to get list of tables and materialized views in the configured database
+ */
+async function getTablesAndMaterializedViews(
+  client: any,
+  dbName: string,
+  componentType?: string,
+  searchPattern?: string,
+): Promise<{
+  tables: Array<{ name: string; engine: string }>;
+  materializedViews: Array<{ name: string; engine: string }>;
+}> {
+  const query = sql`
+    SELECT
+      name,
+      engine,
+      CASE
+        WHEN engine = 'MaterializedView' THEN 'materialized_view'
+        ELSE 'table'
+      END as component_type
+    FROM system.tables
+    WHERE database = ${dbName}
+    ORDER BY name
+  `;
+
+  const result = await client.query.execute(query);
+  const data = (await result.json()) as any[];
+
+  let filteredData = data;
+
+  // Apply component type filter
+  if (componentType) {
+    filteredData = filteredData.filter((row: any) => {
+      if (componentType === "tables") return row.component_type === "table";
+      if (componentType === "materialized_views")
+        return row.component_type === "materialized_view";
+      return true;
+    });
+  }
+
+  // Apply search pattern filter
+  if (searchPattern) {
+    try {
+      const regex = new RegExp(searchPattern, "i");
+      filteredData = filteredData.filter((row: any) => regex.test(row.name));
+    } catch (error) {
+      console.error(`[MCP] Invalid regex pattern: ${searchPattern}`, error);
+      // If regex is invalid, fall back to simple substring match
+      filteredData = filteredData.filter((row: any) =>
+        row.name.toLowerCase().includes(searchPattern.toLowerCase()),
+      );
+    }
+  }
+
+  const tables = filteredData
+    .filter((row: any) => row.component_type === "table")
+    .map((row: any) => ({ name: row.name, engine: row.engine }));
+
+  const materializedViews = filteredData
+    .filter((row: any) => row.component_type === "materialized_view")
+    .map((row: any) => ({ name: row.name, engine: row.engine }));
+
+  return { tables, materializedViews };
+}
+
+/**
+ * Format catalog as summary (just names and column counts)
+ */
+async function formatCatalogSummary(
+  client: any,
+  dbName: string,
+  tables: Array<{ name: string; engine: string }>,
+  materializedViews: Array<{ name: string; engine: string }>,
+): Promise<string> {
+  let output = "# Data Catalog (Summary)\n\n";
+
+  // Format tables
+  if (tables.length > 0) {
+    output += `## Tables (${tables.length})\n`;
+    for (const table of tables) {
+      const columns = await getTableColumns(client, dbName, table.name);
+      output += `- ${table.name} (${columns.length} columns)\n`;
+    }
+    output += "\n";
+  }
+
+  // Format materialized views
+  if (materializedViews.length > 0) {
+    output += `## Materialized Views (${materializedViews.length})\n`;
+    for (const mv of materializedViews) {
+      const columns = await getTableColumns(client, dbName, mv.name);
+      output += `- ${mv.name} (${columns.length} columns)\n`;
+    }
+    output += "\n";
+  }
+
+  if (tables.length === 0 && materializedViews.length === 0) {
+    output = "No data components found matching the specified filters.";
+  }
+
+  return output;
+}
+
+/**
+ * Format catalog as detailed JSON with full schema information
+ */
+async function formatCatalogDetailed(
+  client: any,
+  dbName: string,
+  tables: Array<{ name: string; engine: string }>,
+  materializedViews: Array<{ name: string; engine: string }>,
+): Promise<string> {
+  const catalog: DataCatalogResponse = {};
+
+  // Build tables section
+  if (tables.length > 0) {
+    catalog.tables = {};
+    for (const table of tables) {
+      const columns = await getTableColumns(client, dbName, table.name);
+      catalog.tables[table.name] = {
+        name: table.name,
+        engine: table.engine,
+        columns,
+      };
+    }
+  }
+
+  // Build materialized views section
+  if (materializedViews.length > 0) {
+    catalog.materialized_views = {};
+    for (const mv of materializedViews) {
+      const columns = await getTableColumns(client, dbName, mv.name);
+      catalog.materialized_views[mv.name] = {
+        name: mv.name,
+        engine: mv.engine,
+        columns,
+      };
+    }
+  }
+
+  return JSON.stringify(catalog, null, 2);
+}
 
 // Create Express application
 const app = express();
@@ -37,8 +252,12 @@ const serverFactory = (mooseUtils: ApiUtil | null) => {
    * Register the query_clickhouse tool
    *
    * This tool allows AI assistants to execute SQL queries against your ClickHouse
-   * database through the MCP protocol. Results are automatically limited to a maximum
-   * of 100 rows to prevent excessive data transfer.
+   * database through the MCP protocol.
+   *
+   * Security features:
+   * - Query whitelist: Only SELECT, SHOW, DESCRIBE, EXPLAIN queries permitted
+   * - Query blocklist: Prevents INSERT, UPDATE, DELETE, DROP, CREATE, ALTER, etc.
+   * - Row limit enforcement: Results automatically limited to maximum of 100 rows
    */
   server.registerTool(
     "query_clickhouse",
@@ -80,30 +299,31 @@ const serverFactory = (mooseUtils: ApiUtil | null) => {
           };
         }
 
+        // Validate query for security
+        const validation = validateQuery(query);
+        if (!validation.valid) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: `Security error: ${validation.error}`,
+              },
+            ],
+            isError: true,
+          };
+        }
+
         const { client } = mooseUtils;
 
         // Enforce maximum limit of 100
         const enforcedLimit = Math.min(limit, 100);
 
-        // Apply limit to the query
-        let finalQuery = query.trim();
-
-        // Check if this is a query that doesn't support LIMIT
-        const isNonSelectQuery =
-          /^\s*(SHOW|DESCRIBE|DESC|EXPLAIN|EXISTS)\b/i.test(finalQuery);
-
-        if (!isNonSelectQuery) {
-          // Check if query already has a LIMIT clause
-          const hasLimit = /\bLIMIT\s+\d+/i.test(finalQuery);
-
-          if (hasLimit) {
-            // Wrap the query in a subquery to enforce our maximum limit
-            finalQuery = `SELECT * FROM (${finalQuery}) AS subquery LIMIT ${enforcedLimit}`;
-          } else {
-            // Simply append the LIMIT clause
-            finalQuery = `${finalQuery} LIMIT ${enforcedLimit}`;
-          }
-        }
+        // Apply limit to the query using our dedicated function
+        const finalQuery = applyLimitToQuery(
+          query,
+          enforcedLimit,
+          validation.supportsLimit,
+        );
 
         // Create a Sql object manually for dynamic query execution
         const sqlQuery: Sql = {
@@ -147,6 +367,111 @@ const serverFactory = (mooseUtils: ApiUtil | null) => {
     },
   );
 
+  /**
+   * Register the get_data_catalog tool
+   *
+   * Allows AI to discover available tables, views, and materialized views
+   * with their schema information.
+   */
+  server.registerTool(
+    "get_data_catalog",
+    {
+      title: "Get Data Catalog",
+      description:
+        "Discover available tables and materialized views in the ClickHouse database with their schema information. Use this to learn what data exists before writing queries.",
+      inputSchema: {
+        component_type: z
+          .enum(["tables", "materialized_views"])
+          .optional()
+          .describe(
+            "Filter by component type: 'tables' for regular tables, 'materialized_views' for pre-aggregated views",
+          ),
+        search: z
+          .string()
+          .optional()
+          .describe("Regex pattern to search for in component names"),
+        format: z
+          .enum(["summary", "detailed"])
+          .default("summary")
+          .optional()
+          .describe(
+            "Output format: 'summary' shows names and column counts, 'detailed' shows full schemas",
+          ),
+      },
+      outputSchema: {
+        catalog: z.string().describe("Formatted catalog information"),
+      },
+    } as any,
+    async ({ component_type, search, format = "summary" }) => {
+      try {
+        // Check if MooseStack utilities are available
+        if (!mooseUtils) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: "Error: MooseStack utilities not available",
+              },
+            ],
+            isError: true,
+          };
+        }
+
+        const { client } = mooseUtils;
+        const dbName = process.env.CLICKHOUSE_DB || "local";
+
+        // Get filtered list of tables and materialized views
+        const { tables, materializedViews } =
+          await getTablesAndMaterializedViews(
+            client,
+            dbName,
+            component_type,
+            search,
+          );
+
+        // Format output based on requested format
+        let output: string;
+        if (format === "detailed") {
+          output = await formatCatalogDetailed(
+            client,
+            dbName,
+            tables,
+            materializedViews,
+          );
+        } else {
+          output = await formatCatalogSummary(
+            client,
+            dbName,
+            tables,
+            materializedViews,
+          );
+        }
+
+        return {
+          content: [
+            {
+              type: "text",
+              text: output,
+            },
+          ],
+          structuredContent: { catalog: output },
+        };
+      } catch (error) {
+        const errorMessage =
+          error instanceof Error ? error.message : String(error);
+        return {
+          content: [
+            {
+              type: "text",
+              text: `Error retrieving data catalog: ${errorMessage}`,
+            },
+          ],
+          isError: true,
+        };
+      }
+    },
+  );
+
   return server;
 };
 
@@ -182,6 +507,16 @@ app.all("/", async (req, res) => {
       console.error(`[MCP Error]`, error);
     };
 
+    // Create a fresh MCP server instance for this request
+    //
+    // Why per-request instantiation?
+    // - MCP transports and servers are completely decoupled
+    // - Tools need access to request-specific mooseUtils (ClickHouse client, JWT, etc.)
+    // - The only way to pass mooseUtils to tool handlers is via closure in serverFactory()
+    // - Creating the server per-request ensures each request has isolated utilities
+    //
+    // Performance note: Server instantiation + tool registration is lightweight.
+    // The overhead is minimal compared to database queries.
     const server = serverFactory(mooseUtils);
     await server.connect(transport);
 

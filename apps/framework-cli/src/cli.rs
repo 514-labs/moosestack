@@ -482,7 +482,8 @@ pub async fn top_command_handler(
 
             let infra_map = if project_arc.features.data_model_v2 {
                 debug!("Loading InfrastructureMap from user code (DMV2)");
-                InfrastructureMap::load_from_user_code(&project_arc)
+                // Don't resolve credentials for moose check - avoids baking into Docker
+                InfrastructureMap::load_from_user_code(&project_arc, false)
                     .await
                     .map_err(|e| {
                         RoutineFailure::error(Message {

@@ -1,0 +1,129 @@
+---
+title: November 7, 2025
+description: Release notes for November 7, 2025
+---
+
+import { Callout } from "@/components";
+
+# November 7, 2025
+
+<Callout type="info" title="Highlights">
+- **New:** [Environment file support](/moose/configuration#environment-variables--env-files) with proper precedence (.env < .env.dev < .env.local)
+- **New:** [FixedString(N)](/moose/olap/supported-types) data type support for optimized storage
+- **New:** [Ignore partition changes](/moose/migrate#managing-ttl-outside-moose) during migrations to prevent unnecessary table recreations
+- **New:** [Precise numeric types](/moose/olap/supported-types#numeric-types) for Python (Int8, UInt32, Float64, etc.)
+</Callout>
+
+## Environment file support
+Configure your Moose projects using .env files with proper precedence (.env < .env.dev < .env.local). This makes it easier to manage different configurations across environments without hardcoding values.
+
+```bash filename="Terminal" copy
+# Create .env files in your Moose project root
+# Base configuration (lowest precedence)
+echo "MOOSE_HTTP_SERVER_CONFIG__PORT=3000
+MOOSE_CLICKHOUSE_CONFIG__HOST=localhost
+MOOSE_CLICKHOUSE_CONFIG__PORT=9000" > .env
+
+# Development-specific overrides
+echo "MOOSE_HTTP_SERVER_CONFIG__PORT=3001
+MOOSE_LOGGER__LEVEL=debug
+MOOSE_CLICKHOUSE_CONFIG__DB_NAME=myproject_dev" > .env.dev
+
+# Local overrides (highest precedence, gitignored)
+echo "MOOSE_HTTP_SERVER_CONFIG__PORT=3002
+MOOSE_CLICKHOUSE_CONFIG__HOST=127.0.0.1
+MOOSE_REDIS_CONFIG__URL=redis://localhost:6380" > .env.local
+
+# Start development server - automatically loads .env files
+# Precedence: .env < .env.dev < .env.local
+moose dev
+
+# For production deployment, only .env is loaded
+moose prod
+```
+
+PR: [#2936](https://github.com/514-labs/moosestack/pull/2936) | Docs: [Environment variables](/moose/configuration#environment-variables--env-files)
+
+## FixedString(N) data type support
+Support for FixedString(N) data type in data models, allowing you to define fixed-length string columns for optimized storage of data like hashes, IP addresses, and MAC addresses.
+
+```typescript filename="datamodels/NetworkEvent.ts" copy
+export interface NetworkEvent {
+  id: string;
+  timestamp: Date;
+  
+  // Fixed-length string for MD5 hash (32 hex chars = 16 bytes)
+  md5_hash: string & FixedString<16>;
+  
+  // Fixed-length string for IPv6 address (16 bytes)
+  ipv6_address: string & FixedString<16>;
+  
+  // Fixed-length string for MAC address (17 chars: XX:XX:XX:XX:XX:XX)
+  mac_address: string & FixedString<17>;
+  
+  // Array of MAC addresses for network devices
+  connected_devices: (string & FixedString<17>)[];
+  
+  // Regular string for variable-length data
+  user_agent: string;
+  
+  // Other fields
+  bytes_transferred: number;
+  is_encrypted: boolean;
+}
+```
+
+PR: [#2939](https://github.com/514-labs/moosestack/pull/2939) | Docs: [FixedString type](/moose/olap/supported-types) • [ClickHouse FixedString](https://clickhouse.com/docs/en/sql-reference/data-types/fixedstring)
+
+## Ignore partition changes during migrations
+Configure the migration system to ignore PARTITION BY changes when comparing database schemas. This prevents unnecessary table recreations when partition changes are intentionally ignored.
+
+```toml filename="moose.config.toml" copy
+[migration_config]
+ignore_operations = ["ModifyPartitionBy"]
+```
+
+PR: [#2928](https://github.com/514-labs/moosestack/pull/2928) | Docs: [Ignoring operations](/moose/migrate#managing-ttl-outside-moose)
+
+## Precise numeric types for Python
+New type aliases for ClickHouse numeric types in Python: Int8, Int16, Int32, Int64, UInt8, UInt16, UInt32, UInt64, Float32, and Float64. These provide better type safety and clearer intent when defining data models.
+
+```python filename="datamodels/UserActivity.py" copy
+from moose_lib import (
+    Key, IngestPipeline, IngestPipelineConfig,
+    Int8, Int16, Int32, Int64,
+    UInt8, UInt16, UInt32, UInt64,
+    Float32, Float64
+)
+from pydantic import BaseModel
+from datetime import datetime
+from typing import Optional
+
+class UserActivity(BaseModel):
+    user_id: Key[UInt64]  # User IDs are always positive, use UInt64 for large scale
+    event_time: datetime
+    page_views: UInt32      # Daily page views (0 to 4 billion)
+    session_duration: UInt16  # Session length in seconds (0 to 65K seconds)
+    score_delta: Int32      # Score changes can be positive or negative
+    latitude: Float64       # GPS coordinates need high precision
+    longitude: Float64      # GPS coordinates need high precision
+    confidence: Float32     # ML confidence scores (lower precision acceptable)
+```
+
+PR: [#2945](https://github.com/514-labs/moosestack/pull/2945) | Docs: [Numeric types](/moose/olap/supported-types#numeric-types)
+
+## Other MooseStack Features and Improvements
+- **Real-time Docker logs** – Build commands now stream progress in real-time for better debugging. PR [#2958](https://github.com/514-labs/moosestack/pull/2958)
+- **ClickHouse cluster configuration** – Define clusters for ON CLUSTER operations in distributed environments. PR [#2931](https://github.com/514-labs/moosestack/pull/2931)
+- **TypeScript MCP template** – Create AI assistants that can query your ClickHouse data via Model Context Protocol. Docs: [MCP template](/moose/templates-examples#typescript-mcp) | PR [#2953](https://github.com/514-labs/moosestack/pull/2953)
+- **BYOF documentation** – Integration guides for Express, Fastify, Koa, and FastAPI with MooseStack. Docs: [BYOF guide](/moose/app-api-frameworks) | PR [#2935](https://github.com/514-labs/moosestack/pull/2935)
+
+## MooseStack Bug Fixes
+- **Bug fixes**: (db-pull defaults) [#2956](https://github.com/514-labs/moosestack/pull/2956), (FastAPI OpenAPI paths) [#2957](https://github.com/514-labs/moosestack/pull/2957), (custom database names) [#2955](https://github.com/514-labs/moosestack/pull/2955), (table diffing compatibility) [#2918](https://github.com/514-labs/moosestack/pull/2918)
+
+## Other Boreal Features and Improvements
+- Added Nix syntax highlighting support for code blocks in the dashboard
+- Added branch delete button in branch settings with improved loading states
+
+## Boreal Bug Fixes
+- **Bug fixes**: (Google Tag Manager) [#2940](https://github.com/514-labs/moosestack/pull/2940), (CORS issues) [#2941](https://github.com/514-labs/moosestack/pull/2941)

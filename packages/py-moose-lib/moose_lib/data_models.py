@@ -341,7 +341,7 @@ def py_type_to_column_type(t: type, mds: list[Any]) -> Tuple[bool, list[Any], Da
         if int_size:
             data_type = int_size.replace("u", "U").replace("i", "I")
         else:
-            data_type = "Int"
+            data_type = "Int64"
     elif t is float:
         size = next((md for md in mds if isinstance(md, ClickhouseSize)), None)
         if size is None:
@@ -508,11 +508,11 @@ def _to_columns(model: type[BaseModel]) -> list[Column]:
 
         annotations = []
         for md in mds:
-            if isinstance(md, AggregateFunction):
+            if isinstance(md, AggregateFunction) and all(key != "aggregationFunction" for (key, _) in annotations):
                 annotations.append(
                     ("aggregationFunction", md.to_dict())
                 )
-            if isinstance(md, SimpleAggregateFunction):
+            if isinstance(md, SimpleAggregateFunction) and all(key != "simpleAggregationFunction" for (key, _) in annotations):
                 annotations.append(
                     ("simpleAggregationFunction", md.to_dict())
                 )

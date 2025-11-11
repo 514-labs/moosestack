@@ -341,7 +341,7 @@ const handleNumberType = (
 
   const tagSymbol = t.getProperty("typia.tag");
   if (tagSymbol === undefined) {
-    return "Float";
+    return "Float64";
   } else {
     const typiaProps = checker.getNonNullableType(
       checker.getTypeOfSymbol(tagSymbol),
@@ -385,7 +385,7 @@ const handleNumberType = (
       }
     }
 
-    return "Float";
+    return "Float64";
   }
 };
 

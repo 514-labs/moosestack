@@ -42,7 +42,7 @@ def parse_scalar_value(value: str, t: scalar_types) -> Any:
     match t:
         case 'String':
             return value
-        case 'Int':
+        case 'Int' | 'Int64':
             return int(value)
         case 'Float' | 'Float64' | 'Float32':
             return float(value)

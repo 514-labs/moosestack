@@ -214,13 +214,11 @@ pub enum SerializableOlapOperation {
 pub enum IgnorableOperation {
     ModifyTableTtl,
     ModifyColumnTtl,
+    ModifyPartitionBy,
 }
 
 impl IgnorableOperation {
     pub fn matches(&self, op: &SerializableOlapOperation) -> bool {
-        // Simple pattern matching for operations that can be entirely filtered
-        // Note: ModifyColumnTtl is handled specially in filter_ignored_operations
-        // where we strip TTL changes from ModifyTableColumn operations
         matches!(
             (self, op),
             (
@@ -229,6 +227,44 @@ impl IgnorableOperation {
             )
         )
     }
+}
+
+/// Normalizes a table by stripping fields that should be ignored during comparison.
+///
+/// This prevents the diff strategy from detecting changes in ignored fields and
+/// generating unnecessary drop+create operations.
+///
+/// # Arguments
+/// * `table` - The table to normalize
+/// * `ignore_ops` - Slice of operations to ignore
+///
+/// # Returns
+/// A new table with ignored fields stripped/normalized to match the "before" state
+pub fn normalize_table_for_diff(table: &Table, ignore_ops: &[IgnorableOperation]) -> Table {
+    if ignore_ops.is_empty() {
+        return table.clone();
+    }
+
+    let mut normalized = table.clone();
+
+    // Strip table-level TTL if ignored
+    if ignore_ops.contains(&IgnorableOperation::ModifyTableTtl) {
+        normalized.table_ttl_setting = None;
+    }
+
+    // Strip partition_by if ignored
+    if ignore_ops.contains(&IgnorableOperation::ModifyPartitionBy) {
+        normalized.partition_by = None;
+    }
+
+    // Strip column-level TTL if ignored
+    if ignore_ops.contains(&IgnorableOperation::ModifyColumnTtl) {
+        for column in &mut normalized.columns {
+            column.ttl = None;
+        }
+    }
+
+    normalized
 }
 
 /// Executes a series of changes to the ClickHouse database schema
@@ -860,17 +896,15 @@ fn build_modify_column_sql(
 
     // DEFAULT clause: If omitted, ClickHouse KEEPS any existing DEFAULT
     // Therefore, DEFAULT removal requires a separate REMOVE DEFAULT statement
+    // Default values from ClickHouse/Python are already properly formatted
+    // - String literals come with quotes: 'active'
+    // - SQL expressions come without quotes: xxHash64(_id), now(), today()
+    // - Numbers come without quotes: 42
+    // So we use them as-is without additional formatting
     let default_clause = ch_col
         .default
         .as_ref()
-        .map(|d| {
-            format!(
-                " DEFAULT {}",
-                crate::infrastructure::olap::clickhouse::queries::format_clickhouse_setting_value(
-                    d
-                )
-            )
-        })
+        .map(|d| format!(" DEFAULT {}", d))
         .unwrap_or_default();
 
     // TTL clause: If omitted, ClickHouse KEEPS any existing TTL
@@ -1855,11 +1889,13 @@ pub fn extract_table_ttl_from_create_query(create_query: &str) -> Option<String>
 
 /// Normalize a TTL expression to match ClickHouse's canonical form.
 /// Converts SQL INTERVAL syntax to toInterval* function calls that ClickHouse uses internally.
+/// Also removes trailing DELETE since it's the default action and ClickHouse may delete it implicitly.
 ///
 /// # Examples
 /// - "timestamp + INTERVAL 30 DAY" → "timestamp + toIntervalDay(30)"
 /// - "timestamp + INTERVAL 1 MONTH" → "timestamp + toIntervalMonth(1)"
-/// - "timestamp + INTERVAL 90 DAY DELETE" → "timestamp + toIntervalDay(90) DELETE"
+/// - "timestamp + INTERVAL 90 DAY DELETE" → "timestamp + toIntervalDay(90)"
+/// - "timestamp + toIntervalDay(90) DELETE" → "timestamp + toIntervalDay(90)"
 pub fn normalize_ttl_expression(expr: &str) -> String {
     use regex::Regex;
 
@@ -1869,7 +1905,7 @@ pub fn normalize_ttl_expression(expr: &str) -> String {
         Regex::new(r"(?i)INTERVAL\s+(\d+)\s+(SECOND|MINUTE|HOUR|DAY|WEEK|MONTH|QUARTER|YEAR)")
             .expect("Valid regex pattern");
 
-    interval_pattern
+    let normalized = interval_pattern
         .replace_all(expr, |caps: &regex::Captures| {
             let number = &caps[1];
             let unit = caps[2].to_uppercase();
@@ -1888,7 +1924,12 @@ pub fn normalize_ttl_expression(expr: &str) -> String {
 
             format!("{}({})", func_name, number)
         })
-        .to_string()
+        .to_string();
+
+    // Remove trailing DELETE since it's the default action
+    // ClickHouse may add it implicitly, but it's redundant for comparison purposes
+    let delete_pattern = Regex::new(r"(?i)\s+DELETE\s*$").expect("Valid regex pattern");
+    delete_pattern.replace(&normalized, "").to_string()
 }
 
 /// Extract column-level TTL expressions from the CREATE TABLE column list.
@@ -2009,6 +2050,7 @@ pub fn extract_column_ttls_from_create_query(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::infrastructure::olap::clickhouse::model::{ClickHouseColumnType, ClickHouseInt};
     use crate::infrastructure::olap::clickhouse::sql_parser::tests::NESTED_OBJECTS_SQL;
 
     #[test]
@@ -2312,6 +2354,78 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
     }
 
     #[test]
+    fn test_modify_column_with_sql_function_defaults() {
+        // Test that SQL function defaults (like xxHash64, now(), today()) are not quoted
+        // in MODIFY COLUMN statements. This complements the CREATE TABLE test.
+        // Related to ENG-1162.
+
+        let sample_hash_col = ClickHouseColumn {
+            name: "sample_hash".to_string(),
+            column_type: ClickHouseColumnType::ClickhouseInt(ClickHouseInt::UInt64),
+            required: true,
+            primary_key: false,
+            unique: false,
+            default: Some("xxHash64(_id)".to_string()), // SQL function - no quotes
+            comment: Some("Hash of the ID".to_string()),
+            ttl: None,
+        };
+
+        let sqls = build_modify_column_sql("test_db", "test_table", &sample_hash_col, false, false)
+            .unwrap();
+
+        assert_eq!(sqls.len(), 1);
+        // The fix ensures xxHash64(_id) is NOT quoted - if it were quoted, ClickHouse would treat it as a string literal
+        assert_eq!(
+            sqls[0],
+            "ALTER TABLE `test_db`.`test_table` MODIFY COLUMN IF EXISTS `sample_hash` UInt64 DEFAULT xxHash64(_id) COMMENT 'Hash of the ID'"
+        );
+
+        // Test with now() function
+        let created_at_col = ClickHouseColumn {
+            name: "created_at".to_string(),
+            column_type: ClickHouseColumnType::DateTime64 { precision: 3 },
+            required: true,
+            primary_key: false,
+            unique: false,
+            default: Some("now()".to_string()), // SQL function - no quotes
+            comment: None,
+            ttl: None,
+        };
+
+        let sqls = build_modify_column_sql("test_db", "test_table", &created_at_col, false, false)
+            .unwrap();
+
+        assert_eq!(sqls.len(), 1);
+        // The fix ensures now() is NOT quoted
+        assert_eq!(
+            sqls[0],
+            "ALTER TABLE `test_db`.`test_table` MODIFY COLUMN IF EXISTS `created_at` DateTime64(3) DEFAULT now()"
+        );
+
+        // Test that literal string defaults still work correctly (with quotes preserved)
+        let status_col = ClickHouseColumn {
+            name: "status".to_string(),
+            column_type: ClickHouseColumnType::String,
+            required: true,
+            primary_key: false,
+            unique: false,
+            default: Some("'active'".to_string()), // String literal - quotes preserved
+            comment: None,
+            ttl: None,
+        };
+
+        let sqls =
+            build_modify_column_sql("test_db", "test_table", &status_col, false, false).unwrap();
+
+        assert_eq!(sqls.len(), 1);
+        // String literals should preserve their quotes
+        assert_eq!(
+            sqls[0],
+            "ALTER TABLE `test_db`.`test_table` MODIFY COLUMN IF EXISTS `status` String DEFAULT 'active'"
+        );
+    }
+
+    #[test]
     fn test_extract_order_by_from_create_query_nested_objects() {
         // Test with deeply nested structure
         let order_by = extract_order_by_from_create_query(sql_parser::tests::NESTED_OBJECTS_SQL);
@@ -2423,10 +2537,28 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
             "timestamp + toIntervalQuarter(1)"
         );
 
-        // Test with DELETE clause
+        // Test with DELETE clause - should be stripped since it's the default
         assert_eq!(
             normalize_ttl_expression("timestamp + INTERVAL 90 DAY DELETE"),
-            "timestamp + toIntervalDay(90) DELETE"
+            "timestamp + toIntervalDay(90)"
+        );
+
+        // Test with already normalized expression with DELETE
+        assert_eq!(
+            normalize_ttl_expression("timestamp + toIntervalDay(90) DELETE"),
+            "timestamp + toIntervalDay(90)"
+        );
+
+        // Test with DELETE in lowercase
+        assert_eq!(
+            normalize_ttl_expression("timestamp + INTERVAL 90 DAY delete"),
+            "timestamp + toIntervalDay(90)"
+        );
+
+        // Test with extra spaces before DELETE
+        assert_eq!(
+            normalize_ttl_expression("timestamp + INTERVAL 90 DAY  DELETE"),
+            "timestamp + toIntervalDay(90)"
         );
 
         // Test case insensitivity
@@ -2569,6 +2701,127 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
         assert_eq!(
             add_column_query,
             "ALTER TABLE `test_db`.`test_table` ADD COLUMN `description` Nullable(String) DEFAULT 'default text' AFTER `id`"
+        );
+    }
+
+    #[test]
+    fn test_normalize_table_for_diff_strips_ignored_fields() {
+        use crate::framework::core::infrastructure::table::{Column, ColumnType, OrderBy, Table};
+        use crate::framework::core::infrastructure_map::{PrimitiveSignature, PrimitiveTypes};
+        use crate::framework::core::partial_infrastructure_map::LifeCycle;
+        use crate::infrastructure::olap::clickhouse::IgnorableOperation;
+
+        let table = Table {
+            name: "test_table".to_string(),
+            columns: vec![Column {
+                name: "id".to_string(),
+                data_type: ColumnType::String,
+                required: true,
+                unique: false,
+                primary_key: true,
+                default: None,
+                annotations: vec![],
+                comment: None,
+                ttl: Some("created_at + INTERVAL 7 DAY".to_string()),
+            }],
+            order_by: OrderBy::Fields(vec!["id".to_string()]),
+            partition_by: Some("toYYYYMM(created_at)".to_string()),
+            sample_by: None,
+            engine: None,
+            version: None,
+            source_primitive: PrimitiveSignature {
+                name: "Test".to_string(),
+                primitive_type: PrimitiveTypes::DataModel,
+            },
+            metadata: None,
+            life_cycle: LifeCycle::default_for_deserialization(),
+            engine_params_hash: None,
+            table_settings: None,
+            indexes: vec![],
+            database: None,
+            table_ttl_setting: Some("created_at + INTERVAL 30 DAY".to_string()),
+        };
+
+        let ignore_ops = vec![
+            IgnorableOperation::ModifyTableTtl,
+            IgnorableOperation::ModifyColumnTtl,
+            IgnorableOperation::ModifyPartitionBy,
+        ];
+
+        let normalized = super::normalize_table_for_diff(&table, &ignore_ops);
+
+        // Check that all ignored fields were stripped
+        assert_eq!(
+            normalized.table_ttl_setting, None,
+            "Table TTL should be stripped"
+        );
+        assert_eq!(
+            normalized.partition_by, None,
+            "Partition BY should be stripped"
+        );
+        assert_eq!(
+            normalized.columns[0].ttl, None,
+            "Column TTL should be stripped"
+        );
+
+        // Check that other fields remain unchanged
+        assert_eq!(normalized.name, table.name);
+        assert_eq!(normalized.columns[0].name, "id");
+        assert_eq!(normalized.order_by, table.order_by);
+    }
+
+    #[test]
+    fn test_normalize_table_for_diff_empty_ignore_list() {
+        use crate::framework::core::infrastructure::table::{Column, ColumnType, OrderBy, Table};
+        use crate::framework::core::infrastructure_map::{PrimitiveSignature, PrimitiveTypes};
+        use crate::framework::core::partial_infrastructure_map::LifeCycle;
+
+        let table = Table {
+            name: "test_table".to_string(),
+            columns: vec![Column {
+                name: "id".to_string(),
+                data_type: ColumnType::String,
+                required: true,
+                unique: false,
+                primary_key: true,
+                default: None,
+                annotations: vec![],
+                comment: None,
+                ttl: Some("created_at + INTERVAL 7 DAY".to_string()),
+            }],
+            order_by: OrderBy::Fields(vec!["id".to_string()]),
+            partition_by: Some("toYYYYMM(created_at)".to_string()),
+            sample_by: None,
+            engine: None,
+            version: None,
+            source_primitive: PrimitiveSignature {
+                name: "Test".to_string(),
+                primitive_type: PrimitiveTypes::DataModel,
+            },
+            metadata: None,
+            life_cycle: LifeCycle::default_for_deserialization(),
+            engine_params_hash: None,
+            table_settings: None,
+            indexes: vec![],
+            database: None,
+            table_ttl_setting: Some("created_at + INTERVAL 30 DAY".to_string()),
+        };
+
+        let ignore_ops = vec![];
+        let normalized = super::normalize_table_for_diff(&table, &ignore_ops);
+
+        // With empty ignore list, table should be unchanged
+        assert_eq!(
+            normalized.table_ttl_setting, table.table_ttl_setting,
+            "Table TTL should remain unchanged"
+        );
+        assert_eq!(
+            normalized.partition_by, table.partition_by,
+            "Partition BY should remain unchanged"
+        );
+        assert_eq!(
+            normalized.columns[0].ttl, table.columns[0].ttl,
+            "Column TTL should remain unchanged"
         );
     }
 }

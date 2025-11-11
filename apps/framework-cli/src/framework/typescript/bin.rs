@@ -51,6 +51,13 @@ pub fn run(
         command.env("TS_NODE_COMPILER", "ts-patch/compiler");
     }
 
+    // Set IS_LOADING_INFRA_MAP=true only when loading infrastructure map
+    // This allows mooseRuntimeEnv.get() to return markers for later resolution
+    // For runtime execution (functions/workflows), it will return actual env var values
+    if binary_command == "dmv2-serializer" {
+        command.env("IS_LOADING_INFRA_MAP", "true");
+    }
+
     for arg in args {
         command.arg(arg);
     }

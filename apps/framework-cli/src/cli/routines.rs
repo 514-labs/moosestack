@@ -862,18 +862,20 @@ pub(crate) async fn get_remote_inframap_protobuf(
 /// # Arguments
 /// * `current_map` - The current infrastructure map (from server)
 /// * `target_map` - The target infrastructure map (from local project)
+/// * `ignore_ops` - Operations to ignore during comparison (e.g., ModifyPartitionBy)
 ///
 /// # Returns
 /// * `InfraChanges` - The calculated changes needed to go from current to target
 fn calculate_plan_diff_local(
     current_map: &InfrastructureMap,
     target_map: &InfrastructureMap,
+    ignore_ops: &[crate::infrastructure::olap::clickhouse::IgnorableOperation],
 ) -> crate::framework::core::infrastructure_map::InfraChanges {
     use crate::infrastructure::olap::clickhouse::diff_strategy::ClickHouseTableDiffStrategy;
 
     let clickhouse_strategy = ClickHouseTableDiffStrategy;
     // planning about action on prod env, respect_life_cycle is true
-    current_map.diff_with_table_strategy(target_map, &clickhouse_strategy, true, true)
+    current_map.diff_with_table_strategy(target_map, &clickhouse_strategy, true, true, ignore_ops)
 }
 
 /// Legacy implementation of remote_plan using the existing /admin/plan endpoint
@@ -886,7 +888,7 @@ async fn legacy_remote_plan_logic(
     // Build the inframap from the local project
     let local_infra_map = if project.features.data_model_v2 {
         debug!("Loading InfrastructureMap from user code (DMV2)");
-        InfrastructureMap::load_from_user_code(project).await?
+        InfrastructureMap::load_from_user_code(project, true).await?
     } else {
         debug!("Loading InfrastructureMap from primitives");
         let primitive_map = PrimitiveMap::load(project).await?;
@@ -992,7 +994,7 @@ pub async fn remote_plan(
     // Build the inframap from the local project
     let local_infra_map = if project.features.data_model_v2 {
         debug!("Loading InfrastructureMap from user code (DMV2)");
-        InfrastructureMap::load_from_user_code(project).await?
+        InfrastructureMap::load_from_user_code(project, true).await?
     } else {
         debug!("Loading InfrastructureMap from primitives");
         let primitive_map = PrimitiveMap::load(project).await?;
@@ -1056,7 +1058,11 @@ pub async fn remote_plan(
     };
 
     // Calculate and display changes
-    let changes = calculate_plan_diff_local(&remote_infra_map, &local_infra_map);
+    let changes = calculate_plan_diff_local(
+        &remote_infra_map,
+        &local_infra_map,
+        &project.migration_config.ignore_operations,
+    );
 
     display::show_message_wrapper(
         MessageType::Success,
@@ -1108,9 +1114,10 @@ pub async fn remote_gen_migration(
     use anyhow::Context;
 
     // Build the inframap from the local project
+    // Resolve credentials for generating migration DDL with S3 tables
     let local_infra_map = if project.features.data_model_v2 {
         debug!("Loading InfrastructureMap from user code (DMV2)");
-        InfrastructureMap::load_from_user_code(project).await?
+        InfrastructureMap::load_from_user_code(project, true).await?
     } else {
         debug!("Loading InfrastructureMap from primitives");
         let primitive_map = PrimitiveMap::load(project).await?;
@@ -1149,7 +1156,11 @@ pub async fn remote_gen_migration(
         }
     };
 
-    let changes = calculate_plan_diff_local(&remote_infra_map, &local_infra_map);
+    let changes = calculate_plan_diff_local(
+        &remote_infra_map,
+        &local_infra_map,
+        &project.migration_config.ignore_operations,
+    );
 
     display::show_message_wrapper(
         MessageType::Success,
@@ -1159,11 +1170,8 @@ pub async fn remote_gen_migration(
         },
     );
 
-    let mut db_migration =
+    let db_migration =
         MigrationPlan::from_infra_plan(&changes, &project.clickhouse_config.db_name)?;
-
-    // Filter out ignored operations based on project config
-    db_migration.filter_ignored_operations(&project.migration_config.ignore_operations);
 
     Ok(MigrationPlanWithBeforeAfter {
         remote_state: remote_infra_map,
@@ -1197,7 +1205,7 @@ async fn get_remote_inframap_serverless(
     let remote_infra_map = state_storage
         .load_infrastructure_map()
         .await?
-        .unwrap_or_default();
+        .unwrap_or_else(|| InfrastructureMap::empty_from_project(project));
 
     // Reconcile with actual database state to detect manual changes
     let reconciled_infra_map = if project.features.olap {
@@ -1228,7 +1236,7 @@ pub async fn remote_refresh(
     // Build the inframap from the local project
     let local_infra_map = if project.features.data_model_v2 {
         debug!("Loading InfrastructureMap from user code (DMV2)");
-        InfrastructureMap::load_from_user_code(project).await?
+        InfrastructureMap::load_from_user_code(project, true).await?
     } else {
         debug!("Loading InfrastructureMap from primitives");
         let primitive_map = PrimitiveMap::load(project).await?;

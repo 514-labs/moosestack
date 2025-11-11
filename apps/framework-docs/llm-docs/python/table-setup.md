@@ -1,3 +1,11 @@
+---
+title: Python Table Configuration
+description: Configure ClickHouse table engines, sorting keys, and advanced storage options
+priority: 0.70
+category: database-config
+language: python
+---
+
 # Database Tables
 
 ## Overview
