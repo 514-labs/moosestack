@@ -1170,8 +1170,16 @@ pub async fn remote_gen_migration(
         },
     );
 
+    // Validate the plan before generating migration files
+    let plan = InfraPlan {
+        target_infra_map: local_infra_map.clone(),
+        changes,
+    };
+
+    plan_validator::validate(project, &plan)?;
+
     let db_migration =
-        MigrationPlan::from_infra_plan(&changes, &project.clickhouse_config.db_name)?;
+        MigrationPlan::from_infra_plan(&plan.changes, &project.clickhouse_config.db_name)?;
 
     Ok(MigrationPlanWithBeforeAfter {
         remote_state: remote_infra_map,
