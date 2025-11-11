@@ -1,203 +1,60 @@
 # TypeScript MCP Template
 
-This template demonstrates how to integrate the **Model Context Protocol (MCP)** with MooseStack using Express and the `WebApp` class. It showcases MooseStack's "bring your own API framework" capability.
+This template provides a complete example of building AI-powered applications with MooseStack and the Model Context Protocol (MCP).
 
-## What is Model Context Protocol (MCP)?
+## Overview
 
-[Model Context Protocol (MCP)](https://modelcontextprotocol.io) is an open protocol that enables AI assistants to securely connect to data sources and tools. It provides a standardized way for LLMs to:
+This template contains two independent applications that work together:
 
-- Access real-time data
-- Execute operations
-- Interact with external services
-- Query databases and APIs
+### 1. `moosestack-service/`
 
-## What This Template Demonstrates
+A MooseStack service template that demonstrates how to build a data service with an integrated MCP server. This service:
 
-This template shows how to:
+- Provides a complete MooseStack data pipeline example
+- Exposes an MCP server that AI agents can connect to
+- Includes data ingestion, processing, and API capabilities
+- Can be run independently for development and testing
 
-1. **Create custom API endpoints** using Express within MooseStack
-2. **Implement an MCP server** using `@modelcontextprotocol/sdk`
-3. **Mount custom web apps** at specific paths using the `WebApp` class
-4. **Define data models** with ClickHouse table creation
-5. **Expose tools** that AI assistants can use via MCP
+### 2. `web-app-with-ai-chat/`
 
-## Key Components
+A Next.js web application with a pre-configured AI chat interface. This application:
 
-### 1. Data Model (`app/ingest/models.ts`)
-
-Defines a minimal `DataEvent` model with ClickHouse table creation. The IngestPipeline creates the ClickHouse table, enables Kafka streaming, and provides a POST endpoint at `/ingest/DataEvent`.
-
-### 2. MCP Server (`app/apis/mcp.ts`)
-
-Implements an MCP server using `@modelcontextprotocol/sdk`:
-
-- Uses **StreamableHTTPServerTransport** with JSON responses (stateless mode)
-- Registers a `query_clickhouse` tool for AI assistants
-- Mounts at `/tools` to avoid conflict with built-in `/mcp` endpoint
-- Accesses ClickHouse via `getMooseUtils()` for query execution
-- Fresh server instance created for every request
-
-**Security Features:**
-
-- SQL query whitelist: Only SELECT, SHOW, DESCRIBE, EXPLAIN queries permitted
-- SQL query blocklist: Prevents INSERT, UPDATE, DELETE, DROP, CREATE, ALTER, TRUNCATE, etc.
-- Row limit enforcement: Results automatically capped at 100 rows maximum
-
-### 3. SQL Security (`app/apis/utils/sql.ts`)
-
-Provides SQL validation and sanitization utilities:
-
-- `validateQuery()`: Main validation function combining whitelist and blocklist checks
-- `validateQueryWhitelist()`: Ensures query starts with allowed SQL keywords
-- `validateQueryBlocklist()`: Blocks dangerous SQL operations
-- `applyLimitToQuery()`: Enforces maximum row limits on SELECT queries
-
-Uses regex-based pattern matching for ClickHouse SQL validation without external parser dependencies.
-
-**Note:** This is a demonstration implementation. A production-ready MCP server would require more robust query sanitization beyond regex pattern matching, such as a proper SQL parser, parameterized queries, and comprehensive injection prevention mechanisms.
+- Features a modern, responsive layout with an integrated chat panel
+- Includes a fully functional AI chat interface out of the box
+- Is configured to connect to the MooseStack service MCP server
+- Provides a ready-to-use foundation for building AI-powered user experiences
 
 ## Getting Started
 
-### 1. Install Dependencies
+Both applications can be started independently:
+
+### Start the MooseStack Service
 
 ```bash
+cd moosestack-service
 npm install
+npm run dev
 ```
 
-### 2. Start Development Server
+### Start the Next.js Web App
 
 ```bash
-moose dev
-```
-
-The MCP server will be available at `http://localhost:4000/tools`
-
-### 3. Test the MCP Server
-
-The MCP server will be available at `http://localhost:4000/tools`. You can test it by sending JSON-RPC requests to list available tools or execute the `query_clickhouse` tool.
-
-## MCP Tools Available
-
-### `query_clickhouse`
-
-Executes SQL queries against the ClickHouse database with security validation and automatic result limiting.
-
-**Input Parameters:**
-
-- `query` (required): SQL query to execute against ClickHouse (must be SELECT, SHOW, DESCRIBE, or EXPLAIN)
-- `limit` (optional): Maximum number of rows to return (default: 100, max: 100)
-
-**Output:**
-
-- `rows`: Array of row objects containing query results
-- `rowCount`: Number of rows returned
-
-**Security:**
-
-- Only read-only queries are allowed (SELECT, SHOW, DESCRIBE, EXPLAIN)
-- Write operations (INSERT, UPDATE, DELETE) are blocked
-- DDL operations (DROP, CREATE, ALTER, TRUNCATE) are blocked
-- Results are automatically limited to 100 rows maximum
-
-## Using with Claude Code
-
-You can configure Claude Code to connect to your MCP server by adding it to your Claude Code configuration:
-
-```bash
-claude mcp add --transport http clickhouse http://localhost:4000/tools
-```
-
-Once connected, you can ask Claude Code questions like:
-
-- "What tables exist in the database?"
-- "Show me the latest 10 events from the DataEvent table"
-- "How many events are in the DataEvent table?"
-
-Claude Code will automatically use the `query_clickhouse` tool to execute the appropriate SQL queries.
-
-## Security Features
-
-This template implements several security measures for safe database querying:
-
-### ✅ Implemented
-
-- **SQL Query Validation**: Whitelist/blocklist validation ensures only safe, read-only queries
-  - Allowed: SELECT, SHOW, DESCRIBE, EXPLAIN
-  - Blocked: INSERT, UPDATE, DELETE, DROP, CREATE, ALTER, TRUNCATE, GRANT, REVOKE, EXECUTE, CALL
-- **Row Limiting**: Results automatically capped at 100 rows to prevent excessive data transfer
-- **Error Handling**: Security errors returned through MCP protocol without exposing internals
-
-### ⚠️ Production Considerations
-
-Before deploying to production, consider adding:
-
-- **Authentication & Authorization**: JWT authentication framework is in place (see TODO in mcp.ts)
-- **Rate Limiting**: Protect against abuse and DoS attacks
-- **Query Timeouts**: Prevent long-running queries from consuming resources
-- **Audit Logging**: Track who executed which queries and when
-- **IP Whitelisting**: Restrict access to known clients
-- **TLS/HTTPS**: Encrypt data in transit
-
-The current implementation provides a secure foundation for read-only database access but should be enhanced with additional production-grade features based on your deployment requirements.
-
-## Testing Data Ingestion
-
-You can send test events to the DataEvent table via POST requests to `http://localhost:4000/ingest/DataEvent` with JSON payloads containing `eventId`, `timestamp`, `eventType`, and `data` fields.
-
-## Extending This Template
-
-### Adding More Tools
-
-Register additional tools in `app/apis/mcp.ts` using `server.registerTool()`. Each tool needs a name, title, description, input/output schemas (using Zod), and an async handler function.
-
-### Accessing MooseStack Utilities
-
-Use `getMooseUtils(req)` in your endpoint handlers to access the ClickHouse client (`client.query.execute()`) and SQL template function (`sql`) for safe query execution.
-
-### Adding More Data Models
-
-Create additional data models in `app/ingest/models.ts` by defining interfaces and creating IngestPipeline instances with options for `table`, `stream`, and `ingestApi`.
-
-## Learn More
-
-- [MooseStack Documentation](https://docs.moosejs.com)
-- [Model Context Protocol](https://modelcontextprotocol.io)
-- [MCP SDK (@modelcontextprotocol/sdk)](https://github.com/modelcontextprotocol/typescript-sdk)
-- [WebApp Class Reference](https://docs.moosejs.com/building-moose-apps/custom-apis)
-
-## Troubleshooting
-
-### Port Already in Use
-
-If port 4000 is already in use, update `moose.config.toml`:
-
-```toml
-[server]
-port = 4001
-```
-
-### TypeScript Errors
-
-Make sure all dependencies are installed:
-
-```bash
+cd web-app-with-ai-chat
 npm install
+npm run dev
 ```
 
-### ClickHouse Connection Issues
+## How They Work Together
 
-Verify Docker containers are running:
+1. The **moosestack-service** runs your data pipeline and exposes an MCP server that provides AI agents with access to your data and tools
+2. The **web-app-with-ai-chat** provides a user interface where users can interact with an AI agent
+3. The AI agent in the web app connects to the MCP server to access your data and capabilities
+4. Users can chat naturally with the AI, which uses the MCP server to answer questions and perform actions on your data
 
-```bash
-docker ps
-```
+## Next Steps
 
-You should see containers for ClickHouse, Redpanda, and Temporal.
+- Customize the MooseStack service with your own data models and APIs
+- Extend the AI chat interface with additional features and integrations
+- Configure the MCP connection settings to match your deployment environment
 
-## Support
-
-For questions or issues:
-
-- [GitHub Issues](https://github.com/514-labs/moose)
-- [Discord Community](https://discord.gg/moose)
-- [Documentation](https://docs.moosejs.com)
+For more detailed information, see the README files in each subdirectory.
