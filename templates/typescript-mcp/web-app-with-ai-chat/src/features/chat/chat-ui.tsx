@@ -118,7 +118,7 @@ export function ChatUI({ onClose }: ChatUIProps) {
       {/* Messages Area */}
       <div className="flex-1 min-h-0 overflow-hidden py-3">
         <ScrollArea ref={scrollAreaRef} className="h-full">
-          <div className="space-y-4 py-4 pl-2 pr-6">
+          <div className="space-y-4 py-4 px-4">
             <ChatOutputArea
               messages={messages}
               status={status}

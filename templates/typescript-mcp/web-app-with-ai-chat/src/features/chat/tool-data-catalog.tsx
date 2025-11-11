@@ -7,15 +7,14 @@ import {
 import {
   CheckCircle,
   AlertCircle,
-  Wrench,
+  Database,
   Loader2,
   ChevronRight,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { CodeBlock } from "./code-block";
+import { TextFormatter } from "./text-formatter";
 import { useState } from "react";
-import { ClickHouseToolInvocation } from "./clickhouse-tool-invocation";
-import { DataCatalogToolInvocation } from "./tool-data-catalog";
 
 const MILLISECONDS_THRESHOLD = 5000;
 
@@ -24,56 +23,38 @@ function formatDuration(milliseconds: number): string {
     return `${Math.round(milliseconds)}ms`;
   }
 
-  // For longer durations, show seconds with 2 decimal places
   const seconds = milliseconds / 1000;
   return `${seconds.toFixed(2)}s`;
 }
 
-// Correct AI SDK 5 ToolUIPart structure
-// to get better type inference, we need to define for each tool
-type ToolInvocationProps = {
+type DataCatalogToolInvocationProps = {
   part: {
     type: `tool-${string}` | "dynamic-tool";
     toolCallId: string;
-    toolName?: string; // For dynamic-tool type
+    toolName?: string;
     state:
       | "input-streaming"
       | "input-available"
       | "output-available"
       | "output-error";
-    input?: any;
-    output?:
-      | any
-      | {
-          content?: Array<{
-            type: string;
-            text?: string;
-          }>;
-          isError?: boolean;
-          structuredContent?: any;
-        };
+    input?: {
+      component_type?: string;
+      search?: string;
+      format?: string;
+      [key: string]: any;
+    };
+    output?: any;
     errorText?: string;
     providerExecuted?: boolean;
   };
+  timing?: number;
 };
 
-export function ToolInvocation({
+export function DataCatalogToolInvocation({
   part,
   timing,
-}: ToolInvocationProps & { timing?: number }) {
+}: DataCatalogToolInvocationProps) {
   const [isOpen, setIsOpen] = useState(false);
-
-  const toolName =
-    part.toolName ||
-    (part.type.startsWith("tool-") ? part.type.slice(5) : part.type);
-
-  // Use custom components for specific tools
-  if (toolName === "query_clickhouse") {
-    return <ClickHouseToolInvocation part={part} timing={timing} />;
-  }
-  if (toolName === "get_data_catalog") {
-    return <DataCatalogToolInvocation part={part} timing={timing} />;
-  }
 
   const isLoading = part.state === "input-streaming";
 
@@ -86,6 +67,15 @@ export function ToolInvocation({
     if (part.state === "output-error") {
       return <AlertCircle className="w-3 h-3 text-red-600 dark:text-red-400" />;
     }
+    // Check if output has isError flag
+    if (
+      part.output &&
+      typeof part.output === "object" &&
+      "isError" in part.output &&
+      part.output.isError
+    ) {
+      return <AlertCircle className="w-3 h-3 text-red-600 dark:text-red-400" />;
+    }
     if (part.state === "output-available") {
       return (
         <CheckCircle className="w-3 h-3 text-green-600 dark:text-green-400" />
@@ -94,10 +84,62 @@ export function ToolInvocation({
     return null;
   };
 
+  // Extract catalog text from output
+  const getCatalogText = () => {
+    if (!part.output) return null;
+
+    // Handle structured output format
+    if (
+      typeof part.output === "object" &&
+      "structuredContent" in part.output &&
+      part.output.structuredContent !== undefined
+    ) {
+      const structured = part.output.structuredContent;
+      if (
+        typeof structured === "object" &&
+        structured !== null &&
+        "catalog" in structured &&
+        typeof structured.catalog === "string"
+      ) {
+        return structured.catalog;
+      }
+    }
+
+    // Handle content array format
+    if (
+      typeof part.output === "object" &&
+      "content" in part.output &&
+      Array.isArray(part.output.content)
+    ) {
+      const textContent = part.output.content
+        .filter((c: any) => c.type === "text")
+        .map((c: any) => c.text)
+        .join("");
+      return textContent || null;
+    }
+
+    // Handle direct string output
+    if (typeof part.output === "string") {
+      return part.output;
+    }
+
+    return null;
+  };
+
+  const catalogText = getCatalogText();
+  const input = part.input;
+
+  // Check if output has isError flag
+  const hasError =
+    part.output &&
+    typeof part.output === "object" &&
+    "isError" in part.output &&
+    part.output.isError;
+
   return (
     <div
       className={cn(
-        "mt-2 rounded-lg border transition-all duration-200 border-border overflow-hidden",
+        "mt-2 rounded-lg border transition-all duration-200 border-border",
         isLoading && "opacity-50",
       )}
     >
@@ -115,12 +157,12 @@ export function ToolInvocation({
                 isOpen && "rotate-90",
               )}
             />
-            <Wrench
+            <Database
               className={cn(
                 "w-4 h-4",
                 isLoading ?
                   "text-muted-foreground"
-                : "text-blue-600 dark:text-blue-400",
+                : "text-purple-600 dark:text-purple-400",
               )}
             />
             <span
@@ -129,7 +171,7 @@ export function ToolInvocation({
                 isLoading ? "text-muted-foreground" : "text-foreground",
               )}
             >
-              {toolName || "Unknown Tool"}
+              Data Catalog
             </span>
 
             <div className="flex-1" />
@@ -144,77 +186,72 @@ export function ToolInvocation({
           </div>
         </CollapsibleTrigger>
 
-        <CollapsibleContent>
+        <CollapsibleContent className="relative overflow-hidden">
           <div
             className={cn(
-              "px-3 pb-3 space-y-3 border-t border-border/50 transition-opacity duration-200",
+              "max-w-[400px] min-w-full px-3 pb-3 pt-2 space-y-2 border-t border-border/50 transition-opacity duration-200 overflow-hidden",
               isLoading && "opacity-60",
             )}
           >
-            {/* Provider Executed */}
-            {part.providerExecuted !== undefined && (
-              <div className="pt-3">
-                <div className="text-sm text-muted-foreground mb-1">
-                  Provider Executed:
+            {/* Input Parameters */}
+            {input && Object.keys(input).length > 0 && (
+              <div className="">
+                <div className="text-sm text-muted-foreground mb-2">
+                  Parameters:
                 </div>
-                <Badge variant="outline" className="text-xs">
-                  {part.providerExecuted ? "Yes" : "No"}
-                </Badge>
-              </div>
-            )}
-
-            {part.input && (
-              <div
-                className={part.providerExecuted === undefined ? "pt-3" : ""}
-              >
-                <div className="text-sm text-muted-foreground mb-2">Input:</div>
                 <CodeBlock language="json">
-                  {JSON.stringify(part.input, null, 2)}
+                  {JSON.stringify(input, null, 2)}
                 </CodeBlock>
               </div>
             )}
 
-            {part.output && (
+            {/* Error */}
+            {hasError && (
               <div>
                 <div className="flex items-center gap-2 mb-2">
-                  {(
-                    part.output &&
-                    typeof part.output === "object" &&
-                    "isError" in part.output &&
-                    part.output.isError
-                  ) ?
-                    <AlertCircle className="w-4 h-4 text-red-600 dark:text-red-400" />
-                  : <CheckCircle className="w-4 h-4 text-green-600 dark:text-green-400" />
-                  }
-                  <span className="text-sm text-muted-foreground">Output:</span>
+                  <AlertCircle className="w-4 h-4 text-red-600 dark:text-red-400" />
+                  <span className="text-sm text-red-700 dark:text-red-300">
+                    Error:
+                  </span>
                 </div>
-                <CodeBlock
-                  language={typeof part.output === "string" ? "text" : "json"}
-                >
+                <div className="text-sm text-red-700 dark:text-red-300 bg-red-50/50 dark:bg-red-950/20 p-3 rounded border border-red-200/50 dark:border-red-800/30">
                   {(() => {
-                    // Handle structured output format
                     if (
                       part.output &&
                       typeof part.output === "object" &&
-                      "structuredContent" in part.output &&
-                      part.output.structuredContent !== undefined
+                      "content" in part.output &&
+                      Array.isArray(part.output.content)
                     ) {
-                      return JSON.stringify(
-                        part.output.structuredContent,
-                        null,
-                        2,
-                      );
+                      const textContent = part.output.content
+                        .filter((c: any) => c.type === "text")
+                        .map((c: any) => c.text)
+                        .join("");
+                      return textContent || "An error occurred";
                     }
-                    // Handle legacy format
                     if (typeof part.output === "string") {
                       return part.output;
                     }
                     return JSON.stringify(part.output, null, 2);
                   })()}
-                </CodeBlock>
+                </div>
               </div>
             )}
 
+            {/* Catalog Output */}
+            {!hasError && catalogText && (
+              <div>
+                <div className="text-sm text-muted-foreground mb-2">
+                  Output:
+                </div>
+                <div className="rounded-md border bg-muted/50 p-4">
+                  <div className="prose prose-sm dark:prose-invert max-w-none">
+                    <TextFormatter text={catalogText} />
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Error Text */}
             {part.errorText && (
               <div>
                 <div className="flex items-center gap-2 mb-2">

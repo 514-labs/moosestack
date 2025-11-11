@@ -92,6 +92,7 @@ export function ClickHouseToolInvocation({
       part.output.structuredContent !== undefined
     ) {
       const structured = part.output.structuredContent;
+
       // Check if structuredContent has a rows field (ClickHouse query result)
       if (
         typeof structured === "object" &&
@@ -131,6 +132,7 @@ export function ClickHouseToolInvocation({
 
   const queryData = getQueryData();
   const query = part.input?.query;
+  const input = part.input;
 
   // Check if output has isError flag
   const hasError =
@@ -207,11 +209,21 @@ export function ClickHouseToolInvocation({
               isLoading && "opacity-60",
             )}
           >
-            {/* Query */}
+            {/* Query or Input Parameters */}
             {query && (
               <div className="">
                 <div className="text-sm text-muted-foreground mb-2">Query:</div>
                 <CodeBlock language="sql">{query}</CodeBlock>
+              </div>
+            )}
+            {!query && input && Object.keys(input).length > 0 && (
+              <div className="">
+                <div className="text-sm text-muted-foreground mb-2">
+                  Parameters:
+                </div>
+                <CodeBlock language="json">
+                  {JSON.stringify(input, null, 2)}
+                </CodeBlock>
               </div>
             )}
 
