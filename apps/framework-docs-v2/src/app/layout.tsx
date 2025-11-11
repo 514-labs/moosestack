@@ -7,6 +7,7 @@ import { LanguageProviderWrapper } from "@/components/language-provider-wrapper"
 import { TopNav } from "@/components/navigation/top-nav";
 import { SidebarProvider } from "@/components/ui/sidebar";
 import { Toaster } from "@/components/ui/sonner";
+import { ScrollRestoration } from "@/components/scroll-restoration";
 import { getGitHubStars } from "@/lib/github-stars";
 
 export const metadata: Metadata = {
@@ -25,6 +26,7 @@ export default async function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <body>
+        <ScrollRestoration />
         <ThemeProvider
           attribute="class"
           defaultTheme="system"

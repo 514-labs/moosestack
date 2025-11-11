@@ -79,8 +79,13 @@
   * {
     @apply border-border;
   }
+  html {
+    scroll-behavior: smooth;
+    overscroll-behavior-y: none;
+  }
   body {
     @apply bg-background text-foreground;
+    overscroll-behavior-y: none;
   }
 }
 
