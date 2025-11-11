@@ -253,7 +253,13 @@ fn override_project_config_from_url(
         )
     })?;
 
+    let clusters = project.clickhouse_config.clusters.clone();
+    let additional_databases = project.clickhouse_config.additional_databases.clone();
+
     project.clickhouse_config = clickhouse_config;
+    project.clickhouse_config.clusters = clusters;
+    project.clickhouse_config.additional_databases = additional_databases;
+
     info!(
         "Overriding project ClickHouse config from CLI: database = {}",
         project.clickhouse_config.db_name
