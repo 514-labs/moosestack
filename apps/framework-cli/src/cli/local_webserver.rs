@@ -1319,7 +1319,10 @@ async fn handle_json_array_body(
     debug!("parsed json array for {}", topic_name);
 
     // Log payload if enabled (compact JSON on one line)
-    if std::env::var("MOOSE_LOG_PAYLOADS").is_ok() {
+    if std::env::var("MOOSE_LOG_PAYLOADS")
+        .map(|v| v == "true")
+        .unwrap_or(false)
+    {
         match serde_json::from_slice::<serde_json::Value>(&body) {
             Ok(json_value) => {
                 if let Ok(compact_json) = serde_json::to_string(&json_value) {

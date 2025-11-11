@@ -435,7 +435,7 @@ def main():
 
                             # Log payload before transformation if enabled
                             if os.getenv('MOOSE_LOG_PAYLOADS') == 'true':
-                                log(f"[PAYLOAD:STREAM_IN] {log_prefix}: {json.dumps(input_data, cls=EnhancedJSONEncoder)}")
+                                log(f"[PAYLOAD:STREAM_IN] {json.dumps(input_data, cls=EnhancedJSONEncoder)}")
 
                             # Run the flow
                             all_outputs = []
@@ -487,9 +487,9 @@ def main():
                                 # Filter out None values to match what actually gets sent
                                 outgoing_data = [item for item in all_outputs if item is not None]
                                 if len(outgoing_data) > 0:
-                                    log(f"[PAYLOAD:STREAM_OUT] {log_prefix}: {json.dumps(outgoing_data, cls=EnhancedJSONEncoder)}")
+                                    log(f"[PAYLOAD:STREAM_OUT] {json.dumps(outgoing_data, cls=EnhancedJSONEncoder)}")
                                 else:
-                                    log(f"[PAYLOAD:STREAM_OUT] {log_prefix}: (no output from streaming function)")
+                                    log("[PAYLOAD:STREAM_OUT] (no output from streaming function)")
 
                             if producer is not None:
                                 for item in all_outputs:
