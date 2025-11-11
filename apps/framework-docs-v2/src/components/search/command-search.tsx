@@ -294,18 +294,18 @@ export function CommandSearch({ open, onOpenChange }: CommandSearchProps) {
                   </div>
                   {result.language && (
                     <span className="text-xs text-muted-foreground capitalize flex items-center gap-1">
-                      <IconCode className="h-3 w-3" />
+                      <IconCode className="h-4 w-4" />
                       {result.language}
                     </span>
                   )}
                 </div>
                 {result.excerpt && (
                   <div
-                    className="text-xs text-muted-foreground line-clamp-2 ml-6"
+                    className="text-xs text-muted-foreground line-clamp-2 ml-7"
                     dangerouslySetInnerHTML={{ __html: result.excerpt }}
                   />
                 )}
-                <CommandShortcut>{result.url}</CommandShortcut>
+                <CommandShortcut className="ml-7">{result.url}</CommandShortcut>
               </CommandItem>
             ))}
           </CommandGroup>

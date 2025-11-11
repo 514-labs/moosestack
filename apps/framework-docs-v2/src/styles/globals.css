@@ -93,4 +93,13 @@
   .container {
     @apply max-w-7xl mx-auto px-4 sm:px-6 lg:px-8;
   }
+
+  /* Search result highlights */
+  [cmdk-item] mark {
+    @apply bg-gray-600 text-white p-0;
+  }
+
+  .dark [cmdk-item] mark {
+    @apply bg-gray-600 text-white p-0;
+  }
 }
