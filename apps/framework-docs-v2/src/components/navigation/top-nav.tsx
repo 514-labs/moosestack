@@ -129,7 +129,7 @@ export function TopNav({
             </Link>
             <Separator orientation="vertical" className="h-4" />
             <Link href="/" className="flex items-center ml-2">
-              <span>
+              <span className="text-sm">
                 Fiveonefour<span className="text-muted-foreground"> Docs</span>
               </span>
             </Link>
