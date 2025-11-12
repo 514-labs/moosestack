@@ -141,10 +141,6 @@ pub use replication::ReplicationDiagnostic;
 pub use s3queue::S3QueueDiagnostic;
 pub use stopped_operations::StoppedOperationsDiagnostic;
 
-/// Maximum number of log lines to retrieve from Docker
-#[allow(dead_code)] // Will be used when DockerLogsDiagnostic is implemented
-const MAX_DOCKER_LOG_LINES: u32 = 100;
-
 /// Error types for infrastructure diagnostic operations
 #[derive(Debug, thiserror::Error)]
 pub enum DiagnoseError {
@@ -165,14 +161,6 @@ pub enum DiagnoseError {
 
     #[error("Invalid parameter: {0}")]
     InvalidParameter(String),
-
-    #[error("Docker operation failed: {0}")]
-    #[allow(dead_code)] // Will be used when DockerLogsDiagnostic is implemented
-    DockerError(String),
-
-    #[error("Table '{0}' not found in infrastructure map")]
-    #[allow(dead_code)] // Reserved for future use
-    TableNotFound(String),
 
     #[error("Invalid regex pattern '{pattern}': {error}")]
     InvalidRegex {
