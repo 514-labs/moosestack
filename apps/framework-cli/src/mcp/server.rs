@@ -71,7 +71,7 @@ impl ServerHandler for MooseMcpHandler {
                 website_url: None,
             },
             instructions: Some(
-                "Moose MCP Server - Access dev server logs, infrastructure map, query the OLAP database, sample streaming topics, and browse embedded Moose documentation"
+                "Moose MCP Server - Access dev server logs, infrastructure map, diagnose infrastructure issues, query the OLAP database, sample streaming topics, browse code sources, and read embedded Moose documentation"
                     .to_string(),
             ),
         }

@@ -14,10 +14,10 @@
 //! ### 1. MutationDiagnostic
 //! Detects stuck or failing mutations (ALTER operations) that can block table maintenance.
 //! - **Source**: `system.mutations`
-//! - **Detection**: Mutations with num_tries > 3 or non-empty exceptions
+//! - **Detection**: Mutations not done (is_done = 0) or with non-empty failure reasons
 //! - **Thresholds**:
-//!   - Error: num_tries > 10
-//!   - Warning: 3 < num_tries ≤ 10
+//!   - Error: Mutation has a failure reason (latest_fail_reason not empty)
+//!   - Warning: Mutation in progress but not completed (is_done = 0)
 //! - **Suggested Action**: Cancel stuck mutations with KILL MUTATION
 //!
 //! ### 2. PartsDiagnostic
@@ -30,40 +30,42 @@
 //! - **Suggested Action**: Run OPTIMIZE TABLE to merge parts
 //!
 //! ### 3. MergeDiagnostic
-//! Monitors stuck background merges that fail to make progress.
+//! Monitors long-running background merges.
 //! - **Source**: `system.merges`
-//! - **Detection**: Merges running > 300 seconds with low progress
+//! - **Detection**: Merges running > 300 seconds
 //! - **Thresholds**:
-//!   - Error: elapsed_time > 600s and progress < 50%
-//!   - Warning: elapsed_time > 300s and progress < 50%
-//! - **Suggested Action**: Check disk I/O, memory, and system load
+//!   - Error: elapsed_time > 1800s (30 minutes)
+//!   - Warning: 300s < elapsed_time ≤ 1800s
+//! - **Note**: Progress is tracked and reported but not used in severity determination
+//! - **Suggested Action**: Monitor merge progress and check server resources (CPU, disk I/O, memory)
 //!
 //! ### 4. ErrorStatsDiagnostic
 //! Aggregates errors from ClickHouse system.errors to surface recurring issues.
 //! - **Source**: `system.errors`
-//! - **Detection**: Errors with count > 10
+//! - **Detection**: All errors with count > 0 (reports top 10 by occurrence)
 //! - **Thresholds**:
 //!   - Error: error_count > 100
 //!   - Warning: error_count > 10
+//!   - Info: 0 < error_count ≤ 10
 //! - **Suggested Action**: Review error messages and recent system changes
 //!
 //! ### 5. S3QueueDiagnostic (S3Queue tables only)
 //! Detects S3Queue ingestion failures and processing issues.
 //! - **Source**: `system.s3queue_log`
-//! - **Detection**: Failed status entries in S3Queue processing log
-//! - **Threshold**: Any failed entries trigger Warning
+//! - **Detection**: Failed or ProcessingFailed status entries in S3Queue log
+//! - **Threshold**: All failed entries trigger Error severity
 //! - **Suggested Action**: Check S3 credentials, permissions, and file formats
 //!
 //! ### 6. ReplicationDiagnostic (Replicated* tables only)
 //! Monitors replication health, queue backlogs, and stuck replication entries.
 //! - **Sources**: `system.replication_queue`, `system.replicas`
 //! - **Detection**:
-//!   - Large queue backlogs (queue_size > 10)
+//!   - Large queue backlogs (queue_size > 10 or > 100 for replicas health)
 //!   - Stuck entries (num_tries > 3 or has exceptions)
-//!   - Replica health issues (readonly, session_expired, high delay)
+//!   - Replica health issues (readonly, session_expired, high delay > 300s)
 //! - **Thresholds**:
-//!   - Error: queue_size > 50, num_tries > 10, delay > 300s, readonly
-//!   - Warning: queue_size > 10, 3 < num_tries ≤ 10
+//!   - Error: queue_size > 50, num_tries > 10, session_expired, delay > 600s
+//!   - Warning: queue_size > 10, 3 < num_tries ≤ 10, readonly, 300s < delay ≤ 600s
 //! - **Suggested Action**: Check ZooKeeper connectivity, restart replication queues
 //!
 //! ### 7. MergeFailureDiagnostic
