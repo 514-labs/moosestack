@@ -410,12 +410,20 @@ async fn get_consumption_api_res(
     is_prod: bool,
     proxy_port: u16,
 ) -> Result<Response<Full<Bytes>>, anyhow::Error> {
+    let returned_response = Response::builder()
+        .header("Access-Control-Allow-Origin", "*")
+        .header("Access-Control-Allow-Methods", "GET, POST")
+        .header(
+            "Access-Control-Allow-Headers",
+            "Authorization, Content-Type, baggage, sentry-trace, traceparent, tracestate",
+        );
+
     // Extract the Authorization header and check the bearer token
     let auth_header = req.headers().get(hyper::header::AUTHORIZATION);
 
     // JWT config for consumption api is handled in user's api files
     if !check_authorization(auth_header, &MOOSE_CONSUMPTION_API_KEY, &None).await {
-        return Ok(Response::builder()
+        return Ok(returned_response
             .status(StatusCode::UNAUTHORIZED)
             .body(Full::new(Bytes::from(
                 "Unauthorized: Invalid or missing token",
@@ -475,14 +483,8 @@ async fn get_consumption_api_res(
     let status = res.status();
     let body = res.bytes().await?;
 
-    let returned_response = Response::builder()
+    returned_response
         .status(status)
-        .header("Access-Control-Allow-Origin", "*")
-        .header("Access-Control-Allow-Methods", "GET, POST")
-        .header(
-            "Access-Control-Allow-Headers",
-            "Authorization, Content-Type, baggage, sentry-trace, traceparent, tracestate",
-        )
         .header("Content-Type", "application/json")
         .body(Full::new(body))
         .unwrap();
