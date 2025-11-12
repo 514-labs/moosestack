@@ -1523,4 +1523,104 @@ pub mod tests {
         let indexes = extract_indexes_from_create_table(NESTED_OBJECTS_SQL).unwrap();
         assert_eq!(indexes.len(), 0);
     }
+
+    // =========================================================
+    // Property-Based Tests with Proptest
+    // =========================================================
+
+    mod proptests {
+        use super::*;
+        use proptest::prelude::*;
+
+        proptest! {
+            /// Test that extraction functions never panic on arbitrary strings
+            /// They should always return None/empty result or a valid extraction
+            #[test]
+            fn test_extract_engine_never_panics(s in "\\PC{0,500}") {
+                let _ = extract_engine_from_create_table(&s);
+                // If we reach here, the function didn't panic
+            }
+
+            #[test]
+            fn test_extract_settings_never_panics(s in "\\PC{0,500}") {
+                let _ = extract_table_settings_from_create_table(&s);
+                // If we reach here, the function didn't panic
+            }
+
+            #[test]
+            fn test_extract_sample_by_never_panics(s in "\\PC{0,500}") {
+                let _ = extract_sample_by_from_create_table(&s);
+                // If we reach here, the function didn't panic
+            }
+
+            #[test]
+            fn test_extract_indexes_never_panics(s in "\\PC{0,500}") {
+                let _ = extract_indexes_from_create_table(&s);
+                // If we reach here, the function didn't panic
+            }
+
+            /// Test engine extraction with various parentheses nesting
+            #[test]
+            fn test_extract_engine_with_nested_parens(
+                engine_name in "[A-Za-z][A-Za-z0-9_]{0,15}",
+                nesting_depth in 0u32..5,
+            ) {
+                // Create SQL with nested parentheses
+                let open_parens = "(".repeat(nesting_depth as usize);
+                let close_parens = ")".repeat(nesting_depth as usize);
+                let sql = format!("CREATE TABLE test ENGINE = {}{}params{}", engine_name, open_parens, close_parens);
+
+                let result = extract_engine_from_create_table(&sql);
+                prop_assert!(result.is_some(), "Should extract engine from valid SQL");
+
+                let extracted = result.unwrap();
+                prop_assert!(
+                    extracted.starts_with(&engine_name),
+                    "Extracted engine '{}' should start with '{}'",
+                    extracted,
+                    engine_name
+                );
+            }
+
+            /// Test that engine extraction handles escaped strings correctly
+            #[test]
+            fn test_extract_engine_with_string_params(
+                engine_name in "[A-Za-z][A-Za-z0-9_]{0,15}",
+                param_value in "[a-z0-9_]{0,20}",
+            ) {
+                // Test with string parameter containing potential confusing characters
+                let sql = format!("CREATE TABLE test ENGINE = {}('{}') SETTINGS", engine_name, param_value);
+
+                let result = extract_engine_from_create_table(&sql);
+                prop_assert!(result.is_some(), "Should extract engine from SQL with string params");
+
+                let extracted = result.unwrap();
+                prop_assert!(
+                    extracted.contains(&param_value),
+                    "Extracted engine '{}' should contain param '{}'",
+                    extracted,
+                    param_value
+                );
+            }
+
+            /// Test that SAMPLE BY extraction stops at correct keywords
+            #[test]
+            fn test_sample_by_stops_at_keywords(
+                expr in "[a-z0-9_]+",
+                terminator in prop_oneof![
+                    Just("ORDER BY"),
+                    Just("SETTINGS"),
+                    Just("PRIMARY KEY"),
+                ],
+            ) {
+                let sql = format!("CREATE TABLE test (...) SAMPLE BY {} {} x", expr, terminator);
+
+                let result = extract_sample_by_from_create_table(&sql);
+                prop_assert!(result.is_some(), "Should extract SAMPLE BY expression");
+
+                let extracted = result.unwrap();
+                prop_assert_eq!(extracted.trim(), expr, "Should stop before keyword");
+            }
+        }
+    }
 }

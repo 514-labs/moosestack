@@ -177,3 +177,66 @@ pub fn find_previous_version(
         .find(|v| parse_version(v) < parse_version(version))
         .cloned()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use proptest::prelude::*;
+
+    proptest! {
+        /// Test that parse_version never panics on arbitrary strings
+        #[test]
+        fn test_parse_version_never_panics(s in "\\PC{0,100}") {
+            let _ = parse_version(&s);
+            // If we reach here, the function didn't panic
+        }
+
+        /// Test that version_to_string produces valid output
+        #[test]
+        fn test_version_to_string_never_panics(v in prop::collection::vec(any::<i32>(), 0..10)) {
+            let result = version_to_string(&v);
+            // Should always produce a string
+            prop_assert!(!result.is_empty() || v.is_empty());
+        }
+
+        /// Test the roundtrip property for valid version strings
+        /// parse(to_string(parsed)) should equal the original parsed version
+        #[test]
+        fn test_version_roundtrip(parts in prop::collection::vec(0i32..1000, 1..5)) {
+            let as_string = version_to_string(&parts);
+            let reparsed = parse_version(&as_string);
+            prop_assert_eq!(reparsed, parts);
+        }
+
+        /// Test that Version comparison is consistent
+        #[test]
+        fn test_version_comparison_consistent(
+            a in prop::collection::vec(0i32..100, 1..4),
+            b in prop::collection::vec(0i32..100, 1..4),
+        ) {
+            let v1 = Version::from_string(version_to_string(&a));
+            let v2 = Version::from_string(version_to_string(&b));
+
+            // Compare using references to avoid moves
+            let cmp_result = v1.cmp(&v2);
+            let expected_cmp = a.cmp(&b);
+
+            prop_assert_eq!(cmp_result, expected_cmp, "Version comparison should match vector comparison");
+        }
+
+        /// Test that as_suffix replaces dots with underscores correctly
+        #[test]
+        fn test_as_suffix_property(parts in prop::collection::vec(0i32..100, 1..5)) {
+            let version = Version::from_string(version_to_string(&parts));
+            let suffix = version.as_suffix();
+
+            // Should not contain dots
+            prop_assert!(!suffix.contains('.'), "Suffix should not contain dots: {}", suffix);
+
+            // Should contain underscores as separators (if more than one part)
+            if parts.len() > 1 {
+                prop_assert!(suffix.contains('_'), "Suffix should contain underscores: {}", suffix);
+            }
+        }
+    }
+}

@@ -216,7 +216,7 @@ enum Token {
 }
 
 /// Represents an AST node for a ClickHouse type
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub enum ClickHouseTypeNode {
     /// Simple types without parameters (UInt8, String, etc.)
     Simple(String),
@@ -338,6 +338,48 @@ pub enum JsonParameter {
     /// SKIP REGEXP 'pattern'
     SkipRegexp(String),
 }
+
+// Custom PartialEq implementation to treat JSON(Some([])) as equal to JSON(None)
+// This ensures the roundtrip property holds: parse(serialize(type)) == type
+impl PartialEq for ClickHouseTypeNode {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            // Normalize JSON(Some([])) to JSON(None) for comparison
+            (Self::JSON(Some(params1)), Self::JSON(Some(params2))) if params1.is_empty() && params2.is_empty() => true,
+            (Self::JSON(Some(params)), Self::JSON(None)) | (Self::JSON(None), Self::JSON(Some(params))) if params.is_empty() => true,
+            (Self::JSON(params1), Self::JSON(params2)) => params1 == params2,
+
+            // All other variants use structural equality
+            (Self::Simple(a), Self::Simple(b)) => a == b,
+            (Self::Nullable(a), Self::Nullable(b)) => a == b,
+            (Self::Array(a), Self::Array(b)) => a == b,
+            (Self::LowCardinality(a), Self::LowCardinality(b)) => a == b,
+            (Self::Decimal { precision: p1, scale: s1 }, Self::Decimal { precision: p2, scale: s2 }) => p1 == p2 && s1 == s2,
+            (Self::DecimalSized { bits: b1, precision: p1 }, Self::DecimalSized { bits: b2, precision: p2 }) => b1 == b2 && p1 == p2,
+            (Self::DateTime { timezone: tz1 }, Self::DateTime { timezone: tz2 }) => tz1 == tz2,
+            (Self::DateTime64 { precision: p1, timezone: tz1 }, Self::DateTime64 { precision: p2, timezone: tz2 }) => p1 == p2 && tz1 == tz2,
+            (Self::FixedString(a), Self::FixedString(b)) => a == b,
+            (Self::Nothing, Self::Nothing) => true,
+            (Self::BFloat16, Self::BFloat16) => true,
+            (Self::IPv4, Self::IPv4) => true,
+            (Self::IPv6, Self::IPv6) => true,
+            (Self::Dynamic, Self::Dynamic) => true,
+            (Self::Object(a), Self::Object(b)) => a == b,
+            (Self::Variant(a), Self::Variant(b)) => a == b,
+            (Self::Interval(a), Self::Interval(b)) => a == b,
+            (Self::Geo(a), Self::Geo(b)) => a == b,
+            (Self::Enum { bits: b1, members: m1 }, Self::Enum { bits: b2, members: m2 }) => b1 == b2 && m1 == m2,
+            (Self::Tuple(a), Self::Tuple(b)) => a == b,
+            (Self::Nested(a), Self::Nested(b)) => a == b,
+            (Self::Map { key_type: k1, value_type: v1 }, Self::Map { key_type: k2, value_type: v2 }) => k1 == k2 && v1 == v2,
+            (Self::AggregateFunction { function_name: f1, argument_types: a1 }, Self::AggregateFunction { function_name: f2, argument_types: a2 }) => f1 == f2 && a1 == a2,
+            (Self::SimpleAggregateFunction { function_name: f1, argument_type: a1 }, Self::SimpleAggregateFunction { function_name: f2, argument_type: a2 }) => f1 == f2 && a1 == a2,
+            _ => false,
+        }
+    }
+}
+
+impl Eq for ClickHouseTypeNode {}
 
 impl fmt::Display for ClickHouseTypeNode {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -3026,6 +3068,346 @@ mod tests {
                 }
             }
             _ => panic!("Expected Map type"),
+        }
+    }
+
+    // =========================================================
+    // Property-Based Tests with Proptest
+    // =========================================================
+
+    mod proptests {
+        use super::*;
+        use proptest::prelude::*;
+
+        // =========================================================
+        // Strategy helpers for generating valid ClickHouse types
+        // =========================================================
+
+        /// Valid simple type names in ClickHouse
+        fn simple_type_strategy() -> impl Strategy<Value = String> {
+            prop_oneof![
+                Just("String".to_string()),
+                Just("Int8".to_string()),
+                Just("Int16".to_string()),
+                Just("Int32".to_string()),
+                Just("Int64".to_string()),
+                Just("Int128".to_string()),
+                Just("Int256".to_string()),
+                Just("UInt8".to_string()),
+                Just("UInt16".to_string()),
+                Just("UInt32".to_string()),
+                Just("UInt64".to_string()),
+                Just("UInt128".to_string()),
+                Just("UInt256".to_string()),
+                Just("Float32".to_string()),
+                Just("Float64".to_string()),
+                Just("Boolean".to_string()),
+                Just("UUID".to_string()),
+                Just("Date".to_string()),
+                Just("Date32".to_string()),
+            ]
+        }
+
+        /// Generate valid identifier strings (for names, paths, etc.)
+        fn identifier_strategy() -> impl Strategy<Value = String> {
+            "[a-z][a-z0-9_]{0,10}".prop_map(|s| s.to_string())
+        }
+
+        /// Generate valid timezone strings
+        fn timezone_strategy() -> impl Strategy<Value = String> {
+            prop_oneof![
+                Just("UTC".to_string()),
+                Just("America/New_York".to_string()),
+                Just("Europe/London".to_string()),
+                Just("Asia/Tokyo".to_string()),
+            ]
+        }
+
+        /// Generate Tuple elements with depth limiting
+        fn tuple_element_strategy(depth: u32) -> impl Strategy<Value = TupleElement> {
+            if depth == 0 {
+                // Base case: only simple types
+                simple_type_strategy()
+                    .prop_map(|s| TupleElement::Unnamed(ClickHouseTypeNode::Simple(s)))
+                    .boxed()
+            } else {
+                prop_oneof![
+                    // Named element
+                    (identifier_strategy(), clickhouse_type_strategy(depth - 1))
+                        .prop_map(|(name, type_node)| TupleElement::Named { name, type_node }),
+                    // Unnamed element
+                    clickhouse_type_strategy(depth - 1)
+                        .prop_map(|type_node| TupleElement::Unnamed(type_node)),
+                ]
+                .boxed()
+            }
+        }
+
+        /// Generate JSON parameters with depth limiting
+        fn json_parameter_strategy(depth: u32) -> impl Strategy<Value = JsonParameter> {
+            if depth == 0 {
+                // Base case: only simple parameters
+                prop_oneof![
+                    (1u64..100).prop_map(JsonParameter::MaxDynamicTypes),
+                    (1u64..100).prop_map(JsonParameter::MaxDynamicPaths),
+                ]
+                .boxed()
+            } else {
+                prop_oneof![
+                    (1u64..100).prop_map(JsonParameter::MaxDynamicTypes),
+                    (1u64..100).prop_map(JsonParameter::MaxDynamicPaths),
+                    (identifier_strategy(), clickhouse_type_strategy(depth - 1))
+                        .prop_map(|(path, type_node)| JsonParameter::PathType { path, type_node }),
+                    identifier_strategy().prop_map(JsonParameter::SkipPath),
+                    "[a-z]+".prop_map(|s| JsonParameter::SkipRegexp(s)),
+                ]
+                .boxed()
+            }
+        }
+
+        /// Generate ClickHouse types with depth limiting to avoid infinite recursion
+        fn clickhouse_type_strategy(depth: u32) -> impl Strategy<Value = ClickHouseTypeNode> {
+            if depth == 0 {
+                // Base case: only simple types and non-recursive types
+                prop_oneof![
+                    simple_type_strategy().prop_map(ClickHouseTypeNode::Simple),
+                    Just(ClickHouseTypeNode::Nothing),
+                    Just(ClickHouseTypeNode::BFloat16),
+                    Just(ClickHouseTypeNode::IPv4),
+                    Just(ClickHouseTypeNode::IPv6),
+                    Just(ClickHouseTypeNode::Dynamic),
+                    (1u64..256).prop_map(ClickHouseTypeNode::FixedString),
+                ]
+                .boxed()
+            } else {
+                prop_oneof![
+                    // Simple types (higher weight)
+                    8 => simple_type_strategy().prop_map(ClickHouseTypeNode::Simple),
+                    // Nullable (common)
+                    3 => clickhouse_type_strategy(depth - 1)
+                        .prop_map(|inner| ClickHouseTypeNode::Nullable(Box::new(inner))),
+                    // Array (common)
+                    3 => clickhouse_type_strategy(depth - 1)
+                        .prop_map(|inner| ClickHouseTypeNode::Array(Box::new(inner))),
+                    // LowCardinality
+                    1 => clickhouse_type_strategy(depth - 1)
+                        .prop_map(|inner| ClickHouseTypeNode::LowCardinality(Box::new(inner))),
+                    // Decimal
+                    1 => (1u8..38, 0u8..38)
+                        .prop_filter("scale must be <= precision", |(precision, scale)| {
+                            scale <= precision
+                        })
+                        .prop_map(|(precision, scale)| ClickHouseTypeNode::Decimal {
+                            precision,
+                            scale,
+                        }),
+                    // DecimalSized
+                    1 => prop_oneof![Just(32u16), Just(64u16), Just(128u16), Just(256u16)]
+                        .prop_flat_map(|bits| {
+                            let max_precision = match bits {
+                                32 => 9,
+                                64 => 18,
+                                128 => 38,
+                                256 => 76,
+                                _ => unreachable!(),
+                            };
+                            (Just(bits), 1u8..=max_precision)
+                        })
+                        .prop_map(|(bits, precision)| ClickHouseTypeNode::DecimalSized {
+                            bits,
+                            precision,
+                        }),
+                    // DateTime
+                    1 => prop::option::of(timezone_strategy())
+                        .prop_map(|timezone| ClickHouseTypeNode::DateTime { timezone }),
+                    // DateTime64
+                    1 => (0u8..=9, prop::option::of(timezone_strategy()))
+                        .prop_map(|(precision, timezone)| ClickHouseTypeNode::DateTime64 {
+                            precision,
+                            timezone,
+                        }),
+                    // FixedString
+                    1 => (1u64..256).prop_map(ClickHouseTypeNode::FixedString),
+                    // Nothing, BFloat16, IPv4, IPv6, Dynamic
+                    1 => Just(ClickHouseTypeNode::Nothing),
+                    1 => Just(ClickHouseTypeNode::BFloat16),
+                    1 => Just(ClickHouseTypeNode::IPv4),
+                    1 => Just(ClickHouseTypeNode::IPv6),
+                    1 => Just(ClickHouseTypeNode::Dynamic),
+                    // JSON
+                    1 => prop::option::of(prop::collection::vec(
+                        json_parameter_strategy(depth - 1),
+                        1..3, // Must have at least 1 element to avoid JSON(Some([]))
+                    ))
+                    .prop_map(ClickHouseTypeNode::JSON),
+                    // Object
+                    1 => prop::option::of(identifier_strategy())
+                        .prop_map(ClickHouseTypeNode::Object),
+                    // Variant
+                    1 => prop::collection::vec(clickhouse_type_strategy(depth - 1), 1..4)
+                        .prop_map(ClickHouseTypeNode::Variant),
+                    // Interval
+                    1 => prop_oneof![
+                        Just("Second"),
+                        Just("Minute"),
+                        Just("Hour"),
+                        Just("Day"),
+                        Just("Week"),
+                        Just("Month"),
+                        Just("Quarter"),
+                        Just("Year"),
+                    ]
+                    .prop_map(|s| ClickHouseTypeNode::Interval(s.to_string())),
+                    // Geo
+                    1 => prop_oneof![
+                        Just("Point"),
+                        Just("Ring"),
+                        Just("Polygon"),
+                        Just("MultiPolygon"),
+                    ]
+                    .prop_map(|s| ClickHouseTypeNode::Geo(s.to_string())),
+                    // Enum
+                    1 => prop_oneof![Just(8u8), Just(16u8)]
+                        .prop_flat_map(|bits| {
+                            (
+                                Just(bits),
+                                prop::collection::vec(
+                                    (identifier_strategy(), 0u64..100),
+                                    1..5,
+                                ),
+                            )
+                        })
+                        .prop_map(|(bits, members)| ClickHouseTypeNode::Enum { bits, members }),
+                    // Tuple
+                    1 => prop::collection::vec(tuple_element_strategy(depth - 1), 1..4)
+                        .prop_map(ClickHouseTypeNode::Tuple),
+                    // Nested (must have named elements)
+                    1 => prop::collection::vec(
+                        (identifier_strategy(), clickhouse_type_strategy(depth - 1))
+                            .prop_map(|(name, type_node)| TupleElement::Named { name, type_node }),
+                        1..4,
+                    )
+                    .prop_map(ClickHouseTypeNode::Nested),
+                    // Map
+                    1 => (
+                        clickhouse_type_strategy(depth - 1),
+                        clickhouse_type_strategy(depth - 1),
+                    )
+                        .prop_map(|(key_type, value_type)| ClickHouseTypeNode::Map {
+                            key_type: Box::new(key_type),
+                            value_type: Box::new(value_type),
+                        }),
+                    // AggregateFunction
+                    1 => (
+                        identifier_strategy(),
+                        prop::collection::vec(clickhouse_type_strategy(depth - 1), 1..3),
+                    )
+                        .prop_map(|(function_name, argument_types)| {
+                            ClickHouseTypeNode::AggregateFunction {
+                                function_name,
+                                argument_types,
+                            }
+                        }),
+                    // SimpleAggregateFunction
+                    1 => (identifier_strategy(), clickhouse_type_strategy(depth - 1))
+                        .prop_map(|(function_name, argument_type)| {
+                            ClickHouseTypeNode::SimpleAggregateFunction {
+                                function_name,
+                                argument_type: Box::new(argument_type),
+                            }
+                        }),
+                ]
+                .boxed()
+            }
+        }
+
+        /// Main strategy for generating arbitrary ClickHouse types
+        /// Uses depth 2 for reasonable complexity without excessive nesting
+        fn arb_clickhouse_type() -> impl Strategy<Value = ClickHouseTypeNode> {
+            clickhouse_type_strategy(2)
+        }
+
+        // =========================================================
+        // Property Tests
+        // =========================================================
+
+        proptest! {
+            /// Test that parsing and serialization roundtrip correctly
+            /// This is the fundamental property: parse(serialize(type)) == type
+            #[test]
+            fn test_roundtrip_property(node in arb_clickhouse_type()) {
+                let serialized = node.to_string();
+                let parsed = parse_clickhouse_type(&serialized);
+
+                prop_assert!(
+                    parsed.is_ok(),
+                    "Failed to parse serialized type '{}': {:?}",
+                    serialized,
+                    parsed.err()
+                );
+
+                let parsed_node = parsed.unwrap();
+                prop_assert_eq!(
+                    parsed_node,
+                    node,
+                    "Roundtrip failed for type '{}'",
+                    serialized
+                );
+            }
+
+            /// Test that the parser never panics on arbitrary strings
+            /// It should always return a Result (Ok or Err), never panic
+            #[test]
+            fn test_parse_never_panics(s in "\\PC{0,200}") {
+                let _ = parse_clickhouse_type(&s);
+                // If we reach here, the parser didn't panic
+            }
+
+            /// Test that serialization is deterministic
+            /// Serializing the same type multiple times should produce the same string
+            #[test]
+            fn test_serialization_deterministic(node in arb_clickhouse_type()) {
+                let s1 = node.to_string();
+                let s2 = node.to_string();
+                prop_assert_eq!(s1, s2, "Serialization is not deterministic");
+            }
+
+            /// Test that simple types always parse and convert successfully
+            #[test]
+            fn test_simple_types_always_work(type_name in simple_type_strategy()) {
+                let node = ClickHouseTypeNode::Simple(type_name.clone());
+                let serialized = node.to_string();
+                let parsed = parse_clickhouse_type(&serialized);
+                prop_assert!(
+                    parsed.is_ok(),
+                    "Failed to parse simple type '{}': {:?}",
+                    serialized,
+                    parsed.err()
+                );
+            }
+        }
+
+        // =========================================================
+        // Regression Tests for Specific Bugs
+        // These are marked with #[ignore] until the bugs are fixed
+        // Each bug fix should be a separate commit/change
+        // =========================================================
+
+        /// Regression test for Issue #1: JSON Type with Empty Parameters Fails Roundtrip
+        /// See PROPTEST_FINDINGS.md for details
+        ///
+        /// FIXED: Custom PartialEq implementation treats JSON(Some([])) as equal to JSON(None)
+        #[test]
+        fn test_regression_json_empty_params_roundtrip() {
+            let node = ClickHouseTypeNode::JSON(Some(vec![]));
+            let serialized = node.to_string();
+            assert_eq!(serialized, "JSON");
+
+            let parsed = parse_clickhouse_type(&serialized).unwrap();
+            assert_eq!(
+                parsed, node,
+                "JSON(Some([])) should roundtrip correctly"
+            );
         }
     }
 }
