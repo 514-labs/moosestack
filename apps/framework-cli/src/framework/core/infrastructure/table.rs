@@ -1418,16 +1418,16 @@ impl EnumValue {
     pub fn from_proto(proto: crate::proto::infrastructure_map::EnumValue) -> Self {
         match proto.value.unwrap() {
             crate::proto::infrastructure_map::enum_value::Value::IntValue(i) => {
-                // Validate that the i32 value fits within i16 range before casting
-                if i < i16::MIN as i32 || i > i16::MAX as i32 {
+                // Use try_from for safe, checked conversion from i32 to i16
+                let value = i16::try_from(i).unwrap_or_else(|_| {
                     panic!(
                         "Enum value {} is out of range for i16 (valid range: {} to {})",
                         i,
                         i16::MIN,
                         i16::MAX
-                    );
-                }
-                EnumValue::Int(i as i16)
+                    )
+                });
+                EnumValue::Int(value)
             }
             crate::proto::infrastructure_map::enum_value::Value::StringValue(s) => {
                 EnumValue::String(s)
