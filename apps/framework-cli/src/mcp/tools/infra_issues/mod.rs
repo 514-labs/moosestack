@@ -250,11 +250,11 @@ pub struct DiagnoseInfraParams {
 /// Component information for issue context
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Component {
-    #[serde(rename = "type")]
     pub component_type: String,
     pub name: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub database: Option<String>,
+    /// Flexible metadata for component-specific context (e.g., database, namespace, cluster)
+    #[serde(skip_serializing_if = "HashMap::is_empty")]
+    pub metadata: HashMap<String, String>,
 }
 
 /// Detailed information about an infrastructure issue
@@ -288,7 +288,7 @@ pub struct DiagnosticOutput {
 
 impl DiagnosticOutput {
     /// Create a new diagnostic output and compute summary statistics
-    fn new(infrastructure_type: InfrastructureType, issues: Vec<Issue>) -> Self {
+    pub fn new(infrastructure_type: InfrastructureType, issues: Vec<Issue>) -> Self {
         let mut by_severity = HashMap::new();
         let mut by_component = HashMap::new();
 
@@ -314,8 +314,11 @@ impl DiagnosticOutput {
     }
 }
 
-/// Trait for diagnostic providers
-/// Each provider implements checks for a specific aspect of infrastructure health
+/// Trait for ClickHouse diagnostic providers
+/// Each provider implements checks for a specific aspect of ClickHouse infrastructure health
+///
+/// Note: Currently ClickHouse-specific. Will need refactoring to support other
+/// infrastructure types (Kafka, Temporal, etc.) in the future.
 #[async_trait::async_trait]
 pub trait DiagnosticProvider: Send + Sync {
     /// Name of this diagnostic provider
@@ -555,10 +558,13 @@ async fn diagnose_clickhouse(
     let mut all_issues = Vec::new();
 
     for (_map_key, table) in tables_to_check {
+        let mut metadata = HashMap::new();
+        metadata.insert("database".to_string(), clickhouse_config.db_name.clone());
+
         let component = Component {
             component_type: "table".to_string(),
             name: table.name.clone(), // Use the actual table name, not the infra map key
-            database: Some(clickhouse_config.db_name.clone()),
+            metadata,
         };
 
         let engine = table.engine.as_ref();
@@ -601,10 +607,13 @@ async fn diagnose_clickhouse(
     }
 
     // Run system-wide diagnostics once
+    let mut system_metadata = HashMap::new();
+    system_metadata.insert("database".to_string(), clickhouse_config.db_name.clone());
+
     let system_component = Component {
         component_type: "system".to_string(),
         name: "clickhouse".to_string(),
-        database: Some(clickhouse_config.db_name.clone()),
+        metadata: system_metadata,
     };
 
     for provider in system_wide_providers {
@@ -788,7 +797,11 @@ mod tests {
                 component: Component {
                     component_type: "table".to_string(),
                     name: "users".to_string(),
-                    database: Some("test_db".to_string()),
+                    metadata: {
+                        let mut m = HashMap::new();
+                        m.insert("database".to_string(), "test_db".to_string());
+                        m
+                    },
                 },
                 error_type: "stuck_mutation".to_string(),
                 message: "Mutation stuck".to_string(),
@@ -802,7 +815,11 @@ mod tests {
                 component: Component {
                     component_type: "table".to_string(),
                     name: "users".to_string(),
-                    database: Some("test_db".to_string()),
+                    metadata: {
+                        let mut m = HashMap::new();
+                        m.insert("database".to_string(), "test_db".to_string());
+                        m
+                    },
                 },
                 error_type: "excessive_parts".to_string(),
                 message: "Too many parts".to_string(),
@@ -816,7 +833,11 @@ mod tests {
                 component: Component {
                     component_type: "table".to_string(),
                     name: "orders".to_string(),
-                    database: Some("test_db".to_string()),
+                    metadata: {
+                        let mut m = HashMap::new();
+                        m.insert("database".to_string(), "test_db".to_string());
+                        m
+                    },
                 },
                 error_type: "failed_mutation".to_string(),
                 message: "Mutation failed".to_string(),
