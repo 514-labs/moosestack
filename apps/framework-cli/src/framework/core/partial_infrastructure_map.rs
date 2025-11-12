@@ -156,6 +156,16 @@ struct DistributedConfig {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct IcebergS3Config {
+    path: String,
+    format: String,
+    aws_access_key_id: Option<String>,
+    aws_secret_access_key: Option<String>,
+    compression: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
 #[serde(tag = "engine", rename_all = "camelCase")]
 enum EngineConfig {
     #[serde(rename = "MergeTree")]
@@ -227,6 +237,9 @@ enum EngineConfig {
 
     #[serde(rename = "Distributed")]
     Distributed(Box<DistributedConfig>),
+
+    #[serde(rename = "IcebergS3")]
+    IcebergS3(Box<IcebergS3Config>),
 }
 
 #[derive(Debug, Deserialize)]
@@ -821,6 +834,17 @@ impl PartialInfrastructureMap {
                 sharding_key: config.sharding_key.clone(),
                 policy_name: config.policy_name.clone(),
             })),
+
+            Some(EngineConfig::IcebergS3(config)) => {
+                // Keep environment variable markers as-is - credentials will be resolved at runtime
+                Ok(Some(ClickhouseEngine::IcebergS3 {
+                    path: config.path.clone(),
+                    format: config.format.clone(),
+                    aws_access_key_id: config.aws_access_key_id.clone(),
+                    aws_secret_access_key: config.aws_secret_access_key.clone(),
+                    compression: config.compression.clone(),
+                }))
+            }
 
             None => Ok(None),
         }
