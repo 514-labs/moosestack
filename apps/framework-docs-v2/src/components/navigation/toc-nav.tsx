@@ -124,7 +124,7 @@ export function TOCNav({ headings, helpfulLinks }: TOCNavProps) {
 
   return (
     <aside className="fixed top-[--header-height] right-0 z-30 hidden h-[calc(100vh-var(--header-height))] w-64 shrink-0 overflow-y-auto xl:block">
-      <div className="pt-6 lg:pt-8 pb-6 px-4">
+      <div className="pt-6 lg:pt-8 pb-6 pr-2">
         {headings.length > 0 && (
           <div className="mb-6">
             <h4 className="mb-3 text-sm font-semibold">On this page</h4>
