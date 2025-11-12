@@ -101,7 +101,7 @@ export function TopNav({
         {
           label: "Guides",
           href: "/guides",
-          section: "moosestack" as DocumentationSection,
+          section: "guides" as DocumentationSection,
         },
       ]
     : []),
