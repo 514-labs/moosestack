@@ -401,6 +401,17 @@ impl Default for LocalWebserverConfig {
     }
 }
 
+/// Helper function to add CORS headers to a response builder
+fn add_cors_headers(builder: hyper::http::response::Builder) -> hyper::http::response::Builder {
+    builder
+        .header("Access-Control-Allow-Origin", "*")
+        .header("Access-Control-Allow-Methods", "GET, POST")
+        .header(
+            "Access-Control-Allow-Headers",
+            "Authorization, Content-Type, baggage, sentry-trace, traceparent, tracestate",
+        )
+}
+
 #[tracing::instrument(skip(consumption_apis, req, is_prod), fields(uri = %req.uri(), method = %req.method(), headers = ?req.headers()))]
 async fn get_consumption_api_res(
     http_client: Arc<Client>,
@@ -415,7 +426,7 @@ async fn get_consumption_api_res(
 
     // JWT config for consumption api is handled in user's api files
     if !check_authorization(auth_header, &MOOSE_CONSUMPTION_API_KEY, &None).await {
-        return Ok(Response::builder()
+        return Ok(add_cors_headers(Response::builder())
             .status(StatusCode::UNAUTHORIZED)
             .body(Full::new(Bytes::from(
                 "Unauthorized: Invalid or missing token",
@@ -475,14 +486,8 @@ async fn get_consumption_api_res(
     let status = res.status();
     let body = res.bytes().await?;
 
-    let returned_response = Response::builder()
+    let returned_response = add_cors_headers(Response::builder())
         .status(status)
-        .header("Access-Control-Allow-Origin", "*")
-        .header("Access-Control-Allow-Methods", "GET, POST")
-        .header(
-            "Access-Control-Allow-Headers",
-            "Authorization, Content-Type, baggage, sentry-trace, traceparent, tracestate",
-        )
         .header("Content-Type", "application/json")
         .body(Full::new(body))
         .unwrap();
@@ -629,14 +634,9 @@ impl<I: InfraMapProvider + Clone + Send + 'static> Service<Request<Incoming>>
 }
 
 fn options_route() -> Result<Response<Full<Bytes>>, hyper::http::Error> {
-    let response = Response::builder()
+    let response = add_cors_headers(Response::builder())
         .status(StatusCode::OK)
-        .header("Access-Control-Allow-Origin", "*")
         .header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-        .header(
-            "Access-Control-Allow-Headers",
-            "Authorization, Content-Type, baggage, sentry-trace, traceparent, tracestate",
-        )
         .body(Full::new(Bytes::from("Success")))
         .unwrap();
 
@@ -657,7 +657,7 @@ async fn workflows_history_route(
     if is_prod {
         let auth_header = req.headers().get(hyper::header::AUTHORIZATION);
         if !check_authorization(auth_header, &MOOSE_CONSUMPTION_API_KEY, &None).await {
-            return Response::builder()
+            return add_cors_headers(Response::builder())
                 .status(StatusCode::UNAUTHORIZED)
                 .body(Full::new(Bytes::from(
                     "Unauthorized: Invalid or missing token",
@@ -678,10 +678,9 @@ async fn workflows_history_route(
             let json_string =
                 serde_json::to_string(&workflows).unwrap_or_else(|_| "[]".to_string());
 
-            Response::builder()
+            add_cors_headers(Response::builder())
                 .status(StatusCode::OK)
                 .header("Content-Type", "application/json")
-                .header("Access-Control-Allow-Origin", "*")
                 .body(Full::new(Bytes::from(json_string)))
         }
         Err(e) => {
@@ -691,7 +690,7 @@ async fn workflows_history_route(
                 "details": format!("{:?}", e)
             });
 
-            Response::builder()
+            add_cors_headers(Response::builder())
                 .status(StatusCode::INTERNAL_SERVER_ERROR)
                 .header("Content-Type", "application/json")
                 .body(Full::new(Bytes::from(
@@ -711,7 +710,7 @@ async fn workflows_trigger_route(
     if is_prod {
         let auth_header = req.headers().get(hyper::header::AUTHORIZATION);
         if !check_authorization(auth_header, &MOOSE_CONSUMPTION_API_KEY, &None).await {
-            return Response::builder()
+            return add_cors_headers(Response::builder())
                 .status(StatusCode::UNAUTHORIZED)
                 .body(Full::new(Bytes::from(
                     "Unauthorized: Invalid or missing token",
@@ -729,10 +728,9 @@ async fn workflows_trigger_route(
         Err(e) => match e.classify() {
             serde_json::error::Category::Eof => None,
             _ => {
-                return Response::builder()
+                return add_cors_headers(Response::builder())
                     .status(StatusCode::BAD_REQUEST)
                     .header("Content-Type", "application/json")
-                    .header("Access-Control-Allow-Origin", "*")
                     .body(Full::new(Bytes::from(
                         serde_json::to_string(&serde_json::json!({
                             "error": "Invalid JSON body",
@@ -755,18 +753,16 @@ async fn workflows_trigger_route(
                 payload["dashboardUrl"] = serde_json::Value::String(dashboard_url);
             }
 
-            Response::builder()
+            add_cors_headers(Response::builder())
                 .status(StatusCode::OK)
                 .header("Content-Type", "application/json")
-                .header("Access-Control-Allow-Origin", "*")
                 .body(Full::new(Bytes::from(
                     serde_json::to_string(&payload).unwrap(),
                 )))
         }
-        Err(e) => Response::builder()
+        Err(e) => add_cors_headers(Response::builder())
             .status(StatusCode::BAD_REQUEST)
             .header("Content-Type", "application/json")
-            .header("Access-Control-Allow-Origin", "*")
             .body(Full::new(Bytes::from(
                 serde_json::to_string(&serde_json::json!({
                     "error": "Failed to start workflow",
@@ -786,7 +782,7 @@ async fn workflows_terminate_route(
     if is_prod {
         let auth_header = req.headers().get(hyper::header::AUTHORIZATION);
         if !check_authorization(auth_header, &MOOSE_CONSUMPTION_API_KEY, &None).await {
-            return Response::builder()
+            return add_cors_headers(Response::builder())
                 .status(StatusCode::UNAUTHORIZED)
                 .body(Full::new(Bytes::from(
                     "Unauthorized: Invalid or missing token",
@@ -795,10 +791,9 @@ async fn workflows_terminate_route(
     }
 
     match terminate_workflow(&project, &workflow_name).await {
-        Ok(success) => Response::builder()
+        Ok(success) => add_cors_headers(Response::builder())
             .status(StatusCode::OK)
             .header("Content-Type", "application/json")
-            .header("Access-Control-Allow-Origin", "*")
             .body(Full::new(Bytes::from(
                 serde_json::to_string(&serde_json::json!({
                     "status": "terminated",
@@ -806,10 +801,9 @@ async fn workflows_terminate_route(
                 }))
                 .unwrap(),
             ))),
-        Err(err) => Response::builder()
+        Err(err) => add_cors_headers(Response::builder())
             .status(StatusCode::BAD_REQUEST)
             .header("Content-Type", "application/json")
-            .header("Access-Control-Allow-Origin", "*")
             .body(Full::new(Bytes::from(
                 serde_json::to_string(&serde_json::json!({
                     "error": "Failed to terminate workflow",
