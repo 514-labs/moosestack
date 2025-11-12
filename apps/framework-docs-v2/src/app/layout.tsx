@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import { Suspense } from "react";
+import { cookies } from "next/headers";
 import "@/styles/globals.css";
 import { ThemeProvider } from "@/components/theme-provider";
 import { LanguageProviderWrapper } from "@/components/language-provider-wrapper";
@@ -10,25 +11,30 @@ import { Toaster } from "@/components/ui/sonner";
 import { ScrollRestoration } from "@/components/scroll-restoration";
 import { getGitHubStars } from "@/lib/github-stars";
 import { showHostingSection, showGuidesSection } from "@/flags";
+import { VercelToolbar } from "@vercel/toolbar/next";
 
 export const metadata: Metadata = {
   title: "MooseStack Documentation",
   description: "Build data-intensive applications with MooseStack",
 };
 
+// Force dynamic to enable cookie-based flag overrides
+export const dynamic = "force-dynamic";
+
 export default async function RootLayout({
   children,
 }: Readonly<{
   children: ReactNode;
 }>) {
-  // Fetch GitHub stars on the server with caching
   const stars = await getGitHubStars();
 
-  // Resolve feature flags server-side
+  // Evaluate feature flags (reads cookies automatically for overrides)
   const [showHosting, showGuides] = await Promise.all([
     showHostingSection().catch(() => false),
     showGuidesSection().catch(() => false),
   ]);
+
+  const shouldInjectToolbar = process.env.NODE_ENV === "development";
 
   return (
     <html lang="en" suppressHydrationWarning>
@@ -58,6 +64,7 @@ export default async function RootLayout({
           </Suspense>
           <Toaster position="top-center" />
         </ThemeProvider>
+        {shouldInjectToolbar && <VercelToolbar />}
       </body>
     </html>
   );

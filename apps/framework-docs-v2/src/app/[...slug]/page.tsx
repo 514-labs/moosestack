@@ -4,8 +4,7 @@ import { getAllSlugs, parseMarkdownContent } from "@/lib/content";
 import { TOCNav } from "@/components/navigation/toc-nav";
 import { MDXRenderer } from "@/components/mdx-renderer";
 
-// Force static generation
-export const dynamic = "force-static";
+export const dynamic = "force-dynamic";
 
 interface PageProps {
   params: Promise<{
