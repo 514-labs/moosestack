@@ -1302,14 +1302,13 @@ impl Parser {
                     match self.current_token() {
                         Token::NumberLiteral(n) => {
                             // Use try_from for safe, checked conversion from i64 to u64
-                            let num = u64::try_from(*n).map_err(|_| {
-                                ParseError::InvalidParameter {
+                            let num =
+                                u64::try_from(*n).map_err(|_| ParseError::InvalidParameter {
                                     type_name: "JSON".to_string(),
                                     message: format!(
                                         "max_dynamic_types must be non-negative, got {n}"
                                     ),
-                                }
-                            })?;
+                                })?;
                             self.advance();
                             parameters.push(JsonParameter::MaxDynamicTypes(num));
                         }
@@ -1327,14 +1326,13 @@ impl Parser {
                     match self.current_token() {
                         Token::NumberLiteral(n) => {
                             // Use try_from for safe, checked conversion from i64 to u64
-                            let num = u64::try_from(*n).map_err(|_| {
-                                ParseError::InvalidParameter {
+                            let num =
+                                u64::try_from(*n).map_err(|_| ParseError::InvalidParameter {
                                     type_name: "JSON".to_string(),
                                     message: format!(
                                         "max_dynamic_paths must be non-negative, got {n}"
                                     ),
-                                }
-                            })?;
+                                })?;
                             self.advance();
                             parameters.push(JsonParameter::MaxDynamicPaths(num));
                         }
