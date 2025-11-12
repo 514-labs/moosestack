@@ -251,6 +251,18 @@ pub enum ClickhouseEngine {
         // Optional policy name
         policy_name: Option<String>,
     },
+    IcebergS3 {
+        // S3 path to Iceberg table root
+        path: String,
+        // Data format (Parquet or ORC)
+        format: String,
+        // AWS access key ID (optional, None for NOSIGN)
+        aws_access_key_id: Option<String>,
+        // AWS secret access key (optional)
+        aws_secret_access_key: Option<String>,
+        // Compression type (optional: gzip, zstd, etc.)
+        compression: Option<String>,
+    },
 }
 
 // The implementation is not symetric between TryFrom and Into so we
@@ -365,6 +377,19 @@ impl Into<String> for ClickhouseEngine {
                 &target_table,
                 &sharding_key,
                 &policy_name,
+            ),
+            ClickhouseEngine::IcebergS3 {
+                path,
+                format,
+                aws_access_key_id,
+                aws_secret_access_key,
+                compression,
+            } => Self::serialize_icebergs3_for_display(
+                &path,
+                &format,
+                &aws_access_key_id,
+                &aws_secret_access_key,
+                &compression,
             ),
         }
     }
@@ -742,6 +767,7 @@ impl ClickhouseEngine {
             }
             s if s.starts_with("S3Queue(") => Self::parse_regular_s3queue(s, value),
             s if s.starts_with("S3(") => Self::parse_regular_s3(s, value),
+            s if s.starts_with("Iceberg(") => Self::parse_regular_icebergs3(s, value),
             _ => Err(value),
         }
     }
@@ -786,6 +812,77 @@ impl ClickhouseEngine {
         } else {
             Err(original_value)
         }
+    }
+
+    /// Parse regular Iceberg with parameters
+    fn parse_regular_icebergs3<'a>(
+        engine_name: &str,
+        original_value: &'a str,
+    ) -> Result<Self, &'a str> {
+        if let Some(content) = engine_name
+            .strip_prefix("Iceberg(")
+            .and_then(|s| s.strip_suffix(")"))
+        {
+            Self::parse_icebergs3(content).map_err(|_| original_value)
+        } else {
+            Err(original_value)
+        }
+    }
+
+    /// Parse Iceberg engine content
+    /// Format: Iceberg('path', [NOSIGN | 'key', 'secret'], 'format'[, 'compression'])
+    /// or simplified: Iceberg('path', 'format'[, 'compression'])
+    fn parse_icebergs3(content: &str) -> Result<Self, String> {
+        let parts = parse_quoted_csv(content);
+
+        if parts.len() < 2 {
+            return Err("Iceberg requires at least path and format".to_string());
+        }
+
+        let path = parts[0].clone();
+
+        // Check if second parameter is NOSIGN or a format
+        // If it's "Parquet" or "ORC", then it's format (no credentials)
+        // Otherwise, it might be a credential or NOSIGN
+        let (format, compression) = if parts.len() == 2 {
+            // Simple case: Iceberg('path', 'format')
+            (parts[1].clone(), None)
+        } else if parts.len() == 3 {
+            // Could be: Iceberg('path', 'format', 'compression')
+            // or Iceberg('path', NOSIGN, 'format')
+            if parts[1] == "NOSIGN" || parts[1] == "Parquet" || parts[1] == "ORC" {
+                // Iceberg('path', NOSIGN, 'format') or Iceberg('path', 'format', 'compression')
+                if parts[1] == "NOSIGN" {
+                    (parts[2].clone(), None)
+                } else {
+                    (parts[1].clone(), Some(parts[2].clone()))
+                }
+            } else {
+                // Assume it's credentials: Iceberg('path', 'key', 'secret') - but missing format
+                return Err("Iceberg with credentials requires format parameter".to_string());
+            }
+        } else if parts.len() == 4 {
+            // Iceberg('path', 'key', 'secret', 'format')
+            // or Iceberg('path', NOSIGN, 'format', 'compression')
+            if parts[1] == "NOSIGN" {
+                (parts[2].clone(), Some(parts[3].clone()))
+            } else {
+                (parts[3].clone(), None)
+            }
+        } else if parts.len() >= 5 {
+            // Iceberg('path', 'key', 'secret', 'format', 'compression')
+            (parts[3].clone(), Some(parts[4].clone()))
+        } else {
+            return Err("Invalid Iceberg format".to_string());
+        };
+
+        Ok(ClickhouseEngine::IcebergS3 {
+            path,
+            format,
+            aws_access_key_id: None, // Credentials not parsed from DDL for security
+            aws_secret_access_key: None,
+            compression,
+        })
     }
 
     /// Parse regular SummingMergeTree with parameters
@@ -979,6 +1076,16 @@ impl ClickhouseEngine {
                 target_table,
                 sharding_key,
                 policy_name,
+            ),
+            ClickhouseEngine::IcebergS3 {
+                path,
+                format,
+                compression,
+                ..  // Omit credentials for protobuf
+            } => Self::serialize_icebergs3(
+                path,
+                format,
+                compression,
             ),
         }
     }
@@ -1269,6 +1376,55 @@ impl ClickhouseEngine {
         // Add partition columns if present
         if let Some(pc) = partition_columns_in_data_file {
             result.push_str(&format!(", partition_columns='{}'", pc));
+        }
+
+        result.push(')');
+        result
+    }
+
+    /// Serialize Iceberg engine to string format for display (with masked credentials)
+    /// Format: Iceberg('url', [NOSIGN | 'access_key_id', 'secret_access_key'], 'format'[, 'compression'])
+    fn serialize_icebergs3_for_display(
+        path: &str,
+        format: &str,
+        aws_access_key_id: &Option<String>,
+        aws_secret_access_key: &Option<String>,
+        compression: &Option<String>,
+    ) -> String {
+        let mut result = format!("Iceberg('{}'", path);
+
+        // Add authentication info for display - uses shared masking logic
+        match (aws_access_key_id, aws_secret_access_key) {
+            (Some(key_id), Some(secret)) => {
+                let masked_secret = Self::mask_secret(secret);
+                result.push_str(&format!(", '{}', '{}'", key_id, masked_secret));
+            }
+            _ => {
+                // No credentials provided - using NOSIGN for public buckets or IAM roles
+                result.push_str(", NOSIGN");
+            }
+        }
+
+        // Add format
+        result.push_str(&format!(", '{}'", format));
+
+        // Add compression if present
+        if let Some(comp) = compression {
+            result.push_str(&format!(", '{}'", comp));
+        }
+
+        result.push(')');
+        result
+    }
+
+    /// Serialize Iceberg engine to string format for proto storage (without credentials)
+    /// Format: Iceberg('url', 'format'[, 'compression'])
+    fn serialize_icebergs3(path: &str, format: &str, compression: &Option<String>) -> String {
+        let mut result = format!("Iceberg('{}', '{}'", path, format);
+
+        // Add compression if present
+        if let Some(comp) = compression {
+            result.push_str(&format!(", '{}'", comp));
         }
 
         result.push(')');
@@ -1953,6 +2109,23 @@ impl ClickhouseEngine {
                     hasher.update("null".as_bytes());
                 }
             }
+            ClickhouseEngine::IcebergS3 {
+                path,
+                format,
+                compression,
+                ..
+            } => {
+                hasher.update("Iceberg".as_bytes());
+                hasher.update(path.as_bytes());
+                hasher.update(format.as_bytes());
+
+                // Hash optional compression
+                if let Some(comp) = compression {
+                    hasher.update(comp.as_bytes());
+                } else {
+                    hasher.update("null".as_bytes());
+                }
+            }
         }
 
         format!("{:x}", hasher.finalize())
@@ -2336,6 +2509,36 @@ pub fn create_table_query(
             }
 
             format!("Distributed({})", engine_parts.join(", "))
+        }
+        ClickhouseEngine::IcebergS3 {
+            path,
+            format,
+            aws_access_key_id,
+            aws_secret_access_key,
+            compression,
+        } => {
+            let mut engine_parts = vec![format!("'{}'", path)];
+
+            // Add credentials or NOSIGN
+            match (aws_access_key_id, aws_secret_access_key) {
+                (Some(key_id), Some(secret)) => {
+                    engine_parts.push(format!("'{}'", key_id));
+                    engine_parts.push(format!("'{}'", secret));
+                }
+                _ => {
+                    engine_parts.push("NOSIGN".to_string());
+                }
+            }
+
+            // Add format
+            engine_parts.push(format!("'{}'", format));
+
+            // Add optional compression
+            if let Some(comp) = compression {
+                engine_parts.push(format!("'{}'", comp));
+            }
+
+            format!("Iceberg({})", engine_parts.join(", "))
         }
     };
 
@@ -4484,5 +4687,175 @@ ENGINE = S3Queue('s3://my-bucket/data/*.csv', NOSIGN, 'CSV')"#;
             }
             _ => panic!("Expected ReplacingMergeTree"),
         }
+    }
+
+    #[test]
+    fn test_icebergs3_display_with_credentials() {
+        let engine = ClickhouseEngine::IcebergS3 {
+            path: "s3://bucket/warehouse/table/".to_string(),
+            format: "Parquet".to_string(),
+            aws_access_key_id: Some("AKIATEST".to_string()),
+            aws_secret_access_key: Some("secretkey123".to_string()),
+            compression: Some("gzip".to_string()),
+        };
+
+        let display: String = engine.clone().into();
+        assert!(display.contains("Iceberg"));
+        assert!(display.contains("s3://bucket/warehouse/table/"));
+        assert!(display.contains("AKIATEST"));
+        assert!(display.contains("secr...y123")); // Masked secret (first 4 + ... + last 4)
+        assert!(display.contains("Parquet"));
+        assert!(display.contains("gzip"));
+    }
+
+    #[test]
+    fn test_icebergs3_display_with_nosign() {
+        let engine = ClickhouseEngine::IcebergS3 {
+            path: "s3://public-bucket/table/".to_string(),
+            format: "ORC".to_string(),
+            aws_access_key_id: None,
+            aws_secret_access_key: None,
+            compression: None,
+        };
+
+        let display: String = engine.into();
+        assert!(display.contains("Iceberg"));
+        assert!(display.contains("NOSIGN"));
+        assert!(display.contains("ORC"));
+    }
+
+    #[test]
+    fn test_icebergs3_protobuf_serialization() {
+        let engine = ClickhouseEngine::IcebergS3 {
+            path: "s3://bucket/table/".to_string(),
+            format: "Parquet".to_string(),
+            aws_access_key_id: Some("key".to_string()),
+            aws_secret_access_key: Some("secret".to_string()),
+            compression: None,
+        };
+
+        let proto = engine.to_proto_string();
+        assert!(!proto.contains("key")); // Credentials excluded
+        assert!(!proto.contains("secret"));
+        assert!(proto.contains("s3://bucket/table/"));
+        assert!(proto.contains("Parquet"));
+    }
+
+    #[test]
+    fn test_icebergs3_parse_simple() {
+        // Simple format: Iceberg('path', 'format')
+        let input = "Iceberg('s3://bucket/table/', 'Parquet')";
+        let engine = ClickhouseEngine::try_from(input).unwrap();
+
+        match engine {
+            ClickhouseEngine::IcebergS3 {
+                path,
+                format,
+                aws_access_key_id,
+                aws_secret_access_key,
+                compression,
+            } => {
+                assert_eq!(path, "s3://bucket/table/");
+                assert_eq!(format, "Parquet");
+                assert_eq!(aws_access_key_id, None);
+                assert_eq!(aws_secret_access_key, None);
+                assert_eq!(compression, None);
+            }
+            _ => panic!("Expected Iceberg engine"),
+        }
+    }
+
+    #[test]
+    fn test_icebergs3_parse_with_compression() {
+        // Format: Iceberg('path', 'format', 'compression')
+        let input = "Iceberg('s3://bucket/table/', 'ORC', 'gzip')";
+        let engine = ClickhouseEngine::try_from(input).unwrap();
+
+        match engine {
+            ClickhouseEngine::IcebergS3 {
+                path,
+                format,
+                compression,
+                ..
+            } => {
+                assert_eq!(path, "s3://bucket/table/");
+                assert_eq!(format, "ORC");
+                assert_eq!(compression, Some("gzip".to_string()));
+            }
+            _ => panic!("Expected Iceberg engine"),
+        }
+    }
+
+    #[test]
+    fn test_icebergs3_parse_with_nosign() {
+        // Format: Iceberg('path', NOSIGN, 'format')
+        let input = "Iceberg('s3://public-bucket/table/', NOSIGN, 'Parquet')";
+        let engine = ClickhouseEngine::try_from(input).unwrap();
+
+        match engine {
+            ClickhouseEngine::IcebergS3 { path, format, .. } => {
+                assert_eq!(path, "s3://public-bucket/table/");
+                assert_eq!(format, "Parquet");
+            }
+            _ => panic!("Expected Iceberg engine"),
+        }
+    }
+
+    #[test]
+    fn test_icebergs3_parse_with_credentials() {
+        // Format: Iceberg('path', 'key', 'secret', 'format')
+        let input = "Iceberg('s3://bucket/table/', 'AKIATEST', 'secretkey', 'Parquet')";
+        let engine = ClickhouseEngine::try_from(input).unwrap();
+
+        match engine {
+            ClickhouseEngine::IcebergS3 { path, format, .. } => {
+                assert_eq!(path, "s3://bucket/table/");
+                assert_eq!(format, "Parquet");
+                // Credentials are not parsed for security
+            }
+            _ => panic!("Expected Iceberg engine"),
+        }
+    }
+
+    #[test]
+    fn test_icebergs3_parse_with_credentials_and_compression() {
+        // Format: Iceberg('path', 'key', 'secret', 'format', 'compression')
+        let input = "Iceberg('s3://bucket/table/', 'AKIATEST', 'secretkey', 'ORC', 'zstd')";
+        let engine = ClickhouseEngine::try_from(input).unwrap();
+
+        match engine {
+            ClickhouseEngine::IcebergS3 {
+                path,
+                format,
+                compression,
+                ..
+            } => {
+                assert_eq!(path, "s3://bucket/table/");
+                assert_eq!(format, "ORC");
+                assert_eq!(compression, Some("zstd".to_string()));
+            }
+            _ => panic!("Expected Iceberg engine"),
+        }
+    }
+
+    #[test]
+    fn test_icebergs3_roundtrip() {
+        let engine = ClickhouseEngine::IcebergS3 {
+            path: "s3://test-bucket/warehouse/events/".to_string(),
+            format: "Parquet".to_string(),
+            aws_access_key_id: None,
+            aws_secret_access_key: None,
+            compression: Some("gzip".to_string()),
+        };
+
+        // Convert to string and back
+        let display: String = engine.clone().into();
+        assert!(display.contains("Iceberg"));
+
+        // Proto serialization should work
+        let proto = engine.to_proto_string();
+        assert!(proto.contains("s3://test-bucket/warehouse/events/"));
+        assert!(proto.contains("Parquet"));
+        assert!(proto.contains("gzip"));
     }
 }
