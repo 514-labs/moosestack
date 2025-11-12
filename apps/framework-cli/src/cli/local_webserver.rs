@@ -405,7 +405,7 @@ impl Default for LocalWebserverConfig {
 fn add_cors_headers(builder: hyper::http::response::Builder) -> hyper::http::response::Builder {
     builder
         .header("Access-Control-Allow-Origin", "*")
-        .header("Access-Control-Allow-Methods", "GET, POST")
+        .header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
         .header(
             "Access-Control-Allow-Headers",
             "Authorization, Content-Type, baggage, sentry-trace, traceparent, tracestate",
@@ -636,7 +636,6 @@ impl<I: InfraMapProvider + Clone + Send + 'static> Service<Request<Incoming>>
 fn options_route() -> Result<Response<Full<Bytes>>, hyper::http::Error> {
     let response = add_cors_headers(Response::builder())
         .status(StatusCode::OK)
-        .header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
         .body(Full::new(Bytes::from("Success")))
         .unwrap();
 
