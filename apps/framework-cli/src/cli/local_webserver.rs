@@ -2584,7 +2584,7 @@ impl Webserver {
 
         // Use different timeouts for dev vs production:
         // - Dev: 2 seconds (balance between fast shutdown and allowing in-flight requests to complete)
-        // - Production: 10 seconds (allow load balancers time to drain connections during rolling deployments)
+        // - Production: 30 seconds (allow load balancers time to drain connections during rolling deployments)
         let shutdown_timeout = if project.is_production {
             std::time::Duration::from_secs(30)
         } else {
