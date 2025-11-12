@@ -334,6 +334,12 @@ pub trait DiagnosticProvider: Send + Sync {
     /// Check if this provider is applicable to the given component
     fn applicable_to(&self, component: &Component, engine: Option<&ClickhouseEngine>) -> bool;
 
+    /// Check if this provider is system-wide (not component-specific)
+    /// System-wide providers are run once, not per-component
+    fn is_system_wide(&self) -> bool {
+        false
+    }
+
     /// Run diagnostics and return list of issues found
     async fn diagnose(
         &self,
@@ -551,6 +557,10 @@ async fn diagnose_clickhouse(
     // Create diagnostic providers
     let providers = create_clickhouse_providers();
 
+    // Separate component-specific and system-wide providers
+    let component_providers: Vec<_> = providers.iter().filter(|p| !p.is_system_wide()).collect();
+    let system_wide_providers: Vec<_> = providers.iter().filter(|p| p.is_system_wide()).collect();
+
     // Run diagnostics for each table
     let mut all_issues = Vec::new();
 
@@ -563,8 +573,8 @@ async fn diagnose_clickhouse(
 
         let engine = table.engine.as_ref();
 
-        // Run each applicable provider
-        for provider in &providers {
+        // Run each applicable component-specific provider
+        for provider in &component_providers {
             if provider.applicable_to(&component, engine) {
                 debug!(
                     "Running {} diagnostic for table {}",
@@ -596,6 +606,37 @@ async fn diagnose_clickhouse(
                         // Continue with other providers even if one fails
                     }
                 }
+            }
+        }
+    }
+
+    // Run system-wide diagnostics once
+    let system_component = Component {
+        component_type: "system".to_string(),
+        name: "clickhouse".to_string(),
+        database: Some(clickhouse_config.db_name.clone()),
+    };
+
+    for provider in system_wide_providers {
+        debug!("Running system-wide {} diagnostic", provider.name());
+
+        match provider
+            .diagnose(
+                &system_component,
+                None,
+                clickhouse_config,
+                params.since.as_deref(),
+            )
+            .await
+        {
+            Ok(mut issues) => {
+                // Filter by severity
+                issues.retain(|issue| params.severity.includes(&issue.severity));
+                all_issues.extend(issues);
+            }
+            Err(e) => {
+                debug!("System-wide provider {} failed: {}", provider.name(), e);
+                // Continue with other providers even if one fails
             }
         }
     }

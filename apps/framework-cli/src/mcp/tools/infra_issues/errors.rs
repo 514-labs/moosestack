@@ -21,7 +21,12 @@ impl DiagnosticProvider for ErrorStatsDiagnostic {
     }
 
     fn applicable_to(&self, _component: &Component, _engine: Option<&ClickhouseEngine>) -> bool {
-        // Error stats are system-wide, check only once (for first component)
+        // Error stats are system-wide, not component-specific
+        // This should be run separately outside the component loop
+        false
+    }
+
+    fn is_system_wide(&self) -> bool {
         true
     }
 
