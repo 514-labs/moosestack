@@ -8,10 +8,22 @@ import {
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { IconDatabase, IconCloud, IconSparkles } from "@tabler/icons-react";
+import { showHostingSection, showAiSection } from "@/flags";
+import { cn } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 
-export default function HomePage() {
+export default async function HomePage() {
+  // Evaluate feature flags
+  const [showHosting, showAi] = await Promise.all([
+    showHostingSection().catch(() => false),
+    showAiSection().catch(() => true),
+  ]);
+
+  // Calculate number of visible cards based on flags
+  // MooseStack is always visible (1), plus conditional cards
+  const cardCount = 1 + (showHosting ? 1 : 0) + (showAi ? 1 : 0);
+
   const sections = [
     {
       title: "MooseStack",
@@ -20,20 +32,28 @@ export default function HomePage() {
       href: `/moosestack`,
       icon: IconDatabase,
     },
-    {
-      title: "Hosting",
-      description:
-        "Deploy and host your MooseStack applications with our managed hosting platform.",
-      href: `/hosting/overview`,
-      icon: IconCloud,
-    },
-    {
-      title: "AI",
-      description:
-        "AI-powered features and integrations for enhancing your MooseStack applications.",
-      href: `/ai/overview`,
-      icon: IconSparkles,
-    },
+    ...(showHosting ?
+      [
+        {
+          title: "Hosting",
+          description:
+            "Deploy and host your MooseStack applications with our managed hosting platform.",
+          href: `/hosting/overview`,
+          icon: IconCloud,
+        },
+      ]
+    : []),
+    ...(showAi ?
+      [
+        {
+          title: "AI",
+          description:
+            "AI-powered features and integrations for enhancing your MooseStack applications.",
+          href: `/ai/overview`,
+          icon: IconSparkles,
+        },
+      ]
+    : []),
   ];
 
   return (
@@ -46,7 +66,13 @@ export default function HomePage() {
           </p>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div
+          className={cn("grid grid-cols-1 gap-6", {
+            "md:grid-cols-1 md:max-w-md md:mx-auto": cardCount === 1,
+            "md:grid-cols-2": cardCount === 2,
+            "md:grid-cols-3": cardCount === 3,
+          })}
+        >
           {sections.map((section) => {
             const Icon = section.icon;
             return (

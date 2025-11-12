@@ -3,6 +3,8 @@ import type { Metadata } from "next";
 import { getAllSlugs, parseMarkdownContent } from "@/lib/content";
 import { TOCNav } from "@/components/navigation/toc-nav";
 import { MDXRenderer } from "@/components/mdx-renderer";
+import { DocBreadcrumbs } from "@/components/navigation/doc-breadcrumbs";
+import { buildDocBreadcrumbs } from "@/lib/breadcrumbs";
 
 export const dynamic = "force-dynamic";
 
@@ -21,12 +23,13 @@ export async function generateStaticParams() {
     slug: slug.split("/"),
   }));
 
-  // Also add section index routes (moosestack, ai, hosting)
+  // Also add section index routes (moosestack, ai, hosting, templates)
   // These map to section/index.mdx files
   allParams.push(
     { slug: ["moosestack"] },
     { slug: ["ai"] },
     { slug: ["hosting"] },
+    { slug: ["templates"] },
   );
 
   return allParams;
@@ -85,13 +88,23 @@ export default async function DocPage({ params }: PageProps) {
     notFound();
   }
 
+  const breadcrumbs = buildDocBreadcrumbs(
+    slug,
+    typeof content.frontMatter.title === "string" ?
+      content.frontMatter.title
+    : undefined,
+  );
+
   return (
     <>
-      <article className="prose prose-slate dark:prose-invert max-w-none w-full min-w-0">
-        {content.isMDX ?
-          <MDXRenderer source={content.content} />
-        : <div dangerouslySetInnerHTML={{ __html: content.content }} />}
-      </article>
+      <div className="flex w-full flex-col gap-6 pt-4">
+        <DocBreadcrumbs items={breadcrumbs} />
+        <article className="prose prose-slate dark:prose-invert max-w-none w-full min-w-0">
+          {content.isMDX ?
+            <MDXRenderer source={content.content} />
+          : <div dangerouslySetInnerHTML={{ __html: content.content }} />}
+        </article>
+      </div>
       <TOCNav
         headings={content.headings}
         helpfulLinks={content.frontMatter.helpfulLinks}

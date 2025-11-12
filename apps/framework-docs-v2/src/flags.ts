@@ -35,3 +35,12 @@ export const showAiSection = flag<boolean>({
   origin: "https://us.i.posthog.com",
   identify,
 });
+
+export const showDataSourcesPage = flag<boolean>({
+  key: "show-data-sources-page",
+  adapter: postHogAdapter.isFeatureEnabled(),
+  defaultValue: false,
+  description: "Show Data sources page in navigation",
+  origin: "https://us.i.posthog.com",
+  identify,
+});

@@ -41,6 +41,14 @@ export const GET = createFlagsDiscoveryEndpoint(async () => {
           { value: true, label: "On" },
         ],
       },
+      "show-data-sources-page": {
+        description: "Show Data sources page in navigation",
+        origin: "https://us.i.posthog.com",
+        options: [
+          { value: false, label: "Off" },
+          { value: true, label: "On" },
+        ],
+      },
     },
   };
 });

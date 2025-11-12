@@ -53,6 +53,7 @@ export interface NavPage {
   languages: Language[];
   icon?: TablerIcon;
   children?: NavItem[]; // Allow NavItem[] to support labels/separators within children
+  external?: boolean; // If true, indicates this is a standalone page (not part of the current section)
 }
 
 /**
@@ -94,7 +95,12 @@ export type NavigationConfig = NavItem[];
 /**
  * Top-level documentation section
  */
-export type DocumentationSection = "moosestack" | "hosting" | "ai" | "guides";
+export type DocumentationSection =
+  | "moosestack"
+  | "hosting"
+  | "ai"
+  | "guides"
+  | "templates";
 
 /**
  * Navigation configuration for each documentation section
@@ -142,13 +148,14 @@ const moosestackNavigationConfig: NavigationConfig = [
     ],
   },
 
-  // Templates / Examples
+  // Templates / Examples (standalone page, shown in MooseStack nav with arrow)
   {
     type: "page",
-    slug: "moosestack/templates-examples",
+    slug: "templates",
     title: "Templates / Examples",
     icon: IconCode,
     languages: ["typescript", "python"],
+    external: true,
   },
 
   // Separator
@@ -847,6 +854,11 @@ const aiNavigationConfig: NavigationConfig = [
 ];
 
 /**
+ * Templates navigation configuration (empty - templates is a standalone page)
+ */
+const templatesNavigationConfig: NavigationConfig = [];
+
+/**
  * Guides navigation configuration
  */
 const guidesNavigationConfig: NavigationConfig = [
@@ -1043,6 +1055,11 @@ export const sectionNavigationConfigs: Record<
     title: "Guides",
     nav: guidesNavigationConfig,
   },
+  templates: {
+    id: "templates",
+    title: "Templates",
+    nav: templatesNavigationConfig,
+  },
 };
 
 /**
@@ -1086,6 +1103,9 @@ export function getSectionFromPathname(
   }
   if (segments[0] === "guides") {
     return "guides";
+  }
+  if (segments[0] === "templates") {
+    return "templates";
   }
   if (segments[0] === "moosestack") {
     return "moosestack";
@@ -1146,6 +1166,61 @@ export function buildNavItems(
   }
 
   return config
+    .map(filterNavItem)
+    .filter((item): item is NavItem => item !== null);
+}
+
+/**
+ * Filter navigation items based on feature flags
+ * Removes pages that should be hidden based on flags
+ */
+export function filterNavItemsByFlags(
+  items: NavItem[],
+  flags: { showDataSourcesPage?: boolean },
+): NavItem[] {
+  function filterNavItem(item: NavItem): NavItem | null {
+    if (item.type === "separator" || item.type === "label") {
+      return item;
+    }
+    if (item.type === "section") {
+      const filteredItems = item.items
+        .map(filterNavItem)
+        .filter((i): i is NavItem => i !== null);
+      const hasRealItems = filteredItems.some(
+        (i) =>
+          i.type === "page" || (i.type === "section" && i.items.length > 0),
+      );
+      if (!hasRealItems) {
+        return null;
+      }
+      return {
+        ...item,
+        items: filteredItems,
+      };
+    }
+    // item.type === "page"
+    const page = item as NavPage;
+
+    // Filter data-sources page if flag is off
+    if (page.slug === "moosestack/data-sources" && !flags.showDataSourcesPage) {
+      return null;
+    }
+
+    // Filter children recursively
+    const filteredChildren = page.children
+      ?.map(filterNavItem)
+      .filter((child): child is NavItem => child !== null);
+
+    return {
+      ...page,
+      children:
+        filteredChildren && filteredChildren.length > 0 ?
+          filteredChildren
+        : undefined,
+    };
+  }
+
+  return items
     .map(filterNavItem)
     .filter((item): item is NavItem => item !== null);
 }

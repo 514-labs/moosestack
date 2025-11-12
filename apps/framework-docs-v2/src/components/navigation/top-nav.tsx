@@ -92,9 +92,9 @@ export function TopNav({
     : []),
     {
       label: "Templates",
-      href: "/moosestack/templates-examples",
-      section: "moosestack",
-      isActive: (pathname: string) => pathname.includes("/templates-examples"),
+      href: "/templates",
+      section: "templates",
+      isActive: (pathname: string) => pathname.startsWith("/templates"),
     },
     ...(showGuides ?
       [
