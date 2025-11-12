@@ -21,7 +21,12 @@ impl DiagnosticProvider for MergeFailureDiagnostic {
     }
 
     fn applicable_to(&self, _component: &Component, _engine: Option<&ClickhouseEngine>) -> bool {
-        // Merge failures are system-wide but we report per-table for context
+        // Merge failures from system.metrics are system-wide, not component-specific
+        // This should be run separately outside the component loop
+        false
+    }
+
+    fn is_system_wide(&self) -> bool {
         true
     }
 
