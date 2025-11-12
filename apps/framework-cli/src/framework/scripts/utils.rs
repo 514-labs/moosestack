@@ -58,10 +58,9 @@ pub fn parse_timeout_to_seconds(timeout: &str) -> Result<i64, TemporalExecutionE
     }
 
     // Use character-aware slicing to handle multi-byte UTF-8 characters correctly
-    let unit_char = timeout
-        .chars()
-        .last()
-        .ok_or_else(|| TemporalExecutionError::TimeoutError("Timeout string is empty".to_string()))?;
+    let unit_char = timeout.chars().last().ok_or_else(|| {
+        TemporalExecutionError::TimeoutError("Timeout string is empty".to_string())
+    })?;
 
     // Get the byte index where the last character starts
     let value_str = &timeout[..timeout.len() - unit_char.len_utf8()];
@@ -70,17 +69,16 @@ pub fn parse_timeout_to_seconds(timeout: &str) -> Result<i64, TemporalExecutionE
         .parse()
         .map_err(|_| TemporalExecutionError::TimeoutError("Invalid number format".to_string()))?;
 
-    let seconds = match unit_char {
-        'h' => value * 3600,
-        'm' => value * 60,
-        's' => value,
-        _ => {
-            return Err(TemporalExecutionError::TimeoutError(
+    let seconds =
+        match unit_char {
+            'h' => value * 3600,
+            'm' => value * 60,
+            's' => value,
+            _ => return Err(TemporalExecutionError::TimeoutError(
                 "Invalid time unit. Must be h, m, or s for hours, minutes, or seconds respectively"
                     .to_string(),
-            ))
-        }
-    };
+            )),
+        };
 
     Ok(seconds as i64)
 }
@@ -168,6 +166,9 @@ mod tests {
     fn test_regression_timeout_multibyte_utf8() {
         // This currently panics: byte index 1 is not a char boundary
         let result = parse_timeout_to_seconds("®");
-        assert!(result.is_err(), "Should return error for invalid timeout format");
+        assert!(
+            result.is_err(),
+            "Should return error for invalid timeout format"
+        );
     }
 }

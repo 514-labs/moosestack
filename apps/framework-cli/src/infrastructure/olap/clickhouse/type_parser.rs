@@ -345,8 +345,17 @@ impl PartialEq for ClickHouseTypeNode {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
             // Normalize JSON(Some([])) to JSON(None) for comparison
-            (Self::JSON(Some(params1)), Self::JSON(Some(params2))) if params1.is_empty() && params2.is_empty() => true,
-            (Self::JSON(Some(params)), Self::JSON(None)) | (Self::JSON(None), Self::JSON(Some(params))) if params.is_empty() => true,
+            (Self::JSON(Some(params1)), Self::JSON(Some(params2)))
+                if params1.is_empty() && params2.is_empty() =>
+            {
+                true
+            }
+            (Self::JSON(Some(params)), Self::JSON(None))
+            | (Self::JSON(None), Self::JSON(Some(params)))
+                if params.is_empty() =>
+            {
+                true
+            }
             (Self::JSON(params1), Self::JSON(params2)) => params1 == params2,
 
             // All other variants use structural equality
@@ -354,10 +363,37 @@ impl PartialEq for ClickHouseTypeNode {
             (Self::Nullable(a), Self::Nullable(b)) => a == b,
             (Self::Array(a), Self::Array(b)) => a == b,
             (Self::LowCardinality(a), Self::LowCardinality(b)) => a == b,
-            (Self::Decimal { precision: p1, scale: s1 }, Self::Decimal { precision: p2, scale: s2 }) => p1 == p2 && s1 == s2,
-            (Self::DecimalSized { bits: b1, precision: p1 }, Self::DecimalSized { bits: b2, precision: p2 }) => b1 == b2 && p1 == p2,
+            (
+                Self::Decimal {
+                    precision: p1,
+                    scale: s1,
+                },
+                Self::Decimal {
+                    precision: p2,
+                    scale: s2,
+                },
+            ) => p1 == p2 && s1 == s2,
+            (
+                Self::DecimalSized {
+                    bits: b1,
+                    precision: p1,
+                },
+                Self::DecimalSized {
+                    bits: b2,
+                    precision: p2,
+                },
+            ) => b1 == b2 && p1 == p2,
             (Self::DateTime { timezone: tz1 }, Self::DateTime { timezone: tz2 }) => tz1 == tz2,
-            (Self::DateTime64 { precision: p1, timezone: tz1 }, Self::DateTime64 { precision: p2, timezone: tz2 }) => p1 == p2 && tz1 == tz2,
+            (
+                Self::DateTime64 {
+                    precision: p1,
+                    timezone: tz1,
+                },
+                Self::DateTime64 {
+                    precision: p2,
+                    timezone: tz2,
+                },
+            ) => p1 == p2 && tz1 == tz2,
             (Self::FixedString(a), Self::FixedString(b)) => a == b,
             (Self::Nothing, Self::Nothing) => true,
             (Self::BFloat16, Self::BFloat16) => true,
@@ -368,12 +404,48 @@ impl PartialEq for ClickHouseTypeNode {
             (Self::Variant(a), Self::Variant(b)) => a == b,
             (Self::Interval(a), Self::Interval(b)) => a == b,
             (Self::Geo(a), Self::Geo(b)) => a == b,
-            (Self::Enum { bits: b1, members: m1 }, Self::Enum { bits: b2, members: m2 }) => b1 == b2 && m1 == m2,
+            (
+                Self::Enum {
+                    bits: b1,
+                    members: m1,
+                },
+                Self::Enum {
+                    bits: b2,
+                    members: m2,
+                },
+            ) => b1 == b2 && m1 == m2,
             (Self::Tuple(a), Self::Tuple(b)) => a == b,
             (Self::Nested(a), Self::Nested(b)) => a == b,
-            (Self::Map { key_type: k1, value_type: v1 }, Self::Map { key_type: k2, value_type: v2 }) => k1 == k2 && v1 == v2,
-            (Self::AggregateFunction { function_name: f1, argument_types: a1 }, Self::AggregateFunction { function_name: f2, argument_types: a2 }) => f1 == f2 && a1 == a2,
-            (Self::SimpleAggregateFunction { function_name: f1, argument_type: a1 }, Self::SimpleAggregateFunction { function_name: f2, argument_type: a2 }) => f1 == f2 && a1 == a2,
+            (
+                Self::Map {
+                    key_type: k1,
+                    value_type: v1,
+                },
+                Self::Map {
+                    key_type: k2,
+                    value_type: v2,
+                },
+            ) => k1 == k2 && v1 == v2,
+            (
+                Self::AggregateFunction {
+                    function_name: f1,
+                    argument_types: a1,
+                },
+                Self::AggregateFunction {
+                    function_name: f2,
+                    argument_types: a2,
+                },
+            ) => f1 == f2 && a1 == a2,
+            (
+                Self::SimpleAggregateFunction {
+                    function_name: f1,
+                    argument_type: a1,
+                },
+                Self::SimpleAggregateFunction {
+                    function_name: f2,
+                    argument_type: a2,
+                },
+            ) => f1 == f2 && a1 == a2,
             _ => false,
         }
     }
@@ -3404,10 +3476,7 @@ mod tests {
             assert_eq!(serialized, "JSON");
 
             let parsed = parse_clickhouse_type(&serialized).unwrap();
-            assert_eq!(
-                parsed, node,
-                "JSON(Some([])) should roundtrip correctly"
-            );
+            assert_eq!(parsed, node, "JSON(Some([])) should roundtrip correctly");
         }
     }
 }
