@@ -1301,7 +1301,15 @@ impl Parser {
 
                     match self.current_token() {
                         Token::NumberLiteral(n) => {
-                            let num = *n as u64; // JSON parameters are always positive
+                            if *n < 0 {
+                                return Err(ParseError::InvalidParameter {
+                                    type_name: "JSON".to_string(),
+                                    message: format!(
+                                        "max_dynamic_types must be non-negative, got {n}"
+                                    ),
+                                });
+                            }
+                            let num = *n as u64;
                             self.advance();
                             parameters.push(JsonParameter::MaxDynamicTypes(num));
                         }
@@ -1318,7 +1326,15 @@ impl Parser {
 
                     match self.current_token() {
                         Token::NumberLiteral(n) => {
-                            let num = *n as u64; // JSON parameters are always positive
+                            if *n < 0 {
+                                return Err(ParseError::InvalidParameter {
+                                    type_name: "JSON".to_string(),
+                                    message: format!(
+                                        "max_dynamic_paths must be non-negative, got {n}"
+                                    ),
+                                });
+                            }
+                            let num = *n as u64;
                             self.advance();
                             parameters.push(JsonParameter::MaxDynamicPaths(num));
                         }
@@ -2938,6 +2954,36 @@ mod tests {
                 assert_eq!(opts.typed_paths[1].0, "status");
             }
             _ => panic!("Expected Json column type"),
+        }
+    }
+
+    #[test]
+    fn test_json_negative_max_dynamic_types() {
+        // Test that negative max_dynamic_types is rejected
+        let result = parse_clickhouse_type("JSON(max_dynamic_types = -5)");
+        assert!(result.is_err());
+        match result {
+            Err(ParseError::InvalidParameter { type_name, message }) => {
+                assert_eq!(type_name, "JSON");
+                assert!(message.contains("max_dynamic_types must be non-negative"));
+                assert!(message.contains("-5"));
+            }
+            _ => panic!("Expected InvalidParameter error"),
+        }
+    }
+
+    #[test]
+    fn test_json_negative_max_dynamic_paths() {
+        // Test that negative max_dynamic_paths is rejected
+        let result = parse_clickhouse_type("JSON(max_dynamic_paths = -10)");
+        assert!(result.is_err());
+        match result {
+            Err(ParseError::InvalidParameter { type_name, message }) => {
+                assert_eq!(type_name, "JSON");
+                assert!(message.contains("max_dynamic_paths must be non-negative"));
+                assert!(message.contains("-10"));
+            }
+            _ => panic!("Expected InvalidParameter error"),
         }
     }
 

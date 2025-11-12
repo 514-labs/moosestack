@@ -1418,6 +1418,15 @@ impl EnumValue {
     pub fn from_proto(proto: crate::proto::infrastructure_map::EnumValue) -> Self {
         match proto.value.unwrap() {
             crate::proto::infrastructure_map::enum_value::Value::IntValue(i) => {
+                // Validate that the i32 value fits within i16 range before casting
+                if i < i16::MIN as i32 || i > i16::MAX as i32 {
+                    panic!(
+                        "Enum value {} is out of range for i16 (valid range: {} to {})",
+                        i,
+                        i16::MIN,
+                        i16::MAX
+                    );
+                }
                 EnumValue::Int(i as i16)
             }
             crate::proto::infrastructure_map::enum_value::Value::StringValue(s) => {
@@ -1552,6 +1561,61 @@ mod tests {
 
         assert_eq!(column_without_comment, reconstructed);
         assert_eq!(reconstructed.comment, None);
+    }
+
+    #[test]
+    #[should_panic(expected = "Enum value 40000 is out of range for i16")]
+    fn test_enum_value_from_proto_out_of_range_positive() {
+        use crate::proto::infrastructure_map;
+
+        // Test that enum values > i16::MAX cause a panic
+        let proto = infrastructure_map::EnumValue {
+            value: Some(infrastructure_map::enum_value::Value::IntValue(40000)),
+            special_fields: Default::default(),
+        };
+
+        let _result = EnumValue::from_proto(proto); // Should panic
+    }
+
+    #[test]
+    #[should_panic(expected = "Enum value -40000 is out of range for i16")]
+    fn test_enum_value_from_proto_out_of_range_negative() {
+        use crate::proto::infrastructure_map;
+
+        // Test that enum values < i16::MIN cause a panic
+        let proto = infrastructure_map::EnumValue {
+            value: Some(infrastructure_map::enum_value::Value::IntValue(-40000)),
+            special_fields: Default::default(),
+        };
+
+        let _result = EnumValue::from_proto(proto); // Should panic
+    }
+
+    #[test]
+    fn test_enum_value_from_proto_valid_range() {
+        use crate::proto::infrastructure_map;
+
+        // Test that valid enum values work correctly
+        let proto_positive = infrastructure_map::EnumValue {
+            value: Some(infrastructure_map::enum_value::Value::IntValue(32767)),
+            special_fields: Default::default(),
+        };
+        let result_positive = EnumValue::from_proto(proto_positive);
+        assert_eq!(result_positive, EnumValue::Int(32767));
+
+        let proto_negative = infrastructure_map::EnumValue {
+            value: Some(infrastructure_map::enum_value::Value::IntValue(-32768)),
+            special_fields: Default::default(),
+        };
+        let result_negative = EnumValue::from_proto(proto_negative);
+        assert_eq!(result_negative, EnumValue::Int(-32768));
+
+        let proto_zero = infrastructure_map::EnumValue {
+            value: Some(infrastructure_map::enum_value::Value::IntValue(0)),
+            special_fields: Default::default(),
+        };
+        let result_zero = EnumValue::from_proto(proto_zero);
+        assert_eq!(result_zero, EnumValue::Int(0));
     }
 
     #[test]
