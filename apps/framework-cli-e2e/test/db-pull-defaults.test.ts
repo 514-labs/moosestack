@@ -206,7 +206,7 @@ describe("python template tests - db-pull with SQL function defaults", () => {
     expect(generatedCode).to.include("clickhouse_default(\"'active'\")");
     expect(generatedCode).to.include('clickhouse_default("42")');
 
-    // Verify Enum16 with values > 255 (ENG-XXXX: Enum16 support)
+    // Verify Enum16 with values > 255
     expect(generatedCode).to.include("OK = 200");
     expect(generatedCode).to.include("Created = 201");
     expect(generatedCode).to.include("NotFound = 404");
@@ -548,7 +548,7 @@ describe("typescript template tests - db-pull with SQL function defaults", () =>
     expect(generatedCode).to.include("ClickHouseDefault<\"'active'\">");
     expect(generatedCode).to.include('ClickHouseDefault<"42">');
 
-    // Verify Enum16 with values > 255 (ENG-XXXX: Enum16 support)
+    // Verify Enum16 with values > 255
     expect(generatedCode).to.include('"OK" = 200');
     expect(generatedCode).to.include('"Created" = 201');
     expect(generatedCode).to.include('"NotFound" = 404');
