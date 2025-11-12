@@ -259,6 +259,7 @@ mod tests {
             "query_olap",
             "get_stream_sample",
             "get_source",
+            "diagnose_infrastructure",
         ];
 
         let logs_tool = logs::tool_definition();
@@ -266,11 +267,13 @@ mod tests {
         let olap_tool = query_olap::tool_definition();
         let stream_tool = sample_stream::tool_definition();
         let get_source_tool = get_source::tool_definition();
+        let infra_issues_tool = infra_issues::tool_definition();
 
         assert_eq!(logs_tool.name, expected_tools[0]);
         assert_eq!(infra_tool.name, expected_tools[1]);
         assert_eq!(olap_tool.name, expected_tools[2]);
         assert_eq!(stream_tool.name, expected_tools[3]);
         assert_eq!(get_source_tool.name, expected_tools[4]);
+        assert_eq!(infra_issues_tool.name, expected_tools[5]);
     }
 }
