@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-use consumption_registry::ConsumptionError;
 use orchestration_workers_registry::OrchestrationWorkersRegistryError;
 use process_registry::ProcessRegistries;
 
@@ -32,9 +31,6 @@ pub enum SyncProcessChangesError {
 
     #[error("Failed in the blocks registry")]
     OlapProcess(#[from] BlocksError),
-
-    #[error("Failed in the analytics api registry")]
-    ConsumptionProcess(#[from] ConsumptionError),
 
     #[error("Failed in the orchestration workers registry")]
     OrchestrationWorkersRegistry(#[from] OrchestrationWorkersRegistryError),

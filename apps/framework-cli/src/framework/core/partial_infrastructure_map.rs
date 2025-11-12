@@ -46,7 +46,6 @@ use tokio::process::Child;
 use super::{
     infrastructure::{
         api_endpoint::{APIType, ApiEndpoint, Method},
-        consumption_webserver::ConsumptionApiWebServer,
         function_process::FunctionProcess,
         olap_process::OlapProcess,
         orchestration_worker::OrchestrationWorker,
@@ -61,7 +60,7 @@ use super::{
 use crate::framework::core::infrastructure::table::OrderBy;
 use crate::{
     framework::{
-        consumption::model::ConsumptionQueryParam, languages::SupportedLanguages,
+        core::infrastructure::api_endpoint::ConsumptionQueryParam, languages::SupportedLanguages,
         scripts::Workflow, versions::Version,
     },
     infrastructure::olap::clickhouse::queries::ClickhouseEngine,
