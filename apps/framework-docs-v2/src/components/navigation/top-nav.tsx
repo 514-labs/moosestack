@@ -1,9 +1,11 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname, useSearchParams } from "next/navigation";
 import { IconMenu, IconSearch } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
+import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
 import { useState, useEffect } from "react";
 import { SidebarTrigger } from "@/components/ui/sidebar";
@@ -18,9 +20,11 @@ import { CommandSearch } from "@/components/search/command-search";
 
 interface TopNavProps {
   stars: number | null;
+  showHosting: boolean;
+  showGuides: boolean;
 }
 
-export function TopNav({ stars }: TopNavProps) {
+export function TopNav({ stars, showHosting, showGuides }: TopNavProps) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const { language } = useLanguage();
@@ -62,11 +66,15 @@ export function TopNav({ stars }: TopNavProps) {
       href: "/moosestack",
       section: "moosestack",
     },
-    {
-      label: "Hosting",
-      href: "/hosting/overview",
-      section: "hosting",
-    },
+    ...(showHosting ?
+      [
+        {
+          label: "Hosting",
+          href: "/hosting/overview",
+          section: "hosting" as DocumentationSection,
+        },
+      ]
+    : []),
     {
       label: "AI",
       href: "/ai/overview",
@@ -76,16 +84,41 @@ export function TopNav({ stars }: TopNavProps) {
       label: "Templates",
       href: "/moosestack/templates-examples",
       section: "moosestack",
-      isActive: (pathname) => pathname.includes("/templates-examples"),
+      isActive: (pathname: string) => pathname.includes("/templates-examples"),
     },
+    ...(showGuides ?
+      [
+        {
+          label: "Guides",
+          href: "/guides",
+          section: "moosestack" as DocumentationSection,
+        },
+      ]
+    : []),
   ];
 
   return (
     <>
       <nav className="sticky top-0 z-50 w-full bg-background">
         <div className="flex h-[--header-height] items-center px-4">
-          <div className="mr-4 flex">
-            <Link href="/" className="mr-6 flex items-center space-x-2">
+          <div className="mr-4 flex items-center gap-2">
+            <Link
+              href="https://www.fiveonefour.com"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center"
+            >
+              <Image
+                src="/fiveonefour-logo.png"
+                alt="Fiveonefour"
+                width={32}
+                height={32}
+                className="h-8 w-8 rounded-lg"
+                priority
+              />
+            </Link>
+            <Separator orientation="vertical" className="h-4" />
+            <Link href="/" className="flex items-center ml-2">
               <span>
                 Fiveonefour<span className="text-muted-foreground"> Docs</span>
               </span>

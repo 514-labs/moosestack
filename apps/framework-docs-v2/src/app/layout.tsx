@@ -9,6 +9,7 @@ import { SidebarProvider } from "@/components/ui/sidebar";
 import { Toaster } from "@/components/ui/sonner";
 import { ScrollRestoration } from "@/components/scroll-restoration";
 import { getGitHubStars } from "@/lib/github-stars";
+import { showHostingSection, showGuidesSection } from "@/flags";
 
 export const metadata: Metadata = {
   title: "MooseStack Documentation",
@@ -22,6 +23,12 @@ export default async function RootLayout({
 }>) {
   // Fetch GitHub stars on the server with caching
   const stars = await getGitHubStars();
+
+  // Resolve feature flags server-side
+  const [showHosting, showGuides] = await Promise.all([
+    showHostingSection().catch(() => false),
+    showGuidesSection().catch(() => false),
+  ]);
 
   return (
     <html lang="en" suppressHydrationWarning>
@@ -38,7 +45,11 @@ export default async function RootLayout({
               <SidebarProvider className="flex flex-col">
                 <div className="[--header-height:theme(spacing.14)]">
                   <Suspense fallback={<div className="h-14" />}>
-                    <TopNav stars={stars} />
+                    <TopNav
+                      stars={stars}
+                      showHosting={showHosting}
+                      showGuides={showGuides}
+                    />
                   </Suspense>
                   {children}
                 </div>
