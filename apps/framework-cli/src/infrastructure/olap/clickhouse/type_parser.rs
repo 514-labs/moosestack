@@ -185,9 +185,9 @@ enum Token {
     })]
     StringLiteral(String),
 
-    /// A numeric literal
-    #[regex(r"[0-9]+", |lex| lex.slice().parse::<u64>().unwrap_or_default())]
-    NumberLiteral(u64),
+    /// A numeric literal (supports negative numbers for enums)
+    #[regex(r"-?[0-9]+", |lex| lex.slice().parse::<i64>().unwrap_or_default())]
+    NumberLiteral(i64),
 
     /// Left parenthesis (
     #[token("(")]
@@ -281,7 +281,7 @@ pub enum ClickHouseTypeNode {
     /// Enum8 or Enum16 with members
     Enum {
         bits: u8, // 8 or 16
-        members: Vec<(String, u64)>,
+        members: Vec<(String, i64)>,
     },
 
     /// Tuple with elements
@@ -849,7 +849,7 @@ impl Parser {
 
         // Parse length
         let length = match self.current_token() {
-            Token::NumberLiteral(n) => *n,
+            Token::NumberLiteral(n) => *n as u64, // FixedString length is always positive
             _ => {
                 return Err(ParseError::UnexpectedToken {
                     expected: "number literal for length".to_string(),
@@ -1301,7 +1301,7 @@ impl Parser {
 
                     match self.current_token() {
                         Token::NumberLiteral(n) => {
-                            let num = *n;
+                            let num = *n as u64; // JSON parameters are always positive
                             self.advance();
                             parameters.push(JsonParameter::MaxDynamicTypes(num));
                         }
@@ -1318,7 +1318,7 @@ impl Parser {
 
                     match self.current_token() {
                         Token::NumberLiteral(n) => {
-                            let num = *n;
+                            let num = *n as u64; // JSON parameters are always positive
                             self.advance();
                             parameters.push(JsonParameter::MaxDynamicPaths(num));
                         }
@@ -1602,13 +1602,37 @@ pub fn convert_ast_to_column_type(
         }
 
         ClickHouseTypeNode::Enum { bits, members } => {
-            let enum_members = members
-                .iter()
-                .map(|(name, value)| EnumMember {
+            // Validate enum values are within the valid range for Enum8 or Enum16
+            let (min_value, max_value) = match bits {
+                8 => (i8::MIN as i64, i8::MAX as i64),    // Enum8: -128 to 127
+                16 => (i16::MIN as i64, i16::MAX as i64), // Enum16: -32768 to 32767
+                _ => {
+                    return Err(ConversionError::InvalidParameters {
+                        type_name: format!("Enum{bits}"),
+                        message: format!("Invalid enum bit size: {bits}. Expected 8 or 16"),
+                    })
+                }
+            };
+
+            let mut enum_members = Vec::new();
+            for (name, value) in members {
+                let signed_value = *value;
+
+                // Check if value is within valid range for this enum type
+                if signed_value < min_value || signed_value > max_value {
+                    return Err(ConversionError::InvalidParameters {
+                        type_name: format!("Enum{bits}"),
+                        message: format!(
+                            "Enum value {signed_value} for member '{name}' is out of range [{min_value}, {max_value}]"
+                        ),
+                    });
+                }
+
+                enum_members.push(EnumMember {
                     name: name.clone(),
-                    value: EnumValue::Int(*value as u8),
-                })
-                .collect::<Vec<_>>();
+                    value: EnumValue::Int(signed_value as i16),
+                });
+            }
 
             Ok((
                 ColumnType::Enum(DataEnum {
@@ -3026,6 +3050,160 @@ mod tests {
                 }
             }
             _ => panic!("Expected Map type"),
+        }
+    }
+
+    #[test]
+    fn test_enum8_with_negative_values() {
+        // Test Enum8 with negative values (valid range: -128 to 127)
+        let type_str = "Enum8('negative' = -1, 'zero' = 0, 'positive' = 1)";
+        let parsed = parse_clickhouse_type(type_str).unwrap();
+        let (column_type, is_nullable) = convert_ast_to_column_type(&parsed).unwrap();
+
+        assert!(!is_nullable);
+        match column_type {
+            ColumnType::Enum(data_enum) => {
+                assert_eq!(data_enum.name, "Enum8");
+                assert_eq!(data_enum.values.len(), 3);
+                assert_eq!(data_enum.values[0].name, "negative");
+                assert_eq!(data_enum.values[0].value, EnumValue::Int(-1));
+                assert_eq!(data_enum.values[1].name, "zero");
+                assert_eq!(data_enum.values[1].value, EnumValue::Int(0));
+                assert_eq!(data_enum.values[2].name, "positive");
+                assert_eq!(data_enum.values[2].value, EnumValue::Int(1));
+            }
+            _ => panic!("Expected Enum type"),
+        }
+    }
+
+    #[test]
+    fn test_enum8_boundaries() {
+        // Test Enum8 with minimum and maximum values
+        let type_str = "Enum8('min' = -128, 'max' = 127)";
+        let parsed = parse_clickhouse_type(type_str).unwrap();
+        let (column_type, is_nullable) = convert_ast_to_column_type(&parsed).unwrap();
+
+        assert!(!is_nullable);
+        match column_type {
+            ColumnType::Enum(data_enum) => {
+                assert_eq!(data_enum.name, "Enum8");
+                assert_eq!(data_enum.values.len(), 2);
+                assert_eq!(data_enum.values[0].name, "min");
+                assert_eq!(data_enum.values[0].value, EnumValue::Int(-128));
+                assert_eq!(data_enum.values[1].name, "max");
+                assert_eq!(data_enum.values[1].value, EnumValue::Int(127));
+            }
+            _ => panic!("Expected Enum type"),
+        }
+    }
+
+    #[test]
+    fn test_enum16_with_large_values() {
+        // Test Enum16 with values > 255 (the original bug case)
+        let type_str = "Enum16('small' = 1, 'medium' = 255, 'large' = 256, 'huge' = 32767)";
+        let parsed = parse_clickhouse_type(type_str).unwrap();
+        let (column_type, is_nullable) = convert_ast_to_column_type(&parsed).unwrap();
+
+        assert!(!is_nullable);
+        match column_type {
+            ColumnType::Enum(data_enum) => {
+                assert_eq!(data_enum.name, "Enum16");
+                assert_eq!(data_enum.values.len(), 4);
+                assert_eq!(data_enum.values[0].value, EnumValue::Int(1));
+                assert_eq!(data_enum.values[1].value, EnumValue::Int(255));
+                assert_eq!(data_enum.values[2].value, EnumValue::Int(256));
+                assert_eq!(data_enum.values[3].value, EnumValue::Int(32767));
+            }
+            _ => panic!("Expected Enum type"),
+        }
+    }
+
+    #[test]
+    fn test_enum16_with_negative_values() {
+        // Test Enum16 with negative values
+        let type_str = "Enum16('negative' = -32768, 'zero' = 0, 'positive' = 32767)";
+        let parsed = parse_clickhouse_type(type_str).unwrap();
+        let (column_type, is_nullable) = convert_ast_to_column_type(&parsed).unwrap();
+
+        assert!(!is_nullable);
+        match column_type {
+            ColumnType::Enum(data_enum) => {
+                assert_eq!(data_enum.name, "Enum16");
+                assert_eq!(data_enum.values.len(), 3);
+                assert_eq!(data_enum.values[0].name, "negative");
+                assert_eq!(data_enum.values[0].value, EnumValue::Int(-32768));
+                assert_eq!(data_enum.values[1].name, "zero");
+                assert_eq!(data_enum.values[1].value, EnumValue::Int(0));
+                assert_eq!(data_enum.values[2].name, "positive");
+                assert_eq!(data_enum.values[2].value, EnumValue::Int(32767));
+            }
+            _ => panic!("Expected Enum type"),
+        }
+    }
+
+    #[test]
+    fn test_enum8_out_of_range_error() {
+        // Test Enum8 with value > 127 should fail
+        let type_str = "Enum8('invalid' = 128)";
+        let parsed = parse_clickhouse_type(type_str).unwrap();
+        let result = convert_ast_to_column_type(&parsed);
+
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            ConversionError::InvalidParameters { type_name, message } => {
+                assert_eq!(type_name, "Enum8");
+                assert!(message.contains("128"));
+                assert!(message.contains("out of range"));
+            }
+            _ => panic!("Expected InvalidParameters error"),
+        }
+
+        // Test Enum8 with value < -128 should also fail
+        let type_str = "Enum8('invalid' = -129)";
+        let parsed = parse_clickhouse_type(type_str).unwrap();
+        let result = convert_ast_to_column_type(&parsed);
+
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            ConversionError::InvalidParameters { type_name, message } => {
+                assert_eq!(type_name, "Enum8");
+                assert!(message.contains("-129"));
+                assert!(message.contains("out of range"));
+            }
+            _ => panic!("Expected InvalidParameters error"),
+        }
+    }
+
+    #[test]
+    fn test_enum16_out_of_range_error() {
+        // Test Enum16 with value > 32767 should fail
+        let type_str = "Enum16('invalid' = 32768)";
+        let parsed = parse_clickhouse_type(type_str).unwrap();
+        let result = convert_ast_to_column_type(&parsed);
+
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            ConversionError::InvalidParameters { type_name, message } => {
+                assert_eq!(type_name, "Enum16");
+                assert!(message.contains("32768"));
+                assert!(message.contains("out of range"));
+            }
+            _ => panic!("Expected InvalidParameters error"),
+        }
+
+        // Test Enum16 with value < -32768 should also fail
+        let type_str = "Enum16('invalid' = -32769)";
+        let parsed = parse_clickhouse_type(type_str).unwrap();
+        let result = convert_ast_to_column_type(&parsed);
+
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            ConversionError::InvalidParameters { type_name, message } => {
+                assert_eq!(type_name, "Enum16");
+                assert!(message.contains("-32769"));
+                assert!(message.contains("out of range"));
+            }
+            _ => panic!("Expected InvalidParameters error"),
         }
     }
 }

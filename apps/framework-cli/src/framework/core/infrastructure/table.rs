@@ -172,8 +172,8 @@ pub struct EnumMemberMetadata {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(untagged)]
 pub enum EnumValueMetadata {
-    /// Integer value for numeric enums
-    Int(u8),
+    /// Integer value for numeric enums (supports Enum8: -128 to 127, Enum16: -32768 to 32767)
+    Int(i16),
     /// String value for string enums
     String(String),
 }
@@ -827,7 +827,8 @@ pub struct EnumMember {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
 pub enum EnumValue {
-    Int(u8),
+    /// Integer value for numeric enums (supports Enum8: -128 to 127, Enum16: -32768 to 32767)
+    Int(i16),
     String(String),
 }
 
@@ -1417,7 +1418,7 @@ impl EnumValue {
     pub fn from_proto(proto: crate::proto::infrastructure_map::EnumValue) -> Self {
         match proto.value.unwrap() {
             crate::proto::infrastructure_map::enum_value::Value::IntValue(i) => {
-                EnumValue::Int(i as u8)
+                EnumValue::Int(i as i16)
             }
             crate::proto::infrastructure_map::enum_value::Value::StringValue(s) => {
                 EnumValue::String(s)

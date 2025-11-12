@@ -232,13 +232,14 @@ impl ClickHouseColumnType {
                     .trim_start_matches("Enum16(")
                     .trim_end_matches(')');
 
-                // Use regex to match enum values, handling potential commas in the names
-                let re = Regex::new(r"'([^']*)'\s*=\s*(\d+)").unwrap();
+                // Use regex to match enum values, handling potential commas in the names and negative numbers
+                let re = Regex::new(r"'([^']*)'\s*=\s*(-?\d+)").unwrap();
                 let values = re
                     .captures_iter(enum_content)
                     .map(|cap| {
                         let name = cap[1].to_string();
-                        let value = cap[2].parse::<u8>().unwrap_or(0);
+                        // Parse as i16 to support both Enum8 (-128 to 127) and Enum16 (-32768 to 32767)
+                        let value = cap[2].parse::<i16>().unwrap_or(0);
 
                         crate::framework::core::infrastructure::table::EnumMember {
                             name: name.clone(),

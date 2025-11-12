@@ -136,7 +136,8 @@ describe("python template tests - db-pull with SQL function defaults", () => {
       created_at DateTime DEFAULT now(),
       updated_at DateTime DEFAULT today(),
       literal_default String DEFAULT 'active',
-      numeric_default Int32 DEFAULT 42
+      numeric_default Int32 DEFAULT 42,
+      status_code Enum16('OK' = 200, 'Created' = 201, 'NotFound' = 404, 'LargeValue' = 1000) DEFAULT 'OK'
     ) ENGINE = MergeTree()
     ORDER BY _id
     `;
@@ -205,7 +206,14 @@ describe("python template tests - db-pull with SQL function defaults", () => {
     expect(generatedCode).to.include("clickhouse_default(\"'active'\")");
     expect(generatedCode).to.include('clickhouse_default("42")');
 
+    // Verify Enum16 with values > 255 (ENG-XXXX: Enum16 support)
+    expect(generatedCode).to.include("OK = 200");
+    expect(generatedCode).to.include("Created = 201");
+    expect(generatedCode).to.include("NotFound = 404");
+    expect(generatedCode).to.include("LargeValue = 1000"); // Value > 255 that previously overflowed
+
     console.log("✓ Generated Python code has correct default syntax");
+    console.log("✓ Enum16 with large values (> 255) correctly generated");
 
     // ============ STEP 3.5: Move external model to datamodels for migration ============
     console.log("\n--- Moving external model to datamodels ---");
@@ -478,7 +486,8 @@ describe("typescript template tests - db-pull with SQL function defaults", () =>
         created_at DateTime DEFAULT now(),
         updated_at DateTime DEFAULT today(),
         literal_default String DEFAULT 'active',
-        numeric_default Int32 DEFAULT 42
+        numeric_default Int32 DEFAULT 42,
+        status_code Enum16('OK' = 200, 'Created' = 201, 'NotFound' = 404, 'LargeValue' = 1000) DEFAULT 'OK'
       ) ENGINE = MergeTree()
       ORDER BY _id
     `;
@@ -539,7 +548,14 @@ describe("typescript template tests - db-pull with SQL function defaults", () =>
     expect(generatedCode).to.include("ClickHouseDefault<\"'active'\">");
     expect(generatedCode).to.include('ClickHouseDefault<"42">');
 
+    // Verify Enum16 with values > 255 (ENG-XXXX: Enum16 support)
+    expect(generatedCode).to.include('"OK" = 200');
+    expect(generatedCode).to.include('"Created" = 201');
+    expect(generatedCode).to.include('"NotFound" = 404');
+    expect(generatedCode).to.include('"LargeValue" = 1000'); // Value > 255 that previously overflowed
+
     console.log("✓ Generated TypeScript code has correct default syntax");
+    console.log("✓ Enum16 with large values (> 255) correctly generated");
 
     // ============ STEP 3.5: Move external model to datamodels for migration ============
     console.log("\n--- Moving external model to datamodels ---");

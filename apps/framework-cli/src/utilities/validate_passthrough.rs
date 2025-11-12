@@ -60,20 +60,20 @@ where
 }
 
 trait EnumInt {
-    fn from_u8(u8: u8) -> Self;
+    fn from_i16(i16: i16) -> Self;
     fn from_usize(usize: usize) -> Self;
 }
 impl EnumInt for u64 {
-    fn from_u8(u8: u8) -> u64 {
-        u8 as u64
+    fn from_i16(i16: i16) -> u64 {
+        i16 as u64
     }
     fn from_usize(usize: usize) -> Self {
         usize as u64
     }
 }
 impl EnumInt for i64 {
-    fn from_u8(u8: u8) -> i64 {
-        u8 as i64
+    fn from_i16(i16: i16) -> i64 {
+        i16 as i64
     }
     fn from_usize(usize: usize) -> i64 {
         usize as i64
@@ -172,7 +172,7 @@ where
         .iter()
         .enumerate()
         .any(|(i, ev)| match &ev.value {
-            EnumValue::Int(value) => (T::from_u8(*value)) == v,
+            EnumValue::Int(value) => (T::from_i16(*value)) == v,
             // TODO: string enums have range 1..=length
             // we can skip the iteration
             EnumValue::String(_) => (T::from_usize(i)) == v,
