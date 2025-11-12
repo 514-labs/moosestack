@@ -10,116 +10,133 @@
     };
   };
 
-  outputs = inputs @ {flake-parts, ...}:
-    flake-parts.lib.mkFlake {inherit inputs;} {
-      systems = ["x86_64-linux" "aarch64-linux" "x86_64-darwin" "aarch64-darwin"];
+  outputs =
+    inputs@{ flake-parts, ... }:
+    flake-parts.lib.mkFlake { inherit inputs; } {
+      systems = [
+        "x86_64-linux"
+        "aarch64-linux"
+        "x86_64-darwin"
+        "aarch64-darwin"
+      ];
 
-      perSystem = {
-        config,
-        self',
-        inputs',
-        system,
-        lib,
-        ...
-      }: let
-        # Apply rust overlay
-        pkgs = import inputs.nixpkgs {
-          inherit system;
-          overlays = [(import inputs.rust-overlay)];
-        };
-
-        # Rust toolchain
-        rustToolchain = pkgs.rust-bin.stable.latest.default.override {
-          extensions = ["rust-src" "clippy" "rustfmt"];
-        };
-
-        # Node.js with PNPM
-        nodejs = pkgs.nodejs_20;
-        pnpm = pkgs.pnpm;
-
-        # Python with required packages
-        python = pkgs.python312;
-        pythonEnv = python.withPackages (ps:
-          with ps; [
-            pip
-            setuptools
-            wheel
-          ]);
-
-        # Common build inputs
-        commonBuildInputs = with pkgs;
-          [
-            pkg-config
-            openssl
-            protobuf
-            # For rdkafka
-            rdkafka
-            cyrus_sasl
-            zlib
-            zstd
-            lz4
-          ]
-          ++ lib.optionals pkgs.stdenv.isDarwin [
-            pkgs.apple-sdk
-            pkgs.libiconv
-          ];
-
-        # Helper to convert aliases to scripts
-        aliasToScript = alias:
-          let
-            pwd = if alias ? pwd then "$WORKSPACE_ROOT/${alias.pwd}" else "$WORKSPACE_ROOT";
-          in
-          ''
-            set -e
-            cd "${pwd}"
-            ${alias.cmd}
-          '';
-
-        # Define test command aliases
-        testAliases = {
-          cargo-test = {
-            cmd = "cargo test";
+      perSystem =
+        {
+          config,
+          self',
+          inputs',
+          system,
+          lib,
+          ...
+        }:
+        let
+          # Apply rust overlay
+          pkgs = import inputs.nixpkgs {
+            inherit system;
+            overlays = [ (import inputs.rust-overlay) ];
           };
-          ts-test = {
-            pwd = "packages/ts-moose-lib";
-            cmd = "pnpm test";
+
+          # Rust toolchain
+          rustToolchain = pkgs.rust-bin.stable.latest.default.override {
+            extensions = [
+              "rust-src"
+              "clippy"
+              "rustfmt"
+            ];
           };
-          py-test = {
-            pwd = "packages/py-moose-lib";
-            cmd = "pytest";
-          };
-          e2e-test = {
-            pwd = "apps/framework-cli-e2e";
-            cmd = "pnpm test";
-          };
-          test-all = {
-            cmd = ''
-              cargo test && \
-              (cd packages/ts-moose-lib && pnpm test) && \
-              (cd packages/py-moose-lib && pytest)
+
+          # Node.js with PNPM
+          nodejs = pkgs.nodejs_20;
+          pnpm = pkgs.pnpm;
+
+          # Python with required packages
+          python = pkgs.python312;
+          pythonEnv = python.withPackages (
+            ps: with ps; [
+              pip
+              setuptools
+              wheel
+            ]
+          );
+
+          # Common build inputs
+          commonBuildInputs =
+            with pkgs;
+            [
+              pkg-config
+              openssl
+              protobuf
+              # For rdkafka
+              rdkafka
+              cyrus_sasl
+              zlib
+              zstd
+              lz4
+            ]
+            ++ lib.optionals pkgs.stdenv.isDarwin [
+              pkgs.apple-sdk
+              pkgs.libiconv
+            ];
+
+          # Helper to convert aliases to scripts
+          aliasToScript =
+            alias:
+            let
+              pwd = if alias ? pwd then "$WORKSPACE_ROOT/${alias.pwd}" else "$WORKSPACE_ROOT";
+            in
+            ''
+              set -e
+              cd "${pwd}"
+              ${alias.cmd}
             '';
-          };
-        };
 
-        # Generate scripts for all aliases
-        testScripts = pkgs.runCommand "test-scripts" {} ''
-          mkdir -p $out/bin
-          ${lib.concatStringsSep "\n" (lib.mapAttrsToList (name: alias: ''
-            cat > $out/bin/${name} << 'EOF'
-            #!/usr/bin/env bash
-            export WORKSPACE_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
-            ${aliasToScript alias}
-            EOF
-            chmod +x $out/bin/${name}
-          '') testAliases)}
-        '';
-      in {
-        # Development Shell
-        devShells.default = pkgs.mkShell {
+          # Define test command aliases
+          testAliases = {
+            cargo-test = {
+              cmd = "cargo test";
+            };
+            ts-test = {
+              pwd = "packages/ts-moose-lib";
+              cmd = "pnpm test";
+            };
+            py-test = {
+              pwd = "packages/py-moose-lib";
+              cmd = "pytest";
+            };
+            e2e-test = {
+              pwd = "apps/framework-cli-e2e";
+              cmd = "pnpm test";
+            };
+            test-all = {
+              cmd = ''
+                cargo test && \
+                (cd packages/ts-moose-lib && pnpm test) && \
+                (cd packages/py-moose-lib && pytest)
+              '';
+            };
+          };
+
+          # Generate scripts for all aliases
+          testScripts = pkgs.runCommand "test-scripts" { } ''
+            mkdir -p $out/bin
+            ${lib.concatStringsSep "\n" (
+              lib.mapAttrsToList (name: alias: ''
+                cat > $out/bin/${name} << 'EOF'
+                #!/usr/bin/env bash
+                export WORKSPACE_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+                ${aliasToScript alias}
+                EOF
+                chmod +x $out/bin/${name}
+              '') testAliases
+            )}
+          '';
+        in
+        {
+          # Development Shell
+          devShells.default = pkgs.mkShell {
             name = "moose";
 
-          buildInputs =
-            [
+            buildInputs = [
               # Languages
               rustToolchain
               nodejs
@@ -139,190 +156,168 @@
             ]
             ++ commonBuildInputs;
 
-          shellHook = ''
-            # Set up PNPM
-            export PNPM_HOME="$HOME/.local/share/pnpm"
-            export PATH="$PNPM_HOME:$PATH"
+            shellHook = ''
+              # Set up PNPM
+              export PNPM_HOME="$HOME/.local/share/pnpm"
+              export PATH="$PNPM_HOME:$PATH"
 
-            # Set Python path for development
-            export PYTHONPATH="$PWD/packages/py-moose-lib:$PYTHONPATH"
+              # Set Python path for development
+              export PYTHONPATH="$PWD/packages/py-moose-lib:$PYTHONPATH"
+            '';
+          };
 
-            echo "🦌 MooseStack Development Environment"
-            echo ""
-            echo "Available commands:"
-            echo "  pnpm build       - Build all packages (TypeScript)"
-            echo "  pnpm dev         - Start development servers"
-            echo "  pnpm lint        - Run linters"
-            echo "  cargo build      - Build Rust CLI"
-            echo "  cargo clippy     - Run Rust linter"
-            echo ""
-            echo "Test commands:"
-            echo "  cargo-test       - Run Rust tests"
-            echo "  ts-test          - Run TypeScript library tests"
-            echo "  py-test          - Run Python library tests"
-            echo "  e2e-test         - Run end-to-end tests (requires Docker)"
-            echo "  test-all         - Run all tests"
-            echo ""
-            echo "Versions:"
-            echo "  Node.js: $(node --version)"
-            echo "  PNPM: $(pnpm --version)"
-            echo "  Rust: $(rustc --version)"
-            echo "  Python: $(python --version)"
-            echo ""
-          '';
+          # Package outputs
+          packages = {
+            # Rust CLI
+            moose-cli = pkgs.rustPlatform.buildRustPackage {
+              pname = "moose-cli";
+              version = "0.0.1";
 
-          # Environment variables
-          RUST_BACKTRACE = "1";
-          CARGO_INCREMENTAL = "1";
-        };
+              src = ./.;
 
-        # Package outputs
-        packages = {
-          # Rust CLI
-          moose-cli = pkgs.rustPlatform.buildRustPackage {
-            pname = "moose-cli";
-            version = "0.0.1";
+              cargoLock = {
+                lockFile = ./Cargo.lock;
+                outputHashes = {
+                  "opentelemetry-prometheus-0.17.0" = "sha256-KjPqfxnXoxVKZ63nL8v7yKr7KN6z0ZoChuTZpjVV0cI=";
+                  "rustfsm-0.1.0" = "sha256-XkSRoJkMLQJyhOiAAREf3sM+Jqje4z0lxE07LA3nQQo=";
+                  "rustfsm_procmacro-0.1.0" = "sha256-XkSRoJkMLQJyhOiAAREf3sM+Jqje4z0lxE07LA3nQQo=";
+                  "rustfsm_trait-0.1.0" = "sha256-XkSRoJkMLQJyhOiAAREf3sM+Jqje4z0lxE07LA3nQQo=";
+                  "temporal-client-0.1.0" = "sha256-XkSRoJkMLQJyhOiAAREf3sM+Jqje4z0lxE07LA3nQQo=";
+                  "temporal-sdk-core-0.1.0" = "sha256-XkSRoJkMLQJyhOiAAREf3sM+Jqje4z0lxE07LA3nQQo=";
+                  "temporal-sdk-core-api-0.1.0" = "sha256-XkSRoJkMLQJyhOiAAREf3sM+Jqje4z0lxE07LA3nQQo=";
+                  "temporal-sdk-core-protos-0.1.0" = "sha256-XkSRoJkMLQJyhOiAAREf3sM+Jqje4z0lxE07LA3nQQo=";
+                };
+              };
 
-            src = ./.;
+              nativeBuildInputs = [
+                pkgs.pkg-config
+                pythonEnv
+                pkgs.maturin
+                pkgs.perl
+                # For rdkafka-sys build
+                pkgs.bash
+                pkgs.gnumake
+                pkgs.cmake
+                pkgs.coreutils
+              ];
 
-            cargoLock = {
-              lockFile = ./Cargo.lock;
-              outputHashes = {
-                "opentelemetry-prometheus-0.17.0" = "sha256-KjPqfxnXoxVKZ63nL8v7yKr7KN6z0ZoChuTZpjVV0cI=";
-                "rustfsm-0.1.0" = "sha256-XkSRoJkMLQJyhOiAAREf3sM+Jqje4z0lxE07LA3nQQo=";
-                "rustfsm_procmacro-0.1.0" = "sha256-XkSRoJkMLQJyhOiAAREf3sM+Jqje4z0lxE07LA3nQQo=";
-                "rustfsm_trait-0.1.0" = "sha256-XkSRoJkMLQJyhOiAAREf3sM+Jqje4z0lxE07LA3nQQo=";
-                "temporal-client-0.1.0" = "sha256-XkSRoJkMLQJyhOiAAREf3sM+Jqje4z0lxE07LA3nQQo=";
-                "temporal-sdk-core-0.1.0" = "sha256-XkSRoJkMLQJyhOiAAREf3sM+Jqje4z0lxE07LA3nQQo=";
-                "temporal-sdk-core-api-0.1.0" = "sha256-XkSRoJkMLQJyhOiAAREf3sM+Jqje4z0lxE07LA3nQQo=";
-                "temporal-sdk-core-protos-0.1.0" = "sha256-XkSRoJkMLQJyhOiAAREf3sM+Jqje4z0lxE07LA3nQQo=";
+              buildInputs = commonBuildInputs;
+
+              # Build only the CLI package
+              cargoBuildFlags = [
+                "-p"
+                "moose-cli"
+              ];
+
+              # Skip tests - some tests require filesystem access and external commands
+              # that aren't available in the Nix sandbox
+              doCheck = false;
+
+              # The build.rs uses protobuf codegen which is pure Rust
+              # No need for protoc at build time
+              PROTOC = "${pkgs.protobuf}/bin/protoc";
+
+              # Force rdkafka-sys to use pkg-config and system library
+              RDKAFKA_SYS_USE_PKG_CONFIG = "1";
+
+              # Patch Cargo.toml to enable dynamic linking for rdkafka
+              postPatch = ''
+                # Add dynamic-linking feature to rdkafka dependency
+                sed -i 's/rdkafka = { version = "0.38", features = \["ssl"\] }/rdkafka = { version = "0.38", features = ["ssl", "dynamic-linking"] }/' apps/framework-cli/Cargo.toml
+              '';
+
+              # Ensure bash is available for configure scripts
+              preBuild = ''
+                export PATH="${pkgs.bash}/bin:${pkgs.coreutils}/bin:$PATH"
+                export SHELL="${pkgs.bash}/bin/bash"
+              '';
+
+              meta = with lib; {
+                description = "MooseStack CLI - Build tool for Moose apps";
+                homepage = "https://www.fiveonefour.com/moose";
+                license = licenses.mit;
+                maintainers = [ ];
               };
             };
 
-            nativeBuildInputs = [
-              pkgs.pkg-config
-              pythonEnv
-              pkgs.maturin
-              pkgs.perl
-              # For rdkafka-sys build
-              pkgs.bash
-              pkgs.gnumake
-              pkgs.cmake
-              pkgs.coreutils
-            ];
+            # TypeScript packages (built via PNPM)
+            ts-moose-lib = pkgs.stdenv.mkDerivation {
+              pname = "ts-moose-lib";
+              version = "0.0.1";
 
-            buildInputs = commonBuildInputs;
+              src = ./.;
 
-            # Build only the CLI package
-            cargoBuildFlags = ["-p" "moose-cli"];
+              nativeBuildInputs = [
+                nodejs
+                pnpm
+              ];
 
-            # Skip tests - some tests require filesystem access and external commands
-            # that aren't available in the Nix sandbox
-            doCheck = false;
+              buildPhase = ''
+                export HOME=$TMPDIR
+                export PNPM_HOME="$HOME/.pnpm"
 
-            # The build.rs uses protobuf codegen which is pure Rust
-            # No need for protoc at build time
-            PROTOC = "${pkgs.protobuf}/bin/protoc";
+                # Install dependencies
+                pnpm install --frozen-lockfile
 
-            # Force rdkafka-sys to use pkg-config and system library
-            RDKAFKA_SYS_USE_PKG_CONFIG = "1";
+                # Build TypeScript packages
+                pnpm build --filter=@514labs/moose-lib
+              '';
 
-            # Patch Cargo.toml to enable dynamic linking for rdkafka
-            postPatch = ''
-              # Add dynamic-linking feature to rdkafka dependency
-              sed -i 's/rdkafka = { version = "0.38", features = \["ssl"\] }/rdkafka = { version = "0.38", features = ["ssl", "dynamic-linking"] }/' apps/framework-cli/Cargo.toml
-            '';
+              installPhase = ''
+                mkdir -p $out
+                cp -r packages/ts-moose-lib/dist $out/
+                cp packages/ts-moose-lib/package.json $out/
+              '';
 
-            # Ensure bash is available for configure scripts
-            preBuild = ''
-              export PATH="${pkgs.bash}/bin:${pkgs.coreutils}/bin:$PATH"
-              export SHELL="${pkgs.bash}/bin/bash"
-            '';
-
-
-            meta = with lib; {
-              description = "MooseStack CLI - Build tool for Moose apps";
-              homepage = "https://www.fiveonefour.com/moose";
-              license = licenses.mit;
-              maintainers = [];
+              meta = with lib; {
+                description = "TypeScript library for MooseStack";
+                homepage = "https://www.fiveonefour.com/moose";
+                license = licenses.mit;
+              };
             };
+
+            # Python library
+            py-moose-lib = pythonEnv.pkgs.buildPythonPackage {
+              pname = "moose-lib";
+              version = "0.0.1";
+
+              src = ./packages/py-moose-lib;
+
+              format = "setuptools";
+
+              propagatedBuildInputs = with pythonEnv.pkgs; [
+                pyjwt
+                pydantic
+                temporalio
+                kafka-python-ng
+                redis
+                humanfriendly
+                clickhouse-connect
+                requests
+              ];
+
+              # Some dependencies might not be in nixpkgs
+              doCheck = false;
+
+              meta = with lib; {
+                description = "Python library for MooseStack";
+                homepage = "https://www.fiveonefour.com/moose";
+                license = licenses.mit;
+              };
+            };
+
+            # Default package
+            default = self'.packages.moose-cli;
           };
 
-          # TypeScript packages (built via PNPM)
-          ts-moose-lib = pkgs.stdenv.mkDerivation {
-            pname = "ts-moose-lib";
-            version = "0.0.1";
-
-            src = ./.;
-
-            nativeBuildInputs = [nodejs pnpm];
-
-            buildPhase = ''
-              export HOME=$TMPDIR
-              export PNPM_HOME="$HOME/.pnpm"
-
-              # Install dependencies
-              pnpm install --frozen-lockfile
-
-              # Build TypeScript packages
-              pnpm build --filter=@514labs/moose-lib
-            '';
-
-            installPhase = ''
-              mkdir -p $out
-              cp -r packages/ts-moose-lib/dist $out/
-              cp packages/ts-moose-lib/package.json $out/
-            '';
-
-            meta = with lib; {
-              description = "TypeScript library for MooseStack";
-              homepage = "https://www.fiveonefour.com/moose";
-              license = licenses.mit;
+          # Apps for easy running
+          apps = {
+            moose = {
+              type = "app";
+              program = "${self'.packages.moose-cli}/bin/moose-cli";
             };
+            default = self'.apps.moose;
           };
-
-          # Python library
-          py-moose-lib = pythonEnv.pkgs.buildPythonPackage {
-            pname = "moose-lib";
-            version = "0.0.1";
-
-            src = ./packages/py-moose-lib;
-
-            format = "setuptools";
-
-            propagatedBuildInputs = with pythonEnv.pkgs; [
-              pyjwt
-              pydantic
-              temporalio
-              kafka-python-ng
-              redis
-              humanfriendly
-              clickhouse-connect
-              requests
-            ];
-
-            # Some dependencies might not be in nixpkgs
-            doCheck = false;
-
-            meta = with lib; {
-              description = "Python library for MooseStack";
-              homepage = "https://www.fiveonefour.com/moose";
-              license = licenses.mit;
-            };
-          };
-
-          # Default package
-          default = self'.packages.moose-cli;
         };
-
-        # Apps for easy running
-        apps = {
-          moose = {
-            type = "app";
-            program = "${self'.packages.moose-cli}/bin/moose-cli";
-          };
-          default = self'.apps.moose;
-        };
-      };
     };
 }
