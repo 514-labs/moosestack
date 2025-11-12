@@ -29,13 +29,6 @@ pub enum GetSourceError {
         component_type: String,
         name: String,
     },
-
-    #[allow(dead_code)]
-    #[error("Source location not available for {component_type}/{name}")]
-    SourceLocationNotAvailable {
-        component_type: String,
-        name: String,
-    },
 }
 
 /// Parameters for the get_source tool
