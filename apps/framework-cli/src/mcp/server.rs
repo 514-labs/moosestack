@@ -228,19 +228,21 @@ mod tests {
         // Test that all expected tools are returned
         let logs_tool = logs::tool_definition();
         let infra_tool = infra_map::tool_definition();
+        let infra_issues_tool = infra_issues::tool_definition();
         let olap_tool = query_olap::tool_definition();
         let stream_tool = sample_stream::tool_definition();
         let get_source_tool = get_source::tool_definition();
 
-        // Ensure we have 5 tools
+        // Ensure we have 6 tools
         let all_tools = vec![
             &logs_tool,
             &infra_tool,
+            &infra_issues_tool,
             &olap_tool,
             &stream_tool,
             &get_source_tool,
         ];
-        assert_eq!(all_tools.len(), 5);
+        assert_eq!(all_tools.len(), 6);
 
         // Verify each tool has required fields
         for tool in all_tools {
