@@ -939,6 +939,27 @@ pub fn tables_to_python(tables: &[Table], life_cycle: Option<LifeCycle>) -> Stri
                     }
                     writeln!(output, "    ),").unwrap();
                 }
+                crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine::IcebergS3 {
+                    path,
+                    format,
+                    aws_access_key_id,
+                    aws_secret_access_key,
+                    compression,
+                } => {
+                    writeln!(output, "    engine=IcebergEngine(").unwrap();
+                    writeln!(output, "        path={:?},", path).unwrap();
+                    writeln!(output, "        format={:?},", format).unwrap();
+                    if let Some(key_id) = aws_access_key_id {
+                        writeln!(output, "        aws_access_key_id={:?},", key_id).unwrap();
+                    }
+                    if let Some(secret) = aws_secret_access_key {
+                        writeln!(output, "        aws_secret_access_key={:?},", secret).unwrap();
+                    }
+                    if let Some(comp) = compression {
+                        writeln!(output, "        compression={:?},", comp).unwrap();
+                    }
+                    writeln!(output, "    ),").unwrap();
+                }
             }
         }
         // Add table settings if present (includes mode for S3Queue)

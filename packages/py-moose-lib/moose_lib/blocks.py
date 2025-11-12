@@ -17,6 +17,7 @@ class ClickHouseEngines(Enum):
     S3 = "S3"
     Buffer = "Buffer"
     Distributed = "Distributed"
+    IcebergS3 = "IcebergS3"
     ReplicatedMergeTree = "ReplicatedMergeTree"
     ReplicatedReplacingMergeTree = "ReplicatedReplacingMergeTree"
     ReplicatedAggregatingMergeTree = "ReplicatedAggregatingMergeTree"
@@ -283,6 +284,60 @@ class DistributedEngine(EngineConfig):
             raise ValueError("Distributed engine requires 'target_database'")
         if not self.target_table:
             raise ValueError("Distributed engine requires 'target_table'")
+
+@dataclass
+class IcebergS3Engine(EngineConfig):
+    """Configuration for IcebergS3 engine - read-only Iceberg table access.
+
+    Provides direct querying of Apache Iceberg tables stored on S3.
+    Data is not copied; queries stream directly from Parquet/ORC files.
+
+    Args:
+        path: S3 path to Iceberg table root (e.g., 's3://bucket/warehouse/events/')
+        format: Data format - 'Parquet' or 'ORC'
+        aws_access_key_id: AWS access key ID (optional, omit for public buckets or IAM roles)
+        aws_secret_access_key: AWS secret access key (optional)
+        compression: Compression type (optional: 'gzip', 'zstd', 'auto')
+
+    Example:
+        >>> from moose_lib import OlapTable, OlapConfig, moose_runtime_env
+        >>> from moose_lib.blocks import IcebergS3Engine
+        >>>
+        >>> lake_events = OlapTable[Event](
+        ...     "lake_events",
+        ...     OlapConfig(
+        ...         engine=IcebergS3Engine(
+        ...             path="s3://datalake/events/",
+        ...             format="Parquet",
+        ...             aws_access_key_id=moose_runtime_env.get("AWS_ACCESS_KEY_ID"),
+        ...             aws_secret_access_key=moose_runtime_env.get("AWS_SECRET_ACCESS_KEY")
+        ...         )
+        ...     )
+        ... )
+
+    Note:
+        - IcebergS3 engine is read-only
+        - Does not support ORDER BY, PARTITION BY, or SAMPLE BY clauses
+        - Queries always see the latest Iceberg snapshot (with metadata cache)
+    """
+
+    # Required fields
+    path: str
+    format: str
+
+    # Optional fields
+    aws_access_key_id: Optional[str] = None
+    aws_secret_access_key: Optional[str] = None
+    compression: Optional[str] = None
+
+    def __post_init__(self):
+        """Validate required fields"""
+        if not self.path:
+            raise ValueError("IcebergS3 engine requires 'path'")
+        if not self.format:
+            raise ValueError("IcebergS3 engine requires 'format'")
+        if self.format not in ['Parquet', 'ORC']:
+            raise ValueError(f"IcebergS3 format must be 'Parquet' or 'ORC', got '{self.format}'")
 
 # ==========================
 # New Table Configuration (Recommended API)
