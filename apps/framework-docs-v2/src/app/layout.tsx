@@ -10,7 +10,7 @@ import { SidebarProvider } from "@/components/ui/sidebar";
 import { Toaster } from "@/components/ui/sonner";
 import { ScrollRestoration } from "@/components/scroll-restoration";
 import { getGitHubStars } from "@/lib/github-stars";
-import { showHostingSection, showGuidesSection } from "@/flags";
+import { showHostingSection, showGuidesSection, showAiSection } from "@/flags";
 import { VercelToolbar } from "@vercel/toolbar/next";
 
 export const metadata: Metadata = {
@@ -29,9 +29,10 @@ export default async function RootLayout({
   const stars = await getGitHubStars();
 
   // Evaluate feature flags (reads cookies automatically for overrides)
-  const [showHosting, showGuides] = await Promise.all([
+  const [showHosting, showGuides, showAi] = await Promise.all([
     showHostingSection().catch(() => false),
     showGuidesSection().catch(() => false),
+    showAiSection().catch(() => true),
   ]);
 
   const shouldInjectToolbar = process.env.NODE_ENV === "development";
@@ -55,6 +56,7 @@ export default async function RootLayout({
                       stars={stars}
                       showHosting={showHosting}
                       showGuides={showGuides}
+                      showAi={showAi}
                     />
                   </Suspense>
                   {children}

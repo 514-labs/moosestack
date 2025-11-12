@@ -17,7 +17,13 @@
 3. **Usage:**
    - Run `pnpm dev`
    - Open Vercel Toolbar → Flags Explorer
-   - Toggle flags to test
+   - Toggle flags to test navigation visibility
+
+## Available Flags
+
+- `show-hosting-section` - Controls Hosting tab visibility (default: off)
+- `show-guides-section` - Controls Guides tab visibility (default: off)
+- `show-ai-section` - Controls AI tab visibility (default: on)
 
 ## How It Works
 

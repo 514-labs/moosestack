@@ -22,9 +22,15 @@ interface TopNavProps {
   stars: number | null;
   showHosting: boolean;
   showGuides: boolean;
+  showAi: boolean;
 }
 
-export function TopNav({ stars, showHosting, showGuides }: TopNavProps) {
+export function TopNav({
+  stars,
+  showHosting,
+  showGuides,
+  showAi,
+}: TopNavProps) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const { language } = useLanguage();
@@ -75,11 +81,15 @@ export function TopNav({ stars, showHosting, showGuides }: TopNavProps) {
         },
       ]
     : []),
-    {
-      label: "AI",
-      href: "/ai/overview",
-      section: "ai",
-    },
+    ...(showAi ?
+      [
+        {
+          label: "AI",
+          href: "/ai/overview",
+          section: "ai" as DocumentationSection,
+        },
+      ]
+    : []),
     {
       label: "Templates",
       href: "/moosestack/templates-examples",
