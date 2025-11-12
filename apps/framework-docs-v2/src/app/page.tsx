@@ -9,8 +9,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { IconDatabase, IconCloud, IconSparkles } from "@tabler/icons-react";
 
-// Force static generation
-export const dynamic = "force-static";
+export const dynamic = "force-dynamic";
 
 export default function HomePage() {
   const sections = [
