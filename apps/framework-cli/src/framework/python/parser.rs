@@ -203,8 +203,8 @@ fn python_enum_to_framework_enum(
                     let enum_value = match &constant.value {
                         Constant::Str(s) => EnumValue::String(s.to_string()),
                         Constant::Int(i) => {
-                            EnumValue::Int(i.to_u8().ok_or(PythonParserError::EnumParseError {
-                                message: format!("Enum value {i} out of range"),
+                            EnumValue::Int(i.to_i16().ok_or(PythonParserError::EnumParseError {
+                                message: format!("Enum value {i} out of range for i16"),
                             })?)
                         }
                         _ => {

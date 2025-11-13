@@ -14,7 +14,9 @@ use rmcp::{
 use std::sync::Arc;
 
 use super::embedded_docs;
-use super::tools::{create_error_result, get_source, infra_map, logs, query_olap, sample_stream};
+use super::tools::{
+    create_error_result, get_source, infra_issues, infra_map, logs, query_olap, sample_stream,
+};
 use crate::cli::processing_coordinator::ProcessingCoordinator;
 use crate::infrastructure::olap::clickhouse::config::ClickHouseConfig;
 use crate::infrastructure::redis::redis_client::RedisClient;
@@ -69,7 +71,7 @@ impl ServerHandler for MooseMcpHandler {
                 website_url: None,
             },
             instructions: Some(
-                "Moose MCP Server - Access dev server logs, infrastructure map, query the OLAP database, sample streaming topics, and browse embedded Moose documentation"
+                "Moose MCP Server - Access dev server logs, infrastructure map, diagnose infrastructure issues, query the OLAP database, sample streaming topics, browse code sources, and read embedded Moose documentation"
                     .to_string(),
             ),
         }
@@ -84,6 +86,7 @@ impl ServerHandler for MooseMcpHandler {
             tools: vec![
                 logs::tool_definition(),
                 infra_map::tool_definition(),
+                infra_issues::tool_definition(),
                 query_olap::tool_definition(),
                 sample_stream::tool_definition(),
                 get_source::tool_definition(),
@@ -106,6 +109,12 @@ impl ServerHandler for MooseMcpHandler {
             "get_infra_map" => Ok(infra_map::handle_call(
                 param.arguments.as_ref(),
                 self.redis_client.clone(),
+            )
+            .await),
+            "diagnose_infrastructure" => Ok(infra_issues::handle_call(
+                param.arguments.as_ref(),
+                self.redis_client.clone(),
+                &self.clickhouse_config,
             )
             .await),
             "query_olap" => Ok(query_olap::handle_call(
@@ -219,19 +228,21 @@ mod tests {
         // Test that all expected tools are returned
         let logs_tool = logs::tool_definition();
         let infra_tool = infra_map::tool_definition();
+        let infra_issues_tool = infra_issues::tool_definition();
         let olap_tool = query_olap::tool_definition();
         let stream_tool = sample_stream::tool_definition();
         let get_source_tool = get_source::tool_definition();
 
-        // Ensure we have 5 tools
+        // Ensure we have 6 tools
         let all_tools = vec![
             &logs_tool,
             &infra_tool,
+            &infra_issues_tool,
             &olap_tool,
             &stream_tool,
             &get_source_tool,
         ];
-        assert_eq!(all_tools.len(), 5);
+        assert_eq!(all_tools.len(), 6);
 
         // Verify each tool has required fields
         for tool in all_tools {
@@ -250,6 +261,7 @@ mod tests {
             "query_olap",
             "get_stream_sample",
             "get_source",
+            "diagnose_infrastructure",
         ];
 
         let logs_tool = logs::tool_definition();
@@ -257,11 +269,13 @@ mod tests {
         let olap_tool = query_olap::tool_definition();
         let stream_tool = sample_stream::tool_definition();
         let get_source_tool = get_source::tool_definition();
+        let infra_issues_tool = infra_issues::tool_definition();
 
         assert_eq!(logs_tool.name, expected_tools[0]);
         assert_eq!(infra_tool.name, expected_tools[1]);
         assert_eq!(olap_tool.name, expected_tools[2]);
         assert_eq!(stream_tool.name, expected_tools[3]);
         assert_eq!(get_source_tool.name, expected_tools[4]);
+        assert_eq!(infra_issues_tool.name, expected_tools[5]);
     }
 }

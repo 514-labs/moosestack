@@ -114,7 +114,10 @@ const handleAggregated = (
     );
     return { functionName: functionStringLiteral.value, argumentTypes };
   } else {
-    console.log("Unexpected type inside Aggregated", functionStringLiteral);
+    console.log(
+      "[CompilerPlugin] Unexpected type inside Aggregated",
+      functionStringLiteral,
+    );
     return undefined;
   }
 };
@@ -282,7 +285,7 @@ const handleSimpleAggregated = (
     return { functionName: functionStringLiteral.value, argumentType };
   } else {
     console.log(
-      "Unexpected type inside SimpleAggregated",
+      "[CompilerPlugin] Unexpected type inside SimpleAggregated",
       functionStringLiteral,
     );
     return undefined;
@@ -352,7 +355,9 @@ const handleNumberType = (
     for (const prop of props) {
       const valueSymbol = prop.getProperty("value");
       if (valueSymbol === undefined) {
-        console.log(`Props.value is undefined for ${fieldName}`);
+        console.log(
+          `[CompilerPlugin] Props.value is undefined for ${fieldName}`,
+        );
       } else {
         const valueTypeLiteral = checker.getTypeOfSymbol(valueSymbol);
         const numberTypeMappings = {
@@ -379,7 +384,7 @@ const handleNumberType = (
             : "unknown";
 
           console.log(
-            `Other number types are not supported: ${typeString} in field ${fieldName}`,
+            `[CompilerPlugin] Other number types are not supported: ${typeString} in field ${fieldName}`,
           );
         }
       }
@@ -442,7 +447,9 @@ const handleStringType = (
     for (const prop of props) {
       const valueSymbol = prop.getProperty("value");
       if (valueSymbol === undefined) {
-        console.log(`Props.value is undefined for ${fieldName}`);
+        console.log(
+          `[CompilerPlugin] Props.value is undefined for ${fieldName}`,
+        );
       } else {
         const valueTypeLiteral = checker.getTypeOfSymbol(valueSymbol);
         if (isStringLiteral(valueTypeLiteral, checker, "uuid")) {
@@ -514,7 +521,9 @@ const handleStringType = (
               valueTypeLiteral.value
             : "unknown";
 
-          console.log(`Unknown format: ${typeString} in field ${fieldName}`);
+          console.log(
+            `[CompilerPlugin] Unknown format: ${typeString} in field ${fieldName}`,
+          );
         }
       }
     }
@@ -915,7 +924,7 @@ const handleDefaultWrapping = (
 
 export const toColumns = (t: ts.Type, checker: TypeChecker): Column[] => {
   if (checker.getIndexInfosOfType(t).length !== 0) {
-    console.log(checker.getIndexInfosOfType(t));
+    console.log("[CompilerPlugin]", checker.getIndexInfosOfType(t));
     throwIndexTypeError(t, checker);
   }
 

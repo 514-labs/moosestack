@@ -30,7 +30,8 @@ export type ClickHouseFixedStringSize<N extends number> = {
  *   sha256_hash: string & FixedString<32>; // 32-byte SHA256
  * }
  */
-export type FixedString<N extends number> = string & ClickHouseFixedStringSize<N>;
+export type FixedString<N extends number> = string &
+  ClickHouseFixedStringSize<N>;
 
 export type ClickHouseByteSize<N extends number> = {
   _clickhouse_byte_size?: N;
