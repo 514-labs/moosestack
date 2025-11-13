@@ -155,7 +155,7 @@ A simplified version of the UFA architecture using ClickHouse Cloud + React fron
 
 ### TypeScript (Default) [#typescript-default]
 
-Default TypeScript project, seeded with foobar example components.
+The default TypeScript starter template that comes pre-configured with working examples of all core Moose capabilities. This template includes foobar example components that demonstrate end-to-end data flows: from data ingestion through streaming pipelines to analytics APIs. Perfect for getting started quickly with a fully functional example that you can modify and build upon. The template showcases best practices for structuring a MooseStack application and includes sample data models, streaming functions, materialized views, and API endpoints.
 
 ```bash filename="Terminal" copy
 moose init PROJECT_NAME typescript
@@ -177,7 +177,7 @@ moose init PROJECT_NAME typescript
 
 ### Python (Default) [#python-default]
 
-Default Python project, seeded with foobar example components.
+The default Python starter template that comes pre-configured with working examples of all core Moose capabilities. This template includes foobar example components that demonstrate end-to-end data flows: from data ingestion through streaming pipelines to analytics APIs. Perfect for getting started quickly with a fully functional example that you can modify and build upon. The template showcases best practices for structuring a MooseStack application using Python and includes sample data models, streaming functions, materialized views, and API endpoints.
 
 ```bash filename="Terminal" copy
 moose init PROJECT_NAME python
@@ -199,7 +199,7 @@ moose init PROJECT_NAME python
 
 ### TypeScript (Empty) [#typescript-empty]
 
-Empty TypeScript project with minimal structure.
+A minimal TypeScript template with just the essential project structure and no example code. This is the ideal starting point when you want a clean slate to build your own application from scratch without having to remove example components. The template includes only the necessary configuration files and basic directory structure, allowing you to define your own data models, APIs, and workflows without any pre-existing examples getting in the way.
 
 ```bash filename="Terminal" copy
 moose init PROJECT_NAME typescript-empty
@@ -219,7 +219,7 @@ moose init PROJECT_NAME typescript-empty
 
 ### Python (Empty) [#python-empty]
 
-Empty Python project with minimal structure.
+A minimal Python template with just the essential project structure and no example code. This is the ideal starting point when you want a clean slate to build your own application from scratch without having to remove example components. The template includes only the necessary configuration files and basic directory structure, allowing you to define your own data models, APIs, and workflows without any pre-existing examples getting in the way.
 
 ```bash filename="Terminal" copy
 moose init PROJECT_NAME python-empty
@@ -239,7 +239,7 @@ moose init PROJECT_NAME python-empty
 
 ### Next.js (Empty) [#nextjs-empty]
 
-TypeScript project with a Next.js frontend (empty).
+A TypeScript template that combines a MooseStack backend with a Next.js frontend application. This template provides the foundation for building full-stack analytical applications with a modern React-based user interface. The Next.js app comes pre-configured to connect to your Moose APIs, making it easy to create dashboards, data visualizations, and interactive analytics interfaces. The template includes the complete infrastructure for both backend data processing and frontend presentation, all configured to work together seamlessly.
 
 ```bash filename="Terminal" copy
 moose init PROJECT_NAME next-app-empty
@@ -263,7 +263,7 @@ moose init PROJECT_NAME next-app-empty
 
 ### Express.js [#express]
 
-TypeScript project using Express for serving analytical APIs.
+A TypeScript template that demonstrates how to integrate MooseStack with Express.js for building custom API endpoints. This template shows you how to serve analytical data through Express routes while leveraging Moose's data infrastructure for storage and processing. Ideal for developers who want full control over their API design and routing, or need to integrate Moose capabilities into an existing Express application. The template includes examples of connecting Express endpoints to ClickHouse for serving real-time analytics.
 
 ```bash filename="Terminal" copy
 moose init PROJECT_NAME typescript-express
@@ -286,7 +286,7 @@ moose init PROJECT_NAME typescript-express
 
 ### TypeScript MCP [#typescript-mcp]
 
-Complete example with MooseStack service and Next.js AI chat interface. Contains two independent applications: a Moose data pipeline with integrated MCP server using Express, and a Next.js web app with pre-configured AI chat that connects to the MCP server.
+A comprehensive template demonstrating how to build AI-powered applications using the Model Context Protocol (MCP). This template contains two independent applications that work together: a MooseStack service with an integrated MCP server (using Express) that exposes your data and tools to AI agents, and a Next.js web application with a pre-built AI chat interface. The chat interface allows users to interact naturally with an AI agent that can query your data, perform analytics, and execute actions through the MCP server. This architecture showcases how to give AI assistants direct access to your analytical data infrastructure, enabling conversational data exploration and AI-powered insights. Perfect for building next-generation data applications where users can ask questions in natural language and get real-time answers from your data.
 
 ```bash filename="Terminal" copy
 moose init PROJECT_NAME typescript-mcp
@@ -312,7 +312,7 @@ moose init PROJECT_NAME typescript-mcp
 
 ### FastAPI [#fastapi]
 
-Python project using FastAPI for serving analytical APIs.
+A Python template that demonstrates how to integrate MooseStack with FastAPI for building high-performance analytical API endpoints. This template shows you how to serve analytical data through FastAPI routes while leveraging Moose's data infrastructure for storage and processing. FastAPI's automatic API documentation, type checking, and async support make it ideal for building production-ready data APIs. The template includes examples of connecting FastAPI endpoints to ClickHouse, implementing efficient data queries, and serving real-time analytics with automatic OpenAPI documentation generation.
 
 ```bash filename="Terminal" copy
 moose init PROJECT_NAME python-fastapi
@@ -335,7 +335,7 @@ moose init PROJECT_NAME python-fastapi
 
 ### FastAPI (Client-Only) [#fastapi-client-only]
 
-FastAPI client-only project using MooseStack libraries without requiring the Moose runtime.
+A Python FastAPI template designed for building analytical backend services that use MooseStack libraries without requiring the full Moose runtime. This approach gives you maximum flexibility to integrate Moose's data capabilities into existing applications or microservices architectures. The template demonstrates how to use the Moose client library directly in your FastAPI application to interact with ClickHouse and Redis, while maintaining complete control over your application structure and deployment. Ideal for teams who want to leverage Moose's data abstractions and type-safe queries within their own custom application frameworks, or for adding analytical capabilities to existing services without adopting the full Moose infrastructure.
 
 ```bash filename="Terminal" copy
 moose init PROJECT_NAME python-fastapi-client-only
@@ -358,7 +358,7 @@ moose init PROJECT_NAME python-fastapi-client-only
 
 ### Brainwaves [#brainwaves]
 
-Brain mapping and movement analytics demo with Muse Headband EEG device. Features real-time data collection, visualization, and analytics with support for both live device streaming and simulation using freely available datasets.
+A comprehensive demo application for brain mapping and movement analytics using the Muse Headband EEG device. This template showcases real-time data ingestion, processing, and analytics for biometric data streams. The project consists of two main components: DAS (Data Acquisition Server) for real-time collection and visualization of brainwave and movement data with a terminal-based dashboard, and Brainmoose for backend data storage and analytics APIs. The template supports both live device streaming from a physical Muse headband and simulation mode using freely available EEG datasets, making it accessible for experimentation without hardware. Perfect for learning how to build real-time analytical applications with complex sensor data, or as a foundation for health tech and biometric applications. Includes examples of processing accelerometer, gyroscope, and brainwave band data (alpha, beta, delta, theta, gamma).
 
 ```bash filename="Terminal" copy
 moose init PROJECT_NAME brainwaves
@@ -382,7 +382,7 @@ moose init PROJECT_NAME brainwaves
 
 ### GitHub Dev Trends [#github-dev-trends]
 
-Real-time dashboard tracking trending GitHub repositories and topics. Collects and analyzes Star Events from the public GitHub events feed. Built as a monorepo with Moose backend and Next.js dashboard frontend.
+A real-time analytics dashboard that tracks trending repositories and developer topics on GitHub by analyzing Star Events from the public GitHub events feed. This template demonstrates a production-ready monorepo architecture using pnpm workspaces, with a MooseStack backend for data collection and processing, and a Next.js/React dashboard for visualization. The backend continuously polls the GitHub API to collect star events, processes them through streaming pipelines, and aggregates trending metrics in ClickHouse. The frontend provides an interactive dashboard showing real-time trends, popular repositories, and emerging topics. This template is an excellent reference for building event-driven analytics applications that collect data from external APIs, process it in real-time, and present insights through a modern web interface. Requires a GitHub Personal Access Token for API access.
 
 ```bash filename="Terminal" copy
 moose init PROJECT_NAME github-dev-trends
@@ -406,7 +406,7 @@ moose init PROJECT_NAME github-dev-trends
 
 ### ADS-B (Aircraft Tracking) [#adsb]
 
-Real-time aircraft transponder data tracking.
+A real-time aircraft tracking application that ingests and analyzes ADS-B transponder data from commercial aircraft. This template demonstrates how to build a geospatial analytics application using MooseStack, processing live flight data including position, altitude, speed, and heading information. The application showcases real-time data ingestion from external data sources, efficient storage of high-velocity geospatial data in ClickHouse, and APIs for querying aircraft positions and flight paths.
 
 ```bash filename="Terminal" copy
 moose init PROJECT_NAME ads-b
@@ -428,7 +428,7 @@ moose init PROJECT_NAME ads-b
 
 ### ADS-B with Frontend [#adsb-frontend]
 
-Real-time aircraft transponder data with a React frontend.
+An enhanced version of the ADS-B aircraft tracking application that includes a full-featured React/Next.js frontend for visualizing real-time flight data. This template combines the aircraft tracking backend with an interactive map-based user interface, allowing users to see live aircraft positions, flight paths, and detailed information about each flight. The frontend demonstrates how to build real-time data visualizations, implement map-based interfaces, and create responsive dashboards that update as new data arrives. Perfect for understanding how to build complete full-stack applications with real-time geospatial data.
 
 ```bash filename="Terminal" copy
 moose init PROJECT_NAME ads-b-frontend
@@ -451,7 +451,7 @@ moose init PROJECT_NAME ads-b-frontend
 
 ### Live Heart Rate Leaderboard [#heartrate]
 
-Live heart rate leaderboard inspired by F45 with Streamlit frontend.
+A live fitness leaderboard application inspired by F45 Training's heart rate monitoring system. This template demonstrates real-time health and fitness data analytics with a Streamlit-based frontend that displays participants' heart rates, calories burned, and workout intensity in a competitive leaderboard format. The application ingests heart rate data from fitness trackers or wearable devices, processes it in real-time through MooseStack's streaming pipelines, and presents live rankings and statistics. Perfect for building fitness applications, group workout tracking, or any application requiring real-time competitive metrics. The Streamlit frontend provides an easy-to-customize interface that updates automatically as new data arrives, making it ideal for display screens in gyms or fitness studios.
 
 ```bash filename="Terminal" copy
 moose init PROJECT_NAME live-heartrate-leaderboard
