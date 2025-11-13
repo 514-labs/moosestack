@@ -1719,10 +1719,9 @@ impl OlapOperations for ConfiguredDBClient {
                 // Fallback to the simple engine name from system.tables
                 debug!("Could not extract engine from CREATE TABLE query, falling back to system.tables engine column");
                 engine.as_str().try_into().ok()
-            };
-            let engine_params_hash = engine_parsed
-                .as_ref()
-                .map(|e: &ClickhouseEngine| e.non_alterable_params_hash());
+            }
+            .unwrap_or(ClickhouseEngine::MergeTree);
+            let engine_params_hash = Some(engine_parsed.non_alterable_params_hash());
 
             // Extract table settings from CREATE TABLE query
             let table_settings = extract_table_settings_from_create_table(&create_query);
@@ -2727,7 +2726,7 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
             order_by: OrderBy::Fields(vec!["id".to_string()]),
             partition_by: Some("toYYYYMM(created_at)".to_string()),
             sample_by: None,
-            engine: None,
+            engine: ClickhouseEngine::MergeTree,
             version: None,
             source_primitive: PrimitiveSignature {
                 name: "Test".to_string(),
@@ -2792,7 +2791,7 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
             order_by: OrderBy::Fields(vec!["id".to_string()]),
             partition_by: Some("toYYYYMM(created_at)".to_string()),
             sample_by: None,
-            engine: None,
+            engine: ClickhouseEngine::MergeTree,
             version: None,
             source_primitive: PrimitiveSignature {
                 name: "Test".to_string(),

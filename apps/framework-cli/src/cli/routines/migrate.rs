@@ -631,6 +631,7 @@ mod tests {
     use crate::framework::core::infrastructure::table::{Column, ColumnType, OrderBy};
     use crate::framework::core::infrastructure_map::PrimitiveSignature;
     use crate::framework::core::partial_infrastructure_map::LifeCycle;
+    use crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine;
 
     /// Helper to create a minimal test table
     fn create_test_table(name: &str) -> Table {
@@ -658,7 +659,7 @@ mod tests {
                 primitive_type:
                     crate::framework::core::infrastructure_map::PrimitiveTypes::DataModel,
             },
-            engine: None,
+            engine: ClickhouseEngine::MergeTree,
             metadata: None,
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,

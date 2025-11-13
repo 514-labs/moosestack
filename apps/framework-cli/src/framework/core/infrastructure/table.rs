@@ -274,7 +274,7 @@ pub struct Table {
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub sample_by: Option<String>,
     #[serde(default)]
-    pub engine: Option<ClickhouseEngine>,
+    pub engine: ClickhouseEngine,
     pub version: Option<Version>,
     pub source_primitive: PrimitiveSignature,
     pub metadata: Option<Metadata>,
@@ -331,20 +331,16 @@ impl Table {
         use sha2::{Digest, Sha256};
 
         // Combine engine hash and database into a single hash
-        let engine_hash = self.engine.as_ref().map(|e| e.non_alterable_params_hash());
+        let engine_hash = self.engine.non_alterable_params_hash();
 
-        // If we have neither engine hash nor database, return None
-        if engine_hash.is_none() && self.database.is_none() {
-            return None;
-        }
+        // If we have no database, return None (engine always exists now)
+        self.database.as_ref()?;
 
         // Create a combined hash that includes both engine params and database
         let mut hasher = Sha256::new();
 
-        // Include engine params hash if it exists
-        if let Some(ref hash) = engine_hash {
-            hasher.update(hash.as_bytes());
-        }
+        // Include engine params hash
+        hasher.update(engine_hash.as_bytes());
 
         // Include database field
         if let Some(ref db) = self.database {
@@ -373,11 +369,7 @@ impl Table {
             .map(|c| format!("{}: {}", c.name, c.data_type))
             .collect::<Vec<String>>()
             .join(", ");
-        let engine_str = self
-            .engine
-            .as_ref()
-            .map(|e| format!(" - engine: {}", Into::<String>::into(e.clone())))
-            .unwrap_or_default();
+        let engine_str = format!(" - engine: {}", Into::<String>::into(self.engine.clone()));
         format!(
             "Table: {} Version {:?} - {} - {}{}",
             self.name, self.version, columns_str, self.order_by, engine_str
@@ -412,9 +404,8 @@ impl Table {
             // but the implicit order_by from primary keys can be the same
             // ONLY for engines that support ORDER BY (MergeTree family and S3)
             // Buffer, S3Queue, and Distributed don't support ORDER BY
-            // When engine is None, ClickHouse defaults to MergeTree
             || (target.order_by.is_empty()
-                && target.engine.as_ref().is_none_or(|e| e.supports_order_by())
+                && target.engine.supports_order_by()
                 && matches!(
                     &self.order_by,
                     OrderBy::Fields(v) if v.iter().map(String::as_str).collect::<Vec<_>>() == target.primary_key_columns()
@@ -455,14 +446,11 @@ impl Table {
             sample_by_expression: self.sample_by.clone(),
             version: self.version.as_ref().map(|v| v.to_string()),
             source_primitive: MessageField::some(self.source_primitive.to_proto()),
-            deduplicate: self
-                .engine
-                .as_ref()
-                .is_some_and(|e| matches!(e, ClickhouseEngine::ReplacingMergeTree { .. })),
-            engine: MessageField::from_option(self.engine.as_ref().map(|engine| StringValue {
-                value: engine.clone().to_proto_string(),
+            deduplicate: matches!(self.engine, ClickhouseEngine::ReplacingMergeTree { .. }),
+            engine: MessageField::some(StringValue {
+                value: self.engine.clone().to_proto_string(),
                 special_fields: Default::default(),
-            })),
+            }),
             order_by2: MessageField::some(proto_order_by2),
             // Store the hash for change detection, including database field
             engine_params_hash: self
@@ -508,7 +496,8 @@ impl Table {
                         ver: None,
                         is_deleted: None,
                     })
-            });
+            })
+            .unwrap_or(ClickhouseEngine::MergeTree);
 
         // Engine settings are now handled via table_settings field
 
@@ -1564,7 +1553,7 @@ mod tests {
             order_by: OrderBy::Fields(vec![]),
             partition_by: None,
             sample_by: None,
-            engine: None,
+            engine: ClickhouseEngine::MergeTree,
             version: None,
             source_primitive: PrimitiveSignature {
                 name: "Users".to_string(),
