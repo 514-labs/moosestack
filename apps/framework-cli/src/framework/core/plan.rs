@@ -234,7 +234,10 @@ pub async fn reconcile_with_reality<T: OlapOperations>(
     }
     // Add unmapped tables
     for unmapped_table in discrepancies.unmapped_tables {
+        // default_database passed to `id` does not matter
+        // tables from check_reality always contain non-None database
         let id = unmapped_table.id(&reconciled_map.default_database);
+
         let id = match id.strip_prefix(&current_infra_map.default_database) {
             None => id,
             Some(table_name_version) => {
