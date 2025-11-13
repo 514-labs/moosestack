@@ -513,6 +513,64 @@ class User(BaseModel):
     role: UserRole  # Enum with string values
 ```
 </Python>
+
+#### Enum with Integer Values
+
+ClickHouse enums support both string values and integer values. Moose fully supports **Enum8** and **Enum16** with their complete ranges, including negative values.
+
+<TypeScript>
+```typescript
+enum HttpStatus {
+  OK = 200,
+  Created = 201,
+  NotFound = 404,
+  ServerError = 500
+}
+
+enum ErrorLevel {
+  Critical = -2,
+  Error = -1,
+  Warning = 0,
+  Info = 1
+}
+
+interface ApiResponse {
+  status: HttpStatus;    // Maps to Enum16 in ClickHouse
+  level: ErrorLevel;     // Maps to Enum8 in ClickHouse
+}
+```
+</TypeScript>
+
+<Python>
+```python
+from enum import IntEnum
+
+class HttpStatus(IntEnum):
+    OK = 200
+    CREATED = 201
+    NOT_FOUND = 404
+    SERVER_ERROR = 500
+
+class ErrorLevel(IntEnum):
+    CRITICAL = -2
+    ERROR = -1
+    WARNING = 0
+    INFO = 1
+
+class ApiResponse(BaseModel):
+    status: HttpStatus    # Maps to Enum16 in ClickHouse
+    level: ErrorLevel     # Maps to Enum8 in ClickHouse
+```
+</Python>
+
+<Callout type="info" title="ClickHouse Enum Ranges">
+Moose automatically selects the appropriate ClickHouse enum type based on your values:
+- **Enum8**: Values from **-128 to 127** (1 byte)
+- **Enum16**: Values from **-32,768 to 32,767** (2 bytes)
+
+When using `moose db-pull` to import existing ClickHouse tables, enum columns are correctly detected and mapped to your application code with full support for negative values and the complete numeric range.
+</Callout>
+
 ## Special Types
 
 ### JSON Type
