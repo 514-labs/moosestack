@@ -1081,9 +1081,11 @@ pub async fn remote_plan(
         }
     };
 
-    // Normalize remote inframap for older versions that didn't persist engine data
+    // Normalize both infra maps for older versions that didn't persist engine data
     // Default to MergeTree when engine is null (ClickHouse default)
+    // Both remote and local need normalization for consistent comparison
     let remote_infra_map = normalize_inframap_engines(remote_infra_map);
+    let local_infra_map = normalize_inframap_engines(local_infra_map);
 
     // Calculate and display changes
     let changes = calculate_plan_diff_local(
@@ -1184,9 +1186,11 @@ pub async fn remote_gen_migration(
         }
     };
 
-    // Normalize remote inframap for older versions that didn't persist engine data
+    // Normalize both infra maps for older versions that didn't persist engine data
     // Default to MergeTree when engine is null (ClickHouse default)
+    // Both remote and local need normalization for consistent comparison
     let remote_infra_map = normalize_inframap_engines(remote_infra_map);
+    let local_infra_map = normalize_inframap_engines(local_infra_map);
 
     let changes = calculate_plan_diff_local(
         &remote_infra_map,
