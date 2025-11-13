@@ -1070,7 +1070,7 @@ from uuid import UUID
 from enum import IntEnum, Enum
 from moose_lib import Key, IngestPipeline, IngestPipelineConfig, OlapTable, OlapConfig, clickhouse_datetime64, clickhouse_decimal, ClickhouseSize, StringToEnumMixin
 from moose_lib.data_models import ClickHouseJson
-from moose_lib import Point, Ring, LineString, MultiLineString, Polygon, MultiPolygon
+from moose_lib import Point, Ring, LineString, MultiLineString, Polygon, MultiPolygon, FixedString
 from moose_lib import clickhouse_default, LifeCycle, ClickHouseTTL
 from moose_lib.blocks import MergeTreeEngine, ReplacingMergeTreeEngine, AggregatingMergeTreeEngine, SummingMergeTreeEngine, S3QueueEngine, ReplicatedMergeTreeEngine, ReplicatedReplacingMergeTreeEngine, ReplicatedAggregatingMergeTreeEngine, ReplicatedSummingMergeTreeEngine
 
