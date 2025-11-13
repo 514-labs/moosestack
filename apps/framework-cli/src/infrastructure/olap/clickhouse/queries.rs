@@ -136,7 +136,9 @@ SETTINGS {{settings}}{{/if}}"#;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[allow(clippy::large_enum_variant)] // S3Queue has many fields, but this is acceptable for our use case
+#[derive(Default)]
 pub enum ClickhouseEngine {
+    #[default]
     MergeTree,
     ReplacingMergeTree {
         // Optional version column for deduplication

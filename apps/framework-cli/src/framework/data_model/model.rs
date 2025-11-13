@@ -36,14 +36,14 @@ impl DataModel {
             OrderBy::Fields(self.primary_key_columns())
         };
 
-        let engine =
-            self.config
-                .storage
-                .deduplicate
-                .then_some(ClickhouseEngine::ReplacingMergeTree {
-                    ver: None,
-                    is_deleted: None,
-                });
+        let engine = if self.config.storage.deduplicate {
+            ClickhouseEngine::ReplacingMergeTree {
+                ver: None,
+                is_deleted: None,
+            }
+        } else {
+            ClickhouseEngine::MergeTree
+        };
 
         // Create the table first, then compute the combined hash that includes database
         let mut table = Table {
