@@ -1,9 +1,175 @@
 ---
-title: Table Versioning
-description: Manage table versions and schema changes
-order: 12
+title: Schema Versioning with Materialized Views
+description: Use table versions and materialized views to migrate breaking schema changes safely
+order: 8
+category: olap
 ---
 
-# Table Versioning
+import { Callout, LanguageTabs, LanguageTabContent, BulletPointsCard } from "@/components/mdx";
 
-This page is a placeholder. Content migration pending.
+# Table Versioning & Blue/Green Migrations
+
+## Overview
+
+Changing a table's storage layout (engine or sorting key) in ClickHouse requires a full table rewrite. Doing it in-place can block or slow concurrent reads and writes due to heavy merges and metadata changes, creating real risk for production workloads. Blue/Green avoids this by creating a new versioned table and migrating data live via a materialized view, so traffic continues uninterrupted.
+
+**When to use it**: 
+- Change the **table engine** (e.g., MergeTree → ReplacingMergeTree)
+- Update **ORDER BY fields** (sorting keys) to better match query patterns
+- Reshape **primary keys** or perform type changes that require a rewrite
+
+**How Moose does it**:
+1. Define a new table with the same logical name and a bumped `version`, setting the new <LanguageTabs><LanguageTabContent value="typescript">`orderByFields`</LanguageTabContent><LanguageTabContent value="python">`order_by_fields`</LanguageTabContent></LanguageTabs> and/or `engine` ([Table modeling](/moosestack/olap/model-table)).
+2. Create a [Materialized view](/moosestack/olap/model-materialized-view) that selects from the old table and writes to the new one; Moose backfills once and keeps the view live for new inserts.
+3. Later on, cut over readers/writers to the new export and clean up old resources ([Applying migrations](/moosestack/olap/apply-migrations)).
+
+<Callout type="info" title="Version configuration">
+Setting `config.version` on an `OlapTable` changes only the underlying table name (suffixes dots with underscores). Your code still refers to the logical table you exported.
+</Callout>
+
+## High-level workflow
+
+<BulletPointsCard
+  title="Versioned migration flow"
+  bullets={[
+    "Create the new schema for the new table",
+    "Create the new table with the same logical name, but set config.version to e.g. \"0.1\"",
+    "Create a materialized view that SELECTs from the old table and writes into the new table (its targetTable)",
+    "Let the view backfill and keep migrating new inserts automatically",
+    "Cut over your readers/writers to the new versioned table, then drop the old one when ready"
+  ]}
+  bulletStyle="check"
+  divider={false}
+/>
+
+## Example: change sorting key (ORDER BY)
+
+Assume the original `events` table orders by `id` only. We want to update the
+sorting key to optimize reads by ordering on `id, createdAt`.
+
+### Original table (version 0.0)
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```ts filename="app/tables/events.ts" copy
+import { Key, OlapTable } from "@514labs/moose-lib";
+
+interface EventV0 {
+  id: string;
+  name: string;
+  createdAt: Date;
+}
+
+export const events = new OlapTable<EventV0>("events", { version: "0.0", orderByFields: ["id"] });
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```python filename="app/tables/events.py" copy
+from typing import Annotated
+from pydantic import BaseModel
+from moose_lib import OlapTable, Key, OlapConfig
+
+class EventV0(BaseModel):
+    id: str
+    name: str
+    created_at: str  # datetime in your format
+
+events = OlapTable[EventV0]("events", config=OlapConfig(version="0.0", order_by_fields=["id"]))
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+### New table (bump to version 0.1)
+
+Create a new table with the same logical name, but set `version: "0.1"` and update the ordering to `id, createdAt`. Moose will create `events_0_1` in ClickHouse.
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```ts filename="app/tables/events_v01.ts" copy
+import { Key, OlapTable } from "@514labs/moose-lib";
+
+interface EventV1 {
+  id: Key<string>;
+  name: string;
+  createdAt: Date;
+}
+
+export const eventsV1 = new OlapTable<EventV1>("events", { version: "0.1", orderByFields: ["id", "createdAt"] });
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```python filename="app/tables/events_v01.py" copy
+class EventV1(BaseModel):
+    id: Key[str]
+    name: str
+    created_at: str
+
+events_v1 = OlapTable[EventV1]("events", config=OlapConfig(version="0.1", order_by_fields=["id", "created_at"]))
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+### Create the materialized view to migrate data
+
+Create a materialized view that:
+- SELECTs from the old table (`events_v0`)
+- copies fields 1:1 to the new table
+- writes into the versioned target table (`events_v1`)
+
+<Callout type="warning">
+Pass the versioned `OlapTable` instance as `targetTable`. If you only pass a `tableName`, Moose will create an unversioned target.
+</Callout>
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```ts filename="app/views/migrate_events_to_v01.ts" copy
+import { MaterializedView, sql } from "@514labs/moose-lib";
+import { events } from "../tables/events";        // old table
+import { eventsV1, EventV1 } from "../tables/events_v01";  // new versioned table
+
+export const migrateEventsToV01 = new MaterializedView<EventV1>({
+  materializedViewName: "mv_events_to_0_1",
+  selectTables: [events],
+  selectStatement: sql`
+    SELECT * FROM ${events}
+  `,
+  targetTable: eventsV1,
+});
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```python filename="app/views/migrate_events_to_v01.py" copy
+from moose_lib import MaterializedView, MaterializedViewOptions
+from app.tables.events import events
+from app.tables.events_v01 import events_v1, EventV1
+
+migrate_events_to_v01 = MaterializedView[EventV1](
+    MaterializedViewOptions(
+        materialized_view_name="mv_events_to_0_1",
+        select_statement=(
+            f"SELECT * FROM {events.name}"
+        ),
+        select_tables=[events],
+    ),
+    target_table=events_v1,
+)
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+What happens when you export this view:
+- Moose creates the versioned table if needed
+- Moose creates the MATERIALIZED VIEW and immediately runs a one-time backfill (`INSERT INTO ... SELECT ...`)
+- ClickHouse keeps the view active: any new inserts into `events` automatically flow into `events_0_1`
+
+## Cutover and cleanup
+
+- Update readers to query the new table export (`eventsV1`).
+- Update writers/streams to produce to the new table if applicable.
+- After verifying parity and retention windows, drop the old table and the migration view.
+
+## Notes and tips
+
+- Use semantic versions like `0.1`, `1.0`, `1.1`. Moose will render `events_1_1` as the physical name.
+- Keep the migration view simple and deterministic. If you need complex transforms, prefer explicit SQL in the `selectStatement`.
+- Very large backfills can take time. Consider deploying during low-traffic windows.

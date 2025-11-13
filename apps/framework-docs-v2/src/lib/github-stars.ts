@@ -1,19 +1,20 @@
+import { unstable_cache } from "next/cache";
+
 /**
  * Fetches the GitHub star count for the 514-labs/moose repository.
- * Uses Next.js fetch cache with 1 hour revalidation to minimize API calls.
+ * Uses Next.js unstable_cache to ensure only one API call during build,
+ * even when multiple pages are generated in parallel.
  */
-export async function getGitHubStars(): Promise<number | null> {
+async function fetchGitHubStars(): Promise<number | null> {
   try {
     const response = await fetch(
       "https://api.github.com/repos/514-labs/moose",
       {
-        next: {
-          // Cache for 1 hour (3600 seconds)
-          revalidate: 3600,
-        },
         headers: {
           // GitHub API requires a user-agent
           "User-Agent": "MooseDocs",
+          // Optional: Add Authorization header with token to increase rate limit
+          // Authorization: `token ${process.env.GITHUB_TOKEN}`,
         },
       },
     );
@@ -36,3 +37,16 @@ export async function getGitHubStars(): Promise<number | null> {
     return null;
   }
 }
+
+/**
+ * Cached version that ensures only one API call during build.
+ * Cache is shared across all page generations.
+ */
+export const getGitHubStars = unstable_cache(
+  async () => fetchGitHubStars(),
+  ["github-stars"],
+  {
+    revalidate: 3600, // Cache for 1 hour
+    tags: ["github-stars"],
+  },
+);

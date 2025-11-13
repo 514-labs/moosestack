@@ -37,11 +37,11 @@ function clickhouseReadonlyQuery(
 }
 
 /**
- * Query ClickHouse to get column information for a specific table
+ * Query ClickHouse to get column information for a specific table.
+ * Uses currentDatabase() to automatically query the active database context.
  */
 async function getTableColumns(
   client: any,
-  dbName: string,
   tableName: string,
 ): Promise<ColumnInfo[]> {
   const query = `
@@ -51,7 +51,7 @@ async function getTableColumns(
       type LIKE '%Nullable%' as nullable,
       comment
     FROM system.columns
-    WHERE database = '${dbName}' AND table = '${tableName}'
+    WHERE database = currentDatabase() AND table = '${tableName}'
     ORDER BY position
   `;
 
@@ -68,11 +68,11 @@ async function getTableColumns(
 }
 
 /**
- * Query ClickHouse to get list of tables and materialized views in the configured database
+ * Query ClickHouse to get list of tables and materialized views in the configured database.
+ * Uses currentDatabase() to automatically query the active database context.
  */
 async function getTablesAndMaterializedViews(
   client: any,
-  dbName: string,
   componentType?: string,
   searchPattern?: string,
 ): Promise<{
@@ -88,7 +88,7 @@ async function getTablesAndMaterializedViews(
         ELSE 'table'
       END as component_type
     FROM system.tables
-    WHERE database = '${dbName}'
+    WHERE database = currentDatabase()
     ORDER BY name
   `;
 
@@ -138,7 +138,6 @@ async function getTablesAndMaterializedViews(
  */
 async function formatCatalogSummary(
   client: any,
-  dbName: string,
   tables: Array<{ name: string; engine: string }>,
   materializedViews: Array<{ name: string; engine: string }>,
 ): Promise<string> {
@@ -148,7 +147,7 @@ async function formatCatalogSummary(
   if (tables.length > 0) {
     output += `## Tables (${tables.length})\n`;
     for (const table of tables) {
-      const columns = await getTableColumns(client, dbName, table.name);
+      const columns = await getTableColumns(client, table.name);
       output += `- ${table.name} (${columns.length} columns)\n`;
     }
     output += "\n";
@@ -158,7 +157,7 @@ async function formatCatalogSummary(
   if (materializedViews.length > 0) {
     output += `## Materialized Views (${materializedViews.length})\n`;
     for (const mv of materializedViews) {
-      const columns = await getTableColumns(client, dbName, mv.name);
+      const columns = await getTableColumns(client, mv.name);
       output += `- ${mv.name} (${columns.length} columns)\n`;
     }
     output += "\n";
@@ -176,7 +175,6 @@ async function formatCatalogSummary(
  */
 async function formatCatalogDetailed(
   client: any,
-  dbName: string,
   tables: Array<{ name: string; engine: string }>,
   materializedViews: Array<{ name: string; engine: string }>,
 ): Promise<string> {
@@ -186,7 +184,7 @@ async function formatCatalogDetailed(
   if (tables.length > 0) {
     catalog.tables = {};
     for (const table of tables) {
-      const columns = await getTableColumns(client, dbName, table.name);
+      const columns = await getTableColumns(client, table.name);
       catalog.tables[table.name] = {
         name: table.name,
         engine: table.engine,
@@ -199,7 +197,7 @@ async function formatCatalogDetailed(
   if (materializedViews.length > 0) {
     catalog.materialized_views = {};
     for (const mv of materializedViews) {
-      const columns = await getTableColumns(client, dbName, mv.name);
+      const columns = await getTableColumns(client, mv.name);
       catalog.materialized_views[mv.name] = {
         name: mv.name,
         engine: mv.engine,
@@ -409,30 +407,22 @@ const serverFactory = (mooseUtils: ApiUtil | null) => {
         }
 
         const { client } = mooseUtils;
-        const dbName = process.env.CLICKHOUSE_DB || "local";
 
         // Get filtered list of tables and materialized views
         const { tables, materializedViews } =
-          await getTablesAndMaterializedViews(
-            client,
-            dbName,
-            component_type,
-            search,
-          );
+          await getTablesAndMaterializedViews(client, component_type, search);
 
         // Format output based on requested format
         let output: string;
         if (format === "detailed") {
           output = await formatCatalogDetailed(
             client,
-            dbName,
             tables,
             materializedViews,
           );
         } else {
           output = await formatCatalogSummary(
             client,
-            dbName,
             tables,
             materializedViews,
           );
