@@ -1057,6 +1057,38 @@ pub async fn remote_plan(
         }
     };
 
+    // DEBUG: Log table info for Python backward compat debugging
+    if let Some(table) = remote_infra_map
+        .tables
+        .values()
+        .find(|t| t.name.contains("SimpleArrays"))
+    {
+        eprintln!("\n=== REMOTE SimpleArrays table ===");
+        for col in &table.columns {
+            if col.name.contains("optional") {
+                eprintln!(
+                    "  Column: {} | Type: {:?} | Required: {}",
+                    col.name, col.data_type, col.required
+                );
+            }
+        }
+    }
+    if let Some(table) = local_infra_map
+        .tables
+        .values()
+        .find(|t| t.name.contains("SimpleArrays"))
+    {
+        eprintln!("\n=== LOCAL SimpleArrays table ===");
+        for col in &table.columns {
+            if col.name.contains("optional") {
+                eprintln!(
+                    "  Column: {} | Type: {:?} | Required: {}",
+                    col.name, col.data_type, col.required
+                );
+            }
+        }
+    }
+
     // Calculate and display changes
     let changes = calculate_plan_diff_local(
         &remote_infra_map,
