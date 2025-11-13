@@ -3251,10 +3251,10 @@ async fn get_admin_reconciled_inframap(
     // For admin endpoints, reconcile all currently managed tables only
     // Pass the managed table names as target_table_names - this ensures that
     // reconcile_with_reality only operates on tables that are already managed by Moose
-    let target_table_names: HashSet<String> = current_map
+    let target_table_ids: HashSet<String> = current_map
         .tables
         .values()
-        .map(|t| t.name.to_string())
+        .map(|t| t.id(&current_map.default_database))
         .collect();
 
     let olap_client = clickhouse::create_client(project.clickhouse_config.clone());
@@ -3262,7 +3262,7 @@ async fn get_admin_reconciled_inframap(
     crate::framework::core::plan::reconcile_with_reality(
         project,
         &current_map,
-        &target_table_names,
+        &target_table_ids,
         olap_client,
     )
     .await

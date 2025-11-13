@@ -550,7 +550,7 @@ pub fn tables_to_python(tables: &[Table], life_cycle: Option<LifeCycle>) -> Stri
     writeln!(output, "from moose_lib.data_models import ClickHouseJson").unwrap();
     writeln!(
         output,
-        "from moose_lib import Point, Ring, LineString, MultiLineString, Polygon, MultiPolygon"
+        "from moose_lib import Point, Ring, LineString, MultiLineString, Polygon, MultiPolygon, FixedString"
     )
     .unwrap();
     writeln!(
@@ -940,6 +940,9 @@ pub fn tables_to_python(tables: &[Table], life_cycle: Option<LifeCycle>) -> Stri
                     writeln!(output, "    ),").unwrap();
                 }
             }
+        }
+        if let Some(version) = &table.version {
+            writeln!(output, "    version={:?}", version).unwrap();
         }
         // Add table settings if present (includes mode for S3Queue)
         if let Some(settings) = &table.table_settings {
