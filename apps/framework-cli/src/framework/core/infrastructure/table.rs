@@ -333,16 +333,15 @@ impl Table {
         // Combine engine hash and database into a single hash
         let engine_hash = self.engine.non_alterable_params_hash();
 
-        // If we have no database, return None (engine always exists now)
-        self.database.as_ref()?;
-
-        // Create a combined hash that includes both engine params and database
+        // Always compute hash now that engine is always present (non-optional)
+        // This ensures backward compatibility: tables without database field still get a hash
+        // based on engine params alone, preventing spurious table recreation
         let mut hasher = Sha256::new();
 
         // Include engine params hash
         hasher.update(engine_hash.as_bytes());
 
-        // Include database field
+        // Include database field if present
         if let Some(ref db) = self.database {
             hasher.update(b"database:");
             hasher.update(db.as_bytes());
