@@ -544,7 +544,7 @@ mod tests {
         // The reconciled map should not contain the unmapped table (ignoring unmapped tables)
         assert_eq!(reconciled.tables.len(), 0);
 
-        target_ids.insert("unmapped_table".to_string());
+        target_ids.insert("test_unmapped_table_1_0_0".to_string());
 
         // Reconcile the infrastructure map
         let reconciled = reconcile_with_reality(
