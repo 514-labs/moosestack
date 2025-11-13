@@ -84,6 +84,10 @@ pub fn parse_clickhouse_connection_string(conn_str: &str) -> anyhow::Result<Clic
             http_port = Some(url.port().unwrap_or(443));
             true
         }
+        "http" => {
+            http_port = Some(url.port().unwrap_or(80));
+            false
+        }
         "clickhouse" => {
             let port = url.port().unwrap_or(9000);
             native_port = Some(port);

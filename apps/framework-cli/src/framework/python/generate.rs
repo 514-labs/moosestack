@@ -942,7 +942,7 @@ pub fn tables_to_python(tables: &[Table], life_cycle: Option<LifeCycle>) -> Stri
             }
         }
         if let Some(version) = &table.version {
-            writeln!(output, "    version={:?}", version).unwrap();
+            writeln!(output, "    version={:?},", version).unwrap();
         }
         // Add table settings if present (includes mode for S3Queue)
         if let Some(settings) = &table.table_settings {
