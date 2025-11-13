@@ -60,20 +60,26 @@ where
 }
 
 trait EnumInt {
-    fn from_u8(u8: u8) -> Self;
+    fn from_i16(i16: i16) -> Self;
     fn from_usize(usize: usize) -> Self;
 }
 impl EnumInt for u64 {
-    fn from_u8(u8: u8) -> u64 {
-        u8 as u64
+    fn from_i16(i16: i16) -> u64 {
+        // Note: Negative values are now filtered out in handle_enum_value before calling this
+        // For safety, we still clamp negative values to 0, but they won't be compared
+        if i16 < 0 {
+            0 // Safe fallback; should never be used due to filtering in handle_enum_value
+        } else {
+            i16 as u64
+        }
     }
     fn from_usize(usize: usize) -> Self {
         usize as u64
     }
 }
 impl EnumInt for i64 {
-    fn from_u8(u8: u8) -> i64 {
-        u8 as i64
+    fn from_i16(i16: i16) -> i64 {
+        i16 as i64 // Sign extension works correctly for i64
     }
     fn from_usize(usize: usize) -> i64 {
         usize as i64
@@ -165,14 +171,28 @@ fn handle_enum_value<S: SerializeValue, E, T>(
 ) -> Result<(), E>
 where
     E: Error,
-    T: Copy + PartialEq + EnumInt + Serialize + Display,
+    T: Copy + PartialEq + EnumInt + Serialize + Display + 'static,
 {
+    use std::any::TypeId;
+
+    // Check if we're working with u64 (unsigned type)
+    let is_unsigned = TypeId::of::<T>() == TypeId::of::<u64>();
+
     if enum_def
         .values
         .iter()
         .enumerate()
         .any(|(i, ev)| match &ev.value {
-            EnumValue::Int(value) => (T::from_u8(*value)) == v,
+            EnumValue::Int(value) => {
+                // Skip negative enum values when comparing against unsigned types
+                // ClickHouse stores negative enums in signed columns (Int8/Int16)
+                // If we're comparing against u64, negative values should never match
+                if is_unsigned && *value < 0 {
+                    false
+                } else {
+                    (T::from_i16(*value)) == v
+                }
+            }
             // TODO: string enums have range 1..=length
             // we can skip the iteration
             EnumValue::String(_) => (T::from_usize(i)) == v,
@@ -2269,5 +2289,132 @@ mod tests {
             .deserialize_any(&mut DataModelVisitor::new(&columns, None))
             .unwrap_err();
         assert!(err.to_string().contains("Missing fields: payload.a.b"));
+    }
+
+    #[test]
+    fn test_negative_enum_values_with_u64() {
+        // Test that negative enum values don't incorrectly match u64 database values
+        // This reproduces the bug where -1i16 as u64 becomes 18446744073709551615u64
+        let columns = vec![Column {
+            name: "status".to_string(),
+            data_type: ColumnType::Enum(DataEnum {
+                name: "StatusEnum".to_string(),
+                values: vec![
+                    EnumMember {
+                        name: "Error".to_string(),
+                        value: EnumValue::Int(-1), // Negative enum value
+                    },
+                    EnumMember {
+                        name: "OK".to_string(),
+                        value: EnumValue::Int(0),
+                    },
+                    EnumMember {
+                        name: "Success".to_string(),
+                        value: EnumValue::Int(1),
+                    },
+                ],
+            }),
+            required: true,
+            unique: false,
+            primary_key: false,
+            default: None,
+            annotations: vec![],
+            comment: None,
+            ttl: None,
+        }];
+
+        // Test 1: Two's complement value (what -1 becomes with naive cast) should be rejected
+        let json_negative = r#"{"status": 18446744073709551615}"#;
+        let err = serde_json::Deserializer::from_str(json_negative)
+            .deserialize_any(&mut DataModelVisitor::new(&columns, None))
+            .unwrap_err();
+        assert!(err.to_string().contains("Invalid enum value"));
+
+        // Test 2: Sentinel value 32768 should be rejected (value we use for negative enums)
+        let json_sentinel = r#"{"status": 32768}"#;
+        let err = serde_json::Deserializer::from_str(json_sentinel)
+            .deserialize_any(&mut DataModelVisitor::new(&columns, None))
+            .unwrap_err();
+        assert!(err.to_string().contains("Invalid enum value"));
+
+        // Test 3: Zero should match the "OK" member, not "Error" (collision test)
+        let json_zero = r#"{"status": 0}"#;
+        let result = serde_json::Deserializer::from_str(json_zero)
+            .deserialize_any(&mut DataModelVisitor::new(&columns, None));
+        assert!(result.is_ok(), "Zero should match OK enum member");
+
+        // Test 4: Valid positive enum value should work
+        let json_positive = r#"{"status": 1}"#;
+        let result = serde_json::Deserializer::from_str(json_positive)
+            .deserialize_any(&mut DataModelVisitor::new(&columns, None));
+        assert!(result.is_ok());
+
+        // Test 5: Out of range positive value should fail
+        let json_invalid = r#"{"status": 999}"#;
+        let err = serde_json::Deserializer::from_str(json_invalid)
+            .deserialize_any(&mut DataModelVisitor::new(&columns, None))
+            .unwrap_err();
+        assert!(err.to_string().contains("Invalid enum value"));
+    }
+
+    #[test]
+    fn test_negative_enum_values_with_i64() {
+        // Test that negative enum values work correctly with i64 database values
+        let columns = vec![Column {
+            name: "temperature".to_string(),
+            data_type: ColumnType::Enum(DataEnum {
+                name: "TempEnum".to_string(),
+                values: vec![
+                    EnumMember {
+                        name: "Freezing".to_string(),
+                        value: EnumValue::Int(-10),
+                    },
+                    EnumMember {
+                        name: "Cold".to_string(),
+                        value: EnumValue::Int(-5),
+                    },
+                    EnumMember {
+                        name: "Neutral".to_string(),
+                        value: EnumValue::Int(0),
+                    },
+                    EnumMember {
+                        name: "Warm".to_string(),
+                        value: EnumValue::Int(20),
+                    },
+                ],
+            }),
+            required: true,
+            unique: false,
+            primary_key: false,
+            default: None,
+            annotations: vec![],
+            comment: None,
+            ttl: None,
+        }];
+
+        // Test negative values work with i64
+        let json_negative = r#"{"temperature": -10}"#;
+        let result = serde_json::Deserializer::from_str(json_negative)
+            .deserialize_any(&mut DataModelVisitor::new(&columns, None));
+        assert!(result.is_ok(), "Negative enum values should work with i64");
+
+        // Test another negative value
+        let json_negative2 = r#"{"temperature": -5}"#;
+        let result = serde_json::Deserializer::from_str(json_negative2)
+            .deserialize_any(&mut DataModelVisitor::new(&columns, None));
+        assert!(result.is_ok());
+
+        // Test positive value
+        let json_positive = r#"{"temperature": 20}"#;
+        let result = serde_json::Deserializer::from_str(json_positive)
+            .deserialize_any(&mut DataModelVisitor::new(&columns, None));
+        assert!(result.is_ok());
+
+        // Test invalid value
+        let json_invalid = r#"{"temperature": -999}"#;
+        let err = serde_json::Deserializer::from_str(json_invalid)
+            .deserialize_any(&mut DataModelVisitor::new(&columns, None))
+            .unwrap_err();
+        assert!(err.to_string().contains("Invalid enum value"));
     }
 }

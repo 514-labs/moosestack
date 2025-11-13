@@ -133,7 +133,8 @@ pub struct TSEnumMember {
 #[derive(Debug, Clone, Serialize, Eq, PartialEq, Hash)]
 pub enum TSEnumValue {
     String(String),
-    Number(u8),
+    /// Number value for numeric enums (supports Enum8: -128 to 127, Enum16: -32768 to 32767)
+    Number(i16),
 }
 
 impl fmt::Display for InterfaceFieldType {
