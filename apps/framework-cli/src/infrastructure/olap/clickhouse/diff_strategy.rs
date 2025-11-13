@@ -519,13 +519,10 @@ impl TableDiffStrategy for ClickHouseTableDiffStrategy {
             before_hash != after_hash
         } else {
             // Fallback to direct engine comparison if hashes are not available
-            let before_engine = before.engine.as_ref();
-            match after.engine.as_ref() {
-                // after.engine is unset -> before engine should be same as default
-                None => before_engine.is_some_and(|e| *e != ClickhouseEngine::MergeTree),
-                // force recreate only if engines are different
-                Some(e) => Some(e) != before_engine,
-            }
+            // Note: Tables are already normalized at this point (None -> Some(MergeTree))
+            // via normalize_inframap_engines() in the remote plan flow, so we can
+            // safely use direct comparison
+            before.engine != after.engine
         };
 
         // Check if engine has changed (using hash comparison when available)
