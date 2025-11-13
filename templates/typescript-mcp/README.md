@@ -108,9 +108,7 @@ This template implements several security measures for safe database querying:
 
 ### ✅ Implemented
 
-- **SQL Query Validation**: Whitelist/blocklist validation ensures only safe, read-only queries
-  - Allowed: SELECT, SHOW, DESCRIBE, EXPLAIN
-  - Blocked: INSERT, UPDATE, DELETE, DROP, CREATE, ALTER, TRUNCATE, GRANT, REVOKE, EXECUTE, CALL
+- **Readonly SQL Queries**: enforced by the ClickHouse client
 - **Row Limiting**: Results automatically capped at 100 rows to prevent excessive data transfer
 - **Error Handling**: Security errors returned through MCP protocol without exposing internals
 
@@ -118,7 +116,7 @@ This template implements several security measures for safe database querying:
 
 Before deploying to production, consider adding:
 
-- **Authentication & Authorization**: JWT authentication framework is in place (see TODO in mcp.ts)
+- **Authentication & Authorization**: JWT authentication framework is in place
 - **Rate Limiting**: Protect against abuse and DoS attacks
 - **Query Timeouts**: Prevent long-running queries from consuming resources
 - **Audit Logging**: Track who executed which queries and when
