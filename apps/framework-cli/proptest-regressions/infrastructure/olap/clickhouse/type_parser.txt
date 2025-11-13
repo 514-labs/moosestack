@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 49804330e6626508a770bfa9454f4e37af23e6058a59b118d05ea40635cb2ce0 # shrinks to node = JSON(Some([]))

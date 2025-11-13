@@ -1,0 +1,26 @@
+# Proptest configuration for framework-cli tests
+# See: https://altsysrq.github.io/proptest-book/proptest/tutorial/config.html
+
+# Number of test cases to generate (per test)
+# Higher values find more bugs but take longer
+# CI should override this with PROPTEST_CASES env var
+cases = 1000
+
+# Maximum shrink iterations when a test fails
+# Proptest will try to find the minimal failing case
+max_shrink_iters = 10000
+
+# Maximum time to spend shrinking (in milliseconds)
+max_shrink_time = 60000  # 1 minute
+
+# Timeout for each individual test case (in milliseconds)
+timeout = 5000  # 5 seconds per test case
+
+# RNG seed source
+# "default" uses a random seed, "deterministic" uses a fixed seed
+# Use deterministic for reproducible test runs
+source_file = "default"
+
+# Whether to persist failed test cases
+# If true, failed cases are stored and replayed on subsequent runs
+persist_failed = true
