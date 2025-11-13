@@ -1184,6 +1184,10 @@ pub async fn remote_gen_migration(
         }
     };
 
+    // Normalize remote inframap for older versions that didn't persist engine data
+    // Default to MergeTree when engine is null (ClickHouse default)
+    let remote_infra_map = normalize_inframap_engines(remote_infra_map);
+
     let changes = calculate_plan_diff_local(
         &remote_infra_map,
         &local_infra_map,
