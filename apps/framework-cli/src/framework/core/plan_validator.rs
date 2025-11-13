@@ -93,6 +93,7 @@ mod tests {
     use crate::framework::core::plan::InfraPlan;
     use crate::framework::versions::Version;
     use crate::infrastructure::olap::clickhouse::config::{ClickHouseConfig, ClusterConfig};
+    use crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine;
     use crate::project::{Project, ProjectFeatures};
     use std::collections::HashMap;
     use std::path::PathBuf;
@@ -150,7 +151,7 @@ mod tests {
             order_by: OrderBy::Fields(vec!["id".to_string()]),
             partition_by: None,
             sample_by: None,
-            engine: None,
+            engine: ClickhouseEngine::default(),
             version: Some(Version::from_string("1.0.0".to_string())),
             source_primitive: PrimitiveSignature {
                 name: name.to_string(),
@@ -307,7 +308,7 @@ mod tests {
     fn create_table_with_engine(
         name: &str,
         cluster_name: Option<String>,
-        engine: Option<crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine>,
+        engine: crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine,
     ) -> Table {
         Table {
             name: name.to_string(),
@@ -344,10 +345,8 @@ mod tests {
 
     #[test]
     fn test_non_replicated_engine_without_cluster_succeeds() {
-        use crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine;
-
         let project = create_test_project(None);
-        let table = create_table_with_engine("test_table", None, Some(ClickhouseEngine::MergeTree));
+        let table = create_table_with_engine("test_table", None, ClickhouseEngine::MergeTree);
         let plan = create_test_plan(vec![table]);
 
         let result = validate(&project, &plan);
