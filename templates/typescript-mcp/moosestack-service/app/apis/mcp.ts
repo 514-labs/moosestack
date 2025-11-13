@@ -16,48 +16,24 @@ import express from "express";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { z } from "zod";
-import { WebApp, getMooseUtils, ApiUtil, Sql, sql } from "@514labs/moose-lib";
-import { validateQuery, applyLimitToQuery } from "./utils/sql";
+import { WebApp, getMooseUtils, ApiUtil } from "@514labs/moose-lib";
 
 // TODO:
 // auth using getMooseUtils() jwt
 
-/**
- * Parameters for the get_data_catalog tool
- */
-interface DataCatalogParams {
-  component_type?: "tables" | "materialized_views";
-  search?: string;
-  format?: "summary" | "detailed";
-}
-
-/**
- * Column information from ClickHouse system.columns
- */
-interface ColumnInfo {
-  name: string;
-  type: string;
-  nullable: boolean;
-  comment?: string;
-}
-
-/**
- * Table information from ClickHouse system.tables
- */
-interface TableInfo {
-  name: string;
-  engine: string;
-  total_rows?: number;
-  total_bytes?: number;
-  columns: ColumnInfo[];
-}
-
-/**
- * Catalog response structure
- */
-interface DataCatalogResponse {
-  tables?: Record<string, TableInfo>;
-  materialized_views?: Record<string, TableInfo>;
+function clickhouseReadonlyQuery(
+  client: ApiUtil["client"],
+  sql: string,
+  limit = 100,
+): ReturnType<ApiUtil["client"]["query"]["client"]["query"]> {
+  return client.query.client.query({
+    query: sql,
+    format: "JSONEachRow",
+    clickhouse_settings: {
+      readonly: "2",
+      limit: limit.toString(),
+    },
+  });
 }
 
 /**
@@ -68,18 +44,19 @@ async function getTableColumns(
   dbName: string,
   tableName: string,
 ): Promise<ColumnInfo[]> {
-  const query = sql`
+  const query = `
     SELECT
       name,
       type,
       type LIKE '%Nullable%' as nullable,
       comment
     FROM system.columns
-    WHERE database = ${dbName} AND table = ${tableName}
+    WHERE database = '${dbName}' AND table = '${tableName}'
     ORDER BY position
   `;
 
-  const result = await client.query.execute(query);
+  // High limit for catalog queries - metadata tables are typically small
+  const result = await clickhouseReadonlyQuery(client, query, 10000);
   const data = (await result.json()) as any[];
 
   return data.map((row: any) => ({
@@ -102,7 +79,7 @@ async function getTablesAndMaterializedViews(
   tables: Array<{ name: string; engine: string }>;
   materializedViews: Array<{ name: string; engine: string }>;
 }> {
-  const query = sql`
+  const query = `
     SELECT
       name,
       engine,
@@ -111,11 +88,12 @@ async function getTablesAndMaterializedViews(
         ELSE 'table'
       END as component_type
     FROM system.tables
-    WHERE database = ${dbName}
+    WHERE database = '${dbName}'
     ORDER BY name
   `;
 
-  const result = await client.query.execute(query);
+  // High limit for catalog queries - metadata tables are typically small
+  const result = await clickhouseReadonlyQuery(client, query, 10000);
   const data = (await result.json()) as any[];
 
   let filteredData = data;
@@ -233,6 +211,44 @@ async function formatCatalogDetailed(
   return JSON.stringify(catalog, null, 2);
 }
 
+/**
+ * Parameters for the get_data_catalog tool
+ */
+interface DataCatalogParams {
+  component_type?: "tables" | "materialized_views";
+  search?: string;
+  format?: "summary" | "detailed";
+}
+
+/**
+ * Column information from ClickHouse system.columns
+ */
+interface ColumnInfo {
+  name: string;
+  type: string;
+  nullable: boolean;
+  comment?: string;
+}
+
+/**
+ * Table information from ClickHouse system.tables
+ */
+interface TableInfo {
+  name: string;
+  engine: string;
+  total_rows?: number;
+  total_bytes?: number;
+  columns: ColumnInfo[];
+}
+
+/**
+ * Catalog response structure
+ */
+interface DataCatalogResponse {
+  tables?: Record<string, TableInfo>;
+  materialized_views?: Record<string, TableInfo>;
+}
+
 // Create Express application
 const app = express();
 app.use(express.json());
@@ -251,30 +267,31 @@ const serverFactory = (mooseUtils: ApiUtil | null) => {
   /**
    * Register the query_clickhouse tool
    *
-   * This tool allows AI assistants to execute SQL queries against your ClickHouse
-   * database through the MCP protocol.
-   *
-   * Security features:
-   * - Query whitelist: Only SELECT, SHOW, DESCRIBE, EXPLAIN queries permitted
-   * - Query blocklist: Prevents INSERT, UPDATE, DELETE, DROP, CREATE, ALTER, etc.
-   * - Row limit enforcement: Results automatically limited to maximum of 100 rows
+   * Allows AI assistants to execute SQL queries against ClickHouse.
+   * Results are limited to max 1000 rows to prevent excessive data transfer.
+   * Security is enforced at the database level using ClickHouse readonly mode.
    */
   server.registerTool(
     "query_clickhouse",
+    /**
+     * Type assertion needed here due to MCP SDK type limitations.
+     * The SDK expects Record<string, ZodTypeAny> but our schema structure
+     * doesn't match that exact type. Runtime validation still works correctly.
+     */
     {
       title: "Query ClickHouse Database",
       description:
-        "Execute a SQL query against the ClickHouse OLAP database and return results as JSON",
+        "Execute a read-only query against the ClickHouse OLAP database and return results as JSON. Use SELECT, SHOW, DESCRIBE, or EXPLAIN queries only. Data modification queries (INSERT, UPDATE, DELETE, ALTER, CREATE, etc.) are prohibited.",
       inputSchema: {
         query: z.string().describe("SQL query to execute against ClickHouse"),
         limit: z
           .number()
           .min(1)
-          .max(100)
+          .max(1000)
           .default(100)
           .optional()
           .describe(
-            "Maximum number of rows to return (default: 100, max: 100)",
+            "Maximum number of rows to return (default: 100, max: 1000)",
           ),
       },
       outputSchema: {
@@ -283,7 +300,7 @@ const serverFactory = (mooseUtils: ApiUtil | null) => {
           .describe("Query results as array of row objects"),
         rowCount: z.number().describe("Number of rows returned"),
       },
-    },
+    } as any,
     async ({ query, limit = 100 }) => {
       try {
         // Check if MooseStack utilities are available
@@ -299,39 +316,13 @@ const serverFactory = (mooseUtils: ApiUtil | null) => {
           };
         }
 
-        // Validate query for security
-        const validation = validateQuery(query);
-        if (!validation.valid) {
-          return {
-            content: [
-              {
-                type: "text",
-                text: `Security error: ${validation.error}`,
-              },
-            ],
-            isError: true,
-          };
-        }
-
         const { client } = mooseUtils;
 
-        // Enforce maximum limit of 100
-        const enforcedLimit = Math.min(limit, 100);
-
-        // Apply limit to the query using our dedicated function
-        const finalQuery = applyLimitToQuery(
-          query,
-          enforcedLimit,
-          validation.supportsLimit,
+        const result = await clickhouseReadonlyQuery(
+          client,
+          query.trim(),
+          limit,
         );
-
-        // Create a Sql object manually for dynamic query execution
-        const sqlQuery: Sql = {
-          strings: [finalQuery],
-          values: [],
-        } as any;
-
-        const result = await client.query.execute(sqlQuery);
 
         // Parse the JSON response from ClickHouse
         const data = await result.json();
