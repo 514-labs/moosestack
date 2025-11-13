@@ -387,4 +387,178 @@ mod tests {
         assert!(!Severity::Error.includes(&Severity::Warning));
         assert!(!Severity::Error.includes(&Severity::Info));
     }
+
+    #[test]
+    fn test_parse_params_minimal() {
+        let args = json!({
+            "infrastructure_type": "clickhouse"
+        });
+
+        let params = parse_params(args.as_object()).unwrap();
+
+        assert!(matches!(
+            params.infrastructure_type,
+            InfrastructureType::ClickHouse
+        ));
+        assert!(params.component_filter.is_none());
+        assert!(matches!(params.severity, Severity::Info)); // Default
+        assert!(params.since.is_none());
+    }
+
+    #[test]
+    fn test_parse_params_full() {
+        let args = json!({
+            "infrastructure_type": "clickhouse",
+            "component_filter": {
+                "component_type": "table",
+                "component_name": "user_.*"
+            },
+            "severity": "error",
+            "since": "-1h"
+        });
+
+        let params = parse_params(args.as_object()).unwrap();
+
+        assert!(matches!(
+            params.infrastructure_type,
+            InfrastructureType::ClickHouse
+        ));
+        assert!(matches!(params.severity, Severity::Error));
+        assert_eq!(params.since, Some("-1h".to_string()));
+
+        let filter = params.component_filter.unwrap();
+        assert_eq!(filter.component_type, Some("table".to_string()));
+        assert!(filter.component_name.is_some());
+
+        let regex = filter.component_name.unwrap();
+        assert!(regex.is_match("user_events"));
+        assert!(regex.is_match("user_profiles"));
+        assert!(!regex.is_match("events"));
+    }
+
+    #[test]
+    fn test_parse_params_component_filter_type_only() {
+        let args = json!({
+            "infrastructure_type": "clickhouse",
+            "component_filter": {
+                "component_type": "view"
+            }
+        });
+
+        let params = parse_params(args.as_object()).unwrap();
+
+        let filter = params.component_filter.unwrap();
+        assert_eq!(filter.component_type, Some("view".to_string()));
+        assert!(filter.component_name.is_none());
+    }
+
+    #[test]
+    fn test_parse_params_component_filter_name_only() {
+        let args = json!({
+            "infrastructure_type": "clickhouse",
+            "component_filter": {
+                "component_name": "events"
+            }
+        });
+
+        let params = parse_params(args.as_object()).unwrap();
+
+        let filter = params.component_filter.unwrap();
+        assert!(filter.component_type.is_none());
+        assert!(filter.component_name.is_some());
+    }
+
+    #[test]
+    fn test_parse_params_invalid_regex() {
+        let args = json!({
+            "infrastructure_type": "clickhouse",
+            "component_filter": {
+                "component_name": "[invalid(regex"
+            }
+        });
+
+        let result = parse_params(args.as_object());
+        assert!(matches!(result, Err(DiagnoseError::InvalidRegex { .. })));
+
+        if let Err(DiagnoseError::InvalidRegex { pattern, .. }) = result {
+            assert_eq!(pattern, "[invalid(regex");
+        }
+    }
+
+    #[test]
+    fn test_parse_params_invalid_infrastructure_type() {
+        let args = json!({
+            "infrastructure_type": "kafka"
+        });
+
+        let result = parse_params(args.as_object());
+        assert!(matches!(
+            result,
+            Err(DiagnoseError::UnsupportedInfrastructureType(_))
+        ));
+    }
+
+    #[test]
+    fn test_parse_params_invalid_severity() {
+        let args = json!({
+            "infrastructure_type": "clickhouse",
+            "severity": "critical"
+        });
+
+        let result = parse_params(args.as_object());
+        assert!(matches!(result, Err(DiagnoseError::InvalidParameter(_))));
+    }
+
+    #[test]
+    fn test_parse_params_missing_infrastructure_type() {
+        let args = json!({
+            "severity": "error"
+        });
+
+        let result = parse_params(args.as_object());
+        assert!(matches!(result, Err(DiagnoseError::InvalidParameter(_))));
+    }
+
+    #[test]
+    fn test_parse_params_no_arguments() {
+        let result = parse_params(None);
+        assert!(matches!(result, Err(DiagnoseError::InvalidParameter(_))));
+    }
+
+    #[test]
+    fn test_parse_params_all_severity_variants() {
+        for (severity_str, expected) in [
+            ("error", Severity::Error),
+            ("warning", Severity::Warning),
+            ("info", Severity::Info),
+            ("all", Severity::Info), // "all" maps to Info
+        ] {
+            let args = json!({
+                "infrastructure_type": "clickhouse",
+                "severity": severity_str
+            });
+
+            let params = parse_params(args.as_object()).unwrap();
+            assert_eq!(
+                params.severity, expected,
+                "Failed for severity: {}",
+                severity_str
+            );
+        }
+    }
+
+    #[test]
+    fn test_parse_params_case_insensitive() {
+        let args = json!({
+            "infrastructure_type": "CLICKHOUSE",
+            "severity": "ERROR"
+        });
+
+        let params = parse_params(args.as_object()).unwrap();
+        assert!(matches!(
+            params.infrastructure_type,
+            InfrastructureType::ClickHouse
+        ));
+        assert!(matches!(params.severity, Severity::Error));
+    }
 }

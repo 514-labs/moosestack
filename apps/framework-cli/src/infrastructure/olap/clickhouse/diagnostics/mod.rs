@@ -388,3 +388,340 @@ pub async fn run_diagnostics(
         filtered_issues,
     ))
 }
+
+#[cfg(test)]
+pub mod test_providers {
+    use super::*;
+    use serde_json::json;
+
+    /// Mock diagnostic provider that returns predictable issues for testing
+    ///
+    /// This provider can be configured to return specific issues without requiring
+    /// a real ClickHouse connection, making it useful for testing the orchestration
+    /// layer and MCP integration.
+    pub struct MockDiagnostic {
+        pub name: String,
+        pub system_wide: bool,
+        pub issues_to_return: Vec<Issue>,
+    }
+
+    impl MockDiagnostic {
+        /// Create a mock that returns specific issues
+        pub fn with_issues(name: &str, issues: Vec<Issue>) -> Self {
+            Self {
+                name: name.to_string(),
+                system_wide: false,
+                issues_to_return: issues,
+            }
+        }
+
+        /// Create a mock that returns an error issue
+        pub fn with_error(component_name: &str) -> Self {
+            let mut details = Map::new();
+            details.insert("test_field".to_string(), json!("test_value"));
+            details.insert("count".to_string(), json!(42));
+
+            Self::with_issues(
+                "mock_diagnostic",
+                vec![Issue {
+                    severity: Severity::Error,
+                    source: "mock_source".to_string(),
+                    component: Component {
+                        component_type: "table".to_string(),
+                        name: component_name.to_string(),
+                        metadata: HashMap::new(),
+                    },
+                    error_type: "mock_error".to_string(),
+                    message: format!("Test error for {}", component_name),
+                    details,
+                    suggested_action: "Fix the mock issue".to_string(),
+                    related_queries: vec![
+                        format!("SELECT * FROM {}", component_name),
+                        "SHOW CREATE TABLE".to_string(),
+                    ],
+                }],
+            )
+        }
+
+        /// Create a mock that returns a warning issue
+        pub fn with_warning(component_name: &str) -> Self {
+            let mut details = Map::new();
+            details.insert("threshold".to_string(), json!(100));
+
+            Self::with_issues(
+                "mock_warning",
+                vec![Issue {
+                    severity: Severity::Warning,
+                    source: "mock_source".to_string(),
+                    component: Component {
+                        component_type: "table".to_string(),
+                        name: component_name.to_string(),
+                        metadata: HashMap::new(),
+                    },
+                    error_type: "mock_warning".to_string(),
+                    message: format!("Test warning for {}", component_name),
+                    details,
+                    suggested_action: "Monitor the situation".to_string(),
+                    related_queries: vec![],
+                }],
+            )
+        }
+
+        /// Create a mock that always succeeds with no issues
+        pub fn always_healthy() -> Self {
+            Self::with_issues("healthy_mock", vec![])
+        }
+
+        /// Create a system-wide mock provider
+        pub fn system_wide(name: &str, issues: Vec<Issue>) -> Self {
+            Self {
+                name: name.to_string(),
+                system_wide: true,
+                issues_to_return: issues,
+            }
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl DiagnosticProvider for MockDiagnostic {
+        fn name(&self) -> &str {
+            &self.name
+        }
+
+        fn applicable_to(&self, _: &Component, _: Option<&ClickhouseEngine>) -> bool {
+            true
+        }
+
+        fn is_system_wide(&self) -> bool {
+            self.system_wide
+        }
+
+        async fn diagnose(
+            &self,
+            _component: &Component,
+            _engine: Option<&ClickhouseEngine>,
+            _config: &ClickHouseConfig,
+            _since: Option<&str>,
+        ) -> Result<Vec<Issue>, DiagnosticError> {
+            Ok(self.issues_to_return.clone())
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_mock_diagnostic_with_error() {
+        let mock = test_providers::MockDiagnostic::with_error("test_table");
+        let config = ClickHouseConfig {
+            host: "localhost".to_string(),
+            host_port: 8123,
+            native_port: 9000,
+            db_name: "test_db".to_string(),
+            use_ssl: false,
+            user: "default".to_string(),
+            password: "".to_string(),
+            host_data_path: None,
+            additional_databases: Vec::new(),
+            clusters: None,
+        };
+
+        let component = Component {
+            component_type: "table".to_string(),
+            name: "test_table".to_string(),
+            metadata: HashMap::new(),
+        };
+
+        let issues = mock
+            .diagnose(&component, None, &config, None)
+            .await
+            .unwrap();
+
+        assert_eq!(issues.len(), 1);
+        assert_eq!(issues[0].severity, Severity::Error);
+        assert_eq!(issues[0].error_type, "mock_error");
+        assert_eq!(issues[0].component.name, "test_table");
+        assert_eq!(issues[0].related_queries.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn test_mock_diagnostic_always_healthy() {
+        let mock = test_providers::MockDiagnostic::always_healthy();
+        let config = ClickHouseConfig {
+            host: "localhost".to_string(),
+            host_port: 8123,
+            native_port: 9000,
+            db_name: "test_db".to_string(),
+            use_ssl: false,
+            user: "default".to_string(),
+            password: "".to_string(),
+            host_data_path: None,
+            additional_databases: Vec::new(),
+            clusters: None,
+        };
+
+        let component = Component {
+            component_type: "table".to_string(),
+            name: "test_table".to_string(),
+            metadata: HashMap::new(),
+        };
+
+        let issues = mock
+            .diagnose(&component, None, &config, None)
+            .await
+            .unwrap();
+        assert_eq!(issues.len(), 0);
+    }
+
+    #[test]
+    fn test_severity_includes() {
+        // Info includes all severities
+        assert!(Severity::Info.includes(&Severity::Error));
+        assert!(Severity::Info.includes(&Severity::Warning));
+        assert!(Severity::Info.includes(&Severity::Info));
+
+        // Warning includes warning and error
+        assert!(Severity::Warning.includes(&Severity::Error));
+        assert!(Severity::Warning.includes(&Severity::Warning));
+        assert!(!Severity::Warning.includes(&Severity::Info));
+
+        // Error includes only error
+        assert!(Severity::Error.includes(&Severity::Error));
+        assert!(!Severity::Error.includes(&Severity::Warning));
+        assert!(!Severity::Error.includes(&Severity::Info));
+    }
+
+    #[test]
+    fn test_severity_filtering() {
+        let mut details = Map::new();
+        details.insert("level".to_string(), serde_json::json!("test"));
+
+        let issues = vec![
+            Issue {
+                severity: Severity::Error,
+                component: Component {
+                    component_type: "table".to_string(),
+                    name: "test".to_string(),
+                    metadata: HashMap::new(),
+                },
+                source: "test".to_string(),
+                error_type: "error_type".to_string(),
+                message: "Error".to_string(),
+                details: details.clone(),
+                suggested_action: "Fix".to_string(),
+                related_queries: vec![],
+            },
+            Issue {
+                severity: Severity::Warning,
+                component: Component {
+                    component_type: "table".to_string(),
+                    name: "test".to_string(),
+                    metadata: HashMap::new(),
+                },
+                source: "test".to_string(),
+                error_type: "warning_type".to_string(),
+                message: "Warning".to_string(),
+                details: details.clone(),
+                suggested_action: "Check".to_string(),
+                related_queries: vec![],
+            },
+            Issue {
+                severity: Severity::Info,
+                component: Component {
+                    component_type: "table".to_string(),
+                    name: "test".to_string(),
+                    metadata: HashMap::new(),
+                },
+                source: "test".to_string(),
+                error_type: "info_type".to_string(),
+                message: "Info".to_string(),
+                details,
+                suggested_action: "Note".to_string(),
+                related_queries: vec![],
+            },
+        ];
+
+        // Filter for errors only
+        let filtered: Vec<_> = issues
+            .iter()
+            .filter(|i| Severity::Error.includes(&i.severity))
+            .collect();
+
+        assert_eq!(filtered.len(), 1);
+        assert_eq!(filtered[0].severity, Severity::Error);
+
+        // Filter for warnings and above
+        let filtered: Vec<_> = issues
+            .iter()
+            .filter(|i| Severity::Warning.includes(&i.severity))
+            .collect();
+
+        assert_eq!(filtered.len(), 2);
+
+        // Filter for all (info and above)
+        let filtered: Vec<_> = issues
+            .iter()
+            .filter(|i| Severity::Info.includes(&i.severity))
+            .collect();
+
+        assert_eq!(filtered.len(), 3);
+    }
+
+    #[test]
+    fn test_diagnostic_output_summary() {
+        let issues = vec![
+            Issue {
+                severity: Severity::Error,
+                source: "mutations".to_string(),
+                component: Component {
+                    component_type: "table".to_string(),
+                    name: "users".to_string(),
+                    metadata: HashMap::new(),
+                },
+                error_type: "stuck_mutation".to_string(),
+                message: "Mutation stuck".to_string(),
+                details: Map::new(),
+                suggested_action: "Fix".to_string(),
+                related_queries: vec![],
+            },
+            Issue {
+                severity: Severity::Warning,
+                source: "parts".to_string(),
+                component: Component {
+                    component_type: "table".to_string(),
+                    name: "users".to_string(),
+                    metadata: HashMap::new(),
+                },
+                error_type: "too_many_parts".to_string(),
+                message: "Too many parts".to_string(),
+                details: Map::new(),
+                suggested_action: "Wait for merge".to_string(),
+                related_queries: vec![],
+            },
+            Issue {
+                severity: Severity::Error,
+                source: "replication".to_string(),
+                component: Component {
+                    component_type: "table".to_string(),
+                    name: "events".to_string(),
+                    metadata: HashMap::new(),
+                },
+                error_type: "replication_lag".to_string(),
+                message: "Replication lagging".to_string(),
+                details: Map::new(),
+                suggested_action: "Check network".to_string(),
+                related_queries: vec![],
+            },
+        ];
+
+        let output = DiagnosticOutput::new(InfrastructureType::ClickHouse, issues);
+
+        assert_eq!(output.summary.total_issues, 3);
+        assert_eq!(output.summary.by_severity.get("error"), Some(&2));
+        assert_eq!(output.summary.by_severity.get("warning"), Some(&1));
+        assert_eq!(output.summary.by_component.get("users"), Some(&2));
+        assert_eq!(output.summary.by_component.get("events"), Some(&1));
+    }
+}
