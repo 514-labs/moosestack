@@ -1760,7 +1760,8 @@ impl InfrastructureMap {
         let mut table_additions = 0;
 
         // Use normalized tables for comparison, but original tables for changes
-        for normalized_table in normalized_self.values() {
+        // Iterate over key-value pairs to preserve the HashMap key for lookups
+        for (key, normalized_table) in normalized_self.iter() {
             // self_tables can be from remote where the keys are IDs with another database prefix
             // but they are then the default database,
             //   the `database` field is None and we build the ID ourselves
@@ -1768,13 +1769,14 @@ impl InfrastructureMap {
                 normalized_target.get(&normalized_table.id(default_database))
             {
                 if !tables_equal_ignore_metadata(normalized_table, normalized_target) {
-                    // Get original tables for use in changes
+                    // Get original tables for use in changes using the HashMap key
+                    // not the computed ID, since remote keys may differ from computed IDs
                     let table = self_tables
-                        .get(&normalized_table.id(default_database))
-                        .unwrap();
+                        .get(key)
+                        .expect("normalized_self and self_tables should have same keys");
                     let target_table = target_tables
                         .get(&normalized_target.id(default_database))
-                        .unwrap();
+                        .expect("normalized_target exists, so target_table should too");
                     // Respect lifecycle: ExternallyManaged tables are never modified
                     if target_table.life_cycle == LifeCycle::ExternallyManaged && respect_life_cycle
                     {
@@ -1925,10 +1927,10 @@ impl InfrastructureMap {
                     }
                 }
             } else {
-                // Get original table for removal
+                // Get original table for removal using the HashMap key
                 let table = self_tables
-                    .get(&normalized_table.id(default_database))
-                    .unwrap();
+                    .get(key)
+                    .expect("normalized_self and self_tables should have same keys");
                 // Respect lifecycle: DeletionProtected and ExternallyManaged tables are never removed
                 match (table.life_cycle, respect_life_cycle) {
                     (LifeCycle::FullyManaged, _) | (_, false) => {

@@ -857,6 +857,30 @@ pub(crate) async fn get_remote_inframap_protobuf(
     }
 }
 
+/// Normalizes engine fields in an infrastructure map by defaulting null engines to MergeTree
+///
+/// This is needed for backward compatibility with older deployed versions that didn't
+/// persist engine data in state storage. ClickHouse defaults to MergeTree when no engine
+/// is specified, so we apply the same default here.
+///
+/// # Arguments
+/// * `infra_map` - The infrastructure map to normalize
+///
+/// # Returns
+/// * `InfrastructureMap` - The normalized infrastructure map with default engines applied
+fn normalize_inframap_engines(mut infra_map: InfrastructureMap) -> InfrastructureMap {
+    use crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine;
+
+    for table in infra_map.tables.values_mut() {
+        if table.engine.is_none() {
+            log::debug!("Defaulting engine to MergeTree for table: {}", table.name);
+            table.engine = Some(ClickhouseEngine::MergeTree);
+        }
+    }
+
+    infra_map
+}
+
 /// Calculates the diff between current and target infrastructure maps on the client side
 ///
 /// # Arguments
@@ -1062,6 +1086,10 @@ pub async fn remote_plan(
             }
         }
     };
+
+    // Normalize remote inframap for older versions that didn't persist engine data
+    // Default to MergeTree when engine is null (ClickHouse default)
+    let remote_infra_map = normalize_inframap_engines(remote_infra_map);
 
     // Calculate and display changes
     let changes = calculate_plan_diff_local(
