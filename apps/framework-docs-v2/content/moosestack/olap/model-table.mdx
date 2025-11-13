@@ -1074,7 +1074,7 @@ cloud_replicated = OlapTable[Record]("cloud_records", OlapConfig(
 
 Replicated engines support three configuration approaches. Choose the one that fits your deployment:
 
-1. Default Configuration (Recommended)
+###### Default
 
 Omit all replication parameters. Moose uses smart defaults that work in both ClickHouse Cloud and self-managed environments:
 
@@ -1100,7 +1100,7 @@ table = OlapTable[Record]("my_table", OlapConfig(
 
 Moose auto-injects: `/clickhouse/tables/{database}/{shard}/{table_name}` and `{replica}` in local development. ClickHouse Cloud uses its own patterns automatically.
 
-2. Cluster Configuration
+###### Cluster
 
 For multi-node deployments, specify a cluster name to use `ON CLUSTER` DDL operations:
 
@@ -1135,7 +1135,7 @@ name = "default"
 - Running multi-node self-managed ClickHouse with cluster configuration
 - Need `ON CLUSTER` DDL for distributed operations
 
-3. Explicit Replication Paths
+###### Replication Paths
 
 For custom replication topology, specify both `keeper_path` and `replica_name`:
 
