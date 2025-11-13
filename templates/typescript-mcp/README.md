@@ -109,7 +109,7 @@ This template implements several security measures for safe database querying:
 ### ✅ Implemented
 
 - **Readonly SQL Queries**: enforced by the ClickHouse client
-- **Row Limiting**: Results automatically capped at 100 rows to prevent excessive data transfer
+- **Row Limiting**: Results are capped at a default of 100 rows, but this limit can be configured up to a maximum of 1000 rows to prevent excessive data transfer
 - **Error Handling**: Security errors returned through MCP protocol without exposing internals
 
 ### ⚠️ Production Considerations
