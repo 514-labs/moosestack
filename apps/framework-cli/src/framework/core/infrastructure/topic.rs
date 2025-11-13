@@ -37,7 +37,7 @@ pub struct Topic {
     #[serde(default = "LifeCycle::default_for_deserialization")]
     pub life_cycle: LifeCycle,
 
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub schema_config: Option<KafkaSchema>,
 }
 

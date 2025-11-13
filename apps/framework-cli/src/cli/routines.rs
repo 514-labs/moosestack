@@ -906,21 +906,420 @@ async fn legacy_remote_plan_logic(
         },
     );
 
+    // For legacy servers (commit 36732a1 / v0.5.9), we need to transform the infrastructure map
+    // to a format they can understand. The main issue is that engine field changed from
+    // Option<String> to Option<ClickhouseEngine>, and we need to convert it back to string format.
+
+    // Serialize the request to JSON
     let request_body = PlanRequest {
-        infra_map: local_infra_map,
+        infra_map: local_infra_map.clone(),
     };
+    let mut request_json = serde_json::to_value(&request_body)?;
+
+    // Debug: Write BEFORE transformation
+    std::fs::write(
+        "/tmp/moose-plan-before-transform.json",
+        serde_json::to_string_pretty(&request_json).unwrap(),
+    )?;
+
+    // Transform the tables in the JSON to legacy format
+    if let Some(infra_map) = request_json.get_mut("infra_map") {
+        if let Some(tables_obj) = infra_map.get_mut("tables") {
+            if let Some(tables_map) = tables_obj.as_object_mut() {
+                // Create a new tables map with legacy IDs and converted engines
+                let mut legacy_tables = serde_json::Map::new();
+
+                for (_old_id, table_value) in tables_map.iter() {
+                    let table_json = table_value.clone();
+
+                    // Get table name as legacy ID
+                    // The name field already includes the version (e.g., "TableName_0_0")
+                    // The old format didn't have database prefix, so the name is already in the correct format
+                    let legacy_id = table_json["name"].as_str().unwrap().to_string();
+
+                    // Get reference to the object for reading
+                    let obj = table_json.as_object().unwrap();
+
+                    // Reconstruct table with correct field order from commit 36732a1:
+                    // name, columns, order_by, deduplicate, engine, version, source_primitive, metadata, life_cycle
+                    let mut new_table = serde_json::Map::new();
+
+                    // 1. name
+                    if let Some(name) = obj.get("name") {
+                        new_table.insert("name".to_string(), name.clone());
+                    }
+
+                    // 2. columns (will be transformed below)
+                    // Placeholder, we'll update this later
+
+                    // 3. order_by - convert from OrderBy enum to Vec<String>
+                    let order_by_val = obj
+                        .get("order_by")
+                        .cloned()
+                        .unwrap_or(serde_json::json!([]));
+                    let order_by_array = if let Some(arr) = order_by_val.as_array() {
+                        arr.clone()
+                    } else if let Some(s) = order_by_val.as_str() {
+                        vec![serde_json::json!(s)]
+                    } else {
+                        vec![order_by_val]
+                    };
+                    new_table.insert("order_by".to_string(), serde_json::json!(order_by_array));
+
+                    // 4. deduplicate and 5. engine - handle conversion
+                    // In old versions at commit 36732a1:
+                    //   - engine: null + deduplicate: true = ReplacingMergeTree
+                    //   - engine: null + deduplicate: false = MergeTree (default)
+                    //   - engine: "OtherEngine" = explicit engine
+                    // In new versions:
+                    //   - engine: ReplacingMergeTree = ReplacingMergeTree
+                    //   - engine: MergeTree = explicit MergeTree
+                    let (deduplicate_val, engine_val) = if let Some(engine) =
+                        obj.get("engine").cloned()
+                    {
+                        if !engine.is_null() && !engine.is_string() {
+                            // Engine is an object (new format), convert to string
+                            use crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine;
+                            if let Ok(eng) =
+                                serde_json::from_value::<ClickhouseEngine>(engine.clone())
+                            {
+                                let engine_str: String = eng.into();
+                                if engine_str == "ReplacingMergeTree" {
+                                    // Convert to old format: deduplicate: true, engine: null
+                                    (serde_json::json!(true), serde_json::Value::Null)
+                                } else if engine_str == "MergeTree" {
+                                    // Convert to old format: deduplicate: false, engine: null (MergeTree is default)
+                                    (serde_json::json!(false), serde_json::Value::Null)
+                                } else {
+                                    // Other engines: keep as string
+                                    (serde_json::json!(false), serde_json::json!(engine_str))
+                                }
+                            } else {
+                                // Failed to parse, use as-is
+                                (
+                                    obj.get("deduplicate")
+                                        .cloned()
+                                        .unwrap_or(serde_json::json!(false)),
+                                    engine,
+                                )
+                            }
+                        } else if let Some(engine_str) = engine.as_str() {
+                            // Engine is already a string
+                            if engine_str == "MergeTree" {
+                                // Convert explicit MergeTree to null (old format default)
+                                (serde_json::json!(false), serde_json::Value::Null)
+                            } else if engine_str == "ReplacingMergeTree" {
+                                // Convert to old format
+                                (serde_json::json!(true), serde_json::Value::Null)
+                            } else {
+                                // Other engines: keep as-is
+                                (serde_json::json!(false), engine)
+                            }
+                        } else {
+                            // Engine is null, keep as-is
+                            (
+                                obj.get("deduplicate")
+                                    .cloned()
+                                    .unwrap_or(serde_json::json!(false)),
+                                engine,
+                            )
+                        }
+                    } else {
+                        // No engine, keep deduplicate as-is
+                        (
+                            obj.get("deduplicate")
+                                .cloned()
+                                .unwrap_or(serde_json::json!(false)),
+                            serde_json::Value::Null,
+                        )
+                    };
+                    new_table.insert("deduplicate".to_string(), deduplicate_val);
+                    new_table.insert("engine".to_string(), engine_val);
+
+                    // 6. version
+                    if let Some(version) = obj.get("version") {
+                        new_table.insert("version".to_string(), version.clone());
+                    }
+
+                    // 7. source_primitive
+                    if let Some(source_primitive) = obj.get("source_primitive") {
+                        new_table.insert("source_primitive".to_string(), source_primitive.clone());
+                    }
+
+                    // 8. metadata (strip source field which is new)
+                    if let Some(metadata) = obj.get("metadata") {
+                        if let Some(metadata_obj) = metadata.as_object() {
+                            let mut new_metadata = serde_json::Map::new();
+                            if let Some(description) = metadata_obj.get("description") {
+                                new_metadata.insert("description".to_string(), description.clone());
+                            }
+                            // Don't include "source" field (new in current version)
+                            new_table.insert(
+                                "metadata".to_string(),
+                                serde_json::Value::Object(new_metadata),
+                            );
+                        }
+                    }
+
+                    // 9. life_cycle
+                    if let Some(life_cycle) = obj.get("life_cycle") {
+                        new_table.insert("life_cycle".to_string(), life_cycle.clone());
+                    }
+
+                    // Recursive function to fix data_type (handles arbitrarily nested Nested types with columns and Array types)
+                    fn fix_data_type_recursive(data_type: &serde_json::Value) -> serde_json::Value {
+                        if let Some(dt_obj) = data_type.as_object() {
+                            // Check if this is a Nested type with columns
+                            if let Some(columns) = dt_obj.get("columns") {
+                                if let Some(columns_arr) = columns.as_array() {
+                                    // This is a Nested type, fix its columns recursively
+                                    let fixed_columns: Vec<serde_json::Value> = columns_arr
+                                        .iter()
+                                        .filter_map(|col| col.as_object())
+                                        .map(|column_obj| {
+                                            // Reconstruct each column with correct field order
+                                            let mut new_column = serde_json::Map::new();
+                                            if let Some(name) = column_obj.get("name") {
+                                                new_column.insert("name".to_string(), name.clone());
+                                            }
+                                            // RECURSIVE: data_type might be another Nested type or Array type
+                                            if let Some(inner_data_type) =
+                                                column_obj.get("data_type")
+                                            {
+                                                let fixed_data_type =
+                                                    fix_data_type_recursive(inner_data_type);
+                                                new_column.insert(
+                                                    "data_type".to_string(),
+                                                    fixed_data_type,
+                                                );
+                                            }
+                                            if let Some(required) = column_obj.get("required") {
+                                                new_column.insert(
+                                                    "required".to_string(),
+                                                    required.clone(),
+                                                );
+                                            }
+                                            if let Some(unique) = column_obj.get("unique") {
+                                                new_column
+                                                    .insert("unique".to_string(), unique.clone());
+                                            }
+                                            if let Some(primary_key) = column_obj.get("primary_key")
+                                            {
+                                                new_column.insert(
+                                                    "primary_key".to_string(),
+                                                    primary_key.clone(),
+                                                );
+                                            }
+                                            // Always include default (as null if not present)
+                                            let default_val = column_obj
+                                                .get("default")
+                                                .cloned()
+                                                .unwrap_or(serde_json::Value::Null);
+                                            new_column.insert("default".to_string(), default_val);
+                                            // annotations comes last
+                                            if let Some(annotations) = column_obj.get("annotations")
+                                            {
+                                                new_column.insert(
+                                                    "annotations".to_string(),
+                                                    annotations.clone(),
+                                                );
+                                            }
+                                            serde_json::Value::Object(new_column)
+                                        })
+                                        .collect();
+
+                                    // Rebuild the Nested type with fixed columns
+                                    let mut new_dt = serde_json::Map::new();
+                                    if let Some(name) = dt_obj.get("name") {
+                                        new_dt.insert("name".to_string(), name.clone());
+                                    }
+                                    new_dt.insert(
+                                        "columns".to_string(),
+                                        serde_json::json!(fixed_columns),
+                                    );
+                                    if let Some(jwt) = dt_obj.get("jwt") {
+                                        new_dt.insert("jwt".to_string(), jwt.clone());
+                                    }
+                                    return serde_json::Value::Object(new_dt);
+                                }
+                            }
+                            // Check if this is an Array type with elementType
+                            else if let Some(element_type) = dt_obj.get("elementType") {
+                                // This is an Array type, recurse into elementType
+                                let fixed_element_type = fix_data_type_recursive(element_type);
+                                let mut new_dt = serde_json::Map::new();
+                                new_dt.insert("elementType".to_string(), fixed_element_type);
+                                if let Some(element_nullable) = dt_obj.get("elementNullable") {
+                                    new_dt.insert(
+                                        "elementNullable".to_string(),
+                                        element_nullable.clone(),
+                                    );
+                                }
+                                return serde_json::Value::Object(new_dt);
+                            }
+                        }
+                        // Not a Nested type or Array type, return as-is
+                        data_type.clone()
+                    }
+
+                    // Function to fix a top-level column
+                    fn fix_column(
+                        column_obj: &serde_json::Map<String, serde_json::Value>,
+                    ) -> serde_json::Value {
+                        let mut new_column = serde_json::Map::new();
+                        if let Some(name) = column_obj.get("name") {
+                            new_column.insert("name".to_string(), name.clone());
+                        }
+                        // data_type might contain nested columns, recurse into it
+                        if let Some(data_type) = column_obj.get("data_type") {
+                            let fixed_data_type = fix_data_type_recursive(data_type);
+                            new_column.insert("data_type".to_string(), fixed_data_type);
+                        }
+                        if let Some(required) = column_obj.get("required") {
+                            new_column.insert("required".to_string(), required.clone());
+                        }
+                        if let Some(unique) = column_obj.get("unique") {
+                            new_column.insert("unique".to_string(), unique.clone());
+                        }
+                        if let Some(primary_key) = column_obj.get("primary_key") {
+                            new_column.insert("primary_key".to_string(), primary_key.clone());
+                        }
+                        let default_val = column_obj
+                            .get("default")
+                            .cloned()
+                            .unwrap_or(serde_json::Value::Null);
+                        new_column.insert("default".to_string(), default_val);
+                        if let Some(annotations) = column_obj.get("annotations") {
+                            new_column.insert("annotations".to_string(), annotations.clone());
+                        }
+                        serde_json::Value::Object(new_column)
+                    }
+
+                    // Now handle columns (insert at position 2)
+                    // Fix column field ordering and ensure "default": null is present
+                    if let Some(columns_val) = obj.get("columns") {
+                        if let Some(columns_arr) = columns_val.as_array() {
+                            let new_columns: Vec<serde_json::Value> = columns_arr
+                                .iter()
+                                .filter_map(|col| col.as_object().map(|c| fix_column(c)))
+                                .collect();
+
+                            // Insert columns as the second field (after name)
+                            // We need to rebuild the table to maintain correct order
+                            let mut final_table = serde_json::Map::new();
+                            final_table.insert("name".to_string(), new_table["name"].clone());
+                            final_table
+                                .insert("columns".to_string(), serde_json::json!(new_columns));
+                            for (key, value) in new_table.iter() {
+                                if key != "name" && key != "columns" {
+                                    final_table.insert(key.clone(), value.clone());
+                                }
+                            }
+                            new_table = final_table;
+                        }
+                    }
+
+                    legacy_tables.insert(legacy_id, serde_json::Value::Object(new_table));
+                }
+
+                *tables_map = legacy_tables;
+            }
+        }
+
+        // Transform topic_to_table_sync_processes to use legacy table IDs
+        if let Some(sync_processes_obj) = infra_map.get_mut("topic_to_table_sync_processes") {
+            if let Some(sync_map) = sync_processes_obj.as_object_mut() {
+                let mut legacy_sync = serde_json::Map::new();
+
+                for (_old_id, process_value) in sync_map.iter() {
+                    let mut process_json = process_value.clone();
+
+                    // Update target_table_id to legacy format (strip database prefix)
+                    if let Some(target_id) =
+                        process_json.get("target_table_id").and_then(|v| v.as_str())
+                    {
+                        // target_id might be "local_Table_0_0", we want "Table_0_0"
+                        // Split on underscore and skip the first part (database)
+                        let parts: Vec<&str> = target_id.split('_').collect();
+                        if parts.len() >= 2 {
+                            let legacy_target_id = parts[1..].join("_");
+                            process_json["target_table_id"] = serde_json::json!(legacy_target_id);
+
+                            // Recompute the sync process ID
+                            let source_topic = process_json["source_topic_id"].as_str().unwrap();
+                            let version_suffix = process_json
+                                .get("version")
+                                .and_then(|v| v.as_str())
+                                .map(|v| format!("_{}", v.replace('.', "_")))
+                                .unwrap_or_default();
+                            let new_sync_id =
+                                format!("{}_{}{}", source_topic, legacy_target_id, version_suffix);
+
+                            legacy_sync.insert(new_sync_id, process_json);
+                        } else {
+                            // Fallback: use original if splitting doesn't work
+                            legacy_sync.insert(target_id.to_string(), process_json);
+                        }
+                    }
+                }
+
+                *sync_map = legacy_sync;
+            }
+        }
+
+        // Remove new fields from topics
+        if let Some(topics_obj) = infra_map.get_mut("topics") {
+            if let Some(topics_map) = topics_obj.as_object_mut() {
+                for topic_value in topics_map.values_mut() {
+                    if let Some(obj) = topic_value.as_object_mut() {
+                        obj.remove("schema_config");
+                        if let Some(metadata_obj) = obj.get_mut("metadata") {
+                            if let Some(metadata_map) = metadata_obj.as_object_mut() {
+                                metadata_map.remove("source");
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Remove fields from API endpoints
+        if let Some(endpoints_obj) = infra_map.get_mut("api_endpoints") {
+            if let Some(endpoints_map) = endpoints_obj.as_object_mut() {
+                for endpoint_value in endpoints_map.values_mut() {
+                    if let Some(obj) = endpoint_value.as_object_mut() {
+                        if let Some(metadata_obj) = obj.get_mut("metadata") {
+                            if let Some(metadata_map) = metadata_obj.as_object_mut() {
+                                metadata_map.remove("source");
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Remove new top-level fields
+        infra_map.as_object_mut().unwrap().remove("workflows");
+        infra_map.as_object_mut().unwrap().remove("web_apps");
+    }
 
     let auth_token = token
         .clone()
         .or_else(|| std::env::var("MOOSE_ADMIN_TOKEN").ok())
         .ok_or_else(|| anyhow::anyhow!("Authentication token required. Please provide token via --token parameter or MOOSE_ADMIN_TOKEN environment variable"))?;
 
+    // Debug: Write AFTER transformation
+    std::fs::write(
+        "/tmp/moose-plan-after-transform.json",
+        serde_json::to_string_pretty(&request_json).unwrap(),
+    )?;
+
     let client = reqwest::Client::new();
     let response = client
         .post(&target_url)
         .header("Content-Type", "application/json")
         .header("Authorization", format!("Bearer {auth_token}"))
-        .json(&request_body)
+        .json(&request_json) // Send the modified JSON directly
         .send()
         .await?;
 
@@ -932,7 +1331,47 @@ async fn legacy_remote_plan_logic(
         ));
     }
 
-    let plan_response: PlanResponse = response.json().await?;
+    // Get the response text and transform from legacy format to new format
+    let response_text = response.text().await?;
+
+    // Transform the response from legacy format to new format
+    // The old server returns engine as a string, but new code expects ClickhouseEngine enum
+    let mut response_json: serde_json::Value = serde_json::from_str(&response_text)?;
+
+    // Recursively transform engine fields from string to ClickhouseEngine object format
+    fn transform_engine_fields(value: &mut serde_json::Value) {
+        match value {
+            serde_json::Value::Object(map) => {
+                // Check if this object has an engine field that's a string
+                if let Some(engine_val) = map.get_mut("engine") {
+                    if let Some(engine_str) = engine_val.as_str() {
+                        // Convert string to ClickhouseEngine and back to JSON
+                        use crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine;
+                        if let Ok(engine) = engine_str.try_into() {
+                            let engine_typed: ClickhouseEngine = engine;
+                            *engine_val = serde_json::to_value(engine_typed)
+                                .unwrap_or(serde_json::Value::Null);
+                        }
+                    }
+                }
+                // Recursively process all values in the object
+                for v in map.values_mut() {
+                    transform_engine_fields(v);
+                }
+            }
+            serde_json::Value::Array(arr) => {
+                // Recursively process all items in the array
+                for item in arr.iter_mut() {
+                    transform_engine_fields(item);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    transform_engine_fields(&mut response_json);
+
+    let plan_response: PlanResponse = serde_json::from_value(response_json)?;
 
     display::show_message_wrapper(
         MessageType::Success,

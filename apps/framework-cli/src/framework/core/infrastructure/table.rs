@@ -31,7 +31,8 @@ pub struct SourceLocation {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Eq, Hash)]
 pub struct Metadata {
     pub description: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none", default)]
+    // Can be deserialized from old versions (which don't have this field)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source: Option<SourceLocation>,
 }
 
@@ -273,7 +274,7 @@ pub struct Table {
     pub partition_by: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub sample_by: Option<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub engine: Option<ClickhouseEngine>,
     pub version: Option<Version>,
     pub source_primitive: PrimitiveSignature,
@@ -581,6 +582,51 @@ impl Table {
     }
 }
 
+// Legacy enum kept for backward compatibility with v0.5.9-v0.6.11
+// This is no longer used for new functionality, but needed for deserializing old data
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "PascalCase")]
+enum LegacyColumnDefaults {
+    AutoIncrement,
+    #[serde(alias = "CUID")]
+    Cuid,
+    #[serde(alias = "UUID")]
+    Uuid,
+    Now,
+}
+
+impl LegacyColumnDefaults {
+    fn to_sql_expression(&self) -> String {
+        match self {
+            LegacyColumnDefaults::AutoIncrement => "auto_increment()".to_string(),
+            LegacyColumnDefaults::Cuid => "generateUUIDv4()".to_string(), // CUID approximation
+            LegacyColumnDefaults::Uuid => "generateUUIDv4()".to_string(),
+            LegacyColumnDefaults::Now => "now()".to_string(),
+        }
+    }
+}
+
+// Custom deserializer to handle both old enum format and new string format
+fn deserialize_column_default<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum StringOrEnum {
+        // Try Enum first - order matters for untagged enums!
+        // If Enum fails to deserialize, it will try String next
+        Enum(LegacyColumnDefaults),
+        String(String),
+    }
+
+    let value = Option::<StringOrEnum>::deserialize(deserializer)?;
+    Ok(value.map(|v| match v {
+        StringOrEnum::Enum(e) => e.to_sql_expression(),
+        StringOrEnum::String(s) => s,
+    }))
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
 pub struct Column {
     pub name: String,
@@ -589,6 +635,11 @@ pub struct Column {
     pub required: bool,
     pub unique: bool,
     pub primary_key: bool,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_column_default"
+    )]
     pub default: Option<String>,
     #[serde(default)]
     pub annotations: Vec<(String, Value)>, // workaround for needing to Hash
@@ -1650,5 +1701,100 @@ mod tests {
             ..table1.clone()
         };
         assert_eq!(table7.id(DEFAULT_DATABASE_NAME), "local_users_1_0");
+    }
+
+    #[test]
+    fn test_column_default_backward_compatibility() {
+        // Test that Column.default can deserialize from legacy enum format
+        // This simulates receiving a column definition from a legacy server (v0.6.11 or earlier)
+
+        // Test 1: Legacy enum format (AutoIncrement)
+        let legacy_json_auto_increment = r#"{
+            "name": "id",
+            "data_type": "Int64",
+            "required": true,
+            "unique": true,
+            "primary_key": true,
+            "default": {"AutoIncrement": null}
+        }"#;
+        let result: Result<Column, _> = serde_json::from_str(legacy_json_auto_increment);
+        assert!(
+            result.is_ok(),
+            "Failed to deserialize legacy AutoIncrement: {:?}",
+            result.err()
+        );
+        let column = result.unwrap();
+        assert_eq!(column.default, Some("auto_increment()".to_string()));
+
+        // Test 2: Legacy enum format (UUID)
+        let legacy_json_uuid = r#"{
+            "name": "user_id",
+            "data_type": "String",
+            "required": true,
+            "unique": true,
+            "primary_key": false,
+            "default": "Uuid"
+        }"#;
+        let result: Result<Column, _> = serde_json::from_str(legacy_json_uuid);
+        assert!(
+            result.is_ok(),
+            "Failed to deserialize legacy UUID: {:?}",
+            result.err()
+        );
+        let column = result.unwrap();
+        assert_eq!(column.default, Some("generateUUIDv4()".to_string()));
+
+        // Test 3: Legacy enum format (Now)
+        let legacy_json_now = r#"{
+            "name": "created_at",
+            "data_type": "String",
+            "required": false,
+            "unique": false,
+            "primary_key": false,
+            "default": "Now"
+        }"#;
+        let result: Result<Column, _> = serde_json::from_str(legacy_json_now);
+        assert!(
+            result.is_ok(),
+            "Failed to deserialize legacy Now: {:?}",
+            result.err()
+        );
+        let column = result.unwrap();
+        assert_eq!(column.default, Some("now()".to_string()));
+
+        // Test 4: Current string format (should still work)
+        let current_json = r#"{
+            "name": "status",
+            "data_type": "String",
+            "required": false,
+            "unique": false,
+            "primary_key": false,
+            "default": "active"
+        }"#;
+        let result: Result<Column, _> = serde_json::from_str(current_json);
+        assert!(
+            result.is_ok(),
+            "Failed to deserialize current format: {:?}",
+            result.err()
+        );
+        let column = result.unwrap();
+        assert_eq!(column.default, Some("active".to_string()));
+
+        // Test 5: No default (should be None)
+        let no_default_json = r#"{
+            "name": "optional_field",
+            "data_type": "String",
+            "required": false,
+            "unique": false,
+            "primary_key": false
+        }"#;
+        let result: Result<Column, _> = serde_json::from_str(no_default_json);
+        assert!(
+            result.is_ok(),
+            "Failed to deserialize no default: {:?}",
+            result.err()
+        );
+        let column = result.unwrap();
+        assert_eq!(column.default, None);
     }
 }

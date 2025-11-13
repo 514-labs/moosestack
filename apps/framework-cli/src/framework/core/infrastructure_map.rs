@@ -456,14 +456,19 @@ pub enum ProcessChange {
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct InfraChanges {
     /// Changes to OLAP (database) components
+    #[serde(default)]
     pub olap_changes: Vec<OlapChange>,
     /// Changes to process components
+    #[serde(default)]
     pub processes_changes: Vec<ProcessChange>,
     /// Changes to API components
+    #[serde(default)]
     pub api_changes: Vec<ApiChange>,
     /// Changes to WebApp components
+    #[serde(default)]
     pub web_app_changes: Vec<WebAppChange>,
     /// Changes to streaming components
+    #[serde(default)]
     pub streaming_engine_changes: Vec<StreamingChange>,
 }
 
@@ -541,11 +546,11 @@ pub struct InfrastructureMap {
     pub sql_resources: HashMap<String, SqlResource>,
 
     /// Collection of workflows indexed by workflow name
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     pub workflows: HashMap<String, Workflow>,
 
     /// Collection of web applications indexed by name
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     pub web_apps: HashMap<String, super::infrastructure::web_app::WebApp>,
 }
 
@@ -2944,6 +2949,196 @@ impl Default for InfrastructureMap {
             sql_resources: HashMap::new(),
             workflows: HashMap::new(),
             web_apps: HashMap::new(),
+        }
+    }
+}
+
+impl InfrastructureMap {
+    /// Transform this infrastructure map to a legacy-compatible format.
+    ///
+    /// This removes or transforms fields that were added after commit 36732a1 (v0.5.9 equivalent)
+    /// to ensure backwards compatibility when sending to older servers.
+    ///
+    /// Transformations performed:
+    /// - Removes `web_apps` (didn't exist in old versions)
+    /// - Removes `workflows` (old version has incompatible structure with required `scripts`/`children` fields)
+    /// - Strips `metadata.source` from all components
+    /// - Removes `schema_config` from topics
+    /// - Removes `engine` from tables (old version expected string, not enum)
+    /// - Strips database prefix from table IDs (old version: `Table_0_0`, new version: `local_Table_0_0`)
+    ///
+    /// Note: Workflow tracking is not supported when communicating with legacy servers.
+    /// This is a known limitation due to structural incompatibility in the Workflow type.
+    ///
+    /// # Returns
+    /// A clone of this map with legacy-incompatible fields removed
+    pub fn to_legacy_compatible(&self) -> Self {
+        use serde_json::json;
+        use std::collections::HashMap;
+
+        // Helper function to compute legacy table ID (without database prefix)
+        // Old format: {name}_{version} or {name}
+        // New format: {database}_{name}_{version} or {database}_{name}
+        let legacy_table_id = |table: &Table| -> String {
+            table.version.as_ref().map_or(table.name.clone(), |v| {
+                format!("{}_{}", table.name, v.as_suffix())
+            })
+        };
+
+        // Convert tables to legacy format
+        // The challenge: old Table had engine: Option<String>, new has engine: Option<ClickhouseEngine>
+        // We can't change the type, but we can ensure the engine serializes correctly
+        // by using a custom serialization wrapper
+        //
+        // Actually, the issue is that we need to send tables in a format the old server expects.
+        // Since we can't change the Table struct type, we'll manually construct the JSON representation
+        // that the old server expects, then let serde_json handle the serialization when sending.
+
+        let legacy_tables: HashMap<String, serde_json::Value> = self
+            .tables
+            .values()
+            .map(|table| {
+                // Serialize table to JSON
+                let mut table_json = serde_json::to_value(table).unwrap();
+
+                // Convert engine from object to string format
+                if let Some(engine_obj) = table.engine.as_ref() {
+                    let engine_str: String = engine_obj.clone().into();
+                    table_json["engine"] = json!(engine_str);
+                } else {
+                    // Remove engine field if None (will be skipped in serialization anyway)
+                    table_json.as_object_mut().unwrap().remove("engine");
+                }
+
+                // Remove fields that don't exist in old version
+                let obj = table_json.as_object_mut().unwrap();
+                obj.remove("partition_by");
+                obj.remove("sample_by");
+                obj.remove("engine_params_hash");
+                obj.remove("table_settings");
+                obj.remove("indexes");
+                obj.remove("database");
+                obj.remove("table_ttl_setting");
+
+                // Strip source from metadata
+                if let Some(metadata_obj) = obj.get_mut("metadata") {
+                    if let Some(metadata_map) = metadata_obj.as_object_mut() {
+                        metadata_map.remove("source");
+                    }
+                }
+
+                // Use legacy ID format (without database prefix)
+                let legacy_id = legacy_table_id(table);
+                (legacy_id, table_json)
+            })
+            .collect();
+
+        // Now convert the JSON values back to Tables for the infrastructure map
+        let legacy_tables_typed: HashMap<String, Table> = legacy_tables
+            .into_iter()
+            .map(|(id, json_val)| {
+                // Deserialize the modified JSON back to Table
+                // This might fail if the JSON structure is incompatible
+                match serde_json::from_value::<Table>(json_val.clone()) {
+                    Ok(table) => (id, table),
+                    Err(e) => {
+                        eprintln!("Failed to deserialize table: {}", e);
+                        eprintln!(
+                            "Table JSON: {}",
+                            serde_json::to_string_pretty(&json_val).unwrap()
+                        );
+                        panic!("Failed to convert legacy table");
+                    }
+                }
+            })
+            .collect();
+
+        Self {
+            default_database: self.default_database.clone(),
+            tables: legacy_tables_typed,
+
+            // Transform topics - remove schema_config and source metadata
+            topics: self
+                .topics
+                .iter()
+                .map(|(k, v)| {
+                    let mut topic = v.clone();
+                    // Remove schema_config (didn't exist in old versions)
+                    topic.schema_config = None;
+                    // Strip source from metadata
+                    if let Some(ref mut metadata) = topic.metadata {
+                        metadata.source = None;
+                    }
+                    (k.clone(), topic)
+                })
+                .collect(),
+
+            // Transform API endpoints - remove source metadata
+            api_endpoints: self
+                .api_endpoints
+                .iter()
+                .map(|(k, v)| {
+                    let mut endpoint = v.clone();
+                    // Strip source from metadata
+                    if let Some(ref mut metadata) = endpoint.metadata {
+                        metadata.source = None;
+                    }
+                    (k.clone(), endpoint)
+                })
+                .collect(),
+
+            // Transform function processes - remove source metadata
+            function_processes: self
+                .function_processes
+                .iter()
+                .map(|(k, v)| {
+                    let mut process = v.clone();
+                    // Strip source from metadata
+                    if let Some(ref mut metadata) = process.metadata {
+                        metadata.source = None;
+                    }
+                    (k.clone(), process)
+                })
+                .collect(),
+
+            // Transform sync processes to use legacy table IDs
+            topic_to_table_sync_processes: self
+                .topic_to_table_sync_processes
+                .values()
+                .map(|v| {
+                    let mut process = v.clone();
+                    // Strip database prefix from target_table_id
+                    // The target_table_id is in new format: {database}_{name}_{version}
+                    // We need to convert it to old format: {name}_{version}
+                    // We can look up the table to get its legacy ID
+                    if let Some(table) = self
+                        .tables
+                        .values()
+                        .find(|t| t.id(&self.default_database) == process.target_table_id)
+                    {
+                        process.target_table_id =
+                            table.version.as_ref().map_or(table.name.clone(), |v| {
+                                format!("{}_{}", table.name, v.as_suffix())
+                            });
+                    }
+                    // The sync process ID is based on source_topic_id and target_table_id
+                    // We need to recompute it with the new target_table_id
+                    let new_id = process.id();
+                    (new_id, process)
+                })
+                .collect(),
+
+            // Keep these as-is
+            views: self.views.clone(),
+            topic_to_topic_sync_processes: self.topic_to_topic_sync_processes.clone(),
+            block_db_processes: self.block_db_processes.clone(),
+            consumption_api_web_server: self.consumption_api_web_server.clone(),
+            orchestration_workers: self.orchestration_workers.clone(),
+            sql_resources: self.sql_resources.clone(),
+
+            // Remove these (didn't exist or incompatible in old versions)
+            workflows: HashMap::new(), // Incompatible structure (required scripts/children fields)
+            web_apps: HashMap::new(),  // Didn't exist in old versions
         }
     }
 }
@@ -5778,5 +5973,53 @@ mod diff_orchestration_worker_tests {
 
         assert!(removed_found, "Python worker removal not detected");
         assert!(added_found, "Typescript worker addition not detected");
+    }
+
+    #[test]
+    fn test_infra_changes_backward_compatibility() {
+        // Test that InfraChanges can deserialize from JSON missing web_app_changes field
+        // This simulates receiving a response from a legacy server (v0.6.11 or earlier)
+        let legacy_json = r#"{
+            "olap_changes": [],
+            "processes_changes": [],
+            "api_changes": [],
+            "streaming_engine_changes": []
+        }"#;
+
+        let result: Result<InfraChanges, _> = serde_json::from_str(legacy_json);
+        assert!(
+            result.is_ok(),
+            "Failed to deserialize legacy InfraChanges: {:?}",
+            result.err()
+        );
+
+        let changes = result.unwrap();
+        assert!(changes.olap_changes.is_empty());
+        assert!(changes.processes_changes.is_empty());
+        assert!(changes.api_changes.is_empty());
+        assert!(changes.web_app_changes.is_empty()); // Should default to empty
+        assert!(changes.streaming_engine_changes.is_empty());
+    }
+
+    #[test]
+    fn test_infra_changes_full_deserialization() {
+        // Test that InfraChanges still works with all fields present
+        let current_json = r#"{
+            "olap_changes": [],
+            "processes_changes": [],
+            "api_changes": [],
+            "web_app_changes": [],
+            "streaming_engine_changes": []
+        }"#;
+
+        let result: Result<InfraChanges, _> = serde_json::from_str(current_json);
+        assert!(
+            result.is_ok(),
+            "Failed to deserialize current InfraChanges: {:?}",
+            result.err()
+        );
+
+        let changes = result.unwrap();
+        assert!(changes.is_empty());
     }
 }
