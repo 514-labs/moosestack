@@ -1,9 +1,79 @@
 ---
-title: Secondary & Data-skipping Indexes
-description: Working with indexes in ClickHouse
-order: 7
+title: Secondary Indexes
+description: Specifying indexes with Moose OLAP
+order: 5
+category: olap
 ---
 
-# Secondary & Data-skipping Indexes
+import { LanguageTabs, LanguageTabContent } from "@/components/mdx";
 
-This page is a placeholder. Content migration pending.
+# Secondary Indexes
+
+## Indexes for ClickHouse tables
+
+Moose lets you declare secondary/data-skipping indexes directly in your table definitions.
+Moose generates the ClickHouse `INDEX` clauses on create and
+plans `ALTER TABLE ADD/DROP INDEX` operations when you change them later.
+
+### When to use indexes
+
+- Use indexes to optimize selective predicates on large tables, especially string and high-cardinality columns.
+- Common types: `minmax`, `Set(max_rows)`, `ngrambf_v1(...)`, `bloom_filter`.
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```ts filename="Indexes.ts" copy
+import { OlapTable, ClickHouseEngines } from "@514labs/moose-lib";
+
+interface Events {
+  id: string;
+  user: string;
+  message: string;
+}
+
+export const EventsTable = new OlapTable<Events>("Events", {
+  engine: ClickHouseEngines.MergeTree,
+  orderByFields: ["id"],
+  indexes: [
+    { name: "idx_user", expression: "user", type: "minmax", granularity: 1 },
+    {
+      name: "idx_message_ngrams",
+      expression: "message",
+      type: "ngrambf_v1",
+      arguments: ["3", "256", "1", "123"],
+      granularity: 1,
+    },
+  ],
+});
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```py filename="Indexes.py" copy
+from moose_lib import OlapTable, OlapConfig
+from moose_lib.blocks import MergeTreeEngine
+from pydantic import BaseModel
+
+class Events(BaseModel):
+  id: str
+  user: str
+  message: str
+
+events_table = OlapTable[Events](
+  "Events",
+  OlapConfig(
+    engine=MergeTreeEngine(),
+    order_by_fields=["id"],
+    indexes=[
+      OlapConfig.TableIndex(name="idx_user", expression="user", type="minmax", granularity=1),
+      OlapConfig.TableIndex(name="idx_message_ngrams", expression="message", type="ngrambf_v1", arguments=["3","256","1","123"], granularity=1),
+    ],
+  ),
+)
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+### How Moose applies changes
+
+- On create, Moose emits `INDEX ...` entries inside `CREATE TABLE`.
+- On change, Moose plans `ALTER TABLE DROP INDEX <name>` then `ADD INDEX ...` if the definition changed; pure adds/drops are applied as single operations.

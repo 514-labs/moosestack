@@ -62,29 +62,31 @@ export function CodeEditorWrapper({
   const terminalWriting = isTerminal ? writing : writing;
 
   return (
-    <div className={cn("not-prose", className)}>
-      <CodeEditor
-        lang={language}
-        title={title}
-        icon={icon}
-        dots={isTerminal}
-        header={true}
-        copyButton={false}
-        writing={terminalWriting}
-        duration={terminalDuration}
-        delay={terminalDelay}
-        inView={true}
-        inViewMargin="-100px"
-        inViewOnce={true}
-        cursor={terminalWriting}
-        themes={{
-          light: "vitesse-light",
-          dark: "vitesse-dark",
-        }}
-        className="w-full"
-      >
-        {codeContent}
-      </CodeEditor>
+    <div className={cn("not-prose overflow-hidden min-w-0", className)}>
+      <div className="overflow-x-auto min-w-0 h-full">
+        <CodeEditor
+          lang={language}
+          title={title}
+          icon={icon}
+          dots={isTerminal}
+          header={true}
+          copyButton={false}
+          writing={terminalWriting}
+          duration={terminalDuration}
+          delay={terminalDelay}
+          inView={true}
+          inViewMargin="-100px"
+          inViewOnce={true}
+          cursor={terminalWriting}
+          className="h-full"
+          themes={{
+            light: "vitesse-light",
+            dark: "vitesse-dark",
+          }}
+        >
+          {codeContent}
+        </CodeEditor>
+      </div>
     </div>
   );
 }

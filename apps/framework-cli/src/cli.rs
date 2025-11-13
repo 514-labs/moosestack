@@ -700,28 +700,39 @@ pub async fn top_command_handler(
 
                 check_project_name(&project.name())?;
 
-                // Resolve URLs from flags or env vars
-                let (resolved_clickhouse_url, resolved_redis_url) = resolve_serverless_urls(
-                    &project,
-                    clickhouse_url.as_deref(),
-                    redis_url.as_deref(),
-                )?;
-
-                if let Some(ref ch_url) = resolved_clickhouse_url {
-                    override_project_config_from_url(&mut project, ch_url)?;
-                }
-
-                // Validate that at least one remote source is configured
-                let remote = if let Some(ref ch_url) = resolved_clickhouse_url {
-                    routines::RemoteSource::Serverless {
-                        clickhouse_url: ch_url,
-                        redis_url: &resolved_redis_url,
-                    }
-                } else if let Some(ref moose_url) = url {
-                    routines::RemoteSource::Moose {
+                // Determine which remote source to use and generate migration
+                let result = if let Some(ref moose_url) = url {
+                    // Using Moose server - no need for Redis URL (server handles state)
+                    let remote = routines::RemoteSource::Moose {
                         url: moose_url,
                         token,
-                    }
+                    };
+                    routines::remote_gen_migration(&project, remote).await
+                } else if clickhouse_url.is_some() || std::env::var(ENV_CLICKHOUSE_URL).is_ok() {
+                    // Using direct ClickHouse - need to resolve URLs and validate Redis if needed
+                    let (resolved_clickhouse_url, resolved_redis_url) = resolve_serverless_urls(
+                        &project,
+                        clickhouse_url.as_deref(),
+                        redis_url.as_deref(),
+                    )?;
+
+                    let ch_url = resolved_clickhouse_url.ok_or_else(|| {
+                        RoutineFailure::error(Message {
+                            action: "Configuration".to_string(),
+                            details: format!(
+                                "--clickhouse-url required (or set {} environment variable)",
+                                ENV_CLICKHOUSE_URL
+                            ),
+                        })
+                    })?;
+
+                    override_project_config_from_url(&mut project, &ch_url)?;
+
+                    let remote = routines::RemoteSource::Serverless {
+                        clickhouse_url: &ch_url,
+                        redis_url: &resolved_redis_url,
+                    };
+                    routines::remote_gen_migration(&project, remote).await
                 } else {
                     return Err(RoutineFailure::error(Message {
                         action: "Configuration".to_string(),
@@ -729,17 +740,15 @@ pub async fn top_command_handler(
                     }));
                 };
 
-                let result = routines::remote_gen_migration(&project, remote)
-                    .await
-                    .map_err(|e| {
-                        RoutineFailure::new(
-                            Message {
-                                action: "Plan".to_string(),
-                                details: "Failed to generate migration plan".to_string(),
-                            },
-                            e,
-                        )
-                    })?;
+                let result = result.map_err(|e| {
+                    RoutineFailure::new(
+                        Message {
+                            action: "Plan".to_string(),
+                            details: "Failed to generate migration plan".to_string(),
+                        },
+                        e,
+                    )
+                })?;
 
                 let plan_yaml = result.db_migration.to_yaml().map_err(|e| {
                     RoutineFailure::new(

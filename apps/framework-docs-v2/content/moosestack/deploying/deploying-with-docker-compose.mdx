@@ -2,8 +2,839 @@
 title: Docker Compose Deployment
 description: Deploy MooseStack with Docker Compose
 order: 7
+category: deployment
 ---
 
-# Docker Compose Deployment
+import { Callout } from "@/components/mdx";
 
-This page is a placeholder. Content migration pending.
+# Deploying with Docker Compose
+
+Deploying a Moose application with all its dependencies can be challenging and time-consuming. You need to properly configure multiple services,
+ ensure they communicate with each other, and manage their lifecycle.
+
+ Docker Compose solves this problem by allowing you to deploy your entire stack with a single command.
+
+This guide shows you how to set up a production-ready Moose environment on a single server using Docker Compose, with proper security,
+monitoring, and maintenance practices.
+
+<Callout type="warning" title="Single-Server Deployment">
+  This guide describes a single-server deployment. For high availability (HA) deployments, you'll need to:
+  - Deploy services across multiple servers
+  - Configure service replication and redundancy
+  - Set up load balancing
+  - Implement proper failover mechanisms
+</Callout>
+
+We are also offering an HA managed deployment option for Moose called [Boreal](https://fiveonefour.com/boreal).
+
+## Prerequisites
+
+Before you begin, you'll need:
+
+- Ubuntu 24 or above (for this guide)
+- Docker and Docker Compose (minimum version 2.23.1)
+- Access to a server with at least 8GB RAM and 4 CPU cores
+
+The Moose stack consists of:
+- Your Moose Application
+- [ClickHouse](https://clickhouse.com) (required)
+- [Redis](https://redis.io) (required)
+- [Redpanda](https://redpanda.com) (optional for event streaming)
+- [Temporal](https://temporal.io) (optional for workflow orchestration)
+
+## Setting Up a Production Server
+
+### Installing Required Software
+
+First, install Docker on your Ubuntu server:
+
+```bash
+# Update the apt package index
+sudo apt-get update
+
+# Install packages to allow apt to use a repository over HTTPS
+sudo apt-get install -y \
+    apt-transport-https \
+    ca-certificates \
+    curl \
+    gnupg \
+    lsb-release
+
+# Add Docker's official GPG key
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
+
+# Set up the stable repository
+echo \
+  "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu \
+  $(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+
+# Update apt package index again
+sudo apt-get update
+
+# Install Docker Engine
+sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
+```
+
+Next, install Node.js or Python depending on your Moose application:
+
+```bash
+# For Node.js applications
+curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+sudo apt-get install -y nodejs
+
+# OR for Python applications
+sudo apt-get install -y python3.12 python3-pip
+```
+
+### Configure Docker Log Size Limits
+
+To prevent Docker logs from filling up your disk space, configure log rotation:
+
+```bash
+sudo mkdir -p /etc/docker
+sudo vim /etc/docker/daemon.json
+```
+
+Add the following configuration:
+
+```json
+{
+  "log-driver": "json-file",
+  "log-opts": {
+    "max-size": "100m",
+    "max-file": "3"
+  }
+}
+```
+
+Restart Docker to apply the changes:
+
+```bash
+sudo systemctl restart docker
+```
+
+### Enable Docker Non-Root Access
+
+To run Docker commands without sudo:
+
+```bash
+# Add your user to the docker group
+sudo usermod -aG docker $USER
+
+# Apply the changes (log out and back in, or run this)
+newgrp docker
+```
+
+### Setting Up GitHub Actions Runner (Optional)
+
+If you want to set up CI/CD automation, you can install a GitHub Actions runner:
+
+1. Navigate to your GitHub repository
+2. Go to Settings > Actions > Runners
+3. Click "New self-hosted runner"
+4. Select Linux and follow the instructions shown
+
+To configure the runner as a service (to run automatically):
+
+```bash
+cd actions-runner
+sudo ./svc.sh install
+sudo ./svc.sh start
+```
+
+## Setting up a Foo Bar Moose Application (Optional)
+
+If you already have a Moose application, you can skip this section.
+You should copy the moose project to your server and then build the application with the `--docker` flag and get the built image
+on the server.
+
+### Install Moose CLI
+
+```bash
+bash -i <(curl -fsSL https://fiveonefour.com/install.sh) moose
+```
+
+### Create a new Moose Application
+
+Please follow the initialization instructions for your language.
+
+```bash
+moose init test-ts typescript
+cd test-ts
+npm install
+```
+
+or
+
+```bash
+moose init test-py python
+cd test-py
+pip install -r requirements.txt
+```
+
+### Build the application on AMD64
+
+```bash
+moose build --docker --amd64
+```
+
+### Build the application on ARM64
+
+```bash
+moose build --docker --arm64
+```
+
+### Confirm the image was built
+
+```bash
+docker images
+```
+
+<Callout type="info" title="View the Full Packaging Guide" href="/moosestack/deploying/packaging-moose-for-deployment" ctaLabel="Learn More">
+For more information on packaging Moose for deployment, see the full packaging guide.
+</Callout>
+
+## Preparing for Deployment
+
+### Create Environment Configuration
+
+First, create a file called `.env` in your project directory to specify component versions:
+
+```bash
+# Create and open the .env file
+vim .env
+```
+
+Add the following content to the `.env` file:
+
+```
+# Version configuration for components
+POSTGRESQL_VERSION=14.0
+TEMPORAL_VERSION=1.22.0
+TEMPORAL_UI_VERSION=2.20.0
+REDIS_VERSION=7
+CLICKHOUSE_VERSION=25.4
+REDPANDA_VERSION=v24.3.13
+REDPANDA_CONSOLE_VERSION=v3.1.0
+```
+
+Additionally, create a `.env.prod` file for your Moose application-specific secrets and configuration:
+
+```bash
+# Create and open the .env.prod file
+vim .env.prod
+```
+
+Add your application-specific environment variables:
+
+```
+# Application-specific environment variables
+APP_SECRET=your_app_secret
+# Add other application variables here
+```
+
+## Deploying with Docker Compose
+
+Create a file called `docker-compose.yml` in the same directory:
+
+```bash
+# Create and open the docker-compose.yml file
+vim docker-compose.yml
+```
+
+Add the following content to the file:
+
+```yaml file=./docker-compose.yml
+name: moose-stack
+volumes:
+  # Required volumes
+  clickhouse-0-data: null
+  clickhouse-0-logs: null
+  redis-0: null
+  # Optional volumes
+  redpanda-0: null
+  postgresql-data: null
+
+configs:
+  temporal-config:
+    # Using the "content" property to inline the config
+    content: |
+      limit.maxIDLength:
+        - value: 255
+          constraints: {}
+      system.forceSearchAttributesCacheRefreshOnRead:
+        - value: true # Dev setup only. Please don't turn this on in production.
+          constraints: {}
+
+services:
+  # REQUIRED SERVICES
+
+  # ClickHouse - Required analytics database
+  clickhouse-0:
+    container_name: clickhouse-0
+    restart: always
+    image: clickhouse/clickhouse-server:${CLICKHOUSE_VERSION}
+    volumes:
+      - clickhouse-0-data:/var/lib/clickhouse/
+      - clickhouse-0-logs:/var/log/clickhouse-server/
+    environment:
+      # Enable SQL-driven access control and user management
+      CLICKHOUSE_ALLOW_INTROSPECTION_FUNCTIONS: 1
+      # Default admin credentials
+      CLICKHOUSE_USER: admin
+      CLICKHOUSE_PASSWORD: adminpassword
+      # Disable default user
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
+      # Database setup
+      CLICKHOUSE_DB: moose
+    # Uncomment this if you want to access clickhouse from outside the docker network
+    # ports:
+    #   - 8123:8123
+    #   - 9000:9000
+    healthcheck:
+      test: wget --no-verbose --tries=1 --spider http://localhost:8123/ping || exit 1
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+    networks:
+      - moose-network
+
+  # Redis - Required for caching and pub/sub
+  redis-0:
+    restart: always
+    image: redis:${REDIS_VERSION}
+    volumes:
+      - redis-0:/data
+    command: redis-server --save 20 1 --loglevel warning
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - moose-network
+
+  # OPTIONAL SERVICES
+
+  # --- BEGIN REDPANDA SERVICES (OPTIONAL) ---
+  # Remove this section if you don't need event streaming
+  redpanda-0:
+    restart: always
+    command:
+      - redpanda
+      - start
+      - --kafka-addr internal://0.0.0.0:9092,external://0.0.0.0:19092
+      # Address the broker advertises to clients that connect to the Kafka API.
+      # Use the internal addresses to connect to the Redpanda brokers'
+      # from inside the same Docker network.
+      # Use the external addresses to connect to the Redpanda brokers'
+      # from outside the Docker network.
+      - --advertise-kafka-addr internal://redpanda-0:9092,external://localhost:19092
+      - --pandaproxy-addr internal://0.0.0.0:8082,external://0.0.0.0:18082
+      # Address the broker advertises to clients that connect to the HTTP Proxy.
+      - --advertise-pandaproxy-addr internal://redpanda-0:8082,external://localhost:18082
+      - --schema-registry-addr internal://0.0.0.0:8081,external://0.0.0.0:18081
+      # Redpanda brokers use the RPC API to communicate with each other internally.
+      - --rpc-addr redpanda-0:33145
+      - --advertise-rpc-addr redpanda-0:33145
+      # Mode dev-container uses well-known configuration properties for development in containers.
+      - --mode dev-container
+      # Tells Seastar (the framework Redpanda uses under the hood) to use 1 core on the system.
+      - --smp 1
+      - --default-log-level=info
+    image: docker.redpanda.com/redpandadata/redpanda:${REDPANDA_VERSION}
+    container_name: redpanda-0
+    volumes:
+      - redpanda-0:/var/lib/redpanda/data
+    networks:
+      - moose-network
+    healthcheck:
+      test: ["CMD-SHELL", "rpk cluster health | grep -q 'Healthy:.*true'"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # Optional Redpanda Console for visualizing the cluster
+  redpanda-console:
+    restart: always
+    container_name: redpanda-console
+    image: docker.redpanda.com/redpandadata/console:${REDPANDA_CONSOLE_VERSION}
+    entrypoint: /bin/sh
+    command: -c 'echo "$$CONSOLE_CONFIG_FILE" > /tmp/config.yml; /app/console'
+    environment:
+      CONFIG_FILEPATH: /tmp/config.yml
+      CONSOLE_CONFIG_FILE: |
+        kafka:
+          brokers: ["redpanda-0:9092"]
+        # Schema registry config moved outside of kafka section
+        schemaRegistry:
+          enabled: true
+          urls: ["http://redpanda-0:8081"]
+        redpanda:
+          adminApi:
+            enabled: true
+            urls: ["http://redpanda-0:9644"]
+    ports:
+      - 8080:8080
+    depends_on:
+      - redpanda-0
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "--quiet", "http://localhost:8080/admin/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    networks:
+      - moose-network
+  # --- END REDPANDA SERVICES ---
+
+  # --- BEGIN TEMPORAL SERVICES (OPTIONAL) ---
+  # Remove this section if you don't need workflow orchestration
+
+  # Temporal PostgreSQL database
+  postgresql:
+    container_name: temporal-postgresql
+    environment:
+      POSTGRES_PASSWORD: temporal
+      POSTGRES_USER: temporal
+    image: postgres:${POSTGRESQL_VERSION}
+    restart: always
+    volumes:
+      - postgresql-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U temporal"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    networks:
+      - moose-network
+
+  # Temporal server
+  # For initial setup, use temporalio/auto-setup image
+  # For production, switch to temporalio/server after first run
+  temporal:
+    container_name: temporal
+    depends_on:
+      postgresql:
+        condition: service_healthy
+    environment:
+      # Database configuration
+      - DB=postgres12
+      - DB_PORT=5432
+      - POSTGRES_USER=temporal
+      - POSTGRES_PWD=temporal
+      - POSTGRES_SEEDS=postgresql
+      # Namespace configuration
+      - DEFAULT_NAMESPACE=moose-workflows
+      - DEFAULT_NAMESPACE_RETENTION=72h
+      # Auto-setup options - set to false after initial setup
+      - AUTO_SETUP=true
+      - SKIP_SCHEMA_SETUP=false
+      # Service configuration - all services by default
+      # For high-scale deployments, run these as separate containers
+      # - SERVICES=history,matching,frontend,worker
+      # Logging and metrics
+      - LOG_LEVEL=info
+      # Addresses
+      - TEMPORAL_ADDRESS=temporal:7233
+      - DYNAMIC_CONFIG_FILE_PATH=/etc/temporal/config/dynamicconfig/development-sql.yaml
+    # For initial deployment, use the auto-setup image
+    image: temporalio/auto-setup:${TEMPORAL_VERSION}
+    # For production, after initial setup, switch to server image:
+    # image: temporalio/server:${TEMPORAL_VERSION}
+    restart: always
+    ports:
+      - 7233:7233
+    # Volume for dynamic configuration - essential for production
+    configs:
+      - source: temporal-config
+        target: /etc/temporal/config/dynamicconfig/development-sql.yaml
+        mode: 0444
+    networks:
+      - moose-network
+    healthcheck:
+      test: ["CMD", "tctl", "--ad", "temporal:7233", "cluster", "health", "|", "grep", "-q", "SERVING"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+  # Temporal Admin Tools - useful for maintenance and debugging
+  temporal-admin-tools:
+    container_name: temporal-admin-tools
+    depends_on:
+      - temporal
+    environment:
+      - TEMPORAL_ADDRESS=temporal:7233
+      - TEMPORAL_CLI_ADDRESS=temporal:7233
+    image: temporalio/admin-tools:${TEMPORAL_VERSION}
+    restart: "no"
+    networks:
+      - moose-network
+    stdin_open: true
+    tty: true
+
+  # Temporal Web UI
+  temporal-ui:
+    container_name: temporal-ui
+    depends_on:
+      - temporal
+    environment:
+      - TEMPORAL_ADDRESS=temporal:7233
+      - TEMPORAL_CORS_ORIGINS=http://localhost:3000
+    image: temporalio/ui:${TEMPORAL_UI_VERSION}
+    restart: always
+    ports:
+      - 8081:8080
+    networks:
+      - moose-network
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "--quiet", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+  # --- END TEMPORAL SERVICES ---
+
+  # Your Moose application
+  moose:
+    image: moose-df-deployment-x86_64-unknown-linux-gnu:latest  # Update with your image name
+    depends_on:
+      # Required dependencies
+      - clickhouse-0
+      - redis-0
+      # Optional dependencies - remove if not using
+      - redpanda-0
+      - temporal
+    restart: always
+    environment:
+      # Logging and debugging
+      RUST_BACKTRACE: "1"
+      MOOSE_LOGGER__LEVEL: "Info"
+      MOOSE_LOGGER__STDOUT: "true"
+
+      # Required services configuration
+      # ClickHouse configuration
+      MOOSE_CLICKHOUSE_CONFIG__DB_NAME: "moose"
+      MOOSE_CLICKHOUSE_CONFIG__USER: "moose"
+      MOOSE_CLICKHOUSE_CONFIG__PASSWORD: "your_moose_password"
+      MOOSE_CLICKHOUSE_CONFIG__HOST: "clickhouse-0"
+      MOOSE_CLICKHOUSE_CONFIG__HOST_PORT: "8123"
+
+      # Redis configuration
+      MOOSE_REDIS_CONFIG__URL: "redis://redis-0:6379"
+      MOOSE_REDIS_CONFIG__KEY_PREFIX: "moose"
+
+      # Optional services configuration
+      # Redpanda configuration (remove if not using Redpanda)
+      MOOSE_REDPANDA_CONFIG__BROKER: "redpanda-0:9092"
+      MOOSE_REDPANDA_CONFIG__MESSAGE_TIMEOUT_MS: "1000"
+      MOOSE_REDPANDA_CONFIG__RETENTION_MS: "30000"
+      MOOSE_REDPANDA_CONFIG__NAMESPACE: "moose"
+
+      # Temporal configuration (remove if not using Temporal)
+      MOOSE_TEMPORAL_CONFIG__TEMPORAL_HOST: "temporal:7233"
+      MOOSE_TEMPORAL_CONFIG__NAMESPACE: "moose-workflows"
+
+      # HTTP Server configuration
+      MOOSE_HTTP_SERVER_CONFIG__HOST: 0.0.0.0
+    ports:
+      - 4000:4000
+    env_file:
+      - path: ./.env.prod
+        required: true
+    networks:
+      - moose-network
+    healthcheck:
+      test: ["CMD-SHELL", "curl -s http://localhost:4000/health | grep -q '\"unhealthy\": \\[\\]' && echo 'Healthy'"]
+      interval: 30s
+      timeout: 5s
+      retries: 10
+      start_period: 60s
+
+# Define the network for all services
+networks:
+  moose-network:
+    driver: bridge
+```
+
+At this point, don't start the services yet. First, we need to configure the individual services for production use as described in the following sections.
+
+## Configuring Services for Production
+
+### Configuring ClickHouse Securely (Required)
+
+For production ClickHouse deployment, we'll use environment variables to configure users and access control
+(as recommended in the [official Docker image documentation](https://hub.docker.com/r/clickhouse/clickhouse-server)):
+
+1. First, start the ClickHouse container:
+
+```bash
+# Start just the ClickHouse container
+docker compose up -d clickhouse-0
+```
+
+2. After ClickHouse has started, connect to create additional users:
+
+```bash
+# Connect to ClickHouse with the admin user
+docker exec -it clickhouse-0 clickhouse-client --user admin --password adminpassword
+
+# Create moose application user
+CREATE USER moose IDENTIFIED BY 'your_moose_password';
+GRANT ALL ON moose.* TO moose;
+
+# Create read-only user for BI tools (optional)
+CREATE USER power_bi IDENTIFIED BY 'your_powerbi_password' SETTINGS PROFILE 'readonly';
+GRANT SHOW TABLES, SELECT ON moose.* TO power_bi;
+```
+
+3. To exit the ClickHouse client, type `\q` and press Enter.
+
+4. Update your Moose environment variables to use the new moose user:
+
+```bash
+vim docker-compose.yml
+```
+
+```yaml
+MOOSE_CLICKHOUSE_CONFIG__USER: "moose"
+MOOSE_CLICKHOUSE_CONFIG__PASSWORD: "your_moose_password"
+```
+
+5. Remove the following environement variables from the clickhouse service in the docker-compose.yml file:
+
+```yaml
+MOOSE_CLICKHOUSE_CONFIG__USER: "admin"
+MOOSE_CLICKHOUSE_CONFIG__PASSWORD: "adminpassword"
+```
+
+6. For additional security in production, consider using Docker secrets for passwords.
+
+7. Restart the ClickHouse container to apply the changes:
+
+```bash
+docker compose restart clickhouse-0
+```
+
+8. Verify that the new configuration works by connecting with the newly created user:
+
+```bash
+# Connect with the new moose user
+docker exec -it moose-stack-clickhouse-0-1 clickhouse-client --user moose --password your_moose_password
+
+# Test access by listing tables
+SHOW TABLES FROM moose;
+
+# Exit the clickhouse client
+\q
+```
+
+If you can connect successfully and run commands with the new user, your ClickHouse configuration is working properly.
+
+### Securing Redpanda (Optional)
+
+For production, it's recommended to restrict external access to Redpanda:
+
+1. Modify your Docker Compose file to remove external access:
+   - Use only internal network access for production
+   - If needed, use a reverse proxy with authentication for external access
+
+2. For this simple deployment, we'll keep Redpanda closed to the external world with no authentication required,
+   as it's only accessible from within the Docker network.
+
+### Configuring Temporal (Optional)
+
+If your Moose application uses Temporal for workflow orchestration, the configuration above includes all necessary services based on the
+[official Temporal Docker Compose examples](https://github.com/temporalio/docker-compose).
+
+If you're not using Temporal, simply remove the Temporal-related services (postgresql, temporal, temporal-ui)
+and environment variables from the docker-compose.yml file.
+
+#### Temporal Deployment Process: From Setup to Production
+
+Deploying Temporal involves a two-phase process: initial setup followed by production operation. Here are step-by-step instructions for each phase:
+
+##### Phase 1: Initial Setup
+
+1. **Start the PostgreSQL database**:
+
+```bash
+docker compose up -d postgresql
+```
+
+2. **Wait for PostgreSQL to be healthy** (check the status):
+
+```bash
+docker compose ps postgresql
+```
+
+Look for `healthy` in the output before proceeding.
+
+3. **Start Temporal with auto-setup**:
+
+```bash
+docker compose up -d temporal
+```
+
+During this phase, Temporal's auto-setup will:
+- Create the necessary PostgreSQL databases
+- Initialize the schema tables
+- Register the default namespace (moose-workflows)
+
+4. **Verify Temporal server is running**:
+
+```bash
+docker compose ps temporal
+```
+
+5. **Start the Admin Tools and UI**:
+
+```bash
+docker compose up -d temporal-admin-tools temporal-ui
+```
+
+6. **Create the namespace manually**:
+
+```bash
+# Register the moose-workflows namespace with a 3-day retention period
+docker compose exec temporal-admin-tools tctl namespace register --retention 72h moose-workflows
+```
+
+Verify that the namespace was created:
+
+```bash
+# List all namespaces
+docker compose exec temporal-admin-tools tctl namespace list
+
+# Describe your namespace
+docker compose exec temporal-admin-tools tctl namespace describe moose-workflows
+```
+
+You should see details about the namespace including its retention policy.
+
+##### Phase 2: Transition to Production
+
+After successful initialization, modify your configuration for production use:
+
+1. **Stop Temporal services**:
+
+```bash
+docker compose stop temporal temporal-ui temporal-admin-tools
+```
+
+2. **Edit your docker-compose.yml file** to:
+   - Change image from `temporalio/auto-setup` to `temporalio/server`
+   - Set `SKIP_SCHEMA_SETUP=true`
+
+Example change:
+```yaml
+# From:
+image: temporalio/auto-setup:${TEMPORAL_VERSION}
+
+# To:
+image: temporalio/server:${TEMPORAL_VERSION}
+
+# And change:
+- AUTO_SETUP=true
+- SKIP_SCHEMA_SETUP=false
+
+# To:
+- AUTO_SETUP=false
+- SKIP_SCHEMA_SETUP=true
+```
+
+3. **Restart services with production settings**:
+
+```bash
+docker compose up -d temporal temporal-ui temporal-admin-tools
+```
+
+4. **Verify services are running with new configuration**:
+
+```bash
+docker compose ps
+```
+
+## Starting and Managing the Service
+
+### Starting the Services
+
+Start all services with Docker Compose:
+
+```bash
+docker compose up -d
+```
+
+### Setting Up Systemd Service for Docker Compose
+
+For production, create a systemd service to ensure Docker Compose starts automatically on system boot:
+
+1. Create a systemd service file:
+
+```bash
+sudo vim /etc/systemd/system/moose-stack.service
+```
+
+2. Add the following configuration (adjust paths as needed):
+
+```
+[Unit]
+Description=Moose Stack
+Requires=docker.service
+After=docker.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=/path/to/your/compose/directory
+ExecStart=/usr/bin/docker compose up -d
+ExecStop=/usr/bin/docker compose down
+TimeoutStartSec=0
+
+[Install]
+WantedBy=multi-user.target
+```
+
+3. Enable and start the service:
+
+```bash
+sudo systemctl enable moose-stack.service
+sudo systemctl start moose-stack.service
+```
+
+## Deployment Workflow
+
+You get a smooth deployment process with these options:
+
+### Automated Deployment with CI/CD
+
+1. Set up a CI/CD pipeline using GitHub Actions (if runner is configured)
+2. When code is pushed to your repository:
+   - The GitHub Actions runner builds your Moose application
+   - Updates the Docker image
+   - Deploys using Docker Compose
+
+### Manual Deployment
+
+Alternatively, for manual deployment:
+
+1. Copy the latest version of the code to the machine
+2. Run `moose build`
+3. Update the Docker image tag in your docker-compose.yml
+4. Restart the stack with `docker compose up -d`
+
+## Monitoring and Maintenance
+
+No more worrying about unexpected outages or performance issues. Set up proper monitoring:
+
+- Set up log monitoring with a tool like [Loki](https://grafana.com/oss/loki/)
+- Regularly backup your volumes (especially ClickHouse data)
+- Monitor disk space usage
+- Set up alerting for service health

@@ -3,7 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
-import { IconChevronRight } from "@tabler/icons-react";
+import { IconChevronRight, IconArrowRight } from "@tabler/icons-react";
 import type { NavItem, NavPage } from "@/config/navigation";
 import {
   Sidebar,
@@ -24,32 +24,42 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import { useLanguage } from "@/hooks/use-language";
-import { Button } from "@/components/ui/button";
-import { ButtonGroup } from "@/components/ui/button-group";
 import {
   buildNavItems,
   getNavigationConfig,
   getSectionFromPathname,
+  filterNavItemsByFlags,
 } from "@/config/navigation";
 
 interface SideNavProps {
   // Optional: can pass filtered items or let component filter by language
   items?: NavItem[];
+  // Optional: feature flags to filter navigation items
+  flags?: { showDataSourcesPage?: boolean };
 }
 
-export function SideNav({ items }: SideNavProps) {
+export function SideNav({ items, flags }: SideNavProps) {
   const pathname = usePathname();
-  const { language, setLanguage } = useLanguage();
+  const { language } = useLanguage();
 
   // Determine active section and get its navigation config
   const activeSection = getSectionFromPathname(pathname);
-  const sectionNavConfig = getNavigationConfig(activeSection);
+  const sectionNavConfig =
+    activeSection !== null ? getNavigationConfig(activeSection) : [];
 
   // Filter by language if items not provided
-  const filteredItems = React.useMemo(
+  const languageFilteredItems = React.useMemo(
     () => items ?? buildNavItems(sectionNavConfig, language),
     [items, language, sectionNavConfig],
   );
+
+  // Filter by feature flags if flags are provided
+  const filteredItems = React.useMemo(() => {
+    if (flags) {
+      return filterNavItemsByFlags(languageFilteredItems, flags);
+    }
+    return languageFilteredItems;
+  }, [languageFilteredItems, flags]);
 
   // Group items: pages that appear between separators should be in the same SidebarGroup
   const renderNavItems = () => {
@@ -125,31 +135,7 @@ export function SideNav({ items }: SideNavProps) {
       collapsible="icon"
       variant="sidebar"
     >
-      <SidebarContent>
-        <SidebarGroup>
-          <div className="py-2 pt-4">
-            <ButtonGroup aria-label="Language selection" className="w-full">
-              <Button
-                variant={language === "typescript" ? "default" : "outline"}
-                size="sm"
-                onClick={() => setLanguage("typescript")}
-                aria-label="TypeScript"
-                className="flex-1"
-              >
-                TypeScript
-              </Button>
-              <Button
-                variant={language === "python" ? "default" : "outline"}
-                size="sm"
-                onClick={() => setLanguage("python")}
-                aria-label="Python"
-                className="flex-1"
-              >
-                Python
-              </Button>
-            </ButtonGroup>
-          </div>
-        </SidebarGroup>
+      <SidebarContent className="pt-6 lg:pt-8 pl-2">
         {renderNavItems()}
       </SidebarContent>
     </Sidebar>
@@ -184,6 +170,7 @@ function NavItemComponent({ item }: { item: NavPage }) {
             <Link href={href}>
               {item.icon && <item.icon className="mr-2 h-4 w-4" />}
               <span>{item.title}</span>
+              {item.external && <IconArrowRight className="ml-auto h-4 w-4" />}
             </Link>
           </SidebarMenuButton>
           {item.children?.length ?
@@ -272,6 +259,7 @@ function NavItemComponent({ item }: { item: NavPage }) {
         <Link href={href}>
           {item.icon && <item.icon className="mr-2 h-4 w-4" />}
           <span>{item.title}</span>
+          {item.external && <IconArrowRight className="ml-auto h-4 w-4" />}
         </Link>
       </SidebarMenuButton>
     </SidebarMenuItem>

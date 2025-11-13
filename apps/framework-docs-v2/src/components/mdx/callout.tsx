@@ -10,6 +10,7 @@ import {
   IconAlertCircle,
 } from "@tabler/icons-react";
 import type { IconProps } from "@tabler/icons-react";
+import * as TablerIcons from "@tabler/icons-react";
 
 type CalloutVariant = {
   icon: React.ComponentType<IconProps>;
@@ -53,7 +54,7 @@ interface CalloutProps {
   type: CalloutType;
   title?: string;
   href?: string;
-  icon?: React.ComponentType<IconProps> | boolean;
+  icon?: React.ComponentType<IconProps> | boolean | string;
   ctaLabel?: string;
   children: React.ReactNode;
   compact?: boolean;
@@ -72,17 +73,22 @@ export function Callout({
 }: CalloutProps) {
   const variantProps = calloutVariants[type];
 
+  // Resolve icon: boolean -> default/undefined, string -> lookup from Tabler icons, component -> use directly
   const Icon =
-    typeof icon === "boolean" && icon ?
-      variantProps.icon
-    : (icon as React.ComponentType<IconProps>);
+    typeof icon === "boolean" ?
+      icon ? variantProps.icon
+      : undefined
+    : typeof icon === "string" ?
+      (TablerIcons as any)[`Icon${icon}`] || variantProps.icon
+    : (icon as React.ComponentType<IconProps>) || variantProps.icon;
 
   const displayTitle = title || variantProps.title;
 
   if (compact) {
     return (
       <Alert variant={variantProps.variant} className={cn("my-2", className)}>
-        {icon && <Icon className="h-4 w-4" />}
+        {!href && icon && <Icon className="h-4 w-4" />}
+        {href && icon && <Icon className="h-4 w-4 mt-0.5" />}
         <div className="flex items-start justify-between gap-2">
           <div className="flex-1 min-w-0">
             {displayTitle && (

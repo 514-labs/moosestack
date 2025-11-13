@@ -1,9 +1,103 @@
 ---
-title: Trigger Workflows
-description: Trigger workflows via API calls
-order: 4
+title: Trigger APIs
+description: Create APIs that trigger workflows and other processes
+order: 5
+category: apis
 ---
 
-# Trigger Workflows
+import { Callout, LanguageTabs, LanguageTabContent, BulletPointsCard } from "@/components/mdx";
 
-This page is a placeholder. Content migration pending.
+# Trigger APIs
+
+## Overview
+
+You can create APIs to initiate workflows, data processing jobs, or other automated processes.
+
+## Basic Usage
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```typescript filename="app/apis/trigger_workflow.ts" copy
+import { Api } from "@514labs/moose-lib";
+
+interface WorkflowParams {
+  inputValue: string;
+  priority?: string;
+}
+
+interface WorkflowResponse {
+  workflowId: string;
+  status: string;
+}
+
+const triggerApi = new Api<WorkflowParams, WorkflowResponse>(
+  "trigger-workflow",
+  async ({ inputValue, priority = "normal" }: WorkflowParams, { client }) => {
+    // Trigger the workflow with input parameters
+    const workflowExecution = await client.workflow.execute("data-processing", { 
+        inputValue,
+        priority,
+        triggeredAt: new Date().toISOString()
+      }
+    );
+
+    return {
+      workflowId: workflowExecution.id,
+      status: "started"
+    };
+  }
+);
+
+export default triggerApi;
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```python filename="app/apis/trigger_workflow.py" copy
+from moose_lib import MooseClient, Api
+from pydantic import BaseModel, Field
+from datetime import datetime
+
+class WorkflowParams(BaseModel):
+    input_value: str
+    priority: str = Field(default="normal")
+
+class WorkflowResponse(BaseModel):
+    workflow_id: str
+    status: str
+
+def run(params: WorkflowParams, client: MooseClient) -> WorkflowResponse:
+    # Trigger the workflow with input parameters
+    workflow_execution = client.workflow.execute(
+        workflow="data-processing",
+        params={
+            "input_value": params.input_value,
+            "priority": params.priority,
+            "triggered_at": datetime.now().isoformat()
+        }
+    )
+
+    return WorkflowResponse(
+        workflow_id=workflow_execution.id,
+        status="started"
+    )
+
+api = Api[WorkflowParams, WorkflowResponse]("trigger-workflow", run)
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+## Using the Trigger API
+
+Once deployed, you can trigger workflows via HTTP requests:
+
+```bash filename="Terminal" copy
+curl "http://localhost:4000/api/trigger-workflow?inputValue=process-user-data&priority=high"
+```
+
+Response:
+```json
+{
+  "workflowId": "workflow-12345",
+  "status": "started"
+}
+```

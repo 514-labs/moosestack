@@ -1,11 +1,13 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname, useSearchParams } from "next/navigation";
-import { IconMenu } from "@tabler/icons-react";
+import { IconMenu, IconSearch } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
+import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { GitHubButtonGroup } from "@/components/github-button-group";
@@ -14,16 +16,39 @@ import {
   getSectionFromPathname,
   type DocumentationSection,
 } from "@/config/navigation";
+import { CommandSearch } from "@/components/search/command-search";
 
 interface TopNavProps {
   stars: number | null;
+  showHosting: boolean;
+  showGuides: boolean;
+  showAi: boolean;
 }
 
-export function TopNav({ stars }: TopNavProps) {
+export function TopNav({
+  stars,
+  showHosting,
+  showGuides,
+  showAi,
+}: TopNavProps) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const { language } = useLanguage();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+
+  // Handle keyboard shortcut for search
+  useEffect(() => {
+    const down = (e: KeyboardEvent) => {
+      if (e.key === "k" && (e.metaKey || e.ctrlKey)) {
+        e.preventDefault();
+        setSearchOpen((open) => !open);
+      }
+    };
+
+    document.addEventListener("keydown", down);
+    return () => document.removeEventListener("keydown", down);
+  }, []);
 
   // Determine active section from pathname
   const activeSection = getSectionFromPathname(pathname);
@@ -40,31 +65,71 @@ export function TopNav({ stars }: TopNavProps) {
     href: string;
     section: DocumentationSection;
     external?: boolean;
+    isActive?: (pathname: string) => boolean;
   }> = [
     {
       label: "MooseStack",
       href: "/moosestack",
       section: "moosestack",
     },
+    ...(showHosting ?
+      [
+        {
+          label: "Hosting",
+          href: "/hosting/overview",
+          section: "hosting" as DocumentationSection,
+        },
+      ]
+    : []),
+    ...(showAi ?
+      [
+        {
+          label: "AI",
+          href: "/ai/overview",
+          section: "ai" as DocumentationSection,
+        },
+      ]
+    : []),
     {
-      label: "Hosting",
-      href: "/hosting/overview",
-      section: "hosting",
+      label: "Templates",
+      href: "/templates",
+      section: "templates",
+      isActive: (pathname: string) => pathname.startsWith("/templates"),
     },
-    {
-      label: "AI",
-      href: "/ai/overview",
-      section: "ai",
-    },
+    ...(showGuides ?
+      [
+        {
+          label: "Guides",
+          href: "/guides",
+          section: "guides" as DocumentationSection,
+        },
+      ]
+    : []),
   ];
 
   return (
     <>
-      <nav className="sticky top-0 z-50 w-full border-b bg-background">
+      <nav className="sticky top-0 z-50 w-full bg-background">
         <div className="flex h-[--header-height] items-center px-4">
-          <div className="mr-4 flex">
-            <Link href="/" className="mr-6 flex items-center space-x-2">
-              <span>
+          <div className="mr-4 flex items-center gap-2">
+            <Link
+              href="https://www.fiveonefour.com"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center"
+            >
+              <Image
+                src="/fiveonefour-logo.png"
+                alt="Fiveonefour"
+                width={32}
+                height={32}
+                className="h-8 w-8 rounded-lg"
+                priority
+              />
+            </Link>
+            <Separator orientation="vertical" className="h-4" />
+            <Link href="/" className="flex items-center ml-2">
+              <span className="text-sm">
                 Fiveonefour<span className="text-muted-foreground"> Docs</span>
               </span>
             </Link>
@@ -73,11 +138,14 @@ export function TopNav({ stars }: TopNavProps) {
           {/* Desktop Navigation */}
           <div className="hidden md:flex md:flex-1 md:items-center md:justify-between">
             <nav className="flex items-center gap-2">
-              {navItems.map((item) => {
-                const isActive = activeSection === item.section;
+              {navItems.map((item, index) => {
+                const isActive =
+                  item.isActive ?
+                    item.isActive(pathname)
+                  : activeSection !== null && activeSection === item.section;
                 return (
                   <Button
-                    key={item.section}
+                    key={`${item.section}-${index}`}
                     variant={isActive ? "secondary" : "ghost"}
                     asChild
                   >
@@ -94,6 +162,20 @@ export function TopNav({ stars }: TopNavProps) {
             </nav>
 
             <div className="flex items-center space-x-2">
+              <Button
+                variant="outline"
+                className="relative h-9 w-full justify-start text-sm text-muted-foreground sm:pr-14 md:w-40 lg:w-64"
+                onClick={() => setSearchOpen(true)}
+              >
+                <IconSearch className="mr-2 h-4 w-4" />
+                <span className="hidden lg:inline-flex">
+                  Search documentation
+                </span>
+                <span className="inline-flex lg:hidden">Search...</span>
+                <kbd className="pointer-events-none hidden h-5 select-none items-center gap-1 ml-1 rounded border bg-muted px-1.5 font-mono text-[10px] font-medium opacity-100 sm:flex">
+                  <span className="text-xs">⌘</span>K
+                </kbd>
+              </Button>
               <Button variant="ghost" asChild>
                 <Link href={buildUrl("/moosestack/changelog")}>Changelog</Link>
               </Button>
@@ -120,11 +202,14 @@ export function TopNav({ stars }: TopNavProps) {
       {mobileMenuOpen && (
         <div className="md:hidden border-t">
           <div className="px-4 py-4 space-y-2">
-            {navItems.map((item) => {
-              const isActive = activeSection === item.section;
+            {navItems.map((item, index) => {
+              const isActive =
+                item.isActive ?
+                  item.isActive(pathname)
+                : activeSection !== null && activeSection === item.section;
               return (
                 <Button
-                  key={item.section}
+                  key={`${item.section}-${index}`}
                   variant={isActive ? "secondary" : "ghost"}
                   asChild
                   className="w-full justify-start"
@@ -147,6 +232,8 @@ export function TopNav({ stars }: TopNavProps) {
           </div>
         </div>
       )}
+
+      <CommandSearch open={searchOpen} onOpenChange={setSearchOpen} />
     </>
   );
 }
