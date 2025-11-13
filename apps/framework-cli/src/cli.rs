@@ -68,7 +68,6 @@ use crate::cli::routines::ls::ls_dmv2;
 use crate::cli::routines::templates::create_project_from_template;
 use crate::framework::core::migration_plan::MIGRATION_SCHEMA;
 use crate::framework::languages::SupportedLanguages;
-use crate::utilities::clickhouse_url::convert_http_to_clickhouse;
 use anyhow::Result;
 use std::time::Duration;
 use tokio::time::timeout;
@@ -385,23 +384,8 @@ pub async fn top_command_handler(
                     Some(url)
                 }
                 Some(Some(url_str)) => {
-                    // --from-remote flag provided with URL - validate and use
-                    match convert_http_to_clickhouse(url_str) {
-                        Ok(_) => {
-                            db_to_dmv2(url_str, dir_path).await?;
-                            Some(url_str.to_string())
-                        }
-                        Err(e) => {
-                            return Err(RoutineFailure::error(Message::new(
-                                "Init from remote".to_string(),
-                                format!(
-                                    "Invalid ClickHouse URL. Use HTTPS protocol and correct port. Run `moose init {} --from-remote` without arguments for interactive setup.\nDetails: {}",
-                                    name,
-                                    e
-                                ),
-                            )));
-                        }
-                    }
+                    db_to_dmv2(url_str, dir_path).await?;
+                    Some(url_str.to_string())
                 }
             };
 

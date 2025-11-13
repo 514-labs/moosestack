@@ -824,6 +824,9 @@ pub fn tables_to_typescript(tables: &[Table], life_cycle: Option<LifeCycle>) -> 
                 }
             }
         }
+        if let Some(version) = &table.version {
+            writeln!(output, "    version: {:?},", version).unwrap();
+        }
         // Add table settings if present (works for all engines)
         if let Some(settings) = &table.table_settings {
             if !settings.is_empty() {

@@ -550,7 +550,7 @@ pub fn tables_to_python(tables: &[Table], life_cycle: Option<LifeCycle>) -> Stri
     writeln!(output, "from moose_lib.data_models import ClickHouseJson").unwrap();
     writeln!(
         output,
-        "from moose_lib import Point, Ring, LineString, MultiLineString, Polygon, MultiPolygon"
+        "from moose_lib import Point, Ring, LineString, MultiLineString, Polygon, MultiPolygon, FixedString"
     )
     .unwrap();
     writeln!(
@@ -941,6 +941,9 @@ pub fn tables_to_python(tables: &[Table], life_cycle: Option<LifeCycle>) -> Stri
                 }
             }
         }
+        if let Some(version) = &table.version {
+            writeln!(output, "    version={:?},", version).unwrap();
+        }
         // Add table settings if present (includes mode for S3Queue)
         if let Some(settings) = &table.table_settings {
             if !settings.is_empty() {
@@ -1067,7 +1070,7 @@ from uuid import UUID
 from enum import IntEnum, Enum
 from moose_lib import Key, IngestPipeline, IngestPipelineConfig, OlapTable, OlapConfig, clickhouse_datetime64, clickhouse_decimal, ClickhouseSize, StringToEnumMixin
 from moose_lib.data_models import ClickHouseJson
-from moose_lib import Point, Ring, LineString, MultiLineString, Polygon, MultiPolygon
+from moose_lib import Point, Ring, LineString, MultiLineString, Polygon, MultiPolygon, FixedString
 from moose_lib import clickhouse_default, LifeCycle, ClickHouseTTL
 from moose_lib.blocks import MergeTreeEngine, ReplacingMergeTreeEngine, AggregatingMergeTreeEngine, SummingMergeTreeEngine, S3QueueEngine, ReplicatedMergeTreeEngine, ReplicatedReplacingMergeTreeEngine, ReplicatedAggregatingMergeTreeEngine, ReplicatedSummingMergeTreeEngine
 

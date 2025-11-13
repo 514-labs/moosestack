@@ -1699,9 +1699,8 @@ impl OlapOperations for ConfiguredDBClient {
             // Extract base name and version for source primitive
             let (base_name, version) = extract_version_from_table_name(&table_name);
 
-            // Create source primitive signature using the base name
             let source_primitive = PrimitiveSignature {
-                name: base_name,
+                name: base_name.clone(),
                 primitive_type: PrimitiveTypes::DataModel,
             };
 
@@ -1746,7 +1745,7 @@ impl OlapOperations for ConfiguredDBClient {
             debug!("Extracted indexes for table {}: {:?}", table_name, indexes);
 
             let table = Table {
-                name: table_name, // Keep the original table name with version
+                name: base_name, // the name field is without version suffix elsewhere
                 columns,
                 order_by: OrderBy::Fields(order_by_cols), // Use the extracted ORDER BY columns
                 partition_by: {
