@@ -2,8 +2,273 @@
 title: Troubleshooting
 description: Troubleshoot common issues
 order: 1
+category: help
 ---
+
+import { Callout, LanguageTabs, LanguageTabContent } from "@/components/mdx";
 
 # Troubleshooting
 
-This page is a placeholder. Content migration pending.
+Common issues and their solutions when working with Moose.
+
+## Development Environment
+
+### Issue: `moose dev` fails to start
+
+**Possible causes and solutions:**
+
+1. **Port conflicts**
+   - Check if ports 4000-4002 are already in use
+   - Solution: Kill the conflicting processes or configure different ports
+
+   ```bash
+   # Find processes using ports
+   lsof -i :4000-4002
+   
+   # Kill process by PID
+   kill <PID>
+   ```
+
+2. **Missing dependencies**
+   - Solution: Ensure all dependencies are installed
+
+   <LanguageTabs>
+     <LanguageTabContent value="typescript" label="TypeScript">
+     ```bash
+     npm install
+     ```
+     </LanguageTabContent>
+     <LanguageTabContent value="python" label="Python">
+     ```bash
+     pip install .
+     ```
+     </LanguageTabContent>
+   </LanguageTabs>
+
+3. **Docker not running**
+   - Solution: Start Docker Desktop or Docker daemon
+
+   ```bash
+   # Check Docker status
+   docker info
+   
+   # Start Docker on Linux
+   sudo systemctl start docker
+   ```
+
+## Data Ingestion
+
+### Issue: Data not appearing in tables
+
+1. **Validation errors**
+   - Check logs for validation failures
+   - Solution: Ensure data matches schema
+
+   ```bash filename="Terminal" copy
+   moose logs
+   ```
+
+2. **Stream processing errors**
+   - Solution: Check transform functions for errors
+   
+   ```bash filename="Terminal" copy
+   moose logs --filter functions
+   ```
+
+3. **Database connectivity**
+   - Solution: Verify database credentials in `.moose/config.toml`
+   
+```toml filename=".moose/config.toml" copy
+[clickhouse_config]
+db_name = "local"
+user = "panda"
+password = "pandapass"
+use_ssl = false
+host = "localhost"
+host_port = 18123
+native_port = 9000
+```
+
+## Stream Processing
+
+### Issue: High processing latency
+
+1. **Insufficient parallelism**
+   - Solution: Increase stream parallelism
+   
+   <LanguageTabs>
+     <LanguageTabContent value="typescript" label="TypeScript">
+     ```typescript
+     const stream = new Stream<Data>("high_volume", {
+       parallelism: 8  // Increase from default
+     });
+     ```
+     </LanguageTabContent>
+     <LanguageTabContent value="python" label="Python">
+     ```python
+     from moose_lib import Stream, StreamConfig
+
+     stream = Stream[Data]("high_volume", StreamConfig(parallelism=8))
+     ```
+     </LanguageTabContent>
+   </LanguageTabs>
+
+### Issue: Data transformations not working
+
+1. **Transform function errors**
+   - Solution: Debug transformation logic
+   
+   <LanguageTabs>
+     <LanguageTabContent value="typescript" label="TypeScript">
+     ```typescript
+     // Add logging to transform
+     stream.addTransform(outputStream, (record) => {
+       console.log('Processing record:', record.id);
+       try {
+         // Your transformation logic
+         return transformedRecord;
+       } catch (error) {
+         console.error('Transform error:', error);
+         return undefined;  // Skip record on error
+       }
+     });
+     ```
+     </LanguageTabContent>
+     <LanguageTabContent value="python" label="Python">
+     ```python
+     # Add logging to transform
+     def transform(record: Data) -> Data:
+         print(f"Processing record: {record.id}")
+         try:
+             # Your transformation logic
+             return transformed_record   
+         except Exception as e:
+             print(f"Transform error: {e}")
+             return None  # Skip record on error        
+     ```
+     </LanguageTabContent>
+   </LanguageTabs>
+
+## Database Issues
+
+### Issue: Slow queries
+
+1. **Missing or improper indexes**
+   - Solution: Check orderByFields configuration
+   
+   <LanguageTabs>
+     <LanguageTabContent value="typescript" label="TypeScript">
+     ```typescript
+     const table = new OlapTable<Data>("slow_table", {
+       orderByFields: ["frequently_queried_field", "timestamp"]
+     });
+     ```
+     </LanguageTabContent>
+     <LanguageTabContent value="python" label="Python">
+     ```python
+     from moose_lib import OlapTable, OlapConfig
+
+     table = OlapTable[Data]("slow_table", OlapConfig(
+         order_by_fields=["frequently_queried_field", "timestamp"]
+     ))
+     ```
+     </LanguageTabContent>
+   </LanguageTabs>
+
+2. **Large result sets**
+   - Solution: Add limits and pagination
+   
+   <LanguageTabs>
+     <LanguageTabContent value="typescript" label="TypeScript">
+     ```typescript
+     // In query API
+     const results = await client.query.execute(sql`
+       SELECT * FROM large_table
+       WHERE category = 'example'
+       LIMIT 100
+     `);
+     ```
+     </LanguageTabContent>
+     <LanguageTabContent value="python" label="Python">
+     ```python
+     # In query API
+     results = client.query.execute(
+       # not an f-string, the values are provided in the dict
+       """
+       SELECT * FROM large_table
+       WHERE category = {category}
+       LIMIT {limit}
+       """, {"category": "example", "limit": 100}
+     )
+     ```
+     </LanguageTabContent>
+   </LanguageTabs>
+
+## Deployment Issues
+
+### Issue: Deployment fails
+
+1. **Configuration errors**
+   - Solution: Check deployment configuration
+   
+   ```bash
+   # Validate configuration
+   moose validate --config
+   ```
+
+2. **Resource limitations**
+   - Solution: Increase resource allocation
+   
+   ```yaml
+   # In kubernetes manifest
+   resources:
+     requests:
+       memory: "1Gi"
+       cpu: "500m"
+     limits:
+       memory: "2Gi"
+       cpu: "1000m"
+   ```
+
+3. **Permission issues**
+   - Solution: Verify service account permissions
+   
+   ```bash
+   # Check permissions
+   moose auth check
+   ```
+
+### Issue: Migration stuck with "Migration already in progress"
+
+**Cause:** A previous migration was interrupted without releasing its lock.
+
+**Solution:**
+
+1. **Wait 5 minutes** - locks expire automatically
+
+2. **Or manually clear the lock:**
+   ```sql
+   DELETE FROM _MOOSE_STATE WHERE key = 'migration_lock';
+   ```
+
+3. **Verify it worked:**
+   ```sql
+   SELECT * FROM _MOOSE_STATE WHERE key = 'migration_lock';
+   -- Should return no rows
+   ```
+
+<Callout type="info">
+The `_MOOSE_STATE` table uses ClickHouse's KeeperMap engine for distributed locking, ensuring only one migration runs at a time across multiple deployments.
+</Callout>
+
+## Getting Help
+
+If you can't resolve an issue:
+
+1. Ask for help on the [Moose community Slack channel](https://join.slack.com/t/moose-community/shared_invite/zt-2fjh5n3wz-cnOmM9Xe9DYAgQrNu8xKxg)
+2. Search existing [GitHub issues](https://github.com/514-labs/moose/issues)
+3. Open a new issue with:
+   - Moose version (`moose --version`)
+   - Error messages and logs
+   - Steps to reproduce
+   - Expected vs. actual behavior

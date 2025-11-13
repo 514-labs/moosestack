@@ -67,7 +67,10 @@ export function CodeSnippet({
 }: CodeSnippetProps) {
   return (
     <div
-      className={cn("relative my-4 rounded-lg border bg-muted/50", className)}
+      className={cn(
+        "relative my-4 rounded-lg border bg-muted/50 overflow-hidden",
+        className,
+      )}
     >
       {copyButton && <CopyButton content={code} />}
       {filename && (
@@ -75,7 +78,7 @@ export function CodeSnippet({
           {filename}
         </div>
       )}
-      <div className="bg-muted/30 rounded-b-lg">
+      <div className="bg-muted/30 rounded-b-lg overflow-x-auto min-w-0">
         <CodeBlock
           data={[
             {

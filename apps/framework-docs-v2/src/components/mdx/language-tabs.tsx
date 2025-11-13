@@ -1,8 +1,9 @@
 "use client";
 
-import { ReactNode, Suspense, useState, useEffect } from "react";
+import { ReactNode, Suspense, useState, useEffect, useRef } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useLanguage } from "@/hooks/use-language";
+import { toast } from "sonner";
 
 interface LanguageTabsProps {
   children: ReactNode;
@@ -13,21 +14,43 @@ function LanguageTabsInner({
   children,
   items = ["TypeScript", "Python"],
 }: LanguageTabsProps) {
-  const { language } = useLanguage();
+  const { language, setLanguage } = useLanguage();
 
   // Local state for this tab group - initializes from global language
   const [localLanguage, setLocalLanguage] = useState<string>(
     language.toLowerCase(),
   );
 
-  // Sync local state when global language changes (from sidenav)
+  // Track if this is the initial mount to avoid showing toast on mount
+  const isInitialMount = useRef(true);
+
+  // Sync local state when global language changes (from top nav)
   useEffect(() => {
     setLocalLanguage(language.toLowerCase());
+    // Reset initial mount flag after first sync
+    if (isInitialMount.current) {
+      isInitialMount.current = false;
+    }
   }, [language]);
 
   const handleValueChange = (value: string) => {
-    // Only update local state, don't change global language
-    setLocalLanguage(value);
+    const newLang = value.toLowerCase() as "typescript" | "python";
+    setLocalLanguage(newLang);
+
+    // Only show toast if the language is different from global language
+    if (newLang !== language.toLowerCase()) {
+      const languageName = newLang === "typescript" ? "TypeScript" : "Python";
+      toast(`Switched to ${languageName}`, {
+        description: "Would you like to set this as your default language?",
+        action: {
+          label: "Set as default",
+          onClick: () => {
+            setLanguage(newLang);
+          },
+        },
+        duration: 5000,
+      });
+    }
   };
 
   return (

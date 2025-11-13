@@ -2,8 +2,306 @@
 title: Kubernetes Deployment
 description: Deploy MooseStack on Kubernetes
 order: 4
+category: deployment
 ---
 
-# Kubernetes Deployment
+import { Callout } from "@/components/mdx";
 
-This page is a placeholder. Content migration pending.
+# Deploying on Kubernetes
+
+Moose applications can be deployed to Kubernetes clusters, whether it's your own on-prem
+cluster or through a cloud service like Google's Kubernetes Engine (GKE) or Amazon's
+Elastic Kubernetes Service (EKS).
+
+<Callout type="warning" title="Launch a Single Instance">
+  Note at this time, we recommend that you only launch a single instance of
+  moose in one cluster. We're currently developing for multi-instance concurrent
+  usage.
+</Callout>
+
+Essentially you'll need to create a moose-deployment YAML file. Here is an example:
+
+```yaml filename="moose-deployment.yaml-fragment" copy
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: moosedeployment
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: moosedeploy
+  template:
+    metadata:
+      labels:
+        app: moosedeploy
+    spec:
+      containers:
+        - name: moosedeploy
+          image: 514labs/moose-df-deployment-x86_64-unknown-linux-gnu:latest
+          ports:
+            - containerPort: 4000
+```
+
+> Make sure to update the image key above with the location of your repository and image tag.
+
+You may also need to configure a load balancer to route external traffic to your moose ingest points.
+
+```yaml filename="moose-lb-service.yaml" copy
+apiVersion: v1
+kind: Service
+metadata:
+  name: moose-service
+spec:
+  selector:
+    app: moosedeploy
+  ports:
+    - protocol: TCP
+      port: 4000
+      targetPort: 4000
+  type: LoadBalancer
+```
+
+Another approach would be to use a service type of `ClusterIP`:
+
+```yaml filename="moose-service.yaml" copy
+apiVersion: v1
+kind: Service
+metadata:
+  name: moose-service
+spec:
+  selector:
+    app: moosedeploy
+  type: ClusterIP
+  ports:
+    - protocol: TCP
+      port: 4000
+      targetPort: 4000
+```
+
+The approach you decide on will depend on your specific Kubernetes networking requirements.
+
+## Setting up health checks and probes
+
+Your generated Moose docker containers feature a health check endpoint at `/health` that can be used by Kubernetes to monitor the health of your application. Based on our production deployment, we recommend configuring the following probes:
+
+```yaml
+# Startup probe - gives Moose time to initialize before accepting traffic
+startupProbe:
+  httpGet:
+    path: /health
+    port: 4000
+  initialDelaySeconds: 60
+  timeoutSeconds: 3
+  periodSeconds: 5
+  failureThreshold: 30
+  successThreshold: 3
+
+# Readiness probe - determines when the pod is ready to receive traffic
+readinessProbe:
+  httpGet:
+    path: /health
+    port: 4000
+  initialDelaySeconds: 5
+  timeoutSeconds: 3
+  periodSeconds: 3
+  failureThreshold: 2
+  successThreshold: 5
+
+# Liveness probe - restarts the pod if it becomes unresponsive
+livenessProbe:
+  httpGet:
+    path: /health
+    port: 4000
+  initialDelaySeconds: 5
+  timeoutSeconds: 3
+  periodSeconds: 5
+  failureThreshold: 5
+  successThreshold: 1
+```
+
+## Zero-downtime deployments with lifecycle hooks
+
+For production deployments, we recommend configuring a preStop lifecycle hook to ensure graceful pod termination during updates:
+
+```yaml
+lifecycle:
+  preStop:
+    exec:
+      command: ["/bin/sleep", "60"]
+```
+
+This gives the pod time to finish processing in-flight requests before termination. You should also set an appropriate
+ `terminationGracePeriodSeconds` value (we recommend 70 seconds) to work with this hook.
+
+## Resource requirements
+
+Based on our production deployments, we recommend the following resource allocation for a standard Moose deployment:
+
+```yaml
+resources:
+  requests:
+    cpu: "1000m"
+    memory: "8Gi"
+```
+
+You can adjust these values based on your application's specific needs and workload.
+
+## Configuring container environment variables
+
+Inside your `moose-deployment.yaml` file, you will need to add an `env` section for environment variables.
+
+<Callout type="warning" title="Security Best Practice">
+  The example below includes actual sample values for clarity. In production deployments, you should use Kubernetes secrets for sensitive information as shown in the second example.
+</Callout>
+
+<Callout type="info" title="Optional Components">
+  Note that both Redpanda and Temporal are optional. If you're not using these components, you can omit their respective configuration sections.
+</Callout>
+
+### Example with hardcoded values (for development/testing only):
+
+<Callout type="warning" title="Security Best Practice">
+  The example below includes actual sample values for clarity. In production deployments, you should use Kubernetes secrets for sensitive information as shown in the second example.
+</Callout>
+
+<Callout type="info" title="Optional Components">
+  Note that both Redpanda and Temporal are optional. If you're not using these components, you can omit their respective configuration sections.
+</Callout>
+
+```yaml filename="moose-deployment-dev.yaml" copy
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: moosedeployment
+spec:
+  # For zero-downtime deployments
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  replicas: 1
+  selector:
+    matchLabels:
+      app: moosedeploy
+  template:
+    metadata:
+      labels:
+        app: moosedeploy
+    spec:
+      # For graceful shutdowns
+      terminationGracePeriodSeconds: 70
+      containers:
+        - name: moosedeploy
+          image: 514labs/moose-df-deployment-x86_64-unknown-linux-gnu:latest
+          ports:
+            - containerPort: 4000
+          # Lifecycle hook to delay pod shutdown
+          lifecycle:
+            preStop:
+              exec:
+                command: ["/bin/sleep", "60"]
+          # Startup probe
+          startupProbe:
+            httpGet:
+              path: /health
+              port: 4000
+            initialDelaySeconds: 60
+            timeoutSeconds: 3
+            periodSeconds: 5
+            failureThreshold: 30
+            successThreshold: 3
+          # Readiness probe
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 4000
+            initialDelaySeconds: 5
+            timeoutSeconds: 3
+            periodSeconds: 3
+            failureThreshold: 2
+            successThreshold: 5
+          # Liveness probe
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 4000
+            initialDelaySeconds: 5
+            timeoutSeconds: 3
+            periodSeconds: 5
+            failureThreshold: 5
+            successThreshold: 1
+          # Resource requirements
+          resources:
+            requests:
+              cpu: "1000m"
+              memory: "8Gi"
+          env:
+            # Logger configuration
+            - name: MOOSE_LOGGER__LEVEL
+              value: "Info"
+            - name: MOOSE_LOGGER__STDOUT
+              value: "true"
+            - name: MOOSE_LOGGER__FORMAT
+              value: "Json"
+            # Telemetry configuration
+            - name: MOOSE_TELEMETRY__ENABLED
+              value: "true"
+            - name: MOOSE_TELEMETRY__EXPORT_METRICS
+              value: "true"
+            # Debugging
+            - name: RUST_BACKTRACE
+              value: "1"
+            # HTTP server configuration
+            - name: MOOSE_HTTP_SERVER_CONFIG__HOST
+              value: "0.0.0.0"
+            - name: MOOSE_HTTP_SERVER_CONFIG__PORT
+              value: "4000"
+            # ClickHouse configuration
+            - name: MOOSE_CLICKHOUSE_CONFIG__DB_NAME
+              value: "moose_production"
+            - name: MOOSE_CLICKHOUSE_CONFIG__USER
+              value: "clickhouse_user"
+            - name: MOOSE_CLICKHOUSE_CONFIG__PASSWORD
+              value: "clickhouse_password_example"
+            - name: MOOSE_CLICKHOUSE_CONFIG__HOST
+              value: "your-clickhouse.cloud.example.com"
+            - name: MOOSE_CLICKHOUSE_CONFIG__HOST_PORT
+              value: "8443"
+            - name: MOOSE_CLICKHOUSE_CONFIG__USE_SSL
+              value: "1"
+            - name: MOOSE_CLICKHOUSE_CONFIG__NATIVE_PORT
+              value: "9440"
+            # Redis configuration
+            - name: MOOSE_REDIS_CONFIG__URL
+              value: "redis://redis_user:redis_password_example@redis.example.com:6379"
+            - name: MOOSE_REDIS_CONFIG__KEY_PREFIX
+              value: "moose_production"
+            # Redpanda configuration (Optional)
+            - name: MOOSE_REDPANDA_CONFIG__BROKER
+              value: "seed-5fbcae97.example.redpanda.com:9092"
+            - name: MOOSE_REDPANDA_CONFIG__NAMESPACE
+              value: "moose_production"
+            - name: MOOSE_REDPANDA_CONFIG__MESSAGE_TIMEOUT_MS
+              value: "10043"
+            - name: MOOSE_REDPANDA_CONFIG__SASL_USERNAME
+              value: "redpanda_user"
+            - name: MOOSE_REDPANDA_CONFIG__SASL_PASSWORD
+              value: "redpanda_password_example"
+            - name: MOOSE_REDPANDA_CONFIG__SASL_MECHANISM
+              value: "SCRAM-SHA-256"
+            - name: MOOSE_REDPANDA_CONFIG__SECURITY_PROTOCOL
+              value: "SASL_SSL"
+            - name: MOOSE_REDPANDA_CONFIG__REPLICATION_FACTOR
+              value: "3"
+            # Temporal configuration (Optional)
+            - name: MOOSE_TEMPORAL_CONFIG__CA_CERT
+              value: "/etc/ssl/certs/ca-certificates.crt"
+            - name: MOOSE_TEMPORAL_CONFIG__API_KEY
+              value: "temporal_api_key_example"
+            - name: MOOSE_TEMPORAL_CONFIG__TEMPORAL_HOST
+              value: "your-namespace.tmprl.cloud"
+      imagePullSecrets:
+        - name: moose-docker-repo-credentials
+```

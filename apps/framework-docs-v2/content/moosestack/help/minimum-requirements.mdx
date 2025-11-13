@@ -2,8 +2,33 @@
 title: Minimum Requirements
 description: Minimum system requirements for MooseStack
 order: 2
+category: help
 ---
 
 # Minimum Requirements
 
-This page is a placeholder. Content migration pending.
+## Development Setup
+
+The development setup has higher requirements because Moose runs locally along with all its dependencies (Redpanda, ClickHouse, Temporal, Redis).
+
+- **CPU:** 12 cores
+- **Memory:** 18GB
+- **Disk:** >500GB SSD
+- **OS:**
+  - Windows with Linux subsystem (Ubuntu preferred)
+  - Linux (Debian 10+, Ubuntu 18.10+, Fedora 29+, CentOS/RHEL 8+)
+  - Mac OS 13+
+- **Runtime:** Python 3.12+ or Node.js 20+, Docker 24.0.0+, and Docker Compose 2.23.1+
+
+## Production Setup
+
+The production setup has lower requirements, as external components (Redpanda, ClickHouse, Redis, and Temporal) are assumed to be deployed separately.
+
+- **CPU:** 1vCPU
+- **Memory:** 6GB
+- **Disk:** >30GB SSD
+- **OS:**
+  - Windows with Linux subsystem (Ubuntu preferred)
+  - Linux (Debian 10+, Ubuntu 18.10+, Fedora 29+, CentOS/RHEL 8+)
+  - Mac OS 13+
+- **Runtime:** Python 3.12+ or Node.js 20+

@@ -1,14 +1,399 @@
 ---
-title: Express
-description: Integrating MooseStack with Express applications
-order: 2
+title: Express with MooseStack
+description: Use Express framework with MooseStack
+order: 1
 category: integration
 ---
 
-# Express
+import { Callout } from "@/components/mdx";
 
-This page is a placeholder. Content migration pending.
+# Express with MooseStack
 
+Mount Express applications within your MooseStack project using the `WebApp` class. Express is the most popular Node.js web framework with a rich ecosystem of middleware.
 
+<Callout type="info" title="Choose your integration path">
+  - Already run Express elsewhere? Keep it outside your MooseStack project and query data with the MooseStack client. The [Querying Data guide](/moosestack/olap/read-data) shows how to use the SDK.  
+  - Want to mount Express in your MooseStack project? Follow the steps below with `WebApp` for unified deployment and access to MooseStack utilities.
+</Callout>
 
+## Basic Example
 
+```ts filename="app/apis/expressApp.ts" copy
+import express from "express";
+import { WebApp, expressMiddleware, getMooseUtils } from "@514labs/moose-lib";
+import { MyTable } from "../tables/MyTable";
+
+const app = express();
+
+app.use(express.json());
+app.use(expressMiddleware()); // Required for Express
+
+app.get("/health", (req, res) => {
+  res.json({ status: "ok" });
+});
+
+app.get("/data", async (req, res) => {
+  const moose = getMooseUtils(req);
+  if (!moose) {
+    return res.status(500).json({ error: "Moose utilities not available" });
+  }
+
+  const { client, sql } = moose;
+  const limit = parseInt(req.query.limit as string) || 10;
+
+  try {
+    const query = sql`
+      SELECT 
+        ${MyTable.columns.id},
+        ${MyTable.columns.name},
+        ${MyTable.columns.createdAt}
+      FROM ${MyTable} 
+      ORDER BY ${MyTable.columns.createdAt} DESC
+      LIMIT ${limit}
+    `;
+    const result = await client.query.execute(query);
+    const data = await result.json();
+    res.json(data);
+  } catch (error) {
+    res.status(500).json({ error: String(error) });
+  }
+});
+
+export const expressApp = new WebApp("expressApp", app, {
+  mountPath: "/express",
+  metadata: { description: "Express API with custom middleware" }
+});
+```
+
+**Access your API:**
+- `GET http://localhost:4000/express/health`
+- `GET http://localhost:4000/express/data?limit=20`
+
+<Callout type="info" title="Express Middleware Required">
+Express applications must use `expressMiddleware()` to access Moose utilities:
+
+```ts
+import { expressMiddleware } from "@514labs/moose-lib";
+app.use(expressMiddleware());
+```
+
+This middleware injects MooseStack utilities into the request object.
+</Callout>
+
+## Complete Example with Features
+
+```ts filename="app/apis/advancedExpressApp.ts" copy
+import express, { Request, Response, NextFunction } from "express";
+import { WebApp, expressMiddleware, getMooseUtils } from "@514labs/moose-lib";
+import { UserEvents } from "../tables/UserEvents";
+import { UserProfile } from "../tables/UserProfile";
+
+const app = express();
+
+// Middleware setup
+app.use(express.json());
+app.use(expressMiddleware()); // Required!
+
+// Custom logging middleware
+app.use((req: Request, res: Response, next: NextFunction) => {
+  console.log(`${req.method} ${req.path}`);
+  next();
+});
+
+// Error handling middleware
+const asyncHandler = (fn: Function) => (req: Request, res: Response, next: NextFunction) => {
+  Promise.resolve(fn(req, res, next)).catch(next);
+};
+
+// Health check endpoint
+app.get("/health", (req, res) => {
+  res.json({
+    status: "ok",
+    timestamp: new Date().toISOString()
+  });
+});
+
+// GET endpoint with query parameters
+app.get("/users/:userId/events", asyncHandler(async (req: Request, res: Response) => {
+  const moose = getMooseUtils(req);
+  if (!moose) {
+    return res.status(500).json({ error: "Moose utilities not available" });
+  }
+
+  const { client, sql } = moose;
+  const { userId } = req.params;
+  const limit = parseInt(req.query.limit as string) || 10;
+  const eventType = req.query.eventType as string;
+
+  const cols = UserEvents.columns;
+  const query = sql`
+    SELECT
+      ${cols.id},
+      ${cols.event_type},
+      ${cols.timestamp}
+    FROM ${UserEvents}
+    WHERE ${cols.user_id} = ${userId}
+      ${eventType ? sql`AND ${cols.event_type} = ${eventType}` : sql``}
+    ORDER BY ${cols.timestamp} DESC
+    LIMIT ${limit}
+  `;
+
+  const result = await client.query.execute(query);
+  const events = await result.json();
+
+  res.json({
+    userId,
+    count: events.length,
+    events
+  });
+}));
+
+// POST endpoint
+app.post("/users/:userId/profile", asyncHandler(async (req: Request, res: Response) => {
+  const moose = getMooseUtils(req);
+  if (!moose) {
+    return res.status(500).json({ error: "Moose utilities not available" });
+  }
+
+  const { userId } = req.params;
+  const { name, email } = req.body;
+
+  // Validation
+  if (!name || !email) {
+    return res.status(400).json({ error: "Name and email are required" });
+  }
+
+  // Handle POST logic here
+  res.json({
+    success: true,
+    userId,
+    profile: { name, email }
+  });
+}));
+
+// Protected endpoint with JWT
+app.get("/protected", asyncHandler(async (req: Request, res: Response) => {
+  const moose = getMooseUtils(req);
+
+  if (!moose?.jwt) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+
+  const userId = moose.jwt.sub;
+  res.json({
+    message: "Authenticated",
+    userId,
+    claims: moose.jwt
+  });
+}));
+
+// Error handling
+app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
+  console.error(err);
+  res.status(500).json({
+    error: "Internal Server Error",
+    message: err.message
+  });
+});
+
+// Register as WebApp
+export const advancedExpressApp = new WebApp("advancedExpress", app, {
+  mountPath: "/api/v1",
+  metadata: {
+    description: "Advanced Express API with routing and middleware"
+  }
+});
+```
+
+## WebApp Configuration
+
+```ts
+new WebApp(name, app, config)
+```
+
+**Parameters:**
+- `name` (string): Unique identifier for your WebApp
+- `app`: Your Express application instance
+- `config` (WebAppConfig): Configuration object
+
+**WebAppConfig:**
+```ts
+interface WebAppConfig {
+  mountPath: string;                    // Required: URL path (e.g., "/api/v1")
+  metadata?: { description?: string };  // Optional: Documentation metadata
+  injectMooseUtils?: boolean;           // Optional: Inject utilities (default: true)
+}
+```
+
+## Accessing Moose Utilities
+
+```ts
+import { getMooseUtils } from "@514labs/moose-lib";
+
+app.get("/data", async (req, res) => {
+  const moose = getMooseUtils(req);
+  if (!moose) {
+    return res.status(500).json({ error: "Utilities not available" });
+  }
+
+  const { client, sql, jwt } = moose;
+  // Use client and sql for database queries
+});
+```
+
+**Available utilities:**
+- `client`: MooseClient for database queries
+- `sql`: Template tag for safe SQL queries
+- `jwt`: Parsed JWT payload (when authentication is configured)
+
+## Middleware Integration
+
+Express middleware works seamlessly with MooseStack:
+
+```ts
+import helmet from "helmet";
+import compression from "compression";
+import rateLimit from "express-rate-limit";
+
+const app = express();
+
+// Security
+app.use(helmet());
+
+// Compression
+app.use(compression());
+
+// Rate limiting
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100 // limit each IP to 100 requests per windowMs
+});
+app.use(limiter);
+
+// Body parsing
+app.use(express.json());
+
+// Moose utilities (must be after body parsing)
+app.use(expressMiddleware());
+```
+
+## Router Pattern
+
+Organize routes using Express Router:
+
+```ts filename="app/apis/routers/usersRouter.ts"
+import { Router } from "express";
+import { getMooseUtils } from "@514labs/moose-lib";
+import { UserProfile } from "../../tables/UserProfile";
+
+export const usersRouter = Router();
+
+usersRouter.get("/:userId", async (req, res) => {
+  const moose = getMooseUtils(req);
+  if (!moose) {
+    return res.status(500).json({ error: "Utilities not available" });
+  }
+
+  const { client, sql } = moose;
+  const { userId } = req.params;
+
+  const query = sql`
+    SELECT 
+      ${UserProfile.columns.id},
+      ${UserProfile.columns.name},
+      ${UserProfile.columns.email},
+      ${UserProfile.columns.createdAt}
+    FROM ${UserProfile}
+    WHERE ${UserProfile.columns.id} = ${userId}
+  `;
+
+  const result = await client.query.execute(query);
+  const users = await result.json();
+
+  if (users.length === 0) {
+    return res.status(404).json({ error: "User not found" });
+  }
+
+  res.json(users[0]);
+});
+```
+
+```ts filename="app/apis/mainApp.ts"
+import express from "express";
+import { WebApp, expressMiddleware } from "@514labs/moose-lib";
+import { usersRouter } from "./routers/usersRouter";
+
+const app = express();
+
+app.use(express.json());
+app.use(expressMiddleware());
+
+// Mount routers
+app.use("/users", usersRouter);
+
+export const mainApp = new WebApp("mainApp", app, {
+  mountPath: "/api",
+  metadata: { description: "Main API with routers" }
+});
+```
+
+## Authentication with JWT
+
+```ts
+app.get("/protected", async (req, res) => {
+  const moose = getMooseUtils(req);
+
+  if (!moose?.jwt) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+
+  const userId = moose.jwt.sub;
+  const userRole = moose.jwt.role;
+
+  // Check permissions
+  if (userRole !== "admin") {
+    return res.status(403).json({ error: "Forbidden" });
+  }
+
+  res.json({ message: "Authenticated", userId });
+});
+```
+
+See [Authentication documentation](/moosestack/apis/auth) for JWT configuration.
+
+## Best Practices
+
+1. **Always use expressMiddleware()**: Required for accessing Moose utilities
+2. **Check for moose utilities**: Always verify `getMooseUtils(req)` returns a value
+3. **Use async error handling**: Wrap async routes with error handler
+4. **Organize with routers**: Split large applications into multiple routers
+5. **Apply middleware in order**: Body parsing before expressMiddleware
+6. **Use TypeScript types**: Import Request, Response types from Express
+7. **Handle errors globally**: Use Express error handling middleware
+
+## Troubleshooting
+
+### "Moose utilities not available"
+
+**Solution:** Ensure `expressMiddleware()` is added after body parsing:
+```ts
+app.use(express.json());
+app.use(expressMiddleware()); // Must come after body parsers
+```
+
+### TypeScript errors with getMooseUtils
+
+**Solution:** The utilities may be undefined, always check:
+```ts
+const moose = getMooseUtils(req);
+if (!moose) {
+  return res.status(500).json({ error: "Utilities not available" });
+}
+// Now moose.client, moose.sql are safely accessible
+```
+
+### Mount path conflicts
+
+**Solution:** Ensure your mount path doesn't conflict with reserved paths:
+- Avoid: `/api`, `/admin`, `/consumption`, `/health`, `/ingest`, `/mcp`
+- Use: `/myapi`, `/v1`, `/custom`

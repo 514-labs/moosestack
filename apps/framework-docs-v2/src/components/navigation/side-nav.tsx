@@ -24,8 +24,6 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import { useLanguage } from "@/hooks/use-language";
-import { Button } from "@/components/ui/button";
-import { ButtonGroup } from "@/components/ui/button-group";
 import {
   buildNavItems,
   getNavigationConfig,
@@ -39,11 +37,12 @@ interface SideNavProps {
 
 export function SideNav({ items }: SideNavProps) {
   const pathname = usePathname();
-  const { language, setLanguage } = useLanguage();
+  const { language } = useLanguage();
 
   // Determine active section and get its navigation config
   const activeSection = getSectionFromPathname(pathname);
-  const sectionNavConfig = getNavigationConfig(activeSection);
+  const sectionNavConfig =
+    activeSection !== null ? getNavigationConfig(activeSection) : [];
 
   // Filter by language if items not provided
   const filteredItems = React.useMemo(
@@ -125,31 +124,7 @@ export function SideNav({ items }: SideNavProps) {
       collapsible="icon"
       variant="sidebar"
     >
-      <SidebarContent>
-        <SidebarGroup>
-          <div className="py-2 pt-4">
-            <ButtonGroup aria-label="Language selection" className="w-full">
-              <Button
-                variant={language === "typescript" ? "default" : "outline"}
-                size="sm"
-                onClick={() => setLanguage("typescript")}
-                aria-label="TypeScript"
-                className="flex-1"
-              >
-                TypeScript
-              </Button>
-              <Button
-                variant={language === "python" ? "default" : "outline"}
-                size="sm"
-                onClick={() => setLanguage("python")}
-                aria-label="Python"
-                className="flex-1"
-              >
-                Python
-              </Button>
-            </ButtonGroup>
-          </div>
-        </SidebarGroup>
+      <SidebarContent className="pt-6 lg:pt-8">
         {renderNavItems()}
       </SidebarContent>
     </Sidebar>

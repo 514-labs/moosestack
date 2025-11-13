@@ -237,9 +237,11 @@ const wordHighlightClassNames = cn(
 );
 
 const codeBlockClassName = cn(
-  "mt-0 bg-transparent text-sm",
+  "mt-0 bg-transparent text-sm min-w-0 w-full",
   "[&_pre]:py-4",
   "[&_pre]:bg-transparent",
+  "[&_pre]:overflow-x-auto",
+  "[&_pre]:min-w-0",
   "[&_.shiki]:!bg-transparent",
   "[&_.shiki]:[background:var(--shiki-bg)_!important]",
   "[&_code]:w-full",
@@ -294,7 +296,7 @@ export const CodeBlock = ({
     <CodeBlockContext.Provider value={{ value, onValueChange, data }}>
       <div
         className={cn(
-          "size-full overflow-hidden rounded-lg border-0 bg-transparent",
+          "w-full overflow-x-auto overflow-y-hidden rounded-lg border-0 bg-transparent",
           className,
         )}
         {...props}
@@ -494,8 +496,8 @@ type CodeBlockFallbackProps = HTMLAttributes<HTMLDivElement>;
 
 const CodeBlockFallback = ({ children, ...props }: CodeBlockFallbackProps) => (
   <div {...props}>
-    <pre className="w-full">
-      <code>
+    <pre className="overflow-x-auto">
+      <code className="whitespace-pre">
         {children
           ?.toString()
           .split("\n")
@@ -592,8 +594,16 @@ export const CodeBlockContent = ({
       try {
         const { codeToHtml } = await import("shiki");
 
+        // Map unsupported languages to supported ones
+        const languageMap: Record<string, string> = {
+          gitignore: "text",
+          env: "text",
+          dotenv: "text",
+        };
+        const mappedLanguage = languageMap[language.toLowerCase()] || language;
+
         const html = await codeToHtml(children, {
-          lang: language,
+          lang: mappedLanguage,
           themes: {
             light: themes.light,
             dark: themes.dark,
@@ -603,10 +613,23 @@ export const CodeBlockContent = ({
         setHighlightedCode(html);
         setIsLoading(false);
       } catch (error) {
-        console.error(
-          `Failed to highlight code for language "${language}":`,
-          error,
-        );
+        // If language is still not supported, fall back to text
+        try {
+          const { codeToHtml } = await import("shiki");
+          const html = await codeToHtml(children, {
+            lang: "text",
+            themes: {
+              light: themes.light,
+              dark: themes.dark,
+            },
+          });
+          setHighlightedCode(html);
+        } catch (fallbackError) {
+          console.error(
+            `Failed to highlight code for language "${language}":`,
+            error,
+          );
+        }
         setIsLoading(false);
       }
     };
@@ -619,6 +642,10 @@ export const CodeBlockContent = ({
   }
 
   return (
-    <div dangerouslySetInnerHTML={{ __html: highlightedCode }} {...props} />
+    <div
+      className="min-w-0 w-full"
+      dangerouslySetInnerHTML={{ __html: highlightedCode }}
+      {...props}
+    />
   );
 };

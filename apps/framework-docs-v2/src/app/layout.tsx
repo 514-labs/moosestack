@@ -6,6 +6,7 @@ import { ThemeProvider } from "@/components/theme-provider";
 import { LanguageProviderWrapper } from "@/components/language-provider-wrapper";
 import { TopNav } from "@/components/navigation/top-nav";
 import { SidebarProvider } from "@/components/ui/sidebar";
+import { Toaster } from "@/components/ui/sonner";
 import { getGitHubStars } from "@/lib/github-stars";
 
 export const metadata: Metadata = {
@@ -42,6 +43,7 @@ export default async function RootLayout({
               </SidebarProvider>
             </LanguageProviderWrapper>
           </Suspense>
+          <Toaster position="top-center" />
         </ThemeProvider>
       </body>
     </html>

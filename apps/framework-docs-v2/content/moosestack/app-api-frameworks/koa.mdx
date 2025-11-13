@@ -1,0 +1,451 @@
+---
+title: Koa with MooseStack
+description: Use Koa framework with MooseStack
+order: 4
+category: integration
+---
+
+import { Callout } from "@/components/mdx";
+
+# Koa with MooseStack
+
+Mount Koa applications within your MooseStack project using the `WebApp` class. Koa is an expressive, minimalist framework by the Express team, designed for modern async/await patterns.
+
+<Callout type="info" title="Choose your integration path">
+  - Already running Koa outside MooseStack? Keep it separate and call MooseStack data with the client SDK. The [Querying Data guide](/moosestack/olap/read-data) has TypeScript examples.  
+  - Want to mount Koa in your MooseStack project? Continue below with `WebApp` for unified deployment and access to MooseStack utilities.
+</Callout>
+
+## Basic Example
+
+```ts filename="app/apis/koaApp.ts" copy
+import Koa from "koa";
+import Router from "@koa/router";
+import bodyParser from "koa-bodyparser";
+import { WebApp, getMooseUtils } from "@514labs/moose-lib";
+import { MyTable } from "../tables/MyTable";
+
+const app = new Koa();
+const router = new Router();
+
+app.use(bodyParser());
+
+router.get("/health", (ctx) => {
+  ctx.body = { status: "ok" };
+});
+
+router.get("/data", async (ctx) => {
+  const moose = getMooseUtils(ctx.req);
+  if (!moose) {
+    ctx.status = 500;
+    ctx.body = { error: "Moose utilities not available" };
+    return;
+  }
+
+  const { client, sql } = moose;
+  const limit = parseInt((ctx.query.limit as string) || "10");
+
+  try {
+    const query = sql`
+      SELECT 
+        ${MyTable.columns.id},
+        ${MyTable.columns.name},
+        ${MyTable.columns.createdAt}
+      FROM ${MyTable}
+      ORDER BY ${MyTable.columns.createdAt} DESC
+      LIMIT ${limit}
+    `;
+    const result = await client.query.execute(query);
+    ctx.body = await result.json();
+  } catch (error) {
+    ctx.status = 500;
+    ctx.body = { error: String(error) };
+  }
+});
+
+app.use(router.routes());
+app.use(router.allowedMethods());
+
+export const koaApp = new WebApp("koaApp", app, {
+  mountPath: "/koa",
+  metadata: { description: "Koa API" }
+});
+```
+
+**Access your API:**
+- `GET http://localhost:4000/koa/health`
+- `GET http://localhost:4000/koa/data?limit=20`
+
+## Complete Example with Middleware
+
+```ts filename="app/apis/advancedKoaApp.ts" copy
+import Koa, { Context, Next } from "koa";
+import Router from "@koa/router";
+import bodyParser from "koa-bodyparser";
+import logger from "koa-logger";
+import { WebApp, getMooseUtils } from "@514labs/moose-lib";
+import { UserEvents } from "../tables/UserEvents";
+import { UserProfile } from "../tables/UserProfile";
+
+const app = new Koa();
+const router = new Router();
+
+// Middleware
+app.use(logger());
+app.use(bodyParser());
+
+// Custom error handling middleware
+app.use(async (ctx: Context, next: Next) => {
+  try {
+    await next();
+  } catch (error) {
+    ctx.status = error.status || 500;
+    ctx.body = {
+      error: error.message || "Internal Server Error"
+    };
+    ctx.app.emit("error", error, ctx);
+  }
+});
+
+// Custom logging middleware
+app.use(async (ctx: Context, next: Next) => {
+  const start = Date.now();
+  await next();
+  const ms = Date.now() - start;
+  console.log(`${ctx.method} ${ctx.url} - ${ms}ms`);
+});
+
+// Health check
+router.get("/health", (ctx) => {
+  ctx.body = {
+    status: "ok",
+    timestamp: new Date().toISOString()
+  };
+});
+
+// GET with params and query
+router.get("/users/:userId/events", async (ctx) => {
+  const moose = getMooseUtils(ctx.req);
+  if (!moose) {
+    ctx.throw(500, "Moose utilities not available");
+  }
+
+  const { client, sql } = moose;
+  const { userId } = ctx.params;
+  const limit = parseInt((ctx.query.limit as string) || "10");
+  const eventType = ctx.query.eventType as string;
+
+  const cols = UserEvents.columns;
+  const query = sql`
+    SELECT
+      ${cols.id},
+      ${cols.event_type},
+      ${cols.timestamp}
+    FROM ${UserEvents}
+    WHERE ${cols.user_id} = ${userId}
+      ${eventType ? sql`AND ${cols.event_type} = ${eventType}` : sql``}
+    ORDER BY ${cols.timestamp} DESC
+    LIMIT ${limit}
+  `;
+
+  const result = await client.query.execute(query);
+  const events = await result.json();
+
+  ctx.body = {
+    userId,
+    count: events.length,
+    events
+  };
+});
+
+// POST endpoint
+router.post("/users/:userId/events", async (ctx) => {
+  const moose = getMooseUtils(ctx.req);
+  if (!moose) {
+    ctx.throw(500, "Moose utilities not available");
+  }
+
+  const { userId } = ctx.params;
+  const { eventType, data } = ctx.request.body as any;
+
+  // Validation
+  if (!eventType || !data) {
+    ctx.throw(400, "eventType and data are required");
+  }
+
+  // Handle POST logic
+  ctx.body = {
+    success: true,
+    userId,
+    eventType,
+    data
+  };
+  ctx.status = 201;
+});
+
+// Protected route with JWT
+router.get("/protected", async (ctx) => {
+  const moose = getMooseUtils(ctx.req);
+
+  if (!moose?.jwt) {
+    ctx.throw(401, "Unauthorized");
+  }
+
+  const userId = moose.jwt.sub;
+  const userRole = moose.jwt.role;
+
+  ctx.body = {
+    message: "Authenticated",
+    userId,
+    role: userRole
+  };
+});
+
+// Multiple route handlers (middleware chain)
+const checkAuth = async (ctx: Context, next: Next) => {
+  const moose = getMooseUtils(ctx.req);
+  if (!moose?.jwt) {
+    ctx.throw(401, "Unauthorized");
+  }
+  await next();
+};
+
+router.get("/admin/stats", checkAuth, async (ctx) => {
+  const moose = getMooseUtils(ctx.req);
+  // moose.jwt is guaranteed to exist here
+  ctx.body = { stats: "admin stats" };
+});
+
+app.use(router.routes());
+app.use(router.allowedMethods());
+
+// Error listener
+app.on("error", (err, ctx) => {
+  console.error("Server error:", err);
+});
+
+export const advancedKoaApp = new WebApp("advancedKoa", app, {
+  mountPath: "/api/v1",
+  metadata: {
+    description: "Advanced Koa API with middleware chain"
+  }
+});
+```
+
+## Accessing Moose Utilities
+
+Use `ctx.req` to access the underlying Node.js request:
+
+```ts
+const moose = getMooseUtils(ctx.req);
+if (!moose) {
+  ctx.throw(500, "Utilities not available");
+}
+
+const { client, sql, jwt } = moose;
+```
+
+## Middleware Patterns
+
+### Composition
+
+```ts
+import compose from "koa-compose";
+
+const authMiddleware = async (ctx: Context, next: Next) => {
+  const moose = getMooseUtils(ctx.req);
+  if (!moose?.jwt) {
+    ctx.throw(401, "Unauthorized");
+  }
+  await next();
+};
+
+const adminMiddleware = async (ctx: Context, next: Next) => {
+  const moose = getMooseUtils(ctx.req);
+  if (!moose?.jwt || moose.jwt.role !== "admin") {
+    ctx.throw(403, "Forbidden");
+  }
+  await next();
+};
+
+// Compose middleware
+const requireAdmin = compose([authMiddleware, adminMiddleware]);
+
+router.get("/admin", requireAdmin, async (ctx) => {
+  ctx.body = { message: "Admin access granted" };
+});
+```
+
+### Custom Context Extensions
+
+```ts
+import Koa, { Context } from "koa";
+import { MyTable } from "../tables/MyTable";
+
+// Extend context type
+interface CustomContext extends Context {
+  formatResponse: (data: any) => { success: boolean; data: any };
+}
+
+const app = new Koa<any, CustomContext>();
+
+// Add custom method to context
+app.context.formatResponse = function(data: any) {
+  return {
+    success: true,
+    timestamp: new Date().toISOString(),
+    data
+  };
+};
+
+router.get("/data", async (ctx: CustomContext) => {
+  const moose = getMooseUtils(ctx.req);
+  if (!moose) {
+    ctx.throw(500, "Utilities not available");
+  }
+
+  const { client, sql } = moose;
+  const result = await client.query.execute(sql`
+    SELECT 
+      ${MyTable.columns.id},
+      ${MyTable.columns.name},
+      ${MyTable.columns.status}
+    FROM ${MyTable}
+    WHERE ${MyTable.columns.status} = 'active'
+    LIMIT 10
+  `);
+  const data = await result.json();
+
+  ctx.body = ctx.formatResponse(data);
+});
+```
+
+## Error Handling
+
+Koa uses try-catch for error handling:
+
+```ts
+// Error middleware
+app.use(async (ctx, next) => {
+  try {
+    await next();
+  } catch (err) {
+    // Custom error handling
+    ctx.status = err.statusCode || err.status || 500;
+    ctx.body = {
+      error: {
+        message: err.message,
+        status: ctx.status
+      }
+    };
+
+    // Emit error event
+    ctx.app.emit("error", err, ctx);
+  }
+});
+
+// Error listener
+app.on("error", (err, ctx) => {
+  console.error("Error:", err);
+});
+```
+
+## Router Nesting
+
+Organize routes with nested routers:
+
+```ts filename="app/apis/routers/usersRouter.ts"
+import Router from "@koa/router";
+import { getMooseUtils } from "@514labs/moose-lib";
+
+export const usersRouter = new Router({ prefix: "/users" });
+
+usersRouter.get("/:userId", async (ctx) => {
+  const moose = getMooseUtils(ctx.req);
+  if (!moose) {
+    ctx.throw(500, "Utilities not available");
+  }
+
+  const { userId } = ctx.params;
+  // Query logic
+  ctx.body = { userId };
+});
+```
+
+```ts filename="app/apis/mainApp.ts"
+import Koa from "koa";
+import Router from "@koa/router";
+import { WebApp } from "@514labs/moose-lib";
+import { usersRouter } from "./routers/usersRouter";
+
+const app = new Koa();
+const mainRouter = new Router();
+
+// Nest routers
+mainRouter.use("/api", usersRouter.routes(), usersRouter.allowedMethods());
+
+app.use(mainRouter.routes());
+app.use(mainRouter.allowedMethods());
+
+export const mainApp = new WebApp("mainApp", app, {
+  mountPath: "/v1",
+  metadata: { description: "Main API with nested routers" }
+});
+```
+
+## WebApp Configuration
+
+```ts
+new WebApp(name, app, config)
+```
+
+**WebAppConfig:**
+```ts
+interface WebAppConfig {
+  mountPath: string;
+  metadata?: { description?: string };
+  injectMooseUtils?: boolean; // default: true
+}
+```
+
+## Best Practices
+
+1. **Use ctx.req for utilities**: Access Moose utilities via `getMooseUtils(ctx.req)`
+2. **Use ctx.throw()**: Koa's built-in error throwing for cleaner code
+3. **Leverage async/await**: Koa is designed for modern async patterns
+4. **Compose middleware**: Use `koa-compose` for reusable middleware chains
+5. **Handle errors globally**: Use error middleware at the top of middleware stack
+6. **Type your context**: Extend Context type for custom properties
+7. **Organize with routers**: Split large applications into nested routers
+
+## Troubleshooting
+
+### "Moose utilities not available"
+
+**Solution:** Use `ctx.req` not `ctx.request`:
+```ts
+const moose = getMooseUtils(ctx.req); // Correct
+const moose = getMooseUtils(ctx.request); // Wrong
+```
+
+### Middleware order issues
+
+**Solution:** Apply middleware in correct order:
+```ts
+app.use(logger());          // 1. Logging
+app.use(bodyParser());      // 2. Body parsing
+app.use(errorHandler);      // 3. Error handling
+app.use(router.routes());   // 4. Routes
+```
+
+### TypeScript errors with Context
+
+**Solution:** Import and use correct types:
+```ts
+import { Context, Next } from "koa";
+
+router.get("/path", async (ctx: Context, next: Next) => {
+  // ctx is properly typed
+});
+```
+

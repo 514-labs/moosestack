@@ -1,9 +1,376 @@
 ---
-title: Migrate
-description: Database migration tools and workflows
-order: 1
+title: Migrations & Planning
+description: How Moose handles infrastructure migrations and planning
+order: 0
+category: migrate
 ---
 
-# Migrate
+import { LanguageTabs, LanguageTabContent, Callout } from "@/components/mdx";
 
-This page is a placeholder. Content migration pending.
+# Moose Migrate
+
+Moose's migration system works like version control for your infrastructure. It automatically detects changes in your code and applies them to your data infrastructure with confidence.
+
+<Callout type="info" title="Infrastructure Components">
+Moose tracks changes across:
+- OLAP Tables and Materialized Views
+- Streaming Topics  
+- API Endpoints
+- Workflows
+</Callout>
+
+
+## How It Works
+
+Moose collects all objects defined in your main file (`index.ts` for TypeScript or `main.py` for Python) and automatically generates infrastructure operations to match your code:
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript" label="TypeScript">
+
+```ts file="app/index.ts"
+interface UserSchema {
+  id: string;
+  name: string;
+  email: string;
+}
+
+export const usersTable = new OlapTable<UserSchema>("Users");
+export const userEvents = new Stream<UserSchema>("Users");
+```
+
+  </LanguageTabContent>
+  <LanguageTabContent value="python" label="Python">
+
+```python file="app/main.py"
+from pydantic import BaseModel
+from moose_lib import OlapTable, Stream
+
+class UserSchema(BaseModel):
+    id: str
+    name: str
+    email: str
+
+users_table = OlapTable[UserSchema]("Users")
+user_events = Stream[UserSchema]("Users")
+```
+
+  </LanguageTabContent>
+</LanguageTabs>
+
+When you add these objects, Moose automatically creates:
+- A ClickHouse table named `Users` with the `UserSchema`
+- A Redpanda topic named `Users` with the `UserSchema`
+
+## Development Workflow
+
+When running your code in development mode, Moose will automatically hot-reload migrations to your local infrastructure as you save code changes.
+
+### Quick Start
+
+Start your development environment:
+
+```bash filename="Terminal" copy
+moose dev
+```
+
+This automatically:
+1. Recursively watches your `/app` directory for code changes
+2. Parses objects defined in your main file
+3. Compares the new objects with the current infrastructure state Moose stores internally
+4. Generates and applies migrations in real-time based on the differences
+5. Provides immediate feedback on any errors or warnings
+6. Updates the internal state of your infrastructure to reflect the new state
+
+### Example: Adding a New Table
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript" label="TypeScript">
+
+```ts file="app/index.ts" {6} copy
+// Before
+export const usersTable = new OlapTable<UserSchema>("Users");
+
+// After (add analytics table)
+export const usersTable = new OlapTable<UserSchema>("Users");
+export const analyticsTable = new OlapTable<AnalyticsSchema>("Analytics");
+```
+
+  </LanguageTabContent>
+  <LanguageTabContent value="python" label="Python">
+
+```python file="app/main.py" {6} copy
+# Before
+users_table = OlapTable[UserSchema]("Users")
+
+# After (add analytics table)
+users_table = OlapTable[UserSchema]("Users")
+analytics_table = OlapTable[AnalyticsSchema]("Analytics")
+```
+
+  </LanguageTabContent>
+</LanguageTabs>
+
+**What happens:**
+- Moose detects the new `analyticsTable` object
+- Compares: "No Analytics table exists"
+- Generates migration: "Create Analytics table"
+- Applies migration automatically
+- Updates internal state
+
+In your terminal, you will see a log that shows the new table being created:
+```bash
+⠋ Processing Infrastructure changes from file watcher
+             +  Table: Analytics Version None - id: String, number: Int64, status: String -  - deduplicate: false
+```
+### Example: Schema Changes
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript" label="TypeScript">
+
+```ts file="app/index.ts" {8} copy
+import { Key } from "@514labs/moose-lib";
+
+// After (add age field)
+interface UserSchema {
+  id: Key<string>;
+  name: string;
+  email: string;
+  age: number;  // New field
+}
+```
+
+  </LanguageTabContent>
+  <LanguageTabContent value="python" label="Python">
+
+```python file="app/main.py" {8} copy
+from moose_lib import Key
+
+# After (add age field)
+class UserSchema(BaseModel):
+    id: Key[str]
+    name: str
+    email: str
+    age: int  # New field
+```
+
+  </LanguageTabContent>
+</LanguageTabs>
+
+**What happens:**
+- Moose detects the new `age` field
+- Generates migration: "Add age column to Users table"
+- Applies migration
+- Existing rows get NULL/default values
+
+## Production Workflow
+
+Moose supports two deployment patterns: **Moose Server** and **Serverless**.
+
+### Moose Server Deployments
+
+For deployments with a running Moose server, preview changes before applying:
+
+```bash filename="Terminal" copy
+moose plan --url https://your-production-instance --token <token>
+```
+
+<Callout type="warning" title="Authentication Required">
+Remote planning requires authentication:
+
+1. Generate a token: `moose generate hash-token`
+2. Configure your server:
+```toml filename="moose.config.toml" copy
+[authentication]
+admin_api_key = "your-hashed-token"
+```
+3. Use the token with `--token` flag
+</Callout>
+
+**Deployment Flow:**
+1. **Develop locally** with `moose dev`
+2. **Test changes** in local environment
+3. **Plan against production**: `moose plan --url <url> --token <token>`
+4. **Review changes** carefully
+5. **Deploy** - Moose applies migrations automatically on startup
+
+### Serverless Deployments
+
+For serverless deployments (no Moose server), use the ClickHouse connection directly:
+
+```bash filename="Terminal" copy
+# Step 1: Generate migration files
+moose generate migration --clickhouse-url <url> --save
+
+# Step 2: Preview changes in PR
+moose plan --clickhouse-url clickhouse://user:pass@host:port/database
+
+# Step 3: Execute migration after merge
+moose migrate --clickhouse-url <url>
+```
+
+**Deployment Flow:**
+1. **Develop locally** with `moose dev`
+2. **Generate migration plan**: `moose generate migration --clickhouse-url <url> --save`
+3. **Create PR** with `plan.yaml`, `remote_state.json`, `local_infra_map.json`
+4. **PR validation**: Run `moose plan --clickhouse-url <url>` in CI to preview changes
+5. **Review** migration files and plan output
+6. **Merge PR**
+7. **Execute migration**: Run `moose migrate --clickhouse-url <url>` in CI/CD
+
+<Callout type="info" title="Serverless Configuration">
+Requires `state_config.storage = "clickhouse"` in `moose.config.toml`:
+```toml filename="moose.config.toml" copy
+[state_config]
+storage = "clickhouse"
+
+[features]
+olap = true
+data_models_v2 = true
+```
+</Callout>
+
+<Callout type="warning" title="ClickHouse Requirements for Serverless">
+Your ClickHouse instance needs the KeeperMap engine for state storage and migration locking.
+
+✅ **ClickHouse Cloud**: Works out of the box
+✅ **`moose dev` or `moose prod`**: Already configured
+⚠️ **Self-hosted ClickHouse**: See [ClickHouse KeeperMap documentation](https://clickhouse.com/docs/en/engines/table-engines/special/keeper-map) for setup requirements
+</Callout>
+
+### State Storage Options
+
+Moose migrations require storing infrastructure state and coordinating locks. You can choose between two backends:
+
+**ClickHouse State Storage (Default)**
+Uses the `_MOOSE_STATE` KeeperMap table. Best for:
+- ClickHouse Cloud (works out of the box)
+- Self-hosted with ClickHouse Keeper already configured
+
+**Redis State Storage**
+Uses Redis for state and locking. Best for:
+- Existing Redis infrastructure
+- Multi-tenant deployments (isolated by `key_prefix`)
+- When ClickHouse Keeper isn't available
+
+**Configuration:**
+```toml filename="moose.config.toml" copy
+[state_config]
+storage = "redis"  # or "clickhouse" (default)
+```
+
+**Usage with Redis:**
+```bash filename="Terminal" copy
+# With environment variable (recommended)
+export MOOSE_REDIS_CONFIG__URL="redis://host:port"
+moose migrate --clickhouse-url clickhouse://...
+
+# Or with CLI flag
+moose migrate \
+  --clickhouse-url clickhouse://... \
+  --redis-url redis://host:port
+```
+
+<Callout type="info">
+The ClickHouse URL is always required, even when using Redis for state storage.
+</Callout>
+
+### Understanding Plan Output
+
+Moose shows exactly what will change:
+
+```bash
+  +  Table: Analytics Version None - id: String, number: Int64, status: String -  - deduplicate: false
+  +  Table: Users Version None - id: String, name: String, email: String -  - deduplicate: false
+```
+
+## Migration Types
+
+| Change Type | Infrastructure Impact | Data Impact |
+|-------------|----------------------|-------------|
+| **Add new object** | New table/stream/API created | No impact |
+| **Remove object** | Table/stream/API dropped | All data lost |
+| **Add field** | New column created | Existing rows get NULL/default |
+| **Remove field** | Column dropped | Data permanently lost |
+| **Change type** | Column altered | Data converted if compatible |
+
+For detailed examples of each migration type, see [Migration Types](/moosestack/migrate/migration-types).
+
+## Viewing Infrastructure State
+
+### Via CLI
+```bash
+# Check current infrastructure objects
+moose ls
+
+# View migration logs
+moose logs
+```
+
+### Via Direct Connection
+
+Connect to your local infrastructure using details from `moose.config.toml`:
+
+```toml file="moose.config.toml"
+[features]
+olap = true              # ClickHouse for analytics
+streaming_engine = true  # Redpanda for streaming
+workflows = false        # Temporal for workflows
+
+[clickhouse_config]
+host = "localhost"
+host_port = 18123
+native_port = 9000
+db_name = "local"
+user = "panda"
+password = "pandapass"
+
+[redpanda_config]
+broker = "localhost:19092"
+message_timeout_ms = 1000
+retention_ms = 30000
+replication_factor = 1
+```
+
+## Best Practices
+
+### Development
+- Use `moose dev` for all local development
+- Monitor plan outputs for warnings
+- Test schema changes with sample data
+
+### Production
+- Always use remote planning before deployments
+- Review changes carefully in production plans
+- Maintain proper authentication
+- Test migrations in staging first
+
+### Managing TTL Outside Moose
+
+If you're managing ClickHouse TTL settings through other tools or want to avoid migration failures from TTL drift, you can configure Moose to ignore TTL changes:
+
+```toml filename="moose.config.toml" copy
+[migration_config]
+ignore_operations = ["ModifyTableTtl", "ModifyColumnTtl"]
+```
+
+This tells Moose to:
+- Skip generating TTL change operations in migration plans
+- Ignore TTL differences during drift detection
+
+You'll still get migrations for all other schema changes (adding tables, modifying columns, etc.), but TTL changes won't block your deployments.
+
+## Troubleshooting
+
+### Authentication Errors
+- Verify your authentication token
+- Generate a new token: `moose generate hash-token`
+- Check server configuration in `moose.config.toml`
+
+### Migration Issues
+- Check `moose logs` for detailed error messages
+- Verify object definitions in your main file
+- Ensure all required fields are properly typed
+- **Stuck migration lock**: If you see "Migration already in progress" but no migration is running, wait 5 minutes for automatic expiry or manually clear it:
+  ```sql
+  DELETE FROM _MOOSE_STATE WHERE key = 'migration_lock';
+  ```
