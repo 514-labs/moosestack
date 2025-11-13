@@ -6,6 +6,7 @@ const config: Config = {
     "./src/pages/**/*.{js,ts,jsx,tsx,mdx}",
     "./src/components/**/*.{js,ts,jsx,tsx,mdx}",
     "./src/app/**/*.{js,ts,jsx,tsx,mdx}",
+    "./content/**/*.{mdx,md}",
   ],
   theme: {
     extend: {
@@ -140,6 +141,15 @@ const config: Config = {
             a: {
               color: "hsl(var(--primary))",
               textDecoration: "none",
+            },
+            "p a": {
+              textDecoration: "underline",
+              "&:hover": {
+                textDecoration: "underline",
+              },
+            },
+            "li a": {
+              textDecoration: "underline",
               "&:hover": {
                 textDecoration: "underline",
               },

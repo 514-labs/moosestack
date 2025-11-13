@@ -26,10 +26,19 @@ export const CodeBlockContent = async ({
   syntaxHighlighting = true,
   ...props
 }: CodeBlockContentProps) => {
+  // Map unsupported languages to supported ones
+  const languageMap: Record<string, string> = {
+    gitignore: "text",
+    env: "text",
+    dotenv: "text",
+  };
+  const mappedLanguage =
+    language ? languageMap[language.toLowerCase()] || language : "typescript";
+
   const html =
     syntaxHighlighting ?
       await codeToHtml(children as string, {
-        lang: language ?? "typescript",
+        lang: mappedLanguage,
         themes: themes ?? {
           light: "vitesse-light",
           dark: "vitesse-dark",
@@ -51,6 +60,32 @@ export const CodeBlockContent = async ({
             matchAlgorithm: "v3",
           }),
         ],
+      }).catch(() => {
+        // Fallback to text if language is not supported
+        return codeToHtml(children as string, {
+          lang: "text",
+          themes: themes ?? {
+            light: "vitesse-light",
+            dark: "vitesse-dark",
+          },
+          transformers: [
+            transformerNotationDiff({
+              matchAlgorithm: "v3",
+            }),
+            transformerNotationHighlight({
+              matchAlgorithm: "v3",
+            }),
+            transformerNotationWordHighlight({
+              matchAlgorithm: "v3",
+            }),
+            transformerNotationFocus({
+              matchAlgorithm: "v3",
+            }),
+            transformerNotationErrorLevel({
+              matchAlgorithm: "v3",
+            }),
+          ],
+        });
       })
     : children;
 

@@ -1,9 +1,994 @@
 ---
-title: Modeling Materialized Views
-description: Learn how to model materialized views in ClickHouse
+title: Creating Materialized Views
+description: Create and configure materialized views for data transformations
 order: 2
+category: olap
 ---
+
+import { Callout, BulletPointsCard, LanguageTabs, LanguageTabContent, Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/mdx";
 
 # Modeling Materialized Views
 
-This page is a placeholder. Content migration pending.
+## Overview
+
+Materialized views are write-time transformations in ClickHouse. A static `SELECT` populates a destination table from one or more sources. You query the destination like any other table. The `MaterializedView` class wraps [ClickHouse `MATERIALIZED VIEW`](https://clickhouse.com/docs/en/sql-reference/statements/create/view/#create-materialized-view) and keeps the `SELECT` explicit. When you edit the destination schema in code and update the `SELECT` accordingly, Moose applies the corresponding DDL, orders dependent updates, and backfills as needed, so the pipeline stays consistent as you iterate.
+
+<BulletPointsCard title="Materialized Views: ClickHouse vs. Other Databases" bulletStyle="number" compact bullets={[
+    "Requires two parts: a SELECT transformation and a destination table schema",
+    "Transformation is write-time: runs on INSERT into source table(s) and writes to the destination table",
+    "SQL‑native pipelines: MV 'triggers' live inside ClickHouse, so pipelines are defined and executed entirely in the database — no external orchestrator needed. Cascading MVs require correct DDL order."
+]} />
+
+In local dev, Moose Migrate generates and applies DDL to your local database.
+
+<BulletPointsCard title="On change, Moose Migrate:"
+bulletStyle="check"
+compact
+bullets={[
+    "Generates and applies destination table DDL when you update the schema in code",
+    "Applies DDL in dependency order across views and tables",
+    "Backfills or rewires when the SELECT changes",
+    "Hot‑reloads the view and destination table locally and keeps APIs in sync"
+]}
+/>
+
+<Callout type="info" title="Roadmap: inferring schema from SELECT" compact>
+Today, destination schemas are declared in code and kept in sync manually with your `SELECT`. Moose Migrate coordinates DDL and dependencies when you make those changes. A future enhancement will infer the destination schema from the `SELECT` and update it automatically.
+</Callout>
+
+<Callout type="info" title="Dependency awareness" compact icon="Bulb">
+This dependency awareness is critical for [cascading materialized views](https://clickhouse.com/docs/en/sql-reference/statements/create/view/#create-materialized-view-with-dependencies). Moose Migrate [orders DDL across views and tables](https://www.fiveonefour.com/blog/Moose-SQL-Getting-DDL-Dependencies-in-Order) to avoid failed migrations and partial states.
+</Callout>
+
+### Basic Usage
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```ts filename="BasicUsage.ts" copy
+import { MaterializedView, OlapTable, ClickHouseEngines, sql } from "@514labs/moose-lib";
+import { sourceTable } from "path/to/SourceTable"; // or a view
+
+// Define the schema of the transformed rows-- this is static and it must match the results of your SELECT. It also represents the schema of your entire destination table.
+interface TargetSchema {
+  id: string;
+  average_rating: number;
+  num_reviews: number;
+}
+export const mv = new MaterializedView<TargetSchema>({
+  // The transformation to run on the source table
+  selectStatement: sql`
+  SELECT
+    ${sourceTable.columns.id},
+    avg(${sourceTable.columns.rating}) AS average_rating, 
+    count(*) AS num_reviews 
+    FROM ${sourceTable}
+    GROUP BY ${sourceTable.columns.id}
+  `,
+  // Reference to the source table(s) that the SELECT reads from
+  selectTables: [sourceTable], 
+
+  // Creates a new OlapTable named "target_table" where the transformed rows are written to.
+  targetTable: {
+    name: "target_table",
+    orderByFields: ["id"],
+  },
+  // The name of the materialized view in ClickHouse
+  materializedViewName: "mv_to_target_table", 
+});
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```python filename="BasicUsage.py" copy
+from moose_lib import MaterializedView, MaterializedViewOptions, ClickHouseEngines
+from source_table import source_table
+
+# Define the schema of the transformed rows-- this is static and it must match the results of your SELECT. It also represents the schema of your entire destination table.
+class TargetSchema(BaseModel):
+    id: str
+    average_rating: float
+    num_reviews: int
+
+mv = MaterializedView[TargetSchema](MaterializedViewOptions(
+    # The transformation to run on the source table
+    select_statement="""
+        SELECT
+        {source_table.columns.id},
+        avg({source_table.columns.rating}) AS average_rating, 
+        count(*) AS num_reviews 
+        FROM {source_table}
+        GROUP BY {source_table.columns.id}
+    """,
+    # Reference to the source table(s) that the SELECT reads from
+    select_tables=[source_table],
+
+    # Creates a new OlapTable named "target_table" where the transformed rows are written to.
+    table_name="target_table",
+    order_by_fields=["id"],
+    # The name of the materialized view in ClickHouse
+    materialized_view_name="mv_to_target_table",
+))
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+<Callout type="info" title="Materialized View is like a trigger" compact icon="Bulb">
+The ClickHouse `MATERIALIZED VIEW` object acts like a trigger: on new inserts into the source table(s), it runs the SELECT and writes the transformed rows to the destination.
+</Callout>
+
+### Quick Reference
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```typescript filename="ViewOptions.ts" copy
+import type { Sql } from "@514labs/moose-lib";
+
+interface MaterializedViewConfig<T> {
+  // Static SELECT that computes the destination rows
+  selectStatement: string | Sql;
+
+  // Tables/views the query reads from
+  selectTables: (OlapTable<any> | View)[];
+
+  // Name of the ClickHouse MATERIALIZED VIEW object
+  materializedViewName: string;
+
+  // Destination table where materialized rows are stored
+  targetTable?:
+    | OlapTable<T>
+    | {
+        name: string;
+        engine?: ClickHouseEngines;
+        orderByFields?: (keyof T & string)[];
+      };
+
+  /** @deprecated prefer targetTable */
+  tableName?: string;
+  /** @deprecated prefer targetTable */
+  engine?: ClickHouseEngines;
+  /** @deprecated prefer targetTable */
+  orderByFields?: (keyof T & string)[];
+}
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```python filename="ViewOptions.py" copy
+from moose_lib import MaterializedView, sql
+from source_table import source_table
+
+class MaterializedViewOptions(BaseModel):
+    select_statement: str
+    table_name: str
+    materialized_view_name: str
+    select_tables: List[OlapTable | View]
+    engine: ClickHouseEngines = ClickHouseEngines.MergeTree
+    order_by_fields: List[str] = []
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+## Modeling the Target Table
+
+The destination table is where the transformed rows are written by the materialized view. You can model it in two ways:
+
+<Tabs>
+  <TabsList>
+    <TabsTrigger value="option1">Option 1: Inline</TabsTrigger>
+    <TabsTrigger value="option2">Option 2: Decoupled</TabsTrigger>
+  </TabsList>
+  <TabsContent value="option1">
+
+### Option 1 — Define target table inside the MaterializedView (most cases)
+
+- Simple, co-located lifecycle: the destination table is created/updated/dropped with the MV.
+- Best for: projection/denormalization, filtered serving tables, enrichment joins, and most rollups.
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```ts filename="InlineTarget.ts" copy
+import { MaterializedView, ClickHouseEngines, sql } from "@514labs/moose-lib";
+
+interface Dest { id: string; value: number }
+
+new MaterializedView<Dest>({
+  selectStatement: sql`SELECT id, toInt32(value) AS value FROM ${sourceTable}`,
+  selectTables: [sourceTable],
+  targetTable: { name: "serving_table", orderByFields: ["id"] }, // MergeTree by default
+  materializedViewName: "mv_to_serving_table",
+});
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```python filename="InlineTarget.py" copy
+from pydantic import BaseModel
+from moose_lib import MaterializedView, MaterializedViewOptions
+
+class TargetSchema(BaseModel):
+    id: str
+    value: int
+
+mv = MaterializedView[TargetSchema](MaterializedViewOptions(
+    select_statement="""
+        SELECT {source_table.columns.id}, toInt32({source_table.columns.value}) AS value FROM {source_table}
+    """,
+    select_tables=[source_table],
+    table_name="serving_table",
+    order_by_fields=["id"],
+    materialized_view_name="mv_to_serving_table",
+))
+```
+  </LanguageTabContent>
+</LanguageTabs>
+  </TabsContent>
+  <TabsContent value="option2">
+
+### Option 2 — Decoupled: reference a standalone `OlapTable`
+
+Certain use cases may benefit from a separate lifecycle for the target table that is managed independently from the MV.
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```ts filename="DecoupledTarget.ts" copy
+import { MaterializedView, OlapTable, ClickHouseEngines, sql } from "@514labs/moose-lib";
+
+interface Dest { id: string; value: number }
+
+const targetTable = new OlapTable<Dest>("target_table", {
+  engine: ClickHouseEngines.MergeTree,
+  orderByFields: ["id"],
+});
+
+new MaterializedView<Dest>({
+  selectStatement: sql`SELECT id, toInt32(value) AS value FROM ${sourceTable}`,
+  selectTables: [sourceTable],
+  targetTable: targetTable,
+  materializedViewName: "mv_to_target_table",
+});
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```python filename="DecoupledTarget.py" copy
+from pydantic import BaseModel
+from moose_lib import MaterializedView, MaterializedViewOptions, OlapConfig, ClickHouseEngines
+
+class TargetSchema(BaseModel):
+    id: str
+    value: int
+
+# Create the standalone table
+target_table = OlapTable[TargetSchema](OlapConfig(
+    name="target_table",
+    engine=ClickHouseEngines.MergeTree,
+    order_by_fields=["id"],
+))
+
+mv = MaterializedView[TargetSchema](MaterializedViewOptions(
+    select_statement="""
+        SELECT {source_table.columns.id}, toInt32({source_table.columns.value}) AS value FROM {source_table}
+    """,
+    select_tables=[source_table],
+    materialized_view_name="mv_to_target_table",
+), target_table=target_table)
+```
+  </LanguageTabContent>
+</LanguageTabs>
+  </TabsContent>
+</Tabs>
+
+### Basic Transformation, Cleaning, Filtering, Denormalization
+
+Create a narrower, query-optimized table from a wide source. Apply light transforms (cast, rename, parse) at write time.
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```ts filename="Denormalization.ts" copy
+import { MaterializedView, sql } from "@514labs/moose-lib";
+
+interface Dest { id: string; value: number; created_at: string }
+
+new MaterializedView<Dest>({
+  selectStatement: sql`
+    SELECT id, toInt32(value) AS value, created_at
+    FROM ${sourceTable}
+    WHERE active = 1
+  `,
+  selectTables: [sourceTable],
+  targetTable: { name: "proj_table" },
+  materializedViewName: "mv_to_proj_table",
+});
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```python filename="Denormalization.py" copy
+from pydantic import BaseModel
+from moose_lib import MaterializedView, MaterializedViewOptions
+
+class Dest(BaseModel):
+    id: str
+    value: int
+    created_at: str
+
+mv = MaterializedView[Dest](MaterializedViewOptions(
+    select_statement="""
+        SELECT {source_table.columns.id}, toInt32({source_table.columns.value}) AS value, {source_table.columns.created_at} AS created_at FROM {source_table} WHERE active = 1
+    """,
+    select_tables=[source_table],
+    table_name="proj_table",
+    order_by_fields=["id"],
+    materialized_view_name="mv_to_proj_table",
+))
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+### Aggregations
+
+<Tabs>
+  <TabsList>
+    <TabsTrigger value="simple">Simple Aggregations</TabsTrigger>
+    <TabsTrigger value="complex">Complex Aggregations</TabsTrigger>
+  </TabsList>
+  <TabsContent value="simple">
+
+### Simple Additive Rollups
+
+When you want to maintain running sums (counts, totals) that are additive per key, use the `SummingMergeTree` engine:
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```ts filename="Summing.ts" copy
+import { MaterializedView, ClickHouseEngines, sql } from "@514labs/moose-lib";
+
+interface DailyCounts { 
+  day: string; 
+  user_id: string; 
+  events: number; 
+}
+
+const stmt = sql`
+  SELECT 
+    toDate(${events.columns.timestamp}) AS day, 
+    ${events.columns.user_id} AS user_id, 
+    count(*) AS events
+  FROM ${events}
+  GROUP BY day, user_id
+`;
+
+new MaterializedView<DailyCounts>({
+  selectStatement: stmt,
+  selectTables: [events],
+  targetTable: {
+    name: "daily_counts",
+    engine: ClickHouseEngines.SummingMergeTree,
+    orderByFields: ["day", "user_id"],
+  },
+  materializedViewName: "mv_to_daily_counts",
+});
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```python filename="Summing.py" copy
+from pydantic import BaseModel
+from moose_lib import MaterializedView, MaterializedViewOptions, ClickHouseEngines
+
+class DailyCounts(BaseModel):
+    day: str
+    user_id: str
+    events: int
+
+stmt = """
+    SELECT 
+      toDate({events.columns.timestamp}) AS day, 
+      {events.columns.user_id} AS user_id,
+      count(*) AS events
+    FROM {events}
+    GROUP BY day, user_id
+"""
+
+mv = MaterializedView[DailyCounts](MaterializedViewOptions(
+    select_statement=stmt,
+    select_tables=[events],
+    table_name="daily_counts",
+    engine=ClickHouseEngines.SummingMergeTree,
+    order_by_fields=["day", "user_id"],
+    materialized_view_name="mv_to_daily_counts",
+))
+```
+  </LanguageTabContent>
+</LanguageTabs>
+  </TabsContent>
+  <TabsContent value="complex">
+
+#### Complex Aggregations
+
+When you want to compute complex aggregation metrics that are not just simple additive operations (sum, count, avg, etc), but instead uses more complex anlaytical functions: (topK,percentile, etc), create a target table with the `AggregatingMergeTree` engine.
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```ts filename="AggTransform.ts" copy
+import { MaterializedView, ClickHouseEngines, Aggregated, sql } from "@514labs/moose-lib";
+
+interface MetricsById {
+  id: string;
+  avg_rating: number & Aggregated<"avg", [number]>;
+  daily_uniques: number & ClickHouseInt<"uint64"> & Aggregated<"uniqExact", [string]>;
+}
+
+//  All Aggregate Functions in this query have a [functionName][State]() suffix.
+const stmt = sql`
+  SELECT
+    ${events.columns.id} AS id,
+    avgState(${events.columns.rating})      AS avg_rating,
+    uniqExactState(${events.columns.user_id}) AS daily_uniques
+  FROM ${events}
+  GROUP BY ${events.columns.id}
+`;
+
+
+new MaterializedView<MetricsById>({
+  selectStatement: stmt,
+  selectTables: [events],
+  targetTable: {
+    name: "metrics_by_id",
+    engine: ClickHouseEngines.AggregatingMergeTree,
+    orderByFields: ["id"],
+  },
+  materializedViewName: "mv_metrics_by_id",
+});
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```python filename="AggTransform.py" copy
+from typing import Annotated
+from pydantic import BaseModel
+from moose_lib import MaterializedView, AggregateFunction, MaterializedViewOptions, ClickHouseEngines
+
+class MetricsById(BaseModel):
+    id: str
+    avg_rating: Annotated[float, AggregateFunction(agg_func="avg", param_types=[float])]
+    daily_uniques: Annotated[int, AggregateFunction(agg_func="uniqExact", param_types=[str])]
+
+# The SELECT must output aggregate states
+STMT = """
+  SELECT
+    id,
+    avgState({events.columns.rating})        AS avg_rating,
+    uniqExactState({events.columns.user_id}) AS daily_uniques
+  FROM {events}
+  GROUP BY {events.columns.id}
+"""
+
+# Create the MV (engine config shown in TS example)
+mv = MaterializedView[MetricsById](MaterializedViewOptions(
+    select_statement=STMT,
+    table_name="metrics_by_id",
+    materialized_view_name="mv_metrics_by_id",
+    engine=ClickHouseEngines.AggregatingMergeTree,
+    order_by_fields=["id"],
+    select_tables=[events],
+))
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+<Callout type="warning" title="Deeper Dive: Aggregations">
+Jump to the [Advanced: AggregatingMergeTree transformations](#advanced-aggregatingmergetree-transformations) section for more details.
+</Callout>
+  </TabsContent>
+</Tabs>
+
+### Fan-in Patterns
+
+When you have multiple sources that you want to merge into a single destination table, its best to create an OlapTable and reference it in each MV that needs to write to it:
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```ts filename="FanIn.ts" copy
+interface DailyCounts { day: string; user_id: string; events: number }
+
+// Create the destination table explicitly
+const daily = new OlapTable<DailyCounts>("daily_counts", {
+  engine: ClickHouseEngines.SummingMergeTree,
+  orderByFields: ["day", "user_id"],
+});
+
+
+// MV 1 - write to the daily_counts table
+const webStmt = sql`SELECT toDate(ts) AS day, user_id, 1 AS events FROM ${webEvents}`;
+const mv1 = new MaterializedView<DailyCounts>({
+  selectStatement: webStmt,
+  selectTables: [webEvents],
+  targetTable: daily,
+  materializedViewName: "mv_web_to_daily_counts",
+});
+
+// MV 2 - write to the daily_counts table
+const mobileStmt = sql`SELECT toDate(ts) AS day, user_id, 1 AS events FROM ${mobileEvents}`;
+const mv2 = new MaterializedView<DailyCounts>({
+  selectStatement: mobileStmt,
+  selectTables: [mobileEvents],
+  targetTable: daily,
+  materializedViewName: "mv_mobile_to_daily_counts",
+});
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```python filename="FanIn.py" copy
+from pydantic import BaseModel
+from moose_lib import MaterializedView, MaterializedViewOptions, OlapConfig, ClickHouseEngines
+
+class DailyCounts(BaseModel):
+    day: str
+    user_id: str
+    events: int
+
+# Create the destination table explicitly
+daily = OlapTable[DailyCounts]("daily_counts", OlapConfig(
+    engine=ClickHouseEngines.SummingMergeTree,
+    order_by_fields=["day", "user_id"],
+))
+
+# MV 1 - write to the daily_counts table
+mv1 = MaterializedView[DailyCounts](MaterializedViewOptions(
+    select_statement="SELECT toDate(ts) AS day, user_id, 1 AS events FROM {webEvents}",
+    select_tables=[webEvents],
+    materialized_view_name="mv_web_to_daily_counts",
+), target_table=daily)
+
+# MV 2 - write to the daily_counts table
+mv2 = MaterializedView[DailyCounts](MaterializedViewOptions(
+    select_statement="SELECT toDate(ts) AS day, user_id, 1 AS events FROM {mobileEvents}",
+    select_tables=[mobileEvents],
+    materialized_view_name="mv_mobile_to_daily_counts",
+), target_table=daily)
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+### Blue/green schema migrations
+
+Create a new table for a breaking schema change and use an MV to copy data from the old table; when complete, switch reads to the new table and drop just the MV and old table.
+
+<Callout type="info" title="Blue/green table migrations" href="/moosestack/olap/schema-versioning" ctaLabel="Learn more">
+For more information on how to use materialized views to perform blue/green schema migrations, see the [Schema Versioning](/moosestack/olap/schema-versioning) guide.
+</Callout>
+
+## Defining the transformation
+
+The `selectStatement` (TypeScript) or `select_statement` (Python) is a static SQL query that Moose runs to transform data from your source table(s) into rows for the destination table.
+
+<Callout type="info" title="Recommended: ClickHouse SQL Reference" icon="Database" href="https://clickhouse.com/docs/en/sql-reference" ctaLabel="Learn more" compact>
+Transformations are defined as ClickHouse SQL queries. We strongly recommend using the ClickHouse SQL reference and functions overview to help you develop your transformations.
+</Callout>
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+Use the Moose `sql` template to interpolate tables and columns safely. This gives type-checked column references and prevents runtime parameters.
+Reference tables and columns via objects in your project (e.g., `${sourceTable}`, `${sourceTable.columns.id}`) rather than string literals.
+
+```ts filename="Transformation.ts" copy
+import { MaterializedView, sql } from "@514labs/moose-lib";
+
+interface Dest { id: string; name: string; day: string }
+
+const transformation = sql`
+  SELECT
+    ${users.columns.id}        AS id,
+    ${users.columns.name}      AS name,
+    toDate(${events.columns.ts}) AS day
+  FROM ${events}
+  JOIN ${users} ON ${events.columns.user_id} = ${users.columns.id}
+  WHERE ${events.columns.active} = 1
+`;
+
+new MaterializedView<Dest>({
+  selectStatement: transformation,
+  selectTables: [events, users],
+  targetTable: { name: "user_activity_by_day" },
+  materializedViewName: "mv_user_activity_by_day",
+});
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+You can use f-strings to interpolate tables and columns identifiers to your queries. Since these are static, you don't need to worry about SQL injection.
+
+```python filename="Transformation.py" copy
+from pydantic import BaseModel
+from moose_lib import MaterializedView, MaterializedViewOptions, OlapConfig
+
+class Dest(BaseModel):
+    id: str
+    name: str
+    day: str
+
+mv = MaterializedView[Dest](MaterializedViewOptions(
+    select_statement="""
+        SELECT
+            {events.columns.id}        AS id,
+            {events.columns.name}      AS name,
+            toDate({events.columns.ts}) AS day
+        FROM {events}
+        JOIN {users} ON {events.columns.user_id} = {users.columns.id}
+        WHERE {events.columns.active} = 1
+    """,
+    select_tables=[events, users],
+    order_by_fields=["id"],
+    table_name="user_activity_by_day",
+    materialized_view_name="mv_user_activity_by_day",
+))
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+The columns returned by your `SELECT` must exactly match the destination table schema.
+
+- Use column aliases (`AS target_column_name`) to align names.
+- All destination columns must be present in the `SELECT`, or the materialized view won't be created. Adjust your transformation or table schema so they match.
+
+<Callout type="info" title="Advanced: Writing SELECT statements to Aggregated tables" compact>
+Go to the [Advanced: Writing SELECT statements to Aggregated tables](#writing-select-statements-to-aggregated-tables) section for more details.
+</Callout>
+
+## Backfill Destination Tables
+
+When the MaterializedView is created, Moose backfills the destination once by running your `SELECT` (so you start with a fully populated table).
+
+<Callout type="info" title="S3Queue sources are not backfilled" compact>
+Materialized views that source from S3Queue tables are **not backfilled** automatically. S3Queue tables only process new files added to S3 after the table is created - there is no historical data to backfill from. The MV will start populating as new files arrive in S3.
+</Callout>
+
+You can see the SQL that Moose will run to backfill the destination table when you generate the [Migration Plan](/moosestack/olap/planned-migrations).
+
+During dev mode, as soon as you save the MaterializedView, Moose will run the backfill and you can see the results in the destination table by querying it in your local ClickHouse instance.
+
+## Query Destination Tables
+
+You can query the destination table like any other table.
+
+<Tabs>
+  <TabsList>
+    <TabsTrigger value="referencing">Referencing the target table</TabsTrigger>
+    <TabsTrigger value="decoupled">Decoupled target tables</TabsTrigger>
+  </TabsList>
+  <TabsContent value="referencing">
+
+For inline or decoupled target tables, you can reference target table columns and tables directly in your queries:
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```ts filename="Query.ts" copy
+import { sql } from "@514labs/moose-lib";
+
+// Inline-defined destination table from earlier examples
+const q = sql`
+SELECT 
+  ${mv.targetTable.columns.id},
+  ${mv.targetTable.columns.value} 
+FROM ${mv.targetTable} 
+ORDER BY ${mv.targetTable.columns.id} 
+LIMIT 10`;
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```python filename="Query.py" copy
+# Query inline destination table by name
+QUERY = """
+SELECT {mv.target_table.columns.id}, {mv.target_table.columns.value}
+FROM {mv.target_table}
+ORDER BY {mv.target_table.columns.id}
+LIMIT 10
+"""
+```
+  </LanguageTabContent>
+</LanguageTabs>
+  </TabsContent>
+  <TabsContent value="decoupled">
+
+If you define your target table outside of the MaterializedView, you can also just reference the table by its variable name in your queries:
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```ts filename="QueryDecoupled.ts" copy
+import { sql } from "@514labs/moose-lib";
+
+const targetTable = new OlapTable<{ id: string; average_rating: number }>("target_table")
+
+// Assuming `targetTable` is the OlapTable you created explicitly
+const q = sql`
+  SELECT ${targetTable.columns.id}, ${targetTable.columns.average_rating}
+  FROM ${targetTable}
+  WHERE ${targetTable.columns.id} = 'abc'
+`;
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```python filename="QueryDecoupled.py" copy
+# Query the standalone destination table by name
+target_table = OlapTable[TargetTable](OlapConfig(
+    name="target_table",
+    engine=ClickHouseEngines.MergeTree,
+    order_by_fields=["id"],
+))
+
+QUERY = """
+SELECT 
+  {target_table.columns.id}, 
+  {target_table.columns.average_rating} 
+FROM {target_table} 
+WHERE {target_table.columns.id} = 'abc'
+"""
+```
+  </LanguageTabContent>
+</LanguageTabs>
+  </TabsContent>
+</Tabs>
+
+<Callout type="info" title="Advanced: Querying Aggregated tables" compact>
+Go to the [Querying Aggregated tables](#querying-aggregated-tables) section for more details on how to query Aggregated tables.
+</Callout>
+
+## Advanced: Aggregations + Materialized Views
+
+This section dives deeper into advanced patterns and tradeoffs when building aggregated materialized views.
+
+### Target Tables with `AggregatingMergeTree`
+
+When using an `AggregatingMergeTree` target table, you must use the `AggregateFunction` type to model the result of the aggregation functions:
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```ts filename="AggTransform.ts" copy
+import { MaterializedView, ClickHouseEngines, Aggregated, sql } from "@514labs/moose-lib";
+
+
+interface MetricsById {
+  id: string;
+  /**
+   * Result of avgState(events.rating)
+   *   - avgState(number) returns number, so model the type as number
+   *   - Aggregated arg type is [number] because the column (events.rating) is a number
+   *   - Aggregated function name is "avg"
+   */
+  avg_rating: number & Aggregated<"avg", [number]>;
+  /** 
+  * Result of uniqExactState(events.user_id)
+  *  - uniqExact returns an integer; use number & ClickHouseInt<"uint64"> for precision
+  *  - Aggregated arg type is [string] because the column (events.user_id) is a string
+  *  - Aggregated function name is "uniqExact"
+  */
+  daily_uniques: number & ClickHouseInt<"uint64"> & Aggregated<"uniqExact", [string]>;
+}
+
+//  All Aggregate Functions in this query have a [functionName][State]() suffix.
+const stmt = sql`
+  SELECT
+    ${events.columns.id} AS id,
+    avgState(${events.columns.rating})      AS avg_rating,
+    uniqExactState(${events.columns.user_id}) AS daily_uniques
+  FROM ${events}
+  GROUP BY ${events.columns.id}
+`;
+
+
+new MaterializedView<MetricsById>({
+  selectStatement: stmt,
+  selectTables: [events],
+  targetTable: {
+    name: "metrics_by_id",
+    engine: ClickHouseEngines.AggregatingMergeTree,
+    orderByFields: ["id"],
+  },
+  materializedViewName: "mv_metrics_by_id",
+});
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```python filename="AggTransform.py" copy
+from typing import Annotated, TypedDict
+from moose_lib import MaterializedView, AggregateFunction, MaterializedViewOptions
+
+class MetricsById(TypedDict):
+    id: Key[str]
+    # avg_rating stores result of avgState(events.rating)
+    # daily_uniques stores result of uniqExactState(events.user_id)
+    #   - uniqExact returns an integer; use number & ClickHouseInt<"uint64"> for precision
+    #   - Aggregated arg type is [string] because the column (events.user_id) is a string
+    #   - Aggregated function name is "uniqExact"
+    avg_rating: Annotated[float, AggregateFunction(agg_func="avg", param_types=[float])]
+    
+    # daily_uniques stores result of uniqExactState(events.user_id)
+    #   - uniqExact returns an integer; Annotated[int, ...] to model this result type
+    #   - Aggregated function name is "uniqExact"
+    #   - The column we are aggregating (events.user_id) is a string, so the Aggregated arg type is [string].
+    daily_uniques: Annotated[int, AggregateFunction(agg_func="uniqExact", param_types=[str])]
+
+# The SELECT must output aggregate states
+STMT = """
+  SELECT
+    id,
+    avgState({events.columns.rating})        AS avg_rating,
+    uniqExactState({events.columns.user_id}) AS daily_uniques
+  FROM {events}
+  GROUP BY {events.columns.id}
+"""
+
+# Create the MV (engine config shown in TS example)
+mv = MaterializedView[MetricsById](MaterializedViewOptions(
+    select_statement=STMT,
+    table_name="metrics_by_id",
+    materialized_view_name="mv_metrics_by_id",
+    select_tables=[events],
+))
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+<Callout type="warning" title="Common mistakes">
+- Using `avg()`/`uniqExact()` in the SELECT instead of `avgState()`/`uniqExactState()`
+- Forgetting to annotate the schema with `Aggregated<...>` (TypeScript) or `AggregateFunction(...)` (Python) so the target table can be created correctly
+- Mismatch between `GROUP BY` keys in your `SELECT` and the `orderByFields` (TypeScript) or `order_by_fields` (Python) of your target table
+</Callout>
+
+### Modeling columns with `AggregateFunction`
+
+<LanguageTabs>
+  <LanguageTabContent value="python">
+- Pattern: `Annotated[U, AggregateFunction(agg_func="avg", param_types=[float])]`
+- `U` is the read-time type (e.g., `float`, `int`)
+- `agg_func` is the aggregation name (e.g., `avg`, `uniqExact`)
+- `param_types` are the argument types. These are the types of the columns that are being aggregated.
+
+```python filename="FunctionToTypeMapping.py" copy
+Annotated[int, Aggregated["avg", [int]]] # avgState(col: int)
+Annotated[int, Aggregated["uniqExact", [str]]] # uniqExactState(col: str)
+Annotated[int, Aggregated["count", []]] # countState(col: any)
+
+Annotated[str, Aggregated["argMax", [str, datetime]]] # argMaxState(col: str, value: datetime)
+Annotated[str, Aggregated["argMin", [str, datetime]]] # argMinState(col: str, value: datetime)
+
+Annotated[float, Aggregated["corr", [float, float]]] # corrState(col1: float, col2: float)
+
+Annotated[float, Aggregated["quantiles", [float]]] # quantilesState(levels: float, value: float)
+
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="typescript">
+- Pattern: `U & Aggregated<"agg_func_name", [Types]>`
+- `U` is the read-time type (e.g., `number`, `string`)
+- `agg_func_name` is the aggregation name (e.g., `avg`, `uniqExact`)
+- `Types` are the argument types. These are the types of the columns that are being aggregated.
+
+```ts filename="FunctionToTypeMapping.ts" copy
+number & Aggregated<"avg", [number]> // avgState(col: number)
+number & ClickHouseInt<"uint64"> & Aggregated<"uniqExact", [string]> // uniqExactState(col: string)
+number & ClickHouseInt<"uint64"> & Aggregated<"count", []> // countState(col: any)
+
+string & Aggregated<"argMax", [string, Date]> // argMaxState(col: string, value: Date)
+string & Aggregated<"argMin", [string, Date]> // argMinState(col: string, value: Date)
+
+number & Aggregated<"corr", [number, number]> // corrState(col1: number, col2: number)
+
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+### Writing SELECT statements to Aggregated tables
+
+When you write to an `AggregatingMergeTree` table, you must add a `State` suffix to the aggregation functions in your `SELECT` statement.
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```ts filename="AggTransform.ts" copy
+import { MaterializedView, ClickHouseEngines, Aggregated, sql } from "@514labs/moose-lib";
+
+interface MetricsById {
+  id: string;
+  avg_rating: number & Aggregated<"avg", [number]>;
+  total_reviews: number & Aggregated<"sum", [number]>;
+}
+
+const aggStmt = sql`
+  SELECT
+    ${reviews.columns.id} AS id,
+    avgState(${reviews.columns.rating}) AS avg_rating,
+    countState(${reviews.columns.id})   AS total_reviews
+  FROM ${reviews}
+  GROUP BY ${reviews.columns.id}
+`;
+
+const mv = new MaterializedView<MetricsById>({
+  selectStatement: aggStmt,
+  selectTables: [reviews],
+  targetTable: {
+    name: "metrics_by_id",
+    engine: ClickHouseEngines.AggregatingMergeTree,
+    orderByFields: ["id"],
+  },
+  materializedViewName: "mv_metrics_by_id",
+});
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```python filename="AggTransform.py" copy
+from pydantic import BaseModel
+from typing import Annotated
+from moose_lib import MaterializedView, ClickHouseEngines, AggregateFunction, MaterializedViewOptions
+
+class MetricsById(BaseModel):
+    id: str
+    avg_rating: Annotated[float, AggregateFunction(agg_func="avg", param_types=[float])]
+    total_reviews: Annotated[int, AggregateFunction(agg_func="sum", param_types=[int])]
+
+agg_stmt = '''
+  SELECT
+    {reviews.columns.id} AS id,
+    avgState({reviews.columns.rating}) AS avg_rating,
+    countState({reviews.columns.id})   AS total_reviews
+  FROM {reviews}
+  GROUP BY {reviews.columns.id}
+'''
+
+mv = MaterializedView[MetricsById](MaterializedViewOptions(
+    select_statement=agg_stmt,
+    select_tables=[reviews],
+    table_name="metrics_by_id",
+    engine=ClickHouseEngines.AggregatingMergeTree,
+    order_by_fields=["id"],
+    materialized_view_name="mv_metrics_by_id",
+))
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+<Callout type="warning">
+Why states? Finalized values (e.g., `avg()`) are not incrementally mergeable. Storing states lets ClickHouse maintain results efficiently as new data arrives. Docs: https://clickhouse.com/docs/en/sql-reference/aggregate-functions/index and https://clickhouse.com/docs/en/sql-reference/aggregate-functions/combinators#-state
+</Callout>
+
+### Querying Aggregated Tables
+
+When you query a table with an `AggregatingMergeTree` engine, you must use aggregate functions with the `Merge` suffix (e.g., `avgMerge`) or rely on Moose's `Aggregated` typing plus `sql` to auto-finalize at query time (TypeScript only).
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```ts filename="QueryAgg.ts" copy
+import { sql } from "@514labs/moose-lib";
+
+// Auto-finalized via Aggregated + sql
+const cols = mv.targetTable.columns; // mv from earlier Agg example
+const autoFinalized = sql`
+  SELECT ${cols.avg_rating}, ${cols.total_reviews}
+  FROM ${mv.targetTable}
+  WHERE ${cols.id} = '123'
+`;
+
+// Manual finalization (explicit ...Merge)
+const manual = sql`
+  SELECT
+    avgMerge(avg_rating)   AS avg_rating,
+    countMerge(total_reviews) AS total_reviews
+  FROM metrics_by_id
+  WHERE id = '123'
+`;
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```python filename="QueryAgg.py" copy
+# Manual finalization using ...Merge
+QUERY = """
+SELECT
+  avgMerge(avg_rating)   AS avg_rating,
+  countMerge(total_reviews) AS total_reviews
+FROM metrics_by_id
+WHERE id = '123'
+"""
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+## Choosing the right engine
+
+<Callout type="info" title="Overview:  Which engine should I use?">
+- Use `MergeTree` for copies/filters/enrichment without aggregation semantics.
+- Use `SummingMergeTree` when all measures are additive, and you want compact, eventually-consistent sums.
+- Use `AggregatingMergeTree` for non-additive metrics and advanced functions; store states and finalize on read.
+- Use `ReplacingMergeTree` for dedup/upserts or as an idempotent staging layer before rollups.
+</Callout>
