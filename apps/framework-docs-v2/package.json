@@ -12,9 +12,11 @@
     "test:snippets": "tsx scripts/test-snippets.ts"
   },
   "dependencies": {
+    "@iarna/toml": "^2.2.5",
     "@icons-pack/react-simple-icons": "^13.8.0",
     "@mdx-js/loader": "^3.1.1",
     "@mdx-js/react": "^3.1.1",
+    "@mux/mux-player-react": "^3.3.0",
     "@next/mdx": "^16.0.1",
     "@radix-ui/react-accordion": "^1.2.11",
     "@radix-ui/react-avatar": "^1.0.4",
@@ -55,6 +57,7 @@
     "remark-gfm": "^4.0.0",
     "remark-html": "^16.0.1",
     "shiki": "^3.14.0",
+    "sonner": "^2.0.7",
     "tailwind-merge": "^2.6.0",
     "tailwindcss-animate": "^1.0.7"
   },
