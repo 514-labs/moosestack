@@ -1,5 +1,6 @@
-use crate::framework::consumption::model::ConsumptionQueryParam;
-use crate::framework::core::infrastructure::api_endpoint::{APIType, ApiEndpoint};
+use crate::framework::core::infrastructure::api_endpoint::{
+    APIType, ApiEndpoint, ConsumptionQueryParam,
+};
 use crate::framework::core::infrastructure::table::ColumnType;
 use crate::framework::core::infrastructure_map::InfrastructureMap;
 use crate::project::Project;

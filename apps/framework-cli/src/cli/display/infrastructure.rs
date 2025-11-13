@@ -670,15 +670,6 @@ pub fn show_process_changes(process_changes: &[ProcessChange]) {
         ProcessChange::OlapProcess(olap_change) => {
             handle_standard_change!(olap_change);
         }
-        ProcessChange::ConsumptionApiWebServer(Change::Added(_)) => {
-            infra_added("Starting Consumption WebServer...");
-        }
-        ProcessChange::ConsumptionApiWebServer(Change::Removed(_)) => {
-            infra_removed("Stopping Consumption WebServer...");
-        }
-        ProcessChange::ConsumptionApiWebServer(Change::Updated { .. }) => {
-            infra_updated("Reloading Consumption WebServer...");
-        }
         ProcessChange::OrchestrationWorker(Change::Added(_)) => {
             infra_added("Starting Orchestration worker...");
         }

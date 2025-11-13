@@ -46,7 +46,6 @@ use tokio::process::Child;
 use super::{
     infrastructure::{
         api_endpoint::{APIType, ApiEndpoint, Method},
-        consumption_webserver::ConsumptionApiWebServer,
         function_process::FunctionProcess,
         olap_process::OlapProcess,
         orchestration_worker::OrchestrationWorker,
@@ -61,7 +60,7 @@ use super::{
 use crate::framework::core::infrastructure::table::OrderBy;
 use crate::{
     framework::{
-        consumption::model::ConsumptionQueryParam, languages::SupportedLanguages,
+        core::infrastructure::api_endpoint::ConsumptionQueryParam, languages::SupportedLanguages,
         scripts::Workflow, versions::Version,
     },
     infrastructure::olap::clickhouse::queries::ClickhouseEngine,
@@ -448,7 +447,6 @@ pub struct PartialInfrastructureMap {
     #[serde(default)]
     function_processes: HashMap<String, FunctionProcess>,
     block_db_processes: Option<OlapProcess>,
-    consumption_api_web_server: Option<ConsumptionApiWebServer>,
     #[serde(default)]
     workflows: HashMap<String, PartialWorkflow>,
     #[serde(default)]
@@ -582,9 +580,6 @@ impl PartialInfrastructureMap {
             topic_to_topic_sync_processes: self.topic_to_topic_sync_processes,
             function_processes,
             block_db_processes: self.block_db_processes.unwrap_or(OlapProcess {}),
-            consumption_api_web_server: self
-                .consumption_api_web_server
-                .unwrap_or(ConsumptionApiWebServer {}),
             orchestration_workers,
             workflows,
             web_apps,

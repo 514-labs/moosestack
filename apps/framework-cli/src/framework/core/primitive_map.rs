@@ -5,18 +5,14 @@ use std::{
 };
 use walkdir::WalkDir;
 
+use crate::framework::core::infrastructure::table::ColumnType;
 use crate::framework::data_model::config::DataModelConfig;
 use crate::framework::data_model::DuplicateModelError;
 use crate::framework::languages::SupportedLanguages;
-use crate::framework::{
-    consumption::loader::{load_consumption, AnalyticsApiLoaderError},
-    core::infrastructure::table::ColumnType,
-};
 use crate::utilities::PathExt;
 use crate::{
     framework::{
         blocks::model::Blocks,
-        consumption::model::Consumption,
         data_model::{
             self,
             config::ModelConfigurationError,
@@ -40,9 +36,6 @@ pub enum PrimitiveMapLoadingError {
 
     #[error("Failed to load functions")]
     FunctionsLoading(#[from] crate::framework::streaming::model::FunctionError),
-
-    #[error("Failed to load analytics apis")]
-    AnalyticsApis(#[from] AnalyticsApiLoaderError),
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -68,13 +61,6 @@ pub struct PrimitiveMap {
     // to start/stop them individually. Right now we are starting all of them at once through the language specific
     // blocks runner. We are loading blocks as 1 unique blocks as a default.
     pub blocks: Blocks,
-
-    // We are currently not loading individual consumption endpoints in the CLI and we probably will not need to
-    // Since this is a local webserver without side effects, keeping track of what is up and running is not necessary
-    // it just needs to be restarted when something in its dependency tree changes.
-    // We might want to try and load the full map of consumption endpoints in the future to be able to display thgat
-    // to the user.
-    pub consumption: Consumption,
 }
 
 fn check_no_empty_nested(
@@ -147,8 +133,6 @@ impl PrimitiveMap {
                 .filter(|func| func.executable.ext_is_supported_lang())
                 .cloned()
                 .collect();
-
-        primitive_map.consumption = load_consumption(project).await?;
 
         log::debug!("Loaded Versioned primitive map: {:?}", primitive_map);
 
