@@ -305,7 +305,7 @@ describe("Backward Compatibility Tests", function () {
               TEST_AWS_SECRET_ACCESS_KEY: "test-secret-access-key",
             };
 
-        devProcess = spawn("npx", ["-y", "@514labs/moose-cli@latest", "dev"], {
+        devProcess = spawn("npx", ["-y", "@514labs/moose-cli@0.6.201", "dev"], {
           stdio: "pipe",
           cwd: TEST_PROJECT_DIR,
           env: devEnv,
@@ -317,7 +317,7 @@ describe("Backward Compatibility Tests", function () {
           SERVER_CONFIG.startupMessage,
           SERVER_CONFIG.url,
         );
-        console.log("Server started with latest CLI, infrastructure is ready");
+        console.log("Server started with 0.6.201 CLI, infrastructure is ready");
         // Brief wait to ensure everything is fully settled
         await setTimeoutAsync(5000);
 
