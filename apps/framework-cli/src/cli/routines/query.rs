@@ -87,6 +87,39 @@ pub async fn query(
     let sql_query = get_sql_input(sql, file)?;
     info!("Executing SQL: {}", sql_query);
 
-    // More implementation in next task
+    // Get ClickHouse connection pool
+    // TODO: Apply max_result_rows setting to limit results without modifying user's SQL
+    let pool = get_pool(&project.clickhouse_config);
+
+    let mut client = pool.get_handle().await.map_err(|_| {
+        RoutineFailure::error(Message::new(
+            "Failed".to_string(),
+            "Error connecting to storage".to_string(),
+        ))
+    })?;
+
+    let redis_client = setup_redis_client(project.clone()).await.map_err(|e| {
+        RoutineFailure::error(Message {
+            action: "Query".to_string(),
+            details: format!("Failed to setup redis client: {e:?}"),
+        })
+    })?;
+
+    let _infra = InfrastructureMap::load_from_redis(&redis_client)
+        .await
+        .map_err(|_| {
+            RoutineFailure::error(Message::new(
+                "Failed".to_string(),
+                "Error retrieving current state".to_string(),
+            ))
+        })?
+        .ok_or_else(|| {
+            RoutineFailure::error(Message::new(
+                "Failed".to_string(),
+                "No state found".to_string(),
+            ))
+        })?;
+
+    // More implementation in next step
     todo!()
 }
