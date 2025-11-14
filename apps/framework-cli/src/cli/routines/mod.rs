@@ -169,6 +169,7 @@ pub mod migrate;
 pub mod openapi;
 pub mod peek;
 pub mod ps;
+pub mod query;
 pub mod scripts;
 pub mod seed_data;
 pub mod templates;
