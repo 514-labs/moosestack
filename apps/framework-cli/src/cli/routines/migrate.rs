@@ -471,27 +471,22 @@ pub async fn execute_migration(
             use crate::framework::core::plan::reconcile_with_reality;
             use std::collections::HashSet;
 
-            let target_table_names: HashSet<String> =
+            let target_table_ids: HashSet<String> =
                 current_infra_map.tables.keys().cloned().collect();
 
             let olap_client = create_client(clickhouse_config.clone());
 
-            reconcile_with_reality(
-                project,
-                &current_infra_map,
-                &target_table_names,
-                olap_client,
-            )
-            .await
-            .map_err(|e| {
-                RoutineFailure::new(
-                    Message::new(
-                        "Reconciliation".to_string(),
-                        "Failed to reconcile state with ClickHouse reality".to_string(),
-                    ),
-                    anyhow::anyhow!("{:?}", e),
-                )
-            })?
+            reconcile_with_reality(project, &current_infra_map, &target_table_ids, olap_client)
+                .await
+                .map_err(|e| {
+                    RoutineFailure::new(
+                        Message::new(
+                            "Reconciliation".to_string(),
+                            "Failed to reconcile state with ClickHouse reality".to_string(),
+                        ),
+                        anyhow::anyhow!("{:?}", e),
+                    )
+                })?
         } else {
             current_infra_map
         };

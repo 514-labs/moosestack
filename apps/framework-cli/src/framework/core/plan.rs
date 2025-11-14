@@ -76,7 +76,7 @@ pub enum PlanningError {
 /// # Arguments
 /// * `project` - The project configuration
 /// * `infra_map` - The infrastructure map to update
-/// * `target_table_names` - Names of tables to include from unmapped tables (tables in DB but not in current inframap). Only unmapped tables with names in this set will be added to the reconciled inframap.
+/// * `target_table_ids` - IDs of tables to include from unmapped tables (tables in DB but not in current inframap). Only unmapped tables with IDs in this set will be added to the reconciled inframap.
 /// * `olap_client` - The OLAP client to use for checking reality
 ///
 /// # Returns
@@ -84,7 +84,7 @@ pub enum PlanningError {
 pub async fn reconcile_with_reality<T: OlapOperations>(
     project: &Project,
     current_infra_map: &InfrastructureMap,
-    target_table_names: &HashSet<String>,
+    target_table_ids: &HashSet<String>,
     olap_client: T,
 ) -> Result<InfrastructureMap, PlanningError> {
     info!("Reconciling infrastructure map with actual database state");
@@ -232,9 +232,18 @@ pub async fn reconcile_with_reality<T: OlapOperations>(
             }
         }
     }
-    // Add unmapped tables
+    // Add unmapped tables by ID
     for unmapped_table in discrepancies.unmapped_tables {
-        if target_table_names.contains(&unmapped_table.name) {
+        // default_database passed to `id` does not matter
+        // tables from check_reality always contain non-None database
+        let mut id = unmapped_table.id(&reconciled_map.default_database);
+
+        // Normalize ID if current_infra_map used a different default database prefix
+        if let Some(suffix) = id.strip_prefix(&current_infra_map.default_database) {
+            id = format!("{}{}", reconciled_map.default_database, suffix);
+        }
+
+        if target_table_ids.contains(&id) {
             reconciled_map.tables.insert(
                 unmapped_table.id(&reconciled_map.default_database),
                 unmapped_table,
@@ -324,7 +333,7 @@ pub async fn plan_changes(
             &target_infra_map
                 .tables
                 .values()
-                .map(|t| t.name.to_string())
+                .map(|t| t.id(&target_infra_map.default_database))
                 .collect(),
             olap_client,
         )
@@ -586,13 +595,13 @@ mod tests {
         // Create another mock client for the reconciliation
         let reconcile_mock_client = MockOlapClient { tables: vec![] };
 
-        let target_table_names = HashSet::new();
+        let target_table_ids = HashSet::new();
 
         // Reconcile the infrastructure map
         let reconciled = reconcile_with_reality(
             &project,
             &infra_map,
-            &target_table_names,
+            &target_table_ids,
             reconcile_mock_client,
         )
         .await
@@ -663,12 +672,12 @@ mod tests {
             }],
         };
 
-        let target_table_names = HashSet::new();
+        let target_table_ids = HashSet::new();
         // Reconcile the infrastructure map
         let reconciled = reconcile_with_reality(
             &project,
             &infra_map,
-            &target_table_names,
+            &target_table_ids,
             reconcile_mock_client,
         )
         .await
@@ -720,12 +729,12 @@ mod tests {
             tables: vec![table.clone()],
         };
 
-        let target_table_names = HashSet::new();
+        let target_table_ids = HashSet::new();
         // Reconcile the infrastructure map
         let reconciled = reconcile_with_reality(
             &project,
             &infra_map,
-            &target_table_names,
+            &target_table_ids,
             reconcile_mock_client,
         )
         .await
@@ -779,9 +788,9 @@ mod tests {
         // Also verify that reconciliation preserves the database name
         let mock_client = MockOlapClient { tables: vec![] };
 
-        let target_table_names = HashSet::new();
+        let target_table_ids = HashSet::new();
         let reconciled =
-            reconcile_with_reality(&project, &loaded_map, &target_table_names, mock_client)
+            reconcile_with_reality(&project, &loaded_map, &target_table_ids, mock_client)
                 .await
                 .unwrap();
 
@@ -832,9 +841,9 @@ mod tests {
         // Now test reconciliation - this is where the fix should be applied
         let mock_client = MockOlapClient { tables: vec![] };
 
-        let target_table_names = HashSet::new();
+        let target_table_ids = HashSet::new();
         let reconciled =
-            reconcile_with_reality(&project, &loaded_map, &target_table_names, mock_client)
+            reconcile_with_reality(&project, &loaded_map, &target_table_ids, mock_client)
                 .await
                 .unwrap();
 
