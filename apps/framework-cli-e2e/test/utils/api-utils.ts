@@ -169,7 +169,7 @@ export const verifyProxyHealth = async (
   await withRetries(
     async () => {
       const response = await fetch(`${SERVER_CONFIG.url}/health`);
-      
+
       // If we expect unhealthy services, status should be 503
       // Otherwise it should be 200
       const expectedStatus = expectedUnhealthy.length > 0 ? 503 : 200;
