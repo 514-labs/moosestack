@@ -119,18 +119,21 @@ pub async fn query(
         })?;
 
     // Execute query and stream results
-    // Create empty enum mappings (we don't need enum handling for raw SQL)
-    let enum_mappings: Vec<Option<Vec<&str>>> = vec![];
-
     let mut stream = client.query(&sql_query).stream();
 
     let mut success_count = 0;
+    let mut enum_mappings: Option<Vec<Option<Vec<&str>>>> = None;
 
     while let Some(row_result) = stream.next().await {
         match row_result {
             Ok(row) => {
-                // Reuse peek's row_to_json with empty enum mappings
-                let value = row_to_json(&row, &enum_mappings).map_err(|e| {
+                // Create enum mappings on first row (one None entry per column)
+                if enum_mappings.is_none() {
+                    enum_mappings = Some(vec![None; row.len()]);
+                }
+
+                // Reuse peek's row_to_json with enum mappings
+                let value = row_to_json(&row, enum_mappings.as_ref().unwrap()).map_err(|e| {
                     RoutineFailure::new(
                         Message::new(
                             "Query".to_string(),
