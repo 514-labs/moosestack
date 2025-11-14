@@ -102,6 +102,8 @@ pub async fn query(
         })
     })?;
 
+    // Validate that infrastructure state exists and is accessible.
+    // The value is not used further, but we fail early if it cannot be loaded.
     let _infra = InfrastructureMap::load_from_redis(&redis_client)
         .await
         .map_err(|_| {
