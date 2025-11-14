@@ -12,6 +12,7 @@ use std::collections::HashMap;
 use std::fmt::Write;
 use std::sync::LazyLock;
 
+use crate::infrastructure::olap::clickhouse::extract_version_from_table_name;
 /// Language-agnostic sanitization: replace common separators with spaces to create word boundaries.
 pub use ident::sanitize_identifier;
 
@@ -550,7 +551,7 @@ pub fn tables_to_python(tables: &[Table], life_cycle: Option<LifeCycle>) -> Stri
     writeln!(output, "from moose_lib.data_models import ClickHouseJson").unwrap();
     writeln!(
         output,
-        "from moose_lib import Point, Ring, LineString, MultiLineString, Polygon, MultiPolygon"
+        "from moose_lib import Point, Ring, LineString, MultiLineString, Polygon, MultiPolygon, FixedString"
     )
     .unwrap();
     writeln!(
@@ -708,11 +709,18 @@ pub fn tables_to_python(tables: &[Table], life_cycle: Option<LifeCycle>) -> Stri
             OrderBy::SingleExpr(expr) => format!("order_by_expression={:?}", expr),
         };
 
+        let (base_name, version) = extract_version_from_table_name(&table.name);
+        let table_name = if version == table.version {
+            &base_name
+        } else {
+            &table.name
+        };
+
         let var_name = map_to_python_snake_identifier(&table.name);
         writeln!(
             output,
             "{}_table = OlapTable[{}](\"{}\", OlapConfig(",
-            var_name, table.name, table.name
+            var_name, table.name, table_name
         )
         .unwrap();
         writeln!(output, "    {order_by_spec},").unwrap();
@@ -939,6 +947,9 @@ pub fn tables_to_python(tables: &[Table], life_cycle: Option<LifeCycle>) -> Stri
                 writeln!(output, "    ),").unwrap();
             }
         }
+        if let Some(version) = &table.version {
+            writeln!(output, "    version={:?},", version).unwrap();
+        }
         // Add table settings if present (includes mode for S3Queue)
         if let Some(settings) = &table.table_settings {
             if !settings.is_empty() {
@@ -1065,7 +1076,7 @@ from uuid import UUID
 from enum import IntEnum, Enum
 from moose_lib import Key, IngestPipeline, IngestPipelineConfig, OlapTable, OlapConfig, clickhouse_datetime64, clickhouse_decimal, ClickhouseSize, StringToEnumMixin
 from moose_lib.data_models import ClickHouseJson
-from moose_lib import Point, Ring, LineString, MultiLineString, Polygon, MultiPolygon
+from moose_lib import Point, Ring, LineString, MultiLineString, Polygon, MultiPolygon, FixedString
 from moose_lib import clickhouse_default, LifeCycle, ClickHouseTTL
 from moose_lib.blocks import MergeTreeEngine, ReplacingMergeTreeEngine, AggregatingMergeTreeEngine, SummingMergeTreeEngine, S3QueueEngine, ReplicatedMergeTreeEngine, ReplicatedReplacingMergeTreeEngine, ReplicatedAggregatingMergeTreeEngine, ReplicatedSummingMergeTreeEngine
 

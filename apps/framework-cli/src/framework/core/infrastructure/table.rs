@@ -266,6 +266,7 @@ impl std::fmt::Display for OrderBy {
 /// concerns from the core table abstraction.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Table {
+    // the name field contains the version suffix
     pub name: String,
     pub columns: Vec<Column>,
     pub order_by: OrderBy,

@@ -11,6 +11,7 @@ use std::collections::HashMap;
 use std::fmt::Write;
 
 // Use shared, language-agnostic sanitization (underscores) from utilities
+use crate::infrastructure::olap::clickhouse::extract_version_from_table_name;
 pub use ident::sanitize_identifier;
 
 /// Map a string to a valid TypeScript PascalCase identifier (for types/classes/consts).
@@ -629,10 +630,17 @@ pub fn tables_to_typescript(tables: &[Table], life_cycle: Option<LifeCycle>) -> 
             OrderBy::SingleExpr(expr) => format!("orderByExpression: {:?}", expr),
         };
         let var_name = sanitize_typescript_identifier(&table.name);
+
+        let (base_name, version) = extract_version_from_table_name(&table.name);
+        let table_name = if version == table.version {
+            &base_name
+        } else {
+            &table.name
+        };
         writeln!(
             output,
             "export const {}Table = new OlapTable<{}>(\"{}\", {{",
-            var_name, table.name, table.name
+            var_name, table.name, table_name
         )
         .unwrap();
         writeln!(output, "    {order_by_spec},").unwrap();
@@ -821,6 +829,9 @@ pub fn tables_to_typescript(tables: &[Table], life_cycle: Option<LifeCycle>) -> 
                 writeln!(output, "    policyName: {:?},", policy).unwrap();
             }
             }
+        }
+        if let Some(version) = &table.version {
+            writeln!(output, "    version: {:?},", version).unwrap();
         }
         // Add table settings if present (works for all engines)
         if let Some(settings) = &table.table_settings {

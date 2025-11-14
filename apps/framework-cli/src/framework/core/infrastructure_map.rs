@@ -175,10 +175,7 @@ pub enum PrimitiveTypes {
     ConsumptionAPI,
 }
 
-/// Signature that uniquely identifies a primitive component
-///
-/// This combines the name and type of a primitive to provide a consistent
-/// way to reference primitives throughout the system.
+/// TODO: delete this DM V1 type
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PrimitiveSignature {
     /// Name of the primitive component

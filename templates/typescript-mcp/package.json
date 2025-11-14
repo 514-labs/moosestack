@@ -1,0 +1,15 @@
+{
+  "name": "typescript-mcp",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "pnpm --parallel --stream -r dev",
+    "dev:moose": "pnpm --filter moosestack-service dev",
+    "dev:web": "pnpm --filter web-app dev"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "@confluentinc/kafka-javascript"
+    ]
+  }
+}

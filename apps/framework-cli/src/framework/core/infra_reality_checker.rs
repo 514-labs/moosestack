@@ -148,7 +148,11 @@ impl<T: OlapOperations> InfraRealityChecker<T> {
     ) -> Result<InfraDiscrepancies, RealityCheckError> {
         debug!("Starting infrastructure reality check");
         debug!("Project version: {}", project.cur_version());
-        debug!("Database: {}", project.clickhouse_config.db_name);
+        debug!(
+            "Database: {}. additional DBs: {}",
+            project.clickhouse_config.db_name,
+            project.clickhouse_config.additional_databases.join(", ")
+        );
 
         // Get actual tables from all configured databases
         debug!("Fetching actual tables from OLAP databases");
