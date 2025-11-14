@@ -857,6 +857,48 @@ public_s3 = OlapTable[DataRecord]("public_s3", OlapConfig(
 Both engines support the same credential management and format options.
 </Callout>
 
+#### Iceberg
+The `IcebergS3` engine provides read-only access to Iceberg tables stored in S3:
+
+<TypeScript>
+```ts filename="IcebergTable.ts" copy
+import { OlapTable, ClickHouseEngines, mooseRuntimeEnv } from '@514labs/moose-lib';
+
+// Iceberg table with AWS credentials (recommended with mooseRuntimeEnv)
+export const icebergEvents = new OlapTable<Event>("iceberg_events", {
+  engine: ClickHouseEngines.IcebergS3,
+  path: "s3://my-bucket/warehouse/db/table/",
+  format: "Parquet", // or "ORC"
+  awsAccessKeyId: mooseRuntimeEnv.get("AWS_ACCESS_KEY_ID"),
+  awsSecretAccessKey: mooseRuntimeEnv.get("AWS_SECRET_ACCESS_KEY"),
+});
+```
+</TypeScript>
+
+<Python>
+```py filename="IcebergTable.py" copy
+from moose_lib import OlapTable, OlapConfig, moose_runtime_env
+from moose_lib.blocks import IcebergS3Engine
+
+# Iceberg table with AWS credentials (recommended with moose_runtime_env)
+iceberg_events = OlapTable[Event]("iceberg_events", OlapConfig(
+    engine=IcebergS3Engine(
+        path="s3://my-bucket/warehouse/db/table/",
+        format="Parquet",  # or "ORC"
+        aws_access_key_id=moose_runtime_env.get("AWS_ACCESS_KEY_ID"),
+        aws_secret_access_key=moose_runtime_env.get("AWS_SECRET_ACCESS_KEY"),
+    )
+))
+```
+</Python>
+
+<Callout type="warning" title="IcebergS3 is read-only">
+- IcebergS3 tables are **read-only** and provide access to the latest state of your Iceberg table
+- `orderByFields`, `orderByExpression`, `partitionBy`, and `sampleByExpression` are not supported
+- The table automatically reflects the current state of the Iceberg table in S3
+- Supported formats: **Parquet** and **ORC** only
+</Callout>
+
 #### In-Memory Buffer (`Buffer`)
 The `Buffer` engine provides an in-memory buffer that flushes data to a destination table based on time, row count, or size thresholds:
 
