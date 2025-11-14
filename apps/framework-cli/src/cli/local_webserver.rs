@@ -817,8 +817,8 @@ async fn health_route(
     project: &Project,
     redis_client: &Arc<RedisClient>,
 ) -> Result<Response<Full<Bytes>>, hyper::http::Error> {
-    use tokio::task::JoinSet;
     use std::time::Duration;
+    use tokio::task::JoinSet;
 
     let mut join_set = JoinSet::new();
 
@@ -862,7 +862,10 @@ async fn health_route(
     if project.features.apis {
         let consumption_api_port = project.http_server_config.proxy_port;
         join_set.spawn(async move {
-            let health_url = format!("http://localhost:{}/_moose_internal/health", consumption_api_port);
+            let health_url = format!(
+                "http://localhost:{}/_moose_internal/health",
+                consumption_api_port
+            );
             let client = match reqwest::Client::builder()
                 .timeout(Duration::from_secs(2))
                 .build()
@@ -875,11 +878,12 @@ async fn health_route(
             };
 
             match client.get(&health_url).send().await {
-                Ok(response) if response.status().is_success() => {
-                    ("Consumption API", true)
-                }
+                Ok(response) if response.status().is_success() => ("Consumption API", true),
                 Ok(response) => {
-                    warn!("Health check: Consumption API returned status {}", response.status());
+                    warn!(
+                        "Health check: Consumption API returned status {}",
+                        response.status()
+                    );
                     ("Consumption API", false)
                 }
                 Err(e) => {
