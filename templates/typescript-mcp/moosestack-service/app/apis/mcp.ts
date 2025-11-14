@@ -18,9 +18,6 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import { z } from "zod";
 import { WebApp, getMooseUtils, ApiUtil } from "@514labs/moose-lib";
 
-// TODO:
-// auth using getMooseUtils() jwt
-
 function clickhouseReadonlyQuery(
   client: ApiUtil["client"],
   sql: string,
@@ -210,15 +207,6 @@ async function formatCatalogDetailed(
 }
 
 /**
- * Parameters for the get_data_catalog tool
- */
-interface DataCatalogParams {
-  component_type?: "tables" | "materialized_views";
-  search?: string;
-  format?: "summary" | "detailed";
-}
-
-/**
  * Column information from ClickHouse system.columns
  */
 interface ColumnInfo {
@@ -306,7 +294,7 @@ const serverFactory = (mooseUtils: ApiUtil | null) => {
           return {
             content: [
               {
-                type: "text",
+                type: "text" as const,
                 text: "Error: MooseStack utilities not available",
               },
             ],
@@ -334,7 +322,7 @@ const serverFactory = (mooseUtils: ApiUtil | null) => {
         return {
           content: [
             {
-              type: "text",
+              type: "text" as const,
               text: JSON.stringify(output, null, 2),
             },
           ],
@@ -346,7 +334,7 @@ const serverFactory = (mooseUtils: ApiUtil | null) => {
         return {
           content: [
             {
-              type: "text",
+              type: "text" as const,
               text: `Error executing query: ${errorMessage}`,
             },
           ],
@@ -398,7 +386,7 @@ const serverFactory = (mooseUtils: ApiUtil | null) => {
           return {
             content: [
               {
-                type: "text",
+                type: "text" as const,
                 text: "Error: MooseStack utilities not available",
               },
             ],
@@ -431,7 +419,7 @@ const serverFactory = (mooseUtils: ApiUtil | null) => {
         return {
           content: [
             {
-              type: "text",
+              type: "text" as const,
               text: output,
             },
           ],
@@ -443,7 +431,7 @@ const serverFactory = (mooseUtils: ApiUtil | null) => {
         return {
           content: [
             {
-              type: "text",
+              type: "text" as const,
               text: `Error retrieving data catalog: ${errorMessage}`,
             },
           ],
