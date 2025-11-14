@@ -946,7 +946,7 @@ pub fn tables_to_python(tables: &[Table], life_cycle: Option<LifeCycle>) -> Stri
                     aws_secret_access_key,
                     compression,
                 } => {
-                    writeln!(output, "    engine=IcebergEngine(").unwrap();
+                    writeln!(output, "    engine=IcebergS3Engine(").unwrap();
                     writeln!(output, "        path={:?},", path).unwrap();
                     writeln!(output, "        format={:?},", format).unwrap();
                     if let Some(key_id) = aws_access_key_id {
