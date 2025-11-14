@@ -6,13 +6,11 @@
 use crate::cli::display::Message;
 use crate::cli::routines::{setup_redis_client, RoutineFailure, RoutineSuccess};
 use crate::framework::core::infrastructure_map::InfrastructureMap;
-use crate::infrastructure::olap::clickhouse_alt_client::get_pool;
+use crate::infrastructure::olap::clickhouse_alt_client::{get_pool, row_to_json};
 use crate::project::Project;
 
-use clickhouse_rs::types::Options;
 use futures::StreamExt;
 use log::info;
-use serde_json::Value;
 use std::io::Read;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -120,6 +118,62 @@ pub async fn query(
             ))
         })?;
 
-    // More implementation in next step
-    todo!()
+    // Execute query and stream results
+    // Create empty enum mappings (we don't need enum handling for raw SQL)
+    let enum_mappings: Vec<Option<Vec<&str>>> = vec![];
+
+    let mut stream = client.query(&sql_query).stream();
+
+    let mut success_count = 0;
+
+    while let Some(row_result) = stream.next().await {
+        match row_result {
+            Ok(row) => {
+                // Reuse peek's row_to_json with empty enum mappings
+                let value = row_to_json(&row, &enum_mappings).map_err(|e| {
+                    RoutineFailure::new(
+                        Message::new(
+                            "Query".to_string(),
+                            "Failed to convert row to JSON".to_string(),
+                        ),
+                        e,
+                    )
+                })?;
+
+                let json = serde_json::to_string(&value).map_err(|e| {
+                    RoutineFailure::new(
+                        Message::new(
+                            "Query".to_string(),
+                            "Failed to serialize result".to_string(),
+                        ),
+                        e,
+                    )
+                })?;
+
+                println!("{}", json);
+                info!("{}", json);
+                success_count += 1;
+
+                // Check limit to avoid unbounded queries
+                if success_count >= limit {
+                    info!("Reached limit of {} rows", limit);
+                    break;
+                }
+            }
+            Err(e) => {
+                return Err(RoutineFailure::new(
+                    Message::new("Query".to_string(), "ClickHouse query error".to_string()),
+                    e,
+                ));
+            }
+        }
+    }
+
+    // Add newline for output cleanliness (like peek does)
+    println!();
+
+    Ok(RoutineSuccess::success(Message::new(
+        "Query".to_string(),
+        format!("{} rows", success_count),
+    )))
 }
