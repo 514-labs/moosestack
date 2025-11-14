@@ -84,7 +84,7 @@ describe("moose query command", () => {
   });
 
   it("should execute simple SELECT query from argument", async function () {
-    this.timeout(TIMEOUTS.OPERATION_MS);
+    this.timeout(TIMEOUTS.MIGRATION_MS);
 
     console.log("\n--- Testing query from argument ---");
 
@@ -104,7 +104,7 @@ describe("moose query command", () => {
   });
 
   it("should execute query with multiple rows", async function () {
-    this.timeout(TIMEOUTS.OPERATION_MS);
+    this.timeout(TIMEOUTS.MIGRATION_MS);
 
     console.log("\n--- Testing query with multiple rows ---");
 
@@ -116,11 +116,11 @@ describe("moose query command", () => {
     const lines = stdout
       .trim()
       .split("\n")
-      .filter((l) => l.startsWith("{"));
+      .filter((l: string) => l.startsWith("{"));
     expect(lines.length).to.equal(5);
 
     // Verify JSON format
-    lines.forEach((line, idx) => {
+    lines.forEach((line: string, idx: number) => {
       const parsed = JSON.parse(line);
       expect(parsed.number).to.equal(idx);
     });
@@ -129,7 +129,7 @@ describe("moose query command", () => {
   });
 
   it("should execute query from file", async function () {
-    this.timeout(TIMEOUTS.OPERATION_MS);
+    this.timeout(TIMEOUTS.MIGRATION_MS);
 
     console.log("\n--- Testing query from file ---");
 
@@ -150,7 +150,7 @@ describe("moose query command", () => {
   });
 
   it("should execute query from stdin", async function () {
-    this.timeout(TIMEOUTS.OPERATION_MS);
+    this.timeout(TIMEOUTS.MIGRATION_MS);
 
     console.log("\n--- Testing query from stdin ---");
 
@@ -167,7 +167,7 @@ describe("moose query command", () => {
   });
 
   it("should respect limit parameter", async function () {
-    this.timeout(TIMEOUTS.OPERATION_MS);
+    this.timeout(TIMEOUTS.MIGRATION_MS);
 
     console.log("\n--- Testing limit parameter ---");
 
@@ -179,7 +179,7 @@ describe("moose query command", () => {
     const lines = stdout
       .trim()
       .split("\n")
-      .filter((l) => l.startsWith("{"));
+      .filter((l: string) => l.startsWith("{"));
     expect(lines.length).to.equal(3);
     expect(stdout).to.include("3 rows");
 
@@ -187,7 +187,7 @@ describe("moose query command", () => {
   });
 
   it("should handle query errors gracefully", async function () {
-    this.timeout(TIMEOUTS.OPERATION_MS);
+    this.timeout(TIMEOUTS.MIGRATION_MS);
 
     console.log("\n--- Testing error handling ---");
 
