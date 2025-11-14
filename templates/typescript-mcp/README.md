@@ -4,9 +4,9 @@ This template provides a complete example of building AI-powered applications wi
 
 ## Overview
 
-This template contains two independent applications that work together:
+This is a pnpm monorepo containing two independent applications that work together:
 
-### 1. `moosestack-service/`
+### 1. `packages/moosestack-service/`
 
 A MooseStack service template that demonstrates how to build a data service with an integrated MCP server. This service:
 
@@ -16,7 +16,7 @@ A MooseStack service template that demonstrates how to build a data service with
 - Can be run independently for development and testing
 - Built using [BYO API](https://docs.fiveonefour.com/moose/app-api-frameworks) and Express
 
-### 2. `web-app-with-ai-chat/`
+### 2. `packages/web-app/`
 
 A Next.js web application with a pre-configured AI chat interface. This application:
 
@@ -27,24 +27,26 @@ A Next.js web application with a pre-configured AI chat interface. This applicat
 
 ## Getting Started
 
-Both applications can be started independently:
-
-### Start the MooseStack Service
+Install dependencies for both applications:
 
 ```bash
-cd moosestack-service
 pnpm install
-moose dev # start moose dev server
 ```
 
-### Start the Next.js Web App
-
-In another terminal:
+Start both services:
 
 ```bash
-cd web-app-with-ai-chat
-pnpm install
-pnpm run dev # start web dev server
+pnpm dev
+```
+
+Or start services individually:
+
+```bash
+# Start only the MooseStack service
+pnpm dev:moose
+
+# Start only the Next.js web app
+pnpm dev:web
 ```
 
 ## MCP Tools Available
@@ -136,7 +138,7 @@ You can send test events to the DataEvent table via POST requests to `http://loc
 
 ### Adding More Tools
 
-Register additional tools in `app/apis/mcp.ts` using `server.registerTool()`. Each tool needs a name, title, description, input/output schemas (using Zod), and an async handler function.
+Register additional tools in `packages/moosestack-service/app/apis/mcp.ts` using `server.registerTool()`. Each tool needs a name, title, description, input/output schemas (using Zod), and an async handler function.
 
 ### Accessing MooseStack Utilities
 
@@ -144,7 +146,7 @@ Use `getMooseUtils(req)` in your endpoint handlers to access the ClickHouse clie
 
 ### Adding More Data Models
 
-Create additional data models in `app/ingest/models.ts` by defining interfaces and creating IngestPipeline instances with options for `table`, `stream`, and `ingestApi`.
+Create additional data models in `packages/moosestack-service/app/ingest/models.ts` by defining interfaces and creating IngestPipeline instances with options for `table`, `stream`, and `ingestApi`.
 
 ## Learn More
 
@@ -157,7 +159,7 @@ Create additional data models in `app/ingest/models.ts` by defining interfaces a
 
 ### Port Already in Use
 
-If port 4000 is already in use, update `moose.config.toml`:
+If port 4000 is already in use, update `packages/moosestack-service/moose.config.toml`:
 
 ```toml
 [server]
@@ -170,8 +172,8 @@ Make sure all dependencies are installed:
 
 ## How They Work Together
 
-1. The **moosestack-service** runs your data pipeline and exposes an MCP server that provides AI agents with access to your data and tools
-2. The **web-app-with-ai-chat** provides a user interface where users can interact with an AI agent
+1. The **packages/moosestack-service** runs your data pipeline and exposes an MCP server that provides AI agents with access to your data and tools
+2. The **packages/web-app** provides a user interface where users can interact with an AI agent
 3. The AI agent in the web app connects to the MCP server to access your data and capabilities
 4. Users can chat naturally with the AI, which uses the MCP server to answer questions and perform actions on your data
 
@@ -181,4 +183,4 @@ Make sure all dependencies are installed:
 - Extend the AI chat interface with additional features and integrations
 - Configure the MCP connection settings to match your deployment environment
 
-For more detailed information, see the README files in each subdirectory.
+For more detailed information, see the README files in each package directory.
