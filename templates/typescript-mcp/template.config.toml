@@ -20,8 +20,8 @@ https://boreal.cloud
 🛠️ Start Moose dev server:
     $ moose dev
     
-⚠️ Open a new terminal, install Web App Dependencies:
-    $ cd ../web-app-with-ai-chat
+⚠️ Open a new terminal in the project root, install Web App Dependencies:
+    $ cd web-app-with-ai-chat
     $ npm install
     
 🛠️ Start dev server:
