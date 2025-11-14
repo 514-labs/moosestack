@@ -12,9 +12,17 @@ use crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine;
 const DIAGNOSTIC_QUERY_TIMEOUT_SECS: u64 = 30;
 
 /// Diagnostic provider for checking S3Queue ingestion
-pub struct S3QueueDiagnostic;
+///
+/// Use `S3QueueDiagnostic::new()` or `Default::default()` to construct.
+#[derive(Default)]
+pub struct S3QueueDiagnostic(());
 
 impl S3QueueDiagnostic {
+    /// Create a new S3QueueDiagnostic provider
+    pub const fn new() -> Self {
+        Self(())
+    }
+
     /// Parse the ClickHouse JSON response and extract S3Queue ingestion issues
     ///
     /// # Arguments

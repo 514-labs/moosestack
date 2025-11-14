@@ -12,9 +12,17 @@ use crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine;
 const DIAGNOSTIC_QUERY_TIMEOUT_SECS: u64 = 30;
 
 /// Diagnostic provider for checking system-wide errors
-pub struct ErrorStatsDiagnostic;
+///
+/// Use `ErrorStatsDiagnostic::new()` or `Default::default()` to construct.
+#[derive(Default)]
+pub struct ErrorStatsDiagnostic(());
 
 impl ErrorStatsDiagnostic {
+    /// Create a new ErrorStatsDiagnostic provider
+    pub const fn new() -> Self {
+        Self(())
+    }
+
     /// Parse the ClickHouse JSON response and extract error statistics issues
     ///
     /// # Arguments

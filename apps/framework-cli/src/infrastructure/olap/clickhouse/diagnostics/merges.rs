@@ -12,9 +12,17 @@ use crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine;
 const DIAGNOSTIC_QUERY_TIMEOUT_SECS: u64 = 30;
 
 /// Diagnostic provider for checking stuck background merges
-pub struct MergeDiagnostic;
+///
+/// Use `MergeDiagnostic::new()` or `Default::default()` to construct.
+#[derive(Default)]
+pub struct MergeDiagnostic(());
 
 impl MergeDiagnostic {
+    /// Create a new MergeDiagnostic provider
+    pub const fn new() -> Self {
+        Self(())
+    }
+
     /// Parse the ClickHouse JSON response and extract merge issues
     ///
     /// # Arguments

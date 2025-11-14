@@ -12,9 +12,17 @@ use crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine;
 const DIAGNOSTIC_QUERY_TIMEOUT_SECS: u64 = 30;
 
 /// Diagnostic provider for checking stopped operations (merges, replication)
-pub struct StoppedOperationsDiagnostic;
+///
+/// Use `StoppedOperationsDiagnostic::new()` or `Default::default()` to construct.
+#[derive(Default)]
+pub struct StoppedOperationsDiagnostic(());
 
 impl StoppedOperationsDiagnostic {
+    /// Create a new StoppedOperationsDiagnostic provider
+    pub const fn new() -> Self {
+        Self(())
+    }
+
     /// Parse parts count and merge count to detect stopped merges
     ///
     /// # Arguments

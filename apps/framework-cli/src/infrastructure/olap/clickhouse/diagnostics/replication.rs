@@ -12,9 +12,17 @@ use crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine;
 const DIAGNOSTIC_QUERY_TIMEOUT_SECS: u64 = 30;
 
 /// Diagnostic provider for checking replication health
-pub struct ReplicationDiagnostic;
+///
+/// Use `ReplicationDiagnostic::new()` or `Default::default()` to construct.
+#[derive(Default)]
+pub struct ReplicationDiagnostic(());
 
 impl ReplicationDiagnostic {
+    /// Create a new ReplicationDiagnostic provider
+    pub const fn new() -> Self {
+        Self(())
+    }
+
     /// Parse queue size response and extract backlog issues
     pub fn parse_queue_size_response(
         json_response: &str,

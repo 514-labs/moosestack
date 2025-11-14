@@ -12,9 +12,17 @@ use crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine;
 const DIAGNOSTIC_QUERY_TIMEOUT_SECS: u64 = 30;
 
 /// Diagnostic provider for checking data parts issues
-pub struct PartsDiagnostic;
+///
+/// Use `PartsDiagnostic::new()` or `Default::default()` to construct.
+#[derive(Default)]
+pub struct PartsDiagnostic(());
 
 impl PartsDiagnostic {
+    /// Create a new PartsDiagnostic provider
+    pub const fn new() -> Self {
+        Self(())
+    }
+
     /// Parse the ClickHouse JSON response and extract parts issues
     ///
     /// # Arguments

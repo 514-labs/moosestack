@@ -12,9 +12,17 @@ use crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine;
 const DIAGNOSTIC_QUERY_TIMEOUT_SECS: u64 = 30;
 
 /// Diagnostic provider for checking merge failures from system.metrics
-pub struct MergeFailureDiagnostic;
+///
+/// Use `MergeFailureDiagnostic::new()` or `Default::default()` to construct.
+#[derive(Default)]
+pub struct MergeFailureDiagnostic(());
 
 impl MergeFailureDiagnostic {
+    /// Create a new MergeFailureDiagnostic provider
+    pub const fn new() -> Self {
+        Self(())
+    }
+
     /// Parse the ClickHouse JSON response and extract merge failure issues
     ///
     /// # Arguments

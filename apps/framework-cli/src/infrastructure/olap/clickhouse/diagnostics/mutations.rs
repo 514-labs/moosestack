@@ -12,9 +12,17 @@ use crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine;
 const DIAGNOSTIC_QUERY_TIMEOUT_SECS: u64 = 30;
 
 /// Diagnostic provider for checking stuck or failed mutations
-pub struct MutationDiagnostic;
+///
+/// Use `MutationDiagnostic::new()` or `Default::default()` to construct.
+#[derive(Default)]
+pub struct MutationDiagnostic(());
 
 impl MutationDiagnostic {
+    /// Create a new MutationDiagnostic provider
+    pub const fn new() -> Self {
+        Self(())
+    }
+
     /// Parse the ClickHouse JSON response and extract mutation issues
     ///
     /// # Arguments

@@ -257,14 +257,14 @@ pub trait DiagnosticProvider: Send + Sync {
 /// These can be filtered by name or applicability before running.
 pub fn create_all_providers() -> Vec<Box<dyn DiagnosticProvider>> {
     vec![
-        Box::new(MutationDiagnostic),
-        Box::new(PartsDiagnostic),
-        Box::new(MergeDiagnostic),
-        Box::new(ErrorStatsDiagnostic),
-        Box::new(S3QueueDiagnostic),
-        Box::new(ReplicationDiagnostic),
-        Box::new(MergeFailureDiagnostic),
-        Box::new(StoppedOperationsDiagnostic),
+        Box::new(MutationDiagnostic::new()),
+        Box::new(PartsDiagnostic::new()),
+        Box::new(MergeDiagnostic::new()),
+        Box::new(ErrorStatsDiagnostic::new()),
+        Box::new(S3QueueDiagnostic::new()),
+        Box::new(ReplicationDiagnostic::new()),
+        Box::new(MergeFailureDiagnostic::new()),
+        Box::new(StoppedOperationsDiagnostic::new()),
     ]
 }
 
