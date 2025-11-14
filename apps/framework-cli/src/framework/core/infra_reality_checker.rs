@@ -88,10 +88,29 @@ pub fn find_table_from_infra_map(
         return Some(table_id);
     }
 
-    // handles the case where `infra_map_tables` has keys with a different db prefix, or not at all
-    infra_map_tables.iter().find_map(|(table_id, t)| {
-        if t.name == table.name && t.database.is_none() && t.version == table.version {
-            Some(table_id.clone())
+    // Canonicalize (db, name) for legacy and new formats
+    // If name contains a dot, prefer the database from the name itself.
+    fn canonical_db_and_name(t: &Table, default_db: &str) -> (String, String) {
+        if let Some((db, short)) = t.name.split_once('.') {
+            (db.to_string(), short.to_string())
+        } else {
+            (
+                t.database.as_deref().unwrap_or(default_db).to_string(),
+                t.name.clone(),
+            )
+        }
+    }
+
+    let (table_db, table_short_name) = canonical_db_and_name(table, default_database);
+
+    // Fallback: scan values and try to match canonically by (db, name, version)
+    infra_map_tables.iter().find_map(|(existing_key, t)| {
+        let (existing_db, existing_short_name) = canonical_db_and_name(t, default_database);
+        if existing_short_name == table_short_name
+            && existing_db == table_db
+            && t.version == table.version
+        {
+            Some(existing_key.clone())
         } else {
             None
         }

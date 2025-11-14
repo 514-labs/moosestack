@@ -857,6 +857,37 @@ pub(crate) async fn get_remote_inframap_protobuf(
     }
 }
 
+/// Normalizes an infrastructure map for backward compatibility
+///
+/// This function ensures consistent table IDs by recomputing them using the current
+/// Table::id() logic. This is necessary because older CLI versions may have used
+/// different ID computation strategies, causing tables to appear as "removed" and "added"
+/// when they should be recognized as the same table.
+///
+/// # Arguments
+/// * `infra_map` - The infrastructure map to normalize
+///
+/// # Returns
+/// * `InfrastructureMap` - A new infrastructure map with normalized table IDs
+fn normalize_inframap_engines(mut infra_map: InfrastructureMap) -> InfrastructureMap {
+    // Rebuild the tables HashMap with correctly computed IDs
+    // This ensures backward compatibility with older servers that may have used different ID logic
+    let normalized_tables: std::collections::HashMap<
+        String,
+        crate::framework::core::infrastructure::table::Table,
+    > = infra_map
+        .tables
+        .into_values()
+        .map(|table| {
+            let correct_id = table.id(&infra_map.default_database);
+            (correct_id, table)
+        })
+        .collect();
+
+    infra_map.tables = normalized_tables;
+    infra_map
+}
+
 /// Calculates the diff between current and target infrastructure maps on the client side
 ///
 /// # Arguments
@@ -1057,37 +1088,11 @@ pub async fn remote_plan(
         }
     };
 
-    // DEBUG: Log table info for Python backward compat debugging
-    if let Some(table) = remote_infra_map
-        .tables
-        .values()
-        .find(|t| t.name.contains("SimpleArrays"))
-    {
-        eprintln!("\n=== REMOTE SimpleArrays table ===");
-        for col in &table.columns {
-            if col.name.contains("optional") {
-                eprintln!(
-                    "  Column: {} | Type: {:?} | Required: {}",
-                    col.name, col.data_type, col.required
-                );
-            }
-        }
-    }
-    if let Some(table) = local_infra_map
-        .tables
-        .values()
-        .find(|t| t.name.contains("SimpleArrays"))
-    {
-        eprintln!("\n=== LOCAL SimpleArrays table ===");
-        for col in &table.columns {
-            if col.name.contains("optional") {
-                eprintln!(
-                    "  Column: {} | Type: {:?} | Required: {}",
-                    col.name, col.data_type, col.required
-                );
-            }
-        }
-    }
+    // Normalize both infra maps for older versions that didn't persist engine data
+    // Default to MergeTree when engine is null (ClickHouse default)
+    // Both remote and local need normalization for consistent comparison
+    let remote_infra_map = normalize_inframap_engines(remote_infra_map);
+    let local_infra_map = normalize_inframap_engines(local_infra_map);
 
     // Calculate and display changes
     let changes = calculate_plan_diff_local(
@@ -1187,6 +1192,12 @@ pub async fn remote_gen_migration(
             get_remote_inframap_serverless(project, clickhouse_url, redis_url.as_deref()).await?
         }
     };
+
+    // Normalize both infra maps for older versions that didn't persist engine data
+    // Default to MergeTree when engine is null (ClickHouse default)
+    // Both remote and local need normalization for consistent comparison
+    let remote_infra_map = normalize_inframap_engines(remote_infra_map);
+    let local_infra_map = normalize_inframap_engines(local_infra_map);
 
     let changes = calculate_plan_diff_local(
         &remote_infra_map,

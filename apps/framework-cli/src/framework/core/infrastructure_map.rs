@@ -1765,21 +1765,30 @@ impl InfrastructureMap {
         // Use normalized tables for comparison, but original tables for changes
         // Iterate over key-value pairs to preserve the HashMap key for lookups
         for (key, normalized_table) in normalized_self.iter() {
-            // self_tables can be from remote where the keys are IDs with another database prefix
-            // but they are then the default database,
-            //   the `database` field is None and we build the ID ourselves
-            if let Some(normalized_target) =
-                normalized_target.get(&normalized_table.id(default_database))
+            // self_tables can be from remote where the keys are in a legacy format (e.g. dotted names)
+            // Try to find a matching entry in target using a robust matcher that understands
+            // legacy/new ID formats (database prefix differences, dotted vs underscored, etc.)
+            if let Some(target_key) =
+                crate::framework::core::infra_reality_checker::find_table_from_infra_map(
+                    normalized_table,
+                    &normalized_target,
+                    default_database,
+                )
             {
+                // Safe: target_key comes from normalized_target's keys; fetch the normalized target
+                let normalized_target = normalized_target
+                    .get(&target_key)
+                    .expect("target_key should exist in normalized_target");
                 if !tables_equal_ignore_metadata(normalized_table, normalized_target) {
                     // Get original tables for use in changes using the HashMap key
                     // not the computed ID, since remote keys may differ from computed IDs
                     let table = self_tables
                         .get(key)
                         .expect("normalized_self and self_tables should have same keys");
+                    // Use the matched key to fetch the original target table
                     let target_table = target_tables
-                        .get(&normalized_target.id(default_database))
-                        .expect("normalized_target exists, so target_table should too");
+                        .get(&target_key)
+                        .expect("target_key exists, so target_table should too");
                     // Respect lifecycle: ExternallyManaged tables are never modified
                     if target_table.life_cycle == LifeCycle::ExternallyManaged && respect_life_cycle
                     {
