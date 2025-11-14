@@ -1,0 +1,30 @@
+language = "typescript" # Must be typescript or python
+description = "TypeScript project using Express for serving analytical APIs, with a frontend with chat and MCP configured"
+post_install_print = """
+Deploy on Boreal
+
+The easiest way to deploy your MooseStack Applications is to use Boreal
+from the creators of MooseStack.
+
+https://boreal.cloud
+
+---------------------------------------------------------
+
+📂 Go to your project directory:
+    $ cd {project_dir}
+
+📦 Install MooseStack Dependencies:
+    $ cd moosestack-service
+    $ npm install
+    
+🛠️ Start Mooose dev server:
+    $ moose dev
+
+📦 Install Web App Dependencies:
+    $ cd web-app-with-ai-chat
+    $ npm install
+    
+🛠️ Start dev server:
+    $ npm run dev
+"""
+default_sloan_telemetry = "standard"
