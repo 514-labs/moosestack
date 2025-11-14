@@ -86,7 +86,6 @@ pub async fn query(
     info!("Executing SQL: {}", sql_query);
 
     // Get ClickHouse connection pool
-    // TODO: Apply max_result_rows setting to limit results without modifying user's SQL
     let pool = get_pool(&project.clickhouse_config);
 
     let mut client = pool.get_handle().await.map_err(|_| {
@@ -103,6 +102,8 @@ pub async fn query(
         })
     })?;
 
+    // Validate that infrastructure state exists and is accessible.
+    // The value is not used further, but we fail early if it cannot be loaded.
     let _infra = InfrastructureMap::load_from_redis(&redis_client)
         .await
         .map_err(|_| {
