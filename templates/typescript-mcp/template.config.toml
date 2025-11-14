@@ -17,7 +17,7 @@ https://boreal.cloud
     $ cd moosestack-service
     $ npm install
     
-🛠️ Start Mooose dev server:
+🛠️ Start Moose dev server:
     $ moose dev
 
 📦 Install Web App Dependencies:
