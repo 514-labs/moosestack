@@ -72,17 +72,46 @@ For each streaming transformation:
 
 ### Health Monitoring
 
-Moose applications expose a health check endpoint at `/health` that returns a 200 OK response when the application is operational. This endpoint is used by container orchestration systems like Kubernetes to determine the health of your application.
+Moose applications expose a health check endpoint at `/health` that monitors the status of all critical services. This endpoint is used by container orchestration systems like Kubernetes to determine the health of your application.
+
+#### Health Check Response
+
+The `/health` endpoint returns a JSON response with the status of each service:
+
+```json
+{
+  "healthy": ["Redis", "ClickHouse", "Redpanda", "Consumption API"],
+  "unhealthy": []
+}
+```
+
+**Status Codes:**
+- `200 OK`: All services are healthy
+- `503 Service Unavailable`: One or more services are unhealthy
+
+**Monitored Services:**
+- **Redis**: Internal state management
+- **ClickHouse**: OLAP database (when OLAP features are enabled)
+- **Redpanda**: Streaming platform (when streaming features are enabled)
+- **Consumption API**: API server for consumption endpoints (when API features are enabled)
+
+Each service is checked concurrently with a 2-second timeout. If a service is unavailable or times out, it will appear in the `unhealthy` array and the endpoint will return a 503 status.
+
+#### Production Probes
 
 In production environments, we recommend configuring three types of probes:
 
-1. Startup Probe: Gives Moose time to initialize before receiving traffic
-2. Readiness Probe: Determines when the application is ready to receive traffic
-3. Liveness Probe: Detects when the application is in a deadlocked state and needs to be restarted
+1. **Startup Probe**: Gives Moose time to initialize before receiving traffic
+2. **Readiness Probe**: Determines when the application is ready to receive traffic
+3. **Liveness Probe**: Detects when the application is in a deadlocked state and needs to be restarted
 
 <Callout type="info" title="Read the Kubernetes Deployment Guide" href={`${PathConfig.deploying.path}/deploying-on-kubernetes`} ctaLabel="Learn More">
 Learn more about how to configure health checks in your Kubernetes deployment.
 </Callout>
+
+#### Internal Health Endpoint
+
+The Consumption API also exposes an internal health endpoint at `/_moose_internal/health` used by the proxy for service monitoring. This endpoint is not intended for external use.
 
 ### Prometheus Metrics
 
