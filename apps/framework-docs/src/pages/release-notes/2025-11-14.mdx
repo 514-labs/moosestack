@@ -8,108 +8,84 @@ import { Callout } from "@/components";
 # November 14, 2025
 
 <Callout type="info" title="Highlights">
-* **New:** Add TypeScript MCP template with AI chat integration
-* **New:** Added ClickHouse query performance monitoring and database metrics
+- **New:** TypeScript MCP template with AI chat integration and data catalog discovery
+- **New:** [Enum16 data type](#enum16-data-type-support) for HTTP status codes and extended value ranges
+- **New:** [Registry functions](#registry-functions-for-programmatic-resource-access) to inspect and access Moose resources at runtime
+- **New:** ClickHouse query performance monitoring in Boreal dashboard
 </Callout>
 
+## TypeScript MCP template with AI chat integration
 
+New project template for building AI-powered data applications with Model Context Protocol (MCP) server integration. Create projects that include analytical APIs, MCP server tools, and a web interface with AI chat capabilities.
 
-## 🦌 Moose
+The template includes:
+- **AI chat interface** for natural language data exploration
+- **Data catalog discovery** tool for automatic schema detection
+- **Infrastructure diagnostics** for troubleshooting merge issues and system errors
+- **Embedded documentation** resources for AI assistants
+- **Monorepo structure** with unified dependency management
 
-### New Features
-- **Add TypeScript MCP template with AI chat integration**
-  Added a new project template for TypeScript applications with Model Context Protocol (MCP) server integration and AI chat frontend. Users can now create projects that include both analytical APIs and a web interface with AI chat capabilities, making it easier to build AI-powered data applications.
+```bash filename="Terminal" copy
+# Create a new project with the TypeScript MCP template
+moose create my-ai-app --template typescript-mcp
 
-- **Add support for Enum16 data type with extended value range**
-  Added support for ClickHouse Enum16 data type, which allows enum values from -32,768 to 32,767 (compared to Enum8's -128 to 127 range). This enables users to define enums with larger numeric values like HTTP status codes (e.g., 404, 500) or other business identifiers that exceed the Enum8 range. The framework now properly validates enum values and generates correct TypeScript and Python code for Enum16 types.
+cd my-ai-app
 
-  **Using Enum16 for HTTP Status Codes in Data Models**
-  ```typescript
+# Start the Moose dev server
+moose dev
+
+# In a new terminal, start the web app
+cd packages/web-app
+pnpm install
+pnpm dev
+```
+
+The MCP server automatically detects database context and provides readonly access to ClickHouse data with query limits up to 1000 rows.
+
+## Enum16 data type support
+
+Support for ClickHouse Enum16 data type with values from -32,768 to 32,767 (compared to Enum8's -128 to 127). Use Enum16 for HTTP status codes, business identifiers, or any enum values exceeding Enum8's range.
+
+```typescript filename="datamodels/ApiRequestLog.ts" copy
   import { Key } from "@514labs/moose-lib";
   
-  // Define an enum with HTTP status codes using Enum16
-  // This allows values beyond Enum8's -128 to 127 range
+// Define HTTP status codes with Enum16 to support values like 404, 500
   export enum HttpStatusCode {
     "OK" = 200,
     "Created" = 201,
     "BadRequest" = 400,
     "Unauthorized" = 401,
-    "Forbidden" = 403,
     "NotFound" = 404,
     "InternalServerError" = 500,
     "BadGateway" = 502,
-    "ServiceUnavailable" = 503,
-    "CustomBusinessCode" = 1000  // Custom codes beyond standard HTTP range
+  "ServiceUnavailable" = 503
   }
   
-  // Data model for API request logs
   export interface ApiRequestLog {
     id: Key<string>;
     endpoint: string;
     method: string;
-    status_code: HttpStatusCode;  // Uses Enum16 to support HTTP status codes
+  status_code: HttpStatusCode;  // Uses Enum16
     response_time_ms: number;
-    user_id?: string;
     timestamp: Date;
   }
-  
-  // Example usage in a streaming data pipeline
-  export default function processApiLogs(log: ApiRequestLog): ApiRequestLog {
-    // The framework now properly handles Enum16 values like 404, 500, etc.
-    // Previously these would overflow with Enum8's limited range
-    return {
-      ...log,
-      // Enum16 supports the full range of HTTP status codes
-      status_code: log.status_code || HttpStatusCode.OK
-    };
-  }
-  ```
-  
-  This example shows how to use the new Enum16 data type to define HTTP status codes in a MooseStack data model. The Enum16 type supports values from -32,768 to 32,767, making it perfect for HTTP status codes (200, 404, 500, etc.) that exceed Enum8's -128 to 127 range.
+```
 
-- **Added search functionality to documentation site**
-  Added comprehensive search functionality to the MooseStack documentation site, allowing users to quickly find relevant guides, API references, and tutorials. The search experience includes command palette-style interface and improved navigation with feature flags for different documentation sections.
-  
-  📸 *[Screenshot needed: Added comprehensive search functionality to the MooseStack documentation site, allowing users to quickly find relevant guides, API references, and tutorials. The search experience includes command palette-style interface and improved navigation with feature flags for different documentation sections.]*
+## Registry functions for programmatic resource access
 
-- **Add infrastructure diagnostics tool to Moose Dev MCP Server**
-  Added a new infrastructure diagnostics tool to the Moose Dev MCP Server that helps developers identify and troubleshoot infrastructure issues. The tool can diagnose problems like stuck background merges, merge failures, system errors, replication issues, and stopped operations. Developers can now use their AI assistant to automatically detect and get guidance on resolving infrastructure problems in their Moose applications.
+New registry functions allow programmatic access to all registered Moose resources at runtime. Build dynamic tools, inspect resources, or generate documentation programmatically.
 
-- **Added AI chat interface to TypeScript MCP template**
-  The TypeScript MCP template now includes a complete AI chat interface that allows users to interact with their MCP server through a web application. Users can ask questions about their data and get AI-powered responses that leverage the MCP tools and resources. This provides an intuitive way to explore and query data without writing code directly.
-  
-  📸 *[Screenshot needed: The TypeScript MCP template now includes a complete AI chat interface that allows users to interact with their MCP server through a web application. Users can ask questions about their data and get AI-powered responses that leverage the MCP tools and resources. This provides an intuitive way to explore and query data without writing code directly.]*
+```typescript filename="scripts/inspect-resources.ts" copy
+import { getTables, getApis, getStreams, getWorkflows } from "@514labs/moose-lib";
 
-- **Add embedded documentation resources to MCP server**
-  The MCP server now provides access to Moose framework documentation as resources. AI assistants and IDEs can now directly access and reference Python and TypeScript documentation for schema definitions, pipelines, streaming, consumption, and other framework concepts when helping users build data applications.
-
-- **Add data catalog discovery tool to TypeScript MCP template**
-  Added get_data_catalog tool to the TypeScript MCP template, allowing AI assistants to automatically discover available tables and materialized views with their schema information. This enables better AI-assisted query writing by providing context about what data exists in the database.
-
-- **Add registry functions to programmatically access Moose resources**
-  Added new registry functions that allow developers to programmatically access all registered Moose resources (tables, streams, APIs, workflows, etc.) at runtime. This enables building dynamic tools, meta-programming, resource inspection, and testing. Functions include getTables(), getTable(), getApis(), getApi(), and similar functions for all resource types in both TypeScript and Python.
-
-  **Dynamic resource inspector using registry functions**
-  ```typescript
-  import { 
-    getTables, 
-    getApis, 
-    getStreams, 
-    getWorkflows 
-  } from "@514labs/moose-lib";
-  
-  // Build a dynamic resource inspector for your Moose application
+// Inspect all registered resources in your Moose application
   export function inspectMooseResources() {
-    console.log("=== Moose Application Resources ===\n");
-    
-    // Inspect all registered tables
     const tables = getTables();
     console.log(`📊 Tables (${tables.size}):`);
     for (const [name, table] of tables) {
       console.log(`  - ${name}: ${table.columns.length} columns`);
     }
     
-    // Inspect all registered APIs
     const apis = getApis();
     console.log(`\n🔌 APIs (${apis.size}):`);
     for (const [name, api] of apis) {
@@ -117,62 +93,32 @@ import { Callout } from "@/components";
       console.log(`  - ${name}: ${path}`);
     }
     
-    // Inspect all registered streams
     const streams = getStreams();
     console.log(`\n🌊 Streams (${streams.size}):`);
     for (const [name, stream] of streams) {
       console.log(`  - ${name}: ${stream.topic}`);
     }
-    
-    // Inspect all registered workflows
-    const workflows = getWorkflows();
-    console.log(`\n⚙️  Workflows (${workflows.size}):`);
-    for (const [name, workflow] of workflows) {
-      const schedule = workflow.config.schedule || "manual";
-      console.log(`  - ${name}: ${schedule}`);
-    }
-  }
-  ```
-  
-  This example shows how to use the new registry functions to build a dynamic resource inspector that lists all registered Moose resources (tables, APIs, streams, workflows) in your application. This is useful for debugging, documentation generation, or building admin tools.
+}
+```
 
-- **Auto-assign Copilot agent to connector requests**
-  When users submit connector requests through the form, Copilot is now automatically assigned to help implement the connector, speeding up the development process and providing AI assistance for connector creation.
+Available registry functions: `getTables()`, `getTable()`, `getApis()`, `getApi()`, `getStreams()`, `getStream()`, `getWorkflows()`, `getWorkflow()` in both TypeScript and Python.
 
-### Improvements
-- Convert TypeScript MCP template to monorepo structure: Restructured the TypeScript MCP template into a pnpm monorepo with packages for the MooseStack service and web app. This improves the developer experience by providing unified dependency management, simplified development commands (pnpm dev to start both services), and better project organization. Users can now run both the data service and web interface together more easily or start them individually as needed.
-- Improved migration documentation clarity and removed empty example: Enhanced the migration documentation by removing an empty YAML example that could confuse users and improved text formatting for better readability. The documentation now provides clearer guidance on how to work with migration plans.
-- Remove outdated "Moose In Your Stack" documentation page: Removed an outdated documentation page that described integration patterns with external systems. This cleanup improves the documentation experience by removing potentially confusing or obsolete information.
-- Improved setup instructions for TypeScript MCP template: Updated the TypeScript MCP template setup instructions to be clearer and more logical. The instructions now guide users to start the Moose dev server first, then open a new terminal to install and start the web app dependencies, making the development workflow easier to follow.
-- Updated TypeScript MCP template documentation with BYO API and Express details: Added clarification to the TypeScript MCP template README that it's built using BYO API and Express framework, helping users better understand the underlying technology stack when working with this template.
-- MCP server now automatically detects database context: The TypeScript MCP template now uses ClickHouse's currentDatabase() function to automatically determine the active database context, eliminating the need for manual database name configuration. This simplifies setup and makes the MCP tools more reliable when working with different database environments.
-- Improved compiler plugin logging in dev terminal: Added [CompilerPlugin] prefix to compiler logs to help developers distinguish between different types of messages in the dev terminal, making debugging easier
-- Improved MCP server security and query limits for TypeScript template: Enhanced the MCP server in the TypeScript template with better security by relying on ClickHouse's built-in readonly mode instead of custom query validation. Increased maximum query result limit from 100 to 1000 rows for better data exploration capabilities. This provides more robust protection against data modification while allowing users to retrieve larger datasets when needed.
-- Improved connection handling during application deployments: Enhanced deployment reliability by implementing connection draining for HTTP routes. This ensures smoother application updates with fewer connection errors during deployments, providing a better experience when deploying or updating Moose applications.
+## ClickHouse query performance monitoring
 
-### Bug Fixes
-- Fix list_tables to include version suffix in table names: Fixed an issue where the list_tables functionality was not properly including version suffixes in table names. This ensures that when users query or interact with versioned tables, they get the correct table names with their version identifiers, preventing confusion and potential data access issues in multi-version environments.
-- Fix TypeScript MCP template setup instructions and TypeScript errors: Fixed getting started instructions in the TypeScript MCP template to use correct commands (pnpm instead of npm, moose dev instead of npm run dev). Also resolved TypeScript compilation errors and updated dependencies to always use the latest moose version.
-- Fix JWT environment variable names in authentication documentation: Corrected the JWT environment variable names in the authentication documentation from MOOSE_JWT_PUBLIC_KEY, MOOSE_JWT_ISSUER, and MOOSE_JWT_AUDIENCE to the correct format with double underscores: MOOSE_JWT__SECRET, MOOSE_JWT__ISSUER, and MOOSE_JWT__AUDIENCE. This fixes a configuration issue where users following the documentation would have non-functional JWT authentication.
-- Fix serverless migration reconciliation with remote databases: Fixed an issue where serverless migrations would fail to properly reconcile table states with remote ClickHouse databases. This ensures that migration operations work correctly when using serverless deployments with external database connections.
-- Fix migration generation when using Moose server URL: Fixed an issue where the `moose generate migration` command would fail when using the `--url` flag to connect to a Moose server. The command now properly handles Moose server connections without requiring unnecessary ClickHouse or Redis configuration.
-- Fix backwards compatibility issues with data model schema changes: Fixed several issues that were causing incorrect schema diffs during backwards compatibility checks. This resolves problems where valid schema changes were being flagged as breaking changes, particularly with JSON column types, nested structures, and FixedString columns. Users should now experience more accurate schema validation when updating their data models.
-- Fixed CORS headers for distributed tracing in HTTP requests: Added missing CORS headers (traceparent, tracestate) to HTTP requests, enabling proper distributed tracing functionality and resolving potential cross-origin request issues that could affect API interactions.
+Boreal dashboard now displays query performance metrics including P95 response times, database table counts, and total row counts. System table data refreshes every minute for real-time monitoring visibility.
 
-## 🐻 Boreal
+## Other MooseStack Features and Improvements
+- **Documentation search** – Command palette-style search for guides, API references, and tutorials
+- **MCP monorepo structure** – Unified dependency management with `pnpm dev` to start both services
+- **Auto-assign Copilot to connector requests** – Automatic AI assistance for connector development
+- **Improved deployment reliability** – Connection draining for HTTP routes during deployments
+- **Enhanced MCP security** – Readonly mode with ClickHouse built-in protections
+- **Better compiler logging** – `[CompilerPlugin]` prefix in dev terminal messages
 
-### New Features
-- **Added ClickHouse query performance monitoring and database metrics**
-  Users can now view query performance metrics including P95 response times, database table counts, and total row counts in their project dashboard. The system automatically collects and displays ClickHouse system logs to provide insights into database performance over time.
-  
-  📸 *[Screenshot needed: Users can now view query performance metrics including P95 response times, database table counts, and total row counts in their project dashboard. The system automatically collects and displays ClickHouse system logs to provide insights into database performance over time.]*
+## MooseStack Bug Fixes
+- **Bug fixes**: (list_tables version suffix), (MCP template setup commands), (JWT environment variable names), (serverless migration reconciliation), (migration generation with --url flag), (backwards compatibility schema diffs), (CORS headers for distributed tracing)
 
-### Improvements
-- System table monitoring now updates every minute for faster data refresh: System table data in the dashboard now refreshes every minute instead of every hour, providing users with more up-to-date monitoring information and faster visibility into system performance changes.
-- Simplified environment variable key formatting: Environment variable keys are now only trimmed of whitespace instead of being automatically formatted to uppercase with underscores. This gives users more control over their environment variable naming conventions while still preventing accidental whitespace.
-- Updated navigation with improved sign-up and sign-in links: Improved the marketing website navigation by updating the main call-to-action button from "Get Started" to "Sign up" and fixing the "Sign In" link to properly direct users to the sign-in page instead of the sign-up page. Also reordered navigation items to improve user flow.
-
-### Bug Fixes
-- Fixed user menu navigation causing broken URLs with undefined organization ID: Fixed a critical bug where the user menu was generating broken URLs with "undefined" as the organization ID, preventing users from properly navigating to user settings and other pages. This ensures all navigation links work correctly and maintain proper organization context.
-
-
+## Other Boreal Features and Improvements
+- Simplified environment variable key formatting (whitespace trimming only)
+- Updated navigation with improved sign-up and sign-in links
+- Enhanced user menu navigation with proper organization context
