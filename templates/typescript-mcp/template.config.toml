@@ -1,5 +1,5 @@
 language = "typescript" # Must be typescript or python
-description = "TypeScript project using Express for serving analytical APIs, with a frontend with chat and MCP configured"
+description = "TypeScript monorepo with Express for serving analytical APIs, and a frontend with AI chat and MCP configured"
 post_install_print = """
 Deploy on Boreal
 
@@ -13,17 +13,14 @@ https://boreal.cloud
 📂 Go to your project directory:
     $ cd {project_dir}
 
-📦 Install MooseStack Dependencies:
-    $ cd moosestack-service
+📦 Install all dependencies:
     $ pnpm install
-    $ moose dev # start moose dev server
-    
-⚠️ In a seperate terminal:
-    $ cd {project_dir}
 
-📦 Install Web App Dependencies:
-    $ cd web-app-with-ai-chat
-    $ pnpm install
-    $ pnpm run dev # start web dev server
+🚀 Start both services:
+    $ pnpm dev
+
+Or start services individually:
+    $ pnpm dev:moose    # Start MooseStack service only
+    $ pnpm dev:web      # Start web app only
 """
 default_sloan_telemetry = "standard"

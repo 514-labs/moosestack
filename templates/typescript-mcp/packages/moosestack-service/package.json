@@ -1,5 +1,5 @@
 {
-  "name": "ts",
+  "name": "moosestack-service",
   "version": "0.0",
   "scripts": {
     "moose": "moose-cli",
@@ -10,7 +10,6 @@
     "@514labs/moose-lib": "latest",
     "@modelcontextprotocol/sdk": "^1.20.2",
     "express": "^5.1.0",
-    "ts": "link:",
     "ts-patch": "^3.3.0",
     "tsconfig-paths": "^4.2.0",
     "typia": "^9.6.1",
@@ -20,10 +19,5 @@
     "@514labs/moose-cli": "latest",
     "@types/express": "^5.0.3",
     "@types/node": "^20.12.12"
-  },
-  "pnpm": {
-    "onlyBuiltDependencies": [
-      "@confluentinc/kafka-javascript"
-    ]
   }
 }
