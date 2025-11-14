@@ -1095,7 +1095,7 @@ async fn execute_raw_sql(
 /// assert_eq!(base_name, "my_table");
 /// assert_eq!(version.to_string(), "1.0.0");
 /// ```
-fn extract_version_from_table_name(table_name: &str) -> (String, Option<Version>) {
+pub fn extract_version_from_table_name(table_name: &str) -> (String, Option<Version>) {
     debug!("Extracting version from table name: {}", table_name);
 
     // Special case for empty table name
@@ -1745,7 +1745,8 @@ impl OlapOperations for ConfiguredDBClient {
             debug!("Extracted indexes for table {}: {:?}", table_name, indexes);
 
             let table = Table {
-                name: base_name, // the name field is without version suffix elsewhere
+                // keep the name with version suffix, following PartialInfrastructureMap.convert_tables
+                name: table_name,
                 columns,
                 order_by: OrderBy::Fields(order_by_cols), // Use the extracted ORDER BY columns
                 partition_by: {

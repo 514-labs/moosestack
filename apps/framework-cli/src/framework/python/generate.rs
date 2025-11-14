@@ -12,6 +12,7 @@ use std::collections::HashMap;
 use std::fmt::Write;
 use std::sync::LazyLock;
 
+use crate::infrastructure::olap::clickhouse::extract_version_from_table_name;
 /// Language-agnostic sanitization: replace common separators with spaces to create word boundaries.
 pub use ident::sanitize_identifier;
 
@@ -708,11 +709,18 @@ pub fn tables_to_python(tables: &[Table], life_cycle: Option<LifeCycle>) -> Stri
             OrderBy::SingleExpr(expr) => format!("order_by_expression={:?}", expr),
         };
 
+        let (base_name, version) = extract_version_from_table_name(&table.name);
+        let table_name = if version == table.version {
+            &base_name
+        } else {
+            &table.name
+        };
+
         let var_name = map_to_python_snake_identifier(&table.name);
         writeln!(
             output,
             "{}_table = OlapTable[{}](\"{}\", OlapConfig(",
-            var_name, table.name, table.name
+            var_name, table.name, table_name
         )
         .unwrap();
         writeln!(output, "    {order_by_spec},").unwrap();
