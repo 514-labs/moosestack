@@ -185,7 +185,7 @@ class QueryClient:
     def __call__(self, input, variables):
         return self.execute(input, variables)
 
-    def execute(self, input: Union[str, Query], variables = None, row_type: Type[BaseModel] = None):
+    def execute(self, input: Union[str, Query], variables=None, row_type: Type[BaseModel] = None):
         """
         Execute a query.
 
@@ -222,9 +222,9 @@ class QueryClient:
 
                 if isinstance(value, Column) or isinstance(value, OlapTable):
                     if isinstance(value, OlapTable) and value.config.database:
-                        params[variable_name] = f'{{p{i}: Identifier}}.{{p{i+1}: Identifier}}'
+                        params[variable_name] = f'{{p{i}: Identifier}}.{{p{i + 1}: Identifier}}'
                         values[f'p{i}'] = value.config.database
-                        values[f'p{i+1}'] = value.name
+                        values[f'p{i + 1}'] = value.name
                         i += 2
                     else:
                         params[variable_name] = f'{{p{i}: Identifier}}'
@@ -298,6 +298,9 @@ class QueryClient:
         # DateTime
         if isinstance(value, datetime):
             return f"'{value.strftime('%Y-%m-%d %H:%M:%S')}'"
+
+        if isinstance(value, OlapTable) and value.config.database:
+            return f"{value.config.database}.{value.name}"
 
         if isinstance(value, Column) or isinstance(value, OlapTable):
             return value.name
