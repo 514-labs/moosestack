@@ -15,16 +15,15 @@ https://boreal.cloud
 
 📦 Install MooseStack Dependencies:
     $ cd moosestack-service
-    $ npm install
+    $ pnpm install
+    $ moose dev # start moose dev server
+    
+⚠️ In a seperate terminal:
+    $ cd {project_dir}
 
-🛠️ Start Moose dev server:
-    $ moose dev
-    
-⚠️ Open a new terminal in the project root, install Web App Dependencies:
+📦 Install Web App Dependencies:
     $ cd web-app-with-ai-chat
-    $ npm install
-    
-🛠️ Start dev server:
-    $ npm run dev
+    $ pnpm install
+    $ pnpm run dev # start web dev server
 """
 default_sloan_telemetry = "standard"

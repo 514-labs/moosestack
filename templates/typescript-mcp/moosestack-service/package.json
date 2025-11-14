@@ -7,7 +7,7 @@
     "dev": "moose-cli dev"
   },
   "dependencies": {
-    "@514labs/moose-lib": "0.6.190",
+    "@514labs/moose-lib": "latest",
     "@modelcontextprotocol/sdk": "^1.20.2",
     "express": "^5.1.0",
     "ts": "link:",
@@ -17,7 +17,7 @@
     "zod": "^3.0.0"
   },
   "devDependencies": {
-    "@514labs/moose-cli": "0.6.190",
+    "@514labs/moose-cli": "latest",
     "@types/express": "^5.0.3",
     "@types/node": "^20.12.12"
   },

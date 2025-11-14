@@ -33,16 +33,18 @@ Both applications can be started independently:
 
 ```bash
 cd moosestack-service
-npm install
-npm run dev
+pnpm install
+moose dev # start moose dev server
 ```
 
 ### Start the Next.js Web App
 
+In another terminal:
+
 ```bash
 cd web-app-with-ai-chat
-npm install
-npm run dev
+pnpm install
+pnpm run dev # start web dev server
 ```
 
 ## MCP Tools Available
