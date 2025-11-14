@@ -86,7 +86,6 @@ pub async fn query(
     info!("Executing SQL: {}", sql_query);
 
     // Get ClickHouse connection pool
-    // TODO: Apply max_result_rows setting to limit results without modifying user's SQL
     let pool = get_pool(&project.clickhouse_config);
 
     let mut client = pool.get_handle().await.map_err(|_| {
