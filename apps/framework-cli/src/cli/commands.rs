@@ -209,6 +209,10 @@ pub enum Commands {
         /// Format query as code literal (python|typescript). Skips execution.
         #[arg(short = 'c', long = "format-query", value_name = "LANGUAGE")]
         format_query: Option<String>,
+
+        /// Prettify SQL before formatting (only with --format-query)
+        #[arg(short = 'p', long = "prettify", requires = "format_query")]
+        prettify: bool,
     },
 }
 
