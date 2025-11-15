@@ -1362,6 +1362,7 @@ pub async fn top_command_handler(
             query: sql,
             file,
             limit,
+            format_query,
         } => {
             info!("Running query command");
 
@@ -1376,6 +1377,8 @@ pub async fn top_command_handler(
                 HashMap::new(),
             );
 
+            // Temporary: ignore format_query for now - will be implemented in later task
+            let _ = format_query;
             let result = query(project_arc, sql.clone(), file.clone(), *limit).await;
 
             wait_for_usage_capture(capture_handle).await;
