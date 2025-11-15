@@ -201,7 +201,7 @@ where
 ///
 /// # Returns
 /// * `Result<Value, clickhouse_rs::errors::Error>` - JSON object or error
-fn row_to_json<C>(
+pub fn row_to_json<C>(
     row: &Row<'_, C>,
     enum_mappings: &[Option<Vec<&str>>],
 ) -> Result<Value, clickhouse_rs::errors::Error>

@@ -65,6 +65,8 @@ pub enum ActivityType {
     GenerateSDKCommand,
     #[serde(rename = "peekCommand")]
     PeekCommand,
+    #[serde(rename = "queryCommand")]
+    QueryCommand,
     #[serde(rename = "workflowCommand")]
     WorkflowCommand,
     #[serde(rename = "workflowInitCommand")]
