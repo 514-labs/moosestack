@@ -11,7 +11,6 @@ import { Callout } from "@/components";
 - **New:** TypeScript MCP template with AI chat integration and data catalog discovery
 - **New:** [Enum16 data type](#enum16-data-type-support) for HTTP status codes and extended value ranges
 - **New:** [Registry functions](#registry-functions-for-programmatic-resource-access) to inspect and access Moose resources at runtime
-- **New:** ClickHouse query performance monitoring in Boreal dashboard
 </Callout>
 
 ## TypeScript MCP template with AI chat integration
@@ -103,22 +102,20 @@ import { getTables, getApis, getStreams, getWorkflows } from "@514labs/moose-lib
 
 Available registry functions: `getTables()`, `getTable()`, `getApis()`, `getApi()`, `getStreams()`, `getStream()`, `getWorkflows()`, `getWorkflow()` in both TypeScript and Python.
 
-## ClickHouse query performance monitoring
-
-Boreal dashboard now displays query performance metrics including P95 response times, database table counts, and total row counts. System table data refreshes every minute for real-time monitoring visibility.
-
-## Other MooseStack Features and Improvements
+## Other Features and Improvements
 - **Documentation search** – Command palette-style search for guides, API references, and tutorials
 - **MCP monorepo structure** – Unified dependency management with `pnpm dev` to start both services
-- **Auto-assign Copilot to connector requests** – Automatic AI assistance for connector development
-- **Improved deployment reliability** – Connection draining for HTTP routes during deployments
-- **Enhanced MCP security** – Readonly mode with ClickHouse built-in protections
-- **Better compiler logging** – `[CompilerPlugin]` prefix in dev terminal messages
+- **Enhanced MCP security** – Readonly mode with ClickHouse built-in protections, query limits up to 1000 rows
+- **Automatic database context detection** – MCP server uses ClickHouse's `currentDatabase()` for simpler setup
+- **Database-qualified table handling** – Support for database prefixes in SQL queries across TypeScript and Python
+- **Better compiler logging** – `[CompilerPlugin]` prefix in dev terminal messages for clearer debugging
+- **Deep health monitoring** – Concurrent health checks for Redis, ClickHouse, Redpanda, and Consumption API with `/_moose_internal/health` endpoint
 
-## MooseStack Bug Fixes
-- **Bug fixes**: (list_tables version suffix), (MCP template setup commands), (JWT environment variable names), (serverless migration reconciliation), (migration generation with --url flag), (backwards compatibility schema diffs), (CORS headers for distributed tracing)
-
-## Other Boreal Features and Improvements
-- Simplified environment variable key formatting (whitespace trimming only)
-- Updated navigation with improved sign-up and sign-in links
-- Enhanced user menu navigation with proper organization context
+## Bug Fixes
+- **list_tables version suffix** – Fixed table names to properly include version identifiers
+- **MCP template setup** – Corrected getting started instructions to use `pnpm` and `moose dev`
+- **JWT environment variables** – Fixed auth docs to use correct names (`MOOSE_JWT__SECRET`, `MOOSE_JWT__ISSUER`, `MOOSE_JWT__AUDIENCE`)
+- **Serverless migrations** – Fixed table reconciliation with remote ClickHouse databases
+- **Migration generation** – Fixed `moose generate migration --url` to work with Moose servers
+- **Schema compatibility** – Fixed incorrect breaking change detection for JSON, nested structures, and FixedString columns
+- **CORS headers** – Added missing distributed tracing headers (`traceparent`, `tracestate`)
