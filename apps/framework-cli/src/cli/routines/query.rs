@@ -72,6 +72,7 @@ fn get_sql_input(sql: Option<String>, file: Option<PathBuf>) -> Result<String, R
 /// * `sql` - Optional SQL query string
 /// * `file` - Optional file path containing SQL query
 /// * `limit` - Maximum number of rows to return (via ClickHouse settings)
+/// * `format_query` - Optional language name to format query as code literal instead of executing
 ///
 /// # Returns
 ///
@@ -81,9 +82,25 @@ pub async fn query(
     sql: Option<String>,
     file: Option<PathBuf>,
     limit: u64,
+    format_query: Option<String>,
 ) -> Result<RoutineSuccess, RoutineFailure> {
     let sql_query = get_sql_input(sql, file)?;
     info!("Executing SQL: {}", sql_query);
+
+    // If format_query flag is present, format and exit without executing
+    if let Some(lang_str) = format_query {
+        use crate::cli::routines::format_query::{format_as_code, CodeLanguage};
+
+        let language = CodeLanguage::from_str(&lang_str)?;
+        let formatted = format_as_code(&sql_query, language);
+
+        println!("{}", formatted);
+
+        return Ok(RoutineSuccess::success(Message::new(
+            "Format Query".to_string(),
+            format!("Formatted as {} code", lang_str),
+        )));
+    }
 
     // Get ClickHouse connection pool
     let pool = get_pool(&project.clickhouse_config);
