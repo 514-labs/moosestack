@@ -5,69 +5,13 @@ order: 2
 category: getting-started
 ---
 
-import { CTACards, CTACard } from "@/components/mdx";
-import { Badge } from "@/components/ui/badge";
-import Link from "next/link";
-import { TemplatesGridServer } from "@/components/mdx";
+import { TemplatesGridServer, CommandSnippet } from "@/components/mdx";
 
 # Templates & Apps
 
 Moose provides two ways to get started: **templates** and **demo apps**. Templates are simple skeleton applications that you can initialize with `moose init`, while demo apps are more advanced examples available on GitHub that showcase real-world use cases and integrations.
 
-**Initialize a template:**
-```bash filename="Terminal" copy
-moose init PROJECT_NAME TEMPLATE_NAME
-```
-
-**List available templates:**
-```bash filename="Terminal" copy
-moose template list
-```
-
-## Popular Apps
-
-<CTACards columns={2}>
-  <CTACard
-    title="Nextjs + Express + MCP demo app: Aircraft data"
-    description="Complete demo application featuring real-time aircraft transponder data with MCP chat integration."
-    ctaLink="#plane-transponder-demo"
-    ctaLabel="Details"
-    secondaryCtaLink="https://github.com/514-labs/planes"
-    secondaryCtaLabel="Github →"
-    badge={{ variant: "default", text: "Express APIs + MCP Demo" }}
-  />
-
-  <CTACard
-    title="Postgres to ClickHouse CDC with Debezium"
-    description="Easy-to-run demo of a CDC pipeline using Debezium, PostgreSQL, Redpanda, and ClickHouse."
-    ctaLink="#postgres-clickhouse-cdc"
-    ctaLabel="Details"
-    secondaryCtaLink="https://github.com/514-labs/debezium-cdc"
-    secondaryCtaLabel="Github →"
-    badge={{ variant: "default", text: "CDC Demo" }}
-  />
-
-  <CTACard
-    title="User-facing analytics reference app (Postgres + Clickhouse + React)"
-    description="Complete reference architecture showing how to add a dedicated analytics microservice to an existing application."
-    ctaLink="#foobar-ufa"
-    ctaLabel="Details"
-    secondaryCtaLink="https://github.com/514-labs/area-code/tree/main/ufa"
-    secondaryCtaLabel="Github →"
-    badge={{ variant: "default", text: "Reference Architecture" }}
-  />
-
-  <CTACard
-    title="User-facing analytics reference app (Clickhouse Cloud + React)"
-    description="Simplified version of the reference architecture using ClickHouse Cloud with React frontend and chat analytics."
-    ctaLink="#foobar-ufa-lite"
-    ctaLabel="Details"
-    secondaryCtaLink="https://github.com/514-labs/area-code/tree/main/ufa-lite"
-    secondaryCtaLabel="Github →"
-    badge={{ variant: "default", text: "ClickHouse Cloud demo" }}
-  />
-</CTACards>
----
+<CommandSnippet />
 
 ## Browse Apps and Templates
 
