@@ -44,6 +44,8 @@ import {
   withRetries,
   verifyConsumptionApi,
   verifyVersionedConsumptionApi,
+  verifyProxyHealth,
+  verifyConsumptionApiInternalHealth,
   verifyConsumerLogs,
   createTempTestDirectory,
   setupTypeScriptProject,
@@ -873,6 +875,32 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
           }
 
           await clickhouse.close();
+        });
+
+        it("should include Consumption API in proxy health check (healthy)", async function () {
+          this.timeout(TIMEOUTS.TEST_SETUP_MS);
+
+          // Verify that the proxy health endpoint includes "Consumption API" in healthy list
+          // Expected healthy services: Redis, ClickHouse, Redpanda, Consumption API
+          await verifyProxyHealth([
+            "Redis",
+            "ClickHouse",
+            "Redpanda",
+            "Consumption API",
+          ]);
+
+          console.log(
+            "✅ Proxy health check correctly includes Consumption API",
+          );
+        });
+
+        it("should have working internal health endpoint (/_moose_internal/health)", async function () {
+          this.timeout(TIMEOUTS.TEST_SETUP_MS);
+
+          // Verify the consumption API internal health endpoint works
+          await verifyConsumptionApiInternalHealth();
+
+          console.log("✅ Internal health endpoint works correctly");
         });
 
         it("should serve WebApp at custom mountPath with Express framework", async function () {

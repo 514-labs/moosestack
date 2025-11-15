@@ -125,11 +125,14 @@ describe("typescript template tests - .env file configuration", function () {
 
   it("should load .env files with correct precedence (.env < .env.dev < .env.local)", async () => {
     // Verify server is running on port 9992 (from .env.local)
+    // Note: Health endpoint may return 503 if some services are unhealthy,
+    // but a response means the server is running on the correct port
     const response = await fetch("http://localhost:9992/health");
-    expect(response.ok).to.be.true;
+    expect(response.status).to.be.oneOf([200, 503]);
 
     const health = await response.json();
     expect(health).to.have.property("healthy");
+    expect(health).to.have.property("unhealthy");
 
     console.log(
       "✓ Server is running on port 9992 from .env.local (correct precedence)",
@@ -138,8 +141,14 @@ describe("typescript template tests - .env file configuration", function () {
 
   it("should have .env.local values accessible via environment", async () => {
     // The .env files are loaded, we can verify the server responds correctly
+    // Note: Health endpoint may return 503 if some services are unhealthy,
+    // but getting a valid JSON response proves the server is configured correctly
     const response = await fetch("http://localhost:9992/health");
-    expect(response.status).to.equal(200);
+    expect(response.status).to.be.oneOf([200, 503]);
+
+    const health = await response.json();
+    expect(health).to.have.property("healthy");
+    expect(health).to.have.property("unhealthy");
 
     console.log("✓ .env.local configuration is active");
   });
@@ -232,11 +241,14 @@ describe("python template tests - .env file configuration", function () {
 
   it("should load .env files with correct precedence (.env < .env.dev < .env.local)", async () => {
     // Verify server is running on port 9982 (from .env.local)
+    // Note: Health endpoint may return 503 if some services are unhealthy,
+    // but a response means the server is running on the correct port
     const response = await fetch("http://localhost:9982/health");
-    expect(response.ok).to.be.true;
+    expect(response.status).to.be.oneOf([200, 503]);
 
     const health = await response.json();
     expect(health).to.have.property("healthy");
+    expect(health).to.have.property("unhealthy");
 
     console.log(
       "✓ Python server is running on port 9982 from .env.local (correct precedence)",
@@ -245,8 +257,14 @@ describe("python template tests - .env file configuration", function () {
 
   it("should have .env.local values accessible via environment", async () => {
     // The .env files are loaded, we can verify the server responds correctly
+    // Note: Health endpoint may return 503 if some services are unhealthy,
+    // but getting a valid JSON response proves the server is configured correctly
     const response = await fetch("http://localhost:9982/health");
-    expect(response.status).to.equal(200);
+    expect(response.status).to.be.oneOf([200, 503]);
+
+    const health = await response.json();
+    expect(health).to.have.property("healthy");
+    expect(health).to.have.property("unhealthy");
 
     console.log("✓ Python .env.local configuration is active");
   });

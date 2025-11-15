@@ -283,6 +283,18 @@ const createMainRouter = async (
     const url = new URL(req.url || "", "http://localhost");
     const pathname = url.pathname;
 
+    // Health check - checked before all other routes
+    if (pathname === "/_moose_internal/health") {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(
+        JSON.stringify({
+          status: "healthy",
+          timestamp: new Date().toISOString(),
+        }),
+      );
+      return;
+    }
+
     let jwtPayload;
     if (publicKey && jwtConfig) {
       const jwt = req.headers.authorization?.split(" ")[1];

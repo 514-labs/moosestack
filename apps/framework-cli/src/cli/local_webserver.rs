@@ -817,38 +817,98 @@ async fn health_route(
     project: &Project,
     redis_client: &Arc<RedisClient>,
 ) -> Result<Response<Full<Bytes>>, hyper::http::Error> {
-    // Check Redis connectivity
-    let redis_healthy = redis_client.is_connected();
+    use std::time::Duration;
+    use tokio::task::JoinSet;
 
-    // Prepare healthy and unhealthy lists
+    let mut join_set = JoinSet::new();
+
+    // Spawn Redis check
+    let redis_client_clone = redis_client.clone();
+    join_set.spawn(async move {
+        let healthy = redis_client_clone.is_connected();
+        ("Redis", healthy)
+    });
+
+    // Spawn Redpanda check (if enabled)
+    if project.features.streaming_engine {
+        let redpanda_config = project.redpanda_config.clone();
+        join_set.spawn(async move {
+            match kafka::client::health_check(&redpanda_config).await {
+                Ok(_) => ("Redpanda", true),
+                Err(e) => {
+                    warn!("Health check: Redpanda unavailable: {}", e);
+                    ("Redpanda", false)
+                }
+            }
+        });
+    }
+
+    // Spawn ClickHouse check (if enabled)
+    if project.features.olap {
+        let clickhouse_config = project.clickhouse_config.clone();
+        join_set.spawn(async move {
+            let olap_client = clickhouse::create_client(clickhouse_config);
+            match olap_client.client.query("SELECT 1").execute().await {
+                Ok(_) => ("ClickHouse", true),
+                Err(e) => {
+                    warn!("Health check: ClickHouse unavailable: {}", e);
+                    ("ClickHouse", false)
+                }
+            }
+        });
+    }
+
+    // Spawn Consumption API check (if enabled)
+    if project.features.apis {
+        let consumption_api_port = project.http_server_config.proxy_port;
+        join_set.spawn(async move {
+            let health_url = format!(
+                "http://localhost:{}/_moose_internal/health",
+                consumption_api_port
+            );
+            let client = match reqwest::Client::builder()
+                .timeout(Duration::from_secs(2))
+                .build()
+            {
+                Ok(c) => c,
+                Err(e) => {
+                    warn!("Health check: Failed to create HTTP client: {}", e);
+                    return ("Consumption API", false);
+                }
+            };
+
+            match client.get(&health_url).send().await {
+                Ok(response) if response.status().is_success() => ("Consumption API", true),
+                Ok(response) => {
+                    warn!(
+                        "Health check: Consumption API returned status {}",
+                        response.status()
+                    );
+                    ("Consumption API", false)
+                }
+                Err(e) => {
+                    warn!("Health check: Consumption API unavailable: {}", e);
+                    ("Consumption API", false)
+                }
+            }
+        });
+    }
+
+    // Collect results from JoinSet
     let mut healthy = Vec::new();
     let mut unhealthy = Vec::new();
 
-    if redis_healthy {
-        healthy.push("Redis")
-    } else {
-        unhealthy.push("Redis")
-    }
-
-    // Check Redpanda/Kafka connectivity only if streaming is enabled
-    if project.features.streaming_engine {
-        match kafka::client::health_check(&project.redpanda_config).await {
-            Ok(_) => healthy.push("Redpanda"),
-            Err(e) => {
-                warn!("Health check: Redpanda unavailable: {}", e);
-                unhealthy.push("Redpanda")
+    while let Some(result) = join_set.join_next().await {
+        match result {
+            Ok((service, is_healthy)) => {
+                if is_healthy {
+                    healthy.push(service);
+                } else {
+                    unhealthy.push(service);
+                }
             }
-        }
-    }
-
-    // Check ClickHouse connectivity only if OLAP is enabled
-    if project.features.olap {
-        let olap_client = clickhouse::create_client(project.clickhouse_config.clone());
-        match olap_client.client.query("SELECT 1").execute().await {
-            Ok(_) => healthy.push("ClickHouse"),
             Err(e) => {
-                warn!("Health check: ClickHouse unavailable: {}", e);
-                unhealthy.push("ClickHouse")
+                warn!("Health check task failed: {}", e);
             }
         }
     }
