@@ -87,7 +87,7 @@ pub fn prettify_sql(sql: &str) -> String {
 
         if is_major_keyword && !current_line.is_empty() {
             // Finish current line and start new one
-            result.push_str(&current_line.trim_end());
+            result.push_str(current_line.trim_end());
             result.push('\n');
             current_line.clear();
 
@@ -108,7 +108,7 @@ pub fn prettify_sql(sql: &str) -> String {
 
     // Add final line
     if !current_line.is_empty() {
-        result.push_str(&current_line.trim_end());
+        result.push_str(current_line.trim_end());
     }
 
     result
