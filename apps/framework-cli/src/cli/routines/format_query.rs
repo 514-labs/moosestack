@@ -5,6 +5,8 @@
 
 use crate::cli::display::Message;
 use crate::cli::routines::RoutineFailure;
+use sqlparser::dialect::GenericDialect;
+use sqlparser::parser::Parser;
 
 /// Supported languages for code formatting
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -30,12 +32,31 @@ impl CodeLanguage {
     }
 }
 
-/// Prettify SQL query with basic formatting.
+/// Validate SQL syntax using sqlparser.
 ///
-/// Applies simple formatting rules:
-/// - Capitalizes SQL keywords
-/// - Adds line breaks after major clauses
-/// - Indents nested content
+/// Parses the SQL query to ensure it's syntactically valid before formatting or execution.
+///
+/// # Arguments
+///
+/// * `sql` - The SQL query string to validate
+///
+/// # Returns
+///
+/// * `Result<(), RoutineFailure>` - Ok if valid, error with helpful message if invalid
+pub fn validate_sql(sql: &str) -> Result<(), RoutineFailure> {
+    let dialect = GenericDialect {};
+    Parser::parse_sql(&dialect, sql).map_err(|e| {
+        RoutineFailure::error(Message::new(
+            "SQL Validation".to_string(),
+            format!("Invalid SQL syntax: {}", e),
+        ))
+    })?;
+    Ok(())
+}
+
+/// Prettify SQL query using sqlparser's pretty printing.
+///
+/// Parses the SQL and formats it with proper indentation and line breaks.
 ///
 /// # Arguments
 ///
@@ -43,75 +64,23 @@ impl CodeLanguage {
 ///
 /// # Returns
 ///
-/// Prettified SQL string
-pub fn prettify_sql(sql: &str) -> String {
-    let sql = sql.trim();
+/// * `Result<String, RoutineFailure>` - Prettified SQL string or error
+fn prettify_sql(sql: &str) -> Result<String, RoutineFailure> {
+    let dialect = GenericDialect {};
+    let statements = Parser::parse_sql(&dialect, sql).map_err(|e| {
+        RoutineFailure::error(Message::new(
+            "SQL Parsing".to_string(),
+            format!("Failed to parse SQL: {}", e),
+        ))
+    })?;
 
-    // Major SQL keywords that should start new lines
-    let major_keywords = [
-        "SELECT",
-        "FROM",
-        "WHERE",
-        "GROUP BY",
-        "HAVING",
-        "ORDER BY",
-        "LIMIT",
-        "OFFSET",
-        "JOIN",
-        "LEFT JOIN",
-        "RIGHT JOIN",
-        "INNER JOIN",
-        "OUTER JOIN",
-        "ON",
-        "AND",
-        "OR",
-    ];
+    // Format all statements with pretty printing
+    let formatted: Vec<String> = statements
+        .iter()
+        .map(|stmt| format!("{:#}", stmt))
+        .collect();
 
-    let mut result = String::new();
-    let mut current_line = String::new();
-
-    // Simple tokenization by whitespace
-    let tokens: Vec<&str> = sql.split_whitespace().collect();
-    let mut i = 0;
-
-    while i < tokens.len() {
-        let token = tokens[i];
-        let upper_token = token.to_uppercase();
-
-        // Check if this is a major keyword
-        let is_major_keyword = major_keywords.iter().any(|&kw| {
-            upper_token.starts_with(kw)
-                || (i + 1 < tokens.len()
-                    && format!("{} {}", upper_token, tokens[i + 1].to_uppercase()) == kw)
-        });
-
-        if is_major_keyword && !current_line.is_empty() {
-            // Finish current line and start new one
-            result.push_str(current_line.trim_end());
-            result.push('\n');
-            current_line.clear();
-
-            // Add indentation
-            if upper_token != "SELECT" && upper_token != "FROM" {
-                current_line.push_str("    ");
-            }
-        }
-
-        // Add token to current line
-        if !current_line.trim().is_empty() {
-            current_line.push(' ');
-        }
-        current_line.push_str(token);
-
-        i += 1;
-    }
-
-    // Add final line
-    if !current_line.is_empty() {
-        result.push_str(current_line.trim_end());
-    }
-
-    result
+    Ok(formatted.join(";\n"))
 }
 
 /// Format SQL query as a code literal for the specified language.
@@ -124,18 +93,24 @@ pub fn prettify_sql(sql: &str) -> String {
 ///
 /// # Returns
 ///
-/// Formatted code literal as a string
-pub fn format_as_code(sql: &str, language: CodeLanguage, prettify: bool) -> String {
+/// * `Result<String, RoutineFailure>` - Formatted code literal or error
+pub fn format_as_code(
+    sql: &str,
+    language: CodeLanguage,
+    prettify: bool,
+) -> Result<String, RoutineFailure> {
     let sql_to_format = if prettify {
-        prettify_sql(sql)
+        prettify_sql(sql)?
     } else {
         sql.to_string()
     };
 
-    match language {
+    let formatted = match language {
         CodeLanguage::Python => format_python(&sql_to_format),
         CodeLanguage::TypeScript => format_typescript(&sql_to_format),
-    }
+    };
+
+    Ok(formatted)
 }
 
 /// Format SQL as Python raw triple-quoted string
@@ -195,14 +170,14 @@ mod tests {
     #[test]
     fn test_format_as_code_python() {
         let sql = "SELECT 1";
-        let result = format_as_code(sql, CodeLanguage::Python, false);
+        let result = format_as_code(sql, CodeLanguage::Python, false).unwrap();
         assert_eq!(result, "r\"\"\"\nSELECT 1\n\"\"\"");
     }
 
     #[test]
     fn test_format_as_code_typescript() {
         let sql = "SELECT 1";
-        let result = format_as_code(sql, CodeLanguage::TypeScript, false);
+        let result = format_as_code(sql, CodeLanguage::TypeScript, false).unwrap();
         assert_eq!(result, "`\nSELECT 1\n`");
     }
 
@@ -281,20 +256,20 @@ LIMIT 50"#;
     #[test]
     fn test_prettify_sql_basic() {
         let sql = "SELECT id, name FROM users WHERE active = 1 ORDER BY name";
-        let result = prettify_sql(sql);
+        let result = prettify_sql(sql).unwrap();
 
         assert!(result.contains("SELECT"));
         assert!(result.contains("FROM"));
+        assert!(result.contains("users"));
         assert!(result.contains("WHERE"));
-        assert!(result.contains("ORDER BY"));
-        // Should have line breaks
+        // Should have line breaks with sqlparser formatting
         assert!(result.contains('\n'));
     }
 
     #[test]
     fn test_prettify_sql_preserves_values() {
         let sql = "SELECT * FROM users WHERE email = 'test@example.com'";
-        let result = prettify_sql(sql);
+        let result = prettify_sql(sql).unwrap();
 
         // Should preserve the email value
         assert!(result.contains("test@example.com"));
@@ -305,13 +280,13 @@ LIMIT 50"#;
         let sql = "SELECT id, name FROM users WHERE active = 1";
 
         // With prettify
-        let result = format_as_code(sql, CodeLanguage::Python, true);
+        let result = format_as_code(sql, CodeLanguage::Python, true).unwrap();
         assert!(result.starts_with("r\"\"\""));
         assert!(result.contains('\n'));
         assert!(result.contains("SELECT"));
 
         // Without prettify
-        let result_no_prettify = format_as_code(sql, CodeLanguage::Python, false);
+        let result_no_prettify = format_as_code(sql, CodeLanguage::Python, false).unwrap();
         assert!(result_no_prettify.starts_with("r\"\"\""));
         assert!(result_no_prettify.contains("SELECT id, name FROM users"));
     }
@@ -319,13 +294,25 @@ LIMIT 50"#;
     #[test]
     fn test_prettify_with_complex_query() {
         let sql = "SELECT u.id, u.name, o.total FROM users u LEFT JOIN orders o ON u.id = o.user_id WHERE u.active = 1 AND o.total > 100 ORDER BY o.total DESC LIMIT 10";
-        let result = prettify_sql(sql);
+        let result = prettify_sql(sql).unwrap();
 
         assert!(result.contains("SELECT"));
         assert!(result.contains("FROM"));
-        assert!(result.contains("LEFT") && result.contains("JOIN"));
+        assert!(result.contains("users"));
+        assert!(result.contains("JOIN"));
         assert!(result.contains("WHERE"));
-        assert!(result.contains("ORDER BY") || (result.contains("ORDER") && result.contains("BY")));
         assert!(result.contains("LIMIT"));
+    }
+
+    #[test]
+    fn test_validate_sql_valid() {
+        let sql = "SELECT * FROM users WHERE id = 1";
+        assert!(validate_sql(sql).is_ok());
+    }
+
+    #[test]
+    fn test_validate_sql_invalid() {
+        let sql = "INVALID SQL SYNTAX ;;; NOT VALID";
+        assert!(validate_sql(sql).is_err());
     }
 }

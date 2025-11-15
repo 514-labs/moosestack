@@ -89,12 +89,16 @@ pub async fn query(
     let sql_query = get_sql_input(sql, file)?;
     info!("Executing SQL: {}", sql_query);
 
+    // Validate SQL syntax before any operation
+    use crate::cli::routines::format_query::validate_sql;
+    validate_sql(&sql_query)?;
+
     // If format_query flag is present, format and exit without executing
     if let Some(lang_str) = format_query {
         use crate::cli::routines::format_query::{format_as_code, CodeLanguage};
 
         let language = CodeLanguage::from_str(&lang_str)?;
-        let formatted = format_as_code(&sql_query, language, prettify);
+        let formatted = format_as_code(&sql_query, language, prettify)?;
 
         println!("{}", formatted);
 
