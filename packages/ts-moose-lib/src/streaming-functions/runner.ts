@@ -492,6 +492,12 @@ const handleMessage = async (
       payloadBuffer = payloadBuffer.subarray(5);
     }
     const parsedData = JSON.parse(payloadBuffer.toString(), jsonDateReviver);
+
+    // Log payload before transformation if enabled
+    if (process.env.MOOSE_LOG_PAYLOADS === "true") {
+      logger.log(`[PAYLOAD:STREAM_IN] ${JSON.stringify(parsedData)}`);
+    }
+
     const transformedData = await Promise.all(
       streamingFunctionWithConfigList.map(async ([fn, config]) => {
         try {
@@ -545,7 +551,7 @@ const handleMessage = async (
       }),
     );
 
-    return transformedData
+    const processedMessages = transformedData
       .map((userFunctionOutput, i) => {
         const [_, config] = streamingFunctionWithConfigList[i];
         if (userFunctionOutput) {
@@ -578,6 +584,19 @@ const handleMessage = async (
       })
       .flat()
       .filter((item) => item !== undefined && item !== null);
+
+    // Log payload after transformation if enabled (what we're actually sending to Kafka)
+    if (process.env.MOOSE_LOG_PAYLOADS === "true") {
+      if (processedMessages.length > 0) {
+        // msg.value is already JSON stringified, just construct array format
+        const outgoingJsonStrings = processedMessages.map((msg) => msg.value);
+        logger.log(`[PAYLOAD:STREAM_OUT] [${outgoingJsonStrings.join(",")}]`);
+      } else {
+        logger.log(`[PAYLOAD:STREAM_OUT] (no output from streaming function)`);
+      }
+    }
+
+    return processedMessages;
   } catch (e) {
     // TODO: Track failure rate
     logger.error(`Failed to transform data`);
