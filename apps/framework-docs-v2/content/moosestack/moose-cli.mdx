@@ -223,6 +223,24 @@ moose query -c python -p "SELECT id, name FROM users WHERE active = 1 ORDER BY n
 #     ORDER BY name
 # """
 
+# Use heredoc for multi-line SQL queries (no need to escape quotes)
+moose query -c python -p <<EOF
+SELECT
+    b.id,
+    b.name,
+    b.email,
+    COUNT(o.id) as order_count,
+    SUM(o.total) as total_spent
+FROM local.Bar b
+LEFT JOIN local.Orders o ON b.id = o.user_id
+WHERE b.status = 'active'
+    AND o.created_at > '2024-01-01'
+GROUP BY b.id, b.name, b.email
+HAVING COUNT(o.id) > 5
+ORDER BY total_spent DESC
+LIMIT 50
+EOF
+
 # Supported languages: python (py), typescript (ts)
 # Prettify flag: -p, --prettify (only works with --format-query)
 ```
