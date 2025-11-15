@@ -226,6 +226,13 @@ export type BaseOlapConfig<T> = (
    * When not specified, uses the global ClickHouse config database.
    */
   database?: string;
+  /**
+   * Optional cluster name for ON CLUSTER support.
+   * Use this to enable replicated tables across ClickHouse clusters.
+   * The cluster must be defined in config.toml (dev environment only).
+   * Example: cluster: "prod_cluster"
+   */
+  cluster?: string;
 };
 
 /**
@@ -524,6 +531,20 @@ export class OlapTable<T> extends TypedBase<T, OlapConfig<T>> {
     if (hasFields && hasExpr) {
       throw new Error(
         `OlapTable ${name}: Provide either orderByFields or orderByExpression, not both.`,
+      );
+    }
+
+    // Validate cluster and explicit replication params are not both specified
+    const hasCluster = typeof (resolvedConfig as any).cluster === "string";
+    const hasKeeperPath =
+      typeof (resolvedConfig as any).keeperPath === "string";
+    const hasReplicaName =
+      typeof (resolvedConfig as any).replicaName === "string";
+
+    if (hasCluster && (hasKeeperPath || hasReplicaName)) {
+      throw new Error(
+        `OlapTable ${name}: Cannot specify both 'cluster' and explicit replication params ('keeperPath' or 'replicaName'). ` +
+          `Use 'cluster' for auto-injected params, or use explicit 'keeperPath' and 'replicaName' without 'cluster'.`,
       );
     }
 

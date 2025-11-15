@@ -84,6 +84,8 @@ You will commit the entire `migrations/` directory to version control, and Moose
 
 <Callout type="info" title="Why edit the plan?" compact>
 Moose makes some assumptions about your schema changes, such as renaming a column instead of dropping and adding. You can modify the plan to override these assumptions.
+
+Note: The `cluster` field controls which ClickHouse cluster Moose uses for `ON CLUSTER` DDL operations. It's a deployment directive, not a schema property, so changing it won't trigger table recreation.
 </Callout>
 
 Open `plan.yaml` in your PR. Operations are ordered (teardown first, then setup) to avoid dependency issues. Review like regular code. You can also edit the plan to override the default assumptions Moose makes.

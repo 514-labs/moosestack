@@ -121,6 +121,10 @@ class OlapConfig(BaseModel):
         life_cycle: Determines how changes in code will propagate to the resources.
         settings: Optional table-level settings that can be modified with ALTER TABLE MODIFY SETTING.
                   These are alterable settings that can be changed without recreating the table.
+        cluster: Optional cluster name for ON CLUSTER support in ClickHouse.
+                 Use this to enable replicated tables across ClickHouse clusters.
+                 The cluster must be defined in moose.config.toml (dev environment only).
+                 Example: cluster="prod_cluster"
     """
     order_by_fields: list[str] = []
     order_by_expression: Optional[str] = None
@@ -133,6 +137,8 @@ class OlapConfig(BaseModel):
     settings: Optional[dict[str, str]] = None
     # Optional table-level TTL expression (without leading 'TTL')
     ttl: Optional[str] = None
+    # Optional cluster name for ON CLUSTER support in ClickHouse
+    cluster: Optional[str] = None
 
     # Optional secondary/data-skipping indexes
     class TableIndex(BaseModel):
@@ -227,6 +233,29 @@ class OlapTable(TypedMooseResource, Generic[T]):
                 f"OlapTable with name {name} and version {config.version or 'unversioned'} already exists"
             )
         _tables[registry_key] = self
+
+        # Validate cluster and explicit replication params are not both specified
+        if config.cluster:
+            from moose_lib.blocks import (
+                ReplicatedMergeTreeEngine,
+                ReplicatedReplacingMergeTreeEngine,
+                ReplicatedAggregatingMergeTreeEngine,
+                ReplicatedSummingMergeTreeEngine,
+            )
+
+            if isinstance(config.engine, (
+                ReplicatedMergeTreeEngine,
+                ReplicatedReplacingMergeTreeEngine,
+                ReplicatedAggregatingMergeTreeEngine,
+                ReplicatedSummingMergeTreeEngine,
+            )):
+                if config.engine.keeper_path is not None or config.engine.replica_name is not None:
+                    raise ValueError(
+                        f"OlapTable {name}: Cannot specify both 'cluster' and explicit replication params "
+                        f"('keeper_path' or 'replica_name'). "
+                        f"Use 'cluster' for auto-injected params, or use explicit 'keeper_path' and "
+                        f"'replica_name' without 'cluster'."
+                    )
 
         # Check if using legacy enum-based engine configuration
         if config.engine and isinstance(config.engine, ClickHouseEngines):

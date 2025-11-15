@@ -256,6 +256,9 @@ struct PartialTable {
     /// Optional database name for multi-database support
     #[serde(default)]
     pub database: Option<String>,
+    /// Optional cluster name for ON CLUSTER support
+    #[serde(default)]
+    pub cluster: Option<String>,
 }
 
 /// Represents a topic definition from user code before it's converted into a complete [`Topic`].
@@ -699,6 +702,7 @@ impl PartialInfrastructureMap {
                     indexes: partial_table.indexes.clone(),
                     table_ttl_setting,
                     database: partial_table.database.clone(),
+                    cluster_name: partial_table.cluster.clone(),
                 };
                 Ok((table.id(default_database), table))
             })

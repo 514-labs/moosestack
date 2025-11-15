@@ -210,6 +210,8 @@ interface TableJson {
   ttl?: string;
   /** Optional database name for multi-database support. */
   database?: string;
+  /** Optional cluster name for ON CLUSTER support. */
+  cluster?: string;
 }
 /**
  * Represents a target destination for data flow, typically a stream.
@@ -726,6 +728,7 @@ export const toInfraMap = (registry: typeof moose_internal) => {
         })) || [],
       ttl: table.config.ttl,
       database: table.config.database,
+      cluster: table.config.cluster,
     };
   });
 

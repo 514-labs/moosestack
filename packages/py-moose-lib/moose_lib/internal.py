@@ -198,6 +198,7 @@ class TableConfig(BaseModel):
         metadata: Optional metadata for the table.
         life_cycle: Lifecycle management setting for the table.
         table_settings: Optional table-level settings that can be modified with ALTER TABLE MODIFY SETTING.
+        cluster: Optional cluster name for ON CLUSTER support in ClickHouse.
     """
     model_config = model_config
 
@@ -214,6 +215,7 @@ class TableConfig(BaseModel):
     indexes: list[OlapConfig.TableIndex] = []
     ttl: Optional[str] = None
     database: Optional[str] = None
+    cluster: Optional[str] = None
 
 
 class TopicConfig(BaseModel):
@@ -696,6 +698,7 @@ def to_infra_map() -> dict:
             indexes=table.config.indexes,
             ttl=table.config.ttl,
             database=table.config.database,
+            cluster=table.config.cluster,
         )
 
     for name, stream in get_streams().items():

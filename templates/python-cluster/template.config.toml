@@ -1,0 +1,22 @@
+language = "python"
+description = "Test-only template: Python project for testing ClickHouse cluster support"
+post_install_print = """
+Test Template: ClickHouse Cluster Support
+
+This template is designed for E2E testing of ON CLUSTER functionality.
+
+---------------------------------------------------------
+
+📂 Go to your project directory:
+    $ cd {project_dir}
+
+📦 Install Dependencies:
+    $ pip install -e .
+
+🛠️ Start dev server:
+    $ moose dev
+"""
+default_sloan_telemetry="standard"
+
+visible=false
+

@@ -1070,17 +1070,110 @@ cloud_replicated = OlapTable[Record]("cloud_records", OlapConfig(
   </LanguageTabContent>
 </LanguageTabs>
 
-<Callout type="info" title="Replication Parameters">
-The `keeper_path` and `replica_name` parameters are **optional** for replicated engines:
+##### Configuring Replication
 
-- **Omit both parameters** (recommended): Moose uses smart defaults that work in both ClickHouse Cloud and self-managed environments. The default path pattern `/clickhouse/tables/{uuid}/{shard}` with replica `{replica}` works automatically with Atomic databases (default in modern ClickHouse).
-  
-- **Provide custom paths**: You can still specify both parameters explicitly if you need custom replication paths for your self-managed cluster.
+Replicated engines support three configuration approaches. Choose the one that fits your deployment:
 
-**Note**: Both parameters must be provided together, or both omitted. The `{uuid}`, `{shard}`, and `{replica}` macros are automatically substituted by ClickHouse at runtime.
+###### Default
+
+Omit all replication parameters. Moose uses smart defaults that work in both ClickHouse Cloud and self-managed environments:
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```ts filename="DefaultReplication.ts" copy
+const table = new OlapTable<Record>("my_table", {
+  engine: ClickHouseEngines.ReplicatedMergeTree,
+  orderByFields: ["id"]
+  // No keeper_path, replica_name, or cluster needed
+});
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```py filename="DefaultReplication.py" copy
+table = OlapTable[Record]("my_table", OlapConfig(
+    engine=ReplicatedMergeTreeEngine(),  # No parameters
+    order_by_fields=["id"]
+))
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+Moose auto-injects: `/clickhouse/tables/{database}/{shard}/{table_name}` and `{replica}` in local development. ClickHouse Cloud uses its own patterns automatically.
+
+###### Cluster
+
+For multi-node deployments, specify a cluster name to use `ON CLUSTER` DDL operations:
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```ts filename="ClusterReplication.ts" copy
+const table = new OlapTable<Record>("my_table", {
+  engine: ClickHouseEngines.ReplicatedMergeTree,
+  orderByFields: ["id"],
+  cluster: "default"  // References cluster from moose.config.toml
+});
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```py filename="ClusterReplication.py" copy
+table = OlapTable[Record]("my_table", OlapConfig(
+    engine=ReplicatedMergeTreeEngine(),
+    order_by_fields=["id"],
+    cluster="default"  # References cluster from moose.config.toml
+))
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+**Configuration in `moose.config.toml`:**
+```toml
+[[clickhouse_config.clusters]]
+name = "default"
+```
+
+**Use when:**
+- Running multi-node self-managed ClickHouse with cluster configuration
+- Need `ON CLUSTER` DDL for distributed operations
+
+###### Replication Paths
+
+For custom replication topology, specify both `keeper_path` and `replica_name`:
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```ts filename="ExplicitReplication.ts" copy
+const table = new OlapTable<Record>("my_table", {
+  engine: ClickHouseEngines.ReplicatedMergeTree,
+  keeperPath: "/clickhouse/tables/{database}/{shard}/my_table",
+  replicaName: "{replica}",
+  orderByFields: ["id"]
+});
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```py filename="ExplicitReplication.py" copy
+table = OlapTable[Record]("my_table", OlapConfig(
+    engine=ReplicatedMergeTreeEngine(
+        keeper_path="/clickhouse/tables/{database}/{shard}/my_table",
+        replica_name="{replica}"
+    ),
+    order_by_fields=["id"]
+))
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+**Use when:**
+- Need custom replication paths for advanced configurations
+- Both parameters must be provided together
+
+<Callout type="warning">
+**Cannot mix approaches:** Specifying both `cluster` and explicit `keeper_path`/`replica_name` will cause an error. Choose one approach.
+
+**Cluster is a deployment directive:** Changing `cluster` won't recreate your table—it only affects future DDL operations.
+</Callout>
 
 For more details, see the [ClickHouse documentation on data replication](https://clickhouse.com/docs/en/engines/table-engines/mergetree-family/replication).
-</Callout>
 
 <LanguageTabs>
   <LanguageTabContent value="python">
