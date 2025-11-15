@@ -205,6 +205,10 @@ pub enum Commands {
         /// Maximum number of rows to return (applied via ClickHouse settings)
         #[arg(short, long, default_value = "10000")]
         limit: u64,
+
+        /// Format query as code literal (python|typescript). Skips execution.
+        #[arg(short = 'c', long = "format-query", value_name = "LANGUAGE")]
+        format_query: Option<String>,
     },
 }
 
