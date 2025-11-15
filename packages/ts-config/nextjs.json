@@ -1,15 +1,10 @@
 {
   "$schema": "https://json.schemastore.org/tsconfig",
-  "display": "Next.js",
+  "display": "Next.js App",
   "extends": "./base.json",
   "compilerOptions": {
-    "plugins": [{ "name": "next" }],
-    "moduleResolution": "NodeNext",
-    "allowJs": true,
-    "jsx": "preserve",
-    "noEmit": true,
-    "paths": {
-      "@ui/*": ["../../packages/design-system/*"]
-    }
+    "declaration": false,
+    "declarationMap": false,
+    "emitDeclarationOnly": false
   }
 }
