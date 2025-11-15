@@ -5,7 +5,8 @@
 
 use crate::cli::display::Message;
 use crate::cli::routines::RoutineFailure;
-use sqlparser::dialect::GenericDialect;
+use sqlparser::ast::Statement;
+use sqlparser::dialect::ClickHouseDialect;
 use sqlparser::parser::Parser;
 
 /// Supported languages for code formatting
@@ -32,6 +33,17 @@ impl CodeLanguage {
     }
 }
 
+/// Parse SQL using ClickHouse dialect
+fn parse_sql(sql: &str) -> Result<Vec<Statement>, RoutineFailure> {
+    let dialect = ClickHouseDialect {};
+    Parser::parse_sql(&dialect, sql).map_err(|e| {
+        RoutineFailure::error(Message::new(
+            "SQL Parsing".to_string(),
+            format!("Invalid SQL syntax: {}", e),
+        ))
+    })
+}
+
 /// Validate SQL syntax using sqlparser.
 ///
 /// Parses the SQL query to ensure it's syntactically valid before formatting or execution.
@@ -44,13 +56,7 @@ impl CodeLanguage {
 ///
 /// * `Result<(), RoutineFailure>` - Ok if valid, error with helpful message if invalid
 pub fn validate_sql(sql: &str) -> Result<(), RoutineFailure> {
-    let dialect = GenericDialect {};
-    Parser::parse_sql(&dialect, sql).map_err(|e| {
-        RoutineFailure::error(Message::new(
-            "SQL Validation".to_string(),
-            format!("Invalid SQL syntax: {}", e),
-        ))
-    })?;
+    parse_sql(sql)?;
     Ok(())
 }
 
@@ -66,13 +72,7 @@ pub fn validate_sql(sql: &str) -> Result<(), RoutineFailure> {
 ///
 /// * `Result<String, RoutineFailure>` - Prettified SQL string or error
 fn prettify_sql(sql: &str) -> Result<String, RoutineFailure> {
-    let dialect = GenericDialect {};
-    let statements = Parser::parse_sql(&dialect, sql).map_err(|e| {
-        RoutineFailure::error(Message::new(
-            "SQL Parsing".to_string(),
-            format!("Failed to parse SQL: {}", e),
-        ))
-    })?;
+    let statements = parse_sql(sql)?;
 
     // Format all statements with pretty printing
     let formatted: Vec<String> = statements
