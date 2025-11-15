@@ -190,6 +190,62 @@ moose query "SELECT * FROM events" --limit 100
 - One JSON object per row
 - Row count summary at end
 
+#### Formatting Queries for Code
+
+Use the `-c/--format-query` flag to format SQL queries as code literals instead of executing them:
+
+```bash
+# Format as Python (raw string)
+moose query -c python "SELECT * FROM users WHERE email REGEXP '[a-z]+'"
+# Output:
+# r"""
+# SELECT * FROM users WHERE email REGEXP '[a-z]+'
+# """
+
+# Format as TypeScript (template literal)
+moose query -c typescript "SELECT * FROM events"
+# Output:
+# `
+# SELECT * FROM events
+# `
+
+# Works with file input
+moose query -c python -f my_query.sql
+
+# Prettify SQL before formatting (adds line breaks and indentation)
+moose query -c python -p "SELECT id, name FROM users WHERE active = 1 ORDER BY name"
+# Output:
+# r"""
+# SELECT id, name
+# FROM users
+#     WHERE active = 1
+#     ORDER BY name
+# """
+
+# Use heredoc for multi-line SQL queries (no need to escape quotes)
+moose query -c python -p <<EOF
+SELECT
+    b.id,
+    b.name,
+    b.email,
+    COUNT(o.id) as order_count,
+    SUM(o.total) as total_spent
+FROM local.Bar b
+LEFT JOIN local.Orders o ON b.id = o.user_id
+WHERE b.status = 'active'
+    AND o.created_at > '2024-01-01'
+GROUP BY b.id, b.name, b.email
+HAVING COUNT(o.id) > 5
+ORDER BY total_spent DESC
+LIMIT 50
+EOF
+
+# Supported languages: python (py), typescript (ts)
+# Prettify flag: -p, --prettify (only works with --format-query)
+```
+
+**Use case:** Iterate on SQL queries in the CLI, then format and paste into your application code without manual escaping. Use `--prettify` to clean up messy one-line queries.
+
 ## Generation Commands
 
 ### Generate Hash Token
