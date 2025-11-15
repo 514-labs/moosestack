@@ -364,6 +364,78 @@ describe("Backward Compatibility Tests", function () {
         try {
           const TEST_ADMIN_TOKEN =
             "deadbeefdeadbeefdeadbeefdeadbeef.0123456789abcdef0123456789abcdef";
+
+          // First, fetch the infrastructure maps to debug the comparison
+          console.log("\n=== FETCHING INFRASTRUCTURE MAPS FOR DEBUGGING ===");
+
+          // Fetch remote inframap from the old CLI dev server
+          try {
+            const remoteInframapResponse = await fetch(
+              "http://localhost:4000/admin/inframap",
+              {
+                headers: {
+                  Authorization: `Bearer ${TEST_ADMIN_TOKEN}`,
+                },
+              },
+            );
+            const remoteInframap = await remoteInframapResponse.json();
+            console.log("\n📡 REMOTE INFRAMAP (from v0.6.201 CLI dev server):");
+            console.log(JSON.stringify(remoteInframap, null, 2));
+
+            // Focus on SimpleArrays table if it exists
+            const remoteSimpleArrays = remoteInframap.tables?.find(
+              (t: any) => t.name === "SimpleArrays",
+            );
+            if (remoteSimpleArrays) {
+              console.log("\n🔍 REMOTE SimpleArrays Table:");
+              console.log(JSON.stringify(remoteSimpleArrays, null, 2));
+            }
+          } catch (error: any) {
+            console.error("Failed to fetch remote inframap:", error.message);
+          }
+
+          // Get local inframap by running the new CLI's ls command
+          try {
+            const { stdout: lsOutput } = await execAsync(
+              `"${CLI_PATH}" ls --json`,
+              {
+                cwd: TEST_PROJECT_DIR,
+                env:
+                  config.language === "python" ?
+                    {
+                      ...process.env,
+                      VIRTUAL_ENV: path.join(TEST_PROJECT_DIR, ".venv"),
+                      PATH: `${path.join(TEST_PROJECT_DIR, ".venv", "bin")}:${process.env.PATH}`,
+                      TEST_AWS_ACCESS_KEY_ID: "test-access-key-id",
+                      TEST_AWS_SECRET_ACCESS_KEY: "test-secret-access-key",
+                    }
+                  : {
+                      ...process.env,
+                      TEST_AWS_ACCESS_KEY_ID: "test-access-key-id",
+                      TEST_AWS_SECRET_ACCESS_KEY: "test-secret-access-key",
+                    },
+              },
+            );
+            const localInframap = JSON.parse(lsOutput);
+            console.log(
+              "\n💻 LOCAL INFRAMAP (from NEW CLI analyzing current code):",
+            );
+            console.log(JSON.stringify(localInframap, null, 2));
+
+            // Focus on SimpleArrays table if it exists
+            const localSimpleArrays = localInframap.tables?.find(
+              (t: any) => t.name === "SimpleArrays",
+            );
+            if (localSimpleArrays) {
+              console.log("\n🔍 LOCAL SimpleArrays Table:");
+              console.log(JSON.stringify(localSimpleArrays, null, 2));
+            }
+          } catch (error: any) {
+            console.error("Failed to get local inframap:", error.message);
+          }
+
+          console.log("\n=== RUNNING MOOSE PLAN ===\n");
+
           const { stdout, stderr } = await execAsync(
             `"${CLI_PATH}" plan --url "http://localhost:4000" --token "${TEST_ADMIN_TOKEN}"`,
             {

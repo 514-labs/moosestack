@@ -567,7 +567,7 @@ async fn diagnose_clickhouse(
             metadata,
         };
 
-        let engine = table.engine.as_ref();
+        let engine = Some(&table.engine);
 
         // Run each applicable component-specific provider
         for provider in &component_providers {
