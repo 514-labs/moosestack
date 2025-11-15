@@ -185,7 +185,7 @@ class QueryClient:
     def __call__(self, input, variables):
         return self.execute(input, variables)
 
-    def execute(self, input: Union[str, Query], variables = None, row_type: Type[BaseModel] = None):
+    def execute(self, input: Union[str, Query], variables=None, row_type: Type[BaseModel] = None):
         """
         Execute a query.
 
@@ -212,7 +212,8 @@ class QueryClient:
         values: dict[str, Any] = {}
         preview_params = {}
 
-        for i, (_, variable_name, _, _) in enumerate(Formatter().parse(input)):
+        i = 0
+        for _, variable_name, _, _ in Formatter().parse(input):
             if variable_name:
                 value = variables[variable_name]
                 if isinstance(value, list) and len(value) == 1:
@@ -220,13 +221,21 @@ class QueryClient:
                     value = value[0]
 
                 if isinstance(value, Column) or isinstance(value, OlapTable):
-                    params[variable_name] = f'{{p{i}: Identifier}}'
-                    values[f'p{i}'] = value.name
+                    if isinstance(value, OlapTable) and value.config.database:
+                        params[variable_name] = f'{{p{i}: Identifier}}.{{p{i + 1}: Identifier}}'
+                        values[f'p{i}'] = value.config.database
+                        values[f'p{i + 1}'] = value.name
+                        i += 2
+                    else:
+                        params[variable_name] = f'{{p{i}: Identifier}}'
+                        values[f'p{i}'] = value.name
+                        i += 1
                 else:
                     from moose_lib.utilities.sql import clickhouse_param_type_for_value
                     ch_type = clickhouse_param_type_for_value(value)
                     params[variable_name] = f'{{p{i}: {ch_type}}}'
                     values[f'p{i}'] = value
+                    i += 1
                 preview_params[variable_name] = self._format_value_for_preview(value)
 
         clickhouse_query = input.format_map(params)
@@ -289,6 +298,9 @@ class QueryClient:
         # DateTime
         if isinstance(value, datetime):
             return f"'{value.strftime('%Y-%m-%d %H:%M:%S')}'"
+
+        if isinstance(value, OlapTable) and value.config.database:
+            return f"{value.config.database}.{value.name}"
 
         if isinstance(value, Column) or isinstance(value, OlapTable):
             return value.name
