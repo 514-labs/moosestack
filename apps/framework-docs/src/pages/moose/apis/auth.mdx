@@ -17,6 +17,7 @@ Choose the method that fits your use case, or use both together with custom conf
 ## Do you want to use API Keys?
 
 API keys are the simplest way to secure your Moose endpoints. They're ideal for:
+
 - Internal applications and microservices
 - Getting started quickly with authentication
 - Scenarios where you control both client and server
@@ -34,6 +35,7 @@ moose generate hash-token
 ```
 
 **Output:**
+
 - **ENV API Keys**: Hashed key for environment variables (use this in your server configuration)
 - **Bearer Token**: Plain-text token for client applications (use this in `Authorization` headers)
 
@@ -44,6 +46,7 @@ moose generate hash-token
 ### Step 2: Configure API Keys with Environment Variables
 
 Set environment variables with the **hashed** API keys you generated:
+
 ```bash
 # For ingest endpoints
 export MOOSE_INGEST_API_KEY='your_pbkdf2_hmac_sha256_hashed_key'
@@ -86,6 +89,7 @@ fetch('https://your-moose-instance.com/api/endpoint', {
 ## Do you want to use JWTs?
 
 JWT authentication integrates with existing identity providers and follows standard token-based authentication patterns. Use JWTs when:
+
 - You have an existing identity provider (Auth0, Okta, etc.)
 - You need user-specific authentication and authorization
 - You want standard OAuth 2.0 / OpenID Connect flows
@@ -121,9 +125,9 @@ audience = "my-moose-app"
 You can also set these values as environment variables:
 
 ```bash filename=".env" copy
-MOOSE_JWT_PUBLIC_KEY=your_jwt_public_key # PEM-formatted RSA public key (overrides `secret` in `moose.config.toml`)
-MOOSE_JWT_ISSUER=your_jwt_issuer # Expected JWT issuer (overrides `issuer` in `moose.config.toml`)
-MOOSE_JWT_AUDIENCE=your_jwt_audience # Expected JWT audience (overrides `audience` in `moose.config.toml`)
+MOOSE_JWT__SECRET=your_jwt_public_key # PEM-formatted RSA public key (overrides `secret` in `moose.config.toml`)
+MOOSE_JWT__ISSUER=your_jwt_issuer # Expected JWT issuer (overrides `issuer` in `moose.config.toml`)
+MOOSE_JWT__AUDIENCE=your_jwt_audience # Expected JWT audience (overrides `audience` in `moose.config.toml`)
 ```
 
 ### Step 2: Make Authenticated Requests
@@ -169,10 +173,12 @@ MOOSE_CONSUMPTION_API_KEY='your_pbkdf2_hmac_sha256_hashed_key'
 ```
 
 **For Ingest Endpoints (`/ingest/*`)**:
+
 - Attempts JWT validation first (RS256 signature check)
 - Falls back to API Key validation (PBKDF2 HMAC SHA256) if JWT fails
 
 **For Analytics Endpoints (`/api/*`)**:
+
 - Same fallback behavior as ingest endpoints
 
 This allows you to use either authentication method for your clients.
@@ -234,6 +240,7 @@ enforce_on_all_consumptions_apis = false
 Admin endpoints use API key authentication exclusively (configured separately from ingest/analytics endpoints).
 
 **Configuration precedence** (highest to lowest):
+
 1. `--token` CLI parameter (plain-text token)
 2. `MOOSE_ADMIN_TOKEN` environment variable (plain-text token)
 3. `admin_api_key` in `moose.config.toml` (hashed token)
@@ -267,4 +274,5 @@ moose remote plan
 
 <Callout type="warning">
   Never commit plain-text tokens to version control. Use hashed keys in configuration files and environment variables for production.
-</Callout> 
+</Callout>
+

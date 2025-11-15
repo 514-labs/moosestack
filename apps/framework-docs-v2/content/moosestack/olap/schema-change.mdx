@@ -1,9 +1,200 @@
 ---
-title: Failed Migrations
-description: Handle failed migrations and schema changes
+title: Handling Failed Migrations
+description: Recover from failed migrations and safely achieve desired type changes
 order: 13
+category: olap
 ---
 
-# Failed Migrations
+import { Callout, LanguageTabs, LanguageTabContent } from "@/components/mdx";
 
-This page is a placeholder. Content migration pending.
+# Handling Failed Migrations
+
+One of the main benefits of the Moose local development environment is that you can detect breaking schema changes before they happen in production. This can be specifically useful for identifying incompatible data type changes when you change a column's data type and the generated migration cannot cast the existing data to the new type.
+
+This page describes how to recover from a failed migration in dev and gives a playbook for safely achieving the desired type change.
+
+## What happened
+
+You changed a column's data type on a table that already has data. The dev migration tried to run an in-place ALTER and ClickHouse created a mutation that failed (incompatible cast, nullability, defaults, etc.).
+
+Symptoms:
+- Failed migration in dev
+- A stuck mutation on the table
+- Reverting your code type alone doesn't help until the mutation is cleared
+
+## Quick recovery (dev)
+
+Follow these steps to get unblocked quickly.
+
+### View the terminal logs to see the failing mutation
+
+In your terminal, you should see a message like this:
+
+```txt filename="Terminal" copy
+⢹ Processing Infrastructure changes from file watcher
+  ~ Table events:
+      Column changes:
+        ~ value: String -> Float64
+  Applying: ALTER TABLE events MODIFY COLUMN value Float64
+  ClickHouse mutation created: mutation_id='00000001-0000-4000-8000-000000000123'
+  Error: Code: 368. Conversion failed: cannot parse 'abc' as Float64 (column: value)
+  Status: mutation failed; table may be partially transformed
+```
+
+Copy the mutation ID from the terminal logs and run the following command to kill the mutation.
+
+### Kill the mutation
+
+- If you have the `mutation_id`:
+```sql filename="ClickHouse" copy
+KILL MUTATION WHERE mutation_id = '<id>';
+```
+
+- If you didn't capture the ID, find it and kill by table:
+```sql filename="ClickHouse" copy
+SELECT mutation_id, command, is_done, latest_fail_reason
+FROM system.mutations
+WHERE database = currentDatabase() AND table = '<your_table>'
+ORDER BY create_time DESC;
+
+KILL MUTATION WHERE database = currentDatabase() AND table = '<your_table>';
+```
+
+ClickHouse ALTERs are implemented as asynchronous mutations, not transactional. If a mutation fails mid-way, some parts may have been rewritten while others were not, leaving the table partially transformed. The failed mutation also remains queued until you kill it. Clear the mutation first, then proceed.
+
+<Callout type="info" title="Coming Soon: Automatic mutation killing" compact>
+Soon, Moose will automatically generate a local DDL plan that kills the mutation and "rolls back" the transformation to the data that was changed before the failure occurred. 
+</Callout>
+
+### Revert your code to match the current DB schema
+
+- Change the column type in code back to the previous (working) type
+- Save your changes; let `moose dev` resync. You should be able to query the table again
+
+<Callout type="info" compact>
+If the table only has disposable dev data, you can also `TRUNCATE TABLE <db>.<table>` or drop/recreate the table and let `moose dev` rebuild it. Only do this in dev.
+</Callout>
+
+## Safely achieving the desired type change
+
+Instead of editing the column type in place, you can add a new column with the target type and backfill the data. This is the recommended approach.
+
+### Add a new column + backfill
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```ts filename="app/tables/events.ts" copy
+enum StatusEnum {
+  "active" = "active",
+  "inactive" = "inactive",
+}
+
+interface Event {
+  id: Key<string>;
+  name: string;
+  createdAt: Date;
+  status: string;
+  status_v2: StatusEnum; // New field - will trigger migration
+}
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```python filename="app/tables/events.py" copy
+# Python example would go here
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+Then, generate a plan to add the new column and backfill the data.
+
+```bash filename="Terminal" copy
+moose generate migration --url <YOUR_PRODUCTION_DATABASE_URL> --save --token <MOOSE_ADMIN_API_KEY>
+```
+
+Open the generated `/migrations/plan.yaml` file. You'll see the `AddTableColumn` operation to add the new column. Right after it, you can add a `RawSql` operation to backfill the data. Here you can write an `ALTER TABLE` statement to update the new column with the data from the old column:
+
+```yaml filename="migrations/plan.yaml" copy
+- AddTableColumn:
+    table: "events"
+    column:
+      name: "status_v2"
+      data_type:
+        Nullable:
+          nullable: "StatusEnum"
+      default: null
+- RawSql:
+    sql:
+      - "ALTER TABLE events UPDATE status_v2 = toStatusEnumOrNull(status) WHERE status_v2 IS NULL"
+    description: "Backfill status_v2 from status"
+```
+
+Then, when writing to the table, double write to both columns.
+
+This allows for all surrounding processes and applications that rely on the old column to continue working, and you can later deprecate the old column and rename the new column when you are ready.
+
+### Later, deprecate the old column and rename the new column
+
+Once the column backfill is complete and you are ready to deprecate the old column, you can rename the new column to the old column name and apply this in a new, subsequent PR.
+
+In your code, you can rename the column and deprecate the old column:
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```ts filename="app/tables/events.ts" copy
+interface Event {
+  id: Key<string>;
+  name: string;
+  createdAt: Date;
+  status_old: string; // rename status to status_old
+  status: StatusEnum; // rename status_v2 to status
+}
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```python filename="app/tables/events.py" copy
+class Event(BaseModel):
+    id: Key[str]
+    name: str
+    created_at: datetime
+    status_old: str
+    status: StatusEnum
+
+table = OlapTable[Event]("events")
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+Initially you'll see two `DeleteTableColumn` operations, followed by two `AddTableColumn` operations. 
+
+*IMPORTANT*: DELETE ALL FOUR GENERATED `DeleteTableColumn` AND `AddTableColumn` OPERATIONS WITH THE FOLLOWING:
+
+```yaml filename="migrations/plan.yaml" copy
+- RenameTableColumn:
+    table: "events"
+    before_column_name: "status"
+    after_column_name: "status_old"
+- RenameTableColumn:
+    table: "events"
+    before_column_name: "status_v2"
+    after_column_name: "status"
+```
+
+<Callout type="info" title="Dropping the old column" compact>
+Once the old column is no longer needed, you can drop it in a third PR.
+
+```yaml filename="migrations/plan.yaml" copy
+- DropTableColumn:
+    table: "events"
+    column_name: "status_old"
+```
+</Callout>
+
+## Common breaking cases
+
+- String -> Int/Float: can fail on non-numeric rows; prefer `toInt64OrNull(...)`/`toFloat64OrNull(...)` + backfill
+- Nullable(T) -> T (NOT NULL): fails if any NULLs exist and no default is provided; backfill then drop nullability
+- Narrowing types (e.g., Int64 -> Int32): fails if values overflow; validate and transform first
+
+<Callout type="info" title="Related" compact href="/moosestack/olap/planned-migrations" ctaLabel="Learn more" icon={false}>
+Read about migration planning and how to use it to safely manage schema changes in production.
+</Callout>

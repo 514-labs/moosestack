@@ -1,0 +1,23 @@
+{
+  "name": "moosestack-service",
+  "version": "0.0",
+  "scripts": {
+    "moose": "moose-cli",
+    "build": "moose-cli build --docker",
+    "dev": "moose-cli dev"
+  },
+  "dependencies": {
+    "@514labs/moose-lib": "latest",
+    "@modelcontextprotocol/sdk": "^1.20.2",
+    "express": "^5.1.0",
+    "ts-patch": "^3.3.0",
+    "tsconfig-paths": "^4.2.0",
+    "typia": "^9.6.1",
+    "zod": "^3.0.0"
+  },
+  "devDependencies": {
+    "@514labs/moose-cli": "latest",
+    "@types/express": "^5.0.3",
+    "@types/node": "^20.12.12"
+  }
+}

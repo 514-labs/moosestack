@@ -25,6 +25,18 @@ import {
   IconRocket,
   IconHandStop,
   IconGitCompare,
+  IconApps,
+  IconServer,
+  IconTarget,
+  IconChartLine,
+  IconMessageChatbot,
+  IconFileReport,
+  IconDatabaseImport,
+  IconChartDots,
+  IconUsers,
+  IconChartBarOff,
+  IconBrain,
+  IconTrendingUp,
   type IconProps,
 } from "@tabler/icons-react";
 
@@ -41,6 +53,7 @@ export interface NavPage {
   languages: Language[];
   icon?: TablerIcon;
   children?: NavItem[]; // Allow NavItem[] to support labels/separators within children
+  external?: boolean; // If true, indicates this is a standalone page (not part of the current section)
 }
 
 /**
@@ -82,7 +95,12 @@ export type NavigationConfig = NavItem[];
 /**
  * Top-level documentation section
  */
-export type DocumentationSection = "moosestack" | "hosting" | "ai";
+export type DocumentationSection =
+  | "moosestack"
+  | "hosting"
+  | "ai"
+  | "guides"
+  | "templates";
 
 /**
  * Navigation configuration for each documentation section
@@ -130,13 +148,14 @@ const moosestackNavigationConfig: NavigationConfig = [
     ],
   },
 
-  // Templates / Examples
+  // Templates / Examples (standalone page, shown in MooseStack nav with arrow)
   {
     type: "page",
-    slug: "moosestack/templates-examples",
+    slug: "templates",
     title: "Templates / Examples",
     icon: IconCode,
     languages: ["typescript", "python"],
+    external: true,
   },
 
   // Separator
@@ -195,6 +214,24 @@ const moosestackNavigationConfig: NavigationConfig = [
         type: "page",
         slug: "moosestack/app-api-frameworks/express",
         title: "Express",
+        languages: ["typescript"],
+      },
+      {
+        type: "page",
+        slug: "moosestack/app-api-frameworks/fastify",
+        title: "Fastify",
+        languages: ["typescript"],
+      },
+      {
+        type: "page",
+        slug: "moosestack/app-api-frameworks/koa",
+        title: "Koa",
+        languages: ["typescript"],
+      },
+      {
+        type: "page",
+        slug: "moosestack/app-api-frameworks/raw-nodejs",
+        title: "Raw Node.js",
         languages: ["typescript"],
       },
       {
@@ -568,20 +605,6 @@ const moosestackNavigationConfig: NavigationConfig = [
     title: "API Reference",
     icon: IconBook,
     languages: ["typescript", "python"],
-    children: [
-      {
-        type: "page",
-        slug: "moosestack/reference/ts-moose-lib",
-        title: "TypeScript",
-        languages: ["typescript"],
-      },
-      {
-        type: "page",
-        slug: "moosestack/reference/py-moose-lib",
-        title: "Python",
-        languages: ["python"],
-      },
-    ],
   },
   {
     type: "page",
@@ -831,6 +854,181 @@ const aiNavigationConfig: NavigationConfig = [
 ];
 
 /**
+ * Templates navigation configuration (empty - templates is a standalone page)
+ */
+const templatesNavigationConfig: NavigationConfig = [];
+
+/**
+ * Guides navigation configuration
+ */
+const guidesNavigationConfig: NavigationConfig = [
+  {
+    type: "page",
+    slug: "guides/index",
+    title: "Overview",
+    icon: IconChartArea,
+    languages: ["typescript", "python"],
+  },
+  { type: "separator" },
+  {
+    type: "section",
+    title: "Applications",
+    items: [
+      {
+        type: "page",
+        slug: "guides/applications/performant-dashboards",
+        title: "Performant Dashboards",
+        icon: IconChartLine,
+        languages: ["typescript", "python"],
+      },
+      {
+        type: "page",
+        slug: "guides/applications/in-app-chat-analytics",
+        title: "In-App Chat Analytics",
+        icon: IconMessageChatbot,
+        languages: ["typescript", "python"],
+      },
+      {
+        type: "page",
+        slug: "guides/applications/automated-reports",
+        title: "Automated Reports",
+        icon: IconFileReport,
+        languages: ["typescript", "python"],
+      },
+      {
+        type: "page",
+        slug: "guides/applications/going-to-production",
+        title: "Going to Production",
+        icon: IconCloudUpload,
+        languages: ["typescript", "python"],
+      },
+    ],
+  },
+  {
+    type: "section",
+    title: "Data Management",
+    items: [
+      {
+        type: "page",
+        slug: "guides/data-management/migrations",
+        title: "Migrations",
+        icon: IconDatabaseImport,
+        languages: ["typescript", "python"],
+      },
+      {
+        type: "page",
+        slug: "guides/data-management/impact-analysis",
+        title: "Impact Analysis",
+        icon: IconChartDots,
+        languages: ["typescript", "python"],
+      },
+      {
+        type: "page",
+        slug: "guides/data-management/change-data-capture",
+        title: "Change Data Capture",
+        icon: IconBolt,
+        languages: ["typescript", "python"],
+      },
+    ],
+  },
+  {
+    type: "section",
+    title: "Data Warehousing",
+    items: [
+      {
+        type: "page",
+        slug: "guides/data-warehousing/customer-data-platform",
+        title: "Customer Data Platform",
+        icon: IconUsers,
+        languages: ["typescript", "python"],
+      },
+      {
+        type: "page",
+        slug: "guides/data-warehousing/operational-analytics",
+        title: "Operational Analytics",
+        icon: IconChartBarOff,
+        languages: ["typescript", "python"],
+      },
+      {
+        type: "page",
+        slug: "guides/data-warehousing/startup-metrics",
+        title: "Startup Metrics",
+        icon: IconChartBar,
+        languages: ["typescript", "python"],
+      },
+      {
+        type: "page",
+        slug: "guides/data-warehousing/connectors",
+        title: "Connectors",
+        icon: IconStack,
+        languages: ["typescript", "python"],
+      },
+      {
+        type: "page",
+        slug: "guides/data-warehousing/pipelines",
+        title: "Pipelines",
+        icon: IconRoute,
+        languages: ["typescript", "python"],
+      },
+    ],
+  },
+  {
+    type: "section",
+    title: "Methodology",
+    items: [
+      {
+        type: "page",
+        slug: "guides/methodology/data-as-code",
+        title: "Data as Code",
+        icon: IconCode,
+        languages: ["typescript", "python"],
+      },
+      {
+        type: "page",
+        slug: "guides/methodology/dora-for-data",
+        title: "DORA for Data",
+        icon: IconTrendingUp,
+        languages: ["typescript", "python"],
+      },
+    ],
+  },
+  {
+    type: "section",
+    title: "Strategy",
+    items: [
+      {
+        type: "page",
+        slug: "guides/strategy/ai-enablement",
+        title: "AI Enablement",
+        icon: IconBrain,
+        languages: ["typescript", "python"],
+      },
+      {
+        type: "page",
+        slug: "guides/strategy/data-foundation",
+        title: "Data Foundation",
+        icon: IconDatabase,
+        languages: ["typescript", "python"],
+      },
+      {
+        type: "page",
+        slug: "guides/strategy/platform-engineering",
+        title: "Platform Engineering",
+        icon: IconServer,
+        languages: ["typescript", "python"],
+      },
+      {
+        type: "page",
+        slug: "guides/strategy/olap-evaluation",
+        title: "OLAP Evaluation",
+        icon: IconDatabase,
+        languages: ["typescript", "python"],
+      },
+    ],
+  },
+];
+
+/**
  * All section navigation configurations
  */
 export const sectionNavigationConfigs: Record<
@@ -852,6 +1050,16 @@ export const sectionNavigationConfigs: Record<
     title: "AI",
     nav: aiNavigationConfig,
   },
+  guides: {
+    id: "guides",
+    title: "Guides",
+    nav: guidesNavigationConfig,
+  },
+  templates: {
+    id: "templates",
+    title: "Templates",
+    nav: templatesNavigationConfig,
+  },
 };
 
 /**
@@ -871,10 +1079,19 @@ export function getNavigationConfig(
 
 /**
  * Get the documentation section from a pathname
+ * Returns null for the root path (/)
  */
-export function getSectionFromPathname(pathname: string): DocumentationSection {
+export function getSectionFromPathname(
+  pathname: string,
+): DocumentationSection | null {
   // Remove leading slash and split
   const path = pathname.startsWith("/") ? pathname.slice(1) : pathname;
+
+  // Return null for root path
+  if (path === "" || path === "/") {
+    return null;
+  }
+
   const segments = path.split("/");
 
   // Check if path starts with a section prefix
@@ -883,6 +1100,12 @@ export function getSectionFromPathname(pathname: string): DocumentationSection {
   }
   if (segments[0] === "ai") {
     return "ai";
+  }
+  if (segments[0] === "guides") {
+    return "guides";
+  }
+  if (segments[0] === "templates") {
+    return "templates";
   }
   if (segments[0] === "moosestack") {
     return "moosestack";
@@ -943,6 +1166,61 @@ export function buildNavItems(
   }
 
   return config
+    .map(filterNavItem)
+    .filter((item): item is NavItem => item !== null);
+}
+
+/**
+ * Filter navigation items based on feature flags
+ * Removes pages that should be hidden based on flags
+ */
+export function filterNavItemsByFlags(
+  items: NavItem[],
+  flags: { showDataSourcesPage?: boolean },
+): NavItem[] {
+  function filterNavItem(item: NavItem): NavItem | null {
+    if (item.type === "separator" || item.type === "label") {
+      return item;
+    }
+    if (item.type === "section") {
+      const filteredItems = item.items
+        .map(filterNavItem)
+        .filter((i): i is NavItem => i !== null);
+      const hasRealItems = filteredItems.some(
+        (i) =>
+          i.type === "page" || (i.type === "section" && i.items.length > 0),
+      );
+      if (!hasRealItems) {
+        return null;
+      }
+      return {
+        ...item,
+        items: filteredItems,
+      };
+    }
+    // item.type === "page"
+    const page = item as NavPage;
+
+    // Filter data-sources page if flag is off
+    if (page.slug === "moosestack/data-sources" && !flags.showDataSourcesPage) {
+      return null;
+    }
+
+    // Filter children recursively
+    const filteredChildren = page.children
+      ?.map(filterNavItem)
+      .filter((child): child is NavItem => child !== null);
+
+    return {
+      ...page,
+      children:
+        filteredChildren && filteredChildren.length > 0 ?
+          filteredChildren
+        : undefined,
+    };
+  }
+
+  return items
     .map(filterNavItem)
     .filter((item): item is NavItem => item !== null);
 }
