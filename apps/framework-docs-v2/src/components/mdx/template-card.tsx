@@ -11,7 +11,9 @@ import {
   CardFooter,
   CardHeader,
 } from "@/components/ui/card";
-import { IconBrandGithub } from "@tabler/icons-react";
+import { IconBrandGithub, IconRocket } from "@tabler/icons-react";
+import { Button } from "@/components/ui/button";
+import { Separator } from "@/components/ui/separator";
 import {
   Snippet,
   SnippetCopyButton,
@@ -52,12 +54,6 @@ export function TemplateCard({ item, className }: TemplateCardProps) {
   const template = isTemplate ? (item as TemplateMetadata) : null;
   const app = !isTemplate ? (item as AppMetadata) : null;
 
-  const categoryColors = {
-    starter: "border-blue-200 dark:border-blue-800",
-    framework: "border-purple-200 dark:border-purple-800",
-    example: "border-green-200 dark:border-green-800",
-  };
-
   const categoryLabels = {
     starter: "Starter",
     framework: "Framework",
@@ -82,9 +78,6 @@ export function TemplateCard({ item, className }: TemplateCardProps) {
     <Card
       className={cn(
         "h-full flex flex-col transition-all hover:shadow-lg",
-        isTemplate && template ?
-          categoryColors[template.category]
-        : "border-orange-200 dark:border-orange-800",
         className,
       )}
     >
@@ -93,11 +86,8 @@ export function TemplateCard({ item, className }: TemplateCardProps) {
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 mb-2">
               {language && (
-                <Badge
-                  variant={language === "typescript" ? "default" : "secondary"}
-                  className="text-xs"
-                >
-                  {language === "typescript" ? "TS" : "Python"}
+                <Badge variant="secondary" className="text-xs">
+                  {language === "typescript" ? "TypeScript" : "Python"}
                 </Badge>
               )}
               {isTemplate && template && (
@@ -111,70 +101,101 @@ export function TemplateCard({ item, className }: TemplateCardProps) {
                 </Badge>
               )}
             </div>
-            <h3 className="text-lg font-semibold text-foreground mb-1">
+            <h3 className="text-xl  text-foreground mb-1">
               {isTemplate ? formatTemplateName(name) : name}
             </h3>
           </div>
         </div>
       </CardHeader>
-      <CardContent className="flex-1">
-        <CardDescription className="mb-4">{description}</CardDescription>
-
-        {frameworks.length > 0 && (
-          <div className="mb-3">
-            <p className="text-xs text-muted-foreground mb-1.5 font-medium">
-              Frameworks:
-            </p>
-            <div className="flex flex-wrap gap-1.5">
-              {frameworks.map((framework) => (
-                <Badge key={framework} variant="outline" className="text-xs">
-                  {framework}
-                </Badge>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {features.length > 0 && (
-          <div>
-            <p className="text-xs text-muted-foreground mb-1.5 font-medium">
-              Features:
-            </p>
-            <div className="flex flex-wrap gap-1.5">
-              {features.map((feature) => (
-                <Badge key={feature} variant="outline" className="text-xs">
-                  {feature}
-                </Badge>
-              ))}
-            </div>
-          </div>
-        )}
-      </CardContent>
-      <CardFooter className="flex flex-col gap-2 pt-4 w-full">
+      <CardContent className="flex-1 flex flex-col">
+        <CardDescription className="mb-4 flex-1">{description}</CardDescription>
         {isTemplate && template && (
           <div className="w-full min-w-0">
             <ShellSnippet code={template.initCommand} />
           </div>
         )}
-        {!isTemplate && app && app.blogPost && (
-          <Link
-            href={app.blogPost}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1 w-full mb-1"
-          >
-            Read Blog Post →
-          </Link>
+      </CardContent>
+      <CardFooter className="flex flex-col gap-2 pt-4 w-full">
+        {isTemplate && template && (
+          <>
+            {(frameworks.length > 0 || features.length > 0) && (
+              <>
+                <Separator className="my-2" />
+                <div className="flex flex-wrap gap-1.5 justify-start w-full">
+                  {frameworks.map((framework) => (
+                    <Badge
+                      key={framework}
+                      variant="secondary"
+                      className="text-xs"
+                    >
+                      {framework}
+                    </Badge>
+                  ))}
+                  {features.map((feature) => (
+                    <Badge key={feature} variant="outline" className="text-xs">
+                      {feature}
+                    </Badge>
+                  ))}
+                </div>
+              </>
+            )}
+          </>
         )}
-        <Link
-          href={githubUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1 w-full"
-        >
-          <IconBrandGithub className="h-3 w-3" />
-          View on GitHub
-        </Link>
+        {!isTemplate && app && (
+          <>
+            {app.blogPost && (
+              <Link
+                href={app.blogPost}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1 w-full"
+              >
+                Read Blog Post →
+              </Link>
+            )}
+            {app.blogPost && (frameworks.length > 0 || features.length > 0) && (
+              <Separator className="my-2" />
+            )}
+            {(frameworks.length > 0 || features.length > 0) && (
+              <div className="flex flex-wrap gap-1.5 justify-start w-full">
+                {frameworks.map((framework) => (
+                  <Badge
+                    key={framework}
+                    variant="secondary"
+                    className="text-xs"
+                  >
+                    {framework}
+                  </Badge>
+                ))}
+                {features.map((feature) => (
+                  <Badge key={feature} variant="outline" className="text-xs">
+                    {feature}
+                  </Badge>
+                ))}
+              </div>
+            )}
+          </>
+        )}
+        <div className="flex w-full items-center justify-start gap-2 mt-auto pt-2">
+          <Button variant="default" asChild>
+            <Link
+              href={`https://moose.dev/deploy?template=${isTemplate ? template!.slug : app!.slug}`}
+            >
+              <IconRocket className="h-4 w-4" />
+              Deploy
+            </Link>
+          </Button>
+          <Button variant="outline" size="icon" asChild>
+            <Link
+              href={githubUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label="View on GitHub"
+            >
+              <IconBrandGithub className="h-4 w-4" />
+            </Link>
+          </Button>
+        </div>
       </CardFooter>
     </Card>
   );

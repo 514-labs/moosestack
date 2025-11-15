@@ -31,7 +31,8 @@ export function getContentFiles(): string[] {
 
 /**
  * Recursively get all markdown files in a directory
- * Excludes the 'shared' folder
+ * Excludes the 'shared' folder and 'templates' folder
+ * (templates is now an explicit page in the app directory)
  */
 function getAllMarkdownFiles(dir: string, baseDir: string): string[] {
   const files: string[] = [];
@@ -39,11 +40,12 @@ function getAllMarkdownFiles(dir: string, baseDir: string): string[] {
 
   for (const entry of entries) {
     const fullPath = path.join(dir, entry.name);
-    // Skip the shared folder
-    if (entry.isDirectory() && entry.name === "shared") {
-      continue;
-    }
+    // Skip the shared folder and templates folder
+    // (templates is now an explicit page in app directory)
     if (entry.isDirectory()) {
+      if (entry.name === "shared" || entry.name === "templates") {
+        continue;
+      }
       files.push(...getAllMarkdownFiles(fullPath, baseDir));
     } else if (
       entry.isFile() &&
