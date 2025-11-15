@@ -66,6 +66,7 @@ use crate::project::Project;
 
 pub mod client;
 pub mod config;
+pub mod diagnostics;
 pub mod diff_strategy;
 pub mod errors;
 pub mod inserter;

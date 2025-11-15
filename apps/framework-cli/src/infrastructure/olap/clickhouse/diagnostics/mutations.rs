@@ -3,7 +3,7 @@
 use log::debug;
 use serde_json::{json, Map, Value};
 
-use super::{Component, DiagnoseError, DiagnosticProvider, Issue, Severity};
+use super::{Component, DiagnosticError, DiagnosticProvider, Issue, Severity};
 use crate::infrastructure::olap::clickhouse::client::ClickHouseClient;
 use crate::infrastructure::olap::clickhouse::config::ClickHouseConfig;
 use crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine;
@@ -12,65 +12,39 @@ use crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine;
 const DIAGNOSTIC_QUERY_TIMEOUT_SECS: u64 = 30;
 
 /// Diagnostic provider for checking stuck or failed mutations
-pub struct MutationDiagnostic;
+///
+/// Use `MutationDiagnostic::new()` or `Default::default()` to construct.
+#[derive(Default)]
+pub struct MutationDiagnostic(());
 
-#[async_trait::async_trait]
-impl DiagnosticProvider for MutationDiagnostic {
-    fn name(&self) -> &str {
-        "MutationDiagnostic"
+impl MutationDiagnostic {
+    /// Create a new MutationDiagnostic provider
+    pub const fn new() -> Self {
+        Self(())
     }
 
-    fn applicable_to(&self, _component: &Component, _engine: Option<&ClickhouseEngine>) -> bool {
-        // Mutations can occur on any table
-        true
-    }
-
-    async fn diagnose(
-        &self,
+    /// Parse the ClickHouse JSON response and extract mutation issues
+    ///
+    /// # Arguments
+    /// * `json_response` - The raw JSON string from ClickHouse
+    /// * `component` - The component being diagnosed
+    /// * `db_name` - Database name for generating related queries
+    ///
+    /// # Returns
+    /// Vector of issues found in the response
+    pub fn parse_response(
+        json_response: &str,
         component: &Component,
-        _engine: Option<&ClickhouseEngine>,
-        config: &ClickHouseConfig,
-        _since: Option<&str>,
-    ) -> Result<Vec<Issue>, DiagnoseError> {
-        let client = ClickHouseClient::new(config)
-            .map_err(|e| DiagnoseError::ClickHouseConnection(format!("{}", e)))?;
+        db_name: &str,
+    ) -> Result<Vec<Issue>, DiagnosticError> {
+        let json_value: Value = serde_json::from_str(json_response)
+            .map_err(|e| DiagnosticError::ParseError(format!("{}", e)))?;
 
-        let query = format!(
-            "SELECT
-                mutation_id,
-                command,
-                create_time,
-                is_done,
-                latest_failed_part,
-                latest_fail_time,
-                latest_fail_reason
-             FROM system.mutations
-             WHERE database = '{}' AND table = '{}'
-             AND (is_done = 0 OR latest_fail_reason != '')
-             ORDER BY create_time DESC
-             FORMAT JSON",
-            config.db_name, component.name
-        );
-
-        debug!("Executing mutations query: {}", query);
-
-        let result = tokio::time::timeout(
-            std::time::Duration::from_secs(DIAGNOSTIC_QUERY_TIMEOUT_SECS),
-            client.execute_sql(&query),
-        )
-        .await
-        .map_err(|_| DiagnoseError::QueryTimeout(DIAGNOSTIC_QUERY_TIMEOUT_SECS))?
-        .map_err(|e| DiagnoseError::QueryFailed(format!("{}", e)))?;
-
-        // Parse ClickHouse JSON response
-        let json_response: Value = serde_json::from_str(&result)
-            .map_err(|e| DiagnoseError::ParseError(format!("{}", e)))?;
-
-        let data = json_response
+        let data = json_value
             .get("data")
             .and_then(|v| v.as_array())
             .ok_or_else(|| {
-                DiagnoseError::ParseError("Missing 'data' field in response".to_string())
+                DiagnosticError::ParseError("Missing 'data' field in response".to_string())
             })?;
 
         let mut issues = Vec::new();
@@ -130,7 +104,7 @@ impl DiagnosticProvider for MutationDiagnostic {
             let related_queries = vec![
                 format!(
                     "SELECT * FROM system.mutations WHERE database = '{}' AND table = '{}' AND mutation_id = '{}'",
-                    config.db_name, component.name, mutation_id
+                    db_name, component.name, mutation_id
                 ),
                 format!("KILL MUTATION WHERE mutation_id = '{}'", mutation_id),
             ];
@@ -148,5 +122,57 @@ impl DiagnosticProvider for MutationDiagnostic {
         }
 
         Ok(issues)
+    }
+}
+
+#[async_trait::async_trait]
+impl DiagnosticProvider for MutationDiagnostic {
+    fn name(&self) -> &str {
+        "MutationDiagnostic"
+    }
+
+    fn applicable_to(&self, _component: &Component, _engine: Option<&ClickhouseEngine>) -> bool {
+        // Mutations can occur on any table
+        true
+    }
+
+    async fn diagnose(
+        &self,
+        component: &Component,
+        _engine: Option<&ClickhouseEngine>,
+        config: &ClickHouseConfig,
+        _since: Option<&str>,
+    ) -> Result<Vec<Issue>, DiagnosticError> {
+        let client = ClickHouseClient::new(config)
+            .map_err(|e| DiagnosticError::ConnectionFailed(format!("{}", e)))?;
+
+        let query = format!(
+            "SELECT
+                mutation_id,
+                command,
+                create_time,
+                is_done,
+                latest_failed_part,
+                latest_fail_time,
+                latest_fail_reason
+             FROM system.mutations
+             WHERE database = '{}' AND table = '{}'
+             AND (is_done = 0 OR latest_fail_reason != '')
+             ORDER BY create_time DESC
+             FORMAT JSON",
+            config.db_name, component.name
+        );
+
+        debug!("Executing mutations query: {}", query);
+
+        let result = tokio::time::timeout(
+            std::time::Duration::from_secs(DIAGNOSTIC_QUERY_TIMEOUT_SECS),
+            client.execute_sql(&query),
+        )
+        .await
+        .map_err(|_| DiagnosticError::QueryTimeout(DIAGNOSTIC_QUERY_TIMEOUT_SECS))?
+        .map_err(|e| DiagnosticError::QueryFailed(format!("{}", e)))?;
+
+        Self::parse_response(&result, component, &config.db_name)
     }
 }
