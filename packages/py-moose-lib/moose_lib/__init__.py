@@ -26,6 +26,7 @@ from .blocks import (
     ReplicatedAggregatingMergeTreeEngine,
     ReplicatedSummingMergeTreeEngine,
     S3QueueEngine,
+    IcebergS3Engine,
     EngineConfig,
     # Legacy enum (already exported via .blocks import, but explicit for clarity)
     ClickHouseEngines

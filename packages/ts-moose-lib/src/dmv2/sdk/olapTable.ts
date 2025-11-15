@@ -439,6 +439,49 @@ export type DistributedConfig<T> = Omit<
 };
 
 /**
+ * Configuration for IcebergS3 engine - read-only Iceberg table access
+ *
+ * Provides direct querying of Apache Iceberg tables stored on S3.
+ * Data is not copied; queries stream directly from Parquet/ORC files.
+ *
+ * @template T The data type of the records stored in the table.
+ *
+ * @example
+ * ```typescript
+ * const lakeEvents = new OlapTable<Event>("lake_events", {
+ *   engine: ClickHouseEngines.IcebergS3,
+ *   path: "s3://datalake/events/",
+ *   format: "Parquet",
+ *   awsAccessKeyId: mooseRuntimeEnv.get("AWS_ACCESS_KEY_ID"),
+ *   awsSecretAccessKey: mooseRuntimeEnv.get("AWS_SECRET_ACCESS_KEY")
+ * });
+ * ```
+ *
+ * @remarks
+ * - IcebergS3 engine is read-only
+ * - Does not support ORDER BY, PARTITION BY, or SAMPLE BY clauses
+ * - Queries always see the latest Iceberg snapshot (with metadata cache)
+ */
+export type IcebergS3Config<T> = Omit<
+  BaseOlapConfig<T>,
+  "orderByFields" | "orderByExpression" | "partitionBy" | "sampleByExpression"
+> & {
+  engine: ClickHouseEngines.IcebergS3;
+  /** S3 path to Iceberg table root (e.g., 's3://bucket/warehouse/events/') */
+  path: string;
+  /** Data format - 'Parquet' or 'ORC' */
+  format: "Parquet" | "ORC";
+  /** AWS access key ID (optional, omit for public buckets or IAM roles) */
+  awsAccessKeyId?: string;
+  /** AWS secret access key (optional) */
+  awsSecretAccessKey?: string;
+  /** Compression type (optional: 'gzip', 'zstd', 'auto') */
+  compression?: string;
+  /** Use NOSIGN for public buckets or default credentials */
+  noSign?: boolean;
+};
+
+/**
  * Legacy configuration (backward compatibility) - defaults to MergeTree engine
  * @template T The data type of the records stored in the table.
  */
@@ -456,7 +499,8 @@ type EngineConfig<T> =
   | S3QueueConfig<T>
   | S3Config<T>
   | BufferConfig<T>
-  | DistributedConfig<T>;
+  | DistributedConfig<T>
+  | IcebergS3Config<T>;
 
 /**
  * Union of all engine-specific configurations (new API)

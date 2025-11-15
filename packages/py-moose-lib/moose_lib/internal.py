@@ -167,6 +167,16 @@ class DistributedConfigDict(BaseEngineConfigDict):
     policy_name: Optional[str] = None
 
 
+class IcebergS3ConfigDict(BaseEngineConfigDict):
+    """Configuration for IcebergS3 engine."""
+    engine: Literal["IcebergS3"] = "IcebergS3"
+    path: str
+    format: str
+    aws_access_key_id: Optional[str] = None
+    aws_secret_access_key: Optional[str] = None
+    compression: Optional[str] = None
+
+
 # Discriminated union of all engine configurations
 EngineConfigDict = Union[
     MergeTreeConfigDict,
@@ -180,7 +190,8 @@ EngineConfigDict = Union[
     S3QueueConfigDict,
     S3ConfigDict,
     BufferConfigDict,
-    DistributedConfigDict
+    DistributedConfigDict,
+    IcebergS3ConfigDict
 ]
 
 
@@ -506,7 +517,7 @@ def _convert_engine_instance_to_config_dict(engine: "EngineConfig") -> EngineCon
     Returns:
         EngineConfigDict with engine-specific configuration
     """
-    from moose_lib.blocks import S3QueueEngine, S3Engine, BufferEngine, DistributedEngine
+    from moose_lib.blocks import S3QueueEngine, S3Engine, BufferEngine, DistributedEngine, IcebergS3Engine
 
     # Try S3Queue first
     if isinstance(engine, S3QueueEngine):
@@ -556,6 +567,16 @@ def _convert_engine_instance_to_config_dict(engine: "EngineConfig") -> EngineCon
             target_table=engine.target_table,
             sharding_key=engine.sharding_key,
             policy_name=engine.policy_name
+        )
+
+    # Try IcebergS3
+    if isinstance(engine, IcebergS3Engine):
+        return IcebergS3ConfigDict(
+            path=engine.path,
+            format=engine.format,
+            aws_access_key_id=engine.aws_access_key_id,
+            aws_secret_access_key=engine.aws_secret_access_key,
+            compression=engine.compression
         )
 
     # Try basic engines
