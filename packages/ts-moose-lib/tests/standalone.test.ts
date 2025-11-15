@@ -1,6 +1,7 @@
 import { expect } from "chai";
 import { getMooseClients } from "../src/consumption-apis/standalone";
 import { sql } from "../src/sqlHelpers";
+import { OlapTable } from "../src/dmv2";
 
 describe("BYOF Standalone Functionality", function () {
   this.timeout(10000);
@@ -125,6 +126,77 @@ describe("BYOF Standalone Functionality", function () {
       const query = sql`SELECT * FROM test WHERE name = ${"O'Reilly"}`;
 
       expect(query.values[0]).to.equal("O'Reilly");
+    });
+  });
+
+  describe("sql template tag with database-qualified tables", () => {
+    it("should handle table without database config", () => {
+      interface TestModel1 {
+        id: number;
+        name: string;
+      }
+
+      const table = new OlapTable<TestModel1>("table_no_db");
+      const query = sql`SELECT * FROM ${table}`;
+
+      // Table without database should be rendered inline as `table_no_db`
+      // The sql template tag concatenates the table directly into strings
+      expect(query.strings.join("")).to.include("`table_no_db`");
+      expect(query.values).to.have.lengthOf(0);
+    });
+
+    it("should handle table with database config", () => {
+      interface TestModel2 {
+        id: number;
+        name: string;
+      }
+
+      const table = new OlapTable<TestModel2>("table_with_db", {
+        database: "my_database",
+      });
+      const query = sql`SELECT * FROM ${table}`;
+
+      // Table with database should be rendered as `my_database`.`table_with_db`
+      const fullQuery = query.strings.join("");
+      expect(fullQuery).to.include("`my_database`.`table_with_db`");
+      expect(query.values).to.have.lengthOf(0);
+    });
+
+    it("should handle multiple tables with different database configs", () => {
+      interface TestModel3 {
+        id: number;
+        name: string;
+      }
+
+      const table1 = new OlapTable<TestModel3>("multi_table1", {
+        database: "db1",
+      });
+      const table2 = new OlapTable<TestModel3>("multi_table2"); // no database
+      const query = sql`SELECT * FROM ${table1} JOIN ${table2}`;
+
+      // Should properly interpolate both tables
+      const fullQuery = query.strings.join("");
+      expect(fullQuery).to.include("`db1`.`multi_table1`");
+      expect(fullQuery).to.include("`multi_table2`");
+      expect(query.values).to.have.lengthOf(0);
+    });
+
+    it("should handle table in WHERE clause with database config", () => {
+      interface TestModel4 {
+        id: number;
+        name: string;
+      }
+
+      const table = new OlapTable<TestModel4>("events_table", {
+        database: "analytics",
+      });
+      const userId = 123;
+      const query = sql`SELECT * FROM ${table} WHERE user_id = ${userId}`;
+
+      const fullQuery = query.strings.join("");
+      expect(fullQuery).to.include("`analytics`.`events_table`");
+      expect(query.values).to.have.lengthOf(1);
+      expect(query.values[0]).to.equal(123);
     });
   });
 
