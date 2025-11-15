@@ -2463,7 +2463,7 @@ pub fn create_table_query(
 }
 
 pub static DROP_TABLE_TEMPLATE: &str = r#"
-DROP TABLE IF EXISTS `{{db_name}}`.`{{table_name}}`{{#if cluster_name}} ON CLUSTER {{cluster_name}}{{/if}} SYNC;
+DROP TABLE IF EXISTS `{{db_name}}`.`{{table_name}}`{{#if cluster_name}} ON CLUSTER {{cluster_name}} SYNC{{/if}};
 "#;
 
 pub fn drop_table_query(
@@ -4623,8 +4623,11 @@ ENGINE = S3Queue('s3://my-bucket/data/*.csv', NOSIGN, 'CSV')"#;
             "DROP query should contain ON CLUSTER clause"
         );
 
-        // Should have SYNC (always present)
-        assert!(query.contains("SYNC"), "DROP query should contain SYNC");
+        // Should have SYNC (when using ON CLUSTER)
+        assert!(
+            query.contains("SYNC"),
+            "DROP query should contain SYNC with ON CLUSTER"
+        );
 
         // Should have DROP TABLE
         assert!(query.contains("DROP TABLE"));
@@ -4641,8 +4644,11 @@ ENGINE = S3Queue('s3://my-bucket/data/*.csv', NOSIGN, 'CSV')"#;
             "DROP query should not contain ON CLUSTER clause when cluster_name is None"
         );
 
-        // Should still have SYNC (for replicated tables)
-        assert!(query.contains("SYNC"), "DROP query should contain SYNC");
+        // Should NOT have SYNC (only needed with ON CLUSTER)
+        assert!(
+            !query.contains("SYNC"),
+            "DROP query should not contain SYNC without ON CLUSTER"
+        );
 
         // Should still have DROP TABLE
         assert!(query.contains("DROP TABLE"));
