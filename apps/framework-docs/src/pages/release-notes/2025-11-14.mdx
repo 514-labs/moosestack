@@ -1,0 +1,134 @@
+---
+title: November 14, 2025
+description: Release notes for November 14, 2025
+---
+
+import { Callout } from "@/components";
+
+# November 14, 2025
+
+<Callout type="info" title="Highlights">
+- **New:** TypeScript MCP template with AI chat integration and data catalog discovery
+- **New:** [Enum16 data type](#enum16-data-type-support)
+- **New:** [Registry functions](#registry-functions-for-programmatic-resource-access) to inspect and access Moose resources at runtime
+</Callout>
+
+## TypeScript MCP template with AI chat integration
+
+New project template for building AI-powered data applications with Model Context Protocol (MCP) server integration.
+Create projects that include analytical APIs, MCP server tools, and a web interface with AI chat capabilities.
+
+The template includes:
+- **AI chat interface** for natural language data exploration
+- **Data catalog discovery** tool for automatic schema detection
+- **Monorepo structure** with unified dependency management
+
+```bash filename="Terminal" copy
+# Create a new project with the TypeScript MCP template
+moose create my-ai-app --template typescript-mcp
+
+cd my-ai-app
+
+# Start the Moose dev server
+moose dev
+
+# In a new terminal, start the web app
+cd packages/web-app
+pnpm install
+pnpm dev
+```
+
+The MCP server automatically detects database context and
+provides readonly access to ClickHouse data with query limits up to 1000 rows.
+
+## Enum16 data type support
+
+Support for ClickHouse Enum16 data type with values from -32,768 to 32,767 (compared to Enum8's -128 to 127).
+Use Enum16 for HTTP status codes, business identifiers, or any enum values exceeding Enum8's range.
+
+```typescript filename="datamodels/ApiRequestLog.ts" copy
+import { Key } from "@514labs/moose-lib";
+
+// Define HTTP status codes with Enum16 to support values like 404, 500
+export enum HttpStatusCode {
+  "OK" = 200,
+  "Created" = 201,
+  "BadRequest" = 400,
+  "Unauthorized" = 401,
+  "NotFound" = 404,
+  "InternalServerError" = 500,
+  "BadGateway" = 502,
+  "ServiceUnavailable" = 503
+}
+
+export interface ApiRequestLog {
+  id: Key<string>;
+  endpoint: string;
+  method: string;
+  status_code: HttpStatusCode;  // Uses Enum16
+  response_time_ms: number;
+  timestamp: Date;
+}
+```
+
+## Registry functions for programmatic resource access
+
+New registry functions allow programmatic access to all registered Moose resources at runtime.
+Dynamically route stream messages to different tables based on runtime conditions, or build custom tooling that inspects your Moose application structure.
+
+```typescript filename="app/streams/eventRouter.ts" copy
+import { getTable, getStream, DeadLetterQueue } from "@514labs/moose-lib";
+
+interface IncomingEvent {
+  eventType: string;
+  userId: string;
+  data: any;
+}
+
+// Create dead letter queue for failed routing
+const dlq = new DeadLetterQueue<IncomingEvent>("routing_dlq");
+
+// Get the incoming events stream and add dynamic routing consumer
+const incomingStream = getStream<IncomingEvent>("incoming_events");
+
+incomingStream?.addConsumer(async (event) => {
+  // Dynamically determine target table based on event type
+  const targetTableName = `${event.eventType}_events`;
+  const targetTable = getTable(targetTableName);
+
+  if (targetTable) {
+    // Route to the appropriate table
+    await targetTable.insert([{
+      userId: event.userId,
+      timestamp: new Date(),
+      ...event.data
+    }]);
+  } else {
+    // Send to dead letter queue if table doesn't exist
+    await dlq.send({
+      originalRecord: event,
+      errorMessage: `No table found for event type: ${event.eventType}`,
+      errorType: "RoutingError",
+      failedAt: new Date(),
+      source: "transform"
+    });
+  }
+});
+```
+
+Available registry functions: `getTables()`, `getTable()`, `getApis()`, `getApi()`, `getStreams()`, `getStream()`, `getWorkflows()`, `getWorkflow()` in both TypeScript and Python.
+
+## Other Features and Improvements
+- **Documentation search** – Command palette-style search for guides and API references
+- **MCP template setup** – Monorepo structure, changing started instructions to use `pnpm` and `moose dev`
+- **Automatic database context detection** – MCP server uses ClickHouse's `currentDatabase()` for simpler setup
+- **Better logging** – `[CompilerPlugin]` prefix in dev terminal messages for clearer debugging
+- **Deep health monitoring** – Concurrent health checks for Redis, ClickHouse, Redpanda, and Consumption API with `/_moose_internal/health` endpoint
+- **CORS headers** – Applied consistently across all API endpoints including error responses
+
+## Bug Fixes
+- **Database-qualified table handling** – Support for database prefixes in SQL queries across TypeScript and Python
+- **JWT environment variables** – Fixed auth docs to use correct names (`MOOSE_JWT__SECRET`, `MOOSE_JWT__ISSUER`, `MOOSE_JWT__AUDIENCE`)
+- **Serverless migrations** – Fixed table reconciliation with remote ClickHouse databases
+- **Migration generation** – Fixed `moose generate migration --url` to work with Moose servers
+- **Schema compatibility** – Fixed incorrect breaking change detection for JSON, nested structures, and FixedString columns
