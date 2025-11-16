@@ -155,18 +155,31 @@ function NavItemComponent({ item }: { item: NavPage }) {
 
   const isActive = pathname === `/${item.slug}`;
   const hasChildren = item.children && item.children.length > 0;
-  const hasActiveChild =
-    hasChildren &&
-    item.children?.some(
-      (child) => child.type === "page" && pathname === `/${child.slug}`,
-    );
-  const defaultOpen = isActive || hasActiveChild;
+
+  // Recursively check if any descendant is active
+  const hasActiveDescendant = React.useMemo(() => {
+    if (!hasChildren) return false;
+
+    const checkDescendant = (children: NavItem[]): boolean => {
+      return children.some((child) => {
+        if (child.type === "page") {
+          if (pathname === `/${child.slug}`) return true;
+          if (child.children) return checkDescendant(child.children);
+        }
+        return false;
+      });
+    };
+
+    return checkDescendant(item.children!);
+  }, [hasChildren, item.children, pathname]);
+
+  const defaultOpen = isActive || hasActiveDescendant;
 
   if (hasChildren) {
     return (
       <Collapsible key={item.slug} asChild defaultOpen={defaultOpen}>
         <SidebarMenuItem>
-          <SidebarMenuButton asChild tooltip={item.title}>
+          <SidebarMenuButton asChild tooltip={item.title} isActive={isActive}>
             <Link href={href}>
               {item.icon && <item.icon className="mr-2 h-4 w-4" />}
               <span>{item.title}</span>
@@ -183,67 +196,12 @@ function NavItemComponent({ item }: { item: NavPage }) {
               </CollapsibleTrigger>
               <CollapsibleContent>
                 <SidebarMenuSub>
-                  {(() => {
-                    const elements: React.ReactNode[] = [];
-                    let currentGroup: NavPage[] = [];
-                    let currentLabel: string | null = null;
-
-                    const flushGroup = () => {
-                      if (currentGroup.length > 0) {
-                        currentGroup.forEach((child: NavPage) => {
-                          const childHref = (() => {
-                            const params = new URLSearchParams(
-                              searchParams.toString(),
-                            );
-                            params.set("lang", language);
-                            return `/${child.slug}?${params.toString()}`;
-                          })();
-                          const childIsActive = pathname === `/${child.slug}`;
-                          elements.push(
-                            <SidebarMenuSubItem key={child.slug}>
-                              <SidebarMenuSubButton
-                                asChild
-                                isActive={childIsActive}
-                              >
-                                <Link href={childHref}>
-                                  {child.icon && (
-                                    <child.icon className="mr-2 h-4 w-4" />
-                                  )}
-                                  <span>{child.title}</span>
-                                </Link>
-                              </SidebarMenuSubButton>
-                            </SidebarMenuSubItem>,
-                          );
-                        });
-                        currentGroup = [];
-                      }
-                    };
-
-                    item.children?.forEach((child) => {
-                      if (child.type === "separator") {
-                        flushGroup();
-                        currentLabel = null;
-                      } else if (child.type === "label") {
-                        flushGroup();
-                        currentLabel = child.title;
-                      } else if (child.type === "page") {
-                        if (currentLabel && currentGroup.length === 0) {
-                          // Add label before first item in group
-                          elements.push(
-                            <SidebarGroupLabel
-                              key={`label-${currentLabel}`}
-                              className="text-xs text-muted-foreground py-1.5"
-                            >
-                              {currentLabel}
-                            </SidebarGroupLabel>,
-                          );
-                        }
-                        currentGroup.push(child);
-                      }
-                    });
-                    flushGroup();
-                    return elements;
-                  })()}
+                  {renderNavChildren(
+                    item.children,
+                    pathname,
+                    searchParams,
+                    language,
+                  )}
                 </SidebarMenuSub>
               </CollapsibleContent>
             </>
@@ -264,4 +222,178 @@ function NavItemComponent({ item }: { item: NavPage }) {
       </SidebarMenuButton>
     </SidebarMenuItem>
   );
+}
+
+function renderNavChildren(
+  children: NavItem[],
+  pathname: string,
+  searchParams: URLSearchParams,
+  language: string,
+): React.ReactNode[] {
+  const elements: React.ReactNode[] = [];
+  let currentGroup: NavPage[] = [];
+  let currentLabel: string | null = null;
+
+  const flushGroup = () => {
+    if (currentGroup.length > 0) {
+      currentGroup.forEach((child: NavPage) => {
+        const childHasChildren = child.children && child.children.length > 0;
+        const childHref = (() => {
+          const params = new URLSearchParams(searchParams.toString());
+          params.set("lang", language);
+          return `/${child.slug}?${params.toString()}`;
+        })();
+        const childIsActive = pathname === `/${child.slug}`;
+
+        // Recursively check if any descendant is active
+        const checkDescendant = (children: NavItem[]): boolean => {
+          return children.some((c) => {
+            if (c.type === "page") {
+              if (pathname === `/${c.slug}`) return true;
+              if (c.children) return checkDescendant(c.children);
+            }
+            return false;
+          });
+        };
+        const hasActiveDescendant =
+          childHasChildren ? checkDescendant(child.children!) : false;
+        const defaultOpen = childIsActive || hasActiveDescendant;
+
+        if (childHasChildren) {
+          // Render nested collapsible item - using same pattern as top-level
+          // SidebarMenuSubItem needs relative positioning for SidebarMenuAction
+          elements.push(
+            <Collapsible key={child.slug} asChild defaultOpen={defaultOpen}>
+              <SidebarMenuSubItem className="group/menu-item ">
+                <SidebarMenuSubButton
+                  asChild
+                  isActive={childIsActive}
+                  className="peer/menu-button"
+                >
+                  <Link href={childHref}>
+                    {child.icon && <child.icon className="mr-2 h-4 w-4" />}
+                    <span>{child.title}</span>
+                  </Link>
+                </SidebarMenuSubButton>
+                <CollapsibleTrigger asChild>
+                  <SidebarMenuAction className="data-[state=open]:rotate-90">
+                    <IconChevronRight />
+                    <span className="sr-only">Toggle</span>
+                  </SidebarMenuAction>
+                </CollapsibleTrigger>
+                <CollapsibleContent>
+                  <SidebarMenuSub>
+                    {renderNavChildren(
+                      child.children!,
+                      pathname,
+                      searchParams,
+                      language,
+                    )}
+                  </SidebarMenuSub>
+                </CollapsibleContent>
+              </SidebarMenuSubItem>
+            </Collapsible>,
+          );
+        } else {
+          // Render simple link for leaf nodes
+          elements.push(
+            <SidebarMenuSubItem key={child.slug}>
+              <SidebarMenuSubButton asChild isActive={childIsActive}>
+                <Link href={childHref}>
+                  {child.icon && <child.icon className="mr-2 h-4 w-4" />}
+                  <span>{child.title}</span>
+                </Link>
+              </SidebarMenuSubButton>
+            </SidebarMenuSubItem>,
+          );
+        }
+      });
+      currentGroup = [];
+    }
+  };
+
+  children.forEach((child) => {
+    if (child.type === "separator") {
+      flushGroup();
+      currentLabel = null;
+    } else if (child.type === "label") {
+      flushGroup();
+      currentLabel = child.title;
+    } else if (child.type === "section") {
+      flushGroup();
+      // Check if any item in the section is active to determine default open state
+      const hasActiveItem = child.items.some((item) => {
+        if (item.type === "page") {
+          return pathname === `/${item.slug}`;
+        }
+        return false;
+      });
+
+      // Render collapsible section within the submenu
+      // We need to render the trigger and items as siblings, not nested
+      const sectionItems: React.ReactNode[] = [];
+      child.items.forEach((item) => {
+        if (item.type === "page") {
+          const itemHref = (() => {
+            const params = new URLSearchParams(searchParams.toString());
+            params.set("lang", language);
+            return `/${item.slug}?${params.toString()}`;
+          })();
+          const itemIsActive = pathname === `/${item.slug}`;
+          sectionItems.push(
+            <SidebarMenuSubItem key={item.slug}>
+              <SidebarMenuSubButton asChild isActive={itemIsActive}>
+                <Link href={itemHref}>
+                  {item.icon && <item.icon className="mr-2 h-4 w-4" />}
+                  <span>{item.title}</span>
+                </Link>
+              </SidebarMenuSubButton>
+            </SidebarMenuSubItem>,
+          );
+        }
+      });
+
+      elements.push(
+        <Collapsible
+          key={`section-${child.title}`}
+          defaultOpen={hasActiveItem}
+          className="group/collapsible-section"
+        >
+          <SidebarMenuSubItem>
+            <CollapsibleTrigger asChild>
+              <SidebarMenuSubButton className="w-full justify-between">
+                <span className="flex items-center">
+                  {child.icon && (
+                    <child.icon className="mr-2 h-4 w-4 text-muted-foreground" />
+                  )}
+                  <span className="text-xs text-muted-foreground font-medium">
+                    {child.title}
+                  </span>
+                </span>
+                <IconChevronRight className="h-4 w-4 transition-transform group-data-[state=open]/collapsible-section:rotate-90" />
+              </SidebarMenuSubButton>
+            </CollapsibleTrigger>
+          </SidebarMenuSubItem>
+          <CollapsibleContent className="contents">
+            {sectionItems}
+          </CollapsibleContent>
+        </Collapsible>,
+      );
+    } else if (child.type === "page") {
+      if (currentLabel && currentGroup.length === 0) {
+        // Add label before first item in group
+        elements.push(
+          <SidebarGroupLabel
+            key={`label-${currentLabel}`}
+            className="text-xs text-muted-foreground py-1.5"
+          >
+            {currentLabel}
+          </SidebarGroupLabel>,
+        );
+      }
+      currentGroup.push(child);
+    }
+  });
+  flushGroup();
+  return elements;
 }

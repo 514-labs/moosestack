@@ -12,29 +12,22 @@ interface PageProps {
   params: Promise<{
     slug: string[];
   }>;
-  searchParams?: Promise<Record<string, string | string[] | undefined>>;
 }
 
 export async function generateStaticParams() {
+  // Get all slugs and filter for guides
   const slugs = getAllSlugs();
 
-  // Filter out templates and guides slugs (they have their own explicit pages)
-  const filteredSlugs = slugs.filter(
-    (slug) => !slug.startsWith("templates/") && !slug.startsWith("guides/"),
-  );
+  // Filter for guides slugs and generate params
+  const guideSlugs = slugs.filter((slug) => slug.startsWith("guides/"));
 
-  // Generate params for each slug
-  const allParams: { slug: string[] }[] = filteredSlugs.map((slug) => ({
-    slug: slug.split("/"),
-  }));
-
-  // Also add section index routes (moosestack, ai, hosting)
-  // Note: templates and guides are now explicit pages, so they're excluded here
-  allParams.push(
-    { slug: ["moosestack"] },
-    { slug: ["ai"] },
-    { slug: ["hosting"] },
-  );
+  // Remove the "guides/" prefix and split into array
+  const allParams: { slug: string[] }[] = guideSlugs
+    .map((slug) => slug.replace(/^guides\//, ""))
+    .filter((slug) => slug !== "index") // Exclude the index page
+    .map((slug) => ({
+      slug: slug.split("/"),
+    }));
 
   return allParams;
 }
@@ -48,12 +41,13 @@ export async function generateMetadata({
   // Handle empty slug array (shouldn't happen with [...slug] but be safe)
   if (!slugArray || slugArray.length === 0) {
     return {
-      title: "MooseStack Documentation",
-      description: "Build data-intensive applications with MooseStack",
+      title: "Guides | MooseStack Documentation",
+      description:
+        "Comprehensive guides for building applications, managing data, and implementing data warehousing strategies",
     };
   }
 
-  const slug = slugArray.join("/");
+  const slug = `guides/${slugArray.join("/")}`;
 
   try {
     const content = await parseMarkdownContent(slug);
@@ -61,20 +55,21 @@ export async function generateMetadata({
       title:
         content.frontMatter.title ?
           `${content.frontMatter.title} | MooseStack Documentation`
-        : "MooseStack Documentation",
+        : "Guides | MooseStack Documentation",
       description:
         content.frontMatter.description ||
-        "Build data-intensive applications with MooseStack",
+        "Comprehensive guides for building applications, managing data, and implementing data warehousing strategies",
     };
   } catch (error) {
     return {
-      title: "MooseStack Documentation",
-      description: "Build data-intensive applications with MooseStack",
+      title: "Guides | MooseStack Documentation",
+      description:
+        "Comprehensive guides for building applications, managing data, and implementing data warehousing strategies",
     };
   }
 }
 
-export default async function DocPage({ params }: PageProps) {
+export default async function GuidePage({ params }: PageProps) {
   const resolvedParams = await params;
   const slugArray = resolvedParams.slug;
 
@@ -83,12 +78,7 @@ export default async function DocPage({ params }: PageProps) {
     notFound();
   }
 
-  const slug = slugArray.join("/");
-
-  // Templates and guides are now explicit pages, so they should not be handled by this catch-all route
-  if (slug.startsWith("templates/") || slug.startsWith("guides/")) {
-    notFound();
-  }
+  const slug = `guides/${slugArray.join("/")}`;
 
   let content;
   try {

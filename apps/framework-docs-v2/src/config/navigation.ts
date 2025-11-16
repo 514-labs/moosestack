@@ -860,6 +860,7 @@ const templatesNavigationConfig: NavigationConfig = [];
 
 /**
  * Guides navigation configuration
+ * Structure: Guide → Overview → Starting Point → Overview/Requirements/Steps
  */
 const guidesNavigationConfig: NavigationConfig = [
   {
@@ -876,31 +877,261 @@ const guidesNavigationConfig: NavigationConfig = [
     items: [
       {
         type: "page",
-        slug: "guides/applications/performant-dashboards",
+        slug: "guides/applications/performant-dashboards/overview",
         title: "Performant Dashboards",
         icon: IconChartLine,
         languages: ["typescript", "python"],
+        children: [
+          {
+            type: "page",
+            slug: "guides/applications/performant-dashboards/guide-overview",
+            title: "Overview",
+            languages: ["typescript", "python"],
+          },
+          {
+            type: "section",
+            title: "Existing OLTP DB",
+            items: [
+              {
+                type: "page",
+                slug: "guides/applications/performant-dashboards/existing-oltp-db/overview",
+                title: "Implementation Overview",
+                languages: ["typescript", "python"],
+              },
+              {
+                type: "page",
+                slug: "guides/applications/performant-dashboards/existing-oltp-db/requirements",
+                title: "Requirements",
+                languages: ["typescript", "python"],
+              },
+              {
+                type: "page",
+                slug: "guides/applications/performant-dashboards/existing-oltp-db/1-setup-connection",
+                title: "Setup Connection",
+                languages: ["typescript", "python"],
+              },
+              {
+                type: "page",
+                slug: "guides/applications/performant-dashboards/existing-oltp-db/2-create-materialized-view",
+                title: "Create Materialized View",
+                languages: ["typescript", "python"],
+              },
+            ],
+          },
+          {
+            type: "section",
+            title: "New Application",
+            items: [
+              {
+                type: "page",
+                slug: "guides/applications/performant-dashboards/new-application/overview",
+                title: "Implementation Overview",
+                languages: ["typescript", "python"],
+              },
+              {
+                type: "page",
+                slug: "guides/applications/performant-dashboards/new-application/requirements",
+                title: "Requirements",
+                languages: ["typescript", "python"],
+              },
+              {
+                type: "page",
+                slug: "guides/applications/performant-dashboards/new-application/1-initialize-project",
+                title: "Initialize Project",
+                languages: ["typescript", "python"],
+              },
+            ],
+          },
+        ],
       },
       {
         type: "page",
-        slug: "guides/applications/in-app-chat-analytics",
+        slug: "guides/applications/in-app-chat-analytics/overview",
         title: "In-App Chat Analytics",
         icon: IconMessageChatbot,
         languages: ["typescript", "python"],
+        children: [
+          {
+            type: "page",
+            slug: "guides/applications/in-app-chat-analytics/guide-overview",
+            title: "Overview",
+            languages: ["typescript", "python"],
+          },
+          {
+            type: "section",
+            title: "Existing Chat System",
+            items: [
+              {
+                type: "page",
+                slug: "guides/applications/in-app-chat-analytics/existing-chat-system/overview",
+                title: "Implementation Overview",
+                languages: ["typescript", "python"],
+              },
+              {
+                type: "page",
+                slug: "guides/applications/in-app-chat-analytics/existing-chat-system/requirements",
+                title: "Requirements",
+                languages: ["typescript", "python"],
+              },
+              {
+                type: "page",
+                slug: "guides/applications/in-app-chat-analytics/existing-chat-system/1-integrate-event-tracking",
+                title: "Integrate Event Tracking",
+                languages: ["typescript", "python"],
+              },
+            ],
+          },
+          {
+            type: "section",
+            title: "New Chat Feature",
+            items: [
+              {
+                type: "page",
+                slug: "guides/applications/in-app-chat-analytics/new-chat-feature/overview",
+                title: "Implementation Overview",
+                languages: ["typescript", "python"],
+              },
+              {
+                type: "page",
+                slug: "guides/applications/in-app-chat-analytics/new-chat-feature/requirements",
+                title: "Requirements",
+                languages: ["typescript", "python"],
+              },
+              {
+                type: "page",
+                slug: "guides/applications/in-app-chat-analytics/new-chat-feature/1-setup-chat-schema",
+                title: "Setup Chat Schema",
+                languages: ["typescript", "python"],
+              },
+            ],
+          },
+        ],
       },
       {
         type: "page",
-        slug: "guides/applications/automated-reports",
+        slug: "guides/applications/automated-reports/overview",
         title: "Automated Reports",
         icon: IconFileReport,
         languages: ["typescript", "python"],
+        children: [
+          {
+            type: "page",
+            slug: "guides/applications/automated-reports/guide-overview",
+            title: "Overview",
+            languages: ["typescript", "python"],
+          },
+          {
+            type: "section",
+            title: "Scheduled Reports",
+            items: [
+              {
+                type: "page",
+                slug: "guides/applications/automated-reports/scheduled-reports/overview",
+                title: "Implementation Overview",
+                languages: ["typescript", "python"],
+              },
+              {
+                type: "page",
+                slug: "guides/applications/automated-reports/scheduled-reports/requirements",
+                title: "Requirements",
+                languages: ["typescript", "python"],
+              },
+              {
+                type: "page",
+                slug: "guides/applications/automated-reports/scheduled-reports/1-create-report-template",
+                title: "Create Report Template",
+                languages: ["typescript", "python"],
+              },
+            ],
+          },
+          {
+            type: "section",
+            title: "Event-Driven Reports",
+            items: [
+              {
+                type: "page",
+                slug: "guides/applications/automated-reports/event-driven-reports/overview",
+                title: "Implementation Overview",
+                languages: ["typescript", "python"],
+              },
+              {
+                type: "page",
+                slug: "guides/applications/automated-reports/event-driven-reports/requirements",
+                title: "Requirements",
+                languages: ["typescript", "python"],
+              },
+              {
+                type: "page",
+                slug: "guides/applications/automated-reports/event-driven-reports/1-setup-event-triggers",
+                title: "Setup Event Triggers",
+                languages: ["typescript", "python"],
+              },
+            ],
+          },
+        ],
       },
       {
         type: "page",
-        slug: "guides/applications/going-to-production",
+        slug: "guides/applications/going-to-production/overview",
         title: "Going to Production",
         icon: IconCloudUpload,
         languages: ["typescript", "python"],
+        children: [
+          {
+            type: "page",
+            slug: "guides/applications/going-to-production/guide-overview",
+            title: "Overview",
+            languages: ["typescript", "python"],
+          },
+          {
+            type: "section",
+            title: "Local Development",
+            items: [
+              {
+                type: "page",
+                slug: "guides/applications/going-to-production/local-development/overview",
+                title: "Implementation Overview",
+                languages: ["typescript", "python"],
+              },
+              {
+                type: "page",
+                slug: "guides/applications/going-to-production/local-development/requirements",
+                title: "Requirements",
+                languages: ["typescript", "python"],
+              },
+              {
+                type: "page",
+                slug: "guides/applications/going-to-production/local-development/1-prepare-environment",
+                title: "Prepare Environment",
+                languages: ["typescript", "python"],
+              },
+            ],
+          },
+          {
+            type: "section",
+            title: "Staging Environment",
+            items: [
+              {
+                type: "page",
+                slug: "guides/applications/going-to-production/staging-environment/overview",
+                title: "Implementation Overview",
+                languages: ["typescript", "python"],
+              },
+              {
+                type: "page",
+                slug: "guides/applications/going-to-production/staging-environment/requirements",
+                title: "Requirements",
+                languages: ["typescript", "python"],
+              },
+              {
+                type: "page",
+                slug: "guides/applications/going-to-production/staging-environment/1-deploy-infrastructure",
+                title: "Deploy Infrastructure",
+                languages: ["typescript", "python"],
+              },
+            ],
+          },
+        ],
       },
     ],
   },
@@ -910,24 +1141,216 @@ const guidesNavigationConfig: NavigationConfig = [
     items: [
       {
         type: "page",
-        slug: "guides/data-management/migrations",
+        slug: "guides/data-management/migrations/overview",
         title: "Migrations",
         icon: IconDatabaseImport,
         languages: ["typescript", "python"],
+        children: [
+          {
+            type: "page",
+            slug: "guides/data-management/migrations/guide-overview",
+            title: "Overview",
+            languages: ["typescript", "python"],
+          },
+          {
+            type: "section",
+            title: "Schema Changes",
+            items: [
+              {
+                type: "page",
+                slug: "guides/data-management/migrations/schema-changes/overview",
+                title: "Implementation Overview",
+                languages: ["typescript", "python"],
+              },
+              {
+                type: "page",
+                slug: "guides/data-management/migrations/schema-changes/requirements",
+                title: "Requirements",
+                languages: ["typescript", "python"],
+              },
+              {
+                type: "page",
+                slug: "guides/data-management/migrations/schema-changes/1-create-migration-script",
+                title: "Create Migration Script",
+                languages: ["typescript", "python"],
+              },
+            ],
+          },
+          {
+            type: "section",
+            title: "Data Migration",
+            items: [
+              {
+                type: "page",
+                slug: "guides/data-management/migrations/data-migration/overview",
+                title: "Implementation Overview",
+                languages: ["typescript", "python"],
+              },
+              {
+                type: "page",
+                slug: "guides/data-management/migrations/data-migration/requirements",
+                title: "Requirements",
+                languages: ["typescript", "python"],
+              },
+              {
+                type: "page",
+                slug: "guides/data-management/migrations/data-migration/1-backup-existing-data",
+                title: "Backup Existing Data",
+                languages: ["typescript", "python"],
+              },
+            ],
+          },
+          {
+            type: "section",
+            title: "Version Upgrades",
+            items: [
+              {
+                type: "page",
+                slug: "guides/data-management/migrations/version-upgrades/overview",
+                title: "Implementation Overview",
+                languages: ["typescript", "python"],
+              },
+              {
+                type: "page",
+                slug: "guides/data-management/migrations/version-upgrades/requirements",
+                title: "Requirements",
+                languages: ["typescript", "python"],
+              },
+              {
+                type: "page",
+                slug: "guides/data-management/migrations/version-upgrades/1-review-changelog",
+                title: "Review Changelog",
+                languages: ["typescript", "python"],
+              },
+            ],
+          },
+        ],
       },
       {
         type: "page",
-        slug: "guides/data-management/impact-analysis",
+        slug: "guides/data-management/impact-analysis/overview",
         title: "Impact Analysis",
         icon: IconChartDots,
         languages: ["typescript", "python"],
+        children: [
+          {
+            type: "page",
+            slug: "guides/data-management/impact-analysis/guide-overview",
+            title: "Overview",
+            languages: ["typescript", "python"],
+          },
+          {
+            type: "section",
+            title: "Schema Changes",
+            items: [
+              {
+                type: "page",
+                slug: "guides/data-management/impact-analysis/schema-changes/overview",
+                title: "Implementation Overview",
+                languages: ["typescript", "python"],
+              },
+              {
+                type: "page",
+                slug: "guides/data-management/impact-analysis/schema-changes/requirements",
+                title: "Requirements",
+                languages: ["typescript", "python"],
+              },
+              {
+                type: "page",
+                slug: "guides/data-management/impact-analysis/schema-changes/1-identify-dependencies",
+                title: "Identify Dependencies",
+                languages: ["typescript", "python"],
+              },
+            ],
+          },
+          {
+            type: "section",
+            title: "Query Changes",
+            items: [
+              {
+                type: "page",
+                slug: "guides/data-management/impact-analysis/query-changes/overview",
+                title: "Implementation Overview",
+                languages: ["typescript", "python"],
+              },
+              {
+                type: "page",
+                slug: "guides/data-management/impact-analysis/query-changes/requirements",
+                title: "Requirements",
+                languages: ["typescript", "python"],
+              },
+              {
+                type: "page",
+                slug: "guides/data-management/impact-analysis/query-changes/1-analyze-query-performance",
+                title: "Analyze Query Performance",
+                languages: ["typescript", "python"],
+              },
+            ],
+          },
+        ],
       },
       {
         type: "page",
-        slug: "guides/data-management/change-data-capture",
+        slug: "guides/data-management/change-data-capture/overview",
         title: "Change Data Capture",
         icon: IconBolt,
         languages: ["typescript", "python"],
+        children: [
+          {
+            type: "page",
+            slug: "guides/data-management/change-data-capture/guide-overview",
+            title: "Overview",
+            languages: ["typescript", "python"],
+          },
+          {
+            type: "section",
+            title: "Database CDC",
+            items: [
+              {
+                type: "page",
+                slug: "guides/data-management/change-data-capture/database-cdc/overview",
+                title: "Implementation Overview",
+                languages: ["typescript", "python"],
+              },
+              {
+                type: "page",
+                slug: "guides/data-management/change-data-capture/database-cdc/requirements",
+                title: "Requirements",
+                languages: ["typescript", "python"],
+              },
+              {
+                type: "page",
+                slug: "guides/data-management/change-data-capture/database-cdc/1-enable-cdc-logging",
+                title: "Enable CDC Logging",
+                languages: ["typescript", "python"],
+              },
+            ],
+          },
+          {
+            type: "section",
+            title: "Application Events",
+            items: [
+              {
+                type: "page",
+                slug: "guides/data-management/change-data-capture/application-events/overview",
+                title: "Implementation Overview",
+                languages: ["typescript", "python"],
+              },
+              {
+                type: "page",
+                slug: "guides/data-management/change-data-capture/application-events/requirements",
+                title: "Requirements",
+                languages: ["typescript", "python"],
+              },
+              {
+                type: "page",
+                slug: "guides/data-management/change-data-capture/application-events/1-implement-event-emitter",
+                title: "Implement Event Emitter",
+                languages: ["typescript", "python"],
+              },
+            ],
+          },
+        ],
       },
     ],
   },
@@ -937,38 +1360,282 @@ const guidesNavigationConfig: NavigationConfig = [
     items: [
       {
         type: "page",
-        slug: "guides/data-warehousing/customer-data-platform",
+        slug: "guides/data-warehousing/customer-data-platform/overview",
         title: "Customer Data Platform",
         icon: IconUsers,
         languages: ["typescript", "python"],
+        children: [
+          {
+            type: "page",
+            slug: "guides/data-warehousing/customer-data-platform/guide-overview",
+            title: "Overview",
+            languages: ["typescript", "python"],
+          },
+          {
+            type: "section",
+            title: "Existing Customer Data",
+            items: [
+              {
+                type: "page",
+                slug: "guides/data-warehousing/customer-data-platform/existing-customer-data/overview",
+                title: "Implementation Overview",
+                languages: ["typescript", "python"],
+              },
+              {
+                type: "page",
+                slug: "guides/data-warehousing/customer-data-platform/existing-customer-data/requirements",
+                title: "Requirements",
+                languages: ["typescript", "python"],
+              },
+              {
+                type: "page",
+                slug: "guides/data-warehousing/customer-data-platform/existing-customer-data/1-consolidate-data-sources",
+                title: "Consolidate Data Sources",
+                languages: ["typescript", "python"],
+              },
+            ],
+          },
+          {
+            type: "section",
+            title: "Multi-Source Integration",
+            items: [
+              {
+                type: "page",
+                slug: "guides/data-warehousing/customer-data-platform/multi-source-integration/overview",
+                title: "Implementation Overview",
+                languages: ["typescript", "python"],
+              },
+              {
+                type: "page",
+                slug: "guides/data-warehousing/customer-data-platform/multi-source-integration/requirements",
+                title: "Requirements",
+                languages: ["typescript", "python"],
+              },
+              {
+                type: "page",
+                slug: "guides/data-warehousing/customer-data-platform/multi-source-integration/1-setup-connectors",
+                title: "Setup Connectors",
+                languages: ["typescript", "python"],
+              },
+            ],
+          },
+        ],
       },
       {
         type: "page",
-        slug: "guides/data-warehousing/operational-analytics",
+        slug: "guides/data-warehousing/operational-analytics/overview",
         title: "Operational Analytics",
         icon: IconChartBarOff,
         languages: ["typescript", "python"],
+        children: [
+          {
+            type: "page",
+            slug: "guides/data-warehousing/operational-analytics/application-metrics/overview",
+            title: "Application Metrics",
+            languages: ["typescript", "python"],
+            children: [
+              {
+                type: "page",
+                slug: "guides/data-warehousing/operational-analytics/application-metrics/requirements",
+                title: "Requirements",
+                languages: ["typescript", "python"],
+              },
+              {
+                type: "page",
+                slug: "guides/data-warehousing/operational-analytics/application-metrics/1-instrument-application",
+                title: "Instrument Application",
+                languages: ["typescript", "python"],
+              },
+            ],
+          },
+          {
+            type: "page",
+            slug: "guides/data-warehousing/operational-analytics/infrastructure-monitoring/overview",
+            title: "Infrastructure Monitoring",
+            languages: ["typescript", "python"],
+            children: [
+              {
+                type: "page",
+                slug: "guides/data-warehousing/operational-analytics/infrastructure-monitoring/requirements",
+                title: "Requirements",
+                languages: ["typescript", "python"],
+              },
+              {
+                type: "page",
+                slug: "guides/data-warehousing/operational-analytics/infrastructure-monitoring/1-collect-system-metrics",
+                title: "Collect System Metrics",
+                languages: ["typescript", "python"],
+              },
+            ],
+          },
+        ],
       },
       {
         type: "page",
-        slug: "guides/data-warehousing/startup-metrics",
+        slug: "guides/data-warehousing/startup-metrics/overview",
         title: "Startup Metrics",
         icon: IconChartBar,
         languages: ["typescript", "python"],
+        children: [
+          {
+            type: "page",
+            slug: "guides/data-warehousing/startup-metrics/product-metrics/overview",
+            title: "Product Metrics",
+            languages: ["typescript", "python"],
+            children: [
+              {
+                type: "page",
+                slug: "guides/data-warehousing/startup-metrics/product-metrics/requirements",
+                title: "Requirements",
+                languages: ["typescript", "python"],
+              },
+              {
+                type: "page",
+                slug: "guides/data-warehousing/startup-metrics/product-metrics/1-define-kpis",
+                title: "Define KPIs",
+                languages: ["typescript", "python"],
+              },
+            ],
+          },
+          {
+            type: "page",
+            slug: "guides/data-warehousing/startup-metrics/business-metrics/overview",
+            title: "Business Metrics",
+            languages: ["typescript", "python"],
+            children: [
+              {
+                type: "page",
+                slug: "guides/data-warehousing/startup-metrics/business-metrics/requirements",
+                title: "Requirements",
+                languages: ["typescript", "python"],
+              },
+              {
+                type: "page",
+                slug: "guides/data-warehousing/startup-metrics/business-metrics/1-setup-revenue-tracking",
+                title: "Setup Revenue Tracking",
+                languages: ["typescript", "python"],
+              },
+            ],
+          },
+        ],
       },
       {
         type: "page",
-        slug: "guides/data-warehousing/connectors",
+        slug: "guides/data-warehousing/connectors/overview",
         title: "Connectors",
         icon: IconStack,
         languages: ["typescript", "python"],
+        children: [
+          {
+            type: "page",
+            slug: "guides/data-warehousing/connectors/database-connector/overview",
+            title: "Database Connector",
+            languages: ["typescript", "python"],
+            children: [
+              {
+                type: "page",
+                slug: "guides/data-warehousing/connectors/database-connector/requirements",
+                title: "Requirements",
+                languages: ["typescript", "python"],
+              },
+              {
+                type: "page",
+                slug: "guides/data-warehousing/connectors/database-connector/1-configure-connection",
+                title: "Configure Connection",
+                languages: ["typescript", "python"],
+              },
+            ],
+          },
+          {
+            type: "page",
+            slug: "guides/data-warehousing/connectors/api-connector/overview",
+            title: "API Connector",
+            languages: ["typescript", "python"],
+            children: [
+              {
+                type: "page",
+                slug: "guides/data-warehousing/connectors/api-connector/requirements",
+                title: "Requirements",
+                languages: ["typescript", "python"],
+              },
+              {
+                type: "page",
+                slug: "guides/data-warehousing/connectors/api-connector/1-setup-authentication",
+                title: "Setup Authentication",
+                languages: ["typescript", "python"],
+              },
+            ],
+          },
+          {
+            type: "page",
+            slug: "guides/data-warehousing/connectors/custom-connector/overview",
+            title: "Custom Connector",
+            languages: ["typescript", "python"],
+            children: [
+              {
+                type: "page",
+                slug: "guides/data-warehousing/connectors/custom-connector/requirements",
+                title: "Requirements",
+                languages: ["typescript", "python"],
+              },
+              {
+                type: "page",
+                slug: "guides/data-warehousing/connectors/custom-connector/1-create-connector-class",
+                title: "Create Connector Class",
+                languages: ["typescript", "python"],
+              },
+            ],
+          },
+        ],
       },
       {
         type: "page",
-        slug: "guides/data-warehousing/pipelines",
+        slug: "guides/data-warehousing/pipelines/overview",
         title: "Pipelines",
         icon: IconRoute,
         languages: ["typescript", "python"],
+        children: [
+          {
+            type: "page",
+            slug: "guides/data-warehousing/pipelines/etl-pipeline/overview",
+            title: "ETL Pipeline",
+            languages: ["typescript", "python"],
+            children: [
+              {
+                type: "page",
+                slug: "guides/data-warehousing/pipelines/etl-pipeline/requirements",
+                title: "Requirements",
+                languages: ["typescript", "python"],
+              },
+              {
+                type: "page",
+                slug: "guides/data-warehousing/pipelines/etl-pipeline/1-extract-data",
+                title: "Extract Data",
+                languages: ["typescript", "python"],
+              },
+            ],
+          },
+          {
+            type: "page",
+            slug: "guides/data-warehousing/pipelines/streaming-pipeline/overview",
+            title: "Streaming Pipeline",
+            languages: ["typescript", "python"],
+            children: [
+              {
+                type: "page",
+                slug: "guides/data-warehousing/pipelines/streaming-pipeline/requirements",
+                title: "Requirements",
+                languages: ["typescript", "python"],
+              },
+              {
+                type: "page",
+                slug: "guides/data-warehousing/pipelines/streaming-pipeline/1-setup-stream-source",
+                title: "Setup Stream Source",
+                languages: ["typescript", "python"],
+              },
+            ],
+          },
+        ],
       },
     ],
   },
@@ -978,17 +1645,101 @@ const guidesNavigationConfig: NavigationConfig = [
     items: [
       {
         type: "page",
-        slug: "guides/methodology/data-as-code",
+        slug: "guides/methodology/data-as-code/overview",
         title: "Data as Code",
         icon: IconCode,
         languages: ["typescript", "python"],
+        children: [
+          {
+            type: "page",
+            slug: "guides/methodology/data-as-code/version-control-setup/overview",
+            title: "Version Control Setup",
+            languages: ["typescript", "python"],
+            children: [
+              {
+                type: "page",
+                slug: "guides/methodology/data-as-code/version-control-setup/requirements",
+                title: "Requirements",
+                languages: ["typescript", "python"],
+              },
+              {
+                type: "page",
+                slug: "guides/methodology/data-as-code/version-control-setup/1-initialize-repository",
+                title: "Initialize Repository",
+                languages: ["typescript", "python"],
+              },
+            ],
+          },
+          {
+            type: "page",
+            slug: "guides/methodology/data-as-code/cicd-integration/overview",
+            title: "CI/CD Integration",
+            languages: ["typescript", "python"],
+            children: [
+              {
+                type: "page",
+                slug: "guides/methodology/data-as-code/cicd-integration/requirements",
+                title: "Requirements",
+                languages: ["typescript", "python"],
+              },
+              {
+                type: "page",
+                slug: "guides/methodology/data-as-code/cicd-integration/1-create-pipeline-config",
+                title: "Create Pipeline Config",
+                languages: ["typescript", "python"],
+              },
+            ],
+          },
+        ],
       },
       {
         type: "page",
-        slug: "guides/methodology/dora-for-data",
+        slug: "guides/methodology/dora-for-data/overview",
         title: "DORA for Data",
         icon: IconTrendingUp,
         languages: ["typescript", "python"],
+        children: [
+          {
+            type: "page",
+            slug: "guides/methodology/dora-for-data/deployment-frequency/overview",
+            title: "Deployment Frequency",
+            languages: ["typescript", "python"],
+            children: [
+              {
+                type: "page",
+                slug: "guides/methodology/dora-for-data/deployment-frequency/requirements",
+                title: "Requirements",
+                languages: ["typescript", "python"],
+              },
+              {
+                type: "page",
+                slug: "guides/methodology/dora-for-data/deployment-frequency/1-measure-current-frequency",
+                title: "Measure Current Frequency",
+                languages: ["typescript", "python"],
+              },
+            ],
+          },
+          {
+            type: "page",
+            slug: "guides/methodology/dora-for-data/lead-time/overview",
+            title: "Lead Time",
+            languages: ["typescript", "python"],
+            children: [
+              {
+                type: "page",
+                slug: "guides/methodology/dora-for-data/lead-time/requirements",
+                title: "Requirements",
+                languages: ["typescript", "python"],
+              },
+              {
+                type: "page",
+                slug: "guides/methodology/dora-for-data/lead-time/1-track-change-lifecycle",
+                title: "Track Change Lifecycle",
+                languages: ["typescript", "python"],
+              },
+            ],
+          },
+        ],
       },
     ],
   },
@@ -998,31 +1749,199 @@ const guidesNavigationConfig: NavigationConfig = [
     items: [
       {
         type: "page",
-        slug: "guides/strategy/ai-enablement",
+        slug: "guides/strategy/ai-enablement/overview",
         title: "AI Enablement",
         icon: IconBrain,
         languages: ["typescript", "python"],
+        children: [
+          {
+            type: "page",
+            slug: "guides/strategy/ai-enablement/llm-integration/overview",
+            title: "LLM Integration",
+            languages: ["typescript", "python"],
+            children: [
+              {
+                type: "page",
+                slug: "guides/strategy/ai-enablement/llm-integration/requirements",
+                title: "Requirements",
+                languages: ["typescript", "python"],
+              },
+              {
+                type: "page",
+                slug: "guides/strategy/ai-enablement/llm-integration/1-choose-llm-provider",
+                title: "Choose LLM Provider",
+                languages: ["typescript", "python"],
+              },
+            ],
+          },
+          {
+            type: "page",
+            slug: "guides/strategy/ai-enablement/vector-search/overview",
+            title: "Vector Search",
+            languages: ["typescript", "python"],
+            children: [
+              {
+                type: "page",
+                slug: "guides/strategy/ai-enablement/vector-search/requirements",
+                title: "Requirements",
+                languages: ["typescript", "python"],
+              },
+              {
+                type: "page",
+                slug: "guides/strategy/ai-enablement/vector-search/1-setup-vector-database",
+                title: "Setup Vector Database",
+                languages: ["typescript", "python"],
+              },
+            ],
+          },
+        ],
       },
       {
         type: "page",
-        slug: "guides/strategy/data-foundation",
+        slug: "guides/strategy/data-foundation/overview",
         title: "Data Foundation",
         icon: IconDatabase,
         languages: ["typescript", "python"],
+        children: [
+          {
+            type: "page",
+            slug: "guides/strategy/data-foundation/greenfield-project/overview",
+            title: "Greenfield Project",
+            languages: ["typescript", "python"],
+            children: [
+              {
+                type: "page",
+                slug: "guides/strategy/data-foundation/greenfield-project/requirements",
+                title: "Requirements",
+                languages: ["typescript", "python"],
+              },
+              {
+                type: "page",
+                slug: "guides/strategy/data-foundation/greenfield-project/1-design-data-architecture",
+                title: "Design Data Architecture",
+                languages: ["typescript", "python"],
+              },
+            ],
+          },
+          {
+            type: "page",
+            slug: "guides/strategy/data-foundation/legacy-system-migration/overview",
+            title: "Legacy System Migration",
+            languages: ["typescript", "python"],
+            children: [
+              {
+                type: "page",
+                slug: "guides/strategy/data-foundation/legacy-system-migration/requirements",
+                title: "Requirements",
+                languages: ["typescript", "python"],
+              },
+              {
+                type: "page",
+                slug: "guides/strategy/data-foundation/legacy-system-migration/1-assess-current-state",
+                title: "Assess Current State",
+                languages: ["typescript", "python"],
+              },
+            ],
+          },
+        ],
       },
       {
         type: "page",
-        slug: "guides/strategy/platform-engineering",
+        slug: "guides/strategy/platform-engineering/overview",
         title: "Platform Engineering",
         icon: IconServer,
         languages: ["typescript", "python"],
+        children: [
+          {
+            type: "page",
+            slug: "guides/strategy/platform-engineering/internal-platform/overview",
+            title: "Internal Platform",
+            languages: ["typescript", "python"],
+            children: [
+              {
+                type: "page",
+                slug: "guides/strategy/platform-engineering/internal-platform/requirements",
+                title: "Requirements",
+                languages: ["typescript", "python"],
+              },
+              {
+                type: "page",
+                slug: "guides/strategy/platform-engineering/internal-platform/1-define-platform-scope",
+                title: "Define Platform Scope",
+                languages: ["typescript", "python"],
+              },
+            ],
+          },
+          {
+            type: "page",
+            slug: "guides/strategy/platform-engineering/self-service-tools/overview",
+            title: "Self-Service Tools",
+            languages: ["typescript", "python"],
+            children: [
+              {
+                type: "page",
+                slug: "guides/strategy/platform-engineering/self-service-tools/requirements",
+                title: "Requirements",
+                languages: ["typescript", "python"],
+              },
+              {
+                type: "page",
+                slug: "guides/strategy/platform-engineering/self-service-tools/1-create-developer-portal",
+                title: "Create Developer Portal",
+                languages: ["typescript", "python"],
+              },
+            ],
+          },
+        ],
       },
       {
         type: "page",
-        slug: "guides/strategy/olap-evaluation",
+        slug: "guides/strategy/olap-evaluation/overview",
         title: "OLAP Evaluation",
         icon: IconDatabase,
         languages: ["typescript", "python"],
+        children: [
+          {
+            type: "page",
+            slug: "guides/strategy/olap-evaluation/performance-requirements/overview",
+            title: "Performance Requirements",
+            languages: ["typescript", "python"],
+            children: [
+              {
+                type: "page",
+                slug: "guides/strategy/olap-evaluation/performance-requirements/requirements",
+                title: "Requirements",
+                languages: ["typescript", "python"],
+              },
+              {
+                type: "page",
+                slug: "guides/strategy/olap-evaluation/performance-requirements/1-benchmark-queries",
+                title: "Benchmark Queries",
+                languages: ["typescript", "python"],
+              },
+            ],
+          },
+          {
+            type: "page",
+            slug: "guides/strategy/olap-evaluation/scale-requirements/overview",
+            title: "Scale Requirements",
+            languages: ["typescript", "python"],
+            children: [
+              {
+                type: "page",
+                slug: "guides/strategy/olap-evaluation/scale-requirements/requirements",
+                title: "Requirements",
+                languages: ["typescript", "python"],
+              },
+              {
+                type: "page",
+                slug: "guides/strategy/olap-evaluation/scale-requirements/1-estimate-data-volume",
+                title: "Estimate Data Volume",
+                languages: ["typescript", "python"],
+              },
+            ],
+          },
+        ],
       },
     ],
   },
