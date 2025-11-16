@@ -1,5 +1,5 @@
 {
-  "extends": "@repo/ts-config/base.json",
+  "extends": "@repo/ts-config/nextjs.json",
   "compilerOptions": {
     "plugins": [
       {
@@ -21,7 +21,10 @@
     "resolveJsonModule": true,
     "isolatedModules": true,
     "jsx": "react-jsx",
-    "incremental": true
+    "incremental": true,
+    "declaration": false,
+    "declarationMap": false,
+    "emitDeclarationOnly": false
   },
   "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
   "exclude": ["node_modules"]
