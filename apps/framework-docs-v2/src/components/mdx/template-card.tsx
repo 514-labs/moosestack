@@ -11,9 +11,8 @@ import {
   CardFooter,
   CardHeader,
 } from "@/components/ui/card";
-import { IconBrandGithub, IconRocket } from "@tabler/icons-react";
+import { IconBrandGithub, IconRocket, IconBook } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
-import { Separator } from "@/components/ui/separator";
 import {
   Snippet,
   SnippetCopyButton,
@@ -53,6 +52,7 @@ export function TemplateCard({ item, className }: TemplateCardProps) {
   const isTemplate = item.type === "template";
   const template = isTemplate ? (item as TemplateMetadata) : null;
   const app = !isTemplate ? (item as AppMetadata) : null;
+  const [chipsExpanded, setChipsExpanded] = React.useState(false);
 
   const categoryLabels = {
     starter: "Starter",
@@ -74,6 +74,17 @@ export function TemplateCard({ item, className }: TemplateCardProps) {
   const description = isTemplate ? template!.description : app!.description;
   const name = isTemplate ? template!.name : app!.name;
 
+  // Combine frameworks and features into a single array with type info
+  const allChips = [
+    ...frameworks.map((f) => ({ value: f, type: "framework" as const })),
+    ...features.map((f) => ({ value: f, type: "feature" as const })),
+  ];
+
+  const MAX_VISIBLE_CHIPS = 3;
+  const visibleChips =
+    chipsExpanded ? allChips : allChips.slice(0, MAX_VISIBLE_CHIPS);
+  const hiddenCount = allChips.length - MAX_VISIBLE_CHIPS;
+
   return (
     <Card
       className={cn(
@@ -84,26 +95,63 @@ export function TemplateCard({ item, className }: TemplateCardProps) {
       <CardHeader>
         <div className="flex items-start justify-between gap-2">
           <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 mb-2">
-              {language && (
-                <Badge variant="secondary" className="text-xs">
-                  {language === "typescript" ? "TypeScript" : "Python"}
-                </Badge>
-              )}
-              {isTemplate && template && (
-                <Badge variant="outline" className="text-xs">
-                  {categoryLabels[template.category]}
-                </Badge>
-              )}
-              {!isTemplate && (
-                <Badge variant="outline" className="text-xs">
-                  Demo App
-                </Badge>
-              )}
+            <div className="flex items-center gap-1 mb-2">
+              {(() => {
+                const labels: string[] = [];
+                if (language) {
+                  labels.push(
+                    language === "typescript" ? "TypeScript" : "Python",
+                  );
+                }
+                if (isTemplate && template) {
+                  labels.push(categoryLabels[template.category]);
+                }
+                if (!isTemplate) {
+                  labels.push("Demo App");
+                }
+                return (
+                  <span className="text-xs text-muted-foreground">
+                    {labels.join(" • ")}
+                  </span>
+                );
+              })()}
             </div>
             <h3 className="text-xl  text-foreground mb-1">
               {isTemplate ? formatTemplateName(name) : name}
             </h3>
+            {allChips.length > 0 && (
+              <div className="flex flex-wrap gap-1.5 justify-start w-full mt-2">
+                {visibleChips.map((chip) => (
+                  <Badge
+                    key={`${chip.type}-${chip.value}`}
+                    variant={
+                      chip.type === "framework" ? "secondary" : "outline"
+                    }
+                    className="text-xs"
+                  >
+                    {chip.value}
+                  </Badge>
+                ))}
+                {!chipsExpanded && hiddenCount > 0 && (
+                  <Badge
+                    variant="outline"
+                    className="text-xs cursor-pointer hover:bg-accent"
+                    onClick={() => setChipsExpanded(true)}
+                  >
+                    {hiddenCount} more
+                  </Badge>
+                )}
+                {chipsExpanded && (
+                  <Badge
+                    variant="outline"
+                    className="text-xs cursor-pointer hover:bg-accent"
+                    onClick={() => setChipsExpanded(false)}
+                  >
+                    Show less
+                  </Badge>
+                )}
+              </div>
+            )}
           </div>
         </div>
       </CardHeader>
@@ -116,66 +164,6 @@ export function TemplateCard({ item, className }: TemplateCardProps) {
         )}
       </CardContent>
       <CardFooter className="flex flex-col gap-2 pt-4 w-full">
-        {isTemplate && template && (
-          <>
-            {(frameworks.length > 0 || features.length > 0) && (
-              <>
-                <Separator className="my-2" />
-                <div className="flex flex-wrap gap-1.5 justify-start w-full">
-                  {frameworks.map((framework) => (
-                    <Badge
-                      key={framework}
-                      variant="secondary"
-                      className="text-xs"
-                    >
-                      {framework}
-                    </Badge>
-                  ))}
-                  {features.map((feature) => (
-                    <Badge key={feature} variant="outline" className="text-xs">
-                      {feature}
-                    </Badge>
-                  ))}
-                </div>
-              </>
-            )}
-          </>
-        )}
-        {!isTemplate && app && (
-          <>
-            {app.blogPost && (
-              <Link
-                href={app.blogPost}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1 w-full"
-              >
-                Read Blog Post →
-              </Link>
-            )}
-            {app.blogPost && (frameworks.length > 0 || features.length > 0) && (
-              <Separator className="my-2" />
-            )}
-            {(frameworks.length > 0 || features.length > 0) && (
-              <div className="flex flex-wrap gap-1.5 justify-start w-full">
-                {frameworks.map((framework) => (
-                  <Badge
-                    key={framework}
-                    variant="secondary"
-                    className="text-xs"
-                  >
-                    {framework}
-                  </Badge>
-                ))}
-                {features.map((feature) => (
-                  <Badge key={feature} variant="outline" className="text-xs">
-                    {feature}
-                  </Badge>
-                ))}
-              </div>
-            )}
-          </>
-        )}
         <div className="flex w-full items-center justify-start gap-2 mt-auto pt-2">
           <Button variant="default" asChild>
             <Link
@@ -185,6 +173,18 @@ export function TemplateCard({ item, className }: TemplateCardProps) {
               Deploy
             </Link>
           </Button>
+          {!isTemplate && app && app.blogPost && (
+            <Button variant="outline" size="icon" asChild>
+              <Link
+                href={app.blogPost}
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label="Read Blog Post"
+              >
+                <IconBook className="h-4 w-4" />
+              </Link>
+            </Button>
+          )}
           <Button variant="outline" size="icon" asChild>
             <Link
               href={githubUrl}
