@@ -10,38 +10,35 @@ export const dynamic = "force-dynamic";
 
 export async function generateMetadata(): Promise<Metadata> {
   try {
-    const content = await parseMarkdownContent(
-      "guides/strategy/platform-engineering",
-    );
+    const content = await parseMarkdownContent("guides/index");
     return {
       title:
         content.frontMatter.title ?
           `${content.frontMatter.title} | MooseStack Documentation`
-        : "Platform Engineering | MooseStack Documentation",
+        : "Guides | MooseStack Documentation",
       description:
         content.frontMatter.description ||
-        "Guide to platform engineering strategy with MooseStack",
+        "Comprehensive guides for building applications, managing data, and implementing data warehousing strategies",
     };
   } catch (error) {
     return {
-      title: "Platform Engineering | MooseStack Documentation",
-      description: "Guide to platform engineering strategy with MooseStack",
+      title: "Guides | MooseStack Documentation",
+      description:
+        "Comprehensive guides for building applications, managing data, and implementing data warehousing strategies",
     };
   }
 }
 
-export default async function PlatformEngineeringPage() {
+export default async function GuidesPage() {
   let content;
   try {
-    content = await parseMarkdownContent(
-      "guides/strategy/platform-engineering",
-    );
+    content = await parseMarkdownContent("guides/index");
   } catch (error) {
     notFound();
   }
 
   const breadcrumbs = buildDocBreadcrumbs(
-    "guides/strategy/platform-engineering",
+    "guides/index",
     typeof content.frontMatter.title === "string" ?
       content.frontMatter.title
     : undefined,
