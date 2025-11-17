@@ -409,6 +409,7 @@ mod tests {
     use crate::framework::core::infrastructure_map::{PrimitiveSignature, PrimitiveTypes};
     use crate::framework::core::partial_infrastructure_map::LifeCycle;
     use crate::framework::versions::Version;
+    use crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine;
     use crate::infrastructure::olap::clickhouse::TableWithUnsupportedType;
     use crate::infrastructure::olap::OlapChangesError;
     use crate::infrastructure::olap::OlapOperations;
@@ -449,7 +450,7 @@ mod tests {
             order_by: OrderBy::Fields(vec!["id".to_string()]),
             partition_by: None,
             sample_by: None,
-            engine: None,
+            engine: ClickhouseEngine::MergeTree,
             version: Some(Version::from_string("1.0.0".to_string())),
             source_primitive: PrimitiveSignature {
                 name: "test".to_string(),
