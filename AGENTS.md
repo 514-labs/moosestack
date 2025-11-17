@@ -1,117 +1,73 @@
 # AGENTS.md
 
-When you are changing MooseStack functionality (either in the language specific libraries or in the Rust core) ALWAYS run the
-end-to-end tests to make sure you did not break anything.
+Multi-language monorepo (Rust CLI + TypeScript/Python libraries) using PNPM workspaces, Turbo Repo, and Cargo workspace.
 
-When you change user facing functionality for moose, always add end-to-end tests for the `python-tests` and `typescript-tests`
-templates and ALWAYS audit for the documentation for update needs. Those projects are Moose project that should be using Moose code.
-The checks if the moose code works as expected should be inside `apps/framework-cli-e2e`. 
+**CRITICAL**: When changing MooseStack functionality, ALWAYS run end-to-end tests. When changing user-facing features, add E2E tests to `python-tests`/`typescript-tests` templates AND audit documentation. Logs: `~/.moose/*-cli.log`
 
-You can find the logs for moose if you need to troublehoot into `~/.moose/*-cli.log`
+## Build & Development Commands
 
-## Commands
+### All Languages
+- **Build all**: `pnpm build` (Turbo orchestrates builds)
+- **Dev mode**: `pnpm dev` (starts dev servers)
+- **Clean**: `pnpm clean`
+- **Lint all**: `pnpm lint`
+- **Format**: `pnpm format` (Prettier for TS/JS)
 
-### Build and Development
-- **Build all packages**: `pnpm build` (uses Turbo Repo)
-- **Development mode**: `pnpm dev` (starts development servers)
-- **Linting**: `pnpm lint`
-- **Formatting**: `pnpm format` (Prettier on TypeScript/JavaScript files)
-- **Clean build artifacts**: `pnpm clean`
+### Rust
+- **Build**: `cargo build`
+- **Test all**: `cargo test`
+- **Test single**: `cargo test <test_name>` or `cargo test --package <package_name> --test <test_file>`
+- **Lint**: `cargo clippy --all-targets -- -D warnings` (REQUIRED pre-commit, no warnings allowed)
+- **Format**: `rustfmt --edition 2021 <file.rs>`
 
-### Rust Components
-- **Build Rust**: `cargo build`
-- **Run Rust tests**: `cargo test`
-- **Lint Rust code**: `cargo clippy --all-targets -- -D warnings` (no warnings allowed)
-- **Format Rust code**: `rustfmt --edition 2021 <file.rs>`
+### TypeScript
+- **Test lib**: `cd packages/ts-moose-lib && pnpm test` (runs mocha tests)
+- **Test single**: `cd packages/ts-moose-lib && pnpm test --grep "test name pattern"`
+- **Typecheck**: `cd packages/ts-moose-lib && pnpm typecheck`
 
-### Testing
+### Python
+- **Test lib**: `cd packages/py-moose-lib && pytest`
+- **Test single**: `cd packages/py-moose-lib && pytest tests/test_file.py::test_function_name`
+- **Test pattern**: `cd packages/py-moose-lib && pytest -k "test_pattern"`
 
-#### Unit Tests (Library Testing)
-- **Rust tests**: `cargo test`
-- **TypeScript library tests**: Navigate to `./packages/ts-moose-lib` and run `pnpm test`
-- **Python library tests**: Navigate to `./packages/py-moose-lib` and run `pytest`
+### End-to-End Tests
+- **Run E2E**: `cd apps/framework-cli-e2e && pnpm test` (includes pretest: cargo build, pnpm build, package templates)
+- **Single E2E test**: `cd apps/framework-cli-e2e && pnpm test --grep "test name"`
 
-Unit tests should be colocated with the library code they test:
-- TypeScript library tests: `packages/ts-moose-lib/tests/`
-- Python library tests: `packages/py-moose-lib/tests/`
-- Rust tests: Inline with code using `#[cfg(test)]` modules
+## Code Style Guidelines
 
-#### End-to-End Tests (Template Integration Testing)
-- **End-to-end tests**: Navigate to `./apps/framework-cli-e2e` and run `pnpm test`
+### TypeScript/JavaScript
+- **Imports**: Group by external deps, internal modules, types; use named exports from barrel files (`index.ts`)
+- **Naming**: camelCase for vars/functions, PascalCase for types/classes/components, UPPER_SNAKE_CASE for constants
+- **Types**: Prefer interfaces for objects, types for unions/intersections; explicit return types on public APIs
+- **Unused vars**: Prefix with `_` (e.g., `_unusedParam`) to bypass linting errors
+- **Formatting**: Prettier with `experimentalTernaries: true`; auto-formats on commit (Husky + lint-staged)
+- **ESLint**: Extends Next.js, Turbo, TypeScript recommended; `@typescript-eslint/no-explicit-any` disabled
 
-End-to-end tests verify that complete MooseStack applications work correctly:
-- Tests use the templates in `templates/` as working Moose applications
-- Templates like `python-tests` and `typescript-tests` are complete MooseStack projects
-- E2E tests verify infrastructure creation, data ingestion, API responses, etc.
+### Rust
+- **Error handling**: Use `thiserror` with `#[derive(thiserror::Error)]`; define errors near fallibility unit (NO global `Error` type); NEVER use `anyhow::Result`
+- **Naming**: snake_case for functions/vars, PascalCase for types/traits, SCREAMING_SNAKE_CASE for constants
+- **Constants**: Place in `constants.rs` at appropriate module level
+- **Newtypes**: Use tuple structs with validation constructors (e.g., `struct UserId(String)`)
+- **Tests**: Inline with `#[cfg(test)]` modules
+- **Documentation**: Required for all public APIs
 
-#### Testing Distinction: Templates vs Libraries
-**IMPORTANT**: Templates are NOT for library unit tests. They are working MooseStack applications.
+### Python
+- **Style**: Follow PEP 8; snake_case for functions/vars, PascalCase for classes, UPPER_SNAKE_CASE for constants
+- **Types**: Use type hints for function signatures and public APIs
+- **Tests**: Use pytest with fixtures and parametrize decorators
 
-- **Templates** (`templates/python-tests`, `templates/typescript-tests`): 
-  - Complete, runnable Moose applications
-  - Used by E2E tests to verify end-to-end functionality
-  - Should demonstrate features and serve as examples
-  - Tested by `apps/framework-cli-e2e`
+## Repository Structure
 
-- **Library Tests** (`packages/*/tests/`):
-  - Unit tests for library functionality
-  - Test individual functions, classes, and modules
-  - Should be colocated with the library code
-  - Run independently of the CLI or infrastructure
+- **`apps/`**: CLI (`framework-cli/`), docs (`framework-docs/`), E2E tests (`framework-cli-e2e/`)
+- **`packages/`**: Libraries (`ts-moose-lib/`, `py-moose-lib/`), shared deps, protobuf definitions
+- **`templates/`**: Standalone Moose apps used by E2E tests (NOT for unit tests)
 
-## Repository Architecture
+## Testing Philosophy
 
-### Monorepo Structure
-This is a multi-language monorepo using:
-- **PNPM workspaces** with **Turbo Repo** for JavaScript/TypeScript packages
-- **Cargo workspace** for Rust components
-- **Cross-language integration** between Rust CLI and TypeScript/Python libraries
+- **Library tests** (`packages/*/tests/`): Unit tests colocated with library code
+- **Templates** (`templates/python-tests`, `templates/typescript-tests`): Complete Moose apps for E2E testing; must run in isolation
 
-### Key Directories
-- `apps/`: End-to-end tests, CLI application, docs, and distribution packages
-  - `framework-cli/`: Main Rust CLI application
-  - `framework-docs/`: Documentation site
-  - `framework-cli-e2e/`: End-to-end test suite
-- `packages/`: Shared libraries and common dependencies
-  - `ts-moose-lib/`: TypeScript library for MooseStack
-  - `py-moose-lib/`: Python library for MooseStack
-  - `protobuf/`: Protocol buffer definitions
-- `templates/`: Standalone Moose project templates
+## Key Technologies
 
-### Core Technologies
-- **Rust**: CLI application, performance-critical components
-- **TypeScript**: Developer libraries, web interfaces
-- **Python**: Alternative developer library
-- **ClickHouse**: OLAP database
-- **Redpanda/Kafka**: Streaming platform
-- **Temporal**: Workflow orchestration
-- **Redis**: Internal state management
-
-### Architecture Patterns
-- **Code-first infrastructure**: Declare tables, streams, APIs in code
-- **Type-safe development**: Strong typing across TypeScript and Rust
-- **Modular design**: Independent modules (OLAP, Streaming, Workflows, APIs)
-- **Local-first development**: Full production mirror via `moose dev`
-
-## Development Guidelines
-
-### Pre-commit Requirements
-- **TypeScript/JavaScript**: Must pass linting and code formating checks (`npx lint-staged`)
-- **Rust**: Must pass `cargo clippy --all-targets -- -D warnings` (no warnings permitted)
-- **All components**: Tests must pass before PR submission
-
-### Error Handling (Rust)
-- Define error types near their unit of fallibility (no global `Error` type)
-- Use `thiserror` for error definitions with `#[derive(thiserror::Error)]`
-- Structure errors in layers with context and specific variants
-- Never use `anyhow::Result` - refactor to use `thiserror`
-
-### Code Standards
-- **Constants**: Use `const` in Rust, place in `constants.rs` at appropriate module level
-- **Newtypes**: Use tuple structs with validation constructors
-- **Documentation**: All public APIs must be documented
-- **Linting**: Always run `cargo clippy --all-targets -- -D warnings` for Rust code
-- Follow existing patterns and conventions in each language
-
-### Templates
-Templates in the `templates/` directory must be able to run in isolation. When modifying templates, verify they can still function as standalone projects.
+Rust (CLI), TypeScript (libs/web), Python (lib), ClickHouse (OLAP), Redpanda/Kafka (streaming), Temporal (workflows), Redis (state)
