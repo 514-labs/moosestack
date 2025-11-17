@@ -62,6 +62,7 @@ const ClickHouseIcon = (props: React.SVGProps<SVGSVGElement>) => (
 // Base paths for different sections
 const basePaths = {
   quickstart: "/moose/getting-started/quickstart",
+  addExistingApp: "/moose/getting-started/add-to-app",
   fromClickhouse: "/moose/getting-started/from-clickhouse",
   dataModeling: "/moose/data-modeling",
   localDev: "/moose/local-dev",
@@ -87,6 +88,7 @@ export const Icons = {
   // Getting Started
   quickstart: Rocket,
   fromClickhouse: ClickHouseIcon,
+  addExistingApp: Library,
   dataModeling: PencilRuler,
   localDev: Laptop,
   // Modules
@@ -130,6 +132,12 @@ export const PathConfig = {
     path: `${basePaths.quickstart}`,
     icon: Icons.quickstart,
     title: "Quickstart",
+    category: "getting-started" as const,
+  },
+  addExistingApp: {
+    path: `${basePaths.addExistingApp}`,
+    icon: Icons.addExistingApp,
+    title: "Add to Existing Application",
     category: "getting-started" as const,
   },
   dataModeling: {

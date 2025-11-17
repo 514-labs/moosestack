@@ -24,26 +24,18 @@ bash -i <(curl -fsSL https://fiveonefour.com/install.sh) moose
 
 <CTACards rows={3} columns={1}>
   <CTACard
-    title="5-minute Quickstart"
-    description="Start with a simple demo app to get a feel for Moose"
+    title="Start from scratch"
+    description="Create a new MooseStack service with a full runtime including OLAP, Streaming, Workflows, and APIs"
     ctaLink={PathConfig.quickstart.path}
     Icon={PathConfig.quickstart.icon}
     variant="default"
     orientation="horizontal"
   />
   <CTACard
-    title="Start with your existing ClickHouse database"
-    description="Works with your current data - zero migration required"
-    ctaLink={PathConfig.fromClickhouse.path}
-    Icon={PathConfig.fromClickhouse.icon}
-    variant="default"
-    orientation="horizontal"
-  />
-  <CTACard
-    title="Bootstrap with a Reference Application"
-    description="Start with a reference application for integrating Moose with complex microservices architectures"
-    ctaLink="https://github.com/514-labs/area-code"
-    Icon={Github}
+    title="Add to your existing application"
+    description="Add Moose OLAP as a library to your existing app (e.g Next.js, Express, FastAPI, etc.) without adopting a full server runtime"
+    ctaLink={PathConfig.addExistingApp.path}
+    Icon={PathConfig.addExistingApp.icon}
     variant="default"
     orientation="horizontal"
   />
