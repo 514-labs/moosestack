@@ -9,7 +9,6 @@ import { Callout } from "@/components";
 
 <Callout type="info" title="Highlights">
 - **New:** TypeScript MCP template with AI chat integration and data catalog discovery
-- **New:** [Enum16 data type](#enum16-data-type-support)
 - **New:** [Resource access functions](#functions-for-programmatic-resource-access) to inspect and access Moose resources at runtime
 </Callout>
 
@@ -43,42 +42,9 @@ provides readonly access to ClickHouse data with query limits up to 1000 rows.
 
 PR: [#2970](https://github.com/514-labs/moosestack/pull/2970), [#2991](https://github.com/514-labs/moosestack/pull/2991) | Docs: [MCP template](/moose/templates-examples#typescript-mcp)
 
-## Enum16 data type support
-
-Support for ClickHouse Enum16 data type with values from -32,768 to 32,767 (compared to Enum8's -128 to 127).
-Use Enum16 for HTTP status codes, business identifiers, or any enum values exceeding Enum8's range.
-
-```typescript filename="datamodels/ApiRequestLog.ts" copy
-import { Key } from "@514labs/moose-lib";
-
-// Define HTTP status codes with Enum16 to support values like 404, 500
-export enum HttpStatusCode {
-  "OK" = 200,
-  "Created" = 201,
-  "BadRequest" = 400,
-  "Unauthorized" = 401,
-  "NotFound" = 404,
-  "InternalServerError" = 500,
-  "BadGateway" = 502,
-  "ServiceUnavailable" = 503
-}
-
-export interface ApiRequestLog {
-  id: Key<string>;
-  endpoint: string;
-  method: string;
-  status_code: HttpStatusCode;  // Uses Enum16
-  response_time_ms: number;
-  timestamp: Date;
-}
-```
-
-PR: [#2972](https://github.com/514-labs/moosestack/pull/2972) | Docs: [Supported types](/moose/olap/supported-types#enum-types)
-
 ## Functions for programmatic resource access
 
-New functions allow programmatic access to all registered Moose resources at runtime.
-Dynamically route stream messages to different tables based on runtime conditions, or build custom tooling that inspects your Moose application structure.
+Access your Moose resources (tables, streams, APIs, workflows) programmatically at runtime. Build dynamic data routing logic that adapts to incoming events, create admin tools that inspect your data infrastructure, or write custom debugging utilities that explore your application's resources without hardcoding names.
 
 ```typescript filename="app/streams/eventRouter.ts" copy
 import { getTable, getStream, DeadLetterQueue } from "@514labs/moose-lib";
@@ -125,6 +91,7 @@ TypeScript now includes resource access functions for parity with Python: `getTa
 PR: [#2961](https://github.com/514-labs/moosestack/pull/2961) | Docs: [TypeScript](/moose/reference/ts-moose-lib), [Python](/moose/reference/py-moose-lib)
 
 ## Other Features and Improvements
+- **Enum16 data type** – Support for ClickHouse Enum16 with values from -32,768 to 32,767. PR [#2972](https://github.com/514-labs/moosestack/pull/2972) | Docs: [Supported types](/moose/olap/supported-types#enum-types)
 - **Documentation search** – Command palette-style search for guides and API references. PR [#2964](https://github.com/514-labs/moosestack/pull/2964)
 - **MCP template setup** – Monorepo structure, changing started instructions to use `pnpm` and `moose dev`. PR [#2990](https://github.com/514-labs/moosestack/pull/2990)
 - **Automatic database context detection** – MCP server uses ClickHouse's `currentDatabase()` for simpler setup. PR [#2979](https://github.com/514-labs/moosestack/pull/2979)
