@@ -1,0 +1,228 @@
+---
+title: Add to Existing Application
+description: Layer Moose's ClickHouse schema management into an existing Next.js, Express, or FastAPI service without starting `moose dev`.
+---
+
+import { Callout, LanguageSwitcher, TypeScript, Python, FeatureCard, FeatureGrid, Icons } from "@/components";
+
+# Add Moose to an Existing Application
+
+<LanguageSwitcher />
+
+Bring Moose's type-safe ClickHouse migrations into an app you already run (Next.js, Express, FastAPI, or any other server) without adopting the full runtime. You'll install the lightweight libraries, point Moose at your managed ClickHouse cluster, define tables as code, run migrations directly against production, and query the data from your existing API layer.
+
+## Prerequisites
+
+- You already operate a ClickHouse cluster (Cloud or self-hosted) and have credentials that can create/alter tables.
+- Node.js 20+ for TypeScript projects or Python 3.12+ for FastAPI projects.
+- The [Moose CLI](https://docs.fiveonefour.com/moose/moose-cli) installed globally **or** available via `npx`/`pip` so you can run `moose plan` / `moose migrate`.
+- Git access to the repository that hosts your Next.js, Express, or FastAPI service.
+
+## 1. Install Moose libraries
+
+<TypeScript>
+Install the runtime library inside your app, plus the CLI as a dev dependency:
+
+```bash filename="Terminal" copy
+pnpm add @514labs/moose-lib
+pnpm add -D @514labs/moose-cli
+# npm install @514labs/moose-lib && npm install -D @514labs/moose-cli
+```
+
+If you prefer the Rust binary, keep `@514labs/moose-cli` out of your `package.json` and rely on the globally installed `moose` command instead.
+</TypeScript>
+
+<Python>
+```bash filename="Terminal" copy
+pip install --upgrade moose-lib moose-cli
+```
+
+The PyPI `moose-cli` package exposes the same `moose` entrypoint as the Rust binary, so you can keep everything inside your virtual environment if you prefer.
+</Python>
+
+## 2. Configure the Moose CLI
+
+Create a `moose.config.toml` in the repo root with just the essentials: which language you’re using, where Moose should look for schema files, and how to store migration state.
+
+```toml filename="moose.config.toml" copy
+language = "typescript"            # or "python"
+source_dir = "moose"
+
+[state_config]
+storage = "clickhouse"
+
+[features]
+streaming_engine = false
+workflows = false
+apis = false
+```
+
+## 3. Model your ClickHouse schema
+
+Create a folder in your existing project that you plan to use as the source directory for your Moose OLAP schema files (e.g. `/moose/`). The Moose CLI will watch that directory when it builds migrations, so when you define a new table or view, it becomes part of your infrastructure plan.
+
+<TypeScript>
+For TypeScript projects, Moose requires you export all the tables, views, and other schema objects that you want to manage from a file named `index.ts` which is located in the root of your `source_dir`.
+
+```typescript filename="/moose/index.ts"
+import { Key, OlapTable, ClickHouseEngines } from "@514labs/moose-lib";
+
+type PageView = {
+  id: Key<string>;
+  path: string;
+  referrer?: string;
+  occurredAt: Date;
+  source: "web" | "api";
+};
+
+export const pageViews = new OlapTable<PageView>("page_views", {
+  engine: ClickHouseEngines.ReplacingMergeTree,
+  orderByFields: ["occurredAt"],
+});
+```
+
+This defines a ClickHouse table named `page_views` along with its schema, indexes, and enum constraints in TypeScript.
+</TypeScript>
+
+<Python>
+For Python projects, Moose requires you import all the tables, views, and other schema objects that you want to manage from a file named `main.py` which is located in the root of your `source_dir`.
+
+```python filename="/moose/main.py"
+from datetime import datetime
+from typing import Literal, Optional
+
+from moose_lib import Key, OlapTable, ClickHouseEngines
+from pydantic import BaseModel
+
+class PageView(BaseModel):
+    id: Key[str]
+    path: str
+    referrer: Optional[str] = None
+    occurred_at: datetime
+    source: Literal["web", "api"]
+
+page_views = OlapTable[PageView](
+    "page_views",
+    engine=ClickHouseEngines.ReplacingMergeTree,
+    order_by_fields=["occurred_at"],
+)
+```
+</Python>
+
+
+Commit these schema files just like any other source code—the `moose plan` command will read them to produce migrations, and you can import the same table objects inside your application for fully typed queries.
+
+<Callout type="info" title="Already have tables in ClickHouse?">
+Run `moose db pull` to scaffold code from an existing database instead of retyping schemas:
+
+```bash filename="Terminal" copy
+export PROD_CLICKHOUSE_URL="clickhouse://USER:PASSWORD@HOST:PORT/DATABASE_NAME"
+moose db pull --connection-string "$PROD_CLICKHOUSE_URL"
+```
+
+Use the same connection string here that you’ll later use for planning and migrating changes.
+</Callout>
+
+## 4. Point Moose at your remote ClickHouse
+
+Whether you’re pulling schemas, planning migrations, or applying them, the connection string is the same: the URL of the ClickHouse cluster you’re managing. Keep it outside git (for example in `.env.production`) and reuse it for every remote operation:
+
+```bash filename="Terminal" copy
+export PROD_CLICKHOUSE_URL="clickhouse://USER:PASSWORD@prod-clickhouse:9440/customer_events"
+
+# Pull existing objects into code
+moose db pull --connection-string "$PROD_CLICKHOUSE_URL" --target infra/moose
+
+# Generate migration plans
+moose plan --clickhouse-url "$PROD_CLICKHOUSE_URL" --save
+
+# Apply the reviewed plan
+moose migrate --clickhouse-url "$PROD_CLICKHOUSE_URL"
+```
+
+## 5. Optional: spin up a local disposable ClickHouse
+
+When you want a safe sandbox to try migration ideas or iterate on data transformations, extend `moose.config.toml` with a local `clickhouse_config`, then run `moose dev`:
+
+```toml filename="moose.config.toml" copy
+[clickhouse_config]
+host = "localhost"
+host_port = 18123
+native_port = 9000
+db_name = "local"
+user = "panda"
+password = "pandapass"
+use_ssl = false
+```
+
+```bash filename="Terminal" copy
+# Start ClickHouse, Redpanda, Temporal, etc. locally
+moose dev
+```
+
+Seed the local database with a slice of production data so you can validate queries end-to-end:
+
+```bash filename="Terminal" copy
+moose seed clickhouse --connection-string "$PROD_CLICKHOUSE_URL" --tables page_views --limit 10000
+```
+
+Now you can iterate on schemas, rerun `moose dev` (it hot-reloads migrations), and inspect the data impact before touching production.
+
+## 6. Run migrations against remote ClickHouse
+
+Once your schema changes are ready, generate and apply migrations directly against the target ClickHouse cluster. Use the connection string you exported in the previous section so that you can target the correct ClickHouse cluster without exposing your production credentials in the `moose.config.toml` file which is checked into git:
+
+```bash filename="Terminal" copy
+# Preview changes (writes plan.yaml + state files to ./moose-build)
+export PROD_CLICKHOUSE_URL="clickhouse://USER:PASSWORD@HOST:PORT/DATABASE_NAME"
+moose generate migration --clickhouse-url "$PROD_CLICKHOUSE_URL" --save
+
+# Apply the plan once it's reviewed/approved
+moose migrate --clickhouse-url "$PROD_CLICKHOUSE_URL"
+```
+
+- For npm-based projects, replace `moose` with `npx @514labs/moose-cli` if you did not install the binary globally.
+- Python users can run the same commands via `python -m moose_cli plan ...` / `python -m moose_cli migrate ...` inside a virtual environment.
+
+<Callout type="warning" title="Keep secrets out of your shell history">
+Export `PROD_CLICKHOUSE_URL=clickhouse://user:pass@host:9440/db` (or use your secrets manager) and reference it with `--clickhouse-url "$PROD_CLICKHOUSE_URL"` so passwords never land in shell history or CI logs.
+</Callout>
+
+## 7. Query from your existing application
+
+Now that your ClickHouse schema is managed and migrated, integrate Moose's query clients into your existing application to run type-safe queries against your analytics data.
+
+Choose your framework to see a complete integration guide:
+
+<FeatureGrid columns={3}>
+  <FeatureCard
+    title="Next.js"
+    href="/moose/app-api-frameworks/nextjs"
+    Icon={Icons.apis}
+    description="Add type-safe ClickHouse queries to Next.js API routes and server components"
+  />
+  <FeatureCard
+    title="Express"
+    href="/moose/app-api-frameworks/express"
+    Icon={Icons.apis}
+    description="Integrate Moose query clients into Express middleware and route handlers"
+  />
+  <FeatureCard
+    title="FastAPI"
+    href="/moose/app-api-frameworks/fastapi"
+    Icon={Icons.apis}
+    description="Use Moose with FastAPI dependency injection for efficient connection pooling"
+  />
+</FeatureGrid>
+
+Each guide shows you how to:
+- Initialize the Moose client in your app's lifecycle
+- Write type-safe queries with autocomplete
+- Handle connection configuration for local and production environments
+- Structure query logic for optimal performance
+
+## What's next?
+
+- Learn more about schema capabilities in the [OLAP module](/moosestack/olap/index).
+- Automate deploys by scripting `moose plan`/`moose migrate` as described in [Apply migrations](/moosestack/olap/apply-migrations) and storing prod secrets in your CI’s secret manager.
+- When you're ready to add streaming or APIs, continue with the [Real-Time Analytics pattern](/moosestack/building/patterns/realtime-analytics) or the [general quickstart](/moosestack/getting-started/quickstart).
