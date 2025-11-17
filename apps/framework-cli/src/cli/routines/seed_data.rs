@@ -128,7 +128,7 @@ async fn load_infrastructure_map(project: &Project) -> Result<InfrastructureMap,
 
 /// Builds the ORDER BY clause for a table based on infrastructure map or provided order
 fn build_order_by_clause(
-    table_name: &str,
+    table_id: &str,
     infra_map: &InfrastructureMap,
     order_by: Option<&str>,
     total_rows: usize,
@@ -136,10 +136,10 @@ fn build_order_by_clause(
 ) -> Result<String, RoutineFailure> {
     match order_by {
         None => {
-            let table = infra_map.tables.get(table_name).ok_or_else(|| {
+            let table = infra_map.tables.get(table_id).ok_or_else(|| {
                 RoutineFailure::error(Message::new(
                     "Seed".to_string(),
-                    format!("{table_name} not found."),
+                    format!("Table with id {table_id} not found."),
                 ))
             })?;
             let clause = match &table.order_by {
@@ -159,7 +159,7 @@ fn build_order_by_clause(
             } else {
                 Err(RoutineFailure::error(Message::new(
                     "Seed".to_string(),
-                    format!("Table {table_name} without ORDER BY. Supply ordering with --order-by to prevent the same row fetched in multiple batches."),
+                    format!("Table {} without ORDER BY. Supply ordering with --order-by to prevent the same row fetched in multiple batches.", table.name),
                 )))
             }
         }
@@ -218,13 +218,24 @@ async fn seed_single_table(
     infra_map: &InfrastructureMap,
     local_clickhouse: &ClickHouseClient,
     remote_config: &ClickHouseConfig,
-    table_name: &str,
+    table_id: &str,
     limit: Option<usize>,
     order_by: Option<&str>,
 ) -> Result<String, RoutineFailure> {
     let remote_host_and_port = format!("{}:{}", remote_config.host, remote_config.native_port);
     let local_db = &local_clickhouse.config().db_name;
     let batch_size: usize = 50_000;
+
+    // Get the table to extract the actual table name
+    let table = infra_map.tables.get(table_id).ok_or_else(|| {
+        RoutineFailure::error(Message::new(
+            "SeedSingleTable".to_string(),
+            format!("Table with id {table_id} not found in infrastructure map"),
+        ))
+    })?;
+
+    // Use the table's name field, which contains the version suffix
+    let table_name = &table.name;
 
     // Get total row count
     let remote_total = get_remote_table_count(
@@ -254,7 +265,7 @@ async fn seed_single_table(
     };
 
     let order_by_clause =
-        build_order_by_clause(table_name, infra_map, order_by, total_rows, batch_size)?;
+        build_order_by_clause(table_id, infra_map, order_by, total_rows, batch_size)?;
 
     let mut copied_total: usize = 0;
     let mut i: usize = 0;
@@ -297,23 +308,51 @@ async fn seed_single_table(
     Ok(format!("✓ {table_name}: copied from remote"))
 }
 
-/// Gets the list of tables to seed based on parameters
-fn get_tables_to_seed(infra_map: &InfrastructureMap, table_name: Option<String>) -> Vec<String> {
+/// Gets the list of table IDs to seed based on parameters
+/// Returns table IDs (keys from infra_map.tables) which may include database prefixes
+fn get_tables_to_seed(
+    infra_map: &InfrastructureMap,
+    table_name: Option<String>,
+) -> Result<Vec<String>, RoutineFailure> {
     if let Some(ref t) = table_name {
-        info!("Seeding single table: {}", t);
-        vec![t.clone()]
+        // User specified a table name - need to find the matching table ID
+        // Try to find a table where the name matches (could be in any database)
+        let matching_ids: Vec<String> = infra_map
+            .tables
+            .iter()
+            .filter(|(_, table)| table.name == *t)
+            .map(|(id, _)| id.clone())
+            .collect();
+
+        if matching_ids.is_empty() {
+            return Err(RoutineFailure::error(Message::new(
+                "Seed".to_string(),
+                format!("Table '{}' not found in infrastructure map", t),
+            )));
+        }
+
+        if matching_ids.len() > 1 {
+            warn!(
+                "Multiple tables found with name '{}': {:?}. Seeding all.",
+                t, matching_ids
+            );
+        }
+
+        info!("Seeding {} table(s) with name: {}", matching_ids.len(), t);
+        Ok(matching_ids)
     } else {
+        // Return all table IDs, excluding internal Moose tables
         let table_list: Vec<String> = infra_map
             .tables
-            .keys()
-            .filter(|table| !table.starts_with("_MOOSE"))
-            .cloned()
+            .iter()
+            .filter(|(_, table)| !table.name.starts_with("_MOOSE"))
+            .map(|(id, _)| id.clone())
             .collect();
         info!(
             "Seeding {} tables (excluding internal Moose tables)",
             table_list.len()
         );
-        table_list
+        Ok(table_list)
     }
 }
 
@@ -479,8 +518,8 @@ pub async fn seed_clickhouse_tables(
 ) -> Result<Vec<String>, RoutineFailure> {
     let mut summary = Vec::new();
 
-    // Get the list of tables to seed
-    let tables = get_tables_to_seed(infra_map, table_name.clone());
+    // Get the list of table IDs to seed
+    let table_ids = get_tables_to_seed(infra_map, table_name.clone())?;
 
     // Get available remote tables for validation (unless specific table is requested)
     let remote_tables = if table_name.is_some() {
@@ -504,14 +543,22 @@ pub async fn seed_clickhouse_tables(
     };
 
     // Process each table
-    for table_name in tables {
-        // Check if table should be skipped due to validation
-        if should_skip_table(&table_name, &remote_tables) {
+    for table_id in table_ids {
+        // Get the table to access its name for validation
+        let table = infra_map.tables.get(&table_id).ok_or_else(|| {
+            RoutineFailure::error(Message::new(
+                "Seed".to_string(),
+                format!("Table with id {table_id} not found in infrastructure map"),
+            ))
+        })?;
+
+        // Check if table should be skipped due to validation (use actual table name for checking)
+        if should_skip_table(&table.name, &remote_tables) {
             debug!(
                 "Table '{}' exists locally but not on remote - skipping",
-                table_name
+                table.name
             );
-            summary.push(format!("⚠️  {}: skipped (not found on remote)", table_name));
+            summary.push(format!("⚠️  {}: skipped (not found on remote)", table.name));
             continue;
         }
 
@@ -520,7 +567,7 @@ pub async fn seed_clickhouse_tables(
             infra_map,
             local_clickhouse,
             remote_config,
-            &table_name,
+            &table_id,
             limit,
             order_by,
         )
@@ -534,14 +581,14 @@ pub async fn seed_clickhouse_tables(
                     // Table not found on remote, skip gracefully
                     debug!(
                         "Table '{}' not found on remote database - skipping",
-                        table_name
+                        table.name
                     );
-                    summary.push(format!("⚠️  {}: skipped (not found on remote)", table_name));
+                    summary.push(format!("⚠️  {}: skipped (not found on remote)", table.name));
                 } else {
                     // Other errors should be added as failures
                     summary.push(format!(
                         "✗ {}: failed to copy - {}",
-                        table_name, e.message.details
+                        table.name, e.message.details
                     ));
                 }
             }
@@ -660,12 +707,15 @@ mod tests {
     }
 
     #[test]
-    fn test_get_tables_to_seed_single_table() {
+    fn test_get_tables_to_seed_single_table_not_found() {
         let infra_map = InfrastructureMap::default();
 
         let result = get_tables_to_seed(&infra_map, Some("specific_table".to_string()));
-        assert_eq!(result.len(), 1);
-        assert_eq!(result[0], "specific_table");
+        assert!(result.is_err());
+        if let Err(e) = result {
+            assert_eq!(e.message.action, "Seed");
+            assert!(e.message.details.contains("not found"));
+        }
     }
 
     #[test]
@@ -673,7 +723,8 @@ mod tests {
         let infra_map = InfrastructureMap::default();
 
         let result = get_tables_to_seed(&infra_map, None);
-        assert_eq!(result.len(), 0); // Default map has no tables
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().len(), 0); // Default map has no tables
     }
 
     // Test for the bug fix: ensure batch counting is accurate
