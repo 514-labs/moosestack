@@ -365,7 +365,7 @@ fn is_only_required_change_for_special_column_type(before: &Column, after: &Colu
 impl ClickHouseTableDiffStrategy {
     /// Check if a table uses the S3Queue engine
     pub fn is_s3queue_table(table: &Table) -> bool {
-        matches!(&table.engine, Some(ClickhouseEngine::S3Queue { .. }))
+        matches!(&table.engine, ClickhouseEngine::S3Queue { .. })
     }
 
     /// Check if a SQL resource is a materialized view that needs population
@@ -472,6 +472,12 @@ impl TableDiffStrategy for ClickHouseTableDiffStrategy {
             })];
         }
 
+        // Note: cluster_name changes are intentionally NOT treated as requiring drop+create.
+        // cluster_name is a deployment directive (how to run DDL) rather than a schema property
+        // (what the table looks like). When cluster_name changes, future DDL operations will
+        // automatically use the new cluster_name via the ON CLUSTER clause, but the table
+        // itself doesn't need to be recreated.
+
         // Check if PARTITION BY has changed
         let partition_by_changed = partition_by_change.before != partition_by_change.after;
         if partition_by_changed {
@@ -492,7 +498,7 @@ impl TableDiffStrategy for ClickHouseTableDiffStrategy {
         let after_primary_keys = after.primary_key_columns();
         if before_primary_keys != after_primary_keys
             // S3 allows specifying PK, but that information is not in system.columns
-            && after.engine.as_ref().is_none_or(|e| e.is_merge_tree_family())
+            && after.engine.is_merge_tree_family()
         {
             log::warn!(
                 "ClickHouse: Primary key structure changed for table '{}', requiring drop+create",
@@ -513,13 +519,10 @@ impl TableDiffStrategy for ClickHouseTableDiffStrategy {
             before_hash != after_hash
         } else {
             // Fallback to direct engine comparison if hashes are not available
-            let before_engine = before.engine.as_ref();
-            match after.engine.as_ref() {
-                // after.engine is unset -> before engine should be same as default
-                None => before_engine.is_some_and(|e| *e != ClickhouseEngine::MergeTree),
-                // force recreate only if engines are different
-                Some(e) => Some(e) != before_engine,
-            }
+            // Note: Tables are already normalized at this point (None -> Some(MergeTree))
+            // via normalize_inframap_engines() in the remote plan flow, so we can
+            // safely use direct comparison
+            before.engine != after.engine
         };
 
         // Check if engine has changed (using hash comparison when available)
@@ -586,19 +589,16 @@ impl TableDiffStrategy for ClickHouseTableDiffStrategy {
 
         // Check if this is an S3Queue table with column changes
         // S3Queue only supports MODIFY/RESET SETTING, not column operations
-        if !column_changes.is_empty() {
-            if let Some(engine) = &before.engine {
-                if matches!(engine, ClickhouseEngine::S3Queue { .. }) {
-                    log::warn!(
-                        "ClickHouse: S3Queue table '{}' has column changes, requiring drop+create (S3Queue doesn't support ALTER TABLE for columns)",
-                        before.name
-                    );
-                    return vec![
-                        OlapChange::Table(TableChange::Removed(before.clone())),
-                        OlapChange::Table(TableChange::Added(after.clone())),
-                    ];
-                }
-            }
+        if !column_changes.is_empty() && matches!(&before.engine, ClickhouseEngine::S3Queue { .. })
+        {
+            log::warn!(
+                "ClickHouse: S3Queue table '{}' has column changes, requiring drop+create (S3Queue doesn't support ALTER TABLE for columns)",
+                before.name
+            );
+            return vec![
+                OlapChange::Table(TableChange::Removed(before.clone())),
+                OlapChange::Table(TableChange::Added(after.clone())),
+            ];
         }
 
         // Filter out no-op changes for ClickHouse semantics:
@@ -671,10 +671,14 @@ mod tests {
             order_by: OrderBy::Fields(order_by),
             partition_by: None,
             sample_by: None,
-            engine: deduplicate.then_some(ClickhouseEngine::ReplacingMergeTree {
-                ver: None,
-                is_deleted: None,
-            }),
+            engine: if deduplicate {
+                ClickhouseEngine::ReplacingMergeTree {
+                    ver: None,
+                    is_deleted: None,
+                }
+            } else {
+                ClickhouseEngine::MergeTree
+            },
             version: Some(Version::from_string("1.0.0".to_string())),
             source_primitive: PrimitiveSignature {
                 name: "test".to_string(),
@@ -687,6 +691,7 @@ mod tests {
             indexes: vec![],
             database: None,
             table_ttl_setting: None,
+            cluster_name: None,
         }
     }
 
@@ -1473,14 +1478,14 @@ mod tests {
             order_by: OrderBy::Fields(vec![]),
             partition_by: None,
             sample_by: None,
-            engine: Some(ClickhouseEngine::S3Queue {
+            engine: ClickhouseEngine::S3Queue {
                 s3_path: "s3://bucket/path".to_string(),
                 format: "JSONEachRow".to_string(),
                 compression: None,
                 headers: None,
                 aws_access_key_id: None,
                 aws_secret_access_key: None,
-            }),
+            },
             version: None,
             source_primitive: PrimitiveSignature {
                 name: "test_s3".to_string(),
@@ -1493,6 +1498,7 @@ mod tests {
             indexes: vec![],
             database: None,
             table_ttl_setting: None,
+            cluster_name: None,
         };
 
         assert!(ClickHouseTableDiffStrategy::is_s3queue_table(&s3_table));
@@ -1620,5 +1626,178 @@ mod tests {
         assert!(
             error_msg.contains("INSERT INTO target_db.my_table SELECT * FROM source_db.my_table")
         );
+    }
+
+    #[test]
+    fn test_cluster_change_from_none_to_some() {
+        let strategy = ClickHouseTableDiffStrategy;
+
+        let mut before = create_test_table("test", vec!["id".to_string()], false);
+        let mut after = create_test_table("test", vec!["id".to_string()], false);
+
+        // Change cluster from None to Some
+        before.cluster_name = None;
+        after.cluster_name = Some("test_cluster".to_string());
+
+        let order_by_change = OrderByChange {
+            before: before.order_by.clone(),
+            after: after.order_by.clone(),
+        };
+
+        let partition_by_change = PartitionByChange {
+            before: before.partition_by.clone(),
+            after: after.partition_by.clone(),
+        };
+
+        let changes = strategy.diff_table_update(
+            &before,
+            &after,
+            vec![],
+            order_by_change,
+            partition_by_change,
+            "local",
+        );
+
+        // cluster_name is a deployment directive, not a schema property
+        // Changing it should not trigger any operations
+        assert_eq!(changes.len(), 0);
+    }
+
+    #[test]
+    fn test_cluster_change_from_some_to_none() {
+        let strategy = ClickHouseTableDiffStrategy;
+
+        let mut before = create_test_table("test", vec!["id".to_string()], false);
+        let mut after = create_test_table("test", vec!["id".to_string()], false);
+
+        // Change cluster from Some to None
+        before.cluster_name = Some("test_cluster".to_string());
+        after.cluster_name = None;
+
+        let order_by_change = OrderByChange {
+            before: before.order_by.clone(),
+            after: after.order_by.clone(),
+        };
+
+        let partition_by_change = PartitionByChange {
+            before: before.partition_by.clone(),
+            after: after.partition_by.clone(),
+        };
+
+        let changes = strategy.diff_table_update(
+            &before,
+            &after,
+            vec![],
+            order_by_change,
+            partition_by_change,
+            "local",
+        );
+
+        // cluster_name is a deployment directive, not a schema property
+        // Changing it should not trigger any operations
+        assert_eq!(changes.len(), 0);
+    }
+
+    #[test]
+    fn test_cluster_change_between_different_clusters() {
+        let strategy = ClickHouseTableDiffStrategy;
+
+        let mut before = create_test_table("test", vec!["id".to_string()], false);
+        let mut after = create_test_table("test", vec!["id".to_string()], false);
+
+        // Change cluster from one to another
+        before.cluster_name = Some("cluster_a".to_string());
+        after.cluster_name = Some("cluster_b".to_string());
+
+        let order_by_change = OrderByChange {
+            before: before.order_by.clone(),
+            after: after.order_by.clone(),
+        };
+
+        let partition_by_change = PartitionByChange {
+            before: before.partition_by.clone(),
+            after: after.partition_by.clone(),
+        };
+
+        let changes = strategy.diff_table_update(
+            &before,
+            &after,
+            vec![],
+            order_by_change,
+            partition_by_change,
+            "local",
+        );
+
+        // cluster_name is a deployment directive, not a schema property
+        // Changing it should not trigger any operations
+        assert_eq!(changes.len(), 0);
+    }
+
+    #[test]
+    fn test_no_cluster_change_both_none() {
+        let strategy = ClickHouseTableDiffStrategy;
+
+        let before = create_test_table("test", vec!["id".to_string()], false);
+        let after = create_test_table("test", vec!["id".to_string()], false);
+
+        // Both None - no cluster change
+        assert_eq!(before.cluster_name, None);
+        assert_eq!(after.cluster_name, None);
+
+        let order_by_change = OrderByChange {
+            before: before.order_by.clone(),
+            after: after.order_by.clone(),
+        };
+
+        let partition_by_change = PartitionByChange {
+            before: before.partition_by.clone(),
+            after: after.partition_by.clone(),
+        };
+
+        let changes = strategy.diff_table_update(
+            &before,
+            &after,
+            vec![],
+            order_by_change,
+            partition_by_change,
+            "local",
+        );
+
+        // Should not trigger a validation error - no changes at all
+        assert_eq!(changes.len(), 0);
+    }
+
+    #[test]
+    fn test_no_cluster_change_both_same() {
+        let strategy = ClickHouseTableDiffStrategy;
+
+        let mut before = create_test_table("test", vec!["id".to_string()], false);
+        let mut after = create_test_table("test", vec!["id".to_string()], false);
+
+        // Both have the same cluster
+        before.cluster_name = Some("test_cluster".to_string());
+        after.cluster_name = Some("test_cluster".to_string());
+
+        let order_by_change = OrderByChange {
+            before: before.order_by.clone(),
+            after: after.order_by.clone(),
+        };
+
+        let partition_by_change = PartitionByChange {
+            before: before.partition_by.clone(),
+            after: after.partition_by.clone(),
+        };
+
+        let changes = strategy.diff_table_update(
+            &before,
+            &after,
+            vec![],
+            order_by_change,
+            partition_by_change,
+            "local",
+        );
+
+        // Should not trigger a validation error - no changes at all
+        assert_eq!(changes.len(), 0);
     }
 }

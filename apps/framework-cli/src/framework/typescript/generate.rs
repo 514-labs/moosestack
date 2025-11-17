@@ -11,6 +11,7 @@ use std::collections::HashMap;
 use std::fmt::Write;
 
 // Use shared, language-agnostic sanitization (underscores) from utilities
+use crate::infrastructure::olap::clickhouse::extract_version_from_table_name;
 pub use ident::sanitize_identifier;
 
 /// Map a string to a valid TypeScript PascalCase identifier (for types/classes/consts).
@@ -629,10 +630,17 @@ pub fn tables_to_typescript(tables: &[Table], life_cycle: Option<LifeCycle>) -> 
             OrderBy::SingleExpr(expr) => format!("orderByExpression: {:?}", expr),
         };
         let var_name = sanitize_typescript_identifier(&table.name);
+
+        let (base_name, version) = extract_version_from_table_name(&table.name);
+        let table_name = if version == table.version {
+            &base_name
+        } else {
+            &table.name
+        };
         writeln!(
             output,
             "export const {}Table = new OlapTable<{}>(\"{}\", {{",
-            var_name, table.name, table.name
+            var_name, table.name, table_name
         )
         .unwrap();
         writeln!(output, "    {order_by_spec},").unwrap();
@@ -645,183 +653,181 @@ pub fn tables_to_typescript(tables: &[Table], life_cycle: Option<LifeCycle>) -> 
         if let Some(database) = &table.database {
             writeln!(output, "    database: {:?},", database).unwrap();
         }
-        if let Some(engine) = &table.engine {
-            match engine {
-                crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine::S3Queue {
-                    s3_path,
-                    format,
-                    compression,
-                    headers,
-                    aws_access_key_id,
-                    aws_secret_access_key,
-                } => {
-                    // For S3Queue, properties are at the same level as orderByFields
-                    writeln!(output, "    engine: ClickHouseEngines.S3Queue,").unwrap();
-                    writeln!(output, "    s3Path: {:?},", s3_path).unwrap();
-                    writeln!(output, "    format: {:?},", format).unwrap();
-                    if let Some(compression) = compression {
-                        writeln!(output, "    compression: {:?},", compression).unwrap();
+        match &table.engine {
+            crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine::S3Queue {
+                s3_path,
+                format,
+                compression,
+                headers,
+                aws_access_key_id,
+                aws_secret_access_key,
+            } => {
+                // For S3Queue, properties are at the same level as orderByFields
+                writeln!(output, "    engine: ClickHouseEngines.S3Queue,").unwrap();
+                writeln!(output, "    s3Path: {:?},", s3_path).unwrap();
+                writeln!(output, "    format: {:?},", format).unwrap();
+                if let Some(compression) = compression {
+                    writeln!(output, "    compression: {:?},", compression).unwrap();
+                }
+                if let Some(key_id) = aws_access_key_id {
+                    writeln!(output, "    awsAccessKeyId: {:?},", key_id).unwrap();
+                }
+                if let Some(secret) = aws_secret_access_key {
+                    writeln!(output, "    awsSecretAccessKey: {:?},", secret).unwrap();
+                }
+                if let Some(headers) = headers {
+                    write!(output, "    headers: {{").unwrap();
+                    for (i, (key, value)) in headers.iter().enumerate() {
+                        if i > 0 { write!(output, ",").unwrap(); }
+                        write!(output, " {:?}: {:?}", key, value).unwrap();
                     }
-                    if let Some(key_id) = aws_access_key_id {
-                        writeln!(output, "    awsAccessKeyId: {:?},", key_id).unwrap();
-                    }
-                    if let Some(secret) = aws_secret_access_key {
-                        writeln!(output, "    awsSecretAccessKey: {:?},", secret).unwrap();
-                    }
-                    if let Some(headers) = headers {
-                        write!(output, "    headers: {{").unwrap();
-                        for (i, (key, value)) in headers.iter().enumerate() {
-                            if i > 0 { write!(output, ",").unwrap(); }
-                            write!(output, " {:?}: {:?}", key, value).unwrap();
-                        }
-                        writeln!(output, " }},").unwrap();
+                    writeln!(output, " }},").unwrap();
+                }
+            }
+            crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine::MergeTree => {
+                writeln!(output, "    engine: ClickHouseEngines.MergeTree,").unwrap();
+            }
+            crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine::ReplacingMergeTree { ver, is_deleted } => {
+                // Emit ReplacingMergeTree engine configuration
+                writeln!(output, "    engine: ClickHouseEngines.ReplacingMergeTree,").unwrap();
+                if let Some(ver_col) = ver {
+                    writeln!(output, "    ver: \"{}\",", ver_col).unwrap();
+                }
+                if let Some(is_deleted_col) = is_deleted {
+                    writeln!(output, "    isDeleted: \"{}\",", is_deleted_col).unwrap();
+                }
+            }
+            crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine::AggregatingMergeTree => {
+                writeln!(output, "    engine: ClickHouseEngines.AggregatingMergeTree,").unwrap();
+            }
+            crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine::SummingMergeTree { columns } => {
+                writeln!(output, "    engine: ClickHouseEngines.SummingMergeTree,").unwrap();
+                if let Some(cols) = columns {
+                    if !cols.is_empty() {
+                        let col_list = cols.iter().map(|c| format!("{:?}", c)).collect::<Vec<_>>().join(", ");
+                        writeln!(output, "    columns: [{}],", col_list).unwrap();
                     }
                 }
-                crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine::MergeTree => {
-                    writeln!(output, "    engine: ClickHouseEngines.MergeTree,").unwrap();
+            }
+            crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine::ReplicatedMergeTree { keeper_path, replica_name } => {
+                writeln!(output, "    engine: ClickHouseEngines.ReplicatedMergeTree,").unwrap();
+                if let (Some(path), Some(name)) = (keeper_path, replica_name) {
+                    writeln!(output, "    keeperPath: {:?},", path).unwrap();
+                    writeln!(output, "    replicaName: {:?},", name).unwrap();
                 }
-                crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine::ReplacingMergeTree { ver, is_deleted } => {
-                    // Emit ReplacingMergeTree engine configuration
-                    writeln!(output, "    engine: ClickHouseEngines.ReplacingMergeTree,").unwrap();
-                    if let Some(ver_col) = ver {
-                        writeln!(output, "    ver: \"{}\",", ver_col).unwrap();
-                    }
-                    if let Some(is_deleted_col) = is_deleted {
-                        writeln!(output, "    isDeleted: \"{}\",", is_deleted_col).unwrap();
-                    }
+            }
+            crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine::ReplicatedReplacingMergeTree { keeper_path, replica_name, ver, is_deleted } => {
+                writeln!(output, "    engine: ClickHouseEngines.ReplicatedReplacingMergeTree,").unwrap();
+                if let (Some(path), Some(name)) = (keeper_path, replica_name) {
+                    writeln!(output, "    keeperPath: {:?},", path).unwrap();
+                    writeln!(output, "    replicaName: {:?},", name).unwrap();
                 }
-                crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine::AggregatingMergeTree => {
-                    writeln!(output, "    engine: ClickHouseEngines.AggregatingMergeTree,").unwrap();
+                if let Some(ver_col) = ver {
+                    writeln!(output, "    ver: {:?},", ver_col).unwrap();
                 }
-                crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine::SummingMergeTree { columns } => {
-                    writeln!(output, "    engine: ClickHouseEngines.SummingMergeTree,").unwrap();
-                    if let Some(cols) = columns {
-                        if !cols.is_empty() {
-                            let col_list = cols.iter().map(|c| format!("{:?}", c)).collect::<Vec<_>>().join(", ");
-                            writeln!(output, "    columns: [{}],", col_list).unwrap();
-                        }
-                    }
+                if let Some(is_deleted_col) = is_deleted {
+                    writeln!(output, "    isDeleted: {:?},", is_deleted_col).unwrap();
                 }
-                crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine::ReplicatedMergeTree { keeper_path, replica_name } => {
-                    writeln!(output, "    engine: ClickHouseEngines.ReplicatedMergeTree,").unwrap();
-                    if let (Some(path), Some(name)) = (keeper_path, replica_name) {
-                        writeln!(output, "    keeperPath: {:?},", path).unwrap();
-                        writeln!(output, "    replicaName: {:?},", name).unwrap();
-                    }
+            }
+            crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine::ReplicatedAggregatingMergeTree { keeper_path, replica_name } => {
+                writeln!(output, "    engine: ClickHouseEngines.ReplicatedAggregatingMergeTree,").unwrap();
+                if let (Some(path), Some(name)) = (keeper_path, replica_name) {
+                    writeln!(output, "    keeperPath: {:?},", path).unwrap();
+                    writeln!(output, "    replicaName: {:?},", name).unwrap();
                 }
-                crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine::ReplicatedReplacingMergeTree { keeper_path, replica_name, ver, is_deleted } => {
-                    writeln!(output, "    engine: ClickHouseEngines.ReplicatedReplacingMergeTree,").unwrap();
-                    if let (Some(path), Some(name)) = (keeper_path, replica_name) {
-                        writeln!(output, "    keeperPath: {:?},", path).unwrap();
-                        writeln!(output, "    replicaName: {:?},", name).unwrap();
-                    }
-                    if let Some(ver_col) = ver {
-                        writeln!(output, "    ver: {:?},", ver_col).unwrap();
-                    }
-                    if let Some(is_deleted_col) = is_deleted {
-                        writeln!(output, "    isDeleted: {:?},", is_deleted_col).unwrap();
+            }
+            crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine::ReplicatedSummingMergeTree { keeper_path, replica_name, columns } => {
+                writeln!(output, "    engine: ClickHouseEngines.ReplicatedSummingMergeTree,").unwrap();
+                if let (Some(path), Some(name)) = (keeper_path, replica_name) {
+                    writeln!(output, "    keeperPath: {:?},", path).unwrap();
+                    writeln!(output, "    replicaName: {:?},", name).unwrap();
+                }
+                if let Some(cols) = columns {
+                    if !cols.is_empty() {
+                        let col_list = cols.iter().map(|c| format!("{:?}", c)).collect::<Vec<_>>().join(", ");
+                        writeln!(output, "    columns: [{}],", col_list).unwrap();
                     }
                 }
-                crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine::ReplicatedAggregatingMergeTree { keeper_path, replica_name } => {
-                    writeln!(output, "    engine: ClickHouseEngines.ReplicatedAggregatingMergeTree,").unwrap();
-                    if let (Some(path), Some(name)) = (keeper_path, replica_name) {
-                        writeln!(output, "    keeperPath: {:?},", path).unwrap();
-                        writeln!(output, "    replicaName: {:?},", name).unwrap();
-                    }
+            }
+            crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine::S3 {
+                path,
+                format,
+                aws_access_key_id,
+                aws_secret_access_key,
+                compression,
+                partition_strategy,
+                partition_columns_in_data_file,
+            } => {
+                writeln!(output, "    engine: ClickHouseEngines.S3,").unwrap();
+                writeln!(output, "    path: {:?},", path).unwrap();
+                writeln!(output, "    format: {:?},", format).unwrap();
+                if let Some(key_id) = aws_access_key_id {
+                    writeln!(output, "    awsAccessKeyId: {:?},", key_id).unwrap();
                 }
-                crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine::ReplicatedSummingMergeTree { keeper_path, replica_name, columns } => {
-                    writeln!(output, "    engine: ClickHouseEngines.ReplicatedSummingMergeTree,").unwrap();
-                    if let (Some(path), Some(name)) = (keeper_path, replica_name) {
-                        writeln!(output, "    keeperPath: {:?},", path).unwrap();
-                        writeln!(output, "    replicaName: {:?},", name).unwrap();
-                    }
-                    if let Some(cols) = columns {
-                        if !cols.is_empty() {
-                            let col_list = cols.iter().map(|c| format!("{:?}", c)).collect::<Vec<_>>().join(", ");
-                            writeln!(output, "    columns: [{}],", col_list).unwrap();
-                        }
-                    }
+                if let Some(secret) = aws_secret_access_key {
+                    writeln!(output, "    awsSecretAccessKey: {:?},", secret).unwrap();
                 }
-                crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine::S3 {
-                    path,
-                    format,
-                    aws_access_key_id,
-                    aws_secret_access_key,
-                    compression,
-                    partition_strategy,
-                    partition_columns_in_data_file,
-                } => {
-                    writeln!(output, "    engine: ClickHouseEngines.S3,").unwrap();
-                    writeln!(output, "    path: {:?},", path).unwrap();
-                    writeln!(output, "    format: {:?},", format).unwrap();
-                    if let Some(key_id) = aws_access_key_id {
-                        writeln!(output, "    awsAccessKeyId: {:?},", key_id).unwrap();
-                    }
-                    if let Some(secret) = aws_secret_access_key {
-                        writeln!(output, "    awsSecretAccessKey: {:?},", secret).unwrap();
-                    }
-                    if let Some(comp) = compression {
-                        writeln!(output, "    compression: {:?},", comp).unwrap();
-                    }
-                    if let Some(ps) = partition_strategy {
-                        writeln!(output, "    partitionStrategy: {:?},", ps).unwrap();
-                    }
-                    if let Some(pc) = partition_columns_in_data_file {
-                        writeln!(output, "    partitionColumnsInDataFile: {:?},", pc).unwrap();
-                    }
+                if let Some(comp) = compression {
+                    writeln!(output, "    compression: {:?},", comp).unwrap();
                 }
-                crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine::Buffer {
-                    target_database,
-                    target_table,
-                    num_layers,
-                    min_time,
-                    max_time,
-                    min_rows,
-                    max_rows,
-                    min_bytes,
-                    max_bytes,
-                    flush_time,
-                    flush_rows,
-                    flush_bytes,
-                } => {
-                    writeln!(output, "    engine: ClickHouseEngines.Buffer,").unwrap();
-                    writeln!(output, "    targetDatabase: {:?},", target_database).unwrap();
-                    writeln!(output, "    targetTable: {:?},", target_table).unwrap();
-                    writeln!(output, "    numLayers: {},", num_layers).unwrap();
-                    writeln!(output, "    minTime: {},", min_time).unwrap();
-                    writeln!(output, "    maxTime: {},", max_time).unwrap();
-                    writeln!(output, "    minRows: {},", min_rows).unwrap();
-                    writeln!(output, "    maxRows: {},", max_rows).unwrap();
-                    writeln!(output, "    minBytes: {},", min_bytes).unwrap();
-                    writeln!(output, "    maxBytes: {},", max_bytes).unwrap();
-                    if let Some(ft) = flush_time {
-                        writeln!(output, "    flushTime: {},", ft).unwrap();
-                    }
-                    if let Some(fr) = flush_rows {
-                        writeln!(output, "    flushRows: {},", fr).unwrap();
-                    }
-                    if let Some(fb) = flush_bytes {
-                        writeln!(output, "    flushBytes: {},", fb).unwrap();
-                    }
+                if let Some(ps) = partition_strategy {
+                    writeln!(output, "    partitionStrategy: {:?},", ps).unwrap();
                 }
-                crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine::Distributed {
-                    cluster,
-                    target_database,
-                    target_table,
-                    sharding_key,
-                    policy_name,
-                } => {
-                    writeln!(output, "    engine: ClickHouseEngines.Distributed,").unwrap();
-                    writeln!(output, "    cluster: {:?},", cluster).unwrap();
-                    writeln!(output, "    targetDatabase: {:?},", target_database).unwrap();
-                    writeln!(output, "    targetTable: {:?},", target_table).unwrap();
-                    if let Some(key) = sharding_key {
-                        writeln!(output, "    shardingKey: {:?},", key).unwrap();
-                    }
-                    if let Some(policy) = policy_name {
-                        writeln!(output, "    policyName: {:?},", policy).unwrap();
-                    }
+                if let Some(pc) = partition_columns_in_data_file {
+                    writeln!(output, "    partitionColumnsInDataFile: {:?},", pc).unwrap();
                 }
+            }
+            crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine::Buffer {
+                target_database,
+                target_table,
+                num_layers,
+                min_time,
+                max_time,
+                min_rows,
+                max_rows,
+                min_bytes,
+                max_bytes,
+                flush_time,
+                flush_rows,
+                flush_bytes,
+            } => {
+                writeln!(output, "    engine: ClickHouseEngines.Buffer,").unwrap();
+                writeln!(output, "    targetDatabase: {:?},", target_database).unwrap();
+                writeln!(output, "    targetTable: {:?},", target_table).unwrap();
+                writeln!(output, "    numLayers: {},", num_layers).unwrap();
+                writeln!(output, "    minTime: {},", min_time).unwrap();
+                writeln!(output, "    maxTime: {},", max_time).unwrap();
+                writeln!(output, "    minRows: {},", min_rows).unwrap();
+                writeln!(output, "    maxRows: {},", max_rows).unwrap();
+                writeln!(output, "    minBytes: {},", min_bytes).unwrap();
+                writeln!(output, "    maxBytes: {},", max_bytes).unwrap();
+                if let Some(ft) = flush_time {
+                    writeln!(output, "    flushTime: {},", ft).unwrap();
+                }
+                if let Some(fr) = flush_rows {
+                    writeln!(output, "    flushRows: {},", fr).unwrap();
+                }
+                if let Some(fb) = flush_bytes {
+                    writeln!(output, "    flushBytes: {},", fb).unwrap();
+                }
+            }
+            crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine::Distributed {
+                cluster,
+                target_database,
+                target_table,
+                sharding_key,
+                policy_name,
+            } => {
+                writeln!(output, "    engine: ClickHouseEngines.Distributed,").unwrap();
+                writeln!(output, "    cluster: {:?},", cluster).unwrap();
+                writeln!(output, "    targetDatabase: {:?},", target_database).unwrap();
+                writeln!(output, "    targetTable: {:?},", target_table).unwrap();
+                if let Some(key) = sharding_key {
+                    writeln!(output, "    shardingKey: {:?},", key).unwrap();
+                }
+            if let Some(policy) = policy_name {
+                writeln!(output, "    policyName: {:?},", policy).unwrap();
+            }
             }
         }
         if let Some(version) = &table.version {
@@ -981,7 +987,7 @@ mod tests {
             order_by: OrderBy::Fields(vec!["id".to_string()]),
             partition_by: None,
             sample_by: None,
-            engine: Some(ClickhouseEngine::MergeTree),
+            engine: ClickhouseEngine::MergeTree,
             version: None,
             source_primitive: PrimitiveSignature {
                 name: "User".to_string(),
@@ -994,6 +1000,7 @@ mod tests {
             indexes: vec![],
             database: None,
             table_ttl_setting: None,
+            cluster_name: None,
         }];
 
         let result = tables_to_typescript(&tables, None);
@@ -1051,14 +1058,14 @@ export const UserTable = new OlapTable<User>("User", {
             order_by: OrderBy::Fields(vec!["id".to_string()]),
             sample_by: None,
             partition_by: None,
-            engine: Some(ClickhouseEngine::S3Queue {
+            engine: ClickhouseEngine::S3Queue {
                 s3_path: "s3://bucket/path".to_string(),
                 format: "JSONEachRow".to_string(),
                 compression: Some("gzip".to_string()),
                 headers: None,
                 aws_access_key_id: None,
                 aws_secret_access_key: None,
-            }),
+            },
             version: None,
             source_primitive: PrimitiveSignature {
                 name: "Events".to_string(),
@@ -1075,6 +1082,7 @@ export const UserTable = new OlapTable<User>("User", {
             indexes: vec![],
             database: None,
             table_ttl_setting: None,
+            cluster_name: None,
         }];
 
         let result = tables_to_typescript(&tables, None);
@@ -1105,7 +1113,7 @@ export const UserTable = new OlapTable<User>("User", {
             order_by: OrderBy::Fields(vec!["id".to_string()]),
             partition_by: None,
             sample_by: None,
-            engine: Some(ClickhouseEngine::MergeTree),
+            engine: ClickhouseEngine::MergeTree,
             version: None,
             source_primitive: PrimitiveSignature {
                 name: "UserData".to_string(),
@@ -1125,6 +1133,7 @@ export const UserTable = new OlapTable<User>("User", {
             indexes: vec![],
             database: None,
             table_ttl_setting: None,
+            cluster_name: None,
         }];
 
         let result = tables_to_typescript(&tables, None);
@@ -1178,10 +1187,10 @@ export const UserTable = new OlapTable<User>("User", {
             order_by: OrderBy::Fields(vec!["id".to_string()]),
             partition_by: None,
             sample_by: None,
-            engine: Some(ClickhouseEngine::ReplacingMergeTree {
+            engine: ClickhouseEngine::ReplacingMergeTree {
                 ver: Some("version".to_string()),
                 is_deleted: Some("is_deleted".to_string()),
-            }),
+            },
             version: None,
             source_primitive: PrimitiveSignature {
                 name: "UserData".to_string(),
@@ -1194,6 +1203,7 @@ export const UserTable = new OlapTable<User>("User", {
             indexes: vec![],
             database: None,
             table_ttl_setting: None,
+            cluster_name: None,
         }];
 
         let result = tables_to_typescript(&tables, None);
@@ -1222,10 +1232,10 @@ export const UserTable = new OlapTable<User>("User", {
             sample_by: None,
             order_by: OrderBy::Fields(vec!["id".to_string()]),
             partition_by: None,
-            engine: Some(ClickhouseEngine::ReplicatedMergeTree {
+            engine: ClickhouseEngine::ReplicatedMergeTree {
                 keeper_path: Some("/clickhouse/tables/{shard}/user_data".to_string()),
                 replica_name: Some("{replica}".to_string()),
-            }),
+            },
             version: None,
             source_primitive: PrimitiveSignature {
                 name: "UserData".to_string(),
@@ -1238,6 +1248,7 @@ export const UserTable = new OlapTable<User>("User", {
             indexes: vec![],
             database: None,
             table_ttl_setting: None,
+            cluster_name: None,
         }];
 
         let result = tables_to_typescript(&tables, None);
@@ -1296,12 +1307,12 @@ export const UserTable = new OlapTable<User>("User", {
             sample_by: None,
             order_by: OrderBy::Fields(vec!["id".to_string()]),
             partition_by: None,
-            engine: Some(ClickhouseEngine::ReplicatedReplacingMergeTree {
+            engine: ClickhouseEngine::ReplicatedReplacingMergeTree {
                 keeper_path: Some("/clickhouse/tables/{shard}/user_data".to_string()),
                 replica_name: Some("{replica}".to_string()),
                 ver: Some("version".to_string()),
                 is_deleted: Some("is_deleted".to_string()),
-            }),
+            },
             version: None,
             source_primitive: PrimitiveSignature {
                 name: "UserData".to_string(),
@@ -1314,6 +1325,7 @@ export const UserTable = new OlapTable<User>("User", {
             indexes: vec![],
             database: None,
             table_ttl_setting: None,
+            cluster_name: None,
         }];
 
         let result = tables_to_typescript(&tables, None);
@@ -1348,7 +1360,7 @@ export const UserTable = new OlapTable<User>("User", {
             order_by: OrderBy::Fields(vec!["u64".to_string()]),
             partition_by: None,
             sample_by: None,
-            engine: Some(ClickhouseEngine::MergeTree),
+            engine: ClickhouseEngine::MergeTree,
             version: None,
             source_primitive: PrimitiveSignature {
                 name: "IndexTest".to_string(),
@@ -1376,6 +1388,7 @@ export const UserTable = new OlapTable<User>("User", {
             ],
             database: None,
             table_ttl_setting: None,
+            cluster_name: None,
         }];
 
         let result = tables_to_typescript(&tables, None);
@@ -1433,7 +1446,7 @@ export const UserTable = new OlapTable<User>("User", {
             order_by: OrderBy::Fields(vec!["id".to_string()]),
             partition_by: None,
             sample_by: None,
-            engine: Some(ClickhouseEngine::MergeTree),
+            engine: ClickhouseEngine::MergeTree,
             version: None,
             source_primitive: PrimitiveSignature {
                 name: "Task".to_string(),
@@ -1446,6 +1459,7 @@ export const UserTable = new OlapTable<User>("User", {
             indexes: vec![],
             database: None,
             table_ttl_setting: None,
+            cluster_name: None,
         }];
 
         let result = tables_to_typescript(&tables, None);
@@ -1510,7 +1524,7 @@ export const TaskTable = new OlapTable<Task>("Task", {
             order_by: OrderBy::Fields(vec!["id".to_string(), "timestamp".to_string()]),
             partition_by: None,
             sample_by: None,
-            engine: Some(ClickhouseEngine::MergeTree),
+            engine: ClickhouseEngine::MergeTree,
             version: None,
             source_primitive: PrimitiveSignature {
                 name: "Events".to_string(),
@@ -1523,6 +1537,7 @@ export const TaskTable = new OlapTable<Task>("Task", {
             indexes: vec![],
             database: None,
             table_ttl_setting: Some("timestamp + INTERVAL 90 DAY DELETE".to_string()),
+            cluster_name: None,
         }];
 
         let result = tables_to_typescript(&tables, None);
@@ -1577,7 +1592,7 @@ export const TaskTable = new OlapTable<Task>("Task", {
             order_by: OrderBy::Fields(vec!["id".to_string()]),
             partition_by: None,
             sample_by: None,
-            engine: Some(ClickhouseEngine::MergeTree),
+            engine: ClickhouseEngine::MergeTree,
             version: None,
             source_primitive: PrimitiveSignature {
                 name: "JsonTest".to_string(),
@@ -1589,6 +1604,7 @@ export const TaskTable = new OlapTable<Task>("Task", {
             table_settings: None,
             indexes: vec![],
             table_ttl_setting: None,
+            cluster_name: None,
         }];
 
         let result = tables_to_typescript(&tables, None);
@@ -1623,7 +1639,7 @@ export const TaskTable = new OlapTable<Task>("Task", {
             order_by: OrderBy::Fields(vec!["id".to_string()]),
             partition_by: None,
             sample_by: None,
-            engine: Some(ClickhouseEngine::MergeTree),
+            engine: ClickhouseEngine::MergeTree,
             version: None,
             source_primitive: PrimitiveSignature {
                 name: "ExternalData".to_string(),
@@ -1636,6 +1652,7 @@ export const TaskTable = new OlapTable<Task>("Task", {
             indexes: vec![],
             database: Some("analytics_db".to_string()),
             table_ttl_setting: None,
+            cluster_name: None,
         }];
 
         let result = tables_to_typescript(&tables, None);

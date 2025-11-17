@@ -1,0 +1,107 @@
+---
+title: November 14, 2025
+description: Release notes for November 14, 2025
+---
+
+import { Callout } from "@/components";
+
+# November 14, 2025
+
+<Callout type="info" title="Highlights">
+- **New:** TypeScript MCP template with AI chat integration and data catalog discovery
+- **New:** [Resource access functions](#functions-for-programmatic-resource-access) to inspect and access Moose resources at runtime
+</Callout>
+
+## TypeScript MCP template with AI chat integration
+
+New project template for building AI-powered data applications with Model Context Protocol (MCP) server integration.
+Create projects that include analytical APIs, MCP server tools, and a web interface with AI chat capabilities.
+
+The template includes:
+- **AI chat interface** for natural language data exploration
+- **Data catalog discovery** tool for automatic schema detection
+- **Monorepo structure** with unified dependency management
+
+```bash filename="Terminal" copy
+# Create a new project with the TypeScript MCP template
+moose create my-ai-app --template typescript-mcp
+
+cd my-ai-app
+
+# Start the Moose dev server
+moose dev
+
+# In a new terminal, start the web app
+cd packages/web-app
+pnpm install
+pnpm dev
+```
+
+The MCP server automatically detects database context and
+provides readonly access to ClickHouse data with query limits up to 1000 rows.
+
+PR: [#2970](https://github.com/514-labs/moosestack/pull/2970), [#2991](https://github.com/514-labs/moosestack/pull/2991) | Docs: [MCP template](/moose/templates-examples#typescript-mcp)
+
+## Functions for programmatic resource access
+
+Access your Moose resources (tables, streams, APIs, workflows) programmatically at runtime. Build dynamic data routing logic that adapts to incoming events, create admin tools that inspect your data infrastructure, or write custom debugging utilities that explore your application's resources without hardcoding names.
+
+```typescript filename="app/streams/eventRouter.ts" copy
+import { getTable, getStream, DeadLetterQueue } from "@514labs/moose-lib";
+
+interface IncomingEvent {
+  eventType: string;
+  userId: string;
+  data: any;
+}
+
+// Create dead letter queue for failed routing
+const dlq = new DeadLetterQueue<IncomingEvent>("routing_dlq");
+
+// Get the incoming events stream and add dynamic routing consumer
+const incomingStream = getStream<IncomingEvent>("incoming_events");
+
+incomingStream?.addConsumer(async (event) => {
+  // Dynamically determine target table based on event type
+  const targetTableName = `${event.eventType}_events`;
+  const targetTable = getTable(targetTableName);
+
+  if (targetTable) {
+    // Route to the appropriate table
+    await targetTable.insert([{
+      userId: event.userId,
+      timestamp: new Date(),
+      ...event.data
+    }]);
+  } else {
+    // Send to dead letter queue if table doesn't exist
+    await dlq.send({
+      originalRecord: event,
+      errorMessage: `No table found for event type: ${event.eventType}`,
+      errorType: "RoutingError",
+      failedAt: new Date(),
+      source: "transform"
+    });
+  }
+});
+```
+
+TypeScript now includes resource access functions for parity with Python: `getTables()`, `getTable()`, `getApis()`, `getApi()`, `getStreams()`, `getStream()`, `getWorkflows()`, `getWorkflow()`. Python already includes `get_tables()`, `get_table()`, `get_streams()`, `get_stream()`, `get_ingest_apis()`, `get_ingest_api()`, `get_apis()`, `get_api()`, `get_sql_resources()`, `get_sql_resource()`, `get_workflows()`, `get_workflow()`, `get_web_apps()`, `get_web_app()`.
+
+PR: [#2961](https://github.com/514-labs/moosestack/pull/2961) | Docs: [TypeScript](/moose/reference/ts-moose-lib), [Python](/moose/reference/py-moose-lib)
+
+## Other Features and Improvements
+- **Enum16 data type** – Support for ClickHouse Enum16 with values from -32,768 to 32,767. PR [#2972](https://github.com/514-labs/moosestack/pull/2972) | Docs: [Supported types](/moose/olap/supported-types#enum-types)
+- **Documentation search** – Command palette-style search for guides and API references. PR [#2964](https://github.com/514-labs/moosestack/pull/2964)
+- **MCP template setup** – Monorepo structure, changing started instructions to use `pnpm` and `moose dev`. PR [#2990](https://github.com/514-labs/moosestack/pull/2990)
+- **Automatic database context detection** – MCP server uses ClickHouse's `currentDatabase()` for simpler setup. PR [#2979](https://github.com/514-labs/moosestack/pull/2979)
+- **Better logging** – `[CompilerPlugin]` prefix in dev terminal messages for clearer debugging. PR [#2971](https://github.com/514-labs/moosestack/pull/2971)
+- **Deep health monitoring** – Concurrent health checks for Redis, ClickHouse, Redpanda, and Consumption API with `/_moose_internal/health` endpoint. PR [#2995](https://github.com/514-labs/moosestack/pull/2995)
+- **CORS headers** – Applied consistently across all API endpoints including error responses. PR [#2975](https://github.com/514-labs/moosestack/pull/2975)
+
+## Bug Fixes
+- **Database-qualified table handling** – Support for database prefixes in SQL queries across TypeScript and Python. PR [#2992](https://github.com/514-labs/moosestack/pull/2992), [#2994](https://github.com/514-labs/moosestack/pull/2994)
+- **JWT environment variables** – Fixed auth docs to use correct names (`MOOSE_JWT__SECRET`, `MOOSE_JWT__ISSUER`, `MOOSE_JWT__AUDIENCE`). PR [#2987](https://github.com/514-labs/moosestack/pull/2987) | Docs: [Authentication](/moose/app-api-auth)
+- **Serverless migrations** – Fixed table reconciliation with remote ClickHouse databases. PR [#2981](https://github.com/514-labs/moosestack/pull/2981)
+- **Migration generation** – Fixed `moose generate migration --url` to work with Moose servers. PR [#2984](https://github.com/514-labs/moosestack/pull/2984)
+- **Schema compatibility** – Fixed incorrect breaking change detection for JSON, nested structures, and FixedString columns. PR [#2960](https://github.com/514-labs/moosestack/pull/2960)

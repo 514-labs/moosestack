@@ -172,6 +172,12 @@ pub async fn reconcile_with_reality<T: OlapOperations>(
                         // that might have authentication parameters.
                         table.engine_params_hash = infra_map_table.engine_params_hash.clone();
 
+                        // Keep the cluster_name from the infra map because it cannot be reliably detected
+                        // from ClickHouse's system tables. The ON CLUSTER clause is only used during
+                        // DDL execution and is not stored in the table schema. While it appears in
+                        // system.distributed_ddl_queue, those entries are ephemeral and get cleaned up.
+                        table.cluster_name = infra_map_table.cluster_name.clone();
+
                         reconciled_map
                             .tables
                             .insert(reality_table.id(&reconciled_map.default_database), table);
@@ -403,6 +409,7 @@ mod tests {
     use crate::framework::core::infrastructure_map::{PrimitiveSignature, PrimitiveTypes};
     use crate::framework::core::partial_infrastructure_map::LifeCycle;
     use crate::framework::versions::Version;
+    use crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine;
     use crate::infrastructure::olap::clickhouse::TableWithUnsupportedType;
     use crate::infrastructure::olap::OlapChangesError;
     use crate::infrastructure::olap::OlapOperations;
@@ -443,7 +450,7 @@ mod tests {
             order_by: OrderBy::Fields(vec!["id".to_string()]),
             partition_by: None,
             sample_by: None,
-            engine: None,
+            engine: ClickhouseEngine::MergeTree,
             version: Some(Version::from_string("1.0.0".to_string())),
             source_primitive: PrimitiveSignature {
                 name: "test".to_string(),
@@ -456,6 +463,7 @@ mod tests {
             indexes: vec![],
             database: None,
             table_ttl_setting: None,
+            cluster_name: None,
         }
     }
 
@@ -916,5 +924,109 @@ mod tests {
         // (e.g., orchestration_workers is created based on project.language)
         // but they don't directly use clickhouse_config.db_name.
         // The bug in ENG-1160 is specifically about default_database being hardcoded to "local".
+    }
+
+    #[tokio::test]
+    async fn test_reconcile_preserves_cluster_name() {
+        // Create a test table with a cluster name
+        let mut table = create_test_table("clustered_table");
+        table.cluster_name = Some("test_cluster".to_string());
+
+        // Create mock OLAP client with the table (but cluster_name will be lost in reality)
+        let mut table_from_reality = table.clone();
+        table_from_reality.cluster_name = None; // ClickHouse system.tables doesn't preserve this
+
+        let mock_client = MockOlapClient {
+            tables: vec![table_from_reality],
+        };
+
+        // Create infrastructure map with the table including cluster_name
+        let mut infra_map = InfrastructureMap::default();
+        infra_map
+            .tables
+            .insert(table.id(DEFAULT_DATABASE_NAME), table.clone());
+
+        // Create test project
+        let project = create_test_project();
+
+        let target_table_names = HashSet::new();
+        // Reconcile the infrastructure map
+        let reconciled =
+            reconcile_with_reality(&project, &infra_map, &target_table_names, mock_client)
+                .await
+                .unwrap();
+
+        // The reconciled map should preserve cluster_name from the infra map
+        assert_eq!(reconciled.tables.len(), 1);
+        let reconciled_table = reconciled.tables.values().next().unwrap();
+        assert_eq!(
+            reconciled_table.cluster_name,
+            Some("test_cluster".to_string()),
+            "cluster_name should be preserved from infra map"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_reconcile_with_reality_mismatched_table_preserves_cluster() {
+        // Create a table that exists in both places but with different schemas
+        let mut infra_table = create_test_table("mismatched_table");
+        infra_table.cluster_name = Some("production_cluster".to_string());
+
+        let mut reality_table = create_test_table("mismatched_table");
+        // Reality table has no cluster_name (as ClickHouse doesn't preserve it)
+        reality_table.cluster_name = None;
+        // Add a column difference to make them mismatched
+        reality_table
+            .columns
+            .push(crate::framework::core::infrastructure::table::Column {
+                name: "extra_col".to_string(),
+                data_type: crate::framework::core::infrastructure::table::ColumnType::String,
+                required: true,
+                unique: false,
+                primary_key: false,
+                default: None,
+                annotations: vec![],
+                comment: None,
+                ttl: None,
+            });
+
+        // Create mock OLAP client with the reality table
+        let mock_client = MockOlapClient {
+            tables: vec![reality_table.clone()],
+        };
+
+        // Create infrastructure map with the infra table
+        let mut infra_map = InfrastructureMap::default();
+        infra_map
+            .tables
+            .insert(infra_table.id(DEFAULT_DATABASE_NAME), infra_table.clone());
+
+        // Create test project
+        let project = create_test_project();
+
+        let target_table_names = HashSet::new();
+        // Reconcile the infrastructure map
+        let reconciled =
+            reconcile_with_reality(&project, &infra_map, &target_table_names, mock_client)
+                .await
+                .unwrap();
+
+        // The reconciled map should still have the table
+        assert_eq!(reconciled.tables.len(), 1);
+        let reconciled_table = reconciled.tables.values().next().unwrap();
+
+        // The cluster_name should be preserved from the infra map
+        assert_eq!(
+            reconciled_table.cluster_name,
+            Some("production_cluster".to_string()),
+            "cluster_name should be preserved from infra map even when schema differs"
+        );
+
+        // But the columns should be updated from reality
+        assert_eq!(
+            reconciled_table.columns.len(),
+            reality_table.columns.len(),
+            "columns should be updated from reality"
+        );
     }
 }

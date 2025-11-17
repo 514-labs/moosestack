@@ -142,7 +142,7 @@ pub async fn query(
         .ok_or_else(|| {
             RoutineFailure::error(Message::new(
                 "Failed".to_string(),
-                "No state found".to_string(),
+                "No infrastructure state found. Is 'moose dev' running?".to_string(),
             ))
         })?;
 
@@ -150,53 +150,53 @@ pub async fn query(
     let mut stream = client.query(&sql_query).stream();
 
     let mut success_count = 0;
-    let mut enum_mappings: Option<Vec<Option<Vec<&str>>>> = None;
+    let mut enum_mappings: Vec<Option<Vec<&str>>> = Vec::new();
 
     while let Some(row_result) = stream.next().await {
-        match row_result {
-            Ok(row) => {
-                // Create enum mappings on first row (one None entry per column)
-                if enum_mappings.is_none() {
-                    enum_mappings = Some(vec![None; row.len()]);
-                }
-
-                // Reuse peek's row_to_json with enum mappings
-                let value = row_to_json(&row, enum_mappings.as_ref().unwrap()).map_err(|e| {
-                    RoutineFailure::new(
-                        Message::new(
-                            "Query".to_string(),
-                            "Failed to convert row to JSON".to_string(),
-                        ),
-                        e,
-                    )
-                })?;
-
-                let json = serde_json::to_string(&value).map_err(|e| {
-                    RoutineFailure::new(
-                        Message::new(
-                            "Query".to_string(),
-                            "Failed to serialize result".to_string(),
-                        ),
-                        e,
-                    )
-                })?;
-
-                println!("{}", json);
-                info!("{}", json);
-                success_count += 1;
-
-                // Check limit to avoid unbounded queries
-                if success_count >= limit {
-                    info!("Reached limit of {} rows", limit);
-                    break;
-                }
-            }
+        let row = match row_result {
+            Ok(row) => row,
             Err(e) => {
                 return Err(RoutineFailure::new(
                     Message::new("Query".to_string(), "ClickHouse query error".to_string()),
                     e,
                 ));
             }
+        };
+
+        // Create enum mappings on first row (one None entry per column)
+        if enum_mappings.is_empty() {
+            enum_mappings = vec![None; row.len()];
+        }
+
+        // Reuse peek's row_to_json with enum mappings
+        let value = row_to_json(&row, &enum_mappings).map_err(|e| {
+            RoutineFailure::new(
+                Message::new(
+                    "Query".to_string(),
+                    "Failed to convert row to JSON".to_string(),
+                ),
+                e,
+            )
+        })?;
+
+        let json = serde_json::to_string(&value).map_err(|e| {
+            RoutineFailure::new(
+                Message::new(
+                    "Query".to_string(),
+                    "Failed to serialize result".to_string(),
+                ),
+                e,
+            )
+        })?;
+
+        println!("{}", json);
+        info!("{}", json);
+        success_count += 1;
+
+        // Check limit to avoid unbounded queries
+        if success_count >= limit {
+            info!("Reached limit of {} rows", limit);
+            break;
         }
     }
 

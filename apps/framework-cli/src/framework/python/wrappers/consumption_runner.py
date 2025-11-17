@@ -178,6 +178,18 @@ def handler_with_client(moose_client):
             raw_path = parsed_path.path
             method = self.command
 
+            # Health check - checked before all other routes
+            if raw_path == "/_moose_internal/health":
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                response = json.dumps({
+                    "status": "healthy",
+                    "timestamp": datetime.now(timezone.utc).isoformat()
+                })
+                self.wfile.write(response.encode())
+                return
+
             # Read request body for POST/PUT/PATCH methods
             content_length = int(self.headers.get('Content-Length', 0))
             request_body = self.rfile.read(content_length) if content_length > 0 else b''

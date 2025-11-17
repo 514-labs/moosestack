@@ -121,7 +121,8 @@ pub fn create_alias_for_table(
 }
 
 static CREATE_TABLE_TEMPLATE: &str = r#"
-CREATE TABLE IF NOT EXISTS `{{db_name}}`.`{{table_name}}`
+CREATE TABLE IF NOT EXISTS `{{db_name}}`.`{{table_name}}`{{#if cluster_name}}
+ON CLUSTER {{cluster_name}}{{/if}}
 (
 {{#each fields}} `{{field_name}}` {{{field_type}}} {{field_nullable}}{{#if field_default}} DEFAULT {{{field_default}}}{{/if}}{{#if field_comment}} COMMENT '{{{field_comment}}}'{{/if}}{{#if field_ttl}} TTL {{{field_ttl}}}{{/if}}{{#unless @last}},
 {{/unless}}{{/each}}{{#if has_indexes}}, {{#each indexes}}{{this}}{{#unless @last}}, {{/unless}}{{/each}}{{/if}}
@@ -136,7 +137,9 @@ SETTINGS {{settings}}{{/if}}"#;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[allow(clippy::large_enum_variant)] // S3Queue has many fields, but this is acceptable for our use case
+#[derive(Default)]
 pub enum ClickhouseEngine {
+    #[default]
     MergeTree,
     ReplacingMergeTree {
         // Optional version column for deduplication
@@ -2011,12 +2014,14 @@ fn build_summing_merge_tree_ddl(columns: &Option<Vec<String>>) -> String {
 /// Build replication parameters for replicated engines
 ///
 /// When keeper_path and replica_name are None:
-/// - In dev mode: Injects default parameters for local development using a static table name hash
-/// - In production: Returns empty parameters to let ClickHouse use automatic configuration
-///   (ClickHouse Cloud or server-configured defaults)
+/// - Dev without cluster: Injects table_name-based paths (ON CLUSTER absent, {uuid} won't work)
+/// - Dev with cluster: Returns empty params (ON CLUSTER present, ClickHouse uses {uuid})
+/// - Prod with cluster: Returns empty params (ON CLUSTER present, ClickHouse uses {uuid})
+/// - Prod without cluster: Returns empty params (ClickHouse Cloud handles defaults)
 fn build_replication_params(
     keeper_path: &Option<String>,
     replica_name: &Option<String>,
+    cluster_name: &Option<String>,
     engine_name: &str,
     table_name: &str,
     is_dev: bool,
@@ -2026,18 +2031,20 @@ fn build_replication_params(
             Ok(vec![format!("'{}'", path), format!("'{}'", name)])
         }
         (None, None) => {
-            if is_dev {
-                // In dev mode, inject default parameters for local ClickHouse
-                // Use table name to ensure unique paths per table, avoiding conflicts
+            // The {uuid} macro only works with ON CLUSTER queries
+            // Only dev without cluster needs explicit params
+            if is_dev && cluster_name.is_none() {
+                // Dev mode without cluster: inject table_name-based paths
                 // {shard}, {replica}, and {database} macros are configured in docker-compose
-                // Note: {uuid} macro only works with ON CLUSTER queries, so we use table name instead
                 Ok(vec![
                     format!("'/clickhouse/tables/{{database}}/{{shard}}/{}'", table_name),
                     "'{replica}'".to_string(),
                 ])
             } else {
-                // In production, return empty parameters - let ClickHouse handle defaults
-                // This works for ClickHouse Cloud and properly configured servers
+                // All other cases: return empty parameters
+                // - Dev with cluster: ON CLUSTER present → ClickHouse uses {uuid}
+                // - Prod with cluster: ON CLUSTER present → ClickHouse uses {uuid}
+                // - Prod without cluster: ClickHouse Cloud handles defaults
                 Ok(vec![])
             }
         }
@@ -2054,12 +2061,14 @@ fn build_replication_params(
 fn build_replicated_merge_tree_ddl(
     keeper_path: &Option<String>,
     replica_name: &Option<String>,
+    cluster_name: &Option<String>,
     table_name: &str,
     is_dev: bool,
 ) -> Result<String, ClickhouseError> {
     let params = build_replication_params(
         keeper_path,
         replica_name,
+        cluster_name,
         "ReplicatedMergeTree",
         table_name,
         is_dev,
@@ -2068,9 +2077,11 @@ fn build_replicated_merge_tree_ddl(
 }
 
 /// Generate DDL for ReplicatedReplacingMergeTree engine
+#[allow(clippy::too_many_arguments)]
 fn build_replicated_replacing_merge_tree_ddl(
     keeper_path: &Option<String>,
     replica_name: &Option<String>,
+    cluster_name: &Option<String>,
     ver: &Option<String>,
     is_deleted: &Option<String>,
     order_by_empty: bool,
@@ -2093,6 +2104,7 @@ fn build_replicated_replacing_merge_tree_ddl(
     let mut params = build_replication_params(
         keeper_path,
         replica_name,
+        cluster_name,
         "ReplicatedReplacingMergeTree",
         table_name,
         is_dev,
@@ -2115,12 +2127,14 @@ fn build_replicated_replacing_merge_tree_ddl(
 fn build_replicated_aggregating_merge_tree_ddl(
     keeper_path: &Option<String>,
     replica_name: &Option<String>,
+    cluster_name: &Option<String>,
     table_name: &str,
     is_dev: bool,
 ) -> Result<String, ClickhouseError> {
     let params = build_replication_params(
         keeper_path,
         replica_name,
+        cluster_name,
         "ReplicatedAggregatingMergeTree",
         table_name,
         is_dev,
@@ -2135,6 +2149,7 @@ fn build_replicated_aggregating_merge_tree_ddl(
 fn build_replicated_summing_merge_tree_ddl(
     keeper_path: &Option<String>,
     replica_name: &Option<String>,
+    cluster_name: &Option<String>,
     columns: &Option<Vec<String>>,
     table_name: &str,
     is_dev: bool,
@@ -2142,6 +2157,7 @@ fn build_replicated_summing_merge_tree_ddl(
     let mut params = build_replication_params(
         keeper_path,
         replica_name,
+        cluster_name,
         "ReplicatedSummingMergeTree",
         table_name,
         is_dev,
@@ -2181,7 +2197,13 @@ pub fn create_table_query(
         ClickhouseEngine::ReplicatedMergeTree {
             keeper_path,
             replica_name,
-        } => build_replicated_merge_tree_ddl(keeper_path, replica_name, &table.name, is_dev)?,
+        } => build_replicated_merge_tree_ddl(
+            keeper_path,
+            replica_name,
+            &table.cluster_name,
+            &table.name,
+            is_dev,
+        )?,
         ClickhouseEngine::ReplicatedReplacingMergeTree {
             keeper_path,
             replica_name,
@@ -2190,6 +2212,7 @@ pub fn create_table_query(
         } => build_replicated_replacing_merge_tree_ddl(
             keeper_path,
             replica_name,
+            &table.cluster_name,
             ver,
             is_deleted,
             table.order_by.is_empty(),
@@ -2202,6 +2225,7 @@ pub fn create_table_query(
         } => build_replicated_aggregating_merge_tree_ddl(
             keeper_path,
             replica_name,
+            &table.cluster_name,
             &table.name,
             is_dev,
         )?,
@@ -2212,6 +2236,7 @@ pub fn create_table_query(
         } => build_replicated_summing_merge_tree_ddl(
             keeper_path,
             replica_name,
+            &table.cluster_name,
             columns,
             &table.name,
             is_dev,
@@ -2409,6 +2434,7 @@ pub fn create_table_query(
     let template_context = json!({
         "db_name": db_name,
         "table_name": table.name,
+        "cluster_name": table.cluster_name.as_deref(),
         "fields":  builds_field_context(&table.columns)?,
         "has_fields": !table.columns.is_empty(),
         "has_indexes": has_indexes,
@@ -2439,28 +2465,33 @@ pub fn create_table_query(
 }
 
 pub static DROP_TABLE_TEMPLATE: &str = r#"
-DROP TABLE IF EXISTS `{{db_name}}`.`{{table_name}}`;
+DROP TABLE IF EXISTS `{{db_name}}`.`{{table_name}}`{{#if cluster_name}} ON CLUSTER {{cluster_name}} SYNC{{/if}};
 "#;
 
-pub fn drop_table_query(db_name: &str, table_name: &str) -> Result<String, ClickhouseError> {
+pub fn drop_table_query(
+    db_name: &str,
+    table_name: &str,
+    cluster_name: Option<&str>,
+) -> Result<String, ClickhouseError> {
     let mut reg = Handlebars::new();
     reg.register_escape_fn(no_escape);
 
     let context = json!({
         "db_name": db_name,
         "table_name": table_name,
+        "cluster_name": cluster_name,
     });
 
     Ok(reg.render_template(DROP_TABLE_TEMPLATE, &context)?)
 }
 
 pub static ALTER_TABLE_MODIFY_SETTINGS_TEMPLATE: &str = r#"
-ALTER TABLE `{{db_name}}`.`{{table_name}}`
+ALTER TABLE `{{db_name}}`.`{{table_name}}`{{#if cluster_name}} ON CLUSTER {{cluster_name}}{{/if}}
 MODIFY SETTING {{settings}};
 "#;
 
 pub static ALTER_TABLE_RESET_SETTINGS_TEMPLATE: &str = r#"
-ALTER TABLE `{{db_name}}`.`{{table_name}}`
+ALTER TABLE `{{db_name}}`.`{{table_name}}`{{#if cluster_name}} ON CLUSTER {{cluster_name}}{{/if}}
 RESET SETTING {{settings}};
 "#;
 
@@ -2469,6 +2500,7 @@ pub fn alter_table_modify_settings_query(
     db_name: &str,
     table_name: &str,
     settings: &std::collections::HashMap<String, String>,
+    cluster_name: Option<&str>,
 ) -> Result<String, ClickhouseError> {
     if settings.is_empty() {
         return Err(ClickhouseError::InvalidParameters {
@@ -2495,6 +2527,7 @@ pub fn alter_table_modify_settings_query(
         "db_name": db_name,
         "table_name": table_name,
         "settings": settings_str,
+        "cluster_name": cluster_name,
     });
 
     Ok(reg.render_template(ALTER_TABLE_MODIFY_SETTINGS_TEMPLATE, &context)?)
@@ -2505,6 +2538,7 @@ pub fn alter_table_reset_settings_query(
     db_name: &str,
     table_name: &str,
     setting_names: &[String],
+    cluster_name: Option<&str>,
 ) -> Result<String, ClickhouseError> {
     if setting_names.is_empty() {
         return Err(ClickhouseError::InvalidParameters {
@@ -2521,6 +2555,7 @@ pub fn alter_table_reset_settings_query(
         "db_name": db_name,
         "table_name": table_name,
         "settings": settings_str,
+        "cluster_name": cluster_name,
     });
 
     Ok(reg.render_template(ALTER_TABLE_RESET_SETTINGS_TEMPLATE, &context)?)
@@ -2917,6 +2952,7 @@ mod tests {
             table_settings: None,
             indexes: vec![],
             table_ttl_setting: None,
+            cluster_name: None,
         };
 
         let query = create_table_query("test_db", table, false).unwrap();
@@ -2954,6 +2990,7 @@ PRIMARY KEY (`id`)
             table_settings: None,
             indexes: vec![],
             table_ttl_setting: None,
+            cluster_name: None,
         };
 
         let query = create_table_query("test_db", table, false).unwrap();
@@ -2990,6 +3027,7 @@ ENGINE = MergeTree
             table_settings: None,
             indexes: vec![],
             table_ttl_setting: None,
+            cluster_name: None,
         };
 
         let query = create_table_query("test_db", table, false).unwrap();
@@ -3049,6 +3087,7 @@ ENGINE = MergeTree
             table_settings: None,
             indexes: vec![],
             table_ttl_setting: None,
+            cluster_name: None,
         };
 
         let query = create_table_query("test_db", table, false).unwrap();
@@ -3089,6 +3128,7 @@ ENGINE = MergeTree
             table_settings: None,
             indexes: vec![],
             table_ttl_setting: None,
+            cluster_name: None,
         };
 
         let query = create_table_query("test_db", table, false).unwrap();
@@ -3128,6 +3168,7 @@ ORDER BY (`id`) "#;
             table_settings: None,
             indexes: vec![],
             table_ttl_setting: None,
+            cluster_name: None,
         };
 
         let result = create_table_query("test_db", table, false);
@@ -3174,6 +3215,7 @@ ORDER BY (`id`) "#;
             table_settings: None,
             indexes: vec![],
             table_ttl_setting: None,
+            cluster_name: None,
         };
 
         let query = create_table_query("test_db", table, false).unwrap();
@@ -3236,6 +3278,7 @@ ORDER BY (`id`) "#;
             table_settings: None,
             indexes: vec![],
             table_ttl_setting: None,
+            cluster_name: None,
         };
 
         let query = create_table_query("test_db", table, false).unwrap();
@@ -3277,6 +3320,7 @@ ORDER BY (`id`) "#;
             table_settings: None,
             table_ttl_setting: None,
             indexes: vec![],
+            cluster_name: None,
         };
 
         let result = create_table_query("test_db", table, false);
@@ -3432,6 +3476,7 @@ ORDER BY (`id`) "#;
             table_settings: None,
             indexes: vec![],
             table_ttl_setting: None,
+            cluster_name: None,
         };
 
         let query = create_table_query("test_db", table, false).unwrap();
@@ -3497,6 +3542,7 @@ ORDER BY (`id`) "#;
             table_settings: Some(settings),
             indexes: vec![],
             table_ttl_setting: None,
+            cluster_name: None,
         };
 
         let query = create_table_query("test_db", table, false).unwrap();
@@ -3969,6 +4015,7 @@ SETTINGS keeper_path = '/clickhouse/s3queue/test_table', mode = 'unordered', s3q
             table_settings: None,
             indexes: vec![],
             table_ttl_setting: None,
+            cluster_name: None,
         };
 
         let query = create_table_query("test_db", table, false).unwrap();
@@ -4483,6 +4530,312 @@ ENGINE = S3Queue('s3://my-bucket/data/*.csv', NOSIGN, 'CSV')"#;
                 assert_eq!(is_deleted, Some("_is_deleted".to_string()));
             }
             _ => panic!("Expected ReplacingMergeTree"),
+        }
+    }
+
+    #[test]
+    fn test_create_table_with_cluster_includes_on_cluster() {
+        let table = ClickHouseTable {
+            version: Some(Version::from_string("1".to_string())),
+            name: "test_table".to_string(),
+            columns: vec![ClickHouseColumn {
+                name: "id".to_string(),
+                column_type: ClickHouseColumnType::ClickhouseInt(ClickHouseInt::Int32),
+                required: true,
+                primary_key: true,
+                unique: false,
+                default: None,
+                comment: None,
+                ttl: None,
+            }],
+            order_by: OrderBy::Fields(vec![]),
+            partition_by: None,
+            sample_by: None,
+            engine: ClickhouseEngine::ReplicatedMergeTree {
+                keeper_path: None,
+                replica_name: None,
+            },
+            table_settings: None,
+            indexes: vec![],
+            table_ttl_setting: None,
+            cluster_name: Some("test_cluster".to_string()),
+        };
+
+        let query = create_table_query("test_db", table, false).unwrap();
+
+        // Should include ON CLUSTER clause
+        assert!(
+            query.contains("ON CLUSTER test_cluster"),
+            "Query should contain ON CLUSTER clause"
+        );
+
+        // ON CLUSTER should come after CREATE TABLE but before column definitions
+        let create_idx = query.find("CREATE TABLE").unwrap();
+        let on_cluster_idx = query.find("ON CLUSTER").unwrap();
+        let engine_idx = query.find("ENGINE").unwrap();
+
+        assert!(
+            create_idx < on_cluster_idx && on_cluster_idx < engine_idx,
+            "ON CLUSTER should be between CREATE TABLE and ENGINE"
+        );
+    }
+
+    #[test]
+    fn test_create_table_without_cluster_no_on_cluster() {
+        let table = ClickHouseTable {
+            version: Some(Version::from_string("1".to_string())),
+            name: "test_table".to_string(),
+            columns: vec![ClickHouseColumn {
+                name: "id".to_string(),
+                column_type: ClickHouseColumnType::ClickhouseInt(ClickHouseInt::Int32),
+                required: true,
+                primary_key: true,
+                unique: false,
+                default: None,
+                comment: None,
+                ttl: None,
+            }],
+            order_by: OrderBy::Fields(vec![]),
+            partition_by: None,
+            sample_by: None,
+            engine: ClickhouseEngine::MergeTree,
+            table_settings: None,
+            indexes: vec![],
+            table_ttl_setting: None,
+            cluster_name: None,
+        };
+
+        let query = create_table_query("test_db", table, false).unwrap();
+
+        // Should NOT include ON CLUSTER clause
+        assert!(
+            !query.contains("ON CLUSTER"),
+            "Query should not contain ON CLUSTER clause when cluster_name is None"
+        );
+    }
+
+    #[test]
+    fn test_drop_table_with_cluster() {
+        let cluster_name = Some("test_cluster");
+        let query = drop_table_query("test_db", "test_table", cluster_name).unwrap();
+
+        // Should include ON CLUSTER clause
+        assert!(
+            query.contains("ON CLUSTER test_cluster"),
+            "DROP query should contain ON CLUSTER clause"
+        );
+
+        // Should have SYNC (when using ON CLUSTER)
+        assert!(
+            query.contains("SYNC"),
+            "DROP query should contain SYNC with ON CLUSTER"
+        );
+
+        // Should have DROP TABLE
+        assert!(query.contains("DROP TABLE"));
+    }
+
+    #[test]
+    fn test_drop_table_without_cluster() {
+        let cluster_name = None;
+        let query = drop_table_query("test_db", "test_table", cluster_name).unwrap();
+
+        // Should NOT include ON CLUSTER clause
+        assert!(
+            !query.contains("ON CLUSTER"),
+            "DROP query should not contain ON CLUSTER clause when cluster_name is None"
+        );
+
+        // Should NOT have SYNC (only needed with ON CLUSTER)
+        assert!(
+            !query.contains("SYNC"),
+            "DROP query should not contain SYNC without ON CLUSTER"
+        );
+
+        // Should still have DROP TABLE
+        assert!(query.contains("DROP TABLE"));
+    }
+
+    #[test]
+    fn test_alter_table_modify_setting_with_cluster() {
+        use std::collections::HashMap;
+
+        let mut settings = HashMap::new();
+        settings.insert("index_granularity".to_string(), "4096".to_string());
+        settings.insert("ttl_only_drop_parts".to_string(), "1".to_string());
+
+        let query = alter_table_modify_settings_query(
+            "test_db",
+            "test_table",
+            &settings,
+            Some("test_cluster"),
+        )
+        .unwrap();
+
+        assert!(
+            query.contains("ON CLUSTER test_cluster"),
+            "MODIFY SETTING query should contain ON CLUSTER clause"
+        );
+        assert!(query.contains("ALTER TABLE"));
+        assert!(query.contains("MODIFY SETTING"));
+    }
+
+    #[test]
+    fn test_alter_table_add_column_with_cluster() {
+        let column = ClickHouseColumn {
+            name: "new_col".to_string(),
+            column_type: ClickHouseColumnType::String,
+            required: false,
+            primary_key: false,
+            unique: false,
+            default: None,
+            comment: None,
+            ttl: None,
+        };
+
+        let cluster_clause = Some("test_cluster")
+            .map(|c| format!(" ON CLUSTER {}", c))
+            .unwrap_or_default();
+
+        let query = format!(
+            "ALTER TABLE `test_db`.`test_table`{} ADD COLUMN `{}` String FIRST",
+            cluster_clause, column.name
+        );
+
+        assert!(
+            query.contains("ON CLUSTER test_cluster"),
+            "ADD COLUMN query should contain ON CLUSTER clause"
+        );
+        assert!(query.contains("ALTER TABLE"));
+        assert!(query.contains("ADD COLUMN"));
+    }
+
+    #[test]
+    fn test_replication_params_dev_no_cluster_no_keeper_args_auto_injects() {
+        let result = build_replication_params(
+            &None,
+            &None,
+            &None,
+            "ReplicatedMergeTree",
+            "test_table",
+            true, // is_dev
+        );
+
+        assert!(result.is_ok());
+        let params = result.unwrap();
+        // Should auto-inject params in dev mode
+        assert_eq!(params.len(), 2);
+        assert!(params[0].contains("/clickhouse/tables/"));
+        assert!(params[1].contains("{replica}"));
+    }
+
+    #[test]
+    fn test_replication_params_dev_with_cluster_no_keeper_args_succeeds() {
+        let result = build_replication_params(
+            &None,
+            &None,
+            &Some("test_cluster".to_string()),
+            "ReplicatedMergeTree",
+            "test_table",
+            true, // is_dev
+        );
+
+        assert!(result.is_ok());
+        let params = result.unwrap();
+        // Dev with cluster: should return empty params (let CH use {uuid} with ON CLUSTER)
+        assert_eq!(params.len(), 0);
+    }
+
+    #[test]
+    fn test_replication_params_dev_no_cluster_with_keeper_args_succeeds() {
+        let result = build_replication_params(
+            &Some("/clickhouse/tables/{database}/{table}".to_string()),
+            &Some("{replica}".to_string()),
+            &None,
+            "ReplicatedMergeTree",
+            "test_table",
+            true, // is_dev
+        );
+
+        assert!(result.is_ok());
+        let params = result.unwrap();
+        assert_eq!(params.len(), 2);
+        assert_eq!(params[0], "'/clickhouse/tables/{database}/{table}'");
+        assert_eq!(params[1], "'{replica}'");
+    }
+
+    #[test]
+    fn test_replication_params_prod_no_cluster_no_keeper_args_succeeds() {
+        let result = build_replication_params(
+            &None,
+            &None,
+            &None,
+            "ReplicatedMergeTree",
+            "test_table",
+            false, // is_dev = false (production)
+        );
+
+        assert!(result.is_ok());
+        let params = result.unwrap();
+        // Should return empty params for ClickHouse Cloud
+        assert_eq!(params.len(), 0);
+    }
+
+    #[test]
+    fn test_replication_params_dev_with_cluster_and_keeper_args_succeeds() {
+        let result = build_replication_params(
+            &Some("/clickhouse/tables/{database}/{table}".to_string()),
+            &Some("{replica}".to_string()),
+            &Some("test_cluster".to_string()),
+            "ReplicatedMergeTree",
+            "test_table",
+            true, // is_dev
+        );
+
+        assert!(result.is_ok());
+        let params = result.unwrap();
+        // Should use explicit params, not auto-inject
+        assert_eq!(params.len(), 2);
+        assert_eq!(params[0], "'/clickhouse/tables/{database}/{table}'");
+        assert_eq!(params[1], "'{replica}'");
+    }
+
+    #[test]
+    fn test_replication_params_prod_with_cluster_no_keeper_args_empty() {
+        let result = build_replication_params(
+            &None,
+            &None,
+            &Some("test_cluster".to_string()),
+            "ReplicatedMergeTree",
+            "test_table",
+            false, // is_dev = false (production)
+        );
+
+        assert!(result.is_ok());
+        let params = result.unwrap();
+        // Prod with cluster: should return empty params (let CH use {uuid} with ON CLUSTER)
+        assert_eq!(params.len(), 0);
+    }
+
+    #[test]
+    fn test_replication_params_mismatched_keeper_args_fails() {
+        // Only keeper_path, no replica_name
+        let result = build_replication_params(
+            &Some("/clickhouse/tables/{database}/{table}".to_string()),
+            &None,
+            &Some("test_cluster".to_string()),
+            "ReplicatedMergeTree",
+            "test_table",
+            true,
+        );
+
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        match err {
+            ClickhouseError::InvalidParameters { message } => {
+                assert!(message.contains("requires both keeper_path and replica_name"));
+            }
+            _ => panic!("Expected InvalidParameters error"),
         }
     }
 }

@@ -407,7 +407,7 @@ mod tests {
             order_by: OrderBy::Fields(vec!["id".to_string()]),
             partition_by: None,
             sample_by: None,
-            engine: None,
+            engine: ClickhouseEngine::MergeTree,
             version: Some(Version::from_string("1.0.0".to_string())),
             source_primitive: PrimitiveSignature {
                 name: "test".to_string(),
@@ -420,6 +420,7 @@ mod tests {
             indexes: vec![],
             database: None,
             table_ttl_setting: None,
+            cluster_name: None,
         }
     }
 
@@ -633,11 +634,11 @@ mod tests {
         let mut infra_table = create_base_table("test_table");
 
         // Set different engine values
-        actual_table.engine = Some(ClickhouseEngine::ReplacingMergeTree {
+        actual_table.engine = ClickhouseEngine::ReplacingMergeTree {
             ver: None,
             is_deleted: None,
-        });
-        infra_table.engine = None;
+        };
+        infra_table.engine = ClickhouseEngine::MergeTree;
 
         let mock_client = MockOlapClient {
             tables: vec![Table {
@@ -680,10 +681,10 @@ mod tests {
         match &discrepancies.mismatched_tables[0] {
             OlapChange::Table(TableChange::Updated { before, after, .. }) => {
                 assert!(matches!(
-                    before.engine.as_ref(),
-                    Some(ClickhouseEngine::ReplacingMergeTree { .. })
+                    &before.engine,
+                    ClickhouseEngine::ReplacingMergeTree { .. }
                 ));
-                assert_eq!(after.engine.as_ref(), None);
+                assert!(matches!(&after.engine, ClickhouseEngine::MergeTree));
             }
             _ => panic!("Expected TableChange::Updated variant"),
         }

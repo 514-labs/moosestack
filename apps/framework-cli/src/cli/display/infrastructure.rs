@@ -236,10 +236,16 @@ fn format_table_display(
         details.push(format!("Order by: {}", table.order_by));
     }
 
-    // Engine section (if present)
-    if let Some(ref engine) = table.engine {
-        details.push(format!("Engine: {}", Into::<String>::into(engine.clone())));
+    // Cluster section (if present)
+    if let Some(ref cluster) = table.cluster_name {
+        details.push(format!("Cluster: {}", cluster));
     }
+
+    // Engine section
+    details.push(format!(
+        "Engine: {}",
+        Into::<String>::into(table.engine.clone())
+    ));
 
     (title, details)
 }

@@ -158,3 +158,107 @@ export const verifyVersionedConsumptionApi = async (
     },
   );
 };
+
+/**
+ * Verifies the proxy health endpoint (/health) returns expected healthy/unhealthy services
+ */
+export const verifyProxyHealth = async (
+  expectedHealthy: string[],
+  expectedUnhealthy: string[] = [],
+): Promise<void> => {
+  await withRetries(
+    async () => {
+      const response = await fetch(`${SERVER_CONFIG.url}/health`);
+
+      // If we expect unhealthy services, status should be 503
+      // Otherwise it should be 200
+      const expectedStatus = expectedUnhealthy.length > 0 ? 503 : 200;
+      if (response.status !== expectedStatus) {
+        const text = await response.text();
+        throw new Error(
+          `Expected status ${expectedStatus}, got ${response.status}: ${text}`,
+        );
+      }
+
+      const json = (await response.json()) as {
+        healthy: string[];
+        unhealthy: string[];
+      };
+
+      console.log("Health check response:", json);
+
+      // Verify healthy list
+      for (const service of expectedHealthy) {
+        if (!json.healthy.includes(service)) {
+          throw new Error(
+            `Expected "${service}" in healthy list, got: ${json.healthy.join(", ")}`,
+          );
+        }
+      }
+
+      // Verify unhealthy list
+      for (const service of expectedUnhealthy) {
+        if (!json.unhealthy.includes(service)) {
+          throw new Error(
+            `Expected "${service}" in unhealthy list, got: ${json.unhealthy.join(", ")}`,
+          );
+        }
+      }
+
+      // Note: We don't enforce exact counts because services are conditionally
+      // checked based on feature flags (features.apis, features.olap, features.streaming_engine).
+      // The test verifies that expected services are present in the correct state,
+      // but allows for additional services that may be enabled in the environment.
+    },
+    {
+      attempts: RETRY_CONFIG.API_VERIFICATION_ATTEMPTS,
+      delayMs: RETRY_CONFIG.API_VERIFICATION_DELAY_MS,
+    },
+  );
+};
+
+/**
+ * Verifies the consumption API internal health endpoint (/_moose_internal/health)
+ */
+export const verifyConsumptionApiInternalHealth = async (): Promise<void> => {
+  await withRetries(
+    async () => {
+      // Note: The internal health endpoint runs on the consumption API port (4001 by default)
+      // which is the same as SERVER_CONFIG.consumptionApiUrl but without the /api prefix
+      const consumptionApiPort = new URL(SERVER_CONFIG.url).port || "4000";
+      const consumptionPort = parseInt(consumptionApiPort) + 1; // Default: 4001
+      const healthUrl = `http://localhost:${consumptionPort}/_moose_internal/health`;
+
+      const response = await fetch(healthUrl);
+      if (!response.ok) {
+        const text = await response.text();
+        throw new Error(`${response.status}: ${text}`);
+      }
+
+      const json = (await response.json()) as {
+        status: string;
+        timestamp: string;
+      };
+
+      console.log("Internal health check response:", json);
+
+      if (json.status !== "healthy") {
+        throw new Error(`Expected status "healthy", got "${json.status}"`);
+      }
+
+      if (!json.timestamp) {
+        throw new Error("Missing timestamp in response");
+      }
+
+      // Verify timestamp is a valid ISO 8601 string
+      const timestamp = new Date(json.timestamp);
+      if (isNaN(timestamp.getTime())) {
+        throw new Error(`Invalid timestamp: ${json.timestamp}`);
+      }
+    },
+    {
+      attempts: RETRY_CONFIG.API_VERIFICATION_ATTEMPTS,
+      delayMs: RETRY_CONFIG.API_VERIFICATION_DELAY_MS,
+    },
+  );
+};

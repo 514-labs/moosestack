@@ -1760,7 +1760,8 @@ impl InfrastructureMap {
         let mut table_additions = 0;
 
         // Use normalized tables for comparison, but original tables for changes
-        for normalized_table in normalized_self.values() {
+        // Iterate over key-value pairs to preserve the HashMap key for lookups
+        for (key, normalized_table) in normalized_self.iter() {
             // self_tables can be from remote where the keys are IDs with another database prefix
             // but they are then the default database,
             //   the `database` field is None and we build the ID ourselves
@@ -1768,13 +1769,14 @@ impl InfrastructureMap {
                 normalized_target.get(&normalized_table.id(default_database))
             {
                 if !tables_equal_ignore_metadata(normalized_table, normalized_target) {
-                    // Get original tables for use in changes
+                    // Get original tables for use in changes using the HashMap key
+                    // not the computed ID, since remote keys may differ from computed IDs
                     let table = self_tables
-                        .get(&normalized_table.id(default_database))
-                        .unwrap();
+                        .get(key)
+                        .expect("normalized_self and self_tables should have same keys");
                     let target_table = target_tables
                         .get(&normalized_target.id(default_database))
-                        .unwrap();
+                        .expect("normalized_target exists, so target_table should too");
                     // Respect lifecycle: ExternallyManaged tables are never modified
                     if target_table.life_cycle == LifeCycle::ExternallyManaged && respect_life_cycle
                     {
@@ -1842,9 +1844,8 @@ impl InfrastructureMap {
                             // but the implicit order_by from primary keys can be the same
                             // ONLY for engines that support ORDER BY (MergeTree family and S3)
                             // Buffer, S3Queue, and Distributed don't support ORDER BY
-                            // When engine is None, ClickHouse defaults to MergeTree
                             && !(target_table.order_by.is_empty()
-                                && target_table.engine.as_ref().is_none_or(|e| e.supports_order_by())
+                                && target_table.engine.supports_order_by()
                                 && matches!(
                                     &table.order_by,
                                     OrderBy::Fields(v)
@@ -1853,6 +1854,11 @@ impl InfrastructureMap {
 
                         // Detect engine change (e.g., MergeTree -> ReplacingMergeTree)
                         let engine_changed = table.engine != target_table.engine;
+
+                        // Note: We intentionally do NOT check for cluster_name changes here.
+                        // cluster_name is a deployment directive (how to run DDL), not a schema property.
+                        // The inframap will be updated with the new cluster_name value, and future DDL
+                        // operations will use it, but changing cluster_name doesn't trigger operations.
 
                         let order_by_change = if order_by_changed {
                             OrderByChange {
@@ -1894,6 +1900,7 @@ impl InfrastructureMap {
                         // since ClickHouse requires the full column definition when modifying TTL
 
                         // Only process changes if there are actual differences to report
+                        // Note: cluster_name changes are intentionally excluded - they don't trigger operations
                         if !column_changes.is_empty()
                             || order_by_changed
                             || partition_by_changed
@@ -1919,10 +1926,10 @@ impl InfrastructureMap {
                     }
                 }
             } else {
-                // Get original table for removal
+                // Get original table for removal using the HashMap key
                 let table = self_tables
-                    .get(&normalized_table.id(default_database))
-                    .unwrap();
+                    .get(key)
+                    .expect("normalized_self and self_tables should have same keys");
                 // Respect lifecycle: DeletionProtected and ExternallyManaged tables are never removed
                 match (table.life_cycle, respect_life_cycle) {
                     (LifeCycle::FullyManaged, _) | (_, false) => {
@@ -2138,9 +2145,8 @@ impl InfrastructureMap {
             // but the implicit order_by from primary keys can be the same
             // ONLY for engines that support ORDER BY (MergeTree family and S3)
             // Buffer, S3Queue, and Distributed don't support ORDER BY
-            // When engine is None, ClickHouse defaults to MergeTree
             && !(target_table.order_by.is_empty()
-                && target_table.engine.as_ref().is_none_or(|e| e.supports_order_by())
+                && target_table.engine.supports_order_by()
                 && matches!(
                     &table.order_by,
                     crate::framework::core::infrastructure::table::OrderBy::Fields(v)
@@ -2237,15 +2243,14 @@ impl InfrastructureMap {
         for table in self.tables.values_mut() {
             let mut should_recalc_hash = false;
 
-            if let Some(engine) = &mut table.engine {
-                match engine {
-                    ClickhouseEngine::S3Queue {
-                        aws_access_key_id,
-                        aws_secret_access_key,
-                        ..
-                    } => {
-                        // Resolve environment variable markers for AWS credentials
-                        let resolved_access_key = resolve_optional_runtime_env(aws_access_key_id)
+            match &mut table.engine {
+                ClickhouseEngine::S3Queue {
+                    aws_access_key_id,
+                    aws_secret_access_key,
+                    ..
+                } => {
+                    // Resolve environment variable markers for AWS credentials
+                    let resolved_access_key = resolve_optional_runtime_env(aws_access_key_id)
                             .map_err(|e| {
                             format!(
                                 "Failed to resolve runtime environment variable for table '{}' field 'awsAccessKeyId': {}",
@@ -2253,7 +2258,7 @@ impl InfrastructureMap {
                             )
                         })?;
 
-                        let resolved_secret_key =
+                    let resolved_secret_key =
                             resolve_optional_runtime_env(aws_secret_access_key).map_err(|e| {
                                 format!(
                                     "Failed to resolve runtime environment variable for table '{}' field 'awsSecretAccessKey': {}",
@@ -2261,56 +2266,54 @@ impl InfrastructureMap {
                                 )
                             })?;
 
-                        *aws_access_key_id = resolved_access_key;
-                        *aws_secret_access_key = resolved_secret_key;
-                        should_recalc_hash = true;
+                    *aws_access_key_id = resolved_access_key;
+                    *aws_secret_access_key = resolved_secret_key;
+                    should_recalc_hash = true;
 
-                        log::debug!(
-                            "Resolved S3Queue credentials for table '{}' at runtime",
-                            table.name
-                        );
-                    }
-                    ClickhouseEngine::S3 {
-                        aws_access_key_id,
-                        aws_secret_access_key,
-                        ..
-                    } => {
-                        // Resolve environment variable markers for AWS credentials
-                        let resolved_access_key = resolve_optional_runtime_env(aws_access_key_id)
-                            .map_err(|e| {
+                    log::debug!(
+                        "Resolved S3Queue credentials for table '{}' at runtime",
+                        table.name
+                    );
+                }
+                ClickhouseEngine::S3 {
+                    aws_access_key_id,
+                    aws_secret_access_key,
+                    ..
+                } => {
+                    // Resolve environment variable markers for AWS credentials
+                    let resolved_access_key = resolve_optional_runtime_env(aws_access_key_id)
+                        .map_err(|e| {
+                        format!(
+                            "Failed to resolve runtime environment variable for table '{}' field 'awsAccessKeyId': {}",
+                            table.name, e
+                        )
+                    })?;
+
+                    let resolved_secret_key =
+                        resolve_optional_runtime_env(aws_secret_access_key).map_err(|e| {
                             format!(
-                                "Failed to resolve runtime environment variable for table '{}' field 'awsAccessKeyId': {}",
+                                "Failed to resolve runtime environment variable for table '{}' field 'awsSecretAccessKey': {}",
                                 table.name, e
                             )
                         })?;
 
-                        let resolved_secret_key =
-                            resolve_optional_runtime_env(aws_secret_access_key).map_err(|e| {
-                                format!(
-                                    "Failed to resolve runtime environment variable for table '{}' field 'awsSecretAccessKey': {}",
-                                    table.name, e
-                                )
-                            })?;
+                    *aws_access_key_id = resolved_access_key;
+                    *aws_secret_access_key = resolved_secret_key;
+                    should_recalc_hash = true;
 
-                        *aws_access_key_id = resolved_access_key;
-                        *aws_secret_access_key = resolved_secret_key;
-                        should_recalc_hash = true;
-
-                        log::debug!(
-                            "Resolved S3 credentials for table '{}' at runtime",
-                            table.name
-                        );
-                    }
-                    _ => {
-                        // No credentials to resolve for other engine types
-                    }
+                    log::debug!(
+                        "Resolved S3 credentials for table '{}' at runtime",
+                        table.name
+                    );
+                }
+                _ => {
+                    // No credentials to resolve for other engine types
                 }
             }
 
             // Recalculate engine_params_hash after resolving credentials
             if should_recalc_hash {
-                table.engine_params_hash =
-                    table.engine.as_ref().map(|e| e.non_alterable_params_hash());
+                table.engine_params_hash = Some(table.engine.non_alterable_params_hash());
                 log::debug!(
                     "Recalculated engine_params_hash for table '{}' after credential resolution",
                     table.name
@@ -2557,6 +2560,57 @@ impl InfrastructureMap {
     /// An Option containing a reference to the table if found
     pub fn find_table_by_name(&self, name: &str) -> Option<&Table> {
         self.tables.values().find(|table| table.name == name)
+    }
+
+    /// Normalizes the infrastructure map for backward compatibility
+    ///
+    /// This applies the same normalization logic as partial_infrastructure_map.rs
+    /// to ensure consistent comparison between old and new infrastructure maps.
+    ///
+    /// Specifically:
+    /// - Falls back to primary key columns for order_by when it's empty (for MergeTree tables)
+    /// - Ensures arrays are always required=true (ClickHouse doesn't support Nullable(Array))
+    ///
+    /// This is needed because older CLI versions didn't persist order_by when it was
+    /// derived from primary key columns.
+    pub fn normalize(mut self) -> Self {
+        use crate::framework::core::infrastructure::table::{ColumnType, OrderBy};
+
+        self.tables = self
+            .tables
+            .into_iter()
+            .map(|(id, mut table)| {
+                // Fall back to primary key columns if order_by is empty for MergeTree engines
+                // This ensures backward compatibility when order_by isn't explicitly set
+                // We only do this for MergeTree family to avoid breaking S3 tables
+                if table.order_by.is_empty() && table.engine.is_merge_tree_family() {
+                    let primary_key_columns: Vec<String> = table
+                        .columns
+                        .iter()
+                        .filter_map(|c| {
+                            if c.primary_key {
+                                Some(c.name.clone())
+                            } else {
+                                None
+                            }
+                        })
+                        .collect();
+                    table.order_by = OrderBy::Fields(primary_key_columns);
+                }
+
+                // Normalize columns: ClickHouse doesn't support Nullable(Array(...))
+                // Arrays must always be NOT NULL (required=true)
+                for col in &mut table.columns {
+                    if matches!(col.data_type, ColumnType::Array { .. }) {
+                        col.required = true;
+                    }
+                }
+
+                (id, table)
+            })
+            .collect();
+
+        self
     }
 
     /// Adds a topic to the infrastructure map
@@ -2961,12 +3015,13 @@ mod tests {
     };
     use crate::framework::versions::Version;
     use crate::infrastructure::olap::clickhouse::config::DEFAULT_DATABASE_NAME;
+    use crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine;
 
     #[test]
     fn test_compute_table_diff() {
         let before = Table {
             name: "test_table".to_string(),
-            engine: None,
+            engine: ClickhouseEngine::MergeTree,
             columns: vec![
                 Column {
                     name: "id".to_string(),
@@ -3017,11 +3072,12 @@ mod tests {
             indexes: vec![],
             database: None,
             table_ttl_setting: None,
+            cluster_name: None,
         };
 
         let after = Table {
             name: "test_table".to_string(),
-            engine: None,
+            engine: ClickhouseEngine::MergeTree,
             columns: vec![
                 Column {
                     name: "id".to_string(),
@@ -3072,6 +3128,7 @@ mod tests {
             indexes: vec![],
             database: None,
             table_ttl_setting: None,
+            cluster_name: None,
         };
 
         let diff = compute_table_columns_diff(&before, &after);
@@ -3230,7 +3287,7 @@ mod diff_tests {
     pub fn create_test_table(name: &str, version: &str) -> Table {
         Table {
             name: name.to_string(),
-            engine: None,
+            engine: ClickhouseEngine::MergeTree,
             columns: vec![],
             order_by: OrderBy::Fields(vec![]),
             partition_by: None,
@@ -3247,6 +3304,7 @@ mod diff_tests {
             indexes: vec![],
             database: None,
             table_ttl_setting: None,
+            cluster_name: None,
         }
     }
 
@@ -3528,11 +3586,11 @@ mod diff_tests {
         let mut before = create_test_table("test", "1.0");
         let mut after = create_test_table("test", "1.0");
 
-        before.engine = Some(ClickhouseEngine::MergeTree);
-        after.engine = Some(ClickhouseEngine::ReplacingMergeTree {
+        before.engine = ClickhouseEngine::MergeTree;
+        after.engine = ClickhouseEngine::ReplacingMergeTree {
             ver: None,
             is_deleted: None,
-        });
+        };
 
         // Set database field for both tables
         before.database = Some(DEFAULT_DATABASE_NAME.to_string());
@@ -3557,10 +3615,10 @@ mod diff_tests {
                 after: a,
                 ..
             }) => {
-                assert_eq!(b.engine.as_ref(), Some(&ClickhouseEngine::MergeTree));
+                assert!(matches!(&b.engine, ClickhouseEngine::MergeTree));
                 assert!(matches!(
-                    a.engine.as_ref(),
-                    Some(ClickhouseEngine::ReplacingMergeTree { .. })
+                    &a.engine,
+                    ClickhouseEngine::ReplacingMergeTree { .. }
                 ));
             }
             _ => panic!("Expected Updated change with engine modification"),

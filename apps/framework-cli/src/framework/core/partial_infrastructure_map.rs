@@ -51,7 +51,7 @@ use super::{
         olap_process::OlapProcess,
         orchestration_worker::OrchestrationWorker,
         sql_resource::SqlResource,
-        table::{Column, Metadata, Table, TableIndex},
+        table::{Column, ColumnType, Metadata, Table, TableIndex},
         topic::{KafkaSchema, Topic, DEFAULT_MAX_MESSAGE_BYTES},
         topic_sync_process::{TopicToTableSyncProcess, TopicToTopicSyncProcess},
         view::View,
@@ -256,6 +256,9 @@ struct PartialTable {
     /// Optional database name for multi-database support
     #[serde(default)]
     pub database: Option<String>,
+    /// Optional cluster name for ON CLUSTER support
+    #[serde(default)]
+    pub cluster: Option<String>,
 }
 
 /// Represents a topic definition from user code before it's converted into a complete [`Topic`].
@@ -614,7 +617,7 @@ impl PartialInfrastructureMap {
                     .map(|v_str| Version::from_string(v_str.clone()));
 
                 let engine = self.parse_engine(partial_table)?;
-                let engine_params_hash = engine.as_ref().map(|e| e.non_alterable_params_hash());
+                let engine_params_hash = Some(engine.non_alterable_params_hash());
 
                 // S3Queue settings should come directly from table_settings in the user code
                 let mut table_settings = partial_table.table_settings.clone().unwrap_or_default();
@@ -622,11 +625,7 @@ impl PartialInfrastructureMap {
                 // Apply ClickHouse default settings for MergeTree family engines
                 // This ensures our internal representation matches what ClickHouse actually has
                 // and prevents unnecessary diffs
-                // Note: When engine is None, ClickHouse defaults to MergeTree, so we apply defaults in that case too
-                let should_apply_mergetree_defaults = match &engine {
-                    None => true, // No engine specified defaults to MergeTree
-                    Some(eng) => eng.is_merge_tree_family(),
-                };
+                let should_apply_mergetree_defaults = engine.is_merge_tree_family();
 
                 if should_apply_mergetree_defaults {
                     // Apply MergeTree defaults if not explicitly set by user
@@ -653,24 +652,54 @@ impl PartialInfrastructureMap {
                 }
 
                 // Buffer, S3Queue, Distributed, and other non-MergeTree engines don't support PRIMARY KEY
-                // When engine is None, ClickHouse defaults to MergeTree which does support it
-                let supports_primary_key = engine.as_ref().is_none_or(|e| e.supports_order_by());
-                // Clear primary_key flag from columns if engine doesn't support it
-                let columns = if supports_primary_key {
-                    partial_table.columns.clone()
-                } else {
-                    partial_table
-                        .columns
-                        .iter()
-                        .map(|col| Column {
-                            primary_key: false,
-                            ..col.clone()
-                        })
-                        .collect()
-                };
+                let supports_primary_key = engine.supports_order_by();
+
+                // Normalize columns:
+                // 1. Clear primary_key flag if engine doesn't support it
+                // 2. Force arrays to be required=true (ClickHouse doesn't support nullable arrays)
+                let columns: Vec<Column> = partial_table
+                    .columns
+                    .iter()
+                    .map(|col| {
+                        let mut normalized_col = col.clone();
+
+                        // Clear primary_key if engine doesn't support it
+                        if !supports_primary_key {
+                            normalized_col.primary_key = false;
+                        }
+
+                        // ClickHouse doesn't support Nullable(Array(...))
+                        // Arrays must always be NOT NULL (required=true)
+                        if matches!(col.data_type, ColumnType::Array { .. }) {
+                            normalized_col.required = true;
+                        }
+
+                        normalized_col
+                    })
+                    .collect();
 
                 // Extract table-level TTL from partial table
                 let table_ttl_setting = partial_table.ttl.clone();
+
+                // Fall back to primary key columns if order_by is empty for MergeTree engines
+                // This ensures backward compatibility when order_by isn't explicitly set
+                // We only do this for MergeTree family to avoid breaking S3 tables
+                let order_by = if partial_table.order_by.is_empty() && engine.is_merge_tree_family()
+                {
+                    let primary_key_columns: Vec<String> = columns
+                        .iter()
+                        .filter_map(|c| {
+                            if c.primary_key {
+                                Some(c.name.clone())
+                            } else {
+                                None
+                            }
+                        })
+                        .collect();
+                    OrderBy::Fields(primary_key_columns)
+                } else {
+                    partial_table.order_by.clone()
+                };
 
                 let table = Table {
                     name: version
@@ -679,7 +708,7 @@ impl PartialInfrastructureMap {
                             format!("{}_{}", partial_table.name, version.as_suffix())
                         }),
                     columns,
-                    order_by: partial_table.order_by.clone(),
+                    order_by,
                     partition_by: partial_table.partition_by.clone(),
                     sample_by: partial_table.sample_by.clone(),
                     engine,
@@ -699,6 +728,7 @@ impl PartialInfrastructureMap {
                     indexes: partial_table.indexes.clone(),
                     table_ttl_setting,
                     database: partial_table.database.clone(),
+                    cluster_name: partial_table.cluster.clone(),
                 };
                 Ok((table.id(default_database), table))
             })
@@ -714,81 +744,81 @@ impl PartialInfrastructureMap {
     fn parse_engine(
         &self,
         partial_table: &PartialTable,
-    ) -> Result<Option<ClickhouseEngine>, DmV2LoadingError> {
+    ) -> Result<ClickhouseEngine, DmV2LoadingError> {
         match &partial_table.engine_config {
-            Some(EngineConfig::MergeTree {}) => Ok(Some(ClickhouseEngine::MergeTree)),
+            Some(EngineConfig::MergeTree {}) => Ok(ClickhouseEngine::MergeTree),
 
             Some(EngineConfig::ReplacingMergeTree { ver, is_deleted }) => {
-                Ok(Some(ClickhouseEngine::ReplacingMergeTree {
+                Ok(ClickhouseEngine::ReplacingMergeTree {
                     ver: ver.clone(),
                     is_deleted: is_deleted.clone(),
-                }))
+                })
             }
 
             Some(EngineConfig::AggregatingMergeTree {}) => {
-                Ok(Some(ClickhouseEngine::AggregatingMergeTree))
+                Ok(ClickhouseEngine::AggregatingMergeTree)
             }
 
             Some(EngineConfig::SummingMergeTree { columns }) => {
-                Ok(Some(ClickhouseEngine::SummingMergeTree {
+                Ok(ClickhouseEngine::SummingMergeTree {
                     columns: columns.clone(),
-                }))
+                })
             }
 
             Some(EngineConfig::ReplicatedMergeTree {
                 keeper_path,
                 replica_name,
-            }) => Ok(Some(ClickhouseEngine::ReplicatedMergeTree {
+            }) => Ok(ClickhouseEngine::ReplicatedMergeTree {
                 keeper_path: keeper_path.clone(),
                 replica_name: replica_name.clone(),
-            })),
+            }),
 
             Some(EngineConfig::ReplicatedReplacingMergeTree {
                 keeper_path,
                 replica_name,
                 ver,
                 is_deleted,
-            }) => Ok(Some(ClickhouseEngine::ReplicatedReplacingMergeTree {
+            }) => Ok(ClickhouseEngine::ReplicatedReplacingMergeTree {
                 keeper_path: keeper_path.clone(),
                 replica_name: replica_name.clone(),
                 ver: ver.clone(),
                 is_deleted: is_deleted.clone(),
-            })),
+            }),
 
             Some(EngineConfig::ReplicatedAggregatingMergeTree {
                 keeper_path,
                 replica_name,
-            }) => Ok(Some(ClickhouseEngine::ReplicatedAggregatingMergeTree {
+            }) => Ok(ClickhouseEngine::ReplicatedAggregatingMergeTree {
                 keeper_path: keeper_path.clone(),
                 replica_name: replica_name.clone(),
-            })),
+            }),
 
             Some(EngineConfig::ReplicatedSummingMergeTree {
                 keeper_path,
                 replica_name,
                 columns,
-            }) => Ok(Some(ClickhouseEngine::ReplicatedSummingMergeTree {
+            }) => Ok(ClickhouseEngine::ReplicatedSummingMergeTree {
                 keeper_path: keeper_path.clone(),
                 replica_name: replica_name.clone(),
                 columns: columns.clone(),
-            })),
+            }),
 
             Some(EngineConfig::S3Queue(config)) => {
                 // Keep environment variable markers as-is - credentials will be resolved at runtime
                 // S3Queue settings are handled in table_settings, not in the engine
-                Ok(Some(ClickhouseEngine::S3Queue {
+                Ok(ClickhouseEngine::S3Queue {
                     s3_path: config.s3_path.clone(),
                     format: config.format.clone(),
                     compression: config.compression.clone(),
                     headers: config.headers.clone(),
                     aws_access_key_id: config.aws_access_key_id.clone(),
                     aws_secret_access_key: config.aws_secret_access_key.clone(),
-                }))
+                })
             }
 
             Some(EngineConfig::S3(config)) => {
                 // Keep environment variable markers as-is - credentials will be resolved at runtime
-                Ok(Some(ClickhouseEngine::S3 {
+                Ok(ClickhouseEngine::S3 {
                     path: config.path.clone(),
                     format: config.format.clone(),
                     aws_access_key_id: config.aws_access_key_id.clone(),
@@ -796,10 +826,10 @@ impl PartialInfrastructureMap {
                     compression: config.compression.clone(),
                     partition_strategy: config.partition_strategy.clone(),
                     partition_columns_in_data_file: config.partition_columns_in_data_file.clone(),
-                }))
+                })
             }
 
-            Some(EngineConfig::Buffer(config)) => Ok(Some(ClickhouseEngine::Buffer {
+            Some(EngineConfig::Buffer(config)) => Ok(ClickhouseEngine::Buffer {
                 target_database: config.target_database.clone(),
                 target_table: config.target_table.clone(),
                 num_layers: config.num_layers,
@@ -812,17 +842,17 @@ impl PartialInfrastructureMap {
                 flush_time: config.flush_time,
                 flush_rows: config.flush_rows,
                 flush_bytes: config.flush_bytes,
-            })),
+            }),
 
-            Some(EngineConfig::Distributed(config)) => Ok(Some(ClickhouseEngine::Distributed {
+            Some(EngineConfig::Distributed(config)) => Ok(ClickhouseEngine::Distributed {
                 cluster: config.cluster.clone(),
                 target_database: config.target_database.clone(),
                 target_table: config.target_table.clone(),
                 sharding_key: config.sharding_key.clone(),
                 policy_name: config.policy_name.clone(),
-            })),
+            }),
 
-            None => Ok(None),
+            None => Ok(ClickhouseEngine::MergeTree),
         }
     }
 
