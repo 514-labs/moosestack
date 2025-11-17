@@ -237,6 +237,80 @@ export const ReplicatedDedup = new OlapTable<ReplicatedSchema>("ReplicatedDedup"
 **Note**: The `keeperPath` and `replicaName` parameters are optional:
 - **Self-managed ClickHouse**: Both parameters are required for configuring ZooKeeper/ClickHouse Keeper paths
 - **ClickHouse Cloud / Boreal**: Omit both parameters - the platform manages replication automatically
+
+### Cluster-Aware Replicated Tables
+
+For multi-node ClickHouse deployments, you can specify a cluster name to use `ON CLUSTER` DDL operations:
+
+```typescript
+import { OlapTable, ClickHouseEngines, Key } from '@514labs/moose-lib';
+
+interface ReplicatedSchema {
+  id: Key<string>;
+  data: string;
+  timestamp: Date;
+}
+
+// Replicated table on a cluster
+export const ClusteredTable = new OlapTable<ReplicatedSchema>("ClusteredTable", {
+  engine: ClickHouseEngines.ReplicatedMergeTree,
+  orderByFields: ["id"],
+  cluster: "default"  // References cluster from moose.config.toml
+});
+```
+
+**Configuration in `moose.config.toml`:**
+```toml
+[[clickhouse_config.clusters]]
+name = "default"
+```
+
+**When to omit all parameters (recommended):**
+- ✅ **ClickHouse Cloud** - Platform manages replication automatically
+- ✅ **Local development** - Moose auto-injects params: `/clickhouse/tables/{database}/{shard}/{table_name}`
+- ✅ **Most production deployments** - Works out of the box
+
+**When to use `cluster`:**
+- ✅ Multi-node self-managed ClickHouse with cluster configuration
+- ✅ Need `ON CLUSTER` DDL for distributed operations
+- ✅ Works without explicit `keeperPath`/`replicaName` parameters
+
+**When to use explicit `keeperPath`/`replicaName`:**
+- ✅ Custom replication topology required
+- ✅ Advanced ZooKeeper/Keeper configuration
+- ✅ Specific self-managed deployment requirements
+
+**Important:** Cannot specify both `cluster` and explicit `keeperPath`/`replicaName` - choose one approach.
+
+**Local Development:** Moose configures cluster names to point to your local ClickHouse instance, letting you develop with `ON CLUSTER` DDL without running multiple nodes.
+
+**Production:** Cluster names must match your ClickHouse `remote_servers` configuration.
+
+#### Understanding `cluster` as a Deployment Directive
+
+The `cluster` field is a **deployment directive** that controls HOW Moose runs DDL operations, not WHAT the table looks like:
+
+- **Changing `cluster` won't recreate your table** - it only affects future DDL operations (CREATE, ALTER, etc.)
+- **ClickHouse doesn't store cluster information** - the `ON CLUSTER` clause is only used during DDL execution
+- **`moose init --from-remote` & `moose db pull` cannot detect cluster names** - ClickHouse system tables don't preserve this information
+
+**If you're importing existing tables that were created with `ON CLUSTER`:**
+1. Run `moose init --from-remote` to generate your table definitions
+2. Manually add `cluster: "your_cluster_name"` to the generated table configs
+3. Future migrations and DDL operations will correctly use `ON CLUSTER`
+
+**Example workflow:**
+```typescript
+// After moose init --from-remote generates this:
+export const MyTable = new OlapTable<MySchema>("MyTable", {
+  orderByFields: ["id"]
+});
+
+// Manually add cluster if you know it was created with ON CLUSTER:
+export const MyTable = new OlapTable<MySchema>("MyTable", {
+  orderByFields: ["id"],
+  cluster: "my_cluster"  // Add this line
+});
 ```
 
 ### S3Queue Engine Tables

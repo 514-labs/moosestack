@@ -201,8 +201,13 @@
           }
         },
         "engine": {
-          "type": ["string", "null"],
-          "default": null
+          "anyOf": [
+            { "type": "string" },
+            { "type": "object" },
+            { "type": "null" }
+          ],
+          "default": null,
+          "description": "Table engine configuration. Can be a simple string (e.g., 'MergeTree') or an object for complex engines (e.g., ReplicatedMergeTree with parameters)"
         },
         "version": {
           "anyOf": [
