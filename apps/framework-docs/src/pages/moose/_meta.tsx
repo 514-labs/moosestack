@@ -134,11 +134,6 @@ const rawMeta = {
     title: "Project Configuration",
     Icon: Settings,
   },
-  "migration-plan-reference": {
-    title: "Migration Plan",
-    Icon: GitCompare,
-    href: "/moose/migrate/migration-plan-reference",
-  },
   help: {
     title: "Help",
     Icon: HelpCircle,
@@ -146,6 +141,9 @@ const rawMeta = {
   changelog: {
     title: "Changelog",
     Icon: History,
+  },
+  "llm-docs": {
+    display: "hidden",
   },
 };
 
