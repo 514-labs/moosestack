@@ -167,7 +167,7 @@ impl Default for DiagnosticOptions {
 #[derive(Debug, Clone)]
 pub struct DiagnosticRequest {
     /// Components to diagnose (tables, views, etc.)
-    pub components: Vec<(Component, Option<ClickhouseEngine>)>,
+    pub components: Vec<(Component, ClickhouseEngine)>,
     /// Diagnostic options for filtering and configuration
     pub options: DiagnosticOptions,
 }
@@ -374,7 +374,7 @@ pub async fn run_diagnostics(
     for (component, engine) in request.components {
         for provider in &component_specific {
             // Check if provider is applicable to this component
-            if !provider.applicable_to(&component, engine.as_ref()) {
+            if !provider.applicable_to(&component, Some(&engine)) {
                 continue;
             }
 
@@ -397,7 +397,7 @@ pub async fn run_diagnostics(
         join_set.spawn(async move {
             let result = if let Some(provider) = provider {
                 provider
-                    .diagnose(&component, engine.as_ref(), &config, since.as_deref())
+                    .diagnose(&component, Some(&engine), &config, since.as_deref())
                     .await
             } else {
                 // This shouldn't happen since we just got the name from a valid provider
@@ -891,7 +891,7 @@ mod tests {
 
         // Test with invalid diagnostic name
         let request = DiagnosticRequest {
-            components: vec![(component.clone(), None)],
+            components: vec![(component.clone(), ClickhouseEngine::default())],
             options: DiagnosticOptions {
                 diagnostic_names: vec!["invalid_diagnostic".to_string()],
                 min_severity: Severity::Info,
@@ -911,7 +911,7 @@ mod tests {
 
         // Test with mix of valid and invalid names
         let request = DiagnosticRequest {
-            components: vec![(component.clone(), None)],
+            components: vec![(component.clone(), ClickhouseEngine::default())],
             options: DiagnosticOptions {
                 diagnostic_names: vec![
                     "MutationDiagnostic".to_string(), // Valid name
