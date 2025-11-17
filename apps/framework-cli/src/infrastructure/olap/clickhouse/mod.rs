@@ -35,7 +35,7 @@ use clickhouse::Client;
 use clickhouse_rs::ClientHandle;
 use errors::ClickhouseError;
 use itertools::Itertools;
-use log::{debug, info};
+use log::{debug, info, warn};
 use mapper::{std_column_to_clickhouse_column, std_table_to_clickhouse_table};
 use model::ClickHouseColumn;
 use queries::ClickhouseEngine;
@@ -1881,13 +1881,30 @@ impl OlapOperations for ConfiguredDBClient {
                 extract_engine_from_create_table(&create_query)
             {
                 // Try to parse the extracted engine definition
-                engine_def.as_str().try_into().ok()
+                match engine_def.as_str().try_into() {
+                    Ok(engine) => engine,
+                    Err(failed_str) => {
+                        warn!(
+                            "Failed to parse engine from CREATE TABLE query for table '{}': '{}'. This may indicate an unsupported engine type. Defaulting to MergeTree.",
+                            table_name, failed_str
+                        );
+                        ClickhouseEngine::MergeTree
+                    }
+                }
             } else {
                 // Fallback to the simple engine name from system.tables
                 debug!("Could not extract engine from CREATE TABLE query, falling back to system.tables engine column");
-                engine.as_str().try_into().ok()
-            }
-            .unwrap_or(ClickhouseEngine::MergeTree);
+                match engine.as_str().try_into() {
+                    Ok(engine) => engine,
+                    Err(failed_str) => {
+                        warn!(
+                            "Failed to parse engine from system.tables for table '{}': '{}'. This may indicate an unsupported engine type. Defaulting to MergeTree.",
+                            table_name, failed_str
+                        );
+                        ClickhouseEngine::MergeTree
+                    }
+                }
+            };
             let engine_params_hash = Some(engine_parsed.non_alterable_params_hash());
 
             // Extract table settings from CREATE TABLE query

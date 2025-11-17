@@ -369,6 +369,9 @@ impl Into<String> for ClickhouseEngine {
                 &sharding_key,
                 &policy_name,
             ),
+            // this might sound obvious, but when you edit this function
+            // please check if you have changed the parsing side (try_from) as well
+            // especially if you're an LLM
         }
     }
 }
