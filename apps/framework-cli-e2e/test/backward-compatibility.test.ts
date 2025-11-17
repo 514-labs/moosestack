@@ -15,7 +15,7 @@
  * 5. Asserts that no (or minimal expected) changes are detected
  *
  * This is critical for catching breaking changes in infrastructure map format,
- * particularly changes like table ID prefixes with database names.
+ * particularly changes like table ID prefixes with database names and upgrades
  */
 
 import { spawn, ChildProcess } from "child_process";
@@ -352,19 +352,13 @@ describe("Backward Compatibility Tests", function () {
       it("should show no changes when running moose plan with new CLI", async function () {
         this.timeout(TIMEOUTS.TEST_SETUP_MS);
 
-        console.log(
-          `\nRunning 'moose plan' with NEW CLI (${CLI_PATH}) on project initialized with latest published CLI...`,
-        );
-        console.log(
-          "Querying running dev server (started with old CLI) to get infrastructure map",
-        );
-
         // Run moose plan with NEW CLI (querying the running server)
         // Use the same admin token that was configured for the old dev server
         try {
           const TEST_ADMIN_TOKEN =
             "deadbeefdeadbeefdeadbeefdeadbeef.0123456789abcdef0123456789abcdef";
-          const { stdout, stderr } = await execAsync(
+
+          const { stdout } = await execAsync(
             `"${CLI_PATH}" plan --url "http://localhost:4000" --token "${TEST_ADMIN_TOKEN}"`,
             {
               cwd: TEST_PROJECT_DIR,
@@ -384,11 +378,6 @@ describe("Backward Compatibility Tests", function () {
                   },
             },
           );
-
-          console.log("moose plan stdout:", stdout);
-          if (stderr) {
-            console.log("moose plan stderr:", stderr);
-          }
 
           // Strip ANSI color codes from the output for reliable parsing
           const stripAnsi = (str: string) => str.replace(/\x1b\[[0-9;]*m/g, "");

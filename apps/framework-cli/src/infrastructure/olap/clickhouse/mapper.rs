@@ -10,7 +10,6 @@ use crate::infrastructure::olap::clickhouse::model::{
 };
 
 use super::errors::ClickhouseError;
-use super::queries::ClickhouseEngine;
 
 /// Generates a column comment, preserving any existing user comment and adding/updating metadata for enums
 fn generate_column_comment(column: &Column) -> Result<Option<String>, ClickhouseError> {
@@ -328,10 +327,7 @@ pub fn std_columns_to_clickhouse_columns(
 pub fn std_table_to_clickhouse_table(table: &Table) -> Result<ClickHouseTable, ClickhouseError> {
     let columns = std_columns_to_clickhouse_columns(&table.columns)?;
 
-    let clickhouse_engine = match &table.engine {
-        Some(engine) => engine.clone(),
-        None => ClickhouseEngine::MergeTree,
-    };
+    let clickhouse_engine = table.engine.clone();
 
     Ok(ClickHouseTable {
         name: table.name.clone(),
