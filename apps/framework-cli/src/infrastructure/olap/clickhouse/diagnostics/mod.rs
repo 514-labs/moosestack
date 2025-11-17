@@ -632,7 +632,7 @@ mod tests {
         let mut details = Map::new();
         details.insert("level".to_string(), serde_json::json!("test"));
 
-        let issues = vec![
+        let issues = [
             Issue {
                 severity: Severity::Error,
                 component: Component {
