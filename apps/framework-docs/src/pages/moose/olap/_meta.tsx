@@ -41,10 +41,13 @@ const rawMeta = {
     type: "separator",
   },
   "apply-migrations": {
-    title: "Applying Migrations",
+    title: "Local Development",
   },
   "planned-migrations": {
-    title: "Generating Migrations",
+    title: "Server Migrations",
+  },
+  "planned-migrations-library": {
+    title: "CLI Migrations",
   },
   "schema-versioning": {
     title: "Table Versioning",
