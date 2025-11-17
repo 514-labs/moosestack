@@ -1,52 +1,66 @@
 ---
-title: Applying Migrations
-description: How to apply migrations to your database
+title: How to Develop Locally with Migrations
+description: Use moose dev for rapid schema iteration with automatic migrations and hot reload
 ---
 
-import { Callout, LanguageSwitcher, TypeScript, Python, BulletPointsCard, PathConfig } from "@/components";
-import { ShieldCheck } from "lucide-react";
+import { Callout, LanguageSwitcher, TypeScript, Python, PathConfig } from "@/components";
 
-# Applying Migrations
-
+# How to Develop Locally with Migrations
 
 <LanguageSwitcher />
 
-<Callout type="info" title="OLAP Migrations" href={`${PathConfig.migrate.path}/migration-types`} ctaLabel="View Docs" compact>
-This page covers OLAP migrations. For migrations across the MooseStack, see the Migrate docs.
+This guide shows you how to use `moose dev` for local development with automatic migrations. You'll learn how to iterate quickly on your database schema, see changes apply in real-time, and validate your data model before deploying to production.
+
+<Callout type="info" title="New to migrations?" href={PathConfig.migrate.path} ctaLabel="Read the concept guide" compact>
+If you're unfamiliar with migration modes or deployment models, start with the migrations concept guide.
 </Callout>
 
-## Overview
+## When to Use This Guide
 
-Migrations are designed for two complementary goals:
+Use this guide if you want to:
+- Iterate quickly on database schemas during development
+- See schema changes apply automatically when you save code
+- Test migrations in a safe local environment
+- Validate data transformations before production deployment
+- Connect to local ClickHouse to inspect data
 
-- Move fast locally by inferring changes from your code and applying them immediately to your local database.
-- Be deliberate in production by executing a reviewed, versioned plan that matches your intent and protects data.
+This guide covers **local development only**. For production deployments, see:
+- [Planned migrations (service model)](/moose/olap/planned-migrations) - For `moose prod` deployments
+- [Planned migrations (library model)](/moose/olap/planned-migrations-library) - For existing app integration
 
-How to think about it:
-- Development mode: You edit code, MooseStack infers the SQL and immediately applies it to local ClickHouse. Great for rapid iteration; not guaranteed to infer intent (e.g., renames).
-- Production (planned) mode: You generate a plan from the target environment vs your code, review and commit the plan, and MooseStack executes it deterministically during deploy with drift checks.
+## Before You Begin
 
-What you need to do:
-- In dev: just code. MooseStack handles local diffs automatically.
-- In prod (OLAP):
-  - Generate and save a plan:
-    ```bash
-    moose generate migration --url https://<remote-env> --token <api-token> --save
-    ```
-  - Review and edit the plan (`plan.yaml`) as needed
-  - Commit the plan to source control
-  - Deploy to production. MooseStack validates snapshots (current DB vs `remote_state.json`, desired code vs `local_infra_map.json`) and executes `plan.yaml` in order. If drift is detected, the deploy aborts; regenerate the plan and retry.
+**Required software:**
+- Docker Desktop installed and running
+- Moose CLI installed (`npm i -g @514labs/moose-cli` or `pip install moose-cli`)
+- Your preferred code editor
 
+**Project requirements:**
+- Existing Moose project or new project created with `moose init`
+- Source directory with table definitions (default: `app/` or `moose/`)
 
-## Development Workflow
+**Configuration:**
+```toml file="moose.config.toml"
+[features]
+olap = true  # Required for OLAP migrations
+```
 
-### Starting the Runtime
+No production credentials needed—`moose dev` creates local infrastructure automatically.
 
-Use `moose dev` to start the MooseStack runtime with automatic migration detection:
+## Steps
 
-```bash
+### 1. Start the local development environment
+
+From your project root, start the development server:
+
+```bash filename="Terminal" copy
 moose dev
+```
 
+**What happens:** Moose starts Docker containers for ClickHouse, Redpanda (if enabled), and Temporal, then applies any existing migrations.
+
+**Expected output:**
+```text
 ⡏ Starting local infrastructure
   Successfully started containers
      Validated clickhousedb-1 docker container
@@ -54,547 +68,351 @@ moose dev
   Successfully validated red panda cluster
      Validated temporal docker container
   Successfully ran local infrastructure
+✓ Local environment ready
 ```
 
-### Hot-Reloaded Migrations
+**Verify it's running:**
+```bash filename="Terminal" copy
+# Check infrastructure status
+moose ls
 
-MooseStack continuously monitors your code changes and applies migrations automatically. All changes are applied to your **local database only**.
+# Or use Docker
+docker ps
+```
+
+You should see containers running for `clickhousedb-1`, `redpanda-1`, and `temporal`.
+
+### 2. Create or modify a table schema
+
+With `moose dev` running, create or edit a table definition:
 
 <TypeScript>
-```ts filename="app/tables/events.ts" copy
-interface Event {
+```typescript filename="app/tables/page_views.ts" copy
+import { Key, OlapTable } from "@514labs/moose-lib";
+
+interface PageView {
   id: Key<string>;
-  name: string;
-  createdAt: Date;
-  status: string; // New field - will trigger migration
+  path: string;
+  referrer?: string;
+  timestamp: Date;
+  user_agent: string; // New field added
 }
 
-export const events = new OlapTable<Event>("events")
+export const pageViews = new OlapTable<PageView>("page_views");
 ```
 </TypeScript>
 
 <Python>
-```python filename="app/tables/events.py" copy
-class Event(BaseModel):
+```python filename="app/tables/page_views.py" copy
+from datetime import datetime
+from typing import Optional
+from pydantic import BaseModel
+from moose_lib import Key, OlapTable
+
+class PageView(BaseModel):
     id: Key[str]
+    path: str
+    referrer: Optional[str] = None
+    timestamp: datetime
+    user_agent: str  # New field added
+
+page_views = OlapTable[PageView]("page_views")
+```
+</Python>
+
+Save the file and **keep `moose dev` running in your terminal**.
+
+### 3. Watch the migration apply automatically
+
+In your terminal where `moose dev` is running, you'll see the migration apply in real-time:
+
+**Expected output:**
+```text
+⢹ Processing Infrastructure changes from file watcher
+             ~ Table page_views:
+                  Column changes:
+                    + user_agent: String
+```
+
+**What happened:**
+- Moose detected your file change
+- Compared your code to local ClickHouse
+- Generated and applied the migration automatically
+- Added the `user_agent` column to the `page_views` table
+
+<Callout type="info" title="Auto-inferred mode in development">
+In dev, Moose uses auto-inferred migrations by default. Changes apply immediately without generating a plan file. This is perfect for rapid iteration but shouldn't be used in production.
+</Callout>
+
+### 4. Verify the migration in ClickHouse
+
+Connect to your local ClickHouse to inspect the schema changes:
+
+```bash filename="Terminal" copy
+# Using clickhouse-client
+clickhouse-client --host localhost --port 18123 --user panda --password pandapass --database local
+
+# Query the table structure
+DESCRIBE TABLE page_views;
+```
+
+**Expected output:**
+```text
+┌─name────────┬─type─────┬─default_type─┬─default_expression─┐
+│ id          │ String   │              │                    │
+│ path        │ String   │              │                    │
+│ referrer    │ String   │              │                    │
+│ timestamp   │ DateTime │              │                    │
+│ user_agent  │ String   │              │                    │
+└─────────────┴──────────┴──────────────┴────────────────────┘
+```
+
+You can also use a ClickHouse GUI client like [DBeaver](https://dbeaver.io/) or [ClickHouse Desktop](https://clickhouse.com/docs/en/integrations/sql-clients/clickhouse-desktop).
+
+**Local ClickHouse credentials (from default config):**
+- Host: `localhost`
+- Port: `18123` (HTTP) or `9000` (Native)
+- Database: `local`
+- User: `panda`
+- Password: `pandapass`
+
+### 5. Test with sample data (optional)
+
+Insert test data to validate your schema:
+
+<TypeScript>
+```typescript filename="app/seed.ts" copy
+import { pageViews } from "./tables/page_views";
+
+await pageViews.insert([
+  {
+    id: "1",
+    path: "/home",
+    referrer: "https://google.com",
+    timestamp: new Date(),
+    user_agent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)",
+  },
+  {
+    id: "2",
+    path: "/about",
+    timestamp: new Date(),
+    user_agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+  },
+]);
+```
+</TypeScript>
+
+<Python>
+```python filename="app/seed.py" copy
+from datetime import datetime
+from app.tables.page_views import page_views
+
+await page_views.insert([
+    {
+        "id": "1",
+        "path": "/home",
+        "referrer": "https://google.com",
+        "timestamp": datetime.now(),
+        "user_agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)",
+    },
+    {
+        "id": "2",
+        "path": "/about",
+        "timestamp": datetime.now(),
+        "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+    },
+])
+```
+</Python>
+
+Query the data in ClickHouse:
+```sql
+SELECT * FROM page_views ORDER BY timestamp DESC;
+```
+
+### 6. Iterate and repeat
+
+Continue making schema changes as needed. Each save triggers an automatic migration:
+
+**Common operations you'll see:**
+```text
+# Adding a column
++ new_column: String
+
+# Removing a column
+- old_column: Int64
+
+# Modifying a column type
+~ column_name: String -> LowCardinality(String)
+
+# Creating a new table
++ Table: new_table
+
+# Dropping a table
+- Table: old_table
+```
+
+## Common Development Workflows
+
+### Creating a New Table
+
+<TypeScript>
+```typescript filename="app/tables/users.ts" copy
+import { Key, OlapTable } from "@514labs/moose-lib";
+
+interface User {
+  id: Key<string>;
+  email: string;
+  name: string;
+  created_at: Date;
+}
+
+export const users = new OlapTable<User>("users");
+```
+</TypeScript>
+
+<Python>
+```python filename="app/tables/users.py" copy
+from datetime import datetime
+from pydantic import BaseModel
+from moose_lib import Key, OlapTable
+
+class User(BaseModel):
+    id: Key[str]
+    email: str
     name: str
     created_at: datetime
-    status: str  # New field - will trigger migration
 
-table = OlapTable[Event]("events")
+users = OlapTable[User]("users")
 ```
 </Python>
 
-When you save changes, you'll see live logs in the terminal showing the diffs being applied to your local database:
-
-```bash
-⢹ Processing Infrastructure changes from file watcher
-             ~ Table events:
-                  Column changes:
-                    + status: String
-```
-
-
-## Production Workflow
-
-<Callout type="info" title="Prefer a reviewed plan?" href={`${PathConfig.olap.path}/planned-migrations`} ctaLabel="Planned Migrations (OLAP)" compact>
-Use planned migrations to generate, review, and apply OLAP DDL plans deterministically.
-</Callout>
-
-
-### Generating Migration Plans
-
-When using planned migrations for OLAP, you need to generate a migration plan from the remote environment. This is done by running the following command:
-
-```bash
-moose generate migration --url https://<remote-env> --token <api-token> --save
-```
-
-This generates a few files in the `migrations` directory:
-
-- `plan.yaml`: The migration plan containing an ordered list of operations to apply to the remote database to bring it into alignment with your local code.
-- `remote_state.json`: A snapshot of the remote database state at the time the plan was generated
-- `local_infra_map.json`: A snapshot of the local database state at the time the plan was generated
-
-<Callout type="info" title="Why store the remote and local state?" compact>
-The remote and local state are used to validate that the plan is still valid at the time of deployment. If there have been schema changes made to your live remote database since the plan was generated, the deployment will abort and you will need to regenerate the plan. This is to prevent you from dropping data unintentionally.
-</Callout>
-
-### Reviewing and Editing the Plan
-
-You can review and edit the plan as needed. The plan is a YAML file that contains an ordered list of operations to apply to the remote database to bring it into alignment with your local code.
-
-```yaml filename="migrations/plan.yaml" copy
-
-```
-
-### Applying the Plan
- 
-The plan is applied during deployment. MooseStack will validate that the remote database state matches the snapshot of the database state at the time the plan was generated, and applies `plan.yaml` in order; it aborts if snapshots don’t match current state.
-
-
-## Migration Types
-
-### Adding New Tables or Materialized Views
-
-<TypeScript>
-```typescript filename="index.ts" {4-7} copy
-import { newTable, newMaterializedView } from "./path/to/your/newObjects"
-
-// Export the new table and materialized view to apply changes
-export {
-  newTable, // New table
-  newMaterializedView // New materialized view
-}
-```
-</TypeScript>
-
-<Python>
-```python filename="main.py" {4-7} copy
-from app.db import newTable, newMaterializedView
-```
-</Python>
-
-The dev mode will automatically detect the new table or materialized view and apply the changes to your local database. You will see a log like this in the terminal:
-
-```bash filename="Terminal" copy
-$ moose dev
+**Terminal output:**
+```text
 ⠋ Processing Infrastructure changes from file watcher
-             +  Table: new_table Version None - id: String, a_column: String, some_other_column: Float64 -  - deduplicate: false
-             +  Table: target_table Version None - id: String, a_column: String, some_other_column: Float64 - id - deduplicate: false
-             +  SQL Resource: mv_to_target
-              
+             +  Table: users - id: String, email: String, name: String, created_at: DateTime
 ```
 
-The generated plan for this operation will look like this:
-
-```yaml filename="migrations/plan.yaml" copy
-- CreateTable:
-    table:
-      name: new_table
-      columns:
-      - name: id
-        data_type: String
-        required: true
-        unique: false
-        primary_key: true
-        default: null
-        annotations: []
-      - name: a_column
-        data_type: String
-        required: true
-        unique: false
-        primary_key: false
-        default: null
-        annotations: []
-      - name: some_other_column
-        data_type: Float64
-        required: true
-        unique: false
-        primary_key: false
-        default: null
-        annotations: []
-      order_by:
-      - id
-      deduplicate: false
-      engine: MergeTree
-      version: null
-      metadata:
-        description: null
-      life_cycle: FULLY_MANAGED
-- CreateTable:
-    table:
-      name: target_table
-      columns:
-      - name: id
-        data_type: String
-        required: true
-        unique: false
-        primary_key: true
-        default: null
-        annotations: []
-      - name: a_column
-        data_type: String
-        required: true
-        unique: false
-        primary_key: false
-        default: null
-        annotations: []
-      - name: some_other_column
-        data_type: Float64
-        required: true
-        unique: false
-        primary_key: false
-        default: null
-        annotations: []
-      order_by:
-      - id
-      deduplicate: false
-      engine: MergeTree
-      version: null
-      metadata:
-        description: null
-      life_cycle: FULLY_MANAGED
-- RawSQL:
-    sql: "CREATE MATERIALIZED VIEW mv_to_target TO target_table AS SELECT * FROM source_table"
-    description: Running setup SQL for resource mv_to_target
-```
-
-
-### Column Additions
-
-Adding new fields to your data models:
+### Removing a Column
 
 <TypeScript>
-```ts filename="Before" copy
-interface AddedColumn {
+```typescript filename="app/tables/page_views.ts"
+interface PageView {
   id: Key<string>;
-  another_column: string;
-  some_column: string;
-}
-```
-
-```ts filename="After" copy
-interface AddedColumn {
-  id: Key<string>;
-  another_column: string;
-  some_column: string;
-  new_column: number; // New field - migration applied
+  path: string;
+  // referrer field removed
+  timestamp: Date;
 }
 ```
 </TypeScript>
 
 <Python>
-```python filename="Before.py" copy
-class AddedColumn(BaseModel):
+```python filename="app/tables/page_views.py"
+class PageView(BaseModel):
     id: Key[str]
-    another_column: str
-    some_column: str
-
-table = OlapTable[AddedColumn]("events")
-```
-```python filename="After.py" copy
-class AddedColumn(BaseModel):
-    id: Key[str]
-    another_column: str
-    some_column: str
-    new_column: int  # New field - migration applied
-
-table = OlapTable[AddedColumn]("events")
+    path: str
+    # referrer field removed
+    timestamp: datetime
 ```
 </Python>
 
-In dev mode, you will see a log like this:
-
-```bash filename="Terminal" copy
-$ moose dev
+**Terminal output:**
+```text
 ⢹ Processing Infrastructure changes from file watcher
-             ~ Table events:
+             ~ Table page_views:
                   Column changes:
-                    + new_column: Int64
+                    - referrer: String
 ```
 
-The generated plan for this operation will look like this:
-
-```yaml filename="migrations/plan.yaml" copy
-- AddTableColumn:
-    table: "events"
-    column:
-      name: "new_column"
-      data_type: "Int64"
-```
-
-
-### Column Removals
-
-Removing fields from your data models:
-
-<TypeScript>
-```ts filename="Before" copy
-interface RemovedColumn {
-  id: Key<string>;
-  another_column: string;
-  some_column: string;
-  old_column: number;
-}
-
-export const events = new OlapTable<RemovedColumn>("events")
-```
-
-```ts filename="After" copy
-interface RemovedColumn {
-  id: Key<string>;
-  another_column: string;
-  some_column: string;
-  // old_column field removed 
-}
-
-export const events = new OlapTable<RemovedColumn>("events")
-```
-</TypeScript>
-
-<Python>
-```python filename="Before.py" copy
-class RemovedColumn(BaseModel):
-    id: Key[str]
-    another_column: str
-    some_column: str
-    old_column: int
-
-
-table = OlapTable[RemovedColumn]("events")
-```
-```python filename="After.py" copy
-class RemovedColumn(BaseModel):
-    id: Key[str]
-    another_column: str
-    some_column: str
-    # old_column field removed
-
-table = OlapTable[RemovedColumn]("events")
-```
-</Python>
-
-In dev mode, you will see a log like this:
-
-```bash filename="Terminal" copy
-$ moose dev
-⢹ Processing Infrastructure changes from file watcher
-             ~ Table events:
-                  Column changes:
-                    - old_column: Int64
-```
-
-The generated plan for this operation will look like this:
-
-```yaml filename="migrations/plan.yaml" copy
-- DropTableColumn:
-    table: "events"
-    column_name: "old_column"
-```
-
-
-### Changing Column Data Types (use with caution)
-
-<TypeScript>
-```ts filename="Before" copy
-interface ChangedType {
-  id: Key<string>;
-  some_column: string; // String type
-}
-
-export const events = new OlapTable<ChangedType>("events")
-```
-
-```ts filename="After" copy
-interface ChangedType {
-  id: Key<string>;
-  some_column: string & LowCardinality; // Add LowCardinality for better performance
-}
-
-export const events = new OlapTable<ChangedType>("events")
-```
-</TypeScript>
-
-<Python>
-```python filename="Before.py" copy
-class ChangedType(BaseModel):
-    id: Key[str]
-    some_column: str
-
-table = OlapTable[ChangedType]("events")
-```
-```python filename="After.py" copy
-class ChangedType(BaseModel):
-    id: Key[str]
-    some_column: Annotated[str, "LowCardinality"]  # Add LowCardinality for better performance
-
-table = OlapTable[ChangedType]("events")
-```
-</Python>
-
-In dev mode, you will see a log like this:
-
-```bash filename="Terminal" copy
-$ moose dev
-⢹ Processing Infrastructure changes from file watcher
-             ~ Table events:
-                  Column changes:
-                    - some_column: String -> LowCardinality(String)
-```
-
-The generated plan for this operation will look like this:
-
-```yaml filename="migrations/plan.yaml" copy
-- ChangeTableColumn:
-    table: "events"
-    column_name: "some_column"
-    data_type: "LowCardinality(String)"
-```
-
-<Callout type="warning" title="Breaking type changes" href="/moose/olap/schema-changes" ctaLabel="Learn more">
-Some data type changes can be incompatible with existing data. Read the guide to learn more.
+<Callout type="warning" title="Data loss in dev is fine">
+Removing a column in dev drops it immediately and loses data. That's okay—local data is disposable. In production, use planned migrations to review destructive changes.
 </Callout>
 
-### Materialized View Changes
-
-Modifying the `SELECT` statement of a materialized view:
+### Changing a Column Type
 
 <TypeScript>
-```ts filename="Before.ts" copy
-import { sql } from "@514-labs/moose-lib";
-
-interface TargetSchema {
-  day: Date;
-  count: number;
-  sum: number;
+```typescript filename="app/tables/metrics.ts"
+interface Metric {
+  id: Key<string>;
+  value: number & LowCardinality; // Added LowCardinality optimization
 }
-
-const selectStatement = sql`
-  SELECT 
-    toStartOfDay(${sourceTable.columns.a_date}) as day, 
-    uniq(${sourceTable.columns.id}) as count, 
-    SUM(${sourceTable.columns.a_number}) as sum 
-    FROM ${sourceTable} 
-    GROUP BY day
-`;
-
-const mv = new MaterializedView<Target>({
-  selectStatement,
-  selectTables: [sourceTable],
-  targetTable: {
-    name: "target_table",
-    engine: ClickHouseEngines.MergeTree,
-    orderByFields: ["day"],
-  },
-  materializedViewName: "mv_table_to_target,
-});
-```
-
-```ts filename="After.ts" copy
-import { sql } from "@514-labs/moose-lib";
-
-interface TargetSchema {
-  day: Date;
-  count: number;
-  sum: number;
-  avg: number; // New column - migration applied
-}
-
-const selectStatement = sql`
-  SELECT 
-    toStartOfDay(${sourceTable.columns.a_date}) as day, 
-    uniq(${sourceTable.columns.id}) as count, 
-    sum(${sourceTable.columns.a_number}) as sum,
-    avg(${sourceTable.columns.a_number}) as avg 
-    FROM ${sourceTable} 
-    GROUP BY day
-`;
-
-export const userStats = new MaterializedView<TargetSchema>({
-  selectStatement,
-  selectTables: [sourceTable],
-  targetTable: {
-    name: "target_table",
-    engine: ClickHouseEngines.MergeTree,
-    orderByFields: ["day"],
-  },
-  materializedViewName: "mv_table_to_target,
-});
 ```
 </TypeScript>
 
 <Python>
-```python filename="Before.py" copy
-from pydantic import BaseModel
+```python filename="app/tables/metrics.py"
+from typing import Annotated
 
-class TargetSchema(BaseModel):
-  day: Date;
-  count: number;
-  sum: number;
-
-mv = MaterializedView[TargetSchema](MaterializedViewConfig(
-    select_statement="""
-    SELECT 
-        toStartOfDay(a_date) as day,
-        uniq(id) as count,
-        sum(a_number) as sum
-    FROM table
-    GROUP BY day
-    """
-    target_table=OlapConfig(
-        name="target_table",
-        engine=ClickHouseEngines.MergeTree,
-        order_by_fields=["day"],
-    ),
-    materialized_view_name="mv_table_to_target",
-))
-```
-
-```python filename="After.py" copy
-class TargetSchema(BaseModel):
-  day: Date;
-  count: number;
-  sum: number;
-  avg: number;
-
-mv = MaterializedView[TargetSchema](MaterializedViewConfig(
-    select_statement="""
-    SELECT 
-        toStartOfDay(a_date) as day,
-        uniq(id) as count,
-        sum(a_number) as sum,
-        avg(a_number) as avg
-    FROM table
-    GROUP BY day
-    """
-    target_table=OlapConfig(
-        name="target_table",
-        engine=ClickHouseEngines.MergeTree,
-        order_by_fields=["day"],
-    ),
-    materialized_view_name="mv_table_to_target",
-))
+class Metric(BaseModel):
+    id: Key[str]
+    value: Annotated[float, "LowCardinality"]  # Added LowCardinality
 ```
 </Python>
 
-The dev mode diff:
-```bash filename="Terminal" copy
-$ moose dev
-⠋ Processing Infrastructure changes from file watcher
-             ~  Table target_table:
+**Terminal output:**
+```text
+⢹ Processing Infrastructure changes from file watcher
+             ~ Table metrics:
                   Column changes:
-                    + avg: Float64
-             ~  SQL Resource: mv_to_target
+                    ~ value: Float64 -> LowCardinality(Float64)
 ```
 
-<Callout type="info" title="What is a SQL Resource?" compact>
-Notice that the materialized view generates both a target table and a SQL resource. The target table creates a new table in the database to store the results of the materialized view `SELECT` statement. The `SQL Resource` is the SQL statement that is used to create the target table.
-</Callout>
+## Troubleshooting
 
-The generated plan for this operation will look like this:
+**Containers won't start:**
+- Ensure Docker Desktop is running
+- Check for port conflicts: `lsof -i :18123` (ClickHouse), `lsof -i :19092` (Redpanda)
+- Try stopping containers: `moose stop` then restart with `moose dev`
+- Check Docker logs: `docker logs clickhousedb-1`
 
-```yaml filename="migrations/plan.yaml" copy
-created_at: 2025-08-20T05:35:31.668353Z
-operations:
-  - RawSql:
-      sql:
-        - DROP VIEW IF EXISTS mv_table_to_target
-      description: Running teardown SQL for resource mv_table_to_target
-  - AddTableColumn:
-      table: target_table
-      column:
-        name: "avg"
-        data_type: "Float64"
-  - RawSql:
-      sql:
-        - "CREATE MATERIALIZED VIEW IF NOT EXISTS mv_table_to_target \n        TO target_table\n        AS \n  SELECT \n    toStartOfDay(`a_date`) as day, \n    uniq(`id`) as count, \n    sum(`a_number`) as sum, \n    avg(`a_number`) as avg\n  FROM `source_table` \n  GROUP BY day"
-        - "INSERT INTO target_table\n          \n  SELECT \n    toStartOfDay(`a_date`) as day, \n    uniq(`id`) as count, \n    sum(`a_number`) as sum, \n    avg(`a_number`) as avg\n  FROM `source_table` \n  GROUP BY day"
-      description: Running setup SQL for resource mv_table_to_target
+**Changes not detected:**
+- Verify `moose dev` is still running (check terminal)
+- Ensure you're editing files in the correct source directory
+- Check file syntax errors (TypeScript/Python validation)
+- Try restarting: Stop `moose dev` with Ctrl+C, then run `moose dev` again
 
+**Migration fails:**
+- Read the error message carefully—it often explains the issue
+- Common causes: type incompatibility, ORDER BY changes, required fields on existing data
+- See [troubleshooting failed migrations](/moose/olap/schema-change) for detailed solutions
+
+**Can't connect to ClickHouse:**
+- Verify containers are running: `docker ps`
+- Check connection credentials match `moose.config.toml`
+- Ensure you're using the correct port (18123 for HTTP, 9000 for Native)
+- Try connecting via Docker: `docker exec -it clickhousedb-1 clickhouse-client`
+
+**Hot reload stopped working:**
+- Restart `moose dev` (Ctrl+C, then `moose dev`)
+- Check for syntax errors in your code
+- Verify file watcher isn't overwhelmed (close unused files/projects)
+
+## Moving to Production
+
+Once you've tested your schema changes locally, you'll need to generate a migration plan for production:
+
+**For service model deployments:**
+```bash filename="Terminal" copy
+moose generate migration --url https://your-prod-server.com --token <admin-token> --save
 ```
 
+See [planned migrations (service model)](/moose/olap/planned-migrations) for complete workflow.
 
-<Callout type="warning" title="Note">
-Changing a materialized view's SELECT statement will recreate the entire view and repopulate all data. This can be time-consuming for large datasets.
+**For library model deployments:**
+```bash filename="Terminal" copy
+export PROD_CLICKHOUSE_URL="clickhouse://user:pass@host:9440/db"
+moose generate migration --clickhouse-url "$PROD_CLICKHOUSE_URL" --save
+```
+
+See [planned migrations (library model)](/moose/olap/planned-migrations-library) for complete workflow.
+
+<Callout type="warning" title="Never use auto-inferred in production">
+Local development uses auto-inferred migrations for speed. Production should **always** use planned migrations with review workflows. Auto-inferred can't distinguish renames from drop+add, leading to data loss.
 </Callout>
+
+## Next Steps
+
+- [Planned migrations (service model)](/moose/olap/planned-migrations) - Production workflow for `moose prod`
+- [Planned migrations (library model)](/moose/olap/planned-migrations-library) - Production workflow for existing apps
+- [Migration reference](/moose/migrate/reference) - Operations, data types, and plan structure
+- [Lifecycle modes](/moose/migrate/lifecycle) - Control what operations are allowed per table

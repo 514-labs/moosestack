@@ -123,6 +123,12 @@ const moosestackNavigationConfig: NavigationConfig = [
       },
       {
         type: "page",
+        slug: "moosestack/getting-started/add-to-existing-app",
+        title: "Add to Existing App",
+        languages: ["typescript", "python"],
+      },
+      {
+        type: "page",
         slug: "moosestack/getting-started/from-clickhouse",
         title: "Use with Existing ClickHouse",
         languages: ["typescript", "python"],
@@ -320,7 +326,7 @@ const moosestackNavigationConfig: NavigationConfig = [
   {
     type: "page",
     slug: "moosestack/streaming",
-    title: "Moose Streaming",
+    title: "Moose Streams",
     icon: IconBolt,
     languages: ["typescript", "python"],
     children: [
