@@ -8,6 +8,7 @@ use rmcp::model::{CallToolResult, Tool};
 use serde_json::{json, Map, Value};
 use std::sync::Arc;
 
+use super::toon_serializer::serialize_to_toon_compressed;
 use super::{create_error_result, create_success_result};
 use crate::framework::core::infrastructure::api_endpoint::ApiEndpoint;
 use crate::framework::core::infrastructure_map::InfrastructureMap;
@@ -41,6 +42,9 @@ pub enum InfraMapError {
 
     #[error("Failed to serialize infrastructure map: {0}")]
     Serialization(#[from] serde_json::Error),
+
+    #[error("Failed to serialize to TOON format: {0}")]
+    ToonSerialization(#[from] super::toon_serializer::ToonSerializationError),
 
     #[error("Invalid parameter: {0}")]
     InvalidParameter(String),
@@ -572,8 +576,8 @@ fn format_detailed(
         serde_json::to_value(infra_map)?
     };
 
-    output.push_str("```json\n");
-    output.push_str(&serde_json::to_string_pretty(&filtered_json)?);
+    output.push_str("```toon\n");
+    output.push_str(&serialize_to_toon_compressed(&filtered_json)?);
     output.push_str("\n```\n");
 
     // Add filters applied section if any filters were used

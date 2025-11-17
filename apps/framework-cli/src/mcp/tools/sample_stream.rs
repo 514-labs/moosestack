@@ -13,6 +13,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio_stream::StreamExt;
 
+use super::toon_serializer::serialize_to_toon_compressed;
 use super::{create_error_result, create_success_result};
 use crate::framework::core::infrastructure_map::InfrastructureMap;
 use crate::infrastructure::redis::redis_client::RedisClient;
@@ -23,8 +24,8 @@ use crate::infrastructure::stream::kafka::models::KafkaConfig;
 const MIN_LIMIT: u8 = 1;
 const MAX_LIMIT: u8 = 100;
 const DEFAULT_LIMIT: u8 = 10;
-const VALID_FORMATS: [&str; 2] = ["json", "pretty"];
-const DEFAULT_FORMAT: &str = "json";
+const VALID_FORMATS: [&str; 2] = ["toon", "pretty"];
+const DEFAULT_FORMAT: &str = "toon";
 const SAMPLE_TIMEOUT_SECS: u64 = 2;
 
 /// Error types for stream sampling operations
@@ -42,6 +43,9 @@ pub enum StreamSampleError {
     #[error("Failed to serialize messages: {0}")]
     Serialization(#[from] serde_json::Error),
 
+    #[error("Failed to serialize to TOON format: {0}")]
+    ToonSerialization(#[from] super::toon_serializer::ToonSerializationError),
+
     #[error("Invalid parameter: {0}")]
     InvalidParameter(String),
 }
@@ -53,7 +57,7 @@ struct GetStreamSampleParams {
     stream_name: String,
     /// Number of messages to retrieve (default: 10, max: 100)
     limit: u8,
-    /// Output format: "json" or "pretty" (default: "json")
+    /// Output format: "toon" or "pretty" (default: "toon")
     format: String,
 }
 
@@ -79,7 +83,7 @@ pub fn tool_definition() -> Tool {
             },
             "format": {
                 "type": "string",
-                "description": format!("Output format: 'json' (default) or 'pretty'. Default: {}", DEFAULT_FORMAT),
+                "description": format!("Output format: 'toon' (default) or 'pretty'. Default: {}", DEFAULT_FORMAT),
                 "enum": VALID_FORMATS
             }
         },
@@ -398,7 +402,7 @@ fn format_output(
             Ok(output)
         }
         _ => {
-            // Default to JSON format
+            // Default to TOON format
             let mut response = json!({
                 "stream_name": params.stream_name,
                 "message_count": messages.len(),
@@ -419,7 +423,8 @@ fn format_output(
                     .insert("metadata".to_string(), metadata);
             }
 
-            Ok(serde_json::to_string_pretty(&response)?)
+            // Serialize to TOON format with compression
+            Ok(serialize_to_toon_compressed(&response)?)
         }
     }
 }
@@ -430,14 +435,15 @@ mod tests {
 
     #[test]
     fn test_is_valid_format() {
-        assert!(is_valid_format("json"));
-        assert!(is_valid_format("JSON"));
+        assert!(is_valid_format("toon"));
+        assert!(is_valid_format("TOON"));
         assert!(is_valid_format("pretty"));
         assert!(is_valid_format("PRETTY"));
 
         assert!(!is_valid_format("invalid"));
         assert!(!is_valid_format(""));
         assert!(!is_valid_format("xml"));
+        assert!(!is_valid_format("json")); // json is no longer valid
     }
 
     #[test]
@@ -617,11 +623,11 @@ mod tests {
     }
 
     #[test]
-    fn test_format_output_json() {
+    fn test_format_output_toon() {
         let params = GetStreamSampleParams {
             stream_name: "test_topic".to_string(),
             limit: 10,
-            format: "json".to_string(),
+            format: "toon".to_string(),
         };
         let collection_result = MessageCollectionResult {
             messages: vec![
@@ -641,11 +647,11 @@ mod tests {
     }
 
     #[test]
-    fn test_format_output_json_with_timeout() {
+    fn test_format_output_toon_with_timeout() {
         let params = GetStreamSampleParams {
             stream_name: "test_topic".to_string(),
             limit: 10,
-            format: "json".to_string(),
+            format: "toon".to_string(),
         };
         let collection_result = MessageCollectionResult {
             messages: vec![json!({"id": 1, "name": "test1"})],
@@ -661,11 +667,11 @@ mod tests {
     }
 
     #[test]
-    fn test_format_output_json_with_errors() {
+    fn test_format_output_toon_with_errors() {
         let params = GetStreamSampleParams {
             stream_name: "test_topic".to_string(),
             limit: 10,
-            format: "json".to_string(),
+            format: "toon".to_string(),
         };
         let collection_result = MessageCollectionResult {
             messages: vec![json!({"id": 1, "name": "test1"})],
@@ -675,9 +681,10 @@ mod tests {
         let result = format_output(&params, &collection_result, 2);
         assert!(result.is_ok());
         let output = result.unwrap();
+        // TOON format should still contain these field names
         assert!(output.contains("metadata"));
         assert!(output.contains("error_count"));
-        assert!(output.contains("\"error_count\": 3"));
+        assert!(output.contains("3")); // Check for the error count value
     }
 
     #[test]

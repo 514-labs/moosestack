@@ -17,6 +17,7 @@ use serde_json::{json, Map, Value};
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use super::toon_serializer::serialize_to_toon_compressed;
 use super::{create_error_result, create_success_result};
 use crate::framework::core::infrastructure_map::InfrastructureMap;
 use crate::infrastructure::olap::clickhouse::config::ClickHouseConfig;
@@ -227,10 +228,16 @@ pub async fn handle_call(
 
     match execute_diagnose_infrastructure(params, redis_client, clickhouse_config).await {
         Ok(output) => {
-            // Format as pretty JSON
-            match serde_json::to_string_pretty(&output) {
-                Ok(json_str) => create_success_result(json_str),
-                Err(e) => create_error_result(format!("Failed to format output: {}", e)),
+            // Convert output to JSON Value first
+            match serde_json::to_value(&output) {
+                Ok(json_value) => {
+                    // Format as TOON
+                    match serialize_to_toon_compressed(&json_value) {
+                        Ok(toon_str) => create_success_result(toon_str),
+                        Err(e) => create_error_result(format!("Failed to format as TOON: {}", e)),
+                    }
+                }
+                Err(e) => create_error_result(format!("Failed to convert output to JSON: {}", e)),
             }
         }
         Err(e) => create_error_result(format!("Infrastructure diagnostics error: {}", e)),
