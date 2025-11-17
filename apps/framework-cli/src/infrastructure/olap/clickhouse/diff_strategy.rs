@@ -365,7 +365,7 @@ fn is_only_required_change_for_special_column_type(before: &Column, after: &Colu
 impl ClickHouseTableDiffStrategy {
     /// Check if a table uses the S3Queue engine
     pub fn is_s3queue_table(table: &Table) -> bool {
-        matches!(&table.engine, Some(ClickhouseEngine::S3Queue { .. }))
+        matches!(&table.engine, ClickhouseEngine::S3Queue { .. })
     }
 
     /// Check if a SQL resource is a materialized view that needs population
@@ -498,7 +498,7 @@ impl TableDiffStrategy for ClickHouseTableDiffStrategy {
         let after_primary_keys = after.primary_key_columns();
         if before_primary_keys != after_primary_keys
             // S3 allows specifying PK, but that information is not in system.columns
-            && after.engine.as_ref().is_none_or(|e| e.is_merge_tree_family())
+            && after.engine.is_merge_tree_family()
         {
             log::warn!(
                 "ClickHouse: Primary key structure changed for table '{}', requiring drop+create",
@@ -519,13 +519,10 @@ impl TableDiffStrategy for ClickHouseTableDiffStrategy {
             before_hash != after_hash
         } else {
             // Fallback to direct engine comparison if hashes are not available
-            let before_engine = before.engine.as_ref();
-            match after.engine.as_ref() {
-                // after.engine is unset -> before engine should be same as default
-                None => before_engine.is_some_and(|e| *e != ClickhouseEngine::MergeTree),
-                // force recreate only if engines are different
-                Some(e) => Some(e) != before_engine,
-            }
+            // Note: Tables are already normalized at this point (None -> Some(MergeTree))
+            // via normalize_inframap_engines() in the remote plan flow, so we can
+            // safely use direct comparison
+            before.engine != after.engine
         };
 
         // Check if engine has changed (using hash comparison when available)
@@ -592,19 +589,16 @@ impl TableDiffStrategy for ClickHouseTableDiffStrategy {
 
         // Check if this is an S3Queue table with column changes
         // S3Queue only supports MODIFY/RESET SETTING, not column operations
-        if !column_changes.is_empty() {
-            if let Some(engine) = &before.engine {
-                if matches!(engine, ClickhouseEngine::S3Queue { .. }) {
-                    log::warn!(
-                        "ClickHouse: S3Queue table '{}' has column changes, requiring drop+create (S3Queue doesn't support ALTER TABLE for columns)",
-                        before.name
-                    );
-                    return vec![
-                        OlapChange::Table(TableChange::Removed(before.clone())),
-                        OlapChange::Table(TableChange::Added(after.clone())),
-                    ];
-                }
-            }
+        if !column_changes.is_empty() && matches!(&before.engine, ClickhouseEngine::S3Queue { .. })
+        {
+            log::warn!(
+                "ClickHouse: S3Queue table '{}' has column changes, requiring drop+create (S3Queue doesn't support ALTER TABLE for columns)",
+                before.name
+            );
+            return vec![
+                OlapChange::Table(TableChange::Removed(before.clone())),
+                OlapChange::Table(TableChange::Added(after.clone())),
+            ];
         }
 
         // Filter out no-op changes for ClickHouse semantics:
@@ -677,10 +671,14 @@ mod tests {
             order_by: OrderBy::Fields(order_by),
             partition_by: None,
             sample_by: None,
-            engine: deduplicate.then_some(ClickhouseEngine::ReplacingMergeTree {
-                ver: None,
-                is_deleted: None,
-            }),
+            engine: if deduplicate {
+                ClickhouseEngine::ReplacingMergeTree {
+                    ver: None,
+                    is_deleted: None,
+                }
+            } else {
+                ClickhouseEngine::MergeTree
+            },
             version: Some(Version::from_string("1.0.0".to_string())),
             source_primitive: PrimitiveSignature {
                 name: "test".to_string(),
@@ -1480,14 +1478,14 @@ mod tests {
             order_by: OrderBy::Fields(vec![]),
             partition_by: None,
             sample_by: None,
-            engine: Some(ClickhouseEngine::S3Queue {
+            engine: ClickhouseEngine::S3Queue {
                 s3_path: "s3://bucket/path".to_string(),
                 format: "JSONEachRow".to_string(),
                 compression: None,
                 headers: None,
                 aws_access_key_id: None,
                 aws_secret_access_key: None,
-            }),
+            },
             version: None,
             source_primitive: PrimitiveSignature {
                 name: "test_s3".to_string(),
