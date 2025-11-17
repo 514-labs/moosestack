@@ -891,36 +891,50 @@ impl ClickhouseEngine {
 
         let path = parts[0].clone();
 
-        // Parse authentication and format (same logic as S3 engine)
-        // Possible formats:
-        // 1. Iceberg('path', 'format', ...) - no auth
-        // 2. Iceberg('path', NOSIGN, 'format', ...) - explicit no auth
-        // 3. Iceberg('path', 'access_key_id', 'secret_access_key', 'format', ...) - with credentials
+        // Parse authentication and format based on ClickHouse IcebergS3 syntax:
+        // ENGINE = IcebergS3(url, [, NOSIGN | access_key_id, secret_access_key, [session_token]], format, [,compression])
+        //
+        // Possible patterns:
+        // 1. Iceberg('path', 'format') - no auth
+        // 2. Iceberg('path', 'format', 'compression') - no auth with compression
+        // 3. Iceberg('path', NOSIGN, 'format') - explicit NOSIGN
+        // 4. Iceberg('path', 'access_key_id', 'secret_access_key', 'format') - with credentials
+        // 5. Iceberg('path', 'access_key_id', 'secret_access_key', 'format', 'compression') - with credentials and compression
         let (format, aws_access_key_id, aws_secret_access_key, extra_params_start) =
             if parts.len() >= 2 && parts[1].to_uppercase() == "NOSIGN" {
-                // NOSIGN authentication - format is at position 2
+                // NOSIGN keyword (no authentication) - format is at position 2
                 if parts.len() < 3 {
                     return Err("Iceberg with NOSIGN requires format parameter".to_string());
                 }
                 (parts[2].clone(), None, None, 3)
-            } else if parts.len() >= 4 && !parts[1].is_empty() && !parts[2].is_empty() {
-                // Check if parts[1] and parts[2] look like credentials
-                let possible_format = &parts[3].to_uppercase();
-                if possible_format == "PARQUET" || possible_format == "ORC" {
-                    // parts[1] and parts[2] are likely credentials
-                    (
-                        parts[3].clone(),
-                        Some(parts[1].clone()),
-                        Some(parts[2].clone()),
-                        4,
-                    )
+            } else if parts.len() >= 2 {
+                let format_at_pos1 = parts[1].to_uppercase();
+                let is_pos1_format = format_at_pos1 == "PARQUET" || format_at_pos1 == "ORC";
+
+                if is_pos1_format {
+                    // Format is at position 1, no credentials
+                    (parts[1].clone(), None, None, 2)
+                } else if parts.len() >= 4 && !parts[1].is_empty() && !parts[2].is_empty() {
+                    // Check if parts[3] is a format (credentials case)
+                    let format_at_pos3 = parts[3].to_uppercase();
+                    if format_at_pos3 == "PARQUET" || format_at_pos3 == "ORC" {
+                        // parts[1] and parts[2] are credentials, format at position 3
+                        (
+                            parts[3].clone(),
+                            Some(parts[1].clone()),
+                            Some(parts[2].clone()),
+                            4,
+                        )
+                    } else {
+                        // Ambiguous format - default to no credentials
+                        (parts[1].clone(), None, None, 2)
+                    }
                 } else {
-                    // No credentials, parts[1] is the format
+                    // Not enough parts for credentials, treat parts[1] as format
                     (parts[1].clone(), None, None, 2)
                 }
             } else {
-                // No credentials, parts[1] is the format
-                (parts[1].clone(), None, None, 2)
+                return Err("Iceberg requires at least path and format parameters".to_string());
             };
 
         // Parse optional compression (next parameter after format)
