@@ -1,7 +1,4 @@
-use crate::{
-    infrastructure::{olap::clickhouse::queries::ClickhouseEngine, stream},
-    project::Project,
-};
+use crate::{infrastructure::stream, project::Project};
 
 use super::infrastructure_map::{OlapChange, TableChange};
 use super::plan::InfraPlan;
@@ -95,7 +92,10 @@ mod tests {
     use crate::framework::core::partial_infrastructure_map::LifeCycle;
     use crate::framework::core::plan::InfraPlan;
     use crate::framework::versions::Version;
-    use crate::infrastructure::olap::clickhouse::config::{ClickHouseConfig, ClusterConfig};
+    use crate::infrastructure::olap::clickhouse::{
+        config::{ClickHouseConfig, ClusterConfig},
+        queries::ClickhouseEngine,
+    };
     use crate::project::{Project, ProjectFeatures};
     use std::collections::HashMap;
     use std::path::PathBuf;
@@ -347,8 +347,6 @@ mod tests {
 
     #[test]
     fn test_non_replicated_engine_without_cluster_succeeds() {
-        use crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine;
-
         let project = create_test_project(None);
         let table = create_table_with_engine("test_table", None, Some(ClickhouseEngine::MergeTree));
         let plan = create_test_plan(vec![table]);
