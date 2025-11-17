@@ -31,6 +31,7 @@ Initiate your project:
 
 ```bash
 moose init <project-name> typescript-mcp
+```
 
 Install dependencies for both applications:
 
