@@ -1,10 +1,15 @@
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
-import { getAllSlugs, parseMarkdownContent } from "@/lib/content";
+import {
+  getAllSlugs,
+  parseMarkdownContent,
+  discoverStepFiles,
+} from "@/lib/content";
 import { TOCNav } from "@/components/navigation/toc-nav";
 import { MDXRenderer } from "@/components/mdx-renderer";
 import { DocBreadcrumbs } from "@/components/navigation/doc-breadcrumbs";
 import { buildDocBreadcrumbs } from "@/lib/breadcrumbs";
+import { GuideStepsWrapper } from "@/components/guides/guide-steps-wrapper";
 
 export const dynamic = "force-dynamic";
 
@@ -87,12 +92,49 @@ export default async function GuidePage({ params }: PageProps) {
     notFound();
   }
 
+  // Discover step files for this starting point page
+  const steps = discoverStepFiles(slug);
+
+  // Load step content server-side and pre-render MDX
+  const stepsWithContent = await Promise.all(
+    steps.map(async (step) => {
+      try {
+        const stepContent = await parseMarkdownContent(step.slug);
+        return {
+          ...step,
+          content: stepContent.content,
+          isMDX: stepContent.isMDX,
+        };
+      } catch (error) {
+        console.error(`Failed to load step ${step.slug}:`, error);
+        return {
+          ...step,
+          content: null,
+          isMDX: false,
+        };
+      }
+    }),
+  );
+
   const breadcrumbs = buildDocBreadcrumbs(
     slug,
     typeof content.frontMatter.title === "string" ?
       content.frontMatter.title
     : undefined,
   );
+
+  // Combine page headings with step headings for TOC
+  const allHeadings = [...content.headings];
+  if (steps.length > 0) {
+    // Add steps as headings in TOC
+    steps.forEach((step) => {
+      allHeadings.push({
+        level: 2,
+        text: `${step.stepNumber}. ${step.title}`,
+        id: `step-${step.stepNumber}`,
+      });
+    });
+  }
 
   return (
     <>
@@ -103,9 +145,18 @@ export default async function GuidePage({ params }: PageProps) {
             <MDXRenderer source={content.content} />
           : <div dangerouslySetInnerHTML={{ __html: content.content }} />}
         </article>
+        {steps.length > 0 && (
+          <GuideStepsWrapper
+            steps={stepsWithContent.map(
+              ({ content: _, isMDX: __, ...step }) => step,
+            )}
+            stepsWithContent={stepsWithContent}
+            currentSlug={slug}
+          />
+        )}
       </div>
       <TOCNav
-        headings={content.headings}
+        headings={allHeadings}
         helpfulLinks={content.frontMatter.helpfulLinks}
       />
     </>
