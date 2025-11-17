@@ -14,9 +14,7 @@ export default render({
     href: "/moose",
   },
   sloan: {
-    type: "page",
-    title: "Sloan",
-    href: "/sloan",
+    display: "hidden",
   },
   blog: {
     title: "Blog",
