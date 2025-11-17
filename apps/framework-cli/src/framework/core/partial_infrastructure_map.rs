@@ -51,7 +51,7 @@ use super::{
         olap_process::OlapProcess,
         orchestration_worker::OrchestrationWorker,
         sql_resource::SqlResource,
-        table::{Column, Metadata, Table, TableIndex},
+        table::{Column, ColumnType, Metadata, Table, TableIndex},
         topic::{KafkaSchema, Topic, DEFAULT_MAX_MESSAGE_BYTES},
         topic_sync_process::{TopicToTableSyncProcess, TopicToTopicSyncProcess},
         view::View,
@@ -653,22 +653,53 @@ impl PartialInfrastructureMap {
 
                 // Buffer, S3Queue, Distributed, and other non-MergeTree engines don't support PRIMARY KEY
                 let supports_primary_key = engine.supports_order_by();
-                // Clear primary_key flag from columns if engine doesn't support it
-                let columns = if supports_primary_key {
-                    partial_table.columns.clone()
-                } else {
-                    partial_table
-                        .columns
-                        .iter()
-                        .map(|col| Column {
-                            primary_key: false,
-                            ..col.clone()
-                        })
-                        .collect()
-                };
+
+                // Normalize columns:
+                // 1. Clear primary_key flag if engine doesn't support it
+                // 2. Force arrays to be required=true (ClickHouse doesn't support nullable arrays)
+                let columns: Vec<Column> = partial_table
+                    .columns
+                    .iter()
+                    .map(|col| {
+                        let mut normalized_col = col.clone();
+
+                        // Clear primary_key if engine doesn't support it
+                        if !supports_primary_key {
+                            normalized_col.primary_key = false;
+                        }
+
+                        // ClickHouse doesn't support Nullable(Array(...))
+                        // Arrays must always be NOT NULL (required=true)
+                        if matches!(col.data_type, ColumnType::Array { .. }) {
+                            normalized_col.required = true;
+                        }
+
+                        normalized_col
+                    })
+                    .collect();
 
                 // Extract table-level TTL from partial table
                 let table_ttl_setting = partial_table.ttl.clone();
+
+                // Fall back to primary key columns if order_by is empty for MergeTree engines
+                // This ensures backward compatibility when order_by isn't explicitly set
+                // We only do this for MergeTree family to avoid breaking S3 tables
+                let order_by = if partial_table.order_by.is_empty() && engine.is_merge_tree_family()
+                {
+                    let primary_key_columns: Vec<String> = columns
+                        .iter()
+                        .filter_map(|c| {
+                            if c.primary_key {
+                                Some(c.name.clone())
+                            } else {
+                                None
+                            }
+                        })
+                        .collect();
+                    OrderBy::Fields(primary_key_columns)
+                } else {
+                    partial_table.order_by.clone()
+                };
 
                 let table = Table {
                     name: version
@@ -677,7 +708,7 @@ impl PartialInfrastructureMap {
                             format!("{}_{}", partial_table.name, version.as_suffix())
                         }),
                     columns,
-                    order_by: partial_table.order_by.clone(),
+                    order_by,
                     partition_by: partial_table.partition_by.clone(),
                     sample_by: partial_table.sample_by.clone(),
                     engine,
