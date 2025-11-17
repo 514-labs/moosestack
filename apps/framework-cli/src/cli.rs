@@ -1388,6 +1388,44 @@ pub async fn top_command_handler(
 
             result
         }
+        Commands::Doctor {
+            severity,
+            component,
+            since,
+            json,
+            verbose,
+            clickhouse_url,
+            redis_url,
+        } => {
+            info!("Running doctor command");
+
+            let project = load_project(commands)?;
+            let project_arc = Arc::new(project);
+
+            let capture_handle = crate::utilities::capture::capture_usage(
+                ActivityType::DoctorCommand,
+                Some(project_arc.name()),
+                &settings,
+                machine_id.clone(),
+                HashMap::new(),
+            );
+
+            let result = routines::doctor::diagnose_infrastructure(
+                project_arc,
+                severity.clone(),
+                component.clone(),
+                since.clone(),
+                *json,
+                *verbose,
+                clickhouse_url.clone(),
+                redis_url.clone(),
+            )
+            .await;
+
+            wait_for_usage_capture(capture_handle).await;
+
+            result
+        }
     }
 }
 

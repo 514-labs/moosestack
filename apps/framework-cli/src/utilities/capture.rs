@@ -67,6 +67,8 @@ pub enum ActivityType {
     PeekCommand,
     #[serde(rename = "queryCommand")]
     QueryCommand,
+    #[serde(rename = "doctorCommand")]
+    DoctorCommand,
     #[serde(rename = "workflowCommand")]
     WorkflowCommand,
     #[serde(rename = "workflowInitCommand")]
