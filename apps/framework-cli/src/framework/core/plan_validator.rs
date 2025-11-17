@@ -150,7 +150,7 @@ mod tests {
             order_by: OrderBy::Fields(vec!["id".to_string()]),
             partition_by: None,
             sample_by: None,
-            engine: None,
+            engine: ClickhouseEngine::MergeTree,
             version: Some(Version::from_string("1.0.0".to_string())),
             source_primitive: PrimitiveSignature {
                 name: name.to_string(),
@@ -325,7 +325,7 @@ mod tests {
             order_by: OrderBy::Fields(vec!["id".to_string()]),
             partition_by: None,
             sample_by: None,
-            engine,
+            engine: engine.unwrap_or_default(),
             version: Some(Version::from_string("1.0.0".to_string())),
             source_primitive: PrimitiveSignature {
                 name: name.to_string(),
