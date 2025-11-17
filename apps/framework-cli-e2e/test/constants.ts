@@ -96,6 +96,8 @@ export const TEMPLATE_NAMES = {
   TYPESCRIPT_TESTS: "typescript-tests",
   PYTHON_DEFAULT: "python",
   PYTHON_TESTS: "python-tests",
+  TYPESCRIPT_CLUSTER: "typescript-cluster",
+  PYTHON_CLUSTER: "python-cluster",
 } as const;
 
 export const APP_NAMES = {
@@ -103,4 +105,6 @@ export const APP_NAMES = {
   TYPESCRIPT_TESTS: "moose-ts-tests-app",
   PYTHON_DEFAULT: "moose-py-default-app",
   PYTHON_TESTS: "moose-py-tests-app",
+  TYPESCRIPT_CLUSTER: "moose-ts-cluster-app",
+  PYTHON_CLUSTER: "moose-py-cluster-app",
 } as const;
