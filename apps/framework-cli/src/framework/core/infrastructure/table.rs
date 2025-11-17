@@ -335,7 +335,8 @@ impl Table {
         use sha2::{Digest, Sha256};
 
         // Combine engine hash and database into a single hash
-        let engine_hash = self.engine.as_ref().map(|e| e.non_alterable_params_hash());
+        let engine_hash: Option<String> =
+            self.engine.as_ref().map(|e| e.non_alterable_params_hash());
 
         // If we have neither engine hash nor database, return None
         if engine_hash.is_none() && self.database.is_none() {
@@ -347,7 +348,7 @@ impl Table {
 
         // Include engine params hash if it exists
         if let Some(ref hash) = engine_hash {
-            hasher.update(hash.as_bytes());
+            hasher.update(hash.as_str().as_bytes());
         }
 
         // Include database field
