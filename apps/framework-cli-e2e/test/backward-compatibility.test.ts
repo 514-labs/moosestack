@@ -15,7 +15,7 @@
  * 5. Asserts that no (or minimal expected) changes are detected
  *
  * This is critical for catching breaking changes in infrastructure map format,
- * particularly changes like table ID prefixes with database names.
+ * particularly changes like table ID prefixes with database names and upgrades
  */
 
 import { spawn, ChildProcess } from "child_process";
