@@ -2562,6 +2562,57 @@ impl InfrastructureMap {
         self.tables.values().find(|table| table.name == name)
     }
 
+    /// Normalizes the infrastructure map for backward compatibility
+    ///
+    /// This applies the same normalization logic as partial_infrastructure_map.rs
+    /// to ensure consistent comparison between old and new infrastructure maps.
+    ///
+    /// Specifically:
+    /// - Falls back to primary key columns for order_by when it's empty (for MergeTree tables)
+    /// - Ensures arrays are always required=true (ClickHouse doesn't support Nullable(Array))
+    ///
+    /// This is needed because older CLI versions didn't persist order_by when it was
+    /// derived from primary key columns.
+    pub fn normalize(mut self) -> Self {
+        use crate::framework::core::infrastructure::table::{ColumnType, OrderBy};
+
+        self.tables = self
+            .tables
+            .into_iter()
+            .map(|(id, mut table)| {
+                // Fall back to primary key columns if order_by is empty for MergeTree engines
+                // This ensures backward compatibility when order_by isn't explicitly set
+                // We only do this for MergeTree family to avoid breaking S3 tables
+                if table.order_by.is_empty() && table.engine.is_merge_tree_family() {
+                    let primary_key_columns: Vec<String> = table
+                        .columns
+                        .iter()
+                        .filter_map(|c| {
+                            if c.primary_key {
+                                Some(c.name.clone())
+                            } else {
+                                None
+                            }
+                        })
+                        .collect();
+                    table.order_by = OrderBy::Fields(primary_key_columns);
+                }
+
+                // Normalize columns: ClickHouse doesn't support Nullable(Array(...))
+                // Arrays must always be NOT NULL (required=true)
+                for col in &mut table.columns {
+                    if matches!(col.data_type, ColumnType::Array { .. }) {
+                        col.required = true;
+                    }
+                }
+
+                (id, table)
+            })
+            .collect();
+
+        self
+    }
+
     /// Adds a topic to the infrastructure map
     ///
     /// # Arguments
