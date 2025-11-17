@@ -252,6 +252,7 @@ pub enum ClickhouseEngine {
         // Optional policy name
         policy_name: Option<String>,
     },
+    Kafka, // Unit variant - all configuration is in table_settings
 }
 
 // The implementation is not symetric between TryFrom and Into so we
@@ -367,6 +368,7 @@ impl Into<String> for ClickhouseEngine {
                 &sharding_key,
                 &policy_name,
             ),
+            ClickhouseEngine::Kafka => "Kafka".to_string(),
         }
     }
 }
@@ -743,6 +745,7 @@ impl ClickhouseEngine {
             }
             s if s.starts_with("S3Queue(") => Self::parse_regular_s3queue(s, value),
             s if s.starts_with("S3(") => Self::parse_regular_s3(s, value),
+            "Kafka" => Ok(ClickhouseEngine::Kafka),
             _ => Err(value),
         }
     }
@@ -981,6 +984,7 @@ impl ClickhouseEngine {
                 sharding_key,
                 policy_name,
             ),
+            ClickhouseEngine::Kafka => "Kafka".to_string(),
         }
     }
 
@@ -1954,6 +1958,10 @@ impl ClickhouseEngine {
                     hasher.update("null".as_bytes());
                 }
             }
+            ClickhouseEngine::Kafka => {
+                // Kafka has no constructor params - hash the engine name only
+                hasher.update("Kafka".as_bytes());
+            }
         }
 
         format!("{:x}", hasher.finalize())
@@ -2360,6 +2368,7 @@ pub fn create_table_query(
 
             format!("Distributed({})", engine_parts.join(", "))
         }
+        ClickhouseEngine::Kafka => "Kafka".to_string(),
     };
 
     // Format settings from table.table_settings
@@ -4835,5 +4844,88 @@ ENGINE = S3Queue('s3://my-bucket/data/*.csv', NOSIGN, 'CSV')"#;
             }
             _ => panic!("Expected InvalidParameters error"),
         }
+    }
+
+    #[test]
+    fn test_kafka_engine_parsing() {
+        let engine = ClickhouseEngine::try_from("Kafka");
+        assert!(engine.is_ok());
+        assert!(matches!(engine.unwrap(), ClickhouseEngine::Kafka));
+    }
+
+    #[test]
+    fn test_kafka_engine_serialization() {
+        let engine = ClickhouseEngine::Kafka;
+        assert_eq!(engine.to_proto_string(), "Kafka");
+        let engine_string: String = engine.into();
+        assert_eq!(engine_string, "Kafka");
+    }
+
+    #[test]
+    fn test_kafka_engine_hash_consistency() {
+        let engine1 = ClickhouseEngine::Kafka;
+        let engine2 = ClickhouseEngine::Kafka;
+        assert_eq!(
+            engine1.non_alterable_params_hash(),
+            engine2.non_alterable_params_hash()
+        );
+    }
+
+    #[test]
+    fn test_kafka_engine_no_order_by_support() {
+        let engine = ClickhouseEngine::Kafka;
+        assert!(!engine.supports_order_by());
+    }
+
+    #[test]
+    fn test_create_table_query_kafka() {
+        let mut settings = std::collections::HashMap::new();
+        settings.insert(
+            "kafka_broker_list".to_string(),
+            "localhost:9092".to_string(),
+        );
+        settings.insert("kafka_topic_list".to_string(), "test_topic".to_string());
+        settings.insert("kafka_group_name".to_string(), "test_group".to_string());
+        settings.insert("kafka_format".to_string(), "JSONEachRow".to_string());
+        settings.insert("kafka_num_consumers".to_string(), "2".to_string());
+
+        let table = ClickHouseTable {
+            version: Some(Version::from_string("1".to_string())),
+            name: "kafka_test".to_string(),
+            columns: vec![ClickHouseColumn {
+                name: "id".to_string(),
+                column_type: ClickHouseColumnType::ClickhouseInt(ClickHouseInt::Int32),
+                required: true,
+                primary_key: false,
+                unique: false,
+                default: None,
+                comment: None,
+                ttl: None,
+            }],
+            order_by: OrderBy::Fields(vec![]), // Kafka doesn't support ORDER BY
+            partition_by: None,
+            sample_by: None,
+            engine: ClickhouseEngine::Kafka,
+            table_settings: Some(settings),
+            indexes: vec![],
+            table_ttl_setting: None,
+            cluster_name: None,
+        };
+
+        let query = create_table_query("test_db", table, false).unwrap();
+
+        // Verify the query contains the expected elements
+        assert!(query.contains("CREATE TABLE IF NOT EXISTS `test_db`.`kafka_test`"));
+        assert!(query.contains("ENGINE = Kafka"));
+        assert!(query.contains("SETTINGS"));
+        assert!(query.contains("kafka_broker_list = 'localhost:9092'"));
+        assert!(query.contains("kafka_topic_list = 'test_topic'"));
+        assert!(query.contains("kafka_group_name = 'test_group'"));
+        assert!(query.contains("kafka_format = 'JSONEachRow'"));
+        // Note: numeric-looking values are unquoted in SETTINGS
+        assert!(query.contains("kafka_num_consumers = 2"));
+
+        // Verify it does NOT contain ORDER BY (Kafka doesn't support it)
+        assert!(!query.contains("ORDER BY"));
     }
 }

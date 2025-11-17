@@ -17,6 +17,7 @@ class ClickHouseEngines(Enum):
     S3 = "S3"
     Buffer = "Buffer"
     Distributed = "Distributed"
+    Kafka = "Kafka"
     ReplicatedMergeTree = "ReplicatedMergeTree"
     ReplicatedReplacingMergeTree = "ReplicatedReplacingMergeTree"
     ReplicatedAggregatingMergeTree = "ReplicatedAggregatingMergeTree"
@@ -283,6 +284,19 @@ class DistributedEngine(EngineConfig):
             raise ValueError("Distributed engine requires 'target_database'")
         if not self.target_table:
             raise ValueError("Distributed engine requires 'target_table'")
+
+@dataclass
+class KafkaEngine(EngineConfig):
+    """Configuration for Kafka engine - all config is in settings.
+
+    Note: Unlike S3Queue, Kafka engine has NO constructor parameters.
+    All configuration must be provided via table-level settings with kafka_* prefix.
+
+    This is a marker class - the actual configuration is in OlapConfig.settings.
+
+    Reference: https://clickhouse.com/docs/engines/table-engines/integrations/kafka
+    """
+    pass
 
 # ==========================
 # New Table Configuration (Recommended API)

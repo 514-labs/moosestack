@@ -947,6 +947,9 @@ pub fn tables_to_python(tables: &[Table], life_cycle: Option<LifeCycle>) -> Stri
                     }
                     writeln!(output, "    ),").unwrap();
                 }
+                crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine::Kafka => {
+                    writeln!(output, "    engine=KafkaEngine(),").unwrap();
+                }
             }
         }
         if let Some(version) = &table.version {

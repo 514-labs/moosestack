@@ -830,6 +830,9 @@ pub fn tables_to_typescript(tables: &[Table], life_cycle: Option<LifeCycle>) -> 
                         writeln!(output, "    policyName: {:?},", policy).unwrap();
                     }
                 }
+                crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine::Kafka => {
+                    writeln!(output, "    engine: ClickHouseEngines.Kafka,").unwrap();
+                }
             }
         }
         if let Some(version) = &table.version {

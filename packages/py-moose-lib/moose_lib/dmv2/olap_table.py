@@ -159,11 +159,11 @@ class OlapConfig(BaseModel):
 
         # Validate that non-MergeTree engines don't have unsupported clauses
         if self.engine:
-            from ..blocks import S3Engine, S3QueueEngine, BufferEngine, DistributedEngine
+            from ..blocks import S3Engine, S3QueueEngine, BufferEngine, DistributedEngine, KafkaEngine
 
-            # S3QueueEngine, BufferEngine, and DistributedEngine don't support ORDER BY
+            # S3QueueEngine, BufferEngine, DistributedEngine, and KafkaEngine don't support ORDER BY
             # Note: S3Engine DOES support ORDER BY (unlike S3Queue)
-            engines_without_order_by = (S3QueueEngine, BufferEngine, DistributedEngine)
+            engines_without_order_by = (S3QueueEngine, BufferEngine, DistributedEngine, KafkaEngine)
             if isinstance(self.engine, engines_without_order_by):
                 engine_name = type(self.engine).__name__
 
@@ -174,7 +174,7 @@ class OlapConfig(BaseModel):
                     )
 
             # All non-MergeTree engines don't support SAMPLE BY
-            engines_without_sample_by = (S3Engine, S3QueueEngine, BufferEngine, DistributedEngine)
+            engines_without_sample_by = (S3Engine, S3QueueEngine, BufferEngine, DistributedEngine, KafkaEngine)
             if isinstance(self.engine, engines_without_sample_by):
                 engine_name = type(self.engine).__name__
 
@@ -184,9 +184,9 @@ class OlapConfig(BaseModel):
                         f"Remove sample_by_expression from your configuration."
                     )
 
-            # Only S3QueueEngine, BufferEngine, and DistributedEngine don't support PARTITION BY
+            # Only S3QueueEngine, BufferEngine, DistributedEngine, and KafkaEngine don't support PARTITION BY
             # S3Engine DOES support PARTITION BY
-            engines_without_partition_by = (S3QueueEngine, BufferEngine, DistributedEngine)
+            engines_without_partition_by = (S3QueueEngine, BufferEngine, DistributedEngine, KafkaEngine)
             if isinstance(self.engine, engines_without_partition_by):
                 engine_name = type(self.engine).__name__
 

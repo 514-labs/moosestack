@@ -157,6 +157,10 @@ interface DistributedEngineConfig {
   policyName?: string;
 }
 
+interface KafkaEngineConfig {
+  engine: "Kafka";
+}
+
 /**
  * Union type for all supported engine configurations
  */
@@ -172,7 +176,8 @@ type EngineConfig =
   | S3QueueEngineConfig
   | S3EngineConfig
   | BufferEngineConfig
-  | DistributedEngineConfig;
+  | DistributedEngineConfig
+  | KafkaEngineConfig;
 
 /**
  * JSON representation of an OLAP table configuration.
@@ -588,6 +593,23 @@ function convertDistributedEngineConfig(
 }
 
 /**
+ * Convert Kafka engine config
+ * Note: Kafka has no constructor params - all config is in settings
+ */
+function convertKafkaEngineConfig(
+  config: OlapConfig<any>,
+): EngineConfig | undefined {
+  if (!("engine" in config) || config.engine !== ClickHouseEngines.Kafka) {
+    return undefined;
+  }
+
+  // Kafka engine has no constructor params - it's just a marker
+  return {
+    engine: "Kafka",
+  };
+}
+
+/**
  * Convert table configuration to engine config
  */
 function convertTableConfigToEngineConfig(
@@ -625,6 +647,11 @@ function convertTableConfigToEngineConfig(
   // Handle Distributed
   if (engine === ClickHouseEngines.Distributed) {
     return convertDistributedEngineConfig(config);
+  }
+
+  // Handle Kafka
+  if (engine === ClickHouseEngines.Kafka) {
+    return convertKafkaEngineConfig(config);
   }
 
   return undefined;

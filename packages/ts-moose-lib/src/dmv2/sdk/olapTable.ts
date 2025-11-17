@@ -161,6 +161,86 @@ export interface S3QueueTableSettings {
 }
 
 /**
+ * Kafka table settings - all ClickHouse Kafka engine configuration
+ * Reference: https://clickhouse.com/docs/engines/table-engines/integrations/kafka
+ *
+ * Note: ALL Kafka configuration is in SETTINGS (no constructor parameters).
+ * This is different from S3Queue which has constructor params.
+ */
+export interface KafkaTableSettings {
+  // ===== REQUIRED SETTINGS (immutable - require table recreate) =====
+  /** Comma-separated list of brokers (e.g., 'localhost:9092') */
+  kafka_broker_list: string;
+  /** Comma-separated list of Kafka topics */
+  kafka_topic_list: string;
+  /** Consumer group name */
+  kafka_group_name: string;
+  /** Message format (e.g., 'JSONEachRow', 'CSV') */
+  kafka_format: string;
+
+  // ===== OPTIONAL SETTINGS =====
+
+  // Security settings
+  /** Protocol for broker communication */
+  kafka_security_protocol?: "plaintext" | "ssl" | "sasl_plaintext" | "sasl_ssl";
+  /** SASL authentication mechanism */
+  kafka_sasl_mechanism?:
+    | "GSSAPI"
+    | "PLAIN"
+    | "SCRAM-SHA-256"
+    | "SCRAM-SHA-512"
+    | "OAUTHBEARER";
+  /** SASL username for PLAIN and SCRAM mechanisms */
+  kafka_sasl_username?: string;
+  /** SASL password for PLAIN and SCRAM mechanisms */
+  kafka_sasl_password?: string;
+
+  // Schema settings
+  /** Schema definition path (e.g., for Cap'n Proto: 'schema.capnp:Message') */
+  kafka_schema?: string;
+  /** Bytes to skip from message start for schema registry envelope headers (0-255) */
+  kafka_schema_registry_skip_bytes?: string;
+
+  // Consumer settings
+  /** Number of consumers per table (default: 1) */
+  kafka_num_consumers?: string;
+  /** Maximum batch size in messages for poll (default: max_insert_block_size) */
+  kafka_max_block_size?: string;
+  /** Number of schema-incompatible messages to skip per block (default: 0) */
+  kafka_skip_broken_messages?: string;
+  /** Whether to commit after every batch (0 or 1, default: 0) */
+  kafka_commit_every_batch?: string;
+  /** Kafka client ID */
+  kafka_client_id?: string;
+  /** Poll timeout in milliseconds (default: 0) */
+  kafka_poll_timeout_ms?: string;
+  /** Maximum batch size for poll (default: 0) */
+  kafka_poll_max_batch_size?: string;
+  /** Flush interval in milliseconds (default: 0) */
+  kafka_flush_interval_ms?: string;
+  /** Use dedicated thread per consumer (0 or 1, default: 0) */
+  kafka_thread_per_consumer?: string;
+  /** Error handling mode: 'default' or 'stream' (default: 'default') */
+  kafka_handle_error_mode?: "default" | "stream";
+  /** Commit offsets on SELECT queries (default: false) */
+  kafka_commit_on_select?: string;
+  /** Maximum rows per message for row-based formats (default: 1) */
+  kafka_max_rows_per_message?: string;
+
+  // Compression settings
+  /** Compression codec for producer */
+  kafka_compression_codec?: string;
+  /** Compression level (-1 for default) */
+  kafka_compression_level?: string;
+
+  // Experimental ClickHouse Keeper offset storage
+  /** Path in ClickHouse Keeper for offset storage (experimental) */
+  kafka_keeper_path?: string;
+  /** Replica name in ClickHouse Keeper (experimental) */
+  kafka_replica_name?: string;
+}
+
+/**
  * Base configuration shared by all table engines
  * @template T The data type of the records stored in the table.
  */
@@ -446,6 +526,24 @@ export type DistributedConfig<T> = Omit<
 };
 
 /**
+ * Configuration for Kafka engine
+ * Note: Kafka engine does NOT support ORDER BY, PARTITION BY, or SAMPLE BY
+ * @template T The data type of the records stored in the table.
+ */
+export type KafkaConfig<T> = Omit<
+  BaseOlapConfig<T>,
+  | "settings"
+  | "orderByFields"
+  | "orderByExpression"
+  | "partitionBy"
+  | "sampleByExpression"
+> & {
+  engine: ClickHouseEngines.Kafka;
+  /** Kafka-specific settings. All Kafka configuration is in settings. */
+  settings: KafkaTableSettings;
+};
+
+/**
  * Legacy configuration (backward compatibility) - defaults to MergeTree engine
  * @template T The data type of the records stored in the table.
  */
@@ -463,7 +561,8 @@ type EngineConfig<T> =
   | S3QueueConfig<T>
   | S3Config<T>
   | BufferConfig<T>
-  | DistributedConfig<T>;
+  | DistributedConfig<T>
+  | KafkaConfig<T>;
 
 /**
  * Union of all engine-specific configurations (new API)

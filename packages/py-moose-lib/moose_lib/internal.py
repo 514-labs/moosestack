@@ -167,6 +167,15 @@ class DistributedConfigDict(BaseEngineConfigDict):
     policy_name: Optional[str] = None
 
 
+class KafkaConfigDict(BaseEngineConfigDict):
+    """Kafka engine configuration for serialization.
+
+    Note: Kafka has no constructor parameters. All configuration
+    is in table_settings with kafka_* prefix.
+    """
+    engine: Literal["Kafka"] = "Kafka"
+
+
 # Discriminated union of all engine configurations
 EngineConfigDict = Union[
     MergeTreeConfigDict,
@@ -180,7 +189,8 @@ EngineConfigDict = Union[
     S3QueueConfigDict,
     S3ConfigDict,
     BufferConfigDict,
-    DistributedConfigDict
+    DistributedConfigDict,
+    KafkaConfigDict
 ]
 
 
@@ -508,7 +518,7 @@ def _convert_engine_instance_to_config_dict(engine: "EngineConfig") -> EngineCon
     Returns:
         EngineConfigDict with engine-specific configuration
     """
-    from moose_lib.blocks import S3QueueEngine, S3Engine, BufferEngine, DistributedEngine
+    from moose_lib.blocks import S3QueueEngine, S3Engine, BufferEngine, DistributedEngine, KafkaEngine
 
     # Try S3Queue first
     if isinstance(engine, S3QueueEngine):
@@ -559,6 +569,10 @@ def _convert_engine_instance_to_config_dict(engine: "EngineConfig") -> EngineCon
             sharding_key=engine.sharding_key,
             policy_name=engine.policy_name
         )
+
+    # Try Kafka
+    if isinstance(engine, KafkaEngine):
+        return KafkaConfigDict()
 
     # Try basic engines
     basic_config = _convert_basic_engine_instance(engine)
