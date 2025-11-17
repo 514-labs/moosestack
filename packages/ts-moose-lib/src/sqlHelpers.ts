@@ -127,7 +127,11 @@ export class Sql {
         }
         this.strings[pos] += rawString;
       } else if (isTable(child)) {
-        this.strings[pos] += `\`${child.name}\``;
+        if (child.config.database) {
+          this.strings[pos] += `\`${child.config.database}\`.\`${child.name}\``;
+        } else {
+          this.strings[pos] += `\`${child.name}\``;
+        }
         this.strings[pos] += rawString;
       } else {
         this.values[pos++] = child;

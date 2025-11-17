@@ -11,6 +11,7 @@ use std::collections::HashMap;
 use std::fmt::Write;
 
 // Use shared, language-agnostic sanitization (underscores) from utilities
+use crate::infrastructure::olap::clickhouse::extract_version_from_table_name;
 pub use ident::sanitize_identifier;
 
 /// Map a string to a valid TypeScript PascalCase identifier (for types/classes/consts).
@@ -629,10 +630,17 @@ pub fn tables_to_typescript(tables: &[Table], life_cycle: Option<LifeCycle>) -> 
             OrderBy::SingleExpr(expr) => format!("orderByExpression: {:?}", expr),
         };
         let var_name = sanitize_typescript_identifier(&table.name);
+
+        let (base_name, version) = extract_version_from_table_name(&table.name);
+        let table_name = if version == table.version {
+            &base_name
+        } else {
+            &table.name
+        };
         writeln!(
             output,
             "export const {}Table = new OlapTable<{}>(\"{}\", {{",
-            var_name, table.name, table.name
+            var_name, table.name, table_name
         )
         .unwrap();
         writeln!(output, "    {order_by_spec},").unwrap();
@@ -994,6 +1002,7 @@ mod tests {
             indexes: vec![],
             database: None,
             table_ttl_setting: None,
+            cluster_name: None,
         }];
 
         let result = tables_to_typescript(&tables, None);
@@ -1075,6 +1084,7 @@ export const UserTable = new OlapTable<User>("User", {
             indexes: vec![],
             database: None,
             table_ttl_setting: None,
+            cluster_name: None,
         }];
 
         let result = tables_to_typescript(&tables, None);
@@ -1125,6 +1135,7 @@ export const UserTable = new OlapTable<User>("User", {
             indexes: vec![],
             database: None,
             table_ttl_setting: None,
+            cluster_name: None,
         }];
 
         let result = tables_to_typescript(&tables, None);
@@ -1194,6 +1205,7 @@ export const UserTable = new OlapTable<User>("User", {
             indexes: vec![],
             database: None,
             table_ttl_setting: None,
+            cluster_name: None,
         }];
 
         let result = tables_to_typescript(&tables, None);
@@ -1238,6 +1250,7 @@ export const UserTable = new OlapTable<User>("User", {
             indexes: vec![],
             database: None,
             table_ttl_setting: None,
+            cluster_name: None,
         }];
 
         let result = tables_to_typescript(&tables, None);
@@ -1314,6 +1327,7 @@ export const UserTable = new OlapTable<User>("User", {
             indexes: vec![],
             database: None,
             table_ttl_setting: None,
+            cluster_name: None,
         }];
 
         let result = tables_to_typescript(&tables, None);
@@ -1376,6 +1390,7 @@ export const UserTable = new OlapTable<User>("User", {
             ],
             database: None,
             table_ttl_setting: None,
+            cluster_name: None,
         }];
 
         let result = tables_to_typescript(&tables, None);
@@ -1446,6 +1461,7 @@ export const UserTable = new OlapTable<User>("User", {
             indexes: vec![],
             database: None,
             table_ttl_setting: None,
+            cluster_name: None,
         }];
 
         let result = tables_to_typescript(&tables, None);
@@ -1523,6 +1539,7 @@ export const TaskTable = new OlapTable<Task>("Task", {
             indexes: vec![],
             database: None,
             table_ttl_setting: Some("timestamp + INTERVAL 90 DAY DELETE".to_string()),
+            cluster_name: None,
         }];
 
         let result = tables_to_typescript(&tables, None);
@@ -1589,6 +1606,7 @@ export const TaskTable = new OlapTable<Task>("Task", {
             table_settings: None,
             indexes: vec![],
             table_ttl_setting: None,
+            cluster_name: None,
         }];
 
         let result = tables_to_typescript(&tables, None);
@@ -1636,6 +1654,7 @@ export const TaskTable = new OlapTable<Task>("Task", {
             indexes: vec![],
             database: Some("analytics_db".to_string()),
             table_ttl_setting: None,
+            cluster_name: None,
         }];
 
         let result = tables_to_typescript(&tables, None);

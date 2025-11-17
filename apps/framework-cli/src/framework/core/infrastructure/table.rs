@@ -266,6 +266,7 @@ impl std::fmt::Display for OrderBy {
 /// concerns from the core table abstraction.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Table {
+    // the name field contains the version suffix
     pub name: String,
     pub columns: Vec<Column>,
     pub order_by: OrderBy,
@@ -298,6 +299,9 @@ pub struct Table {
     /// Table-level TTL expression (without leading 'TTL')
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub table_ttl_setting: Option<String>,
+    /// Optional cluster name for ON CLUSTER support in ClickHouse
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub cluster_name: Option<String>,
 }
 
 impl Table {
@@ -331,7 +335,8 @@ impl Table {
         use sha2::{Digest, Sha256};
 
         // Combine engine hash and database into a single hash
-        let engine_hash = self.engine.as_ref().map(|e| e.non_alterable_params_hash());
+        let engine_hash: Option<String> =
+            self.engine.as_ref().map(|e| e.non_alterable_params_hash());
 
         // If we have neither engine hash nor database, return None
         if engine_hash.is_none() && self.database.is_none() {
@@ -343,7 +348,7 @@ impl Table {
 
         // Include engine params hash if it exists
         if let Some(ref hash) = engine_hash {
-            hasher.update(hash.as_bytes());
+            hasher.update(hash.as_str().as_bytes());
         }
 
         // Include database field
@@ -471,6 +476,7 @@ impl Table {
                 .or_else(|| self.compute_non_alterable_params_hash()),
             table_settings: self.table_settings.clone().unwrap_or_default(),
             table_ttl_setting: self.table_ttl_setting.clone(),
+            cluster_name: self.cluster_name.clone(),
             metadata: MessageField::from_option(self.metadata.as_ref().map(|m| {
                 infrastructure_map::Metadata {
                     description: m.description.clone().unwrap_or_default(),
@@ -577,6 +583,7 @@ impl Table {
                 .collect(),
             database: proto.database,
             table_ttl_setting: proto.table_ttl_setting,
+            cluster_name: proto.cluster_name,
         }
     }
 }
@@ -1642,6 +1649,7 @@ mod tests {
             indexes: vec![],
             database: None,
             table_ttl_setting: None,
+            cluster_name: None,
         };
         assert_eq!(table1.id(DEFAULT_DATABASE_NAME), "local_users");
 
