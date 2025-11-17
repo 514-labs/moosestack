@@ -1,4 +1,7 @@
-use crate::{infrastructure::stream, project::Project};
+use crate::{
+    infrastructure::{olap::clickhouse::queries::ClickhouseEngine, stream},
+    project::Project,
+};
 
 use super::infrastructure_map::{OlapChange, TableChange};
 use super::plan::InfraPlan;
