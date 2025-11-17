@@ -310,6 +310,25 @@ pub async fn run_diagnostics(
     {
         all_providers
     } else {
+        // Validate that requested diagnostic names exist
+        let available_names: Vec<String> =
+            all_providers.iter().map(|p| p.name().to_string()).collect();
+        let invalid_names: Vec<String> = request
+            .options
+            .diagnostic_names
+            .iter()
+            .filter(|name| !available_names.contains(name))
+            .cloned()
+            .collect();
+
+        if !invalid_names.is_empty() {
+            return Err(DiagnosticError::InvalidParameter(format!(
+                "Unknown diagnostic names: {}. Available diagnostics: {}",
+                invalid_names.join(", "),
+                available_names.join(", ")
+            )));
+        }
+
         all_providers
             .into_iter()
             .filter(|p| {
@@ -852,5 +871,68 @@ mod tests {
         // In serial execution: slow finishes first (order=0), fast second (order=1)
         assert_eq!(slow_order.load(Ordering::SeqCst), 0);
         assert_eq!(fast_order.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn test_invalid_diagnostic_names_return_error() {
+        let config = ClickHouseConfig {
+            db_name: "test".to_string(),
+            host: "localhost".to_string(),
+            host_port: 8123,
+            native_port: 9000,
+            ..Default::default()
+        };
+
+        let component = Component {
+            component_type: "table".to_string(),
+            name: "test_table".to_string(),
+            metadata: HashMap::new(),
+        };
+
+        // Test with invalid diagnostic name
+        let request = DiagnosticRequest {
+            components: vec![(component.clone(), None)],
+            options: DiagnosticOptions {
+                diagnostic_names: vec!["invalid_diagnostic".to_string()],
+                min_severity: Severity::Info,
+                since: None,
+            },
+        };
+
+        let result = run_diagnostics(request, &config).await;
+        assert!(result.is_err());
+
+        if let Err(DiagnosticError::InvalidParameter(msg)) = result {
+            assert!(msg.contains("invalid_diagnostic"));
+            assert!(msg.contains("Available diagnostics:"));
+        } else {
+            panic!("Expected InvalidParameter error");
+        }
+
+        // Test with mix of valid and invalid names
+        let request = DiagnosticRequest {
+            components: vec![(component.clone(), None)],
+            options: DiagnosticOptions {
+                diagnostic_names: vec![
+                    "MutationDiagnostic".to_string(), // Valid name
+                    "invalid_one".to_string(),
+                    "invalid_two".to_string(),
+                ],
+                min_severity: Severity::Info,
+                since: None,
+            },
+        };
+
+        let result = run_diagnostics(request, &config).await;
+        assert!(result.is_err());
+
+        if let Err(DiagnosticError::InvalidParameter(msg)) = result {
+            assert!(msg.contains("invalid_one"));
+            assert!(msg.contains("invalid_two"));
+            assert!(msg.contains("Unknown diagnostic names:"));
+            assert!(!msg.contains("MutationDiagnostic, invalid")); // Valid name not listed as invalid
+        } else {
+            panic!("Expected InvalidParameter error");
+        }
     }
 }
