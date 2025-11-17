@@ -163,6 +163,34 @@ moose peek <name> [--limit <n>] [--file <path>] [-t|--table] [-s|--stream]
 - `-t, --table`: View data from a table (default if neither flag specified)
 - `-s, --stream`: View data from a stream/topic
 
+### Query
+Execute arbitrary SQL queries against your ClickHouse database during development.
+```bash
+# Direct query
+moose query "SELECT count(*) FROM users"
+
+# From file
+moose query -f queries/analysis.sql
+
+# From stdin
+cat query.sql | moose query
+
+# With limit
+moose query "SELECT * FROM events" --limit 100
+```
+- `<query>`: SQL query string to execute (optional if using --file or stdin)
+- `-f, --file <PATH>`: Read query from file
+- `-l, --limit <NUM>`: Maximum rows to return (default: 10000)
+
+**Requirements:**
+- Requires `moose dev` to be running
+- Executes queries against your development ClickHouse instance
+
+**Output:**
+- Returns results as newline-delimited JSON
+- One JSON object per row
+- Row count summary at end
+
 ## Generation Commands
 
 ### Generate Hash Token
