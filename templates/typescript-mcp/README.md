@@ -27,6 +27,12 @@ A Next.js web application with a pre-configured AI chat interface. This applicat
 
 ## Getting Started
 
+Initiate your project:
+
+```bash
+moose init <project-name> typescript-mcp
+```
+
 Install dependencies for both applications:
 
 ```bash
@@ -42,11 +48,8 @@ pnpm dev
 Or start services individually:
 
 ```bash
-# Start only the MooseStack service
-pnpm dev:moose
-
-# Start only the Next.js web app
-pnpm dev:web
+pnpm dev:moose    # Start MooseStack service only
+pnpm dev:web      # Start web app only
 ```
 
 ## MCP Tools Available
