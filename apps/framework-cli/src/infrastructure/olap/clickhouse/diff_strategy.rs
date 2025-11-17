@@ -472,6 +472,12 @@ impl TableDiffStrategy for ClickHouseTableDiffStrategy {
             })];
         }
 
+        // Note: cluster_name changes are intentionally NOT treated as requiring drop+create.
+        // cluster_name is a deployment directive (how to run DDL) rather than a schema property
+        // (what the table looks like). When cluster_name changes, future DDL operations will
+        // automatically use the new cluster_name via the ON CLUSTER clause, but the table
+        // itself doesn't need to be recreated.
+
         // Check if PARTITION BY has changed
         let partition_by_changed = partition_by_change.before != partition_by_change.after;
         if partition_by_changed {
@@ -687,6 +693,7 @@ mod tests {
             indexes: vec![],
             database: None,
             table_ttl_setting: None,
+            cluster_name: None,
         }
     }
 
@@ -1493,6 +1500,7 @@ mod tests {
             indexes: vec![],
             database: None,
             table_ttl_setting: None,
+            cluster_name: None,
         };
 
         assert!(ClickHouseTableDiffStrategy::is_s3queue_table(&s3_table));
@@ -1620,5 +1628,178 @@ mod tests {
         assert!(
             error_msg.contains("INSERT INTO target_db.my_table SELECT * FROM source_db.my_table")
         );
+    }
+
+    #[test]
+    fn test_cluster_change_from_none_to_some() {
+        let strategy = ClickHouseTableDiffStrategy;
+
+        let mut before = create_test_table("test", vec!["id".to_string()], false);
+        let mut after = create_test_table("test", vec!["id".to_string()], false);
+
+        // Change cluster from None to Some
+        before.cluster_name = None;
+        after.cluster_name = Some("test_cluster".to_string());
+
+        let order_by_change = OrderByChange {
+            before: before.order_by.clone(),
+            after: after.order_by.clone(),
+        };
+
+        let partition_by_change = PartitionByChange {
+            before: before.partition_by.clone(),
+            after: after.partition_by.clone(),
+        };
+
+        let changes = strategy.diff_table_update(
+            &before,
+            &after,
+            vec![],
+            order_by_change,
+            partition_by_change,
+            "local",
+        );
+
+        // cluster_name is a deployment directive, not a schema property
+        // Changing it should not trigger any operations
+        assert_eq!(changes.len(), 0);
+    }
+
+    #[test]
+    fn test_cluster_change_from_some_to_none() {
+        let strategy = ClickHouseTableDiffStrategy;
+
+        let mut before = create_test_table("test", vec!["id".to_string()], false);
+        let mut after = create_test_table("test", vec!["id".to_string()], false);
+
+        // Change cluster from Some to None
+        before.cluster_name = Some("test_cluster".to_string());
+        after.cluster_name = None;
+
+        let order_by_change = OrderByChange {
+            before: before.order_by.clone(),
+            after: after.order_by.clone(),
+        };
+
+        let partition_by_change = PartitionByChange {
+            before: before.partition_by.clone(),
+            after: after.partition_by.clone(),
+        };
+
+        let changes = strategy.diff_table_update(
+            &before,
+            &after,
+            vec![],
+            order_by_change,
+            partition_by_change,
+            "local",
+        );
+
+        // cluster_name is a deployment directive, not a schema property
+        // Changing it should not trigger any operations
+        assert_eq!(changes.len(), 0);
+    }
+
+    #[test]
+    fn test_cluster_change_between_different_clusters() {
+        let strategy = ClickHouseTableDiffStrategy;
+
+        let mut before = create_test_table("test", vec!["id".to_string()], false);
+        let mut after = create_test_table("test", vec!["id".to_string()], false);
+
+        // Change cluster from one to another
+        before.cluster_name = Some("cluster_a".to_string());
+        after.cluster_name = Some("cluster_b".to_string());
+
+        let order_by_change = OrderByChange {
+            before: before.order_by.clone(),
+            after: after.order_by.clone(),
+        };
+
+        let partition_by_change = PartitionByChange {
+            before: before.partition_by.clone(),
+            after: after.partition_by.clone(),
+        };
+
+        let changes = strategy.diff_table_update(
+            &before,
+            &after,
+            vec![],
+            order_by_change,
+            partition_by_change,
+            "local",
+        );
+
+        // cluster_name is a deployment directive, not a schema property
+        // Changing it should not trigger any operations
+        assert_eq!(changes.len(), 0);
+    }
+
+    #[test]
+    fn test_no_cluster_change_both_none() {
+        let strategy = ClickHouseTableDiffStrategy;
+
+        let before = create_test_table("test", vec!["id".to_string()], false);
+        let after = create_test_table("test", vec!["id".to_string()], false);
+
+        // Both None - no cluster change
+        assert_eq!(before.cluster_name, None);
+        assert_eq!(after.cluster_name, None);
+
+        let order_by_change = OrderByChange {
+            before: before.order_by.clone(),
+            after: after.order_by.clone(),
+        };
+
+        let partition_by_change = PartitionByChange {
+            before: before.partition_by.clone(),
+            after: after.partition_by.clone(),
+        };
+
+        let changes = strategy.diff_table_update(
+            &before,
+            &after,
+            vec![],
+            order_by_change,
+            partition_by_change,
+            "local",
+        );
+
+        // Should not trigger a validation error - no changes at all
+        assert_eq!(changes.len(), 0);
+    }
+
+    #[test]
+    fn test_no_cluster_change_both_same() {
+        let strategy = ClickHouseTableDiffStrategy;
+
+        let mut before = create_test_table("test", vec!["id".to_string()], false);
+        let mut after = create_test_table("test", vec!["id".to_string()], false);
+
+        // Both have the same cluster
+        before.cluster_name = Some("test_cluster".to_string());
+        after.cluster_name = Some("test_cluster".to_string());
+
+        let order_by_change = OrderByChange {
+            before: before.order_by.clone(),
+            after: after.order_by.clone(),
+        };
+
+        let partition_by_change = PartitionByChange {
+            before: before.partition_by.clone(),
+            after: after.partition_by.clone(),
+        };
+
+        let changes = strategy.diff_table_update(
+            &before,
+            &after,
+            vec![],
+            order_by_change,
+            partition_by_change,
+            "local",
+        );
+
+        // Should not trigger a validation error - no changes at all
+        assert_eq!(changes.len(), 0);
     }
 }
