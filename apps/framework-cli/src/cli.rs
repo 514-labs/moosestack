@@ -28,6 +28,7 @@ use routines::kafka_pull::write_external_topics;
 use routines::metrics_console::run_console;
 use routines::peek::peek;
 use routines::ps::show_processes;
+use routines::query::query;
 use routines::scripts::{
     cancel_workflow, get_workflow_status, list_workflows_history, pause_workflow, run_workflow,
     terminate_workflow, unpause_workflow,
@@ -1363,6 +1364,30 @@ pub async fn top_command_handler(
                 )))
             }
         },
+        Commands::Query {
+            query: sql,
+            file,
+            limit,
+        } => {
+            info!("Running query command");
+
+            let project = load_project(commands)?;
+            let project_arc = Arc::new(project);
+
+            let capture_handle = crate::utilities::capture::capture_usage(
+                ActivityType::QueryCommand,
+                Some(project_arc.name()),
+                &settings,
+                machine_id.clone(),
+                HashMap::new(),
+            );
+
+            let result = query(project_arc, sql.clone(), file.clone(), *limit).await;
+
+            wait_for_usage_capture(capture_handle).await;
+
+            result
+        }
     }
 }
 
