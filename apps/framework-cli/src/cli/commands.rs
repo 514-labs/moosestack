@@ -193,6 +193,19 @@ pub enum Commands {
     },
     /// Manage Kafka-related operations
     Kafka(KafkaArgs),
+    /// Execute SQL queries against ClickHouse
+    Query {
+        /// SQL query to execute
+        query: Option<String>,
+
+        /// Read query from file
+        #[arg(short = 'f', long = "file", conflicts_with = "query")]
+        file: Option<PathBuf>,
+
+        /// Maximum number of rows to return (applied via ClickHouse settings)
+        #[arg(short, long, default_value = "10000")]
+        limit: u64,
+    },
 }
 
 #[derive(Debug, Args)]
