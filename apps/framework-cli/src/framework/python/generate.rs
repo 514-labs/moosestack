@@ -12,6 +12,7 @@ use std::collections::HashMap;
 use std::fmt::Write;
 use std::sync::LazyLock;
 
+use crate::infrastructure::olap::clickhouse::extract_version_from_table_name;
 /// Language-agnostic sanitization: replace common separators with spaces to create word boundaries.
 pub use ident::sanitize_identifier;
 
@@ -708,11 +709,18 @@ pub fn tables_to_python(tables: &[Table], life_cycle: Option<LifeCycle>) -> Stri
             OrderBy::SingleExpr(expr) => format!("order_by_expression={:?}", expr),
         };
 
+        let (base_name, version) = extract_version_from_table_name(&table.name);
+        let table_name = if version == table.version {
+            &base_name
+        } else {
+            &table.name
+        };
+
         let var_name = map_to_python_snake_identifier(&table.name);
         writeln!(
             output,
             "{}_table = OlapTable[{}](\"{}\", OlapConfig(",
-            var_name, table.name, table.name
+            var_name, table.name, table_name
         )
         .unwrap();
         writeln!(output, "    {order_by_spec},").unwrap();
@@ -1057,6 +1065,7 @@ mod tests {
             indexes: vec![],
             database: None,
             table_ttl_setting: None,
+            cluster_name: None,
         }];
 
         let result = tables_to_python(&tables, None);
@@ -1150,6 +1159,7 @@ foo_table = OlapTable[Foo]("Foo", OlapConfig(
             indexes: vec![],
             database: None,
             table_ttl_setting: None,
+            cluster_name: None,
         }];
 
         let result = tables_to_python(&tables, None);
@@ -1268,6 +1278,7 @@ nested_array_table = OlapTable[NestedArray]("NestedArray", OlapConfig(
             indexes: vec![],
             database: None,
             table_ttl_setting: None,
+            cluster_name: None,
         }];
 
         let result = tables_to_python(&tables, None);
@@ -1346,6 +1357,7 @@ user_table = OlapTable[User]("User", OlapConfig(
             indexes: vec![],
             database: None,
             table_ttl_setting: None,
+            cluster_name: None,
         }];
 
         let result = tables_to_python(&tables, None);
@@ -1403,6 +1415,7 @@ user_table = OlapTable[User]("User", OlapConfig(
             indexes: vec![],
             database: None,
             table_ttl_setting: None,
+            cluster_name: None,
         }];
 
         let result = tables_to_python(&tables, None);
@@ -1471,6 +1484,7 @@ user_table = OlapTable[User]("User", OlapConfig(
             indexes: vec![],
             database: None,
             table_ttl_setting: None,
+            cluster_name: None,
         }];
 
         let result = tables_to_python(&tables, None);
@@ -1542,6 +1556,7 @@ user_table = OlapTable[User]("User", OlapConfig(
             indexes: vec![],
             database: None,
             table_ttl_setting: None,
+            cluster_name: None,
         }];
 
         let result = tables_to_python(&tables, None);
@@ -1624,6 +1639,7 @@ user_table = OlapTable[User]("User", OlapConfig(
             indexes: vec![],
             database: None,
             table_ttl_setting: Some("timestamp + INTERVAL 90 DAY DELETE".to_string()),
+            cluster_name: None,
         }];
 
         let result = tables_to_python(&tables, None);
@@ -1688,6 +1704,7 @@ user_table = OlapTable[User]("User", OlapConfig(
             ],
             database: None,
             table_ttl_setting: None,
+            cluster_name: None,
         }];
 
         let result = tables_to_python(&tables, None);
@@ -1752,6 +1769,7 @@ user_table = OlapTable[User]("User", OlapConfig(
             table_settings: None,
             indexes: vec![],
             table_ttl_setting: None,
+            cluster_name: None,
         }];
 
         let result = tables_to_python(&tables, None);
@@ -1805,6 +1823,7 @@ user_table = OlapTable[User]("User", OlapConfig(
             indexes: vec![],
             database: Some("analytics_db".to_string()),
             table_ttl_setting: None,
+            cluster_name: None,
         }];
 
         let result = tables_to_python(&tables, None);
