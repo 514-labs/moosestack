@@ -27,6 +27,11 @@ A Next.js web application with a pre-configured AI chat interface. This applicat
 
 ## Getting Started
 
+Initiate your project:
+
+```bash
+moose init <project-name> typescript-mcp
+
 Install dependencies for both applications:
 
 ```bash
