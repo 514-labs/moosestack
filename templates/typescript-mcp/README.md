@@ -48,11 +48,8 @@ pnpm dev
 Or start services individually:
 
 ```bash
-# Start only the MooseStack service
-pnpm dev:moose
-
-# Start only the Next.js web app
-pnpm dev:web
+pnpm dev:moose    # Start MooseStack service only
+pnpm dev:web      # Start web app only
 ```
 
 ## MCP Tools Available
