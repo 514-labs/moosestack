@@ -71,7 +71,7 @@ const rawMeta = {
     isMoose: true,
   },
   streaming: {
-    title: "Streaming",
+    title: "Streams",
     Icon: Waves,
     isMoose: true,
   },
@@ -133,6 +133,11 @@ const rawMeta = {
   configuration: {
     title: "Project Configuration",
     Icon: Settings,
+  },
+  "migration-plan-reference": {
+    title: "Migration Plan",
+    Icon: GitCompare,
+    href: "/moose/migrate/migration-plan-reference",
   },
   help: {
     title: "Help",
