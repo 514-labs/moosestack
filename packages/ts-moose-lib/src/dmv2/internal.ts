@@ -157,6 +157,15 @@ interface DistributedEngineConfig {
   policyName?: string;
 }
 
+interface IcebergS3EngineConfig {
+  engine: "IcebergS3";
+  path: string;
+  format: string;
+  awsAccessKeyId?: string;
+  awsSecretAccessKey?: string;
+  compression?: string;
+}
+
 /**
  * Union type for all supported engine configurations
  */
@@ -172,7 +181,8 @@ type EngineConfig =
   | S3QueueEngineConfig
   | S3EngineConfig
   | BufferEngineConfig
-  | DistributedEngineConfig;
+  | DistributedEngineConfig
+  | IcebergS3EngineConfig;
 
 /**
  * JSON representation of an OLAP table configuration.
@@ -588,6 +598,26 @@ function convertDistributedEngineConfig(
 }
 
 /**
+ * Convert IcebergS3 engine config
+ */
+function convertIcebergS3EngineConfig(
+  config: OlapConfig<any>,
+): EngineConfig | undefined {
+  if (!("engine" in config) || config.engine !== ClickHouseEngines.IcebergS3) {
+    return undefined;
+  }
+
+  return {
+    engine: "IcebergS3",
+    path: config.path,
+    format: config.format,
+    awsAccessKeyId: config.awsAccessKeyId,
+    awsSecretAccessKey: config.awsSecretAccessKey,
+    compression: config.compression,
+  };
+}
+
+/**
  * Convert table configuration to engine config
  */
 function convertTableConfigToEngineConfig(
@@ -625,6 +655,11 @@ function convertTableConfigToEngineConfig(
   // Handle Distributed
   if (engine === ClickHouseEngines.Distributed) {
     return convertDistributedEngineConfig(config);
+  }
+
+  // Handle IcebergS3
+  if (engine === ClickHouseEngines.IcebergS3) {
+    return convertIcebergS3EngineConfig(config);
   }
 
   return undefined;
