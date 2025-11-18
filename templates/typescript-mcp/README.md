@@ -27,6 +27,12 @@ A Next.js web application with a pre-configured AI chat interface. This applicat
 
 ## Getting Started
 
+Set the ANTHROPIC_API_KEY environment variable:
+
+```bash
+echo "ANTHROPIC_API_KEY=your_api_key_here" >> packages/web-app/.env.local
+```
+
 Install dependencies for both applications:
 
 ```bash
