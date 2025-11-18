@@ -103,7 +103,7 @@ export default async function GuidePage({ params }: PageProps) {
         return {
           ...step,
           content: stepContent.content,
-          isMDX: stepContent.isMDX,
+          isMDX: stepContent.isMDX ?? false,
         };
       } catch (error) {
         console.error(`Failed to load step ${step.slug}:`, error);
