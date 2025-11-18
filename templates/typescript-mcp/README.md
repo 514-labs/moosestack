@@ -33,6 +33,13 @@ Initiate your project:
 moose init <project-name> typescript-mcp
 ```
 
+Set the ANTHROPIC_API_KEY environment variable:
+
+```bash
+cd <project-name>
+echo "ANTHROPIC_API_KEY=your_api_key_here" >> packages/web-app/.env.local
+```
+
 Install dependencies for both applications:
 
 ```bash
