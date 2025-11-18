@@ -18,7 +18,7 @@ Multi-language monorepo (Rust CLI + TypeScript/Python libraries) using PNPM work
 - **Test all**: `cargo test`
 - **Test single**: `cargo test <test_name>` or `cargo test --package <package_name> --test <test_file>`
 - **Lint**: `cargo clippy --all-targets -- -D warnings` (REQUIRED pre-commit, no warnings allowed)
-- **Format**: `rustfmt --edition 2021 <file.rs>`
+- **Format**: `cargo fmt`
 
 ### TypeScript
 - **Test lib**: `cd packages/ts-moose-lib && pnpm test` (runs mocha tests)
