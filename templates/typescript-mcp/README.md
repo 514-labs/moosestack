@@ -27,6 +27,9 @@ A Next.js web application with a pre-configured AI chat interface. This applicat
 
 ## Getting Started
 
+Note: You must set the ANTHROPIC_API_KEY environment variable for the chat
+feature to function.
+
 Install dependencies for both applications:
 
 ```bash
@@ -46,7 +49,7 @@ Or start services individually:
 pnpm dev:moose
 
 # Start only the Next.js web app
-pnpm dev:web
+pnpm dev:web # requires ANTHROPIC_API_KEY to be set in the environment
 ```
 
 ## MCP Tools Available

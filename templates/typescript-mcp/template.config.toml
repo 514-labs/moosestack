@@ -21,6 +21,6 @@ https://boreal.cloud
 
 Or start services individually:
     $ pnpm dev:moose    # Start MooseStack service only
-    $ pnpm dev:web      # Start web app only
+    $ pnpm dev:web      # Start web app only; requires ANTHROPIC_API_KEY to be set in the environment
 """
 default_sloan_telemetry = "standard"
