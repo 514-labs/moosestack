@@ -2243,78 +2243,68 @@ impl InfrastructureMap {
         for table in self.tables.values_mut() {
             let mut should_recalc_hash = false;
 
-            if let Some(engine) = &mut table.engine {
-                // Helper closure to resolve AWS credentials for S3-based engines
-                let resolve_aws_credentials = |access_key: &mut Option<String>,
-                                               secret_key: &mut Option<String>,
-                                               engine_name: &str|
-                 -> Result<(), String> {
-                    let resolved_access_key = resolve_optional_runtime_env(access_key).map_err(
-                        |e| {
-                            format!(
-                                "Failed to resolve runtime environment variable for table '{}' field 'awsAccessKeyId': {}",
-                                table.name, e
-                            )
-                        },
-                    )?;
+            // Helper closure to resolve AWS credentials for S3-based engines
+            let resolve_aws_credentials = |access_key: &mut Option<String>,
+                                           secret_key: &mut Option<String>,
+                                           engine_name: &str|
+             -> Result<(), String> {
+                let resolved_access_key = resolve_optional_runtime_env(access_key).map_err(
+                    |e| {
+                        format!(
+                            "Failed to resolve runtime environment variable for table '{}' field 'awsAccessKeyId': {}",
+                            table.name, e
+                        )
+                    },
+                )?;
 
-                    let resolved_secret_key = resolve_optional_runtime_env(secret_key).map_err(
-                        |e| {
-                            format!(
-                                "Failed to resolve runtime environment variable for table '{}' field 'awsSecretAccessKey': {}",
-                                table.name, e
-                            )
-                        },
-                    )?;
+                let resolved_secret_key = resolve_optional_runtime_env(secret_key).map_err(
+                    |e| {
+                        format!(
+                            "Failed to resolve runtime environment variable for table '{}' field 'awsSecretAccessKey': {}",
+                            table.name, e
+                        )
+                    },
+                )?;
 
-                    *access_key = resolved_access_key;
-                    *secret_key = resolved_secret_key;
+                *access_key = resolved_access_key;
+                *secret_key = resolved_secret_key;
 
-                    log::debug!(
-                        "Resolved {} credentials for table '{}' at runtime",
-                        engine_name,
-                        table.name
-                    );
+                log::debug!(
+                    "Resolved {} credentials for table '{}' at runtime",
+                    engine_name,
+                    table.name
+                );
 
-                    Ok(())
-                };
+                Ok(())
+            };
 
-                match engine {
-                    ClickhouseEngine::S3Queue {
-                        aws_access_key_id,
-                        aws_secret_access_key,
-                        ..
-                    } => {
-                        resolve_aws_credentials(
-                            aws_access_key_id,
-                            aws_secret_access_key,
-                            "S3Queue",
-                        )?;
-                        should_recalc_hash = true;
-                    }
-                    ClickhouseEngine::S3 {
-                        aws_access_key_id,
-                        aws_secret_access_key,
-                        ..
-                    } => {
-                        resolve_aws_credentials(aws_access_key_id, aws_secret_access_key, "S3")?;
-                        should_recalc_hash = true;
-                    }
-                    ClickhouseEngine::IcebergS3 {
-                        aws_access_key_id,
-                        aws_secret_access_key,
-                        ..
-                    } => {
-                        resolve_aws_credentials(
-                            aws_access_key_id,
-                            aws_secret_access_key,
-                            "IcebergS3",
-                        )?;
-                        should_recalc_hash = true;
-                    }
-                    _ => {
-                        // No credentials to resolve for other engine types
-                    }
+            match &mut table.engine {
+                ClickhouseEngine::S3Queue {
+                    aws_access_key_id,
+                    aws_secret_access_key,
+                    ..
+                } => {
+                    resolve_aws_credentials(aws_access_key_id, aws_secret_access_key, "S3Queue")?;
+                    should_recalc_hash = true;
+                }
+                ClickhouseEngine::S3 {
+                    aws_access_key_id,
+                    aws_secret_access_key,
+                    ..
+                } => {
+                    resolve_aws_credentials(aws_access_key_id, aws_secret_access_key, "S3")?;
+                    should_recalc_hash = true;
+                }
+                ClickhouseEngine::IcebergS3 {
+                    aws_access_key_id,
+                    aws_secret_access_key,
+                    ..
+                } => {
+                    resolve_aws_credentials(aws_access_key_id, aws_secret_access_key, "IcebergS3")?;
+                    should_recalc_hash = true;
+                }
+                _ => {
+                    // No credentials to resolve for other engine types
                 }
             }
 
