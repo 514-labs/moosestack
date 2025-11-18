@@ -13,6 +13,7 @@ use std::fmt::Write;
 use std::sync::LazyLock;
 
 use crate::infrastructure::olap::clickhouse::extract_version_from_table_name;
+use crate::infrastructure::olap::clickhouse::queries::BufferEngine;
 /// Language-agnostic sanitization: replace common separators with spaces to create word boundaries.
 pub use ident::sanitize_identifier;
 
@@ -892,7 +893,7 @@ pub fn tables_to_python(tables: &[Table], life_cycle: Option<LifeCycle>) -> Stri
                 }
                 writeln!(output, "    ),").unwrap();
             }
-            crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine::Buffer {
+            crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine::Buffer(BufferEngine {
                 target_database,
                 target_table,
                 num_layers,
@@ -905,7 +906,7 @@ pub fn tables_to_python(tables: &[Table], life_cycle: Option<LifeCycle>) -> Stri
                 flush_time,
                 flush_rows,
                 flush_bytes,
-            } => {
+            }) => {
                 writeln!(output, "    engine=BufferEngine(").unwrap();
                 writeln!(output, "        target_database={:?},", target_database).unwrap();
                 writeln!(output, "        target_table={:?},", target_table).unwrap();

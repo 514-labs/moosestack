@@ -59,6 +59,7 @@ use super::{
     infrastructure_map::{InfrastructureMap, PrimitiveSignature, PrimitiveTypes},
 };
 use crate::framework::core::infrastructure::table::OrderBy;
+use crate::infrastructure::olap::clickhouse::queries::BufferEngine;
 use crate::{
     framework::{
         consumption::model::ConsumptionQueryParam, languages::SupportedLanguages,
@@ -829,7 +830,7 @@ impl PartialInfrastructureMap {
                 })
             }
 
-            Some(EngineConfig::Buffer(config)) => Ok(ClickhouseEngine::Buffer {
+            Some(EngineConfig::Buffer(config)) => Ok(ClickhouseEngine::Buffer(BufferEngine {
                 target_database: config.target_database.clone(),
                 target_table: config.target_table.clone(),
                 num_layers: config.num_layers,
@@ -842,7 +843,7 @@ impl PartialInfrastructureMap {
                 flush_time: config.flush_time,
                 flush_rows: config.flush_rows,
                 flush_bytes: config.flush_bytes,
-            }),
+            })),
 
             Some(EngineConfig::Distributed(config)) => Ok(ClickhouseEngine::Distributed {
                 cluster: config.cluster.clone(),

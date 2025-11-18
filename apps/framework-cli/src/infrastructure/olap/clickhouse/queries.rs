@@ -135,6 +135,99 @@ ORDER BY ({{order_by_string}}){{/if}}{{#if ttl_clause}}
 TTL {{ttl_clause}}{{/if}}{{#if settings}}
 SETTINGS {{settings}}{{/if}}"#;
 
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+pub struct BufferEngine {
+    // Target database name
+    pub target_database: String,
+    // Target table name
+    pub target_table: String,
+    // Number of buffer layers (typically 16)
+    pub num_layers: u32,
+    // Minimum time in seconds before flushing
+    pub min_time: u32,
+    // Maximum time in seconds before flushing
+    pub max_time: u32,
+    // Minimum number of rows before flushing
+    pub min_rows: u64,
+    // Maximum number of rows before flushing
+    pub max_rows: u64,
+    // Minimum bytes before flushing
+    pub min_bytes: u64,
+    // Maximum bytes before flushing
+    pub max_bytes: u64,
+    // Optional flush time
+    pub flush_time: Option<u32>,
+    // Optional flush rows
+    pub flush_rows: Option<u64>,
+    // Optional flush bytes
+    pub flush_bytes: Option<u64>,
+}
+
+impl BufferEngine {
+    /// Helper function to append nested optional flush parameters for Buffer engine
+    /// Returns comma-separated string of flush parameters that are present
+    /// Validates nested optional constraint: flush_rows requires flush_time, flush_bytes requires both
+    fn append_buffer_flush_params(
+        flush_time: &Option<u32>,
+        flush_rows: &Option<u64>,
+        flush_bytes: &Option<u64>,
+    ) -> String {
+        // Warn about invalid combinations (but serialize what we can)
+        if flush_rows.is_some() && flush_time.is_none() {
+            log::warn!(
+                "Buffer engine has flush_rows but no flush_time - flush_rows will be ignored. \
+                 This violates ClickHouse nested optional constraint."
+            );
+        }
+        if flush_bytes.is_some() && (flush_time.is_none() || flush_rows.is_none()) {
+            log::warn!(
+                "Buffer engine has flush_bytes but missing flush_time or flush_rows - flush_bytes will be ignored. \
+                 This violates ClickHouse nested optional constraint."
+            );
+        }
+
+        let mut params = String::new();
+        if let Some(ft) = flush_time {
+            params.push_str(&format!(", {}", ft));
+
+            if let Some(fr) = flush_rows {
+                params.push_str(&format!(", {}", fr));
+
+                if let Some(fb) = flush_bytes {
+                    params.push_str(&format!(", {}", fb));
+                }
+            }
+        }
+        params
+    }
+
+    /// Serialize Buffer engine to string format for proto storage
+    /// Format: Buffer('database', 'table', num_layers, min_time, max_time, min_rows, max_rows, min_bytes, max_bytes[, flush_time[, flush_rows[, flush_bytes]]])
+    /// Note: flush parameters are nested optionals - you cannot skip earlier parameters
+    fn build_string(&self) -> String {
+        let mut result = format!(
+            "Buffer('{}', '{}', {}, {}, {}, {}, {}, {}, {}",
+            self.target_database,
+            self.target_table,
+            self.num_layers,
+            self.min_time,
+            self.max_time,
+            self.min_rows,
+            self.max_rows,
+            self.min_bytes,
+            self.max_bytes
+        );
+
+        result.push_str(&Self::append_buffer_flush_params(
+            &self.flush_time,
+            &self.flush_rows,
+            &self.flush_bytes,
+        ));
+        result.push(')');
+        result
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[allow(clippy::large_enum_variant)] // S3Queue has many fields, but this is acceptable for our use case
 #[derive(Default)]
@@ -216,32 +309,7 @@ pub enum ClickhouseEngine {
         // Partition columns in data file
         partition_columns_in_data_file: Option<String>,
     },
-    Buffer {
-        // Target database name
-        target_database: String,
-        // Target table name
-        target_table: String,
-        // Number of buffer layers (typically 16)
-        num_layers: u32,
-        // Minimum time in seconds before flushing
-        min_time: u32,
-        // Maximum time in seconds before flushing
-        max_time: u32,
-        // Minimum number of rows before flushing
-        min_rows: u64,
-        // Maximum number of rows before flushing
-        max_rows: u64,
-        // Minimum bytes before flushing
-        min_bytes: u64,
-        // Maximum bytes before flushing
-        max_bytes: u64,
-        // Optional flush time
-        flush_time: Option<u32>,
-        // Optional flush rows
-        flush_rows: Option<u64>,
-        // Optional flush bytes
-        flush_bytes: Option<u64>,
-    },
+    Buffer(BufferEngine),
     Distributed {
         // Cluster name from ClickHouse configuration
         cluster: String,
@@ -329,33 +397,7 @@ impl Into<String> for ClickhouseEngine {
                 &partition_strategy,
                 &partition_columns_in_data_file,
             ),
-            ClickhouseEngine::Buffer {
-                target_database,
-                target_table,
-                num_layers,
-                min_time,
-                max_time,
-                min_rows,
-                max_rows,
-                min_bytes,
-                max_bytes,
-                flush_time,
-                flush_rows,
-                flush_bytes,
-            } => Self::serialize_buffer(
-                &target_database,
-                &target_table,
-                num_layers,
-                min_time,
-                max_time,
-                min_rows,
-                max_rows,
-                min_bytes,
-                max_bytes,
-                &flush_time,
-                &flush_rows,
-                &flush_bytes,
-            ),
+            ClickhouseEngine::Buffer(buffer_engine) => buffer_engine.build_string(),
             ClickhouseEngine::Distributed {
                 cluster,
                 target_database,
@@ -858,7 +900,7 @@ impl ClickhouseEngine {
                 None
             };
 
-            Ok(ClickhouseEngine::Buffer {
+            Ok(ClickhouseEngine::Buffer(BufferEngine {
                 target_database,
                 target_table,
                 num_layers,
@@ -871,7 +913,7 @@ impl ClickhouseEngine {
                 flush_time,
                 flush_rows,
                 flush_bytes,
-            })
+            }))
         } else {
             Err(original_value)
         }
@@ -1061,33 +1103,7 @@ impl ClickhouseEngine {
                 partition_strategy,
                 partition_columns_in_data_file,
             ),
-            ClickhouseEngine::Buffer {
-                target_database,
-                target_table,
-                num_layers,
-                min_time,
-                max_time,
-                min_rows,
-                max_rows,
-                min_bytes,
-                max_bytes,
-                flush_time,
-                flush_rows,
-                flush_bytes,
-            } => Self::serialize_buffer_proto(
-                target_database,
-                target_table,
-                *num_layers,
-                *min_time,
-                *max_time,
-                *min_rows,
-                *max_rows,
-                *min_bytes,
-                *max_bytes,
-                flush_time,
-                flush_rows,
-                flush_bytes,
-            ),
+            ClickhouseEngine::Buffer(buffer_engine) => buffer_engine.build_string(),
             ClickhouseEngine::Distributed {
                 cluster,
                 target_database,
@@ -1240,43 +1256,6 @@ impl ClickhouseEngine {
         result
     }
 
-    /// Helper function to append nested optional flush parameters for Buffer engine
-    /// Returns comma-separated string of flush parameters that are present
-    /// Validates nested optional constraint: flush_rows requires flush_time, flush_bytes requires both
-    fn append_buffer_flush_params(
-        flush_time: &Option<u32>,
-        flush_rows: &Option<u64>,
-        flush_bytes: &Option<u64>,
-    ) -> String {
-        // Warn about invalid combinations (but serialize what we can)
-        if flush_rows.is_some() && flush_time.is_none() {
-            log::warn!(
-                "Buffer engine has flush_rows but no flush_time - flush_rows will be ignored. \
-                 This violates ClickHouse nested optional constraint."
-            );
-        }
-        if flush_bytes.is_some() && (flush_time.is_none() || flush_rows.is_none()) {
-            log::warn!(
-                "Buffer engine has flush_bytes but missing flush_time or flush_rows - flush_bytes will be ignored. \
-                 This violates ClickHouse nested optional constraint."
-            );
-        }
-
-        let mut params = String::new();
-        if let Some(ft) = flush_time {
-            params.push_str(&format!(", {}", ft));
-
-            if let Some(fr) = flush_rows {
-                params.push_str(&format!(", {}", fr));
-
-                if let Some(fb) = flush_bytes {
-                    params.push_str(&format!(", {}", fb));
-                }
-            }
-        }
-        params
-    }
-
     /// Helper function to append nested optional parameters for Distributed engine
     /// Returns comma-separated string of parameters that are present
     /// Validates nested optional constraint: policy_name requires sharding_key
@@ -1306,45 +1285,6 @@ impl ClickhouseEngine {
             }
         }
         params
-    }
-
-    /// Serialize Buffer engine to string format for proto storage
-    /// Format: Buffer('database', 'table', num_layers, min_time, max_time, min_rows, max_rows, min_bytes, max_bytes[, flush_time[, flush_rows[, flush_bytes]]])
-    #[allow(clippy::too_many_arguments)]
-    fn serialize_buffer_proto(
-        target_database: &str,
-        target_table: &str,
-        num_layers: u32,
-        min_time: u32,
-        max_time: u32,
-        min_rows: u64,
-        max_rows: u64,
-        min_bytes: u64,
-        max_bytes: u64,
-        flush_time: &Option<u32>,
-        flush_rows: &Option<u64>,
-        flush_bytes: &Option<u64>,
-    ) -> String {
-        let mut result = format!(
-            "Buffer('{}', '{}', {}, {}, {}, {}, {}, {}, {}",
-            target_database,
-            target_table,
-            num_layers,
-            min_time,
-            max_time,
-            min_rows,
-            max_rows,
-            min_bytes,
-            max_bytes
-        );
-
-        result.push_str(&Self::append_buffer_flush_params(
-            flush_time,
-            flush_rows,
-            flush_bytes,
-        ));
-        result.push(')');
-        result
     }
 
     /// Serialize Distributed engine to string format for proto storage
@@ -1449,46 +1389,6 @@ impl ClickhouseEngine {
             result.push_str(&format!(", partition_columns='{}'", pc));
         }
 
-        result.push(')');
-        result
-    }
-
-    /// Serialize Buffer engine to string format
-    /// Format: Buffer('database', 'table', num_layers, min_time, max_time, min_rows, max_rows, min_bytes, max_bytes[, flush_time[, flush_rows[, flush_bytes]]])
-    /// Note: flush parameters are nested optionals - you cannot skip earlier parameters
-    #[allow(clippy::too_many_arguments)]
-    fn serialize_buffer(
-        target_database: &str,
-        target_table: &str,
-        num_layers: u32,
-        min_time: u32,
-        max_time: u32,
-        min_rows: u64,
-        max_rows: u64,
-        min_bytes: u64,
-        max_bytes: u64,
-        flush_time: &Option<u32>,
-        flush_rows: &Option<u64>,
-        flush_bytes: &Option<u64>,
-    ) -> String {
-        let mut result = format!(
-            "Buffer('{}', '{}', {}, {}, {}, {}, {}, {}, {}",
-            target_database,
-            target_table,
-            num_layers,
-            min_time,
-            max_time,
-            min_rows,
-            max_rows,
-            min_bytes,
-            max_bytes
-        );
-
-        result.push_str(&Self::append_buffer_flush_params(
-            flush_time,
-            flush_rows,
-            flush_bytes,
-        ));
         result.push(')');
         result
     }
@@ -2053,7 +1953,7 @@ impl ClickhouseEngine {
                     hasher.update("null".as_bytes());
                 }
             }
-            ClickhouseEngine::Buffer {
+            ClickhouseEngine::Buffer(BufferEngine {
                 target_database,
                 target_table,
                 num_layers,
@@ -2066,7 +1966,7 @@ impl ClickhouseEngine {
                 flush_time,
                 flush_rows,
                 flush_bytes,
-            } => {
+            }) => {
                 hasher.update("Buffer".as_bytes());
                 hasher.update(target_database.as_bytes());
                 hasher.update(target_table.as_bytes());
@@ -2463,7 +2363,7 @@ pub fn create_table_query(
 
             format!("S3({})", engine_parts.join(", "))
         }
-        ClickhouseEngine::Buffer {
+        ClickhouseEngine::Buffer(BufferEngine {
             target_database,
             target_table,
             num_layers,
@@ -2476,7 +2376,7 @@ pub fn create_table_query(
             flush_time,
             flush_rows,
             flush_bytes,
-        } => {
+        }) => {
             // Warn about invalid combinations
             if flush_rows.is_some() && flush_time.is_none() {
                 log::warn!(
@@ -5030,7 +4930,7 @@ ENGINE = S3Queue('s3://my-bucket/data/*.csv', NOSIGN, 'CSV')"#;
     #[test]
     fn test_buffer_engine_round_trip() {
         // Test Buffer engine with all parameters
-        let engine = ClickhouseEngine::Buffer {
+        let engine = ClickhouseEngine::Buffer(BufferEngine {
             target_database: "db".to_string(),
             target_table: "table".to_string(),
             num_layers: 16,
@@ -5043,7 +4943,7 @@ ENGINE = S3Queue('s3://my-bucket/data/*.csv', NOSIGN, 'CSV')"#;
             flush_time: Some(5),
             flush_rows: Some(50000),
             flush_bytes: Some(50000000),
-        };
+        });
 
         let serialized: String = engine.clone().into();
         assert_eq!(
@@ -5053,7 +4953,7 @@ ENGINE = S3Queue('s3://my-bucket/data/*.csv', NOSIGN, 'CSV')"#;
 
         let parsed = ClickhouseEngine::try_from(serialized.as_str()).unwrap();
         match parsed {
-            ClickhouseEngine::Buffer {
+            ClickhouseEngine::Buffer(BufferEngine {
                 target_database,
                 target_table,
                 num_layers,
@@ -5066,7 +4966,7 @@ ENGINE = S3Queue('s3://my-bucket/data/*.csv', NOSIGN, 'CSV')"#;
                 flush_time,
                 flush_rows,
                 flush_bytes,
-            } => {
+            }) => {
                 assert_eq!(target_database, "db");
                 assert_eq!(target_table, "table");
                 assert_eq!(num_layers, 16);
@@ -5084,7 +4984,7 @@ ENGINE = S3Queue('s3://my-bucket/data/*.csv', NOSIGN, 'CSV')"#;
         }
 
         // Test Buffer engine without optional parameters
-        let engine2 = ClickhouseEngine::Buffer {
+        let engine2 = ClickhouseEngine::Buffer(BufferEngine {
             target_database: "mydb".to_string(),
             target_table: "mytable".to_string(),
             num_layers: 8,
@@ -5097,7 +4997,7 @@ ENGINE = S3Queue('s3://my-bucket/data/*.csv', NOSIGN, 'CSV')"#;
             flush_time: None,
             flush_rows: None,
             flush_bytes: None,
-        };
+        });
 
         let serialized2: String = engine2.clone().into();
         assert_eq!(
@@ -5107,7 +5007,7 @@ ENGINE = S3Queue('s3://my-bucket/data/*.csv', NOSIGN, 'CSV')"#;
 
         let parsed2 = ClickhouseEngine::try_from(serialized2.as_str()).unwrap();
         match parsed2 {
-            ClickhouseEngine::Buffer {
+            ClickhouseEngine::Buffer(BufferEngine {
                 target_database,
                 target_table,
                 num_layers,
@@ -5120,7 +5020,7 @@ ENGINE = S3Queue('s3://my-bucket/data/*.csv', NOSIGN, 'CSV')"#;
                 flush_time,
                 flush_rows,
                 flush_bytes,
-            } => {
+            }) => {
                 assert_eq!(target_database, "mydb");
                 assert_eq!(target_table, "mytable");
                 assert_eq!(num_layers, 8);
@@ -5138,7 +5038,7 @@ ENGINE = S3Queue('s3://my-bucket/data/*.csv', NOSIGN, 'CSV')"#;
         }
 
         // Test Buffer engine with only flush_time (nested optional - level 1)
-        let engine3 = ClickhouseEngine::Buffer {
+        let engine3 = ClickhouseEngine::Buffer(BufferEngine {
             target_database: "db3".to_string(),
             target_table: "table3".to_string(),
             num_layers: 4,
@@ -5151,7 +5051,7 @@ ENGINE = S3Queue('s3://my-bucket/data/*.csv', NOSIGN, 'CSV')"#;
             flush_time: Some(3),
             flush_rows: None,
             flush_bytes: None,
-        };
+        });
 
         let serialized3: String = engine3.clone().into();
         assert_eq!(
@@ -5161,7 +5061,7 @@ ENGINE = S3Queue('s3://my-bucket/data/*.csv', NOSIGN, 'CSV')"#;
 
         let parsed3 = ClickhouseEngine::try_from(serialized3.as_str()).unwrap();
         match parsed3 {
-            ClickhouseEngine::Buffer {
+            ClickhouseEngine::Buffer(BufferEngine {
                 target_database,
                 target_table,
                 num_layers,
@@ -5174,7 +5074,7 @@ ENGINE = S3Queue('s3://my-bucket/data/*.csv', NOSIGN, 'CSV')"#;
                 flush_time,
                 flush_rows,
                 flush_bytes,
-            } => {
+            }) => {
                 assert_eq!(target_database, "db3");
                 assert_eq!(target_table, "table3");
                 assert_eq!(num_layers, 4);
@@ -5192,7 +5092,7 @@ ENGINE = S3Queue('s3://my-bucket/data/*.csv', NOSIGN, 'CSV')"#;
         }
 
         // Test Buffer engine with flush_time and flush_rows (nested optional - level 2)
-        let engine4 = ClickhouseEngine::Buffer {
+        let engine4 = ClickhouseEngine::Buffer(BufferEngine {
             target_database: "db4".to_string(),
             target_table: "table4".to_string(),
             num_layers: 2,
@@ -5205,7 +5105,7 @@ ENGINE = S3Queue('s3://my-bucket/data/*.csv', NOSIGN, 'CSV')"#;
             flush_time: Some(7),
             flush_rows: Some(15000),
             flush_bytes: None,
-        };
+        });
 
         let serialized4: String = engine4.clone().into();
         assert_eq!(
@@ -5215,7 +5115,7 @@ ENGINE = S3Queue('s3://my-bucket/data/*.csv', NOSIGN, 'CSV')"#;
 
         let parsed4 = ClickhouseEngine::try_from(serialized4.as_str()).unwrap();
         match parsed4 {
-            ClickhouseEngine::Buffer {
+            ClickhouseEngine::Buffer(BufferEngine {
                 target_database,
                 target_table,
                 num_layers,
@@ -5228,7 +5128,7 @@ ENGINE = S3Queue('s3://my-bucket/data/*.csv', NOSIGN, 'CSV')"#;
                 flush_time,
                 flush_rows,
                 flush_bytes,
-            } => {
+            }) => {
                 assert_eq!(target_database, "db4");
                 assert_eq!(target_table, "table4");
                 assert_eq!(num_layers, 2);
@@ -5387,7 +5287,7 @@ ENGINE = S3Queue('s3://my-bucket/data/*.csv', NOSIGN, 'CSV')"#;
     #[test]
     fn test_buffer_invalid_flush_combinations_logged() {
         // Test: flush_rows without flush_time - should warn and ignore flush_rows
-        let engine = ClickhouseEngine::Buffer {
+        let engine = ClickhouseEngine::Buffer(BufferEngine {
             target_database: "db".to_string(),
             target_table: "table".to_string(),
             num_layers: 16,
@@ -5400,7 +5300,7 @@ ENGINE = S3Queue('s3://my-bucket/data/*.csv', NOSIGN, 'CSV')"#;
             flush_time: None,
             flush_rows: Some(50000), // Invalid: no flush_time
             flush_bytes: None,
-        };
+        });
 
         let serialized: String = engine.clone().into();
         // flush_rows should be ignored, so only required params present
@@ -5410,7 +5310,7 @@ ENGINE = S3Queue('s3://my-bucket/data/*.csv', NOSIGN, 'CSV')"#;
         );
 
         // Test: flush_bytes without flush_time or flush_rows - should warn and ignore flush_bytes
-        let engine2 = ClickhouseEngine::Buffer {
+        let engine2 = ClickhouseEngine::Buffer(BufferEngine {
             target_database: "db2".to_string(),
             target_table: "table2".to_string(),
             num_layers: 8,
@@ -5423,7 +5323,7 @@ ENGINE = S3Queue('s3://my-bucket/data/*.csv', NOSIGN, 'CSV')"#;
             flush_time: Some(3),
             flush_rows: None,
             flush_bytes: Some(25000000), // Invalid: no flush_rows
-        };
+        });
 
         let serialized2: String = engine2.clone().into();
         // flush_bytes should be ignored, only flush_time present
