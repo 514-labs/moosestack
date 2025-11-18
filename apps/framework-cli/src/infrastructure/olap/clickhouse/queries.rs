@@ -135,6 +135,99 @@ ORDER BY ({{order_by_string}}){{/if}}{{#if ttl_clause}}
 TTL {{ttl_clause}}{{/if}}{{#if settings}}
 SETTINGS {{settings}}{{/if}}"#;
 
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+pub struct BufferEngine {
+    // Target database name
+    pub target_database: String,
+    // Target table name
+    pub target_table: String,
+    // Number of buffer layers (typically 16)
+    pub num_layers: u32,
+    // Minimum time in seconds before flushing
+    pub min_time: u32,
+    // Maximum time in seconds before flushing
+    pub max_time: u32,
+    // Minimum number of rows before flushing
+    pub min_rows: u64,
+    // Maximum number of rows before flushing
+    pub max_rows: u64,
+    // Minimum bytes before flushing
+    pub min_bytes: u64,
+    // Maximum bytes before flushing
+    pub max_bytes: u64,
+    // Optional flush time
+    pub flush_time: Option<u32>,
+    // Optional flush rows
+    pub flush_rows: Option<u64>,
+    // Optional flush bytes
+    pub flush_bytes: Option<u64>,
+}
+
+impl BufferEngine {
+    /// Helper function to append nested optional flush parameters for Buffer engine
+    /// Returns comma-separated string of flush parameters that are present
+    /// Validates nested optional constraint: flush_rows requires flush_time, flush_bytes requires both
+    fn append_buffer_flush_params(
+        flush_time: &Option<u32>,
+        flush_rows: &Option<u64>,
+        flush_bytes: &Option<u64>,
+    ) -> String {
+        // Warn about invalid combinations (but serialize what we can)
+        if flush_rows.is_some() && flush_time.is_none() {
+            log::warn!(
+                "Buffer engine has flush_rows but no flush_time - flush_rows will be ignored. \
+                 This violates ClickHouse nested optional constraint."
+            );
+        }
+        if flush_bytes.is_some() && (flush_time.is_none() || flush_rows.is_none()) {
+            log::warn!(
+                "Buffer engine has flush_bytes but missing flush_time or flush_rows - flush_bytes will be ignored. \
+                 This violates ClickHouse nested optional constraint."
+            );
+        }
+
+        let mut params = String::new();
+        if let Some(ft) = flush_time {
+            params.push_str(&format!(", {}", ft));
+
+            if let Some(fr) = flush_rows {
+                params.push_str(&format!(", {}", fr));
+
+                if let Some(fb) = flush_bytes {
+                    params.push_str(&format!(", {}", fb));
+                }
+            }
+        }
+        params
+    }
+
+    /// Serialize Buffer engine to string format for proto storage
+    /// Format: Buffer('database', 'table', num_layers, min_time, max_time, min_rows, max_rows, min_bytes, max_bytes[, flush_time[, flush_rows[, flush_bytes]]])
+    /// Note: flush parameters are nested optionals - you cannot skip earlier parameters
+    fn build_string(&self) -> String {
+        let mut result = format!(
+            "Buffer('{}', '{}', {}, {}, {}, {}, {}, {}, {}",
+            self.target_database,
+            self.target_table,
+            self.num_layers,
+            self.min_time,
+            self.max_time,
+            self.min_rows,
+            self.max_rows,
+            self.min_bytes,
+            self.max_bytes
+        );
+
+        result.push_str(&Self::append_buffer_flush_params(
+            &self.flush_time,
+            &self.flush_rows,
+            &self.flush_bytes,
+        ));
+        result.push(')');
+        result
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[allow(clippy::large_enum_variant)] // S3Queue has many fields, but this is acceptable for our use case
 #[derive(Default)]
@@ -216,32 +309,7 @@ pub enum ClickhouseEngine {
         // Partition columns in data file
         partition_columns_in_data_file: Option<String>,
     },
-    Buffer {
-        // Target database name
-        target_database: String,
-        // Target table name
-        target_table: String,
-        // Number of buffer layers (typically 16)
-        num_layers: u32,
-        // Minimum time in seconds before flushing
-        min_time: u32,
-        // Maximum time in seconds before flushing
-        max_time: u32,
-        // Minimum number of rows before flushing
-        min_rows: u64,
-        // Maximum number of rows before flushing
-        max_rows: u64,
-        // Minimum bytes before flushing
-        min_bytes: u64,
-        // Maximum bytes before flushing
-        max_bytes: u64,
-        // Optional flush time
-        flush_time: Option<u32>,
-        // Optional flush rows
-        flush_rows: Option<u64>,
-        // Optional flush bytes
-        flush_bytes: Option<u64>,
-    },
+    Buffer(BufferEngine),
     Distributed {
         // Cluster name from ClickHouse configuration
         cluster: String,
@@ -329,33 +397,7 @@ impl Into<String> for ClickhouseEngine {
                 &partition_strategy,
                 &partition_columns_in_data_file,
             ),
-            ClickhouseEngine::Buffer {
-                target_database,
-                target_table,
-                num_layers,
-                min_time,
-                max_time,
-                min_rows,
-                max_rows,
-                min_bytes,
-                max_bytes,
-                flush_time,
-                flush_rows,
-                flush_bytes,
-            } => Self::serialize_buffer(
-                &target_database,
-                &target_table,
-                num_layers,
-                min_time,
-                max_time,
-                min_rows,
-                max_rows,
-                min_bytes,
-                max_bytes,
-                &flush_time,
-                &flush_rows,
-                &flush_bytes,
-            ),
+            ClickhouseEngine::Buffer(buffer_engine) => buffer_engine.build_string(),
             ClickhouseEngine::Distributed {
                 cluster,
                 target_database,
@@ -369,6 +411,9 @@ impl Into<String> for ClickhouseEngine {
                 &sharding_key,
                 &policy_name,
             ),
+            // this might sound obvious, but when you edit this function
+            // please check if you have changed the parsing side (try_from) as well
+            // especially if you're an LLM
         }
     }
 }
@@ -745,6 +790,8 @@ impl ClickhouseEngine {
             }
             s if s.starts_with("S3Queue(") => Self::parse_regular_s3queue(s, value),
             s if s.starts_with("S3(") => Self::parse_regular_s3(s, value),
+            s if s.starts_with("Buffer(") => Self::parse_regular_buffer(s, value),
+            s if s.starts_with("Distributed(") => Self::parse_regular_distributed(s, value),
             _ => Err(value),
         }
     }
@@ -801,6 +848,119 @@ impl ClickhouseEngine {
             .and_then(|s| s.strip_suffix(")"))
         {
             Self::parse_summing_merge_tree(content).map_err(|_| original_value)
+        } else {
+            Err(original_value)
+        }
+    }
+
+    /// Parse regular Buffer with parameters
+    /// Format: Buffer('db', 'table', num_layers, min_time, max_time, min_rows, max_rows, min_bytes, max_bytes[, flush_time][, flush_rows][, flush_bytes])
+    fn parse_regular_buffer<'a>(
+        engine_name: &str,
+        original_value: &'a str,
+    ) -> Result<Self, &'a str> {
+        if let Some(content) = engine_name
+            .strip_prefix("Buffer(")
+            .and_then(|s| s.strip_suffix(")"))
+        {
+            let params = parse_quoted_csv(content);
+
+            // Need at least 9 parameters (database, table, and 7 numeric values)
+            if params.len() < 9 {
+                return Err(original_value);
+            }
+
+            // Parse required parameters
+            let target_database = params[0].clone();
+            let target_table = params[1].clone();
+            let num_layers = params[2].parse::<u32>().map_err(|_| original_value)?;
+            let min_time = params[3].parse::<u32>().map_err(|_| original_value)?;
+            let max_time = params[4].parse::<u32>().map_err(|_| original_value)?;
+            let min_rows = params[5].parse::<u64>().map_err(|_| original_value)?;
+            let max_rows = params[6].parse::<u64>().map_err(|_| original_value)?;
+            let min_bytes = params[7].parse::<u64>().map_err(|_| original_value)?;
+            let max_bytes = params[8].parse::<u64>().map_err(|_| original_value)?;
+
+            // Parse optional parameters (flush_time, flush_rows, flush_bytes)
+            let flush_time = if params.len() > 9 {
+                Some(params[9].parse::<u32>().map_err(|_| original_value)?)
+            } else {
+                None
+            };
+
+            let flush_rows = if params.len() > 10 {
+                Some(params[10].parse::<u64>().map_err(|_| original_value)?)
+            } else {
+                None
+            };
+
+            let flush_bytes = if params.len() > 11 {
+                Some(params[11].parse::<u64>().map_err(|_| original_value)?)
+            } else {
+                None
+            };
+
+            Ok(ClickhouseEngine::Buffer(BufferEngine {
+                target_database,
+                target_table,
+                num_layers,
+                min_time,
+                max_time,
+                min_rows,
+                max_rows,
+                min_bytes,
+                max_bytes,
+                flush_time,
+                flush_rows,
+                flush_bytes,
+            }))
+        } else {
+            Err(original_value)
+        }
+    }
+
+    /// Parse regular Distributed with parameters
+    /// Format: Distributed('cluster', 'database', 'table'[, sharding_key][, 'policy'])
+    fn parse_regular_distributed<'a>(
+        engine_name: &str,
+        original_value: &'a str,
+    ) -> Result<Self, &'a str> {
+        if let Some(content) = engine_name
+            .strip_prefix("Distributed(")
+            .and_then(|s| s.strip_suffix(")"))
+        {
+            let params = parse_quoted_csv(content);
+
+            // Need at least 3 parameters (cluster, database, table)
+            if params.len() < 3 {
+                return Err(original_value);
+            }
+
+            let cluster = params[0].clone();
+            let target_database = params[1].clone();
+            let target_table = params[2].clone();
+
+            // Parse optional sharding_key (4th parameter, not quoted - it's an expression)
+            let sharding_key = if params.len() > 3 {
+                Some(params[3].clone())
+            } else {
+                None
+            };
+
+            // Parse optional policy_name (5th parameter, quoted)
+            let policy_name = if params.len() > 4 {
+                Some(params[4].clone())
+            } else {
+                None
+            };
+
+            Ok(ClickhouseEngine::Distributed {
+                cluster,
+                target_database,
+                target_table,
+                sharding_key,
+                policy_name,
+            })
         } else {
             Err(original_value)
         }
@@ -943,33 +1103,7 @@ impl ClickhouseEngine {
                 partition_strategy,
                 partition_columns_in_data_file,
             ),
-            ClickhouseEngine::Buffer {
-                target_database,
-                target_table,
-                num_layers,
-                min_time,
-                max_time,
-                min_rows,
-                max_rows,
-                min_bytes,
-                max_bytes,
-                flush_time,
-                flush_rows,
-                flush_bytes,
-            } => Self::serialize_buffer_proto(
-                target_database,
-                target_table,
-                *num_layers,
-                *min_time,
-                *max_time,
-                *min_rows,
-                *max_rows,
-                *min_bytes,
-                *max_bytes,
-                flush_time,
-                flush_rows,
-                flush_bytes,
-            ),
+            ClickhouseEngine::Buffer(buffer_engine) => buffer_engine.build_string(),
             ClickhouseEngine::Distributed {
                 cluster,
                 target_database,
@@ -1122,49 +1256,35 @@ impl ClickhouseEngine {
         result
     }
 
-    /// Serialize Buffer engine to string format for proto storage
-    /// Format: Buffer('database', 'table', num_layers, min_time, max_time, min_rows, max_rows, min_bytes, max_bytes[, flush_time, flush_rows, flush_bytes])
-    #[allow(clippy::too_many_arguments)]
-    fn serialize_buffer_proto(
-        target_database: &str,
-        target_table: &str,
-        num_layers: u32,
-        min_time: u32,
-        max_time: u32,
-        min_rows: u64,
-        max_rows: u64,
-        min_bytes: u64,
-        max_bytes: u64,
-        flush_time: &Option<u32>,
-        flush_rows: &Option<u64>,
-        flush_bytes: &Option<u64>,
+    /// Helper function to append nested optional parameters for Distributed engine
+    /// Returns comma-separated string of parameters that are present
+    /// Validates nested optional constraint: policy_name requires sharding_key
+    fn append_distributed_optional_params(
+        sharding_key: &Option<String>,
+        policy_name: &Option<String>,
+        quote_policy: bool,
     ) -> String {
-        let mut result = format!(
-            "Buffer('{}', '{}', {}, {}, {}, {}, {}, {}, {}",
-            target_database,
-            target_table,
-            num_layers,
-            min_time,
-            max_time,
-            min_rows,
-            max_rows,
-            min_bytes,
-            max_bytes
-        );
-
-        // Add optional flush parameters
-        if let Some(ft) = flush_time {
-            result.push_str(&format!(", {}", ft));
-        }
-        if let Some(fr) = flush_rows {
-            result.push_str(&format!(", {}", fr));
-        }
-        if let Some(fb) = flush_bytes {
-            result.push_str(&format!(", {}", fb));
+        // Warn about invalid combination
+        if policy_name.is_some() && sharding_key.is_none() {
+            log::warn!(
+                "Distributed engine has policy_name but no sharding_key - policy_name will be ignored. \
+                 This violates ClickHouse nested optional constraint."
+            );
         }
 
-        result.push(')');
-        result
+        let mut params = String::new();
+        if let Some(key) = sharding_key {
+            params.push_str(&format!(", {}", key)); // Expression, not quoted
+
+            if let Some(policy) = policy_name {
+                if quote_policy {
+                    params.push_str(&format!(", '{}'", policy));
+                } else {
+                    params.push_str(&format!(", {}", policy));
+                }
+            }
+        }
+        params
     }
 
     /// Serialize Distributed engine to string format for proto storage
@@ -1181,16 +1301,11 @@ impl ClickhouseEngine {
             cluster, target_database, target_table
         );
 
-        // Add sharding key if present
-        if let Some(key) = sharding_key {
-            result.push_str(&format!(", {}", key));
-        }
-
-        // Add policy name if present
-        if let Some(policy) = policy_name {
-            result.push_str(&format!(", '{}'", policy));
-        }
-
+        result.push_str(&Self::append_distributed_optional_params(
+            sharding_key,
+            policy_name,
+            true,
+        ));
         result.push(')');
         result
     }
@@ -1278,55 +1393,8 @@ impl ClickhouseEngine {
         result
     }
 
-    /// Serialize Buffer engine to string format
-    /// Format: Buffer('database', 'table', num_layers, min_time, max_time, min_rows, max_rows, min_bytes, max_bytes[, flush_time, flush_rows, flush_bytes])
-    #[allow(clippy::too_many_arguments)]
-    fn serialize_buffer(
-        target_database: &str,
-        target_table: &str,
-        num_layers: u32,
-        min_time: u32,
-        max_time: u32,
-        min_rows: u64,
-        max_rows: u64,
-        min_bytes: u64,
-        max_bytes: u64,
-        flush_time: &Option<u32>,
-        flush_rows: &Option<u64>,
-        flush_bytes: &Option<u64>,
-    ) -> String {
-        let mut result = format!(
-            "Buffer('{}', '{}', {}, {}, {}, {}, {}, {}, {}",
-            target_database,
-            target_table,
-            num_layers,
-            min_time,
-            max_time,
-            min_rows,
-            max_rows,
-            min_bytes,
-            max_bytes
-        );
-
-        // Add optional flush parameters if any are present
-        if flush_time.is_some() || flush_rows.is_some() || flush_bytes.is_some() {
-            if let Some(ft) = flush_time {
-                result.push_str(&format!(", {}", ft));
-            }
-            if let Some(fr) = flush_rows {
-                result.push_str(&format!(", {}", fr));
-            }
-            if let Some(fb) = flush_bytes {
-                result.push_str(&format!(", {}", fb));
-            }
-        }
-
-        result.push(')');
-        result
-    }
-
     /// Serialize Distributed engine to string format
-    /// Format: Distributed('cluster', 'database', 'table'[, 'sharding_key'][, 'policy_name'])
+    /// Format: Distributed('cluster', 'database', 'table'[, sharding_key][, 'policy_name'])
     fn serialize_distributed(
         cluster: &str,
         target_database: &str,
@@ -1339,16 +1407,11 @@ impl ClickhouseEngine {
             cluster, target_database, target_table
         );
 
-        // Add sharding key if present
-        if let Some(key) = sharding_key {
-            result.push_str(&format!(", {}", key)); // Don't quote - it's an expression
-        }
-
-        // Add policy name if present
-        if let Some(policy) = policy_name {
-            result.push_str(&format!(", '{}'", policy));
-        }
-
+        result.push_str(&Self::append_distributed_optional_params(
+            sharding_key,
+            policy_name,
+            true,
+        ));
         result.push(')');
         result
     }
@@ -1890,7 +1953,7 @@ impl ClickhouseEngine {
                     hasher.update("null".as_bytes());
                 }
             }
-            ClickhouseEngine::Buffer {
+            ClickhouseEngine::Buffer(BufferEngine {
                 target_database,
                 target_table,
                 num_layers,
@@ -1903,7 +1966,7 @@ impl ClickhouseEngine {
                 flush_time,
                 flush_rows,
                 flush_bytes,
-            } => {
+            }) => {
                 hasher.update("Buffer".as_bytes());
                 hasher.update(target_database.as_bytes());
                 hasher.update(target_table.as_bytes());
@@ -2300,7 +2363,7 @@ pub fn create_table_query(
 
             format!("S3({})", engine_parts.join(", "))
         }
-        ClickhouseEngine::Buffer {
+        ClickhouseEngine::Buffer(BufferEngine {
             target_database,
             target_table,
             num_layers,
@@ -2313,7 +2376,21 @@ pub fn create_table_query(
             flush_time,
             flush_rows,
             flush_bytes,
-        } => {
+        }) => {
+            // Warn about invalid combinations
+            if flush_rows.is_some() && flush_time.is_none() {
+                log::warn!(
+                    "Buffer engine has flush_rows but no flush_time - flush_rows will be ignored. \
+                     This violates ClickHouse nested optional constraint."
+                );
+            }
+            if flush_bytes.is_some() && (flush_time.is_none() || flush_rows.is_none()) {
+                log::warn!(
+                    "Buffer engine has flush_bytes but missing flush_time or flush_rows - flush_bytes will be ignored. \
+                     This violates ClickHouse nested optional constraint."
+                );
+            }
+
             let mut engine_parts = vec![
                 format!("'{}'", target_database),
                 format!("'{}'", target_table),
@@ -2326,15 +2403,17 @@ pub fn create_table_query(
                 max_bytes.to_string(),
             ];
 
-            // Add optional flush parameters
+            // Add optional flush parameters following nested optional constraint
             if let Some(ft) = flush_time {
                 engine_parts.push(ft.to_string());
-            }
-            if let Some(fr) = flush_rows {
-                engine_parts.push(fr.to_string());
-            }
-            if let Some(fb) = flush_bytes {
-                engine_parts.push(fb.to_string());
+
+                if let Some(fr) = flush_rows {
+                    engine_parts.push(fr.to_string());
+
+                    if let Some(fb) = flush_bytes {
+                        engine_parts.push(fb.to_string());
+                    }
+                }
             }
 
             format!("Buffer({})", engine_parts.join(", "))
@@ -2346,18 +2425,27 @@ pub fn create_table_query(
             sharding_key,
             policy_name,
         } => {
+            // Warn about invalid combination
+            if policy_name.is_some() && sharding_key.is_none() {
+                log::warn!(
+                    "Distributed engine has policy_name but no sharding_key - policy_name will be ignored. \
+                     This violates ClickHouse nested optional constraint."
+                );
+            }
+
             let mut engine_parts = vec![
                 format!("'{}'", cluster),
                 format!("'{}'", target_database),
                 format!("'{}'", target_table),
             ];
 
-            // Add optional parameters
+            // Add optional parameters following nested optional constraint
             if let Some(key) = sharding_key {
                 engine_parts.push(key.clone()); // Don't quote - it's an expression
-            }
-            if let Some(policy) = policy_name {
-                engine_parts.push(format!("'{}'", policy));
+
+                if let Some(policy) = policy_name {
+                    engine_parts.push(format!("'{}'", policy));
+                }
             }
 
             format!("Distributed({})", engine_parts.join(", "))
@@ -4836,6 +4924,447 @@ ENGINE = S3Queue('s3://my-bucket/data/*.csv', NOSIGN, 'CSV')"#;
                 assert!(message.contains("requires both keeper_path and replica_name"));
             }
             _ => panic!("Expected InvalidParameters error"),
+        }
+    }
+
+    #[test]
+    fn test_buffer_engine_round_trip() {
+        // Test Buffer engine with all parameters
+        let engine = ClickhouseEngine::Buffer(BufferEngine {
+            target_database: "db".to_string(),
+            target_table: "table".to_string(),
+            num_layers: 16,
+            min_time: 10,
+            max_time: 100,
+            min_rows: 10000,
+            max_rows: 100000,
+            min_bytes: 10000000,
+            max_bytes: 100000000,
+            flush_time: Some(5),
+            flush_rows: Some(50000),
+            flush_bytes: Some(50000000),
+        });
+
+        let serialized: String = engine.clone().into();
+        assert_eq!(
+            serialized,
+            "Buffer('db', 'table', 16, 10, 100, 10000, 100000, 10000000, 100000000, 5, 50000, 50000000)"
+        );
+
+        let parsed = ClickhouseEngine::try_from(serialized.as_str()).unwrap();
+        match parsed {
+            ClickhouseEngine::Buffer(BufferEngine {
+                target_database,
+                target_table,
+                num_layers,
+                min_time,
+                max_time,
+                min_rows,
+                max_rows,
+                min_bytes,
+                max_bytes,
+                flush_time,
+                flush_rows,
+                flush_bytes,
+            }) => {
+                assert_eq!(target_database, "db");
+                assert_eq!(target_table, "table");
+                assert_eq!(num_layers, 16);
+                assert_eq!(min_time, 10);
+                assert_eq!(max_time, 100);
+                assert_eq!(min_rows, 10000);
+                assert_eq!(max_rows, 100000);
+                assert_eq!(min_bytes, 10000000);
+                assert_eq!(max_bytes, 100000000);
+                assert_eq!(flush_time, Some(5));
+                assert_eq!(flush_rows, Some(50000));
+                assert_eq!(flush_bytes, Some(50000000));
+            }
+            _ => panic!("Expected Buffer engine"),
+        }
+
+        // Test Buffer engine without optional parameters
+        let engine2 = ClickhouseEngine::Buffer(BufferEngine {
+            target_database: "mydb".to_string(),
+            target_table: "mytable".to_string(),
+            num_layers: 8,
+            min_time: 5,
+            max_time: 50,
+            min_rows: 5000,
+            max_rows: 50000,
+            min_bytes: 5000000,
+            max_bytes: 50000000,
+            flush_time: None,
+            flush_rows: None,
+            flush_bytes: None,
+        });
+
+        let serialized2: String = engine2.clone().into();
+        assert_eq!(
+            serialized2,
+            "Buffer('mydb', 'mytable', 8, 5, 50, 5000, 50000, 5000000, 50000000)"
+        );
+
+        let parsed2 = ClickhouseEngine::try_from(serialized2.as_str()).unwrap();
+        match parsed2 {
+            ClickhouseEngine::Buffer(BufferEngine {
+                target_database,
+                target_table,
+                num_layers,
+                min_time,
+                max_time,
+                min_rows,
+                max_rows,
+                min_bytes,
+                max_bytes,
+                flush_time,
+                flush_rows,
+                flush_bytes,
+            }) => {
+                assert_eq!(target_database, "mydb");
+                assert_eq!(target_table, "mytable");
+                assert_eq!(num_layers, 8);
+                assert_eq!(min_time, 5);
+                assert_eq!(max_time, 50);
+                assert_eq!(min_rows, 5000);
+                assert_eq!(max_rows, 50000);
+                assert_eq!(min_bytes, 5000000);
+                assert_eq!(max_bytes, 50000000);
+                assert_eq!(flush_time, None);
+                assert_eq!(flush_rows, None);
+                assert_eq!(flush_bytes, None);
+            }
+            _ => panic!("Expected Buffer engine"),
+        }
+
+        // Test Buffer engine with only flush_time (nested optional - level 1)
+        let engine3 = ClickhouseEngine::Buffer(BufferEngine {
+            target_database: "db3".to_string(),
+            target_table: "table3".to_string(),
+            num_layers: 4,
+            min_time: 1,
+            max_time: 10,
+            min_rows: 1000,
+            max_rows: 10000,
+            min_bytes: 1000000,
+            max_bytes: 10000000,
+            flush_time: Some(3),
+            flush_rows: None,
+            flush_bytes: None,
+        });
+
+        let serialized3: String = engine3.clone().into();
+        assert_eq!(
+            serialized3,
+            "Buffer('db3', 'table3', 4, 1, 10, 1000, 10000, 1000000, 10000000, 3)"
+        );
+
+        let parsed3 = ClickhouseEngine::try_from(serialized3.as_str()).unwrap();
+        match parsed3 {
+            ClickhouseEngine::Buffer(BufferEngine {
+                target_database,
+                target_table,
+                num_layers,
+                min_time,
+                max_time,
+                min_rows,
+                max_rows,
+                min_bytes,
+                max_bytes,
+                flush_time,
+                flush_rows,
+                flush_bytes,
+            }) => {
+                assert_eq!(target_database, "db3");
+                assert_eq!(target_table, "table3");
+                assert_eq!(num_layers, 4);
+                assert_eq!(min_time, 1);
+                assert_eq!(max_time, 10);
+                assert_eq!(min_rows, 1000);
+                assert_eq!(max_rows, 10000);
+                assert_eq!(min_bytes, 1000000);
+                assert_eq!(max_bytes, 10000000);
+                assert_eq!(flush_time, Some(3));
+                assert_eq!(flush_rows, None);
+                assert_eq!(flush_bytes, None);
+            }
+            _ => panic!("Expected Buffer engine"),
+        }
+
+        // Test Buffer engine with flush_time and flush_rows (nested optional - level 2)
+        let engine4 = ClickhouseEngine::Buffer(BufferEngine {
+            target_database: "db4".to_string(),
+            target_table: "table4".to_string(),
+            num_layers: 2,
+            min_time: 2,
+            max_time: 20,
+            min_rows: 2000,
+            max_rows: 20000,
+            min_bytes: 2000000,
+            max_bytes: 20000000,
+            flush_time: Some(7),
+            flush_rows: Some(15000),
+            flush_bytes: None,
+        });
+
+        let serialized4: String = engine4.clone().into();
+        assert_eq!(
+            serialized4,
+            "Buffer('db4', 'table4', 2, 2, 20, 2000, 20000, 2000000, 20000000, 7, 15000)"
+        );
+
+        let parsed4 = ClickhouseEngine::try_from(serialized4.as_str()).unwrap();
+        match parsed4 {
+            ClickhouseEngine::Buffer(BufferEngine {
+                target_database,
+                target_table,
+                num_layers,
+                min_time,
+                max_time,
+                min_rows,
+                max_rows,
+                min_bytes,
+                max_bytes,
+                flush_time,
+                flush_rows,
+                flush_bytes,
+            }) => {
+                assert_eq!(target_database, "db4");
+                assert_eq!(target_table, "table4");
+                assert_eq!(num_layers, 2);
+                assert_eq!(min_time, 2);
+                assert_eq!(max_time, 20);
+                assert_eq!(min_rows, 2000);
+                assert_eq!(max_rows, 20000);
+                assert_eq!(min_bytes, 2000000);
+                assert_eq!(max_bytes, 20000000);
+                assert_eq!(flush_time, Some(7));
+                assert_eq!(flush_rows, Some(15000));
+                assert_eq!(flush_bytes, None);
+            }
+            _ => panic!("Expected Buffer engine"),
+        }
+    }
+
+    #[test]
+    fn test_distributed_engine_round_trip() {
+        // Test Distributed engine with all parameters
+        let engine = ClickhouseEngine::Distributed {
+            cluster: "my_cluster".to_string(),
+            target_database: "db".to_string(),
+            target_table: "table".to_string(),
+            sharding_key: Some("cityHash64(user_id)".to_string()),
+            policy_name: Some("my_policy".to_string()),
+        };
+
+        let serialized: String = engine.clone().into();
+        assert_eq!(
+            serialized,
+            "Distributed('my_cluster', 'db', 'table', cityHash64(user_id), 'my_policy')"
+        );
+
+        let parsed = ClickhouseEngine::try_from(serialized.as_str()).unwrap();
+        match parsed {
+            ClickhouseEngine::Distributed {
+                cluster,
+                target_database,
+                target_table,
+                sharding_key,
+                policy_name,
+            } => {
+                assert_eq!(cluster, "my_cluster");
+                assert_eq!(target_database, "db");
+                assert_eq!(target_table, "table");
+                assert_eq!(sharding_key, Some("cityHash64(user_id)".to_string()));
+                assert_eq!(policy_name, Some("my_policy".to_string()));
+            }
+            _ => panic!("Expected Distributed engine"),
+        }
+
+        // Test Distributed engine with only required parameters
+        let engine2 = ClickhouseEngine::Distributed {
+            cluster: "prod_cluster".to_string(),
+            target_database: "mydb".to_string(),
+            target_table: "mytable".to_string(),
+            sharding_key: None,
+            policy_name: None,
+        };
+
+        let serialized2: String = engine2.clone().into();
+        assert_eq!(
+            serialized2,
+            "Distributed('prod_cluster', 'mydb', 'mytable')"
+        );
+
+        let parsed2 = ClickhouseEngine::try_from(serialized2.as_str()).unwrap();
+        match parsed2 {
+            ClickhouseEngine::Distributed {
+                cluster,
+                target_database,
+                target_table,
+                sharding_key,
+                policy_name,
+            } => {
+                assert_eq!(cluster, "prod_cluster");
+                assert_eq!(target_database, "mydb");
+                assert_eq!(target_table, "mytable");
+                assert_eq!(sharding_key, None);
+                assert_eq!(policy_name, None);
+            }
+            _ => panic!("Expected Distributed engine"),
+        }
+
+        // Test Distributed engine with sharding key but no policy
+        let engine3 = ClickhouseEngine::Distributed {
+            cluster: "test_cluster".to_string(),
+            target_database: "testdb".to_string(),
+            target_table: "testtable".to_string(),
+            sharding_key: Some("rand()".to_string()),
+            policy_name: None,
+        };
+
+        let serialized3: String = engine3.clone().into();
+        assert_eq!(
+            serialized3,
+            "Distributed('test_cluster', 'testdb', 'testtable', rand())"
+        );
+
+        let parsed3 = ClickhouseEngine::try_from(serialized3.as_str()).unwrap();
+        match parsed3 {
+            ClickhouseEngine::Distributed {
+                cluster,
+                target_database,
+                target_table,
+                sharding_key,
+                policy_name,
+            } => {
+                assert_eq!(cluster, "test_cluster");
+                assert_eq!(target_database, "testdb");
+                assert_eq!(target_table, "testtable");
+                assert_eq!(sharding_key, Some("rand()".to_string()));
+                assert_eq!(policy_name, None);
+            }
+            _ => panic!("Expected Distributed engine"),
+        }
+
+        // Test edge case: policy_name without sharding_key should be silently dropped
+        // This matches ClickHouse specification where policy_name requires sharding_key
+        let engine4 = ClickhouseEngine::Distributed {
+            cluster: "edge_cluster".to_string(),
+            target_database: "edgedb".to_string(),
+            target_table: "edgetable".to_string(),
+            sharding_key: None,
+            policy_name: Some("orphan_policy".to_string()), // This should be dropped
+        };
+
+        let serialized4: String = engine4.clone().into();
+        // policy_name should NOT appear since sharding_key is None
+        assert_eq!(
+            serialized4,
+            "Distributed('edge_cluster', 'edgedb', 'edgetable')"
+        );
+
+        // Round-trip should work correctly
+        let parsed4 = ClickhouseEngine::try_from(serialized4.as_str()).unwrap();
+        match parsed4 {
+            ClickhouseEngine::Distributed {
+                cluster,
+                target_database,
+                target_table,
+                sharding_key,
+                policy_name,
+            } => {
+                assert_eq!(cluster, "edge_cluster");
+                assert_eq!(target_database, "edgedb");
+                assert_eq!(target_table, "edgetable");
+                assert_eq!(sharding_key, None);
+                assert_eq!(policy_name, None); // Both should be None after round-trip
+            }
+            _ => panic!("Expected Distributed engine"),
+        }
+    }
+
+    #[test]
+    fn test_buffer_invalid_flush_combinations_logged() {
+        // Test: flush_rows without flush_time - should warn and ignore flush_rows
+        let engine = ClickhouseEngine::Buffer(BufferEngine {
+            target_database: "db".to_string(),
+            target_table: "table".to_string(),
+            num_layers: 16,
+            min_time: 10,
+            max_time: 100,
+            min_rows: 10000,
+            max_rows: 100000,
+            min_bytes: 10000000,
+            max_bytes: 100000000,
+            flush_time: None,
+            flush_rows: Some(50000), // Invalid: no flush_time
+            flush_bytes: None,
+        });
+
+        let serialized: String = engine.clone().into();
+        // flush_rows should be ignored, so only required params present
+        assert_eq!(
+            serialized,
+            "Buffer('db', 'table', 16, 10, 100, 10000, 100000, 10000000, 100000000)"
+        );
+
+        // Test: flush_bytes without flush_time or flush_rows - should warn and ignore flush_bytes
+        let engine2 = ClickhouseEngine::Buffer(BufferEngine {
+            target_database: "db2".to_string(),
+            target_table: "table2".to_string(),
+            num_layers: 8,
+            min_time: 5,
+            max_time: 50,
+            min_rows: 5000,
+            max_rows: 50000,
+            min_bytes: 5000000,
+            max_bytes: 50000000,
+            flush_time: Some(3),
+            flush_rows: None,
+            flush_bytes: Some(25000000), // Invalid: no flush_rows
+        });
+
+        let serialized2: String = engine2.clone().into();
+        // flush_bytes should be ignored, only flush_time present
+        assert_eq!(
+            serialized2,
+            "Buffer('db2', 'table2', 8, 5, 50, 5000, 50000, 5000000, 50000000, 3)"
+        );
+    }
+
+    #[test]
+    fn test_distributed_invalid_policy_without_sharding_logged() {
+        // Test: policy_name without sharding_key - should warn and ignore policy_name
+        let engine = ClickhouseEngine::Distributed {
+            cluster: "my_cluster".to_string(),
+            target_database: "db".to_string(),
+            target_table: "table".to_string(),
+            sharding_key: None,
+            policy_name: Some("orphan_policy".to_string()), // Invalid: no sharding_key
+        };
+
+        let serialized: String = engine.clone().into();
+        // policy_name should be ignored
+        assert_eq!(serialized, "Distributed('my_cluster', 'db', 'table')");
+
+        // Verify round-trip works correctly
+        let parsed = ClickhouseEngine::try_from(serialized.as_str()).unwrap();
+        match parsed {
+            ClickhouseEngine::Distributed {
+                cluster,
+                target_database,
+                target_table,
+                sharding_key,
+                policy_name,
+            } => {
+                assert_eq!(cluster, "my_cluster");
+                assert_eq!(target_database, "db");
+                assert_eq!(target_table, "table");
+                assert_eq!(sharding_key, None);
+                assert_eq!(policy_name, None); // Both should be None
+            }
+            _ => panic!("Expected Distributed engine"),
         }
     }
 }
