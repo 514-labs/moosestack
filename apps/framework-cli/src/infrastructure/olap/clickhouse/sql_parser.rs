@@ -247,7 +247,13 @@ pub fn extract_sample_by_from_create_table(sql: &str) -> Option<String> {
     if let Some(i) = after_upper.find("PRIMARY KEY") {
         end = end.min(i);
     }
-    if let Some(i) = after_upper.find("TTL") {
+    // Note: We search for keywords with leading space/newline to avoid matching substrings
+    // within identifiers (e.g., "cattle" contains "ttl")
+    // Check for both " TTL" and "\nTTL" to handle whitespace variations
+    if let Some(i) = after_upper.find(" TTL") {
+        end = end.min(i);
+    }
+    if let Some(i) = after_upper.find("\nTTL") {
         end = end.min(i);
     }
 
@@ -1438,6 +1444,17 @@ pub mod tests {
         assert_eq!(
             extract_sample_by_from_create_table(sql),
             Some("sample_hash".to_string())
+        );
+    }
+
+    #[test]
+    fn test_extract_sample_by_with_identifier_containing_ttl() {
+        // Edge case: Ensure identifiers containing "ttl" substring don't cause false matches
+        // "cattle" contains "ttl" when uppercased, but shouldn't be treated as TTL keyword
+        let sql = "CREATE TABLE t (id UInt64, cattle_count UInt64) ENGINE = MergeTree ORDER BY id SAMPLE BY cattle_count SETTINGS index_granularity = 8192";
+        assert_eq!(
+            extract_sample_by_from_create_table(sql),
+            Some("cattle_count".to_string())
         );
     }
 
