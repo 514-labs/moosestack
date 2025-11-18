@@ -13,7 +13,6 @@ use crate::framework::core::infrastructure_map::{
 };
 use crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine;
 use std::collections::HashMap;
-use std::mem::discriminant;
 
 /// Generates a formatted error message for database field changes.
 ///
@@ -511,22 +510,20 @@ impl TableDiffStrategy for ClickHouseTableDiffStrategy {
             ];
         }
 
-        // First make sure the engine type is the kind
-        // then check if we can use hash comparison for engine changes
-        let engine_changed = discriminant(&before.engine) != discriminant(&after.engine)
-            || if let (Some(before_hash), Some(after_hash)) =
-                (&before.engine_params_hash, &after.engine_params_hash)
-            {
-                // If both tables have hashes, compare them for change detection
-                // This includes credentials and other non-alterable parameters
-                before_hash != after_hash
-            } else {
-                // Fallback to direct engine comparison if hashes are not available
-                // Note: Tables are already normalized at this point (None -> Some(MergeTree))
-                // via normalize_inframap_engines() in the remote plan flow, so we can
-                // safely use direct comparison
-                before.engine != after.engine
-            };
+        // First check if we can use hash comparison for engine changes
+        let engine_changed = if let (Some(before_hash), Some(after_hash)) =
+            (&before.engine_params_hash, &after.engine_params_hash)
+        {
+            // If both tables have hashes, compare them for change detection
+            // This includes credentials and other non-alterable parameters
+            before_hash != after_hash
+        } else {
+            // Fallback to direct engine comparison if hashes are not available
+            // Note: Tables are already normalized at this point (None -> Some(MergeTree))
+            // via normalize_inframap_engines() in the remote plan flow, so we can
+            // safely use direct comparison
+            before.engine != after.engine
+        };
 
         // Check if engine has changed (using hash comparison when available)
         if engine_changed {
