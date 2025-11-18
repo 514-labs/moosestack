@@ -43,15 +43,13 @@ describe("IcebergS3 Engine Configuration", () => {
     expect((table.config as any).compression).to.equal("zstd");
   });
 
-  it("should work with noSign flag for public buckets (no credentials)", () => {
+  it("should work without credentials for public buckets (NOSIGN)", () => {
     const table = new OlapTable<TestData>("public_data", {
       engine: ClickHouseEngines.IcebergS3,
       path: "s3://public-bucket/data/",
       format: "Parquet",
-      noSign: true,
     } as const);
 
-    expect((table.config as any).noSign).to.equal(true);
     expect((table.config as any).awsAccessKeyId).to.be.undefined;
     expect((table.config as any).awsSecretAccessKey).to.be.undefined;
   });

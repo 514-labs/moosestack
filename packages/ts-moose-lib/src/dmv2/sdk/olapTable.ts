@@ -478,14 +478,12 @@ export type IcebergS3Config<T> = Omit<
   path: string;
   /** Data format - 'Parquet' or 'ORC' */
   format: "Parquet" | "ORC";
-  /** AWS access key ID (optional, omit for public buckets or IAM roles) */
+  /** AWS access key ID (optional, omit for NOSIGN/public buckets) */
   awsAccessKeyId?: string;
   /** AWS secret access key (optional) */
   awsSecretAccessKey?: string;
   /** Compression type (optional: 'gzip', 'zstd', 'auto') */
   compression?: string;
-  /** Use NOSIGN for public buckets or default credentials */
-  noSign?: boolean;
 };
 
 /**
