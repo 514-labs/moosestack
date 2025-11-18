@@ -2,7 +2,7 @@
 
 Multi-language monorepo (Rust CLI + TypeScript/Python libraries) using PNPM workspaces, Turbo Repo, and Cargo workspace.
 
-**CRITICAL**: When changing MooseStack functionality, ALWAYS run end-to-end tests. When changing user-facing features, add E2E tests to `python-tests`/`typescript-tests` templates AND audit documentation. Logs: `~/.moose/*-cli.log`
+**CRITICAL**: When changing MooseStack functionality, ALWAYS run end-to-end tests. When changing user-facing features, add E2E tests to `python-tests`/`typescript-tests` templates AND audit documentation. Logs: `~/.moose/*-cli.log`. Always format the code.
 
 ## Build & Development Commands
 
