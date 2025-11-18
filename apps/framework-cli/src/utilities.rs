@@ -8,6 +8,7 @@ pub mod docker;
 pub mod dotenv;
 pub mod git;
 pub mod identifiers;
+pub mod json;
 pub mod keyring;
 pub mod machine_id;
 pub mod nodejs_version;
