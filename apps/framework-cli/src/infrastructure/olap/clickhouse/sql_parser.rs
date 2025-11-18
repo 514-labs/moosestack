@@ -1425,14 +1425,15 @@ pub mod tests {
 
     #[test]
     fn test_extract_sample_by_with_ttl_single_line() {
-        // When ClickHouse stores CREATE TABLE queries, the format depends
-        // on how the table was created. Tables created by Moose have newlines between clauses,
-        // so the parser worked correctly. But tables created manually or migrated from other
-        // systems may be stored as a single line with just spaces: "...SAMPLE BY x TTL y SETTINGS..."
+        // When parsing CREATE TABLE with both SAMPLE BY and TTL,
+        // the parser needs to stop at TTL keyword to avoid capturing the TTL expression.
         //
-        // Without the TTL terminator check, the parser would extract "x TTL y" instead of just "x".
-        // This caused remote_state.json to show: "sample_by": "sample_hash TTL toDateTime(...)"
-        // which differs from the local state and triggers false positive migration diffs.
+        // Bug: Parser only checked for ORDER BY, SETTINGS, and PRIMARY KEY as terminators,
+        // so it extracted "sample_hash TTL toDateTime(...)" instead of just "sample_hash".
+        //
+        // This primarily affected tables created outside Moose (not in state storage).
+        // For Moose-managed tables, the correct value from state storage was used instead.
+        // Customer reported this when migrating external tables.
         let sql = "CREATE TABLE t (id UInt64, ts DateTime) ENGINE = MergeTree ORDER BY (hour_stamp, sample_hash, ts) SAMPLE BY sample_hash TTL toDateTime(ts / 1000) + toIntervalDay(30) SETTINGS index_granularity = 8192";
         assert_eq!(
             extract_sample_by_from_create_table(sql),
