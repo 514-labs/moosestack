@@ -2576,16 +2576,11 @@ pub fn create_table_query(
         } => {
             let mut engine_parts = vec![format!("'{}'", path)];
 
-            // Add credentials or NOSIGN
-            match (aws_access_key_id, aws_secret_access_key) {
-                (Some(key_id), Some(secret)) => {
-                    engine_parts.push(format!("'{}'", key_id));
-                    engine_parts.push(format!("'{}'", secret));
-                }
-                _ => {
-                    engine_parts.push("NOSIGN".to_string());
-                }
-            }
+            // Handle credentials using shared helper (same as S3Queue)
+            engine_parts.extend(ClickhouseEngine::format_s3_credentials_for_ddl(
+                aws_access_key_id,
+                aws_secret_access_key,
+            ));
 
             // Add format
             engine_parts.push(format!("'{}'", format));
