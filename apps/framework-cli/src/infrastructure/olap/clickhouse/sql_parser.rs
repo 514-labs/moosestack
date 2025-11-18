@@ -247,13 +247,9 @@ pub fn extract_sample_by_from_create_table(sql: &str) -> Option<String> {
     if let Some(i) = after_upper.find("PRIMARY KEY") {
         end = end.min(i);
     }
-    // Note: We search for keywords with leading space/newline to avoid matching substrings
+    // Note: Match " TTL" with leading space to avoid matching substrings
     // within identifiers (e.g., "cattle" contains "ttl")
-    // Check for both " TTL" and "\nTTL" to handle whitespace variations
     if let Some(i) = after_upper.find(" TTL") {
-        end = end.min(i);
-    }
-    if let Some(i) = after_upper.find("\nTTL") {
         end = end.min(i);
     }
 
