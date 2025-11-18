@@ -12,6 +12,7 @@ use std::fmt::Write;
 
 // Use shared, language-agnostic sanitization (underscores) from utilities
 use crate::infrastructure::olap::clickhouse::extract_version_from_table_name;
+use crate::infrastructure::olap::clickhouse::queries::BufferEngine;
 pub use ident::sanitize_identifier;
 
 /// Map a string to a valid TypeScript PascalCase identifier (for types/classes/consts).
@@ -777,7 +778,7 @@ pub fn tables_to_typescript(tables: &[Table], life_cycle: Option<LifeCycle>) -> 
                     writeln!(output, "    partitionColumnsInDataFile: {:?},", pc).unwrap();
                 }
             }
-            crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine::Buffer {
+            crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine::Buffer(BufferEngine {
                 target_database,
                 target_table,
                 num_layers,
@@ -790,7 +791,7 @@ pub fn tables_to_typescript(tables: &[Table], life_cycle: Option<LifeCycle>) -> 
                 flush_time,
                 flush_rows,
                 flush_bytes,
-            } => {
+            }) => {
                 writeln!(output, "    engine: ClickHouseEngines.Buffer,").unwrap();
                 writeln!(output, "    targetDatabase: {:?},", target_database).unwrap();
                 writeln!(output, "    targetTable: {:?},", target_table).unwrap();
