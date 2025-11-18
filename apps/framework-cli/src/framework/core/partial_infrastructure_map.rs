@@ -868,13 +868,13 @@ impl PartialInfrastructureMap {
 
             Some(EngineConfig::IcebergS3(config)) => {
                 // Keep environment variable markers as-is - credentials will be resolved at runtime
-                Ok(Some(ClickhouseEngine::IcebergS3 {
+                Ok(ClickhouseEngine::IcebergS3 {
                     path: config.path.clone(),
                     format: config.format.clone(),
                     aws_access_key_id: config.aws_access_key_id.clone(),
                     aws_secret_access_key: config.aws_secret_access_key.clone(),
                     compression: config.compression.clone(),
-                }))
+                })
             }
 
             None => Ok(ClickhouseEngine::MergeTree),
