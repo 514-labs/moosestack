@@ -63,6 +63,8 @@ export function GuideSteps({
   if (steps.length === 0) return null;
 
   const currentStep = steps[currentStepIndex];
+  if (!currentStep) return null;
+
   const currentRenderedStep = renderedSteps[currentStepIndex];
   const hasPrevious = currentStepIndex > 0;
   const hasNext = currentStepIndex < steps.length - 1;
