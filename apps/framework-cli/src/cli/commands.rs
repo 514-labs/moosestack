@@ -206,6 +206,36 @@ pub enum Commands {
         #[arg(short, long, default_value = "10000")]
         limit: u64,
     },
+    /// Diagnose infrastructure health and surface issues
+    Doctor {
+        /// Minimum severity level to report (error, warning, info)
+        #[arg(long, default_value = "error")]
+        severity: String,
+
+        /// Filter by component name pattern (glob pattern, e.g., "users_*")
+        #[arg(long)]
+        component: Option<String>,
+
+        /// Time window to check (e.g., "6 hours", "1 day", "30m")
+        #[arg(long, default_value = "6 hours")]
+        since: String,
+
+        /// Output results in JSON format
+        #[arg(long, default_value = "false")]
+        json: bool,
+
+        /// Increase verbosity level (can be used multiple times: -v, -vv, -vvv)
+        #[arg(short = 'v', long = "verbose", action = clap::ArgAction::Count)]
+        verbose: u8,
+
+        /// ClickHouse connection URL (optional, falls back to project config)
+        #[arg(long)]
+        clickhouse_url: Option<String>,
+
+        /// Redis connection URL (optional, falls back to project config)
+        #[arg(long)]
+        redis_url: Option<String>,
+    },
 }
 
 #[derive(Debug, Args)]
