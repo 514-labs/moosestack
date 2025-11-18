@@ -494,7 +494,10 @@ fn default_database_name() -> String {
 ///
 /// The relationship between the components is maintained by reference rather than by value.
 /// Helper methods facilitate navigating the map and finding related components.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+///
+/// Note: This type has a custom `Serialize` implementation that sorts all JSON keys
+/// alphabetically for deterministic output in version-controlled migration files.
+#[derive(Debug, Clone, Deserialize)]
 pub struct InfrastructureMap {
     #[serde(default = "default_database_name")]
     pub default_database: String,
@@ -2996,6 +2999,60 @@ impl Default for InfrastructureMap {
             workflows: HashMap::new(),
             web_apps: HashMap::new(),
         }
+    }
+}
+
+impl serde::Serialize for InfrastructureMap {
+    /// Custom serialization with sorted keys for deterministic output.
+    ///
+    /// Migration files are version-controlled, so we need consistent output.
+    /// Without sorted keys, HashMap serialization order is random, causing noisy diffs.
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        // We need to temporarily derive Serialize on a shadow type to avoid infinite recursion
+        // Create a JSON value using the derived Serialize, then sort keys
+        #[derive(serde::Serialize)]
+        struct InfrastructureMapForSerialization<'a> {
+            #[serde(skip_serializing_if = "Option::is_none")]
+            default_database: Option<&'a String>,
+            topics: &'a HashMap<String, Topic>,
+            api_endpoints: &'a HashMap<String, ApiEndpoint>,
+            tables: &'a HashMap<String, Table>,
+            views: &'a HashMap<String, View>,
+            topic_to_table_sync_processes: &'a HashMap<String, TopicToTableSyncProcess>,
+            topic_to_topic_sync_processes: &'a HashMap<String, TopicToTopicSyncProcess>,
+            function_processes: &'a HashMap<String, FunctionProcess>,
+            block_db_processes: &'a OlapProcess,
+            consumption_api_web_server: &'a ConsumptionApiWebServer,
+            orchestration_workers: &'a HashMap<String, OrchestrationWorker>,
+            sql_resources: &'a HashMap<String, SqlResource>,
+            workflows: &'a HashMap<String, Workflow>,
+            web_apps: &'a HashMap<String, super::infrastructure::web_app::WebApp>,
+        }
+
+        let shadow_map = InfrastructureMapForSerialization {
+            default_database: Some(&self.default_database),
+            topics: &self.topics,
+            api_endpoints: &self.api_endpoints,
+            tables: &self.tables,
+            views: &self.views,
+            topic_to_table_sync_processes: &self.topic_to_table_sync_processes,
+            topic_to_topic_sync_processes: &self.topic_to_topic_sync_processes,
+            function_processes: &self.function_processes,
+            block_db_processes: &self.block_db_processes,
+            consumption_api_web_server: &self.consumption_api_web_server,
+            orchestration_workers: &self.orchestration_workers,
+            sql_resources: &self.sql_resources,
+            workflows: &self.workflows,
+            web_apps: &self.web_apps,
+        };
+
+        // Serialize to JSON value, sort keys, then serialize that
+        let json_value = serde_json::to_value(&shadow_map).map_err(serde::ser::Error::custom)?;
+        let sorted_value = crate::utilities::json::sort_json_keys(json_value);
+        sorted_value.serialize(serializer)
     }
 }
 
