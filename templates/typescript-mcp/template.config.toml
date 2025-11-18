@@ -13,6 +13,9 @@ https://boreal.cloud
 📂 Go to your project directory:
     $ cd {project_dir}
 
+📦 Set Anthropic API Key
+    $ echo "ANTHROPIC_API_KEY=your_api_key_here" >> packages/web-app/.env.local
+
 📦 Install all dependencies:
     $ pnpm install
 
