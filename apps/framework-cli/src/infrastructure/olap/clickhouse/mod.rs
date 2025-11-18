@@ -1877,32 +1877,31 @@ impl OlapOperations for ConfiguredDBClient {
             // This is more reliable than using the system.tables engine column which
             // only contains the engine name without parameters (e.g., "S3Queue" instead of
             // "S3Queue('path', 'format', ...)")
-            let engine_parsed = if let Some(engine_def) =
+            let engine_str_to_parse = if let Some(engine_def) =
                 extract_engine_from_create_table(&create_query)
             {
-                // Try to parse the extracted engine definition
-                match engine_def.as_str().try_into() {
-                    Ok(engine) => engine,
-                    Err(failed_str) => {
-                        warn!(
-                            "Failed to parse engine from CREATE TABLE query for table '{}': '{}'. This may indicate an unsupported engine type. Defaulting to MergeTree.",
-                            table_name, failed_str
-                        );
-                        ClickhouseEngine::MergeTree
-                    }
-                }
+                engine_def
             } else {
                 // Fallback to the simple engine name from system.tables
                 debug!("Could not extract engine from CREATE TABLE query, falling back to system.tables engine column");
-                match engine.as_str().try_into() {
-                    Ok(engine) => engine,
-                    Err(failed_str) => {
-                        warn!(
-                            "Failed to parse engine from system.tables for table '{}': '{}'. This may indicate an unsupported engine type. Defaulting to MergeTree.",
-                            table_name, failed_str
-                        );
-                        ClickhouseEngine::MergeTree
-                    }
+                engine.clone()
+            };
+
+            // Try to parse the engine string
+            let engine_parsed: ClickhouseEngine = match engine_str_to_parse.as_str().try_into() {
+                Ok(engine) => engine,
+                Err(failed_str) => {
+                    warn!(
+                        "Failed to parse engine for table '{}': '{}'. This may indicate an unsupported engine type.",
+                        table_name, failed_str
+                    );
+                    unsupported_tables.push(TableWithUnsupportedType {
+                        database: database.clone(),
+                        name: table_name.clone(),
+                        col_name: "__engine".to_string(),
+                        col_type: String::from(failed_str),
+                    });
+                    continue 'table_loop;
                 }
             };
             let engine_params_hash = Some(engine_parsed.non_alterable_params_hash());
