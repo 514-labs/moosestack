@@ -3572,6 +3572,8 @@ mod tests {
             unmapped_tables: vec![table.clone()],
             missing_tables: vec![],
             mismatched_tables: vec![OlapChange::Table(TableChange::Added(table.clone()))],
+            extra_sql_resources: vec![],
+            missing_sql_resources: vec![],
         };
 
         let result = find_table_definition("test_table", &discrepancies);
@@ -3588,6 +3590,8 @@ mod tests {
             unmapped_tables: vec![test_table.clone()],
             missing_tables: vec![],
             mismatched_tables: vec![OlapChange::Table(TableChange::Added(test_table.clone()))],
+            extra_sql_resources: vec![],
+            missing_sql_resources: vec![],
         };
 
         let mut infra_map = create_test_infra_map();
@@ -3620,6 +3624,8 @@ mod tests {
             unmapped_tables: vec![test_table.clone()],
             missing_tables: vec![],
             mismatched_tables: vec![OlapChange::Table(TableChange::Added(test_table.clone()))],
+            extra_sql_resources: vec![],
+            missing_sql_resources: vec![],
         };
 
         let mut infra_map = create_test_infra_map();

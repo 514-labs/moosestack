@@ -56,6 +56,10 @@ pub struct InfraDiscrepancies {
     pub missing_tables: Vec<String>,
     /// Tables that exist in both but have structural differences
     pub mismatched_tables: Vec<OlapChange>,
+    /// SQL resources (views/MVs) that exist in reality but are not in the map
+    pub extra_sql_resources: Vec<crate::framework::core::infrastructure::sql_resource::SqlResource>,
+    /// SQL resources that are in the map but don't exist in reality
+    pub missing_sql_resources: Vec<String>,
 }
 
 impl InfraDiscrepancies {
@@ -64,6 +68,8 @@ impl InfraDiscrepancies {
         self.unmapped_tables.is_empty()
             && self.missing_tables.is_empty()
             && self.mismatched_tables.is_empty()
+            && self.extra_sql_resources.is_empty()
+            && self.missing_sql_resources.is_empty()
     }
 }
 
@@ -292,17 +298,86 @@ impl<T: OlapOperations> InfraRealityChecker<T> {
             }
         }
 
+        // Fetch and compare SQL resources (views and materialized views)
+        debug!("Fetching actual SQL resources from OLAP databases");
+
+        let mut actual_sql_resources = Vec::new();
+
+        // Query each database and merge results
+        for database in &all_databases {
+            debug!("Fetching SQL resources from database: {}", database);
+            let mut db_sql_resources = self
+                .olap_client
+                .list_sql_resources(database, &infra_map.default_database)
+                .await?;
+            actual_sql_resources.append(&mut db_sql_resources);
+        }
+
+        debug!(
+            "Found {} SQL resources across all databases",
+            actual_sql_resources.len()
+        );
+
+        // Create a map of actual SQL resources by name
+        let actual_sql_resource_map: HashMap<String, _> = actual_sql_resources
+            .into_iter()
+            .map(|r| (r.name.clone(), r))
+            .collect();
+
+        debug!(
+            "Actual SQL resource names: {:?}",
+            actual_sql_resource_map.keys()
+        );
+        debug!(
+            "Infrastructure map SQL resource names: {:?}",
+            infra_map.sql_resources.keys()
+        );
+
+        // Find extra SQL resources (exist in reality but not in map)
+        let extra_sql_resources: Vec<_> = actual_sql_resource_map
+            .values()
+            .filter(|resource| !infra_map.sql_resources.contains_key(&resource.name))
+            .cloned()
+            .collect();
+
+        debug!(
+            "Found {} extra SQL resources: {:?}",
+            extra_sql_resources.len(),
+            extra_sql_resources
+                .iter()
+                .map(|r| &r.name)
+                .collect::<Vec<_>>()
+        );
+
+        // Find missing SQL resources (in map but don't exist in reality)
+        let missing_sql_resources: Vec<String> = infra_map
+            .sql_resources
+            .keys()
+            .filter(|name| !actual_sql_resource_map.contains_key(*name))
+            .cloned()
+            .collect();
+
+        debug!(
+            "Found {} missing SQL resources: {:?}",
+            missing_sql_resources.len(),
+            missing_sql_resources
+        );
+
         let discrepancies = InfraDiscrepancies {
             unmapped_tables,
             missing_tables,
             mismatched_tables,
+            extra_sql_resources,
+            missing_sql_resources,
         };
 
         debug!(
-            "Reality check complete. Found {} unmapped, {} missing, and {} mismatched tables",
+            "Reality check complete. Found {} unmapped, {} missing, and {} mismatched tables, {} extra SQL resources, {} missing SQL resources",
             discrepancies.unmapped_tables.len(),
             discrepancies.missing_tables.len(),
-            discrepancies.mismatched_tables.len()
+            discrepancies.mismatched_tables.len(),
+            discrepancies.extra_sql_resources.len(),
+            discrepancies.missing_sql_resources.len()
         );
 
         if discrepancies.is_empty() {
@@ -345,6 +420,17 @@ mod tests {
             _project: &Project,
         ) -> Result<(Vec<Table>, Vec<TableWithUnsupportedType>), OlapChangesError> {
             Ok((self.tables.clone(), vec![]))
+        }
+
+        async fn list_sql_resources(
+            &self,
+            _db_name: &str,
+            _default_database: &str,
+        ) -> Result<
+            Vec<crate::framework::core::infrastructure::sql_resource::SqlResource>,
+            OlapChangesError,
+        > {
+            Ok(vec![])
         }
     }
 
