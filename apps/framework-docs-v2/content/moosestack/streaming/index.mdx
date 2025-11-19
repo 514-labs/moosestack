@@ -1,6 +1,6 @@
 ---
-title: Moose Streaming
-description: Build real-time data pipelines with Redpanda/Kafka streams, transformations, and event processing
+title: Moose Streams
+description: Use Moose Streams to ingest streaming data into ClickHouse-backed OLAP tables.
 order: 0
 category: streaming
 ---
@@ -8,129 +8,116 @@ category: streaming
 import { Callout, BulletPointsCard, LanguageTabs, LanguageTabContent, CTACards, CTACard, ExportRequirement } from "@/components/mdx";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 
-# Moose Streaming
+# Moose Streams
 
-## Overview
+## What is Moose Streams?
 
-The Streaming module provides standalone real-time data processing with Kafka/Redpanda topics. You can use this capability independently to build event-driven architectures, data transformations, and real-time pipelines without requiring other MooseStack components.
+Moose Streams is an auxiliary capability that complements the OLAP module by handling the real-time side of your data architecture. Streams connect producers (apps, webhooks, external brokers) to Moose's ClickHouse-backed tables so that analytical workloads always see up-to-date data without you building bespoke ingestion services.
 
-## Basic Usage
+<Callout type="info" title="Moose Streams is not a replacement for OLAP" compact>
+Streams keep your analytical tables hydrated by routing, validating, and transforming events before they land in ClickHouse.
+</Callout>
 
-<ExportRequirement primitive="Stream" example="export { exampleStream }" />
+## When to leverage Moose Streams
 
-<LanguageTabs>
-  <LanguageTabContent value="typescript">
-```ts filename="Stream.ts" copy
-import { Stream } from "@514labs/moose-lib";
+- **Configure sinks from streaming providers:** Attach CDC tools or managed Kafka/Redpanda topics to Moose Streams so they can batch, validate, and sync events into ClickHouse with OLAP-friendly write patterns.
+- **Build low-latency ingest pipelines:** Capture events in motion, apply lightweight transforms, and persist them for OLAP queries or APIs.
+- **Stage streaming ELT jobs:** Validate, filter, or enrich data on the way into ClickHouse instead of running separate stream processors.
+- **Prototype new tables safely:** Use streams to hydrate experimental OLAP tables before exposing them broadly.
 
-interface ExampleEvent {
-  id: string;
-  userId: string;
-  timestamp: Date;
-  eventType: string;
-}
+## Conceptual model
 
-// Create a standalone stream for events
-export const exampleStream = new Stream<ExampleEvent>("streaming-topic-name", {
-  // Optional: specify destination table
-  destination: new OlapTable<ExampleEvent>("table-name")
-});
+1. **Capture events:** Define type-safe streams that describe the payloads published from your applications or from existing Kafka/Redpanda topics.
+2. **Process in motion:** Attach consumer or transform functions when you need filtering, enrichment, or fan-out between topics.
+3. **Land in ClickHouse:** Sync streams into OLAP tables to materialize durable, queryable datasets or drive downstream APIs.
 
-// Add consumers for real-time processing
-exampleStream.addConsumer((event) => {
-  console.log("Processing event:", event);
-  // Custom processing logic here
-});
-```
-  </LanguageTabContent>
-  <LanguageTabContent value="python">
-```py filename="Stream.py" copy
-from moose_lib import Stream
-from pydantic import BaseModel
-from datetime import datetime
+## Before you start
 
-class ExampleEvent(BaseModel):
-    id: str
-    user_id: str
-    timestamp: datetime
-    event_type: str
-
-# Create a standalone stream for user events
-example_stream = Stream[ExampleEvent]("streaming-topic-name")
-
-# Add consumers for real-time processing
-def process_event(event: ExampleEvent):
-    print(f"Processing event: {event}")
-    # Custom processing logic here
-
-example_stream.add_consumer(process_event)
-
-# No export needed - Python modules are automatically discovered
-```
-  </LanguageTabContent>
-</LanguageTabs>
-
-### Enabling Streaming
-
-To enable streaming, you need to ensure that the `streaming_engine` feature flag is set to `true` in your `moose.config.toml` file:
+- Moose Streams assumes you already have an OLAP project initialized. Confirm your destination tables or plan to create them with the OLAP docs.
+- Enable the feature flag in `moose.config.toml`:
 
 ```toml
 [features]
 streaming_engine = true
 ```
 
-## Core Capabilities
+## Basic usage
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```ts filename="Stream.ts" copy
+import { Stream, OlapTable } from "@514labs/moose-lib";
+
+interface UserEvent {
+  id: string;
+  userId: string;
+  occurredAt: Date;
+  eventType: string;
+}
+
+// Stream events into the clickhouse_users table
+export const userEvents = new Stream<UserEvent>("user-events", {
+  destination: new OlapTable<UserEvent>("clickhouse_users"),
+});
+
+userEvents.addConsumer((event) => {
+  console.log("Forwarding to ClickHouse", event);
+});
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```py filename="Stream.py" copy
+from moose_lib import Stream, OlapTable
+from pydantic import BaseModel
+from datetime import datetime
+
+class UserEvent(BaseModel):
+    id: str
+    user_id: str
+    occurred_at: datetime
+    event_type: str
+
+user_events = Stream[UserEvent](
+    "user-events",
+    destination=OlapTable[UserEvent]("clickhouse_users"),
+)
+
+@user_events.add_consumer
+def enrich_and_forward(event: UserEvent) -> None:
+    print("Forwarding to ClickHouse", event)
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+## Core capabilities
 
 <CTACards>
 <CTACard
-  title="Create Streams"
-  description="Define and create Kafka/Redpanda topics with type-safe schemas"
+  title="Define Streams"
+  description="Model the schemas and retention of topics that sit upstream of your OLAP tables."
   ctaLink="/moosestack/streaming/create-stream"
-  ctaLabel="Learn More →"
+  ctaLabel="Create a stream →"
   badge={{ variant: "moose", text: "Streams" }}
 />
 <CTACard
-  title="Publish Data"
-  description="Write data to streams from applications, APIs, or external sources"
+  title="Publish & ingest"
+  description="Connect applications, APIs, or connectors so events land in Moose-managed topics."
   ctaLink="/moosestack/streaming/from-your-code"
-  ctaLabel="Learn More →"
-  badge={{ variant: "moose", text: "Publishing" }}
+  ctaLabel="Ingest data →"
+  badge={{ variant: "moose", text: "Ingest" }}
 />
 <CTACard
-  title="Consumer Functions"
-  description="Read and process data from streams with consumers and processors"
+  title="Process events"
+  description="Author consumer and transform functions to enrich or route events before storage."
   ctaLink="/moosestack/streaming/consumer-functions"
-  ctaLabel="Learn More →"
-  badge={{ variant: "moose", text: "Consuming" }}
+  ctaLabel="Process events →"
+  badge={{ variant: "moose", text: "Processing" }}
 />
 <CTACard
-  title="Streaming Transformations"
-  description="Process and transform data in-flight between streams"
-  ctaLink="/moosestack/streaming/transform-functions"
-  ctaLabel="Learn More →"
-  badge={{ variant: "moose", text: "Transformation" }}
-/>
-</CTACards>
-
-## Integration with Other Capabilities
-
-The Streaming capability can be used independently, or in conjunction with other MooseStack modules:
-
-<CTACards>
-<CTACard
-  title="OLAP"
-  description="Sync data from streams to tables to persist data and enable fast analytical queries on top of it"
+  title="Sync to OLAP"
+  description="Persist curated streams into ClickHouse tables that power analytics, metrics, or APIs."
   ctaLink="/moosestack/streaming/sync-to-table"
-  ctaLabel="Learn More →"
-  orientation="horizontal"
-  isMooseModule={true}
-/>
-<CTACard
-  title="APIs"
-  description="Create APIs to route data into streams from your other applications or webhooks"
-  ctaLink="/moosestack/streaming/from-your-code"
-  ctaLabel="Learn More →"
-  orientation="horizontal"
-  isMooseModule={true}
+  ctaLabel="Sync to OLAP →"
+  badge={{ variant: "moose", text: "OLAP" }}
 />
 </CTACards>
