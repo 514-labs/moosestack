@@ -59,8 +59,6 @@ The sections below document every supported action plus common edit patterns.
 | [RenameTableColumn](#renametablecolumn) | Renames a column (preserves data) | No |
 | [ModifyTableColumn](#modifytablecolumn) | Changes column type/properties | ⚠️ Maybe |
 | [RawSql](#rawsql) | Executes custom SQL | ⚠️ Varies |
-| [CreateStream](#createstream) | Creates Kafka/Redpanda topic | No |
-| [DropStream](#dropstream) | Removes topic | ⚠️ Yes |
 
 ### Key Terms
 
@@ -92,20 +90,13 @@ Integrate Moose into existing apps - migrations run with `moose migrate` CLI com
 
 ## Scope
 
-Migration operations apply to:
-- **OLAP Tables** - ClickHouse tables and materialized views
-- **Streams** - Kafka/Redpanda topics
+Migration operations apply to ClickHouse OLAP tables (including materialized views) defined in your Moose project. Streams, APIs, and workflows currently bypass `plan.yaml` and are provisioned directly by Moose tooling.
 
-Operations do **not** apply to:
-- APIs (managed separately)
-- Workflows (managed separately)
-
-Operations only apply to enabled features in `moose.config.toml`:
+Ensure the OLAP feature flag is enabled in `moose.config.toml`:
 
 ```toml
 [features]
 olap = true              # Required for table operations
-streaming_engine = true  # Required for stream operations
 ```
 
 ## Table Operations
@@ -460,82 +451,6 @@ class User(BaseModel):
 <Callout type="warning" title="Use with caution">
 `RawSql` bypasses Moose's safety checks. Ensure your SQL is correct and test in dev first. Syntax errors or destructive operations can cause migration failures.
 </Callout>
-
----
-
-## Stream Operations
-
-### CreateStream
-
-**What it does:** Creates a new Kafka/Redpanda topic for streaming data.
-
-**Code:**
-
-<LanguageTabs>
-  <LanguageTabContent value="typescript" label="TypeScript">
-
-```typescript
-import { Stream } from "@514labs/moose-lib";
-
-interface UserEvent {
-  user_id: string;
-  event_type: string;
-  timestamp: Date;
-}
-
-export const userEvents = new Stream<UserEvent>("user_events");
-```
-
-  </LanguageTabContent>
-  <LanguageTabContent value="python" label="Python">
-
-```python
-from datetime import datetime
-from pydantic import BaseModel
-from moose_lib import Stream
-
-class UserEvent(BaseModel):
-    user_id: str
-    event_type: str
-    timestamp: datetime
-
-user_events = Stream[UserEvent]("user_events")
-```
-
-  </LanguageTabContent>
-</LanguageTabs>
-
-**Generated plan operation:**
-```yaml
-- CreateStream:
-    stream:
-      name: user_events
-      schema: UserEvent
-```
-
-**Result:** New topic `user_events` created in Redpanda/Kafka.
-
-**Requirements:**
-```toml
-[features]
-streaming_engine = true  # Must be enabled
-```
-
----
-
-### DropStream
-
-**What it does:** Removes an existing stream/topic.
-
-**Code:** Remove the stream export from your code.
-
-**Generated plan operation:**
-```yaml
-- DropStream:
-    stream: user_events
-```
-
-**Result:** Topic deleted. Messages in topic are lost.
 
 ---
 
@@ -904,4 +819,3 @@ See [lifecycle management](/moosestack/migrate/lifecycle) for details.
 - [Planned migrations](/moosestack/migrate/planned-migrations) - Production workflow guide
 - [Lifecycle management](/moosestack/migrate/lifecycle) - Control allowed operations
 - [CLI commands](/moosestack/moose-cli#generate-migration-plan-olap) - moose migrate and related commands
-
