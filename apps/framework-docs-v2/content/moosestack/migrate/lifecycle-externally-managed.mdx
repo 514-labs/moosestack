@@ -1,0 +1,79 @@
+---
+title: Externally Managed Lifecycle
+description: Read-only mode where Moose assumes the schema is managed by an external process.
+order: 23
+category: migrate
+---
+
+import { Callout, LanguageTabs, LanguageTabContent } from "@/components/mdx";
+
+# Externally Managed Lifecycle
+
+`LifeCycle.EXTERNALLY_MANAGED` tells Moose to be completely hands-off with your resources. You become responsible for creating and managing the database schema.
+
+## Use Cases
+
+- You have existing database tables managed by another team
+- You're integrating with another system (e.g. PeerDB)
+- You have strict database change management processes
+
+<Callout type="info" title="Note">
+With externally managed resources, you must ensure your database schema matches your data models exactly, or you may encounter runtime errors.
+</Callout>
+
+## Examples
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript" label="TypeScript">
+
+```ts filename="ExternallyManagedExample.ts" copy
+import { Stream, OlapTable, LifeCycle, Key } from "@514labs/moose-lib";
+
+interface ExternalUserData {
+  userId: Key<string>;
+  fullName: string;
+  emailAddress: string;
+  createdAt: Date;
+}
+
+// Connect to existing database table
+const legacyUserTable = new OlapTable<ExternalUserData>("legacy_users", {
+  lifeCycle: LifeCycle.EXTERNALLY_MANAGED
+});
+
+// Connect to existing Kafka topic
+const legacyStream = new Stream<ExternalUserData>("legacy_user_stream", {
+  lifeCycle: LifeCycle.EXTERNALLY_MANAGED,
+  destination: legacyUserTable
+});
+```
+
+  </LanguageTabContent>
+  <LanguageTabContent value="python" label="Python">
+
+```py filename="ExternallyManagedExample.py" copy
+from moose_lib import Stream, OlapTable, OlapConfig, StreamConfig, LifeCycle, Key
+from pydantic import BaseModel
+from datetime import datetime
+
+class ExternalUserData(BaseModel):
+    user_id: Key[str]
+    full_name: str
+    email_address: str
+    created_at: datetime
+
+# Connect to existing database table
+legacy_user_table = OlapTable[ExternalUserData]("legacy_users", OlapConfig(
+    life_cycle=LifeCycle.EXTERNALLY_MANAGED
+))
+
+# Connect to existing Kafka topic
+legacy_stream = Stream[ExternalUserData]("legacy_user_stream", StreamConfig(
+    life_cycle=LifeCycle.EXTERNALLY_MANAGED,
+    destination=legacy_user_table
+))
+```
+
+  </LanguageTabContent>
+</LanguageTabs>
+

@@ -1,141 +1,70 @@
 ---
-title: Apply Planned Migrations with the CLI
-description: Run moose migrate against ClickHouse to execute your approved plan
-order: 13
+title: Serverless (moose migrate)
+description: Reference documentation for the manual migration CLI command used in serverless deployments.
+order: 7
 category: olap
 ---
 
 import { Callout } from "@/components/mdx";
 
-# Apply Planned Migrations with the CLI
+# Serverless (moose migrate)
 
-Use this guide when you run Moose in **library/serverless mode** and want explicit control over when migrations execute. The CLI reads `plan.yaml`, verifies drift with the snapshot files, and runs each operation against ClickHouse.
+The **Serverless** deployment model relies on the `moose migrate` CLI command to execute planned schema changes. This gives you explicit control over when migrations run, which is essential for architectures where Moose is integrated as a library rather than a standalone server.
 
-<Callout type="info" title="Start here if you still need a plan" href="/moosestack/migrate/planned-migrations" ctaLabel="Generate plan" compact>
-You must generate and review a plan before running it in production.
-</Callout>
+## Overview
 
-## When to Use
+In serverless or library-based deployments, Moose does not control the application runtime. Therefore, migrations must be triggered externally, typically as a step in a CI/CD pipeline or a manual administrative action.
 
-- You integrate Moose into an existing application (Next.js, Express, FastAPI, etc.)
-- You need a manual approval step before migrations run
-- You prefer running migrations inside your CI/CD pipeline
-- Your production ClickHouse is managed outside the Moose runtime
+| Feature | Description |
+| :--- | :--- |
+| **Manual Control** | Migrations run only when you explicitly execute the command. |
+| **CI/CD Integration** | Designed to run as a discrete step in deployment pipelines (e.g., GitHub Actions). |
+| **Drift Protection** | Validates `remote_state.json` against the target database before execution. |
+| **Direct Connection** | Connects directly to ClickHouse using a connection string. |
 
-## Prerequisites
-
-- `ddl_plan = true` and `olap = true` in `moose.config.toml`
-- `migrations/plan.yaml`, `migrations/remote_state.json`, and `migrations/local_infra_map.json` committed to the main branch
-- Production ClickHouse URL with `CREATE`, `ALTER`, and `DROP` privileges
-- Moose CLI installed wherever you plan to run the command
-
----
-
-## Step 1 · Pull the Approved Plan
-
-Make sure the machine running `moose migrate` has the same commit that reviewers approved:
+## Command Reference
 
 ```bash
-git checkout main
-git pull origin main
+moose migrate --clickhouse-url <CONNECTION_STRING>
 ```
 
-If the plan files are missing or drifted, regenerate them before proceeding.
+### Options
 
----
+| Option | Description | Required |
+| :--- | :--- | :--- |
+| `--clickhouse-url` | The full connection string to the target ClickHouse database (e.g., `clickhouse://user:pass@host:9440/db`). | Yes |
 
-## Step 2 · Run `moose migrate`
+## Execution Lifecycle
 
-```bash filename="Terminal" copy
-export PROD_CLICKHOUSE_URL="clickhouse://user:password@prod-host:9440/analytics"
-moose migrate --clickhouse-url "$PROD_CLICKHOUSE_URL"
+When `moose migrate` is executed:
+
+1.  **Load Plan:** Reads `migrations/plan.yaml` from the current directory.
+2.  **Check Database Drift:** Connects to the provided ClickHouse URL and compares the current schema against `remote_state.json`.
+3.  **Abort on Drift:** If the database state does not match the snapshot, the process exits with an error code.
+4.  **Execute Migration:** Applies the operations defined in `plan.yaml` sequentially.
+5.  **Report Success:** Exits with code 0 if all operations succeed.
+
+## Failure Modes
+
+| Condition | Outcome | Resolution |
+| :--- | :--- | :--- |
+| **Drift Detected** | Command fails (exit code 1). | Regenerate the plan against the current production DB and retry. |
+| **Connection Error** | Command fails (exit code 1). | Check network connectivity and credentials in the connection string. |
+| **SQL Error** | Command fails (exit code 1). | Fix the problematic operation in `plan.yaml` or the database state and retry. |
+
+## CI/CD Example
+
+This command is typically used in a deployment pipeline before updating the application code.
+
+```yaml
+# Example GitHub Actions step
+- name: Apply Migrations
+  run: moose migrate --clickhouse-url "$CLICKHOUSE_URL"
+  env:
+    CLICKHOUSE_URL: ${{ secrets.CLICKHOUSE_URL }}
 ```
 
-**What happens:**
+## See Also
 
-1. Moose loads `migrations/plan.yaml`
-2. Verifies production matches `remote_state.json` (drift detection)
-3. Verifies your code matches `local_infra_map.json`
-4. Executes each operation in the plan
-5. Reports success or fails fast on the first error
-
-**Sample output**
-
-```text
-$ moose migrate --clickhouse-url "$PROD_CLICKHOUSE_URL"
-✓ Loading migration plan
-✓ Validating production state (no drift detected)
-✓ Validating code state (matches plan)
-✓ Executing migration operations
-  → AddTableColumn: users.status
-✓ Migration completed successfully
-```
-
-<Callout type="warning" title="Plan aborted due to drift">
-If someone changed the production schema after you generated the plan, Moose will exit before executing anything. Regenerate the plan against the latest production state and push the updated files.
-</Callout>
-
----
-
-## Step 3 · Deploy Application Code
-
-Once the CLI finishes, deploy your application as usual so the new schema is available to the rest of your stack.
-
----
-
-## Automate in CI/CD
-
-Most teams run migrations as a pipeline stage that must succeed before application code deploys.
-
-```yaml filename=".github/workflows/deploy.yml" copy
-name: Deploy
-on:
-  push:
-    branches: [main]
-
-jobs:
-  migrate:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Install Moose CLI
-        run: npm install -g @514labs/moose-cli
-      - name: Apply migrations
-        run: moose migrate --clickhouse-url "$PROD_CLICKHOUSE_URL"
-        env:
-          PROD_CLICKHOUSE_URL: ${{ secrets.CLICKHOUSE_URL }}
-
-  deploy:
-    needs: migrate
-    runs-on: ubuntu-latest
-    steps:
-      - name: Deploy application
-        run: ./scripts/deploy.sh
-```
-
-Recommendations:
-
-- Store connection strings in your secret store
-- Trigger the pipeline on merges to `main` or a protected release branch
-- Notify the team (Slack, email, etc.) when the migrate job fails
-
----
-
-## Troubleshooting
-
-**Drift detected**  
-Another migration or manual change landed first. Regenerate the plan from the latest production state and rerun `moose migrate`.
-
-**Plan files missing**  
-Ensure the `migrations/` directory exists in the repository and you pulled the correct commit. Regenerate if files were accidentally deleted.
-
-**Connection errors**  
-Verify your ClickHouse URL, allowlist the runner IP, and confirm the user has DDL permissions.
-
----
-
-## Next Steps
-
-- [Apply planned migrations with Moose Prod](/moosestack/migrate/apply-planned-migrations-service) – Let the runtime apply plans on startup.
-- [Review & edit planned migrations](/moosestack/migrate/reference) – Update the plan before your next deployment.
-
+- [Planned Migrations](/moosestack/migrate/planned-migrations) - Generating the plan files.
+- [Server Runtime](/moosestack/migrate/apply-planned-migrations-service) - The automatic alternative for full server deployments.

@@ -9,139 +9,62 @@ import { Callout } from "@/components/mdx";
 
 # Migrations
 
-When you define database tables and streaming topics in your code, you need a way to synchronize those definitions with your actual production environment. As your application evolves, you'll add fields, change data types, update TTLs, or even drop resources. Migrations are the mechanism that makes these schema changes safely and reliably.
+When you define database tables in your code, you need a way to synchronize those definitions with your production infrastructure. As your application evolves, you'll add/remove fields, change data types, and restructure tables. Migrations are the mechanism that makes these schema changes safely and reliably.
 
-## Quick Reference
+## What Are Migrations?
 
-| Goal | Command / Entry Point | Primary Docs |
-|------|-----------------------|--------------|
-| Iterate locally with automatic diffs | `moose dev` | [Auto-inferred migrations](/moosestack/migrate/apply-migrations) |
-| Generate a reviewable migration plan | `moose migrate plan` | [Planned migrations](/moosestack/migrate/planned-migrations) |
-| Apply a vetted plan from CI/CD | `moose migrate apply --plan <file>` | [Apply planned migrations (CLI)](/moosestack/migrate/apply-planned-migrations-cli) |
-| Let MooseStack apply plans during rollout | `moose prod` startup | [Apply planned migrations (service)](/moosestack/migrate/apply-planned-migrations-service) |
-| Change lifecycle protections on a resource | Update `lifeCycle` / `life_cycle` | [Lifecycle management](/moosestack/migrate/lifecycle) |
-| Investigate failures or drift | Inspect plan + logs | [Troubleshooting migrations](/moosestack/migrate/schema-change) |
+Migrations are operations that update your database schema to match your code definitions. Instead of manually writing SQL commands or managing schema changes through a database interface, you declare your desired schema in code, and Moose Migrate calculates what needs to change and applies those changes for you.
 
-## Decision Matrix
-
-| Decision | Options | Choose When | Reference |
-|----------|---------|-------------|-----------|
-| Migration mode | [Planned](/moosestack/migrate/planned-migrations) / [Auto-inferred](/moosestack/migrate/apply-migrations) | Do you need a review artifact or instant feedback? | [Modes](#migration-modes) |
-| Deployment model | [Service (`moose prod`)](/moosestack/migrate/apply-planned-migrations-service) / [Library (`moose migrate`)](/moosestack/migrate/apply-planned-migrations-cli) | Should migrations run automatically with the Moose runtime or under your release tooling? | [Deployment models](#deployment-models) |
-| Lifecycle mode | [`FULLY_MANAGED`](/moosestack/migrate/lifecycle) / [`DELETION_PROTECTED`](/moosestack/migrate/lifecycle) / [`EXTERNALLY_MANAGED`](/moosestack/migrate/lifecycle) | How destructive can Moose be on specific resources? | [Lifecycle modes](#lifecycle-modes) |
-
-Use these three axes together to describe any workflow precisely (e.g., “Service model + planned migrations + `DELETION_PROTECTED` tables”).
-
-## Migration Modes
-
-### Planned migrations
-
-- Generate deterministic plan artifacts (`remote_state.json`, `local_infra_map.json`, `migration_plan.sql`) that must be reviewed and committed.
-- Enforce drift detection—execution halts if the database no longer matches the snapshots captured in the plan.
-- Best for production and compliance-sensitive deployments where auditability matters.
-- Learn the full workflow: [Planned migrations guide](/moosestack/migrate/planned-migrations).
-
-### Auto-inferred migrations
-
-- Moose diffs code definitions against the live database at runtime (typically through `moose dev`) and applies changes immediately.
-- Optimized for prototyping or isolated developer environments; destructive changes (like column drops) can happen automatically.
-- Production parity tips, safeguards, and dev tricks live in [Auto-inferred migrations](/moosestack/migrate/apply-migrations).
-
-<Callout type="warning">
-For production systems, always prefer planned migrations with lifecycle protections. Auto-inferred runs skip human review and can drop data if your code removes fields.
+<Callout type="info" title="Version Control for your Database">
+Just as Git tracks changes to your code, migrations track changes to your schema, creating an audit trail and enabling safe, repeatable deployments.
 </Callout>
 
-## Deployment Models
+### Why Migrations Matter
 
-### Service model (`moose prod`)
+Database schema changes are risky. A mistaken column drop can lose customer data. An incorrectly applied change during high traffic can cause downtime. Manual SQL scripts are error-prone and hard to track across environments.
 
-- Deploys the full MooseStack runtime. On startup, the admin service runs pending migration plans before bringing up APIs, workflows, and consumers.
-- Ideal for net-new Moose applications that allow MooseStack to manage the runtime lifecycle end-to-end.
-- See [Apply planned migrations (service)](/moosestack/migrate/apply-planned-migrations-service) for boot order, failure handling, and log expectations.
+Moose Migrate solves these problems by:
 
-### Library model (`moose migrate`)
+- **Generating changes automatically** - You focus on your schema definition, not SQL syntax
+- **Providing review workflows** - See exactly what will change before it happens
+- **Detecting conflicts** - Know when someone else has modified the database
+- **Preserving data** - Use rename operations instead of destructive drop-and-recreate
+- **Creating audit trails** - Track every schema change through version control
 
-- Treats Moose as a dependency inside an existing app. You decide when to run `moose migrate` (plan, review, apply) inside your release tooling or CI/CD.
-- Works well when another orchestrator (Argo, GitHub Actions, etc.) already controls deploy cadence.
-- Step-by-step instructions live in [Apply planned migrations (CLI)](/moosestack/migrate/apply-planned-migrations-cli).
+## How Migrations Work
 
-## Lifecycle Modes
+Moose Migrate operates through a comparison model. The system compares two states:
 
-Lifecycle modes gate which DDL operations Moose can execute per table, stream, or pipeline. They pair with your selected migration mode to enforce safety.
+1. **Your code** - Tables and streams defined in your application
+2. **Your database** - The actual schema in ClickHouse, Kafka, or Redpanda
 
-- **[`FULLY_MANAGED`](/moosestack/migrate/lifecycle)** — Moose may perform any required operation, including destructive changes. Default for dev environments.
-- **[`DELETION_PROTECTED`](/moosestack/migrate/lifecycle)** — Moose may add or modify structures but blocks drops. Recommended for production tables.
-- **[`EXTERNALLY_MANAGED`](/moosestack/migrate/lifecycle)** — Moose treats the resource as read-only, useful when another tool owns the schema.
+When these states differ, Moose generates a set of operations to bring them into alignment. These operations might include:
 
-Configure these via the `lifeCycle` (TypeScript) or `life_cycle` (Python) option on tables, pipelines, and streams. Examples and code snippets are in the [Lifecycle management guide](/moosestack/migrate/lifecycle).
+- Adding or dropping tables
+- Adding, removing, or renaming columns
+- Changing data types
+- Creating or modifying streaming topics
 
-## How Moose Calculates Changes
+The key insight is that Moose handles the complexity of schema evolution so you can focus on your application logic.
 
-1. **Snapshot desired state** — Parse your TypeScript/Python models and build a canonical schema description.
-2. **Inspect actual state** — Connect to ClickHouse / Redpanda / Kafka and fetch live metadata.
-3. **Diff + order operations** — Determine adds, alters, drops, and dependency ordering (tables, materialized views, streams).
-4. **Materialize output** — Either emit a plan (planned mode) or execute immediately (auto-inferred).
-5. **Persist audit data** — Plans become version-controlled artifacts; auto-inferred runs leave traces in CLI logs (`~/.moose/*-cli.log`).
+## Core Concepts
 
-Because Moose compares entire states, it can detect drift, prevent partial deployments, and re-run safely when nothing changed.
+Migrations in Moose revolve around a few key decisions. Think of this section as your map—here’s where to find the details on how to configure, run, and manage your schema changes.
 
-## Environment Recipes
+| Concept | What it is | Where to go |
+| :--- | :--- | :--- |
+| **Migration Types** | Deciding *how* changes are generated. | [Auto-Inferred](./auto-inferred) • [Planned](./planned-migrations) |
+| **Lifecycle Management** | Controlling *what* changes are allowed (e.g., preventing data deletion). | [Fully Managed](./lifecycle-fully-managed) • [Deletion Protected](./lifecycle-deletion-protected) • [Externally Managed](./lifecycle-externally-managed) |
+| **Applying Changes** | The workflow for executing migrations: serverless (`moose migrate`) vs server runtime (`moose prod`). | [Serverless](./apply-planned-migrations-cli) • [Server Runtime](./apply-planned-migrations-service) |
+| **Failed Migrations** | Understanding how to recover from failed migrations. | [Failed Migrations](./failed-migrations) |
+| **Plan Format** | Deep dive into the format of the migration plan file. | [Plan Format](./plan-format) |
 
-| Scenario | Recommended Setup | Notes |
-|----------|------------------|-------|
-| New Moose application | [Service model (`moose prod`)](/moosestack/migrate/apply-planned-migrations-service) + [planned migrations](/moosestack/migrate/planned-migrations) + [`DELETION_PROTECTED`](/moosestack/migrate/lifecycle) | Zero-touch deploys with automatic safety rails. |
-| Existing app adding analytics | [Library model (`moose migrate`)](/moosestack/migrate/apply-planned-migrations-cli) + [planned migrations](/moosestack/migrate/planned-migrations) + [`DELETION_PROTECTED`](/moosestack/migrate/lifecycle) | Integrates cleanly with established CI/CD review steps. |
-| Local development | Either deployment model + [auto-inferred migrations](/moosestack/migrate/apply-migrations) + [`FULLY_MANAGED`](/moosestack/migrate/lifecycle) | Hot reload iterations, expect destructive operations. |
-| Shared database touched by other tools | Either deployment model + [planned migrations](/moosestack/migrate/planned-migrations) + [`EXTERNALLY_MANAGED`](/moosestack/migrate/lifecycle) | Drift detection prevents Moose from overwriting external changes. |
-| Staging / QA | Either deployment model + [planned migrations](/moosestack/migrate/planned-migrations) + [`FULLY_MANAGED`](/moosestack/migrate/lifecycle) | Mirrors production workflow while allowing destructive cleanup. |
+### Quick Guide: Which path should I take?
 
-## Infrastructure State Storage
+- **Just starting out?** Stick to **auto-inferred** migrations in development. It’s fast and keeps you in the flow.
+- **Going to production?** Switch to **planned** migrations. You’ll get a reviewable plan (like a PR for your database) and safety checks.
+- **Integrating into an existing app?** Use **serverless** (`moose migrate`) to control exactly when migrations run.
+- **Building a dedicated data platform?** Use the **Server Runtime** (`moose prod`) to handle the lifecycle automatically.
 
-Moose stores migration state so it can detect drift and coordinate distributed runners. Two storage backends are available:
+For a complete breakdown of commands and flags, head over to the [Reference](./reference) page.
 
-- **ClickHouse Keeper (default)** — Co-locates state with your ClickHouse deployment and works out of the box.
-- **Redis** — Configure when you already run Redis or need multi-tenant isolation. Set `state_config.storage = "redis"` and provide a connection string.
-
-```toml filename="moose.config.toml" copy
-[state_config]
-storage = "redis"
-
-[redis_config]
-url = "redis://host:port"
-```
-
-When using Redis, pass `--redis-url` or set `MOOSE_REDIS_CONFIG__URL` alongside the required ClickHouse connection string whenever you run `moose migrate`.
-
-## Production Rollout Checklist
-
-1. [Generate a plan](/moosestack/migrate/planned-migrations) from the exact commit you intend to deploy.
-2. Review the `plan.yaml`, `remote_state.json`, and `local_infra_map.json` diffs in a pull request.
-3. Confirm lifecycle settings (`DELETION_PROTECTED`, `EXTERNALLY_MANAGED`, etc.) match the blast-radius you accept.
-4. Apply via `moose migrate apply` (library model) or ship the plan artifact alongside your `moose prod` deployment (service model).
-5. Monitor CLI / service logs for the migration block, and keep the plan artifacts for audit evidence.
-
-## Migration Operation Reference
-
-These are the only operations emitted in `plan.yaml` according to the [plan reference](/moosestack/migrate/reference).
-
-| Operation | What It Does | Typical Trigger |
-|-----------|--------------|-----------------|
-| `CreateTable` | Adds a new ClickHouse table to match a newly exported `OlapTable`. | Defining a new table in code. |
-| `DropTable` | Removes a table (and data). | Deleting a table definition. |
-| `AddTableColumn` | Adds a column to an existing table. | Adding a field to a model. |
-| `DropTableColumn` | Removes a column. | Removing a field from the model. |
-| `ModifyTableColumn` | Alters type, nullability, defaults, or constraints. | Changing field metadata. |
-| `RenameTableColumn` | Renames a column in place. | Renaming a field without rewriting data. |
-| `RawSql` | Executes custom SQL snippets for cases not covered above. | Manual edits such as indexes, backfills, or advanced DDL. |
-
-The [Migration reference](/moosestack/migrate/reference) details every operation, ordering rules, and how they appear inside `migration_plan.sql`.
-
-## Related Resources
-
-- [Add Moose to an existing app](/moosestack/getting-started/from-clickhouse)
-- [Quick start guide](/moosestack/getting-started/quickstart)
-- [Planned migrations](/moosestack/migrate/planned-migrations)
-- [Dev mode migrations](/moosestack/migrate/apply-migrations)
-- [Migration reference](/moosestack/migrate/reference)
-- [Lifecycle management](/moosestack/migrate/lifecycle)
-- [Troubleshooting migrations](/moosestack/migrate/schema-change)
