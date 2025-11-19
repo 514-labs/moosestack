@@ -1,99 +1,61 @@
 ---
-title: Apply Planned Migrations with Moose Prod
-description: Let the Moose runtime execute plan.yaml automatically during application startup
-order: 14
+title: Server Runtime
+description: Reference documentation for automatic migration execution in the Moose server runtime.
+order: 8
 category: olap
 ---
 
 import { Callout } from "@/components/mdx";
 
-# Apply Planned Migrations with Moose Prod
+# Server Runtime
 
-When you deploy the full MooseStack runtime (`moose prod`), the server automatically runs your planned migrations during startup. This page explains how to confirm the plan is ready, what happens at boot, and how to respond to drift failures.
+The **Server Runtime** deployment model (invoked via `moose prod`) includes an automatic migration runner that executes planned changes during the application boot sequence.
 
-<Callout type="info" title="Boreal Hosting runs this for you">
-If you're on **Boreal Hosting** (FiveOneFour’s commercial hosting platform for MooseStack runtime apps), the apply-on-start behavior described here is handled automatically during each deployment. You still need to ship an up-to-date plan, but Boreal ensures the runtime picks it up and runs it safely.
-</Callout>
+## Overview
 
-<Callout type="info" title="Need a plan first?" href="/moosestack/migrate/planned-migrations" ctaLabel="Generate plan" compact>
-Make sure `plan.yaml`, `remote_state.json`, and `local_infra_map.json` are up to date before you ship code.
-</Callout>
+When running as a full server, Moose orchestrates the entire lifecycle of your data stack. Migrations are treated as a prerequisite for starting the application: the server will not accept traffic or process data until the database schema matches the code definition.
 
-## When to Use
+| Feature | Description |
+| :--- | :--- |
+| **Automatic Execution** | Migrations run automatically when the `moose prod` command starts. |
+| **Drift Protection** | The server validates the database state against `remote_state.json` before applying changes. |
+| **Code Validation** | The server ensures the deployed code matches `local_infra_map.json` to prevent mismatches. |
+| **Zero-Touch** | No separate CLI commands or CI/CD steps are required to apply migrations. |
 
-- You deploy Moose as a managed runtime (Moose Prod or a containerized service)
-- You want migrations to run automatically during each rollout
-- Your platform team already handles application startup orchestration
-- You use Boreal Hosting and want to understand the automatic plan execution it performs on your behalf
+## Command Reference
 
-## Prerequisites
-
-- `ddl_plan = true` and `olap = true` in `moose.config.toml`
-- An approved plan committed to `migrations/`
-- Access to update the Moose Prod deployment (SSH, Kubernetes, ECS, etc.)
-- Admin API authentication configured (required for generating future plans)
-
----
-
-## Step 1 · Ship the Approved Plan
-
-Ensure the runtime receives the same commit that reviewers approved:
+The migration logic is embedded within the production server start command.
 
 ```bash
-git checkout main
-git pull origin main
-# Build or publish your release artifact as you normally would
-```
-
-Deploy the artifact (container image, binary, etc.) to your production environment.
-
----
-
-## Step 2 · Start `moose prod`
-
-On the server (or inside your orchestrator), run:
-
-```bash filename="Terminal" copy
 moose prod
 ```
 
-During startup Moose will:
+**Environment Variables:**
+The server requires access to the ClickHouse database, typically configured via `moose.config.toml` or environment variables overridden at runtime.
 
-1. Detect that `ddl_plan = true`
-2. Load `migrations/plan.yaml`
-3. Compare `remote_state.json` with the actual ClickHouse state
-4. Compare `local_infra_map.json` with the code bundled in the deployment
-5. Execute the plan in order (teardowns, setups, modifications)
-6. Continue booting application services
+## Execution Lifecycle
 
-<Callout type="warning" title="Startup fails on drift">
-If the ClickHouse schema changed since you generated the plan, Moose exits before starting any services. Regenerate the plan against the current production state, commit the new files, redeploy, and restart `moose prod`.
+When `moose prod` starts, it performs the following sequence:
+
+1.  **Load Plan:** Reads `migrations/plan.yaml` from the deployment artifact.
+2.  **Check Code Consistency:** Verifies that the running application code matches `local_infra_map.json`. If not, it aborts to prevent deploying code that doesn't match the plan.
+3.  **Check Database Drift:** Connects to ClickHouse and compares the current schema against `remote_state.json`. If drift is detected, it aborts.
+4.  **Execute Migration:** Applies the operations defined in `plan.yaml`.
+5.  **Start Services:** Once migrations succeed, the Ingestion API, Consumption API, and Streaming workers are started.
+
+## Failure Modes
+
+| Condition | Outcome | Resolution |
+| :--- | :--- | :--- |
+| **Drift Detected** | Server fails to start. | Regenerate the plan against the current production DB and redeploy. |
+| **Plan Mismatch** | Server fails to start. | Ensure the `migrations/` directory matches the code in your deployment artifact. |
+| **Migration Error** | Server fails to start. | Fix the schema issue or plan file, then redeploy. |
+
+<Callout type="info" title="Boreal Hosting">
+If you are using Boreal Hosting, this process is handled automatically. The platform ensures that your application only becomes healthy once `moose prod` has successfully completed the migration phase.
 </Callout>
 
----
+## See Also
 
-## Step 3 · Verify the Deployment
-
-- Confirm the `moose prod` logs show the migration block executing successfully
-- Run smoke tests or health checks for your application
-- Optional: connect to ClickHouse and inspect the affected tables to ensure schema changes landed
-
----
-
-## Handling Failures
-
-**Plan validation failed**  
-The runtime detected a mismatch between `local_infra_map.json` and your shipped code. Rebuild your artifact to include the same schema definitions used when the plan was generated.
-
-**Migration step failed mid-run**  
-Moose stops immediately and surfaces the ClickHouse error. Fix the plan (or add `RawSql` remediation), regenerate, redeploy, and retry.
-
-**Need to rerun after hotfix**  
-It is safe to rerun `moose prod`; the plan only executes if the snapshots still match. Once applied successfully, consider deleting or rotating the plan files to avoid accidental replays.
-
----
-
-## Next Steps
-
-- [Apply planned migrations with the CLI](/moosestack/migrate/apply-planned-migrations-cli) – Manual control for existing applications.
-- [Review & edit planned migrations](/moosestack/migrate/reference) – Adjust operations before the next deployment.
+- [Planned Migrations](/moosestack/migrate/planned-migrations) - Generating the plan files.
+- [Serverless (moose migrate)](/moosestack/migrate/apply-planned-migrations-cli) - The manual alternative for serverless deployments.
