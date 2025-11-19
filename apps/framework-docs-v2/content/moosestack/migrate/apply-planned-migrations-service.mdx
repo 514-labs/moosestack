@@ -11,6 +11,10 @@ import { Callout } from "@/components/mdx";
 
 When you deploy the full MooseStack runtime (`moose prod`), the server automatically runs your planned migrations during startup. This page explains how to confirm the plan is ready, what happens at boot, and how to respond to drift failures.
 
+<Callout type="info" title="Boreal Hosting runs this for you">
+If you're on **Boreal Hosting** (FiveOneFour’s commercial hosting platform for MooseStack runtime apps), the apply-on-start behavior described here is handled automatically during each deployment. You still need to ship an up-to-date plan, but Boreal ensures the runtime picks it up and runs it safely.
+</Callout>
+
 <Callout type="info" title="Need a plan first?" href="/moosestack/migrate/planned-migrations" ctaLabel="Generate plan" compact>
 Make sure `plan.yaml`, `remote_state.json`, and `local_infra_map.json` are up to date before you ship code.
 </Callout>
@@ -20,6 +24,7 @@ Make sure `plan.yaml`, `remote_state.json`, and `local_infra_map.json` are up to
 - You deploy Moose as a managed runtime (Moose Prod or a containerized service)
 - You want migrations to run automatically during each rollout
 - Your platform team already handles application startup orchestration
+- You use Boreal Hosting and want to understand the automatic plan execution it performs on your behalf
 
 ## Prerequisites
 
@@ -92,4 +97,3 @@ It is safe to rerun `moose prod`; the plan only executes if the snapshots still 
 
 - [Apply planned migrations with the CLI](/moosestack/migrate/apply-planned-migrations-cli) – Manual control for existing applications.
 - [Review & edit planned migrations](/moosestack/migrate/reference) – Adjust operations before the next deployment.
-
