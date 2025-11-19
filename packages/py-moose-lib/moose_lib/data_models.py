@@ -516,7 +516,7 @@ def _to_columns(model: type[BaseModel]) -> list[Column]:
                 annotations.append(
                     ("simpleAggregationFunction", md.to_dict())
                 )
-            if md == "LowCardinality":
+            if md == "LowCardinality" and all(key != "LowCardinality" for (key, _) in annotations):
                 annotations.append(
                     ("LowCardinality", True)
                 )
