@@ -1,7 +1,7 @@
 ---
 title: Schema Versioning with Materialized Views
 description: Use table versions and materialized views to migrate breaking schema changes safely
-order: 8
+order: 10
 category: olap
 ---
 
@@ -21,7 +21,7 @@ Changing a table's storage layout (engine or sorting key) in ClickHouse requires
 **How Moose does it**:
 1. Define a new table with the same logical name and a bumped `version`, setting the new <LanguageTabs><LanguageTabContent value="typescript">`orderByFields`</LanguageTabContent><LanguageTabContent value="python">`order_by_fields`</LanguageTabContent></LanguageTabs> and/or `engine` ([Table modeling](/moosestack/olap/model-table)).
 2. Create a [Materialized view](/moosestack/olap/model-materialized-view) that selects from the old table and writes to the new one; Moose backfills once and keeps the view live for new inserts.
-3. Later on, cut over readers/writers to the new export and clean up old resources ([Applying migrations](/moosestack/olap/apply-migrations)).
+3. Later on, cut over readers/writers to the new export and clean up old resources ([Applying migrations](/moosestack/migrate/apply-migrations)).
 
 <Callout type="info" title="Version configuration">
 Setting `config.version` on an `OlapTable` changes only the underlying table name (suffixes dots with underscores). Your code still refers to the logical table you exported.

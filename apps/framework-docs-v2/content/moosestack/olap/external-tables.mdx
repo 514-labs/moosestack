@@ -1,7 +1,7 @@
 ---
 title: External Tables
 description: Connect to externally managed database tables and CDC services
-order: 12
+order: 15
 category: olap
 ---
 
@@ -197,7 +197,7 @@ Locally, externally managed tables are created/kept in sync in your development 
 
 Moose will **not** apply schema changes to `EXTERNALLY_MANAGED` tables in production. If you edit these table models in code, those edits will not produce DDL operations in the migration plan (they will not appear in `plan.yaml`).
 
-For more on how migration plans are generated and what shows up in `plan.yaml`, see [/moosestack/olap/planned-migrations](/moosestack/olap/planned-migrations).
+For more on how migration plans are generated and what shows up in `plan.yaml`, see [/moosestack/migrate/planned-migrations](/moosestack/migrate/planned-migrations).
 </Callout>
 
 ## Staying in sync with remote schema

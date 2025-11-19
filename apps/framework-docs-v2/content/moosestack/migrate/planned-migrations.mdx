@@ -1,0 +1,239 @@
+---
+title: How to Use Planned Migrations with Service Model
+description: Generate, review, and safely apply database schema changes when using moose prod
+order: 12
+category: olap
+---
+
+import { Callout, LanguageTabs, LanguageTabContent } from "@/components/mdx";
+
+# How to Use Planned Migrations with Service Model
+
+This guide walks you through using planned migrations with the service deployment model (`moose prod`). You'll learn how to safely apply database schema changes to production by generating a migration plan, reviewing it in a pull request, and deploying it automatically.
+
+<Callout type="info" title="New to migrations?" href="/moosestack/migrate" ctaLabel="Read the concept guide" compact>
+If you're unfamiliar with migration modes or deployment models, start with the migrations concept guide.
+</Callout>
+
+## When to Use This Guide
+
+Use this guide if:
+- You're running Moose with `moose prod` (full MooseStack runtime)
+- You want to review exact schema changes before they apply
+- You're deploying to production with real data
+- You need drift detection for shared databases
+
+If you're integrating Moose OLAP into an existing app, see [How to Use Planned Migrations with Library Model](/moosestack/migrate/planned-migrations-library) instead.
+
+## Before You Begin
+
+**Required configuration:**
+```toml file="moose.config.toml"
+[features]
+olap = true
+ddl_plan = true  # Enables planned migrations
+```
+
+**Required access:**
+- Admin API credentials for your production Moose server
+- Git repository with pull request workflow
+- Running production deployment at a known URL
+
+**Prerequisites:**
+- Basic understanding of your table schemas
+- Familiarity with your team's code review process
+- Production environment running a MooseStack service
+
+## Steps
+
+### 1. Make schema changes in your code
+
+Edit your table definitions on a feature branch:
+
+```typescript filename="app/tables/users.ts" copy
+interface User {
+  id: Key<string>;
+  name: string;
+  email: string;
+  status: string; // New field added
+}
+
+export const users = new OlapTable<User>("users");
+```
+
+Commit these changes to your branch but don't merge yet.
+
+### 2. Generate the migration plan from production
+
+Run this command from your project root, pointing to your production environment:
+
+```bash filename="Terminal" copy
+moose generate migration --url https://your-prod-server.com --token <admin-api-token> --save
+```
+
+Replace `your-prod-server.com` with your actual production URL and provide your admin API token.
+
+<Callout type="info" title="Admin API required" href="/moosestack/apis/admin-api" ctaLabel="Admin API setup" compact>
+To run `moose generate migration` against production, your Admin API must be enabled and authentication configured on your MooseStack runtime. Follow the setup guide: [Admin API setup](/moosestack/apis/admin-api).
+</Callout>
+
+**What happens:** Moose CLI connects to production, compares the live database state with your local code changes, and generates three files:
+
+```text
+./migrations/plan.yaml               # Operations to execute
+./migrations/remote_state.json       # Production state snapshot
+./migrations/local_infra_map.json    # Your code's desired state
+```
+
+**Expected output:**
+```text
+$ moose generate migration --url https://your-prod-server.com --token <admin-api-token> --save
+    Remote Plan Comparing local project code with deployed infrastructure
+    Remote Plan Calculated plan differences locally
+      Migration generated
+```
+
+Replace the `--url` and `--token` with the actual URL where your production MooseStack service is running and your admin API token.
+
+### 3. Review the generated plan
+
+Open `./migrations/plan.yaml` to see the exact operations Moose will perform:
+
+```yaml filename="migrations/plan.yaml" copy
+- AddTableColumn:
+    table: users
+    column:
+      name: status
+      data_type: String
+      required: true
+      unique: false
+      primary_key: false
+      default: null
+```
+
+**What to check:**
+- Verify the operations match your intent
+- Ensure no unexpected drops or destructive changes
+- Check the order of operations (teardowns happen first, then setups)
+
+<Callout type="warning" title="Data loss risk">
+If you see `DropTableColumn` operations, verify they're intentional. Moose Migrate doesn't distinguish column renames from drop-and-recreate, so a rename will appear as a drop followed by an add.
+</Callout>
+
+### 4. Edit the plan if needed (optional)
+
+You can modify `plan.yaml` to override Moose's assumptions. Common edits:
+
+**Rename a column instead of drop/add:**
+```yaml filename="migrations/plan.yaml" copy
+# Moose generated:
+- DropTableColumn:
+    table: users
+    column_name: createdAt
+- AddTableColumn:
+    table: users
+    column:
+      name: created_at
+      data_type: DateTime
+
+# Edit to preserve data:
+- RenameTableColumn:
+    table: users
+    before_column_name: createdAt
+    after_column_name: created_at
+```
+
+**Add custom backfill logic:**
+```yaml filename="migrations/plan.yaml" copy
+- AddTableColumn:
+    table: users
+    column:
+      name: last_active
+      data_type: DateTime
+      required: false
+      default: null
+- RawSql:
+    sql:
+      - "UPDATE users SET last_active = created_at WHERE last_active IS NULL"
+    description: "Backfill last_active from created_at"
+```
+
+See the [migration reference](/moosestack/migrate/reference) for all available operations.
+
+### 5. Commit the migration files
+
+Add all three migration files to your branch:
+
+```bash filename="Terminal" copy
+git add migrations/
+git commit -m "Add migration plan for user status column"
+```
+
+**Important:** Commit all three files together:
+- `plan.yaml` - The operations to execute
+- `remote_state.json` - Production snapshot for drift detection
+- `local_infra_map.json` - Your code's desired state
+
+### 6. Create a pull request
+
+Push your branch and create a PR as usual:
+
+```bash filename="Terminal" copy
+git push origin your-feature-branch
+```
+
+**In the PR description, explain:**
+- What schema changes you're making and why
+- Any manual edits you made to the plan
+- Expected impact on the database
+
+Your team can now review both the code changes and the exact migration operations.
+
+### 7. Deploy to production
+
+Once your PR is approved and merged:
+
+```bash filename="Terminal" copy
+# On your production server
+git pull origin main
+moose prod
+```
+
+**What happens on startup:**
+1. Moose Migrate detects `ddl_plan = true` in config
+2. Loads `migrations/plan.yaml`
+3. Validates current production state matches `remote_state.json` (drift check)
+4. Validates local code matches `local_infra_map.json`
+5. Executes plan operations in order
+6. Starts the application
+
+<Callout type="warning" title="Deployment will abort if drift detected" compact>
+If someone else modified the production database since you generated the plan, startup will fail. Regenerate the plan against current production and retry.
+</Callout>
+
+## Troubleshooting
+
+**Can't connect to production:**
+- Verify your admin API token is valid
+- Check the production URL is correct
+- Ensure [admin authentication is configured](/moosestack/apis/auth#admin-endpoints)
+
+**Deployment aborted due to drift:**
+1. Someone modified production since you generated the plan
+2. Regenerate the plan: `moose generate migration --url <prod-url> --token <token> --save`
+3. Review the new plan for conflicts
+4. Commit and redeploy
+
+**Plan not executing:**
+- Verify `ddl_plan = true` in `moose.config.toml`
+- Ensure `migrations/plan.yaml` exists and is committed
+- Check that `[features].olap = true`
+
+**Type mismatch errors:**
+- See [troubleshooting schema changes](/moosestack/migrate/schema-change) for data type compatibility issues
+
+## Next Steps
+
+- [How to use planned migrations with library model](/moosestack/migrate/planned-migrations-library) - For integrating into existing apps
+- [Migration reference](/moosestack/migrate/reference) - Operations, data types, and YAML reference
+- [Lifecycle modes](/moosestack/migrate/lifecycle) - Control what operations are allowed per table

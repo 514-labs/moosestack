@@ -636,7 +636,7 @@ When the MaterializedView is created, Moose backfills the destination once by ru
 Materialized views that source from S3Queue tables are **not backfilled** automatically. S3Queue tables only process new files added to S3 after the table is created - there is no historical data to backfill from. The MV will start populating as new files arrive in S3.
 </Callout>
 
-You can see the SQL that Moose will run to backfill the destination table when you generate the [Migration Plan](/moosestack/olap/planned-migrations).
+You can see the SQL that Moose will run to backfill the destination table when you generate the [Migration Plan](/moosestack/migrate/planned-migrations).
 
 During dev mode, as soon as you save the MaterializedView, Moose will run the backfill and you can see the results in the destination table by querying it in your local ClickHouse instance.
 
