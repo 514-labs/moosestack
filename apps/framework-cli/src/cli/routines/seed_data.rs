@@ -550,7 +550,7 @@ pub async fn seed_clickhouse_tables(
         }
 
         // Attempt to seed the single table
-        match seed_single_table(local_clickhouse, remote_config, &table, limit, order_by).await {
+        match seed_single_table(local_clickhouse, remote_config, table, limit, order_by).await {
             Ok(success_msg) => {
                 summary.push(success_msg);
             }
@@ -580,6 +580,56 @@ pub async fn seed_clickhouse_tables(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::framework::core::infrastructure::table::OrderBy;
+    use crate::framework::core::infrastructure_map::{PrimitiveSignature, PrimitiveTypes};
+    use crate::framework::core::partial_infrastructure_map::LifeCycle;
+    use crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine;
+    use std::collections::HashMap;
+
+    /// Helper function to create a minimal test Table
+    fn create_test_table(name: &str, database: Option<String>) -> Table {
+        Table {
+            name: name.to_string(),
+            columns: vec![],
+            order_by: OrderBy::Fields(vec!["id".to_string()]),
+            partition_by: None,
+            sample_by: None,
+            engine: ClickhouseEngine::MergeTree,
+            version: None,
+            source_primitive: PrimitiveSignature {
+                name: "test".to_string(),
+                primitive_type: PrimitiveTypes::DataModel,
+            },
+            metadata: None,
+            life_cycle: LifeCycle::default_for_deserialization(),
+            indexes: vec![],
+            database,
+            engine_params_hash: None,
+            table_settings: None,
+            table_ttl_setting: None,
+            cluster_name: None,
+        }
+    }
+
+    /// Helper function to create a minimal test InfrastructureMap
+    fn create_test_infra_map(tables: HashMap<String, Table>) -> InfrastructureMap {
+        InfrastructureMap {
+            default_database: "default".to_string(),
+            topics: HashMap::new(),
+            api_endpoints: HashMap::new(),
+            tables,
+            views: HashMap::new(),
+            topic_to_table_sync_processes: HashMap::new(),
+            topic_to_topic_sync_processes: HashMap::new(),
+            function_processes: HashMap::new(),
+            block_db_processes: crate::framework::core::infrastructure::olap_process::OlapProcess {},
+            consumption_api_web_server: crate::framework::core::infrastructure::consumption_webserver::ConsumptionApiWebServer {},
+            orchestration_workers: HashMap::new(),
+            sql_resources: HashMap::new(),
+            workflows: HashMap::new(),
+            web_apps: HashMap::new(),
+        }
+    }
 
     #[test]
     fn test_validate_database_name_valid() {
@@ -724,34 +774,42 @@ mod tests {
 
     #[test]
     fn test_build_order_by_clause_with_provided_order() {
-        let infra_map = InfrastructureMap::default();
+        let table = create_test_table("my_table", None);
 
-        let result = build_order_by_clause("my_table", &infra_map, Some("id ASC"), 1000, 500);
+        let result = build_order_by_clause(&table, Some("id ASC"), 1000, 500);
 
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), "ORDER BY id ASC");
     }
 
     #[test]
-    fn test_build_order_by_clause_table_not_found() {
-        let infra_map = InfrastructureMap::default();
+    fn test_build_order_by_clause_without_order_by_and_no_provided_order() {
+        let mut table = create_test_table("my_table", None);
+        table.order_by = OrderBy::Fields(vec![]); // No ORDER BY fields
 
-        let result = build_order_by_clause("nonexistent_table", &infra_map, None, 1000, 500);
+        let result = build_order_by_clause(&table, None, 1000, 500);
 
         assert!(result.is_err());
         if let Err(e) = result {
             assert_eq!(e.message.action, "Seed");
-            assert!(e.message.details.contains("not found"));
+            assert!(e.message.details.contains("without ORDER BY"));
         }
     }
 
     #[test]
     fn test_get_tables_to_seed_single_table() {
-        let infra_map = InfrastructureMap::default();
+        let mut tables = HashMap::new();
+        tables.insert(
+            "specific_table".to_string(),
+            create_test_table("specific_table", None),
+        );
+
+        let infra_map = create_test_infra_map(tables);
 
         let result = get_tables_to_seed(&infra_map, Some("specific_table".to_string()));
         assert_eq!(result.len(), 1);
-        assert_eq!(result[0], (None, "specific_table".to_string()));
+        assert_eq!(result[0].name, "specific_table");
+        assert_eq!(result[0].database, None);
     }
 
     #[test]
