@@ -536,7 +536,7 @@ impl TableDiffStrategy for ClickHouseTableDiffStrategy {
                 OlapChange::Table(TableChange::Added(after.clone())),
             ];
         }
-
+        let mut changes = Vec::new();
         // Check if only table settings have changed
         if before.table_settings != after.table_settings {
             // List of readonly settings that cannot be modified after table creation
@@ -583,12 +583,12 @@ impl TableDiffStrategy for ClickHouseTableDiffStrategy {
                 before.name
             );
             // Return the explicit SettingsChanged variant for clarity
-            return vec![OlapChange::Table(TableChange::SettingsChanged {
+            changes.push(OlapChange::Table(TableChange::SettingsChanged {
                 name: before.name.clone(),
                 before_settings: before.table_settings.clone(),
                 after_settings: after.table_settings.clone(),
                 table: after.clone(),
-            })];
+            }));
         }
 
         // Check if this is an S3Queue table with column changes
@@ -621,18 +621,18 @@ impl TableDiffStrategy for ClickHouseTableDiffStrategy {
         // For other changes, ClickHouse can handle them via ALTER TABLE.
         // If there are no column/index/sample_by changes, return an empty vector.
         let sample_by_changed = before.sample_by != after.sample_by;
-        if column_changes.is_empty() && before.indexes == after.indexes && !sample_by_changed {
-            vec![]
-        } else {
-            vec![OlapChange::Table(TableChange::Updated {
+        if !column_changes.is_empty() || before.indexes != after.indexes || sample_by_changed {
+            changes.push(OlapChange::Table(TableChange::Updated {
                 name: before.name.clone(),
                 column_changes,
                 order_by_change,
                 partition_by_change,
                 before: before.clone(),
                 after: after.clone(),
-            })]
-        }
+            }))
+        };
+
+        changes
     }
 }
 
