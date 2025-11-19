@@ -30,8 +30,7 @@ Use this guide if you want to:
 - Connect to local ClickHouse to inspect data
 
 This guide covers **local development only**. For production deployments, see:
-- [Planned migrations (service model)](/moosestack/migrate/planned-migrations) - For `moose prod` deployments
-- [Planned migrations (library model)](/moosestack/migrate/planned-migrations-library) - For existing app integration
+- [Planned migrations](/moosestack/migrate/planned-migrations) - Production workflow guide
 
 ## Before You Begin
 
@@ -419,22 +418,20 @@ class Metric(BaseModel):
 
 ## Moving to Production
 
-Once you've tested your schema changes locally, you'll need to generate a migration plan for production:
+Once you've tested your schema changes locally, follow the planned migration workflow for production:
 
-**For service model deployments:**
 ```bash filename="Terminal" copy
+# Service model (moose prod)
 moose generate migration --url https://your-prod-server.com --token <admin-token> --save
-```
 
-See [planned migrations (service model)](/moosestack/migrate/planned-migrations) for complete workflow.
-
-**For library model deployments:**
-```bash filename="Terminal" copy
+# Library model (moose migrate)
 export PROD_CLICKHOUSE_URL="clickhouse://user:pass@host:9440/db"
 moose generate migration --clickhouse-url "$PROD_CLICKHOUSE_URL" --save
 ```
 
-See [planned migrations (library model)](/moosestack/migrate/planned-migrations-library) for complete workflow.
+- [Generate planned migration plans](/moosestack/migrate/planned-migrations) to create reviewable artifacts.
+- [Apply planned migrations with the CLI](/moosestack/migrate/apply-planned-migrations-cli) for serverless/library deployments.
+- [Apply planned migrations with Moose Prod](/moosestack/migrate/apply-planned-migrations-service) for automated runtime deployments.
 
 <Callout type="warning" title="Never use auto-inferred in production">
 Local development uses auto-inferred migrations for speed. Production should **always** use planned migrations with review workflows. Auto-inferred can't distinguish renames from drop+add, leading to data loss.
@@ -442,7 +439,8 @@ Local development uses auto-inferred migrations for speed. Production should **a
 
 ## Next Steps
 
-- [Planned migrations (service model)](/moosestack/migrate/planned-migrations) - Production workflow for `moose prod`
-- [Planned migrations (library model)](/moosestack/migrate/planned-migrations-library) - Production workflow for existing apps
-- [Migration reference](/moosestack/migrate/reference) - Operations, data types, and plan structure
+- [Generate planned migration plans](/moosestack/migrate/planned-migrations) - Diff against production and produce plan files
+- [Apply planned migrations with the CLI](/moosestack/migrate/apply-planned-migrations-cli) - Run `moose migrate` against ClickHouse
+- [Apply planned migrations with Moose Prod](/moosestack/migrate/apply-planned-migrations-service) - Let the runtime execute plans on startup
+- [Review & edit planned migrations](/moosestack/migrate/reference) - Understand every migration operation
 - [Lifecycle modes](/moosestack/migrate/lifecycle) - Control what operations are allowed per table

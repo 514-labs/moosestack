@@ -295,7 +295,7 @@ const moosestackNavigationConfig: NavigationConfig = [
         languages: ["typescript", "python"],
       },
       { type: "separator" },
-      { type: "label", title: "Data Operations" },
+      { type: "label", title: "Data Access" },
       {
         type: "page",
         slug: "moosestack/olap/insert-data",
@@ -343,23 +343,23 @@ const moosestackNavigationConfig: NavigationConfig = [
     icon: IconBolt,
     languages: ["typescript", "python"],
     children: [
-      { type: "label", title: "Managing Streams" },
+      { type: "label", title: "Manage Streams" },
       {
         type: "page",
         slug: "moosestack/streaming/create-stream",
-        title: "Creating Streams",
+        title: "Create Streams",
         languages: ["typescript", "python"],
       },
       {
         type: "page",
         slug: "moosestack/streaming/sync-to-table",
-        title: "Syncing Streams to Tables",
+        title: "Sync to OLAP",
         languages: ["typescript", "python"],
       },
       {
         type: "page",
         slug: "moosestack/streaming/dead-letter-queues",
-        title: "Configuring Dead Letter Queues",
+        title: "Dead Letter Queues",
         languages: ["typescript", "python"],
       },
       { type: "separator" },
@@ -488,8 +488,8 @@ const moosestackNavigationConfig: NavigationConfig = [
   // Separator
   { type: "separator" },
 
-  // Deployment Tools & Guides section
-  { type: "label", title: "Deployment Tools & Guides" },
+  // Deployment & Lifecycle section
+  { type: "label", title: "Deployment & Lifecycle" },
   {
     type: "page",
     slug: "moosestack/migrate",
@@ -515,23 +515,29 @@ const moosestackNavigationConfig: NavigationConfig = [
       {
         type: "page",
         slug: "moosestack/migrate/planned-migrations",
-        title: "Server Migrations",
+        title: "Generate Migration Plans",
         languages: ["typescript", "python"],
       },
       {
         type: "page",
-        slug: "moosestack/migrate/planned-migrations-library",
-        title: "CLI Migrations",
+        slug: "moosestack/migrate/reference",
+        title: "Review & Edit Plans",
+        languages: ["typescript", "python"],
+      },
+      {
+        type: "page",
+        slug: "moosestack/migrate/apply-planned-migrations-cli",
+        title: "Apply Plans (CLI)",
+        languages: ["typescript", "python"],
+      },
+      {
+        type: "page",
+        slug: "moosestack/migrate/apply-planned-migrations-service",
+        title: "Apply Plans (Moose Prod)",
         languages: ["typescript", "python"],
       },
       { type: "separator" },
       { type: "label", title: "Concepts & Reference" },
-      {
-        type: "page",
-        slug: "moosestack/migrate/migration-types",
-        title: "Migration Types",
-        languages: ["typescript", "python"],
-      },
       {
         type: "page",
         slug: "moosestack/migrate/lifecycle",

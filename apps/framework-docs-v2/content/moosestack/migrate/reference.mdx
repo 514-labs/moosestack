@@ -1,27 +1,50 @@
----
-title: Migration Reference
-description: Complete reference for Moose migrations including operations, data types, and plan structure
+title: Review & Edit Planned Migrations
+description: Validate plan.yaml, tweak operations, and reference every supported migration action
 order: 3
 category: migrate
 ---
 
 import { LanguageTabs, LanguageTabContent, Callout } from "@/components/mdx";
 
-# Migration Reference
+# Review & Edit Planned Migrations
+
+When `moose generate migration` finishes, the hard work begins. This page shows how to read `plan.yaml`, decide whether the diff is acceptable, and edit operations safely. The second half of the document is a complete reference for every supported migration action.
 
 <LanguageTabs>
   <LanguageTabContent value="typescript" />
   <LanguageTabContent value="python" />
 </LanguageTabs>
 
-This reference documents all migration operations, data types, and plan structures for Moose migrations. Use this as a comprehensive lookup guide when reviewing migration plans, editing YAML files, or understanding schema changes.
+This reference documents all migration operations, data types, and plan structures for Moose migrations. Use it while reviewing pull requests or editing `plan.yaml`.
 
 <Callout type="info" title="Looking for how-to guides?">
 This is a reference document. For step-by-step instructions, see:
+- [Generate Planned Migration Plans](/moosestack/migrate/planned-migrations) - Create plan artifacts
 - [Local Development](/moosestack/migrate/apply-migrations) - Develop with `moose dev`
-- [Server Migrations](/moosestack/migrate/planned-migrations) - Deploy with `moose prod`
-- [CLI Migrations](/moosestack/migrate/planned-migrations-library) - Deploy with `moose migrate`
+- [Apply Plans with CLI](/moosestack/migrate/apply-planned-migrations-cli) - `moose migrate` workflow
+- [Apply Plans with Moose Prod](/moosestack/migrate/apply-planned-migrations-service) - Automated runtime workflow
 </Callout>
+
+## How to Review `plan.yaml`
+
+1. **Scan the operation list** – Confirm only the tables you touched appear. Unexpected `Drop*` operations almost always mean Moose inferred a rename or removal.
+2. **Validate column definitions** – Ensure types, nullability, and defaults match your intent. Required columns added to existing tables usually need a default or backfill.
+3. **Check ordering** – Moose sequences teardown actions before creates. If dependencies exist (e.g., materialized views), verify the order makes sense.
+4. **Confirm snapshots** – `remote_state.json` should match production when you apply the plan. If someone else changed the database later, regenerate the plan before applying.
+
+<Callout type="warning" title="Never edit drift snapshots manually">
+`remote_state.json` and `local_infra_map.json` are used for drift detection. If their hashes don’t match when you run `moose migrate` or start `moose prod`, the deployment fails. Always regenerate instead of hand-editing these files.
+</Callout>
+
+## Editing the Plan
+
+`plan.yaml` is just YAML—you can adjust operations before committing:
+
+- Replace a `DropTableColumn` + `AddTableColumn` pair with `RenameTableColumn` to preserve data
+- Add `RawSql` blocks for custom backfills
+- Reorder operations when dependencies require a different sequence
+
+The sections below document every supported action plus common edit patterns.
 
 ## Quick Reference
 
@@ -878,8 +901,7 @@ See [lifecycle management](/moosestack/migrate/lifecycle) for details.
 
 - [Migration concept guide](/moosestack/migrate) - Understanding migration modes and models
 - [Local development](/moosestack/migrate/apply-migrations) - Develop with auto-inferred migrations
-- [Server migrations](/moosestack/migrate/planned-migrations) - Production with service model
-- [CLI migrations](/moosestack/migrate/planned-migrations-library) - Production with library model
+- [Planned migrations](/moosestack/migrate/planned-migrations) - Production workflow guide
 - [Lifecycle management](/moosestack/migrate/lifecycle) - Control allowed operations
 - [CLI commands](/moosestack/moose-cli#generate-migration-plan-olap) - moose migrate and related commands
 
