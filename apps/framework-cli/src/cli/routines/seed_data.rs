@@ -512,7 +512,13 @@ pub async fn seed_clickhouse_tables(
         .collect();
 
     // Get available remote tables for validation (unless specific table is requested)
-    let remote_tables = if table_name.is_some() {
+    let remote_tables = if let Some(name) = table_name {
+        if tables.is_empty() {
+            return Err(RoutineFailure::error(Message::new(
+                "Table".to_string(),
+                format!("{name} not found."),
+            )));
+        }
         // Skip validation if user specified a specific table
         None
     } else {
