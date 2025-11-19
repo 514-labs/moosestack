@@ -1368,6 +1368,8 @@ pub async fn top_command_handler(
             query: sql,
             file,
             limit,
+            format_query,
+            prettify,
         } => {
             info!("Running query command");
 
@@ -1382,7 +1384,15 @@ pub async fn top_command_handler(
                 HashMap::new(),
             );
 
-            let result = query(project_arc, sql.clone(), file.clone(), *limit).await;
+            let result = query(
+                project_arc,
+                sql.clone(),
+                file.clone(),
+                *limit,
+                format_query.clone(),
+                *prettify,
+            )
+            .await;
 
             wait_for_usage_capture(capture_handle).await;
 
