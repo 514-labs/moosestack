@@ -1,0 +1,141 @@
+---
+title: Apply Planned Migrations with the CLI
+description: Run moose migrate against ClickHouse to execute your approved plan
+order: 13
+category: olap
+---
+
+import { Callout } from "@/components/mdx";
+
+# Apply Planned Migrations with the CLI
+
+Use this guide when you run Moose in **library/serverless mode** and want explicit control over when migrations execute. The CLI reads `plan.yaml`, verifies drift with the snapshot files, and runs each operation against ClickHouse.
+
+<Callout type="info" title="Start here if you still need a plan" href="/moosestack/migrate/planned-migrations" ctaLabel="Generate plan" compact>
+You must generate and review a plan before running it in production.
+</Callout>
+
+## When to Use
+
+- You integrate Moose into an existing application (Next.js, Express, FastAPI, etc.)
+- You need a manual approval step before migrations run
+- You prefer running migrations inside your CI/CD pipeline
+- Your production ClickHouse is managed outside the Moose runtime
+
+## Prerequisites
+
+- `ddl_plan = true` and `olap = true` in `moose.config.toml`
+- `migrations/plan.yaml`, `migrations/remote_state.json`, and `migrations/local_infra_map.json` committed to the main branch
+- Production ClickHouse URL with `CREATE`, `ALTER`, and `DROP` privileges
+- Moose CLI installed wherever you plan to run the command
+
+---
+
+## Step 1 · Pull the Approved Plan
+
+Make sure the machine running `moose migrate` has the same commit that reviewers approved:
+
+```bash
+git checkout main
+git pull origin main
+```
+
+If the plan files are missing or drifted, regenerate them before proceeding.
+
+---
+
+## Step 2 · Run `moose migrate`
+
+```bash filename="Terminal" copy
+export PROD_CLICKHOUSE_URL="clickhouse://user:password@prod-host:9440/analytics"
+moose migrate --clickhouse-url "$PROD_CLICKHOUSE_URL"
+```
+
+**What happens:**
+
+1. Moose loads `migrations/plan.yaml`
+2. Verifies production matches `remote_state.json` (drift detection)
+3. Verifies your code matches `local_infra_map.json`
+4. Executes each operation in the plan
+5. Reports success or fails fast on the first error
+
+**Sample output**
+
+```text
+$ moose migrate --clickhouse-url "$PROD_CLICKHOUSE_URL"
+✓ Loading migration plan
+✓ Validating production state (no drift detected)
+✓ Validating code state (matches plan)
+✓ Executing migration operations
+  → AddTableColumn: users.status
+✓ Migration completed successfully
+```
+
+<Callout type="warning" title="Plan aborted due to drift">
+If someone changed the production schema after you generated the plan, Moose will exit before executing anything. Regenerate the plan against the latest production state and push the updated files.
+</Callout>
+
+---
+
+## Step 3 · Deploy Application Code
+
+Once the CLI finishes, deploy your application as usual so the new schema is available to the rest of your stack.
+
+---
+
+## Automate in CI/CD
+
+Most teams run migrations as a pipeline stage that must succeed before application code deploys.
+
+```yaml filename=".github/workflows/deploy.yml" copy
+name: Deploy
+on:
+  push:
+    branches: [main]
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Moose CLI
+        run: npm install -g @514labs/moose-cli
+      - name: Apply migrations
+        run: moose migrate --clickhouse-url "$PROD_CLICKHOUSE_URL"
+        env:
+          PROD_CLICKHOUSE_URL: ${{ secrets.CLICKHOUSE_URL }}
+
+  deploy:
+    needs: migrate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy application
+        run: ./scripts/deploy.sh
+```
+
+Recommendations:
+
+- Store connection strings in your secret store
+- Trigger the pipeline on merges to `main` or a protected release branch
+- Notify the team (Slack, email, etc.) when the migrate job fails
+
+---
+
+## Troubleshooting
+
+**Drift detected**  
+Another migration or manual change landed first. Regenerate the plan from the latest production state and rerun `moose migrate`.
+
+**Plan files missing**  
+Ensure the `migrations/` directory exists in the repository and you pulled the correct commit. Regenerate if files were accidentally deleted.
+
+**Connection errors**  
+Verify your ClickHouse URL, allowlist the runner IP, and confirm the user has DDL permissions.
+
+---
+
+## Next Steps
+
+- [Apply planned migrations with Moose Prod](/moosestack/migrate/apply-planned-migrations-service) – Let the runtime apply plans on startup.
+- [Review & edit planned migrations](/moosestack/migrate/reference) – Update the plan before your next deployment.
+

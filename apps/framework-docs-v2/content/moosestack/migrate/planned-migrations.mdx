@@ -1,0 +1,161 @@
+---
+title: Generate Planned Migration Plans
+description: Compare your schema to production and create reviewable plan artifacts
+order: 12
+category: olap
+---
+
+import { Callout, LanguageTabs, LanguageTabContent } from "@/components/mdx";
+
+# Generate Planned Migration Plans
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript" />
+  <LanguageTabContent value="python" />
+</LanguageTabs>
+
+Planned migrations start with a clean diff between your code and production. This page shows how to run `moose generate migration` so you can hand reviewers a precise plan before anything touches ClickHouse.
+
+<Callout type="info" title="New to migrations?" href="/moosestack/migrate" ctaLabel="Read the concept guide" compact>
+If you're unfamiliar with migration modes or deployment models, start with the migrations concept guide.
+</Callout>
+
+## When to Use This Guide
+
+Use this workflow when you:
+- Need human review before schema changes roll out
+- Coordinate deployments through CI/CD
+- Share a ClickHouse database across teams and require drift detection
+- Rely on reproducible migration artifacts for compliance or auditing
+
+## Prerequisites
+
+**Configuration**
+
+```toml file="moose.config.toml"
+[features]
+olap = true
+ddl_plan = true  # Enables planned migrations
+```
+
+**Access**
+
+- **Service model (`moose prod`)** — Admin API URL and token for the production deployment
+- **Library model (`moose migrate`)** — ClickHouse connection string with `CREATE`, `ALTER`, and `DROP`
+
+**Tooling**
+
+- Moose CLI installed locally (`npm i -g @514labs/moose-cli` or `pip install moose-cli`)
+- Git repository to track generated plan files
+
+---
+
+## Step 1 · Make Schema Changes in Code
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript" label="TypeScript">
+
+```typescript filename="app/tables/users.ts" copy
+interface User {
+  id: Key<string>;
+  name: string;
+  email: string;
+  status: string; // New field added
+}
+
+export const users = new OlapTable<User>("users");
+```
+
+  </LanguageTabContent>
+  <LanguageTabContent value="python" label="Python">
+
+```python filename="app/tables/users.py" copy
+class User(BaseModel):
+    id: Key[str]
+    name: str
+    email: str
+    status: str  # New field added
+
+users = OlapTable[User]("users")
+```
+
+  </LanguageTabContent>
+</LanguageTabs>
+
+Commit these changes to your feature branch so reviewers see both the code diff and the future migration plan.
+
+---
+
+## Step 2 · Run `moose generate migration`
+
+Point Moose at the production deployment you want to diff against.
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript" label="Service model (moose prod)">
+
+```bash filename="Terminal" copy
+moose generate migration --url https://your-prod-server.com --token $ADMIN_API_TOKEN --save
+```
+
+  </LanguageTabContent>
+  <LanguageTabContent value="python" label="Library model (moose migrate)">
+
+```bash filename="Terminal" copy
+export PROD_CLICKHOUSE_URL="clickhouse://user:password@prod-host:9440/analytics"
+moose generate migration --clickhouse-url "$PROD_CLICKHOUSE_URL" --save
+```
+
+  </LanguageTabContent>
+</LanguageTabs>
+
+<Callout type="warning" title="Protect secrets" compact>
+Load tokens and ClickHouse URLs from environment variables or your secrets manager. Never hard-code credentials into shell history or Git.
+</Callout>
+
+**Expected output**
+
+```text
+$ moose generate migration --clickhouse-url "$PROD_CLICKHOUSE_URL" --save
+    Remote Plan Comparing local project code with deployed infrastructure
+    Remote Plan Calculated plan differences locally
+      Migration generated
+```
+
+---
+
+## Step 3 · Inspect the Generated Artifacts
+
+Moose always writes three files under `./migrations/`:
+
+| File | Purpose |
+| --- | --- |
+| `plan.yaml` | Ordered list of operations Moose will execute (`AddTableColumn`, `DropTableColumn`, etc.) |
+| `remote_state.json` | Snapshot of production state used for drift detection |
+| `local_infra_map.json` | Snapshot of your code's desired state |
+
+Review these files locally to confirm Moose captured the intended changes. Regenerate the plan at any time—the files are deterministic, so Git diffs remain clear.
+
+---
+
+## Step 4 · Share the Plan for Review
+
+1. Double-check the plan locally for obvious mistakes.
+2. Commit the entire `migrations/` directory to your feature branch:
+
+```bash
+git add migrations/
+git commit -m "Generate plan for users.status column"
+```
+
+3. Open a pull request describing when and how you plan to apply the migration.
+
+Moose will not modify production until you explicitly run `moose migrate` or start `moose prod` with this plan, so it is safe to circulate the artifacts.
+
+---
+
+## Next Steps
+
+- [Review & edit planned migrations](/moosestack/migrate/reference) – Learn how to read `plan.yaml`, tweak operations, and reference every supported action.
+- [Apply a plan with the CLI](/moosestack/migrate/apply-planned-migrations-cli) – Run `moose migrate` against ClickHouse for serverless/library deployments.
+- [Apply a plan with Moose Prod](/moosestack/migrate/apply-planned-migrations-service) – Let `moose prod` run the vetted plan automatically on startup.
+
