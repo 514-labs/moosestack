@@ -1904,6 +1904,7 @@ impl InfrastructureMap {
 
                         // Only process changes if there are actual differences to report
                         // Note: cluster_name changes are intentionally excluded - they don't trigger operations
+                        // TODO: table_settings is not checked in the if condition, but checked by ClickHouseTableDiffStrategy
                         if !column_changes.is_empty()
                             || order_by_changed
                             || partition_by_changed
