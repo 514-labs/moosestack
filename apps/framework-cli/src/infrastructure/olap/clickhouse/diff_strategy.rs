@@ -536,18 +536,18 @@ impl TableDiffStrategy for ClickHouseTableDiffStrategy {
                 OlapChange::Table(TableChange::Added(after.clone())),
             ];
         }
-
+        let mut changes = Vec::new();
         // Check if only table settings have changed
         if before.table_settings != after.table_settings {
             // List of readonly settings that cannot be modified after table creation
             // Source: ClickHouse/src/Storages/MergeTree/MergeTreeSettings.cpp::isReadonlySetting
-            const READONLY_SETTINGS: &[&str] = &[
-                "index_granularity",
-                "index_granularity_bytes",
-                "enable_mixed_granularity_parts",
-                "add_minmax_index_for_numeric_columns",
-                "add_minmax_index_for_string_columns",
-                "table_disk",
+            const READONLY_SETTINGS: &[(&str, &str)] = &[
+                ("index_granularity", "8192"),
+                ("index_granularity_bytes", "10485760"),
+                ("enable_mixed_granularity_parts", "1"),
+                ("add_minmax_index_for_numeric_columns", "0"),
+                ("add_minmax_index_for_string_columns", "0"),
+                ("table_disk", "0"),
             ];
 
             // Check if any readonly settings have changed
@@ -555,9 +555,13 @@ impl TableDiffStrategy for ClickHouseTableDiffStrategy {
             let before_settings = before.table_settings.as_ref().unwrap_or(&empty_settings);
             let after_settings = after.table_settings.as_ref().unwrap_or(&empty_settings);
 
-            for readonly_setting in READONLY_SETTINGS {
-                let before_value = before_settings.get(*readonly_setting);
-                let after_value = after_settings.get(*readonly_setting);
+            for (readonly_setting, default) in READONLY_SETTINGS {
+                let before_value = before_settings
+                    .get(*readonly_setting)
+                    .map_or(*default, |v| v);
+                let after_value = after_settings
+                    .get(*readonly_setting)
+                    .map_or(*default, |v| v);
 
                 if before_value != after_value {
                     log::warn!(
@@ -579,12 +583,12 @@ impl TableDiffStrategy for ClickHouseTableDiffStrategy {
                 before.name
             );
             // Return the explicit SettingsChanged variant for clarity
-            return vec![OlapChange::Table(TableChange::SettingsChanged {
+            changes.push(OlapChange::Table(TableChange::SettingsChanged {
                 name: before.name.clone(),
                 before_settings: before.table_settings.clone(),
                 after_settings: after.table_settings.clone(),
                 table: after.clone(),
-            })];
+            }));
         }
 
         // Check if this is an S3Queue table with column changes
@@ -617,18 +621,18 @@ impl TableDiffStrategy for ClickHouseTableDiffStrategy {
         // For other changes, ClickHouse can handle them via ALTER TABLE.
         // If there are no column/index/sample_by changes, return an empty vector.
         let sample_by_changed = before.sample_by != after.sample_by;
-        if column_changes.is_empty() && before.indexes == after.indexes && !sample_by_changed {
-            vec![]
-        } else {
-            vec![OlapChange::Table(TableChange::Updated {
+        if !column_changes.is_empty() || before.indexes != after.indexes || sample_by_changed {
+            changes.push(OlapChange::Table(TableChange::Updated {
                 name: before.name.clone(),
                 column_changes,
                 order_by_change,
                 partition_by_change,
                 before: before.clone(),
                 after: after.clone(),
-            })]
-        }
+            }))
+        };
+
+        changes
     }
 }
 
