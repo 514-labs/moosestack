@@ -13,6 +13,7 @@ use crate::project::Project;
 use crate::utilities::constants::KEY_REMOTE_CLICKHOUSE_URL;
 use crate::utilities::keyring::{KeyringSecretRepository, SecretRepository};
 
+use crate::framework::core::infrastructure::table::Table;
 use log::{debug, info, warn};
 use std::cmp::min;
 use std::collections::HashSet;
@@ -36,26 +37,54 @@ fn build_remote_tables_query(
     remote_user: &str,
     remote_password: &str,
     remote_db: &str,
+    other_dbs: &[&str],
 ) -> String {
+    let mut databases = vec![remote_db];
+    databases.extend(other_dbs);
+
+    let db_list = databases
+        .iter()
+        .map(|db| format!("'{}'", db))
+        .collect::<Vec<_>>()
+        .join(", ");
+
     format!(
-        "SELECT name FROM remoteSecure('{}', 'system', 'tables', '{}', '{}') WHERE database = '{}'",
-        remote_host_and_port, remote_user, remote_password, remote_db
+        "SELECT database, name FROM remoteSecure('{}', 'system', 'tables', '{}', '{}') WHERE database IN ({})",
+        remote_host_and_port, remote_user, remote_password, db_list
     )
 }
 
-/// Parses the response from remote tables query into a HashSet
-fn parse_remote_tables_response(response: &str) -> HashSet<String> {
+/// Parses the response from remote tables query into a HashSet of (database, table) tuples
+fn parse_remote_tables_response(response: &str) -> HashSet<(String, String)> {
     response
         .lines()
-        .map(|line| line.trim().to_string())
-        .filter(|table| !table.is_empty())
+        .filter_map(|line| {
+            let line = line.trim();
+            if line.is_empty() {
+                return None;
+            }
+            // Split by tab or whitespace to get database and table
+            let parts: Vec<&str> = line.split('\t').collect();
+            if parts.len() >= 2 {
+                Some((parts[0].trim().to_string(), parts[1].trim().to_string()))
+            } else {
+                None
+            }
+        })
         .collect()
 }
 
 /// Determines if a table should be skipped during seeding
-fn should_skip_table(table_name: &str, remote_tables: &Option<HashSet<String>>) -> bool {
+/// db being None means "use the remote default"
+fn should_skip_table(
+    db: &Option<String>,
+    table_name: &str,
+    remote_db: &str,
+    remote_tables: &Option<HashSet<(String, String)>>,
+) -> bool {
     if let Some(ref remote_table_set) = remote_tables {
-        !remote_table_set.contains(table_name)
+        let db_to_check = db.as_deref().unwrap_or(remote_db);
+        !remote_table_set.contains(&(db_to_check.to_string(), table_name.to_string()))
     } else {
         false
     }
@@ -128,20 +157,13 @@ async fn load_infrastructure_map(project: &Project) -> Result<InfrastructureMap,
 
 /// Builds the ORDER BY clause for a table based on infrastructure map or provided order
 fn build_order_by_clause(
-    table_name: &str,
-    infra_map: &InfrastructureMap,
+    table: &Table,
     order_by: Option<&str>,
     total_rows: usize,
     batch_size: usize,
 ) -> Result<String, RoutineFailure> {
     match order_by {
         None => {
-            let table = infra_map.tables.get(table_name).ok_or_else(|| {
-                RoutineFailure::error(Message::new(
-                    "Seed".to_string(),
-                    format!("{table_name} not found."),
-                ))
-            })?;
             let clause = match &table.order_by {
                 crate::framework::core::infrastructure::table::OrderBy::Fields(v) => v
                     .iter()
@@ -159,7 +181,7 @@ fn build_order_by_clause(
             } else {
                 Err(RoutineFailure::error(Message::new(
                     "Seed".to_string(),
-                    format!("Table {table_name} without ORDER BY. Supply ordering with --order-by to prevent the same row fetched in multiple batches."),
+                    format!("Table {} without ORDER BY. Supply ordering with --order-by to prevent the same row fetched in multiple batches.", table.name),
                 )))
             }
         }
@@ -215,23 +237,23 @@ async fn get_remote_table_count(
 
 /// Seeds a single table with batched copying
 async fn seed_single_table(
-    infra_map: &InfrastructureMap,
     local_clickhouse: &ClickHouseClient,
     remote_config: &ClickHouseConfig,
-    table_name: &str,
+    table: &Table,
     limit: Option<usize>,
     order_by: Option<&str>,
 ) -> Result<String, RoutineFailure> {
     let remote_host_and_port = format!("{}:{}", remote_config.host, remote_config.native_port);
-    let local_db = &local_clickhouse.config().db_name;
+    let db = table.database.as_deref();
+    let local_db = db.unwrap_or(&local_clickhouse.config().db_name);
     let batch_size: usize = 50_000;
 
     // Get total row count
     let remote_total = get_remote_table_count(
         local_clickhouse,
         &remote_host_and_port,
-        &remote_config.db_name,
-        table_name,
+        db.unwrap_or(&remote_config.db_name),
+        &table.name,
         &remote_config.user,
         &remote_config.password,
     )
@@ -243,7 +265,7 @@ async fn seed_single_table(
         } else {
             RoutineFailure::error(Message::new(
                 "SeedSingleTable".to_string(),
-                format!("Failed to get row count for {table_name}: {e:?}"),
+                format!("Failed to get row count for {}: {e:?}", table.name),
             ))
         }
     })?;
@@ -253,8 +275,7 @@ async fn seed_single_table(
         Some(l) => min(remote_total, l),
     };
 
-    let order_by_clause =
-        build_order_by_clause(table_name, infra_map, order_by, total_rows, batch_size)?;
+    let order_by_clause = build_order_by_clause(table, order_by, total_rows, batch_size)?;
 
     let mut copied_total: usize = 0;
     let mut i: usize = 0;
@@ -268,9 +289,9 @@ async fn seed_single_table(
 
         let sql = build_seeding_query(&SeedingQueryParams {
             local_db,
-            table_name,
+            table_name: &table.name,
             remote_host_and_port: &remote_host_and_port,
-            remote_db: &remote_config.db_name,
+            remote_db: db.unwrap_or(&remote_config.db_name),
             remote_user: &remote_config.user,
             remote_password: &remote_config.password,
             order_by_clause: &order_by_clause,
@@ -278,43 +299,44 @@ async fn seed_single_table(
             offset: copied_total,
         });
 
-        debug!("Executing SQL: table={table_name}, offset={copied_total}, limit={batch_limit}");
+        debug!(
+            "Executing SQL: table={}, offset={copied_total}, limit={batch_limit}",
+            table.name
+        );
 
         match local_clickhouse.execute_sql(&sql).await {
             Ok(_) => {
                 copied_total += batch_limit;
-                debug!("{table_name}: copied batch {i}");
+                debug!("{}: copied batch {i}", table.name);
             }
             Err(e) => {
                 return Err(RoutineFailure::error(Message::new(
                     "SeedSingleTable".to_string(),
-                    format!("Failed to copy batch for {table_name}: {e}"),
+                    format!("Failed to copy batch for {}: {e}", table.name),
                 )));
             }
         }
     }
 
-    Ok(format!("✓ {table_name}: copied from remote"))
+    Ok(format!("✓ {}: copied from remote", table.name))
 }
 
 /// Gets the list of tables to seed based on parameters
-fn get_tables_to_seed(infra_map: &InfrastructureMap, table_name: Option<String>) -> Vec<String> {
-    if let Some(ref t) = table_name {
-        info!("Seeding single table: {}", t);
-        vec![t.clone()]
-    } else {
-        let table_list: Vec<String> = infra_map
-            .tables
-            .keys()
-            .filter(|table| !table.starts_with("_MOOSE"))
-            .cloned()
-            .collect();
-        info!(
-            "Seeding {} tables (excluding internal Moose tables)",
-            table_list.len()
-        );
-        table_list
-    }
+fn get_tables_to_seed(infra_map: &InfrastructureMap, table_name: Option<String>) -> Vec<&Table> {
+    let table_list: Vec<_> = infra_map
+        .tables
+        .values()
+        .filter(|table| match &table_name {
+            None => !table.name.starts_with("_MOOSE"),
+            Some(name) => &table.name == name,
+        })
+        .collect();
+    info!(
+        "Seeding {} tables (excluding internal Moose tables)",
+        table_list.len()
+    );
+
+    table_list
 }
 
 /// Performs the complete ClickHouse seeding operation including infrastructure loading,
@@ -371,10 +393,12 @@ async fn seed_clickhouse_operation(
 }
 
 /// Get list of available tables from remote ClickHouse database
+/// Returns a set of (database, table_name) tuples
 async fn get_remote_tables(
     local_clickhouse: &ClickHouseClient,
     remote_config: &ClickHouseConfig,
-) -> Result<HashSet<String>, RoutineFailure> {
+    other_dbs: &[&str],
+) -> Result<HashSet<(String, String)>, RoutineFailure> {
     let remote_host_and_port = format!("{}:{}", remote_config.host, remote_config.native_port);
 
     let sql = build_remote_tables_query(
@@ -382,6 +406,7 @@ async fn get_remote_tables(
         &remote_config.user,
         &remote_config.password,
         &remote_config.db_name,
+        other_dbs,
     );
 
     debug!("Querying remote tables: {}", sql);
@@ -481,13 +506,17 @@ pub async fn seed_clickhouse_tables(
 
     // Get the list of tables to seed
     let tables = get_tables_to_seed(infra_map, table_name.clone());
+    let other_dbs: Vec<&str> = tables
+        .iter()
+        .filter_map(|t| t.database.as_deref())
+        .collect();
 
     // Get available remote tables for validation (unless specific table is requested)
     let remote_tables = if table_name.is_some() {
         // Skip validation if user specified a specific table
         None
     } else {
-        match get_remote_tables(local_clickhouse, remote_config).await {
+        match get_remote_tables(local_clickhouse, remote_config, &other_dbs).await {
             Ok(tables) => Some(tables),
             Err(e) => {
                 warn!("Failed to query remote tables for validation: {:?}", e);
@@ -504,28 +533,24 @@ pub async fn seed_clickhouse_tables(
     };
 
     // Process each table
-    for table_name in tables {
+    for table in tables {
         // Check if table should be skipped due to validation
-        if should_skip_table(&table_name, &remote_tables) {
-            debug!(
+        if should_skip_table(
+            &table.database,
+            &table.name,
+            &remote_config.db_name,
+            &remote_tables,
+        ) {
+            info!(
                 "Table '{}' exists locally but not on remote - skipping",
-                table_name
+                table.name
             );
-            summary.push(format!("⚠️  {}: skipped (not found on remote)", table_name));
+            summary.push(format!("⚠️  {}: skipped (not found on remote)", table.name));
             continue;
         }
 
         // Attempt to seed the single table
-        match seed_single_table(
-            infra_map,
-            local_clickhouse,
-            remote_config,
-            &table_name,
-            limit,
-            order_by,
-        )
-        .await
-        {
+        match seed_single_table(local_clickhouse, remote_config, &table, limit, order_by).await {
             Ok(success_msg) => {
                 summary.push(success_msg);
             }
@@ -534,14 +559,14 @@ pub async fn seed_clickhouse_tables(
                     // Table not found on remote, skip gracefully
                     debug!(
                         "Table '{}' not found on remote database - skipping",
-                        table_name
+                        table.name
                     );
-                    summary.push(format!("⚠️  {}: skipped (not found on remote)", table_name));
+                    summary.push(format!("⚠️  {}: skipped (not found on remote)", table.name));
                 } else {
                     // Other errors should be added as failures
                     summary.push(format!(
                         "✗ {}: failed to copy - {}",
-                        table_name, e.message.details
+                        table.name, e.message.details
                     ));
                 }
             }
@@ -574,19 +599,32 @@ mod tests {
 
     #[test]
     fn test_build_remote_tables_query() {
-        let query = build_remote_tables_query("host:9440", "user", "pass", "mydb");
-        let expected = "SELECT name FROM remoteSecure('host:9440', 'system', 'tables', 'user', 'pass') WHERE database = 'mydb'";
+        let query = build_remote_tables_query("host:9440", "user", "pass", "mydb", &[]);
+        let expected = "SELECT database, name FROM remoteSecure('host:9440', 'system', 'tables', 'user', 'pass') WHERE database IN ('mydb')";
+        assert_eq!(query, expected);
+    }
+
+    #[test]
+    fn test_build_remote_tables_query_with_other_dbs() {
+        let query = build_remote_tables_query(
+            "host:9440",
+            "user",
+            "pass",
+            "mydb",
+            &["otherdb1", "otherdb2"],
+        );
+        let expected = "SELECT database, name FROM remoteSecure('host:9440', 'system', 'tables', 'user', 'pass') WHERE database IN ('mydb', 'otherdb1', 'otherdb2')";
         assert_eq!(query, expected);
     }
 
     #[test]
     fn test_parse_remote_tables_response_valid() {
-        let response = "table1\ntable2\n  table3  \n\n";
+        let response = "db1\ttable1\ndb1\ttable2\ndb2\ttable3\n\n";
         let result = parse_remote_tables_response(response);
         assert_eq!(result.len(), 3);
-        assert!(result.contains("table1"));
-        assert!(result.contains("table2"));
-        assert!(result.contains("table3"));
+        assert!(result.contains(&("db1".to_string(), "table1".to_string())));
+        assert!(result.contains(&("db1".to_string(), "table2".to_string())));
+        assert!(result.contains(&("db2".to_string(), "table3".to_string())));
     }
 
     #[test]
@@ -599,16 +637,64 @@ mod tests {
     #[test]
     fn test_should_skip_table_when_not_in_remote() {
         let mut remote_tables = HashSet::new();
-        remote_tables.insert("table1".to_string());
-        remote_tables.insert("table2".to_string());
+        remote_tables.insert(("mydb".to_string(), "table1".to_string()));
+        remote_tables.insert(("mydb".to_string(), "table2".to_string()));
 
-        assert!(!should_skip_table("table1", &Some(remote_tables.clone())));
-        assert!(should_skip_table("table3", &Some(remote_tables)));
+        // Table exists in remote (using default db)
+        assert!(!should_skip_table(
+            &None,
+            "table1",
+            "mydb",
+            &Some(remote_tables.clone())
+        ));
+        // Table exists in remote (with explicit db)
+        assert!(!should_skip_table(
+            &Some("mydb".to_string()),
+            "table1",
+            "mydb",
+            &Some(remote_tables.clone())
+        ));
+        // Table doesn't exist in remote
+        assert!(should_skip_table(
+            &None,
+            "table3",
+            "mydb",
+            &Some(remote_tables)
+        ));
     }
 
     #[test]
     fn test_should_skip_table_when_no_validation() {
-        assert!(!should_skip_table("any_table", &None));
+        assert!(!should_skip_table(&None, "any_table", "mydb", &None));
+    }
+
+    #[test]
+    fn test_should_skip_table_with_other_db() {
+        let mut remote_tables = HashSet::new();
+        remote_tables.insert(("mydb".to_string(), "table1".to_string()));
+        remote_tables.insert(("otherdb".to_string(), "table2".to_string()));
+
+        // Table exists in default db
+        assert!(!should_skip_table(
+            &None,
+            "table1",
+            "mydb",
+            &Some(remote_tables.clone())
+        ));
+        // Table exists in other db
+        assert!(!should_skip_table(
+            &Some("otherdb".to_string()),
+            "table2",
+            "mydb",
+            &Some(remote_tables.clone())
+        ));
+        // Table doesn't exist in specified db (even though it exists in default db)
+        assert!(should_skip_table(
+            &Some("otherdb".to_string()),
+            "table1",
+            "mydb",
+            &Some(remote_tables)
+        ));
     }
 
     #[test]
@@ -665,7 +751,7 @@ mod tests {
 
         let result = get_tables_to_seed(&infra_map, Some("specific_table".to_string()));
         assert_eq!(result.len(), 1);
-        assert_eq!(result[0], "specific_table");
+        assert_eq!(result[0], (None, "specific_table".to_string()));
     }
 
     #[test]
