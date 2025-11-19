@@ -258,6 +258,31 @@ pub async fn reconcile_with_reality<T: OlapOperations>(
         }
     }
 
+    // Handle SQL resources reconciliation
+    debug!("Reconciling SQL resources (views and materialized views)");
+
+    // Remove missing SQL resources (in map but don't exist in reality)
+    for missing_sql_resource_name in discrepancies.missing_sql_resources {
+        debug!(
+            "Removing missing SQL resource from infrastructure map: {}",
+            missing_sql_resource_name
+        );
+        reconciled_map
+            .sql_resources
+            .remove(&missing_sql_resource_name);
+    }
+
+    // Add extra SQL resources (exist in reality but not in map)
+    for extra_sql_resource in discrepancies.extra_sql_resources {
+        debug!(
+            "Adding extra SQL resource found in reality to infrastructure map: {}",
+            extra_sql_resource.name
+        );
+        reconciled_map
+            .sql_resources
+            .insert(extra_sql_resource.name.clone(), extra_sql_resource);
+    }
+
     info!("Infrastructure map successfully reconciled with actual database state");
     Ok(reconciled_map)
 }
@@ -429,6 +454,17 @@ mod tests {
             _project: &Project,
         ) -> Result<(Vec<Table>, Vec<TableWithUnsupportedType>), OlapChangesError> {
             Ok((self.tables.clone(), vec![]))
+        }
+
+        async fn list_sql_resources(
+            &self,
+            _db_name: &str,
+            _default_database: &str,
+        ) -> Result<
+            Vec<crate::framework::core::infrastructure::sql_resource::SqlResource>,
+            OlapChangesError,
+        > {
+            Ok(vec![])
         }
     }
 

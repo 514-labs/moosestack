@@ -47,16 +47,20 @@ use serde::{Deserialize, Serialize};
 use sql_parser::{
     extract_engine_from_create_table, extract_indexes_from_create_table,
     extract_sample_by_from_create_table, extract_table_settings_from_create_table,
+    normalize_sql_for_comparison, parse_create_materialized_view, parse_create_view,
+    strip_column_definitions_from_view,
 };
 use std::collections::HashMap;
 use std::ops::Deref;
 use std::sync::LazyLock;
 
 use self::model::ClickHouseSystemTable;
+use crate::framework::core::infrastructure::sql_resource::SqlResource;
 use crate::framework::core::infrastructure::table::{
     Column, ColumnMetadata, ColumnType, DataEnum, EnumMember, EnumValue, EnumValueMetadata,
     OrderBy, Table, TableIndex, METADATA_PREFIX,
 };
+use crate::framework::core::infrastructure::InfrastructureSignature;
 use crate::framework::core::infrastructure_map::{PrimitiveSignature, PrimitiveTypes};
 use crate::framework::core::partial_infrastructure_map::LifeCycle;
 use crate::framework::versions::Version;
@@ -1963,6 +1967,278 @@ impl OlapOperations for ConfiguredDBClient {
             tables.len()
         );
         Ok((tables, unsupported_tables))
+    }
+
+    /// Retrieves all SQL resources (views and materialized views) from the ClickHouse database
+    ///
+    /// # Arguments
+    /// * `db_name` - The name of the database to list SQL resources from
+    /// * `default_database` - The default database name for resolving unqualified table references
+    ///
+    /// # Returns
+    /// * `Result<Vec<SqlResource>, OlapChangesError>` - A list of SqlResource objects
+    ///
+    /// # Details
+    /// This implementation:
+    /// 1. Queries system.tables for views and materialized views
+    /// 2. Parses the CREATE statements to extract dependencies
+    /// 3. Reconstructs SqlResource objects with setup and teardown scripts
+    /// 4. Extracts data lineage (pulls_data_from and pushes_data_to)
+    async fn list_sql_resources(
+        &self,
+        db_name: &str,
+        default_database: &str,
+    ) -> Result<Vec<SqlResource>, OlapChangesError> {
+        debug!(
+            "Starting list_sql_resources operation for database: {}",
+            db_name
+        );
+
+        let query = format!(
+            r#"
+            SELECT
+                name,
+                database,
+                engine,
+                create_table_query
+            FROM system.tables
+            WHERE database = '{}'
+            AND engine IN ('View', 'MaterializedView')
+            AND NOT name LIKE '.%'
+            ORDER BY name
+            "#,
+            db_name
+        );
+        debug!("Executing SQL resources query: {}", query);
+
+        let mut cursor = self
+            .client
+            .query(&query)
+            .fetch::<(String, String, String, String)>()
+            .map_err(|e| {
+                debug!("Error fetching SQL resources: {}", e);
+                OlapChangesError::DatabaseError(e.to_string())
+            })?;
+
+        let mut sql_resources = Vec::new();
+
+        while let Some((name, database, engine, create_query)) = cursor
+            .next()
+            .await
+            .map_err(|e| OlapChangesError::DatabaseError(e.to_string()))?
+        {
+            debug!("Processing SQL resource: {} (engine: {})", name, engine);
+            debug!("Create query: {}", create_query);
+
+            // Reconstruct SqlResource based on engine type
+            let sql_resource = match engine.as_str() {
+                "MaterializedView" => reconstruct_sql_resource_from_mv(
+                    name,
+                    create_query,
+                    database,
+                    default_database,
+                )?,
+                "View" => reconstruct_sql_resource_from_view(
+                    name,
+                    create_query,
+                    database,
+                    default_database,
+                )?,
+                _ => {
+                    warn!("Unexpected engine type for SQL resource: {}", engine);
+                    continue;
+                }
+            };
+
+            sql_resources.push(sql_resource);
+        }
+
+        debug!(
+            "Completed list_sql_resources operation, found {} SQL resources",
+            sql_resources.len()
+        );
+        Ok(sql_resources)
+    }
+}
+
+/// Reconstructs a SqlResource from a materialized view's CREATE statement
+///
+/// # Arguments
+/// * `name` - The name of the materialized view
+/// * `create_query` - The CREATE MATERIALIZED VIEW statement from ClickHouse
+/// * `database` - The database where the view is located
+/// * `default_database` - The default database for resolving unqualified table references
+///
+/// # Returns
+/// * `Result<SqlResource, OlapChangesError>` - The reconstructed SqlResource
+fn reconstruct_sql_resource_from_mv(
+    name: String,
+    create_query: String,
+    _database: String,
+    default_database: &str,
+) -> Result<SqlResource, OlapChangesError> {
+    // Strip column definitions first, then parse
+    let create_query_stripped = strip_column_definitions_from_view(&create_query);
+    let mv_stmt = parse_create_materialized_view(&create_query_stripped)?;
+
+    // Ensure IF NOT EXISTS is in the setup script (using the stripped version)
+    let setup_raw = ensure_if_not_exists(&create_query_stripped);
+
+    // Normalize the SQL for consistent comparison with user-defined views
+    let setup = normalize_sql_for_comparison(&setup_raw, default_database);
+
+    // Generate teardown script
+    let teardown = format!("DROP VIEW IF EXISTS `{}`", name);
+
+    // Extract pulls_data_from (source tables)
+    let pulls_data_from = mv_stmt
+        .source_tables
+        .into_iter()
+        .map(|table_ref| {
+            // Get the table name, strip version suffix if present
+            let table_name = table_ref.table;
+            let (base_name, _version) = extract_version_from_table_name(&table_name);
+
+            // Use database from table reference if available, otherwise use default
+            let qualified_id = if let Some(db) = table_ref.database {
+                if db == default_database {
+                    base_name
+                } else {
+                    format!("{}_{}", db, base_name)
+                }
+            } else {
+                base_name
+            };
+
+            InfrastructureSignature::Table { id: qualified_id }
+        })
+        .collect();
+
+    // Extract pushes_data_to (target table for MV)
+    let target_table_name = mv_stmt.target_table;
+    let (target_base_name, _version) = extract_version_from_table_name(&target_table_name);
+
+    let target_qualified_id = if let Some(target_db) = mv_stmt.target_database {
+        if target_db == default_database {
+            target_base_name
+        } else {
+            format!("{}_{}", target_db, target_base_name)
+        }
+    } else {
+        target_base_name
+    };
+
+    let pushes_data_to = vec![InfrastructureSignature::Table {
+        id: target_qualified_id,
+    }];
+
+    Ok(SqlResource {
+        name,
+        setup: vec![setup],
+        teardown: vec![teardown],
+        pulls_data_from,
+        pushes_data_to,
+    })
+}
+
+/// Reconstructs a SqlResource from a view's CREATE statement
+///
+/// # Arguments
+/// * `name` - The name of the view
+/// * `create_query` - The CREATE VIEW statement from ClickHouse
+/// * `database` - The database where the view is located
+/// * `default_database` - The default database for resolving unqualified table references
+///
+/// # Returns
+/// * `Result<SqlResource, OlapChangesError>` - The reconstructed SqlResource
+fn reconstruct_sql_resource_from_view(
+    name: String,
+    create_query: String,
+    _database: String,
+    default_database: &str,
+) -> Result<SqlResource, OlapChangesError> {
+    // Strip column definitions first, then parse
+    let create_query_stripped = strip_column_definitions_from_view(&create_query);
+    let view_stmt = parse_create_view(&create_query_stripped)?;
+
+    // Ensure IF NOT EXISTS is in the setup script (using the stripped version)
+    let setup_raw = ensure_if_not_exists(&create_query_stripped);
+
+    // Normalize the SQL for consistent comparison with user-defined views
+    let setup = normalize_sql_for_comparison(&setup_raw, default_database);
+
+    // Generate teardown script
+    let teardown = format!("DROP VIEW IF EXISTS `{}`", name);
+
+    // Extract pulls_data_from (source tables)
+    let pulls_data_from = view_stmt
+        .source_tables
+        .into_iter()
+        .map(|table_ref| {
+            // Get the table name, strip version suffix if present
+            let table_name = table_ref.table;
+            let (base_name, _version) = extract_version_from_table_name(&table_name);
+
+            // Use database from table reference if available, otherwise use default
+            let qualified_id = if let Some(db) = table_ref.database {
+                if db == default_database {
+                    base_name
+                } else {
+                    format!("{}_{}", db, base_name)
+                }
+            } else {
+                base_name
+            };
+
+            InfrastructureSignature::Table { id: qualified_id }
+        })
+        .collect();
+
+    // Regular views don't push data to tables
+    let pushes_data_to = vec![];
+
+    Ok(SqlResource {
+        name,
+        setup: vec![setup],
+        teardown: vec![teardown],
+        pulls_data_from,
+        pushes_data_to,
+    })
+}
+
+/// Ensures a CREATE VIEW/MATERIALIZED VIEW statement has IF NOT EXISTS
+///
+/// # Arguments
+/// * `create_query` - The CREATE statement
+///
+/// # Returns
+/// * `String` - The modified CREATE statement with IF NOT EXISTS
+fn ensure_if_not_exists(create_query: &str) -> String {
+    if create_query.to_uppercase().contains("IF NOT EXISTS") {
+        create_query.to_string()
+    } else {
+        // Insert IF NOT EXISTS after CREATE MATERIALIZED VIEW or CREATE VIEW
+        let upper = create_query.to_uppercase();
+        if let Some(pos) = upper.find("CREATE MATERIALIZED VIEW") {
+            let prefix_len = "CREATE MATERIALIZED VIEW".len();
+            let prefix_end = pos + prefix_len;
+            format!(
+                "{} IF NOT EXISTS{}",
+                &create_query[..prefix_end],
+                &create_query[prefix_end..]
+            )
+        } else if let Some(pos) = upper.find("CREATE VIEW") {
+            let prefix_len = "CREATE VIEW".len();
+            let prefix_end = pos + prefix_len;
+            format!(
+                "{} IF NOT EXISTS{}",
+                &create_query[..prefix_end],
+                &create_query[prefix_end..]
+            )
+        } else {
+            // Fallback: return as-is
+            create_query.to_string()
+        }
     }
 }
 

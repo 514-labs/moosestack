@@ -23,6 +23,14 @@ pub struct MaterializedViewStatement {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub struct ViewStatement {
+    pub view_name: String,
+    pub select_statement: String,
+    pub source_tables: Vec<TableReference>,
+    pub if_not_exists: bool,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub struct InsertSelectStatement {
     pub target_database: Option<String>,
     pub target_table: String,
@@ -69,6 +77,8 @@ pub enum SqlParseError {
     ParseError(#[from] sqlparser::parser::ParserError),
     #[error("Not a materialized view statement")]
     NotMaterializedView,
+    #[error("Not a view statement")]
+    NotView,
     #[error("Not an insert select statement")]
     NotInsertSelect,
     #[error("Missing required field: {0}")]
@@ -406,11 +416,178 @@ pub fn extract_indexes_from_create_table(sql: &str) -> Result<Vec<ClickHouseInde
     Ok(result)
 }
 
+/// Strips column definitions from CREATE VIEW/MATERIALIZED VIEW statements
+/// ClickHouse includes column type definitions like `(col1 Type1, col2 Type2)` before AS
+/// but the SQL parser doesn't support this syntax, so we remove it
+///
+/// Handles nested parentheses (e.g., DateTime('UTC')) by counting paren depth
+/// Normalizes a SQL statement for comparison
+/// - Strips database prefixes that match the default database
+/// - Removes unnecessary backticks
+/// - Normalizes whitespace
+/// - Uppercases SQL keywords
+pub fn normalize_sql_for_comparison(sql: &str, default_database: &str) -> String {
+    let mut result = sql.to_string();
+
+    // Remove database prefix if it matches default (e.g., "local.Bar" -> "Bar")
+    let prefix_pattern = format!("{}.", default_database);
+    result = result.replace(&prefix_pattern, "");
+
+    // Remove unnecessary backticks around simple identifiers
+    // Keep backticks if identifier has special chars, spaces, or is a keyword
+    result = regex::Regex::new(r"`([a-zA-Z_][a-zA-Z0-9_]*)`")
+        .unwrap()
+        .replace_all(&result, "$1")
+        .to_string();
+
+    // Normalize whitespace: collapse multiple spaces/newlines to single space
+    result = regex::Regex::new(r"\s+")
+        .unwrap()
+        .replace_all(&result, " ")
+        .to_string();
+
+    // Trim leading/trailing whitespace
+    result = result.trim().to_string();
+
+    // Uppercase SQL keywords for consistency
+    // Common ClickHouse/SQL keywords
+    for keyword in &[
+        "CREATE",
+        "DROP",
+        "ALTER",
+        "MATERIALIZED",
+        "VIEW",
+        "INDEX",
+        "TABLE",
+        "IF",
+        "NOT",
+        "EXISTS",
+        "TO",
+        "AS",
+        "SELECT",
+        "FROM",
+        "WHERE",
+        "GROUP",
+        "BY",
+        "ORDER",
+        "HAVING",
+        "JOIN",
+        "LEFT",
+        "RIGHT",
+        "INNER",
+        "OUTER",
+        "ON",
+        "AND",
+        "OR",
+        "IN",
+        "LIKE",
+        "BETWEEN",
+        "IS",
+        "NULL",
+        "DISTINCT",
+        "COUNT",
+        "SUM",
+        "AVG",
+        "MAX",
+        "MIN",
+        "CASE",
+        "WHEN",
+        "THEN",
+        "ELSE",
+        "END",
+        "WITH",
+        "UNION",
+        "LIMIT",
+        "OFFSET",
+    ] {
+        // Use word boundaries to avoid replacing parts of identifiers
+        let pattern = format!(r"(?i)\b{}\b", keyword);
+        let re = regex::Regex::new(&pattern).unwrap();
+        result = re.replace_all(&result, *keyword).to_string();
+    }
+
+    result
+}
+
+/// Strips column definitions from CREATE VIEW/MATERIALIZED VIEW statements.
+/// ClickHouse includes column type definitions like `(col1 Type1, col2 Type2)` before AS,
+/// but the SQL parser doesn't support this syntax, so we remove it.
+///
+/// Searches for " AS " keyword to find where column definitions end, similar to how
+/// extract_order_by_from_create_query finds terminating keywords.
+pub fn strip_column_definitions_from_view(sql: &str) -> String {
+    let sql_upper = sql.to_uppercase();
+
+    // Find "TO tablename (...) AS" pattern for materialized views
+    if let Some(to_pos) = sql_upper.find(" TO ") {
+        // Find the AS keyword after TO (this terminates the column definitions)
+        let after_to = &sql_upper[to_pos + 4..];
+        if let Some(as_pos) = after_to.find(" AS ") {
+            let full_as_pos = to_pos + 4 + as_pos;
+
+            // Check if there's a paren between TO and AS (indicating column defs)
+            let between = &sql_upper[to_pos..full_as_pos];
+            if between.contains('(') {
+                // Extract table name (between TO and the opening paren)
+                let after_to_str = &sql[to_pos + 4..];
+                let paren_pos = after_to_str.find('(').unwrap();
+                let table_name = after_to_str[..paren_pos].trim();
+
+                // Preserve the original "TO" keyword with its case
+                let original_to = &sql[to_pos..to_pos + 4];
+
+                // Reconstruct without column definitions
+                let before_to = &sql[..to_pos];
+                let after_as = &sql[full_as_pos..];
+                return format!("{}{}{}{}", before_to, original_to, table_name, after_as);
+            }
+        }
+    }
+
+    // Find "VIEW name (...) AS" pattern for regular views (but not MATERIALIZED VIEW)
+    for (view_pos, _) in sql_upper.match_indices(" VIEW ") {
+        // Make sure this isn't "MATERIALIZED VIEW"
+        let before_view = &sql_upper[..view_pos];
+        if before_view.ends_with("MATERIALIZED") {
+            continue;
+        }
+
+        // Find the AS keyword after VIEW (this terminates the column definitions)
+        let after_view = &sql_upper[view_pos + 6..];
+        if let Some(as_pos) = after_view.find(" AS ") {
+            let full_as_pos = view_pos + 6 + as_pos;
+
+            // Check if there's a paren between VIEW and AS (indicating column defs)
+            let between = &sql_upper[view_pos..full_as_pos];
+            if between.contains('(') {
+                // Extract view name (between VIEW and the opening paren)
+                let after_view_str = &sql[view_pos + 6..];
+                let paren_pos = after_view_str.find('(').unwrap();
+                let view_name = after_view_str[..paren_pos].trim();
+
+                // Preserve the original " VIEW " keyword with its case
+                let original_view = &sql[view_pos..view_pos + 6];
+
+                // Reconstruct without column definitions
+                let before_view = &sql[..view_pos];
+                let after_as = &sql[full_as_pos..];
+                return format!("{}{}{}{}", before_view, original_view, view_name, after_as);
+            }
+        }
+    }
+
+    // No column definitions found, return as-is
+    sql.to_string()
+}
+
 pub fn parse_create_materialized_view(
     sql: &str,
 ) -> Result<MaterializedViewStatement, SqlParseError> {
+    // Strip column definitions that ClickHouse includes but the parser doesn't support
+    let sql_cleaned = strip_column_definitions_from_view(sql);
+
     let dialect = ClickHouseDialect {};
-    let ast = Parser::parse_sql(&dialect, sql)?;
+    let ast = Parser::parse_sql(&dialect, &sql_cleaned)?;
 
     if ast.len() != 1 {
         return Err(SqlParseError::NotMaterializedView);
@@ -460,6 +637,51 @@ pub fn parse_create_materialized_view(
             })
         }
         _ => Err(SqlParseError::NotMaterializedView),
+    }
+}
+
+pub fn parse_create_view(sql: &str) -> Result<ViewStatement, SqlParseError> {
+    // Strip column definitions that ClickHouse includes but the parser doesn't support
+    let sql_cleaned = strip_column_definitions_from_view(sql);
+
+    let dialect = ClickHouseDialect {};
+    let ast = Parser::parse_sql(&dialect, &sql_cleaned)?;
+
+    if ast.len() != 1 {
+        return Err(SqlParseError::NotView);
+    }
+
+    match &ast[0] {
+        Statement::CreateView {
+            name,
+            materialized,
+            query,
+            if_not_exists,
+            ..
+        } => {
+            // Must be a regular view (not materialized)
+            if *materialized {
+                return Err(SqlParseError::NotView);
+            }
+
+            // Extract view name (just the view name, not database.view)
+            let view_name_str = object_name_to_string(name);
+            let (_view_database, view_name) = split_qualified_name(&view_name_str);
+
+            // Format the SELECT statement
+            let select_statement = format!("{}", query);
+
+            // Extract source tables from the query
+            let source_tables = extract_source_tables_from_query(query)?;
+
+            Ok(ViewStatement {
+                view_name,
+                select_statement,
+                source_tables,
+                if_not_exists: *if_not_exists,
+            })
+        }
+        _ => Err(SqlParseError::NotView),
     }
 }
 
@@ -1556,5 +1778,102 @@ pub mod tests {
         // Test with deeply nested structure - should not find indexes since none are present
         let indexes = extract_indexes_from_create_table(NESTED_OBJECTS_SQL).unwrap();
         assert_eq!(indexes.len(), 0);
+    }
+
+    #[test]
+    fn test_strip_column_definitions_from_materialized_view() {
+        let input = "CREATE MATERIALIZED VIEW mv_name TO target_table (col1 String, col2 Int32) AS SELECT * FROM source";
+        let expected = "CREATE MATERIALIZED VIEW mv_name TO target_table AS SELECT * FROM source";
+        assert_eq!(strip_column_definitions_from_view(input), expected);
+    }
+
+    #[test]
+    fn test_strip_column_definitions_from_view() {
+        let input = "CREATE VIEW view_name (col1 String, col2 DateTime('UTC')) AS SELECT col1, col2 FROM source";
+        let expected = "CREATE VIEW view_name AS SELECT col1, col2 FROM source";
+        assert_eq!(strip_column_definitions_from_view(input), expected);
+    }
+
+    #[test]
+    fn test_strip_column_definitions_with_nested_parens() {
+        // Test with DateTime('UTC') which has nested parentheses
+        let input = "CREATE MATERIALIZED VIEW mv TO table (timestamp DateTime('UTC'), count UInt64) AS SELECT now(), count() FROM source";
+        let expected = "CREATE MATERIALIZED VIEW mv TO table AS SELECT now(), count() FROM source";
+        assert_eq!(strip_column_definitions_from_view(input), expected);
+    }
+
+    #[test]
+    fn test_strip_column_definitions_no_columns() {
+        // Test when there are no column definitions
+        let input = "CREATE VIEW view_name AS SELECT * FROM source";
+        let expected = "CREATE VIEW view_name AS SELECT * FROM source";
+        assert_eq!(strip_column_definitions_from_view(input), expected);
+    }
+
+    #[test]
+    fn test_strip_column_definitions_case_insensitive() {
+        let input = "create materialized view MV to Table (Col String) as select * from Source";
+        let expected = "create materialized view MV to Table as select * from Source";
+        assert_eq!(strip_column_definitions_from_view(input), expected);
+    }
+
+    #[test]
+    fn test_normalize_sql_removes_backticks() {
+        let input = "SELECT `column1`, `column2` FROM `table_name`";
+        let result = normalize_sql_for_comparison(input, "");
+        assert!(!result.contains('`'));
+        assert!(result.contains("column1"));
+        assert!(result.contains("table_name"));
+    }
+
+    #[test]
+    fn test_normalize_sql_uppercases_keywords() {
+        let input = "select count(id) as total from users where active = true";
+        let result = normalize_sql_for_comparison(input, "");
+        assert!(result.contains("SELECT"));
+        assert!(result.contains("COUNT"));
+        assert!(result.contains("AS"));
+        assert!(result.contains("FROM"));
+        assert!(result.contains("WHERE"));
+    }
+
+    #[test]
+    fn test_normalize_sql_collapses_whitespace() {
+        let input = "SELECT\n    col1,\n    col2\n  FROM\n    my_table";
+        let result = normalize_sql_for_comparison(input, "");
+        assert!(!result.contains('\n'));
+        assert_eq!(result, "SELECT col1, col2 FROM my_table");
+    }
+
+    #[test]
+    fn test_normalize_sql_removes_database_prefix() {
+        let input = "SELECT * FROM mydb.table1 JOIN mydb.table2";
+        let result = normalize_sql_for_comparison(input, "mydb");
+        assert!(!result.contains("mydb."));
+        assert!(result.contains("table1"));
+        assert!(result.contains("table2"));
+    }
+
+    #[test]
+    fn test_normalize_sql_comprehensive() {
+        // Test with all differences at once
+        let user_sql = "CREATE MATERIALIZED VIEW IF NOT EXISTS `MV`\n        TO `Target`\n        AS SELECT\n    count(`id`) as total\n  FROM `Source`";
+        let ch_sql = "CREATE MATERIALIZED VIEW IF NOT EXISTS MV TO Target AS SELECT COUNT(id) AS total FROM Source";
+
+        let normalized_user = normalize_sql_for_comparison(user_sql, "");
+        let normalized_ch = normalize_sql_for_comparison(ch_sql, "");
+
+        assert_eq!(normalized_user, normalized_ch);
+    }
+
+    #[test]
+    fn test_normalize_sql_with_database_prefix() {
+        let user_sql = "CREATE VIEW `MyView` AS SELECT `col` FROM `MyTable`";
+        let ch_sql = "CREATE VIEW local.MyView AS SELECT col FROM local.MyTable";
+
+        let normalized_user = normalize_sql_for_comparison(user_sql, "local");
+        let normalized_ch = normalize_sql_for_comparison(ch_sql, "local");
+
+        assert_eq!(normalized_user, normalized_ch);
     }
 }
