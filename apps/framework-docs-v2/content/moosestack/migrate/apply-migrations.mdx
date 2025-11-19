@@ -1,0 +1,446 @@
+---
+title: How to Develop Locally with Migrations
+description: Use moose dev for rapid schema iteration with automatic migrations and hot reload
+order: 11
+category: olap
+---
+
+import { Callout, LanguageTabs, LanguageTabContent } from "@/components/mdx";
+
+# How to Develop Locally with Migrations
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript" />
+  <LanguageTabContent value="python" />
+</LanguageTabs>
+
+This guide shows you how to use `moose dev` for local development with automatic migrations. You'll learn how to iterate quickly on your database schema, see changes apply in real-time, and validate your data model before deploying to production.
+
+<Callout type="info" title="New to migrations?" href="/moosestack/migrate" ctaLabel="Read the concept guide" compact>
+If you're unfamiliar with migration modes or deployment models, start with the migrations concept guide.
+</Callout>
+
+## When to Use This Guide
+
+Use this guide if you want to:
+- Iterate quickly on database schemas during development
+- See schema changes apply automatically when you save code
+- Test migrations in a safe local environment
+- Validate data transformations before production deployment
+- Connect to local ClickHouse to inspect data
+
+This guide covers **local development only**. For production deployments, see:
+- [Planned migrations](/moosestack/migrate/planned-migrations) - Production workflow guide
+
+## Before You Begin
+
+**Required software:**
+- Docker Desktop installed and running
+- Moose CLI installed (`npm i -g @514labs/moose-cli` or `pip install moose-cli`)
+- Your preferred code editor
+
+**Project requirements:**
+- Existing Moose project or new project created with `moose init`
+- Source directory with table definitions (default: `app/` or `moose/`)
+
+**Configuration:**
+```toml file="moose.config.toml"
+[features]
+olap = true  # Required for OLAP migrations
+```
+
+No production credentials needed—`moose dev` creates local infrastructure automatically.
+
+## Steps
+
+### 1. Start the local development environment
+
+From your project root, start the development server:
+
+```bash filename="Terminal" copy
+moose dev
+```
+
+**What happens:** Moose starts Docker containers for ClickHouse, Redpanda (if enabled), and Temporal, then applies any existing migrations.
+
+**Expected output:**
+```text
+⡏ Starting local infrastructure
+  Successfully started containers
+     Validated clickhousedb-1 docker container
+     Validated redpanda-1 docker container
+  Successfully validated red panda cluster
+     Validated temporal docker container
+  Successfully ran local infrastructure
+✓ Local environment ready
+```
+
+**Verify it's running:**
+```bash filename="Terminal" copy
+# Check infrastructure status
+moose ls
+
+# Or use Docker
+docker ps
+```
+
+You should see containers running for `clickhousedb-1`, `redpanda-1`, and `temporal`.
+
+### 2. Create or modify a table schema
+
+With `moose dev` running, create or edit a table definition:
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript" label="TypeScript">
+
+```typescript filename="app/tables/page_views.ts" copy
+import { Key, OlapTable } from "@514labs/moose-lib";
+
+interface PageView {
+  id: Key<string>;
+  path: string;
+  referrer?: string;
+  timestamp: Date;
+  user_agent: string; // New field added
+}
+
+export const pageViews = new OlapTable<PageView>("page_views");
+```
+
+  </LanguageTabContent>
+  <LanguageTabContent value="python" label="Python">
+
+```python filename="app/tables/page_views.py" copy
+from datetime import datetime
+from typing import Optional
+from pydantic import BaseModel
+from moose_lib import Key, OlapTable
+
+class PageView(BaseModel):
+    id: Key[str]
+    path: str
+    referrer: Optional[str] = None
+    timestamp: datetime
+    user_agent: str  # New field added
+
+page_views = OlapTable[PageView]("page_views")
+```
+
+  </LanguageTabContent>
+</LanguageTabs>
+
+Save the file and **keep `moose dev` running in your terminal**.
+
+### 3. Watch the migration apply automatically
+
+In your terminal where `moose dev` is running, you'll see the migration apply in real-time:
+
+**Expected output:**
+```text
+⢹ Processing Infrastructure changes from file watcher
+             ~ Table page_views:
+                  Column changes:
+                    + user_agent: String
+```
+
+**What happened:**
+- Moose detected your file change
+- Compared your code to local ClickHouse
+- Generated and applied the migration automatically
+- Added the `user_agent` column to the `page_views` table
+
+<Callout type="info" title="Auto-inferred mode in development">
+In dev, Moose uses auto-inferred migrations by default. Changes apply immediately without generating a plan file. This is perfect for rapid iteration but shouldn't be used in production.
+</Callout>
+
+### 4. Verify the migration in ClickHouse
+
+Connect to your local ClickHouse to inspect the schema changes:
+
+```bash filename="Terminal" copy
+# Using clickhouse-client
+clickhouse-client --host localhost --port 18123 --user panda --password pandapass --database local
+
+# Query the table structure
+DESCRIBE TABLE page_views;
+```
+
+**Expected output:**
+```text
+┌─name────────┬─type─────┬─default_type─┬─default_expression─┐
+│ id          │ String   │              │                    │
+│ path        │ String   │              │                    │
+│ referrer    │ String   │              │                    │
+│ timestamp   │ DateTime │              │                    │
+│ user_agent  │ String   │              │                    │
+└─────────────┴──────────┴──────────────┴────────────────────┘
+```
+
+You can also use a ClickHouse GUI client like [DBeaver](https://dbeaver.io/) or [ClickHouse Desktop](https://clickhouse.com/docs/en/integrations/sql-clients/clickhouse-desktop).
+
+**Local ClickHouse credentials (from default config):**
+- Host: `localhost`
+- Port: `18123` (HTTP) or `9000` (Native)
+- Database: `local`
+- User: `panda`
+- Password: `pandapass`
+
+### 5. Test with sample data (optional)
+
+Insert test data to validate your schema:
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript" label="TypeScript">
+
+```typescript filename="app/seed.ts" copy
+import { pageViews } from "./tables/page_views";
+
+await pageViews.insert([
+  {
+    id: "1",
+    path: "/home",
+    referrer: "https://google.com",
+    timestamp: new Date(),
+    user_agent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)",
+  },
+  {
+    id: "2",
+    path: "/about",
+    timestamp: new Date(),
+    user_agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+  },
+]);
+```
+
+  </LanguageTabContent>
+  <LanguageTabContent value="python" label="Python">
+
+```python filename="app/seed.py" copy
+from datetime import datetime
+from app.tables.page_views import page_views
+
+await page_views.insert([
+    {
+        "id": "1",
+        "path": "/home",
+        "referrer": "https://google.com",
+        "timestamp": datetime.now(),
+        "user_agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)",
+    },
+    {
+        "id": "2",
+        "path": "/about",
+        "timestamp": datetime.now(),
+        "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+    },
+])
+```
+
+  </LanguageTabContent>
+</LanguageTabs>
+
+Query the data in ClickHouse:
+```sql
+SELECT * FROM page_views ORDER BY timestamp DESC;
+```
+
+### 6. Iterate and repeat
+
+Continue making schema changes as needed. Each save triggers an automatic migration:
+
+**Common operations you'll see:**
+```text
+# Adding a column
++ new_column: String
+
+# Removing a column
+- old_column: Int64
+
+# Modifying a column type
+~ column_name: String -> LowCardinality(String)
+
+# Creating a new table
++ Table: new_table
+
+# Dropping a table
+- Table: old_table
+```
+
+## Common Development Workflows
+
+### Creating a New Table
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript" label="TypeScript">
+
+```typescript filename="app/tables/users.ts" copy
+import { Key, OlapTable } from "@514labs/moose-lib";
+
+interface User {
+  id: Key<string>;
+  email: string;
+  name: string;
+  created_at: Date;
+}
+
+export const users = new OlapTable<User>("users");
+```
+
+  </LanguageTabContent>
+  <LanguageTabContent value="python" label="Python">
+
+```python filename="app/tables/users.py" copy
+from datetime import datetime
+from pydantic import BaseModel
+from moose_lib import Key, OlapTable
+
+class User(BaseModel):
+    id: Key[str]
+    email: str
+    name: str
+    created_at: datetime
+
+users = OlapTable[User]("users")
+```
+
+  </LanguageTabContent>
+</LanguageTabs>
+
+**Terminal output:**
+```text
+⠋ Processing Infrastructure changes from file watcher
+             +  Table: users - id: String, email: String, name: String, created_at: DateTime
+```
+
+### Removing a Column
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript" label="TypeScript">
+
+```typescript filename="app/tables/page_views.ts"
+interface PageView {
+  id: Key<string>;
+  path: string;
+  // referrer field removed
+  timestamp: Date;
+}
+```
+
+  </LanguageTabContent>
+  <LanguageTabContent value="python" label="Python">
+
+```python filename="app/tables/page_views.py"
+class PageView(BaseModel):
+    id: Key[str]
+    path: str
+    # referrer field removed
+    timestamp: datetime
+```
+
+  </LanguageTabContent>
+</LanguageTabs>
+
+**Terminal output:**
+```text
+⢹ Processing Infrastructure changes from file watcher
+             ~ Table page_views:
+                  Column changes:
+                    - referrer: String
+```
+
+<Callout type="warning" title="Data loss in dev is fine">
+Removing a column in dev drops it immediately and loses data. That's okay—local data is disposable. In production, use planned migrations to review destructive changes.
+</Callout>
+
+### Changing a Column Type
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript" label="TypeScript">
+
+```typescript filename="app/tables/metrics.ts"
+interface Metric {
+  id: Key<string>;
+  value: number & LowCardinality; // Added LowCardinality optimization
+}
+```
+
+  </LanguageTabContent>
+  <LanguageTabContent value="python" label="Python">
+
+```python filename="app/tables/metrics.py"
+from typing import Annotated
+
+class Metric(BaseModel):
+    id: Key[str]
+    value: Annotated[float, "LowCardinality"]  # Added LowCardinality
+```
+
+  </LanguageTabContent>
+</LanguageTabs>
+
+**Terminal output:**
+```text
+⢹ Processing Infrastructure changes from file watcher
+             ~ Table metrics:
+                  Column changes:
+                    ~ value: Float64 -> LowCardinality(Float64)
+```
+
+## Troubleshooting
+
+**Containers won't start:**
+- Ensure Docker Desktop is running
+- Check for port conflicts: `lsof -i :18123` (ClickHouse), `lsof -i :19092` (Redpanda)
+- Try stopping containers: `moose stop` then restart with `moose dev`
+- Check Docker logs: `docker logs clickhousedb-1`
+
+**Changes not detected:**
+- Verify `moose dev` is still running (check terminal)
+- Ensure you're editing files in the correct source directory
+- Check file syntax errors (TypeScript/Python validation)
+- Try restarting: Stop `moose dev` with Ctrl+C, then run `moose dev` again
+
+**Migration fails:**
+- Read the error message carefully—it often explains the issue
+- Common causes: type incompatibility, ORDER BY changes, required fields on existing data
+- See [troubleshooting failed migrations](/moosestack/migrate/schema-change) for detailed solutions
+
+**Can't connect to ClickHouse:**
+- Verify containers are running: `docker ps`
+- Check connection credentials match `moose.config.toml`
+- Ensure you're using the correct port (18123 for HTTP, 9000 for Native)
+- Try connecting via Docker: `docker exec -it clickhousedb-1 clickhouse-client`
+
+**Hot reload stopped working:**
+- Restart `moose dev` (Ctrl+C, then `moose dev`)
+- Check for syntax errors in your code
+- Verify file watcher isn't overwhelmed (close unused files/projects)
+
+## Moving to Production
+
+Once you've tested your schema changes locally, follow the planned migration workflow for production:
+
+```bash filename="Terminal" copy
+# Service model (moose prod)
+moose generate migration --url https://your-prod-server.com --token <admin-token> --save
+
+# Library model (moose migrate)
+export PROD_CLICKHOUSE_URL="clickhouse://user:pass@host:9440/db"
+moose generate migration --clickhouse-url "$PROD_CLICKHOUSE_URL" --save
+```
+
+- [Generate planned migration plans](/moosestack/migrate/planned-migrations) to create reviewable artifacts.
+- [Apply planned migrations with the CLI](/moosestack/migrate/apply-planned-migrations-cli) for serverless/library deployments.
+- [Apply planned migrations with Moose Prod](/moosestack/migrate/apply-planned-migrations-service) for automated runtime deployments.
+
+<Callout type="warning" title="Never use auto-inferred in production">
+Local development uses auto-inferred migrations for speed. Production should **always** use planned migrations with review workflows. Auto-inferred can't distinguish renames from drop+add, leading to data loss.
+</Callout>
+
+## Next Steps
+
+- [Generate planned migration plans](/moosestack/migrate/planned-migrations) - Diff against production and produce plan files
+- [Apply planned migrations with the CLI](/moosestack/migrate/apply-planned-migrations-cli) - Run `moose migrate` against ClickHouse
+- [Apply planned migrations with Moose Prod](/moosestack/migrate/apply-planned-migrations-service) - Let the runtime execute plans on startup
+- [Review & edit planned migrations](/moosestack/migrate/reference) - Understand every migration operation
+- [Lifecycle modes](/moosestack/migrate/lifecycle) - Control what operations are allowed per table
