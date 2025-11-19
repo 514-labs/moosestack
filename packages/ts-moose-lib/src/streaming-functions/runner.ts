@@ -35,7 +35,8 @@ import {
 import { Cluster } from "../cluster-utils";
 import { getStreamingFunctions } from "../dmv2/internal";
 import type { ConsumerConfig, TransformConfig, DeadLetterQueue } from "../dmv2";
-import { jsonDateReviver } from "../utilities/json";
+import { createColumnAwareDateReviver } from "../utilities/json";
+import type { Column } from "../dataModels/dataModelTypes";
 
 const HOSTNAME = process.env.HOSTNAME;
 const AUTO_COMMIT_INTERVAL_MS = 5000;
@@ -458,11 +459,12 @@ const stopConsumer = async (
  * @param streamingFunctionWithConfigList - functions (with their configs) that transforms input message data
  * @param message - Kafka message to be processed
  * @param producer - Kafka producer for sending dead letter
+ * @param sourceColumns - Column definitions from the source stream for precise date parsing
  * @returns Promise resolving to array of transformed messages or undefined if processing fails
  *
  * The function will:
  * 1. Check for null/undefined message values
- * 2. Parse the message value as JSON with date handling
+ * 2. Parse the message value as JSON with column-aware date handling
  * 3. Pass parsed data through the streaming function
  * 4. Convert transformed data back to string format
  * 5. Handle both single and array return values
@@ -475,6 +477,7 @@ const handleMessage = async (
   streamingFunctionWithConfigList: [StreamingFunction, TransformConfig<any>][],
   message: KafkaMessage,
   producer: Producer,
+  sourceColumns?: Column[],
 ): Promise<KafkaMessageWithLineage[] | undefined> => {
   if (message.value === undefined || message.value === null) {
     logger.log(`Received message with no value, skipping...`);
@@ -491,7 +494,9 @@ const handleMessage = async (
     ) {
       payloadBuffer = payloadBuffer.subarray(5);
     }
-    const parsedData = JSON.parse(payloadBuffer.toString(), jsonDateReviver);
+    // Use column-aware date reviver for precise date parsing based on schema
+    const dateReviver = createColumnAwareDateReviver(sourceColumns);
+    const parsedData = JSON.parse(payloadBuffer.toString(), dateReviver);
     const transformedData = await Promise.all(
       streamingFunctionWithConfigList.map(async ([fn, config]) => {
         try {
@@ -735,15 +740,18 @@ function loadStreamingFunction(functionFilePath: string) {
 async function loadStreamingFunctionV2(
   sourceTopic: TopicConfig,
   targetTopic?: TopicConfig,
-) {
+): Promise<{
+  functions: [StreamingFunction, TransformConfig<any> | ConsumerConfig<any>][];
+  sourceColumns: Column[];
+}> {
   const transformFunctions = await getStreamingFunctions();
   const transformFunctionKey = `${topicNameToStreamName(sourceTopic)}_${targetTopic ? topicNameToStreamName(targetTopic) : "<no-target>"}`;
 
-  const matchingFunctions = Array.from(transformFunctions.entries())
-    .filter(([key]) => key.startsWith(transformFunctionKey))
-    .map(([_, fn]) => fn);
+  const matchingEntries = Array.from(transformFunctions.entries()).filter(
+    ([key]) => key.startsWith(transformFunctionKey),
+  );
 
-  if (matchingFunctions.length === 0) {
+  if (matchingEntries.length === 0) {
     const message = `No functions found for ${transformFunctionKey}`;
     cliLog({
       action: "Function",
@@ -753,7 +761,15 @@ async function loadStreamingFunctionV2(
     throw new Error(message);
   }
 
-  return matchingFunctions;
+  // Extract functions and configs, and get columns from the first entry
+  // (all functions for the same source topic will have the same columns)
+  const functions = matchingEntries.map(([_, [fn, config]]) => [
+    fn,
+    config,
+  ]) as [StreamingFunction, TransformConfig<any> | ConsumerConfig<any>][];
+  const sourceColumns = matchingEntries[0][1][2]; // Get columns from first entry
+
+  return { functions, sourceColumns };
 }
 
 /**
@@ -810,13 +826,23 @@ const startConsumer = async (
   // We preload the function to not have to load it for each message
   // Note: Config types use 'any' as generics because they handle various
   // data model types determined at runtime, not compile time
-  const streamingFunctions: [
+  let streamingFunctions: [
     StreamingFunction,
     TransformConfig<any> | ConsumerConfig<any>,
-  ][] =
-    args.isDmv2 ?
-      await loadStreamingFunctionV2(args.sourceTopic, args.targetTopic)
-    : [[loadStreamingFunction(args.functionFilePath), {}]];
+  ][];
+  let sourceColumns: Column[] | undefined;
+
+  if (args.isDmv2) {
+    const result = await loadStreamingFunctionV2(
+      args.sourceTopic,
+      args.targetTopic,
+    );
+    streamingFunctions = result.functions;
+    sourceColumns = result.sourceColumns;
+  } else {
+    streamingFunctions = [[loadStreamingFunction(args.functionFilePath), {}]];
+    sourceColumns = undefined;
+  }
 
   await consumer.subscribe({
     topics: [args.sourceTopic.name], // Use full topic name for Kafka operations
@@ -859,6 +885,7 @@ const startConsumer = async (
                 streamingFunctions,
                 message,
                 producer,
+                sourceColumns,
               );
             },
             {

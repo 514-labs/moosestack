@@ -963,7 +963,7 @@ const loadIndex = () => {
  *
  * @returns A Map where keys are unique identifiers for transformations/consumers
  *          (e.g., "sourceStream_destStream_version", "sourceStream_<no-target>_version")
- *          and values are the corresponding handler functions.
+ *          and values are tuples containing: [handler function, config, source stream columns]
  */
 export const getStreamingFunctions = async () => {
   loadIndex();
@@ -971,7 +971,11 @@ export const getStreamingFunctions = async () => {
   const registry = getMooseInternal();
   const transformFunctions = new Map<
     string,
-    [(data: unknown) => unknown, TransformConfig<any> | ConsumerConfig<any>]
+    [
+      (data: unknown) => unknown,
+      TransformConfig<any> | ConsumerConfig<any>,
+      Column[],
+    ]
   >();
 
   registry.streams.forEach((stream) => {
@@ -979,7 +983,11 @@ export const getStreamingFunctions = async () => {
       transforms.forEach(([_, transform, config]) => {
         const transformFunctionKey = `${stream.name}_${destinationName}${config.version ? `_${config.version}` : ""}`;
         compilerLog(`getStreamingFunctions: ${transformFunctionKey}`);
-        transformFunctions.set(transformFunctionKey, [transform, config]);
+        transformFunctions.set(transformFunctionKey, [
+          transform,
+          config,
+          stream.columnArray,
+        ]);
       });
     });
 
@@ -988,6 +996,7 @@ export const getStreamingFunctions = async () => {
       transformFunctions.set(consumerFunctionKey, [
         consumer.consumer,
         consumer.config,
+        stream.columnArray,
       ]);
     });
   });
