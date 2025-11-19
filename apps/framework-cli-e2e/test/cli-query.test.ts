@@ -202,4 +202,273 @@ describe("moose query command", () => {
       console.log("✓ Query errors handled gracefully");
     }
   });
+
+  describe("format query flag", () => {
+    it("should format query as Python code", async function () {
+      this.timeout(TIMEOUTS.MIGRATION_MS);
+
+      console.log("\n--- Testing Python formatting ---");
+
+      const { stdout } = await execAsync(
+        `"${CLI_PATH}" query -c python "SELECT * FROM users WHERE email REGEXP '[a-z]+'"`,
+        { cwd: testProjectDir },
+      );
+
+      console.log("Format output:", stdout);
+
+      expect(stdout).to.include('r"""');
+      expect(stdout).to.include(
+        "SELECT * FROM users WHERE email REGEXP '[a-z]+'",
+      );
+      expect(stdout).to.include('"""');
+      expect(stdout).not.to.include("{"); // Should not have JSON output
+
+      console.log("✓ Python formatting works");
+    });
+
+    it("should format query as TypeScript code", async function () {
+      this.timeout(TIMEOUTS.MIGRATION_MS);
+
+      console.log("\n--- Testing TypeScript formatting ---");
+
+      const { stdout } = await execAsync(
+        `"${CLI_PATH}" query -c typescript "SELECT * FROM users"`,
+        { cwd: testProjectDir },
+      );
+
+      console.log("Format output:", stdout);
+
+      expect(stdout).to.include("`");
+      expect(stdout).to.include("SELECT * FROM users");
+      expect(stdout).not.to.include("{"); // Should not have JSON output
+
+      console.log("✓ TypeScript formatting works");
+    });
+
+    it("should format query from file", async function () {
+      this.timeout(TIMEOUTS.MIGRATION_MS);
+
+      console.log("\n--- Testing format from file ---");
+
+      const queryFile = path.join(testProjectDir, "format-test.sql");
+      fs.writeFileSync(queryFile, "SELECT count(*) as total FROM events");
+
+      const { stdout } = await execAsync(
+        `"${CLI_PATH}" query -c python -f format-test.sql`,
+        { cwd: testProjectDir },
+      );
+
+      console.log("Format output:", stdout);
+
+      expect(stdout).to.include('r"""');
+      expect(stdout).to.include("SELECT count(*) as total FROM events");
+
+      console.log("✓ Format from file works");
+    });
+
+    it("should reject invalid language", async function () {
+      this.timeout(TIMEOUTS.MIGRATION_MS);
+
+      console.log("\n--- Testing invalid language ---");
+
+      try {
+        await execAsync(`"${CLI_PATH}" query -c java "SELECT 1"`, {
+          cwd: testProjectDir,
+        });
+        expect.fail("Should have thrown an error");
+      } catch (error: any) {
+        expect(error.message).to.include("Unsupported language");
+        console.log("✓ Invalid language rejected");
+      }
+    });
+
+    it("should accept language aliases", async function () {
+      this.timeout(TIMEOUTS.MIGRATION_MS);
+
+      console.log("\n--- Testing language aliases ---");
+
+      const pyResult = await execAsync(`"${CLI_PATH}" query -c py "SELECT 1"`, {
+        cwd: testProjectDir,
+      });
+      expect(pyResult.stdout).to.include('r"""');
+
+      const tsResult = await execAsync(`"${CLI_PATH}" query -c ts "SELECT 1"`, {
+        cwd: testProjectDir,
+      });
+      expect(tsResult.stdout).to.include("`");
+
+      console.log("✓ Language aliases work");
+    });
+
+    it("should format multi-line SQL with proper indentation", async function () {
+      this.timeout(TIMEOUTS.MIGRATION_MS);
+
+      console.log("\n--- Testing multi-line SQL ---");
+
+      const queryFile = path.join(testProjectDir, "multiline-query.sql");
+      const multilineSQL = `SELECT
+    user_id,
+    email,
+    created_at
+FROM users
+WHERE status = 'active'
+ORDER BY created_at DESC`;
+      fs.writeFileSync(queryFile, multilineSQL);
+
+      const { stdout } = await execAsync(
+        `"${CLI_PATH}" query -c python -f multiline-query.sql`,
+        { cwd: testProjectDir },
+      );
+
+      console.log("Format output:", stdout);
+
+      expect(stdout).to.include('r"""');
+      expect(stdout).to.include("    user_id,");
+      expect(stdout).to.include("ORDER BY created_at DESC");
+      expect(stdout).to.include('"""');
+
+      console.log("✓ Multi-line SQL preserved correctly");
+    });
+
+    it("should format SQL with complex regex patterns", async function () {
+      this.timeout(TIMEOUTS.MIGRATION_MS);
+
+      console.log("\n--- Testing complex regex patterns ---");
+
+      const complexQuery = `SELECT * FROM logs WHERE message REGEXP '\\\\d{4}-\\\\d{2}-\\\\d{2}\\\\s+\\\\w+'`;
+
+      const { stdout } = await execAsync(
+        `"${CLI_PATH}" query -c python "${complexQuery}"`,
+        { cwd: testProjectDir },
+      );
+
+      console.log("Format output:", stdout);
+
+      expect(stdout).to.include('r"""');
+      // Raw strings should preserve backslashes
+      expect(stdout).to.include("\\d{4}");
+      expect(stdout).to.include("REGEXP");
+
+      console.log("✓ Complex regex patterns preserved");
+    });
+
+    it("should format SQL with email regex pattern", async function () {
+      this.timeout(TIMEOUTS.MIGRATION_MS);
+
+      console.log("\n--- Testing email regex pattern ---");
+
+      const emailQuery = `SELECT * FROM users WHERE email REGEXP '^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\\\.[a-zA-Z]{2,}$'`;
+
+      const pyResult = await execAsync(
+        `"${CLI_PATH}" query -c python "${emailQuery}"`,
+        { cwd: testProjectDir },
+      );
+
+      expect(pyResult.stdout).to.include('r"""');
+      expect(pyResult.stdout).to.include("[a-zA-Z0-9._%+-]+");
+
+      const tsResult = await execAsync(
+        `"${CLI_PATH}" query -c typescript "${emailQuery}"`,
+        { cwd: testProjectDir },
+      );
+
+      expect(tsResult.stdout).to.include("`");
+      expect(tsResult.stdout).to.include("[a-zA-Z0-9._%+-]+");
+
+      console.log("✓ Email regex pattern preserved");
+    });
+
+    it("should handle queries with single quotes and backslashes", async function () {
+      this.timeout(TIMEOUTS.MIGRATION_MS);
+
+      console.log("\n--- Testing quotes and backslashes ---");
+
+      const queryFile = path.join(testProjectDir, "complex-pattern.sql");
+      const complexSQL = `SELECT * FROM data WHERE pattern REGEXP '\\\\b(foo|bar)\\\\b' AND name = 'test'`;
+      fs.writeFileSync(queryFile, complexSQL);
+
+      const { stdout } = await execAsync(
+        `"${CLI_PATH}" query -c python -f complex-pattern.sql`,
+        { cwd: testProjectDir },
+      );
+
+      console.log("Format output:", stdout);
+
+      expect(stdout).to.include('r"""');
+      expect(stdout).to.include("name = 'test'");
+      expect(stdout).to.include("\\b(foo|bar)\\b");
+
+      console.log("✓ Quotes and backslashes preserved");
+    });
+
+    it("should prettify SQL when --prettify flag is used", async function () {
+      this.timeout(TIMEOUTS.MIGRATION_MS);
+
+      console.log("\n--- Testing prettify functionality ---");
+
+      const messyQuery =
+        "SELECT id, name FROM users WHERE active = 1 ORDER BY name LIMIT 10";
+
+      const { stdout } = await execAsync(
+        `"${CLI_PATH}" query -c python -p "${messyQuery}"`,
+        { cwd: testProjectDir },
+      );
+
+      console.log("Format output:", stdout);
+
+      expect(stdout).to.include('r"""');
+      expect(stdout).to.include("SELECT");
+      expect(stdout).to.include("FROM");
+      expect(stdout).to.include("WHERE");
+      expect(stdout).to.include("ORDER BY");
+      // Should have line breaks (prettified)
+      const lines = stdout.split("\n");
+      expect(lines.length).to.be.greaterThan(3);
+
+      console.log("✓ Prettify works");
+    });
+
+    it("should prettify complex SQL with TypeScript", async function () {
+      this.timeout(TIMEOUTS.MIGRATION_MS);
+
+      console.log("\n--- Testing prettify with TypeScript ---");
+
+      const complexQuery =
+        "SELECT u.id, u.name, o.total FROM users u LEFT JOIN orders o ON u.id = o.user_id WHERE u.active = 1 AND o.total > 100 ORDER BY o.total DESC";
+
+      const { stdout } = await execAsync(
+        `"${CLI_PATH}" query -c typescript -p "${complexQuery}"`,
+        { cwd: testProjectDir },
+      );
+
+      console.log("Format output:", stdout);
+
+      expect(stdout).to.include("`");
+      expect(stdout).to.include("SELECT");
+      expect(stdout).to.include("LEFT JOIN");
+      expect(stdout).to.include("WHERE");
+      expect(stdout).to.include("ORDER BY");
+
+      console.log("✓ Prettify with TypeScript works");
+    });
+
+    it("should require format-query flag when using prettify", async function () {
+      this.timeout(TIMEOUTS.MIGRATION_MS);
+
+      console.log("\n--- Testing prettify requires format-query ---");
+
+      try {
+        await execAsync(`"${CLI_PATH}" query -p "SELECT 1"`, {
+          cwd: testProjectDir,
+        });
+        expect.fail("Should have thrown an error");
+      } catch (error: any) {
+        // clap should enforce this requirement
+        expect(error.message).to.match(
+          /requires.*format-query|required argument/i,
+        );
+        console.log("✓ Prettify requires format-query flag");
+      }
+    });
+  });
 });
