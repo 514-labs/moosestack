@@ -87,7 +87,6 @@ pub async fn query(
     prettify: bool,
 ) -> Result<RoutineSuccess, RoutineFailure> {
     let sql_query = get_sql_input(sql, file)?;
-    info!("Executing SQL: {}", sql_query);
 
     // Validate SQL syntax before any operation
     use crate::cli::routines::format_query::validate_sql;
@@ -111,6 +110,8 @@ pub async fn query(
             ),
         )));
     }
+
+    info!("Executing SQL: {}", sql_query);
 
     // Get ClickHouse connection pool
     let pool = get_pool(&project.clickhouse_config);
