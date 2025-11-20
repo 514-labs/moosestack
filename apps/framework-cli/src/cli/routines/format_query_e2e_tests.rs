@@ -250,6 +250,6 @@ mod e2e_tests {
             format_as_code_with_delimiter(sql, "r'", Some(CodeLanguage::Python), false).unwrap();
 
         // Should handle the query - single quotes in SQL conflict, so should fallback or escape
-        assert!(result.len() > 0);
+        assert!(!result.is_empty());
     }
 }

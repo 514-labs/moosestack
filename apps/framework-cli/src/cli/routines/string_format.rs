@@ -423,13 +423,11 @@ mod tests {
         let format = StringFormat::PythonRawTripleDouble;
 
         // No conflict
-        assert!(
-            format.has_conflict(r#"SELECT * FROM users WHERE email = 'test@example.com'"#) == false
-        );
+        assert!(!format.has_conflict(r#"SELECT * FROM users WHERE email = 'test@example.com'"#));
 
         // Has conflict - contains """
-        assert!(format.has_conflict(r#"SELECT '"""' AS col"#) == true);
-        assert!(format.has_conflict(r#"SELECT * FROM t WHERE x = "test""""#) == true);
+        assert!(format.has_conflict(r#"SELECT '"""' AS col"#));
+        assert!(format.has_conflict(r#"SELECT * FROM t WHERE x = "test""""#));
     }
 
     #[test]
@@ -437,12 +435,10 @@ mod tests {
         let format = StringFormat::PythonRawTripleSingle;
 
         // No conflict
-        assert!(
-            format.has_conflict(r#"SELECT * FROM users WHERE email = "test@example.com""#) == false
-        );
+        assert!(!format.has_conflict(r#"SELECT * FROM users WHERE email = "test@example.com""#));
 
         // Has conflict - contains '''
-        assert!(format.has_conflict(r"SELECT ''' AS col") == true);
+        assert!(format.has_conflict(r"SELECT ''' AS col"));
     }
 
     #[test]
@@ -450,11 +446,11 @@ mod tests {
         let format = StringFormat::PythonFStringTripleDouble;
 
         // No conflict
-        assert!(format.has_conflict(r#"SELECT * FROM users"#) == false);
+        assert!(!format.has_conflict(r#"SELECT * FROM users"#));
 
         // Has conflict - contains { or }
-        assert!(format.has_conflict(r#"SELECT {'key': 'value'}"#) == true);
-        assert!(format.has_conflict(r#"SELECT [1, 2, 3]"#) == false);
+        assert!(format.has_conflict(r#"SELECT {'key': 'value'}"#));
+        assert!(!format.has_conflict(r#"SELECT [1, 2, 3]"#));
     }
 
     #[test]
@@ -462,11 +458,11 @@ mod tests {
         let format = StringFormat::TypeScriptTemplate;
 
         // No conflict
-        assert!(format.has_conflict(r#"SELECT * FROM users WHERE price > 100"#) == false);
+        assert!(!format.has_conflict(r#"SELECT * FROM users WHERE price > 100"#));
 
         // Has conflict - contains ` or ${
-        assert!(format.has_conflict(r"SELECT `column` FROM table") == true);
-        assert!(format.has_conflict(r"SELECT '${var}' AS template") == true);
+        assert!(format.has_conflict(r"SELECT `column` FROM table"));
+        assert!(format.has_conflict(r"SELECT '${var}' AS template"));
     }
 
     #[test]
@@ -474,15 +470,13 @@ mod tests {
         let format = StringFormat::PythonRawDouble;
 
         // No conflict - SQL doesn't end with backslash
-        assert!(
-            format.has_conflict(r"SELECT * FROM users WHERE path LIKE 'C:\\Users\\%'") == false
-        );
+        assert!(!format.has_conflict(r"SELECT * FROM users WHERE path LIKE 'C:\\Users\\%'"));
 
         // Has conflict - SQL literally ends with backslash (would escape closing delimiter)
-        assert!(format.has_conflict(r"SELECT * FROM t WHERE x = 'value'\") == true);
-        assert!(format.has_conflict(r"SELECT * FROM t WHERE x = 'value'\\") == false);
+        assert!(format.has_conflict(r"SELECT * FROM t WHERE x = 'value'\"));
+        assert!(!format.has_conflict(r"SELECT * FROM t WHERE x = 'value'\\"));
         // Three backslashes at end (odd number)
-        assert!(format.has_conflict(r"SELECT * FROM t WHERE x = 'value'\\\") == true);
+        assert!(format.has_conflict(r"SELECT * FROM t WHERE x = 'value'\\\"));
     }
 
     #[test]
