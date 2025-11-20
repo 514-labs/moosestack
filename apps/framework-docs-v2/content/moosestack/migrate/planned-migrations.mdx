@@ -11,25 +11,45 @@ import { Callout } from "@/components/mdx";
 
 **Planned migrations** are the production-grade schema evolution mechanism in Moose. Unlike auto-inferred migrations, this system separates the *generation* of schema changes from their *execution*, introducing a reviewable artifact (the plan) into your deployment lifecycle.
 
+## Command
+
+Generate a migration plan by comparing your local code against a production environment:
+
+```bash
+# For Server Runtime (connect to Moose Admin API)
+moose generate migration --url <ADMIN_API_URL> --token <ADMIN_TOKEN> --save
+
+# For Serverless (connect to ClickHouse directly)
+moose generate migration --clickhouse-url <CLICKHOUSE_CONNECTION_STRING> --save
+```
+
 ## Overview
 
-Planned migrations provide safety and determinism by creating a static file describing exactly what will happen to your database.
+Planned migrations separate **generation** from **execution**, providing a safe, reviewable workflow for production.
 
-| Feature | Description |
-| :--- | :--- |
-| **Determinism** | The migration plan is fixed once generated. It does not change based on when it runs. |
-| **Drift Detection** | Moose captures the production state at generation time. If the database changes before application, the migration aborts. |
-| **Reviewability** | The generated YAML file allows human review of every operation (e.g., "Drop Column") before execution. |
-| **Version Control** | Plans are committed to Git, creating an audit trail of all schema changes. |
+**Key Benefits:**
+*   **Deterministic:** The plan is a static file (`plan.yaml`) that won't change at runtime.
+*   **Drift Detection:** Snapshots (`remote_state.json`) ensure the DB hasn't changed since the plan was created.
+*   **Reviewable:** You can audit every operation (e.g., `DropColumn`, `AddTable`) before it runs.
+*   **Versioned:** Commit plans to Git to create a permanent audit trail.
 
 ## Workflow
 
-The planned migration lifecycle consists of four distinct stages:
+The lifecycle consists of four distinct stages:
 
-1.  **Code Change:** You modify your data models (tables, views) in your Moose project.
-2.  **Generation:** You run the CLI to compare your local code against the production database.
-3.  **Review:** Moose produces a `migrations/` directory containing the plan. You review and commit these files.
-4.  **Application:** The plan is applied to the database, either serverless (via `moose migrate` CLI command) or server runtime (via `moose prod` command).
+1.  **Code Change** — Modify your data models (tables, views) in your Moose project.
+2.  **Generation** — Run the CLI to compare your code against production.
+    ```bash
+    moose generate migration --save ...
+    ```
+3.  **Review** — Inspect the generated `migrations/plan.yaml` file and commit it to Git.
+4.  **Application** — Execute the plan during deployment.
+    ```bash
+    moose migrate ...
+    
+    ## or if using the Moose Runtime
+    moose prod
+    ```
 
 ## Generated Artifacts
 
@@ -51,17 +71,13 @@ olap = true
 ddl_plan = true
 ```
 
-## CLI Command Reference
+## Command Options
 
-The `moose generate migration` command compares your local code against a production environment. The arguments you use depend on your [deployment model](/moosestack/migrate#deployment-models-service-vs-library).
+The `moose generate migration` command accepts different arguments depending on your [deployment model for applying changes](/moosestack/migrate#applying-changes).
 
-### For Server Runtime (`moose prod`)
+### via Moose Runtime (`moose prod`)
 
-Use this if you are deploying a full Moose server (e.g., Boreal, AWS, or your own container). You connect to the **Admin API** of the running service.
-
-```bash
-moose generate migration --url <ADMIN_API_URL> --token <ADMIN_TOKEN> --save
-```
+Connect to the **Admin API** of the running service.
 
 | Option | Description |
 | :--- | :--- |
@@ -69,13 +85,9 @@ moose generate migration --url <ADMIN_API_URL> --token <ADMIN_TOKEN> --save
 | `--token` | The authentication token for the Admin API. |
 | `--save` | Writes the generated plan to the `migrations/` directory. Without this, it performs a dry run. |
 
-### For Serverless Model (`moose migrate`)
+### via Serverless (`moose migrate`)
 
-Use this if you are integrating Moose into an existing application and managing ClickHouse yourself. You connect directly to the **ClickHouse database**.
-
-```bash
-moose generate migration --clickhouse-url <CLICKHOUSE_CONNECTION_STRING> --save
-```
+Connect directly to the **ClickHouse database**.
 
 | Option | Description |
 | :--- | :--- |

@@ -9,79 +9,109 @@ import { Callout } from "@/components/mdx";
 
 # Migrations
 
-If you've ever had your application code break because it didn't match your database schema, you know the pain of managing state in two places. Moose solves this by acting as a **synchronization engine** that keeps your code and infrastructure in alignment.
+Migrations synchronize your code-defined database schema with your production infrastructure. As your application evolves, you'll add/remove fields, change data types, and restructure tables. Moose Migrate handles these schema changes safely and reliably.
 
-## Code-First vs Database-First
+## How Migrations Work
 
-There are two common ways to manage schemas: "Code-First" (defining tables in your application) and "Database-First" (managing SQL directly).
+Moose Migrate operates by comparing two states:
 
-Moose Migrate supports both approaches through a hybrid **synchronization** layer that can be configured on a per-table (or per-stream) basis:
-1.  **Code-First**: Define models in code, and Moose Migrate pushes changes to the database.
-2.  **Database-First**: Modify the database, and Moose Migrate detects drift and pulls the latest schema definitions into code.
+1. **Your code** - Tables and streams defined in your application
+2. **Your database** - The actual schema in ClickHouse, Kafka, or Redpanda
 
-This ensures that whether a table is fully managed by MooseStack or an external system, your application logic and your infrastructure remain consistent.
+When these states differ, Moose Migrate generates operations to bring them into alignment. These operations might include:
 
-## How It Works
+- Adding or dropping tables
+- Adding, removing, or renaming columns
+- Changing data types
+- Creating or modifying streaming topics
 
-The migration engine compares two things:
-1.  **The Desired State**: The schema of tables and streams defined in your code.
-2.  **The Actual State**: The schemas currently running in your database (ClickHouse) or streaming platform (Redpanda).
+The full list of operations is available in the [Migration Plan Format](/moosestack/migrate/plan-format) documentation.
 
-For the **Code-First** workflow, you might define a `User` model in your application:
+## Core Concepts
 
-```typescript
-// You write this in your code:
-export interface User {
-    id: string;
-    name: string;
-    email: string;
+Migrations in Moose revolve around three key decisions:
+
+| Concept | What it is | Where to go |
+| :--- | :--- | :--- |
+| [Lifecycle Management](#lifecycle-management) | Controlling *what* changes are allowed (e.g., preventing data deletion). | [Overview](/moosestack/migrate/lifecycle) • [Fully Managed](/moosestack/migrate/lifecycle-fully-managed) • [Deletion Protected](/moosestack/migrate/lifecycle-deletion-protected) • [Externally Managed](/moosestack/migrate/lifecycle-externally-managed) |
+| [Generating Migrations](#generating-migrations) | Deciding *how* changes are generated. | [Overview](/moosestack/migrate/modes) • [Auto-Inferred](/moosestack/migrate/auto-inferred) • [Planned](/moosestack/migrate/planned-migrations) |
+| [Applying Changes](#applying-changes-to-production) | The workflow for executing migrations: serverless (`moose migrate`) vs server runtime (`moose prod`). | [Serverless](/moosestack/migrate/apply-planned-migrations-cli) • [Server Runtime](/moosestack/migrate/apply-planned-migrations-service) |
+
+
+### Lifecycle Management
+
+For each table and stream resource defined in your code, you can control *what* changes are allowed (e.g., preventing data deletion, ignoring schema changes, etc.) with the `LifeCycle` configuration property:
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript" label="TypeScript">
+```ts
+import { OlapTable, LifeCycle } from "@514labs/moose-lib";
+
+interface Schema {
+  id: string;
+  name: string;
+  age: number;
 }
 
-export const usersTable = new OlapTable<User>("Users");
+const table = new OlapTable<Schema>("table_name", {
+  lifeCycle: LifeCycle.FULLY_MANAGED
+  orderByFields: ["id"]
+});
 ```
 
-Moose Migrate detects this definition and automatically ensures the corresponding table exists in your database:
+  </LanguageTabContent>
+  <LanguageTabContent value="python" label="Python">
+```py
+from moose_lib import OlapTable, LifeCycle, OlapConfig
+from pydantic import BaseModel
 
-```sql
--- Moose ensures this exists in your database:
-CREATE TABLE User (
-    id String,
-    name String,
-    email String
-) ENGINE = MergeTree() ORDER BY id;
+class Schema(BaseModel):
+  id: str
+  name: str
+  age: int
+
+table = OlapTable[Schema]("table_name", OlapConfig(
+  life_cycle=LifeCycle.FULLY_MANAGED
+  order_by_fields=["id"]
+))
 ```
+  </LanguageTabContent>
+</LanguageTabs>
 
-When it detects a difference—like a new column or a new table entirely—it generates a migration plan to bridge the gap.
+| Option | Behavior | Use When |
+| :--- | :--- | :--- |
+| [`FULLY_MANAGED`](/moosestack/migrate/lifecycle-fully-managed) (default) | Automatically modifies resources to match your code, including destructive operations. | When you're developing new tables that you want your application to manage and evolve over time. |
+| [`DELETION_PROTECTED`](/moosestack/migrate/lifecycle-deletion-protected) | Automatically modifies resources to match your code, but blocks destructive operations (drops, deletions). | When you want to protect critical production tables from accidental data loss. |
+| [`EXTERNALLY_MANAGED`](/moosestack/migrate/lifecycle-externally-managed) | Does not modify resources. You manage the schema manually directly in your database. | When you have existing tables that you want to manage outside of your application, or if you're using a Managed CDC service like [ClickPipes](https://clickhouse.com/cloud/clickpipes) or [PeerDB](https://peerdb.io) to manage your schema. |
 
-## Development vs. Production
+<Callout type="info" title="Per-resource configuration">
+You configure lifecycle modes individually on each `OlapTable` and `Stream` object. This allows you to mix fully managed development tables with deletion-protected production tables and externally managed legacy resources in the same application.
+</Callout>
 
-While the core concept is the same, the workflow changes depending on where you are in your development cycle.
+[Compare Lifecycle Management Modes →](/moosestack/migrate/lifecycle)
 
-### 1. Rapid Prototyping (Dev Mode)
-When you're building a new feature locally, you want speed. You don't want to stop and approve a migration file every time you add a field to a struct.
+### Generating Migrations
 
-In **Auto-Inferred** mode (the default for `moose dev`), Moose watches your files. The moment you save a change to a data model, Moose applies the schema update to your local Docker containers immediately. It feels like magic—you just code, and the database keeps up.
+Moose Migrate provides two complementary ways to generate migrations. Each is designed for use in different stages of the application lifecycle, and it's best practice to use both in your workflow:
 
-[Learn more about Auto-Inferred Migrations →](/moosestack/migrate/auto-inferred)
+| Option | Behavior | Use Case |
+| :--- | :--- | :--- |
+| [Auto-Inferred](/moosestack/migrate/auto-inferred) | Updates database instantly on file save. Fast iteration, but can be destructive. | Local development, fast prototyping |
+| [Planned](/moosestack/migrate/planned-migrations) | Generates reviewable plan files. Safe, deterministic, with drift detection. | Production deployment, CI/CD |
 
-### 2. Safety & Control (Production)
-When you're deploying to production, you want safety. You need to know exactly what's going to happen before it happens. You definitely don't want a rename operation to be misinterpreted as a "drop and create" that wipes out your user data.
 
-For this, Moose Migrate uses **Planned Migrations**. You run a command to generate a migration plan (a strictly formatted file describing the changes). You review this plan, commit it to version control, and then apply it to your production environment. This gives you a predictable, auditable history of every change made to your database.
+[Compare Migration Modes →](/moosestack/migrate/modes)
 
-[Learn more about Planned Migrations →](/moosestack/migrate/planned-migrations)
+### Applying Changes
 
-## Protecting Your Data
+You have two options for executing planned migrations against your production database:
 
-Not all environments are equal. You might want to be able to delete tables freely in development but prevent accidental data loss in production. Or you might have legacy tables that Moose Migrate shouldn't touch at all.
+| Mode | Behavior | Use Case |
+| :--- | :--- | :--- |
+| [Serverless (`moose migrate`)](/moosestack/migrate/apply-planned-migrations-cli) | You run migrations manually or via CI/CD. | Integrating Moose OLAP into an existing application as a library. |
+| [Server Runtime (`moose prod`)](/moosestack/migrate/apply-planned-migrations-service) | Migrations are automatically run within the Moose Runtime on server startup. | Building a dedicated analytics service with the full Moose Runtime. |
 
-Moose Migrate handles this via **Lifecycle Management**. You can tag specific tables or streams with policies like `DELETION_PROTECTED` (for safety) or `EXTERNALLY_MANAGED` (for database-first workflows). This tells the migration engine which operations are allowed—or ignored entirely for external tables.
 
-[Learn more about Lifecycle Management →](/moosestack/migrate/lifecycle)
+## Advanced Topics
 
-## Where to Go Next
-
-*   **Just starting out?** Fire up `moose dev` and experience [Auto-Inferred Migrations](/moosestack/migrate/auto-inferred).
-*   **Ready to deploy?** Learn how to generate and apply [Planned Migrations](/moosestack/migrate/planned-migrations).
-*   **Need to script it?** Check out the [CLI Reference](/moosestack/migrate/apply-planned-migrations-cli) for CI/CD integration.
-*   **Something went wrong?** See how to recover from [Failed Migrations](/moosestack/migrate/failed-migrations).
+- [Failed Migrations](/moosestack/migrate/failed-migrations) - Recover from migration errors

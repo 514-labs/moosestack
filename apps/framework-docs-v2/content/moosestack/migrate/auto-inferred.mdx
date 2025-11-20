@@ -9,18 +9,15 @@ import { Callout } from "@/components/mdx";
 
 # Auto-Inferred Migrations
 
-**Auto-inferred migrations** are a schema evolution mechanism in Moose that automatically detects changes in your data models and applies them to the underlying database in real-time. This system is designed primarily for local development loops.
+**Auto-inferred migrations** are a schema evolution mechanism in Moose that automatically detects changes in your data models and applies them to the underlying database in real-time. This system is designed primarily for local development.
 
-## Overview
+## Command
 
-Unlike [Planned Migrations](/moosestack/migrate/planned-migrations), which require explicit generation and review of migration files, auto-inferred migrations operate continuously in the background when the development server is running.
+Auto-inferred migrations are enabled implicitly when running the development server:
 
-| Feature | Auto-Inferred Migrations | Planned Migrations |
-| :--- | :--- | :--- |
-| **Trigger** | File save / Watcher | `moose generate migration` |
-| **Artifact** | None (in-memory / direct SQL) | Migration plan files (`.json`/`.sql`) |
-| **Safety** | Low (Immediate application) | High (Reviewable, reversible) |
-| **Environment** | Local Development (Default) | Production (Recommended) |
+```bash
+moose dev
+```
 
 ## Production Usage
 
@@ -76,17 +73,11 @@ Auto-inferred migrations do not prompt for confirmation before dropping tables o
 
 ## Configuration
 
-Auto-inferred migrations are enabled implicitly when running the development server:
-
-```bash
-moose dev
-```
-
-The behavior relies on the `olap` feature flag in your project configuration.
+Auto-inferred migrations rely on the `olap` feature flag in your project configuration.
 
 ```toml filename="moose.config.toml"
 [features]
-olap = true
+olap = true # enabled by default
 ```
 
 ## CLI Output Reference
