@@ -95,15 +95,15 @@ function isDateType(dataType: DataType, annotations: [string, any][]): boolean {
 /**
  * Type of handling to apply to a field during parsing
  */
-export type Handling = "parseDate"; // | "parseBigInt" - to be added later
+export type Mutation = "parseDate"; // | "parseBigInt" - to be added later
 
 /**
  * Recursive tuple array structure representing field handling operations
  * Each entry is [fieldName, handling]:
- * - handling is Handling[] for leaf fields that need operations applied
- * - handling is FieldHandlings for nested objects/arrays (auto-applies to array elements)
+ * - handling is Mutation[] for leaf fields that need operations applied
+ * - handling is FieldMutations for nested objects/arrays (auto-applies to array elements)
  */
-export type FieldHandlings = [string, Handling[] | FieldHandlings][];
+export type FieldMutations = [string, Mutation[] | FieldMutations][];
 
 /**
  * Recursively builds field handlings from column definitions
@@ -111,8 +111,8 @@ export type FieldHandlings = [string, Handling[] | FieldHandlings][];
  * @param columns - Array of Column definitions
  * @returns Tuple array of field handlings
  */
-function buildFieldHandlings(columns: Column[]): FieldHandlings {
-  const handlings: FieldHandlings = [];
+function buildFieldMutations(columns: Column[]): FieldMutations {
+  const handlings: FieldMutations = [];
 
   for (const column of columns) {
     const dataType = column.data_type;
@@ -133,9 +133,9 @@ function buildFieldHandlings(columns: Column[]): FieldHandlings {
 
       // Handle nested objects
       if (isNestedType(unwrappedType)) {
-        const nestedHandlings = buildFieldHandlings(unwrappedType.columns);
-        if (nestedHandlings.length > 0) {
-          handlings.push([column.name, nestedHandlings]);
+        const nestedMutations = buildFieldMutations(unwrappedType.columns);
+        if (nestedMutations.length > 0) {
+          handlings.push([column.name, nestedMutations]);
         }
         continue;
       }
@@ -145,9 +145,9 @@ function buildFieldHandlings(columns: Column[]): FieldHandlings {
       if (isArrayType(unwrappedType)) {
         const elementType = unwrappedType.elementType;
         if (isNestedType(elementType)) {
-          const nestedHandlings = buildFieldHandlings(elementType.columns);
-          if (nestedHandlings.length > 0) {
-            handlings.push([column.name, nestedHandlings]);
+          const nestedMutations = buildFieldMutations(elementType.columns);
+          if (nestedMutations.length > 0) {
+            handlings.push([column.name, nestedMutations]);
           }
           continue;
         }
@@ -165,7 +165,7 @@ function buildFieldHandlings(columns: Column[]): FieldHandlings {
  * @param handling - The handling operation to apply
  * @returns The handled value
  */
-function applyHandling(value: any, handling: Handling): any {
+function applyMutation(value: any, handling: Mutation): any {
   if (handling === "parseDate") {
     if (typeof value === "string") {
       try {
@@ -185,7 +185,7 @@ function applyHandling(value: any, handling: Handling): any {
  * @param obj - The object to mutate
  * @param handlings - The field handlings to apply
  */
-function applyFieldHandlings(obj: any, handlings: FieldHandlings): void {
+function applyFieldMutations(obj: any, handlings: FieldMutations): void {
   if (!obj || typeof obj !== "object") {
     return;
   }
@@ -196,26 +196,26 @@ function applyFieldHandlings(obj: any, handlings: FieldHandlings): void {
     }
 
     if (Array.isArray(handling)) {
-      // Check if it's Handling[] (leaf) or FieldHandlings (nested)
+      // Check if it's Mutation[] (leaf) or FieldMutations (nested)
       if (handling.length > 0 && typeof handling[0] === "string") {
-        // It's Handling[] - apply operations to this field
-        const operations = handling as Handling[];
+        // It's Mutation[] - apply operations to this field
+        const operations = handling as Mutation[];
         for (const operation of operations) {
-          obj[fieldName] = applyHandling(obj[fieldName], operation);
+          obj[fieldName] = applyMutation(obj[fieldName], operation);
         }
       } else {
-        // It's FieldHandlings - recurse into nested structure
-        const nestedHandlings = handling as FieldHandlings;
+        // It's FieldMutations - recurse into nested structure
+        const nestedMutations = handling as FieldMutations;
         const fieldValue = obj[fieldName];
 
         if (Array.isArray(fieldValue)) {
           // Auto-apply to each array element
           for (const item of fieldValue) {
-            applyFieldHandlings(item, nestedHandlings);
+            applyFieldMutations(item, nestedMutations);
           }
         } else if (fieldValue && typeof fieldValue === "object") {
           // Apply to nested object
-          applyFieldHandlings(fieldValue, nestedHandlings);
+          applyFieldMutations(fieldValue, nestedMutations);
         }
       }
     }
@@ -230,17 +230,17 @@ function applyFieldHandlings(obj: any, handlings: FieldHandlings): void {
  *
  * @example
  * ```typescript
- * const fieldHandlings = buildFieldHandlingsFromColumns(stream.columnArray);
- * // Reuse fieldHandlings for every message
+ * const fieldMutations = buildFieldMutationsFromColumns(stream.columnArray);
+ * // Reuse fieldMutations for every message
  * ```
  */
-export function buildFieldHandlingsFromColumns(
+export function buildFieldMutationsFromColumns(
   columns: Column[] | undefined,
-): FieldHandlings | undefined {
+): FieldMutations | undefined {
   if (!columns || columns.length === 0) {
     return undefined;
   }
-  const handlings = buildFieldHandlings(columns);
+  const handlings = buildFieldMutations(columns);
   return handlings.length > 0 ? handlings : undefined;
 }
 
@@ -249,23 +249,23 @@ export function buildFieldHandlingsFromColumns(
  * Mutates the object in place for performance
  *
  * @param data - The parsed JSON object to mutate
- * @param fieldHandlings - Pre-built field handlings from buildFieldHandlingsFromColumns
+ * @param fieldMutations - Pre-built field handlings from buildFieldMutationsFromColumns
  *
  * @example
  * ```typescript
- * const fieldHandlings = buildFieldHandlingsFromColumns(stream.columnArray);
+ * const fieldMutations = buildFieldMutationsFromColumns(stream.columnArray);
  * const data = JSON.parse(jsonString);
- * mutateParsedJson(data, fieldHandlings);
+ * mutateParsedJson(data, fieldMutations);
  * // data now has transformations applied per the field handlings
  * ```
  */
 export function mutateParsedJson(
   data: any,
-  fieldHandlings: FieldHandlings | undefined,
+  fieldMutations: FieldMutations | undefined,
 ): void {
-  if (!fieldHandlings || !data) {
+  if (!fieldMutations || !data) {
     return;
   }
 
-  applyFieldHandlings(data, fieldHandlings);
+  applyFieldMutations(data, fieldMutations);
 }

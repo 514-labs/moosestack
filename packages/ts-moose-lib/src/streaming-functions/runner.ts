@@ -36,9 +36,9 @@ import { Cluster } from "../cluster-utils";
 import { getStreamingFunctions } from "../dmv2/internal";
 import type { ConsumerConfig, TransformConfig, DeadLetterQueue } from "../dmv2";
 import {
-  buildFieldHandlingsFromColumns,
+  buildFieldMutationsFromColumns,
   mutateParsedJson,
-  type FieldHandlings,
+  type FieldMutations,
 } from "../utilities/json";
 import type { Column } from "../dataModels/dataModelTypes";
 
@@ -463,7 +463,7 @@ const stopConsumer = async (
  * @param streamingFunctionWithConfigList - functions (with their configs) that transforms input message data
  * @param message - Kafka message to be processed
  * @param producer - Kafka producer for sending dead letter
- * @param fieldHandlings - Pre-built field handlings for data transformations
+ * @param fieldMutations - Pre-built field handlings for data transformations
  * @returns Promise resolving to array of transformed messages or undefined if processing fails
  *
  * The function will:
@@ -482,7 +482,7 @@ const handleMessage = async (
   streamingFunctionWithConfigList: [StreamingFunction, TransformConfig<any>][],
   message: KafkaMessage,
   producer: Producer,
-  fieldHandlings?: FieldHandlings,
+  fieldMutations?: FieldMutations,
 ): Promise<KafkaMessageWithLineage[] | undefined> => {
   if (message.value === undefined || message.value === null) {
     logger.log(`Received message with no value, skipping...`);
@@ -501,7 +501,7 @@ const handleMessage = async (
     }
     // Parse JSON then apply field handlings using pre-built configuration
     const parsedData = JSON.parse(payloadBuffer.toString());
-    mutateParsedJson(parsedData, fieldHandlings);
+    mutateParsedJson(parsedData, fieldMutations);
     const transformedData = await Promise.all(
       streamingFunctionWithConfigList.map(async ([fn, config]) => {
         try {
@@ -747,7 +747,7 @@ async function loadStreamingFunctionV2(
   targetTopic?: TopicConfig,
 ): Promise<{
   functions: [StreamingFunction, TransformConfig<any> | ConsumerConfig<any>][];
-  fieldHandlings: FieldHandlings | undefined;
+  fieldMutations: FieldMutations | undefined;
 }> {
   const transformFunctions = await getStreamingFunctions();
   const transformFunctionKey = `${topicNameToStreamName(sourceTopic)}_${targetTopic ? topicNameToStreamName(targetTopic) : "<no-target>"}`;
@@ -772,12 +772,13 @@ async function loadStreamingFunctionV2(
     fn,
     config,
   ]) as [StreamingFunction, TransformConfig<any> | ConsumerConfig<any>][];
-  const sourceColumns = matchingEntries[0][1][2]; // Get columns from first entry
+  const [_key, firstEntry] = matchingEntries[0];
+  const sourceColumns = firstEntry[2];
 
   // Pre-build field handlings once for all messages
-  const fieldHandlings = buildFieldHandlingsFromColumns(sourceColumns);
+  const fieldMutations = buildFieldMutationsFromColumns(sourceColumns);
 
-  return { functions, fieldHandlings };
+  return { functions, fieldMutations };
 }
 
 /**
@@ -838,7 +839,7 @@ const startConsumer = async (
     StreamingFunction,
     TransformConfig<any> | ConsumerConfig<any>,
   ][];
-  let fieldHandlings: FieldHandlings | undefined;
+  let fieldMutations: FieldMutations | undefined;
 
   if (args.isDmv2) {
     const result = await loadStreamingFunctionV2(
@@ -846,10 +847,10 @@ const startConsumer = async (
       args.targetTopic,
     );
     streamingFunctions = result.functions;
-    fieldHandlings = result.fieldHandlings;
+    fieldMutations = result.fieldMutations;
   } else {
     streamingFunctions = [[loadStreamingFunction(args.functionFilePath), {}]];
-    fieldHandlings = undefined;
+    fieldMutations = undefined;
   }
 
   await consumer.subscribe({
@@ -893,7 +894,7 @@ const startConsumer = async (
                 streamingFunctions,
                 message,
                 producer,
-                fieldHandlings,
+                fieldMutations,
               );
             },
             {
