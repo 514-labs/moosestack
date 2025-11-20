@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { Suspense } from "react";
+import { headers } from "next/headers";
 import { SideNav } from "@/components/navigation/side-nav";
 import { AnalyticsProvider } from "@/components/analytics-provider";
 import { SidebarInset } from "@/components/ui/sidebar";
@@ -7,20 +8,22 @@ import { showDataSourcesPage } from "@/flags";
 
 interface DocLayoutProps {
   children: ReactNode;
-  params: Promise<{
-    slug?: string[];
-  }>;
 }
 
 async function FilteredSideNav() {
   // Evaluate feature flag
+  // Note: Accessing headers() in the parent component marks this as dynamic,
+  // which allows Date.now() usage in the flags SDK
   const showDataSources = await showDataSourcesPage().catch(() => false);
 
   // Pass flag to SideNav, which will filter navigation items after language filtering
   return <SideNav flags={{ showDataSourcesPage: showDataSources }} />;
 }
 
-export default async function DocLayout({ children, params }: DocLayoutProps) {
+export default async function DocLayout({ children }: DocLayoutProps) {
+  // Access headers() to mark this layout as dynamic, which allows Date.now() usage
+  // in the flags SDK without triggering Next.js static generation errors
+  await headers();
   return (
     <AnalyticsProvider>
       <div className="flex flex-1">

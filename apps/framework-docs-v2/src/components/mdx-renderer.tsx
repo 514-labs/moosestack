@@ -62,6 +62,7 @@ interface MDXRendererProps {
 }
 
 export async function MDXRenderer({ source }: MDXRendererProps) {
+  "use cache";
   // Create FileTree with nested components
   const FileTreeWithSubcomponents = Object.assign(FileTree, {
     Folder: FileTreeFolder,
