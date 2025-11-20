@@ -140,7 +140,7 @@ pub fn format_as_code(
     prettify: bool,
 ) -> Result<String, RoutineFailure> {
     let default_delimiter = get_default_delimiter(language);
-    format_as_code_with_delimiter(sql, default_delimiter, prettify)
+    format_as_code_with_delimiter(sql, default_delimiter, Some(language), prettify)
 }
 
 /// Get the default recommended delimiter for a language
@@ -157,6 +157,7 @@ pub fn get_default_delimiter(language: CodeLanguage) -> &'static str {
 ///
 /// * `sql` - The SQL query string to format
 /// * `delimiter` - String delimiter (e.g., `r"""`, `` ` ``, `"`)
+/// * `language` - Optional language context to disambiguate `"` and `'` delimiters
 /// * `prettify` - Whether to prettify SQL before formatting
 ///
 /// # Returns
@@ -165,6 +166,7 @@ pub fn get_default_delimiter(language: CodeLanguage) -> &'static str {
 pub fn format_as_code_with_delimiter(
     sql: &str,
     delimiter: &str,
+    language: Option<CodeLanguage>,
     prettify: bool,
 ) -> Result<String, RoutineFailure> {
     // 1. Validate SQL syntax first
@@ -177,8 +179,8 @@ pub fn format_as_code_with_delimiter(
         sql.to_string()
     };
 
-    // 3. Parse delimiter to StringFormat
-    let format = StringFormat::from_delimiter(delimiter)?;
+    // 3. Parse delimiter to StringFormat with language context
+    let format = StringFormat::from_delimiter(delimiter, language)?;
 
     // 4. Resolve conflicts with automatic fallback
     let final_format = format.resolve(&sql_to_format);
@@ -293,21 +295,26 @@ mod tests {
     #[test]
     fn test_format_as_code_with_delimiter_python_raw() {
         let sql = "SELECT * FROM users WHERE id = 1";
-        let result = format_as_code_with_delimiter(sql, r#"r""""#, false).unwrap();
+        let result =
+            format_as_code_with_delimiter(sql, r#"r""""#, Some(CodeLanguage::Python), false)
+                .unwrap();
         assert_eq!(result, "r\"\"\"\nSELECT * FROM users WHERE id = 1\n\"\"\"");
     }
 
     #[test]
     fn test_format_as_code_with_delimiter_typescript_template() {
         let sql = "SELECT * FROM users WHERE id = 1";
-        let result = format_as_code_with_delimiter(sql, "`", false).unwrap();
+        let result =
+            format_as_code_with_delimiter(sql, "`", Some(CodeLanguage::TypeScript), false).unwrap();
         assert_eq!(result, "`\nSELECT * FROM users WHERE id = 1\n`");
     }
 
     #[test]
     fn test_format_as_code_with_delimiter_handles_conflict() {
         let sql = r#"SELECT '"""' AS col"#;
-        let result = format_as_code_with_delimiter(sql, r#"r""""#, false).unwrap();
+        let result =
+            format_as_code_with_delimiter(sql, r#"r""""#, Some(CodeLanguage::Python), false)
+                .unwrap();
         // Should fall back to r''' since r""" conflicts
         assert!(result.starts_with("r'''"));
     }
@@ -315,7 +322,9 @@ mod tests {
     #[test]
     fn test_format_as_code_with_delimiter_prettifies() {
         let sql = "SELECT id, name FROM users WHERE active = 1";
-        let result = format_as_code_with_delimiter(sql, r#"r""""#, true).unwrap();
+        let result =
+            format_as_code_with_delimiter(sql, r#"r""""#, Some(CodeLanguage::Python), true)
+                .unwrap();
         // Should contain prettified SQL
         assert!(result.contains("SELECT"));
         assert!(result.contains("FROM"));
@@ -324,7 +333,8 @@ mod tests {
     #[test]
     fn test_format_as_code_with_delimiter_validates_sql() {
         let sql = "INVALID SQL SYNTAX ;;; NOT VALID";
-        let result = format_as_code_with_delimiter(sql, r#"r""""#, false);
+        let result =
+            format_as_code_with_delimiter(sql, r#"r""""#, Some(CodeLanguage::Python), false);
         assert!(result.is_err());
     }
 

@@ -101,12 +101,13 @@ pub async fn query(
             format_as_code, format_as_code_with_delimiter, CodeLanguage,
         };
 
+        let language = CodeLanguage::from_str(&lang_str)?;
+
         let formatted = if let Some(delim) = delimiter {
-            // Use explicit delimiter
-            format_as_code_with_delimiter(&sql_query, &delim, prettify)?
+            // Use explicit delimiter with language context
+            format_as_code_with_delimiter(&sql_query, &delim, Some(language), prettify)?
         } else {
             // Use language default
-            let language = CodeLanguage::from_str(&lang_str)?;
             format_as_code(&sql_query, language, prettify)?
         };
 

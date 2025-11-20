@@ -33,8 +33,22 @@ pub enum StringFormat {
 }
 
 impl StringFormat {
-    /// Parse delimiter string into StringFormat enum
-    pub fn from_delimiter(delimiter: &str) -> Result<Self, RoutineFailure> {
+    /// Parse delimiter string into StringFormat enum with language context
+    ///
+    /// # Arguments
+    ///
+    /// * `delimiter` - The delimiter string (e.g., `r"""`, `` ` ``, `"`)
+    /// * `language` - Optional language context to disambiguate `"` and `'` between Python and TypeScript
+    ///
+    /// # Returns
+    ///
+    /// * `Result<Self, RoutineFailure>` - The parsed StringFormat or error
+    pub fn from_delimiter(
+        delimiter: &str,
+        language: Option<crate::cli::routines::format_query::CodeLanguage>,
+    ) -> Result<Self, RoutineFailure> {
+        use crate::cli::routines::format_query::CodeLanguage;
+
         match delimiter {
             // Python raw strings
             r#"r""""# => Ok(StringFormat::PythonRawTripleDouble),
@@ -42,11 +56,9 @@ impl StringFormat {
             r#"r""# => Ok(StringFormat::PythonRawDouble),
             r"r'" => Ok(StringFormat::PythonRawSingle),
 
-            // Python regular strings
+            // Python regular strings (unambiguous)
             r#"""""# => Ok(StringFormat::PythonTripleDouble),
             r"'''" => Ok(StringFormat::PythonTripleSingle),
-            r#"""# => Ok(StringFormat::PythonDouble),
-            r"'" => Ok(StringFormat::PythonSingle),
 
             // Python f-strings
             r#"f""""# => Ok(StringFormat::PythonFStringTripleDouble),
@@ -54,10 +66,18 @@ impl StringFormat {
             r#"f""# => Ok(StringFormat::PythonFStringDouble),
             r"f'" => Ok(StringFormat::PythonFStringSingle),
 
-            // TypeScript/JavaScript
+            // TypeScript/JavaScript (unambiguous)
             r"`" => Ok(StringFormat::TypeScriptTemplate),
-            // Note: " and ' are handled by Python variants above
-            // TypeScriptDouble and TypeScriptSingle will be used via fallback chains
+
+            // Ambiguous delimiters: " and ' (need language context)
+            r#"""# => match language {
+                Some(CodeLanguage::TypeScript) => Ok(StringFormat::TypeScriptDouble),
+                _ => Ok(StringFormat::PythonDouble), // Default to Python
+            },
+            r"'" => match language {
+                Some(CodeLanguage::TypeScript) => Ok(StringFormat::TypeScriptSingle),
+                _ => Ok(StringFormat::PythonSingle), // Default to Python
+            },
 
             _ => Err(RoutineFailure::error(Message::new(
                 "String Format".to_string(),
@@ -318,26 +338,26 @@ mod tests {
 
     #[test]
     fn test_parse_python_raw_triple_double() {
-        let format = StringFormat::from_delimiter(r#"r""""#).unwrap();
+        let format = StringFormat::from_delimiter(r#"r""""#, None).unwrap();
         assert!(matches!(format, StringFormat::PythonRawTripleDouble));
     }
 
     #[test]
     fn test_parse_all_python_raw_delimiters() {
         assert!(matches!(
-            StringFormat::from_delimiter(r#"r""""#).unwrap(),
+            StringFormat::from_delimiter(r#"r""""#, None).unwrap(),
             StringFormat::PythonRawTripleDouble
         ));
         assert!(matches!(
-            StringFormat::from_delimiter(r"r'''").unwrap(),
+            StringFormat::from_delimiter(r"r'''", None).unwrap(),
             StringFormat::PythonRawTripleSingle
         ));
         assert!(matches!(
-            StringFormat::from_delimiter(r#"r""#).unwrap(),
+            StringFormat::from_delimiter(r#"r""#, None).unwrap(),
             StringFormat::PythonRawDouble
         ));
         assert!(matches!(
-            StringFormat::from_delimiter(r"r'").unwrap(),
+            StringFormat::from_delimiter(r"r'", None).unwrap(),
             StringFormat::PythonRawSingle
         ));
     }
@@ -345,19 +365,19 @@ mod tests {
     #[test]
     fn test_parse_all_python_regular_delimiters() {
         assert!(matches!(
-            StringFormat::from_delimiter(r#"""""#).unwrap(),
+            StringFormat::from_delimiter(r#"""""#, None).unwrap(),
             StringFormat::PythonTripleDouble
         ));
         assert!(matches!(
-            StringFormat::from_delimiter(r"'''").unwrap(),
+            StringFormat::from_delimiter(r"'''", None).unwrap(),
             StringFormat::PythonTripleSingle
         ));
         assert!(matches!(
-            StringFormat::from_delimiter(r#"""#).unwrap(),
+            StringFormat::from_delimiter(r#"""#, None).unwrap(),
             StringFormat::PythonDouble
         ));
         assert!(matches!(
-            StringFormat::from_delimiter(r"'").unwrap(),
+            StringFormat::from_delimiter(r"'", None).unwrap(),
             StringFormat::PythonSingle
         ));
     }
@@ -365,19 +385,19 @@ mod tests {
     #[test]
     fn test_parse_all_python_fstring_delimiters() {
         assert!(matches!(
-            StringFormat::from_delimiter(r#"f""""#).unwrap(),
+            StringFormat::from_delimiter(r#"f""""#, None).unwrap(),
             StringFormat::PythonFStringTripleDouble
         ));
         assert!(matches!(
-            StringFormat::from_delimiter(r"f'''").unwrap(),
+            StringFormat::from_delimiter(r"f'''", None).unwrap(),
             StringFormat::PythonFStringTripleSingle
         ));
         assert!(matches!(
-            StringFormat::from_delimiter(r#"f""#).unwrap(),
+            StringFormat::from_delimiter(r#"f""#, None).unwrap(),
             StringFormat::PythonFStringDouble
         ));
         assert!(matches!(
-            StringFormat::from_delimiter(r"f'").unwrap(),
+            StringFormat::from_delimiter(r"f'", None).unwrap(),
             StringFormat::PythonFStringSingle
         ));
     }
@@ -385,7 +405,7 @@ mod tests {
     #[test]
     fn test_parse_all_typescript_delimiters() {
         assert!(matches!(
-            StringFormat::from_delimiter(r"`").unwrap(),
+            StringFormat::from_delimiter(r"`", None).unwrap(),
             StringFormat::TypeScriptTemplate
         ));
         // Note: " and ' are ambiguous and resolve to Python by default
@@ -394,8 +414,8 @@ mod tests {
 
     #[test]
     fn test_parse_invalid_delimiter() {
-        assert!(StringFormat::from_delimiter("invalid").is_err());
-        assert!(StringFormat::from_delimiter("").is_err());
+        assert!(StringFormat::from_delimiter("invalid", None).is_err());
+        assert!(StringFormat::from_delimiter("", None).is_err());
     }
 
     #[test]
