@@ -210,6 +210,10 @@ pub enum Commands {
         #[arg(short = 'c', long = "format-query", value_name = "LANGUAGE")]
         format_query: Option<String>,
 
+        /// String delimiter for formatting (e.g., r""", `, ", '). Uses language default if not specified.
+        #[arg(long = "delimiter", value_name = "DELIMITER")]
+        delimiter: Option<String>,
+
         /// Prettify SQL before formatting (only with --format-query)
         #[arg(short = 'p', long = "prettify", requires = "format_query")]
         prettify: bool,

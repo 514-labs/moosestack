@@ -1,9 +1,49 @@
 //! Module for formatting SQL queries as code literals.
 //!
-//! Supports formatting SQL queries as Python raw strings or TypeScript template literals
-//! for easy copy-pasting into application code.
+//! Supports formatting SQL queries with delimiter-aware escaping for Python and TypeScript
+//! string literals. Automatically detects conflicts and falls back to safer delimiters.
+//!
+//! # Usage
+//!
+//! ```rust
+//! use moose_cli::cli::routines::format_query::*;
+//!
+//! // With explicit delimiter
+//! let formatted = format_as_code_with_delimiter(
+//!     "SELECT * FROM users",
+//!     r#"r""""#,  // Python raw triple-quote
+//!     false
+//! ).unwrap();
+//!
+//! // With language default
+//! let formatted = format_as_code(
+//!     "SELECT * FROM users",
+//!     CodeLanguage::Python,
+//!     false
+//! ).unwrap();
+//! ```
+//!
+//! # Supported Delimiters
+//!
+//! ## Python
+//! - Raw strings: `r"""`, `r'''`, `r"`, `r'`
+//! - Regular strings: `"""`, `'''`, `"`, `'`
+//! - F-strings: `f"""`, `f'''`, `f"`, `f'`
+//!
+//! ## TypeScript
+//! - Template literals: `` ` ``
+//! - Strings: `"`, `'`
+//!
+//! # Automatic Fallback
+//!
+//! When SQL content conflicts with the chosen delimiter (e.g., SQL contains `"""`
+//! when using `r"""`), the formatter automatically falls back to a safer delimiter:
+//!
+//! - `r"""` → `r'''` → `"""` → `'''`
+//! - `` ` `` → `"` → `'`
 
 use crate::cli::display::Message;
+use crate::cli::routines::string_format::StringFormat;
 use crate::cli::routines::RoutineFailure;
 use sqlparser::ast::Statement;
 use sqlparser::dialect::ClickHouseDialect;
@@ -99,28 +139,55 @@ pub fn format_as_code(
     language: CodeLanguage,
     prettify: bool,
 ) -> Result<String, RoutineFailure> {
+    let default_delimiter = get_default_delimiter(language);
+    format_as_code_with_delimiter(sql, default_delimiter, prettify)
+}
+
+/// Get the default recommended delimiter for a language
+pub fn get_default_delimiter(language: CodeLanguage) -> &'static str {
+    match language {
+        CodeLanguage::Python => r#"r""""#, // Raw triple-quote for multi-line
+        CodeLanguage::TypeScript => "`",   // Template literal for multi-line
+    }
+}
+
+/// Format SQL query as a code literal with specific delimiter.
+///
+/// # Arguments
+///
+/// * `sql` - The SQL query string to format
+/// * `delimiter` - String delimiter (e.g., `r"""`, `` ` ``, `"`)
+/// * `prettify` - Whether to prettify SQL before formatting
+///
+/// # Returns
+///
+/// * `Result<String, RoutineFailure>` - Formatted code literal or error
+pub fn format_as_code_with_delimiter(
+    sql: &str,
+    delimiter: &str,
+    prettify: bool,
+) -> Result<String, RoutineFailure> {
+    // 1. Validate SQL syntax first
+    validate_sql(sql)?;
+
+    // 2. Optionally prettify
     let sql_to_format = if prettify {
         prettify_sql(sql)?
     } else {
         sql.to_string()
     };
 
-    let formatted = match language {
-        CodeLanguage::Python => format_python(&sql_to_format),
-        CodeLanguage::TypeScript => format_typescript(&sql_to_format),
-    };
+    // 3. Parse delimiter to StringFormat
+    let format = StringFormat::from_delimiter(delimiter)?;
 
-    Ok(formatted)
-}
+    // 4. Resolve conflicts with automatic fallback
+    let final_format = format.resolve(&sql_to_format);
 
-/// Format SQL as Python raw triple-quoted string
-fn format_python(sql: &str) -> String {
-    format!("r\"\"\"\n{}\n\"\"\"", sql.trim())
-}
+    // 5. Escape and wrap
+    let escaped = final_format.escape(&sql_to_format);
+    let wrapped = final_format.wrap(&escaped);
 
-/// Format SQL as TypeScript template literal
-fn format_typescript(sql: &str) -> String {
-    format!("`\n{}\n`", sql.trim())
+    Ok(wrapped)
 }
 
 #[cfg(test)]
@@ -146,28 +213,6 @@ mod tests {
     }
 
     #[test]
-    fn test_format_python() {
-        let sql = "SELECT * FROM users\nWHERE id = 1";
-        let result = format_python(sql);
-        assert_eq!(result, "r\"\"\"\nSELECT * FROM users\nWHERE id = 1\n\"\"\"");
-    }
-
-    #[test]
-    fn test_format_python_with_regex() {
-        let sql = r"SELECT * FROM users WHERE email REGEXP '[a-z]+'";
-        let result = format_python(sql);
-        assert!(result.starts_with("r\"\"\""));
-        assert!(result.contains(r"REGEXP '[a-z]+'"));
-    }
-
-    #[test]
-    fn test_format_typescript() {
-        let sql = "SELECT * FROM users\nWHERE id = 1";
-        let result = format_typescript(sql);
-        assert_eq!(result, "`\nSELECT * FROM users\nWHERE id = 1\n`");
-    }
-
-    #[test]
     fn test_format_as_code_python() {
         let sql = "SELECT 1";
         let result = format_as_code(sql, CodeLanguage::Python, false).unwrap();
@@ -179,78 +224,6 @@ mod tests {
         let sql = "SELECT 1";
         let result = format_as_code(sql, CodeLanguage::TypeScript, false).unwrap();
         assert_eq!(result, "`\nSELECT 1\n`");
-    }
-
-    #[test]
-    fn test_format_python_multiline_complex() {
-        let sql = r#"SELECT
-    user_id,
-    email,
-    created_at
-FROM users
-WHERE email REGEXP '^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
-    AND status = 'active'
-ORDER BY created_at DESC"#;
-        let result = format_python(sql);
-        assert!(result.starts_with("r\"\"\""));
-        assert!(result.ends_with("\"\"\""));
-        assert!(result.contains("REGEXP"));
-        assert!(result.contains("ORDER BY"));
-        // Verify backslashes are preserved as-is in raw string
-        assert!(result.contains(r"[a-zA-Z0-9._%+-]+"));
-    }
-
-    #[test]
-    fn test_format_python_complex_regex_patterns() {
-        // Test various regex special characters
-        let sql = r"SELECT * FROM logs WHERE message REGEXP '\\d{4}-\\d{2}-\\d{2}\\s+\\w+'";
-        let result = format_python(sql);
-        assert!(result.contains(r"\\d{4}-\\d{2}-\\d{2}\\s+\\w+"));
-
-        // Test with character classes and quantifiers
-        let sql2 = r"SELECT * FROM data WHERE field REGEXP '[A-Z]{3,5}\-\d+'";
-        let result2 = format_python(sql2);
-        assert!(result2.contains(r"[A-Z]{3,5}\-\d+"));
-    }
-
-    #[test]
-    fn test_format_typescript_multiline_complex() {
-        let sql = r#"SELECT
-    order_id,
-    customer_email,
-    total_amount
-FROM orders
-WHERE customer_email REGEXP '[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}'
-    AND total_amount > 100
-LIMIT 50"#;
-        let result = format_typescript(sql);
-        assert!(result.starts_with("`"));
-        assert!(result.ends_with("`"));
-        assert!(result.contains("REGEXP"));
-        assert!(result.contains("LIMIT 50"));
-    }
-
-    #[test]
-    fn test_format_preserves_indentation() {
-        let sql = "SELECT *\n    FROM users\n        WHERE id = 1";
-        let python_result = format_python(sql);
-        let typescript_result = format_typescript(sql);
-
-        // Both should preserve the indentation
-        assert!(python_result.contains("    FROM users"));
-        assert!(python_result.contains("        WHERE id = 1"));
-        assert!(typescript_result.contains("    FROM users"));
-        assert!(typescript_result.contains("        WHERE id = 1"));
-    }
-
-    #[test]
-    fn test_format_python_with_quotes_and_backslashes() {
-        // SQL with single quotes and backslashes
-        let sql = r"SELECT * FROM data WHERE pattern REGEXP '\\b(foo|bar)\\b' AND name = 'test'";
-        let result = format_python(sql);
-        // Raw strings should preserve everything as-is
-        assert!(result.contains(r"\\b(foo|bar)\\b"));
-        assert!(result.contains("name = 'test'"));
     }
 
     #[test]
@@ -315,4 +288,60 @@ LIMIT 50"#;
         let sql = "INVALID SQL SYNTAX ;;; NOT VALID";
         assert!(validate_sql(sql).is_err());
     }
+
+    // Task 10: Tests for format_as_code_with_delimiter
+    #[test]
+    fn test_format_as_code_with_delimiter_python_raw() {
+        let sql = "SELECT * FROM users WHERE id = 1";
+        let result = format_as_code_with_delimiter(sql, r#"r""""#, false).unwrap();
+        assert_eq!(result, "r\"\"\"\nSELECT * FROM users WHERE id = 1\n\"\"\"");
+    }
+
+    #[test]
+    fn test_format_as_code_with_delimiter_typescript_template() {
+        let sql = "SELECT * FROM users WHERE id = 1";
+        let result = format_as_code_with_delimiter(sql, "`", false).unwrap();
+        assert_eq!(result, "`\nSELECT * FROM users WHERE id = 1\n`");
+    }
+
+    #[test]
+    fn test_format_as_code_with_delimiter_handles_conflict() {
+        let sql = r#"SELECT '"""' AS col"#;
+        let result = format_as_code_with_delimiter(sql, r#"r""""#, false).unwrap();
+        // Should fall back to r''' since r""" conflicts
+        assert!(result.starts_with("r'''"));
+    }
+
+    #[test]
+    fn test_format_as_code_with_delimiter_prettifies() {
+        let sql = "SELECT id, name FROM users WHERE active = 1";
+        let result = format_as_code_with_delimiter(sql, r#"r""""#, true).unwrap();
+        // Should contain prettified SQL
+        assert!(result.contains("SELECT"));
+        assert!(result.contains("FROM"));
+    }
+
+    #[test]
+    fn test_format_as_code_with_delimiter_validates_sql() {
+        let sql = "INVALID SQL SYNTAX ;;; NOT VALID";
+        let result = format_as_code_with_delimiter(sql, r#"r""""#, false);
+        assert!(result.is_err());
+    }
+
+    // Task 12: Tests for default delimiter selection
+    #[test]
+    fn test_get_default_delimiter_python() {
+        let delimiter = get_default_delimiter(CodeLanguage::Python);
+        assert_eq!(delimiter, r#"r""""#);
+    }
+
+    #[test]
+    fn test_get_default_delimiter_typescript() {
+        let delimiter = get_default_delimiter(CodeLanguage::TypeScript);
+        assert_eq!(delimiter, "`");
+    }
 }
+
+#[cfg(test)]
+#[path = "format_query_e2e_tests.rs"]
+mod format_query_e2e_tests;

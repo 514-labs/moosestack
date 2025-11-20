@@ -73,6 +73,7 @@ fn get_sql_input(sql: Option<String>, file: Option<PathBuf>) -> Result<String, R
 /// * `file` - Optional file path containing SQL query
 /// * `limit` - Maximum number of rows to return (via ClickHouse settings)
 /// * `format_query` - Optional language name to format query as code literal instead of executing
+/// * `delimiter` - Optional string delimiter for formatting (e.g., r""", `, ")
 /// * `prettify` - Whether to prettify SQL before formatting
 ///
 /// # Returns
@@ -84,6 +85,7 @@ pub async fn query(
     file: Option<PathBuf>,
     limit: u64,
     format_query: Option<String>,
+    delimiter: Option<String>,
     prettify: bool,
 ) -> Result<RoutineSuccess, RoutineFailure> {
     let sql_query = get_sql_input(sql, file)?;
@@ -95,10 +97,18 @@ pub async fn query(
 
     // If format_query flag is present, format and exit without executing
     if let Some(lang_str) = format_query {
-        use crate::cli::routines::format_query::{format_as_code, CodeLanguage};
+        use crate::cli::routines::format_query::{
+            format_as_code, format_as_code_with_delimiter, CodeLanguage,
+        };
 
-        let language = CodeLanguage::from_str(&lang_str)?;
-        let formatted = format_as_code(&sql_query, language, prettify)?;
+        let formatted = if let Some(delim) = delimiter {
+            // Use explicit delimiter
+            format_as_code_with_delimiter(&sql_query, &delim, prettify)?
+        } else {
+            // Use language default
+            let language = CodeLanguage::from_str(&lang_str)?;
+            format_as_code(&sql_query, language, prettify)?
+        };
 
         println!("{}", formatted);
 
