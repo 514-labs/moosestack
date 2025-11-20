@@ -62,14 +62,14 @@ When you're building a new feature locally, you want speed. You don't want to st
 
 In **Auto-Inferred** mode (the default for `moose dev`), Moose watches your files. The moment you save a change to a data model, Moose applies the schema update to your local Docker containers immediately. It feels like magic—you just code, and the database keeps up.
 
-[Learn more about Auto-Inferred Migrations →](./auto-inferred)
+[Learn more about Auto-Inferred Migrations →](/moosestack/migrate/auto-inferred)
 
 ### 2. Safety & Control (Production)
 When you're deploying to production, you want safety. You need to know exactly what's going to happen before it happens. You definitely don't want a rename operation to be misinterpreted as a "drop and create" that wipes out your user data.
 
 For this, Moose Migrate uses **Planned Migrations**. You run a command to generate a migration plan (a strictly formatted file describing the changes). You review this plan, commit it to version control, and then apply it to your production environment. This gives you a predictable, auditable history of every change made to your database.
 
-[Learn more about Planned Migrations →](./planned-migrations)
+[Learn more about Planned Migrations →](/moosestack/migrate/planned-migrations)
 
 ## Protecting Your Data
 
@@ -77,11 +77,11 @@ Not all environments are equal. You might want to be able to delete tables freel
 
 Moose Migrate handles this via **Lifecycle Management**. You can tag specific tables or streams with policies like `DELETION_PROTECTED` (for safety) or `EXTERNALLY_MANAGED` (for database-first workflows). This tells the migration engine which operations are allowed—or ignored entirely for external tables.
 
-[Learn more about Lifecycle Management →](./lifecycle)
+[Learn more about Lifecycle Management →](/moosestack/migrate/lifecycle)
 
 ## Where to Go Next
 
-*   **Just starting out?** Fire up `moose dev` and experience [Auto-Inferred Migrations](./auto-inferred).
-*   **Ready to deploy?** Learn how to generate and apply [Planned Migrations](./planned-migrations).
-*   **Need to script it?** Check out the [CLI Reference](./apply-planned-migrations-cli) for CI/CD integration.
-*   **Something went wrong?** See how to recover from [Failed Migrations](./failed-migrations).
+*   **Just starting out?** Fire up `moose dev` and experience [Auto-Inferred Migrations](/moosestack/migrate/auto-inferred).
+*   **Ready to deploy?** Learn how to generate and apply [Planned Migrations](/moosestack/migrate/planned-migrations).
+*   **Need to script it?** Check out the [CLI Reference](/moosestack/migrate/apply-planned-migrations-cli) for CI/CD integration.
+*   **Something went wrong?** See how to recover from [Failed Migrations](/moosestack/migrate/failed-migrations).
