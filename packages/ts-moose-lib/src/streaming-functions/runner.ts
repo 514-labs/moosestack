@@ -463,13 +463,13 @@ const stopConsumer = async (
  * @param streamingFunctionWithConfigList - functions (with their configs) that transforms input message data
  * @param message - Kafka message to be processed
  * @param producer - Kafka producer for sending dead letter
- * @param fieldMutations - Pre-built field handlings for data transformations
+ * @param fieldMutations - Pre-built field mutations for data transformations
  * @returns Promise resolving to array of transformed messages or undefined if processing fails
  *
  * The function will:
  * 1. Check for null/undefined message values
  * 2. Parse the message value as JSON
- * 3. Apply field handlings (e.g., date parsing) using pre-built configuration
+ * 3. Apply field mutations (e.g., date parsing) using pre-built configuration
  * 4. Pass parsed data through the streaming function
  * 5. Convert transformed data back to string format
  * 6. Handle both single and array return values
@@ -499,7 +499,7 @@ const handleMessage = async (
     ) {
       payloadBuffer = payloadBuffer.subarray(5);
     }
-    // Parse JSON then apply field handlings using pre-built configuration
+    // Parse JSON then apply field mutations using pre-built configuration
     const parsedData = JSON.parse(payloadBuffer.toString());
     mutateParsedJson(parsedData, fieldMutations);
     const transformedData = await Promise.all(
@@ -775,7 +775,7 @@ async function loadStreamingFunctionV2(
   const [_key, firstEntry] = matchingEntries[0];
   const sourceColumns = firstEntry[2];
 
-  // Pre-build field handlings once for all messages
+  // Pre-build field mutations once for all messages
   const fieldMutations = buildFieldMutationsFromColumns(sourceColumns);
 
   return { functions, fieldMutations };
