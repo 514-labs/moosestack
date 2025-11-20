@@ -34,23 +34,12 @@ import { CodeEditor } from "@/components/ui/shadcn-io/code-editor";
 import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
-import {
-  IconTerminal,
-  IconFileCode,
-  IconRocket,
-  IconDatabase,
-  IconDeviceLaptop,
-  IconBrandGithub,
-  IconInfoCircle,
-  IconCheck,
-  IconClock,
-} from "@tabler/icons-react";
+import { IconTerminal, IconFileCode } from "@tabler/icons-react";
 import {
   MDXPre,
   MDXCode,
   MDXFigure,
 } from "@/components/mdx/code-block-wrapper";
-import { PathConfig } from "@/lib/path-config";
 import Link from "next/link";
 import remarkGfm from "remark-gfm";
 import rehypeSlug from "rehype-slug";
