@@ -3,6 +3,8 @@ title: Setup Connection
 description: Configure connection to your existing OLTP database
 ---
 
+import { LanguageTabs, LanguageTabContent } from "@/components/mdx";
+
 # Step 1: Setup Connection
 
 In this step, you'll configure MooseStack to connect to your existing OLTP database.
@@ -13,8 +15,8 @@ MooseStack needs to connect to your existing database to read data and create ma
 
 ## Configuration
 
-### TypeScript
-
+<LanguageTabs items={["TypeScript", "Python"]}>
+  <LanguageTabContent value="typescript">
 ```typescript filename="moose.config.ts"
 import { defineConfig } from "@514labs/moose-cli";
 
@@ -31,9 +33,8 @@ export default defineConfig({
   },
 });
 ```
-
-### Python
-
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
 ```python filename="moose.config.py"
 from moose_cli import define_config
 
@@ -50,6 +51,8 @@ config = define_config(
     }
 )
 ```
+  </LanguageTabContent>
+</LanguageTabs>
 
 ## Environment Variables
 
