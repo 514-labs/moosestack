@@ -52,29 +52,37 @@ function isDateType(dataType: DataType, annotations: [string, any][]): boolean {
 }
 
 /**
- * Path segment for traversing nested objects
+ * Type of handling to apply to a field during parsing
  */
-type PathSegment = string | number;
+export type Handling = "parseDate"; // | "parseBigInt" - to be added later
 
 /**
- * Builds a list of paths to date fields in the schema
- * Each path is an array of keys to traverse to reach the date field
+ * Recursive tuple array structure representing field handling operations
+ * Each entry is [fieldName, handling]:
+ * - handling is Handling[] for leaf fields that need operations applied
+ * - handling is FieldHandlings for nested objects/arrays (auto-applies to array elements)
  */
-function buildDateFieldPaths(
-  columns: Column[],
-  basePath: PathSegment[] = [],
-): PathSegment[][] {
-  const datePaths: PathSegment[][] = [];
+export type FieldHandlings = [string, Handling[] | FieldHandlings][];
+
+/**
+ * Recursively builds field handlings from column definitions
+ *
+ * @param columns - Array of Column definitions
+ * @returns Tuple array of field handlings
+ */
+function buildFieldHandlings(columns: Column[]): FieldHandlings {
+  const handlings: FieldHandlings = [];
 
   for (const column of columns) {
-    const currentPath = [...basePath, column.name];
+    const dataType = column.data_type;
 
-    if (isDateType(column.data_type, column.annotations)) {
-      datePaths.push(currentPath);
+    // Check if this is a date field that should be converted
+    if (isDateType(dataType, column.annotations)) {
+      handlings.push([column.name, ["parseDate"]]);
+      continue;
     }
 
     // Handle nested structures
-    const dataType = column.data_type;
     if (typeof dataType === "object" && dataType !== null) {
       // Handle nullable wrapper
       let unwrappedType: DataType = dataType;
@@ -92,15 +100,17 @@ function buildDateFieldPaths(
         "columns" in unwrappedType &&
         Array.isArray((unwrappedType as any).columns)
       ) {
-        const nestedPaths = buildDateFieldPaths(
+        const nestedHandlings = buildFieldHandlings(
           (unwrappedType as any).columns,
-          currentPath,
         );
-        datePaths.push(...nestedPaths);
+        if (nestedHandlings.length > 0) {
+          handlings.push([column.name, nestedHandlings]);
+        }
+        continue;
       }
 
-      // Handle arrays of nested objects
-      // For arrays, we use a special marker '*' to indicate "all array elements"
+      // Handle arrays with nested columns
+      // The handlings will be auto-applied to each array element at runtime
       if (
         typeof unwrappedType === "object" &&
         unwrappedType !== null &&
@@ -109,118 +119,128 @@ function buildDateFieldPaths(
         (unwrappedType as any).elementType !== null &&
         "columns" in (unwrappedType as any).elementType
       ) {
-        const nestedPaths = buildDateFieldPaths(
+        const nestedHandlings = buildFieldHandlings(
           (unwrappedType as any).elementType.columns,
-          [...currentPath, "*"],
         );
-        datePaths.push(...nestedPaths);
+        if (nestedHandlings.length > 0) {
+          handlings.push([column.name, nestedHandlings]);
+        }
+        continue;
       }
     }
   }
 
-  return datePaths;
+  return handlings;
 }
 
 /**
- * Mutates an object by converting string values to Date objects at specified paths
+ * Applies a handling operation to a field value
+ *
+ * @param value - The value to handle
+ * @param handling - The handling operation to apply
+ * @returns The handled value
+ */
+function applyHandling(value: any, handling: Handling): any {
+  if (handling === "parseDate") {
+    if (typeof value === "string") {
+      try {
+        const date = new Date(value);
+        return !isNaN(date.getTime()) ? date : value;
+      } catch {
+        return value;
+      }
+    }
+  }
+  return value;
+}
+
+/**
+ * Recursively mutates an object by applying field handlings
  *
  * @param obj - The object to mutate
- * @param path - Array of keys/indices to traverse
- * @param index - Current position in the path
+ * @param handlings - The field handlings to apply
  */
-function mutateDateAtPath(
-  obj: any,
-  path: PathSegment[],
-  index: number = 0,
-): void {
+function applyFieldHandlings(obj: any, handlings: FieldHandlings): void {
   if (!obj || typeof obj !== "object") {
     return;
   }
 
-  if (index >= path.length) {
-    return;
-  }
-
-  const segment = path[index];
-  const isLastSegment = index === path.length - 1;
-
-  // Handle array wildcard
-  if (segment === "*") {
-    if (Array.isArray(obj)) {
-      for (const item of obj) {
-        mutateDateAtPath(item, path, index + 1);
-      }
+  for (const [fieldName, handling] of handlings) {
+    if (!(fieldName in obj)) {
+      continue;
     }
-    return;
-  }
 
-  // Handle regular property access
-  if (segment in obj) {
-    if (isLastSegment) {
-      // Convert to Date if it's a string
-      const value = obj[segment];
-      if (typeof value === "string") {
-        try {
-          const date = new Date(value);
-          if (!isNaN(date.getTime())) {
-            obj[segment] = date;
+    if (Array.isArray(handling)) {
+      // Check if it's Handling[] (leaf) or FieldHandlings (nested)
+      if (handling.length > 0 && typeof handling[0] === "string") {
+        // It's Handling[] - apply operations to this field
+        const operations = handling as Handling[];
+        for (const operation of operations) {
+          obj[fieldName] = applyHandling(obj[fieldName], operation);
+        }
+      } else {
+        // It's FieldHandlings - recurse into nested structure
+        const nestedHandlings = handling as FieldHandlings;
+        const fieldValue = obj[fieldName];
+
+        if (Array.isArray(fieldValue)) {
+          // Auto-apply to each array element
+          for (const item of fieldValue) {
+            applyFieldHandlings(item, nestedHandlings);
           }
-        } catch {
-          // If date parsing fails, leave as is
+        } else if (fieldValue && typeof fieldValue === "object") {
+          // Apply to nested object
+          applyFieldHandlings(fieldValue, nestedHandlings);
         }
       }
-    } else {
-      // Recurse deeper
-      mutateDateAtPath(obj[segment], path, index + 1);
     }
   }
 }
 
 /**
- * Pre-builds date field paths from column schema for efficient reuse
+ * Pre-builds field handlings from column schema for efficient reuse
  *
  * @param columns - Column definitions from the Stream schema
- * @returns Array of paths to date fields, or undefined if no columns
+ * @returns Field handlings tuple array, or undefined if no columns
  *
  * @example
  * ```typescript
- * const datePaths = buildDateFieldPathsFromColumns(stream.columnArray);
- * // Reuse datePaths for every message
+ * const fieldHandlings = buildFieldHandlingsFromColumns(stream.columnArray);
+ * // Reuse fieldHandlings for every message
  * ```
  */
-export function buildDateFieldPathsFromColumns(
+export function buildFieldHandlingsFromColumns(
   columns: Column[] | undefined,
-): PathSegment[][] | undefined {
+): FieldHandlings | undefined {
   if (!columns || columns.length === 0) {
     return undefined;
   }
-  return buildDateFieldPaths(columns);
+  const handlings = buildFieldHandlings(columns);
+  return handlings.length > 0 ? handlings : undefined;
 }
 
 /**
- * Converts date string fields to Date objects using pre-built paths
+ * Applies field handlings to parsed data
  * Mutates the object in place for performance
  *
  * @param data - The parsed JSON object to mutate
- * @param datePaths - Pre-built paths to date fields from buildDateFieldPathsFromColumns
+ * @param fieldHandlings - Pre-built field handlings from buildFieldHandlingsFromColumns
  *
  * @example
  * ```typescript
- * const datePaths = buildDateFieldPathsFromColumns(stream.columnArray);
+ * const fieldHandlings = buildFieldHandlingsFromColumns(stream.columnArray);
  * const data = JSON.parse(jsonString);
- * convertDatesFromPaths(data, datePaths);
- * // data now has Date objects where the schema specifies date fields
+ * applyFieldHandlingsToData(data, fieldHandlings);
+ * // data now has transformations applied per the field handlings
  * ```
  */
-export function convertDatesFromPaths(
+export function applyFieldHandlingsToData(
   data: any,
-  datePaths: PathSegment[][] | undefined,
+  fieldHandlings: FieldHandlings | undefined,
 ): void {
-  if (!datePaths || datePaths.length === 0 || !data) {
+  if (!fieldHandlings || !data) {
     return;
   }
 
-  for (const path of datePaths) {
-    mutateDateAtPath(data, path);
-  }
+  applyFieldHandlings(data, fieldHandlings);
 }

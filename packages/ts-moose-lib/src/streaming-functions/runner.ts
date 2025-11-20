@@ -36,12 +36,11 @@ import { Cluster } from "../cluster-utils";
 import { getStreamingFunctions } from "../dmv2/internal";
 import type { ConsumerConfig, TransformConfig, DeadLetterQueue } from "../dmv2";
 import {
-  buildDateFieldPathsFromColumns,
-  convertDatesFromPaths,
+  buildFieldHandlingsFromColumns,
+  applyFieldHandlingsToData,
+  type FieldHandlings,
 } from "../utilities/json";
 import type { Column } from "../dataModels/dataModelTypes";
-
-type PathSegment = string | number;
 
 const HOSTNAME = process.env.HOSTNAME;
 const AUTO_COMMIT_INTERVAL_MS = 5000;
@@ -464,13 +463,13 @@ const stopConsumer = async (
  * @param streamingFunctionWithConfigList - functions (with their configs) that transforms input message data
  * @param message - Kafka message to be processed
  * @param producer - Kafka producer for sending dead letter
- * @param datePaths - Pre-built paths to date fields for precise date parsing
+ * @param fieldHandlings - Pre-built field handlings for data transformations
  * @returns Promise resolving to array of transformed messages or undefined if processing fails
  *
  * The function will:
  * 1. Check for null/undefined message values
  * 2. Parse the message value as JSON
- * 3. Convert date fields to Date objects using pre-built paths
+ * 3. Apply field handlings (e.g., date parsing) using pre-built configuration
  * 4. Pass parsed data through the streaming function
  * 5. Convert transformed data back to string format
  * 6. Handle both single and array return values
@@ -483,7 +482,7 @@ const handleMessage = async (
   streamingFunctionWithConfigList: [StreamingFunction, TransformConfig<any>][],
   message: KafkaMessage,
   producer: Producer,
-  datePaths?: PathSegment[][],
+  fieldHandlings?: FieldHandlings,
 ): Promise<KafkaMessageWithLineage[] | undefined> => {
   if (message.value === undefined || message.value === null) {
     logger.log(`Received message with no value, skipping...`);
@@ -500,9 +499,9 @@ const handleMessage = async (
     ) {
       payloadBuffer = payloadBuffer.subarray(5);
     }
-    // Parse JSON then mutate date fields using pre-built paths
+    // Parse JSON then apply field handlings using pre-built configuration
     const parsedData = JSON.parse(payloadBuffer.toString());
-    convertDatesFromPaths(parsedData, datePaths);
+    applyFieldHandlingsToData(parsedData, fieldHandlings);
     const transformedData = await Promise.all(
       streamingFunctionWithConfigList.map(async ([fn, config]) => {
         try {
@@ -748,7 +747,7 @@ async function loadStreamingFunctionV2(
   targetTopic?: TopicConfig,
 ): Promise<{
   functions: [StreamingFunction, TransformConfig<any> | ConsumerConfig<any>][];
-  datePaths: PathSegment[][] | undefined;
+  fieldHandlings: FieldHandlings | undefined;
 }> {
   const transformFunctions = await getStreamingFunctions();
   const transformFunctionKey = `${topicNameToStreamName(sourceTopic)}_${targetTopic ? topicNameToStreamName(targetTopic) : "<no-target>"}`;
@@ -775,10 +774,10 @@ async function loadStreamingFunctionV2(
   ]) as [StreamingFunction, TransformConfig<any> | ConsumerConfig<any>][];
   const sourceColumns = matchingEntries[0][1][2]; // Get columns from first entry
 
-  // Pre-build date field paths once for all messages
-  const datePaths = buildDateFieldPathsFromColumns(sourceColumns);
+  // Pre-build field handlings once for all messages
+  const fieldHandlings = buildFieldHandlingsFromColumns(sourceColumns);
 
-  return { functions, datePaths };
+  return { functions, fieldHandlings };
 }
 
 /**
@@ -839,7 +838,7 @@ const startConsumer = async (
     StreamingFunction,
     TransformConfig<any> | ConsumerConfig<any>,
   ][];
-  let datePaths: PathSegment[][] | undefined;
+  let fieldHandlings: FieldHandlings | undefined;
 
   if (args.isDmv2) {
     const result = await loadStreamingFunctionV2(
@@ -847,10 +846,10 @@ const startConsumer = async (
       args.targetTopic,
     );
     streamingFunctions = result.functions;
-    datePaths = result.datePaths;
+    fieldHandlings = result.fieldHandlings;
   } else {
     streamingFunctions = [[loadStreamingFunction(args.functionFilePath), {}]];
-    datePaths = undefined;
+    fieldHandlings = undefined;
   }
 
   await consumer.subscribe({
@@ -894,7 +893,7 @@ const startConsumer = async (
                 streamingFunctions,
                 message,
                 producer,
-                datePaths,
+                fieldHandlings,
               );
             },
             {

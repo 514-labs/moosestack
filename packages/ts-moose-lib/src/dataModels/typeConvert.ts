@@ -481,9 +481,6 @@ const handleStringType = (
             }
           }
 
-          // Mark this as a string-based date field so it won't be parsed to Date at runtime
-          annotations.push(["stringDate", true]);
-
           if (size === 4) {
             return "Date";
           } else if (size === 2) {
