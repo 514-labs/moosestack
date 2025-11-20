@@ -7,7 +7,8 @@ use crate::framework::core::partial_infrastructure_map::LifeCycle;
 use crate::framework::languages::SupportedLanguages;
 use crate::framework::python::generate::tables_to_python;
 use crate::framework::typescript::generate::tables_to_typescript;
-use crate::infrastructure::olap::clickhouse::ConfiguredDBClient;
+use crate::infrastructure::olap::clickhouse::config::parse_clickhouse_connection_string;
+use crate::infrastructure::olap::clickhouse::{create_client, ConfiguredDBClient};
 use crate::infrastructure::olap::OlapOperations;
 use crate::project::Project;
 use crate::utilities::constants::{
@@ -15,7 +16,6 @@ use crate::utilities::constants::{
 };
 use crate::utilities::git::create_code_generation_commit;
 use log::debug;
-use reqwest::Url;
 use std::borrow::Cow;
 use std::env;
 use std::io::Write;
@@ -59,103 +59,20 @@ fn should_be_externally_managed(table: &Table) -> bool {
 pub async fn create_client_and_db(
     remote_url: &str,
 ) -> Result<(ConfiguredDBClient, String), RoutineFailure> {
-    let mut url = Url::parse(remote_url).map_err(|e| {
-        RoutineFailure::error(Message::new(
-            "Invalid URL".to_string(),
-            format!("Failed to parse remote_url '{remote_url}': {e}"),
-        ))
+    // Parse the connection string using the standard parser
+    let config = parse_clickhouse_connection_string(remote_url).map_err(|e| {
+        RoutineFailure::new(
+            Message::new(
+                "Invalid URL".to_string(),
+                format!("Failed to parse ClickHouse URL '{remote_url}'"),
+            ),
+            e,
+        )
     })?;
 
-    if url.scheme() == "clickhouse" {
-        debug!("Only HTTP(s) supported. Transforming native protocol connection string.");
-        let is_secure = match (url.host_str(), url.port()) {
-            (_, Some(9000)) => false,
-            (_, Some(9440)) => true,
-            (Some(host), _) if host == "localhost" || host == "127.0.0.1" => false,
-            _ => true,
-        };
-        let (new_port, new_scheme) = if is_secure {
-            (8443, "https")
-        } else {
-            (8123, "http")
-        };
-        url = Url::parse(&remote_url.replacen("clickhouse", new_scheme, 1)).unwrap();
-        url.set_port(Some(new_port)).unwrap();
+    let db_name = config.db_name.clone();
 
-        let path_segments = url.path().split('/').collect::<Vec<&str>>();
-        if path_segments.len() == 2 && path_segments[0].is_empty() {
-            let database = path_segments[1].to_string();
-            url.set_path("");
-            url.query_pairs_mut().append_pair("database", &database);
-        };
-
-        let display_url = if url.password().is_some() {
-            let mut cloned = url.clone();
-            cloned.set_password(Some("******")).unwrap();
-            Cow::Owned(cloned)
-        } else {
-            Cow::Borrowed(&url)
-        };
-        show_message!(
-            MessageType::Highlight,
-            Message {
-                action: "Protocol".to_string(),
-                details: format!("native protocol detected. Converting to HTTP(s): {display_url}"),
-            }
-        );
-    }
-
-    let mut client = clickhouse::Client::default().with_url(remote_url);
-    let url_username = url.username();
-    let url_username = if !url_username.is_empty() {
-        url_username.to_string()
-    } else {
-        match url.query_pairs().find(|(key, _)| key == "user") {
-            None => String::new(),
-            Some((_, v)) => v.to_string(),
-        }
-    };
-    if !url_username.is_empty() {
-        client = client
-            .with_user(percent_encoding::percent_decode_str(&url_username).decode_utf8_lossy())
-    }
-    if let Some(password) = url.password() {
-        client = client
-            .with_password(percent_encoding::percent_decode_str(password).decode_utf8_lossy());
-    }
-
-    let url_db = url
-        .query_pairs()
-        .filter_map(|(k, v)| {
-            if k == "database" {
-                Some(v.to_string())
-            } else {
-                None
-            }
-        })
-        .last();
-
-    let client = ConfiguredDBClient {
-        client,
-        config: Default::default(),
-    };
-
-    let db = match url_db {
-        None => client
-            .client
-            .query("select database()")
-            .fetch_one::<String>()
-            .await
-            .map_err(|e| {
-                RoutineFailure::new(
-                    Message::new("Failure".to_string(), "fetching database".to_string()),
-                    e,
-                )
-            })?,
-        Some(db) => db,
-    };
-
-    Ok((client, db))
+    Ok((create_client(config), db_name))
 }
 
 fn write_external_models_file(
