@@ -543,9 +543,15 @@ export function MDXCode({ children, className, ...props }: MDXCodeProps) {
   const isInline = !className?.includes("language-") && !props["data-language"];
 
   if (isInline) {
-    // Inline code - render as normal code element
+    // Inline code - render as normal code element with proper styling
     return (
-      <code className={className} {...props}>
+      <code
+        className={cn(
+          "relative rounded bg-muted px-[0.3rem] py-[0.2rem] font-mono text-sm text-foreground not-prose",
+          className,
+        )}
+        {...props}
+      >
         {children}
       </code>
     );
