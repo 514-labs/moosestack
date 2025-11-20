@@ -5,11 +5,13 @@
 
 use crate::infrastructure::olap::clickhouse::model::ClickHouseIndex;
 use sqlparser::ast::{
-    Expr, ObjectName, Query, Select, SelectItem, Statement, TableFactor, TableWithJoins,
+    Expr, ObjectName, ObjectNamePart, Query, Select, SelectItem, Statement, TableFactor,
+    TableWithJoins, VisitMut, VisitorMut,
 };
 use sqlparser::dialect::ClickHouseDialect;
 use sqlparser::parser::Parser;
 use std::collections::HashSet;
+use std::ops::ControlFlow;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct MaterializedViewStatement {
@@ -426,168 +428,231 @@ pub fn extract_indexes_from_create_table(sql: &str) -> Result<Vec<ClickHouseInde
 /// - Removes unnecessary backticks
 /// - Normalizes whitespace
 /// - Uppercases SQL keywords
-pub fn normalize_sql_for_comparison(sql: &str, default_database: &str) -> String {
+struct Normalizer<'a> {
+    default_database: &'a str,
+}
+
+impl<'a> VisitorMut for Normalizer<'a> {
+    type Break = ();
+
+    fn pre_visit_table_factor(
+        &mut self,
+        table_factor: &mut TableFactor,
+    ) -> ControlFlow<Self::Break> {
+        if let TableFactor::Table { name, .. } = table_factor {
+            // Strip default database prefix
+            if name.0.len() == 2 {
+                if let ObjectNamePart::Identifier(ident) = &name.0[0] {
+                    if ident.value.eq_ignore_ascii_case(self.default_database) {
+                        name.0.remove(0);
+                    }
+                }
+            }
+            // Unquote table names
+            for part in &mut name.0 {
+                if let ObjectNamePart::Identifier(ident) = part {
+                    ident.quote_style = None;
+                    ident.value = ident.value.replace('`', "");
+                }
+            }
+        }
+        ControlFlow::Continue(())
+    }
+
+    fn pre_visit_expr(&mut self, expr: &mut Expr) -> ControlFlow<Self::Break> {
+        match expr {
+            Expr::Identifier(ident) => {
+                ident.quote_style = None;
+                ident.value = ident.value.replace('`', "");
+            }
+            Expr::Function(func) => {
+                // Uppercase function names (e.g. count -> COUNT)
+                if let Some(ObjectNamePart::Identifier(ident)) = func.name.0.last_mut() {
+                    let upper = ident.value.to_uppercase();
+                    if matches!(
+                        upper.as_str(),
+                        "COUNT"
+                            | "SUM"
+                            | "AVG"
+                            | "MIN"
+                            | "MAX"
+                            | "ABS"
+                            | "COALESCE"
+                            | "IF"
+                            | "DISTINCT"
+                    ) {
+                        ident.value = upper;
+                    }
+                    ident.quote_style = None;
+                    ident.value = ident.value.replace('`', "");
+                }
+            }
+            _ => {}
+        }
+        ControlFlow::Continue(())
+    }
+
+    fn pre_visit_statement(&mut self, statement: &mut Statement) -> ControlFlow<Self::Break> {
+        if let Statement::CreateView { name, to, .. } = statement {
+            // Strip default database prefix from view name
+            if name.0.len() == 2 {
+                if let ObjectNamePart::Identifier(ident) = &name.0[0] {
+                    if ident.value.eq_ignore_ascii_case(self.default_database) {
+                        name.0.remove(0);
+                    }
+                }
+            }
+
+            for part in &mut name.0 {
+                if let ObjectNamePart::Identifier(ident) = part {
+                    ident.quote_style = None;
+                    ident.value = ident.value.replace('`', "");
+                }
+            }
+            if let Some(to_name) = to {
+                // Strip default database prefix from TO table
+                if to_name.0.len() == 2 {
+                    if let ObjectNamePart::Identifier(ident) = &to_name.0[0] {
+                        if ident.value.eq_ignore_ascii_case(self.default_database) {
+                            to_name.0.remove(0);
+                        }
+                    }
+                }
+
+                for part in &mut to_name.0 {
+                    if let ObjectNamePart::Identifier(ident) = part {
+                        ident.quote_style = None;
+                        ident.value = ident.value.replace('`', "");
+                    }
+                }
+            }
+        }
+        ControlFlow::Continue(())
+    }
+}
+
+const SQL_KEYWORDS: &[&str] = &[
+    "CREATE",
+    "DROP",
+    "ALTER",
+    "MATERIALIZED",
+    "VIEW",
+    "INDEX",
+    "TABLE",
+    "IF",
+    "NOT",
+    "EXISTS",
+    "TO",
+    "AS",
+    "SELECT",
+    "FROM",
+    "WHERE",
+    "GROUP",
+    "BY",
+    "ORDER",
+    "HAVING",
+    "JOIN",
+    "LEFT",
+    "RIGHT",
+    "INNER",
+    "OUTER",
+    "ON",
+    "AND",
+    "OR",
+    "IN",
+    "LIKE",
+    "BETWEEN",
+    "IS",
+    "NULL",
+    "DISTINCT",
+    "COUNT",
+    "SUM",
+    "AVG",
+    "MAX",
+    "MIN",
+    "CASE",
+    "WHEN",
+    "THEN",
+    "ELSE",
+    "END",
+    "WITH",
+    "UNION",
+    "LIMIT",
+    "OFFSET",
+    "COALESCE",
+    "ABS",
+];
+
+/// Applies cosmetic cleanup to SQL strings for comparison.
+/// This includes collapsing whitespace, removing quotes from identifiers,
+/// and uppercasing common SQL keywords.
+/// This is used as a final step in normalization to ensure consistent diffs.
+fn apply_cosmetic_cleanup(sql: &str) -> String {
     let mut result = sql.to_string();
 
-    // Remove database prefix if it matches default (e.g., "local.Bar" -> "Bar")
-    let prefix_pattern = format!("{}.", default_database);
-    result = result.replace(&prefix_pattern, "");
-
-    // Remove unnecessary backticks around simple identifiers
-    // Keep backticks if identifier has special chars, spaces, or is a keyword
-    result = regex::Regex::new(r"`([a-zA-Z_][a-zA-Z0-9_]*)`")
-        .unwrap()
-        .replace_all(&result, "$1")
-        .to_string();
-
-    // Normalize whitespace: collapse multiple spaces/newlines to single space
+    // Collapse whitespace
     result = regex::Regex::new(r"\s+")
-        .unwrap()
+        .expect("Whitespace regex should compile")
         .replace_all(&result, " ")
         .to_string();
 
-    // Trim leading/trailing whitespace
-    result = result.trim().to_string();
+    // Remove quotes (backticks or double quotes) around identifiers
+    result = regex::Regex::new(r#"["`]([a-zA-Z_][a-zA-Z0-9_]*)["`]"#)
+        .expect("Quote stripping regex should compile")
+        .replace_all(&result, "$1")
+        .to_string();
 
-    // Uppercase SQL keywords for consistency
-    // Common ClickHouse/SQL keywords
-    for keyword in &[
-        "CREATE",
-        "DROP",
-        "ALTER",
-        "MATERIALIZED",
-        "VIEW",
-        "INDEX",
-        "TABLE",
-        "IF",
-        "NOT",
-        "EXISTS",
-        "TO",
-        "AS",
-        "SELECT",
-        "FROM",
-        "WHERE",
-        "GROUP",
-        "BY",
-        "ORDER",
-        "HAVING",
-        "JOIN",
-        "LEFT",
-        "RIGHT",
-        "INNER",
-        "OUTER",
-        "ON",
-        "AND",
-        "OR",
-        "IN",
-        "LIKE",
-        "BETWEEN",
-        "IS",
-        "NULL",
-        "DISTINCT",
-        "COUNT",
-        "SUM",
-        "AVG",
-        "MAX",
-        "MIN",
-        "CASE",
-        "WHEN",
-        "THEN",
-        "ELSE",
-        "END",
-        "WITH",
-        "UNION",
-        "LIMIT",
-        "OFFSET",
-    ] {
-        // Use word boundaries to avoid replacing parts of identifiers
+    // Uppercase SQL keywords
+    for keyword in SQL_KEYWORDS {
         let pattern = format!(r"(?i)\b{}\b", keyword);
-        let re = regex::Regex::new(&pattern).unwrap();
-        result = re.replace_all(&result, *keyword).to_string();
+        if let Ok(re) = regex::Regex::new(&pattern) {
+            result = re.replace_all(&result, *keyword).to_string();
+        }
     }
 
-    result
+    result.trim().to_string()
 }
 
-/// Strips column definitions from CREATE VIEW/MATERIALIZED VIEW statements.
-/// ClickHouse includes column type definitions like `(col1 Type1, col2 Type2)` before AS,
-/// but the SQL parser doesn't support this syntax, so we remove it.
-///
-/// Searches for " AS " keyword to find where column definitions end, similar to how
-/// extract_order_by_from_create_query finds terminating keywords.
-pub fn strip_column_definitions_from_view(sql: &str) -> String {
-    let sql_upper = sql.to_uppercase();
-
-    // Find "TO tablename (...) AS" pattern for materialized views
-    if let Some(to_pos) = sql_upper.find(" TO ") {
-        // Find the AS keyword after TO (this terminates the column definitions)
-        let after_to = &sql_upper[to_pos + 4..];
-        if let Some(as_pos) = after_to.find(" AS ") {
-            let full_as_pos = to_pos + 4 + as_pos;
-
-            // Check if there's a paren between TO and AS (indicating column defs)
-            let between = &sql_upper[to_pos..full_as_pos];
-            if between.contains('(') {
-                // Extract table name (between TO and the opening paren)
-                let after_to_str = &sql[to_pos + 4..];
-                let paren_pos = after_to_str.find('(').unwrap();
-                let table_name = after_to_str[..paren_pos].trim();
-
-                // Preserve the original "TO" keyword with its case
-                let original_to = &sql[to_pos..to_pos + 4];
-
-                // Reconstruct without column definitions
-                let before_to = &sql[..to_pos];
-                let after_as = &sql[full_as_pos..];
-                return format!("{}{}{}{}", before_to, original_to, table_name, after_as);
+pub fn normalize_sql_for_comparison(sql: &str, default_database: &str) -> String {
+    // 1. Parse with sqlparser (AST-based structural normalization)
+    // This handles stripping default database prefixes (e.g., `local.Table` -> `Table`)
+    // and basic unquoting where the parser understands the structure.
+    let dialect = ClickHouseDialect {};
+    let intermediate = match Parser::parse_sql(&dialect, sql) {
+        Ok(mut ast) => {
+            if ast.is_empty() {
+                return sql.trim().to_string();
             }
-        }
-    }
 
-    // Find "VIEW name (...) AS" pattern for regular views (but not MATERIALIZED VIEW)
-    for (view_pos, _) in sql_upper.match_indices(" VIEW ") {
-        // Make sure this isn't "MATERIALIZED VIEW"
-        let before_view = &sql_upper[..view_pos];
-        if before_view.ends_with("MATERIALIZED") {
-            continue;
-        }
-
-        // Find the AS keyword after VIEW (this terminates the column definitions)
-        let after_view = &sql_upper[view_pos + 6..];
-        if let Some(as_pos) = after_view.find(" AS ") {
-            let full_as_pos = view_pos + 6 + as_pos;
-
-            // Check if there's a paren between VIEW and AS (indicating column defs)
-            let between = &sql_upper[view_pos..full_as_pos];
-            if between.contains('(') {
-                // Extract view name (between VIEW and the opening paren)
-                let after_view_str = &sql[view_pos + 6..];
-                let paren_pos = after_view_str.find('(').unwrap();
-                let view_name = after_view_str[..paren_pos].trim();
-
-                // Preserve the original " VIEW " keyword with its case
-                let original_view = &sql[view_pos..view_pos + 6];
-
-                // Reconstruct without column definitions
-                let before_view = &sql[..view_pos];
-                let after_as = &sql[full_as_pos..];
-                return format!("{}{}{}{}", before_view, original_view, view_name, after_as);
+            // 2. Walk AST to normalize (strip database prefixes, unquote)
+            let mut normalizer = Normalizer { default_database };
+            for statement in &mut ast {
+                let _ = statement.visit(&mut normalizer);
             }
-        }
-    }
 
-    // No column definitions found, return as-is
-    sql.to_string()
+            // 3. Convert back to string
+            ast[0].to_string()
+        }
+        Err(_e) => {
+            // Fallback if parsing fails: rudimentary string replacement
+            let mut result = sql.to_string();
+            if !default_database.is_empty() {
+                let prefix_pattern = format!("{}.", default_database);
+                result = result.replace(&prefix_pattern, "");
+            }
+            result
+        }
+    };
+
+    // 4. Apply final cosmetic cleanup (common to both paths)
+    apply_cosmetic_cleanup(&intermediate)
 }
 
 pub fn parse_create_materialized_view(
     sql: &str,
 ) -> Result<MaterializedViewStatement, SqlParseError> {
-    // Strip column definitions that ClickHouse includes but the parser doesn't support
-    let sql_cleaned = strip_column_definitions_from_view(sql);
-
     let dialect = ClickHouseDialect {};
-    let ast = Parser::parse_sql(&dialect, &sql_cleaned)?;
+    let ast = Parser::parse_sql(&dialect, sql)?;
 
     if ast.len() != 1 {
         return Err(SqlParseError::NotMaterializedView);
@@ -624,7 +689,7 @@ pub fn parse_create_materialized_view(
             let select_statement = format!("{}", query);
 
             // Extract source tables from the query
-            let source_tables = extract_source_tables_from_query(query)?;
+            let source_tables = extract_source_tables_from_query_ast(query)?;
 
             Ok(MaterializedViewStatement {
                 view_name,
@@ -641,11 +706,8 @@ pub fn parse_create_materialized_view(
 }
 
 pub fn parse_create_view(sql: &str) -> Result<ViewStatement, SqlParseError> {
-    // Strip column definitions that ClickHouse includes but the parser doesn't support
-    let sql_cleaned = strip_column_definitions_from_view(sql);
-
     let dialect = ClickHouseDialect {};
-    let ast = Parser::parse_sql(&dialect, &sql_cleaned)?;
+    let ast = Parser::parse_sql(&dialect, sql)?;
 
     if ast.len() != 1 {
         return Err(SqlParseError::NotView);
@@ -672,7 +734,7 @@ pub fn parse_create_view(sql: &str) -> Result<ViewStatement, SqlParseError> {
             let select_statement = format!("{}", query);
 
             // Extract source tables from the query
-            let source_tables = extract_source_tables_from_query(query)?;
+            let source_tables = extract_source_tables_from_query_ast(query)?;
 
             Ok(ViewStatement {
                 view_name,
@@ -705,7 +767,7 @@ pub fn parse_insert_select(sql: &str) -> Result<InsertSelectStatement, SqlParseE
             };
 
             if let Some(query) = &insert.source {
-                let source_tables = extract_source_tables_from_query(query)?;
+                let source_tables = extract_source_tables_from_query_ast(query)?;
                 let select_statement = format!("{}", query);
 
                 Ok(InsertSelectStatement {
@@ -737,7 +799,7 @@ fn object_name_to_string(name: &ObjectName) -> String {
     format!("{}", name).replace('`', "")
 }
 
-fn split_qualified_name(name: &str) -> (Option<String>, String) {
+pub fn split_qualified_name(name: &str) -> (Option<String>, String) {
     if let Some(dot_pos) = name.rfind('.') {
         let database = name[..dot_pos].to_string();
         let table = name[dot_pos + 1..].to_string();
@@ -747,7 +809,25 @@ fn split_qualified_name(name: &str) -> (Option<String>, String) {
     }
 }
 
-fn extract_source_tables_from_query(query: &Query) -> Result<Vec<TableReference>, SqlParseError> {
+pub fn extract_source_tables_from_query(sql: &str) -> Result<Vec<TableReference>, SqlParseError> {
+    let dialect = ClickHouseDialect {};
+    let ast = Parser::parse_sql(&dialect, sql)?;
+
+    if ast.len() != 1 {
+        // Should be exactly one query
+        return Err(SqlParseError::UnsupportedStatement);
+    }
+
+    if let Statement::Query(query) = &ast[0] {
+        extract_source_tables_from_query_ast(query)
+    } else {
+        Err(SqlParseError::UnsupportedStatement)
+    }
+}
+
+fn extract_source_tables_from_query_ast(
+    query: &Query,
+) -> Result<Vec<TableReference>, SqlParseError> {
     let mut tables = HashSet::new();
     extract_tables_from_query_recursive(query, &mut tables)?;
     Ok(tables.into_iter().collect())
@@ -1778,43 +1858,6 @@ pub mod tests {
         // Test with deeply nested structure - should not find indexes since none are present
         let indexes = extract_indexes_from_create_table(NESTED_OBJECTS_SQL).unwrap();
         assert_eq!(indexes.len(), 0);
-    }
-
-    #[test]
-    fn test_strip_column_definitions_from_materialized_view() {
-        let input = "CREATE MATERIALIZED VIEW mv_name TO target_table (col1 String, col2 Int32) AS SELECT * FROM source";
-        let expected = "CREATE MATERIALIZED VIEW mv_name TO target_table AS SELECT * FROM source";
-        assert_eq!(strip_column_definitions_from_view(input), expected);
-    }
-
-    #[test]
-    fn test_strip_column_definitions_from_view() {
-        let input = "CREATE VIEW view_name (col1 String, col2 DateTime('UTC')) AS SELECT col1, col2 FROM source";
-        let expected = "CREATE VIEW view_name AS SELECT col1, col2 FROM source";
-        assert_eq!(strip_column_definitions_from_view(input), expected);
-    }
-
-    #[test]
-    fn test_strip_column_definitions_with_nested_parens() {
-        // Test with DateTime('UTC') which has nested parentheses
-        let input = "CREATE MATERIALIZED VIEW mv TO table (timestamp DateTime('UTC'), count UInt64) AS SELECT now(), count() FROM source";
-        let expected = "CREATE MATERIALIZED VIEW mv TO table AS SELECT now(), count() FROM source";
-        assert_eq!(strip_column_definitions_from_view(input), expected);
-    }
-
-    #[test]
-    fn test_strip_column_definitions_no_columns() {
-        // Test when there are no column definitions
-        let input = "CREATE VIEW view_name AS SELECT * FROM source";
-        let expected = "CREATE VIEW view_name AS SELECT * FROM source";
-        assert_eq!(strip_column_definitions_from_view(input), expected);
-    }
-
-    #[test]
-    fn test_strip_column_definitions_case_insensitive() {
-        let input = "create materialized view MV to Table (Col String) as select * from Source";
-        let expected = "create materialized view MV to Table as select * from Source";
-        assert_eq!(strip_column_definitions_from_view(input), expected);
     }
 
     #[test]
