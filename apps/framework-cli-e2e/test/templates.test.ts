@@ -1079,6 +1079,107 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
           }
         });
       }
+
+      // DateTime precision test for TypeScript
+      it("should preserve microsecond precision with DateTime64String types via streaming transform", async function () {
+        this.timeout(TIMEOUTS.TEST_SETUP_MS);
+
+        const testId = randomUUID();
+        const now = new Date();
+        // Create ISO string with microseconds: 2024-01-15T10:30:00.123456Z
+        const timestampWithMicroseconds = now
+          .toISOString()
+          .replace(/(\d{3})Z$/, "$1456Z");
+        // Nanoseconds
+        const timestampWithNanoseconds = now
+          .toISOString()
+          .replace(/(\d{3})Z$/, "$1456789Z");
+
+        console.log(
+          `Testing DateTime precision with timestamp: ${timestampWithMicroseconds}`,
+        );
+
+        // Ingest to DateTimePrecisionInput (which has a transform to Output)
+        const response = await fetch(
+          `${SERVER_CONFIG.url}/ingest/DateTimePrecisionInput`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              id: testId,
+              createdAt: now.toISOString(),
+              timestampMs: now.toISOString(),
+              timestampUsDate: timestampWithMicroseconds,
+              timestampUsString: timestampWithMicroseconds,
+              timestampNs: timestampWithNanoseconds,
+              createdAtString: now.toISOString(),
+            }),
+          },
+        );
+
+        if (!response.ok) {
+          const text = await response.text();
+          throw new Error(
+            `Failed to ingest DateTimePrecisionInput: ${response.status}: ${text}`,
+          );
+        }
+
+        // Wait for transform to process and write to output table
+        await waitForDBWrite(
+          devProcess!,
+          "DateTimePrecisionOutput",
+          1,
+          60_000,
+          "local",
+        );
+
+        // Query the output data and verify precision
+        const client = createClient(CLICKHOUSE_CONFIG);
+        const result = await client.query({
+          query: `
+            SELECT 
+              id,
+              toString(createdAt) as createdAt,
+              toString(timestampMs) as timestampMs,
+              toString(timestampUsDate) as timestampUsDate,
+              toString(timestampUsString) as timestampUsString,
+              toString(timestampNs) as timestampNs,
+              toString(createdAtString) as createdAtString
+            FROM local.DateTimePrecisionOutput 
+            WHERE id = '${testId}'
+          `,
+          format: "JSONEachRow",
+        });
+
+        const data: any[] = await result.json();
+
+        if (data.length === 0) {
+          throw new Error(
+            `No data found for DateTimePrecisionOutput with id ${testId}`,
+          );
+        }
+
+        const row = data[0];
+        console.log("Retrieved row:", row);
+
+        // Verify that DateTime64String<6> preserves microseconds
+        if (!row.timestampUsString.includes(".123456")) {
+          throw new Error(
+            `Expected timestampUsString to preserve microseconds (.123456), got: ${row.timestampUsString}`,
+          );
+        }
+
+        // Verify that DateTime64String<9> preserves nanoseconds
+        if (!row.timestampNs.includes(".123456789")) {
+          throw new Error(
+            `Expected timestampNs to preserve nanoseconds (.123456789), got: ${row.timestampNs}`,
+          );
+        }
+
+        console.log(
+          "✅ DateTime precision test passed - microseconds preserved",
+        );
+      });
     } else {
       it("should successfully ingest data and verify through consumption API", async function () {
         // Wait for infrastructure to stabilize after previous test's file modification
@@ -1340,6 +1441,103 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
           expect(apiResponse.ok).to.be.true;
           const apiData = await apiResponse.json();
           expect(apiData).to.be.an("array");
+        });
+
+        // DateTime precision test for Python
+        it("should preserve microsecond precision with clickhouse_datetime64 annotations via streaming transform (PY)", async function () {
+          this.timeout(TIMEOUTS.TEST_SETUP_MS);
+
+          const testId = randomUUID();
+          const now = new Date();
+          // Create ISO string with microseconds: 2024-01-15T10:30:00.123456Z
+          const timestampWithMicroseconds = now
+            .toISOString()
+            .replace(/(\d{3})Z$/, "$1456Z");
+          // Nanoseconds
+          const timestampWithNanoseconds = now
+            .toISOString()
+            .replace(/(\d{3})Z$/, "$1456789Z");
+
+          console.log(
+            `Testing DateTime precision (Python) with timestamp: ${timestampWithMicroseconds}`,
+          );
+
+          // Ingest to DateTimePrecisionInput (which has a transform to Output)
+          const response = await fetch(
+            `${SERVER_CONFIG.url}/ingest/datetimeprecisioninput`,
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                id: testId,
+                created_at: now.toISOString(),
+                timestamp_ms: timestampWithMicroseconds,
+                timestamp_us: timestampWithMicroseconds,
+                timestamp_ns: timestampWithNanoseconds,
+              }),
+            },
+          );
+
+          if (!response.ok) {
+            const text = await response.text();
+            throw new Error(
+              `Failed to ingest DateTimePrecisionInput (Python): ${response.status}: ${text}`,
+            );
+          }
+
+          // Wait for transform to process and write to output table
+          await waitForDBWrite(
+            devProcess!,
+            "DateTimePrecisionOutput",
+            1,
+            60_000,
+            "local",
+          );
+
+          // Query the output data and verify precision
+          const client = createClient(CLICKHOUSE_CONFIG);
+          const result = await client.query({
+            query: `
+              SELECT 
+                id,
+                toString(created_at) as created_at,
+                toString(timestamp_ms) as timestamp_ms,
+                toString(timestamp_us) as timestamp_us,
+                toString(timestamp_ns) as timestamp_ns
+              FROM local.DateTimePrecisionOutput 
+              WHERE id = '${testId}'
+            `,
+            format: "JSONEachRow",
+          });
+
+          const data: any[] = await result.json();
+
+          if (data.length === 0) {
+            throw new Error(
+              `No data found for DateTimePrecisionOutput (Python) with id ${testId}`,
+            );
+          }
+
+          const row = data[0];
+          console.log("Retrieved row (Python):", row);
+
+          // Verify that datetime with clickhouse_datetime64(6) preserves microseconds
+          if (!row.timestamp_us.includes(".123456")) {
+            throw new Error(
+              `Expected timestamp_us to preserve microseconds (.123456), got: ${row.timestamp_us}`,
+            );
+          }
+
+          // Note: Python datetime truncates nanoseconds to microseconds, so we expect .123456 not .123456789
+          if (!row.timestamp_ns.includes(".123456")) {
+            throw new Error(
+              `Expected timestamp_ns to have microseconds (.123456), got: ${row.timestamp_ns}`,
+            );
+          }
+
+          console.log(
+            "✅ DateTime precision test passed (Python) - microseconds preserved",
+          );
         });
       }
     }
