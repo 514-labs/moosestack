@@ -35,7 +35,7 @@ import {
 import { Cluster } from "../cluster-utils";
 import { getStreamingFunctions } from "../dmv2/internal";
 import type { ConsumerConfig, TransformConfig, DeadLetterQueue } from "../dmv2";
-import { createColumnAwareDateReviver } from "../utilities/json";
+import { convertDatesFromColumns } from "../utilities/json";
 import type { Column } from "../dataModels/dataModelTypes";
 
 const HOSTNAME = process.env.HOSTNAME;
@@ -464,11 +464,12 @@ const stopConsumer = async (
  *
  * The function will:
  * 1. Check for null/undefined message values
- * 2. Parse the message value as JSON with column-aware date handling
- * 3. Pass parsed data through the streaming function
- * 4. Convert transformed data back to string format
- * 5. Handle both single and array return values
- * 6. Log any processing errors
+ * 2. Parse the message value as JSON
+ * 3. Convert date fields to Date objects based on column schema
+ * 4. Pass parsed data through the streaming function
+ * 5. Convert transformed data back to string format
+ * 6. Handle both single and array return values
+ * 7. Log any processing errors
  */
 const handleMessage = async (
   logger: Logger,
@@ -494,9 +495,9 @@ const handleMessage = async (
     ) {
       payloadBuffer = payloadBuffer.subarray(5);
     }
-    // Use column-aware date reviver for precise date parsing based on schema
-    const dateReviver = createColumnAwareDateReviver(sourceColumns);
-    const parsedData = JSON.parse(payloadBuffer.toString(), dateReviver);
+    // Parse JSON then mutate date fields based on column schema
+    const parsedData = JSON.parse(payloadBuffer.toString());
+    convertDatesFromColumns(parsedData, sourceColumns);
     const transformedData = await Promise.all(
       streamingFunctionWithConfigList.map(async ([fn, config]) => {
         try {

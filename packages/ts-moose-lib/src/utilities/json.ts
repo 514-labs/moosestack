@@ -3,8 +3,6 @@ import type { Column, DataType } from "../dataModels/dataModelTypes";
 /**
  * Revives ISO 8601 date strings into Date objects during JSON parsing
  * This is useful for automatically converting date strings to Date objects
- *
- * @deprecated Use createColumnAwareDateReviver instead for more precise date parsing
  */
 export function jsonDateReviver(key: string, value: unknown): unknown {
   const iso8601Format =
@@ -18,16 +16,25 @@ export function jsonDateReviver(key: string, value: unknown): unknown {
 }
 
 /**
- * Checks if a DataType represents a date or datetime column
+ * Checks if a DataType represents a datetime column (not just date)
+ * AND if the column should be parsed from string to Date at runtime
+ *
+ * Note: Date and Date16 are date-only types and should remain as strings.
+ * Only DateTime types are candidates for parsing to JavaScript Date objects.
  */
-function isDateType(dataType: DataType): boolean {
+function isDateType(dataType: DataType, annotations: [string, any][]): boolean {
+  // Check if this is marked as a string-based date (from typia.tags.Format)
+  // If so, it should remain as a string, not be parsed to Date
+  if (
+    annotations.some(([key, value]) => key === "stringDate" && value === true)
+  ) {
+    return false;
+  }
+
   if (typeof dataType === "string") {
-    return (
-      dataType === "Date" ||
-      dataType === "Date16" ||
-      dataType === "DateTime" ||
-      dataType.startsWith("DateTime(")
-    );
+    // Only DateTime types should be parsed to Date objects
+    // Date and Date16 are date-only and should stay as strings
+    return dataType === "DateTime" || dataType.startsWith("DateTime(");
   }
   // Handle nullable wrapper
   if (
@@ -36,21 +43,34 @@ function isDateType(dataType: DataType): boolean {
     "nullable" in dataType &&
     typeof (dataType as { nullable: DataType }).nullable !== "undefined"
   ) {
-    return isDateType((dataType as { nullable: DataType }).nullable);
+    return isDateType(
+      (dataType as { nullable: DataType }).nullable,
+      annotations,
+    );
   }
   return false;
 }
 
 /**
- * Extracts date field names from column structures
- * Recursively handles nested objects and arrays
+ * Path segment for traversing nested objects
  */
-function extractDateFieldNames(columns: Column[]): Set<string> {
-  const dateFields = new Set<string>();
+type PathSegment = string | number;
+
+/**
+ * Builds a list of paths to date fields in the schema
+ * Each path is an array of keys to traverse to reach the date field
+ */
+function buildDateFieldPaths(
+  columns: Column[],
+  basePath: PathSegment[] = [],
+): PathSegment[][] {
+  const datePaths: PathSegment[][] = [];
 
   for (const column of columns) {
-    if (isDateType(column.data_type)) {
-      dateFields.add(column.name);
+    const currentPath = [...basePath, column.name];
+
+    if (isDateType(column.data_type, column.annotations)) {
+      datePaths.push(currentPath);
     }
 
     // Handle nested structures
@@ -72,15 +92,15 @@ function extractDateFieldNames(columns: Column[]): Set<string> {
         "columns" in unwrappedType &&
         Array.isArray((unwrappedType as any).columns)
       ) {
-        const nestedDateFields = extractDateFieldNames(
+        const nestedPaths = buildDateFieldPaths(
           (unwrappedType as any).columns,
+          currentPath,
         );
-        for (const nestedField of nestedDateFields) {
-          dateFields.add(nestedField);
-        }
+        datePaths.push(...nestedPaths);
       }
 
       // Handle arrays of nested objects
+      // For arrays, we use a special marker '*' to indicate "all array elements"
       if (
         typeof unwrappedType === "object" &&
         unwrappedType !== null &&
@@ -89,57 +109,98 @@ function extractDateFieldNames(columns: Column[]): Set<string> {
         (unwrappedType as any).elementType !== null &&
         "columns" in (unwrappedType as any).elementType
       ) {
-        const nestedDateFields = extractDateFieldNames(
+        const nestedPaths = buildDateFieldPaths(
           (unwrappedType as any).elementType.columns,
+          [...currentPath, "*"],
         );
-        for (const nestedField of nestedDateFields) {
-          dateFields.add(nestedField);
-        }
+        datePaths.push(...nestedPaths);
       }
     }
   }
 
-  return dateFields;
+  return datePaths;
 }
 
 /**
- * Creates a JSON reviver function that only converts date fields based on Column metadata
- * This is more precise than jsonDateReviver which converts all ISO 8601 strings
+ * Mutates an object by converting string values to Date objects at specified paths
  *
- * @param columns - Array of Column definitions from the Stream schema
- * @returns A reviver function for JSON.parse that converts only known date fields
+ * @param obj - The object to mutate
+ * @param path - Array of keys/indices to traverse
+ * @param index - Current position in the path
+ */
+function mutateDateAtPath(
+  obj: any,
+  path: PathSegment[],
+  index: number = 0,
+): void {
+  if (!obj || typeof obj !== "object") {
+    return;
+  }
+
+  if (index >= path.length) {
+    return;
+  }
+
+  const segment = path[index];
+  const isLastSegment = index === path.length - 1;
+
+  // Handle array wildcard
+  if (segment === "*") {
+    if (Array.isArray(obj)) {
+      for (const item of obj) {
+        mutateDateAtPath(item, path, index + 1);
+      }
+    }
+    return;
+  }
+
+  // Handle regular property access
+  if (segment in obj) {
+    if (isLastSegment) {
+      // Convert to Date if it's a string
+      const value = obj[segment];
+      if (typeof value === "string") {
+        try {
+          const date = new Date(value);
+          if (!isNaN(date.getTime())) {
+            obj[segment] = date;
+          }
+        } catch {
+          // If date parsing fails, leave as is
+        }
+      }
+    } else {
+      // Recurse deeper
+      mutateDateAtPath(obj[segment], path, index + 1);
+    }
+  }
+}
+
+/**
+ * Converts date string fields to Date objects based on Column schema
+ * Mutates the object in place for performance
+ *
+ * @param data - The parsed JSON object to mutate
+ * @param columns - Column definitions from the Stream schema
  *
  * @example
  * ```typescript
- * const columns = stream.columnArray;
- * const reviver = createColumnAwareDateReviver(columns);
- * const data = JSON.parse(jsonString, reviver);
+ * const data = JSON.parse(jsonString);
+ * convertDatesFromColumns(data, stream.columnArray);
+ * // data now has Date objects where the schema specifies date fields
  * ```
  */
-export function createColumnAwareDateReviver(
+export function convertDatesFromColumns(
+  data: any,
   columns: Column[] | undefined,
-): (key: string, value: unknown) => unknown {
-  // If no columns provided, fall back to no-op reviver
-  if (!columns || columns.length === 0) {
-    return (_key: string, value: unknown) => value;
+): void {
+  if (!columns || columns.length === 0 || !data) {
+    return;
   }
 
-  const dateFieldNames = extractDateFieldNames(columns);
+  const datePaths = buildDateFieldPaths(columns);
 
-  return function reviver(key: string, value: unknown): unknown {
-    // Check if this field name is a known date field
-    if (dateFieldNames.has(key) && typeof value === "string") {
-      try {
-        const date = new Date(value);
-        // Validate it's a valid date
-        if (!isNaN(date.getTime())) {
-          return date;
-        }
-      } catch {
-        // If date parsing fails, return original value
-      }
-    }
-
-    return value;
-  };
+  for (const path of datePaths) {
+    mutateDateAtPath(data, path);
+  }
 }

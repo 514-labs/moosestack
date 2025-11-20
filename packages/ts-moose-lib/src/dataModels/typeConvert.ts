@@ -466,6 +466,8 @@ const handleStringType = (
               precision = precisionType.value;
             }
           }
+          // Mark this as a string-based date field so it won't be parsed to Date at runtime
+          annotations.push(["stringDate", true]);
           return `DateTime(${precision})`;
         } else if (isStringLiteral(valueTypeLiteral, checker, "date")) {
           let size = 4;
@@ -478,6 +480,9 @@ const handleStringType = (
               size = sizeType.value;
             }
           }
+
+          // Mark this as a string-based date field so it won't be parsed to Date at runtime
+          annotations.push(["stringDate", true]);
 
           if (size === 4) {
             return "Date";
