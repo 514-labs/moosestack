@@ -1,33 +1,135 @@
 ---
 title: Lifecycle Management
-description: Control how Moose manages database and streaming resources when your code changes
+description: Reference documentation for the LifeCycle enum configuration property on OlapTable and Stream objects.
 order: 2
 category: migrate
 ---
 
-import { BulletPointsCard } from "@/components/mdx";
+import { BulletPointsCard, LanguageTabs, LanguageTabContent } from "@/components/mdx";
 
 # Lifecycle Management
 
-The `LifeCycle` enum controls how Moose manages the lifecycle of database/streaming resources when your code changes. This feature gives you fine-grained control over whether Moose automatically updates your database schema or leaves it under external/manual control.
+The `LifeCycle` enum is a configuration property that controls how Moose Migrate manages individual `OlapTable` and `Stream` resources during schema evolution. Each resource can have its own lifecycle mode, enabling hybrid management models within a single application.
 
-<BulletPointsCard
-  title="LifeCycle management modes"
-  bullets={[
-    {
-      title: "FULLY_MANAGED (default)",
-      description: "Moose automatically modifies database resources to match your code, including destructive operations.",
-      link: "/moosestack/migrate/lifecycle-fully-managed"
-    },
-    {
-      title: "DELETION_PROTECTED",
-      description: "Moose will modify resources to match your code but avoids destructive actions like dropping columns.",
-      link: "/moosestack/migrate/lifecycle-deletion-protected"
-    },
-    {
-      title: "EXTERNALLY_MANAGED",
-      description: "Moose will not modify database resources at all - you are responsible for managing the schema manually.",
-      link: "/moosestack/migrate/lifecycle-externally-managed"
-    }
-  ]}
-/>
+## Lifecycle Modes
+
+| Mode | Behavior | Default |
+| :--- | :--- | :--- |
+| `FULLY_MANAGED` | Moose automatically modifies resources to match your code, including destructive operations (drops, deletions). | Yes (for new resources) |
+| `DELETION_PROTECTED` | Moose modifies resources to match your code but blocks destructive operations (drops, deletions). | No |
+| `EXTERNALLY_MANAGED` | Moose does not modify resources. You are responsible for managing the schema manually. | No |
+
+## Configuration Syntax
+
+The `lifeCycle` (TypeScript)/`life_cycle` (Python) property is set in the configuration object when creating `OlapTable` or `Stream` instances.
+
+### OlapTable Configuration
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript" label="TypeScript">
+
+```ts
+import { OlapTable, OlapConfig, LifeCycle } from "@514labs/moose-lib";
+
+const table = new OlapTable<DataType>("table_name", {
+  lifeCycle: LifeCycle.FULLY_MANAGED
+});
+```
+
+  </LanguageTabContent>
+  <LanguageTabContent value="python" label="Python">
+
+```py
+from moose_lib import OlapTable, OlapConfig, LifeCycle
+
+table = OlapTable[DataType]("table_name", OlapConfig(
+    life_cycle=LifeCycle.FULLY_MANAGED
+))
+```
+
+  </LanguageTabContent>
+</LanguageTabs>
+
+### Stream Configuration
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript" label="TypeScript">
+
+```ts
+import { Stream, StreamConfig, LifeCycle } from "@514labs/moose-lib";
+
+const stream = new Stream<DataType>("stream_name", {
+  destination: table,
+  lifeCycle: LifeCycle.FULLY_MANAGED
+});
+```
+
+  </LanguageTabContent>
+  <LanguageTabContent value="python" label="Python">
+
+```py
+from moose_lib import Stream, StreamConfig, LifeCycle
+
+stream = Stream[DataType]("stream_name", StreamConfig(
+    destination=table,
+    life_cycle=LifeCycle.FULLY_MANAGED
+))
+```
+
+  </LanguageTabContent>
+</LanguageTabs>
+
+### IngestPipeline Configuration
+
+For `IngestPipeline`, you can set lifecycle modes independently for the table and stream components.
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript" label="TypeScript">
+
+```ts
+import { IngestPipeline, IngestPipelineConfig, LifeCycle } from "@514labs/moose-lib";
+
+const pipeline = new IngestPipeline<DataType>("pipeline_name", {
+  table: {
+    lifeCycle: LifeCycle.DELETION_PROTECTED
+  },
+  stream: {
+    lifeCycle: LifeCycle.FULLY_MANAGED
+  }
+});
+```
+
+  </LanguageTabContent>
+  <LanguageTabContent value="python" label="Python">
+
+```py
+from moose_lib import IngestPipeline, IngestPipelineConfig, OlapConfig, StreamConfig, LifeCycle
+
+pipeline = IngestPipeline[DataType]("pipeline_name", IngestPipelineConfig(
+    table=OlapConfig(
+        life_cycle=LifeCycle.DELETION_PROTECTED
+    ),
+    stream=StreamConfig(
+        life_cycle=LifeCycle.FULLY_MANAGED
+    )
+))
+```
+
+  </LanguageTabContent>
+</LanguageTabs>
+
+## Use Cases
+
+| Scenario | Recommended Mode | Rationale |
+| :--- | :--- | :--- |
+| Development/iteration | `FULLY_MANAGED` | Allows rapid schema changes including destructive operations. |
+| Production tables | `DELETION_PROTECTED` | Prevents accidental data loss while allowing schema evolution. |
+| Legacy/shared tables | `EXTERNALLY_MANAGED` | Tables managed by another team or system. |
+| CDC-managed streams | `EXTERNALLY_MANAGED` | Topics created by ClickPipes, PeerDB, or other CDC services. |
+| Moose-managed streams | `FULLY_MANAGED` | Topics created and managed by Moose. |
+
+## See Also
+
+- [Fully Managed](/moosestack/migrate/lifecycle-fully-managed) - Default lifecycle mode
+- [Deletion Protected](/moosestack/migrate/lifecycle-deletion-protected) - Safe production mode
+- [Externally Managed](/moosestack/migrate/lifecycle-externally-managed) - Read-only mode

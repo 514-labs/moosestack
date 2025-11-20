@@ -9,62 +9,79 @@ import { Callout } from "@/components/mdx";
 
 # Migrations
 
-When you define database tables in your code, you need a way to synchronize those definitions with your production infrastructure. As your application evolves, you'll add/remove fields, change data types, and restructure tables. Migrations are the mechanism that makes these schema changes safely and reliably.
+If you've ever had your application code break because it didn't match your database schema, you know the pain of managing state in two places. Moose solves this by acting as a **synchronization engine** that keeps your code and infrastructure in alignment.
 
-## What Are Migrations?
+## Code-First vs Database-First
 
-Migrations are operations that update your database schema to match your code definitions. Instead of manually writing SQL commands or managing schema changes through a database interface, you declare your desired schema in code, and Moose Migrate calculates what needs to change and applies those changes for you.
+There are two common ways to manage schemas: "Code-First" (defining tables in your application) and "Database-First" (managing SQL directly).
 
-<Callout type="info" title="Version Control for your Database">
-Just as Git tracks changes to your code, migrations track changes to your schema, creating an audit trail and enabling safe, repeatable deployments.
-</Callout>
+Moose Migrate supports both approaches through a hybrid **synchronization** layer that can be configured on a per-table (or per-stream) basis:
+1.  **Code-First**: Define models in code, and Moose Migrate pushes changes to the database.
+2.  **Database-First**: Modify the database, and Moose Migrate detects drift and pulls the latest schema definitions into code.
 
-### Why Migrations Matter
+This ensures that whether a table is fully managed by MooseStack or an external system, your application logic and your infrastructure remain consistent.
 
-Database schema changes are risky. A mistaken column drop can lose customer data. An incorrectly applied change during high traffic can cause downtime. Manual SQL scripts are error-prone and hard to track across environments.
+## How It Works
 
-Moose Migrate solves these problems by:
+The migration engine compares two things:
+1.  **The Desired State**: The schema of tables and streams defined in your code.
+2.  **The Actual State**: The schemas currently running in your database (ClickHouse) or streaming platform (Redpanda).
 
-- **Generating changes automatically** - You focus on your schema definition, not SQL syntax
-- **Providing review workflows** - See exactly what will change before it happens
-- **Detecting conflicts** - Know when someone else has modified the database
-- **Preserving data** - Use rename operations instead of destructive drop-and-recreate
-- **Creating audit trails** - Track every schema change through version control
+For the **Code-First** workflow, you might define a `User` model in your application:
 
-## How Migrations Work
+```typescript
+// You write this in your code:
+export interface User {
+    id: string;
+    name: string;
+    email: string;
+}
 
-Moose Migrate operates through a comparison model. The system compares two states:
+export const usersTable = new OlapTable<User>("Users");
+```
 
-1. **Your code** - Tables and streams defined in your application
-2. **Your database** - The actual schema in ClickHouse, Kafka, or Redpanda
+Moose Migrate detects this definition and automatically ensures the corresponding table exists in your database:
 
-When these states differ, Moose generates a set of operations to bring them into alignment. These operations might include:
+```sql
+-- Moose ensures this exists in your database:
+CREATE TABLE User (
+    id String,
+    name String,
+    email String
+) ENGINE = MergeTree() ORDER BY id;
+```
 
-- Adding or dropping tables
-- Adding, removing, or renaming columns
-- Changing data types
-- Creating or modifying streaming topics
+When it detects a difference—like a new column or a new table entirely—it generates a migration plan to bridge the gap.
 
-The key insight is that Moose handles the complexity of schema evolution so you can focus on your application logic.
+## Development vs. Production
 
-## Core Concepts
+While the core concept is the same, the workflow changes depending on where you are in your development cycle.
 
-Migrations in Moose revolve around a few key decisions. Think of this section as your map—here’s where to find the details on how to configure, run, and manage your schema changes.
+### 1. Rapid Prototyping (Dev Mode)
+When you're building a new feature locally, you want speed. You don't want to stop and approve a migration file every time you add a field to a struct.
 
-| Concept | What it is | Where to go |
-| :--- | :--- | :--- |
-| **Migration Types** | Deciding *how* changes are generated. | [Auto-Inferred](./auto-inferred) • [Planned](./planned-migrations) |
-| **Lifecycle Management** | Controlling *what* changes are allowed (e.g., preventing data deletion). | [Fully Managed](./lifecycle-fully-managed) • [Deletion Protected](./lifecycle-deletion-protected) • [Externally Managed](./lifecycle-externally-managed) |
-| **Applying Changes** | The workflow for executing migrations: serverless (`moose migrate`) vs server runtime (`moose prod`). | [Serverless](./apply-planned-migrations-cli) • [Server Runtime](./apply-planned-migrations-service) |
-| **Failed Migrations** | Understanding how to recover from failed migrations. | [Failed Migrations](./failed-migrations) |
-| **Plan Format** | Deep dive into the format of the migration plan file. | [Plan Format](./plan-format) |
+In **Auto-Inferred** mode (the default for `moose dev`), Moose watches your files. The moment you save a change to a data model, Moose applies the schema update to your local Docker containers immediately. It feels like magic—you just code, and the database keeps up.
 
-### Quick Guide: Which path should I take?
+[Learn more about Auto-Inferred Migrations →](./auto-inferred)
 
-- **Just starting out?** Stick to **auto-inferred** migrations in development. It’s fast and keeps you in the flow.
-- **Going to production?** Switch to **planned** migrations. You’ll get a reviewable plan (like a PR for your database) and safety checks.
-- **Integrating into an existing app?** Use **serverless** (`moose migrate`) to control exactly when migrations run.
-- **Building a dedicated data platform?** Use the **Server Runtime** (`moose prod`) to handle the lifecycle automatically.
+### 2. Safety & Control (Production)
+When you're deploying to production, you want safety. You need to know exactly what's going to happen before it happens. You definitely don't want a rename operation to be misinterpreted as a "drop and create" that wipes out your user data.
 
-For a complete breakdown of commands and flags, head over to the [Reference](./reference) page.
+For this, Moose Migrate uses **Planned Migrations**. You run a command to generate a migration plan (a strictly formatted file describing the changes). You review this plan, commit it to version control, and then apply it to your production environment. This gives you a predictable, auditable history of every change made to your database.
 
+[Learn more about Planned Migrations →](./planned-migrations)
+
+## Protecting Your Data
+
+Not all environments are equal. You might want to be able to delete tables freely in development but prevent accidental data loss in production. Or you might have legacy tables that Moose Migrate shouldn't touch at all.
+
+Moose Migrate handles this via **Lifecycle Management**. You can tag specific tables or streams with policies like `DELETION_PROTECTED` (for safety) or `EXTERNALLY_MANAGED` (for database-first workflows). This tells the migration engine which operations are allowed—or ignored entirely for external tables.
+
+[Learn more about Lifecycle Management →](./lifecycle)
+
+## Where to Go Next
+
+*   **Just starting out?** Fire up `moose dev` and experience [Auto-Inferred Migrations](./auto-inferred).
+*   **Ready to deploy?** Learn how to generate and apply [Planned Migrations](./planned-migrations).
+*   **Need to script it?** Check out the [CLI Reference](./apply-planned-migrations-cli) for CI/CD integration.
+*   **Something went wrong?** See how to recover from [Failed Migrations](./failed-migrations).
