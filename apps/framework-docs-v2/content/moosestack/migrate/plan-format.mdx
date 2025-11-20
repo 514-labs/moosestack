@@ -39,7 +39,7 @@ Operations are the atomic units of change in a migration plan. Moose executes th
 
 Creates a new ClickHouse table.
 
-```yaml
+```yaml filename="migrations/plan.yaml"
 - CreateTable:
     table:
       name: <string>
@@ -59,7 +59,7 @@ Creates a new ClickHouse table.
 
 Permanently removes a table and all its data.
 
-```yaml
+```yaml filename="migrations/plan.yaml"
 - DropTable:
     table: <string>
 ```
@@ -74,7 +74,7 @@ Permanently removes a table and all its data.
 
 Adds a new column to an existing table.
 
-```yaml
+```yaml filename="migrations/plan.yaml"
 - AddTableColumn:
     table: <string>
     column: <ColumnDefinition>
@@ -89,7 +89,7 @@ Adds a new column to an existing table.
 
 Removes a column from a table. **Destructive operation.**
 
-```yaml
+```yaml filename="migrations/plan.yaml"
 - DropTableColumn:
     table: <string>
     column_name: <string>
@@ -104,7 +104,7 @@ Removes a column from a table. **Destructive operation.**
 
 Renames a column while preserving its data.
 
-```yaml
+```yaml filename="migrations/plan.yaml"
 - RenameTableColumn:
     table: <string>
     before_column_name: <string>
@@ -121,7 +121,7 @@ Renames a column while preserving its data.
 
 Changes a column's data type or properties.
 
-```yaml
+```yaml filename="migrations/plan.yaml"
 - ModifyTableColumn:
     table: <string>
     before_column: <ColumnDefinition>
@@ -140,7 +140,7 @@ Changes a column's data type or properties.
 
 Executes arbitrary SQL statements. Used for custom migrations, backfills, or unsupported operations.
 
-```yaml
+```yaml filename="migrations/plan.yaml"
 - RawSql:
     sql: [<string>]
     description: <string>
@@ -155,7 +155,7 @@ Executes arbitrary SQL statements. Used for custom migrations, backfills, or uns
 
 Every column in a `CreateTable`, `AddTableColumn`, or `ModifyTableColumn` operation follows this structure:
 
-```yaml
+```yaml filename="migrations/plan.yaml"
 name: <string>
 data_type: <DataType>
 required: <boolean>
@@ -202,7 +202,7 @@ data_type:
 
 #### Arrays
 List of values of a single type.
-```yaml
+```yaml filename="migrations/plan.yaml"
 data_type:
   Array:
     elementType: String
@@ -211,7 +211,7 @@ data_type:
 
 #### Enums
 Fixed set of string or integer values.
-```yaml
+```yaml filename="migrations/plan.yaml"
 data_type:
   Enum:
     name: "Status"
@@ -224,7 +224,7 @@ data_type:
 
 #### Nested (Structs)
 Hierarchical data structures.
-```yaml
+```yaml filename="migrations/plan.yaml"
 data_type:
   Nested:
     name: "Address"
@@ -234,7 +234,7 @@ data_type:
 
 #### LowCardinality
 Storage optimization for columns with few unique values.
-```yaml
+```yaml filename="migrations/plan.yaml"
 data_type:
   LowCardinality:
     nullable: String
