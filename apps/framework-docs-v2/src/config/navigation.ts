@@ -1,4 +1,3 @@
-import * as React from "react";
 import type { Language } from "@/lib/content-types";
 import {
   IconChartArea,
@@ -256,23 +255,23 @@ const moosestackNavigationConfig: NavigationConfig = [
     icon: IconDatabase,
     languages: ["typescript", "python"],
     children: [
-      { type: "label", title: "Schema" },
+      { type: "label", title: "Data Modeling" },
       {
         type: "page",
         slug: "moosestack/olap/model-table",
-        title: "Modeling Tables",
-        languages: ["typescript", "python"],
-      },
-      {
-        type: "page",
-        slug: "moosestack/olap/model-materialized-view",
-        title: "Modeling Materialized Views",
+        title: "Tables",
         languages: ["typescript", "python"],
       },
       {
         type: "page",
         slug: "moosestack/olap/model-view",
-        title: "Modeling Views",
+        title: "Views",
+        languages: ["typescript", "python"],
+      },
+      {
+        type: "page",
+        slug: "moosestack/olap/model-materialized-view",
+        title: "Materialized Views",
         languages: ["typescript", "python"],
       },
       {
@@ -281,26 +280,8 @@ const moosestackNavigationConfig: NavigationConfig = [
         title: "Supported Types",
         languages: ["typescript", "python"],
       },
-      {
-        type: "page",
-        slug: "moosestack/olap/ttl",
-        title: "TTL (Time-to-Live)",
-        languages: ["typescript", "python"],
-      },
-      {
-        type: "page",
-        slug: "moosestack/olap/schema-optimization",
-        title: "Schema Optimization",
-        languages: ["typescript", "python"],
-      },
-      {
-        type: "page",
-        slug: "moosestack/olap/indexes",
-        title: "Secondary & Data-skipping Indexes",
-        languages: ["typescript", "python"],
-      },
       { type: "separator" },
-      { type: "label", title: "Remote ClickHouse" },
+      { type: "label", title: "External Data & Introspection" },
       {
         type: "page",
         slug: "moosestack/olap/external-tables",
@@ -310,37 +291,11 @@ const moosestackNavigationConfig: NavigationConfig = [
       {
         type: "page",
         slug: "moosestack/olap/db-pull",
-        title: "Syncing External Tables",
+        title: "Introspecting Tables",
         languages: ["typescript", "python"],
       },
       { type: "separator" },
-      { type: "label", title: "Migrations" },
-      {
-        type: "page",
-        slug: "moosestack/olap/apply-migrations",
-        title: "Applying Migrations",
-        languages: ["typescript", "python"],
-      },
-      {
-        type: "page",
-        slug: "moosestack/olap/planned-migrations",
-        title: "Generating Migrations",
-        languages: ["typescript", "python"],
-      },
-      {
-        type: "page",
-        slug: "moosestack/olap/schema-versioning",
-        title: "Table Versioning",
-        languages: ["typescript", "python"],
-      },
-      {
-        type: "page",
-        slug: "moosestack/olap/schema-change",
-        title: "Failed Migrations",
-        languages: ["typescript", "python"],
-      },
-      { type: "separator" },
-      { type: "label", title: "Accessing Data" },
+      { type: "label", title: "Data Access" },
       {
         type: "page",
         slug: "moosestack/olap/insert-data",
@@ -353,6 +308,32 @@ const moosestackNavigationConfig: NavigationConfig = [
         title: "Reading Data",
         languages: ["typescript", "python"],
       },
+      { type: "separator" },
+      { type: "label", title: "Performance & Optimization" },
+      {
+        type: "page",
+        slug: "moosestack/olap/schema-optimization",
+        title: "Schema Optimization",
+        languages: ["typescript", "python"],
+      },
+      {
+        type: "page",
+        slug: "moosestack/olap/indexes",
+        title: "Secondary & Data-skipping Indexes",
+        languages: ["typescript", "python"],
+      },
+      {
+        type: "page",
+        slug: "moosestack/olap/ttl",
+        title: "TTL (Time-to-Live)",
+        languages: ["typescript", "python"],
+      },
+      {
+        type: "page",
+        slug: "moosestack/olap/schema-versioning",
+        title: "Schema Versioning",
+        languages: ["typescript", "python"],
+      },
     ],
   },
   {
@@ -362,23 +343,23 @@ const moosestackNavigationConfig: NavigationConfig = [
     icon: IconBolt,
     languages: ["typescript", "python"],
     children: [
-      { type: "label", title: "Managing Streams" },
+      { type: "label", title: "Manage Streams" },
       {
         type: "page",
         slug: "moosestack/streaming/create-stream",
-        title: "Creating Streams",
+        title: "Create Streams",
         languages: ["typescript", "python"],
       },
       {
         type: "page",
         slug: "moosestack/streaming/sync-to-table",
-        title: "Syncing Streams to Tables",
+        title: "Sync to OLAP",
         languages: ["typescript", "python"],
       },
       {
         type: "page",
         slug: "moosestack/streaming/dead-letter-queues",
-        title: "Configuring Dead Letter Queues",
+        title: "Dead Letter Queues",
         languages: ["typescript", "python"],
       },
       { type: "separator" },
@@ -507,8 +488,8 @@ const moosestackNavigationConfig: NavigationConfig = [
   // Separator
   { type: "separator" },
 
-  // Deployment Tools & Guides section
-  { type: "label", title: "Deployment Tools & Guides" },
+  // Deployment & Lifecycle section
+  { type: "label", title: "Deployment & Lifecycle" },
   {
     type: "page",
     slug: "moosestack/migrate",
@@ -516,16 +497,65 @@ const moosestackNavigationConfig: NavigationConfig = [
     icon: IconGitMerge,
     languages: ["typescript", "python"],
     children: [
+      { type: "label", title: "Migration Modes" },
       {
         type: "page",
-        slug: "moosestack/migrate/migration-types",
-        title: "Migration Types",
+        slug: "moosestack/migrate/auto-inferred",
+        title: "Auto-Inferred",
         languages: ["typescript", "python"],
       },
       {
         type: "page",
-        slug: "moosestack/migrate/lifecycle",
-        title: "Lifecycle Management",
+        slug: "moosestack/migrate/planned-migrations",
+        title: "Planned",
+        languages: ["typescript", "python"],
+      },
+      {
+        type: "page",
+        slug: "moosestack/migrate/plan-format",
+        title: "Plan Format",
+        languages: ["typescript", "python"],
+      },
+      { type: "separator" },
+      { type: "label", title: "Applying Migrations" },
+      {
+        type: "page",
+        slug: "moosestack/migrate/apply-planned-migrations-cli",
+        title: "Serverless (moose migrate)",
+        languages: ["typescript", "python"],
+      },
+      {
+        type: "page",
+        slug: "moosestack/migrate/apply-planned-migrations-service",
+        title: "Server Runtime",
+        languages: ["typescript", "python"],
+      },
+      { type: "separator" },
+      { type: "label", title: "Lifecycle Management" },
+      {
+        type: "page",
+        slug: "moosestack/migrate/lifecycle-fully-managed",
+        title: "Fully Managed",
+        languages: ["typescript", "python"],
+      },
+      {
+        type: "page",
+        slug: "moosestack/migrate/lifecycle-deletion-protected",
+        title: "Deletion Protected",
+        languages: ["typescript", "python"],
+      },
+      {
+        type: "page",
+        slug: "moosestack/migrate/lifecycle-externally-managed",
+        title: "Externally Managed",
+        languages: ["typescript", "python"],
+      },
+      { type: "separator" },
+      { type: "label", title: "Advanced Topics" },
+      {
+        type: "page",
+        slug: "moosestack/migrate/failed-migrations",
+        title: "Failed Migrations",
         languages: ["typescript", "python"],
       },
     ],
@@ -861,7 +891,6 @@ const templatesNavigationConfig: NavigationConfig = [];
 
 /**
  * Guides navigation configuration
- * Structure: Guide → Overview → Starting Point → Overview/Requirements/Steps
  */
 const guidesNavigationConfig: NavigationConfig = [
   {
@@ -878,87 +907,31 @@ const guidesNavigationConfig: NavigationConfig = [
     items: [
       {
         type: "page",
-        slug: "guides/applications/performant-dashboards/guide-overview",
+        slug: "guides/applications/performant-dashboards",
         title: "Performant Dashboards",
         icon: IconChartLine,
         languages: ["typescript", "python"],
-        children: [
-          {
-            type: "page",
-            slug: "guides/applications/performant-dashboards/existing-oltp-db",
-            title: "From Existing OLTP DB",
-            languages: ["typescript", "python"],
-          },
-          {
-            type: "page",
-            slug: "guides/applications/performant-dashboards/new-application",
-            title: "New Application",
-            languages: ["typescript", "python"],
-          },
-        ],
       },
       {
         type: "page",
-        slug: "guides/applications/in-app-chat-analytics/guide-overview",
+        slug: "guides/applications/in-app-chat-analytics",
         title: "In-App Chat Analytics",
         icon: IconMessageChatbot,
         languages: ["typescript", "python"],
-        children: [
-          {
-            type: "page",
-            slug: "guides/applications/in-app-chat-analytics/existing-chat-system",
-            title: "Existing Chat System",
-            languages: ["typescript", "python"],
-          },
-          {
-            type: "page",
-            slug: "guides/applications/in-app-chat-analytics/new-chat-feature",
-            title: "New Chat Feature",
-            languages: ["typescript", "python"],
-          },
-        ],
       },
       {
         type: "page",
-        slug: "guides/applications/automated-reports/guide-overview",
+        slug: "guides/applications/automated-reports",
         title: "Automated Reports",
         icon: IconFileReport,
         languages: ["typescript", "python"],
-        children: [
-          {
-            type: "page",
-            slug: "guides/applications/automated-reports/scheduled-reports",
-            title: "Scheduled Reports",
-            languages: ["typescript", "python"],
-          },
-          {
-            type: "page",
-            slug: "guides/applications/automated-reports/event-driven-reports",
-            title: "Event-Driven Reports",
-            languages: ["typescript", "python"],
-          },
-        ],
       },
       {
         type: "page",
-        slug: "guides/applications/going-to-production/guide-overview",
+        slug: "guides/applications/going-to-production",
         title: "Going to Production",
         icon: IconCloudUpload,
         languages: ["typescript", "python"],
-        children: [
-          {
-            type: "page",
-            slug: "guides/applications/going-to-production/local-development",
-            title: "Local Development",
-            languages: ["typescript", "python"],
-          },
-          {
-            type: "page",
-            slug: "guides/applications/going-to-production/staging-environment",
-            title: "Staging Environment",
-            languages: ["typescript", "python"],
-          },
-        ],
       },
     ],
   },
@@ -968,72 +941,24 @@ const guidesNavigationConfig: NavigationConfig = [
     items: [
       {
         type: "page",
-        slug: "guides/data-management/migrations/guide-overview",
+        slug: "guides/data-management/migrations",
         title: "Migrations",
         icon: IconDatabaseImport,
         languages: ["typescript", "python"],
-        children: [
-          {
-            type: "page",
-            slug: "guides/data-management/migrations/schema-changes",
-            title: "Schema Changes",
-            languages: ["typescript", "python"],
-          },
-          {
-            type: "page",
-            slug: "guides/data-management/migrations/data-migration",
-            title: "Data Migration",
-            languages: ["typescript", "python"],
-          },
-          {
-            type: "page",
-            slug: "guides/data-management/migrations/version-upgrades",
-            title: "Version Upgrades",
-            languages: ["typescript", "python"],
-          },
-        ],
       },
       {
         type: "page",
-        slug: "guides/data-management/impact-analysis/guide-overview",
+        slug: "guides/data-management/impact-analysis",
         title: "Impact Analysis",
         icon: IconChartDots,
         languages: ["typescript", "python"],
-        children: [
-          {
-            type: "page",
-            slug: "guides/data-management/impact-analysis/schema-changes",
-            title: "Schema Changes",
-            languages: ["typescript", "python"],
-          },
-          {
-            type: "page",
-            slug: "guides/data-management/impact-analysis/query-changes",
-            title: "Query Changes",
-            languages: ["typescript", "python"],
-          },
-        ],
       },
       {
         type: "page",
-        slug: "guides/data-management/change-data-capture/guide-overview",
+        slug: "guides/data-management/change-data-capture",
         title: "Change Data Capture",
         icon: IconBolt,
         languages: ["typescript", "python"],
-        children: [
-          {
-            type: "page",
-            slug: "guides/data-management/change-data-capture/database-cdc",
-            title: "Database CDC",
-            languages: ["typescript", "python"],
-          },
-          {
-            type: "page",
-            slug: "guides/data-management/change-data-capture/application-events",
-            title: "Application Events",
-            languages: ["typescript", "python"],
-          },
-        ],
       },
     ],
   },
@@ -1043,114 +968,38 @@ const guidesNavigationConfig: NavigationConfig = [
     items: [
       {
         type: "page",
-        slug: "guides/data-warehousing/customer-data-platform/guide-overview",
+        slug: "guides/data-warehousing/customer-data-platform",
         title: "Customer Data Platform",
         icon: IconUsers,
         languages: ["typescript", "python"],
-        children: [
-          {
-            type: "page",
-            slug: "guides/data-warehousing/customer-data-platform/existing-customer-data",
-            title: "Existing Customer Data",
-            languages: ["typescript", "python"],
-          },
-          {
-            type: "page",
-            slug: "guides/data-warehousing/customer-data-platform/multi-source-integration",
-            title: "Multi-Source Integration",
-            languages: ["typescript", "python"],
-          },
-        ],
       },
       {
         type: "page",
-        slug: "guides/data-warehousing/operational-analytics/guide-overview",
+        slug: "guides/data-warehousing/operational-analytics",
         title: "Operational Analytics",
         icon: IconChartBarOff,
         languages: ["typescript", "python"],
-        children: [
-          {
-            type: "page",
-            slug: "guides/data-warehousing/operational-analytics/application-metrics",
-            title: "Application Metrics",
-            languages: ["typescript", "python"],
-          },
-          {
-            type: "page",
-            slug: "guides/data-warehousing/operational-analytics/infrastructure-monitoring",
-            title: "Infrastructure Monitoring",
-            languages: ["typescript", "python"],
-          },
-        ],
       },
       {
         type: "page",
-        slug: "guides/data-warehousing/startup-metrics/guide-overview",
+        slug: "guides/data-warehousing/startup-metrics",
         title: "Startup Metrics",
         icon: IconChartBar,
         languages: ["typescript", "python"],
-        children: [
-          {
-            type: "page",
-            slug: "guides/data-warehousing/startup-metrics/product-metrics",
-            title: "Product Metrics",
-            languages: ["typescript", "python"],
-          },
-          {
-            type: "page",
-            slug: "guides/data-warehousing/startup-metrics/business-metrics",
-            title: "Business Metrics",
-            languages: ["typescript", "python"],
-          },
-        ],
       },
       {
         type: "page",
-        slug: "guides/data-warehousing/connectors/guide-overview",
+        slug: "guides/data-warehousing/connectors",
         title: "Connectors",
         icon: IconStack,
         languages: ["typescript", "python"],
-        children: [
-          {
-            type: "page",
-            slug: "guides/data-warehousing/connectors/database-connector",
-            title: "Database Connector",
-            languages: ["typescript", "python"],
-          },
-          {
-            type: "page",
-            slug: "guides/data-warehousing/connectors/api-connector",
-            title: "API Connector",
-            languages: ["typescript", "python"],
-          },
-          {
-            type: "page",
-            slug: "guides/data-warehousing/connectors/custom-connector",
-            title: "Custom Connector",
-            languages: ["typescript", "python"],
-          },
-        ],
       },
       {
         type: "page",
-        slug: "guides/data-warehousing/pipelines/guide-overview",
+        slug: "guides/data-warehousing/pipelines",
         title: "Pipelines",
         icon: IconRoute,
         languages: ["typescript", "python"],
-        children: [
-          {
-            type: "page",
-            slug: "guides/data-warehousing/pipelines/etl-pipeline",
-            title: "ETL Pipeline",
-            languages: ["typescript", "python"],
-          },
-          {
-            type: "page",
-            slug: "guides/data-warehousing/pipelines/streaming-pipeline",
-            title: "Streaming Pipeline",
-            languages: ["typescript", "python"],
-          },
-        ],
       },
     ],
   },
@@ -1160,45 +1009,17 @@ const guidesNavigationConfig: NavigationConfig = [
     items: [
       {
         type: "page",
-        slug: "guides/methodology/data-as-code/guide-overview",
+        slug: "guides/methodology/data-as-code",
         title: "Data as Code",
         icon: IconCode,
         languages: ["typescript", "python"],
-        children: [
-          {
-            type: "page",
-            slug: "guides/methodology/data-as-code/version-control-setup",
-            title: "Version Control Setup",
-            languages: ["typescript", "python"],
-          },
-          {
-            type: "page",
-            slug: "guides/methodology/data-as-code/cicd-integration",
-            title: "CI/CD Integration",
-            languages: ["typescript", "python"],
-          },
-        ],
       },
       {
         type: "page",
-        slug: "guides/methodology/dora-for-data/guide-overview",
+        slug: "guides/methodology/dora-for-data",
         title: "DORA for Data",
         icon: IconTrendingUp,
         languages: ["typescript", "python"],
-        children: [
-          {
-            type: "page",
-            slug: "guides/methodology/dora-for-data/deployment-frequency",
-            title: "Deployment Frequency",
-            languages: ["typescript", "python"],
-          },
-          {
-            type: "page",
-            slug: "guides/methodology/dora-for-data/lead-time",
-            title: "Lead Time",
-            languages: ["typescript", "python"],
-          },
-        ],
       },
     ],
   },
@@ -1208,87 +1029,31 @@ const guidesNavigationConfig: NavigationConfig = [
     items: [
       {
         type: "page",
-        slug: "guides/strategy/ai-enablement/guide-overview",
+        slug: "guides/strategy/ai-enablement",
         title: "AI Enablement",
         icon: IconBrain,
         languages: ["typescript", "python"],
-        children: [
-          {
-            type: "page",
-            slug: "guides/strategy/ai-enablement/llm-integration",
-            title: "LLM Integration",
-            languages: ["typescript", "python"],
-          },
-          {
-            type: "page",
-            slug: "guides/strategy/ai-enablement/vector-search",
-            title: "Vector Search",
-            languages: ["typescript", "python"],
-          },
-        ],
       },
       {
         type: "page",
-        slug: "guides/strategy/data-foundation/guide-overview",
+        slug: "guides/strategy/data-foundation",
         title: "Data Foundation",
         icon: IconDatabase,
         languages: ["typescript", "python"],
-        children: [
-          {
-            type: "page",
-            slug: "guides/strategy/data-foundation/greenfield-project",
-            title: "Greenfield Project",
-            languages: ["typescript", "python"],
-          },
-          {
-            type: "page",
-            slug: "guides/strategy/data-foundation/legacy-system-migration",
-            title: "Legacy System Migration",
-            languages: ["typescript", "python"],
-          },
-        ],
       },
       {
         type: "page",
-        slug: "guides/strategy/platform-engineering/guide-overview",
+        slug: "guides/strategy/platform-engineering",
         title: "Platform Engineering",
         icon: IconServer,
         languages: ["typescript", "python"],
-        children: [
-          {
-            type: "page",
-            slug: "guides/strategy/platform-engineering/internal-platform",
-            title: "Internal Platform",
-            languages: ["typescript", "python"],
-          },
-          {
-            type: "page",
-            slug: "guides/strategy/platform-engineering/self-service-tools",
-            title: "Self-Service Tools",
-            languages: ["typescript", "python"],
-          },
-        ],
       },
       {
         type: "page",
-        slug: "guides/strategy/olap-evaluation/guide-overview",
+        slug: "guides/strategy/olap-evaluation",
         title: "OLAP Evaluation",
         icon: IconDatabase,
         languages: ["typescript", "python"],
-        children: [
-          {
-            type: "page",
-            slug: "guides/strategy/olap-evaluation/performance-requirements",
-            title: "Performance Requirements",
-            languages: ["typescript", "python"],
-          },
-          {
-            type: "page",
-            slug: "guides/strategy/olap-evaluation/scale-requirements",
-            title: "Scale Requirements",
-            languages: ["typescript", "python"],
-          },
-        ],
       },
     ],
   },

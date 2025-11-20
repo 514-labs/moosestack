@@ -3,6 +3,8 @@ title: Create Materialized View
 description: Create optimized materialized views for dashboard queries
 ---
 
+import { LanguageTabs, LanguageTabContent } from "@/components/mdx";
+
 # Step 2: Create Materialized View
 
 In this step, you'll create materialized views that pre-aggregate data from your OLTP database for fast dashboard queries.
@@ -13,8 +15,8 @@ Materialized views store pre-computed query results, allowing dashboards to load
 
 ## Define Materialized View
 
-### TypeScript
-
+<LanguageTabs items={["TypeScript", "Python"]}>
+  <LanguageTabContent value="typescript">
 ```typescript filename="dashboard-views.ts"
 import { OlapMaterializedView, OlapTable } from "@514labs/moose-lib";
 
@@ -49,9 +51,8 @@ export const dailySalesView = new OlapMaterializedView<DailySalesView>(
   }
 );
 ```
-
-### Python
-
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
 ```python filename="dashboard_views.py"
 from moose_lib import OlapMaterializedView
 from pydantic import BaseModel
@@ -77,6 +78,8 @@ daily_sales_view = OlapMaterializedView[DailySalesView](
     refresh="incremental",
 )
 ```
+  </LanguageTabContent>
+</LanguageTabs>
 
 ## Apply the View
 

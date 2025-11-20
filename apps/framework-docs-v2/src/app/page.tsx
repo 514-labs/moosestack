@@ -11,7 +11,7 @@ import { IconDatabase, IconCloud, IconSparkles } from "@tabler/icons-react";
 import { showHostingSection, showAiSection } from "@/flags";
 import { cn } from "@/lib/utils";
 
-export const dynamic = "force-dynamic";
+// export const dynamic = "force-dynamic";
 
 export default async function HomePage() {
   // Evaluate feature flags
