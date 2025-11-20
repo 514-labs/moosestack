@@ -177,28 +177,48 @@ function mutateDateAtPath(
 }
 
 /**
- * Converts date string fields to Date objects based on Column schema
- * Mutates the object in place for performance
+ * Pre-builds date field paths from column schema for efficient reuse
  *
- * @param data - The parsed JSON object to mutate
  * @param columns - Column definitions from the Stream schema
+ * @returns Array of paths to date fields, or undefined if no columns
  *
  * @example
  * ```typescript
+ * const datePaths = buildDateFieldPathsFromColumns(stream.columnArray);
+ * // Reuse datePaths for every message
+ * ```
+ */
+export function buildDateFieldPathsFromColumns(
+  columns: Column[] | undefined,
+): PathSegment[][] | undefined {
+  if (!columns || columns.length === 0) {
+    return undefined;
+  }
+  return buildDateFieldPaths(columns);
+}
+
+/**
+ * Converts date string fields to Date objects using pre-built paths
+ * Mutates the object in place for performance
+ *
+ * @param data - The parsed JSON object to mutate
+ * @param datePaths - Pre-built paths to date fields from buildDateFieldPathsFromColumns
+ *
+ * @example
+ * ```typescript
+ * const datePaths = buildDateFieldPathsFromColumns(stream.columnArray);
  * const data = JSON.parse(jsonString);
- * convertDatesFromColumns(data, stream.columnArray);
+ * convertDatesFromPaths(data, datePaths);
  * // data now has Date objects where the schema specifies date fields
  * ```
  */
-export function convertDatesFromColumns(
+export function convertDatesFromPaths(
   data: any,
-  columns: Column[] | undefined,
+  datePaths: PathSegment[][] | undefined,
 ): void {
-  if (!columns || columns.length === 0 || !data) {
+  if (!datePaths || datePaths.length === 0 || !data) {
     return;
   }
-
-  const datePaths = buildDateFieldPaths(columns);
 
   for (const path of datePaths) {
     mutateDateAtPath(data, path);
