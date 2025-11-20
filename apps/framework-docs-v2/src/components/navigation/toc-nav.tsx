@@ -153,9 +153,9 @@ export function TOCNav({ headings, helpfulLinks }: TOCNavProps) {
           <div className="mb-6">
             <h4 className="mb-3 text-sm font-semibold">On this page</h4>
             <nav className="space-y-2">
-              {headings.map((heading) => (
+              {headings.map((heading, index) => (
                 <a
-                  key={heading.id}
+                  key={`${heading.id}-${index}`}
                   href={`#${heading.id}`}
                   className={cn(
                     "block text-sm transition-colors hover:text-foreground",

@@ -6,7 +6,7 @@ import { MDXRenderer } from "@/components/mdx-renderer";
 import { DocBreadcrumbs } from "@/components/navigation/doc-breadcrumbs";
 import { buildDocBreadcrumbs } from "@/lib/breadcrumbs";
 
-export const dynamic = "force-dynamic";
+// export const dynamic = "force-dynamic";
 
 interface PageProps {
   params: Promise<{
