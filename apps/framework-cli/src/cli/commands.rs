@@ -363,7 +363,7 @@ pub enum SeedSubcommands {
     /// Seed ClickHouse tables with data
     Clickhouse {
         /// ClickHouse connection URL (e.g. 'clickhouse://explorer@play.clickhouse.com:9440/default')
-        #[arg(long)]
+        #[arg(long, alias = "connection-string")]
         clickhouse_url: Option<String>,
         /// Limit the number of rows to copy per table (default: 1000)
         #[arg(
@@ -397,7 +397,7 @@ pub enum DbCommands {
     /// Update DB schema for EXTERNALLY_MANAGED tables
     Pull {
         /// ClickHouse connection URL (e.g. 'https://play.clickhouse.com/?user=explorer')
-        #[arg(long)]
+        #[arg(long, alias = "connection-string")]
         clickhouse_url: Option<String>,
         /// File storing the EXTERNALLY_MANAGED table definitions, defaults to app/external_models.py or app/externalModels.ts
         #[arg(long)]
