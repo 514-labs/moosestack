@@ -12,7 +12,7 @@ use crate::infrastructure::olap::clickhouse::{create_client, ConfiguredDBClient}
 use crate::infrastructure::olap::OlapOperations;
 use crate::project::Project;
 use crate::utilities::constants::{
-    APP_DIR, PYTHON_EXTERNAL_FILE, PYTHON_MAIN_FILE, TYPESCRIPT_EXTERNAL_FILE, TYPESCRIPT_MAIN_FILE,
+    PYTHON_EXTERNAL_FILE, PYTHON_MAIN_FILE, TYPESCRIPT_EXTERNAL_FILE, TYPESCRIPT_MAIN_FILE,
 };
 use crate::utilities::git::create_code_generation_commit;
 use log::debug;
@@ -79,14 +79,15 @@ fn write_external_models_file(
     language: SupportedLanguages,
     tables: &[Table],
     file_path: Option<&str>,
+    source_dir: &str,
 ) -> Result<(), RoutineFailure> {
     let file = match (language, file_path) {
         (_, Some(path)) => Cow::Borrowed(path),
         (SupportedLanguages::Typescript, None) => {
-            Cow::Owned(format!("{APP_DIR}/{TYPESCRIPT_EXTERNAL_FILE}"))
+            Cow::Owned(format!("{source_dir}/{TYPESCRIPT_EXTERNAL_FILE}"))
         }
         (SupportedLanguages::Python, None) => {
-            Cow::Owned(format!("{APP_DIR}/{PYTHON_EXTERNAL_FILE}"))
+            Cow::Owned(format!("{source_dir}/{PYTHON_EXTERNAL_FILE}"))
         }
     };
     match language {
@@ -209,7 +210,7 @@ pub async fn db_to_dmv2(remote_url: &str, dir_path: &Path) -> Result<(), Routine
                     .create(true)
                     .write(true)
                     .truncate(true)
-                    .open(format!("{APP_DIR}/{TYPESCRIPT_EXTERNAL_FILE}"))
+                    .open(format!("{}/{TYPESCRIPT_EXTERNAL_FILE}", project.source_dir))
                     .map_err(|e| {
                         RoutineFailure::new(
                             Message::new(
@@ -228,7 +229,7 @@ pub async fn db_to_dmv2(remote_url: &str, dir_path: &Path) -> Result<(), Routine
                         e,
                     )
                 })?;
-                let main_path = format!("{APP_DIR}/{TYPESCRIPT_MAIN_FILE}");
+                let main_path = format!("{}/{TYPESCRIPT_MAIN_FILE}", project.source_dir);
                 let import_stmt = "import \"./externalModels\";";
                 let needs_import = match std::fs::read_to_string(&main_path) {
                     Ok(contents) => !contents.contains(import_stmt),
@@ -263,7 +264,7 @@ pub async fn db_to_dmv2(remote_url: &str, dir_path: &Path) -> Result<(), Routine
                 let table_definitions = tables_to_typescript(&managed, None);
                 let mut file = std::fs::OpenOptions::new()
                     .append(true)
-                    .open(format!("{APP_DIR}/{TYPESCRIPT_MAIN_FILE}"))
+                    .open(format!("{}/{TYPESCRIPT_MAIN_FILE}", project.source_dir))
                     .map_err(|e| {
                         RoutineFailure::new(
                             Message::new(
@@ -293,7 +294,7 @@ pub async fn db_to_dmv2(remote_url: &str, dir_path: &Path) -> Result<(), Routine
                     .create(true)
                     .write(true)
                     .truncate(true)
-                    .open(format!("{APP_DIR}/{PYTHON_EXTERNAL_FILE}"))
+                    .open(format!("{}/{PYTHON_EXTERNAL_FILE}", project.source_dir))
                     .map_err(|e| {
                         RoutineFailure::new(
                             Message::new(
@@ -312,7 +313,7 @@ pub async fn db_to_dmv2(remote_url: &str, dir_path: &Path) -> Result<(), Routine
                         e,
                     )
                 })?;
-                let main_path = format!("{APP_DIR}/{PYTHON_MAIN_FILE}");
+                let main_path = format!("{}/{PYTHON_MAIN_FILE}", project.source_dir);
                 let import_stmt = "from .external_models import *";
                 let needs_import = match std::fs::read_to_string(&main_path) {
                     Ok(contents) => !contents.contains(import_stmt),
@@ -346,7 +347,7 @@ pub async fn db_to_dmv2(remote_url: &str, dir_path: &Path) -> Result<(), Routine
                 let table_definitions = tables_to_python(&managed, None);
                 let mut file = std::fs::OpenOptions::new()
                     .append(true)
-                    .open(format!("{APP_DIR}/{PYTHON_MAIN_FILE}"))
+                    .open(format!("{}/{PYTHON_MAIN_FILE}", project.source_dir))
                     .map_err(|e| {
                         RoutineFailure::new(
                             Message::new(
@@ -451,7 +452,12 @@ pub async fn db_pull(
     // Keep a stable ordering for deterministic output
     tables_for_external_file.sort_by(|a, b| a.name.cmp(&b.name));
 
-    write_external_models_file(project.language, &tables_for_external_file, file_path)?;
+    write_external_models_file(
+        project.language,
+        &tables_for_external_file,
+        file_path,
+        &project.source_dir,
+    )?;
 
     match create_code_generation_commit(
         ".".as_ref(),
