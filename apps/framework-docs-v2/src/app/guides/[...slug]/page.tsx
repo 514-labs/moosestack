@@ -10,13 +10,16 @@ import { MDXRenderer } from "@/components/mdx-renderer";
 import { DocBreadcrumbs } from "@/components/navigation/doc-breadcrumbs";
 import { buildDocBreadcrumbs } from "@/lib/breadcrumbs";
 import { GuideStepsWrapper } from "@/components/guides/guide-steps-wrapper";
+import { DynamicGuideBuilder } from "@/components/guides/dynamic-guide-builder";
+import { parseGuideManifest, getCachedGuideSteps } from "@/lib/guide-content";
 
-export const dynamic = "force-dynamic";
+// export const dynamic = "force-dynamic";
 
 interface PageProps {
   params: Promise<{
     slug: string[];
   }>;
+  searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
 }
 
 export async function generateStaticParams() {
@@ -74,8 +77,9 @@ export async function generateMetadata({
   }
 }
 
-export default async function GuidePage({ params }: PageProps) {
+export default async function GuidePage({ params, searchParams }: PageProps) {
   const resolvedParams = await params;
+  const resolvedSearchParams = await searchParams;
   const slugArray = resolvedParams.slug;
 
   // Handle empty slug array (shouldn't happen with [...slug] but be safe)
@@ -91,6 +95,85 @@ export default async function GuidePage({ params }: PageProps) {
   } catch (error) {
     notFound();
   }
+
+  const breadcrumbs = buildDocBreadcrumbs(
+    slug,
+    typeof content.frontMatter.title === "string" ?
+      content.frontMatter.title
+    : undefined,
+  );
+
+  // Check if this is a dynamic guide by checking for guide.toml
+  const guideManifest = await parseGuideManifest(slug);
+
+  if (guideManifest) {
+    // DYNAMIC GUIDE LOGIC
+
+    // Flatten search params to Record<string, string> for our cache function
+    const queryParams: Record<string, string> = {};
+    Object.entries(resolvedSearchParams).forEach(([key, value]) => {
+      if (typeof value === "string") {
+        queryParams[key] = value;
+      } else if (Array.isArray(value) && value.length > 0) {
+        // Take first value if array
+        queryParams[key] = value[0];
+      }
+    });
+
+    // Fetch steps here (cached function)
+    const steps = await getCachedGuideSteps(slug, queryParams);
+
+    const allHeadings = [...content.headings];
+    if (steps.length > 0) {
+      // Add steps as headings in TOC, avoiding duplicates
+      const existingIds = new Set(allHeadings.map((h) => h.id));
+      steps.forEach((step) => {
+        const stepId = `step-${step.stepNumber}`;
+        // Only add if ID doesn't already exist
+        if (!existingIds.has(stepId)) {
+          allHeadings.push({
+            level: 2,
+            text: `${step.stepNumber}. ${step.title}`,
+            id: stepId,
+          });
+          existingIds.add(stepId);
+        }
+      });
+    }
+
+    return (
+      <>
+        <div className="flex w-full flex-col gap-6 pt-4">
+          <DocBreadcrumbs items={breadcrumbs} />
+          <article className="prose prose-slate dark:prose-invert max-w-none w-full min-w-0">
+            {content.isMDX ?
+              <MDXRenderer source={content.content} />
+            : <div dangerouslySetInnerHTML={{ __html: content.content }} />}
+          </article>
+
+          <DynamicGuideBuilder manifest={guideManifest} />
+
+          {steps.length > 0 ?
+            <GuideStepsWrapper
+              steps={steps.map(({ content, isMDX, ...step }) => step)}
+              stepsWithContent={steps}
+              currentSlug={slug}
+            />
+          : <div className="text-center p-8 text-muted-foreground border rounded-lg border-dashed">
+              No steps found for this configuration. Please try different
+              options.
+            </div>
+          }
+        </div>
+        <TOCNav
+          headings={allHeadings}
+          helpfulLinks={content.frontMatter.helpfulLinks}
+        />
+      </>
+    );
+  }
+
+  // STATIC GUIDE LOGIC (Fallback)
 
   // Discover step files for this starting point page
   const steps = discoverStepFiles(slug);
@@ -116,23 +199,22 @@ export default async function GuidePage({ params }: PageProps) {
     }),
   );
 
-  const breadcrumbs = buildDocBreadcrumbs(
-    slug,
-    typeof content.frontMatter.title === "string" ?
-      content.frontMatter.title
-    : undefined,
-  );
-
   // Combine page headings with step headings for TOC
   const allHeadings = [...content.headings];
   if (steps.length > 0) {
-    // Add steps as headings in TOC
+    // Add steps as headings in TOC, avoiding duplicates
+    const existingIds = new Set(allHeadings.map((h) => h.id));
     steps.forEach((step) => {
-      allHeadings.push({
-        level: 2,
-        text: `${step.stepNumber}. ${step.title}`,
-        id: `step-${step.stepNumber}`,
-      });
+      const stepId = `step-${step.stepNumber}`;
+      // Only add if ID doesn't already exist
+      if (!existingIds.has(stepId)) {
+        allHeadings.push({
+          level: 2,
+          text: `${step.stepNumber}. ${step.title}`,
+          id: stepId,
+        });
+        existingIds.add(stepId);
+      }
     });
   }
 

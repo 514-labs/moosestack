@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import { GuideStepsNav } from "./guide-steps-nav";
 import { StepContent } from "./step-content";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -19,26 +20,57 @@ interface GuideStepsWrapperProps {
   currentSlug: string;
 }
 
-export async function GuideStepsWrapper({
+async function StepContentWrapper({
+  content,
+  isMDX,
+  slug,
+  index,
+}: {
+  content: string;
+  isMDX: boolean;
+  slug: string;
+  index: number;
+}) {
+  return (
+    <div
+      key={slug}
+      data-step-index={index}
+      className={`step-content ${index === 0 ? "block" : "hidden"}`}
+    >
+      <StepContent content={content} isMDX={isMDX} />
+    </div>
+  );
+}
+
+export function GuideStepsWrapper({
   steps,
   stepsWithContent,
   currentSlug,
 }: GuideStepsWrapperProps) {
-  // Render all step content on the server
-  const renderedSteps = await Promise.all(
-    stepsWithContent.map(async (step, index) => {
-      if (!step.content) return null;
-      return (
-        <div
-          key={step.slug}
-          data-step-index={index}
-          className={`step-content ${index === 0 ? "block" : "hidden"}`}
-        >
-          <StepContent content={step.content} isMDX={step.isMDX} />
-        </div>
-      );
-    }),
-  );
+  // Render all step content with Suspense for async MDX rendering
+  const renderedSteps = stepsWithContent.map((step, index) => {
+    if (!step.content) return null;
+    return (
+      <Suspense
+        key={step.slug}
+        fallback={
+          <div
+            data-step-index={index}
+            className={`step-content ${index === 0 ? "block" : "hidden"}`}
+          >
+            <div className="text-muted-foreground">Loading step content...</div>
+          </div>
+        }
+      >
+        <StepContentWrapper
+          content={step.content}
+          isMDX={step.isMDX}
+          slug={step.slug}
+          index={index}
+        />
+      </Suspense>
+    );
+  });
 
   return (
     <div id="guide-steps" className="mt-12 w-full">
