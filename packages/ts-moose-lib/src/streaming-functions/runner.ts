@@ -37,7 +37,7 @@ import { getStreamingFunctions } from "../dmv2/internal";
 import type { ConsumerConfig, TransformConfig, DeadLetterQueue } from "../dmv2";
 import {
   buildFieldHandlingsFromColumns,
-  applyFieldHandlingsToData,
+  mutateParsedJson,
   type FieldHandlings,
 } from "../utilities/json";
 import type { Column } from "../dataModels/dataModelTypes";
@@ -501,7 +501,7 @@ const handleMessage = async (
     }
     // Parse JSON then apply field handlings using pre-built configuration
     const parsedData = JSON.parse(payloadBuffer.toString());
-    applyFieldHandlingsToData(parsedData, fieldHandlings);
+    mutateParsedJson(parsedData, fieldHandlings);
     const transformedData = await Promise.all(
       streamingFunctionWithConfigList.map(async ([fn, config]) => {
         try {

@@ -40,6 +40,112 @@ interface ApiUtil {
 }
 ```
 
+## Date and Time Types
+
+Moose provides specialized types for working with temporal data, offering a choice between Date objects and string representations based on your precision requirements.
+
+### `DateTime`
+A type alias for JavaScript's native `Date` object, suitable for datetime values with up to millisecond precision.
+```ts
+interface Event {
+  // Stored as ClickHouse DateTime (second precision)
+  // Runtime: JavaScript Date object
+  createdAt: DateTime;
+}
+```
+
+**Use when:**
+- You need standard JavaScript Date objects in your application
+- Millisecond precision is sufficient (JavaScript Date limit)
+- Working with timestamps that don't require microsecond precision
+
+### `DateTime64<P extends number>`
+A type for datetime values with configurable precision (0-9 decimal places). JavaScript Date objects are used at runtime but cannot represent microsecond precision accurately.
+```ts
+interface Event {
+  // Stored as ClickHouse DateTime64(3) - millisecond precision
+  // Runtime: JavaScript Date object
+  timestamp: DateTime64<3>;
+  
+  // Stored as ClickHouse DateTime64(6) - microsecond precision
+  // Runtime: JavaScript Date object (loses microseconds!)
+  highPrecisionTimestamp: DateTime64<6>;
+}
+```
+
+**Use when:**
+- You want Date objects in your application code
+- You're okay with potential precision loss for sub-millisecond values
+- Precision parameter P ≤ 3 (milliseconds)
+
+**Caution:** JavaScript Date objects cannot accurately represent microsecond precision. If you use `DateTime64<6>` or higher, microseconds will be lost during JSON parsing.
+
+### `DateTimeString`
+A string type with date-time format validation, preserved as a string at runtime to avoid Date object limitations.
+```ts
+interface Event {
+  // Stored as ClickHouse DateTime
+  // Runtime: ISO 8601 string (e.g., "2024-01-15T10:30:00Z")
+  createdAt: DateTimeString;
+}
+```
+
+**Use when:**
+- You need to preserve the exact datetime string representation
+- You want consistent string-based datetime handling
+- You don't need Date object methods in your application
+
+### `DateTime64String<P extends number>`
+A string type for high-precision datetime values, preserving full precision as strings to avoid JavaScript Date limitations.
+```ts
+interface Event {
+  // Stored as ClickHouse DateTime64(6) - microsecond precision
+  // Runtime: ISO 8601 string with microseconds (e.g., "2024-01-15T10:30:00.123456Z")
+  highPrecisionTimestamp: DateTime64String<6>;
+  
+  // Stored as ClickHouse DateTime64(9) - nanosecond precision
+  // Runtime: ISO 8601 string with nanoseconds
+  veryHighPrecisionTimestamp: DateTime64String<9>;
+}
+```
+
+**Use when:**
+- You need microsecond (P=6) or nanosecond (P=9) precision
+- You want to preserve exact datetime values without precision loss
+- You're ingesting high-precision timestamps from external systems
+
+**Important:** This is the **only** way to preserve microsecond or higher precision. Using `DateTime64<6>` or above without the String suffix will result in precision loss.
+
+### Comparison Table
+
+| Type | ClickHouse | Runtime Type | Precision | Use Case |
+|------|-----------|--------------|-----------|----------|
+| `DateTime` | `DateTime` | `Date` | 1 second | Standard timestamps |
+| `DateTime64<3>` | `DateTime64(3)` | `Date` | 1 millisecond | JavaScript-compatible high precision |
+| `DateTime64<6>` | `DateTime64(6)` | `Date` | ⚠️ ~1 millisecond* | Not recommended - use DateTime64String |
+| `DateTimeString` | `DateTime` | `string` | 1 second | String-based datetime handling |
+| `DateTime64String<6>` | `DateTime64(6)` | `string` | 1 microsecond | High-precision requirements |
+| `DateTime64String<9>` | `DateTime64(9)` | `string` | 1 nanosecond | Ultra-high-precision requirements |
+
+*Loses microseconds during JSON parsing
+
+### Example: Choosing the Right Type
+```ts
+interface Telemetry {
+  // User-visible timestamp - Date object is fine
+  createdAt: DateTime;
+  
+  // High-frequency sensor data - need microseconds
+  sensorTimestamp: DateTime64String<6>;
+  
+  // API response timestamp - millisecond precision
+  processedAt: DateTime64<3>;
+  
+  // Compliance log - preserve exact string format
+  auditTimestamp: DateTimeString;
+}
+```
+
 ## Infrastructure Components
 
 ### `OlapTable<T>`

@@ -1,4 +1,51 @@
-import type { Column, DataType } from "../dataModels/dataModelTypes";
+import type {
+  Column,
+  DataType,
+  Nested,
+  ArrayType,
+} from "../dataModels/dataModelTypes";
+
+/**
+ * Annotation key used to mark DateTime fields that should remain as strings
+ * rather than being parsed into Date objects at runtime.
+ */
+export const STRING_DATE_ANNOTATION = "stringDate";
+
+/**
+ * Type guard to check if a DataType is a nullable wrapper
+ */
+function isNullableType(dt: DataType): dt is { nullable: DataType } {
+  return (
+    typeof dt === "object" &&
+    dt !== null &&
+    "nullable" in dt &&
+    typeof dt.nullable !== "undefined"
+  );
+}
+
+/**
+ * Type guard to check if a DataType is a Nested type
+ */
+function isNestedType(dt: DataType): dt is Nested {
+  return (
+    typeof dt === "object" &&
+    dt !== null &&
+    "columns" in dt &&
+    Array.isArray(dt.columns)
+  );
+}
+
+/**
+ * Type guard to check if a DataType is an ArrayType
+ */
+function isArrayType(dt: DataType): dt is ArrayType {
+  return (
+    typeof dt === "object" &&
+    dt !== null &&
+    "elementType" in dt &&
+    typeof dt.elementType !== "undefined"
+  );
+}
 
 /**
  * Revives ISO 8601 date strings into Date objects during JSON parsing
@@ -26,7 +73,9 @@ function isDateType(dataType: DataType, annotations: [string, any][]): boolean {
   // Check if this is marked as a string-based date (from typia.tags.Format)
   // If so, it should remain as a string, not be parsed to Date
   if (
-    annotations.some(([key, value]) => key === "stringDate" && value === true)
+    annotations.some(
+      ([key, value]) => key === STRING_DATE_ANNOTATION && value === true,
+    )
   ) {
     return false;
   }
@@ -37,16 +86,8 @@ function isDateType(dataType: DataType, annotations: [string, any][]): boolean {
     return dataType === "DateTime" || dataType.startsWith("DateTime(");
   }
   // Handle nullable wrapper
-  if (
-    typeof dataType === "object" &&
-    dataType !== null &&
-    "nullable" in dataType &&
-    typeof (dataType as { nullable: DataType }).nullable !== "undefined"
-  ) {
-    return isDateType(
-      (dataType as { nullable: DataType }).nullable,
-      annotations,
-    );
+  if (isNullableType(dataType)) {
+    return isDateType(dataType.nullable, annotations);
   }
   return false;
 }
@@ -86,23 +127,13 @@ function buildFieldHandlings(columns: Column[]): FieldHandlings {
     if (typeof dataType === "object" && dataType !== null) {
       // Handle nullable wrapper
       let unwrappedType: DataType = dataType;
-      if (
-        "nullable" in dataType &&
-        typeof (dataType as any).nullable !== "undefined"
-      ) {
-        unwrappedType = (dataType as { nullable: DataType }).nullable;
+      if (isNullableType(dataType)) {
+        unwrappedType = dataType.nullable;
       }
 
       // Handle nested objects
-      if (
-        typeof unwrappedType === "object" &&
-        unwrappedType !== null &&
-        "columns" in unwrappedType &&
-        Array.isArray((unwrappedType as any).columns)
-      ) {
-        const nestedHandlings = buildFieldHandlings(
-          (unwrappedType as any).columns,
-        );
+      if (isNestedType(unwrappedType)) {
+        const nestedHandlings = buildFieldHandlings(unwrappedType.columns);
         if (nestedHandlings.length > 0) {
           handlings.push([column.name, nestedHandlings]);
         }
@@ -111,21 +142,15 @@ function buildFieldHandlings(columns: Column[]): FieldHandlings {
 
       // Handle arrays with nested columns
       // The handlings will be auto-applied to each array element at runtime
-      if (
-        typeof unwrappedType === "object" &&
-        unwrappedType !== null &&
-        "elementType" in unwrappedType &&
-        typeof (unwrappedType as any).elementType === "object" &&
-        (unwrappedType as any).elementType !== null &&
-        "columns" in (unwrappedType as any).elementType
-      ) {
-        const nestedHandlings = buildFieldHandlings(
-          (unwrappedType as any).elementType.columns,
-        );
-        if (nestedHandlings.length > 0) {
-          handlings.push([column.name, nestedHandlings]);
+      if (isArrayType(unwrappedType)) {
+        const elementType = unwrappedType.elementType;
+        if (isNestedType(elementType)) {
+          const nestedHandlings = buildFieldHandlings(elementType.columns);
+          if (nestedHandlings.length > 0) {
+            handlings.push([column.name, nestedHandlings]);
+          }
+          continue;
         }
-        continue;
       }
     }
   }
@@ -230,11 +255,11 @@ export function buildFieldHandlingsFromColumns(
  * ```typescript
  * const fieldHandlings = buildFieldHandlingsFromColumns(stream.columnArray);
  * const data = JSON.parse(jsonString);
- * applyFieldHandlingsToData(data, fieldHandlings);
+ * mutateParsedJson(data, fieldHandlings);
  * // data now has transformations applied per the field handlings
  * ```
  */
-export function applyFieldHandlingsToData(
+export function mutateParsedJson(
   data: any,
   fieldHandlings: FieldHandlings | undefined,
 ): void {

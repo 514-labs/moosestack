@@ -21,6 +21,7 @@ import {
   MapType,
 } from "./dataModelTypes";
 import { ClickHouseNamedTuple, DecimalRegex } from "./types";
+import { STRING_DATE_ANNOTATION } from "../utilities/json";
 
 const dateType = (checker: TypeChecker) =>
   checker
@@ -467,7 +468,7 @@ const handleStringType = (
             }
           }
           // Mark this as a string-based date field so it won't be parsed to Date at runtime
-          annotations.push(["stringDate", true]);
+          annotations.push([STRING_DATE_ANNOTATION, true]);
           return `DateTime(${precision})`;
         } else if (isStringLiteral(valueTypeLiteral, checker, "date")) {
           let size = 4;
