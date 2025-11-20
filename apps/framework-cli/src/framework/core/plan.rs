@@ -14,7 +14,7 @@
 /// The resulting plan is then used by the execution module to apply the changes.
 use crate::framework::core::infra_reality_checker::{InfraRealityChecker, RealityCheckError};
 use crate::framework::core::infrastructure_map::{
-    InfraChanges, InfrastructureMap, OlapChange, TableChange,
+    Change, InfraChanges, InfrastructureMap, OlapChange, TableChange,
 };
 use crate::framework::core::primitive_map::PrimitiveMap;
 use crate::framework::core::state_storage::StateStorage;
@@ -272,15 +272,36 @@ pub async fn reconcile_with_reality<T: OlapOperations>(
             .remove(&missing_sql_resource_name);
     }
 
-    // Add extra SQL resources (exist in reality but not in map)
-    for extra_sql_resource in discrepancies.extra_sql_resources {
+    // Add unmapped SQL resources (exist in reality but not in map)
+    for unmapped_sql_resource in discrepancies.unmapped_sql_resources {
         debug!(
-            "Adding extra SQL resource found in reality to infrastructure map: {}",
-            extra_sql_resource.name
+            "Adding unmapped SQL resource found in reality to infrastructure map: {}",
+            unmapped_sql_resource.name
         );
         reconciled_map
             .sql_resources
-            .insert(extra_sql_resource.name.clone(), extra_sql_resource);
+            .insert(unmapped_sql_resource.name.clone(), unmapped_sql_resource);
+    }
+
+    // Update mismatched SQL resources (exist in both but differ)
+    for change in discrepancies.mismatched_sql_resources {
+        match change {
+            OlapChange::SqlResource(Change::Updated { before, .. }) => {
+                debug!(
+                    "Updating mismatched SQL resource in infrastructure map to match reality: {}",
+                    before.name
+                );
+                reconciled_map
+                    .sql_resources
+                    .insert(before.name.clone(), *before);
+            }
+            _ => {
+                log::warn!(
+                    "Unexpected change type in mismatched_sql_resources: {:?}",
+                    change
+                );
+            }
+        }
     }
 
     info!("Infrastructure map successfully reconciled with actual database state");
