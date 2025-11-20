@@ -114,7 +114,7 @@ export default async function GuidePage({ params, searchParams }: PageProps) {
     Object.entries(resolvedSearchParams).forEach(([key, value]) => {
       if (typeof value === "string") {
         queryParams[key] = value;
-      } else if (Array.isArray(value) && value.length > 0) {
+      } else if (Array.isArray(value) && value.length > 0 && value[0]) {
         // Take first value if array
         queryParams[key] = value[0];
       }

@@ -49,7 +49,7 @@ export function GuideForm({ manifest }: GuideFormProps) {
         values[option.id] = option.defaultValue;
       } else {
         // Default to first value if available, to ensure we have a valid state if possible
-        if (option.values.length > 0) {
+        if (option.values.length > 0 && option.values[0]) {
           values[option.id] = option.values[0].id;
         }
       }
@@ -105,7 +105,9 @@ export function GuideForm({ manifest }: GuideFormProps) {
       });
 
       if (needsUpdate) {
-        form.setFieldValues(currentValues);
+        Object.entries(currentValues).forEach(([key, value]) => {
+          form.setFieldValue(key, value);
+        });
       }
     }
   }, [searchParams, manifest, language]);

@@ -91,6 +91,8 @@ export async function getCachedGuideSteps(
     if (!match) continue;
 
     const [, stepNumStr, stepName, condKey, condValue] = match;
+    if (!stepNumStr || !stepName) continue;
+
     const stepNumber = parseInt(stepNumStr, 10);
 
     // Check condition if present
@@ -117,7 +119,7 @@ export async function getCachedGuideSteps(
           stepName.replace(/-/g, " "),
         slug: stepSlug,
         content: parsedContent.content,
-        isMDX: parsedContent.isMDX,
+        isMDX: parsedContent.isMDX ?? false,
       });
     } catch (error) {
       console.error(`Failed to load step content for ${stepSlug}:`, error);
