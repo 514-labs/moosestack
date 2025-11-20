@@ -116,6 +116,10 @@ pub enum Commands {
         /// Enable or disable the MCP (Model Context Protocol) server
         #[arg(long, default_value = "true")]
         mcp: bool,
+
+        /// Log payloads at ingest API and streaming functions for debugging
+        #[arg(long)]
+        log_payloads: bool,
     },
     /// Start a remote environment for use in cloud deployments
     Prod {

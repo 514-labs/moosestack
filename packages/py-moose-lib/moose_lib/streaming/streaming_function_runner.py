@@ -15,6 +15,7 @@ The runner handles:
 
 import argparse
 import dataclasses
+import os
 import traceback
 from datetime import datetime, timezone
 from importlib import import_module
@@ -432,6 +433,10 @@ def main():
                             # Parse the message into the input type
                             input_data = parse_input(streaming_function_input_type, message.value)
 
+                            # Log payload before transformation if enabled
+                            if os.getenv('MOOSE_LOG_PAYLOADS') == 'true':
+                                log(f"[PAYLOAD:STREAM_IN] {json.dumps(input_data, cls=EnhancedJSONEncoder)}")
+
                             # Run the flow
                             all_outputs = []
                             for (streaming_function_callable, dlq) in streaming_function_callables:
@@ -476,6 +481,15 @@ def main():
 
                                 cli_log(CliLogData(action="Received",
                                                    message=f'{log_prefix} {len(output_data_list)} message(s)'))
+
+                            # Log payload after transformation if enabled (what we're actually sending to Kafka)
+                            if os.getenv('MOOSE_LOG_PAYLOADS') == 'true':
+                                # Filter out None values to match what actually gets sent
+                                outgoing_data = [item for item in all_outputs if item is not None]
+                                if len(outgoing_data) > 0:
+                                    log(f"[PAYLOAD:STREAM_OUT] {json.dumps(outgoing_data, cls=EnhancedJSONEncoder)}")
+                                else:
+                                    log("[PAYLOAD:STREAM_OUT] (no output from streaming function)")
 
                             if producer is not None:
                                 for item in all_outputs:
