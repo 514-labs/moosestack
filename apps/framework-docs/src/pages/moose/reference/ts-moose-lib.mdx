@@ -42,11 +42,12 @@ interface ApiUtil {
 
 ## Date and Time Types
 
-Moose provides type aliases for temporal data that map to ClickHouse's DateTime types, 
-giving you a choice between Date objects and strings based on your precision requirements.
+Type aliases that map JavaScript temporal data to ClickHouse DateTime types.
+Choose between Date objects or strings based on the precision you need to persist in ClickHouse.
 
 ### `DateTime`
-A type alias for JavaScript's native `Date` object, suitable for datetime values with up to millisecond precision.
+A type alias for JavaScript's native `Date` object that maps to ClickHouse `DateTime` (second precision).
+
 ```ts
 interface Event {
   // Stored as ClickHouse DateTime (second precision)
@@ -55,68 +56,72 @@ interface Event {
 }
 ```
 
+**Important:** While JavaScript `Date` objects can hold millisecond precision, only the second portion will be persisted in ClickHouse since the database type is `DateTime`.
+
 **Use when:**
+- Second precision is sufficient for your use case
 - You need standard JavaScript Date objects in your application
-- Millisecond precision is sufficient (JavaScript Date limit)
-- Working with timestamps that don't require microsecond precision
+- Working with user-visible timestamps where sub-second precision isn't critical
 
 ### `DateTime64<P extends number>`
-A type for datetime values with configurable precision (0-9 decimal places).
-JavaScript `Date` objects are used at runtime but cannot represent microsecond precision accurately.
+A type for datetime values with configurable precision (0-9 decimal places) that maps to ClickHouse `DateTime64(P)`.
+At runtime, JavaScript `Date` objects are used.
 
 ```ts
 interface Event {
-  // Stored as ClickHouse DateTime64(3) - millisecond precision
-  // Runtime: JavaScript Date object
+  // ✅ Safe: ClickHouse DateTime64(3), JavaScript Date holds milliseconds
   timestamp: DateTime64<3>;
   
-  // Stored as ClickHouse DateTime64(6) - microsecond precision
-  // Runtime: JavaScript Date object (loses microseconds!)
+  // ⚠️ Precision loss: ClickHouse stores microseconds, but Date truncates to milliseconds
   highPrecisionTimestamp: DateTime64<6>;
 }
 ```
 
-**Use when:**
-- You want `Date` objects in your application code
-- You're okay with potential precision loss for sub-millisecond values
-- Precision parameter P ≤ 3 (milliseconds)
+**Precision Limits:**
+- **P ≤ 3** (milliseconds): JavaScript `Date` can represent this precision - **use this safely**
+- **P > 3** (microseconds and beyond): ClickHouse stores the full precision, but `Date` objects truncate to milliseconds during JSON parsing - **precision loss occurs**
 
-**Caution:** JavaScript Date objects cannot accurately represent microsecond precision.
-If you use `DateTime64<4>` or higher, microseconds will be lost during JSON parsing.
+**Use when:**
+- You need millisecond precision (P ≤ 3) with Date objects
+- You're okay with Date API in your application code
+
+**Don't use when:**
+- You need microsecond or nanosecond precision - use `DateTime64String` instead
 
 ### `DateTimeString`
-A string type with date-time format validation, preserved as a string at runtime.
+A string type that maps to ClickHouse `DateTime` (second precision) but stays as a string at runtime instead of being parsed into a `Date` object.
+
 ```ts
 interface Event {
-  // Stored as ClickHouse DateTime
+  // Stored as ClickHouse DateTime (second precision)
   // Runtime: ISO 8601 string (e.g., "2024-01-15T10:30:00Z")
   createdAt: DateTimeString;
 }
 ```
 
 **Use when:**
-- You don't need Date object methods in your application
+- You prefer string-based datetime handling in your application code
+- You don't need Date object methods
 
 ### `DateTime64String<P extends number>`
-A string type for high-precision datetime values,
-preserving full precision as strings to avoid JavaScript Date limitations.
+A string type that maps to ClickHouse `DateTime64(P)` and preserves full precision by keeping datetimes as strings at runtime instead of parsing into `Date` objects.
+
 ```ts
 interface Event {
-  // Stored as ClickHouse DateTime64(6) - microsecond precision
-  // Runtime: ISO 8601 string with microseconds (e.g., "2024-01-15T10:30:00.123456Z")
-  highPrecisionTimestamp: DateTime64String<6>;
+  // ✅ Full precision preserved: ClickHouse stores microseconds, runtime keeps string
+  highPrecisionTimestamp: DateTime64String<6>;  // e.g., "2024-01-15T10:30:00.123456Z"
   
-  // Stored as ClickHouse DateTime64(9) - nanosecond precision
-  // Runtime: ISO 8601 string with nanoseconds
-  veryHighPrecisionTimestamp: DateTime64String<9>;
+  // ✅ Full precision preserved: ClickHouse stores nanoseconds, runtime keeps string
+  veryHighPrecisionTimestamp: DateTime64String<9>;  // e.g., "2024-01-15T10:30:00.123456789Z"
 }
 ```
 
 **Use when:**
-- You need microsecond (P=6) or nanosecond (P=9) precision
+- **You need microsecond (P≥4) or higher precision** - this is the only type that preserves it
+- You're ingesting high-precision timestamps from external systems
+- You're okay working with ISO 8601 strings instead of Date objects
 
-**Important:** This is the **only** way to preserve microsecond or higher precision.
-Using `DateTime64<6>` or above without the String suffix will result in precision loss.
+**Why strings?** JavaScript `Date` objects truncate to milliseconds. By keeping timestamps as strings, you preserve the full precision that ClickHouse stores.
 
 ### Comparison Table
 
