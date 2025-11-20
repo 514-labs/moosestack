@@ -2526,7 +2526,7 @@ impl InfrastructureMap {
     /// This is needed because older CLI versions didn't persist order_by when it was
     /// derived from primary key columns.
     pub fn normalize(mut self) -> Self {
-        use crate::framework::core::infrastructure::table::{ColumnType, OrderBy};
+        use crate::framework::core::infrastructure::table::ColumnType;
 
         self.tables = self
             .tables
