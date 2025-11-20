@@ -60,7 +60,7 @@ This command is typically used in a deployment pipeline before updating the appl
 # Example GitHub Actions step
 - name: Apply Migrations
   run: moose migrate --clickhouse-url "$CLICKHOUSE_URL"
-  env:
+        env:
     CLICKHOUSE_URL: ${{ secrets.CLICKHOUSE_URL }}
 ```
 

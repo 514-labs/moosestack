@@ -534,6 +534,12 @@ const moosestackNavigationConfig: NavigationConfig = [
       { type: "label", title: "Lifecycle Management" },
       {
         type: "page",
+        slug: "moosestack/migrate/lifecycle",
+        title: "Overview",
+        languages: ["typescript", "python"],
+      },
+      {
+        type: "page",
         slug: "moosestack/migrate/lifecycle-fully-managed",
         title: "Fully Managed",
         languages: ["typescript", "python"],
