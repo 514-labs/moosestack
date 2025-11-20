@@ -46,9 +46,8 @@ use queries::{
 use serde::{Deserialize, Serialize};
 use sql_parser::{
     extract_engine_from_create_table, extract_indexes_from_create_table,
-    extract_sample_by_from_create_table, extract_table_settings_from_create_table,
-    normalize_sql_for_comparison, parse_create_materialized_view, parse_create_view,
-    strip_column_definitions_from_view,
+    extract_sample_by_from_create_table, extract_source_tables_from_query,
+    extract_table_settings_from_create_table, normalize_sql_for_comparison, split_qualified_name,
 };
 use std::collections::HashMap;
 use std::ops::Deref;
@@ -1994,13 +1993,17 @@ impl OlapOperations for ConfiguredDBClient {
             db_name
         );
 
+        // We query `as_select` from system.tables to get the clean SELECT statement
+        // without the view's column definitions (e.g., `CREATE VIEW v (col1 Type) AS ...`).
+        // This avoids complex parsing logic to strip those columns manually.
         let query = format!(
             r#"
             SELECT
                 name,
                 database,
                 engine,
-                create_table_query
+                create_table_query,
+                as_select
             FROM system.tables
             WHERE database = '{}'
             AND engine IN ('View', 'MaterializedView')
@@ -2014,7 +2017,7 @@ impl OlapOperations for ConfiguredDBClient {
         let mut cursor = self
             .client
             .query(&query)
-            .fetch::<(String, String, String, String)>()
+            .fetch::<(String, String, String, String, String)>()
             .map_err(|e| {
                 debug!("Error fetching SQL resources: {}", e);
                 OlapChangesError::DatabaseError(e.to_string())
@@ -2022,7 +2025,7 @@ impl OlapOperations for ConfiguredDBClient {
 
         let mut sql_resources = Vec::new();
 
-        while let Some((name, database, engine, create_query)) = cursor
+        while let Some((name, database, engine, create_query, as_select)) = cursor
             .next()
             .await
             .map_err(|e| OlapChangesError::DatabaseError(e.to_string()))?
@@ -2035,15 +2038,13 @@ impl OlapOperations for ConfiguredDBClient {
                 "MaterializedView" => reconstruct_sql_resource_from_mv(
                     name,
                     create_query,
+                    as_select,
                     database,
                     default_database,
                 )?,
-                "View" => reconstruct_sql_resource_from_view(
-                    name,
-                    create_query,
-                    database,
-                    default_database,
-                )?,
+                "View" => {
+                    reconstruct_sql_resource_from_view(name, as_select, database, default_database)?
+                }
                 _ => {
                     warn!("Unexpected engine type for SQL resource: {}", engine);
                     continue;
@@ -2061,11 +2062,18 @@ impl OlapOperations for ConfiguredDBClient {
     }
 }
 
+static MATERIALIZED_VIEW_TO_PATTERN: LazyLock<regex::Regex> = LazyLock::new(|| {
+    // Pattern to extract TO <table_name> from CREATE MATERIALIZED VIEW
+    regex::Regex::new(r"(?i)\bTO\s+([a-zA-Z0-9_.`]+)")
+        .expect("MATERIALIZED_VIEW_TO_PATTERN regex should compile")
+});
+
 /// Reconstructs a SqlResource from a materialized view's CREATE statement
 ///
 /// # Arguments
 /// * `name` - The name of the materialized view
 /// * `create_query` - The CREATE MATERIALIZED VIEW statement from ClickHouse
+/// * `as_select` - The SELECT part of the query (clean, from system.tables)
 /// * `database` - The database where the view is located
 /// * `default_database` - The default database for resolving unqualified table references
 ///
@@ -2074,15 +2082,31 @@ impl OlapOperations for ConfiguredDBClient {
 fn reconstruct_sql_resource_from_mv(
     name: String,
     create_query: String,
+    as_select: String,
     _database: String,
     default_database: &str,
 ) -> Result<SqlResource, OlapChangesError> {
-    // Strip column definitions first, then parse
-    let create_query_stripped = strip_column_definitions_from_view(&create_query);
-    let mv_stmt = parse_create_materialized_view(&create_query_stripped)?;
+    // Extract target table from create_query
+    // We use a regex on the raw create_query because it's simpler than full parsing and
+    // avoids issues with ClickHouse's specific column definition syntax in CREATE statements.
+    // as_select doesn't contain the TO clause, so we must check the original query.
+    let target_table = MATERIALIZED_VIEW_TO_PATTERN
+        .captures(&create_query)
+        .and_then(|caps| caps.get(1))
+        .map(|m| m.as_str().to_string())
+        .ok_or_else(|| {
+            OlapChangesError::DatabaseError(format!(
+                "Could not find TO target in materialized view definition: {}",
+                name
+            ))
+        })?;
 
-    // Ensure IF NOT EXISTS is in the setup script (using the stripped version)
-    let setup_raw = ensure_if_not_exists(&create_query_stripped);
+    // Reconstruct the canonical CREATE statement
+    // CREATE MATERIALIZED VIEW IF NOT EXISTS name TO target AS select
+    let setup_raw = format!(
+        "CREATE MATERIALIZED VIEW IF NOT EXISTS {} TO {} AS {}",
+        name, target_table, as_select
+    );
 
     // Normalize the SQL for consistent comparison with user-defined views
     let setup = normalize_sql_for_comparison(&setup_raw, default_database);
@@ -2090,9 +2114,17 @@ fn reconstruct_sql_resource_from_mv(
     // Generate teardown script
     let teardown = format!("DROP VIEW IF EXISTS `{}`", name);
 
+    // Parse as_select to get source tables (lineage)
+    // as_select is clean SQL, so we can use standard parser logic
+    let source_tables = extract_source_tables_from_query(&as_select).map_err(|e| {
+        OlapChangesError::DatabaseError(format!(
+            "Failed to extract source tables from MV {}: {}",
+            name, e
+        ))
+    })?;
+
     // Extract pulls_data_from (source tables)
-    let pulls_data_from = mv_stmt
-        .source_tables
+    let pulls_data_from = source_tables
         .into_iter()
         .map(|table_ref| {
             // Get the table name, strip version suffix if present
@@ -2115,17 +2147,18 @@ fn reconstruct_sql_resource_from_mv(
         .collect();
 
     // Extract pushes_data_to (target table for MV)
-    let target_table_name = mv_stmt.target_table;
-    let (target_base_name, _version) = extract_version_from_table_name(&target_table_name);
+    let (target_base_name, _version) = extract_version_from_table_name(&target_table);
+    // target_table might be qualified (db.table)
+    let (target_db, target_name_only) = split_qualified_name(&target_base_name);
 
-    let target_qualified_id = if let Some(target_db) = mv_stmt.target_database {
+    let target_qualified_id = if let Some(target_db) = target_db {
         if target_db == default_database {
-            target_base_name
+            target_name_only
         } else {
-            format!("{}_{}", target_db, target_base_name)
+            format!("{}_{}", target_db, target_name_only)
         }
     } else {
-        target_base_name
+        target_name_only
     };
 
     let pushes_data_to = vec![InfrastructureSignature::Table {
@@ -2145,7 +2178,7 @@ fn reconstruct_sql_resource_from_mv(
 ///
 /// # Arguments
 /// * `name` - The name of the view
-/// * `create_query` - The CREATE VIEW statement from ClickHouse
+/// * `as_select` - The SELECT part of the query (clean, from system.tables)
 /// * `database` - The database where the view is located
 /// * `default_database` - The default database for resolving unqualified table references
 ///
@@ -2153,16 +2186,15 @@ fn reconstruct_sql_resource_from_mv(
 /// * `Result<SqlResource, OlapChangesError>` - The reconstructed SqlResource
 fn reconstruct_sql_resource_from_view(
     name: String,
-    create_query: String,
+    as_select: String,
     _database: String,
     default_database: &str,
 ) -> Result<SqlResource, OlapChangesError> {
-    // Strip column definitions first, then parse
-    let create_query_stripped = strip_column_definitions_from_view(&create_query);
-    let view_stmt = parse_create_view(&create_query_stripped)?;
-
-    // Ensure IF NOT EXISTS is in the setup script (using the stripped version)
-    let setup_raw = ensure_if_not_exists(&create_query_stripped);
+    // Reconstruct the canonical CREATE statement using as_select.
+    // This ensures we have a clean definition without column types in the header,
+    // matching how Moose generates views (just `CREATE VIEW ... AS SELECT ...`).
+    // CREATE VIEW IF NOT EXISTS name AS select
+    let setup_raw = format!("CREATE VIEW IF NOT EXISTS {} AS {}", name, as_select);
 
     // Normalize the SQL for consistent comparison with user-defined views
     let setup = normalize_sql_for_comparison(&setup_raw, default_database);
@@ -2170,9 +2202,16 @@ fn reconstruct_sql_resource_from_view(
     // Generate teardown script
     let teardown = format!("DROP VIEW IF EXISTS `{}`", name);
 
+    // Parse as_select to get source tables (lineage)
+    let source_tables = extract_source_tables_from_query(&as_select).map_err(|e| {
+        OlapChangesError::DatabaseError(format!(
+            "Failed to extract source tables from View {}: {}",
+            name, e
+        ))
+    })?;
+
     // Extract pulls_data_from (source tables)
-    let pulls_data_from = view_stmt
-        .source_tables
+    let pulls_data_from = source_tables
         .into_iter()
         .map(|table_ref| {
             // Get the table name, strip version suffix if present
@@ -2204,42 +2243,6 @@ fn reconstruct_sql_resource_from_view(
         pulls_data_from,
         pushes_data_to,
     })
-}
-
-/// Ensures a CREATE VIEW/MATERIALIZED VIEW statement has IF NOT EXISTS
-///
-/// # Arguments
-/// * `create_query` - The CREATE statement
-///
-/// # Returns
-/// * `String` - The modified CREATE statement with IF NOT EXISTS
-fn ensure_if_not_exists(create_query: &str) -> String {
-    if create_query.to_uppercase().contains("IF NOT EXISTS") {
-        create_query.to_string()
-    } else {
-        // Insert IF NOT EXISTS after CREATE MATERIALIZED VIEW or CREATE VIEW
-        let upper = create_query.to_uppercase();
-        if let Some(pos) = upper.find("CREATE MATERIALIZED VIEW") {
-            let prefix_len = "CREATE MATERIALIZED VIEW".len();
-            let prefix_end = pos + prefix_len;
-            format!(
-                "{} IF NOT EXISTS{}",
-                &create_query[..prefix_end],
-                &create_query[prefix_end..]
-            )
-        } else if let Some(pos) = upper.find("CREATE VIEW") {
-            let prefix_len = "CREATE VIEW".len();
-            let prefix_end = pos + prefix_len;
-            format!(
-                "{} IF NOT EXISTS{}",
-                &create_query[..prefix_end],
-                &create_query[prefix_end..]
-            )
-        } else {
-            // Fallback: return as-is
-            create_query.to_string()
-        }
-    }
 }
 
 /// Regex pattern to find keywords that terminate an ORDER BY clause
