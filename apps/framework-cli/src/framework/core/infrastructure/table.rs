@@ -402,18 +402,27 @@ impl Table {
             .collect()
     }
 
+    pub fn order_by_with_fallback(&self) -> OrderBy {
+        // table (in infra map created by older version of moose) may leave order_by unspecified,
+        // but the implicit order_by from primary keys can be the same
+        // ONLY for the MergeTree family
+        // S3 supports ORDER BY but does not auto set ORDER BY from PRIMARY KEY
+        // Buffer, S3Queue, and Distributed don't support ORDER BY
+        if self.order_by.is_empty() && self.engine.is_merge_tree_family() {
+            OrderBy::Fields(
+                self.primary_key_columns()
+                    .iter()
+                    .map(|c| c.to_string())
+                    .collect(),
+            )
+        } else {
+            self.order_by.clone()
+        }
+    }
+
     pub fn order_by_equals(&self, target: &Table) -> bool {
         self.order_by == target.order_by
-            // target may leave order_by unspecified,
-            // but the implicit order_by from primary keys can be the same
-            // ONLY for engines that support ORDER BY (MergeTree family and S3)
-            // Buffer, S3Queue, and Distributed don't support ORDER BY
-            || (target.order_by.is_empty()
-                && target.engine.supports_order_by()
-                && matches!(
-                    &self.order_by,
-                    OrderBy::Fields(v) if v.iter().map(String::as_str).collect::<Vec<_>>() == target.primary_key_columns()
-                ))
+            || self.order_by_with_fallback() == target.order_by_with_fallback()
     }
 
     pub fn to_proto(&self) -> ProtoTable {
