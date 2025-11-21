@@ -295,6 +295,7 @@ def create_consumer() -> KafkaConsumer:
     Create a Kafka consumer configured for the source topic.
     
     Handles SASL authentication if configured.
+    Disables auto-commit to ensure at-least-once processing semantics.
     
     Returns:
         Configured KafkaConsumer instance
@@ -316,6 +317,7 @@ def create_consumer() -> KafkaConsumer:
         sasl_password=sasl_config.get("password"),
         sasl_mechanism=sasl_config.get("mechanism"),
         security_protocol=args.security_protocol,
+        enable_auto_commit=False,  # Disable auto-commit for at-least-once semantics
     )
     consumer = get_kafka_consumer(**kwargs)
     return consumer
@@ -489,6 +491,13 @@ def main():
                                         with metrics_lock:
                                             metrics['bytes_count'] += len(record)
                                             metrics['count_out'] += 1
+                                
+                                # Flush producer to ensure messages are sent before committing
+                                producer.flush()
+
+                            # Commit offset only after successful processing and flushing
+                            # This ensures at-least-once delivery semantics
+                            consumer.commit()
 
                 except Exception as e:
                     cli_log(CliLogData(action="Function", message=str(e), message_type="Error"))
