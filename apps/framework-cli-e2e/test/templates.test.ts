@@ -1088,11 +1088,11 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
           // Create ISO string with microseconds: 2024-01-15T10:30:00.123456Z
           const timestampWithMicroseconds = now
             .toISOString()
-            .replace(/(\d{3})Z$/, "$1456Z");
+            .replace(/\.\d{3}Z$/, ".123456Z");
           // Nanoseconds
           const timestampWithNanoseconds = now
             .toISOString()
-            .replace(/(\d{3})Z$/, "$1456789Z");
+            .replace(/\.\d{3}Z$/, ".123456789Z");
 
           console.log(
             `Testing DateTime precision with timestamp: ${timestampWithMicroseconds}`,
@@ -1452,11 +1452,11 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
           // Create ISO string with microseconds: 2024-01-15T10:30:00.123456Z
           const timestampWithMicroseconds = now
             .toISOString()
-            .replace(/(\d{3})Z$/, "$1456Z");
+            .replace(/\.\d{3}Z$/, ".123456Z");
           // Nanoseconds
           const timestampWithNanoseconds = now
             .toISOString()
-            .replace(/(\d{3})Z$/, "$1456789Z");
+            .replace(/\.\d{3}Z$/, ".123456789Z");
 
           console.log(
             `Testing DateTime precision (Python) with timestamp: ${timestampWithMicroseconds}`,
