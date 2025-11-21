@@ -1,0 +1,108 @@
+---
+title: Create Materialized View (Initiative)
+description: Create optimized materialized views for initiative-level dashboard queries
+---
+
+import { LanguageTabs, LanguageTabContent } from "@/components/mdx";
+
+# Step 2: Create Materialized View (Initiative Scope)
+
+In this step, you'll create materialized views that pre-aggregate data from your OLTP database for fast dashboard queries, specifically tailored for initiative-level reporting.
+
+## Overview
+
+Materialized views store pre-computed query results, allowing dashboards to load instantly without querying your production OLTP database directly. This step shows you how to define and create these views.
+
+## Define Materialized View
+
+<LanguageTabs items={["TypeScript", "Python"]}>
+  <LanguageTabContent value="typescript">
+```typescript filename="dashboard-views.ts"
+import { OlapMaterializedView, OlapTable } from "@514labs/moose-lib";
+
+// Define the source table (from your OLTP DB)
+interface OrdersTable {
+  id: string;
+  customer_id: string;
+  amount: number;
+  created_at: Date;
+}
+
+// Define the materialized view
+interface InitiativeSalesView {
+  date: Date;
+  initiative_id: string;
+  total_sales: number;
+  order_count: number;
+}
+
+export const initiativeSalesView = new OlapMaterializedView<InitiativeSalesView>(
+  "initiative_sales",
+  {
+    source: "orders", // References your OLTP table
+    query: `
+      SELECT
+        toDate(created_at) as date,
+        initiative_id,
+        sum(amount) as total_sales,
+        count(*) as order_count
+      FROM orders
+      GROUP BY date, initiative_id
+    `,
+    refresh: "incremental", // Update as new data arrives
+  }
+);
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```python filename="dashboard_views.py"
+from moose_lib import OlapMaterializedView
+from pydantic import BaseModel
+from datetime import date
+
+# Define the materialized view
+class InitiativeSalesView(BaseModel):
+    date: date
+    initiative_id: str
+    total_sales: float
+    order_count: int
+
+initiative_sales_view = OlapMaterializedView[InitiativeSalesView](
+    "initiative_sales",
+    source="orders",
+    query="""
+        SELECT
+            toDate(created_at) as date,
+            initiative_id,
+            sum(amount) as total_sales,
+            count(*) as order_count
+        FROM orders
+        GROUP BY date, initiative_id
+    """,
+    refresh="incremental",
+)
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+## Apply the View
+
+Create the materialized view in your database:
+
+```bash
+moose db migrate
+```
+
+## Query the View
+
+Once created, you can query the materialized view directly:
+
+```typescript
+const results = await initiativeSalesView.select({
+  date: { $gte: new Date("2024-01-01") },
+});
+```
+
+## Next Steps
+
+Your materialized view is now ready! You can use it in your dashboard queries for fast, pre-aggregated data.

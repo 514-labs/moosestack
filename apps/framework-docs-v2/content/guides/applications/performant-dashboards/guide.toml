@@ -1,0 +1,49 @@
+id = "performant-dashboards"
+title = "Performant Dashboards Guide"
+
+[[options]]
+id = "scope"
+label = "Scope"
+type = "select"
+  [[options.values]]
+  id = "initiative"
+  label = "Initiative"
+  
+  [[options.values]]
+  id = "project"
+  label = "Project"
+
+[[options]]
+id = "starting-point"
+label = "Starting Point"
+type = "select"
+  [[options.values]]
+  id = "existing-oltp"
+  label = "Existing Postgres/MySQL"
+  
+  [[options.values]]
+  id = "scratch"
+  label = "From Scratch"
+
+[[options]]
+id = "lang"
+label = "Language"
+type = "select"
+  [[options.values]]
+  id = "ts"
+  label = "TypeScript"
+  
+  [[options.values]]
+  id = "python"
+  label = "Python"
+
+# Flow Definitions
+# Keys match the 'starting-point' values (primary branching logic)
+[flows.existing-oltp]
+stepsDir = "existing-oltp-db"
+title = "Connect Existing DB"
+
+[flows.scratch]
+stepsDir = "scratch"
+title = "Build from Scratch"
+
