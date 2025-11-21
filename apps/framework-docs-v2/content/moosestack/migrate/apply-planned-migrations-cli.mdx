@@ -1,0 +1,70 @@
+---
+title: Serverless (moose migrate)
+description: Reference documentation for the manual migration CLI command used in serverless deployments.
+order: 7
+category: olap
+---
+
+import { Callout } from "@/components/mdx";
+
+# Serverless (moose migrate)
+
+The **Serverless** deployment model relies on the `moose migrate` CLI command to execute planned schema changes. This gives you explicit control over when migrations run, which is essential for architectures where Moose is integrated as a library rather than a standalone server.
+
+## Overview
+
+In serverless or library-based deployments, Moose does not control the application runtime. Therefore, migrations must be triggered externally, typically as a step in a CI/CD pipeline or a manual administrative action.
+
+| Feature | Description |
+| :--- | :--- |
+| **Manual Control** | Migrations run only when you explicitly execute the command. |
+| **CI/CD Integration** | Designed to run as a discrete step in deployment pipelines (e.g., GitHub Actions). |
+| **Drift Protection** | Validates `remote_state.json` against the target database before execution. |
+| **Direct Connection** | Connects directly to ClickHouse using a connection string. |
+
+## Command Reference
+
+```bash
+moose migrate --clickhouse-url <CONNECTION_STRING>
+```
+
+### Options
+
+| Option | Description | Required |
+| :--- | :--- | :--- |
+| `--clickhouse-url` | The full connection string to the target ClickHouse database (e.g., `clickhouse://user:pass@host:9440/db`). | Yes |
+
+## Execution Lifecycle
+
+When `moose migrate` is executed:
+
+1.  **Load Plan:** Reads `migrations/plan.yaml` from the current directory.
+2.  **Check Database Drift:** Connects to the provided ClickHouse URL and compares the current schema against `remote_state.json`.
+3.  **Abort on Drift:** If the database state does not match the snapshot, the process exits with an error code.
+4.  **Execute Migration:** Applies the operations defined in `plan.yaml` sequentially.
+5.  **Report Success:** Exits with code 0 if all operations succeed.
+
+## Failure Modes
+
+| Condition | Outcome | Resolution |
+| :--- | :--- | :--- |
+| **Drift Detected** | Command fails (exit code 1). | Regenerate the plan against the current production DB and retry. |
+| **Connection Error** | Command fails (exit code 1). | Check network connectivity and credentials in the connection string. |
+| **SQL Error** | Command fails (exit code 1). | Fix the problematic operation in `plan.yaml` or the database state and retry. |
+
+## CI/CD Example
+
+This command is typically used in a deployment pipeline before updating the application code.
+
+```yaml
+# Example GitHub Actions step
+- name: Apply Migrations
+  run: moose migrate --clickhouse-url "$CLICKHOUSE_URL"
+        env:
+    CLICKHOUSE_URL: ${{ secrets.CLICKHOUSE_URL }}
+```
+
+## See Also
+
+- [Planned Migrations](/moosestack/migrate/planned-migrations) - Generating the plan files.
+- [Server Runtime](/moosestack/migrate/apply-planned-migrations-service) - The automatic alternative for full server deployments.
