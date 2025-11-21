@@ -426,6 +426,7 @@ def main():
                     # Process each partition's messages
                     for partition_messages in messages.values():
                         for message in partition_messages:
+                            log(f"Message partition={message.partition} offset={message.offset}")
                             if not running.is_set():
                                 return
 
