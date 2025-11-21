@@ -562,6 +562,7 @@ impl PartialInfrastructureMap {
         default_database: &str,
     ) -> Result<InfrastructureMap, DmV2LoadingError> {
         let tables = self.convert_tables(default_database)?;
+        let sql_resources = self.convert_sql_resources(default_database);
         let topics = self.convert_topics();
         let api_endpoints = self.convert_api_endpoints(main_file, &topics);
         let topic_to_table_sync_processes =
@@ -581,7 +582,7 @@ impl PartialInfrastructureMap {
             api_endpoints,
             tables,
             views: self.views,
-            sql_resources: self.sql_resources,
+            sql_resources,
             topic_to_table_sync_processes,
             topic_to_topic_sync_processes: self.topic_to_topic_sync_processes,
             function_processes,
@@ -732,6 +733,32 @@ impl PartialInfrastructureMap {
                     cluster_name: partial_table.cluster.clone(),
                 };
                 Ok((table.id(default_database), table))
+            })
+            .collect()
+    }
+
+    /// Converts SQL resources from user code into a HashMap keyed by resource ID.
+    ///
+    /// This method re-keys the SQL resources HashMap to use `resource.id(default_database)`
+    /// instead of just the resource name. This ensures consistency with how:
+    /// - Remote state keys SQL resources (uses database-prefixed IDs)
+    /// - Tables are keyed (uses database-prefixed IDs)
+    ///
+    /// Without this re-keying, the diff engine would see resources with the same name but
+    /// different keys (e.g., "MyView" vs "local_MyView") and incorrectly think they are
+    /// different resources, causing unnecessary drop+recreate operations.
+    ///
+    /// # Arguments
+    /// * `default_database` - The default database name to use for ID generation
+    ///
+    /// # Returns
+    /// A HashMap with keys of format `{database}_{name}` matching the resource ID format
+    fn convert_sql_resources(&self, default_database: &str) -> HashMap<String, SqlResource> {
+        self.sql_resources
+            .values()
+            .map(|resource| {
+                // Re-key using resource.id(default_database) to match remote state and table behavior
+                (resource.id(default_database), resource.clone())
             })
             .collect()
     }
@@ -1252,5 +1279,108 @@ impl PartialInfrastructureMap {
                 (partial_webapp.name.clone(), webapp)
             })
             .collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::framework::core::infrastructure::sql_resource::SqlResource;
+
+    #[test]
+    fn test_convert_sql_resources_rekeys_with_database_prefix() {
+        // Create a partial infrastructure map with SQL resources keyed by name only
+        let mut sql_resources_map = HashMap::new();
+        sql_resources_map.insert(
+            "MyView".to_string(),
+            SqlResource {
+                name: "MyView".to_string(),
+                database: None,
+                setup: vec!["CREATE VIEW MyView AS SELECT * FROM table1".to_string()],
+                teardown: vec!["DROP VIEW IF EXISTS MyView".to_string()],
+                pulls_data_from: vec![],
+                pushes_data_to: vec![],
+            },
+        );
+        sql_resources_map.insert(
+            "MyMV".to_string(),
+            SqlResource {
+                name: "MyMV".to_string(),
+                database: None,
+                setup: vec![
+                    "CREATE MATERIALIZED VIEW MyMV TO target AS SELECT * FROM source".to_string(),
+                ],
+                teardown: vec!["DROP VIEW IF EXISTS MyMV".to_string()],
+                pulls_data_from: vec![],
+                pushes_data_to: vec![],
+            },
+        );
+
+        let partial_map = PartialInfrastructureMap {
+            topics: HashMap::new(),
+            ingest_apis: HashMap::new(),
+            apis: HashMap::new(),
+            tables: HashMap::new(),
+            views: HashMap::new(),
+            sql_resources: sql_resources_map,
+            topic_to_table_sync_processes: HashMap::new(),
+            topic_to_topic_sync_processes: HashMap::new(),
+            function_processes: HashMap::new(),
+            block_db_processes: None,
+            consumption_api_web_server: None,
+            workflows: HashMap::new(),
+            web_apps: HashMap::new(),
+        };
+
+        // Convert SQL resources with default database "test"
+        let converted = partial_map.convert_sql_resources("test");
+
+        // Verify the keys are now prefixed with database name
+        assert!(converted.contains_key("test_MyView"));
+        assert!(converted.contains_key("test_MyMV"));
+        assert!(!converted.contains_key("MyView"));
+        assert!(!converted.contains_key("MyMV"));
+
+        // Verify the resources themselves are unchanged
+        assert_eq!(converted.get("test_MyView").unwrap().name, "MyView");
+        assert_eq!(converted.get("test_MyMV").unwrap().name, "MyMV");
+    }
+
+    #[test]
+    fn test_convert_sql_resources_with_explicit_database() {
+        let mut sql_resources_map = HashMap::new();
+        sql_resources_map.insert(
+            "MyView".to_string(),
+            SqlResource {
+                name: "MyView".to_string(),
+                database: Some("custom".to_string()),
+                setup: vec!["CREATE VIEW MyView AS SELECT * FROM table1".to_string()],
+                teardown: vec!["DROP VIEW IF EXISTS MyView".to_string()],
+                pulls_data_from: vec![],
+                pushes_data_to: vec![],
+            },
+        );
+
+        let partial_map = PartialInfrastructureMap {
+            topics: HashMap::new(),
+            ingest_apis: HashMap::new(),
+            apis: HashMap::new(),
+            tables: HashMap::new(),
+            views: HashMap::new(),
+            sql_resources: sql_resources_map,
+            topic_to_table_sync_processes: HashMap::new(),
+            topic_to_topic_sync_processes: HashMap::new(),
+            function_processes: HashMap::new(),
+            block_db_processes: None,
+            consumption_api_web_server: None,
+            workflows: HashMap::new(),
+            web_apps: HashMap::new(),
+        };
+
+        let converted = partial_map.convert_sql_resources("default");
+
+        // Should use the explicit database from the resource, not the default
+        assert!(converted.contains_key("custom_MyView"));
+        assert!(!converted.contains_key("default_MyView"));
     }
 }
