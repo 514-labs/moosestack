@@ -63,7 +63,7 @@ def run(client: MooseClient, params: QueryParams):
     FROM {{table}}
     WHERE {BarAggregated.day_of_month:col} >= {{start_day}} 
     AND {BarAggregated.day_of_month:col} <= {{end_day}} 
-    ORDER BY {BarAggregated[params.order_by]:col} DESC
+    ORDER BY {{order_by}} DESC
     LIMIT {{limit}}
     """
 
@@ -71,6 +71,7 @@ def run(client: MooseClient, params: QueryParams):
         query,
         {
             "table": barAggregatedMV.target_table,
+            "order_by": BarAggregated.cols[params.order_by],
             "start_day": params.start_day,
             "end_day": params.end_day,
             "limit": params.limit,
