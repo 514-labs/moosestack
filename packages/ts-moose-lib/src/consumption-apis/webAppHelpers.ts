@@ -104,6 +104,64 @@ function getValidApiKeys(): string[] | false {
   return keys;
 }
 
+/**
+ * Express middleware for API key authentication.
+ *
+ * Validates API key from Authorization header against configured keys.
+ * Returns 401 Unauthorized if:
+ * - Authorization header is missing
+ * - Authorization header format is invalid
+ * - API key doesn't match any valid keys
+ *
+ * If MOOSE_WEB_APP_API_KEYS is not configured, all requests pass through.
+ * This makes auth opt-in via environment variable.
+ */
+export function expressApiKeyAuthMiddleware() {
+  return (req: any, res: any, next: any) => {
+    const validApiKeys = getValidApiKeys();
+
+    // If no API keys configured, allow all requests through (opt-in auth)
+    if (!validApiKeys) {
+      return next();
+    }
+
+    const authHeader = req.headers.authorization;
+
+    if (!authHeader) {
+      console.log("[API Auth] Rejected: Missing Authorization header");
+      return res.status(401).json({
+        error: "Unauthorized",
+      });
+    }
+
+    // Extract token from "Bearer <token>" format
+    const parts = authHeader.split(" ");
+    if (parts.length !== 2 || parts[0] !== "Bearer") {
+      console.log("[API Auth] Rejected: Invalid Authorization header format");
+      return res.status(401).json({
+        error: "Unauthorized",
+      });
+    }
+
+    const providedToken = parts[1];
+
+    // Validate against all configured keys using PBKDF2 validation
+    const isValid = validApiKeys.some((validKey) =>
+      validateAuthToken(providedToken, validKey),
+    );
+
+    if (isValid) {
+      console.log("[API Auth] Authenticated: Valid API key");
+      return next();
+    } else {
+      console.log("[API Auth] Rejected: Invalid API key");
+      return res.status(401).json({
+        error: "Unauthorized",
+      });
+    }
+  };
+}
+
 export function getMooseUtils(
   req: http.IncomingMessage | any,
 ): ApiUtil | undefined {
@@ -123,5 +181,5 @@ export interface ExpressRequestWithMoose {
   moose?: ApiUtil;
 }
 
-// Export for testing
+// Export for testing (internal functions)
 export { constantTimeCompare, validateAuthToken, getValidApiKeys };
