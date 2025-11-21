@@ -65,7 +65,7 @@ importers:
     devDependencies:
       '@clickhouse/client':
         specifier: latest
-        version: 1.13.0
+        version: 1.14.0
       '@iarna/toml':
         specifier: ^3.0.0
         version: 3.0.0
@@ -397,6 +397,9 @@ importers:
       tailwindcss-animate:
         specifier: ^1.0.7
         version: 1.0.7(tailwindcss@3.4.18(tsx@4.20.6)(yaml@2.8.1))
+      unist-util-visit:
+        specifier: ^5.0.0
+        version: 5.0.0
       zod:
         specifier: ^3.25.76
         version: 3.25.76
@@ -1351,8 +1354,8 @@ packages:
   '@chevrotain/utils@11.0.3':
     resolution: {integrity: sha512-YslZMgtJUyuMbZ+aKvfF3x1f5liK4mWNxghFRv7jqRR9C3R3fAOGTTKvxXDa2Y1s9zSbcpuO0cAxDYsc9SrXoQ==}
 
-  '@clickhouse/client-common@1.13.0':
-    resolution: {integrity: sha512-QlGUMd3EaKkIRLCv0WW8Rw9cOlqhwQPT+ucNWY8eC4UALsMhJLpa0H7Cd7MYc9CEtTv/xlr3IcYw5Tdho4Hr2g==}
+  '@clickhouse/client-common@1.14.0':
+    resolution: {integrity: sha512-CyUcv2iCkZ1A++vmOSufYRpHR3aAWVfbrWed7ATzf0yyx/BW/2SEqlL07vBpSRa3BIkQe/DSOHVv8JkWZpUOwQ==}
 
   '@clickhouse/client-common@1.5.0':
     resolution: {integrity: sha512-U3vDp+PDnNVEv6kia+Mq5ygnlMZzsYU+3TX+0da3XvL926jzYLMBlIvFUxe2+/5k47ySvnINRC/2QxVK7PC2/A==}
@@ -1363,8 +1366,8 @@ packages:
   '@clickhouse/client-web@1.5.0':
     resolution: {integrity: sha512-21+c2UJ4cx9SPiIWQThCLULb8h/zng0pNrtTwbbnaoCqMbasyRCyRTHs3wRr7fqRUcZ3p9krIPuN0gnJw3GJ6Q==}
 
-  '@clickhouse/client@1.13.0':
-    resolution: {integrity: sha512-uK+zqPaJnAoq3QIOvUNbHtbWUhyg2A/aSbdJtrY2+kawp4SMBLcfIbB9ucRv5Yht1CAa3b24CiUlypkmgarukg==}
+  '@clickhouse/client@1.14.0':
+    resolution: {integrity: sha512-co2spjR7wZoZ3Ck0H/jv76bpiuO3oJHtOmq9/gxFiod2DcT9NFg01u/hXcG8MJFnEJuMB6e3vGqS6IOnLwHqRw==}
     engines: {node: '>=16'}
 
   '@clickhouse/client@1.8.1':
@@ -10319,7 +10322,7 @@ snapshots:
 
   '@chevrotain/utils@11.0.3': {}
 
-  '@clickhouse/client-common@1.13.0': {}
+  '@clickhouse/client-common@1.14.0': {}
 
   '@clickhouse/client-common@1.5.0': {}
 
@@ -10329,9 +10332,9 @@ snapshots:
     dependencies:
       '@clickhouse/client-common': 1.5.0
 
-  '@clickhouse/client@1.13.0':
+  '@clickhouse/client@1.14.0':
     dependencies:
-      '@clickhouse/client-common': 1.13.0
+      '@clickhouse/client-common': 1.14.0
 
   '@clickhouse/client@1.8.1':
     dependencies:
