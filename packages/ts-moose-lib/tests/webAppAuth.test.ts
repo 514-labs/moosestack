@@ -115,9 +115,7 @@ describe("Express API Key Authentication", function () {
     it("should return single key when one key is provided", () => {
       process.env.MOOSE_WEB_APP_API_KEYS = "hash123";
       const result = getValidApiKeys();
-      expect(result).to.be.an("array");
-      expect(result).to.have.lengthOf(1);
-      expect(result![0]).to.equal("hash123");
+      expect(result).to.deep.equal(["hash123"]);
     });
 
     it("should return multiple keys when comma-separated", () => {
@@ -150,8 +148,7 @@ describe("Express API Key Authentication", function () {
       const longKey = "a".repeat(32);
       process.env.MOOSE_WEB_APP_API_KEYS = longKey;
       const result = getValidApiKeys();
-      expect(result).to.be.an("array");
-      expect(result).to.have.lengthOf(1);
+      expect(result).to.deep.equal([longKey]);
     });
 
     it("should accept keys shorter than 32 chars (with warning)", () => {
@@ -159,9 +156,7 @@ describe("Express API Key Authentication", function () {
       const shortKey = "short";
       process.env.MOOSE_WEB_APP_API_KEYS = shortKey;
       const result = getValidApiKeys();
-      expect(result).to.be.an("array");
-      expect(result).to.have.lengthOf(1);
-      expect(result![0]).to.equal(shortKey);
+      expect(result).to.deep.equal([shortKey]);
     });
   });
 });

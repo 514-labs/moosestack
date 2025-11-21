@@ -62,6 +62,48 @@ function validateAuthToken(token: string, expectedHash: string): boolean {
   return constantTimeCompare(computedHash, expectedHash);
 }
 
+/**
+ * Validates API keys configuration at runtime.
+ * Checks that MOOSE_WEB_APP_API_KEYS is set and warns about weak keys.
+ *
+ * @returns Array of valid API keys or false if not configured
+ */
+function getValidApiKeys(): string[] | false {
+  const apiKeysString = process.env.MOOSE_WEB_APP_API_KEYS;
+
+  if (!apiKeysString) {
+    console.warn(
+      `[API Auth] Warning: API endpoints will be unavailable. MOOSE_WEB_APP_API_KEYS must be set in the env.`,
+    );
+    return false;
+  }
+
+  const keys = apiKeysString
+    .split(",")
+    .map((k) => k.trim())
+    .filter((k) => k.length > 0);
+
+  if (keys.length === 0) {
+    console.warn(
+      `[API Auth] Warning: API endpoints will be unavailable. MOOSE_WEB_APP_API_KEYS is configured but contains no valid keys.`,
+    );
+    return false;
+  }
+
+  // Validate key strength
+  const MIN_KEY_LENGTH = 32;
+  const weakKeys = keys.filter((k) => k.length < MIN_KEY_LENGTH);
+
+  if (weakKeys.length > 0) {
+    console.warn(
+      `[API Auth] Warning: ${weakKeys.length} API key(s) are shorter than ${MIN_KEY_LENGTH} characters. ` +
+        `Recommend using cryptographically secure keys of at least ${MIN_KEY_LENGTH} characters.`,
+    );
+  }
+
+  return keys;
+}
+
 export function getMooseUtils(
   req: http.IncomingMessage | any,
 ): ApiUtil | undefined {
@@ -82,4 +124,4 @@ export interface ExpressRequestWithMoose {
 }
 
 // Export for testing
-export { constantTimeCompare, validateAuthToken };
+export { constantTimeCompare, validateAuthToken, getValidApiKeys };
