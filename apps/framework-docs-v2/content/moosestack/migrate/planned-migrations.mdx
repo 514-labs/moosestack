@@ -23,14 +23,10 @@ moose generate migration --url <ADMIN_API_URL> --token <ADMIN_TOKEN> --save
 moose generate migration --clickhouse-url <CLICKHOUSE_CONNECTION_STRING> --save
 ```
 
-## Overview
-
-Planned migrations separate **generation** from **execution**, providing a safe, reviewable workflow for production.
-
 **Key Benefits:**
 *   **Deterministic:** The plan is a static file (`plan.yaml`) that won't change at runtime.
 *   **Drift Detection:** Snapshots (`remote_state.json`) ensure the DB hasn't changed since the plan was created.
-*   **Reviewable:** You can audit every operation (e.g., `DropColumn`, `AddTable`) before it runs.
+*   **Reviewable:** You can audit every operation (e.g., `DropColumn`, `AddTable`) before it runs, and you can edit the plan to override Moose's assumptions.
 *   **Versioned:** Commit plans to Git to create a permanent audit trail.
 
 ## Workflow
@@ -43,7 +39,7 @@ The lifecycle consists of four distinct stages:
     moose generate migration --save ...
     ```
 3.  **Review** — Inspect the generated `migrations/plan.yaml` file and commit it to Git.
-4.  **Application** — Execute the plan during deployment.
+4.  **Application** — Execute the plan during deployment (if using Moose Runtime), manually via the CLI or your own CI/CD pipeline (if using Serverless).
     ```bash
     moose migrate ...
     
@@ -79,6 +75,10 @@ The `moose generate migration` command accepts different arguments depending on 
 
 Connect to the **Admin API** of the running service.
 
+```bash
+moose generate migration --url <ADMIN_API_URL> --token <ADMIN_TOKEN> --save
+```
+
 | Option | Description |
 | :--- | :--- |
 | `--url` | The endpoint of your production Moose Admin API. |
@@ -88,6 +88,10 @@ Connect to the **Admin API** of the running service.
 ### via Serverless (`moose migrate`)
 
 Connect directly to the **ClickHouse database**.
+
+```bash
+moose generate migration --clickhouse-url <CLICKHOUSE_CONNECTION_STRING> --save
+```
 
 | Option | Description |
 | :--- | :--- |
