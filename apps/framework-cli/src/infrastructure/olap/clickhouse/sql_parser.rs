@@ -25,14 +25,6 @@ pub struct MaterializedViewStatement {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct ViewStatement {
-    pub view_name: String,
-    pub select_statement: String,
-    pub source_tables: Vec<TableReference>,
-    pub if_not_exists: bool,
-}
-
-#[derive(Debug, Clone, PartialEq)]
 pub struct InsertSelectStatement {
     pub target_database: Option<String>,
     pub target_table: String,
@@ -79,8 +71,6 @@ pub enum SqlParseError {
     ParseError(#[from] sqlparser::parser::ParserError),
     #[error("Not a materialized view statement")]
     NotMaterializedView,
-    #[error("Not a view statement")]
-    NotView,
     #[error("Not an insert select statement")]
     NotInsertSelect,
     #[error("Missing required field: {0}")]
@@ -619,48 +609,6 @@ pub fn parse_create_materialized_view(
             })
         }
         _ => Err(SqlParseError::NotMaterializedView),
-    }
-}
-
-pub fn parse_create_view(sql: &str) -> Result<ViewStatement, SqlParseError> {
-    let dialect = ClickHouseDialect {};
-    let ast = Parser::parse_sql(&dialect, sql)?;
-
-    if ast.len() != 1 {
-        return Err(SqlParseError::NotView);
-    }
-
-    match &ast[0] {
-        Statement::CreateView {
-            name,
-            materialized,
-            query,
-            if_not_exists,
-            ..
-        } => {
-            // Must be a regular view (not materialized)
-            if *materialized {
-                return Err(SqlParseError::NotView);
-            }
-
-            // Extract view name (just the view name, not database.view)
-            let view_name_str = object_name_to_string(name);
-            let (_view_database, view_name) = split_qualified_name(&view_name_str);
-
-            // Format the SELECT statement
-            let select_statement = format!("{}", query);
-
-            // Extract source tables from the query
-            let source_tables = extract_source_tables_from_query_ast(query)?;
-
-            Ok(ViewStatement {
-                view_name,
-                select_statement,
-                source_tables,
-                if_not_exists: *if_not_exists,
-            })
-        }
-        _ => Err(SqlParseError::NotView),
     }
 }
 
