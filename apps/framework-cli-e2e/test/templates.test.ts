@@ -1462,19 +1462,22 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
             `Testing DateTime precision (Python) with timestamp: ${timestampWithMicroseconds}`,
           );
 
+          const payload = {
+            id: testId,
+            created_at: now.toISOString(),
+            timestamp_ms: timestampWithMicroseconds,
+            timestamp_us: timestampWithMicroseconds,
+            timestamp_ns: timestampWithNanoseconds,
+          };
+          console.log("Sending payload:", JSON.stringify(payload, null, 2));
+
           // Ingest to DateTimePrecisionInput (which has a transform to Output)
           const response = await fetch(
             `${SERVER_CONFIG.url}/ingest/datetimeprecisioninput`,
             {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                id: testId,
-                created_at: now.toISOString(),
-                timestamp_ms: timestampWithMicroseconds,
-                timestamp_us: timestampWithMicroseconds,
-                timestamp_ns: timestampWithNanoseconds,
-              }),
+              body: JSON.stringify(payload),
             },
           );
 
@@ -1519,7 +1522,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
           }
 
           const row = data[0];
-          console.log("Retrieved row (Python):", row);
+          console.log("Retrieved row (Python):", JSON.stringify(row, null, 2));
 
           // Verify that datetime with clickhouse_datetime64(6) preserves microseconds
           if (!row.timestamp_us.includes(".123456")) {
@@ -1529,9 +1532,24 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
           }
 
           // Note: Python datetime truncates nanoseconds to microseconds, so we expect .123456 not .123456789
-          if (!row.timestamp_ns.includes(".123456")) {
+          // Log if nanoseconds were truncated (expected behavior)
+          if (row.timestamp_ns.includes(".123456789")) {
+            console.log(
+              "✅ Nanoseconds preserved in ClickHouse:",
+              row.timestamp_ns,
+            );
+          } else if (row.timestamp_ns.includes(".123456")) {
+            console.log(
+              "⚠️  Nanoseconds truncated to microseconds (expected Python behavior):",
+              row.timestamp_ns,
+            );
+          } else {
+            console.log(
+              "❌ No sub-second precision found in timestamp_ns:",
+              row.timestamp_ns,
+            );
             throw new Error(
-              `Expected timestamp_ns to have microseconds (.123456), got: ${row.timestamp_ns}`,
+              `Expected timestamp_ns to have at least microseconds (.123456), got: ${row.timestamp_ns}`,
             );
           }
 

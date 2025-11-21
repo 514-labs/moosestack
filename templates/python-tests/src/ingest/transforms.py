@@ -111,11 +111,11 @@ def datetime_precision_transform(input_data: DateTimePrecisionTestData) -> DateT
     so all datetime fields should be datetime objects with microseconds preserved.
     """
 
-    print("DateTime precision transform (Python) - input types:")
-    print(f"  created_at: {type(input_data.created_at)} = {input_data.created_at}")
-    print(f"  timestamp_ms: {type(input_data.timestamp_ms)} = {input_data.timestamp_ms}")
-    print(f"  timestamp_us: {type(input_data.timestamp_us)} = {input_data.timestamp_us}")
-    print(f"  timestamp_ns: {type(input_data.timestamp_ns)} = {input_data.timestamp_ns}")
+    print("DateTime precision transform (Python) - input types and values:")
+    print(f"  created_at: {type(input_data.created_at)} = {input_data.created_at} (µs: {input_data.created_at.microsecond})")
+    print(f"  timestamp_ms: {type(input_data.timestamp_ms)} = {input_data.timestamp_ms} (µs: {input_data.timestamp_ms.microsecond})")
+    print(f"  timestamp_us: {type(input_data.timestamp_us)} = {input_data.timestamp_us} (µs: {input_data.timestamp_us.microsecond})")
+    print(f"  timestamp_ns: {type(input_data.timestamp_ns)} = {input_data.timestamp_ns} (µs: {input_data.timestamp_ns.microsecond})")
 
     # Verify all are datetime objects
     if not isinstance(input_data.created_at, datetime):
@@ -130,6 +130,13 @@ def datetime_precision_transform(input_data: DateTimePrecisionTestData) -> DateT
     # Verify microseconds are present
     if input_data.timestamp_us.microsecond == 0:
         print(f"WARNING: timestamp_us has no microseconds: {input_data.timestamp_us}")
+    else:
+        print(f"✓ timestamp_us has microseconds: {input_data.timestamp_us.microsecond}")
+    
+    if input_data.timestamp_ns.microsecond == 0:
+        print(f"WARNING: timestamp_ns has no microseconds: {input_data.timestamp_ns}")
+    else:
+        print(f"✓ timestamp_ns has microseconds: {input_data.timestamp_ns.microsecond}")
 
     # Pass through unchanged
     return input_data
