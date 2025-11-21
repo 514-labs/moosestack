@@ -65,6 +65,8 @@ export {
   // Added friendly aliases and numeric helpers
   DateTime,
   DateTime64,
+  DateTimeString,
+  DateTime64String,
   FixedString,
   Float32,
   Float64,

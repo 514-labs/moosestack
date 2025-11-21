@@ -46,6 +46,15 @@ export type LowCardinality = {
 export type DateTime = Date;
 export type DateTime64<P extends number> = Date & ClickHousePrecision<P>;
 
+export type DateTimeString = string & tags.Format<"date-time">;
+/**
+ * JS Date objects cannot hold microsecond precision.
+ * Use string as the runtime type to avoid losing information.
+ */
+export type DateTime64String<P extends number> = string &
+  tags.Format<"date-time"> &
+  ClickHousePrecision<P>;
+
 // Numeric convenience tags mirroring ClickHouse integer and float families
 export type Float32 = number & ClickHouseFloat<"float32">;
 export type Float64 = number & ClickHouseFloat<"float64">;
