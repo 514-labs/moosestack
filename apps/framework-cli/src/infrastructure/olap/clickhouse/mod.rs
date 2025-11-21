@@ -2167,6 +2167,7 @@ fn reconstruct_sql_resource_from_mv(
 
     Ok(SqlResource {
         name,
+        database: Some(_database),
         setup: vec![setup],
         teardown: vec![teardown],
         pulls_data_from,
@@ -2238,6 +2239,7 @@ fn reconstruct_sql_resource_from_view(
 
     Ok(SqlResource {
         name,
+        database: Some(_database),
         setup: vec![setup],
         teardown: vec![teardown],
         pulls_data_from,

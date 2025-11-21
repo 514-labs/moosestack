@@ -4550,6 +4550,7 @@ mod diff_sql_resources_tests {
     fn create_sql_resource(name: &str, setup: Vec<&str>, teardown: Vec<&str>) -> SqlResource {
         SqlResource {
             name: name.to_string(),
+            database: None,
             setup: setup.iter().map(|s| s.to_string()).collect(),
             teardown: teardown.iter().map(|s| s.to_string()).collect(),
             pulls_data_from: vec![],
@@ -4785,6 +4786,7 @@ mod diff_sql_resources_tests {
 
         let mv_before = SqlResource {
             name: "events_summary_mv".to_string(),
+            database: None,
             setup: vec!["CREATE MATERIALIZED VIEW events_summary_mv TO events_summary_table AS SELECT id, name FROM events".to_string()],
             teardown: vec!["DROP VIEW events_summary_mv".to_string()],
             pulls_data_from: vec![InfrastructureSignature::Table {
@@ -4797,6 +4799,7 @@ mod diff_sql_resources_tests {
 
         let mv_after = SqlResource {
             name: "events_summary_mv".to_string(),
+            database: None,
             setup: vec!["CREATE MATERIALIZED VIEW events_summary_mv TO events_summary_table AS SELECT id, name, timestamp FROM events".to_string()],
             teardown: vec!["DROP VIEW events_summary_mv".to_string()],
             pulls_data_from: vec![InfrastructureSignature::Table {
