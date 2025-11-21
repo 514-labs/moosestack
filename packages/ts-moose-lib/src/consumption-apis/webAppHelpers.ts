@@ -105,20 +105,50 @@ function getValidApiKeys(): string[] | false {
 }
 
 /**
- * Express middleware for API key authentication.
+ * Express middleware for API key authentication using PBKDF2 HMAC SHA256.
  *
- * Validates API key from Authorization header against configured keys.
- * Returns 401 Unauthorized if:
- * - MOOSE_WEB_APP_API_KEYS is not configured
- * - Authorization header is missing
- * - Authorization header format is invalid
- * - API key doesn't match any valid keys
+ * Validates API keys from `Authorization: Bearer <token>` headers against
+ * configured hashes in `MOOSE_WEB_APP_API_KEYS` environment variable.
  *
- * IMPORTANT: Adding this middleware requires MOOSE_WEB_APP_API_KEYS to be set.
- * If you add this middleware but don't configure keys, all requests will be rejected.
+ * @returns Express middleware function (req, res, next) => void
+ *
+ * @example
+ * ```typescript
+ * import express from "express";
+ * import { expressApiKeyAuthMiddleware } from "@514labs/moose-lib";
+ *
+ * const app = express();
+ *
+ * // Protect all routes
+ * app.use(expressApiKeyAuthMiddleware());
+ *
+ * // Or protect specific routes
+ * app.get("/api/protected", expressApiKeyAuthMiddleware(), (req, res) => {
+ *   res.json({ message: "Success" });
+ * });
+ * ```
+ *
+ * **Environment Configuration:**
+ * - `MOOSE_WEB_APP_API_KEYS`: Comma-separated PBKDF2 hashes (required)
+ * - Generate keys using: `moose generate hash-token`
+ *
+ * **Security Notes:**
+ * - Uses PBKDF2 with SHA256 (1000 iterations, 20 byte key)
+ * - Constant-time comparison prevents timing attacks
+ * - Supports multiple keys for rotation
+ * - Fails secure: rejects all requests if keys not configured
+ *
+ * **Returns 401 Unauthorized if:**
+ * - `MOOSE_WEB_APP_API_KEYS` environment variable is not set
+ * - Authorization header is missing or malformed
+ * - API key doesn't match any configured hash
  */
-export function expressApiKeyAuthMiddleware() {
-  return (req: any, res: any, next: any) => {
+export function expressApiKeyAuthMiddleware(): (
+  req: any,
+  res: any,
+  next: any,
+) => void {
+  return (req: any, res: any, next: any): void => {
     const validApiKeys = getValidApiKeys();
 
     // If no API keys configured, reject all requests (fail secure)
