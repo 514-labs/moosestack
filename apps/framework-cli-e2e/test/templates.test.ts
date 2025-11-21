@@ -204,12 +204,24 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
         const { stdout } = await execAsync(
           `cd "${TEST_PROJECT_DIR}" && "${CLI_PATH}" generate hash-token`,
         );
-        const tokenMatch = stdout.match(/Token: (.+)/);
-        const hashMatch = stdout.match(/ENV API Keys:\s+(\w+)/);
+        // Strip ANSI color codes for parsing
+        const cleanOutput = stdout.replace(/\x1b\[[0-9;]*m/g, "");
+
+        // Extract Bearer Token and ENV API Keys from output
+        const tokenMatch = cleanOutput.match(
+          /Bearer Token\s+([a-f0-9]+\.[a-f0-9]+)/,
+        );
+        const hashMatch = cleanOutput.match(/ENV API Keys\s+([a-f0-9]+)/);
+
         if (tokenMatch && hashMatch) {
           testApiKey = tokenMatch[1].trim();
           testApiKeyHash = hashMatch[1].trim();
           console.log("Generated API key for E2E testing");
+          console.log(`  Token: ${testApiKey.substring(0, 20)}...`);
+          console.log(`  Hash: ${testApiKeyHash.substring(0, 20)}...`);
+        } else {
+          console.warn("Failed to parse API key from CLI output:");
+          console.warn(cleanOutput);
         }
       }
 
