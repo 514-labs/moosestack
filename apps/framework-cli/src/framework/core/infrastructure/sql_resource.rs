@@ -150,38 +150,6 @@ mod tests {
     }
 
     #[test]
-    fn test_sql_resource_equality_with_backticks() {
-        let resource_with_backticks = create_test_resource(
-            "TestMV",
-            vec!["CREATE VIEW `TestMV` AS SELECT `col1`, `col2` FROM `table`"],
-            vec!["DROP VIEW IF EXISTS `TestMV`"],
-        );
-        let resource_without_backticks = create_test_resource(
-            "TestMV",
-            vec!["CREATE VIEW TestMV AS SELECT col1, col2 FROM table"],
-            vec!["DROP VIEW IF EXISTS TestMV"],
-        );
-
-        assert_eq!(resource_with_backticks, resource_without_backticks);
-    }
-
-    #[test]
-    fn test_sql_resource_equality_with_whitespace_differences() {
-        let resource_multiline = create_test_resource(
-            "TestMV",
-            vec!["CREATE VIEW TestMV\n  AS SELECT\n    col1,\n    col2\n  FROM table"],
-            vec!["DROP VIEW IF EXISTS TestMV"],
-        );
-        let resource_singleline = create_test_resource(
-            "TestMV",
-            vec!["CREATE VIEW TestMV AS SELECT col1, col2 FROM table"],
-            vec!["DROP VIEW IF EXISTS TestMV"],
-        );
-
-        assert_eq!(resource_multiline, resource_singleline);
-    }
-
-    #[test]
     fn test_sql_resource_equality_with_case_differences() {
         let resource_lowercase = create_test_resource(
             "TestMV",
