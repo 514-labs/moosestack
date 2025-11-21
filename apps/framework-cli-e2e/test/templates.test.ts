@@ -201,7 +201,9 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
       console.log("Starting dev server...");
       // Generate API key for E2E testing if this is the tests variant
       if (config.isTestsVariant && config.language === "typescript") {
-        const { stdout } = await execAsync(`"${CLI_PATH}" generate hash-token`);
+        const { stdout } = await execAsync(
+          `cd "${TEST_PROJECT_DIR}" && "${CLI_PATH}" generate hash-token`,
+        );
         const tokenMatch = stdout.match(/Token: (.+)/);
         const hashMatch = stdout.match(/ENV API Keys:\s+(\w+)/);
         if (tokenMatch && hashMatch) {
