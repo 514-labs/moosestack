@@ -53,6 +53,10 @@ def run(client: MooseClient, params: QueryParams):
 
     # NEW PATTERN: Use MooseModel for direct column access with autocomplete!
     # LSP provides autocomplete when typing BarAggregated.<field_name>
+
+    # For dynamic column selection, we need to use .cols and format it
+    order_by_col = BarAggregated.cols[params.order_by]
+
     query = f"""
     SELECT 
         {BarAggregated.day_of_month:col},
@@ -63,7 +67,7 @@ def run(client: MooseClient, params: QueryParams):
     FROM {{table}}
     WHERE {BarAggregated.day_of_month:col} >= {{start_day}} 
     AND {BarAggregated.day_of_month:col} <= {{end_day}} 
-    ORDER BY {{order_by}} DESC
+    ORDER BY {order_by_col:col} DESC
     LIMIT {{limit}}
     """
 
@@ -71,7 +75,6 @@ def run(client: MooseClient, params: QueryParams):
         query,
         {
             "table": barAggregatedMV.target_table,
-            "order_by": BarAggregated.cols[params.order_by],
             "start_day": params.start_day,
             "end_day": params.end_day,
             "limit": params.limit,
