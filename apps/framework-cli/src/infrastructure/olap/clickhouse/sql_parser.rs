@@ -531,88 +531,6 @@ impl<'a> VisitorMut for Normalizer<'a> {
     }
 }
 
-const SQL_KEYWORDS: &[&str] = &[
-    "CREATE",
-    "DROP",
-    "ALTER",
-    "MATERIALIZED",
-    "VIEW",
-    "INDEX",
-    "TABLE",
-    "IF",
-    "NOT",
-    "EXISTS",
-    "TO",
-    "AS",
-    "SELECT",
-    "FROM",
-    "WHERE",
-    "GROUP",
-    "BY",
-    "ORDER",
-    "HAVING",
-    "JOIN",
-    "LEFT",
-    "RIGHT",
-    "INNER",
-    "OUTER",
-    "ON",
-    "AND",
-    "OR",
-    "IN",
-    "LIKE",
-    "BETWEEN",
-    "IS",
-    "NULL",
-    "DISTINCT",
-    "COUNT",
-    "SUM",
-    "AVG",
-    "MAX",
-    "MIN",
-    "CASE",
-    "WHEN",
-    "THEN",
-    "ELSE",
-    "END",
-    "WITH",
-    "UNION",
-    "LIMIT",
-    "OFFSET",
-    "COALESCE",
-    "ABS",
-];
-
-/// Applies cosmetic cleanup to SQL strings for comparison.
-/// This includes collapsing whitespace, removing quotes from identifiers,
-/// and uppercasing common SQL keywords.
-/// This is used as a final step in normalization to ensure consistent diffs.
-fn apply_cosmetic_cleanup(sql: &str) -> String {
-    let mut result = sql.to_string();
-
-    // Collapse whitespace
-    result = regex::Regex::new(r"\s+")
-        .expect("Whitespace regex should compile")
-        .replace_all(&result, " ")
-        .to_string();
-
-    // Remove quotes (backticks or double quotes) around identifiers
-    result = regex::Regex::new(r#"["`]([a-zA-Z_][a-zA-Z0-9_]*)["`]"#)
-        .expect("Quote stripping regex should compile")
-        .replace_all(&result, "$1")
-        .to_string();
-
-    // Uppercase SQL keywords
-    for keyword in SQL_KEYWORDS {
-        let pattern = format!(r"(?i)\b{}\b", keyword);
-        if let Ok(re) = regex::Regex::new(&pattern) {
-            result = re.replace_all(&result, *keyword).to_string();
-        }
-    }
-
-    result.trim().to_string()
-}
-
 pub fn normalize_sql_for_comparison(sql: &str, default_database: &str) -> String {
     // 1. Parse with sqlparser (AST-based structural normalization)
     // This handles stripping default database prefixes (e.g., `local.Table` -> `Table`)
@@ -644,8 +562,7 @@ pub fn normalize_sql_for_comparison(sql: &str, default_database: &str) -> String
         }
     };
 
-    // 4. Apply final cosmetic cleanup (common to both paths)
-    apply_cosmetic_cleanup(&intermediate)
+    intermediate.trim().to_string()
 }
 
 pub fn parse_create_materialized_view(
