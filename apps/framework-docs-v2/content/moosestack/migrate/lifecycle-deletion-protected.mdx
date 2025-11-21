@@ -1,0 +1,70 @@
+---
+title: Deletion Protected Lifecycle
+description: Safe lifecycle mode that allows additive changes but prevents destructive operations like drops.
+order: 22
+category: migrate
+---
+
+import { LanguageTabs, LanguageTabContent } from "@/components/mdx";
+
+# Deletion Protected Lifecycle
+
+`LifeCycle.DELETION_PROTECTED` allows Moose to automatically add new database structures but prevents it from removing existing ones. This mode is perfect for production environments where you want to evolve your schema safely without risking data loss.
+
+## Behavior
+
+**What Moose will do:**
+- Add new columns, tables
+- Modify column types (if compatible)
+- Update non-destructive configurations
+
+**What Moose won't do:**
+- Drop columns or tables
+- Perform destructive schema changes
+
+## Examples
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript" label="TypeScript">
+
+```ts filename="DeletionProtectedExample.ts" copy
+import { OlapTable, LifeCycle, ClickHouseEngines } from "@514labs/moose-lib";
+
+interface ProductEvent {
+  id: string;
+  productId: string;
+  timestamp: Date;
+  action: string;
+}
+
+const productAnalytics = new OlapTable<ProductEvent>("product_analytics", {
+  orderByFields: ["timestamp", "productId"],
+  engine: ClickHouseEngines.ReplacingMergeTree,
+  lifeCycle: LifeCycle.DELETION_PROTECTED
+});
+```
+
+  </LanguageTabContent>
+  <LanguageTabContent value="python" label="Python">
+
+```py filename="DeletionProtectedExample.py" copy
+from moose_lib import OlapTable, OlapConfig, LifeCycle, ClickHouseEngines
+from pydantic import BaseModel
+from datetime import datetime
+
+class ProductEvent(BaseModel):
+    id: str
+    product_id: str
+    timestamp: datetime
+    action: str
+
+product_analytics = OlapTable[ProductEvent]("product_analytics", OlapConfig(
+    order_by_fields=["timestamp", "product_id"],
+    engine=ClickHouseEngines.ReplacingMergeTree,
+    life_cycle=LifeCycle.DELETION_PROTECTED
+))
+```
+
+  </LanguageTabContent>
+</LanguageTabs>
+
