@@ -359,6 +359,114 @@ app.get("/protected", async (req, res) => {
 
 See [Authentication documentation](/moose/apis/auth) for JWT configuration.
 
+## API Key Authentication
+
+Protect your Express endpoints with API key authentication using `expressApiKeyAuthMiddleware()`.
+
+### Setup
+
+**1. Generate API keys:**
+
+```bash
+moose generate hash-token
+```
+
+This outputs:
+- **ENV API Keys**: Hashed key for `MOOSE_WEB_APP_API_KEYS` (store on server)
+- **Bearer Token**: Plain-text token for clients (use in `Authorization` headers)
+
+**2. Configure environment variable:**
+
+```bash
+# Set in your environment or .env file
+export MOOSE_WEB_APP_API_KEYS="a1b2c3..."  # Use the hash from step 1
+```
+
+For multiple keys (key rotation):
+```bash
+export MOOSE_WEB_APP_API_KEYS="hash1,hash2,hash3"
+```
+
+### Usage
+
+Apply the middleware to protect routes:
+
+```ts filename="app/apis/protectedApi.ts" copy
+import express from "express";
+import {
+  WebApp,
+  expressMiddleware,
+  expressApiKeyAuthMiddleware,
+} from "@514labs/moose-lib";
+
+const app = express();
+
+app.use(express.json());
+app.use(expressMiddleware()); // Required: adds Moose utilities
+
+// Protect ALL routes in this app
+app.use(expressApiKeyAuthMiddleware());
+
+app.get("/protected/data", async (req, res) => {
+  const moose = getMooseUtils(req);
+  // This route requires valid API key
+  const data = await moose.client.query.execute(/* ... */);
+  res.json(data);
+});
+
+export const protectedApi = new WebApp("protected", app, {
+  mountPath: "/protected",
+});
+```
+
+**Protect specific routes only:**
+
+```ts
+import { expressApiKeyAuthMiddleware } from "@514labs/moose-lib";
+
+// Public route (no auth)
+app.get("/health", (req, res) => {
+  res.json({ status: "ok" });
+});
+
+// Protected route (requires API key)
+app.get("/data", expressApiKeyAuthMiddleware(), async (req, res) => {
+  // Only accessible with valid API key
+  res.json({ data: "sensitive" });
+});
+```
+
+### Making Authenticated Requests
+
+Clients must include the Bearer token in the `Authorization` header:
+
+```bash
+curl -H "Authorization: Bearer token.salt" \
+  http://localhost:4000/protected/data
+```
+
+```ts
+// JavaScript/TypeScript client
+const response = await fetch("http://localhost:4000/protected/data", {
+  headers: {
+    "Authorization": `Bearer ${bearerToken}`,
+  },
+});
+```
+
+### Security Notes
+
+- **Uses PBKDF2 HMAC SHA256** (1000 iterations, 20-byte key) matching the Rust CLI implementation
+- **Constant-time comparison** prevents timing attacks
+- **Fail-secure design**: If `MOOSE_WEB_APP_API_KEYS` is not set, all requests are rejected (401)
+- **Key rotation supported**: Comma-separate multiple hashes for zero-downtime rotation
+- **Minimum key length**: 32 characters recommended (warning issued for shorter keys)
+
+### Response Codes
+
+- **200 OK**: Valid API key provided
+- **401 Unauthorized**: Missing, malformed, or invalid API key
+
 ## Best Practices
 
 1. **Always use expressMiddleware()**: Required for accessing Moose utilities
