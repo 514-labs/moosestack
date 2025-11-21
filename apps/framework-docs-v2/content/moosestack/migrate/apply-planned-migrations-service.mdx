@@ -1,0 +1,61 @@
+---
+title: Server Runtime
+description: Reference documentation for automatic migration execution in the Moose server runtime.
+order: 8
+category: olap
+---
+
+import { Callout } from "@/components/mdx";
+
+# Server Runtime
+
+The **Server Runtime** deployment model (invoked via `moose prod`) includes an automatic migration runner that executes planned changes during the application boot sequence.
+
+## Overview
+
+When running as a full server, Moose orchestrates the entire lifecycle of your data stack. Migrations are treated as a prerequisite for starting the application: the server will not accept traffic or process data until the database schema matches the code definition.
+
+| Feature | Description |
+| :--- | :--- |
+| **Automatic Execution** | Migrations run automatically when the `moose prod` command starts. |
+| **Drift Protection** | The server validates the database state against `remote_state.json` before applying changes. |
+| **Code Validation** | The server ensures the deployed code matches `local_infra_map.json` to prevent mismatches. |
+| **Zero-Touch** | No separate CLI commands or CI/CD steps are required to apply migrations. |
+
+## Command Reference
+
+The migration logic is embedded within the production server start command.
+
+```bash
+moose prod
+```
+
+**Environment Variables:**
+The server requires access to the ClickHouse database, typically configured via `moose.config.toml` or environment variables overridden at runtime.
+
+## Execution Lifecycle
+
+When `moose prod` starts, it performs the following sequence:
+
+1.  **Load Plan:** Reads `migrations/plan.yaml` from the deployment artifact.
+2.  **Check Code Consistency:** Verifies that the running application code matches `local_infra_map.json`. If not, it aborts to prevent deploying code that doesn't match the plan.
+3.  **Check Database Drift:** Connects to ClickHouse and compares the current schema against `remote_state.json`. If drift is detected, it aborts.
+4.  **Execute Migration:** Applies the operations defined in `plan.yaml`.
+5.  **Start Services:** Once migrations succeed, the Ingestion API, Consumption API, and Streaming workers are started.
+
+## Failure Modes
+
+| Condition | Outcome | Resolution |
+| :--- | :--- | :--- |
+| **Drift Detected** | Server fails to start. | Regenerate the plan against the current production DB and redeploy. |
+| **Plan Mismatch** | Server fails to start. | Ensure the `migrations/` directory matches the code in your deployment artifact. |
+| **Migration Error** | Server fails to start. | Fix the schema issue or plan file, then redeploy. |
+
+<Callout type="info" title="Boreal Hosting">
+If you are using Boreal Hosting, this process is handled automatically. The platform ensures that your application only becomes healthy once `moose prod` has successfully completed the migration phase.
+</Callout>
+
+## See Also
+
+- [Planned Migrations](/moosestack/migrate/planned-migrations) - Generating the plan files.
+- [Serverless (moose migrate)](/moosestack/migrate/apply-planned-migrations-cli) - The manual alternative for serverless deployments.

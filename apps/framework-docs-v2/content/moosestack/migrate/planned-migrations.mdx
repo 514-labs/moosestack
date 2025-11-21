@@ -1,0 +1,122 @@
+---
+title: Planned Migrations
+description: Reference documentation for the Planned Migrations system in Moose.
+order: 6
+category: olap
+---
+
+import { Callout } from "@/components/mdx";
+
+# Planned Migrations
+
+**Planned migrations** are the production-grade schema evolution mechanism in Moose. Unlike auto-inferred migrations, this system separates the *generation* of schema changes from their *execution*, introducing a reviewable artifact (the plan) into your deployment lifecycle.
+
+## Command
+
+Generate a migration plan by comparing your local code against a production environment:
+
+```bash
+# For Server Runtime (connect to Moose Admin API)
+moose generate migration --url <ADMIN_API_URL> --token <ADMIN_TOKEN> --save
+
+# For Serverless (connect to ClickHouse directly)
+moose generate migration --clickhouse-url <CLICKHOUSE_CONNECTION_STRING> --save
+```
+
+**Key Benefits:**
+*   **Deterministic:** The plan is a static file (`plan.yaml`) that won't change at runtime.
+*   **Drift Detection:** Snapshots (`remote_state.json`) ensure the DB hasn't changed since the plan was created.
+*   **Reviewable:** You can audit every operation (e.g., `DropColumn`, `AddTable`) before it runs, and you can edit the plan to override Moose's assumptions.
+*   **Versioned:** Commit plans to Git to create a permanent audit trail.
+
+## Workflow
+
+The lifecycle consists of four distinct stages:
+
+1.  **Code Change** — Modify your data models (tables, views) in your Moose project.
+2.  **Generation** — Run the CLI to compare your code against production.
+    ```bash
+    moose generate migration --save ...
+    ```
+3.  **Review** — Inspect the generated `migrations/plan.yaml` file and commit it to Git.
+4.  **Application** — Execute the plan during deployment (if using Moose Runtime), manually via the CLI or your own CI/CD pipeline (if using Serverless).
+    ```bash
+    moose migrate ...
+    
+    ## or if using the Moose Runtime
+    moose prod
+    ```
+
+## Generated Artifacts
+
+Running the generation command produces three files in the `migrations/` directory.
+
+| File | Purpose |
+| :--- | :--- |
+| `plan.yaml` | The imperative list of operations (e.g., `AddTableColumn`) to execute. See [Plan Reference](/moosestack/migrate/reference). |
+| `remote_state.json` | A snapshot of the production database schema at the time of generation. Used to detect drift. |
+| `local_infra_map.json` | A snapshot of your local code's schema definitions. Used to validate the plan against the code. |
+
+## Configuration
+
+Planned migrations are enabled via the `ddl_plan` feature flag in your project configuration.
+
+```toml filename="moose.config.toml"
+[features]
+olap = true
+ddl_plan = true
+```
+
+## Command Options
+
+The `moose generate migration` command accepts different arguments depending on your [deployment model for applying changes](/moosestack/migrate#applying-changes).
+
+### via Moose Runtime (`moose prod`)
+
+Connect to the **Admin API** of the running service.
+
+```bash
+moose generate migration --url <ADMIN_API_URL> --token <ADMIN_TOKEN> --save
+```
+
+| Option | Description |
+| :--- | :--- |
+| `--url` | The endpoint of your production Moose Admin API. |
+| `--token` | The authentication token for the Admin API. |
+| `--save` | Writes the generated plan to the `migrations/` directory. Without this, it performs a dry run. |
+
+### via Serverless (`moose migrate`)
+
+Connect directly to the **ClickHouse database**.
+
+```bash
+moose generate migration --clickhouse-url <CLICKHOUSE_CONNECTION_STRING> --save
+```
+
+| Option | Description |
+| :--- | :--- |
+| `--clickhouse-url` | Direct connection string (e.g., `clickhouse://user:pass@host:9440/db`). |
+| `--save` | Writes the generated plan to the `migrations/` directory. Without this, it performs a dry run. |
+
+## Drift Detection
+
+Drift occurs when the target database's schema changes between the time you generate a plan and the time you apply it.
+
+**How it works:**
+1. `moose generate` writes the current DB state to `remote_state.json`.
+2. `moose migrate` (serverless) or `moose prod` (server runtime) compares `remote_state.json` with the *current* DB state.
+3. If they differ (hash mismatch), the migration **aborts**.
+
+**Resolution:**
+To fix drift, you must regenerate the plan against the new production state.
+
+```bash
+# Regenerate to accept the new state
+moose generate migration ... --save
+```
+
+## See Also
+
+- [Migration Plan Reference](/moosestack/migrate/reference) - Detailed syntax of `plan.yaml`.
+- [Serverless (moose migrate)](/moosestack/migrate/apply-planned-migrations-cli) - Execution guide.
+- [Server Runtime](/moosestack/migrate/apply-planned-migrations-service) - Execution guide.

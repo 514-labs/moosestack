@@ -1,0 +1,70 @@
+---
+title: Fully Managed Lifecycle
+description: Default lifecycle mode where Moose automatically manages all schema changes, including destructive ones.
+order: 21
+category: migrate
+---
+
+import { Callout, LanguageTabs, LanguageTabContent } from "@/components/mdx";
+
+# Fully Managed Lifecycle
+
+`LifeCycle.FULLY_MANAGED` is the default behavior where Moose has complete control over your database resources. When you change your data models, Moose will automatically:
+
+- Add new columns or tables
+- Remove columns or tables that no longer exist in your code
+- Modify existing column types and constraints
+
+<Callout type="warning" title="Warning">
+This mode can perform destructive operations. Data may be lost if you remove fields from your data models or if you perform operations that require a destroy and recreate to be effective, like changing the `order_by_fields` (Python) or `orderByFields` (TypeScript) field.
+</Callout>
+
+## Examples
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript" label="TypeScript">
+
+```ts filename="FullyManagedExample.ts" copy
+import { OlapTable, LifeCycle } from "@514labs/moose-lib";
+
+interface UserData {
+  id: string;
+  name: string;
+  email: string;
+}
+
+// Default behavior - fully managed
+const userTable = new OlapTable<UserData>("users");
+
+// Explicit fully managed configuration
+const explicitTable = new OlapTable<UserData>("users", {
+  orderByFields: ["id"],
+  lifeCycle: LifeCycle.FULLY_MANAGED
+});
+```
+
+  </LanguageTabContent>
+  <LanguageTabContent value="python" label="Python">
+
+```py filename="FullyManagedExample.py" copy
+from moose_lib import OlapTable, OlapConfig, LifeCycle
+from pydantic import BaseModel
+
+class UserData(BaseModel):
+    id: str
+    name: str
+    email: str
+
+# Default behavior - fully managed
+user_table = OlapTable[UserData]("users")
+
+# Explicit fully managed configuration
+explicit_table = OlapTable[UserData]("users", OlapConfig(
+    order_by_fields=["id"],
+    life_cycle=LifeCycle.FULLY_MANAGED
+))
+```
+
+  </LanguageTabContent>
+</LanguageTabs>
+
