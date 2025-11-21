@@ -45,6 +45,7 @@ import remarkGfm from "remark-gfm";
 import rehypeSlug from "rehype-slug";
 import rehypeAutolinkHeadings from "rehype-autolink-headings";
 import rehypePrettyCode from "rehype-pretty-code";
+import { visit } from "unist-util-visit";
 
 interface MDXRendererProps {
   source: string;
@@ -145,10 +146,36 @@ export async function MDXRenderer({ source }: MDXRendererProps) {
               {
                 theme: "github-dark",
                 keepBackground: false,
-                // Keep rehype-pretty-code for now to mark code blocks,
-                // but our components will handle the actual rendering
               },
             ],
+            // Custom plugin to extract copy attribute from metadata and set it on pre element
+            () => {
+              return (tree: any) => {
+                visit(tree, "element", (node: any) => {
+                  // Check pre elements and their code children for metadata
+                  if (node.tagName === "pre" && node.children) {
+                    for (const child of node.children) {
+                      if (child.tagName === "code" && child.data?.meta) {
+                        const codeMetaString = child.data.meta as string;
+                        // Parse copy attribute: copy="false", copy="true", or just "copy" (which means true)
+                        const copyFalseMatch =
+                          codeMetaString.match(/copy=["']?false["']?/);
+
+                        if (copyFalseMatch) {
+                          // copy="false" or copy=false - hide copy button
+                          if (!node.properties) {
+                            node.properties = {};
+                          }
+                          node.properties["data-copy"] = "false";
+                        }
+                        // If copy="true" or just "copy", don't set anything (default behavior shows copy button)
+                        break; // Only process first code child
+                      }
+                    }
+                  }
+                });
+              };
+            },
           ],
         },
       }}
