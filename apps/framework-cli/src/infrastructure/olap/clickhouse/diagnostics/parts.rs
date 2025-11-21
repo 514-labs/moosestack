@@ -1,6 +1,6 @@
 //! Diagnostic provider for checking data parts issues
 
-use log::debug;
+use tracing::debug;
 use serde_json::{json, Map, Value};
 
 use super::{Component, DiagnosticError, DiagnosticProvider, Issue, Severity};

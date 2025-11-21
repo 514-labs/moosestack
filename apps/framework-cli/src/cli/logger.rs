@@ -32,23 +32,27 @@
 //!
 
 use hyper::Uri;
-use log::{error, warn};
-use log::{LevelFilter, Metadata, Record};
-use opentelemetry::logs::Logger;
 use opentelemetry::KeyValue;
-use opentelemetry_appender_log::OpenTelemetryLogBridge;
-use opentelemetry_otlp::{Protocol, WithExportConfig, WithHttpConfig};
-use opentelemetry_sdk::logs::SdkLoggerProvider;
+use opentelemetry_appender_tracing::layer::OpenTelemetryTracingBridge;
+use opentelemetry_otlp::{Protocol, WithExportConfig};
+use opentelemetry_sdk::logs::{SdkLoggerProvider, BatchLogProcessor};
 use opentelemetry_sdk::Resource;
 use opentelemetry_semantic_conventions::resource::SERVICE_NAME;
 use serde::Deserialize;
-use serde_json::Value;
 use std::env;
-use std::env::VarError;
+use std::fmt;
+use std::io::Write;
 use std::time::{Duration, SystemTime};
+use tracing::field::{Field, Visit};
+use tracing::{warn, Event, Level, Subscriber};
+use tracing_subscriber::filter::LevelFilter;
+use tracing_subscriber::fmt::MakeWriter;
+use tracing_subscriber::layer::{Context, SubscriberExt};
+use tracing_subscriber::registry::LookupSpan;
+use tracing_subscriber::util::SubscriberInitExt;
+use tracing_subscriber::{EnvFilter, Layer};
 
 use crate::utilities::constants::{CONTEXT, CTX_SESSION_ID};
-use crate::utilities::decode_object;
 
 use super::settings::user_directory;
 
@@ -68,12 +72,12 @@ pub enum LoggerLevel {
 }
 
 impl LoggerLevel {
-    pub fn to_log_level(&self) -> log::LevelFilter {
+    pub fn to_tracing_level(&self) -> LevelFilter {
         match self {
-            LoggerLevel::Debug => log::LevelFilter::Debug,
-            LoggerLevel::Info => log::LevelFilter::Info,
-            LoggerLevel::Warn => log::LevelFilter::Warn,
-            LoggerLevel::Error => log::LevelFilter::Error,
+            LoggerLevel::Debug => LevelFilter::DEBUG,
+            LoggerLevel::Info => LevelFilter::INFO,
+            LoggerLevel::Warn => LevelFilter::WARN,
+            LoggerLevel::Error => LevelFilter::ERROR,
         }
     }
 }
@@ -101,6 +105,9 @@ pub struct LoggerSettings {
 
     #[serde(default = "default_include_session_id")]
     pub include_session_id: bool,
+
+    #[serde(default = "default_use_tracing_format")]
+    pub use_tracing_format: bool,
 }
 
 fn parsing_url<'de, D>(deserializer: D) -> Result<Option<Uri>, D::Error>
@@ -131,6 +138,13 @@ fn default_include_session_id() -> bool {
     false
 }
 
+fn default_use_tracing_format() -> bool {
+    env::var("MOOSE_LOGGER__USE_TRACING_FORMAT")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(false)
+}
+
 impl Default for LoggerSettings {
     fn default() -> Self {
         LoggerSettings {
@@ -140,6 +154,7 @@ impl Default for LoggerSettings {
             format: default_log_format(),
             export_to: None,
             include_session_id: default_include_session_id(),
+            use_tracing_format: default_use_tracing_format(),
         }
     }
 }
@@ -193,158 +208,347 @@ fn clean_old_logs() {
 // Error that rolls up all the possible errors that can occur during logging setup
 #[derive(thiserror::Error, Debug)]
 pub enum LoggerError {
-    #[error("Error Initializing fern logger")]
-    Init(#[from] fern::InitError),
-    #[error("Error setting up otel logger")]
-    Exporter(#[from] opentelemetry_sdk::error::OTelSdkError),
-    #[error("Error building the exporter")]
-    ExporterBuild(#[from] opentelemetry_otlp::ExporterBuildError),
-    #[error("Error setting up default logger")]
-    LogSetup(#[from] log::SetLoggerError),
+    #[error("Error setting up OTEL logger: {0}")]
+    OtelSetup(String),
+}
+
+/// Custom fields that get injected into every log event
+#[derive(Clone)]
+struct CustomFields {
+    session_id: String,
+    #[allow(dead_code)] // Will be used when OTEL support is re-enabled
+    machine_id: String,
+}
+
+/// Layer that formats logs to match the legacy fern format exactly
+struct LegacyFormatLayer<W> {
+    writer: W,
+    format: LogFormat,
+    include_session_id: bool,
+    custom_fields: CustomFields,
+}
+
+impl<W> LegacyFormatLayer<W> {
+    fn new(writer: W, format: LogFormat, include_session_id: bool, custom_fields: CustomFields) -> Self {
+        Self {
+            writer,
+            format,
+            include_session_id,
+            custom_fields,
+        }
+    }
+
+    fn format_text(
+        &self,
+        level: &Level,
+        target: &str,
+        message: &str,
+    ) -> String {
+        // Match current fern text format exactly
+        format!(
+            "[{} {}{} - {}] {}",
+            humantime::format_rfc3339_seconds(SystemTime::now()),
+            level,
+            if self.include_session_id {
+                format!(" {}", self.custom_fields.session_id)
+            } else {
+                String::new()
+            },
+            target,
+            message
+        )
+    }
+
+    fn format_json(
+        &self,
+        level: &Level,
+        target: &str,
+        message: &str,
+    ) -> String {
+        // Match current fern JSON format exactly
+        let mut log_json = serde_json::json!({
+            "timestamp": chrono::Utc::now().to_rfc3339(),
+            "severity": level.to_string(),
+            "target": target,
+            "message": message,
+        });
+
+        if self.include_session_id {
+            log_json["session_id"] = serde_json::Value::String(self.custom_fields.session_id.clone());
+        }
+
+        serde_json::to_string(&log_json)
+            .expect("formatting `serde_json::Value` with string keys never fails")
+    }
+}
+
+impl<S, W> Layer<S> for LegacyFormatLayer<W>
+where
+    S: Subscriber + for<'a> LookupSpan<'a>,
+    W: for<'writer> MakeWriter<'writer> + 'static,
+{
+    fn on_event(&self, event: &Event<'_>, _ctx: Context<'_, S>) {
+        // Extract metadata
+        let metadata = event.metadata();
+        let level = metadata.level();
+        let target = metadata.target();
+
+        // Extract message using visitor
+        let mut visitor = MessageVisitor::default();
+        event.record(&mut visitor);
+        let message = visitor.message;
+
+        // Format based on LogFormat
+        let output = if self.format == LogFormat::Text {
+            self.format_text(level, target, &message)
+        } else {
+            self.format_json(level, target, &message)
+        };
+
+        // Write to output
+        let mut writer = self.writer.make_writer();
+        let _ = writer.write_all(output.as_bytes());
+        let _ = writer.write_all(b"\n");
+    }
+}
+
+#[derive(Default)]
+struct MessageVisitor {
+    message: String,
+}
+
+impl Visit for MessageVisitor {
+    fn record_debug(&mut self, field: &Field, value: &dyn fmt::Debug) {
+        if field.name() == "message" {
+            self.message = format!("{:?}", value);
+            // Remove surrounding quotes from debug format
+            if self.message.starts_with('"') && self.message.ends_with('"') {
+                self.message = self.message[1..self.message.len() - 1].to_string();
+            }
+        }
+    }
+}
+
+/// Creates an OpenTelemetry layer for log export
+///
+/// This function sets up OTLP log export using opentelemetry-appender-tracing.
+/// It creates a LoggerProvider with a batch processor and OTLP exporter.
+fn create_otel_layer(
+    endpoint: &Uri,
+    session_id: &str,
+    machine_id: &str,
+) -> Result<impl Layer<tracing_subscriber::Registry>, LoggerError> {
+    // Create resource with service metadata
+    let resource = Resource::builder()
+        .with_attribute(KeyValue::new(SERVICE_NAME, "moose-cli"))
+        .with_attribute(KeyValue::new("session_id", session_id.to_string()))
+        .with_attribute(KeyValue::new("machine_id", machine_id.to_string()))
+        .build();
+
+    // Build OTLP log exporter
+    let exporter = opentelemetry_otlp::LogExporter::builder()
+        .with_http()
+        .with_protocol(Protocol::HttpJson)
+        .with_endpoint(endpoint.to_string())
+        .build()
+        .map_err(|e| LoggerError::OtelSetup(format!("Failed to build OTLP exporter: {}", e)))?;
+
+    // Create logger provider with batch processor
+    let provider = SdkLoggerProvider::builder()
+        .with_resource(resource)
+        .with_log_processor(BatchLogProcessor::builder(exporter).build())
+        .build();
+
+    // Create the tracing bridge layer
+    Ok(OpenTelemetryTracingBridge::new(&provider))
 }
 
 pub fn setup_logging(settings: &LoggerSettings, machine_id: &str) -> Result<(), LoggerError> {
     clean_old_logs();
 
     let session_id = CONTEXT.get(CTX_SESSION_ID).unwrap();
-    let include_session_id = settings.include_session_id;
 
-    let base_config = fern::Dispatch::new().level(settings.level.to_log_level());
-
-    let format_config = if settings.format == LogFormat::Text {
-        fern::Dispatch::new().format(move |out, message, record| {
-            out.finish(format_args!(
-                "[{} {}{} - {}] {}",
-                humantime::format_rfc3339_seconds(SystemTime::now()),
-                record.level(),
-                if include_session_id {
-                    format!(" {}", &session_id)
-                } else {
-                    String::new()
-                },
-                record.target(),
-                message
-            ))
-        })
-    } else {
-        fern::Dispatch::new().format(move |out, message, record| {
-            let mut log_json = serde_json::json!({
-                "timestamp": chrono::Utc::now().to_rfc3339(),
-                "severity": record.level().to_string(),
-                "target": record.target(),
-                "message": message,
-            });
-
-            if include_session_id {
-                log_json["session_id"] = serde_json::Value::String(session_id.to_string());
-            }
-
-            out.finish(format_args!(
-                "{}",
-                serde_json::to_string(&log_json)
-                    .expect("formatting `serde_json::Value` with string keys never fails")
-            ))
-        })
+    // Create custom fields for use in formatters
+    let custom_fields = CustomFields {
+        session_id: session_id.to_string(),
+        machine_id: machine_id.to_string(),
     };
 
-    let output_config = if settings.stdout {
-        format_config.chain(std::io::stdout())
+    // Setup logging based on format type
+    if settings.use_tracing_format {
+        // Modern format using tracing built-ins
+        setup_modern_format(settings, session_id, machine_id)
     } else {
-        format_config.chain(fern::DateBased::new(
-            // `.join("")` is an idempotent way to ensure the path ends with '/'
-            user_directory().join("").to_str().unwrap(),
-            settings.log_file_date_format.clone(),
-        ))
-    };
+        // Legacy format matching fern exactly
+        setup_legacy_format(settings, session_id, machine_id, custom_fields)
+    }
+}
 
-    let output_config = match &settings.export_to {
-        None => output_config,
-        Some(otel_endpoint) => {
-            let string_uri = otel_endpoint.to_string();
-            let reqwest_client = reqwest::blocking::Client::new();
+fn setup_modern_format(
+    settings: &LoggerSettings,
+    session_id: &str,
+    machine_id: &str,
+) -> Result<(), LoggerError> {
+    let env_filter = EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| EnvFilter::new(settings.level.to_tracing_level().to_string()));
 
-            let open_telemetry_exporter = opentelemetry_otlp::LogExporter::builder()
-                .with_http()
-                .with_http_client(reqwest_client)
-                .with_endpoint(string_uri)
-                .with_protocol(Protocol::HttpJson)
-                .with_timeout(Duration::from_millis(5000))
-                .build()?;
+    // Setup with or without OTEL based on configuration
+    if let Some(endpoint) = &settings.export_to {
+        let otel_layer = create_otel_layer(endpoint, session_id, machine_id)?;
 
-            let mut resource_attributes = vec![
-                KeyValue::new(SERVICE_NAME, "moose-cli"),
-                KeyValue::new("session_id", session_id.as_str()),
-                KeyValue::new("machine_id", String::from(machine_id)),
-            ];
-            match env::var("MOOSE_METRIC__LABELS") {
-                Ok(base64) => match decode_object::decode_base64_to_json(&base64) {
-                    Ok(Value::Object(labels)) => {
-                        for (key, value) in labels {
-                            if let Some(value_str) = value.as_str() {
-                                resource_attributes.push(KeyValue::new(key, value_str.to_string()));
-                            }
-                        }
-                    }
-                    Ok(_) => warn!("Unexpected value for MOOSE_METRIC_LABELS"),
-                    Err(e) => error!("Error decoding MOOSE_METRIC_LABELS: {}", e),
-                },
-                Err(VarError::NotPresent) => {}
-                Err(VarError::NotUnicode(e)) => {
-                    error!("MOOSE_METRIC__LABELS is not unicode: {:?}", e);
-                }
+        if settings.stdout {
+            let format_layer = tracing_subscriber::fmt::layer()
+                .with_writer(std::io::stdout)
+                .with_target(true)
+                .with_level(true);
+
+            if settings.format == LogFormat::Json {
+                tracing_subscriber::registry()
+                    .with(otel_layer)
+                    .with(env_filter)
+                    .with(format_layer.json())
+                    .init();
+            } else {
+                tracing_subscriber::registry()
+                    .with(otel_layer)
+                    .with(env_filter)
+                    .with(format_layer.compact())
+                    .init();
             }
+        } else {
+            let file_appender = tracing_appender::rolling::daily(user_directory(), "cli.log");
+            let format_layer = tracing_subscriber::fmt::layer()
+                .with_writer(file_appender)
+                .with_target(true)
+                .with_level(true);
 
-            let resource = Resource::builder()
-                .with_attributes(resource_attributes)
-                .build();
-            let logger_provider = SdkLoggerProvider::builder()
-                .with_resource(resource)
-                .with_batch_exporter(open_telemetry_exporter)
-                .build();
-
-            let logger: Box<dyn log::Log> = Box::new(TargetToKvLogger {
-                inner: OpenTelemetryLogBridge::new(&logger_provider),
-            });
-
-            fern::Dispatch::new().chain(output_config).chain(
-                fern::Dispatch::new()
-                    // to prevent exporter recursively calls logging and thus itself
-                    .level(LevelFilter::Off)
-                    .level_for("moose_cli", settings.level.to_log_level())
-                    .chain(logger),
-            )
+            if settings.format == LogFormat::Json {
+                tracing_subscriber::registry()
+                    .with(otel_layer)
+                    .with(env_filter)
+                    .with(format_layer.json())
+                    .init();
+            } else {
+                tracing_subscriber::registry()
+                    .with(otel_layer)
+                    .with(env_filter)
+                    .with(format_layer.compact())
+                    .init();
+            }
         }
-    };
-    base_config.chain(output_config).apply()?;
+    } else {
+        // No OTEL export
+        if settings.stdout {
+            let format_layer = tracing_subscriber::fmt::layer()
+                .with_writer(std::io::stdout)
+                .with_target(true)
+                .with_level(true);
+
+            if settings.format == LogFormat::Json {
+                tracing_subscriber::registry()
+                    .with(env_filter)
+                    .with(format_layer.json())
+                    .init();
+            } else {
+                tracing_subscriber::registry()
+                    .with(env_filter)
+                    .with(format_layer.compact())
+                    .init();
+            }
+        } else {
+            let file_appender = tracing_appender::rolling::daily(user_directory(), "cli.log");
+            let format_layer = tracing_subscriber::fmt::layer()
+                .with_writer(file_appender)
+                .with_target(true)
+                .with_level(true);
+
+            if settings.format == LogFormat::Json {
+                tracing_subscriber::registry()
+                    .with(env_filter)
+                    .with(format_layer.json())
+                    .init();
+            } else {
+                tracing_subscriber::registry()
+                    .with(env_filter)
+                    .with(format_layer.compact())
+                    .init();
+            }
+        }
+    }
 
     Ok(())
 }
 
-struct TargetToKvLogger<P, L>
-where
-    P: opentelemetry::logs::LoggerProvider<Logger = L> + Send + Sync,
-    L: Logger + Send + Sync,
-{
-    inner: OpenTelemetryLogBridge<P, L>,
-}
+fn setup_legacy_format(
+    settings: &LoggerSettings,
+    session_id: &str,
+    machine_id: &str,
+    custom_fields: CustomFields,
+) -> Result<(), LoggerError> {
+    let env_filter = EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| EnvFilter::new(settings.level.to_tracing_level().to_string()));
 
-impl<P, L> log::Log for TargetToKvLogger<P, L>
-where
-    P: opentelemetry::logs::LoggerProvider<Logger = L> + Send + Sync,
-    L: Logger + Send + Sync,
-{
-    fn enabled(&self, metadata: &Metadata) -> bool {
-        self.inner.enabled(metadata)
+    // Setup with or without OTEL based on configuration
+    if let Some(endpoint) = &settings.export_to {
+        let otel_layer = create_otel_layer(endpoint, session_id, machine_id)?;
+
+        if settings.stdout {
+            let legacy_layer = LegacyFormatLayer::new(
+                std::io::stdout,
+                settings.format.clone(),
+                settings.include_session_id,
+                custom_fields,
+            );
+
+            tracing_subscriber::registry()
+                .with(otel_layer)
+                .with(env_filter)
+                .with(legacy_layer)
+                .init();
+        } else {
+            let file_appender = tracing_appender::rolling::daily(user_directory(), "cli.log");
+            let legacy_layer = LegacyFormatLayer::new(
+                file_appender,
+                settings.format.clone(),
+                settings.include_session_id,
+                custom_fields,
+            );
+
+            tracing_subscriber::registry()
+                .with(otel_layer)
+                .with(env_filter)
+                .with(legacy_layer)
+                .init();
+        }
+    } else {
+        // No OTEL export
+        if settings.stdout {
+            let legacy_layer = LegacyFormatLayer::new(
+                std::io::stdout,
+                settings.format.clone(),
+                settings.include_session_id,
+                custom_fields.clone(),
+            );
+
+            tracing_subscriber::registry()
+                .with(env_filter)
+                .with(legacy_layer)
+                .init();
+        } else {
+            let file_appender = tracing_appender::rolling::daily(user_directory(), "cli.log");
+            let legacy_layer = LegacyFormatLayer::new(
+                file_appender,
+                settings.format.clone(),
+                settings.include_session_id,
+                custom_fields,
+            );
+
+            tracing_subscriber::registry()
+                .with(env_filter)
+                .with(legacy_layer)
+                .init();
+        }
     }
 
-    fn log(&self, record: &Record) {
-        let mut with_target = record.to_builder();
-        let kvs: &dyn log::kv::Source = &("target", record.target());
-        with_target.key_values(kvs);
-        self.inner.log(&with_target.build());
-    }
-
-    fn flush(&self) {
-        self.inner.flush()
-    }
+    Ok(())
 }

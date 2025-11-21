@@ -35,7 +35,7 @@ use clickhouse::Client;
 use clickhouse_rs::ClientHandle;
 use errors::ClickhouseError;
 use itertools::Itertools;
-use log::{debug, info, warn};
+use tracing::{debug, info};
 use mapper::{std_column_to_clickhouse_column, std_table_to_clickhouse_table};
 use model::ClickHouseColumn;
 use queries::ClickhouseEngine;
@@ -119,8 +119,6 @@ pub enum SerializableOlapOperation {
         table: String,
         /// The database containing the table (None means use global database)
         database: Option<String>,
-        /// Optional cluster name for ON CLUSTER support
-        cluster_name: Option<String>,
     },
     /// Add a column to a table
     AddTableColumn {
@@ -132,8 +130,6 @@ pub enum SerializableOlapOperation {
         after_column: Option<String>,
         /// The database containing the table (None means use primary database)
         database: Option<String>,
-        /// Optional cluster name for ON CLUSTER support
-        cluster_name: Option<String>,
     },
     /// Drop a column from a table
     DropTableColumn {
@@ -143,8 +139,6 @@ pub enum SerializableOlapOperation {
         column_name: String,
         /// The database containing the table (None means use primary database)
         database: Option<String>,
-        /// Optional cluster name for ON CLUSTER support
-        cluster_name: Option<String>,
     },
     /// Modify a column in a table
     ModifyTableColumn {
@@ -156,8 +150,6 @@ pub enum SerializableOlapOperation {
         after_column: Column,
         /// The database containing the table (None means use primary database)
         database: Option<String>,
-        /// Optional cluster name for ON CLUSTER support
-        cluster_name: Option<String>,
     },
     RenameTableColumn {
         /// The table containing the column
@@ -168,8 +160,6 @@ pub enum SerializableOlapOperation {
         after_column_name: String,
         /// The database containing the table (None means use primary database)
         database: Option<String>,
-        /// Optional cluster name for ON CLUSTER support
-        cluster_name: Option<String>,
     },
     /// Modify table settings using ALTER TABLE MODIFY SETTING
     ModifyTableSettings {
@@ -181,8 +171,6 @@ pub enum SerializableOlapOperation {
         after_settings: Option<HashMap<String, String>>,
         /// The database containing the table (None means use primary database)
         database: Option<String>,
-        /// Optional cluster name for ON CLUSTER support
-        cluster_name: Option<String>,
     },
     /// Modify or remove table-level TTL
     ModifyTableTtl {
@@ -191,39 +179,29 @@ pub enum SerializableOlapOperation {
         after: Option<String>,
         /// The database containing the table (None means use primary database)
         database: Option<String>,
-        /// Optional cluster name for ON CLUSTER support
-        cluster_name: Option<String>,
     },
     AddTableIndex {
         table: String,
         index: TableIndex,
         /// The database containing the table (None means use primary database)
         database: Option<String>,
-        /// Optional cluster name for ON CLUSTER support
-        cluster_name: Option<String>,
     },
     DropTableIndex {
         table: String,
         index_name: String,
         /// The database containing the table (None means use primary database)
         database: Option<String>,
-        /// Optional cluster name for ON CLUSTER support
-        cluster_name: Option<String>,
     },
     ModifySampleBy {
         table: String,
         expression: String,
         /// The database containing the table (None means use primary database)
         database: Option<String>,
-        /// Optional cluster name for ON CLUSTER support
-        cluster_name: Option<String>,
     },
     RemoveSampleBy {
         table: String,
         /// The database containing the table (None means use primary database)
         database: Option<String>,
-        /// Optional cluster name for ON CLUSTER support
-        cluster_name: Option<String>,
     },
     RawSql {
         /// The SQL statements to execute
@@ -459,78 +437,41 @@ pub async fn execute_atomic_operation(
         SerializableOlapOperation::CreateTable { table } => {
             execute_create_table(db_name, table, client, is_dev).await?;
         }
-        SerializableOlapOperation::DropTable {
-            table,
-            database,
-            cluster_name,
-        } => {
-            execute_drop_table(
-                db_name,
-                table,
-                database.as_deref(),
-                cluster_name.as_deref(),
-                client,
-            )
-            .await?;
+        SerializableOlapOperation::DropTable { table, database } => {
+            execute_drop_table(db_name, table, database.as_deref(), client).await?;
         }
         SerializableOlapOperation::AddTableColumn {
             table,
             column,
             after_column,
             database,
-            cluster_name,
         } => {
             let target_db = database.as_deref().unwrap_or(db_name);
-            execute_add_table_column(
-                target_db,
-                table,
-                column,
-                after_column,
-                cluster_name.as_deref(),
-                client,
-            )
-            .await?;
+            execute_add_table_column(target_db, table, column, after_column, client).await?;
         }
         SerializableOlapOperation::DropTableColumn {
             table,
             column_name,
             database,
-            cluster_name,
         } => {
             let target_db = database.as_deref().unwrap_or(db_name);
-            execute_drop_table_column(
-                target_db,
-                table,
-                column_name,
-                cluster_name.as_deref(),
-                client,
-            )
-            .await?;
+            execute_drop_table_column(target_db, table, column_name, client).await?;
         }
         SerializableOlapOperation::ModifyTableColumn {
             table,
             before_column,
             after_column,
             database,
-            cluster_name,
         } => {
             let target_db = database.as_deref().unwrap_or(db_name);
-            execute_modify_table_column(
-                target_db,
-                table,
-                before_column,
-                after_column,
-                cluster_name.as_deref(),
-                client,
-            )
-            .await?;
+            execute_modify_table_column(target_db, table, before_column, after_column, client)
+                .await?;
         }
         SerializableOlapOperation::RenameTableColumn {
             table,
             before_column_name,
             after_column_name,
             database,
-            cluster_name,
         } => {
             let target_db = database.as_deref().unwrap_or(db_name);
             execute_rename_table_column(
@@ -538,7 +479,6 @@ pub async fn execute_atomic_operation(
                 table,
                 before_column_name,
                 after_column_name,
-                cluster_name.as_deref(),
                 client,
             )
             .await?;
@@ -548,7 +488,6 @@ pub async fn execute_atomic_operation(
             before_settings,
             after_settings,
             database,
-            cluster_name,
         } => {
             let target_db = database.as_deref().unwrap_or(db_name);
             execute_modify_table_settings(
@@ -556,7 +495,6 @@ pub async fn execute_atomic_operation(
                 table,
                 before_settings,
                 after_settings,
-                cluster_name.as_deref(),
                 client,
             )
             .await?;
@@ -566,24 +504,16 @@ pub async fn execute_atomic_operation(
             before: _,
             after,
             database,
-            cluster_name,
         } => {
             let target_db = database.as_deref().unwrap_or(db_name);
             // Build ALTER TABLE ... [REMOVE TTL | MODIFY TTL expr]
-            let cluster_clause = cluster_name
-                .as_ref()
-                .map(|c| format!(" ON CLUSTER {}", c))
-                .unwrap_or_default();
             let sql = if let Some(expr) = after {
                 format!(
-                    "ALTER TABLE `{}`.`{}`{} MODIFY TTL {}",
-                    target_db, table, cluster_clause, expr
+                    "ALTER TABLE `{}`.`{}` MODIFY TTL {}",
+                    target_db, table, expr
                 )
             } else {
-                format!(
-                    "ALTER TABLE `{}`.`{}`{} REMOVE TTL",
-                    target_db, table, cluster_clause
-                )
+                format!("ALTER TABLE `{}`.`{}` REMOVE TTL", target_db, table)
             };
             run_query(&sql, client).await.map_err(|e| {
                 ClickhouseChangesError::ClickhouseClient {
@@ -596,51 +526,29 @@ pub async fn execute_atomic_operation(
             table,
             index,
             database,
-            cluster_name,
         } => {
             let target_db = database.as_deref().unwrap_or(db_name);
-            execute_add_table_index(target_db, table, index, cluster_name.as_deref(), client)
-                .await?;
+            execute_add_table_index(target_db, table, index, client).await?;
         }
         SerializableOlapOperation::DropTableIndex {
             table,
             index_name,
             database,
-            cluster_name,
         } => {
             let target_db = database.as_deref().unwrap_or(db_name);
-            execute_drop_table_index(
-                target_db,
-                table,
-                index_name,
-                cluster_name.as_deref(),
-                client,
-            )
-            .await?;
+            execute_drop_table_index(target_db, table, index_name, client).await?;
         }
         SerializableOlapOperation::ModifySampleBy {
             table,
             expression,
             database,
-            cluster_name,
         } => {
             let target_db = database.as_deref().unwrap_or(db_name);
-            execute_modify_sample_by(
-                target_db,
-                table,
-                expression,
-                cluster_name.as_deref(),
-                client,
-            )
-            .await?;
+            execute_modify_sample_by(target_db, table, expression, client).await?;
         }
-        SerializableOlapOperation::RemoveSampleBy {
-            table,
-            database,
-            cluster_name,
-        } => {
+        SerializableOlapOperation::RemoveSampleBy { table, database } => {
             let target_db = database.as_deref().unwrap_or(db_name);
-            execute_remove_sample_by(target_db, table, cluster_name.as_deref(), client).await?;
+            execute_remove_sample_by(target_db, table, client).await?;
         }
         SerializableOlapOperation::RawSql { sql, description } => {
             execute_raw_sql(sql, description, client).await?;
@@ -655,7 +563,7 @@ async fn execute_create_table(
     client: &ConfiguredDBClient,
     is_dev: bool,
 ) -> Result<(), ClickhouseChangesError> {
-    log::info!("Executing CreateTable: {:?}", table.id(db_name));
+    tracing::info!("Executing CreateTable: {:?}", table.id(db_name));
     let clickhouse_table = std_table_to_clickhouse_table(table)?;
     // Use table's database if specified, otherwise use global database
     let target_database = table.database.as_deref().unwrap_or(db_name);
@@ -673,7 +581,6 @@ async fn execute_add_table_index(
     db_name: &str,
     table_name: &str,
     index: &TableIndex,
-    cluster_name: Option<&str>,
     client: &ConfiguredDBClient,
 ) -> Result<(), ClickhouseChangesError> {
     let args = if index.arguments.is_empty() {
@@ -681,14 +588,10 @@ async fn execute_add_table_index(
     } else {
         format!("({})", index.arguments.join(", "))
     };
-    let cluster_clause = cluster_name
-        .map(|c| format!(" ON CLUSTER {}", c))
-        .unwrap_or_default();
     let sql = format!(
-        "ALTER TABLE `{}`.`{}`{} ADD INDEX `{}` {} TYPE {}{} GRANULARITY {}",
+        "ALTER TABLE `{}`.`{}` ADD INDEX `{}` {} TYPE {}{} GRANULARITY {}",
         db_name,
         table_name,
-        cluster_clause,
         index.name,
         index.expression,
         index.index_type,
@@ -707,15 +610,11 @@ async fn execute_drop_table_index(
     db_name: &str,
     table_name: &str,
     index_name: &str,
-    cluster_name: Option<&str>,
     client: &ConfiguredDBClient,
 ) -> Result<(), ClickhouseChangesError> {
-    let cluster_clause = cluster_name
-        .map(|c| format!(" ON CLUSTER {}", c))
-        .unwrap_or_default();
     let sql = format!(
-        "ALTER TABLE `{}`.`{}`{} DROP INDEX `{}`",
-        db_name, table_name, cluster_clause, index_name
+        "ALTER TABLE `{}`.`{}` DROP INDEX `{}`",
+        db_name, table_name, index_name
     );
     run_query(&sql, client)
         .await
@@ -729,15 +628,11 @@ async fn execute_modify_sample_by(
     db_name: &str,
     table_name: &str,
     expression: &str,
-    cluster_name: Option<&str>,
     client: &ConfiguredDBClient,
 ) -> Result<(), ClickhouseChangesError> {
-    let cluster_clause = cluster_name
-        .map(|c| format!(" ON CLUSTER {}", c))
-        .unwrap_or_default();
     let sql = format!(
-        "ALTER TABLE `{}`.`{}`{} MODIFY SAMPLE BY {}",
-        db_name, table_name, cluster_clause, expression
+        "ALTER TABLE `{}`.`{}` MODIFY SAMPLE BY {}",
+        db_name, table_name, expression
     );
     run_query(&sql, client)
         .await
@@ -750,15 +645,11 @@ async fn execute_modify_sample_by(
 async fn execute_remove_sample_by(
     db_name: &str,
     table_name: &str,
-    cluster_name: Option<&str>,
     client: &ConfiguredDBClient,
 ) -> Result<(), ClickhouseChangesError> {
-    let cluster_clause = cluster_name
-        .map(|c| format!(" ON CLUSTER {}", c))
-        .unwrap_or_default();
     let sql = format!(
-        "ALTER TABLE `{}`.`{}`{} REMOVE SAMPLE BY",
-        db_name, table_name, cluster_clause
+        "ALTER TABLE `{}`.`{}` REMOVE SAMPLE BY",
+        db_name, table_name
     );
     run_query(&sql, client)
         .await
@@ -772,13 +663,12 @@ async fn execute_drop_table(
     db_name: &str,
     table_name: &str,
     table_database: Option<&str>,
-    cluster_name: Option<&str>,
     client: &ConfiguredDBClient,
 ) -> Result<(), ClickhouseChangesError> {
-    log::info!("Executing DropTable: {:?}", table_name);
+    tracing::info!("Executing DropTable: {:?}", table_name);
     // Use table's database if specified, otherwise use global database
     let target_database = table_database.unwrap_or(db_name);
-    let drop_query = drop_table_query(target_database, table_name, cluster_name)?;
+    let drop_query = drop_table_query(target_database, table_name, None)?;
     run_query(&drop_query, client)
         .await
         .map_err(|e| ClickhouseChangesError::ClickhouseClient {
@@ -798,10 +688,9 @@ async fn execute_add_table_column(
     table_name: &str,
     column: &Column,
     after_column: &Option<String>,
-    cluster_name: Option<&str>,
     client: &ConfiguredDBClient,
 ) -> Result<(), ClickhouseChangesError> {
-    log::info!(
+    tracing::info!(
         "Executing AddTableColumn for table: {}, column: {}, after: {:?}",
         table_name,
         column.name,
@@ -817,15 +706,10 @@ async fn execute_add_table_column(
         .map(|d| format!(" DEFAULT {}", d))
         .unwrap_or_default();
 
-    let cluster_clause = cluster_name
-        .map(|c| format!(" ON CLUSTER {}", c))
-        .unwrap_or_default();
-
     let add_column_query = format!(
-        "ALTER TABLE `{}`.`{}`{} ADD COLUMN `{}` {}{} {}",
+        "ALTER TABLE `{}`.`{}` ADD COLUMN `{}` {}{} {}",
         db_name,
         table_name,
-        cluster_clause,
         clickhouse_column.name,
         column_type_string,
         default_clause,
@@ -834,7 +718,7 @@ async fn execute_add_table_column(
             Some(after_col) => format!("AFTER `{after_col}`"),
         }
     );
-    log::debug!("Adding column: {}", add_column_query);
+    tracing::debug!("Adding column: {}", add_column_query);
     run_query(&add_column_query, client).await.map_err(|e| {
         ClickhouseChangesError::ClickhouseClient {
             error: e,
@@ -848,22 +732,18 @@ async fn execute_drop_table_column(
     db_name: &str,
     table_name: &str,
     column_name: &str,
-    cluster_name: Option<&str>,
     client: &ConfiguredDBClient,
 ) -> Result<(), ClickhouseChangesError> {
-    log::info!(
+    tracing::info!(
         "Executing DropTableColumn for table: {}, column: {}",
         table_name,
         column_name
     );
-    let cluster_clause = cluster_name
-        .map(|c| format!(" ON CLUSTER {}", c))
-        .unwrap_or_default();
     let drop_column_query = format!(
-        "ALTER TABLE `{}`.`{}`{} DROP COLUMN IF EXISTS `{}`",
-        db_name, table_name, cluster_clause, column_name
+        "ALTER TABLE `{}`.`{}` DROP COLUMN IF EXISTS `{}`",
+        db_name, table_name, column_name
     );
-    log::debug!("Dropping column: {}", drop_column_query);
+    tracing::debug!("Dropping column: {}", drop_column_query);
     run_query(&drop_column_query, client).await.map_err(|e| {
         ClickhouseChangesError::ClickhouseClient {
             error: e,
@@ -884,7 +764,6 @@ async fn execute_modify_table_column(
     table_name: &str,
     before_column: &Column,
     after_column: &Column,
-    cluster_name: Option<&str>,
     client: &ConfiguredDBClient,
 ) -> Result<(), ClickhouseChangesError> {
     // Check if only the comment has changed
@@ -902,7 +781,7 @@ async fn execute_modify_table_column(
         && !ttl_changed
         && comment_changed
     {
-        log::info!(
+        tracing::info!(
             "Executing comment-only modification for table: {}, column: {}",
             table_name,
             after_column.name
@@ -912,31 +791,16 @@ async fn execute_modify_table_column(
         let clickhouse_column = std_column_to_clickhouse_column(after_column.clone())?;
 
         if let Some(ref comment) = clickhouse_column.comment {
-            execute_modify_column_comment(
-                db_name,
-                table_name,
-                after_column,
-                comment,
-                cluster_name,
-                client,
-            )
-            .await?;
+            execute_modify_column_comment(db_name, table_name, after_column, comment, client)
+                .await?;
         } else {
             // If the new comment is None, we still need to update to remove the old comment
-            execute_modify_column_comment(
-                db_name,
-                table_name,
-                after_column,
-                "",
-                cluster_name,
-                client,
-            )
-            .await?;
+            execute_modify_column_comment(db_name, table_name, after_column, "", client).await?;
         }
         return Ok(());
     }
 
-    log::info!(
+    tracing::info!(
         "Executing ModifyTableColumn for table: {}, column: {} ({}→{})\
 data_type_changed: {data_type_changed}, default_changed: {default_changed}, required_changed: {required_changed}, comment_changed: {comment_changed}, ttl_changed: {ttl_changed}",
         table_name,
@@ -957,12 +821,11 @@ data_type_changed: {data_type_changed}, default_changed: {default_changed}, requ
         &clickhouse_column,
         removing_default,
         removing_ttl,
-        cluster_name,
     )?;
 
     // Execute all statements in order
     for query in queries {
-        log::debug!("Modifying column: {}", query);
+        tracing::debug!("Modifying column: {}", query);
         run_query(&query, client)
             .await
             .map_err(|e| ClickhouseChangesError::ClickhouseClient {
@@ -983,19 +846,18 @@ async fn execute_modify_column_comment(
     table_name: &str,
     column: &Column,
     comment: &str,
-    cluster_name: Option<&str>,
     client: &ConfiguredDBClient,
 ) -> Result<(), ClickhouseChangesError> {
-    log::info!(
+    tracing::info!(
         "Executing ModifyColumnComment for table: {}, column: {}",
         table_name,
         column.name
     );
 
     let modify_comment_query =
-        build_modify_column_comment_sql(db_name, table_name, &column.name, comment, cluster_name)?;
+        build_modify_column_comment_sql(db_name, table_name, &column.name, comment)?;
 
-    log::debug!("Modifying column comment: {}", modify_comment_query);
+    tracing::debug!("Modifying column comment: {}", modify_comment_query);
     run_query(&modify_comment_query, client)
         .await
         .map_err(|e| ClickhouseChangesError::ClickhouseClient {
@@ -1011,13 +873,8 @@ fn build_modify_column_sql(
     ch_col: &ClickHouseColumn,
     removing_default: bool,
     removing_ttl: bool,
-    cluster_name: Option<&str>,
 ) -> Result<Vec<String>, ClickhouseChangesError> {
     let column_type_string = basic_field_type_to_string(&ch_col.column_type)?;
-
-    let cluster_clause = cluster_name
-        .map(|c| format!(" ON CLUSTER {}", c))
-        .unwrap_or_default();
 
     let mut statements = vec![];
 
@@ -1025,16 +882,16 @@ fn build_modify_column_sql(
     // ClickHouse doesn't allow mixing column properties with REMOVE clauses
     if removing_default {
         statements.push(format!(
-            "ALTER TABLE `{}`.`{}`{} MODIFY COLUMN `{}` REMOVE DEFAULT",
-            db_name, table_name, cluster_clause, ch_col.name
+            "ALTER TABLE `{}`.`{}` MODIFY COLUMN `{}` REMOVE DEFAULT",
+            db_name, table_name, ch_col.name
         ));
     }
 
     // Add REMOVE TTL statement if needed
     if removing_ttl {
         statements.push(format!(
-            "ALTER TABLE `{}`.`{}`{} MODIFY COLUMN `{}` REMOVE TTL",
-            db_name, table_name, cluster_clause, ch_col.name
+            "ALTER TABLE `{}`.`{}` MODIFY COLUMN `{}` REMOVE TTL",
+            db_name, table_name, ch_col.name
         ));
     }
 
@@ -1063,10 +920,9 @@ fn build_modify_column_sql(
     let main_sql = if let Some(ref comment) = ch_col.comment {
         let escaped_comment = comment.replace('\'', "''");
         format!(
-            "ALTER TABLE `{}`.`{}`{} MODIFY COLUMN IF EXISTS `{}` {}{}{} COMMENT '{}'",
+            "ALTER TABLE `{}`.`{}` MODIFY COLUMN IF EXISTS `{}` {}{}{} COMMENT '{}'",
             db_name,
             table_name,
-            cluster_clause,
             ch_col.name,
             column_type_string,
             default_clause,
@@ -1075,14 +931,8 @@ fn build_modify_column_sql(
         )
     } else {
         format!(
-            "ALTER TABLE `{}`.`{}`{} MODIFY COLUMN IF EXISTS `{}` {}{}{}",
-            db_name,
-            table_name,
-            cluster_clause,
-            ch_col.name,
-            column_type_string,
-            default_clause,
-            ttl_clause
+            "ALTER TABLE `{}`.`{}` MODIFY COLUMN IF EXISTS `{}` {}{}{}",
+            db_name, table_name, ch_col.name, column_type_string, default_clause, ttl_clause
         )
     };
     statements.push(main_sql);
@@ -1095,15 +945,11 @@ fn build_modify_column_comment_sql(
     table_name: &str,
     column_name: &str,
     comment: &str,
-    cluster_name: Option<&str>,
 ) -> Result<String, ClickhouseChangesError> {
     let escaped_comment = comment.replace('\'', "''");
-    let cluster_clause = cluster_name
-        .map(|c| format!(" ON CLUSTER {}", c))
-        .unwrap_or_default();
     Ok(format!(
-        "ALTER TABLE `{}`.`{}`{} MODIFY COLUMN `{}` COMMENT '{}'",
-        db_name, table_name, cluster_clause, column_name, escaped_comment
+        "ALTER TABLE `{}`.`{}` MODIFY COLUMN `{}` COMMENT '{}'",
+        db_name, table_name, column_name, escaped_comment
     ))
 }
 
@@ -1113,7 +959,6 @@ async fn execute_modify_table_settings(
     table_name: &str,
     before_settings: &Option<HashMap<String, String>>,
     after_settings: &Option<HashMap<String, String>>,
-    cluster_name: Option<&str>,
     client: &ConfiguredDBClient,
 ) -> Result<(), ClickhouseChangesError> {
     use std::collections::HashMap;
@@ -1137,7 +982,7 @@ async fn execute_modify_table_settings(
         }
     }
 
-    log::info!(
+    tracing::info!(
         "Executing ModifyTableSettings for table: {} - modifying {} settings, resetting {} settings",
         table_name,
         settings_to_modify.len(),
@@ -1146,13 +991,9 @@ async fn execute_modify_table_settings(
 
     // Execute MODIFY SETTING if there are settings to modify
     if !settings_to_modify.is_empty() {
-        let alter_settings_query = alter_table_modify_settings_query(
-            db_name,
-            table_name,
-            &settings_to_modify,
-            cluster_name,
-        )?;
-        log::debug!("Modifying table settings: {}", alter_settings_query);
+        let alter_settings_query =
+            alter_table_modify_settings_query(db_name, table_name, &settings_to_modify, None)?;
+        tracing::debug!("Modifying table settings: {}", alter_settings_query);
 
         run_query(&alter_settings_query, client)
             .await
@@ -1164,13 +1005,9 @@ async fn execute_modify_table_settings(
 
     // Execute RESET SETTING if there are settings to reset
     if !settings_to_reset.is_empty() {
-        let reset_settings_query = alter_table_reset_settings_query(
-            db_name,
-            table_name,
-            &settings_to_reset,
-            cluster_name,
-        )?;
-        log::debug!("Resetting table settings: {}", reset_settings_query);
+        let reset_settings_query =
+            alter_table_reset_settings_query(db_name, table_name, &settings_to_reset, None)?;
+        tracing::debug!("Resetting table settings: {}", reset_settings_query);
 
         run_query(&reset_settings_query, client)
             .await
@@ -1189,22 +1026,18 @@ async fn execute_rename_table_column(
     table_name: &str,
     before_column_name: &str,
     after_column_name: &str,
-    cluster_name: Option<&str>,
     client: &ConfiguredDBClient,
 ) -> Result<(), ClickhouseChangesError> {
-    log::info!(
+    tracing::info!(
         "Executing RenameTableColumn for table: {}, column: {} → {}",
         table_name,
         before_column_name,
         after_column_name
     );
-    let cluster_clause = cluster_name
-        .map(|c| format!(" ON CLUSTER {}", c))
-        .unwrap_or_default();
     let rename_column_query = format!(
-        "ALTER TABLE `{db_name}`.`{table_name}`{cluster_clause} RENAME COLUMN `{before_column_name}` TO `{after_column_name}`"
+        "ALTER TABLE `{db_name}`.`{table_name}` RENAME COLUMN `{before_column_name}` TO `{after_column_name}`"
     );
-    log::debug!("Renaming column: {}", rename_column_query);
+    tracing::debug!("Renaming column: {}", rename_column_query);
     run_query(&rename_column_query, client).await.map_err(|e| {
         ClickhouseChangesError::ClickhouseClient {
             error: e,
@@ -1220,14 +1053,14 @@ async fn execute_raw_sql(
     description: &str,
     client: &ConfiguredDBClient,
 ) -> Result<(), ClickhouseChangesError> {
-    log::info!(
+    tracing::info!(
         "Executing {} raw SQL statements. {}",
         sql_statements.len(),
         description
     );
     for (i, sql) in sql_statements.iter().enumerate() {
         if !sql.trim().is_empty() {
-            log::debug!("Executing SQL statement {}: {}", i + 1, sql);
+            tracing::debug!("Executing SQL statement {}: {}", i + 1, sql);
             run_query(sql, client)
                 .await
                 .map_err(|e| ClickhouseChangesError::ClickhouseClient {
@@ -1561,7 +1394,7 @@ fn parse_column_metadata(comment: &str) -> Option<ColumnMetadata> {
     match serde_json::from_str::<ColumnMetadata>(json_str) {
         Ok(metadata) => Some(metadata),
         Err(e) => {
-            log::warn!("Failed to parse column metadata JSON: {}", e);
+            tracing::warn!("Failed to parse column metadata JSON: {}", e);
             None
         }
     }
@@ -1877,34 +1710,19 @@ impl OlapOperations for ConfiguredDBClient {
             // This is more reliable than using the system.tables engine column which
             // only contains the engine name without parameters (e.g., "S3Queue" instead of
             // "S3Queue('path', 'format', ...)")
-            let engine_str_to_parse = if let Some(engine_def) =
+            let engine_parsed = if let Some(engine_def) =
                 extract_engine_from_create_table(&create_query)
             {
-                engine_def
+                // Try to parse the extracted engine definition
+                engine_def.as_str().try_into().ok()
             } else {
                 // Fallback to the simple engine name from system.tables
                 debug!("Could not extract engine from CREATE TABLE query, falling back to system.tables engine column");
-                engine.clone()
+                engine.as_str().try_into().ok()
             };
-
-            // Try to parse the engine string
-            let engine_parsed: ClickhouseEngine = match engine_str_to_parse.as_str().try_into() {
-                Ok(engine) => engine,
-                Err(failed_str) => {
-                    warn!(
-                        "Failed to parse engine for table '{}': '{}'. This may indicate an unsupported engine type.",
-                        table_name, failed_str
-                    );
-                    unsupported_tables.push(TableWithUnsupportedType {
-                        database: database.clone(),
-                        name: table_name.clone(),
-                        col_name: "__engine".to_string(),
-                        col_type: String::from(failed_str),
-                    });
-                    continue 'table_loop;
-                }
-            };
-            let engine_params_hash = Some(engine_parsed.non_alterable_params_hash());
+            let engine_params_hash = engine_parsed
+                .as_ref()
+                .map(|e: &ClickhouseEngine| e.non_alterable_params_hash());
 
             // Extract table settings from CREATE TABLE query
             let table_settings = extract_table_settings_from_create_table(&create_query);
@@ -1928,8 +1746,7 @@ impl OlapOperations for ConfiguredDBClient {
             debug!("Extracted indexes for table {}: {:?}", table_name, indexes);
 
             let table = Table {
-                // keep the name with version suffix, following PartialInfrastructureMap.convert_tables
-                name: table_name,
+                name: base_name, // the name field is without version suffix elsewhere
                 columns,
                 order_by: OrderBy::Fields(order_by_cols), // Use the extracted ORDER BY columns
                 partition_by: {
@@ -1937,7 +1754,7 @@ impl OlapOperations for ConfiguredDBClient {
                     (!p.is_empty()).then(|| p.to_string())
                 },
                 sample_by: extract_sample_by_from_create_table(&create_query),
-                engine: engine_parsed,
+                engine: engine_parsed.unwrap_or_default(),
                 version,
                 source_primitive,
                 metadata: None,
@@ -1948,9 +1765,6 @@ impl OlapOperations for ConfiguredDBClient {
                 indexes,
                 database: Some(database),
                 table_ttl_setting,
-                // cluster_name is always None from introspection because ClickHouse doesn't store
-                // the ON CLUSTER clause - it's only used during DDL execution and isn't persisted
-                // in system tables. Users must manually specify cluster in their table configs.
                 cluster_name: None,
             };
             debug!("Created table object: {:?}", table);
@@ -2470,7 +2284,7 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
         };
 
         let ch_after = std_column_to_clickhouse_column(after_column).unwrap();
-        let sqls = build_modify_column_sql("db", "table", &ch_after, false, false, None).unwrap();
+        let sqls = build_modify_column_sql("db", "table", &ch_after, false, false).unwrap();
 
         assert_eq!(sqls.len(), 1);
         assert_eq!(
@@ -2502,8 +2316,8 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
         };
 
         // Use the pure SQL builder for comment-only update
-        let sql = build_modify_column_comment_sql("db", "table", &after_column.name, "new", None)
-            .unwrap();
+        let sql =
+            build_modify_column_comment_sql("db", "table", &after_column.name, "new").unwrap();
         assert_eq!(
             sql,
             "ALTER TABLE `db`.`table` MODIFY COLUMN `status` COMMENT 'new'"
@@ -2531,8 +2345,7 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
         let clickhouse_column = std_column_to_clickhouse_column(column).unwrap();
 
         let sqls =
-            build_modify_column_sql("test_db", "users", &clickhouse_column, false, false, None)
-                .unwrap();
+            build_modify_column_sql("test_db", "users", &clickhouse_column, false, false).unwrap();
 
         assert_eq!(sqls.len(), 1);
         assert_eq!(
@@ -2558,15 +2371,8 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
             ttl: None,
         };
 
-        let sqls = build_modify_column_sql(
-            "test_db",
-            "test_table",
-            &sample_hash_col,
-            false,
-            false,
-            None,
-        )
-        .unwrap();
+        let sqls = build_modify_column_sql("test_db", "test_table", &sample_hash_col, false, false)
+            .unwrap();
 
         assert_eq!(sqls.len(), 1);
         // The fix ensures xxHash64(_id) is NOT quoted - if it were quoted, ClickHouse would treat it as a string literal
@@ -2587,9 +2393,8 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
             ttl: None,
         };
 
-        let sqls =
-            build_modify_column_sql("test_db", "test_table", &created_at_col, false, false, None)
-                .unwrap();
+        let sqls = build_modify_column_sql("test_db", "test_table", &created_at_col, false, false)
+            .unwrap();
 
         assert_eq!(sqls.len(), 1);
         // The fix ensures now() is NOT quoted
@@ -2611,8 +2416,7 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
         };
 
         let sqls =
-            build_modify_column_sql("test_db", "test_table", &status_col, false, false, None)
-                .unwrap();
+            build_modify_column_sql("test_db", "test_table", &status_col, false, false).unwrap();
 
         assert_eq!(sqls.len(), 1);
         // String literals should preserve their quotes
@@ -2924,7 +2728,7 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
             order_by: OrderBy::Fields(vec!["id".to_string()]),
             partition_by: Some("toYYYYMM(created_at)".to_string()),
             sample_by: None,
-            engine: ClickhouseEngine::MergeTree,
+            engine: None,
             version: None,
             source_primitive: PrimitiveSignature {
                 name: "Test".to_string(),
@@ -2936,7 +2740,6 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
             table_settings: None,
             indexes: vec![],
             database: None,
-            cluster_name: None,
             table_ttl_setting: Some("created_at + INTERVAL 30 DAY".to_string()),
         };
 
@@ -2990,7 +2793,7 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
             order_by: OrderBy::Fields(vec!["id".to_string()]),
             partition_by: Some("toYYYYMM(created_at)".to_string()),
             sample_by: None,
-            engine: ClickhouseEngine::MergeTree,
+            engine: None,
             version: None,
             source_primitive: PrimitiveSignature {
                 name: "Test".to_string(),
@@ -3002,7 +2805,6 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
             table_settings: None,
             indexes: vec![],
             database: None,
-            cluster_name: None,
             table_ttl_setting: Some("created_at + INTERVAL 30 DAY".to_string()),
         };
 

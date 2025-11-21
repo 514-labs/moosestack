@@ -20,7 +20,7 @@ use clickhouse_rs::ClientHandle;
 use futures::stream::BoxStream;
 use futures::StreamExt;
 use itertools::{Either, Itertools};
-use log::{info, warn};
+use tracing::{info, warn};
 use serde::Serialize;
 use serde_json::{json, Map, Value};
 

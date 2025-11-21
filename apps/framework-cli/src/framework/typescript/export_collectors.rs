@@ -3,7 +3,7 @@ use crate::framework::consumption::model::ConsumptionQueryParam;
 use crate::framework::data_model::config::{ConfigIdentifier, DataModelConfig};
 use crate::framework::typescript::consumption::{extract_intput_param, extract_schema};
 use crate::project::Project;
-use log::debug;
+use tracing::debug;
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 use std::path::Path;

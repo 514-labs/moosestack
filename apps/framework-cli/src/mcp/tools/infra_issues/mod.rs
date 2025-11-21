@@ -10,7 +10,7 @@
 //! See the shared `crate::infrastructure::olap::clickhouse::diagnostics` module for
 //! detailed documentation on each diagnostic provider.
 
-use log::{debug, info};
+use tracing::{debug, info};
 use regex::Regex;
 use rmcp::model::{CallToolResult, Tool};
 use serde_json::{json, Map, Value};

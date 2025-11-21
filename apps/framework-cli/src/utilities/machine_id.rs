@@ -1,5 +1,5 @@
 use home::home_dir;
-use log::warn;
+use tracing::warn;
 use std::fs;
 use std::path::PathBuf;
 use uuid::Uuid;

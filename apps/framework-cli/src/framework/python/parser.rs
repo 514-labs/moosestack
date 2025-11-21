@@ -24,7 +24,7 @@ use crate::{
     project::python_project::PythonProject,
     utilities::constants::REQUIREMENTS_TXT,
 };
-use log::warn;
+use tracing::warn;
 use rustpython_parser::{
     ast::{self, Constant, Expr, ExprName, Identifier, Keyword, Stmt, StmtClassDef},
     Parse,

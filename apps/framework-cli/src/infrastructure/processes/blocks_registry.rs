@@ -1,4 +1,4 @@
-use log::info;
+use tracing::info;
 use std::sync::Arc;
 use std::{collections::HashMap, path::PathBuf};
 use tokio::process::Child;

@@ -12,7 +12,7 @@ use crate::utilities::package_managers::get_lock_file_path;
 use crate::utilities::{constants, system};
 use crate::{cli::display::Message, project::Project};
 
-use log::{debug, error, info};
+use tracing::{debug, error, info};
 use serde_json::Value as JsonValue;
 use std::fs;
 use std::path::{Path, PathBuf};

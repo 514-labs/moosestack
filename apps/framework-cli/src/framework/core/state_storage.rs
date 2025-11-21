@@ -13,7 +13,7 @@ use crate::utilities::machine_id::get_or_create_machine_id;
 use anyhow::{Context, Result};
 use async_trait::async_trait;
 use chrono::{DateTime, Duration, Utc};
-use log::{debug, info, warn};
+use tracing::{debug, info, warn};
 use protobuf::Message;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;

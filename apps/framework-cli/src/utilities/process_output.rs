@@ -1,4 +1,4 @@
-use log::{error, info, warn};
+use tracing::{error, info, warn};
 use std::io::{BufRead, BufReader as StdBufReader};
 use std::process::{Command, Stdio};
 use tokio::io::{AsyncBufReadExt, BufReader};

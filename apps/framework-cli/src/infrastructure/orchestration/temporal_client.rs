@@ -1,5 +1,5 @@
 use anyhow::{Error, Result};
-use log::info;
+use tracing::info;
 use temporal_sdk_core_protos::temporal::api::workflowservice::v1::workflow_service_client::WorkflowServiceClient;
 use temporal_sdk_core_protos::temporal::api::workflowservice::v1::{
     DescribeNamespaceRequest, DescribeNamespaceResponse, DescribeWorkflowExecutionRequest,

@@ -4,7 +4,7 @@ use crate::{
     framework::{core::infrastructure::table::DataEnum, python, typescript},
     project::Project,
 };
-use log::info;
+use tracing::info;
 use serde::Deserialize;
 use std::path::Path;
 

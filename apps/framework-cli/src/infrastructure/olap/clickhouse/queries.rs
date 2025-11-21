@@ -1,5 +1,5 @@
 use handlebars::{no_escape, Handlebars};
-use log::info;
+use tracing::info;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
@@ -174,13 +174,13 @@ impl BufferEngine {
     ) -> String {
         // Warn about invalid combinations (but serialize what we can)
         if flush_rows.is_some() && flush_time.is_none() {
-            log::warn!(
+            tracing::warn!(
                 "Buffer engine has flush_rows but no flush_time - flush_rows will be ignored. \
                  This violates ClickHouse nested optional constraint."
             );
         }
         if flush_bytes.is_some() && (flush_time.is_none() || flush_rows.is_none()) {
-            log::warn!(
+            tracing::warn!(
                 "Buffer engine has flush_bytes but missing flush_time or flush_rows - flush_bytes will be ignored. \
                  This violates ClickHouse nested optional constraint."
             );
@@ -1133,7 +1133,7 @@ impl ClickhouseEngine {
                 if ver.is_some() {
                     params.push(format!("'{}'", d));
                 } else {
-                    log::warn!("is_deleted requires ver to be specified, this was not caught by the validation");
+                    tracing::warn!("is_deleted requires ver to be specified, this was not caught by the validation");
                 }
             }
             if !params.is_empty() {
@@ -1266,7 +1266,7 @@ impl ClickhouseEngine {
     ) -> String {
         // Warn about invalid combination
         if policy_name.is_some() && sharding_key.is_none() {
-            log::warn!(
+            tracing::warn!(
                 "Distributed engine has policy_name but no sharding_key - policy_name will be ignored. \
                  This violates ClickHouse nested optional constraint."
             );
@@ -2379,13 +2379,13 @@ pub fn create_table_query(
         }) => {
             // Warn about invalid combinations
             if flush_rows.is_some() && flush_time.is_none() {
-                log::warn!(
+                tracing::warn!(
                     "Buffer engine has flush_rows but no flush_time - flush_rows will be ignored. \
                      This violates ClickHouse nested optional constraint."
                 );
             }
             if flush_bytes.is_some() && (flush_time.is_none() || flush_rows.is_none()) {
-                log::warn!(
+                tracing::warn!(
                     "Buffer engine has flush_bytes but missing flush_time or flush_rows - flush_bytes will be ignored. \
                      This violates ClickHouse nested optional constraint."
                 );
@@ -2427,7 +2427,7 @@ pub fn create_table_query(
         } => {
             // Warn about invalid combination
             if policy_name.is_some() && sharding_key.is_none() {
-                log::warn!(
+                tracing::warn!(
                     "Distributed engine has policy_name but no sharding_key - policy_name will be ignored. \
                      This violates ClickHouse nested optional constraint."
                 );

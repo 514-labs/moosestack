@@ -3,7 +3,7 @@
 //! This module implements the MCP tool for executing read-only SQL queries
 //! against the ClickHouse OLAP database for data exploration and debugging.
 
-use log::{debug, info};
+use tracing::{debug, info};
 use rmcp::model::{Annotated, CallToolResult, RawContent, RawTextContent, Tool};
 use serde_json::{json, Map, Value};
 use sqlparser::ast::Statement;

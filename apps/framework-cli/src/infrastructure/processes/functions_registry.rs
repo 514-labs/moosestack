@@ -8,7 +8,7 @@ use crate::{
     project::Project,
     utilities::system::KillProcessError,
 };
-use log::{error, info};
+use tracing::{error, info};
 use std::collections::HashMap;
 use std::sync::Arc;
 

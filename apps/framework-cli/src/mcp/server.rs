@@ -1,4 +1,4 @@
-use log::info;
+use tracing::info;
 use rmcp::{
     model::{
         CallToolRequestParam, CallToolResult, ErrorCode, Implementation, ListResourcesResult,

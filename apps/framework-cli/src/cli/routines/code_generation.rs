@@ -14,7 +14,7 @@ use crate::utilities::constants::{
     APP_DIR, PYTHON_EXTERNAL_FILE, PYTHON_MAIN_FILE, TYPESCRIPT_EXTERNAL_FILE, TYPESCRIPT_MAIN_FILE,
 };
 use crate::utilities::git::create_code_generation_commit;
-use log::debug;
+use tracing::debug;
 use reqwest::Url;
 use std::borrow::Cow;
 use std::env;

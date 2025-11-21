@@ -22,7 +22,7 @@ use crate::{
     infrastructure::olap::{OlapChangesError, OlapOperations},
     project::Project,
 };
-use log::debug;
+use tracing::debug;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use thiserror::Error;

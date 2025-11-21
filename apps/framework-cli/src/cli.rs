@@ -18,7 +18,7 @@ use commands::{
 };
 use config::ConfigError;
 use display::with_spinner_completion;
-use log::{debug, info, warn};
+use tracing::{debug, info, warn};
 use regex::Regex;
 use routines::auth::generate_hash_token;
 use routines::build::build_package;

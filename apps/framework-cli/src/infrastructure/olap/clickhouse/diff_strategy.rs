@@ -13,7 +13,6 @@ use crate::framework::core::infrastructure_map::{
 };
 use crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine;
 use std::collections::HashMap;
-use std::mem::discriminant;
 
 /// Generates a formatted error message for database field changes.
 ///
@@ -393,7 +392,7 @@ impl ClickHouseTableDiffStrategy {
                 // Skip population in production (user must handle manually)
                 // Only populate in dev for new MVs with non-S3Queue sources
                 if is_new && !has_s3queue_source && !is_production {
-                    log::info!(
+                    tracing::info!(
                         "Adding population operation for materialized view '{}'",
                         sql_resource.name
                     );
@@ -436,7 +435,7 @@ impl TableDiffStrategy for ClickHouseTableDiffStrategy {
         // Check if ORDER BY has changed
         let order_by_changed = order_by_change.before != order_by_change.after;
         if order_by_changed {
-            log::warn!(
+            tracing::warn!(
                 "ClickHouse: ORDER BY changed for table '{}', requiring drop+create",
                 before.name
             );
@@ -463,7 +462,7 @@ impl TableDiffStrategy for ClickHouseTableDiffStrategy {
 
             let error_message = format_database_change_error(&before.name, before_db, after_db);
 
-            log::error!("{}", error_message);
+            tracing::error!("{}", error_message);
 
             return vec![OlapChange::Table(TableChange::ValidationError {
                 table_name: before.name.clone(),
@@ -473,16 +472,10 @@ impl TableDiffStrategy for ClickHouseTableDiffStrategy {
             })];
         }
 
-        // Note: cluster_name changes are intentionally NOT treated as requiring drop+create.
-        // cluster_name is a deployment directive (how to run DDL) rather than a schema property
-        // (what the table looks like). When cluster_name changes, future DDL operations will
-        // automatically use the new cluster_name via the ON CLUSTER clause, but the table
-        // itself doesn't need to be recreated.
-
         // Check if PARTITION BY has changed
         let partition_by_changed = partition_by_change.before != partition_by_change.after;
         if partition_by_changed {
-            log::warn!(
+            tracing::warn!(
                 "ClickHouse: PARTITION BY changed for table '{}', requiring drop+create",
                 before.name
             );
@@ -501,7 +494,7 @@ impl TableDiffStrategy for ClickHouseTableDiffStrategy {
             // S3 allows specifying PK, but that information is not in system.columns
             && after.engine.is_merge_tree_family()
         {
-            log::warn!(
+            tracing::warn!(
                 "ClickHouse: Primary key structure changed for table '{}', requiring drop+create",
                 before.name
             );
@@ -511,26 +504,21 @@ impl TableDiffStrategy for ClickHouseTableDiffStrategy {
             ];
         }
 
-        // First make sure the engine type is the kind
-        // then check if we can use hash comparison for engine changes
-        let engine_changed = discriminant(&before.engine) != discriminant(&after.engine)
-            || if let (Some(before_hash), Some(after_hash)) =
-                (&before.engine_params_hash, &after.engine_params_hash)
-            {
-                // If both tables have hashes, compare them for change detection
-                // This includes credentials and other non-alterable parameters
-                before_hash != after_hash
-            } else {
-                // Fallback to direct engine comparison if hashes are not available
-                // Note: Tables are already normalized at this point (None -> Some(MergeTree))
-                // via normalize_inframap_engines() in the remote plan flow, so we can
-                // safely use direct comparison
-                before.engine != after.engine
-            };
+        // First check if we can use hash comparison for engine changes
+        let engine_changed = if let (Some(before_hash), Some(after_hash)) =
+            (&before.engine_params_hash, &after.engine_params_hash)
+        {
+            // If both tables have hashes, compare them for change detection
+            // This includes credentials and other non-alterable parameters
+            before_hash != after_hash
+        } else {
+            // Fallback to direct engine comparison if hashes are not available
+            before.engine != after.engine
+        };
 
         // Check if engine has changed (using hash comparison when available)
         if engine_changed {
-            log::warn!(
+            tracing::warn!(
                 "ClickHouse: engine changed for table '{}', requiring drop+create",
                 before.name
             );
@@ -539,18 +527,18 @@ impl TableDiffStrategy for ClickHouseTableDiffStrategy {
                 OlapChange::Table(TableChange::Added(after.clone())),
             ];
         }
-        let mut changes = Vec::new();
+
         // Check if only table settings have changed
         if before.table_settings != after.table_settings {
             // List of readonly settings that cannot be modified after table creation
             // Source: ClickHouse/src/Storages/MergeTree/MergeTreeSettings.cpp::isReadonlySetting
-            const READONLY_SETTINGS: &[(&str, &str)] = &[
-                ("index_granularity", "8192"),
-                ("index_granularity_bytes", "10485760"),
-                ("enable_mixed_granularity_parts", "1"),
-                ("add_minmax_index_for_numeric_columns", "0"),
-                ("add_minmax_index_for_string_columns", "0"),
-                ("table_disk", "0"),
+            const READONLY_SETTINGS: &[&str] = &[
+                "index_granularity",
+                "index_granularity_bytes",
+                "enable_mixed_granularity_parts",
+                "add_minmax_index_for_numeric_columns",
+                "add_minmax_index_for_string_columns",
+                "table_disk",
             ];
 
             // Check if any readonly settings have changed
@@ -558,16 +546,12 @@ impl TableDiffStrategy for ClickHouseTableDiffStrategy {
             let before_settings = before.table_settings.as_ref().unwrap_or(&empty_settings);
             let after_settings = after.table_settings.as_ref().unwrap_or(&empty_settings);
 
-            for (readonly_setting, default) in READONLY_SETTINGS {
-                let before_value = before_settings
-                    .get(*readonly_setting)
-                    .map_or(*default, |v| v);
-                let after_value = after_settings
-                    .get(*readonly_setting)
-                    .map_or(*default, |v| v);
+            for readonly_setting in READONLY_SETTINGS {
+                let before_value = before_settings.get(*readonly_setting);
+                let after_value = after_settings.get(*readonly_setting);
 
                 if before_value != after_value {
-                    log::warn!(
+                    tracing::warn!(
                         "ClickHouse: Readonly setting '{}' changed for table '{}' (from {:?} to {:?}), requiring drop+create",
                         readonly_setting,
                         before.name,
@@ -581,31 +565,32 @@ impl TableDiffStrategy for ClickHouseTableDiffStrategy {
                 }
             }
 
-            log::debug!(
+            tracing::debug!(
                 "ClickHouse: Only modifiable table settings changed for table '{}', can use ALTER TABLE MODIFY SETTING",
                 before.name
             );
             // Return the explicit SettingsChanged variant for clarity
-            changes.push(OlapChange::Table(TableChange::SettingsChanged {
+            return vec![OlapChange::Table(TableChange::SettingsChanged {
                 name: before.name.clone(),
                 before_settings: before.table_settings.clone(),
                 after_settings: after.table_settings.clone(),
                 table: after.clone(),
-            }));
+            })];
         }
 
         // Check if this is an S3Queue table with column changes
         // S3Queue only supports MODIFY/RESET SETTING, not column operations
-        if !column_changes.is_empty() && matches!(&before.engine, ClickhouseEngine::S3Queue { .. })
-        {
-            log::warn!(
-                "ClickHouse: S3Queue table '{}' has column changes, requiring drop+create (S3Queue doesn't support ALTER TABLE for columns)",
-                before.name
-            );
-            return vec![
-                OlapChange::Table(TableChange::Removed(before.clone())),
-                OlapChange::Table(TableChange::Added(after.clone())),
-            ];
+        if !column_changes.is_empty() {
+            if matches!(&before.engine, ClickhouseEngine::S3Queue { .. }) {
+                tracing::warn!(
+                    "ClickHouse: S3Queue table '{}' has column changes, requiring drop+create (S3Queue doesn't support ALTER TABLE for columns)",
+                    before.name
+                );
+                return vec![
+                    OlapChange::Table(TableChange::Removed(before.clone())),
+                    OlapChange::Table(TableChange::Added(after.clone())),
+                ];
+            }
         }
 
         // Filter out no-op changes for ClickHouse semantics:
@@ -624,18 +609,18 @@ impl TableDiffStrategy for ClickHouseTableDiffStrategy {
         // For other changes, ClickHouse can handle them via ALTER TABLE.
         // If there are no column/index/sample_by changes, return an empty vector.
         let sample_by_changed = before.sample_by != after.sample_by;
-        if !column_changes.is_empty() || before.indexes != after.indexes || sample_by_changed {
-            changes.push(OlapChange::Table(TableChange::Updated {
+        if column_changes.is_empty() && before.indexes == after.indexes && !sample_by_changed {
+            vec![]
+        } else {
+            vec![OlapChange::Table(TableChange::Updated {
                 name: before.name.clone(),
                 column_changes,
                 order_by_change,
                 partition_by_change,
                 before: before.clone(),
                 after: after.clone(),
-            }))
-        };
-
-        changes
+            })]
+        }
     }
 }
 
@@ -678,14 +663,10 @@ mod tests {
             order_by: OrderBy::Fields(order_by),
             partition_by: None,
             sample_by: None,
-            engine: if deduplicate {
-                ClickhouseEngine::ReplacingMergeTree {
-                    ver: None,
-                    is_deleted: None,
-                }
-            } else {
-                ClickhouseEngine::MergeTree
-            },
+            engine: deduplicate.then_some(ClickhouseEngine::ReplacingMergeTree {
+                ver: None,
+                is_deleted: None,
+            }),
             version: Some(Version::from_string("1.0.0".to_string())),
             source_primitive: PrimitiveSignature {
                 name: "test".to_string(),
@@ -698,7 +679,6 @@ mod tests {
             indexes: vec![],
             database: None,
             table_ttl_setting: None,
-            cluster_name: None,
         }
     }
 
@@ -1485,14 +1465,14 @@ mod tests {
             order_by: OrderBy::Fields(vec![]),
             partition_by: None,
             sample_by: None,
-            engine: ClickhouseEngine::S3Queue {
+            engine: Some(ClickhouseEngine::S3Queue {
                 s3_path: "s3://bucket/path".to_string(),
                 format: "JSONEachRow".to_string(),
                 compression: None,
                 headers: None,
                 aws_access_key_id: None,
                 aws_secret_access_key: None,
-            },
+            }),
             version: None,
             source_primitive: PrimitiveSignature {
                 name: "test_s3".to_string(),
@@ -1505,7 +1485,6 @@ mod tests {
             indexes: vec![],
             database: None,
             table_ttl_setting: None,
-            cluster_name: None,
         };
 
         assert!(ClickHouseTableDiffStrategy::is_s3queue_table(&s3_table));
@@ -1633,178 +1612,5 @@ mod tests {
         assert!(
             error_msg.contains("INSERT INTO target_db.my_table SELECT * FROM source_db.my_table")
         );
-    }
-
-    #[test]
-    fn test_cluster_change_from_none_to_some() {
-        let strategy = ClickHouseTableDiffStrategy;
-
-        let mut before = create_test_table("test", vec!["id".to_string()], false);
-        let mut after = create_test_table("test", vec!["id".to_string()], false);
-
-        // Change cluster from None to Some
-        before.cluster_name = None;
-        after.cluster_name = Some("test_cluster".to_string());
-
-        let order_by_change = OrderByChange {
-            before: before.order_by.clone(),
-            after: after.order_by.clone(),
-        };
-
-        let partition_by_change = PartitionByChange {
-            before: before.partition_by.clone(),
-            after: after.partition_by.clone(),
-        };
-
-        let changes = strategy.diff_table_update(
-            &before,
-            &after,
-            vec![],
-            order_by_change,
-            partition_by_change,
-            "local",
-        );
-
-        // cluster_name is a deployment directive, not a schema property
-        // Changing it should not trigger any operations
-        assert_eq!(changes.len(), 0);
-    }
-
-    #[test]
-    fn test_cluster_change_from_some_to_none() {
-        let strategy = ClickHouseTableDiffStrategy;
-
-        let mut before = create_test_table("test", vec!["id".to_string()], false);
-        let mut after = create_test_table("test", vec!["id".to_string()], false);
-
-        // Change cluster from Some to None
-        before.cluster_name = Some("test_cluster".to_string());
-        after.cluster_name = None;
-
-        let order_by_change = OrderByChange {
-            before: before.order_by.clone(),
-            after: after.order_by.clone(),
-        };
-
-        let partition_by_change = PartitionByChange {
-            before: before.partition_by.clone(),
-            after: after.partition_by.clone(),
-        };
-
-        let changes = strategy.diff_table_update(
-            &before,
-            &after,
-            vec![],
-            order_by_change,
-            partition_by_change,
-            "local",
-        );
-
-        // cluster_name is a deployment directive, not a schema property
-        // Changing it should not trigger any operations
-        assert_eq!(changes.len(), 0);
-    }
-
-    #[test]
-    fn test_cluster_change_between_different_clusters() {
-        let strategy = ClickHouseTableDiffStrategy;
-
-        let mut before = create_test_table("test", vec!["id".to_string()], false);
-        let mut after = create_test_table("test", vec!["id".to_string()], false);
-
-        // Change cluster from one to another
-        before.cluster_name = Some("cluster_a".to_string());
-        after.cluster_name = Some("cluster_b".to_string());
-
-        let order_by_change = OrderByChange {
-            before: before.order_by.clone(),
-            after: after.order_by.clone(),
-        };
-
-        let partition_by_change = PartitionByChange {
-            before: before.partition_by.clone(),
-            after: after.partition_by.clone(),
-        };
-
-        let changes = strategy.diff_table_update(
-            &before,
-            &after,
-            vec![],
-            order_by_change,
-            partition_by_change,
-            "local",
-        );
-
-        // cluster_name is a deployment directive, not a schema property
-        // Changing it should not trigger any operations
-        assert_eq!(changes.len(), 0);
-    }
-
-    #[test]
-    fn test_no_cluster_change_both_none() {
-        let strategy = ClickHouseTableDiffStrategy;
-
-        let before = create_test_table("test", vec!["id".to_string()], false);
-        let after = create_test_table("test", vec!["id".to_string()], false);
-
-        // Both None - no cluster change
-        assert_eq!(before.cluster_name, None);
-        assert_eq!(after.cluster_name, None);
-
-        let order_by_change = OrderByChange {
-            before: before.order_by.clone(),
-            after: after.order_by.clone(),
-        };
-
-        let partition_by_change = PartitionByChange {
-            before: before.partition_by.clone(),
-            after: after.partition_by.clone(),
-        };
-
-        let changes = strategy.diff_table_update(
-            &before,
-            &after,
-            vec![],
-            order_by_change,
-            partition_by_change,
-            "local",
-        );
-
-        // Should not trigger a validation error - no changes at all
-        assert_eq!(changes.len(), 0);
-    }
-
-    #[test]
-    fn test_no_cluster_change_both_same() {
-        let strategy = ClickHouseTableDiffStrategy;
-
-        let mut before = create_test_table("test", vec!["id".to_string()], false);
-        let mut after = create_test_table("test", vec!["id".to_string()], false);
-
-        // Both have the same cluster
-        before.cluster_name = Some("test_cluster".to_string());
-        after.cluster_name = Some("test_cluster".to_string());
-
-        let order_by_change = OrderByChange {
-            before: before.order_by.clone(),
-            after: after.order_by.clone(),
-        };
-
-        let partition_by_change = PartitionByChange {
-            before: before.partition_by.clone(),
-            after: after.partition_by.clone(),
-        };
-
-        let changes = strategy.diff_table_update(
-            &before,
-            &after,
-            vec![],
-            order_by_change,
-            partition_by_change,
-            "local",
-        );
-
-        // Should not trigger a validation error - no changes at all
-        assert_eq!(changes.len(), 0);
     }
 }

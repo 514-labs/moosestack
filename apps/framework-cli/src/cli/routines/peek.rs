@@ -14,7 +14,7 @@ use super::{setup_redis_client, RoutineFailure, RoutineSuccess};
 use crate::infrastructure::olap::clickhouse::model::ClickHouseTable;
 use crate::infrastructure::stream::kafka::client::create_consumer;
 use futures::stream::BoxStream;
-use log::info;
+use tracing::info;
 use rdkafka::consumer::{Consumer, StreamConsumer};
 use rdkafka::{Message as KafkaMessage, Offset, TopicPartitionList};
 use serde_json::Value;
@@ -230,7 +230,7 @@ pub async fn peek(
                 success_count += 1;
             }
             Err(e) => {
-                log::error!("Failed to read row {}", e);
+                tracing::error!("Failed to read row {}", e);
             }
         }
     }

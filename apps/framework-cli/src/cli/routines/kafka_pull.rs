@@ -10,7 +10,7 @@ use crate::framework::typescript::generate::sanitize_typescript_identifier;
 use crate::infrastructure::stream::kafka::client::fetch_topics;
 use crate::project::Project;
 use globset::{Glob, GlobMatcher};
-use log::{info, warn};
+use tracing::{info, warn};
 use schema_registry_client::rest::apis::Error as SchemaRegistryError;
 use schema_registry_client::rest::schema_registry_client::{
     Client as SrClientTrait, SchemaRegistryClient,

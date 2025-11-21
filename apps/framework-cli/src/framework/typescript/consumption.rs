@@ -5,7 +5,7 @@ use crate::framework::typescript::export_collectors::ExportCollectorError;
 use crate::infrastructure::olap::clickhouse::config::ClickHouseConfig;
 use crate::infrastructure::processes::consumption_registry::ConsumptionError;
 use crate::project::{JwtConfig, Project};
-use log::{debug, error, info};
+use tracing::{debug, error, info};
 use serde_json::{Map, Value};
 use std::path::Path;
 use tokio::io::{AsyncBufReadExt, BufReader};

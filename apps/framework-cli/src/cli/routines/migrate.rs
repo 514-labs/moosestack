@@ -212,11 +212,11 @@ fn validate_table_databases_and_clusters(
         .map(|cs| cs.iter().map(|c| c.name.clone()).collect())
         .unwrap_or_default();
 
-    log::info!("Configured cluster names: {:?}", cluster_names);
+    tracing::info!("Configured cluster names: {:?}", cluster_names);
 
     // Helper to validate database and cluster options
     let mut validate = |db_opt: &Option<String>, cluster_opt: &Option<String>, table_name: &str| {
-        log::info!(
+        tracing::info!(
             "Validating table '{}' with cluster: {:?}",
             table_name,
             cluster_opt
@@ -229,14 +229,14 @@ fn validate_table_databases_and_clusters(
         }
         // Validate cluster
         if let Some(cluster) = cluster_opt {
-            log::info!(
+            tracing::info!(
                 "Checking if cluster '{}' is in {:?}",
                 cluster,
                 cluster_names
             );
             // Fail if cluster is not in the configured list (or if list is empty)
             if cluster_names.is_empty() || !cluster_names.contains(cluster) {
-                log::info!("Cluster '{}' not found in configured clusters!", cluster);
+                tracing::info!("Cluster '{}' not found in configured clusters!", cluster);
                 invalid_clusters.push((table_name.to_string(), cluster.clone()));
             }
         }
@@ -250,89 +250,78 @@ fn validate_table_databases_and_clusters(
             SerializableOlapOperation::DropTable {
                 table,
                 database,
-                cluster_name,
             } => {
-                validate(database, cluster_name, table);
+                validate(database, &None, table);
             }
             SerializableOlapOperation::AddTableColumn {
                 table,
                 database,
-                cluster_name,
                 ..
             } => {
-                validate(database, cluster_name, table);
+                validate(database, &None, table);
             }
             SerializableOlapOperation::DropTableColumn {
                 table,
                 database,
-                cluster_name,
                 ..
             } => {
-                validate(database, cluster_name, table);
+                validate(database, &None, table);
             }
             SerializableOlapOperation::ModifyTableColumn {
                 table,
                 database,
-                cluster_name,
                 ..
             } => {
-                validate(database, cluster_name, table);
+                validate(database, &None, table);
             }
             SerializableOlapOperation::RenameTableColumn {
                 table,
                 database,
-                cluster_name,
                 ..
             } => {
-                validate(database, cluster_name, table);
+                validate(database, &None, table);
             }
             SerializableOlapOperation::ModifyTableSettings {
                 table,
                 database,
-                cluster_name,
                 ..
             } => {
-                validate(database, cluster_name, table);
+                validate(database, &None, table);
             }
             SerializableOlapOperation::ModifyTableTtl {
                 table,
                 database,
-                cluster_name,
                 ..
             } => {
-                validate(database, cluster_name, table);
+                validate(database, &None, table);
             }
             SerializableOlapOperation::AddTableIndex {
                 table,
                 database,
-                cluster_name,
                 ..
             } => {
-                validate(database, cluster_name, table);
+                validate(database, &None, table);
             }
             SerializableOlapOperation::DropTableIndex {
                 table,
                 database,
-                cluster_name,
                 ..
             } => {
-                validate(database, cluster_name, table);
+                validate(database, &None, table);
             }
             SerializableOlapOperation::ModifySampleBy {
                 table,
                 database,
-                cluster_name,
                 ..
             } => {
-                validate(database, cluster_name, table);
+                validate(database, &None, table);
             }
             SerializableOlapOperation::RemoveSampleBy {
                 table,
                 database,
-                cluster_name,
                 ..
             } => {
-                validate(database, cluster_name, table);
+                validate(database, &None, table);
             }
             SerializableOlapOperation::RawSql { .. } => {
                 // RawSql doesn't reference specific tables/databases/clusters, skip validation
@@ -448,7 +437,7 @@ async fn execute_operations(
     );
 
     // Validate that all table databases and clusters are configured
-    log::info!(
+    tracing::info!(
         "Validating operations against config. Clusters: {:?}",
         project.clickhouse_config.clusters
     );
@@ -641,7 +630,7 @@ pub async fn execute_migration(
     // Always release lock explicitly before returning
     // This ensures cleanup happens even if any operation above failed
     if let Err(e) = state_storage.release_migration_lock().await {
-        log::warn!("Failed to release migration lock: {}", e);
+        tracing::warn!("Failed to release migration lock: {}", e);
     }
 
     result
