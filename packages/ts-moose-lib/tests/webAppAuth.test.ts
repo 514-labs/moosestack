@@ -6,6 +6,35 @@ import {
   expressApiKeyAuthMiddleware,
 } from "../src/consumption-apis/webAppHelpers";
 
+// Test helpers for creating mock Express req/res/next
+function createMockRequest(headers: Record<string, string> = {}) {
+  return { headers };
+}
+
+function createMockResponse() {
+  return {
+    statusCode: 0,
+    body: null,
+    status: function (code: number) {
+      this.statusCode = code;
+      return this;
+    },
+    json: function (data: any) {
+      this.body = data;
+      return this;
+    },
+  };
+}
+
+function createMockNext() {
+  let called = false;
+  const next = () => {
+    called = true;
+  };
+  next.wasCalled = () => called;
+  return next;
+}
+
 describe("Express API Key Authentication", function () {
   describe("constantTimeCompare", () => {
     it("should return true for identical strings", () => {
@@ -181,27 +210,13 @@ describe("Express API Key Authentication", function () {
         delete process.env.MOOSE_WEB_APP_API_KEYS;
 
         const middleware = expressApiKeyAuthMiddleware();
-        const req = { headers: {} };
-        const res: any = {
-          statusCode: 0,
-          body: null,
-          status: function (code: number) {
-            this.statusCode = code;
-            return this;
-          },
-          json: function (data: any) {
-            this.body = data;
-            return this;
-          },
-        };
-        let nextCalled = false;
-        const next = () => {
-          nextCalled = true;
-        };
+        const req = createMockRequest();
+        const res: any = createMockResponse();
+        const next = createMockNext();
 
         middleware(req, res, next);
 
-        expect(nextCalled).to.be.false;
+        expect(next.wasCalled()).to.be.false;
         expect(res.statusCode).to.equal(401);
         expect(res.body).to.deep.equal({ error: "Unauthorized" });
       });
@@ -225,27 +240,13 @@ describe("Express API Key Authentication", function () {
         process.env.MOOSE_WEB_APP_API_KEYS = validHash;
 
         const middleware = expressApiKeyAuthMiddleware();
-        const req = { headers: {} };
-        const res: any = {
-          statusCode: 0,
-          body: null,
-          status: function (code: number) {
-            this.statusCode = code;
-            return this;
-          },
-          json: function (data: any) {
-            this.body = data;
-            return this;
-          },
-        };
-        let nextCalled = false;
-        const next = () => {
-          nextCalled = true;
-        };
+        const req = createMockRequest();
+        const res: any = createMockResponse();
+        const next = createMockNext();
 
         middleware(req, res, next);
 
-        expect(nextCalled).to.be.false;
+        expect(next.wasCalled()).to.be.false;
         expect(res.statusCode).to.equal(401);
         expect(res.body).to.deep.equal({ error: "Unauthorized" });
       });
@@ -254,27 +255,13 @@ describe("Express API Key Authentication", function () {
         process.env.MOOSE_WEB_APP_API_KEYS = validHash;
 
         const middleware = expressApiKeyAuthMiddleware();
-        const req = { headers: { authorization: validBearerToken } };
-        const res: any = {
-          statusCode: 0,
-          body: null,
-          status: function (code: number) {
-            this.statusCode = code;
-            return this;
-          },
-          json: function (data: any) {
-            this.body = data;
-            return this;
-          },
-        };
-        let nextCalled = false;
-        const next = () => {
-          nextCalled = true;
-        };
+        const req = createMockRequest({ authorization: validBearerToken });
+        const res: any = createMockResponse();
+        const next = createMockNext();
 
         middleware(req, res, next);
 
-        expect(nextCalled).to.be.false;
+        expect(next.wasCalled()).to.be.false;
         expect(res.statusCode).to.equal(401);
       });
 
@@ -282,27 +269,15 @@ describe("Express API Key Authentication", function () {
         process.env.MOOSE_WEB_APP_API_KEYS = validHash;
 
         const middleware = expressApiKeyAuthMiddleware();
-        const req = { headers: { authorization: "Bearer invalid.token" } };
-        const res: any = {
-          statusCode: 0,
-          body: null,
-          status: function (code: number) {
-            this.statusCode = code;
-            return this;
-          },
-          json: function (data: any) {
-            this.body = data;
-            return this;
-          },
-        };
-        let nextCalled = false;
-        const next = () => {
-          nextCalled = true;
-        };
+        const req = createMockRequest({
+          authorization: "Bearer invalid.token",
+        });
+        const res: any = createMockResponse();
+        const next = createMockNext();
 
         middleware(req, res, next);
 
-        expect(nextCalled).to.be.false;
+        expect(next.wasCalled()).to.be.false;
         expect(res.statusCode).to.equal(401);
       });
 
@@ -310,27 +285,15 @@ describe("Express API Key Authentication", function () {
         process.env.MOOSE_WEB_APP_API_KEYS = validHash;
 
         const middleware = expressApiKeyAuthMiddleware();
-        const req = {
-          headers: { authorization: `Bearer ${validBearerToken}` },
-        };
-        const res: any = {
-          status: function (code: number) {
-            this.statusCode = code;
-            return this;
-          },
-          json: function (data: any) {
-            this.body = data;
-            return this;
-          },
-        };
-        let nextCalled = false;
-        const next = () => {
-          nextCalled = true;
-        };
+        const req = createMockRequest({
+          authorization: `Bearer ${validBearerToken}`,
+        });
+        const res: any = createMockResponse();
+        const next = createMockNext();
 
         middleware(req, res, next);
 
-        expect(nextCalled).to.be.true;
+        expect(next.wasCalled()).to.be.true;
       });
 
       it("should accept any valid key when multiple keys are configured", () => {
@@ -343,27 +306,15 @@ describe("Express API Key Authentication", function () {
         process.env.MOOSE_WEB_APP_API_KEYS = `${validHash},${hash2}`;
 
         const middleware = expressApiKeyAuthMiddleware();
-        const req = {
-          headers: { authorization: `Bearer ${token2}.${salt2}` },
-        };
-        const res: any = {
-          status: function (code: number) {
-            this.statusCode = code;
-            return this;
-          },
-          json: function (data: any) {
-            this.body = data;
-            return this;
-          },
-        };
-        let nextCalled = false;
-        const next = () => {
-          nextCalled = true;
-        };
+        const req = createMockRequest({
+          authorization: `Bearer ${token2}.${salt2}`,
+        });
+        const res: any = createMockResponse();
+        const next = createMockNext();
 
         middleware(req, res, next);
 
-        expect(nextCalled).to.be.true;
+        expect(next.wasCalled()).to.be.true;
       });
     });
   });
