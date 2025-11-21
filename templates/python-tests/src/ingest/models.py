@@ -664,13 +664,14 @@ class DateTimePrecisionTestData(BaseModel):
 
 
 # Input pipeline (no table, just stream)
-datetime_precision_input_model = IngestPipeline[DateTimePrecisionTestData]("DateTimePrecisionInput",
-                                                                           IngestPipelineConfig(
-                                                                               ingest_api=True,
-                                                                               stream=True,
-                                                                               table=False,
-                                                                               dead_letter_queue=True
-                                                                           ))
+datetime_precision_input_model = IngestPipeline[DateTimePrecisionTestData](
+    "DateTimePrecisionInput",
+    IngestPipelineConfig(
+        ingest_api=True,
+        stream=True,
+        table=False,
+        dead_letter_queue=True
+    ))
 
 # Output table
 datetime_precision_output_table = OlapTable[DateTimePrecisionTestData](
