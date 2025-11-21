@@ -1,7 +1,11 @@
 ---
-title: Handling Failed Migrations
+title: Failed Migrations
 description: Recover from failed migrations and safely achieve desired type changes
+<<<<<<<< HEAD:apps/framework-docs-v2/content/moosestack/olap/schema-change.mdx
 order: 13
+========
+order: 4
+>>>>>>>> 49c5725d4 (docs: migrate foundations documentation refactor):apps/framework-docs-v2/content/moosestack/migrate/failed-migrations.mdx
 category: olap
 ---
 
@@ -46,25 +50,20 @@ Copy the mutation ID from the terminal logs and run the following command to kil
 ### Kill the mutation
 
 - If you have the `mutation_id`:
-```sql filename="ClickHouse" copy
-KILL MUTATION WHERE mutation_id = '<id>';
+```bash filename="Terminal" copy
+moose query "KILL MUTATION WHERE mutation_id = '<id>';"
 ```
 
 - If you didn't capture the ID, find it and kill by table:
-```sql filename="ClickHouse" copy
-SELECT mutation_id, command, is_done, latest_fail_reason
-FROM system.mutations
-WHERE database = currentDatabase() AND table = '<your_table>'
-ORDER BY create_time DESC;
-
-KILL MUTATION WHERE database = currentDatabase() AND table = '<your_table>';
+```bash filename="Terminal" copy
+moose query "SELECT mutation_id, command, is_done, latest_fail_reason FROM system.mutations WHERE database = currentDatabase() AND table = '<your_table>' ORDER BY create_time DESC;"
 ```
 
 ClickHouse ALTERs are implemented as asynchronous mutations, not transactional. If a mutation fails mid-way, some parts may have been rewritten while others were not, leaving the table partially transformed. The failed mutation also remains queued until you kill it. Clear the mutation first, then proceed.
 
-<Callout type="info" title="Coming Soon: Automatic mutation killing" compact>
+{/* <Callout type="info" title="Coming Soon: Automatic mutation killing" compact>
 Soon, Moose will automatically generate a local DDL plan that kills the mutation and "rolls back" the transformation to the data that was changed before the failure occurred. 
-</Callout>
+</Callout> */}
 
 ### Revert your code to match the current DB schema
 

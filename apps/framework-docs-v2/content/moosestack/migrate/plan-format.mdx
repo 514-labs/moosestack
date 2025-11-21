@@ -1,0 +1,240 @@
+---
+title: Migration Plan Format
+description: Detailed specification of the migration plan.yaml structure, operations, and types.
+order: 5
+category: migrate
+---
+
+import { Callout } from "@/components/mdx";
+
+# Migration Plan Format
+
+The `migrations/plan.yaml` file is the declarative source of truth for pending database changes in Moose. It defines the exact sequence of operations Moose will execute to transition your production database to the desired state.
+
+This reference documents the file structure, supported operations, and data type definitions found in generated plans.
+
+## Plan Structure
+
+A migration plan is a YAML document with the following root properties:
+
+| Field | Type | Description |
+| :--- | :--- | :--- |
+| `created_at` | String (ISO 8601) | Timestamp when the plan was generated. Used for versioning and audit trails. |
+| `operations` | Array | Ordered list of migration operations to execute. |
+
+```yaml title="migrations/plan.yaml" copy=false
+created_at: 2025-01-14T10:30:00Z
+operations:
+  - DropTableColumn: ...
+  - AddTableColumn: ...
+```
+
+## Operation Reference
+
+Operations are the atomic units of change in a migration plan. Moose executes them sequentially.
+
+### Table Operations
+
+#### `CreateTable`
+
+Creates a new ClickHouse table.
+
+```yaml title="migrations/plan.yaml" copy=false
+- CreateTable:
+    table:
+      name: <string>
+      columns: [<ColumnDefinition>]
+      order_by: [<string>]
+      engine: <EngineType>
+```
+
+| Field | Description |
+| :--- | :--- |
+| `name` | Name of the table to create. |
+| `columns` | List of column definitions. |
+| `order_by` | Array of column names used for the sorting key. |
+| `engine` | ClickHouse table engine (e.g., `MergeTree`, `ReplacingMergeTree`). |
+
+#### `DropTable`
+
+Permanently removes a table and all its data.
+
+```yaml title="migrations/plan.yaml" copy=false
+- DropTable:
+    table: <string>
+```
+
+| Field | Description |
+| :--- | :--- |
+| `table` | Name of the table to drop. |
+
+### Column Operations
+
+#### `AddTableColumn`
+
+Adds a new column to an existing table.
+
+```yaml title="migrations/plan.yaml" copy=false
+- AddTableColumn:
+    table: <string>
+    column: <ColumnDefinition>
+```
+
+| Field | Description |
+| :--- | :--- |
+| `table` | Target table name. |
+| `column` | Full definition of the new column. |
+
+#### `DropTableColumn`
+
+Removes a column from a table. **Destructive operation.**
+
+```yaml title="migrations/plan.yaml" copy=false
+- DropTableColumn:
+    table: <string>
+    column_name: <string>
+```
+
+| Field | Description |
+| :--- | :--- |
+| `table` | Target table name. |
+| `column_name` | Name of the column to remove. |
+#### `RenameTableColumn`
+
+Renames a column while preserving its data.
+
+```yaml title="migrations/plan.yaml" copy=false
+- RenameTableColumn:
+    table: <string>
+    before_column_name: <string>
+    after_column_name: <string>
+```
+
+| Field | Description |
+| :--- | :--- |
+| `table` | Target table name. |
+| `before_column_name` | Current name of the column. |
+| `after_column_name` | New name for the column. |
+
+#### `ModifyTableColumn`
+
+Changes a column's data type or properties.
+
+```yaml title="migrations/plan.yaml" copy=false
+- ModifyTableColumn:
+    table: <string>
+    before_column: <ColumnDefinition>
+    after_column: <ColumnDefinition>
+```
+
+| Field | Description |
+| :--- | :--- |
+| `table` | Target table name. |
+| `before_column` | Snapshot of the column state before modification. |
+| `after_column` | Desired state of the column. |
+
+### SQL Operations
+
+#### `RawSql`
+
+Executes arbitrary SQL statements. Used for custom migrations, backfills, or unsupported operations.
+
+```yaml title="migrations/plan.yaml" copy=false
+- RawSql:
+    sql: [<string>]
+    description: <string>
+```
+
+| Field | Description |
+| :--- | :--- |
+| `sql` | List of SQL statements to execute in order. |
+| `description` | Human-readable explanation of the operation's purpose. |
+
+## Column Definition
+
+Every column in a `CreateTable`, `AddTableColumn`, or `ModifyTableColumn` operation follows this structure:
+
+```yaml title="migrations/plan.yaml" copy=false
+name: <string>
+data_type: <DataType>
+required: <boolean>
+unique: <boolean>
+primary_key: <boolean>
+default: <string> | null
+comment: <string> | null
+annotations: [[<string>, <boolean>]]
+```
+
+| Property | Type | Description |
+| :--- | :--- | :--- |
+| `name` | String | Column identifier. |
+| `data_type` | Type | ClickHouse data type (see below). |
+| `required` | Boolean | If `true`, the column is `NOT NULL`. |
+| `unique` | Boolean | (Metadata) Whether the field is marked unique in the model. |
+| `primary_key` | Boolean | Whether the field is part of the primary key. |
+| `default` | String | Default value expression (e.g., `'active'`, `0`, `now()`). |
+
+## Data Types
+
+Moose maps data model types to ClickHouse types in the plan.
+
+### Scalar Types
+
+| Type | YAML Representation |
+| :--- | :--- |
+| **String** | `String` |
+| **Boolean** | `Boolean` |
+| **Integer** | `Int8`, `Int16`, `Int32`, `Int64`, `UInt8`... |
+| **Float** | `Float32`, `Float64` |
+| **Date** | `Date`, `Date32`, `DateTime` |
+| **UUID** | `UUID` |
+
+### Complex Types
+
+#### Nullable
+Wraps another type to allow `NULL` values.
+```yaml title="migrations/plan.yaml" copy=false
+data_type:
+  Nullable:
+    nullable: String
+```
+
+#### Arrays
+List of values of a single type.
+```yaml title="migrations/plan.yaml" copy=false
+data_type:
+  Array:
+    elementType: String
+    elementNullable: false
+```
+
+#### Enums
+Fixed set of string or integer values.
+```yaml title="migrations/plan.yaml" copy=false
+data_type:
+  Enum:
+    name: "Status"
+    values:
+      - name: "ACTIVE"
+        value: { String: "active" }
+      - name: "INACTIVE"
+        value: { String: "inactive" }
+```
+
+#### Nested (Structs)
+Hierarchical data structures.
+```yaml title="migrations/plan.yaml" copy=false
+data_type:
+  Nested:
+    name: "Address"
+    columns: [<ColumnDefinition>]
+    jwt: false
+```
+
+#### LowCardinality
+Storage optimization for columns with few unique values.
+```yaml title="migrations/plan.yaml" copy=false
+data_type:
+  LowCardinality:
+    nullable: String
+```
