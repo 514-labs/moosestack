@@ -216,12 +216,13 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
         if (tokenMatch && hashMatch) {
           testApiKey = tokenMatch[1].trim();
           testApiKeyHash = hashMatch[1].trim();
-          console.log("Generated API key for E2E testing");
+          console.log("✓ Generated API key for E2E testing");
           console.log(`  Token: ${testApiKey.substring(0, 20)}...`);
           console.log(`  Hash: ${testApiKeyHash.substring(0, 20)}...`);
         } else {
-          console.warn("Failed to parse API key from CLI output:");
-          console.warn(cleanOutput);
+          console.error("✗ Failed to parse API key from CLI output");
+          console.error("Clean output:", cleanOutput);
+          throw new Error("Could not extract API key for testing");
         }
       }
 
@@ -986,6 +987,14 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
         it("should protect WebApp routes with API key authentication middleware", async function () {
           this.timeout(TIMEOUTS.TEST_SETUP_MS);
 
+          console.log(
+            `  Environment check: testApiKeyHash = ${testApiKeyHash ? testApiKeyHash.substring(0, 20) + "..." : "NOT SET"}`,
+          );
+
+          if (!testApiKey || !testApiKeyHash) {
+            throw new Error("API key not generated - cannot run auth test");
+          }
+
           // Test 1: Request without Authorization header should return 401
           const noAuthResponse = await fetch(
             `${SERVER_CONFIG.url}/protected-api-key/health`,
@@ -1018,12 +1027,22 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
           console.log("  ✓ Rejected request with invalid token");
 
           // Test 4: Request with valid token should succeed (200)
+          console.log(
+            `  Testing valid token: Bearer ${testApiKey.substring(0, 20)}...`,
+          );
           const validAuthResponse = await fetch(
             `${SERVER_CONFIG.url}/protected-api-key/health`,
             {
               headers: { Authorization: `Bearer ${testApiKey}` },
             },
           );
+          if (validAuthResponse.status !== 200) {
+            const errorBody = await validAuthResponse.text();
+            console.error(
+              `  ✗ Valid token rejected with ${validAuthResponse.status}`,
+            );
+            console.error(`  Response: ${errorBody}`);
+          }
           expect(validAuthResponse.status).to.equal(200);
           const validAuthData = await validAuthResponse.json();
           expect(validAuthData).to.have.property("status", "ok");
