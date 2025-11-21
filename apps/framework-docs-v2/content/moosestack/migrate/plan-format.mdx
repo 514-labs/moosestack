@@ -22,7 +22,7 @@ A migration plan is a YAML document with the following root properties:
 | `created_at` | String (ISO 8601) | Timestamp when the plan was generated. Used for versioning and audit trails. |
 | `operations` | Array | Ordered list of migration operations to execute. |
 
-```yaml filename="migrations/plan.yaml"
+```yaml title="migrations/plan.yaml" copy=false
 created_at: 2025-01-14T10:30:00Z
 operations:
   - DropTableColumn: ...
@@ -39,7 +39,7 @@ Operations are the atomic units of change in a migration plan. Moose executes th
 
 Creates a new ClickHouse table.
 
-```yaml filename="migrations/plan.yaml"
+```yaml title="migrations/plan.yaml" copy=false
 - CreateTable:
     table:
       name: <string>
@@ -59,7 +59,7 @@ Creates a new ClickHouse table.
 
 Permanently removes a table and all its data.
 
-```yaml filename="migrations/plan.yaml"
+```yaml title="migrations/plan.yaml" copy=false
 - DropTable:
     table: <string>
 ```
@@ -74,7 +74,7 @@ Permanently removes a table and all its data.
 
 Adds a new column to an existing table.
 
-```yaml filename="migrations/plan.yaml"
+```yaml title="migrations/plan.yaml" copy=false
 - AddTableColumn:
     table: <string>
     column: <ColumnDefinition>
@@ -89,7 +89,7 @@ Adds a new column to an existing table.
 
 Removes a column from a table. **Destructive operation.**
 
-```yaml filename="migrations/plan.yaml"
+```yaml title="migrations/plan.yaml" copy=false
 - DropTableColumn:
     table: <string>
     column_name: <string>
@@ -99,12 +99,11 @@ Removes a column from a table. **Destructive operation.**
 | :--- | :--- |
 | `table` | Target table name. |
 | `column_name` | Name of the column to remove. |
-
 #### `RenameTableColumn`
 
 Renames a column while preserving its data.
 
-```yaml filename="migrations/plan.yaml"
+```yaml title="migrations/plan.yaml" copy=false
 - RenameTableColumn:
     table: <string>
     before_column_name: <string>
@@ -121,7 +120,7 @@ Renames a column while preserving its data.
 
 Changes a column's data type or properties.
 
-```yaml filename="migrations/plan.yaml"
+```yaml title="migrations/plan.yaml" copy=false
 - ModifyTableColumn:
     table: <string>
     before_column: <ColumnDefinition>
@@ -140,7 +139,7 @@ Changes a column's data type or properties.
 
 Executes arbitrary SQL statements. Used for custom migrations, backfills, or unsupported operations.
 
-```yaml filename="migrations/plan.yaml"
+```yaml title="migrations/plan.yaml" copy=false
 - RawSql:
     sql: [<string>]
     description: <string>
@@ -155,7 +154,7 @@ Executes arbitrary SQL statements. Used for custom migrations, backfills, or uns
 
 Every column in a `CreateTable`, `AddTableColumn`, or `ModifyTableColumn` operation follows this structure:
 
-```yaml filename="migrations/plan.yaml"
+```yaml title="migrations/plan.yaml" copy=false
 name: <string>
 data_type: <DataType>
 required: <boolean>
@@ -194,7 +193,7 @@ Moose maps data model types to ClickHouse types in the plan.
 
 #### Nullable
 Wraps another type to allow `NULL` values.
-```yaml
+```yaml title="migrations/plan.yaml" copy=false
 data_type:
   Nullable:
     nullable: String
@@ -202,7 +201,7 @@ data_type:
 
 #### Arrays
 List of values of a single type.
-```yaml filename="migrations/plan.yaml"
+```yaml title="migrations/plan.yaml" copy=false
 data_type:
   Array:
     elementType: String
@@ -211,7 +210,7 @@ data_type:
 
 #### Enums
 Fixed set of string or integer values.
-```yaml filename="migrations/plan.yaml"
+```yaml title="migrations/plan.yaml" copy=false
 data_type:
   Enum:
     name: "Status"
@@ -224,7 +223,7 @@ data_type:
 
 #### Nested (Structs)
 Hierarchical data structures.
-```yaml filename="migrations/plan.yaml"
+```yaml title="migrations/plan.yaml" copy=false
 data_type:
   Nested:
     name: "Address"
@@ -234,7 +233,7 @@ data_type:
 
 #### LowCardinality
 Storage optimization for columns with few unique values.
-```yaml filename="migrations/plan.yaml"
+```yaml title="migrations/plan.yaml" copy=false
 data_type:
   LowCardinality:
     nullable: String

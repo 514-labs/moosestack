@@ -497,6 +497,7 @@ const moosestackNavigationConfig: NavigationConfig = [
     icon: IconGitMerge,
     languages: ["typescript", "python"],
     children: [
+      { type: "separator" },
       { type: "label", title: "Lifecycle Management" },
       {
         type: "page",

@@ -1,6 +1,6 @@
 ---
 title: Externally Managed Lifecycle
-description: Read-only mode where Moose assumes the schema is managed by an external process.
+description: Configure Moose to interact with existing, externally managed database schemas.
 order: 23
 category: migrate
 ---
@@ -9,24 +9,30 @@ import { Callout, LanguageTabs, LanguageTabContent } from "@/components/mdx";
 
 # Externally Managed Lifecycle
 
-`LifeCycle.EXTERNALLY_MANAGED` tells Moose to be completely hands-off with your resources. You become responsible for creating and managing the database schema.
+`LifeCycle.EXTERNALLY_MANAGED` tells Moose to interact with existing resources without managing their schema or lifecycle. In this mode, you are fully responsible for creating and maintaining the database schema outside the context of your code.
 
 ## Use Cases
 
-- You have existing database tables managed by another team
-- You're integrating with another system (e.g. PeerDB)
-- You have strict database change management processes
+- **Existing Infrastructure**: You're connecting to tables managed by another team or process.
+- **Integrations**: You're integrating with external systems like PeerDB or CDC tools that manage the schema.
+- **Strict Governance**: Your organization requires strict, manual database change management.
 
-<Callout type="info" title="Note">
-With externally managed resources, you must ensure your database schema matches your data models exactly, or you may encounter runtime errors.
-</Callout>
+## Syncing Schema
 
-## Examples
+Because Moose doesn't manage the schema, your code definitions must match the database exactly. Mismatches can cause runtime errors.
+
+Use `moose db pull` to generate Moose models from your remote database:
+
+```bash
+moose db pull --clickhouse-url <YOUR_CLICKHOUSE_URL>
+```
+
+## Configuration
 
 <LanguageTabs>
   <LanguageTabContent value="typescript" label="TypeScript">
 
-```ts filename="ExternallyManagedExample.ts" copy
+```ts title="ExternallyManagedExample.ts"
 import { Stream, OlapTable, LifeCycle, Key } from "@514labs/moose-lib";
 
 interface ExternalUserData {
@@ -77,3 +83,9 @@ legacy_stream = Stream[ExternalUserData]("legacy_user_stream", StreamConfig(
   </LanguageTabContent>
 </LanguageTabs>
 
+<Callout type="warning" title="Local Development Behavior">
+`moose dev` **WILL CREATE** `EXTERNALLY_MANAGED` tables in your local ClickHouse instance to enable development of queries and views against your schema.
+
+- **Local Updates**: Schema changes in code **WILL** update your local database.
+- **No Remote Impact**: These changes are **NEVER** applied to the remote database.
+</Callout>
