@@ -69,14 +69,25 @@ pub enum PlanningError {
 /// external changes made to the database are properly reflected in the infrastructure map
 /// before planning and applying new changes.
 ///
-/// We only want to look at differences for tables that are already in the infrastructure map.
-/// This is because if new external tables appear, they might not be in the code, yet. As such
-/// we don't want those to be deleted as a consequence of the diff
+/// ## Handling Unmapped Resources
+///
+/// Unmapped resources (tables/views/MVs in the database but not in the current infra map) are
+/// handled differently based on the filter parameters:
+///
+/// - **Discovery mode** (empty filters): When `target_table_ids` and `target_sql_resource_ids`
+///   are empty, ALL unmapped resources are included in the reconciled map. This is used by
+///   `moose generate migration` to discover manually-created database objects.
+///
+/// - **Managed mode** (non-empty filters): When filters contain specific IDs (typically from
+///   local code or stored state), only unmapped resources matching those IDs are included.
+///   This prevents external tables/views from being accidentally deleted during normal
+///   operation (`moose dev`, `moose prod`, `moose plan`).
 ///
 /// # Arguments
 /// * `project` - The project configuration
 /// * `infra_map` - The infrastructure map to update
-/// * `target_table_names` - Names of tables to include from unmapped tables (tables in DB but not in current inframap). Only unmapped tables with names in this set will be added to the reconciled inframap.
+/// * `target_table_ids` - IDs of tables to include from unmapped tables (tables in DB but not in current inframap). Only unmapped tables with IDs in this set will be added to the reconciled inframap. If empty, all unmapped tables are included (no filtering).
+/// * `target_sql_resource_ids` - IDs of SQL resources to include from unmapped resources. Only unmapped SQL resources with IDs in this set will be added to the reconciled inframap. If empty, all unmapped SQL resources are included (no filtering).
 /// * `olap_client` - The OLAP client to use for checking reality
 ///
 /// # Returns
@@ -85,6 +96,7 @@ pub async fn reconcile_with_reality<T: OlapOperations>(
     project: &Project,
     current_infra_map: &InfrastructureMap,
     target_table_ids: &HashSet<String>,
+    target_sql_resource_ids: &HashSet<String>,
     olap_client: T,
 ) -> Result<InfrastructureMap, PlanningError> {
     info!("Reconciling infrastructure map with actual database state");
@@ -238,7 +250,13 @@ pub async fn reconcile_with_reality<T: OlapOperations>(
             }
         }
     }
-    // Add unmapped tables
+    // Add unmapped tables (exist in database but not in current infrastructure map)
+    //
+    // Filtering behavior:
+    // - Empty target_table_ids: Include ALL unmapped tables (no filtering)
+    //   Used by `moose generate migration` to discover manually-created tables
+    // - Non-empty target_table_ids: Only include tables whose IDs are in the set
+    //   Used by `moose dev`/`moose prod`/`moose plan` to filter to managed resources
     for unmapped_table in discrepancies.unmapped_tables {
         // default_database passed to `id` does not matter
         // tables from check_reality always contain non-None database
@@ -250,10 +268,20 @@ pub async fn reconcile_with_reality<T: OlapOperations>(
                 format!("{}{}", reconciled_map.default_database, table_name_version)
             }
         };
-        if target_table_ids.contains(&id) {
+
+        if target_table_ids.is_empty() || target_table_ids.contains(&id) {
+            debug!(
+                "Adding unmapped table found in reality to infrastructure map: {}",
+                id
+            );
             reconciled_map.tables.insert(
                 unmapped_table.id(&reconciled_map.default_database),
                 unmapped_table,
+            );
+        } else {
+            debug!(
+                "Ignoring unmapped table not in target map (external table): {}",
+                id
             );
         }
     }
@@ -262,38 +290,56 @@ pub async fn reconcile_with_reality<T: OlapOperations>(
     debug!("Reconciling SQL resources (views and materialized views)");
 
     // Remove missing SQL resources (in map but don't exist in reality)
-    for missing_sql_resource_name in discrepancies.missing_sql_resources {
+    for missing_sql_resource_id in discrepancies.missing_sql_resources {
         debug!(
             "Removing missing SQL resource from infrastructure map: {}",
-            missing_sql_resource_name
+            missing_sql_resource_id
         );
         reconciled_map
             .sql_resources
-            .remove(&missing_sql_resource_name);
+            .remove(&missing_sql_resource_id);
     }
 
-    // Add unmapped SQL resources (exist in reality but not in map)
+    // Add unmapped SQL resources (exist in database but not in current infrastructure map)
+    //
+    // Filtering behavior:
+    // - Empty target_sql_resource_ids: Include ALL unmapped SQL resources (no filtering)
+    //   Used by `moose generate migration` to discover manually-created views/MVs
+    // - Non-empty target_sql_resource_ids: Only include resources whose IDs are in the set
+    //   Used by `moose dev`/`moose prod`/`moose plan` to filter to managed resources
     for unmapped_sql_resource in discrepancies.unmapped_sql_resources {
-        debug!(
-            "Adding unmapped SQL resource found in reality to infrastructure map: {}",
-            unmapped_sql_resource.name
-        );
-        reconciled_map
-            .sql_resources
-            .insert(unmapped_sql_resource.name.clone(), unmapped_sql_resource);
+        let id = unmapped_sql_resource.id(&reconciled_map.default_database);
+
+        if target_sql_resource_ids.is_empty() || target_sql_resource_ids.contains(&id) {
+            debug!(
+                "Adding unmapped SQL resource found in reality to infrastructure map: {}",
+                id
+            );
+            reconciled_map
+                .sql_resources
+                .insert(id, unmapped_sql_resource);
+        } else {
+            debug!(
+                "Ignoring unmapped SQL resource not in target map (external resource): {}",
+                id
+            );
+        }
     }
 
     // Update mismatched SQL resources (exist in both but differ)
     for change in discrepancies.mismatched_sql_resources {
         match change {
             OlapChange::SqlResource(Change::Updated { before, .. }) => {
+                // We use 'before' (the actual resource from reality) because we want the
+                // reconciled map to reflect the current state of the database.
+                // This ensures the subsequent diff against the target map will correctly
+                // identify that the current state differs from the desired state.
+                let id = before.id(&reconciled_map.default_database);
                 debug!(
                     "Updating mismatched SQL resource in infrastructure map to match reality: {}",
-                    before.name
+                    id
                 );
-                reconciled_map
-                    .sql_resources
-                    .insert(before.name.clone(), *before);
+                reconciled_map.sql_resources.insert(id, *before);
             }
             _ => {
                 log::warn!(
@@ -388,6 +434,7 @@ pub async fn plan_changes(
                 .values()
                 .map(|t| t.id(&target_infra_map.default_database))
                 .collect(),
+            &target_infra_map.sql_resources.keys().cloned().collect(),
             olap_client,
         )
         .await?
@@ -465,6 +512,7 @@ mod tests {
     // Mock OLAP client for testing
     struct MockOlapClient {
         tables: Vec<Table>,
+        sql_resources: Vec<crate::framework::core::infrastructure::sql_resource::SqlResource>,
     }
 
     #[async_trait]
@@ -485,7 +533,7 @@ mod tests {
             Vec<crate::framework::core::infrastructure::sql_resource::SqlResource>,
             OlapChangesError,
         > {
-            Ok(vec![])
+            Ok(self.sql_resources.clone())
         }
     }
 
@@ -571,6 +619,7 @@ mod tests {
         // Create mock OLAP client with one table
         let mock_client = MockOlapClient {
             tables: vec![table.clone()],
+            sql_resources: vec![],
         };
 
         // Create empty infrastructure map (no tables)
@@ -594,36 +643,42 @@ mod tests {
 
         let mut target_ids = HashSet::new();
 
-        // Reconcile the infrastructure map
+        // Test 1: Empty target_ids means no filter - discover all unmapped tables
+        // This is the behavior used by `moose generate migration`
         let reconciled = reconcile_with_reality(
             &project,
             &infra_map,
             &target_ids,
+            &HashSet::new(),
             MockOlapClient {
                 tables: vec![table.clone()],
+                sql_resources: vec![],
             },
         )
         .await
         .unwrap();
 
-        // The reconciled map should not contain the unmapped table (ignoring unmapped tables)
-        assert_eq!(reconciled.tables.len(), 0);
+        // Empty target_ids = no filter, so unmapped table IS included
+        assert_eq!(reconciled.tables.len(), 1);
 
         target_ids.insert("test_unmapped_table_1_0_0".to_string());
 
-        // Reconcile the infrastructure map
+        // Test 2: Specific target_ids also includes matching tables
+        // This is the behavior used by `moose dev`, `moose prod`, etc.
         let reconciled = reconcile_with_reality(
             &project,
             &infra_map,
             &target_ids,
+            &HashSet::new(),
             MockOlapClient {
                 tables: vec![table.clone()],
+                sql_resources: vec![],
             },
         )
         .await
         .unwrap();
 
-        // The reconciled map should not contain the unmapped table (ignoring unmapped tables)
+        // When target_ids contains the table ID, it's included
         assert_eq!(reconciled.tables.len(), 1);
     }
 
@@ -633,7 +688,10 @@ mod tests {
         let table = create_test_table("missing_table");
 
         // Create mock OLAP client with no tables
-        let mock_client = MockOlapClient { tables: vec![] };
+        let mock_client = MockOlapClient {
+            tables: vec![],
+            sql_resources: vec![],
+        };
 
         // Create infrastructure map with one table
         let mut infra_map = InfrastructureMap::default();
@@ -658,7 +716,10 @@ mod tests {
         assert_eq!(discrepancies.missing_tables[0], "missing_table");
 
         // Create another mock client for the reconciliation
-        let reconcile_mock_client = MockOlapClient { tables: vec![] };
+        let reconcile_mock_client = MockOlapClient {
+            tables: vec![],
+            sql_resources: vec![],
+        };
 
         let target_table_ids = HashSet::new();
 
@@ -667,6 +728,7 @@ mod tests {
             &project,
             &infra_map,
             &target_table_ids,
+            &HashSet::new(),
             reconcile_mock_client,
         )
         .await
@@ -705,6 +767,7 @@ mod tests {
                 database: Some(db_name.clone()),
                 ..actual_table.clone()
             }],
+            sql_resources: vec![],
         };
 
         // Create infrastructure map with the infra table (no extra column)
@@ -735,6 +798,7 @@ mod tests {
                 database: Some(db_name.clone()),
                 ..actual_table.clone()
             }],
+            sql_resources: vec![],
         };
 
         let target_table_ids = HashSet::new();
@@ -743,6 +807,7 @@ mod tests {
             &project,
             &infra_map,
             &target_table_ids,
+            &HashSet::new(),
             reconcile_mock_client,
         )
         .await
@@ -766,6 +831,7 @@ mod tests {
         // Create mock OLAP client with the table
         let mock_client = MockOlapClient {
             tables: vec![table.clone()],
+            sql_resources: vec![],
         };
 
         // Create infrastructure map with the same table
@@ -792,6 +858,7 @@ mod tests {
         // Create another mock client for reconciliation
         let reconcile_mock_client = MockOlapClient {
             tables: vec![table.clone()],
+            sql_resources: vec![],
         };
 
         let target_table_ids = HashSet::new();
@@ -800,6 +867,7 @@ mod tests {
             &project,
             &infra_map,
             &target_table_ids,
+            &HashSet::new(),
             reconcile_mock_client,
         )
         .await
@@ -851,13 +919,21 @@ mod tests {
         );
 
         // Also verify that reconciliation preserves the database name
-        let mock_client = MockOlapClient { tables: vec![] };
+        let mock_client = MockOlapClient {
+            tables: vec![],
+            sql_resources: vec![],
+        };
 
         let target_table_ids = HashSet::new();
-        let reconciled =
-            reconcile_with_reality(&project, &loaded_map, &target_table_ids, mock_client)
-                .await
-                .unwrap();
+        let reconciled = reconcile_with_reality(
+            &project,
+            &loaded_map,
+            &target_table_ids,
+            &HashSet::new(),
+            mock_client,
+        )
+        .await
+        .unwrap();
 
         assert_eq!(
             reconciled.default_database, CUSTOM_DB_NAME,
@@ -904,13 +980,21 @@ mod tests {
         );
 
         // Now test reconciliation - this is where the fix should be applied
-        let mock_client = MockOlapClient { tables: vec![] };
+        let mock_client = MockOlapClient {
+            tables: vec![],
+            sql_resources: vec![],
+        };
 
         let target_table_ids = HashSet::new();
-        let reconciled =
-            reconcile_with_reality(&project, &loaded_map, &target_table_ids, mock_client)
-                .await
-                .unwrap();
+        let reconciled = reconcile_with_reality(
+            &project,
+            &loaded_map,
+            &target_table_ids,
+            &HashSet::new(),
+            mock_client,
+        )
+        .await
+        .unwrap();
 
         // After reconciliation, the database name should be set from the project config
         assert_eq!(
@@ -995,6 +1079,7 @@ mod tests {
 
         let mock_client = MockOlapClient {
             tables: vec![table_from_reality],
+            sql_resources: vec![],
         };
 
         // Create infrastructure map with the table including cluster_name
@@ -1008,10 +1093,15 @@ mod tests {
 
         let target_table_names = HashSet::new();
         // Reconcile the infrastructure map
-        let reconciled =
-            reconcile_with_reality(&project, &infra_map, &target_table_names, mock_client)
-                .await
-                .unwrap();
+        let reconciled = reconcile_with_reality(
+            &project,
+            &infra_map,
+            &target_table_names,
+            &HashSet::new(),
+            mock_client,
+        )
+        .await
+        .unwrap();
 
         // The reconciled map should preserve cluster_name from the infra map
         assert_eq!(reconciled.tables.len(), 1);
@@ -1050,6 +1140,7 @@ mod tests {
         // Create mock OLAP client with the reality table
         let mock_client = MockOlapClient {
             tables: vec![reality_table.clone()],
+            sql_resources: vec![],
         };
 
         // Create infrastructure map with the infra table
@@ -1063,10 +1154,15 @@ mod tests {
 
         let target_table_names = HashSet::new();
         // Reconcile the infrastructure map
-        let reconciled =
-            reconcile_with_reality(&project, &infra_map, &target_table_names, mock_client)
-                .await
-                .unwrap();
+        let reconciled = reconcile_with_reality(
+            &project,
+            &infra_map,
+            &target_table_names,
+            &HashSet::new(),
+            mock_client,
+        )
+        .await
+        .unwrap();
 
         // The reconciled map should still have the table
         assert_eq!(reconciled.tables.len(), 1);
@@ -1085,5 +1181,159 @@ mod tests {
             reality_table.columns.len(),
             "columns should be updated from reality"
         );
+    }
+
+    #[tokio::test]
+    async fn test_reconcile_sql_resources_with_empty_filter_discovers_all() {
+        use crate::framework::core::infrastructure::sql_resource::SqlResource;
+
+        // Create a SQL resource that exists in the database but not in the infra map
+        let sql_resource = SqlResource {
+            name: "unmapped_view".to_string(),
+            database: Some("test".to_string()),
+            setup: vec!["CREATE VIEW unmapped_view AS SELECT * FROM source".to_string()],
+            teardown: vec!["DROP VIEW IF EXISTS unmapped_view".to_string()],
+            pulls_data_from: vec![],
+            pushes_data_to: vec![],
+        };
+
+        let mock_client = MockOlapClient {
+            tables: vec![],
+            sql_resources: vec![sql_resource.clone()],
+        };
+
+        let infra_map = InfrastructureMap::default();
+        let project = create_test_project();
+
+        // Empty target_sql_resource_ids means no filter - discover all
+        let target_table_ids = HashSet::new();
+        let target_sql_resource_ids = HashSet::new();
+
+        let reconciled = reconcile_with_reality(
+            &project,
+            &infra_map,
+            &target_table_ids,
+            &target_sql_resource_ids,
+            mock_client,
+        )
+        .await
+        .unwrap();
+
+        // The unmapped SQL resource should be included because filter is empty
+        assert_eq!(reconciled.sql_resources.len(), 1);
+        assert!(reconciled
+            .sql_resources
+            .contains_key(&sql_resource.id("test")));
+    }
+
+    #[tokio::test]
+    async fn test_reconcile_sql_resources_with_specific_filter() {
+        use crate::framework::core::infrastructure::sql_resource::SqlResource;
+
+        // Create two SQL resources in the database
+        let view_a = SqlResource {
+            name: "view_a".to_string(),
+            database: Some("test".to_string()),
+            setup: vec!["CREATE VIEW view_a AS SELECT * FROM table_a".to_string()],
+            teardown: vec!["DROP VIEW IF EXISTS view_a".to_string()],
+            pulls_data_from: vec![],
+            pushes_data_to: vec![],
+        };
+
+        let view_b = SqlResource {
+            name: "view_b".to_string(),
+            database: Some("test".to_string()),
+            setup: vec!["CREATE VIEW view_b AS SELECT * FROM table_b".to_string()],
+            teardown: vec!["DROP VIEW IF EXISTS view_b".to_string()],
+            pulls_data_from: vec![],
+            pushes_data_to: vec![],
+        };
+
+        let mock_client = MockOlapClient {
+            tables: vec![],
+            sql_resources: vec![view_a.clone(), view_b.clone()],
+        };
+
+        let infra_map = InfrastructureMap::default();
+        let project = create_test_project();
+
+        // Only include view_a in the filter
+        let target_table_ids = HashSet::new();
+        let mut target_sql_resource_ids = HashSet::new();
+        target_sql_resource_ids.insert(view_a.id("test"));
+
+        let reconciled = reconcile_with_reality(
+            &project,
+            &infra_map,
+            &target_table_ids,
+            &target_sql_resource_ids,
+            mock_client,
+        )
+        .await
+        .unwrap();
+
+        // Only view_a should be included, view_b should be filtered out
+        assert_eq!(reconciled.sql_resources.len(), 1);
+        assert!(reconciled.sql_resources.contains_key(&view_a.id("test")));
+        assert!(!reconciled.sql_resources.contains_key(&view_b.id("test")));
+    }
+
+    #[tokio::test]
+    async fn test_reconcile_sql_resources_missing_and_mismatched() {
+        use crate::framework::core::infrastructure::sql_resource::SqlResource;
+
+        // Create SQL resource that's in the infra map
+        let existing_view = SqlResource {
+            name: "existing_view".to_string(),
+            database: None,
+            setup: vec!["CREATE VIEW existing_view AS SELECT * FROM old_table".to_string()],
+            teardown: vec!["DROP VIEW IF EXISTS existing_view".to_string()],
+            pulls_data_from: vec![],
+            pushes_data_to: vec![],
+        };
+
+        // Reality has a different version (mismatched)
+        let reality_view = SqlResource {
+            name: "existing_view".to_string(),
+            database: Some("test".to_string()),
+            setup: vec!["CREATE VIEW existing_view AS SELECT * FROM new_table".to_string()],
+            teardown: vec!["DROP VIEW IF EXISTS existing_view".to_string()],
+            pulls_data_from: vec![],
+            pushes_data_to: vec![],
+        };
+
+        let mock_client = MockOlapClient {
+            tables: vec![],
+            sql_resources: vec![reality_view.clone()],
+        };
+
+        // Create infra map with the existing view
+        let mut infra_map = InfrastructureMap::default();
+        infra_map
+            .sql_resources
+            .insert(existing_view.id("test"), existing_view.clone());
+
+        let project = create_test_project();
+        let target_table_ids = HashSet::new();
+        let mut target_sql_resource_ids = HashSet::new();
+        target_sql_resource_ids.insert(existing_view.id("test"));
+
+        let reconciled = reconcile_with_reality(
+            &project,
+            &infra_map,
+            &target_table_ids,
+            &target_sql_resource_ids,
+            mock_client,
+        )
+        .await
+        .unwrap();
+
+        // The view should be updated to match reality
+        assert_eq!(reconciled.sql_resources.len(), 1);
+        let reconciled_view = reconciled
+            .sql_resources
+            .get(&reality_view.id("test"))
+            .unwrap();
+        assert_eq!(reconciled_view.setup, reality_view.setup);
     }
 }

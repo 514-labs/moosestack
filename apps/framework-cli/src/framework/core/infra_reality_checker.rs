@@ -322,25 +322,29 @@ impl<T: OlapOperations> InfraRealityChecker<T> {
             actual_sql_resources.len()
         );
 
-        // Create a map of actual SQL resources by name
+        // Create a map of actual SQL resources by ID (database_name format)
         let actual_sql_resource_map: HashMap<String, _> = actual_sql_resources
             .into_iter()
-            .map(|r| (r.name.clone(), r))
+            .map(|r| (r.id(&infra_map.default_database), r))
             .collect();
 
         debug!(
-            "Actual SQL resource names: {:?}",
+            "Actual SQL resource IDs: {:?}",
             actual_sql_resource_map.keys()
         );
         debug!(
-            "Infrastructure map SQL resource names: {:?}",
+            "Infrastructure map SQL resource IDs: {:?}",
             infra_map.sql_resources.keys()
         );
 
         // Find unmapped SQL resources (exist in reality but not in map)
         let unmapped_sql_resources: Vec<_> = actual_sql_resource_map
             .values()
-            .filter(|resource| !infra_map.sql_resources.contains_key(&resource.name))
+            .filter(|resource| {
+                !infra_map
+                    .sql_resources
+                    .contains_key(&resource.id(&infra_map.default_database))
+            })
             .cloned()
             .collect();
 
@@ -349,7 +353,7 @@ impl<T: OlapOperations> InfraRealityChecker<T> {
             unmapped_sql_resources.len(),
             unmapped_sql_resources
                 .iter()
-                .map(|r| &r.name)
+                .map(|r| r.id(&infra_map.default_database))
                 .collect::<Vec<_>>()
         );
 
@@ -357,7 +361,7 @@ impl<T: OlapOperations> InfraRealityChecker<T> {
         let missing_sql_resources: Vec<String> = infra_map
             .sql_resources
             .keys()
-            .filter(|name| !actual_sql_resource_map.contains_key(*name))
+            .filter(|id| !actual_sql_resource_map.contains_key(*id))
             .cloned()
             .collect();
 
@@ -369,10 +373,10 @@ impl<T: OlapOperations> InfraRealityChecker<T> {
 
         // Find mismatched SQL resources (exist in both but differ)
         let mut mismatched_sql_resources = Vec::new();
-        for (name, desired) in &infra_map.sql_resources {
-            if let Some(actual) = actual_sql_resource_map.get(name) {
+        for (id, desired) in &infra_map.sql_resources {
+            if let Some(actual) = actual_sql_resource_map.get(id) {
                 if actual != desired {
-                    debug!("Found mismatch in SQL resource: {}", name);
+                    debug!("Found mismatch in SQL resource: {}", id);
                     mismatched_sql_resources.push(OlapChange::SqlResource(Change::Updated {
                         before: Box::new(actual.clone()),
                         after: Box::new(desired.clone()),
@@ -810,6 +814,7 @@ mod tests {
     async fn test_reality_checker_sql_resource_mismatch() {
         let actual_resource = SqlResource {
             name: "test_view".to_string(),
+            database: None,
             setup: vec!["CREATE VIEW test_view AS SELECT 1".to_string()],
             teardown: vec!["DROP VIEW test_view".to_string()],
             pulls_data_from: vec![],
@@ -818,6 +823,7 @@ mod tests {
 
         let infra_resource = SqlResource {
             name: "test_view".to_string(),
+            database: None,
             setup: vec!["CREATE VIEW test_view AS SELECT 2".to_string()], // Difference here
             teardown: vec!["DROP VIEW test_view".to_string()],
             pulls_data_from: vec![],
@@ -846,9 +852,10 @@ mod tests {
             web_apps: HashMap::new(),
         };
 
-        infra_map
-            .sql_resources
-            .insert("test_view".to_string(), infra_resource.clone());
+        infra_map.sql_resources.insert(
+            infra_resource.id(&infra_map.default_database),
+            infra_resource.clone(),
+        );
 
         let checker = InfraRealityChecker::new(mock_client);
         let project = create_test_project();

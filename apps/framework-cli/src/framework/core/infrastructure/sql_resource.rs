@@ -15,6 +15,11 @@ pub struct SqlResource {
     /// The unique name identifier for the SQL resource.
     pub name: String,
 
+    /// The database where this SQL resource exists.
+    /// - None means use the default database
+    /// - Some(db) means the resource is in a specific database
+    pub database: Option<String>,
+
     /// A list of SQL commands or script paths executed during the setup phase.
     pub setup: Vec<String>,
     /// A list of SQL commands or script paths executed during the teardown phase.
@@ -29,10 +34,26 @@ pub struct SqlResource {
 }
 
 impl SqlResource {
+    /// Returns a unique identifier for this SQL resource.
+    ///
+    /// The ID format matches the table ID format: `{database}_{name}`
+    /// This ensures resources in different databases don't collide.
+    ///
+    /// # Arguments
+    /// * `default_database` - The default database name to use when `database` is None
+    ///
+    /// # Returns
+    /// A string in the format `{database}_{name}`
+    pub fn id(&self, default_database: &str) -> String {
+        let db = self.database.as_deref().unwrap_or(default_database);
+        format!("{}_{}", db, self.name)
+    }
+
     /// Converts the `SqlResource` struct into its corresponding Protobuf representation.
     pub fn to_proto(&self) -> ProtoSqlResource {
         ProtoSqlResource {
             name: self.name.clone(),
+            database: self.database.clone(),
             setup: self.setup.clone(),
             teardown: self.teardown.clone(),
             special_fields: Default::default(),
@@ -45,6 +66,7 @@ impl SqlResource {
     pub fn from_proto(proto: ProtoSqlResource) -> Self {
         Self {
             name: proto.name,
+            database: proto.database,
             setup: proto.setup,
             teardown: proto.teardown,
             pulls_data_from: proto
@@ -85,6 +107,11 @@ impl PartialEq for SqlResource {
             return false;
         }
 
+        // Database comparison: treat None as equivalent to any explicit database
+        // This allows resources from user code (database=None) to match introspected
+        // resources (database=Some("local")), since both resolve to the same ID
+        // We don't compare database here because the HashMap key already includes it
+
         // Data lineage must match exactly
         if self.pulls_data_from != other.pulls_data_from
             || self.pushes_data_to != other.pushes_data_to
@@ -98,8 +125,11 @@ impl PartialEq for SqlResource {
         }
 
         for (self_sql, other_sql) in self.setup.iter().zip(other.setup.iter()) {
-            // Pass empty string for default_database since we're comparing already-normalized SQL
-            // or SQL from the same database context
+            // Pass empty string for default_database since the comparison happens after HashMap
+            // lookup by ID (which includes database prefix). Both SQL statements are from the
+            // same database context, so we only need AST-based normalization (backticks, casing,
+            // whitespace) without database prefix stripping. User-defined SQL typically doesn't
+            // include explicit database prefixes (e.g., "FROM local.Table").
             let self_normalized = normalize_sql_for_comparison(self_sql, "");
             let other_normalized = normalize_sql_for_comparison(other_sql, "");
             if self_normalized != other_normalized {
@@ -126,6 +156,7 @@ mod tests {
     fn create_test_resource(name: &str, setup: Vec<&str>, teardown: Vec<&str>) -> SqlResource {
         SqlResource {
             name: name.to_string(),
+            database: None,
             setup: setup.into_iter().map(String::from).collect(),
             teardown: teardown.into_iter().map(String::from).collect(),
             pulls_data_from: vec![],
@@ -263,5 +294,86 @@ mod tests {
         );
 
         assert_eq!(resource1, resource2);
+    }
+
+    #[test]
+    fn test_sql_resource_id_with_database() {
+        // Test with explicit database
+        let resource_with_db = SqlResource {
+            name: "MyView".to_string(),
+            database: Some("custom".to_string()),
+            setup: vec![],
+            teardown: vec![],
+            pulls_data_from: vec![],
+            pushes_data_to: vec![],
+        };
+        assert_eq!(resource_with_db.id("default"), "custom_MyView");
+
+        // Test with None database (uses default)
+        let resource_no_db = SqlResource {
+            name: "MyView".to_string(),
+            database: None,
+            setup: vec![],
+            teardown: vec![],
+            pulls_data_from: vec![],
+            pushes_data_to: vec![],
+        };
+        assert_eq!(resource_no_db.id("default"), "default_MyView");
+    }
+
+    #[test]
+    fn test_sql_resource_equality_ignores_database_field() {
+        // Resources with different database fields should be equal if they have the same name
+        // This is because the HashMap key already includes the database, so we don't need to
+        // compare it during equality checks
+        let resource_no_db = SqlResource {
+            name: "MyView".to_string(),
+            database: None,
+            setup: vec!["CREATE VIEW MyView AS SELECT * FROM table1".to_string()],
+            teardown: vec!["DROP VIEW IF EXISTS MyView".to_string()],
+            pulls_data_from: vec![],
+            pushes_data_to: vec![],
+        };
+
+        let resource_with_db = SqlResource {
+            name: "MyView".to_string(),
+            database: Some("local".to_string()),
+            setup: vec!["CREATE VIEW MyView AS SELECT * FROM table1".to_string()],
+            teardown: vec!["DROP VIEW IF EXISTS MyView".to_string()],
+            pulls_data_from: vec![],
+            pushes_data_to: vec![],
+        };
+
+        // These should be equal because database is not compared in PartialEq
+        assert_eq!(resource_no_db, resource_with_db);
+    }
+
+    #[test]
+    fn test_sql_resource_equality_with_normalized_sql() {
+        // Test that SQL normalization handles whitespace and formatting differences
+        let resource_formatted = SqlResource {
+            name: "TestView".to_string(),
+            database: None,
+            setup: vec![
+                "CREATE VIEW IF NOT EXISTS TestView \n          AS SELECT\n    `primaryKey`,\n    `utcTimestamp`,\n    `textLength`\n  FROM `Bar`\n  WHERE `hasText` = true".to_string()
+            ],
+            teardown: vec!["DROP VIEW IF EXISTS `TestView`".to_string()],
+            pulls_data_from: vec![],
+            pushes_data_to: vec![],
+        };
+
+        let resource_compact = SqlResource {
+            name: "TestView".to_string(),
+            database: None,
+            setup: vec![
+                "CREATE VIEW IF NOT EXISTS TestView AS SELECT primaryKey, utcTimestamp, textLength FROM Bar WHERE hasText = true".to_string()
+            ],
+            teardown: vec!["DROP VIEW IF EXISTS `TestView`".to_string()],
+            pulls_data_from: vec![],
+            pushes_data_to: vec![],
+        };
+
+        // These should be equal after SQL normalization
+        assert_eq!(resource_formatted, resource_compact);
     }
 }
