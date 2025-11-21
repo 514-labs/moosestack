@@ -109,20 +109,24 @@ function getValidApiKeys(): string[] | false {
  *
  * Validates API key from Authorization header against configured keys.
  * Returns 401 Unauthorized if:
+ * - MOOSE_WEB_APP_API_KEYS is not configured
  * - Authorization header is missing
  * - Authorization header format is invalid
  * - API key doesn't match any valid keys
  *
- * If MOOSE_WEB_APP_API_KEYS is not configured, all requests pass through.
- * This makes auth opt-in via environment variable.
+ * IMPORTANT: Adding this middleware requires MOOSE_WEB_APP_API_KEYS to be set.
+ * If you add this middleware but don't configure keys, all requests will be rejected.
  */
 export function expressApiKeyAuthMiddleware() {
   return (req: any, res: any, next: any) => {
     const validApiKeys = getValidApiKeys();
 
-    // If no API keys configured, allow all requests through (opt-in auth)
+    // If no API keys configured, reject all requests (fail secure)
     if (!validApiKeys) {
-      return next();
+      console.log("[API Auth] Rejected: MOOSE_WEB_APP_API_KEYS not configured");
+      return res.status(401).json({
+        error: "Unauthorized",
+      });
     }
 
     const authHeader = req.headers.authorization;

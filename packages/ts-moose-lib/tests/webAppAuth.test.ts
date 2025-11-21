@@ -177,12 +177,14 @@ describe("Express API Key Authentication", function () {
     });
 
     describe("when API keys are not configured", () => {
-      it("should call next() and allow request through", () => {
+      it("should return 401 and reject all requests", () => {
         delete process.env.MOOSE_WEB_APP_API_KEYS;
 
         const middleware = expressApiKeyAuthMiddleware();
         const req = { headers: {} };
         const res: any = {
+          statusCode: 0,
+          body: null,
           status: function (code: number) {
             this.statusCode = code;
             return this;
@@ -199,7 +201,9 @@ describe("Express API Key Authentication", function () {
 
         middleware(req, res, next);
 
-        expect(nextCalled).to.be.true;
+        expect(nextCalled).to.be.false;
+        expect(res.statusCode).to.equal(401);
+        expect(res.body).to.deep.equal({ error: "Unauthorized" });
       });
     });
 
