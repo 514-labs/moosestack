@@ -7,7 +7,6 @@ use crate::{
 };
 
 pub mod clickhouse;
-pub mod clickhouse_alt_client;
 pub mod clickhouse_http_client;
 pub mod ddl_ordering;
 
