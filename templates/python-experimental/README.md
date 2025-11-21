@@ -40,10 +40,44 @@ See `app/apis/bar.py` for complete examples using both f-string and Query builde
 
 ### Installation
 
-1. Install Moose CLI: `pip install moose-cli`
-2. Create project: `moose init <project-name> python`
-3. Install dependencies: `cd <project-name> && pip install -r requirements.txt`
-4. Run Moose: `moose dev`
+**⚠️ Important:** This experimental template requires the latest development version of `moose_lib` with MooseModel support.
+
+#### Option 1: Install from Local Development (Recommended for testing)
+
+If you're working from the moosestack repository:
+
+```bash
+# 1. Create your project
+moose init <project-name> --template python-experimental
+
+# 2. Navigate to project
+cd <project-name>
+
+# 3. Create and activate virtual environment
+python3 -m venv .venv
+source .venv/bin/activate
+
+# 4. Install the local py-moose-lib in development mode
+pip install -e ../../packages/py-moose-lib
+
+# 5. Install other dependencies
+pip install -r requirements.txt
+
+# 6. Run Moose
+moose dev
+```
+
+#### Option 2: Wait for Published Release
+
+The MooseModel feature will be available in the next published release of `moose-cli`. Once published, you can install normally:
+
+```bash
+pip install moose-cli
+moose init <project-name> --template python-experimental
+cd <project-name>
+pip install -r requirements.txt
+moose dev
+```
 
 You are ready to go! You can start editing the app by modifying primitives in the `app` subdirectory.
 

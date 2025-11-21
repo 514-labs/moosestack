@@ -1,26 +1,33 @@
 language = "python" # Must be typescript or python
 description = "Experimental Python project demonstrating MooseModel with LSP autocomplete for column names."
 post_install_print = """
-Deploy on Boreal
+⚠️  EXPERIMENTAL TEMPLATE - REQUIRES DEV VERSION ⚠️
 
-The easiest way to deploy your MooseStack Applications is to use Boreal
-from the creators of MooseStack.
-
-https://boreal.cloud
+This template uses the new MooseModel feature with LSP autocomplete.
+It requires the development version of moose_lib.
 
 ---------------------------------------------------------
 
 📂 Go to your project directory:
     $ cd {project_dir}
 
-🥄 Create a virtual environment (optional, recommended):
+🥄 Create a virtual environment:
     $ python3 -m venv .venv
     $ source .venv/bin/activate
 
-📦 Install Dependencies:
+⚡ Install LOCAL py-moose-lib in development mode:
+    $ pip install -e <path-to-moosestack>/packages/py-moose-lib
+
+📦 Install other dependencies:
     $ pip install -r ./requirements.txt
 
 🛠️ Start Moose Server:
     $ moose dev
+
+---------------------------------------------------------
+
+📖 See README.md for detailed setup instructions.
+
+Deploy on Boreal: https://boreal.cloud
 """
 default_sloan_telemetry="standard"
