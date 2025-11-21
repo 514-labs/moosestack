@@ -7,16 +7,21 @@ import type { ApiUtil } from "./helpers";
  *
  * Regular string comparison (===) stops at the first different character,
  * which can leak information about the correct token through timing measurements.
+ *
+ * Uses utf16le encoding because it's the only Node.js encoding that doesn't
+ * lose information (utf8 normalizes lone surrogates, latin1 truncates multi-byte
+ * characters, base64 drops whitespace, etc.)
  */
 function constantTimeCompare(a: string, b: string): boolean {
   try {
-    // If lengths differ, timingSafeEqual throws, so check first
+    // Early return if lengths differ (length is typically not secret for API keys)
     if (a.length !== b.length) {
       return false;
     }
 
-    const bufA = Buffer.from(a, "utf8") as unknown as Uint8Array;
-    const bufB = Buffer.from(b, "utf8") as unknown as Uint8Array;
+    // Convert to utf16le buffers to preserve all string data
+    const bufA = Buffer.from(a, "utf16le") as unknown as Uint8Array;
+    const bufB = Buffer.from(b, "utf16le") as unknown as Uint8Array;
 
     return crypto.timingSafeEqual(bufA, bufB);
   } catch (error) {

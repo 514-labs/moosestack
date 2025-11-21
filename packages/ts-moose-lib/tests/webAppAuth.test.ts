@@ -1,5 +1,8 @@
 import { expect } from "chai";
-import { constantTimeCompare } from "../src/consumption-apis/webAppHelpers";
+import {
+  constantTimeCompare,
+  validateAuthToken,
+} from "../src/consumption-apis/webAppHelpers";
 
 describe("Express API Key Authentication", function () {
   describe("constantTimeCompare", () => {
@@ -34,6 +37,48 @@ describe("Express API Key Authentication", function () {
     it("should handle empty strings", () => {
       const result = constantTimeCompare("", "");
       expect(result).to.be.true;
+    });
+  });
+
+  describe("validateAuthToken", () => {
+    // Test vector: token "testtoken123", salt "testsalt456"
+    // Generated with: pbkdf2_hmac_sha256("testtoken123", "testsalt456", 1000, 20)
+    const validToken = "testtoken123.testsalt456";
+    const validHash = "16f1007b989903c142e7a8165e669cb737a4aee4";
+
+    it("should return true for valid token and hash", () => {
+      const result = validateAuthToken(validToken, validHash);
+      expect(result).to.be.true;
+    });
+
+    it("should return false for token with wrong token part", () => {
+      const result = validateAuthToken("wrong.testsalt456", validHash);
+      expect(result).to.be.false;
+    });
+
+    it("should return false for token with wrong salt part", () => {
+      const result = validateAuthToken("testtoken123.wrong", validHash);
+      expect(result).to.be.false;
+    });
+
+    it("should return false for malformed token (no dot separator)", () => {
+      const result = validateAuthToken("testtoken123testsalt456", validHash);
+      expect(result).to.be.false;
+    });
+
+    it("should return false for token with multiple dots", () => {
+      const result = validateAuthToken("test.token.salt", validHash);
+      expect(result).to.be.false;
+    });
+
+    it("should return false for empty token", () => {
+      const result = validateAuthToken("", validHash);
+      expect(result).to.be.false;
+    });
+
+    it("should return false for token with empty parts", () => {
+      const result = validateAuthToken(".testsalt456", validHash);
+      expect(result).to.be.false;
     });
   });
 });
