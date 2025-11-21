@@ -160,6 +160,8 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
   describe(testName, () => {
     let devProcess: ChildProcess | null = null;
     let TEST_PROJECT_DIR: string;
+    let testApiKey = "";
+    let testApiKeyHash = "";
 
     before(async function () {
       this.timeout(TIMEOUTS.TEST_SETUP_MS);
@@ -197,6 +199,18 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
 
       // Start dev server
       console.log("Starting dev server...");
+      // Generate API key for E2E testing if this is the tests variant
+      if (config.isTestsVariant && config.language === "typescript") {
+        const { stdout } = await execAsync(`"${CLI_PATH}" generate hash-token`);
+        const tokenMatch = stdout.match(/Token: (.+)/);
+        const hashMatch = stdout.match(/ENV API Keys:\s+(\w+)/);
+        if (tokenMatch && hashMatch) {
+          testApiKey = tokenMatch[1].trim();
+          testApiKeyHash = hashMatch[1].trim();
+          console.log("Generated API key for E2E testing");
+        }
+      }
+
       const devEnv =
         config.language === "python" ?
           {
@@ -212,6 +226,10 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
             // Add test credentials for S3Queue tests
             TEST_AWS_ACCESS_KEY_ID: "test-access-key-id",
             TEST_AWS_SECRET_ACCESS_KEY: "test-secret-access-key",
+            // Add API key for E2E testing
+            ...(testApiKeyHash ?
+              { MOOSE_WEB_APP_API_KEYS: testApiKeyHash }
+            : {}),
           };
 
       devProcess = spawn(CLI_PATH, ["dev"], {
@@ -954,22 +972,6 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
         it("should protect WebApp routes with API key authentication middleware", async function () {
           this.timeout(TIMEOUTS.TEST_SETUP_MS);
 
-          // Generate API key using CLI
-          const { stdout } = await execAsync(
-            `"${CLI_PATH}" generate hash-token`,
-          );
-          const tokenMatch = stdout.match(/Token: (.+)/);
-          const hashMatch = stdout.match(/ENV API Keys:\s+(\w+)/);
-
-          if (!tokenMatch || !hashMatch) {
-            throw new Error("Failed to extract token or hash from CLI output");
-          }
-
-          const bearerToken = tokenMatch[1].trim();
-          const apiKeyHash = hashMatch[1].trim();
-
-          console.log(`  Generated API key for testing`);
-
           // Test 1: Request without Authorization header should return 401
           const noAuthResponse = await fetch(
             `${SERVER_CONFIG.url}/protected-api-key/health`,
@@ -983,7 +985,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
           const malformedAuthResponse = await fetch(
             `${SERVER_CONFIG.url}/protected-api-key/health`,
             {
-              headers: { Authorization: bearerToken },
+              headers: { Authorization: testApiKey },
             },
           );
           expect(malformedAuthResponse.status).to.equal(401);
@@ -1001,14 +1003,39 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
           expect(invalidTokenResponse.status).to.equal(401);
           console.log("  ✓ Rejected request with invalid token");
 
-          // Test 4: Request with valid token should succeed
-          // Need to set MOOSE_WEB_APP_API_KEYS in the running process
-          // Since we can't easily restart the server with new env vars in this test,
-          // we'll just verify the middleware is working by checking 401 responses
-          // Full E2E test with valid auth requires manual testing or separate test setup
-          console.log(
-            "  ✓ API key authentication middleware is active and rejecting unauthorized requests",
+          // Test 4: Request with valid token should succeed (200)
+          const validAuthResponse = await fetch(
+            `${SERVER_CONFIG.url}/protected-api-key/health`,
+            {
+              headers: { Authorization: `Bearer ${testApiKey}` },
+            },
           );
+          expect(validAuthResponse.status).to.equal(200);
+          const validAuthData = await validAuthResponse.json();
+          expect(validAuthData).to.have.property("status", "ok");
+          expect(validAuthData).to.have.property(
+            "service",
+            "protected-api-key-api",
+          );
+          console.log("  ✓ Accepted request with valid API key");
+
+          // Test 5: Verify authenticated POST endpoint works
+          const echoResponse = await fetch(
+            `${SERVER_CONFIG.url}/protected-api-key/echo`,
+            {
+              method: "POST",
+              headers: {
+                Authorization: `Bearer ${testApiKey}`,
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({ test: "data" }),
+            },
+          );
+          expect(echoResponse.status).to.equal(200);
+          const echoData = await echoResponse.json();
+          expect(echoData).to.have.property("authenticated", true);
+          expect(echoData.body).to.deep.equal({ test: "data" });
+          console.log("  ✓ Authenticated POST request succeeded");
         });
 
         it("should serve MCP server at /tools with proper header forwarding", async function () {
