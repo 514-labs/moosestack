@@ -3,6 +3,7 @@ import {
   constantTimeCompare,
   validateAuthToken,
   getValidApiKeys,
+  expressApiKeyAuthMiddleware,
 } from "../src/consumption-apis/webAppHelpers";
 
 describe("Express API Key Authentication", function () {
@@ -157,6 +158,209 @@ describe("Express API Key Authentication", function () {
       process.env.MOOSE_WEB_APP_API_KEYS = shortKey;
       const result = getValidApiKeys();
       expect(result).to.deep.equal([shortKey]);
+    });
+  });
+
+  describe("expressApiKeyAuthMiddleware", () => {
+    let originalEnv: string | undefined;
+
+    beforeEach(() => {
+      originalEnv = process.env.MOOSE_WEB_APP_API_KEYS;
+    });
+
+    afterEach(() => {
+      if (originalEnv === undefined) {
+        delete process.env.MOOSE_WEB_APP_API_KEYS;
+      } else {
+        process.env.MOOSE_WEB_APP_API_KEYS = originalEnv;
+      }
+    });
+
+    describe("when API keys are not configured", () => {
+      it("should call next() and allow request through", () => {
+        delete process.env.MOOSE_WEB_APP_API_KEYS;
+
+        const middleware = expressApiKeyAuthMiddleware();
+        const req = { headers: {} };
+        const res: any = {
+          status: function (code: number) {
+            this.statusCode = code;
+            return this;
+          },
+          json: function (data: any) {
+            this.body = data;
+            return this;
+          },
+        };
+        let nextCalled = false;
+        const next = () => {
+          nextCalled = true;
+        };
+
+        middleware(req, res, next);
+
+        expect(nextCalled).to.be.true;
+      });
+    });
+
+    describe("when API keys are configured", () => {
+      // Generate a valid test token using Node.js crypto
+      const testToken = "testtoken123";
+      const testSalt = "testsalt456";
+      let validHash: string;
+      let validBearerToken: string;
+
+      before(() => {
+        const crypto = require("crypto");
+        const key = crypto.pbkdf2Sync(testToken, testSalt, 1000, 20, "sha256");
+        validHash = key.toString("hex");
+        validBearerToken = `${testToken}.${testSalt}`;
+      });
+
+      it("should return 401 when Authorization header is missing", () => {
+        process.env.MOOSE_WEB_APP_API_KEYS = validHash;
+
+        const middleware = expressApiKeyAuthMiddleware();
+        const req = { headers: {} };
+        const res: any = {
+          statusCode: 0,
+          body: null,
+          status: function (code: number) {
+            this.statusCode = code;
+            return this;
+          },
+          json: function (data: any) {
+            this.body = data;
+            return this;
+          },
+        };
+        let nextCalled = false;
+        const next = () => {
+          nextCalled = true;
+        };
+
+        middleware(req, res, next);
+
+        expect(nextCalled).to.be.false;
+        expect(res.statusCode).to.equal(401);
+        expect(res.body).to.deep.equal({ error: "Unauthorized" });
+      });
+
+      it("should return 401 when Authorization header format is invalid (no Bearer)", () => {
+        process.env.MOOSE_WEB_APP_API_KEYS = validHash;
+
+        const middleware = expressApiKeyAuthMiddleware();
+        const req = { headers: { authorization: validBearerToken } };
+        const res: any = {
+          statusCode: 0,
+          body: null,
+          status: function (code: number) {
+            this.statusCode = code;
+            return this;
+          },
+          json: function (data: any) {
+            this.body = data;
+            return this;
+          },
+        };
+        let nextCalled = false;
+        const next = () => {
+          nextCalled = true;
+        };
+
+        middleware(req, res, next);
+
+        expect(nextCalled).to.be.false;
+        expect(res.statusCode).to.equal(401);
+      });
+
+      it("should return 401 when token is invalid", () => {
+        process.env.MOOSE_WEB_APP_API_KEYS = validHash;
+
+        const middleware = expressApiKeyAuthMiddleware();
+        const req = { headers: { authorization: "Bearer invalid.token" } };
+        const res: any = {
+          statusCode: 0,
+          body: null,
+          status: function (code: number) {
+            this.statusCode = code;
+            return this;
+          },
+          json: function (data: any) {
+            this.body = data;
+            return this;
+          },
+        };
+        let nextCalled = false;
+        const next = () => {
+          nextCalled = true;
+        };
+
+        middleware(req, res, next);
+
+        expect(nextCalled).to.be.false;
+        expect(res.statusCode).to.equal(401);
+      });
+
+      it("should call next() when token is valid", () => {
+        process.env.MOOSE_WEB_APP_API_KEYS = validHash;
+
+        const middleware = expressApiKeyAuthMiddleware();
+        const req = {
+          headers: { authorization: `Bearer ${validBearerToken}` },
+        };
+        const res: any = {
+          status: function (code: number) {
+            this.statusCode = code;
+            return this;
+          },
+          json: function (data: any) {
+            this.body = data;
+            return this;
+          },
+        };
+        let nextCalled = false;
+        const next = () => {
+          nextCalled = true;
+        };
+
+        middleware(req, res, next);
+
+        expect(nextCalled).to.be.true;
+      });
+
+      it("should accept any valid key when multiple keys are configured", () => {
+        const crypto = require("crypto");
+        const token2 = "token2";
+        const salt2 = "salt2";
+        const key2 = crypto.pbkdf2Sync(token2, salt2, 1000, 20, "sha256");
+        const hash2 = key2.toString("hex");
+
+        process.env.MOOSE_WEB_APP_API_KEYS = `${validHash},${hash2}`;
+
+        const middleware = expressApiKeyAuthMiddleware();
+        const req = {
+          headers: { authorization: `Bearer ${token2}.${salt2}` },
+        };
+        const res: any = {
+          status: function (code: number) {
+            this.statusCode = code;
+            return this;
+          },
+          json: function (data: any) {
+            this.body = data;
+            return this;
+          },
+        };
+        let nextCalled = false;
+        const next = () => {
+          nextCalled = true;
+        };
+
+        middleware(req, res, next);
+
+        expect(nextCalled).to.be.true;
+      });
     });
   });
 });
