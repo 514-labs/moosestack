@@ -3,7 +3,7 @@
 from moose_lib import Point, Ring, LineString, MultiLineString, Polygon, MultiPolygon
 from moose_lib import Key, IngestPipeline, IngestPipelineConfig, StringToEnumMixin, clickhouse_default, OlapTable, \
     OlapConfig, MergeTreeEngine, ReplacingMergeTreeEngine, AggregatingMergeTreeEngine, simple_aggregated, \
-    ClickhouseSize, UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64, Float32, Float64, clickhouse_datetime64
+    ClickhouseSize, UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64, Float32, Float64, ClickhousePrecision
 from datetime import datetime, date
 from typing import Optional, Annotated, Any
 from pydantic import BaseModel, BeforeValidator, ConfigDict
@@ -658,9 +658,9 @@ class DateTimePrecisionTestData(BaseModel):
     """Input model with datetime fields."""
     id: Key[str]
     created_at: datetime
-    timestamp_ms: Annotated[datetime, clickhouse_datetime64(3)]
-    timestamp_us: Annotated[datetime, clickhouse_datetime64(6)]
-    timestamp_ns: Annotated[datetime, clickhouse_datetime64(9)]
+    timestamp_ms: Annotated[datetime, ClickhousePrecision(3)]
+    timestamp_us: Annotated[datetime, ClickhousePrecision(6)]
+    timestamp_ns: Annotated[datetime, ClickhousePrecision(9)]
 
 
 # Input pipeline (no table, just stream)
