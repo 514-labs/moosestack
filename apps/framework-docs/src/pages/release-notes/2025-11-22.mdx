@@ -90,16 +90,6 @@ PR: [#2944](https://github.com/514-labs/moosestack/pull/2944)
 
 ## 🐻 Boreal
 
-### GitHub integration for project creation
-
-Connect your GitHub account and create Boreal projects directly from your repositories with an improved multi-step workflow.
-
-**Why it matters:** Setting up data infrastructure projects should be as simple as pointing to your existing codebase. The new GitHub integration eliminates manual repository configuration by letting you browse your GitHub organizations and repositories, select the one you want, and automatically create a Boreal project with proper authentication and repository linking. The enhanced OAuth flow includes better error handling, token expiration detection, and automatic reconnection prompts, so you never get stuck during project creation.
-
-📸 *[Screenshot showing the GitHub organization selector and repository browser in the project creation flow]*
-
-PR: [514-labs/commercial#1087](https://github.com/514-labs/commercial/pull/1087) • Related fixes: [#1088](https://github.com/514-labs/commercial/pull/1088), [#1060](https://github.com/514-labs/commercial/pull/1060), [#1058](https://github.com/514-labs/commercial/pull/1058)
-
 ### Database performance metrics visualization
 
 View query latency (P95), throughput (rows/second), and storage usage directly in your project overview with weekly trends and 24-hour detailed views.
@@ -108,17 +98,15 @@ View query latency (P95), throughput (rows/second), and storage usage directly i
 
 📸 *[Screenshot showing the performance metrics charts with P95 latency, throughput, and storage graphs]*
 
-PR: [514-labs/commercial#1055](https://github.com/514-labs/commercial/pull/1055) • Related fixes: [#1066](https://github.com/514-labs/commercial/pull/1066), [#1073](https://github.com/514-labs/commercial/pull/1073), [#1097](https://github.com/514-labs/commercial/pull/1097)
-
 ### Other improvements
 
-- Videos link added to Resources section in navigation ([514-labs/commercial#1062](https://github.com/514-labs/commercial/pull/1062))
-- Branch selector now displays all branches with scrollable interface (removed 10-item limit) ([514-labs/commercial#1089](https://github.com/514-labs/commercial/pull/1089))
-- Deployment status timestamps now consistent across dashboard ([514-labs/commercial#1090](https://github.com/514-labs/commercial/pull/1090))
-- Redpanda cluster metrics added to monitoring dashboard ([514-labs/commercial#1085](https://github.com/514-labs/commercial/pull/1085))
+- Videos link added to Resources section in navigation
+- Branch selector now displays all branches with scrollable interface (removed 10-item limit)
+- Deployment status timestamps now consistent across dashboard
+- Redpanda cluster metrics added to monitoring dashboard
 
 ### Bug fixes
 
-- API v1 authentication middleware conflicts resolved ([514-labs/commercial#1082](https://github.com/514-labs/commercial/pull/1082), [#1081](https://github.com/514-labs/commercial/pull/1081), [#1080](https://github.com/514-labs/commercial/pull/1080), [#1077](https://github.com/514-labs/commercial/pull/1077))
-- Organization join redirect issue fixed ([514-labs/commercial#1088](https://github.com/514-labs/commercial/pull/1088))
-- Deployment reliability improved with proper await configuration ([514-labs/commercial#1075](https://github.com/514-labs/commercial/pull/1075))
+- API v1 authentication middleware conflicts resolved
+- Organization join redirect issue fixed
+- Deployment reliability improved with proper await configuration
