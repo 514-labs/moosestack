@@ -1,19 +1,24 @@
 """Tests for S3Queue engine configuration with the new type hints."""
 
-import pytest
-from pydantic import BaseModel
-from datetime import datetime
 import warnings
+from datetime import datetime
 
-from moose_lib import OlapTable, OlapConfig, ClickHouseEngines
-from moose_lib.blocks import S3QueueEngine, MergeTreeEngine, ReplacingMergeTreeEngine
-from moose_lib.internal import (
-    _convert_engine_to_config_dict,
-    EngineConfigDict,
-    S3QueueConfigDict,
-    MergeTreeConfigDict,
-    ReplacingMergeTreeConfigDict
+import pytest
+from moose_lib import ClickHouseEngines, OlapConfig, OlapTable
+from moose_lib.blocks import (
+    MergeTreeEngine,
+    NullEngine,
+    ReplacingMergeTreeEngine,
+    S3QueueEngine,
 )
+from moose_lib.internal import (
+    EngineConfigDict,
+    MergeTreeConfigDict,
+    ReplacingMergeTreeConfigDict,
+    S3QueueConfigDict,
+    _convert_engine_to_config_dict,
+)
+from pydantic import BaseModel
 
 
 class SampleEvent(BaseModel):
@@ -94,6 +99,18 @@ def test_olap_table_with_mergetree_engines():
     )
     assert isinstance(table2.config.engine, ReplacingMergeTreeEngine)
 
+
+def test_olap_table_with_null_engine():
+    """Test creating OlapTable with NullEngine."""
+    table = OlapTable[SampleEvent](
+        "NullEngineTable",
+        OlapConfig(
+            engine=NullEngine()
+            # Note: NullEngine does not support order_by_fields
+        )
+    )
+
+    assert isinstance(table.config.engine, NullEngine)
 
 def test_engine_conversion_to_dict():
     """Test conversion of engine configs to EngineConfigDict."""
@@ -289,7 +306,12 @@ def test_engine_config_validation():
 
 def test_non_mergetree_engines_reject_unsupported_clauses():
     """Test that non-MergeTree engines reject unsupported ORDER BY and SAMPLE BY clauses."""
-    from moose_lib.blocks import S3Engine, S3QueueEngine, BufferEngine, DistributedEngine
+    from moose_lib.blocks import (
+        BufferEngine,
+        DistributedEngine,
+        S3Engine,
+        S3QueueEngine,
+    )
 
     # Test S3Engine DOES support ORDER BY (should not raise)
     config_s3_with_order_by = OlapConfig(

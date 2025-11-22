@@ -1557,4 +1557,20 @@ pub mod tests {
         let indexes = extract_indexes_from_create_table(NESTED_OBJECTS_SQL).unwrap();
         assert_eq!(indexes.len(), 0);
     }
+
+    #[test]
+    fn test_extract_null_engine() {
+        // Test for engine = Null
+        let sql = "CREATE TABLE test (x Int32) ENGINE = Null";
+        let result = extract_engine_from_create_table(sql);
+        assert_eq!(result, Some("Null".to_string()));
+    }
+
+    #[test]
+    fn test_extract_null_engine_lowercase() {
+        // Test for engine = null (lowercase)
+        let sql = "create table test (x Int32) engine = null";
+        let result = extract_engine_from_create_table(sql);
+        assert_eq!(result, Some("null".to_string()));
+    }
 }

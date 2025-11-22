@@ -1,11 +1,12 @@
+import warnings
+from abc import ABC
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Dict, List, Optional, Any, Union
-from abc import ABC
-import warnings
+from typing import Any, Dict, List, Optional, Union
 
 
 class ClickHouseEngines(Enum):
+    Null = "Null"
     MergeTree = "MergeTree"
     ReplacingMergeTree = "ReplacingMergeTree"
     SummingMergeTree = "SummingMergeTree"
@@ -29,6 +30,11 @@ class ClickHouseEngines(Enum):
 @dataclass
 class EngineConfig(ABC):
     """Base class for engine configurations"""
+    pass
+
+@dataclass
+class NullEngine(EngineConfig):
+    """Configuration for Null engine"""
     pass
 
 @dataclass

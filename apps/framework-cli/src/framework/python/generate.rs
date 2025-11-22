@@ -780,6 +780,10 @@ pub fn tables_to_python(tables: &[Table], life_cycle: Option<LifeCycle>) -> Stri
             crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine::MergeTree => {
                 writeln!(output, "    engine=MergeTreeEngine(),").unwrap();
             }
+            crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine::Null => {
+                writeln!(output, "    engine=NullEngine(),").unwrap();
+            }
+
             crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine::ReplacingMergeTree { ver, is_deleted } => {
                 // Emit ReplacingMergeTreeEngine with parameters if present
                 write!(output, "    engine=ReplacingMergeTreeEngine(").unwrap();

@@ -234,6 +234,7 @@ impl BufferEngine {
 pub enum ClickhouseEngine {
     #[default]
     MergeTree,
+    Null,
     ReplacingMergeTree {
         // Optional version column for deduplication
         ver: Option<String>,
@@ -330,6 +331,7 @@ pub enum ClickhouseEngine {
 impl Into<String> for ClickhouseEngine {
     fn into(self) -> String {
         match self {
+            ClickhouseEngine::Null => "Null".to_string(),
             ClickhouseEngine::MergeTree => "MergeTree".to_string(),
             ClickhouseEngine::ReplacingMergeTree { ver, is_deleted } => {
                 Self::serialize_replacing_merge_tree(&ver, &is_deleted)
@@ -422,6 +424,11 @@ impl<'a> TryFrom<&'a str> for ClickhouseEngine {
     type Error = &'a str;
 
     fn try_from(value: &'a str) -> Result<Self, &'a str> {
+        // Try to parse Null engine
+        if value.eq_ignore_ascii_case("Null") {
+            return Ok(ClickhouseEngine::Null);
+        }
+
         // Try to parse distributed variants first (SharedMergeTree, ReplicatedMergeTree)
         if let Some(engine) = Self::try_parse_distributed_engine(value) {
             return engine;
@@ -775,6 +782,7 @@ impl ClickhouseEngine {
         let engine_name = value.strip_prefix("Shared").unwrap_or(value);
 
         match engine_name {
+            "Null" => Ok(ClickhouseEngine::Null),
             "MergeTree" => Ok(ClickhouseEngine::MergeTree),
             "ReplacingMergeTree" => Ok(ClickhouseEngine::ReplacingMergeTree {
                 ver: None,
@@ -1050,6 +1058,7 @@ impl ClickhouseEngine {
     /// Convert engine to string for proto storage (no sensitive data)
     pub fn to_proto_string(&self) -> String {
         match self {
+            ClickhouseEngine::Null => "Null".to_string(),
             ClickhouseEngine::MergeTree => "MergeTree".to_string(),
             ClickhouseEngine::ReplacingMergeTree { ver, is_deleted } => {
                 Self::serialize_replacing_merge_tree(ver, is_deleted)
@@ -1745,6 +1754,9 @@ impl ClickhouseEngine {
         // Without hashing "null", both would produce identical hashes.
 
         match self {
+            ClickhouseEngine::Null => {
+                hasher.update("Null".as_bytes());
+            }
             ClickhouseEngine::MergeTree => {
                 hasher.update("MergeTree".as_bytes());
             }
@@ -2249,6 +2261,7 @@ pub fn create_table_query(
     reg.register_escape_fn(no_escape);
 
     let engine = match &table.engine {
+        ClickhouseEngine::Null => "Null".to_string(),
         ClickhouseEngine::MergeTree => "MergeTree".to_string(),
         ClickhouseEngine::ReplacingMergeTree { ver, is_deleted } => build_replacing_merge_tree_ddl(
             ver,
@@ -4925,6 +4938,16 @@ ENGINE = S3Queue('s3://my-bucket/data/*.csv', NOSIGN, 'CSV')"#;
             }
             _ => panic!("Expected InvalidParameters error"),
         }
+    }
+
+    #[test]
+    fn test_null_engine_roundtrip() {
+        let engine_str = "Null";
+        let engine: ClickhouseEngine = engine_str.try_into().unwrap();
+        assert!(matches!(engine, ClickhouseEngine::Null));
+
+        let serialized: String = engine.into();
+        assert_eq!(serialized, "Null");
     }
 
     #[test]
