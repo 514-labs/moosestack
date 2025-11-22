@@ -641,7 +641,7 @@ def _convert_engine_to_config_dict(engine: Union[ClickHouseEngines, EngineConfig
 
     # Map engine names to specific config classes
     engine_map = {
-        "NullEngine": NullConfigDict,
+        "Null": NullConfigDict,
         "MergeTree": MergeTreeConfigDict,
         "ReplacingMergeTree": ReplacingMergeTreeConfigDict,
         "AggregatingMergeTree": AggregatingMergeTreeConfigDict,
