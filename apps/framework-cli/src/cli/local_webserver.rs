@@ -872,7 +872,7 @@ async fn health_route(
             {
                 Ok(c) => c,
                 Err(e) => {
-                    warn!("Health check: Failed to create HTTP client: {}", e);
+                    warn!("Health check: Failed to create HTTP client: {:?}", e);
                     return ("Consumption API", false);
                 }
             };
@@ -880,14 +880,20 @@ async fn health_route(
             match client.get(&health_url).send().await {
                 Ok(response) if response.status().is_success() => ("Consumption API", true),
                 Ok(response) => {
+                    let status = response.status();
+                    // If we can't extract the body as text then default it to an empty string,
+                    // probably not the best solution but should help us uncover the true source
+                    // for most of our errors since they should be in valid text format.
+                    let body = response.text().await.unwrap_or_default();
+
                     warn!(
-                        "Health check: Consumption API returned status {}",
-                        response.status()
+                        "Health check: Consumption API returned status: {}, message: {}",
+                        status, body
                     );
                     ("Consumption API", false)
                 }
                 Err(e) => {
-                    warn!("Health check: Consumption API unavailable: {}", e);
+                    warn!("Health check: Consumption API unavailable: {:?}", e);
                     ("Consumption API", false)
                 }
             }
@@ -2603,13 +2609,12 @@ impl Webserver {
                     );
                     let watched = graceful.watch(conn);
                     // Set server_label to "API" for the main API server. This label is used in error logging below.
-                    let server_label = "API";
                     let port = socket.port();
                     let project_name = api_service.route_service.project.name().to_string();
                     let version = api_service.route_service.current_version.clone();
                     tokio::task::spawn(async move {
                         if let Err(e) = watched.await {
-                            error!("server error on {} server (port {}): {} [project: {}, version: {}]", server_label, port, e, project_name, version);
+                            error!("server error on API server (port {}): {} [project: {}, version: {}]", port, e, project_name, version);
                         }
                     });
                 }
@@ -2625,13 +2630,12 @@ impl Webserver {
                     );
                     let watched = graceful.watch(conn);
                     // Set server_label to "Management" for the management server. This label is used in error logging below.
-                    let server_label = "Management";
                     let port = management_socket.port();
                     let project_name = project.name().to_string();
                     let version = project.cur_version().to_string();
                     tokio::task::spawn(async move {
                         if let Err(e) = watched.await {
-                            error!("server error on {} server (port {}): {} [project: {}, version: {}]", server_label, port, e, project_name, version);
+                            error!("server error on Managment server (port {}): {} [project: {}, version: {}]", port, e, project_name, version);
                         }
                     });
                 }
