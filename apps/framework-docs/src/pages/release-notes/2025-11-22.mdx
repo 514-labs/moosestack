@@ -26,17 +26,23 @@ Execute SQL queries against your ClickHouse database directly from the command l
 ```bash
 # Execute a query and see JSON results
 moose query "SELECT user_id, COUNT(*) as events FROM user_events GROUP BY user_id LIMIT 10"
+{"user_id": "abc-1213", "count": 37}
 
 # Validate and format complex SQL for Python code
-echo "SELECT * FROM logs WHERE message REGEXP '[0-9]{4}-[0-9]{2}-[0-9]{2}'" \
-  | moose query --format-query python --prettify
+moose query --format-query python --prettify <<EOF
+SELECT * FROM
+logs WHERE message REGEXP '[0-9]{4}-[0-9]{2}-[0-9]{2}'
+EOF
 
 # Output: Properly escaped Python raw string ready to paste
-# r"""
-# SELECT *
-#   FROM logs
-# WHERE message REGEXP '[0-9]{4}-[0-9]{2}-[0-9]{2}'
-# """
+r"""
+SELECT
+  *
+FROM
+  logs
+WHERE
+  message REGEXP '[0-9]{4}-[0-9]{2}-[0-9]{2}'
+"""
 ```
 
 The command supports multiple input methods (arguments, files, stdin), syntax validation before execution, configurable row limits, and output formatting for both Python raw strings and TypeScript template literals. This means you can iterate on queries quickly in your terminal, then copy the validated, formatted SQL directly into your data models or consumption APIs.
