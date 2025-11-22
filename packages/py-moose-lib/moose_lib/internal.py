@@ -7,6 +7,7 @@ to convert the user-defined resources (from `dmv2.py`) into a serializable
 JSON format expected by the Moose infrastructure management system.
 """
 import json
+from importlib import import_module
 from typing import TYPE_CHECKING, Any, Dict, List, Literal, Optional, Union
 
 from pydantic import AliasGenerator, BaseModel, ConfigDict, Field
@@ -641,7 +642,7 @@ def _convert_engine_to_config_dict(engine: Union[ClickHouseEngines, EngineConfig
 
     # Map engine names to specific config classes
     engine_map = {
-        "Null": NullConfigDict,
+        "NullEngine": NullConfigDict,
         "MergeTree": MergeTreeConfigDict,
         "ReplacingMergeTree": ReplacingMergeTreeConfigDict,
         "AggregatingMergeTree": AggregatingMergeTreeConfigDict,
