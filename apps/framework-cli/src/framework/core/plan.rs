@@ -38,10 +38,6 @@ pub enum PlanningError {
     #[error("Failed to load primitive map")]
     PrimitiveMapLoading(#[from] crate::framework::core::primitive_map::PrimitiveMapLoadingError),
 
-    /// Error occurred while connecting to the Clickhouse database
-    #[error("Failed to connect to state storage")]
-    Clickhouse(#[from] clickhouse_rs::errors::Error),
-
     /// Error occurred while connecting to Kafka
     #[error("Failed to connect to streaming engine")]
     Kafka(#[from] KafkaError),
