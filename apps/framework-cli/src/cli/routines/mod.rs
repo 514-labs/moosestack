@@ -173,6 +173,7 @@ pub mod ps;
 pub mod query;
 pub mod scripts;
 pub mod seed_data;
+pub mod string_format;
 pub mod templates;
 pub mod truncate_table;
 mod util;

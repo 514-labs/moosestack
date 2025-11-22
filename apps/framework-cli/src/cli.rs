@@ -1369,6 +1369,7 @@ pub async fn top_command_handler(
             file,
             limit,
             format_query,
+            delimiter,
             prettify,
         } => {
             info!("Running query command");
@@ -1390,6 +1391,7 @@ pub async fn top_command_handler(
                 file.clone(),
                 *limit,
                 format_query.clone(),
+                delimiter.clone(),
                 *prettify,
             )
             .await;
