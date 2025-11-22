@@ -19,17 +19,18 @@ export async function generateStaticParams() {
   const slugs = getAllSlugs();
 
   // Generate params for each slug
+  // Note: templates is excluded from getAllSlugs() as it is now an explicit page
   const allParams: { slug: string[] }[] = slugs.map((slug) => ({
     slug: slug.split("/"),
   }));
 
-  // Also add section index routes (moosestack, ai, hosting, templates)
-  // These map to section/index.mdx files
+  // Also add section index routes (moosestack, ai, hosting, guides)
+  // Note: templates is now an explicit page, so it's excluded here
   allParams.push(
     { slug: ["moosestack"] },
     { slug: ["ai"] },
     { slug: ["hosting"] },
-    { slug: ["templates"] },
+    { slug: ["guides"] },
   );
 
   return allParams;
@@ -80,6 +81,11 @@ export default async function DocPage({ params }: PageProps) {
   }
 
   const slug = slugArray.join("/");
+
+  // Templates is now an explicit page, so it should not be handled by this catch-all route
+  if (slug.startsWith("templates/")) {
+    notFound();
+  }
 
   let content;
   try {
