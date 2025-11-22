@@ -76,11 +76,11 @@ impl MessagingManager {
 
         match conn.publish::<_, _, ()>(&channel, message).await {
             Ok(_) => {
-                log::debug!("<RedisMessaging> Message published to channel {}", channel);
+                tracing::debug!("<RedisMessaging> Message published to channel {}", channel);
                 Ok(())
             }
             Err(e) => {
-                log::error!(
+                tracing::error!(
                     "<RedisMessaging> Failed to publish message to channel {}: {}",
                     channel,
                     e

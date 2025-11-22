@@ -420,12 +420,12 @@ pub async fn run_diagnostics(
                 Ok(issues) => all_issues.extend(issues),
                 Err(e) => {
                     // Log error but continue with other providers
-                    log::warn!("Provider {} failed: {}", provider_name, e);
+                    tracing::warn!("Provider {} failed: {}", provider_name, e);
                 }
             },
             Err(e) => {
                 // Task panicked or was cancelled
-                log::error!("Diagnostic task failed: {}", e);
+                tracing::error!("Diagnostic task failed: {}", e);
             }
         }
     }

@@ -29,7 +29,7 @@ fn ensure_terminal_cleanup() {
     let _ = disable_raw_mode();
     let _ = stdout.flush();
 
-    log::info!("Terminal cleanup complete via crossterm");
+    tracing::info!("Terminal cleanup complete via crossterm");
 }
 
 // Entry point for the CLI application

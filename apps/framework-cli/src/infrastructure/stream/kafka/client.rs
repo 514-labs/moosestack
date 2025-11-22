@@ -13,7 +13,7 @@ use crate::infrastructure::stream::kafka::constants::{
     DEFAULT_MAX_MESSAGE_BYTES, KAFKA_MAX_MESSAGE_BYTES_CONFIG_KEY, KAFKA_RETENTION_CONFIG_KEY,
 };
 use crate::project::Project;
-use log::{error, info, warn};
+use tracing::{error, info, warn};
 use rdkafka::admin::{AlterConfig, NewPartitions, ResourceSpecifier};
 use rdkafka::config::RDKafkaLogLevel;
 use rdkafka::consumer::stream_consumer::StreamConsumer;

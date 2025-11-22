@@ -34,7 +34,7 @@
 //! MOOSE_CLICKHOUSE_CONFIG__PASSWORD=my-secret
 //! ```
 
-use log::{debug, info};
+use tracing::{debug, info};
 use std::path::Path;
 
 /// Represents the runtime environment for the Moose project

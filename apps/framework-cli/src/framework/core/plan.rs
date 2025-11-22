@@ -24,7 +24,7 @@ use crate::infrastructure::olap::clickhouse::config::DEFAULT_DATABASE_NAME;
 use crate::infrastructure::olap::clickhouse::diff_strategy::ClickHouseTableDiffStrategy;
 use crate::infrastructure::olap::OlapOperations;
 use crate::project::Project;
-use log::{debug, error, info};
+use tracing::{debug, error, info};
 use rdkafka::error::KafkaError;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;

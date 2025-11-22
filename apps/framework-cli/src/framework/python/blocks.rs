@@ -1,4 +1,4 @@
-use log::{error, info};
+use tracing::{error, info};
 use std::path::Path;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Child;

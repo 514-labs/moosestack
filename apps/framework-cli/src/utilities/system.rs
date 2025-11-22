@@ -1,5 +1,5 @@
 //! System utilities
-use log::{debug, error, info, warn};
+use tracing::{debug, error, info, warn};
 use std::fmt::Debug;
 use std::time::Duration;
 use std::{
@@ -57,7 +57,7 @@ pub async fn kill_child(child: &mut Child) -> Result<(), KillProcessError> {
     let status = kill.wait().await?;
 
     if !status.success() {
-        log::warn!("Failed to send SIGTERM to process {}", id);
+        tracing::warn!("Failed to send SIGTERM to process {}", id);
     }
 
     // Wait for the child process to exit with a timeout (10 seconds)

@@ -26,7 +26,7 @@
 /// }
 /// ```
 use chrono::Local;
-use log::{debug, error, info};
+use tracing::{debug, error, info};
 use std::fs;
 use std::path::Path;
 use std::path::PathBuf;

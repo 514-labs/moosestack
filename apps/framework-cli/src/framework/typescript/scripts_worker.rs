@@ -1,7 +1,7 @@
 use crate::cli::display::{show_message_wrapper, Message, MessageType};
 use crate::project::{Project, ProjectFileError};
 
-use log::{debug, error, info, warn};
+use tracing::{debug, error, info, warn};
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Child;
 

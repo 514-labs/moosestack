@@ -10,7 +10,7 @@ use crate::infrastructure::olap::clickhouse_alt_client::{get_pool, row_to_json};
 use crate::project::Project;
 
 use futures::StreamExt;
-use log::info;
+use tracing::info;
 use std::io::Read;
 use std::path::PathBuf;
 use std::sync::Arc;

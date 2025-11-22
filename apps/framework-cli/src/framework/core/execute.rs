@@ -97,7 +97,7 @@ pub async fn execute_initial_infra_change(
     // This probably can be parallelized through Tokio Spawn
     // Check if infrastructure execution is bypassed
     if ctx.settings.should_bypass_infrastructure_execution() {
-        log::info!("Bypassing OLAP and streaming infrastructure execution (bypass_infrastructure_execution is enabled)");
+        tracing::info!("Bypassing OLAP and streaming infrastructure execution (bypass_infrastructure_execution is enabled)");
     } else {
         // Only execute OLAP changes if OLAP is enabled and not bypassed
         if ctx.project.features.olap && !ctx.skip_olap {
@@ -123,7 +123,7 @@ pub async fn execute_initial_infra_change(
     // Send initial WebApp changes through the channel
     for webapp_change in ctx.plan.target_infra_map.init_web_apps() {
         if let Err(e) = ctx.webapp_changes_channel.send(webapp_change).await {
-            log::warn!("Failed to send webapp change: {}", e);
+            tracing::warn!("Failed to send webapp change: {}", e);
         }
     }
 
@@ -154,11 +154,11 @@ pub async fn execute_initial_infra_change(
         .await
         .map_err(ExecutionError::LeadershipCheckFailed)?
     {
-        log::info!("Executing changes for leader instance");
+        tracing::info!("Executing changes for leader instance");
 
         processes::execute_leader_changes(&mut process_registries, &changes).await?;
     } else {
-        log::info!("Skipping migration & olap process changes as this instance does not have the leadership lock");
+        tracing::info!("Skipping migration & olap process changes as this instance does not have the leadership lock");
     }
 
     Ok(process_registries)
@@ -197,7 +197,7 @@ pub async fn execute_online_change(
     // This probably can be parallelized through Tokio Spawn
     // Check if infrastructure execution is bypassed
     if settings.should_bypass_infrastructure_execution() {
-        log::info!("Bypassing OLAP and streaming infrastructure execution (bypass_infrastructure_execution is enabled)");
+        tracing::info!("Bypassing OLAP and streaming infrastructure execution (bypass_infrastructure_execution is enabled)");
     } else {
         // Only execute OLAP changes if OLAP is enabled and not bypassed
         if project.features.olap {
@@ -220,12 +220,12 @@ pub async fn execute_online_change(
     .map_err(Box::new)?;
 
     // Send WebApp changes through the channel
-    log::info!(
+    tracing::info!(
         "🔄 Processing {} WebApp changes during online change",
         plan.changes.web_app_changes.len()
     );
     for change in &plan.changes.web_app_changes {
-        log::info!("🔄 WebApp change in plan: {:?}", change);
+        tracing::info!("🔄 WebApp change in plan: {:?}", change);
     }
     webapp::execute_changes(&plan.changes.web_app_changes, webapp_changes_channel)
         .await
@@ -242,8 +242,8 @@ pub async fn execute_online_change(
     .await?;
 
     match terminate_all_workflows(project).await {
-        Ok(success) => log::info!("Terminated running workflows: {:?}", success),
-        Err(e) => log::warn!("Failed to terminate running workflows: {:?}", e),
+        Ok(success) => tracing::info!("Terminated running workflows: {:?}", success),
+        Err(e) => tracing::warn!("Failed to terminate running workflows: {:?}", e),
     }
     execute_scheduled_workflows(project, &plan.target_infra_map.workflows).await;
 

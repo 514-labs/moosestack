@@ -132,7 +132,7 @@ pub fn capture_usage(
         let client = match PostHog514Client::from_env(machine_id) {
             Some(client) => client,
             None => {
-                log::warn!("PostHog client not configured - missing POSTHOG_API_KEY");
+                tracing::warn!("PostHog client not configured - missing POSTHOG_API_KEY");
                 return;
             }
         };
@@ -147,7 +147,7 @@ pub fn capture_usage(
             )
             .await
         {
-            log::warn!("Failed to send telemetry to PostHog: {:?}", e);
+            tracing::warn!("Failed to send telemetry to PostHog: {:?}", e);
         }
     }))
 }

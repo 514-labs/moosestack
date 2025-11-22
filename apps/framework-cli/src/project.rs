@@ -80,7 +80,7 @@ use crate::utilities::git::GitConfig;
 use crate::utilities::PathExt;
 use crate::utilities::_true;
 use config::{Config, ConfigError, Environment, File};
-use log::{debug, error};
+use tracing::{debug, error};
 use python_project::PythonProject;
 use serde::Deserialize;
 use serde::Serialize;

@@ -31,7 +31,7 @@
 
 use config::{Config, ConfigError, Environment, File};
 use home::home_dir;
-use log::warn;
+use tracing::warn;
 use serde::Deserialize;
 use std::path::PathBuf;
 use toml_edit::{table, value, DocumentMut, Entry, Item};

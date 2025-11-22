@@ -38,7 +38,7 @@ pub async fn extract_data_model_from_file(
     let internal = project.internal_dir().unwrap();
     let output_dir = internal.join("serialized_datamodels");
 
-    log::info!("Extracting data model from file: {:?}", path);
+    tracing::info!("Extracting data model from file: {:?}", path);
 
     fs::write(
         internal.join(TSCONFIG_JSON),
@@ -85,12 +85,12 @@ pub async fn extract_data_model_from_file(
         run_command_with_output_proxy(command, "TypeScript Compiler")
             .await
             .map_err(|err| {
-                log::error!("Error while running moose-tspc: {}", err);
+                tracing::error!("Error while running moose-tspc: {}", err);
                 TypescriptParsingError::TypescriptCompilerError(Some(err))
             })?
     };
 
-    log::info!("Typescript compiler return code: {:?}", ts_return_code);
+    tracing::info!("Typescript compiler return code: {:?}", ts_return_code);
 
     if !ts_return_code.success() {
         return Err(TypescriptParsingError::TypescriptCompilerError(None));

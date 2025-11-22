@@ -98,7 +98,7 @@ use crate::framework::core::migration_plan::{MigrationPlan, MigrationPlanWithBef
 use crate::framework::core::plan_validator;
 use crate::infrastructure::redis::redis_client::RedisClient;
 use crate::project::Project;
-use log::{debug, error, info, warn};
+use tracing::{debug, error, info, warn};
 use serde::Deserialize;
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
@@ -487,7 +487,7 @@ pub async fn start_development_mode(
                                                 .to_string(),
                                         }
                                     );
-                                    log::warn!("Failed to write suppression flag to config: {e:?}");
+                                    tracing::warn!("Failed to write suppression flag to config: {e:?}");
                                 }
                             }
                             None
@@ -1065,12 +1065,6 @@ pub async fn remote_plan(
         }
     };
 
-    // Normalize both infra maps for backward compatibility
-    // This ensures consistent comparison between old and new CLI versions
-    // by applying the same normalization logic (e.g., filling order_by from primary key)
-    let remote_infra_map = remote_infra_map.normalize();
-    let local_infra_map = local_infra_map.normalize();
-
     // Calculate and display changes
     let changes = calculate_plan_diff_local(
         &remote_infra_map,
@@ -1174,12 +1168,6 @@ pub async fn remote_gen_migration(
                 .await?
         }
     };
-
-    // Normalize both infra maps for backward compatibility
-    // This ensures consistent comparison between old and new CLI versions
-    // by applying the same normalization logic (e.g., filling order_by from primary key)
-    let remote_infra_map = remote_infra_map.normalize();
-    let local_infra_map = local_infra_map.normalize();
 
     let changes = calculate_plan_diff_local(
         &remote_infra_map,

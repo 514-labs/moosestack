@@ -6,7 +6,7 @@ use crate::framework::python::datamodel_config::execute_python_model_file_for_co
 use crate::framework::typescript::export_collectors::get_data_model_configs;
 use crate::project::Project;
 use crate::utilities::_true;
-use log::info;
+use tracing::info;
 use serde::Deserialize;
 use serde::Serialize;
 use std::ffi::OsStr;

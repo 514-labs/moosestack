@@ -75,13 +75,13 @@ pub fn run(
 
     tokio::spawn(async move {
         while let Ok(Some(line)) = stdout_reader.next_line().await {
-            log::info!("{}", line);
+            tracing::info!("{}", line);
         }
     });
 
     tokio::spawn(async move {
         while let Ok(Some(line)) = stderr_reader.next_line().await {
-            log::error!("{}", line);
+            tracing::error!("{}", line);
         }
     });
 

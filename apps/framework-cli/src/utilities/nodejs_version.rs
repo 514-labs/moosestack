@@ -1,4 +1,4 @@
-use log::{debug, info, warn};
+use tracing::{debug, info, warn};
 use semver::{Version, VersionReq};
 use serde_json::Value as JsonValue;
 use std::fs;

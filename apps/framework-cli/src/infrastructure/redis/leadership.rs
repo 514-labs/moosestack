@@ -83,7 +83,7 @@ impl LeadershipManager {
             .await
         {
             Ok(2) => {
-                log::debug!(
+                tracing::debug!(
                     "<RedisLeadership> Lock acquired: {} by instance {}",
                     lock_key,
                     instance_id
@@ -98,7 +98,7 @@ impl LeadershipManager {
                 (false, false) // doesn't have lock and not new acquisition
             }
             Err(e) => {
-                log::error!("<RedisLeadership> Error acquiring lock {}: {}", lock_key, e);
+                tracing::error!("<RedisLeadership> Error acquiring lock {}: {}", lock_key, e);
                 (false, false) // doesn't have lock and not new acquisition
             }
         }
@@ -152,7 +152,7 @@ impl LeadershipManager {
             .await
         {
             Ok(1) => {
-                log::trace!(
+                tracing::trace!(
                     "<RedisLeadership> Lock renewed: {} for instance {}",
                     lock_key,
                     instance_id
@@ -160,7 +160,7 @@ impl LeadershipManager {
                 Ok(true)
             }
             Ok(0) => {
-                log::warn!(
+                tracing::warn!(
                     "<RedisLeadership> Cannot renew lock {} - not owned by instance {}",
                     lock_key,
                     instance_id
@@ -168,7 +168,7 @@ impl LeadershipManager {
                 Ok(false)
             }
             Ok(_) => {
-                log::warn!(
+                tracing::warn!(
                     "<RedisLeadership> Unexpected result while renewing lock {} for instance {}",
                     lock_key,
                     instance_id
@@ -176,7 +176,7 @@ impl LeadershipManager {
                 Ok(false)
             }
             Err(e) => {
-                log::error!("<RedisLeadership> Error renewing lock {}: {}", lock_key, e);
+                tracing::error!("<RedisLeadership> Error renewing lock {}: {}", lock_key, e);
                 Err(anyhow::anyhow!("Error renewing lock: {}", e))
             }
         }

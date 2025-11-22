@@ -7,7 +7,7 @@ use crate::{
     project::Project,
     utilities::constants::{PY_FLOW_FILE, TS_FLOW_FILE},
 };
-use log::{debug, info, warn};
+use tracing::{debug, info, warn};
 use regex::{Captures, Regex};
 use std::ffi::OsStr;
 use std::{fs, path::Path};

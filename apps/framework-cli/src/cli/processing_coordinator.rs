@@ -63,9 +63,9 @@ impl ProcessingCoordinator {
     /// // Guard drops here, releasing write lock
     /// ```
     pub async fn begin_processing(&self) -> ProcessingGuard {
-        log::debug!("[ProcessingCoordinator] Acquiring write lock for processing");
+        tracing::debug!("[ProcessingCoordinator] Acquiring write lock for processing");
         let write_guard = self.lock.clone().write_owned().await;
-        log::debug!("[ProcessingCoordinator] Write lock acquired, processing started");
+        tracing::debug!("[ProcessingCoordinator] Write lock acquired, processing started");
 
         ProcessingGuard {
             _write_guard: write_guard,
@@ -86,9 +86,9 @@ impl ProcessingCoordinator {
     /// // Now safe to read from Redis, ClickHouse, etc.
     /// ```
     pub async fn wait_for_stable_state(&self) {
-        log::trace!("[ProcessingCoordinator] Waiting for stable state (acquiring read lock)");
+        tracing::trace!("[ProcessingCoordinator] Waiting for stable state (acquiring read lock)");
         let _read_guard = self.lock.read().await;
-        log::trace!("[ProcessingCoordinator] State is stable (read lock acquired)");
+        tracing::trace!("[ProcessingCoordinator] State is stable (read lock acquired)");
         // Read lock is dropped here, allowing processing to proceed if needed
     }
 }
@@ -109,7 +109,7 @@ pub struct ProcessingGuard {
 
 impl Drop for ProcessingGuard {
     fn drop(&mut self) {
-        log::debug!("[ProcessingCoordinator] Processing complete, releasing write lock");
+        tracing::debug!("[ProcessingCoordinator] Processing complete, releasing write lock");
         // Write guard drops automatically, releasing the lock
     }
 }

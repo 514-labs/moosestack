@@ -98,7 +98,7 @@ impl ConnectionManagerWrapper {
             match time::timeout(Duration::from_secs(5), client.get_connection_manager()).await {
                 Ok(Ok(conn)) => return Ok(conn),
                 Ok(Err(e)) => {
-                    log::warn!(
+                    tracing::warn!(
                         "<RedisConnection> Failed to create Redis connection (attempt {}/{}): {}",
                         attempts + 1,
                         max_attempts,
@@ -107,7 +107,7 @@ impl ConnectionManagerWrapper {
                     last_error = Some(e);
                 }
                 Err(_) => {
-                    log::warn!(
+                    tracing::warn!(
                         "<RedisConnection> Timeout creating Redis connection (attempt {}/{})",
                         attempts + 1,
                         max_attempts
@@ -186,12 +186,12 @@ impl ConnectionManagerWrapper {
         match timeout_future.await {
             Ok(Ok(_response)) => true,
             Ok(Err(e)) => {
-                log::warn!("<RedisConnection> Redis ping failed: {:?}", e);
+                tracing::warn!("<RedisConnection> Redis ping failed: {:?}", e);
                 self.state.store(false, Ordering::SeqCst);
                 false
             }
             Err(e) => {
-                log::warn!("<RedisConnection> Redis ping timed out: {:?}", e);
+                tracing::warn!("<RedisConnection> Redis ping timed out: {:?}", e);
                 self.state.store(false, Ordering::SeqCst);
                 false
             }
@@ -217,7 +217,7 @@ impl ConnectionManagerWrapper {
     pub async fn attempt_reconnection(&mut self, config: &RedisConfig) {
         let mut backoff = 5;
         while !self.state.load(Ordering::SeqCst) {
-            log::info!(
+            tracing::info!(
                 "<RedisConnection> Attempting to reconnect to Redis at {} (backoff: {}s)",
                 config.effective_url(),
                 backoff
@@ -239,10 +239,10 @@ impl ConnectionManagerWrapper {
                                     self.pub_sub = new_pubsub;
                                     // Store the new client for future connection creation
                                     self.client = Arc::new(client);
-                                    log::info!("<RedisConnection> Successfully reconnected both Redis connections");
+                                    tracing::info!("<RedisConnection> Successfully reconnected both Redis connections");
                                 }
                                 Err(e) => {
-                                    log::warn!("<RedisConnection> Reconnected main connection but failed to reconnect pub_sub: {}", e);
+                                    tracing::warn!("<RedisConnection> Reconnected main connection but failed to reconnect pub_sub: {}", e);
                                     // Still mark as reconnected since the main connection succeeded
                                 }
                             }
@@ -251,13 +251,13 @@ impl ConnectionManagerWrapper {
                             break;
                         }
                         Err(err) => {
-                            log::warn!("<RedisConnection> Failed to reconnect to Redis: {}", err);
+                            tracing::warn!("<RedisConnection> Failed to reconnect to Redis: {}", err);
                             backoff = std::cmp::min(backoff * 2, 60);
                         }
                     }
                 }
                 Err(err) => {
-                    log::warn!(
+                    tracing::warn!(
                         "<RedisConnection> Failed to create Redis client for reconnection: {}",
                         err
                     );
@@ -272,7 +272,7 @@ impl ConnectionManagerWrapper {
     /// This method should be called as part of the application shutdown sequence
     /// to ensure Redis connections are properly terminated.
     pub async fn shutdown(&self) {
-        log::info!("<RedisConnection> Shutting down Redis connections");
+        tracing::info!("<RedisConnection> Shutting down Redis connections");
 
         // Send QUIT command to both connection managers
         let mut conn = self.connection.clone();
@@ -284,6 +284,6 @@ impl ConnectionManagerWrapper {
         // Mark the connection as disconnected
         self.state.store(false, Ordering::SeqCst);
 
-        log::info!("<RedisConnection> Redis connections shutdown complete");
+        tracing::info!("<RedisConnection> Redis connections shutdown complete");
     }
 }

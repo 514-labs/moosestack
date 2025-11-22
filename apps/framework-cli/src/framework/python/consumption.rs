@@ -5,7 +5,7 @@ use crate::infrastructure::olap::clickhouse::config::ClickHouseConfig;
 use crate::infrastructure::processes::consumption_registry::ConsumptionError;
 use crate::project::{JwtConfig, Project};
 use crate::utilities::constants::{CONSUMPTION_WRAPPER_PACKAGE_NAME, UTILS_WRAPPER_PACKAGE_NAME};
-use log::{error, info};
+use tracing::{error, info};
 use std::fs;
 use std::path::Path;
 use tokio::io::{AsyncBufReadExt, BufReader};

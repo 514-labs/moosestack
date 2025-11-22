@@ -1,7 +1,7 @@
 use flate2::read::GzDecoder;
 use futures::StreamExt;
 use home::home_dir;
-use log::warn;
+use tracing::warn;
 use regex::Regex;
 use std::fs::File;
 use std::io::Write;

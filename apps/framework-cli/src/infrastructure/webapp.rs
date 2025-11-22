@@ -12,9 +12,9 @@ pub async fn execute_changes(
     web_app_changes: &[WebAppChange],
     webapp_changes_channel: Sender<WebAppChange>,
 ) -> Result<(), WebAppChangeError> {
-    log::info!("📤 Sending {} WebApp changes", web_app_changes.len());
+    tracing::info!("📤 Sending {} WebApp changes", web_app_changes.len());
     for webapp_change in web_app_changes.iter() {
-        log::info!("📤 Sending WebApp change: {:?}", webapp_change);
+        tracing::info!("📤 Sending WebApp change: {:?}", webapp_change);
         webapp_changes_channel.send(webapp_change.clone()).await?;
     }
 

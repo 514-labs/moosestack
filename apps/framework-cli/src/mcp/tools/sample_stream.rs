@@ -4,7 +4,7 @@
 //! It provides functionality to retrieve recent messages from topics for debugging and exploration.
 
 use futures::stream::BoxStream;
-use log::info;
+use tracing::info;
 use rdkafka::consumer::Consumer;
 use rdkafka::{Message as KafkaMessage, Offset, TopicPartitionList};
 use rmcp::model::{CallToolResult, Tool};
@@ -248,7 +248,7 @@ async fn collect_messages_from_stream(
         match result {
             Ok(Ok(value)) => messages.push(value),
             Ok(Err(e)) => {
-                log::warn!(
+                tracing::warn!(
                     "Error deserializing message from stream '{}': {}",
                     stream_name,
                     e
@@ -256,7 +256,7 @@ async fn collect_messages_from_stream(
                 error_count += 1;
             }
             Err(_elapsed) => {
-                log::info!(
+                tracing::info!(
                     "Timeout waiting for messages from stream '{}' after {} seconds. Retrieved {} messages.",
                     stream_name,
                     SAMPLE_TIMEOUT_SECS,

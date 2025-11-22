@@ -36,7 +36,7 @@ use crate::framework::core::{
     plan::InfraPlan,
 };
 use crossterm::{execute, style::Print};
-use log::info;
+use tracing::info;
 
 /// Create the detail indentation string at compile time
 /// Computed from ACTION_WIDTH (15) + 3 spaces:

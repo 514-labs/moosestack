@@ -39,7 +39,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use log::debug;
+use tracing::debug;
 use serde::{Deserialize, Serialize};
 use tokio::process::Child;
 
@@ -527,7 +527,7 @@ impl PartialInfrastructureMap {
                 .split("end___MOOSE_STUFF___")
                 .next()
                 .ok_or_else(output_format)?;
-            log::info!("load_from_user_code inframap json: {}", json);
+            tracing::info!("load_from_user_code inframap json: {}", json);
 
             Ok(serde_json::from_str(json)
                 .inspect_err(|_| debug!("Invalid JSON from exports: {}", raw_string_stdout))?)
@@ -1107,9 +1107,9 @@ impl PartialInfrastructureMap {
                     TopicToTableSyncProcess::new(source_topic, target_table, default_database);
                 let sync_id = sync_process.id();
                 sync_processes.insert(sync_id.clone(), sync_process);
-                log::info!("<dmv2> Created topic_to_table_sync_processes {}", sync_id);
+                tracing::info!("<dmv2> Created topic_to_table_sync_processes {}", sync_id);
             } else {
-                log::info!(
+                tracing::info!(
                     "<dmv2> Topic {} has no target_table specified, skipping sync process creation",
                     partial_topic.name
                 );

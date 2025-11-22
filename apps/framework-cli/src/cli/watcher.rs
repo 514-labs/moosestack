@@ -18,7 +18,7 @@
 /// 3. After a short delay (debouncing), changes are processed to update the infrastructure
 /// 4. The updated infrastructure is applied to the system
 use crate::framework;
-use log::info;
+use tracing::info;
 use notify::event::ModifyKind;
 use notify::{Event, EventHandler, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use std::collections::HashSet;
@@ -48,7 +48,7 @@ struct EventListener {
 
 impl EventHandler for EventListener {
     fn handle_event(&mut self, event: notify::Result<Event>) {
-        log::debug!("Received Watcher event: {:?}", event);
+        tracing::debug!("Received Watcher event: {:?}", event);
         match event {
             Ok(event) => {
                 self.tx.send_if_modified(|events| {
@@ -57,7 +57,7 @@ impl EventHandler for EventListener {
                 });
             }
             Err(e) => {
-                log::error!("Watcher Error: {:?}", e);
+                tracing::error!("Watcher Error: {:?}", e);
             }
         }
     }
@@ -133,7 +133,7 @@ async fn watch(
     processing_coordinator: ProcessingCoordinator,
     mut shutdown_rx: tokio::sync::watch::Receiver<bool>,
 ) -> Result<(), anyhow::Error> {
-    log::debug!(
+    tracing::debug!(
         "Starting file watcher for project: {:?}",
         project.app_dir().display()
     );
@@ -148,7 +148,7 @@ async fn watch(
         .watch(project.app_dir().as_ref(), RecursiveMode::Recursive)
         .map_err(|e| Error::other(format!("Failed to watch file: {e}")))?;
 
-    log::debug!("Watcher setup complete, entering main loop");
+    tracing::debug!("Watcher setup complete, entering main loop");
 
     loop {
         tokio::select! {
@@ -157,7 +157,7 @@ async fn watch(
                 return Ok(());
             }
             Ok(()) = rx.changed() => {
-                log::debug!("Received change notification, current changes: {:?}", rx.borrow());
+                tracing::debug!("Received change notification, current changes: {:?}", rx.borrow());
             }
             _ = tokio::time::sleep(Duration::from_secs(1)) => {
                 let should_process = {
@@ -166,7 +166,7 @@ async fn watch(
                 };
 
                 if should_process {
-                    log::debug!("Debounce period elapsed, processing changes");
+                    tracing::debug!("Debounce period elapsed, processing changes");
                     receiver_ack.send_replace(EventBuckets::default());
                     rx.mark_unchanged();
 
