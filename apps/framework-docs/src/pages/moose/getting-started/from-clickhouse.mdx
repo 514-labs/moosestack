@@ -333,7 +333,7 @@ Copy real data from your production ClickHouse to your local development environ
 <Tabs items={["From your own ClickHouse", "From the ClickHouse Playground", "Using env var"]}>
 <Tabs.Tab>
 ```bash filename="Terminal" copy
-moose seed clickhouse --connection-string <YOUR_CLICKHOUSE_CONNECTION_STRING> --limit 100000
+moose seed clickhouse --clickhouse-url <YOUR_CLICKHOUSE_CONNECTION_STRING> --limit 100000
 ```
 
 **Connection String Format:**
@@ -347,12 +347,12 @@ clickhouse://username:password@host:9440/database
 </Tabs.Tab>
 <Tabs.Tab>
 ```bash filename="Terminal" copy
-moose seed clickhouse --connection-string clickhouse://explorer:@play.clickhouse.com:9440/default --limit 100000
+moose seed clickhouse --clickhouse-url clickhouse://explorer:@play.clickhouse.com:9440/default --limit 100000
 ```
 </Tabs.Tab>
 <Tabs.Tab>
 ```bash filename="Terminal" copy
-# You can omit --connection-string by setting an env var
+# You can omit --clickhouse-url by setting an env var
 export MOOSE_SEED_CLICKHOUSE_URL='clickhouse://username:password@host:9440/database'
 
 # copy a limited number of rows (batched under the hood)

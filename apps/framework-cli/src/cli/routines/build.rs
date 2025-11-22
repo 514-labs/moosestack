@@ -37,10 +37,10 @@ use crate::project::Project;
 use crate::project::ProjectFileError;
 use crate::utilities::constants::LIB_DIR;
 use crate::utilities::constants::PACKAGE_JSON;
+use crate::utilities::constants::PROJECT_CONFIG_FILE;
 use crate::utilities::constants::REQUIREMENTS_TXT;
 use crate::utilities::constants::SETUP_PY;
 use crate::utilities::constants::TSCONFIG_JSON;
-use crate::utilities::constants::{APP_DIR, PROJECT_CONFIG_FILE};
 use crate::utilities::package_managers::{detect_package_manager, get_lock_file_path};
 use crate::utilities::system;
 use crate::utilities::system::copy_directory;
@@ -192,10 +192,20 @@ pub fn build_package(project: &Project) -> Result<PathBuf, BuildError> {
     // Files to include in the package
     let files_to_copy = match project.language {
         SupportedLanguages::Typescript => {
-            vec![APP_DIR, PROJECT_CONFIG_FILE, PACKAGE_JSON, TSCONFIG_JSON]
+            vec![
+                &project.source_dir,
+                PROJECT_CONFIG_FILE,
+                PACKAGE_JSON,
+                TSCONFIG_JSON,
+            ]
         }
         SupportedLanguages::Python => {
-            vec![APP_DIR, PROJECT_CONFIG_FILE, REQUIREMENTS_TXT, SETUP_PY]
+            vec![
+                &project.source_dir,
+                PROJECT_CONFIG_FILE,
+                REQUIREMENTS_TXT,
+                SETUP_PY,
+            ]
         }
     };
 
