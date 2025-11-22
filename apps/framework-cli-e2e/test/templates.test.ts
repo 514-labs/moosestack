@@ -160,6 +160,8 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
   describe(testName, () => {
     let devProcess: ChildProcess | null = null;
     let TEST_PROJECT_DIR: string;
+    let testApiKey = "";
+    let testApiKeyHash = "";
 
     before(async function () {
       this.timeout(TIMEOUTS.TEST_SETUP_MS);
@@ -197,6 +199,33 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
 
       // Start dev server
       console.log("Starting dev server...");
+      // Generate API key for E2E testing if this is the tests variant
+      if (config.isTestsVariant && config.language === "typescript") {
+        const { stdout } = await execAsync(
+          `cd "${TEST_PROJECT_DIR}" && "${CLI_PATH}" generate hash-token`,
+        );
+        // Strip ANSI color codes for parsing
+        const cleanOutput = stdout.replace(/\x1b\[[0-9;]*m/g, "");
+
+        // Extract Bearer Token and ENV API Keys from output
+        const tokenMatch = cleanOutput.match(
+          /Bearer Token\s+([a-f0-9]+\.[a-f0-9]+)/,
+        );
+        const hashMatch = cleanOutput.match(/ENV API Keys\s+([a-f0-9]+)/);
+
+        if (tokenMatch && hashMatch) {
+          testApiKey = tokenMatch[1].trim();
+          testApiKeyHash = hashMatch[1].trim();
+          console.log("✓ Generated API key for E2E testing");
+          console.log(`  Token: ${testApiKey.substring(0, 20)}...`);
+          console.log(`  Hash: ${testApiKeyHash.substring(0, 20)}...`);
+        } else {
+          console.error("✗ Failed to parse API key from CLI output");
+          console.error("Clean output:", cleanOutput);
+          throw new Error("Could not extract API key for testing");
+        }
+      }
+
       const devEnv =
         config.language === "python" ?
           {
@@ -212,6 +241,10 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
             // Add test credentials for S3Queue tests
             TEST_AWS_ACCESS_KEY_ID: "test-access-key-id",
             TEST_AWS_SECRET_ACCESS_KEY: "test-secret-access-key",
+            // Add API key for E2E testing
+            ...(testApiKeyHash ?
+              { MOOSE_WEB_APP_API_KEYS: testApiKeyHash }
+            : {}),
           };
 
       devProcess = spawn(CLI_PATH, ["dev"], {
@@ -949,6 +982,93 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
           expect(apiResponse.ok).to.be.true;
           const apiData = await apiResponse.json();
           expect(apiData).to.be.an("array");
+        });
+
+        it("should protect WebApp routes with API key authentication middleware", async function () {
+          this.timeout(TIMEOUTS.TEST_SETUP_MS);
+
+          console.log(
+            `  Environment check: testApiKeyHash = ${testApiKeyHash ? testApiKeyHash.substring(0, 20) + "..." : "NOT SET"}`,
+          );
+
+          if (!testApiKey || !testApiKeyHash) {
+            throw new Error("API key not generated - cannot run auth test");
+          }
+
+          // Test 1: Request without Authorization header should return 401
+          const noAuthResponse = await fetch(
+            `${SERVER_CONFIG.url}/protected-api-key/health`,
+          );
+          expect(noAuthResponse.status).to.equal(401);
+          const noAuthData = await noAuthResponse.json();
+          expect(noAuthData).to.have.property("error", "Unauthorized");
+          console.log("  ✓ Rejected request without Authorization header");
+
+          // Test 2: Request with malformed Authorization header should return 401
+          const malformedAuthResponse = await fetch(
+            `${SERVER_CONFIG.url}/protected-api-key/health`,
+            {
+              headers: { Authorization: testApiKey },
+            },
+          );
+          expect(malformedAuthResponse.status).to.equal(401);
+          console.log(
+            "  ✓ Rejected request with malformed Authorization header",
+          );
+
+          // Test 3: Request with invalid token should return 401
+          const invalidTokenResponse = await fetch(
+            `${SERVER_CONFIG.url}/protected-api-key/health`,
+            {
+              headers: { Authorization: "Bearer invalid.token" },
+            },
+          );
+          expect(invalidTokenResponse.status).to.equal(401);
+          console.log("  ✓ Rejected request with invalid token");
+
+          // Test 4: Request with valid token should succeed (200)
+          console.log(
+            `  Testing valid token: Bearer ${testApiKey.substring(0, 20)}...`,
+          );
+          const validAuthResponse = await fetch(
+            `${SERVER_CONFIG.url}/protected-api-key/health`,
+            {
+              headers: { Authorization: `Bearer ${testApiKey}` },
+            },
+          );
+          if (validAuthResponse.status !== 200) {
+            const errorBody = await validAuthResponse.text();
+            console.error(
+              `  ✗ Valid token rejected with ${validAuthResponse.status}`,
+            );
+            console.error(`  Response: ${errorBody}`);
+          }
+          expect(validAuthResponse.status).to.equal(200);
+          const validAuthData = await validAuthResponse.json();
+          expect(validAuthData).to.have.property("status", "ok");
+          expect(validAuthData).to.have.property(
+            "service",
+            "protected-api-key-api",
+          );
+          console.log("  ✓ Accepted request with valid API key");
+
+          // Test 5: Verify authenticated POST endpoint works
+          const echoResponse = await fetch(
+            `${SERVER_CONFIG.url}/protected-api-key/echo`,
+            {
+              method: "POST",
+              headers: {
+                Authorization: `Bearer ${testApiKey}`,
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({ test: "data" }),
+            },
+          );
+          expect(echoResponse.status).to.equal(200);
+          const echoData = await echoResponse.json();
+          expect(echoData).to.have.property("authenticated", true);
+          expect(echoData.body).to.deep.equal({ test: "data" });
+          console.log("  ✓ Authenticated POST request succeeded");
         });
 
         it("should serve MCP server at /tools with proper header forwarding", async function () {

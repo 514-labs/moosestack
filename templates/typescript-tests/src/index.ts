@@ -11,5 +11,6 @@ export * from "./apis/barExpress";
 export * from "./apis/barExpressMcp";
 export * from "./apis/barKoa";
 export * from "./apis/barRaw";
+export * from "./apis/protectedApiKey";
 export * from "./views/barAggregated";
 export * from "./workflows/generator";
