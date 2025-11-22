@@ -7,247 +7,118 @@ import { Callout } from "@/components";
 
 # November 22, 2025
 
+This week brings powerful new tools for developers working with MooseStack: iterate on SQL queries faster with the new `moose query` command, scale your production deployments with ClickHouse cluster support, and seamlessly create Boreal projects from GitHub repositories.
+
 <Callout type="info" title="Highlights">
-* **New:** Add SQL query formatting and syntax validation to moose query command
-* **New:** Complete GitHub integration workflow for project creation
+* **New:** [`moose query` CLI command](#moose-query-cli-command) for SQL exploration and code generation
+* **New:** [ClickHouse cluster support](#clickhouse-cluster-support) for distributed deployments
+* **New:** [GitHub integration workflow](#github-integration-for-project-creation) for seamless project creation in Boreal
 </Callout>
-
-
 
 ## 🦌 Moose
 
-### New Features
-- **Add SQL query formatting and syntax validation to moose query command**
-  The moose query command now supports formatting SQL queries as Python or TypeScript code literals with the --format-query flag, making it easy to copy-paste queries into application code. Added --prettify flag to format SQL with proper indentation and line breaks. Also includes SQL syntax validation to catch errors before execution.
+### moose query CLI command
 
-  **Format SQL queries as code literals with moose query**
-  ```bash
-  # Validate SQL syntax before using in your application
-  moose query "SELECT user_id, email FROM users WHERE created_at > '2024-01-01'"
-  
-  # Format SQL as Python code literal for copy-pasting into your data pipeline
-  moose query --format-query python "SELECT * FROM events WHERE event_type = 'purchase'"
-  # Output: r"""SELECT * FROM events WHERE event_type = 'purchase'"""
-  
-  # Format complex SQL with regex patterns as TypeScript template literal
-  moose query -c typescript "SELECT * FROM logs WHERE message REGEXP '[0-9]{4}-[0-9]{2}-[0-9]{2}'"
-  # Output: `SELECT * FROM logs WHERE message REGEXP '[0-9]{4}-[0-9]{2}-[0-9]{2}'`
-  
-  # Prettify and format SQL from file for better readability
-  echo "SELECT user_id, email, created_at FROM users WHERE status = 'active' ORDER BY created_at DESC" > analytics_query.sql
-  moose query --format-query python --prettify --file analytics_query.sql
-  
-  # Output formatted as Python raw string with proper indentation:
-  # r"""SELECT
-  #     user_id,
-  #     email,
-  #     created_at
-  # FROM users
-  # WHERE status = 'active'
-  # ORDER BY created_at DESC"""
-  
-  # Use language aliases for convenience
-  moose query -c py --prettify "SELECT COUNT(*) as total_events FROM events GROUP BY event_type"
-  moose query -c ts --prettify "SELECT AVG(revenue) as avg_revenue FROM purchases WHERE date >= '2024-01-01'"
-  ```
-  
-  This example shows how to use the new moose query formatting features to validate SQL syntax, format queries as code literals for Python or TypeScript applications, and prettify SQL with proper indentation. The formatted output can be directly copy-pasted into data pipeline code.
+Execute SQL queries against your ClickHouse database directly from the command line, with built-in validation, formatting, and code generation.
 
-- **Add `moose query` CLI command for executing SQL queries**
-  Added a new `moose query` command that allows users to execute arbitrary SQL queries against their ClickHouse database directly from the command line. Users can provide SQL queries as arguments, read from files, or pipe from stdin. Results are returned as JSON with configurable row limits. This enables easier data exploration and debugging during development.
+**Why it matters:** When building data pipelines, you often need to test SQL queries before adding them to your code. Previously, this meant switching between ClickHouse clients, manually escaping strings, and copying queries back and forth. The `moose query` command streamlines this workflow by letting you validate queries, see results immediately, and generate properly-formatted code ready to paste into your Python or TypeScript application.
 
-  **Using moose query CLI for data exploration and debugging**
-  ```bash
-  # Execute a simple query directly from command line
-  moose query "SELECT COUNT(*) as total_users FROM UserActivity WHERE created_at > '2024-01-01'"
-  
-  # Query with row limit to prevent overwhelming output
-  moose query "SELECT * FROM PageViews ORDER BY timestamp DESC" --limit 50
-  
-  # Read complex query from a file
-  echo "SELECT 
-    user_id,
-    COUNT(*) as page_views,
-    AVG(session_duration) as avg_duration
-  FROM UserSessions 
-  WHERE date >= today() - 7
-  GROUP BY user_id
-  ORDER BY page_views DESC" > analytics_query.sql
-  
-  moose query -f analytics_query.sql --limit 100
-  
-  # Pipe query from stdin for dynamic queries
-  echo "SELECT event_name, COUNT(*) FROM Events GROUP BY event_name" | moose query
-  
-  # Debug data pipeline by checking recent ingested data
-  moose query "SELECT * FROM RawEvents WHERE _timestamp > now() - INTERVAL 1 HOUR" --limit 10
-  ```
-  
-  This example shows how to use the new `moose query` CLI command to execute SQL queries against your ClickHouse database for data exploration and debugging. You can provide queries as arguments, read from files, or pipe from stdin, with configurable row limits to manage output size.
+```bash
+# Execute a query and see JSON results
+moose query "SELECT user_id, COUNT(*) as events FROM user_events GROUP BY user_id LIMIT 10"
 
-- **Add release notes for November 14, 2025**
-  Published comprehensive release notes documenting new features including TypeScript MCP template with AI chat integration, Enum16 data type support, registry functions for programmatic resource access, and various bug fixes and improvements. These release notes help users understand what's new and how to use the latest capabilities.
+# Validate and format complex SQL for Python code
+echo "SELECT * FROM logs WHERE message REGEXP '[0-9]{4}-[0-9]{2}-[0-9]{2}'" \
+  | moose query --format-query python --prettify
 
-- **Add ClickHouse cluster support for distributed deployments**
-  Users can now configure ClickHouse clusters in their moose.config.toml to deploy tables across multiple ClickHouse nodes. This enables horizontal scaling and high availability for production deployments. Tables will be created with ON CLUSTER clauses when cluster configuration is specified, supporting both TypeScript and Python projects.
+# Output: Properly escaped Python raw string ready to paste
+# r"""
+# SELECT *
+#   FROM logs
+# WHERE message REGEXP '[0-9]{4}-[0-9]{2}-[0-9]{2}'
+# """
+```
 
-  **Configure ClickHouse clusters for distributed tables**
-  ```toml
-  # moose.config.toml - Configure ClickHouse clusters for distributed deployments
-  
-  [project]
-  name = "my-analytics-app"
-  language = "typescript"
-  
-  # Define ClickHouse clusters for horizontal scaling
-  [clickhouse.clusters.production_cluster]
-  nodes = [
-    { host = "clickhouse-1.example.com", port = 9000 },
-    { host = "clickhouse-2.example.com", port = 9000 },
-    { host = "clickhouse-3.example.com", port = 9000 }
-  ]
-  
-  [clickhouse.clusters.analytics_cluster]
-  nodes = [
-    { host = "analytics-1.example.com", port = 9000 },
-    { host = "analytics-2.example.com", port = 9000 }
-  ]
-  
-  # Tables will automatically use ON CLUSTER when cluster is specified
-  [clickhouse.tables.user_events]
-  cluster = "production_cluster"  # This table will be distributed across production_cluster
-  
-  [clickhouse.tables.analytics_summary]
-  cluster = "analytics_cluster"   # This table will use the analytics cluster
-  
-  # Tables without cluster config remain on single node
-  [clickhouse.tables.local_cache]
-  # No cluster specified - stays on local ClickHouse instance
-  ```
-  
-  This example shows how to configure ClickHouse clusters in moose.config.toml for distributed deployments. When clusters are defined, MooseStack automatically creates tables with ON CLUSTER clauses, enabling horizontal scaling and high availability across multiple ClickHouse nodes.
+The command supports multiple input methods (arguments, files, stdin), syntax validation before execution, configurable row limits, and output formatting for both Python raw strings and TypeScript template literals. This means you can iterate on queries quickly in your terminal, then copy the validated, formatted SQL directly into your data models or consumption APIs.
 
-- **Add Apex Trading connector with v1/v2 API support**
-  Added a new Apex Trading connector that allows users to sync trading data from Apex Trading platforms. The connector supports both v1 and v2 API versions and includes comprehensive documentation, configuration options, and data schemas for trading events, buyers, products, and shipping orders.
+PR: [#2996](https://github.com/514-labs/moosestack/pull/2996), [#2998](https://github.com/514-labs/moosestack/pull/2998)
 
-  **Setting up Apex Trading connector with v2 API support**
-  ```typescript
-  import { Connector } from "@514labs/moose-lib";
-  
-  // Configure the Apex Trading connector with v2 API
-  const apexConnector = new Connector({
-    name: "apex-trading",
-    version: "v2", // Supports both v1 and v2 APIs
-    config: {
-      apiKey: process.env.APEX_API_KEY,
-      baseUrl: "https://api.apextrading.com/v2",
-      batchSize: 1000,
-      syncInterval: "5m"
-    }
-  });
-  
-  // Define data models for Apex Trading events
-  interface TradingEvent {
-    eventId: string;
-    timestamp: Date;
-    eventType: "trade" | "order" | "settlement";
-    symbol: string;
-    quantity: number;
-    price: number;
-    userId: string;
-  }
-  
-  interface Buyer {
-    buyerId: string;
-    name: string;
-    email: string;
-    accountType: "individual" | "institutional";
-    createdAt: Date;
-  }
-  
-  // Set up streaming pipeline to sync trading data
-  export default function setupApexPipeline() {
-    // Sync trading events from Apex Trading platform
-    apexConnector.streamTable({
-      tableName: "trading_events",
-      model: TradingEvent,
-      endpoint: "/events",
-      primaryKey: "eventId"
-    });
-  
-    // Sync buyer information
-    apexConnector.streamTable({
-      tableName: "buyers", 
-      model: Buyer,
-      endpoint: "/buyers",
-      primaryKey: "buyerId"
-    });
-  
-    return apexConnector;
-  }
-  ```
-  
-  This example shows how to configure the new Apex Trading connector in a MooseStack data pipeline. It demonstrates setting up the connector with v2 API support, defining data models for trading events and buyers, and creating streaming tables to sync data from the Apex Trading platform.
+### ClickHouse cluster support
 
-### Improvements
-- Added Anthropic API key setup instructions to TypeScript MCP template: The TypeScript MCP template now includes clear instructions for setting up the required Anthropic API key environment variable. Users will see these instructions both in the README and in the post-initialization output when creating new projects with this template.
-- Improved TypeScript MCP template documentation with clearer setup instructions: Enhanced the README for the TypeScript MCP template with clearer project initialization instructions and more concise development commands. Users now have better guidance on how to start a new MCP project and run development services.
-- Enhanced TypeScript types for Apex connector with detailed field definitions: Replaced generic field definitions with comprehensive, strongly-typed interfaces for Apex connector resources including Batches, Buyers, Products, and Shipping Orders. This provides better type safety, improved IntelliSense support, and clearer API documentation for developers integrating with Apex data sources.
-- Improved Apex Trading connector installation and package naming: Updated the Apex Trading connector with a streamlined installation process using the registry installer script, changed package name from @workspace/connector-apex to @514labs/connector-apex for better distribution, and enhanced the postinstall script to automatically handle core dependencies and imports. Users now get clearer installation instructions and a more robust setup process.
+Configure distributed ClickHouse clusters in your `moose.config.toml` to deploy tables across multiple nodes with automatic `ON CLUSTER` DDL generation.
 
-### Bug Fixes
-- Fix DateTime precision loss - preserve microseconds and nanoseconds: Fixed automatic parsing of datetime strings to Date objects which was dropping microsecond and nanosecond precision. Added new DateTime64String types that preserve full precision by keeping timestamps as strings instead of converting to JavaScript Date objects. This ensures high-precision timestamps from external systems are stored accurately in ClickHouse without precision loss.
-- Fix table schema change detection for ORDER BY clauses: Fixed an issue where Moose incorrectly detected ORDER BY changes when comparing tables created by older CLI versions. Previously, tables with implicit ORDER BY (derived from primary keys) were incorrectly flagged as different from tables with explicit ORDER BY, causing unnecessary schema migrations. This fix ensures smoother upgrades and prevents false positive change detection.
-- Fix moose seed command to support cross-database table seeding: Fixed the `moose seed` command to properly handle tables that exist in different databases. Previously, the seed command would fail or skip tables that weren't in the default database. Now it correctly identifies and seeds tables across multiple databases, improving reliability when working with complex database schemas.
-- Fix table settings handling with default values in ClickHouse tables: Fixed an issue where ClickHouse table settings comparisons would fail when comparing explicit values against default values (Some vs None). This ensures table migrations work correctly when settings are added or removed, preventing unnecessary table recreations.
-- Fix deterministic ordering in migration files: Migration files now generate with consistent, sorted JSON keys to prevent noisy diffs in version control. This eliminates random ordering changes that made it difficult to track actual infrastructure changes in migration plans and state files.
-- Fix SQL parser to correctly extract SAMPLE BY clause when TTL is present: Fixed a bug in the SQL parser that incorrectly extracted SAMPLE BY expressions from CREATE TABLE statements when TTL clauses were present. Previously, the parser would include parts of the TTL expression in the SAMPLE BY value. This primarily affected users migrating external ClickHouse tables into Moose, where the parser would extract incorrect sampling expressions instead of the intended column names.
-- Fix Buffer and Distributed engine parsing for ClickHouse tables: Fixed parsing of ClickHouse Buffer and Distributed table engines that was causing errors when working with tables using these engine types. This resolves issues where users couldn't properly interact with existing ClickHouse tables that use Buffer or Distributed engines in their Moose applications.
-- Fix duplicate LowCardinality annotations in data models: Fixed an issue where LowCardinality annotations could be duplicated in data model definitions, which could cause schema generation problems or unexpected behavior when defining column types.
+**Why it matters:** Production data applications need to scale beyond a single database node. ClickHouse clusters provide horizontal scaling and high availability, but managing distributed table creation, migrations, and operations is complex. MooseStack now handles this automatically—define your cluster topology once, and all table operations (CREATE, ALTER, DROP, migrations) will execute across all nodes.
+
+```toml
+# moose.config.toml
+[project]
+name = "analytics-production"
+language = "typescript"
+
+# Define your ClickHouse cluster
+[clickhouse.clusters.prod_cluster]
+nodes = [
+  { host = "clickhouse-1.example.com", port = 9000 },
+  { host = "clickhouse-2.example.com", port = 9000 },
+  { host = "clickhouse-3.example.com", port = 9000 }
+]
+
+# Tables automatically use ON CLUSTER syntax
+[clickhouse.tables.user_events]
+cluster = "prod_cluster"
+```
+
+When you run migrations or create new tables, MooseStack automatically generates `CREATE TABLE ... ON CLUSTER prod_cluster` statements. This works with replicated engines, supports cluster-aware schema validation, and preserves cluster configuration across migrations. Both TypeScript and Python projects are fully supported.
+
+PR: [#2944](https://github.com/514-labs/moosestack/pull/2944)
+
+### Other improvements
+
+- Improved TypeScript MCP template documentation with setup instructions and API key configuration ([#3006](https://github.com/514-labs/moosestack/pull/3006))
+
+### Bug fixes
+
+- DateTime precision loss - preserve microseconds and nanoseconds ([#3018](https://github.com/514-labs/moosestack/pull/3018))
+- Table schema change detection for ORDER BY clauses ([#3017](https://github.com/514-labs/moosestack/pull/3017))
+- `moose seed` command now supports cross-database table seeding ([#3010](https://github.com/514-labs/moosestack/pull/3010))
+- Table settings handling with default values ([#3012](https://github.com/514-labs/moosestack/pull/3012))
+- Deterministic ordering in migration files ([#3007](https://github.com/514-labs/moosestack/pull/3007))
+- SQL parser SAMPLE BY clause extraction when TTL is present ([#3011](https://github.com/514-labs/moosestack/pull/3011))
+- Buffer and Distributed engine parsing for ClickHouse tables ([#3003](https://github.com/514-labs/moosestack/pull/3003))
+- Duplicate LowCardinality annotations in data models ([#3009](https://github.com/514-labs/moosestack/pull/3009))
+- Unhandled LowCardinality(String) column types in clickhouse_rs client ([#3025](https://github.com/514-labs/moosestack/pull/3025))
 
 ## 🐻 Boreal
 
-### New Features
-- **Complete GitHub integration workflow for project creation**
-  Users can now seamlessly connect their GitHub accounts and create projects from their repositories through an improved multi-step workflow. The integration includes better account selection, repository browsing, and streamlined project setup from GitHub repos.
-  
-  📸 *[Screenshot needed: Users can now seamlessly connect their GitHub accounts and create projects from their repositories through an improved multi-step workflow. The integration includes better account selection, repository browsing, and streamlined project setup from GitHub repos.]*
+### GitHub integration for project creation
 
-- **Improved GitHub integration with enhanced authentication flow**
-  Enhanced GitHub authentication system with better OAuth handling, improved security with CSRF protection, and streamlined connection flow. Users can now connect their GitHub accounts more reliably with better error handling and redirect management.
+Connect your GitHub account and create Boreal projects directly from your repositories with an improved multi-step workflow.
 
-- **Added database performance metrics visualization to project overview**
-  Users can now view comprehensive database performance metrics including query P95 latency, throughput (rows per second), and storage usage directly in their project overview page. The visualizations show both weekly trends and 24-hour detailed views with percentage change indicators, helping users monitor and optimize their database performance over time.
-  
-  📸 *[Screenshot needed: Users can now view comprehensive database performance metrics including query P95 latency, throughput (rows per second), and storage usage directly in their project overview page. The visualizations show both weekly trends and 24-hour detailed views with percentage change indicators, helping users monitor and optimize their database performance over time.]*
+**Why it matters:** Setting up data infrastructure projects should be as simple as pointing to your existing codebase. The new GitHub integration eliminates manual repository configuration by letting you browse your GitHub organizations and repositories, select the one you want, and automatically create a Boreal project with proper authentication and repository linking. The enhanced OAuth flow includes better error handling, token expiration detection, and automatic reconnection prompts, so you never get stuck during project creation.
 
-- **Added Videos link to Resources section in navigation**
-  Users can now access educational videos directly from the Resources section in the main navigation, providing easier access to video tutorials and learning materials.
-  
-  📸 *[Screenshot needed: Users can now access educational videos directly from the Resources section in the main navigation, providing easier access to video tutorials and learning materials.]*
+📸 *[Screenshot showing the GitHub organization selector and repository browser in the project creation flow]*
 
-### Improvements
-- Improved query performance for latest log data retrieval: Optimized database queries for retrieving the latest log information, resulting in faster loading times when viewing recent query activity in the data observability dashboard.
-- Improved deployment status consistency across dashboard: Deployment status and timestamps are now consistent throughout the dashboard. All deployment views, project cards, and status indicators now show the same accurate status information, eliminating confusion from outdated or inconsistent deployment states.
-- Removed 10-item limit from branch selector dropdowns: Branch selector dropdowns now display all available branches instead of being limited to 10 items. Added scrollable interface with 300px max height to handle projects with many branches. This improves navigation for users working with projects that have numerous branches.
-- Enhanced Redpanda cluster monitoring with additional metrics: Added Redpanda cluster metrics to monitoring dashboard, providing better visibility into cluster health and performance for data streaming infrastructure
-- Updated Moose CLI and library to version 0.6.216: Updated the underlying Moose framework from version 0.6.194 to 0.6.216, bringing the latest improvements and bug fixes to the platform. This update enhances the reliability and performance of data processing and application management features.
+PR: [514-labs/commercial#1087](https://github.com/514-labs/commercial/pull/1087) • Related fixes: [#1088](https://github.com/514-labs/commercial/pull/1088), [#1060](https://github.com/514-labs/commercial/pull/1060), [#1058](https://github.com/514-labs/commercial/pull/1058)
 
-### Bug Fixes
-- Fixed redirect issue when joining organizations: Resolved a redirect problem that prevented users from properly accessing the organization join page, ensuring smooth navigation when joining organizations through invitation links.
-- Fixed authentication issues with API v1 endpoints: Resolved authentication middleware conflicts that could prevent proper API access for applications using Bearer token authentication on v1 endpoints
-- Fixed API authentication issues affecting project branch operations: Resolved authentication problems that were preventing API calls for project branch management from working correctly. This fix ensures that programmatic access to project data through the API now functions reliably.
-- Fixed API v1 route authentication issues: Resolved authentication problems with API v1 routes that were preventing proper API access. Users should now experience more reliable API functionality without authentication interference.
-- Fixed duplicate data in storage calculation metrics: Resolved an issue where storage usage calculations were incorrectly counting duplicate data points, leading to inflated storage metrics in the dashboard. Storage usage charts now display accurate values.
-- Fixed data discrepancy between daily and weekly charts in monitoring dashboard: Fixed an issue where daily and weekly performance charts showed inconsistent data due to different handling of the current hour. Daily charts now include current hour data to match weekly charts, providing consistent monitoring views. Also improved tooltip descriptions for better clarity on throughput metrics.
-- Fixed GitHub organization selection showing incorrect organizations: Fixed an issue where the wrong GitHub organizations were displayed when linking repositories to projects. Users will now see the correct list of available organizations when connecting their GitHub account for project creation.
-- Fixed GitHub connection expiration handling in project creation: Fixed an issue where users couldn't create new projects when their GitHub OAuth token expired. The system now properly detects expired tokens and provides a clear reconnection flow, allowing users to seamlessly reconnect their GitHub account and continue creating projects without getting stuck on error pages.
-- Fixed sign-in redirect issue: Fixed an issue where users were not properly redirected to the sign-in page when authentication was required, ensuring a smoother login experience
-- Fix sign in flow for organization creation: Fixed an issue where users were incorrectly redirected during the organization creation process, preventing them from completing sign in and setting up new organizations.
+### Database performance metrics visualization
 
-## 📦 infrastructure
+View query latency (P95), throughput (rows/second), and storage usage directly in your project overview with weekly trends and 24-hour detailed views.
 
-### Bug Fixes
-- Fix deployment reliability by removing skip await configuration: Improved deployment stability and reliability by properly waiting for deployments to complete and implementing rolling updates with zero downtime. This reduces the chance of deployment failures and ensures smoother application updates.
+**Why it matters:** Understanding your database performance is critical for optimizing data pipelines and catching issues before they impact users. The new metrics visualization surfaces ClickHouse query log data directly in the Boreal dashboard, showing you how your database performance changes over time. Weekly and daily charts now display consistent data with percentage change indicators, making it easy to spot trends and diagnose slowdowns.
 
+📸 *[Screenshot showing the performance metrics charts with P95 latency, throughput, and storage graphs]*
 
+PR: [514-labs/commercial#1055](https://github.com/514-labs/commercial/pull/1055) • Related fixes: [#1066](https://github.com/514-labs/commercial/pull/1066), [#1073](https://github.com/514-labs/commercial/pull/1073), [#1097](https://github.com/514-labs/commercial/pull/1097)
+
+### Other improvements
+
+- Videos link added to Resources section in navigation ([514-labs/commercial#1062](https://github.com/514-labs/commercial/pull/1062))
+- Branch selector now displays all branches with scrollable interface (removed 10-item limit) ([514-labs/commercial#1089](https://github.com/514-labs/commercial/pull/1089))
+- Deployment status timestamps now consistent across dashboard ([514-labs/commercial#1090](https://github.com/514-labs/commercial/pull/1090))
+- Redpanda cluster metrics added to monitoring dashboard ([514-labs/commercial#1085](https://github.com/514-labs/commercial/pull/1085))
+
+### Bug fixes
+
+- API v1 authentication middleware conflicts resolved ([514-labs/commercial#1082](https://github.com/514-labs/commercial/pull/1082), [#1081](https://github.com/514-labs/commercial/pull/1081), [#1080](https://github.com/514-labs/commercial/pull/1080), [#1077](https://github.com/514-labs/commercial/pull/1077))
+- Organization join redirect issue fixed ([514-labs/commercial#1088](https://github.com/514-labs/commercial/pull/1088))
+- Deployment reliability improved with proper await configuration ([514-labs/commercial#1075](https://github.com/514-labs/commercial/pull/1075))
