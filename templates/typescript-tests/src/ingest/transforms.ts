@@ -118,3 +118,75 @@ LargeMessageInputPipeline.stream!.addTransform(
     deadLetterQueue: LargeMessageInputPipeline.deadLetterQueue,
   },
 );
+
+// Test transform for DateTime precision - verifies field mutations work correctly
+import {
+  DateTimePrecisionInputPipeline,
+  dateTimePrecisionOutputStream,
+  DateTimePrecisionTestData,
+} from "./models";
+
+DateTimePrecisionInputPipeline.stream!.addTransform(
+  dateTimePrecisionOutputStream,
+  (input: DateTimePrecisionTestData): DateTimePrecisionTestData => {
+    // This transform verifies that field mutations have correctly parsed datetime strings
+    // - DateTime and DateTime64<3> should be Date objects (parsed from strings)
+    // - DateTime64<6> should be Date objects (but loses microseconds in JS)
+    // - DateTime64String<6> should remain as strings (preserves microseconds)
+    // - DateTime64String<9> should remain as strings (preserves nanoseconds)
+    // - DateTimeString should remain as strings
+
+    console.log("DateTime precision transform - input types:");
+    console.log(`  createdAt: ${typeof input.createdAt} = ${input.createdAt}`);
+    console.log(
+      `  timestampMs: ${typeof input.timestampMs} = ${input.timestampMs}`,
+    );
+    console.log(
+      `  timestampUsDate: ${typeof input.timestampUsDate} = ${input.timestampUsDate}`,
+    );
+    console.log(
+      `  timestampUsString: ${typeof input.timestampUsString} = ${input.timestampUsString}`,
+    );
+    console.log(
+      `  timestampNs: ${typeof input.timestampNs} = ${input.timestampNs}`,
+    );
+    console.log(
+      `  createdAtString: ${typeof input.createdAtString} = ${input.createdAtString}`,
+    );
+
+    // Verify types at runtime
+    if (!(input.createdAt instanceof Date)) {
+      throw new Error(
+        `Expected createdAt to be Date, got ${typeof input.createdAt}`,
+      );
+    }
+    if (!(input.timestampMs instanceof Date)) {
+      throw new Error(
+        `Expected timestampMs to be Date, got ${typeof input.timestampMs}`,
+      );
+    }
+    if (!(input.timestampUsDate instanceof Date)) {
+      throw new Error(
+        `Expected timestampUsDate to be Date, got ${typeof input.timestampUsDate}`,
+      );
+    }
+    if (typeof input.timestampUsString !== "string") {
+      throw new Error(
+        `Expected timestampUsString to be string, got ${typeof input.timestampUsString}`,
+      );
+    }
+    if (typeof input.timestampNs !== "string") {
+      throw new Error(
+        `Expected timestampNs to be string, got ${typeof input.timestampNs}`,
+      );
+    }
+    if (typeof input.createdAtString !== "string") {
+      throw new Error(
+        `Expected createdAtString to be string, got ${typeof input.createdAtString}`,
+      );
+    }
+
+    // Pass through unchanged
+    return input;
+  },
+);

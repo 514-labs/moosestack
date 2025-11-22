@@ -4,7 +4,6 @@ from datetime import datetime
 
 
 def foo_to_bar(foo: Foo):
-
     """Transform Foo events to Bar events with error handling and caching.
     
     Normal flow:
@@ -60,6 +59,7 @@ def print_foo_event(foo):
 
 fooModel.get_stream().add_consumer(print_foo_event)
 
+
 # DLQ consumer for handling failed events (alternate flow)
 def print_messages(dead_letter: DeadLetterModel[Foo]):
     print("dead letter:", dead_letter)
@@ -70,6 +70,7 @@ fooModel.get_dead_letter_queue().add_consumer(print_messages)
 
 # Test transform that returns a list - each element should be sent as a separate Kafka message
 from src.ingest.models import array_input_model, array_output_stream, ArrayInput, ArrayOutput
+
 
 def array_transform(input_data: ArrayInput) -> list[ArrayOutput]:
     """Transform that explodes an input array into individual output records.
@@ -93,4 +94,55 @@ def array_transform(input_data: ArrayInput) -> list[ArrayOutput]:
 array_input_model.get_stream().add_transform(
     destination=array_output_stream,
     transformation=array_transform,
+)
+
+# Test transform for DateTime precision - verifies that Python datetime preserves microseconds
+from src.ingest.models import (
+    datetime_precision_input_model,
+    datetime_precision_output_stream,
+    DateTimePrecisionTestData,
+)
+
+
+def datetime_precision_transform(input_data: DateTimePrecisionTestData) -> DateTimePrecisionTestData:
+    """Transform that verifies Python datetime objects preserve microsecond precision.
+    
+    Unlike JavaScript, Python's datetime natively supports microsecond precision,
+    so all datetime fields should be datetime objects with microseconds preserved.
+    """
+
+    print("DateTime precision transform (Python) - input types and values:")
+    print(f"  created_at: {type(input_data.created_at)} = {input_data.created_at} (µs: {input_data.created_at.microsecond})")
+    print(f"  timestamp_ms: {type(input_data.timestamp_ms)} = {input_data.timestamp_ms} (µs: {input_data.timestamp_ms.microsecond})")
+    print(f"  timestamp_us: {type(input_data.timestamp_us)} = {input_data.timestamp_us} (µs: {input_data.timestamp_us.microsecond})")
+    print(f"  timestamp_ns: {type(input_data.timestamp_ns)} = {input_data.timestamp_ns} (µs: {input_data.timestamp_ns.microsecond})")
+
+    # Verify all are datetime objects
+    if not isinstance(input_data.created_at, datetime):
+        raise TypeError(f"Expected created_at to be datetime, got {type(input_data.created_at)}")
+    if not isinstance(input_data.timestamp_ms, datetime):
+        raise TypeError(f"Expected timestamp_ms to be datetime, got {type(input_data.timestamp_ms)}")
+    if not isinstance(input_data.timestamp_us, datetime):
+        raise TypeError(f"Expected timestamp_us to be datetime, got {type(input_data.timestamp_us)}")
+    if not isinstance(input_data.timestamp_ns, datetime):
+        raise TypeError(f"Expected timestamp_ns to be datetime, got {type(input_data.timestamp_ns)}")
+
+    # Verify microseconds are present
+    if input_data.timestamp_us.microsecond == 0:
+        print(f"WARNING: timestamp_us has no microseconds: {input_data.timestamp_us}")
+    else:
+        print(f"✓ timestamp_us has microseconds: {input_data.timestamp_us.microsecond}")
+    
+    if input_data.timestamp_ns.microsecond == 0:
+        print(f"WARNING: timestamp_ns has no microseconds: {input_data.timestamp_ns}")
+    else:
+        print(f"✓ timestamp_ns has microseconds: {input_data.timestamp_ns.microsecond}")
+
+    # Pass through unchanged
+    return input_data
+
+
+datetime_precision_input_model.get_stream().add_transform(
+    destination=datetime_precision_output_stream,
+    transformation=datetime_precision_transform,
 )
