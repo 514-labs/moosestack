@@ -1,7 +1,7 @@
 """Tests for OlapTable cluster validation."""
 
 import pytest
-from moose_lib import OlapTable, OlapConfig, MergeTreeEngine, ReplicatedMergeTreeEngine
+from moose_lib import MergeTreeEngine, OlapConfig, OlapTable, ReplicatedMergeTreeEngine
 from pydantic import BaseModel
 
 
@@ -83,4 +83,6 @@ def test_replicated_engine_without_cluster_or_explicit_params_is_allowed():
         ),
     )
     assert table is not None
+
+
 

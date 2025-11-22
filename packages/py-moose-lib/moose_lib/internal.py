@@ -6,27 +6,31 @@ of various Moose resources (tables, streams/topics, APIs) and functions
 to convert the user-defined resources (from `dmv2.py`) into a serializable
 JSON format expected by the Moose infrastructure management system.
 """
-from importlib import import_module
-from typing import Literal, Optional, List, Any, Dict, Union, TYPE_CHECKING
-from pydantic import BaseModel, ConfigDict, AliasGenerator, Field
 import json
-from .data_models import Column, _to_columns
-from .blocks import EngineConfig, ClickHouseEngines
-from moose_lib.dmv2 import (
-    get_tables,
-    get_streams,
-    get_ingest_apis,
-    get_apis,
-    get_sql_resources,
-    get_workflows,
-    get_web_apps,
-    OlapTable,
-    OlapConfig,
-    SqlResource
-)
-from moose_lib.dmv2.stream import KafkaSchemaConfig
+from importlib import import_module
+from tkinter import N
+from typing import TYPE_CHECKING, Any, Dict, List, Literal, Optional, Union
+
+from pydantic import AliasGenerator, BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
 from pydantic.json_schema import JsonSchemaValue
+
+from moose_lib.dmv2 import (
+    OlapConfig,
+    OlapTable,
+    SqlResource,
+    get_apis,
+    get_ingest_apis,
+    get_sql_resources,
+    get_streams,
+    get_tables,
+    get_web_apps,
+    get_workflows,
+)
+from moose_lib.dmv2.stream import KafkaSchemaConfig
+
+from .blocks import ClickHouseEngines, EngineConfig
+from .data_models import Column, _to_columns
 
 model_config = ConfigDict(alias_generator=AliasGenerator(
     serialization_alias=to_camel,
@@ -61,6 +65,11 @@ class BaseEngineConfigDict(BaseModel):
     """Base engine configuration for all ClickHouse table engines."""
     model_config = model_config
     engine: str
+
+
+class NullConfigDict(BaseEngineConfigDict):
+    """Configuration for Null engine."""
+    engine: Literal["Null"] = "Null"
 
 
 class MergeTreeConfigDict(BaseEngineConfigDict):
@@ -169,6 +178,7 @@ class DistributedConfigDict(BaseEngineConfigDict):
 
 # Discriminated union of all engine configurations
 EngineConfigDict = Union[
+    NullConfigDict,
     MergeTreeConfigDict,
     ReplacingMergeTreeConfigDict,
     AggregatingMergeTreeConfigDict,
@@ -441,8 +451,10 @@ def _convert_basic_engine_instance(engine: "EngineConfig") -> Optional[EngineCon
         EngineConfigDict if matched, None otherwise
     """
     from moose_lib.blocks import (
-        MergeTreeEngine, ReplacingMergeTreeEngine,
-        AggregatingMergeTreeEngine, SummingMergeTreeEngine
+        AggregatingMergeTreeEngine,
+        MergeTreeEngine,
+        ReplacingMergeTreeEngine,
+        SummingMergeTreeEngine,
     )
 
     if isinstance(engine, MergeTreeEngine):
@@ -469,8 +481,10 @@ def _convert_replicated_engine_instance(engine: "EngineConfig") -> Optional[Engi
         EngineConfigDict if matched, None otherwise
     """
     from moose_lib.blocks import (
-        ReplicatedMergeTreeEngine, ReplicatedReplacingMergeTreeEngine,
-        ReplicatedAggregatingMergeTreeEngine, ReplicatedSummingMergeTreeEngine
+        ReplicatedAggregatingMergeTreeEngine,
+        ReplicatedMergeTreeEngine,
+        ReplicatedReplacingMergeTreeEngine,
+        ReplicatedSummingMergeTreeEngine,
     )
 
     if isinstance(engine, ReplicatedMergeTreeEngine):
@@ -508,7 +522,13 @@ def _convert_engine_instance_to_config_dict(engine: "EngineConfig") -> EngineCon
     Returns:
         EngineConfigDict with engine-specific configuration
     """
-    from moose_lib.blocks import S3QueueEngine, S3Engine, BufferEngine, DistributedEngine
+    from moose_lib.blocks import (
+        BufferEngine,
+        DistributedEngine,
+        NullEngine,
+        S3Engine,
+        S3QueueEngine,
+    )
 
     # Try S3Queue first
     if isinstance(engine, S3QueueEngine):
@@ -559,6 +579,10 @@ def _convert_engine_instance_to_config_dict(engine: "EngineConfig") -> EngineCon
             sharding_key=engine.sharding_key,
             policy_name=engine.policy_name
         )
+
+    # Try NullEngine
+    if isinstance(engine, NullEngine):
+        return NullConfigDict()
 
     # Try basic engines
     basic_config = _convert_basic_engine_instance(engine)
@@ -619,6 +643,7 @@ def _convert_engine_to_config_dict(engine: Union[ClickHouseEngines, EngineConfig
 
     # Map engine names to specific config classes
     engine_map = {
+        "NullEngine": NullConfigDict,
         "MergeTree": MergeTreeConfigDict,
         "ReplacingMergeTree": ReplacingMergeTreeConfigDict,
         "AggregatingMergeTree": AggregatingMergeTreeConfigDict,

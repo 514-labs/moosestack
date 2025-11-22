@@ -1,0 +1,26 @@
+language = "python" # Must be typescript or python
+description = "Default Python project, seeded with foobar example components."
+post_install_print = """
+Deploy on Boreal
+
+The easiest way to deploy your MooseStack Applications is to use Boreal
+from the creators of MooseStack.
+
+https://boreal.cloud
+
+---------------------------------------------------------
+
+📂 Go to your project directory:
+    $ cd {project_dir}
+
+🥄 Create a virtual environment (optional, recommended):
+    $ python3 -m venv .venv
+    $ source .venv/bin/activate
+
+📦 Install Dependencies:
+    $ pip install -r ./requirements.txt
+
+🛠️ Start Moose Server:
+    $ moose dev
+"""
+default_sloan_telemetry="standard"

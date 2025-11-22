@@ -6,20 +6,32 @@ particularly for ClickHouse.
 """
 import json
 import warnings
+from dataclasses import dataclass
+from typing import (
+    Any,
+    Generic,
+    Iterator,
+    List,
+    Literal,
+    Optional,
+    Tuple,
+    TypeVar,
+    Union,
+)
+
 from clickhouse_connect import get_client
 from clickhouse_connect.driver.client import Client
 from clickhouse_connect.driver.exceptions import ClickHouseError
-from dataclasses import dataclass
 from pydantic import BaseModel
-from typing import List, Optional, Any, Literal, Union, Tuple, TypeVar, Generic, Iterator
+
 from ..blocks import ClickHouseEngines, EngineConfig
 from ..commons import Logger
 from ..config.runtime import RuntimeClickHouseConfig
+from ..data_models import Column, _to_columns, is_array_nested_type, is_nested_type
 from ..utilities.sql import quote_identifier
-from .types import TypedMooseResource, T, Cols
 from ._registry import _tables
-from ..data_models import Column, is_array_nested_type, is_nested_type, _to_columns
 from .life_cycle import LifeCycle
+from .types import Cols, T, TypedMooseResource
 
 
 @dataclass
@@ -159,11 +171,17 @@ class OlapConfig(BaseModel):
 
         # Validate that non-MergeTree engines don't have unsupported clauses
         if self.engine:
-            from ..blocks import S3Engine, S3QueueEngine, BufferEngine, DistributedEngine
+            from ..blocks import (
+                BufferEngine,
+                DistributedEngine,
+                NullEngine,
+                S3Engine,
+                S3QueueEngine,
+            )
 
             # S3QueueEngine, BufferEngine, and DistributedEngine don't support ORDER BY
             # Note: S3Engine DOES support ORDER BY (unlike S3Queue)
-            engines_without_order_by = (S3QueueEngine, BufferEngine, DistributedEngine)
+            engines_without_order_by = (NullEngine, S3QueueEngine, BufferEngine, DistributedEngine)
             if isinstance(self.engine, engines_without_order_by):
                 engine_name = type(self.engine).__name__
 
@@ -174,7 +192,7 @@ class OlapConfig(BaseModel):
                     )
 
             # All non-MergeTree engines don't support SAMPLE BY
-            engines_without_sample_by = (S3Engine, S3QueueEngine, BufferEngine, DistributedEngine)
+            engines_without_sample_by = (NullEngine, S3Engine, S3QueueEngine, BufferEngine, DistributedEngine)
             if isinstance(self.engine, engines_without_sample_by):
                 engine_name = type(self.engine).__name__
 
@@ -237,9 +255,9 @@ class OlapTable(TypedMooseResource, Generic[T]):
         # Validate cluster and explicit replication params are not both specified
         if config.cluster:
             from moose_lib.blocks import (
+                ReplicatedAggregatingMergeTreeEngine,
                 ReplicatedMergeTreeEngine,
                 ReplicatedReplacingMergeTreeEngine,
-                ReplicatedAggregatingMergeTreeEngine,
                 ReplicatedSummingMergeTreeEngine,
             )
 

@@ -159,6 +159,9 @@ struct DistributedConfig {
 #[derive(Debug, Deserialize)]
 #[serde(tag = "engine", rename_all = "camelCase")]
 enum EngineConfig {
+    #[serde(rename = "Null")]
+    Null {},
+
     #[serde(rename = "MergeTree")]
     MergeTree {},
 
@@ -747,6 +750,8 @@ impl PartialInfrastructureMap {
         partial_table: &PartialTable,
     ) -> Result<ClickhouseEngine, DmV2LoadingError> {
         match &partial_table.engine_config {
+            Some(EngineConfig::Null {}) => Ok(ClickhouseEngine::Null),
+
             Some(EngineConfig::MergeTree {}) => Ok(ClickhouseEngine::MergeTree),
 
             Some(EngineConfig::ReplacingMergeTree { ver, is_deleted }) => {

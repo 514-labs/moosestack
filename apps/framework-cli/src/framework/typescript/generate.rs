@@ -685,6 +685,11 @@ pub fn tables_to_typescript(tables: &[Table], life_cycle: Option<LifeCycle>) -> 
                     writeln!(output, " }},").unwrap();
                 }
             }
+            crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine::Null => {
+                // Table with engine Null : we expose the Null engine in TS
+                // (assuming you have ClickHouseEngines.Null in your TS enum)
+                writeln!(output, "    engine: ClickHouseEngines.Null,").unwrap();
+            }
             crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine::MergeTree => {
                 writeln!(output, "    engine: ClickHouseEngines.MergeTree,").unwrap();
             }
