@@ -1,0 +1,33 @@
+language = "python" # Must be typescript or python
+description = "Experimental Python project demonstrating MooseModel with LSP autocomplete for column names."
+post_install_print = """
+⚠️  EXPERIMENTAL TEMPLATE - REQUIRES DEV VERSION ⚠️
+
+This template uses the new MooseModel feature with LSP autocomplete.
+It requires the development version of moose_lib.
+
+---------------------------------------------------------
+
+📂 Go to your project directory:
+    $ cd {project_dir}
+
+🥄 Create a virtual environment:
+    $ python3 -m venv .venv
+    $ source .venv/bin/activate
+
+⚡ Install LOCAL py-moose-lib in development mode:
+    $ pip install -e <path-to-moosestack>/packages/py-moose-lib
+
+📦 Install other dependencies:
+    $ pip install -r ./requirements.txt
+
+🛠️ Start Moose Server:
+    $ moose dev
+
+---------------------------------------------------------
+
+📖 See README.md for detailed setup instructions.
+
+Deploy on Boreal: https://boreal.cloud
+"""
+default_sloan_telemetry="standard"

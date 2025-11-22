@@ -6,8 +6,19 @@ from inspect import isclass
 from uuid import UUID
 from datetime import datetime, date
 
-from typing import Literal, Tuple, Union, Any, get_origin, get_args, TypeAliasType, Annotated, Type, _BaseGenericAlias, \
-    GenericAlias
+from typing import (
+    Literal,
+    Tuple,
+    Union,
+    Any,
+    get_origin,
+    get_args,
+    TypeAliasType,
+    Annotated,
+    Type,
+    _BaseGenericAlias,
+    GenericAlias,
+)
 from pydantic import BaseModel, Field, PlainSerializer, GetCoreSchemaHandler, ConfigDict
 from pydantic_core import CoreSchema, core_schema
 import ipaddress
@@ -30,7 +41,9 @@ type Float32 = Annotated[float, "float32"]
 type Float64 = Annotated[float, "float64"]
 
 
-@dataclasses.dataclass(frozen=True)  # a BaseModel in the annotations will confuse pydantic
+@dataclasses.dataclass(
+    frozen=True
+)  # a BaseModel in the annotations will confuse pydantic
 class ClickhousePrecision:
     precision: int
 
@@ -106,11 +119,14 @@ type MultiPolygon = Annotated[list[list[list[tuple[float, float]]]], "MultiPolyg
 
 
 def aggregated[T](
-        result_type: Type[T],
-        agg_func: str,
-        param_types: list[type | GenericAlias | _BaseGenericAlias]
+    result_type: Type[T],
+    agg_func: str,
+    param_types: list[type | GenericAlias | _BaseGenericAlias],
 ) -> Type[T]:
-    return Annotated[result_type, AggregateFunction(agg_func=agg_func, param_types=tuple(param_types))]
+    return Annotated[
+        result_type,
+        AggregateFunction(agg_func=agg_func, param_types=tuple(param_types)),
+    ]
 
 
 @dataclasses.dataclass(frozen=True)
@@ -123,14 +139,11 @@ class AggregateFunction:
             "functionName": self.agg_func,
             "argumentTypes": [
                 py_type_to_column_type(t, [])[2] for t in self.param_types
-            ]
+            ],
         }
 
 
-def simple_aggregated[T](
-        agg_func: str,
-        arg_type: Type[T]
-) -> Type[T]:
+def simple_aggregated[T](agg_func: str, arg_type: Type[T]) -> Type[T]:
     """Helper to create a SimpleAggregateFunction type annotation.
 
     SimpleAggregateFunction is a ClickHouse type for storing aggregated values directly
@@ -152,7 +165,9 @@ def simple_aggregated[T](
         last_status: simple_aggregated("anyLast", str)
         ```
     """
-    return Annotated[arg_type, SimpleAggregateFunction(agg_func=agg_func, arg_type=arg_type)]
+    return Annotated[
+        arg_type, SimpleAggregateFunction(agg_func=agg_func, arg_type=arg_type)
+    ]
 
 
 @dataclasses.dataclass(frozen=True)
@@ -163,7 +178,7 @@ class SimpleAggregateFunction:
     def to_dict(self):
         return {
             "functionName": self.agg_func,
-            "argumentType": py_type_to_column_type(self.arg_type, [])[2]
+            "argumentType": py_type_to_column_type(self.arg_type, [])[2],
         }
 
 
@@ -176,7 +191,9 @@ def enum_value_serializer(value: int | str):
 
 class EnumValue(BaseModel):
     name: str
-    value: Annotated[int | str, PlainSerializer(enum_value_serializer, return_type=dict)]
+    value: Annotated[
+        int | str, PlainSerializer(enum_value_serializer, return_type=dict)
+    ]
 
 
 class DataEnum(BaseModel):
@@ -212,7 +229,9 @@ class JsonOptions(BaseModel):
     skip_regexps: list[str] = []
 
 
-type DataType = str | DataEnum | ArrayType | Nested | NamedTupleType | MapType | JsonOptions
+type DataType = (
+    str | DataEnum | ArrayType | Nested | NamedTupleType | MapType | JsonOptions
+)
 
 
 def handle_jwt(field_type: type) -> Tuple[bool, type]:
@@ -256,7 +275,50 @@ class Column(BaseModel):
     def to_expr(self):
         # Lazy import to avoid circular dependency at import time
         from .query_builder import ColumnRef
+
         return ColumnRef(self)
+
+    def __str__(self) -> str:
+        """Return properly quoted identifier for SQL interpolation.
+
+        This enables Column objects to be used directly in f-strings and
+        string concatenation for SQL query construction.
+
+        Returns:
+            Backtick-quoted identifier safe for ClickHouse SQL.
+
+        Example:
+            >>> col = Column(name="user_id", ...)
+            >>> f"SELECT {col} FROM users"
+            "SELECT `user_id` FROM users"
+        """
+        from .utilities.sql import quote_identifier
+
+        return quote_identifier(self.name)
+
+    def __format__(self, format_spec: str) -> str:
+        """Format Column for f-string interpolation with format specifiers.
+
+        Supports format specs:
+        - 'col', 'c', 'column': Returns quoted identifier
+        - '' (empty): Returns quoted identifier (default)
+
+        Args:
+            format_spec: Format specification string
+
+        Returns:
+            Backtick-quoted identifier
+
+        Example:
+            >>> col = Column(name="email", ...)
+            >>> f"SELECT {col:col} FROM users"
+            "SELECT `email` FROM users"
+        """
+        # All format specs return quoted identifier
+        # This provides flexibility for user preference
+        from .utilities.sql import quote_identifier
+
+        return quote_identifier(self.name)
 
 
 def _is_point_type(t: type) -> bool:
@@ -296,8 +358,8 @@ def _validate_geometry_type(requested: str, t: type) -> None:
                 )
         case "MultiPolygon":
             if not _is_list_of(
-                    lambda x: _is_list_of(lambda y: _is_list_of(_is_point_type, y), x),
-                    t,
+                lambda x: _is_list_of(lambda y: _is_list_of(_is_point_type, y), x),
+                t,
             ):
                 raise ValueError(
                     "MultiPolygon must be typed as list[list[list[tuple[float, float]]]]"
@@ -317,8 +379,7 @@ def py_type_to_column_type(t: type, mds: list[Any]) -> Tuple[bool, list[Any], Da
     if t is str:
         # Check for FixedString annotation
         fixed_string_size = next(
-            (md.size for md in mds if isinstance(md, ClickhouseFixedStringSize)),
-            None
+            (md.size for md in mds if isinstance(md, ClickhouseFixedStringSize)), None
         )
         if fixed_string_size:
             data_type = f"FixedString({fixed_string_size})"
@@ -327,8 +388,7 @@ def py_type_to_column_type(t: type, mds: list[Any]) -> Tuple[bool, list[Any], Da
     elif t is bytes:
         # Check for FixedString annotation
         fixed_string_size = next(
-            (md.size for md in mds if isinstance(md, ClickhouseFixedStringSize)),
-            None
+            (md.size for md in mds if isinstance(md, ClickhouseFixedStringSize)), None
         )
         if fixed_string_size:
             data_type = f"FixedString({fixed_string_size})"
@@ -337,7 +397,10 @@ def py_type_to_column_type(t: type, mds: list[Any]) -> Tuple[bool, list[Any], Da
             data_type = "String"
     elif t is int:
         # Check for int size annotations
-        int_size = next((md for md in mds if isinstance(md, str) and re.match(r'^u?int\d+$', md)), None)
+        int_size = next(
+            (md for md in mds if isinstance(md, str) and re.match(r"^u?int\d+$", md)),
+            None,
+        )
         if int_size:
             data_type = int_size.replace("u", "U").replace("i", "I")
         else:
@@ -345,7 +408,14 @@ def py_type_to_column_type(t: type, mds: list[Any]) -> Tuple[bool, list[Any], Da
     elif t is float:
         size = next((md for md in mds if isinstance(md, ClickhouseSize)), None)
         if size is None:
-            bit_size = next((md for md in mds if isinstance(md, str) and re.match(r'^float\d+$', md)), None)
+            bit_size = next(
+                (
+                    md
+                    for md in mds
+                    if isinstance(md, str) and re.match(r"^float\d+$", md)
+                ),
+                None,
+            )
             if bit_size:
                 if bit_size == "float32":
                     data_type = "Float32"
@@ -363,12 +433,16 @@ def py_type_to_column_type(t: type, mds: list[Any]) -> Tuple[bool, list[Any], Da
             raise ValueError(f"Unsupported float size {size.size}")
     elif t is Decimal:
         precision = next((md.max_digits for md in mds if hasattr(md, "max_digits")), 10)
-        scale = next((md.decimal_places for md in mds if hasattr(md, "decimal_places")), 0)
+        scale = next(
+            (md.decimal_places for md in mds if hasattr(md, "decimal_places")), 0
+        )
         data_type = f"Decimal({precision}, {scale})"
     elif t is bool:
         data_type = "Boolean"
     elif t is datetime:
-        precision = next((md for md in mds if isinstance(md, ClickhousePrecision)), None)
+        precision = next(
+            (md for md in mds if isinstance(md, ClickhousePrecision)), None
+        )
         if precision is None:
             data_type = "DateTime"
         else:
@@ -385,22 +459,31 @@ def py_type_to_column_type(t: type, mds: list[Any]) -> Tuple[bool, list[Any], Da
         data_type = "IPv4"
     elif t is ipaddress.IPv6Address:
         data_type = "IPv6"
-    elif any(md in [  # this check has to happen before t is matched against tuple/list
-        "Point",
-        "Ring",
-        "LineString",
-        "MultiLineString",
-        "Polygon",
-        "MultiPolygon",
-    ] for md in mds):
-        data_type = next(md for md in mds if md in [
+    elif any(
+        md
+        in [  # this check has to happen before t is matched against tuple/list
             "Point",
             "Ring",
             "LineString",
             "MultiLineString",
             "Polygon",
             "MultiPolygon",
-        ])
+        ]
+        for md in mds
+    ):
+        data_type = next(
+            md
+            for md in mds
+            if md
+            in [
+                "Point",
+                "Ring",
+                "LineString",
+                "MultiLineString",
+                "Polygon",
+                "MultiPolygon",
+            ]
+        )
         _validate_geometry_type(data_type, t)
     elif get_origin(t) is list:
         inner_optional, _, inner_type = py_type_to_column_type(get_args(t)[0], [])
@@ -413,7 +496,9 @@ def py_type_to_column_type(t: type, mds: list[Any]) -> Tuple[bool, list[Any], Da
             # For dict types, we assume keys are required and values match their type
             data_type = MapType(key_type=key_type, value_type=value_type)
         else:
-            raise ValueError(f"Dict type must have exactly 2 type arguments, got {len(args)}")
+            raise ValueError(
+                f"Dict type must have exactly 2 type arguments, got {len(args)}"
+            )
     elif t is UUID:
         data_type = "UUID"
     elif t is Any:
@@ -427,7 +512,7 @@ def py_type_to_column_type(t: type, mds: list[Any]) -> Tuple[bool, list[Any], Da
                     "Default in inner field. Put ClickHouseDefault in top level field."
                 )
         # Enforce extra='allow' for JSON-mapped models
-        if t.model_config.get('extra') != 'allow':
+        if t.model_config.get("extra") != "allow":
             raise ValueError(
                 f"Model {t.__name__} with ClickHouseJson must have model_config with extra='allow'. "
                 "Add: model_config = ConfigDict(extra='allow')"
@@ -440,11 +525,11 @@ def py_type_to_column_type(t: type, mds: list[Any]) -> Tuple[bool, list[Any], Da
             typed_paths.append((c.name, c.data_type))
 
         has_any_option = (
-                opts.max_dynamic_paths is not None or
-                opts.max_dynamic_types is not None or
-                len(typed_paths) > 0 or
-                len(opts.skip_paths) > 0 or
-                len(opts.skip_regexps) > 0
+            opts.max_dynamic_paths is not None
+            or opts.max_dynamic_types is not None
+            or len(typed_paths) > 0
+            or len(opts.skip_paths) > 0
+            or len(opts.skip_regexps) > 0
         )
 
         if not has_any_option:
@@ -471,10 +556,7 @@ def py_type_to_column_type(t: type, mds: list[Any]) -> Tuple[bool, list[Any], Da
                 )
         if any(md == "ClickHouseNamedTuple" for md in mds):
             data_type = NamedTupleType(
-                fields=[(
-                    column.name,
-                    column.data_type
-                ) for column in columns],
+                fields=[(column.name, column.data_type) for column in columns],
             )
         else:
             data_type = Nested(
@@ -493,7 +575,7 @@ def _to_columns(model: type[BaseModel]) -> list[Column]:
     """Convert Pydantic model fields to Column definitions."""
     columns = []
     # Get raw annotations from the model class to preserve type aliases
-    raw_annotations = getattr(model, '__annotations__', {})
+    raw_annotations = getattr(model, "__annotations__", {})
 
     for field_name, field_info in model.model_fields.items():
         # Use raw annotation if available (preserves type aliases and their metadata)
@@ -504,22 +586,24 @@ def _to_columns(model: type[BaseModel]) -> list[Column]:
         primary_key, field_type = handle_key(field_type)
         is_jwt, field_type = handle_jwt(field_type)
 
-        optional, mds, data_type = py_type_to_column_type(field_type, field_info.metadata)
+        optional, mds, data_type = py_type_to_column_type(
+            field_type, field_info.metadata
+        )
 
         annotations = []
         for md in mds:
-            if isinstance(md, AggregateFunction) and all(key != "aggregationFunction" for (key, _) in annotations):
-                annotations.append(
-                    ("aggregationFunction", md.to_dict())
-                )
-            if isinstance(md, SimpleAggregateFunction) and all(key != "simpleAggregationFunction" for (key, _) in annotations):
-                annotations.append(
-                    ("simpleAggregationFunction", md.to_dict())
-                )
-            if md == "LowCardinality" and all(key != "LowCardinality" for (key, _) in annotations):
-                annotations.append(
-                    ("LowCardinality", True)
-                )
+            if isinstance(md, AggregateFunction) and all(
+                key != "aggregationFunction" for (key, _) in annotations
+            ):
+                annotations.append(("aggregationFunction", md.to_dict()))
+            if isinstance(md, SimpleAggregateFunction) and all(
+                key != "simpleAggregationFunction" for (key, _) in annotations
+            ):
+                annotations.append(("simpleAggregationFunction", md.to_dict()))
+            if md == "LowCardinality" and all(
+                key != "LowCardinality" for (key, _) in annotations
+            ):
+                annotations.append(("LowCardinality", True))
 
         column_name = field_name if field_info.alias is None else field_info.alias
 
@@ -552,7 +636,9 @@ def _to_columns(model: type[BaseModel]) -> list[Column]:
 
 class StringToEnumMixin:
     @classmethod
-    def __get_pydantic_core_schema__(cls, _source_type: Any, _handler: GetCoreSchemaHandler) -> CoreSchema:
+    def __get_pydantic_core_schema__(
+        cls, _source_type: Any, _handler: GetCoreSchemaHandler
+    ) -> CoreSchema:
         def validate(value: Any, _: Any) -> Any:
             if isinstance(value, str):
                 try:
@@ -561,14 +647,15 @@ class StringToEnumMixin:
                     raise ValueError(f"Invalid enum name: {value}")
             return cls(value)  # fallback to default enum validation
 
-        return core_schema.with_info_before_validator_function(validate, core_schema.enum_schema(cls, list(cls)))
+        return core_schema.with_info_before_validator_function(
+            validate, core_schema.enum_schema(cls, list(cls))
+        )
 
 
 def is_array_nested_type(data_type: DataType) -> bool:
     """Type guard to check if a data type is Array(Nested(...))."""
-    return (
-            isinstance(data_type, ArrayType) and
-            isinstance(data_type.element_type, Nested)
+    return isinstance(data_type, ArrayType) and isinstance(
+        data_type.element_type, Nested
     )
 
 
