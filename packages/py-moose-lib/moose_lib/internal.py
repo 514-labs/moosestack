@@ -7,7 +7,6 @@ to convert the user-defined resources (from `dmv2.py`) into a serializable
 JSON format expected by the Moose infrastructure management system.
 """
 import json
-from importlib import import_module
 from typing import TYPE_CHECKING, Any, Dict, List, Literal, Optional, Union
 
 from pydantic import AliasGenerator, BaseModel, ConfigDict, Field
