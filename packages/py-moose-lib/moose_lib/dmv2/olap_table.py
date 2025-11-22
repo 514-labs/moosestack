@@ -204,7 +204,7 @@ class OlapConfig(BaseModel):
 
             # Only S3QueueEngine, BufferEngine, and DistributedEngine don't support PARTITION BY
             # S3Engine DOES support PARTITION BY
-            engines_without_partition_by = (S3QueueEngine, BufferEngine, DistributedEngine)
+            engines_without_partition_by = (NullEngine, S3QueueEngine, BufferEngine, DistributedEngine)
             if isinstance(self.engine, engines_without_partition_by):
                 engine_name = type(self.engine).__name__
 
