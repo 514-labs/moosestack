@@ -155,18 +155,42 @@ function NavItemComponent({ item }: { item: NavPage }) {
 
   const isActive = pathname === `/${item.slug}`;
   const hasChildren = item.children && item.children.length > 0;
-  const hasActiveChild =
-    hasChildren &&
-    item.children?.some(
-      (child) => child.type === "page" && pathname === `/${child.slug}`,
-    );
-  const defaultOpen = isActive || hasActiveChild;
+
+  // Recursively check if any descendant is active
+  const hasActiveDescendant = React.useMemo(() => {
+    if (!hasChildren) return false;
+
+    const checkDescendant = (children: NavItem[]): boolean => {
+      return children.some((child) => {
+        if (child.type === "page") {
+          if (pathname === `/${child.slug}`) return true;
+          if (child.children) return checkDescendant(child.children);
+        }
+        return false;
+      });
+    };
+
+    return checkDescendant(item.children!);
+  }, [hasChildren, item.children, pathname]);
+
+  const defaultOpen = isActive || hasActiveDescendant;
+  const [isOpen, setIsOpen] = React.useState(defaultOpen);
+
+  // Update open state when active state changes
+  React.useEffect(() => {
+    setIsOpen(isActive || hasActiveDescendant);
+  }, [isActive, hasActiveDescendant]);
 
   if (hasChildren) {
     return (
-      <Collapsible key={item.slug} asChild defaultOpen={defaultOpen}>
+      <Collapsible
+        key={item.slug}
+        asChild
+        open={isOpen}
+        onOpenChange={setIsOpen}
+      >
         <SidebarMenuItem>
-          <SidebarMenuButton asChild tooltip={item.title}>
+          <SidebarMenuButton asChild tooltip={item.title} isActive={isActive}>
             <Link href={href}>
               {item.icon && <item.icon className="mr-2 h-4 w-4" />}
               <span>{item.title}</span>
@@ -183,67 +207,12 @@ function NavItemComponent({ item }: { item: NavPage }) {
               </CollapsibleTrigger>
               <CollapsibleContent>
                 <SidebarMenuSub>
-                  {(() => {
-                    const elements: React.ReactNode[] = [];
-                    let currentGroup: NavPage[] = [];
-                    let currentLabel: string | null = null;
-
-                    const flushGroup = () => {
-                      if (currentGroup.length > 0) {
-                        currentGroup.forEach((child: NavPage) => {
-                          const childHref = (() => {
-                            const params = new URLSearchParams(
-                              searchParams.toString(),
-                            );
-                            params.set("lang", language);
-                            return `/${child.slug}?${params.toString()}`;
-                          })();
-                          const childIsActive = pathname === `/${child.slug}`;
-                          elements.push(
-                            <SidebarMenuSubItem key={child.slug}>
-                              <SidebarMenuSubButton
-                                asChild
-                                isActive={childIsActive}
-                              >
-                                <Link href={childHref}>
-                                  {child.icon && (
-                                    <child.icon className="mr-2 h-4 w-4" />
-                                  )}
-                                  <span>{child.title}</span>
-                                </Link>
-                              </SidebarMenuSubButton>
-                            </SidebarMenuSubItem>,
-                          );
-                        });
-                        currentGroup = [];
-                      }
-                    };
-
-                    item.children?.forEach((child) => {
-                      if (child.type === "separator") {
-                        flushGroup();
-                        currentLabel = null;
-                      } else if (child.type === "label") {
-                        flushGroup();
-                        currentLabel = child.title;
-                      } else if (child.type === "page") {
-                        if (currentLabel && currentGroup.length === 0) {
-                          // Add label before first item in group
-                          elements.push(
-                            <SidebarGroupLabel
-                              key={`label-${currentLabel}`}
-                              className="text-xs text-muted-foreground py-1.5"
-                            >
-                              {currentLabel}
-                            </SidebarGroupLabel>,
-                          );
-                        }
-                        currentGroup.push(child);
-                      }
-                    });
-                    flushGroup();
-                    return elements;
-                  })()}
+                  {renderNavChildren(
+                    item.children,
+                    pathname,
+                    searchParams,
+                    language,
+                  )}
                 </SidebarMenuSub>
               </CollapsibleContent>
             </>
@@ -264,4 +233,113 @@ function NavItemComponent({ item }: { item: NavPage }) {
       </SidebarMenuButton>
     </SidebarMenuItem>
   );
+}
+
+function NestedNavItemComponent({
+  item,
+  pathname,
+  searchParams,
+  language,
+}: {
+  item: NavPage;
+  pathname: string;
+  searchParams: URLSearchParams;
+  language: string;
+}) {
+  const childHasChildren = item.children && item.children.length > 0;
+  const childHref = (() => {
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("lang", language);
+    return `/${item.slug}?${params.toString()}`;
+  })();
+  const childIsActive = pathname === `/${item.slug}`;
+
+  // Recursively check if any descendant is active
+  const checkDescendant = (children: NavItem[]): boolean => {
+    return children.some((c) => {
+      if (c.type === "page") {
+        if (pathname === `/${c.slug}`) return true;
+        if (c.children) return checkDescendant(c.children);
+      }
+      return false;
+    });
+  };
+  const hasActiveDescendant =
+    childHasChildren ? checkDescendant(item.children!) : false;
+  const defaultOpen = childIsActive || hasActiveDescendant;
+  const [isOpen, setIsOpen] = React.useState(defaultOpen);
+
+  React.useEffect(() => {
+    setIsOpen(childIsActive || hasActiveDescendant);
+  }, [childIsActive, hasActiveDescendant]);
+
+  if (childHasChildren) {
+    return (
+      <Collapsible asChild open={isOpen} onOpenChange={setIsOpen}>
+        <SidebarMenuSubItem className="group/menu-item">
+          <SidebarMenuSubButton
+            asChild
+            isActive={childIsActive}
+            className="peer/menu-button"
+          >
+            <Link href={childHref}>
+              {item.icon && <item.icon className="mr-2 h-4 w-4" />}
+              <span>{item.title}</span>
+            </Link>
+          </SidebarMenuSubButton>
+          <CollapsibleTrigger asChild>
+            <SidebarMenuAction className="data-[state=open]:rotate-90">
+              <IconChevronRight />
+              <span className="sr-only">Toggle</span>
+            </SidebarMenuAction>
+          </CollapsibleTrigger>
+          <CollapsibleContent>
+            <SidebarMenuSub>
+              {renderNavChildren(
+                item.children!,
+                pathname,
+                searchParams,
+                language,
+              )}
+            </SidebarMenuSub>
+          </CollapsibleContent>
+        </SidebarMenuSubItem>
+      </Collapsible>
+    );
+  }
+
+  return (
+    <SidebarMenuSubItem>
+      <SidebarMenuSubButton asChild isActive={childIsActive}>
+        <Link href={childHref}>
+          {item.icon && <item.icon className="mr-2 h-4 w-4" />}
+          <span>{item.title}</span>
+        </Link>
+      </SidebarMenuSubButton>
+    </SidebarMenuSubItem>
+  );
+}
+
+function renderNavChildren(
+  children: NavItem[],
+  pathname: string,
+  searchParams: URLSearchParams,
+  language: string,
+): React.ReactNode[] {
+  const elements: React.ReactNode[] = [];
+
+  children.forEach((child) => {
+    if (child.type !== "page") return;
+    elements.push(
+      <NestedNavItemComponent
+        key={child.slug}
+        item={child}
+        pathname={pathname}
+        searchParams={searchParams}
+        language={language}
+      />,
+    );
+  });
+
+  return elements;
 }

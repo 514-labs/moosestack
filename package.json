@@ -9,6 +9,7 @@
     "format": "prettier --write './apps/**/*.{ts,tsx}'"
   },
   "devDependencies": {
+    "@biomejs/biome": "2.3.6",
     "@repo/eslint-config-custom": "workspace:*",
     "@repo/ts-config": "workspace:*",
     "eslint": "^9.33.0",

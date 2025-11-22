@@ -27,40 +27,32 @@ import {
   Security,
   BreakingChanges,
   TemplatesGridServer,
+  CommandSnippet,
 } from "@/components/mdx";
 import { FileTreeFolder, FileTreeFile } from "@/components/mdx/file-tree";
 import { CodeEditor } from "@/components/ui/shadcn-io/code-editor";
 import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
-import {
-  IconTerminal,
-  IconFileCode,
-  IconRocket,
-  IconDatabase,
-  IconDeviceLaptop,
-  IconBrandGithub,
-  IconInfoCircle,
-  IconCheck,
-  IconClock,
-} from "@tabler/icons-react";
+import { IconTerminal, IconFileCode } from "@tabler/icons-react";
 import {
   MDXPre,
   MDXCode,
   MDXFigure,
 } from "@/components/mdx/code-block-wrapper";
-import { PathConfig } from "@/lib/path-config";
 import Link from "next/link";
 import remarkGfm from "remark-gfm";
 import rehypeSlug from "rehype-slug";
 import rehypeAutolinkHeadings from "rehype-autolink-headings";
 import rehypePrettyCode from "rehype-pretty-code";
+import { visit } from "unist-util-visit";
 
 interface MDXRendererProps {
   source: string;
 }
 
 export async function MDXRenderer({ source }: MDXRendererProps) {
+  "use cache";
   // Create FileTree with nested components
   const FileTreeWithSubcomponents = Object.assign(FileTree, {
     Folder: FileTreeFolder,
@@ -120,6 +112,7 @@ export async function MDXRenderer({ source }: MDXRendererProps) {
     Security,
     BreakingChanges,
     TemplatesGridServer,
+    CommandSnippet,
     CodeEditor,
     Separator,
     Tabs,
@@ -153,10 +146,36 @@ export async function MDXRenderer({ source }: MDXRendererProps) {
               {
                 theme: "github-dark",
                 keepBackground: false,
-                // Keep rehype-pretty-code for now to mark code blocks,
-                // but our components will handle the actual rendering
               },
             ],
+            // Custom plugin to extract copy attribute from metadata and set it on pre element
+            () => {
+              return (tree: any) => {
+                visit(tree, "element", (node: any) => {
+                  // Check pre elements and their code children for metadata
+                  if (node.tagName === "pre" && node.children) {
+                    for (const child of node.children) {
+                      if (child.tagName === "code" && child.data?.meta) {
+                        const codeMetaString = child.data.meta as string;
+                        // Parse copy attribute: copy="false", copy="true", or just "copy" (which means true)
+                        const copyFalseMatch =
+                          codeMetaString.match(/copy=["']?false["']?/);
+
+                        if (copyFalseMatch) {
+                          // copy="false" or copy=false - hide copy button
+                          if (!node.properties) {
+                            node.properties = {};
+                          }
+                          node.properties["data-copy"] = "false";
+                        }
+                        // If copy="true" or just "copy", don't set anything (default behavior shows copy button)
+                        break; // Only process first code child
+                      }
+                    }
+                  }
+                });
+              };
+            },
           ],
         },
       }}
