@@ -12,10 +12,21 @@ import {
   BreadcrumbList,
   BreadcrumbSeparator,
 } from "@/components/ui/breadcrumb";
+import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuShortcut,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { useRouter } from "next/router";
 import { useConfig, useThemeConfig } from "nextra-theme-docs";
 import { PathConfig } from "./src/components/ctas";
 import { GitHubStarsButton } from "@/components";
+import { Bot, ChevronDown, Copy, FileText, Sparkles } from "lucide-react";
 
 // Base text styles that match your typography components
 const baseTextStyles = {
@@ -26,32 +37,251 @@ const baseTextStyles = {
   heading: "text-primary font-semibold",
 };
 
+const DEFAULT_SITE_URL =
+  process.env.NEXT_PUBLIC_SITE_URL || "https://docs.fiveonefour.com";
+
+function normalizePath(asPath) {
+  const safePath = asPath || "/";
+  const pathWithoutHash = safePath.split("#")[0];
+  const pathWithoutQuery = pathWithoutHash.split("?")[0] || "/";
+
+  if (!pathWithoutQuery || pathWithoutQuery === "/") {
+    return "/";
+  }
+
+  return pathWithoutQuery.endsWith("/") ?
+      pathWithoutQuery.slice(0, -1)
+    : pathWithoutQuery;
+}
+
+function resolveAbsoluteUrl(path, origin) {
+  if (!path) {
+    return origin;
+  }
+
+  if (/^https?:\/\//.test(path)) {
+    return path;
+  }
+
+  const base = origin.endsWith("/") ? origin.slice(0, -1) : origin;
+  const normalized = path.startsWith("/") ? path : `/${path}`;
+
+  return `${base}${normalized}`;
+}
+
 function buildLlmHref(asPath, suffix) {
   if (!suffix) {
     return "/";
   }
 
-  const safePath = asPath || "/";
+  const normalizedPath = normalizePath(asPath);
 
-  const pathWithoutHash = safePath.split("#")[0];
-  const pathWithoutQuery = pathWithoutHash.split("?")[0];
-
-  if (!pathWithoutQuery || pathWithoutQuery === "/") {
+  if (!normalizedPath || normalizedPath === "/") {
     return `/${suffix}`;
   }
 
-  const trimmedPath =
-    pathWithoutQuery.endsWith("/") ?
-      pathWithoutQuery.slice(0, -1)
-    : pathWithoutQuery;
+  return `${normalizedPath}/${suffix}`;
+}
 
-  return `${trimmedPath}/${suffix}`;
+function buildLlmPrompt(languageLabel, canonicalPageUrl, docUrl) {
+  return (
+    `I'm looking at the Moose documentation: ${canonicalPageUrl}. ` +
+    `Use the ${languageLabel} LLM doc for additional context: ${docUrl}. ` +
+    "Help me understand how to use it. Be ready to explain concepts, give examples, or help debug based on it."
+  );
+}
+
+async function copyTextToClipboard(text) {
+  if (
+    typeof navigator !== "undefined" &&
+    navigator.clipboard &&
+    typeof navigator.clipboard.writeText === "function"
+  ) {
+    await navigator.clipboard.writeText(text);
+    return true;
+  }
+
+  if (typeof document === "undefined") {
+    throw new Error("Clipboard API unavailable");
+  }
+
+  const textarea = document.createElement("textarea");
+  textarea.value = text;
+  textarea.setAttribute("readonly", "true");
+  textarea.style.position = "fixed";
+  textarea.style.opacity = "0";
+  textarea.style.pointerEvents = "none";
+  document.body.appendChild(textarea);
+
+  try {
+    textarea.focus();
+    textarea.select();
+    const successful = document.execCommand("copy");
+    if (!successful) {
+      throw new Error("document.execCommand('copy') returned false");
+    }
+    return true;
+  } finally {
+    document.body.removeChild(textarea);
+  }
+}
+
+function LlmHelperMenu({ buttonClassName, align = "start" } = {}) {
+  const { pageOpts } = useConfig();
+  const { asPath } = useRouter();
+
+  const resolvedFilePath = pageOpts?.filePath;
+  const tsHref = buildLlmHref(asPath, "llm-ts.txt");
+  const pyHref = buildLlmHref(asPath, "llm-py.txt");
+  const normalizedPath = normalizePath(asPath);
+
+  const canonicalPageUrl =
+    !normalizedPath || normalizedPath === "/" ?
+      DEFAULT_SITE_URL
+    : resolveAbsoluteUrl(normalizedPath, DEFAULT_SITE_URL);
+
+  const scopeParam =
+    normalizedPath && normalizedPath !== "/" ?
+      normalizedPath.replace(/^\/+/, "")
+    : undefined;
+
+  const rawDocParams = new URLSearchParams();
+
+  if (scopeParam) {
+    rawDocParams.set("scope", scopeParam);
+  }
+
+  if (resolvedFilePath) {
+    rawDocParams.set("file", resolvedFilePath);
+  }
+
+  const rawDocUrl = `/api/docs/raw${
+    rawDocParams.size > 0 ? `?${rawDocParams.toString()}` : ""
+  }`;
+
+  const handleOpenDoc = (target) => () => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const absoluteUrl = resolveAbsoluteUrl(target, window.location.origin);
+    window.open(absoluteUrl, "_blank", "noopener,noreferrer");
+  };
+
+  const handleOpenChatGpt = (languageLabel, docTarget) => () => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const docUrl = resolveAbsoluteUrl(docTarget, DEFAULT_SITE_URL);
+    const prompt = buildLlmPrompt(languageLabel, canonicalPageUrl, docUrl);
+
+    const chatGptUrl =
+      "https://chatgpt.com/?prompt=" + encodeURIComponent(prompt);
+
+    window.open(chatGptUrl, "_blank", "noopener,noreferrer");
+  };
+
+  const handleOpenClaude = (languageLabel, docTarget) => async () => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const docUrl = resolveAbsoluteUrl(docTarget, DEFAULT_SITE_URL);
+    const prompt = buildLlmPrompt(languageLabel, canonicalPageUrl, docUrl);
+
+    try {
+      await copyTextToClipboard(prompt);
+    } catch (error) {
+      console.warn("Failed to copy Claude prompt to clipboard", error);
+    }
+
+    const claudeUrl =
+      "https://claude.ai/new?prompt=" + encodeURIComponent(prompt);
+    window.open(claudeUrl, "_blank", "noopener,noreferrer");
+  };
+
+  const handleCopyMarkdown = async () => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    try {
+      const response = await fetch(rawDocUrl);
+      if (!response.ok) {
+        throw new Error(`Failed to fetch markdown: ${response.status}`);
+      }
+
+      const markdown = await response.text();
+      await copyTextToClipboard(markdown);
+    } catch (error) {
+      console.error("Failed to copy page markdown", error);
+    }
+  };
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          variant="outline"
+          size="sm"
+          className={cn("font-medium", buttonClassName)}
+        >
+          LLM helpers
+          <ChevronDown className="h-4 w-4" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align={align} className="w-72">
+        <DropdownMenuLabel>Doc utilities</DropdownMenuLabel>
+        <DropdownMenuItem onSelect={handleCopyMarkdown}>
+          <Copy className="h-4 w-4" />
+          Copy page Markdown
+          <DropdownMenuShortcut>MD</DropdownMenuShortcut>
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        <DropdownMenuLabel>View as .txt</DropdownMenuLabel>
+        <DropdownMenuItem onSelect={handleOpenDoc(tsHref)}>
+          <FileText className="h-4 w-4" />
+          View TypeScript doc
+          <DropdownMenuShortcut>TS</DropdownMenuShortcut>
+        </DropdownMenuItem>
+        <DropdownMenuItem onSelect={handleOpenDoc(pyHref)}>
+          <FileText className="h-4 w-4" />
+          View Python doc
+          <DropdownMenuShortcut>PY</DropdownMenuShortcut>
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        <DropdownMenuLabel>Send to Claude</DropdownMenuLabel>
+        <DropdownMenuItem onSelect={handleOpenClaude("TypeScript", tsHref)}>
+          <Sparkles className="h-4 w-4" />
+          Claude · TypeScript
+          <DropdownMenuShortcut>TS</DropdownMenuShortcut>
+        </DropdownMenuItem>
+        <DropdownMenuItem onSelect={handleOpenClaude("Python", pyHref)}>
+          <Sparkles className="h-4 w-4" />
+          Claude · Python
+          <DropdownMenuShortcut>PY</DropdownMenuShortcut>
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        <DropdownMenuLabel>Send to ChatGPT</DropdownMenuLabel>
+        <DropdownMenuItem onSelect={handleOpenChatGpt("TypeScript", tsHref)}>
+          <Bot className="h-4 w-4" />
+          ChatGPT · TypeScript
+          <DropdownMenuShortcut>TS</DropdownMenuShortcut>
+        </DropdownMenuItem>
+        <DropdownMenuItem onSelect={handleOpenChatGpt("Python", pyHref)}>
+          <Bot className="h-4 w-4" />
+          ChatGPT · Python
+          <DropdownMenuShortcut>PY</DropdownMenuShortcut>
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
 }
 
 function EditLinks({ filePath, href, className, children }) {
   const { pageOpts } = useConfig();
   const { docsRepositoryBase } = useThemeConfig();
-  const { asPath } = useRouter();
 
   const resolvedFilePath = filePath || pageOpts?.filePath;
 
@@ -66,9 +296,6 @@ function EditLinks({ filePath, href, className, children }) {
       `${cleanedRepoBase}/${resolvedFilePath}`
     : undefined);
 
-  const tsHref = buildLlmHref(asPath, "llm-ts.txt");
-  const pyHref = buildLlmHref(asPath, "llm-py.txt");
-
   return (
     <div className="flex flex-col items-start gap-2">
       {editHref ?
@@ -81,26 +308,7 @@ function EditLinks({ filePath, href, className, children }) {
           {children}
         </a>
       : <span className={className}>{children}</span>}
-      <span className={className}>
-        LLM docs:{" "}
-        <a
-          href={tsHref}
-          className={className}
-          target="_blank"
-          rel="noreferrer noopener"
-        >
-          TS
-        </a>{" "}
-        /{" "}
-        <a
-          href={pyHref}
-          className={className}
-          target="_blank"
-          rel="noreferrer noopener"
-        >
-          PY
-        </a>
-      </span>
+      <LlmHelperMenu buttonClassName="w-full" align="start" />
     </div>
   );
 }
@@ -245,12 +453,7 @@ export default {
   navbar: {
     extraContent: () => <GitHubStarsButton username="514-labs" repo="moose" />,
   },
-  // main: ({ children }) => (
-  //   <div className="relative">
-  //     {children}
-  //     <Contact />
-  //   </div>
-  // ),
+  main: ({ children }) => <>{children}</>,
   navigation: {
     prev: true,
     next: true,
