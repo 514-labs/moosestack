@@ -1568,53 +1568,6 @@ impl ClickhouseEngine {
         result
     }
 
-    /// Serialize Buffer engine to string format
-    /// Format: Buffer('database', 'table', num_layers, min_time, max_time, min_rows, max_rows, min_bytes, max_bytes[, flush_time, flush_rows, flush_bytes])
-    #[allow(clippy::too_many_arguments)]
-    fn serialize_buffer(
-        target_database: &str,
-        target_table: &str,
-        num_layers: u32,
-        min_time: u32,
-        max_time: u32,
-        min_rows: u64,
-        max_rows: u64,
-        min_bytes: u64,
-        max_bytes: u64,
-        flush_time: &Option<u32>,
-        flush_rows: &Option<u64>,
-        flush_bytes: &Option<u64>,
-    ) -> String {
-        let mut result = format!(
-            "Buffer('{}', '{}', {}, {}, {}, {}, {}, {}, {}",
-            target_database,
-            target_table,
-            num_layers,
-            min_time,
-            max_time,
-            min_rows,
-            max_rows,
-            min_bytes,
-            max_bytes
-        );
-
-        // Add optional flush parameters if any are present
-        if flush_time.is_some() || flush_rows.is_some() || flush_bytes.is_some() {
-            if let Some(ft) = flush_time {
-                result.push_str(&format!(", {}", ft));
-            }
-            if let Some(fr) = flush_rows {
-                result.push_str(&format!(", {}", fr));
-            }
-            if let Some(fb) = flush_bytes {
-                result.push_str(&format!(", {}", fb));
-            }
-        }
-
-        result.push(')');
-        result
-    }
-
     /// Serialize Distributed engine to string format
     /// Format: Distributed('cluster', 'database', 'table'[, sharding_key][, 'policy_name'])
     fn serialize_distributed(
@@ -5556,6 +5509,90 @@ ENGINE = S3Queue('s3://my-bucket/data/*.csv', NOSIGN, 'CSV')"#;
                 assert_eq!(target_table, "edgetable");
                 assert_eq!(sharding_key, None);
                 assert_eq!(policy_name, None); // Both should be None after round-trip
+            }
+            _ => panic!("Expected Distributed engine"),
+        }
+    }
+
+    #[test]
+    fn test_buffer_invalid_flush_combinations_logged() {
+        // Test: flush_rows without flush_time - should warn and ignore flush_rows
+        let engine = ClickhouseEngine::Buffer(BufferEngine {
+            target_database: "db".to_string(),
+            target_table: "table".to_string(),
+            num_layers: 16,
+            min_time: 10,
+            max_time: 100,
+            min_rows: 10000,
+            max_rows: 100000,
+            min_bytes: 10000000,
+            max_bytes: 100000000,
+            flush_time: None,
+            flush_rows: Some(50000), // Invalid: no flush_time
+            flush_bytes: None,
+        });
+
+        let serialized: String = engine.clone().into();
+        // flush_rows should be ignored, so only required params present
+        assert_eq!(
+            serialized,
+            "Buffer('db', 'table', 16, 10, 100, 10000, 100000, 10000000, 100000000)"
+        );
+
+        // Test: flush_bytes without flush_time or flush_rows - should warn and ignore flush_bytes
+        let engine2 = ClickhouseEngine::Buffer(BufferEngine {
+            target_database: "db2".to_string(),
+            target_table: "table2".to_string(),
+            num_layers: 8,
+            min_time: 5,
+            max_time: 50,
+            min_rows: 5000,
+            max_rows: 50000,
+            min_bytes: 5000000,
+            max_bytes: 50000000,
+            flush_time: Some(3),
+            flush_rows: None,
+            flush_bytes: Some(25000000), // Invalid: no flush_rows
+        });
+
+        let serialized2: String = engine2.clone().into();
+        // flush_bytes should be ignored, only flush_time present
+        assert_eq!(
+            serialized2,
+            "Buffer('db2', 'table2', 8, 5, 50, 5000, 50000, 5000000, 50000000, 3)"
+        );
+    }
+
+    #[test]
+    fn test_distributed_invalid_policy_without_sharding_logged() {
+        // Test: policy_name without sharding_key - should warn and ignore policy_name
+        let engine = ClickhouseEngine::Distributed {
+            cluster: "my_cluster".to_string(),
+            target_database: "db".to_string(),
+            target_table: "table".to_string(),
+            sharding_key: None,
+            policy_name: Some("orphan_policy".to_string()), // Invalid: no sharding_key
+        };
+
+        let serialized: String = engine.clone().into();
+        // policy_name should be ignored
+        assert_eq!(serialized, "Distributed('my_cluster', 'db', 'table')");
+
+        // Verify round-trip works correctly
+        let parsed = ClickhouseEngine::try_from(serialized.as_str()).unwrap();
+        match parsed {
+            ClickhouseEngine::Distributed {
+                cluster,
+                target_database,
+                target_table,
+                sharding_key,
+                policy_name,
+            } => {
+                assert_eq!(cluster, "my_cluster");
+                assert_eq!(target_database, "db");
+                assert_eq!(target_table, "table");
+                assert_eq!(sharding_key, None);
+                assert_eq!(policy_name, None); // Both should be None
             }
             _ => panic!("Expected Distributed engine"),
         }
