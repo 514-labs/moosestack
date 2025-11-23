@@ -900,42 +900,50 @@ impl ClickhouseEngine {
         // 3. Iceberg('path', NOSIGN, 'format') - explicit NOSIGN
         // 4. Iceberg('path', 'access_key_id', 'secret_access_key', 'format') - with credentials
         // 5. Iceberg('path', 'access_key_id', 'secret_access_key', 'format', 'compression') - with credentials and compression
-        let (format, aws_access_key_id, aws_secret_access_key, extra_params_start) =
-            if parts.len() >= 2 && parts[1].to_uppercase() == "NOSIGN" {
-                // NOSIGN keyword (no authentication) - format is at position 2
-                if parts.len() < 3 {
-                    return Err("Iceberg with NOSIGN requires format parameter".to_string());
-                }
-                (parts[2].clone(), None, None, 3)
-            } else if parts.len() >= 2 {
-                let format_at_pos1 = parts[1].to_uppercase();
-                let is_pos1_format = format_at_pos1 == "PARQUET" || format_at_pos1 == "ORC";
+        let (format, aws_access_key_id, aws_secret_access_key, extra_params_start) = if parts.len()
+            >= 2
+            && parts[1].to_uppercase() == "NOSIGN"
+        {
+            // NOSIGN keyword (no authentication) - format is at position 2
+            if parts.len() < 3 {
+                return Err("Iceberg with NOSIGN requires format parameter".to_string());
+            }
+            (parts[2].clone(), None, None, 3)
+        } else if parts.len() >= 2 {
+            let format_at_pos1 = parts[1].to_uppercase();
+            let is_pos1_format = format_at_pos1 == "PARQUET" || format_at_pos1 == "ORC";
 
-                if is_pos1_format {
-                    // Format is at position 1, no credentials
-                    (parts[1].clone(), None, None, 2)
-                } else if parts.len() >= 4 && !parts[1].is_empty() && !parts[2].is_empty() {
-                    // Check if parts[3] is a format (credentials case)
-                    let format_at_pos3 = parts[3].to_uppercase();
-                    if format_at_pos3 == "PARQUET" || format_at_pos3 == "ORC" {
-                        // parts[1] and parts[2] are credentials, format at position 3
-                        (
-                            parts[3].clone(),
-                            Some(parts[1].clone()),
-                            Some(parts[2].clone()),
-                            4,
-                        )
-                    } else {
-                        // Ambiguous format - default to no credentials
-                        (parts[1].clone(), None, None, 2)
-                    }
+            if is_pos1_format {
+                // Format is at position 1, no credentials
+                (parts[1].clone(), None, None, 2)
+            } else if parts.len() >= 4 && !parts[1].is_empty() && !parts[2].is_empty() {
+                // Check if parts[3] is a format (credentials case)
+                let format_at_pos3 = parts[3].to_uppercase();
+                if format_at_pos3 == "PARQUET" || format_at_pos3 == "ORC" {
+                    // parts[1] and parts[2] are credentials, format at position 3
+                    (
+                        parts[3].clone(),
+                        Some(parts[1].clone()),
+                        Some(parts[2].clone()),
+                        4,
+                    )
                 } else {
-                    // Not enough parts for credentials, treat parts[1] as format
-                    (parts[1].clone(), None, None, 2)
+                    // Ambiguous case - neither pos1 nor pos3 is a valid format
+                    return Err(format!(
+                            "Invalid Iceberg format. Expected 'Parquet' or 'ORC' at position 2 or 4, got '{}' and '{}'",
+                            parts[1], parts[3]
+                        ));
                 }
             } else {
-                return Err("Iceberg requires at least path and format parameters".to_string());
-            };
+                // Not enough parts for credentials, but parts[1] is not a valid format
+                return Err(format!(
+                    "Invalid Iceberg format '{}'. Must be 'Parquet' or 'ORC'",
+                    parts[1]
+                ));
+            }
+        } else {
+            return Err("Iceberg requires at least path and format parameters".to_string());
+        };
 
         // Parse optional compression (next parameter after format)
         let compression = if parts.len() > extra_params_start && parts[extra_params_start] != "null"
@@ -5858,5 +5866,18 @@ ENGINE = S3Queue('s3://my-bucket/data/*.csv', NOSIGN, 'CSV')"#;
             }
             _ => panic!("Expected IcebergS3 engine"),
         }
+
+        // Test 7: Invalid format in ambiguous case - should return error
+        let invalid_format = "Iceberg('s3://bucket/table/', 'InvalidFormat', 'something', 'else')";
+        let result = ClickhouseEngine::try_from(invalid_format);
+        assert!(
+            result.is_err(),
+            "Should reject invalid format 'InvalidFormat'"
+        );
+
+        // Test 8: Another invalid format edge case
+        let another_invalid = "Iceberg('s3://bucket/table/', 'BadFormat', 'test')";
+        let result2 = ClickhouseEngine::try_from(another_invalid);
+        assert!(result2.is_err(), "Should reject invalid format 'BadFormat'");
     }
 }
