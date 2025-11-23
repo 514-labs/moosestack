@@ -15,19 +15,22 @@ This week brings powerful new tools for developers working with MooseStack: iter
 * **New:** [Database performance metrics visualization](#database-performance-metrics-visualization) in Boreal project overview
 </Callout>
 
-## 🦌 Moose
-
-### moose query CLI command
+## `moose query` CLI command
 
 Execute SQL queries against your ClickHouse database directly from the command line, with built-in validation, formatting, and code generation.
 
 **Why it matters:** When building data pipelines, you often need to test SQL queries before adding them to your code. Previously, this meant switching between ClickHouse clients, manually escaping strings, and copying queries back and forth. The `moose query` command streamlines this workflow by letting you validate queries, see results immediately, and generate properly-formatted code ready to paste into your Python or TypeScript application.
 
+
+CLI based querying (automatically set up to query your development ClickHouse instance):
 ```bash
 # Execute a query and see JSON results
 moose query "SELECT user_id, COUNT(*) as events FROM user_events GROUP BY user_id LIMIT 10"
 {"user_id": "abc-1213", "count": 37}
+```
 
+Code generation for using the query in your code:
+```bash
 # Validate and format complex SQL for Python code
 moose query --format-query python --prettify <<EOF
 SELECT * FROM
@@ -45,11 +48,10 @@ WHERE
 """
 ```
 
-The command supports multiple input methods (arguments, files, stdin), syntax validation before execution, configurable row limits, and output formatting for both Python raw strings and TypeScript template literals. This means you can iterate on queries quickly in your terminal, then copy the validated, formatted SQL directly into your data models or consumption APIs.
-
 PR: [#2996](https://github.com/514-labs/moosestack/pull/2996), [#2998](https://github.com/514-labs/moosestack/pull/2998)
+Documentation: [CLI reference: `moose query`](/moose/moose-cli#query)
 
-### ClickHouse cluster support
+## ClickHouse cluster support
 
 Configure distributed ClickHouse clusters in your `moose.config.toml` to deploy tables across multiple nodes with automatic `ON CLUSTER` DDL generation.
 
@@ -78,11 +80,7 @@ When you run migrations or create new tables, MooseStack automatically generates
 
 PR: [#2944](https://github.com/514-labs/moosestack/pull/2944)
 
-### Other improvements
-
-- Improved TypeScript MCP template documentation with setup instructions and API key configuration ([#3006](https://github.com/514-labs/moosestack/pull/3006))
-
-### Bug fixes
+## Bug Fixes
 
 - DateTime precision loss - preserve microseconds and nanoseconds ([#3018](https://github.com/514-labs/moosestack/pull/3018))
 - Table schema change detection for ORDER BY clauses ([#3017](https://github.com/514-labs/moosestack/pull/3017))
@@ -90,11 +88,8 @@ PR: [#2944](https://github.com/514-labs/moosestack/pull/2944)
 - Table settings handling with default values ([#3012](https://github.com/514-labs/moosestack/pull/3012))
 - Deterministic ordering in migration files ([#3007](https://github.com/514-labs/moosestack/pull/3007))
 - SQL parser SAMPLE BY clause extraction when TTL is present ([#3011](https://github.com/514-labs/moosestack/pull/3011))
-- Buffer and Distributed engine parsing for ClickHouse tables ([#3003](https://github.com/514-labs/moosestack/pull/3003))
-- Duplicate LowCardinality annotations in data models ([#3009](https://github.com/514-labs/moosestack/pull/3009))
-- Unhandled LowCardinality(String) column types in clickhouse_rs client ([#3025](https://github.com/514-labs/moosestack/pull/3025))
 
-## 🐻 Boreal
+## Boreal
 
 ### Database performance metrics visualization
 
@@ -104,15 +99,14 @@ View query latency (P95), throughput (rows/second), and storage usage directly i
 
 ![Database performance metrics visualization](/release-notes/boreal-hosting-telem.png)
 
-### Other improvements
+### Other Features and Improvements
 
-- Videos link added to Resources section in navigation
-- Branch selector now displays all branches with scrollable interface (removed 10-item limit)
-- Deployment status timestamps now consistent across dashboard
-- Redpanda cluster metrics added to monitoring dashboard
+- **Redpanda cluster metrics** – Added to monitoring dashboard
 
-### Bug fixes
+### Bug Fixes
 
+- **Branch selector** – Now displays all branches with scrollable interface (removed 10-item limit)  
+- **Deployment status timestamps** – Now consistent across dashboard
 - API v1 authentication middleware conflicts resolved
 - Organization join redirect issue fixed
 - Deployment reliability improved with proper await configuration
