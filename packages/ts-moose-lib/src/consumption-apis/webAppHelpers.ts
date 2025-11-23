@@ -11,21 +11,19 @@ import type { ApiUtil } from "./helpers";
  * Uses utf16le encoding because it's the only Node.js encoding that doesn't
  * lose information (utf8 normalizes lone surrogates, latin1 truncates multi-byte
  * characters, base64 drops whitespace, etc.)
+ *
+ * timingSafeEqual() will throw if buffer lengths don't match, which is caught
+ * and returned as false. This prevents timing leaks from length comparisons.
  */
 function constantTimeCompare(a: string, b: string): boolean {
   try {
-    // Early return if lengths differ (length is typically not secret for API keys)
-    if (a.length !== b.length) {
-      return false;
-    }
-
     // Convert to utf16le buffers to preserve all string data
     const bufA = Buffer.from(a, "utf16le") as unknown as Uint8Array;
     const bufB = Buffer.from(b, "utf16le") as unknown as Uint8Array;
 
+    // timingSafeEqual throws if lengths differ, preventing timing leaks
     return crypto.timingSafeEqual(bufA, bufB);
   } catch (error) {
-    // timingSafeEqual throws if buffer lengths don't match
     return false;
   }
 }
