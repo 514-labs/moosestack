@@ -178,9 +178,11 @@ export function expressApiKeyAuthMiddleware(): (
     const providedToken = parts[1];
 
     // Validate against all configured keys using PBKDF2 validation
-    const isValid = validApiKeys.some((validKey) =>
+    // Must check ALL keys to prevent timing leaks from short-circuit evaluation
+    const results = validApiKeys.map((validKey) =>
       validateAuthToken(providedToken, validKey),
     );
+    const isValid = results.includes(true);
 
     if (isValid) {
       console.log("[API Auth] Authenticated: Valid API key");
