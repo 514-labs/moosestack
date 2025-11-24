@@ -4,15 +4,14 @@ from datetime import datetime
 
 
 def foo_to_bar(foo: Foo):
-
     """Transform Foo events to Bar events with error handling and caching.
-    
+
     Normal flow:
     1. Check cache for previously processed events
     2. Transform Foo to Bar
     3. Cache the result
     4. Return transformed Bar event
-    
+
     Alternate flow (DLQ):
     - If errors occur during transformation, the event is sent to DLQ
     - This enables separate error handling, monitoring, and retry strategies
@@ -31,10 +30,9 @@ def foo_to_bar(foo: Foo):
         raise ValueError("blah")
     result = Bar(
         primary_key=foo.primary_key,
-        baz=foo.baz,
         utc_timestamp=datetime.fromtimestamp(foo.timestamp),
         has_text=foo.optional_text is not None,
-        text_length=len(foo.optional_text) if foo.optional_text else 0
+        text_length=len(foo.optional_text) if foo.optional_text else 0,
     )
 
     # Store the result in cache
@@ -59,6 +57,7 @@ def print_foo_event(foo):
 
 
 fooModel.get_stream().add_consumer(print_foo_event)
+
 
 # DLQ consumer for handling failed events (alternate flow)
 def print_messages(dead_letter: DeadLetterModel[Foo]):
