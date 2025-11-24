@@ -1201,7 +1201,6 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
                   primary_key: i === 0 ? eventId : randomUUID(),
-                  baz: "QUUX",
                   timestamp: TEST_DATA.TIMESTAMP,
                   optional_text:
                     i === 0 ? "Hello from Python" : `Test message ${i}`,
