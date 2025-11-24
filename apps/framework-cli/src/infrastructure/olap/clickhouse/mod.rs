@@ -2728,7 +2728,7 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
             order_by: OrderBy::Fields(vec!["id".to_string()]),
             partition_by: Some("toYYYYMM(created_at)".to_string()),
             sample_by: None,
-            engine: None,
+            engine: ClickhouseEngine::MergeTree,
             version: None,
             source_primitive: PrimitiveSignature {
                 name: "Test".to_string(),
@@ -2741,6 +2741,7 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
             indexes: vec![],
             database: None,
             table_ttl_setting: Some("created_at + INTERVAL 30 DAY".to_string()),
+            cluster_name: None,
         };
 
         let ignore_ops = vec![
@@ -2793,7 +2794,7 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
             order_by: OrderBy::Fields(vec!["id".to_string()]),
             partition_by: Some("toYYYYMM(created_at)".to_string()),
             sample_by: None,
-            engine: None,
+            engine: ClickhouseEngine::MergeTree,
             version: None,
             source_primitive: PrimitiveSignature {
                 name: "Test".to_string(),
@@ -2806,6 +2807,7 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
             indexes: vec![],
             database: None,
             table_ttl_setting: Some("created_at + INTERVAL 30 DAY".to_string()),
+            cluster_name: None,
         };
 
         let ignore_ops = vec![];

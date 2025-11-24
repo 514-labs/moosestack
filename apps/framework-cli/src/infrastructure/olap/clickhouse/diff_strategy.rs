@@ -1465,14 +1465,14 @@ mod tests {
             order_by: OrderBy::Fields(vec![]),
             partition_by: None,
             sample_by: None,
-            engine: Some(ClickhouseEngine::S3Queue {
+            engine: ClickhouseEngine::S3Queue {
                 s3_path: "s3://bucket/path".to_string(),
                 format: "JSONEachRow".to_string(),
                 compression: None,
                 headers: None,
                 aws_access_key_id: None,
                 aws_secret_access_key: None,
-            }),
+            },
             version: None,
             source_primitive: PrimitiveSignature {
                 name: "test_s3".to_string(),
@@ -1485,6 +1485,7 @@ mod tests {
             indexes: vec![],
             database: None,
             table_ttl_setting: None,
+            cluster_name: None,
         };
 
         assert!(ClickHouseTableDiffStrategy::is_s3queue_table(&s3_table));
