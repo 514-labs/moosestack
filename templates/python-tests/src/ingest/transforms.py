@@ -31,6 +31,7 @@ def foo_to_bar(foo: Foo):
     result = Bar(
         primary_key=foo.primary_key,
         utc_timestamp=datetime.fromtimestamp(foo.timestamp),
+        baz=foo.baz,
         has_text=foo.optional_text is not None,
         text_length=len(foo.optional_text) if foo.optional_text else 0,
     )
@@ -54,6 +55,7 @@ def print_foo_event(foo):
     print(f"Received Foo event:", flush=True)
     print(f"  Primary Key: {foo.primary_key}", flush=True)
     print(f"  Timestamp: {datetime.fromtimestamp(foo.timestamp)}", flush=True)
+    print(f"  Baz: {foo.baz.name}", flush=True)
     print(f"  Optional Text: {foo.optional_text or 'None'}", flush=True)
     print("---", flush=True)
     sys.stdout.flush()  # Extra flush for safety
