@@ -240,8 +240,7 @@ pub async fn reconcile_with_reality<T: OlapOperations>(
             }
         }
     }
-    // Add unmapped tables (exist in database but not in current infrastructure map)
-    // Only include tables whose IDs are in target_table_ids to avoid managing external tables
+    // Add unmapped tables
     for unmapped_table in discrepancies.unmapped_tables {
         // default_database passed to `id` does not matter
         // tables from check_reality always contain non-None database
@@ -253,12 +252,7 @@ pub async fn reconcile_with_reality<T: OlapOperations>(
                 format!("{}{}", reconciled_map.default_database, table_name_version)
             }
         };
-
         if target_table_ids.contains(&id) {
-            debug!(
-                "Adding unmapped table found in reality to infrastructure map: {}",
-                id
-            );
             reconciled_map.tables.insert(
                 unmapped_table.id(&reconciled_map.default_database),
                 unmapped_table,

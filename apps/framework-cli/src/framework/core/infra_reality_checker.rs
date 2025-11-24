@@ -349,7 +349,7 @@ impl<T: OlapOperations> InfraRealityChecker<T> {
             unmapped_sql_resources.len(),
             unmapped_sql_resources
                 .iter()
-                .map(|r| r.id(&infra_map.default_database))
+                .map(|r| &r.name)
                 .collect::<Vec<_>>()
         );
 

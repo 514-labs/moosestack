@@ -1176,7 +1176,6 @@ pub async fn remote_gen_migration(
                 },
             );
 
-            // For generate migration, pass the local resources from code so they are reconciled with reality
             let target_table_ids: HashSet<String> = local_infra_map
                 .tables
                 .values()
