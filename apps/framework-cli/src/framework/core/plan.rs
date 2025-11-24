@@ -69,26 +69,15 @@ pub enum PlanningError {
 /// external changes made to the database are properly reflected in the infrastructure map
 /// before planning and applying new changes.
 ///
-/// ## Handling Unmapped Resources
-///
-/// Unmapped resources (tables/views/MVs in the database but not in the current infra map) are
-/// handled differently based on the filter parameters:
-///
-/// - **Discovery mode** (`None` filters): When `target_table_ids` or `target_sql_resource_ids`
-///   are `None`, ALL unmapped resources of that type are included in the reconciled map.
-///   This is used by `moose generate migration` to discover manually-created database objects.
-///
-/// - **Managed mode** (`Some(HashSet)` filters): When filters are provided, only unmapped
-///   resources whose IDs are in the set are included. This prevents external tables/views
-///   from being accidentally deleted during normal operation (`moose dev`, `moose prod`,
-///   `moose plan`). Even if the HashSet is empty (user has no managed resources), external
-///   resources are filtered out.
+/// We only want to look at differences for tables that are already in the infrastructure map.
+/// This is because if new external tables appear, they might not be in the code, yet. As such
+/// we don't want those to be deleted as a consequence of the diff
 ///
 /// # Arguments
 /// * `project` - The project configuration
 /// * `infra_map` - The infrastructure map to update
-/// * `target_table_ids` - `None` = discover all unmapped tables, `Some(ids)` = only include tables in the set
-/// * `target_sql_resource_ids` - `None` = discover all unmapped SQL resources, `Some(ids)` = only include resources in the set
+/// * `target_table_ids` - Tables to include from unmapped tables (tables in DB but not in current inframap). Only unmapped tables with names in this set will be added to the reconciled inframap.
+/// * `target_sql_resource_ids` - SQL resources to include from unmapped SQL resources.
 /// * `olap_client` - The OLAP client to use for checking reality
 ///
 /// # Returns
@@ -96,8 +85,8 @@ pub enum PlanningError {
 pub async fn reconcile_with_reality<T: OlapOperations>(
     project: &Project,
     current_infra_map: &InfrastructureMap,
-    target_table_ids: Option<&HashSet<String>>,
-    target_sql_resource_ids: Option<&HashSet<String>>,
+    target_table_ids: &HashSet<String>,
+    target_sql_resource_ids: &HashSet<String>,
     olap_client: T,
 ) -> Result<InfrastructureMap, PlanningError> {
     info!("Reconciling infrastructure map with actual database state");
@@ -252,12 +241,7 @@ pub async fn reconcile_with_reality<T: OlapOperations>(
         }
     }
     // Add unmapped tables (exist in database but not in current infrastructure map)
-    //
-    // Filtering behavior:
-    // - Empty target_table_ids: Include ALL unmapped tables (no filtering)
-    //   Used by `moose generate migration` to discover manually-created tables
-    // - Non-empty target_table_ids: Only include tables whose IDs are in the set
-    //   Used by `moose dev`/`moose prod`/`moose plan` to filter to managed resources
+    // Only include tables whose IDs are in target_table_ids to avoid managing external tables
     for unmapped_table in discrepancies.unmapped_tables {
         // default_database passed to `id` does not matter
         // tables from check_reality always contain non-None database
@@ -270,12 +254,7 @@ pub async fn reconcile_with_reality<T: OlapOperations>(
             }
         };
 
-        let should_include = match target_table_ids {
-            None => true,                   // Discovery mode: include everything
-            Some(ids) => ids.contains(&id), // Managed mode: only include if in target set
-        };
-
-        if should_include {
+        if target_table_ids.contains(&id) {
             debug!(
                 "Adding unmapped table found in reality to infrastructure map: {}",
                 id
@@ -283,11 +262,6 @@ pub async fn reconcile_with_reality<T: OlapOperations>(
             reconciled_map.tables.insert(
                 unmapped_table.id(&reconciled_map.default_database),
                 unmapped_table,
-            );
-        } else {
-            debug!(
-                "Ignoring unmapped table not in target map (external table): {}",
-                id
             );
         }
     }
@@ -307,19 +281,11 @@ pub async fn reconcile_with_reality<T: OlapOperations>(
     }
 
     // Add unmapped SQL resources (exist in database but not in current infrastructure map)
-    //
-    // Filtering behavior:
-    // - None: Include ALL unmapped SQL resources (discovery mode for `moose generate migration`)
-    // - Some(names): Only include resources whose names are in the set (managed mode)
+    // Only include resources whose names are in target_sql_resource_ids to avoid managing external resources
     for unmapped_sql_resource in discrepancies.unmapped_sql_resources {
         let name = &unmapped_sql_resource.name;
 
-        let should_include = match target_sql_resource_ids {
-            None => true,                    // Discovery mode: include everything
-            Some(ids) => ids.contains(name), // Managed mode: only include if in target set
-        };
-
-        if should_include {
+        if target_sql_resource_ids.contains(name) {
             debug!(
                 "Adding unmapped SQL resource found in reality to infrastructure map: {}",
                 name
@@ -327,11 +293,6 @@ pub async fn reconcile_with_reality<T: OlapOperations>(
             reconciled_map
                 .sql_resources
                 .insert(name.clone(), unmapped_sql_resource);
-        } else {
-            debug!(
-                "Ignoring unmapped SQL resource not in target map (external resource): {}",
-                name
-            );
         }
     }
 
@@ -438,14 +399,12 @@ pub async fn plan_changes(
         reconcile_with_reality(
             project,
             &current_map_or_empty,
-            Some(
-                &target_infra_map
-                    .tables
-                    .values()
-                    .map(|t| t.id(&target_infra_map.default_database))
-                    .collect(),
-            ),
-            Some(&target_infra_map.sql_resources.keys().cloned().collect()),
+            &target_infra_map
+                .tables
+                .values()
+                .map(|t| t.id(&target_infra_map.default_database))
+                .collect(),
+            &target_infra_map.sql_resources.keys().cloned().collect(),
             olap_client,
         )
         .await?
@@ -507,6 +466,7 @@ pub async fn plan_changes(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::framework::core::infrastructure::sql_resource::SqlResource;
     use crate::framework::core::infrastructure::table::{
         Column, ColumnType, IntType, OrderBy, Table,
     };
@@ -523,7 +483,7 @@ mod tests {
     // Mock OLAP client for testing
     struct MockOlapClient {
         tables: Vec<Table>,
-        sql_resources: Vec<crate::framework::core::infrastructure::sql_resource::SqlResource>,
+        sql_resources: Vec<SqlResource>,
     }
 
     #[async_trait]
@@ -540,10 +500,7 @@ mod tests {
             &self,
             _db_name: &str,
             _default_database: &str,
-        ) -> Result<
-            Vec<crate::framework::core::infrastructure::sql_resource::SqlResource>,
-            OlapChangesError,
-        > {
+        ) -> Result<Vec<SqlResource>, OlapChangesError> {
             Ok(self.sql_resources.clone())
         }
     }
@@ -654,13 +611,13 @@ mod tests {
 
         let mut target_ids = HashSet::new();
 
-        // Test 1: None = discovery mode - include all unmapped tables
-        // This is the behavior used by `moose generate migration`
+        // Test 1: Empty target_ids = no managed tables, so unmapped tables are filtered out
+        // External tables are not accidentally included
         let reconciled = reconcile_with_reality(
             &project,
             &infra_map,
-            None,
-            None,
+            &HashSet::new(),
+            &HashSet::new(),
             MockOlapClient {
                 tables: vec![table.clone()],
                 sql_resources: vec![],
@@ -669,18 +626,18 @@ mod tests {
         .await
         .unwrap();
 
-        // None = discovery mode, so unmapped table IS included
-        assert_eq!(reconciled.tables.len(), 1);
+        // With empty target_ids, the unmapped table should NOT be added (external table)
+        assert_eq!(reconciled.tables.len(), 0);
 
         target_ids.insert("test_unmapped_table_1_0_0".to_string());
 
-        // Test 2: Some(ids) = managed mode - only include if in set
+        // Test 2: Non-empty target_ids = only include if in set
         // This is the behavior used by `moose dev`, `moose prod`, etc.
         let reconciled = reconcile_with_reality(
             &project,
             &infra_map,
-            Some(&target_ids),
-            Some(&HashSet::new()),
+            &target_ids,
+            &HashSet::new(),
             MockOlapClient {
                 tables: vec![table.clone()],
                 sql_resources: vec![],
@@ -738,8 +695,8 @@ mod tests {
         let reconciled = reconcile_with_reality(
             &project,
             &infra_map,
-            Some(&target_table_ids),
-            Some(&HashSet::new()),
+            &target_table_ids,
+            &HashSet::new(),
             reconcile_mock_client,
         )
         .await
@@ -817,8 +774,8 @@ mod tests {
         let reconciled = reconcile_with_reality(
             &project,
             &infra_map,
-            Some(&target_table_ids),
-            Some(&HashSet::new()),
+            &target_table_ids,
+            &HashSet::new(),
             reconcile_mock_client,
         )
         .await
@@ -877,8 +834,8 @@ mod tests {
         let reconciled = reconcile_with_reality(
             &project,
             &infra_map,
-            Some(&target_table_ids),
-            Some(&HashSet::new()),
+            &target_table_ids,
+            &HashSet::new(),
             reconcile_mock_client,
         )
         .await
@@ -938,8 +895,8 @@ mod tests {
         let reconciled = reconcile_with_reality(
             &project,
             &loaded_map,
-            Some(&HashSet::new()),
-            Some(&HashSet::new()),
+            &HashSet::new(),
+            &HashSet::new(),
             mock_client,
         )
         .await
@@ -998,8 +955,8 @@ mod tests {
         let reconciled = reconcile_with_reality(
             &project,
             &loaded_map,
-            Some(&HashSet::new()),
-            Some(&HashSet::new()),
+            &HashSet::new(),
+            &HashSet::new(),
             mock_client,
         )
         .await
@@ -1104,8 +1061,8 @@ mod tests {
         let reconciled = reconcile_with_reality(
             &project,
             &infra_map,
-            Some(&HashSet::new()),
-            Some(&HashSet::new()),
+            &HashSet::new(),
+            &HashSet::new(),
             mock_client,
         )
         .await
@@ -1164,8 +1121,8 @@ mod tests {
         let reconciled = reconcile_with_reality(
             &project,
             &infra_map,
-            Some(&HashSet::new()),
-            Some(&HashSet::new()),
+            &HashSet::new(),
+            &HashSet::new(),
             mock_client,
         )
         .await
@@ -1191,9 +1148,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_reconcile_sql_resources_with_empty_filter_discovers_all() {
-        use crate::framework::core::infrastructure::sql_resource::SqlResource;
-
+    async fn test_reconcile_sql_resources_with_empty_filter_ignores_external() {
         // Create a SQL resource that exists in the database but not in the infra map
         let sql_resource = SqlResource {
             name: "unmapped_view".to_string(),
@@ -1212,20 +1167,23 @@ mod tests {
         let infra_map = InfrastructureMap::default();
         let project = create_test_project();
 
-        // Empty target_sql_resource_ids means no filter - discover all
-        let reconciled = reconcile_with_reality(&project, &infra_map, None, None, mock_client)
-            .await
-            .unwrap();
+        // Empty target_sql_resource_ids means no managed resources - external resources are filtered out
+        let reconciled = reconcile_with_reality(
+            &project,
+            &infra_map,
+            &HashSet::new(),
+            &HashSet::new(),
+            mock_client,
+        )
+        .await
+        .unwrap();
 
-        // None = discovery mode, so unmapped SQL resource IS included
-        assert_eq!(reconciled.sql_resources.len(), 1);
-        assert!(reconciled.sql_resources.contains_key(&sql_resource.name));
+        // Empty filter = no managed resources, so unmapped SQL resource is NOT included (external)
+        assert_eq!(reconciled.sql_resources.len(), 0);
     }
 
     #[tokio::test]
     async fn test_reconcile_sql_resources_with_specific_filter() {
-        use crate::framework::core::infrastructure::sql_resource::SqlResource;
-
         // Create two SQL resources in the database
         let view_a = SqlResource {
             name: "view_a".to_string(),
@@ -1260,8 +1218,8 @@ mod tests {
         let reconciled = reconcile_with_reality(
             &project,
             &infra_map,
-            Some(&HashSet::new()),
-            Some(&target_sql_resource_ids),
+            &HashSet::new(),
+            &target_sql_resource_ids,
             mock_client,
         )
         .await
@@ -1275,8 +1233,6 @@ mod tests {
 
     #[tokio::test]
     async fn test_reconcile_sql_resources_missing_and_mismatched() {
-        use crate::framework::core::infrastructure::sql_resource::SqlResource;
-
         // Create SQL resource that's in the infra map
         let existing_view = SqlResource {
             name: "existing_view".to_string(),
@@ -1315,8 +1271,8 @@ mod tests {
         let reconciled = reconcile_with_reality(
             &project,
             &infra_map,
-            Some(&HashSet::new()),
-            Some(&target_sql_resource_ids),
+            &HashSet::new(),
+            &target_sql_resource_ids,
             mock_client,
         )
         .await
