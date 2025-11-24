@@ -11,6 +11,7 @@ from moose_lib.blocks import (
     ReplicatedReplacingMergeTreeEngine,
     ReplicatedAggregatingMergeTreeEngine,
     ReplicatedSummingMergeTreeEngine,
+    NullEngine,
     BufferEngine,
     # S3QueueEngine - requires S3 configuration, tested separately
 )
@@ -96,6 +97,14 @@ merge_tree_table = OlapTable[EngineTestData](
     OlapConfig(
         engine=MergeTreeEngine(),
         order_by_fields=["id", "timestamp"]
+    )
+)
+
+# Test Null engine (schema-only, discards writes)
+null_engine_table = OlapTable[EngineTestData](
+    "NullEngineTest",
+    OlapConfig(
+        engine=NullEngine(),
     )
 )
 
@@ -274,6 +283,7 @@ buffer_table = OlapTable[EngineTestData](
 # can be properly instantiated and don't throw errors during table creation
 all_engine_test_tables = [
     merge_tree_table,
+    null_engine_table,
     merge_tree_table_expr,
     replacing_merge_tree_basic_table,
     replacing_merge_tree_version_table,

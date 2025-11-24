@@ -64,6 +64,11 @@ export const MergeTreeTable = new OlapTable<EngineTestData>("MergeTreeTest", {
   orderByFields: ["id", "timestamp"],
 });
 
+// Test Null engine (schema-only, discards writes)
+export const NullEngineTable = new OlapTable<EngineTestData>("NullEngineTest", {
+  engine: ClickHouseEngines.Null,
+});
+
 // Test MergeTree with orderByExpression (equivalent to fields)
 export const MergeTreeTableExpr = new OlapTable<EngineTestData>(
   "MergeTreeTestExpr",
@@ -247,6 +252,7 @@ export const BufferTable = new OlapTable<EngineTestData>("BufferTest", {
  */
 export const allEngineTestTables = [
   MergeTreeTable,
+  NullEngineTable,
   MergeTreeTableExpr,
   ReplacingMergeTreeBasicTable,
   ReplacingMergeTreeVersionTable,

@@ -65,6 +65,10 @@ const defaultRetentionPeriod = 60 * 60 * 24 * 7;
 /**
  * Engine-specific configuration types using discriminated union pattern
  */
+interface NullEngineConfig {
+  engine: "Null";
+}
+
 interface MergeTreeEngineConfig {
   engine: "MergeTree";
 }
@@ -161,6 +165,7 @@ interface DistributedEngineConfig {
  * Union type for all supported engine configurations
  */
 type EngineConfig =
+  | NullEngineConfig
   | MergeTreeEngineConfig
   | ReplacingMergeTreeEngineConfig
   | AggregatingMergeTreeEngineConfig
@@ -406,6 +411,9 @@ function convertBasicEngineConfig(
   config: OlapConfig<any>,
 ): EngineConfig | undefined {
   switch (engine) {
+    case ClickHouseEngines.Null:
+      return { engine: "Null" };
+
     case ClickHouseEngines.MergeTree:
       return { engine: "MergeTree" };
 

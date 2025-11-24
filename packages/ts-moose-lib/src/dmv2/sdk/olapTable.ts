@@ -236,6 +236,16 @@ export type BaseOlapConfig<T> = (
 };
 
 /**
+ * Configuration for Null engine - discards all data and does not support ORDER BY/PARTITION BY/SAMPLE BY
+ */
+export type NullConfig<T> = Omit<
+  BaseOlapConfig<T>,
+  "orderByFields" | "orderByExpression" | "partitionBy" | "sampleByExpression"
+> & {
+  engine: ClickHouseEngines.Null;
+};
+
+/**
  * Configuration for MergeTree engine
  * @template T The data type of the records stored in the table.
  */
@@ -452,6 +462,7 @@ export type DistributedConfig<T> = Omit<
 export type LegacyOlapConfig<T> = BaseOlapConfig<T>;
 
 type EngineConfig<T> =
+  | NullConfig<T>
   | MergeTreeConfig<T>
   | ReplacingMergeTreeConfig<T>
   | AggregatingMergeTreeConfig<T>
@@ -532,6 +543,33 @@ export class OlapTable<T> extends TypedBase<T, OlapConfig<T>> {
       throw new Error(
         `OlapTable ${name}: Provide either orderByFields or orderByExpression, not both.`,
       );
+    }
+
+    const isNullEngine =
+      "engine" in resolvedConfig &&
+      resolvedConfig.engine === ClickHouseEngines.Null;
+    if (isNullEngine) {
+      if (hasFields || hasExpr) {
+        throw new Error(
+          `OlapTable ${name}: Null engine does not support ORDER BY clauses.`,
+        );
+      }
+      if (
+        "partitionBy" in resolvedConfig &&
+        resolvedConfig.partitionBy !== undefined
+      ) {
+        throw new Error(
+          `OlapTable ${name}: Null engine does not support PARTITION BY clauses.`,
+        );
+      }
+      if (
+        "sampleByExpression" in resolvedConfig &&
+        resolvedConfig.sampleByExpression !== undefined
+      ) {
+        throw new Error(
+          `OlapTable ${name}: Null engine does not support SAMPLE BY clauses.`,
+        );
+      }
     }
 
     // Validate cluster and explicit replication params are not both specified

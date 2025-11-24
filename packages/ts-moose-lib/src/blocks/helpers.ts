@@ -35,6 +35,7 @@ export interface Blocks {
 }
 
 export enum ClickHouseEngines {
+  Null = "Null",
   MergeTree = "MergeTree",
   ReplacingMergeTree = "ReplacingMergeTree",
   SummingMergeTree = "SummingMergeTree",
