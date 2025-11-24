@@ -5,13 +5,13 @@ from datetime import datetime
 
 def foo_to_bar(foo: Foo):
     """Transform Foo events to Bar events with error handling and caching.
-    
+
     Normal flow:
     1. Check cache for previously processed events
     2. Transform Foo to Bar
     3. Cache the result
     4. Return transformed Bar event
-    
+
     Alternate flow (DLQ):
     - If errors occur during transformation, the event is sent to DLQ
     - This enables separate error handling, monitoring, and retry strategies
@@ -33,7 +33,7 @@ def foo_to_bar(foo: Foo):
         baz=foo.baz,
         utc_timestamp=datetime.fromtimestamp(foo.timestamp),
         has_text=foo.optional_text is not None,
-        text_length=len(foo.optional_text) if foo.optional_text else 0
+        text_length=len(foo.optional_text) if foo.optional_text else 0,
     )
 
     # Store the result in cache
@@ -50,11 +50,14 @@ fooModel.get_stream().add_transform(
 
 # Add a streaming consumer to print Foo events
 def print_foo_event(foo):
-    print(f"Received Foo event:")
-    print(f"  Primary Key: {foo.primary_key}")
-    print(f"  Timestamp: {datetime.fromtimestamp(foo.timestamp)}")
-    print(f"  Optional Text: {foo.optional_text or 'None'}")
-    print("---")
+    import sys
+
+    print(f"Received Foo event:", flush=True)
+    print(f"  Primary Key: {foo.primary_key}", flush=True)
+    print(f"  Timestamp: {datetime.fromtimestamp(foo.timestamp)}", flush=True)
+    print(f"  Optional Text: {foo.optional_text or 'None'}", flush=True)
+    print("---", flush=True)
+    sys.stdout.flush()  # Extra flush for safety
 
 
 fooModel.get_stream().add_consumer(print_foo_event)
@@ -69,7 +72,12 @@ def print_messages(dead_letter: DeadLetterModel[Foo]):
 fooModel.get_dead_letter_queue().add_consumer(print_messages)
 
 # Test transform that returns a list - each element should be sent as a separate Kafka message
-from src.ingest.models import array_input_model, array_output_stream, ArrayInput, ArrayOutput
+from src.ingest.models import (
+    array_input_model,
+    array_output_stream,
+    ArrayInput,
+    ArrayOutput,
+)
 
 
 def array_transform(input_data: ArrayInput) -> list[ArrayOutput]:
@@ -82,10 +90,7 @@ def array_transform(input_data: ArrayInput) -> list[ArrayOutput]:
     # Each item in input_data.data becomes a separate Kafka message
     return [
         ArrayOutput(
-            input_id=input_data.id,
-            value=value,
-            index=index,
-            timestamp=datetime.now()
+            input_id=input_data.id, value=value, index=index, timestamp=datetime.now()
         )
         for index, value in enumerate(input_data.data)
     ]
@@ -104,35 +109,53 @@ from src.ingest.models import (
 )
 
 
-def datetime_precision_transform(input_data: DateTimePrecisionTestData) -> DateTimePrecisionTestData:
+def datetime_precision_transform(
+    input_data: DateTimePrecisionTestData,
+) -> DateTimePrecisionTestData:
     """Transform that verifies Python datetime objects preserve microsecond precision.
-    
+
     Unlike JavaScript, Python's datetime natively supports microsecond precision,
     so all datetime fields should be datetime objects with microseconds preserved.
     """
 
     print("DateTime precision transform (Python) - input types and values:")
-    print(f"  created_at: {type(input_data.created_at)} = {input_data.created_at} (µs: {input_data.created_at.microsecond})")
-    print(f"  timestamp_ms: {type(input_data.timestamp_ms)} = {input_data.timestamp_ms} (µs: {input_data.timestamp_ms.microsecond})")
-    print(f"  timestamp_us: {type(input_data.timestamp_us)} = {input_data.timestamp_us} (µs: {input_data.timestamp_us.microsecond})")
-    print(f"  timestamp_ns: {type(input_data.timestamp_ns)} = {input_data.timestamp_ns} (µs: {input_data.timestamp_ns.microsecond})")
+    print(
+        f"  created_at: {type(input_data.created_at)} = {input_data.created_at} (µs: {input_data.created_at.microsecond})"
+    )
+    print(
+        f"  timestamp_ms: {type(input_data.timestamp_ms)} = {input_data.timestamp_ms} (µs: {input_data.timestamp_ms.microsecond})"
+    )
+    print(
+        f"  timestamp_us: {type(input_data.timestamp_us)} = {input_data.timestamp_us} (µs: {input_data.timestamp_us.microsecond})"
+    )
+    print(
+        f"  timestamp_ns: {type(input_data.timestamp_ns)} = {input_data.timestamp_ns} (µs: {input_data.timestamp_ns.microsecond})"
+    )
 
     # Verify all are datetime objects
     if not isinstance(input_data.created_at, datetime):
-        raise TypeError(f"Expected created_at to be datetime, got {type(input_data.created_at)}")
+        raise TypeError(
+            f"Expected created_at to be datetime, got {type(input_data.created_at)}"
+        )
     if not isinstance(input_data.timestamp_ms, datetime):
-        raise TypeError(f"Expected timestamp_ms to be datetime, got {type(input_data.timestamp_ms)}")
+        raise TypeError(
+            f"Expected timestamp_ms to be datetime, got {type(input_data.timestamp_ms)}"
+        )
     if not isinstance(input_data.timestamp_us, datetime):
-        raise TypeError(f"Expected timestamp_us to be datetime, got {type(input_data.timestamp_us)}")
+        raise TypeError(
+            f"Expected timestamp_us to be datetime, got {type(input_data.timestamp_us)}"
+        )
     if not isinstance(input_data.timestamp_ns, datetime):
-        raise TypeError(f"Expected timestamp_ns to be datetime, got {type(input_data.timestamp_ns)}")
+        raise TypeError(
+            f"Expected timestamp_ns to be datetime, got {type(input_data.timestamp_ns)}"
+        )
 
     # Verify microseconds are present
     if input_data.timestamp_us.microsecond == 0:
         print(f"WARNING: timestamp_us has no microseconds: {input_data.timestamp_us}")
     else:
         print(f"✓ timestamp_us has microseconds: {input_data.timestamp_us.microsecond}")
-    
+
     if input_data.timestamp_ns.microsecond == 0:
         print(f"WARNING: timestamp_ns has no microseconds: {input_data.timestamp_ns}")
     else:
