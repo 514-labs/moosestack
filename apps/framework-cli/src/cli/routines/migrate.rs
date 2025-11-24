@@ -593,8 +593,8 @@ pub async fn execute_migration(
             reconcile_with_reality(
                 project,
                 &current_infra_map,
-                &target_table_ids,
-                &target_sql_resource_ids,
+                Some(&target_table_ids),
+                Some(&target_sql_resource_ids),
                 olap_client,
             )
             .await

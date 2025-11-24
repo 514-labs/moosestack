@@ -1023,8 +1023,14 @@ pub async fn remote_plan(
         let sql_resource_ids: HashSet<String> =
             local_infra_map.sql_resources.keys().cloned().collect();
 
-        get_remote_inframap_serverless(project, clickhouse_url, None, table_names, sql_resource_ids)
-            .await?
+        get_remote_inframap_serverless(
+            project,
+            clickhouse_url,
+            None,
+            Some(table_names),
+            Some(sql_resource_ids),
+        )
+        .await?
     } else {
         // Moose server flow
         display::show_message_wrapper(
@@ -1171,16 +1177,13 @@ pub async fn remote_gen_migration(
             );
 
             // For generate migration, we want to discover ALL resources in ClickHouse
-            // Pass empty HashSets = no filtering = include everything found in the database
-            let table_ids: HashSet<String> = HashSet::new();
-            let sql_resource_ids: HashSet<String> = HashSet::new();
-
+            // Pass None = discovery mode = include everything found in the database
             get_remote_inframap_serverless(
                 project,
                 clickhouse_url,
                 redis_url.as_deref(),
-                table_ids,
-                sql_resource_ids,
+                None,
+                None,
             )
             .await?
         }
@@ -1231,8 +1234,8 @@ async fn get_remote_inframap_serverless(
     project: &Project,
     clickhouse_url: &str,
     redis_url: Option<&str>,
-    target_table_ids: HashSet<String>,
-    target_sql_resource_ids: HashSet<String>,
+    target_table_ids: Option<HashSet<String>>,
+    target_sql_resource_ids: Option<HashSet<String>>,
 ) -> anyhow::Result<InfrastructureMap> {
     use crate::framework::core::plan::reconcile_with_reality;
     use crate::infrastructure::olap::clickhouse::config::parse_clickhouse_connection_string;
@@ -1259,8 +1262,8 @@ async fn get_remote_inframap_serverless(
         reconcile_with_reality(
             project,
             &remote_infra_map,
-            &target_table_ids,
-            &target_sql_resource_ids,
+            target_table_ids.as_ref(),
+            target_sql_resource_ids.as_ref(),
             reconcile_client,
         )
         .await?
