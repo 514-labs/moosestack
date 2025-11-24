@@ -74,20 +74,21 @@ pub enum PlanningError {
 /// Unmapped resources (tables/views/MVs in the database but not in the current infra map) are
 /// handled differently based on the filter parameters:
 ///
-/// - **Discovery mode** (empty filters): When `target_table_ids` and `target_sql_resource_ids`
-///   are empty, ALL unmapped resources are included in the reconciled map. This is used by
-///   `moose generate migration` to discover manually-created database objects.
+/// - **Discovery mode** (`None` filters): When `target_table_ids` or `target_sql_resource_ids`
+///   are `None`, ALL unmapped resources of that type are included in the reconciled map.
+///   This is used by `moose generate migration` to discover manually-created database objects.
 ///
-/// - **Managed mode** (non-empty filters): When filters contain specific IDs (typically from
-///   local code or stored state), only unmapped resources matching those IDs are included.
-///   This prevents external tables/views from being accidentally deleted during normal
-///   operation (`moose dev`, `moose prod`, `moose plan`).
+/// - **Managed mode** (`Some(HashSet)` filters): When filters are provided, only unmapped
+///   resources whose IDs are in the set are included. This prevents external tables/views
+///   from being accidentally deleted during normal operation (`moose dev`, `moose prod`,
+///   `moose plan`). Even if the HashSet is empty (user has no managed resources), external
+///   resources are filtered out.
 ///
 /// # Arguments
 /// * `project` - The project configuration
 /// * `infra_map` - The infrastructure map to update
-/// * `target_table_ids` - IDs of tables to include from unmapped tables (tables in DB but not in current inframap). Only unmapped tables with IDs in this set will be added to the reconciled inframap. If empty, all unmapped tables are included (no filtering).
-/// * `target_sql_resource_ids` - IDs of SQL resources to include from unmapped resources. Only unmapped SQL resources with IDs in this set will be added to the reconciled inframap. If empty, all unmapped SQL resources are included (no filtering).
+/// * `target_table_ids` - `None` = discover all unmapped tables, `Some(ids)` = only include tables in the set
+/// * `target_sql_resource_ids` - `None` = discover all unmapped SQL resources, `Some(ids)` = only include resources in the set
 /// * `olap_client` - The OLAP client to use for checking reality
 ///
 /// # Returns
@@ -95,8 +96,8 @@ pub enum PlanningError {
 pub async fn reconcile_with_reality<T: OlapOperations>(
     project: &Project,
     current_infra_map: &InfrastructureMap,
-    target_table_ids: &HashSet<String>,
-    target_sql_resource_ids: &HashSet<String>,
+    target_table_ids: Option<&HashSet<String>>,
+    target_sql_resource_ids: Option<&HashSet<String>>,
     olap_client: T,
 ) -> Result<InfrastructureMap, PlanningError> {
     info!("Reconciling infrastructure map with actual database state");
@@ -269,7 +270,12 @@ pub async fn reconcile_with_reality<T: OlapOperations>(
             }
         };
 
-        if target_table_ids.is_empty() || target_table_ids.contains(&id) {
+        let should_include = match target_table_ids {
+            None => true,                   // Discovery mode: include everything
+            Some(ids) => ids.contains(&id), // Managed mode: only include if in target set
+        };
+
+        if should_include {
             debug!(
                 "Adding unmapped table found in reality to infrastructure map: {}",
                 id
@@ -303,14 +309,17 @@ pub async fn reconcile_with_reality<T: OlapOperations>(
     // Add unmapped SQL resources (exist in database but not in current infrastructure map)
     //
     // Filtering behavior:
-    // - Empty target_sql_resource_ids: Include ALL unmapped SQL resources (no filtering)
-    //   Used by `moose generate migration` to discover manually-created views/MVs
-    // - Non-empty target_sql_resource_ids: Only include resources whose IDs are in the set
-    //   Used by `moose dev`/`moose prod`/`moose plan` to filter to managed resources
+    // - None: Include ALL unmapped SQL resources (discovery mode for `moose generate migration`)
+    // - Some(ids): Only include resources whose IDs are in the set (managed mode)
     for unmapped_sql_resource in discrepancies.unmapped_sql_resources {
         let id = unmapped_sql_resource.id(&reconciled_map.default_database);
 
-        if target_sql_resource_ids.is_empty() || target_sql_resource_ids.contains(&id) {
+        let should_include = match target_sql_resource_ids {
+            None => true,                   // Discovery mode: include everything
+            Some(ids) => ids.contains(&id), // Managed mode: only include if in target set
+        };
+
+        if should_include {
             debug!(
                 "Adding unmapped SQL resource found in reality to infrastructure map: {}",
                 id
@@ -429,12 +438,14 @@ pub async fn plan_changes(
         reconcile_with_reality(
             project,
             &current_map_or_empty,
-            &target_infra_map
-                .tables
-                .values()
-                .map(|t| t.id(&target_infra_map.default_database))
-                .collect(),
-            &target_infra_map.sql_resources.keys().cloned().collect(),
+            Some(
+                &target_infra_map
+                    .tables
+                    .values()
+                    .map(|t| t.id(&target_infra_map.default_database))
+                    .collect(),
+            ),
+            Some(&target_infra_map.sql_resources.keys().cloned().collect()),
             olap_client,
         )
         .await?
@@ -643,13 +654,13 @@ mod tests {
 
         let mut target_ids = HashSet::new();
 
-        // Test 1: Empty target_ids means no filter - discover all unmapped tables
+        // Test 1: None = discovery mode - include all unmapped tables
         // This is the behavior used by `moose generate migration`
         let reconciled = reconcile_with_reality(
             &project,
             &infra_map,
-            &target_ids,
-            &HashSet::new(),
+            None,
+            None,
             MockOlapClient {
                 tables: vec![table.clone()],
                 sql_resources: vec![],
@@ -658,18 +669,18 @@ mod tests {
         .await
         .unwrap();
 
-        // Empty target_ids = no filter, so unmapped table IS included
+        // None = discovery mode, so unmapped table IS included
         assert_eq!(reconciled.tables.len(), 1);
 
         target_ids.insert("test_unmapped_table_1_0_0".to_string());
 
-        // Test 2: Specific target_ids also includes matching tables
+        // Test 2: Some(ids) = managed mode - only include if in set
         // This is the behavior used by `moose dev`, `moose prod`, etc.
         let reconciled = reconcile_with_reality(
             &project,
             &infra_map,
-            &target_ids,
-            &HashSet::new(),
+            Some(&target_ids),
+            Some(&HashSet::new()),
             MockOlapClient {
                 tables: vec![table.clone()],
                 sql_resources: vec![],
@@ -727,8 +738,8 @@ mod tests {
         let reconciled = reconcile_with_reality(
             &project,
             &infra_map,
-            &target_table_ids,
-            &HashSet::new(),
+            Some(&target_table_ids),
+            Some(&HashSet::new()),
             reconcile_mock_client,
         )
         .await
@@ -806,8 +817,8 @@ mod tests {
         let reconciled = reconcile_with_reality(
             &project,
             &infra_map,
-            &target_table_ids,
-            &HashSet::new(),
+            Some(&target_table_ids),
+            Some(&HashSet::new()),
             reconcile_mock_client,
         )
         .await
@@ -866,8 +877,8 @@ mod tests {
         let reconciled = reconcile_with_reality(
             &project,
             &infra_map,
-            &target_table_ids,
-            &HashSet::new(),
+            Some(&target_table_ids),
+            Some(&HashSet::new()),
             reconcile_mock_client,
         )
         .await
@@ -924,12 +935,11 @@ mod tests {
             sql_resources: vec![],
         };
 
-        let target_table_ids = HashSet::new();
         let reconciled = reconcile_with_reality(
             &project,
             &loaded_map,
-            &target_table_ids,
-            &HashSet::new(),
+            Some(&HashSet::new()),
+            Some(&HashSet::new()),
             mock_client,
         )
         .await
@@ -985,12 +995,11 @@ mod tests {
             sql_resources: vec![],
         };
 
-        let target_table_ids = HashSet::new();
         let reconciled = reconcile_with_reality(
             &project,
             &loaded_map,
-            &target_table_ids,
-            &HashSet::new(),
+            Some(&HashSet::new()),
+            Some(&HashSet::new()),
             mock_client,
         )
         .await
@@ -1091,13 +1100,12 @@ mod tests {
         // Create test project
         let project = create_test_project();
 
-        let target_table_names = HashSet::new();
         // Reconcile the infrastructure map
         let reconciled = reconcile_with_reality(
             &project,
             &infra_map,
-            &target_table_names,
-            &HashSet::new(),
+            Some(&HashSet::new()),
+            Some(&HashSet::new()),
             mock_client,
         )
         .await
@@ -1152,13 +1160,12 @@ mod tests {
         // Create test project
         let project = create_test_project();
 
-        let target_table_names = HashSet::new();
         // Reconcile the infrastructure map
         let reconciled = reconcile_with_reality(
             &project,
             &infra_map,
-            &target_table_names,
-            &HashSet::new(),
+            Some(&HashSet::new()),
+            Some(&HashSet::new()),
             mock_client,
         )
         .await
@@ -1206,20 +1213,11 @@ mod tests {
         let project = create_test_project();
 
         // Empty target_sql_resource_ids means no filter - discover all
-        let target_table_ids = HashSet::new();
-        let target_sql_resource_ids = HashSet::new();
+        let reconciled = reconcile_with_reality(&project, &infra_map, None, None, mock_client)
+            .await
+            .unwrap();
 
-        let reconciled = reconcile_with_reality(
-            &project,
-            &infra_map,
-            &target_table_ids,
-            &target_sql_resource_ids,
-            mock_client,
-        )
-        .await
-        .unwrap();
-
-        // The unmapped SQL resource should be included because filter is empty
+        // None = discovery mode, so unmapped SQL resource IS included
         assert_eq!(reconciled.sql_resources.len(), 1);
         assert!(reconciled
             .sql_resources
@@ -1258,15 +1256,14 @@ mod tests {
         let project = create_test_project();
 
         // Only include view_a in the filter
-        let target_table_ids = HashSet::new();
         let mut target_sql_resource_ids = HashSet::new();
         target_sql_resource_ids.insert(view_a.id("test"));
 
         let reconciled = reconcile_with_reality(
             &project,
             &infra_map,
-            &target_table_ids,
-            &target_sql_resource_ids,
+            Some(&HashSet::new()),
+            Some(&target_sql_resource_ids),
             mock_client,
         )
         .await
@@ -1314,15 +1311,14 @@ mod tests {
             .insert(existing_view.id("test"), existing_view.clone());
 
         let project = create_test_project();
-        let target_table_ids = HashSet::new();
         let mut target_sql_resource_ids = HashSet::new();
         target_sql_resource_ids.insert(existing_view.id("test"));
 
         let reconciled = reconcile_with_reality(
             &project,
             &infra_map,
-            &target_table_ids,
-            &target_sql_resource_ids,
+            Some(&HashSet::new()),
+            Some(&target_sql_resource_ids),
             mock_client,
         )
         .await
