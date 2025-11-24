@@ -310,27 +310,27 @@ pub async fn reconcile_with_reality<T: OlapOperations>(
     //
     // Filtering behavior:
     // - None: Include ALL unmapped SQL resources (discovery mode for `moose generate migration`)
-    // - Some(ids): Only include resources whose IDs are in the set (managed mode)
+    // - Some(names): Only include resources whose names are in the set (managed mode)
     for unmapped_sql_resource in discrepancies.unmapped_sql_resources {
-        let id = unmapped_sql_resource.id(&reconciled_map.default_database);
+        let name = &unmapped_sql_resource.name;
 
         let should_include = match target_sql_resource_ids {
-            None => true,                   // Discovery mode: include everything
-            Some(ids) => ids.contains(&id), // Managed mode: only include if in target set
+            None => true,                    // Discovery mode: include everything
+            Some(ids) => ids.contains(name), // Managed mode: only include if in target set
         };
 
         if should_include {
             debug!(
                 "Adding unmapped SQL resource found in reality to infrastructure map: {}",
-                id
+                name
             );
             reconciled_map
                 .sql_resources
-                .insert(id, unmapped_sql_resource);
+                .insert(name.clone(), unmapped_sql_resource);
         } else {
             debug!(
                 "Ignoring unmapped SQL resource not in target map (external resource): {}",
-                id
+                name
             );
         }
     }
@@ -343,12 +343,12 @@ pub async fn reconcile_with_reality<T: OlapOperations>(
                 // reconciled map to reflect the current state of the database.
                 // This ensures the subsequent diff against the target map will correctly
                 // identify that the current state differs from the desired state.
-                let id = before.id(&reconciled_map.default_database);
+                let name = &before.name;
                 debug!(
                     "Updating mismatched SQL resource in infrastructure map to match reality: {}",
-                    id
+                    name
                 );
-                reconciled_map.sql_resources.insert(id, *before);
+                reconciled_map.sql_resources.insert(name.clone(), *before);
             }
             _ => {
                 log::warn!(
@@ -1219,9 +1219,7 @@ mod tests {
 
         // None = discovery mode, so unmapped SQL resource IS included
         assert_eq!(reconciled.sql_resources.len(), 1);
-        assert!(reconciled
-            .sql_resources
-            .contains_key(&sql_resource.id("test")));
+        assert!(reconciled.sql_resources.contains_key(&sql_resource.name));
     }
 
     #[tokio::test]
@@ -1257,7 +1255,7 @@ mod tests {
 
         // Only include view_a in the filter
         let mut target_sql_resource_ids = HashSet::new();
-        target_sql_resource_ids.insert(view_a.id("test"));
+        target_sql_resource_ids.insert(view_a.name.clone());
 
         let reconciled = reconcile_with_reality(
             &project,
@@ -1271,8 +1269,8 @@ mod tests {
 
         // Only view_a should be included, view_b should be filtered out
         assert_eq!(reconciled.sql_resources.len(), 1);
-        assert!(reconciled.sql_resources.contains_key(&view_a.id("test")));
-        assert!(!reconciled.sql_resources.contains_key(&view_b.id("test")));
+        assert!(reconciled.sql_resources.contains_key(&view_a.name));
+        assert!(!reconciled.sql_resources.contains_key(&view_b.name));
     }
 
     #[tokio::test]
@@ -1308,11 +1306,11 @@ mod tests {
         let mut infra_map = InfrastructureMap::default();
         infra_map
             .sql_resources
-            .insert(existing_view.id("test"), existing_view.clone());
+            .insert(existing_view.name.clone(), existing_view.clone());
 
         let project = create_test_project();
         let mut target_sql_resource_ids = HashSet::new();
-        target_sql_resource_ids.insert(existing_view.id("test"));
+        target_sql_resource_ids.insert(existing_view.name.clone());
 
         let reconciled = reconcile_with_reality(
             &project,
@@ -1326,10 +1324,7 @@ mod tests {
 
         // The view should be updated to match reality
         assert_eq!(reconciled.sql_resources.len(), 1);
-        let reconciled_view = reconciled
-            .sql_resources
-            .get(&reality_view.id("test"))
-            .unwrap();
+        let reconciled_view = reconciled.sql_resources.get(&reality_view.name).unwrap();
         assert_eq!(reconciled_view.setup, reality_view.setup);
     }
 }

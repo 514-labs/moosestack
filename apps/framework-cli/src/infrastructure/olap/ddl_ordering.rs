@@ -408,12 +408,12 @@ impl AtomicOlapOperation {
             }
             AtomicOlapOperation::RunSetupSql { resource, .. } => {
                 InfrastructureSignature::SqlResource {
-                    id: resource.id(default_database),
+                    id: resource.name.clone(),
                 }
             }
             AtomicOlapOperation::RunTeardownSql { resource, .. } => {
                 InfrastructureSignature::SqlResource {
-                    id: resource.id(default_database),
+                    id: resource.name.clone(),
                 }
             }
         }
@@ -2390,7 +2390,7 @@ mod tests {
             dependency_info: DependencyInfo {
                 // For teardown: Table A depends on MV being gone first
                 pulls_data_from: vec![InfrastructureSignature::SqlResource {
-                    id: mv_sql_resource.id(DEFAULT_DATABASE_NAME),
+                    id: mv_sql_resource.name.clone(),
                 }],
                 pushes_data_to: vec![],
             },
@@ -2402,7 +2402,7 @@ mod tests {
             dependency_info: DependencyInfo {
                 // For teardown: Table B depends on MV being gone first
                 pulls_data_from: vec![InfrastructureSignature::SqlResource {
-                    id: mv_sql_resource.id(DEFAULT_DATABASE_NAME),
+                    id: mv_sql_resource.name.clone(),
                 }],
                 pushes_data_to: vec![],
             },
@@ -2618,7 +2618,7 @@ mod tests {
             dependency_info: DependencyInfo {
                 // For teardown: Table A depends on MV being gone first
                 pulls_data_from: vec![InfrastructureSignature::SqlResource {
-                    id: resource.id(DEFAULT_DATABASE_NAME),
+                    id: resource.name.clone(),
                 }],
                 pushes_data_to: vec![],
             },
@@ -2629,7 +2629,7 @@ mod tests {
             dependency_info: DependencyInfo {
                 // For teardown: Table B depends on MV being gone first
                 pulls_data_from: vec![InfrastructureSignature::SqlResource {
-                    id: resource.id(DEFAULT_DATABASE_NAME),
+                    id: resource.name.clone(),
                 }],
                 pushes_data_to: vec![],
             },

@@ -322,10 +322,10 @@ impl<T: OlapOperations> InfraRealityChecker<T> {
             actual_sql_resources.len()
         );
 
-        // Create a map of actual SQL resources by ID (database_name format)
+        // Create a map of actual SQL resources by name
         let actual_sql_resource_map: HashMap<String, _> = actual_sql_resources
             .into_iter()
-            .map(|r| (r.id(&infra_map.default_database), r))
+            .map(|r| (r.name.clone(), r))
             .collect();
 
         debug!(
@@ -340,11 +340,7 @@ impl<T: OlapOperations> InfraRealityChecker<T> {
         // Find unmapped SQL resources (exist in reality but not in map)
         let unmapped_sql_resources: Vec<_> = actual_sql_resource_map
             .values()
-            .filter(|resource| {
-                !infra_map
-                    .sql_resources
-                    .contains_key(&resource.id(&infra_map.default_database))
-            })
+            .filter(|resource| !infra_map.sql_resources.contains_key(&resource.name))
             .cloned()
             .collect();
 
@@ -852,10 +848,9 @@ mod tests {
             web_apps: HashMap::new(),
         };
 
-        infra_map.sql_resources.insert(
-            infra_resource.id(&infra_map.default_database),
-            infra_resource.clone(),
-        );
+        infra_map
+            .sql_resources
+            .insert(infra_resource.name.clone(), infra_resource.clone());
 
         let checker = InfraRealityChecker::new(mock_client);
         let project = create_test_project();

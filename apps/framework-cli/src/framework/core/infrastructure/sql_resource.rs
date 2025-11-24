@@ -18,6 +18,7 @@ pub struct SqlResource {
     /// The database where this SQL resource exists.
     /// - None means use the default database
     /// - Some(db) means the resource is in a specific database
+    #[serde(skip_serializing_if = "Option::is_none", default)]
     pub database: Option<String>,
 
     /// A list of SQL commands or script paths executed during the setup phase.
