@@ -4,6 +4,7 @@ OLAP table definitions for Moose Data Model v2 (dmv2).
 This module provides classes for defining and configuring OLAP tables,
 particularly for ClickHouse.
 """
+
 import json
 import warnings
 from clickhouse_connect import get_client
@@ -11,7 +12,17 @@ from clickhouse_connect.driver.client import Client
 from clickhouse_connect.driver.exceptions import ClickHouseError
 from dataclasses import dataclass
 from pydantic import BaseModel
-from typing import List, Optional, Any, Literal, Union, Tuple, TypeVar, Generic, Iterator
+from typing import (
+    List,
+    Optional,
+    Any,
+    Literal,
+    Union,
+    Tuple,
+    TypeVar,
+    Generic,
+    Iterator,
+)
 from ..blocks import ClickHouseEngines, EngineConfig
 from ..commons import Logger
 from ..config.runtime import RuntimeClickHouseConfig
@@ -33,6 +44,7 @@ class InsertOptions:
         validate: Whether to validate data against schema before insertion.
         skip_validation_on_retry: Whether to skip validation for individual records during retries.
     """
+
     allow_errors: Optional[int] = None
     allow_errors_ratio: Optional[float] = None
     strategy: Literal["fail-fast", "discard", "isolate"] = "fail-fast"
@@ -49,6 +61,7 @@ class FailedRecord(Generic[T]):
         error: The error message describing why the insertion failed.
         index: Optional index of this record in the original batch.
     """
+
     record: T
     error: str
     index: Optional[int] = None
@@ -64,6 +77,7 @@ class ValidationError:
         index: Optional index of this record in the original batch.
         path: Optional path to the field that failed validation.
     """
+
     record: Any
     error: str
     index: Optional[int] = None
@@ -79,6 +93,7 @@ class ValidationResult(Generic[T]):
         invalid: Records that failed validation with detailed error information.
         total: Total number of records processed.
     """
+
     valid: List[T]
     invalid: List[ValidationError]
     total: int
@@ -94,6 +109,7 @@ class InsertResult(Generic[T]):
         total: Total number of records processed.
         failed_records: Detailed information about failed records (if record isolation was used).
     """
+
     successful: int
     failed: int
     total: int
@@ -153,17 +169,28 @@ class OlapConfig(BaseModel):
 
     def model_post_init(self, __context):
         has_fields = bool(self.order_by_fields)
-        has_expr = isinstance(self.order_by_expression, str) and len(self.order_by_expression) > 0
+        has_expr = (
+            isinstance(self.order_by_expression, str)
+            and len(self.order_by_expression) > 0
+        )
         if has_fields and has_expr:
-            raise ValueError("Provide either order_by_fields or order_by_expression, not both.")
+            raise ValueError(
+                "Provide either order_by_fields or order_by_expression, not both."
+            )
 
         # Validate that non-MergeTree engines don't have unsupported clauses
         if self.engine:
-            from ..blocks import S3Engine, S3QueueEngine, BufferEngine, DistributedEngine
+            from ..blocks import (
+                S3Engine,
+                S3QueueEngine,
+                BufferEngine,
+                DistributedEngine,
+                IcebergS3Engine,
+            )
 
-            # S3QueueEngine, BufferEngine, and DistributedEngine don't support ORDER BY
+            # S3QueueEngine, BufferEngine, DistributedEngine, and IcebergS3Engine don't support ORDER BY
             # Note: S3Engine DOES support ORDER BY (unlike S3Queue)
-            engines_without_order_by = (S3QueueEngine, BufferEngine, DistributedEngine)
+            engines_without_order_by = (S3QueueEngine, BufferEngine, DistributedEngine, IcebergS3Engine)
             if isinstance(self.engine, engines_without_order_by):
                 engine_name = type(self.engine).__name__
 
@@ -174,7 +201,13 @@ class OlapConfig(BaseModel):
                     )
 
             # All non-MergeTree engines don't support SAMPLE BY
-            engines_without_sample_by = (S3Engine, S3QueueEngine, BufferEngine, DistributedEngine)
+            engines_without_sample_by = (
+                S3Engine,
+                S3QueueEngine,
+                BufferEngine,
+                DistributedEngine,
+                IcebergS3Engine,
+            )
             if isinstance(self.engine, engines_without_sample_by):
                 engine_name = type(self.engine).__name__
 
@@ -184,9 +217,14 @@ class OlapConfig(BaseModel):
                         f"Remove sample_by_expression from your configuration."
                     )
 
-            # Only S3QueueEngine, BufferEngine, and DistributedEngine don't support PARTITION BY
+            # Only S3QueueEngine, BufferEngine, DistributedEngine, and IcebergS3Engine don't support PARTITION BY
             # S3Engine DOES support PARTITION BY
-            engines_without_partition_by = (S3QueueEngine, BufferEngine, DistributedEngine)
+            engines_without_partition_by = (
+                S3QueueEngine,
+                BufferEngine,
+                DistributedEngine,
+                IcebergS3Engine,
+            )
             if isinstance(self.engine, engines_without_partition_by):
                 engine_name = type(self.engine).__name__
 
@@ -212,6 +250,7 @@ class OlapTable(TypedMooseResource, Generic[T]):
         model_type (type[T]): The Pydantic model associated with this table.
         kind: The kind of the table (e.g., "OlapTable").
     """
+
     config: OlapConfig
     kind: str = "OlapTable"
     _memoized_client: Optional[Client] = None
@@ -226,7 +265,15 @@ class OlapTable(TypedMooseResource, Generic[T]):
         self.config = config
         self.metadata = config.metadata
         self._column_list = _to_columns(self._t)
+
+        # Create Cols instance for backward compatibility
+        # This works for both BaseModel and MooseModel
         self._cols = Cols(self._column_list)
+
+        # NOTE: For MooseModel types, columns are also accessible directly
+        # on the model class (e.g., MyModel.field_name) thanks to the metaclass.
+        # This provides LSP autocomplete without requiring .cols access.
+
         registry_key = f"{name}_{config.version}" if config.version else name
         if registry_key in _tables:
             raise ValueError(
@@ -243,13 +290,19 @@ class OlapTable(TypedMooseResource, Generic[T]):
                 ReplicatedSummingMergeTreeEngine,
             )
 
-            if isinstance(config.engine, (
-                ReplicatedMergeTreeEngine,
-                ReplicatedReplacingMergeTreeEngine,
-                ReplicatedAggregatingMergeTreeEngine,
-                ReplicatedSummingMergeTreeEngine,
-            )):
-                if config.engine.keeper_path is not None or config.engine.replica_name is not None:
+            if isinstance(
+                config.engine,
+                (
+                    ReplicatedMergeTreeEngine,
+                    ReplicatedReplacingMergeTreeEngine,
+                    ReplicatedAggregatingMergeTreeEngine,
+                    ReplicatedSummingMergeTreeEngine,
+                ),
+            ):
+                if (
+                    config.engine.keeper_path is not None
+                    or config.engine.replica_name is not None
+                ):
                     raise ValueError(
                         f"OlapTable {name}: Cannot specify both 'cluster' and explicit replication params "
                         f"('keeper_path' or 'replica_name'). "
@@ -286,7 +339,7 @@ class OlapTable(TypedMooseResource, Generic[T]):
                 f"Table '{name}' uses deprecated ClickHouseEngines enum. "
                 f"Please migrate to engine configuration classes (e.g., {config.engine.value}Engine).",
                 DeprecationWarning,
-                stacklevel=2
+                stacklevel=2,
             )
 
     @property
@@ -323,6 +376,7 @@ class OlapTable(TypedMooseResource, Generic[T]):
             A 16-character hex hash of the configuration.
         """
         import hashlib
+
         config_string = (
             f"{clickhouse_config.host}:{clickhouse_config.port}:"
             f"{clickhouse_config.username}:{clickhouse_config.password}:"
@@ -361,7 +415,7 @@ class OlapTable(TypedMooseResource, Generic[T]):
 
         try:
             # Create new client with standard configuration
-            interface = 'https' if clickhouse_config.use_ssl else 'http'
+            interface = "https" if clickhouse_config.use_ssl else "http"
             client = get_client(
                 interface=interface,
                 host=clickhouse_config.host,
@@ -404,7 +458,7 @@ class OlapTable(TypedMooseResource, Generic[T]):
         Returns:
             Tuple of (validated_data, error_message). If validation succeeds,
             validated_data will be the validated record and error_message will be None.
-            If validation fails for any reason, validated_data will be None and error_message 
+            If validation fails for any reason, validated_data will be None and error_message
             will contain the error details.
         """
         try:
@@ -430,23 +484,19 @@ class OlapTable(TypedMooseResource, Generic[T]):
             if validated is not None:
                 valid.append(validated)
             else:
-                invalid.append(ValidationError(
-                    record=record,
-                    error=error or "Validation failed",
-                    index=i,
-                    path="root"
-                ))
+                invalid.append(
+                    ValidationError(
+                        record=record,
+                        error=error or "Validation failed",
+                        index=i,
+                        path="root",
+                    )
+                )
 
-        return ValidationResult(
-            valid=valid,
-            invalid=invalid,
-            total=len(data)
-        )
+        return ValidationResult(valid=valid, invalid=invalid, total=len(data))
 
     def _validate_insert_parameters(
-            self,
-            data: Union[List[T], Iterator[T]],
-            options: Optional[InsertOptions]
+        self, data: Union[List[T], Iterator[T]], options: Optional[InsertOptions]
     ) -> Tuple[bool, str, bool]:
         """Validate input parameters and strategy compatibility.
 
@@ -468,16 +518,18 @@ class OlapTable(TypedMooseResource, Generic[T]):
             )
 
         if is_stream and should_validate:
-            print("Warning: Validation is not supported with stream input. Validation will be skipped.")
+            print(
+                "Warning: Validation is not supported with stream input. Validation will be skipped."
+            )
 
         return is_stream, strategy, should_validate
 
     def _perform_pre_insertion_validation(
-            self,
-            data: List[T],
-            should_validate: bool,
-            strategy: str,
-            options: Optional[InsertOptions] = None
+        self,
+        data: List[T],
+        should_validate: bool,
+        strategy: str,
+        options: Optional[InsertOptions] = None,
     ) -> Tuple[List[T], List[ValidationError]]:
         """Perform pre-insertion validation for array data.
 
@@ -500,10 +552,7 @@ class OlapTable(TypedMooseResource, Generic[T]):
 
             if validation_errors:
                 self._handle_validation_errors(
-                    validation_errors,
-                    strategy,
-                    data,
-                    options
+                    validation_errors, strategy, data, options
                 )
 
                 if strategy == "discard":
@@ -522,11 +571,11 @@ class OlapTable(TypedMooseResource, Generic[T]):
             return data, []
 
     def _handle_validation_errors(
-            self,
-            validation_errors: List[ValidationError],
-            strategy: str,
-            data: List[T],
-            options: Optional[InsertOptions]
+        self,
+        validation_errors: List[ValidationError],
+        strategy: str,
+        data: List[T],
+        options: Optional[InsertOptions],
     ) -> None:
         """Handle validation errors based on the specified strategy.
 
@@ -542,17 +591,13 @@ class OlapTable(TypedMooseResource, Generic[T]):
                 f"Validation failed for record at index {first_error.index}: {first_error.error}"
             )
         elif strategy == "discard":
-            self._check_validation_thresholds(
-                validation_errors,
-                len(data),
-                options
-            )
+            self._check_validation_thresholds(validation_errors, len(data), options)
 
     def _check_validation_thresholds(
-            self,
-            validation_errors: List[ValidationError],
-            total_records: int,
-            options: Optional[InsertOptions]
+        self,
+        validation_errors: List[ValidationError],
+        total_records: int,
+        options: Optional[InsertOptions],
     ) -> None:
         """Check if validation errors exceed configured thresholds.
 
@@ -564,15 +609,21 @@ class OlapTable(TypedMooseResource, Generic[T]):
         validation_failed_count = len(validation_errors)
         validation_failed_ratio = validation_failed_count / total_records
 
-        if (options and options.allow_errors is not None and
-                validation_failed_count > options.allow_errors):
+        if (
+            options
+            and options.allow_errors is not None
+            and validation_failed_count > options.allow_errors
+        ):
             raise ValueError(
                 f"Too many validation failures: {validation_failed_count} > {options.allow_errors}. "
                 f"Errors: {', '.join(e.error for e in validation_errors)}"
             )
 
-        if (options and options.allow_errors_ratio is not None and
-                validation_failed_ratio > options.allow_errors_ratio):
+        if (
+            options
+            and options.allow_errors_ratio is not None
+            and validation_failed_ratio > options.allow_errors_ratio
+        ):
             raise ValueError(
                 f"Validation failure ratio too high: {validation_failed_ratio:.3f} > "
                 f"{options.allow_errors_ratio}. Errors: {', '.join(e.error for e in validation_errors)}"
@@ -583,36 +634,44 @@ class OlapTable(TypedMooseResource, Generic[T]):
 
     def _with_wait_end_settings(self, settings: dict) -> dict:
         """Add wait_end_of_query setting to ensure at least once delivery for INSERT operations.
-        
+
         Args:
             settings: Base settings dictionary
-            
+
         Returns:
             Settings dictionary with wait_end_of_query added
         """
         return {**settings, "wait_end_of_query": 1}
 
     def _prepare_insert_options(
-            self,
-            table_name: str,
-            data: Union[List[T], Iterator[T]],
-            validated_data: List[T],
-            is_stream: bool,
-            strategy: str,
-            options: Optional[InsertOptions]
+        self,
+        table_name: str,
+        data: Union[List[T], Iterator[T]],
+        validated_data: List[T],
+        is_stream: bool,
+        strategy: str,
+        options: Optional[InsertOptions],
     ) -> tuple[str, bytes, dict]:
         """Prepare insert options for JSONEachRow raw SQL insert, returning settings dict."""
         # Base settings for all inserts
         base_settings = {
             "date_time_input_format": "best_effort",
-            "max_insert_block_size": 100000 if is_stream else min(len(validated_data), 100000),
+            "max_insert_block_size": 100000
+            if is_stream
+            else min(len(validated_data), 100000),
             "max_block_size": 65536,
             "async_insert": 1 if len(validated_data) > 1000 else 0,
             "wait_for_async_insert": 1,
         }
         settings = self._with_wait_end_settings(base_settings)
-        if (strategy == "discard" and options and
-                (options.allow_errors is not None or options.allow_errors_ratio is not None)):
+        if (
+            strategy == "discard"
+            and options
+            and (
+                options.allow_errors is not None
+                or options.allow_errors_ratio is not None
+            )
+        ):
             if options.allow_errors is not None:
                 settings["input_format_allow_errors_num"] = options.allow_errors
             if options.allow_errors_ratio is not None:
@@ -625,7 +684,7 @@ class OlapTable(TypedMooseResource, Generic[T]):
             validated_data = [validated_data]
         dict_data = []
         for record in validated_data:
-            if hasattr(record, 'model_dump'):
+            if hasattr(record, "model_dump"):
                 record_dict = record.model_dump()
             else:
                 record_dict = record
@@ -637,13 +696,13 @@ class OlapTable(TypedMooseResource, Generic[T]):
         return quote_identifier(table_name), json_lines, settings
 
     def _create_success_result(
-            self,
-            data: Union[List[T], Iterator[T]],
-            validated_data: List[T],
-            validation_errors: List[ValidationError],
-            is_stream: bool,
-            should_validate: bool,
-            strategy: str
+        self,
+        data: Union[List[T], Iterator[T]],
+        validated_data: List[T],
+        validation_errors: List[ValidationError],
+        is_stream: bool,
+        should_validate: bool,
+        strategy: str,
     ) -> InsertResult[T]:
         """Create appropriate result based on input type.
 
@@ -659,11 +718,7 @@ class OlapTable(TypedMooseResource, Generic[T]):
             InsertResult with appropriate counts and error information.
         """
         if is_stream:
-            return InsertResult(
-                successful=-1,
-                failed=0,
-                total=-1
-            )
+            return InsertResult(successful=-1, failed=0, total=-1)
 
         inserted_count = len(validated_data)
         total_processed = len(data) if not is_stream else inserted_count
@@ -671,32 +726,30 @@ class OlapTable(TypedMooseResource, Generic[T]):
         result = InsertResult(
             successful=inserted_count,
             failed=len(validation_errors) if should_validate else 0,
-            total=total_processed
+            total=total_processed,
         )
 
-        if (should_validate and validation_errors and strategy == "discard"):
+        if should_validate and validation_errors and strategy == "discard":
             result.failed_records = [
                 FailedRecord(
                     record=ve.record,
                     error=f"Validation error: {ve.error}",
-                    index=ve.index
-                ) for ve in validation_errors
+                    index=ve.index,
+                )
+                for ve in validation_errors
             ]
 
         return result
 
     def _retry_individual_records(
-            self,
-            client: Client,
-            records: List[T],
-            options: InsertOptions
+        self, client: Client, records: List[T], options: InsertOptions
     ) -> InsertResult[T]:
         successful: List[T] = []
         failed: List[FailedRecord[T]] = []
         table_name = quote_identifier(self._generate_table_name())
         records_dict = []
         for record in records:
-            if hasattr(record, 'model_dump'):
+            if hasattr(record, "model_dump"):
                 record_dict = record.model_dump()
             else:
                 record_dict = record
@@ -705,51 +758,52 @@ class OlapTable(TypedMooseResource, Generic[T]):
 
         RETRY_BATCH_SIZE = 10
         for i in range(0, len(records_dict), RETRY_BATCH_SIZE):
-            batch = records_dict[i:i + RETRY_BATCH_SIZE]
+            batch = records_dict[i : i + RETRY_BATCH_SIZE]
             try:
                 sql = f"INSERT INTO {table_name} FORMAT JSONEachRow"
                 base_settings = {
                     "date_time_input_format": "best_effort",
                     "max_insert_block_size": RETRY_BATCH_SIZE,
                     "max_block_size": RETRY_BATCH_SIZE,
-                    "async_insert": 0
+                    "async_insert": 0,
                 }
                 settings = self._with_wait_end_settings(base_settings)
                 json_lines = self._to_json_each_row(batch)
                 client.command(sql, data=json_lines, settings=settings)
-                successful.extend(records[i:i + RETRY_BATCH_SIZE])
+                successful.extend(records[i : i + RETRY_BATCH_SIZE])
             except ClickHouseError as batch_error:
                 for j, record_dict in enumerate(batch):
                     try:
                         sql = f"INSERT INTO {table_name} FORMAT JSONEachRow"
-                        individual_settings = self._with_wait_end_settings({
-                            "date_time_input_format": "best_effort",
-                            "async_insert": 0
-                        })
+                        individual_settings = self._with_wait_end_settings(
+                            {"date_time_input_format": "best_effort", "async_insert": 0}
+                        )
                         json_line = self._to_json_each_row([record_dict])
-                        client.command(sql, data=json_line, settings=individual_settings)
+                        client.command(
+                            sql, data=json_line, settings=individual_settings
+                        )
                         successful.append(records[i + j])
                     except ClickHouseError as error:
-                        failed.append(FailedRecord(
-                            record=records[i + j],
-                            error=str(error),
-                            index=i + j
-                        ))
+                        failed.append(
+                            FailedRecord(
+                                record=records[i + j], error=str(error), index=i + j
+                            )
+                        )
         return InsertResult(
             successful=len(successful),
             failed=len(failed),
             total=len(records),
-            failed_records=failed if failed else None
+            failed_records=failed if failed else None,
         )
 
     def _insert_array_data(
-            self,
-            client: Client,
-            table_name: str,
-            data: List[T],
-            should_validate: bool,
-            strategy: str,
-            options: Optional[InsertOptions]
+        self,
+        client: Client,
+        table_name: str,
+        data: List[T],
+        should_validate: bool,
+        strategy: str,
+        options: Optional[InsertOptions],
     ) -> InsertResult[T]:
         """Insert array data into the table with validation and error handling.
 
@@ -765,19 +819,11 @@ class OlapTable(TypedMooseResource, Generic[T]):
             InsertResult with detailed success/failure information.
         """
         validated_data, validation_errors = self._perform_pre_insertion_validation(
-            data,
-            should_validate,
-            strategy,
-            options
+            data, should_validate, strategy, options
         )
         try:
             table_name, json_lines, settings = self._prepare_insert_options(
-                table_name,
-                data,
-                validated_data,
-                False,
-                strategy,
-                options
+                table_name, data, validated_data, False, strategy, options
             )
             sql = f"INSERT INTO {table_name} FORMAT JSONEachRow"
             client.command(sql, data=json_lines, settings=settings)
@@ -787,7 +833,7 @@ class OlapTable(TypedMooseResource, Generic[T]):
                 validation_errors,
                 False,
                 should_validate,
-                strategy
+                strategy,
             )
         except ClickHouseError as e:
             if strategy == "fail-fast":
@@ -798,16 +844,16 @@ class OlapTable(TypedMooseResource, Generic[T]):
                 return self._retry_individual_records(
                     client,
                     validated_data if not options.skip_validation_on_retry else data,
-                    options
+                    options,
                 )
 
     def _insert_stream(
-            self,
-            client: Client,
-            table_name: str,
-            data: Iterator[T],
-            strategy: str,
-            options: Optional[InsertOptions]
+        self,
+        client: Client,
+        table_name: str,
+        data: Iterator[T],
+        strategy: str,
+        options: Optional[InsertOptions],
     ) -> InsertResult[T]:
         """Insert data from an iterator into the table.
 
@@ -825,17 +871,12 @@ class OlapTable(TypedMooseResource, Generic[T]):
             total_inserted = 0
 
             _, _, settings = self._prepare_insert_options(
-                table_name,
-                data,
-                [],
-                True,
-                strategy,
-                options
+                table_name, data, [], True, strategy, options
             )
 
             for record in data:
                 # Convert record to dict using model_dump if available
-                if hasattr(record, 'model_dump'):
+                if hasattr(record, "model_dump"):
                     batch.append(record.model_dump())
                 else:
                     batch.append(record)
@@ -860,9 +901,7 @@ class OlapTable(TypedMooseResource, Generic[T]):
                 total_inserted += len(batch)
 
             return InsertResult(
-                successful=total_inserted,
-                failed=0,
-                total=total_inserted
+                successful=total_inserted, failed=0, total=total_inserted
             )
         except ClickHouseError as e:
             if strategy == "fail-fast":
@@ -870,9 +909,7 @@ class OlapTable(TypedMooseResource, Generic[T]):
             raise ValueError(f"Too many errors during stream insert: {e}")
 
     def insert(
-            self,
-            data: Union[List[T], Iterator[T]],
-            options: Optional[InsertOptions] = None
+        self, data: Union[List[T], Iterator[T]], options: Optional[InsertOptions] = None
     ) -> InsertResult[T]:
         """Insert data into the table with validation and error handling.
 
@@ -924,7 +961,9 @@ class OlapTable(TypedMooseResource, Generic[T]):
             ```
         """
         options = options or InsertOptions()
-        is_stream, strategy, should_validate = self._validate_insert_parameters(data, options)
+        is_stream, strategy, should_validate = self._validate_insert_parameters(
+            data, options
+        )
         if (is_stream and not data) or (not is_stream and not data):
             return InsertResult(successful=0, failed=0, total=0)
 
@@ -935,15 +974,12 @@ class OlapTable(TypedMooseResource, Generic[T]):
             return self._insert_stream(client, table_name, data, strategy, options)
         else:
             return self._insert_array_data(
-                client,
-                table_name,
-                data,
-                should_validate,
-                strategy,
-                options
+                client, table_name, data, should_validate, strategy, options
             )
 
-    def _map_to_clickhouse_record(self, record: dict, columns: Optional[List[Column]] = None) -> dict:
+    def _map_to_clickhouse_record(
+        self, record: dict, columns: Optional[List[Column]] = None
+    ) -> dict:
         """
         Recursively transforms a record to match ClickHouse's JSONEachRow requirements.
 
@@ -972,8 +1008,9 @@ class OlapTable(TypedMooseResource, Generic[T]):
 
             if is_array_nested_type(data_type):
                 # For Array(Nested(...)), wrap each item in its own array and recurse
-                if (isinstance(value, list) and
-                        (len(value) == 0 or isinstance(value[0], dict))):
+                if isinstance(value, list) and (
+                    len(value) == 0 or isinstance(value[0], dict)
+                ):
                     nested_columns = data_type.element_type.columns
                     result[col.name] = [
                         [self._map_to_clickhouse_record(item, nested_columns)]
@@ -982,7 +1019,9 @@ class OlapTable(TypedMooseResource, Generic[T]):
             elif is_nested_type(data_type):
                 # For Nested struct (not array), recurse into it
                 if value and isinstance(value, dict):
-                    result[col.name] = self._map_to_clickhouse_record(value, data_type.columns)
+                    result[col.name] = self._map_to_clickhouse_record(
+                        value, data_type.columns
+                    )
             # All other types: leave as is
 
         return result
