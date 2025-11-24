@@ -826,9 +826,29 @@ pub fn tables_to_typescript(tables: &[Table], life_cycle: Option<LifeCycle>) -> 
                 if let Some(key) = sharding_key {
                     writeln!(output, "    shardingKey: {:?},", key).unwrap();
                 }
-            if let Some(policy) = policy_name {
-                writeln!(output, "    policyName: {:?},", policy).unwrap();
+                if let Some(policy) = policy_name {
+                    writeln!(output, "    policyName: {:?},", policy).unwrap();
+                }
             }
+            crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine::IcebergS3 {
+                path,
+                format,
+                aws_access_key_id,
+                aws_secret_access_key,
+                compression,
+            } => {
+                writeln!(output, "    engine: ClickHouseEngines.IcebergS3,").unwrap();
+                writeln!(output, "    path: {:?},", path).unwrap();
+                writeln!(output, "    format: {:?},", format).unwrap();
+                if let Some(key_id) = aws_access_key_id {
+                    writeln!(output, "    awsAccessKeyId: {:?},", key_id).unwrap();
+                }
+                if let Some(secret) = aws_secret_access_key {
+                    writeln!(output, "    awsSecretAccessKey: {:?},", secret).unwrap();
+                }
+                if let Some(comp) = compression {
+                    writeln!(output, "    compression: {:?},", comp).unwrap();
+                }
             }
         }
         if let Some(version) = &table.version {
