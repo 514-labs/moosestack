@@ -32,6 +32,9 @@ pub struct ComponentNode {
     pub resource_uri: String,
     /// Current operational status
     pub status: ComponentStatus,
+    /// Source file path where the component is declared
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_file: Option<String>,
 }
 
 /// Connection between two components showing data flow
@@ -209,6 +212,11 @@ pub fn build_compressed_map(
             name: topic.name.clone(),
             resource_uri: build_resource_uri(ComponentType::Topic, key),
             status: ComponentStatus::Active,
+            source_file: topic
+                .metadata
+                .as_ref()
+                .and_then(|m| m.source.as_ref())
+                .map(|s| s.file.clone()),
         });
     }
 
@@ -220,6 +228,11 @@ pub fn build_compressed_map(
             name: table.name.clone(),
             resource_uri: build_resource_uri(ComponentType::Table, key),
             status: ComponentStatus::Active,
+            source_file: table
+                .metadata
+                .as_ref()
+                .and_then(|m| m.source.as_ref())
+                .map(|s| s.file.clone()),
         });
     }
 
@@ -231,6 +244,7 @@ pub fn build_compressed_map(
             name: view.name.clone(),
             resource_uri: build_resource_uri(ComponentType::View, key),
             status: ComponentStatus::Active,
+            source_file: None, // Views don't have metadata with source location
         });
 
         // Add connection from view to its target table
@@ -254,6 +268,11 @@ pub fn build_compressed_map(
             name: format!("{:?} {}", api.method, api.path.display()),
             resource_uri: build_resource_uri(ComponentType::ApiEndpoint, key),
             status: ComponentStatus::Active,
+            source_file: api
+                .metadata
+                .as_ref()
+                .and_then(|m| m.source.as_ref())
+                .map(|s| s.file.clone()),
         });
 
         // Add connections based on API type
@@ -284,6 +303,11 @@ pub fn build_compressed_map(
             name: func.name.clone(),
             resource_uri: build_resource_uri(ComponentType::Function, key),
             status: ComponentStatus::Active,
+            source_file: func
+                .metadata
+                .as_ref()
+                .and_then(|m| m.source.as_ref())
+                .map(|s| s.file.clone()),
         });
 
         // Add connections: source topic -> function -> target topic
@@ -311,6 +335,7 @@ pub fn build_compressed_map(
             name: sql.name.clone(),
             resource_uri: build_resource_uri(ComponentType::SqlResource, key),
             status: ComponentStatus::Active,
+            source_file: None, // SQL resources don't have metadata field with source
         });
 
         // Add connections based on lineage
@@ -340,6 +365,7 @@ pub fn build_compressed_map(
             name: workflow.name().to_string(),
             resource_uri: build_resource_uri(ComponentType::Workflow, key),
             status: ComponentStatus::Active,
+            source_file: None, // Workflows don't have metadata field with source
         });
     }
 
@@ -351,6 +377,7 @@ pub fn build_compressed_map(
             name: format!("{} -> {}", sync.source_topic_id, sync.target_table_id),
             resource_uri: build_resource_uri(ComponentType::TopicTableSync, key),
             status: ComponentStatus::Active,
+            source_file: None, // Sync processes are auto-generated, no source file
         });
 
         // Add connections: topic -> sync -> table
@@ -376,6 +403,7 @@ pub fn build_compressed_map(
             name: format!("{} -> {}", sync.source_topic_id, sync.target_topic_id),
             resource_uri: build_resource_uri(ComponentType::TopicTopicSync, key),
             status: ComponentStatus::Active,
+            source_file: None, // Sync processes are auto-generated, no source file
         });
 
         // Add connections: source topic -> sync -> target topic
@@ -471,6 +499,7 @@ mod tests {
             name: "Events".to_string(),
             resource_uri: build_resource_uri(ComponentType::Topic, "topic1"),
             status: ComponentStatus::Active,
+            source_file: Some("app/datamodels/Events.ts".to_string()),
         });
 
         assert_eq!(map.stats.total_components, 1);
@@ -499,5 +528,51 @@ mod tests {
         assert_eq!(ComponentType::Topic.uri_segment(), "topics");
         assert_eq!(ComponentType::ApiEndpoint.uri_segment(), "apis");
         assert_eq!(ComponentType::Function.uri_segment(), "functions");
+    }
+
+    #[test]
+    fn test_component_node_with_source_file() {
+        let component = ComponentNode {
+            id: "test_topic".to_string(),
+            component_type: ComponentType::Topic,
+            name: "TestTopic".to_string(),
+            resource_uri: build_resource_uri(ComponentType::Topic, "test_topic"),
+            status: ComponentStatus::Active,
+            source_file: Some("app/datamodels/TestTopic.ts".to_string()),
+        };
+
+        // Verify source_file is set
+        assert_eq!(
+            component.source_file,
+            Some("app/datamodels/TestTopic.ts".to_string())
+        );
+
+        // Test serialization/deserialization
+        let json = serde_json::to_string(&component).unwrap();
+        let deserialized: ComponentNode = serde_json::from_str(&json).unwrap();
+        assert_eq!(component, deserialized);
+    }
+
+    #[test]
+    fn test_component_node_without_source_file() {
+        let component = ComponentNode {
+            id: "test_view".to_string(),
+            component_type: ComponentType::View,
+            name: "TestView".to_string(),
+            resource_uri: build_resource_uri(ComponentType::View, "test_view"),
+            status: ComponentStatus::Active,
+            source_file: None,
+        };
+
+        // Verify source_file is None
+        assert_eq!(component.source_file, None);
+
+        // Test serialization - should skip the field
+        let json = serde_json::to_string(&component).unwrap();
+        assert!(!json.contains("source_file"));
+
+        // Test deserialization
+        let deserialized: ComponentNode = serde_json::from_str(&json).unwrap();
+        assert_eq!(component, deserialized);
     }
 }
