@@ -713,6 +713,19 @@ pub fn tables_to_python(tables: &[Table], life_cycle: Option<LifeCycle>) -> Stri
             OrderBy::SingleExpr(expr) => format!("order_by_expression={:?}", expr),
         };
 
+        // Generate primary_key_expression if there are primary key columns
+        let primary_key_cols: Vec<String> = table
+            .columns
+            .iter()
+            .filter_map(|c| {
+                if c.primary_key {
+                    Some(c.name.clone())
+                } else {
+                    None
+                }
+            })
+            .collect();
+
         let (base_name, version) = extract_version_from_table_name(&table.name);
         let table_name = if version == table.version {
             &base_name
@@ -728,6 +741,25 @@ pub fn tables_to_python(tables: &[Table], life_cycle: Option<LifeCycle>) -> Stri
         )
         .unwrap();
         writeln!(output, "    {order_by_spec},").unwrap();
+
+        // Emit primary_key_expression if there are primary keys
+        if !primary_key_cols.is_empty() {
+            if primary_key_cols.len() == 1 {
+                writeln!(
+                    output,
+                    "    primary_key_expression=\"{}\",",
+                    primary_key_cols[0]
+                )
+                .unwrap();
+            } else {
+                writeln!(
+                    output,
+                    "    primary_key_expression=\"({})\",",
+                    primary_key_cols.join(", ")
+                )
+                .unwrap();
+            }
+        }
         if let Some(partition_by) = &table.partition_by {
             writeln!(output, "    partition_by={:?},", partition_by).unwrap();
         }

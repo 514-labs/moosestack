@@ -633,6 +633,20 @@ pub fn tables_to_typescript(tables: &[Table], life_cycle: Option<LifeCycle>) -> 
             }
             OrderBy::SingleExpr(expr) => format!("orderByExpression: {:?}", expr),
         };
+
+        // Generate primaryKeyExpression if there are primary key columns
+        let primary_key_cols: Vec<String> = table
+            .columns
+            .iter()
+            .filter_map(|c| {
+                if c.primary_key {
+                    Some(c.name.clone())
+                } else {
+                    None
+                }
+            })
+            .collect();
+
         let var_name = sanitize_typescript_identifier(&table.name);
 
         let (base_name, version) = extract_version_from_table_name(&table.name);
@@ -648,6 +662,25 @@ pub fn tables_to_typescript(tables: &[Table], life_cycle: Option<LifeCycle>) -> 
         )
         .unwrap();
         writeln!(output, "    {order_by_spec},").unwrap();
+
+        // Emit primaryKeyExpression if there are primary keys
+        if !primary_key_cols.is_empty() {
+            if primary_key_cols.len() == 1 {
+                writeln!(
+                    output,
+                    "    primaryKeyExpression: \"{}\",",
+                    primary_key_cols[0]
+                )
+                .unwrap();
+            } else {
+                writeln!(
+                    output,
+                    "    primaryKeyExpression: \"({})\",",
+                    primary_key_cols.join(", ")
+                )
+                .unwrap();
+            }
+        }
         if let Some(partition_by) = &table.partition_by {
             writeln!(output, "    partitionBy: {:?},", partition_by).unwrap();
         }
