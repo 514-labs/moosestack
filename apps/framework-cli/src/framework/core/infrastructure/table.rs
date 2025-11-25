@@ -402,27 +402,18 @@ impl Table {
             .collect()
     }
 
-    pub fn order_by_with_fallback(&self) -> OrderBy {
-        // table (in infra map created by older version of moose) may leave order_by unspecified,
-        // but the implicit order_by from primary keys can be the same
-        // ONLY for the MergeTree family
-        // S3 supports ORDER BY but does not auto set ORDER BY from PRIMARY KEY
-        // Buffer, S3Queue, and Distributed don't support ORDER BY
-        if self.order_by.is_empty() && self.engine.is_merge_tree_family() {
-            OrderBy::Fields(
-                self.primary_key_columns()
-                    .iter()
-                    .map(|c| c.to_string())
-                    .collect(),
-            )
-        } else {
-            self.order_by.clone()
-        }
-    }
-
     pub fn order_by_equals(&self, target: &Table) -> bool {
         self.order_by == target.order_by
-            || self.order_by_with_fallback() == target.order_by_with_fallback()
+            // target may leave order_by unspecified,
+            // but the implicit order_by from primary keys can be the same
+            // ONLY for engines that support ORDER BY (MergeTree family and S3)
+            // Buffer, S3Queue, and Distributed don't support ORDER BY
+            || (target.order_by.is_empty()
+                && target.engine.supports_order_by()
+                && matches!(
+                    &self.order_by,
+                    OrderBy::Fields(v) if v.iter().map(String::as_str).collect::<Vec<_>>() == target.primary_key_columns()
+                ))
     }
 
     pub fn to_proto(&self) -> ProtoTable {
@@ -1720,145 +1711,5 @@ mod tests {
             ..table1.clone()
         };
         assert_eq!(table7.id(DEFAULT_DATABASE_NAME), "local_users_1_0");
-    }
-
-    #[test]
-    fn test_order_by_equals_with_implicit_primary_key() {
-        use crate::framework::core::infrastructure_map::PrimitiveTypes;
-
-        // Test case: actual table has empty order_by (implicit primary key),
-        // target table has explicit order_by that matches the primary key.
-        // This should be considered equal for MergeTree engines.
-
-        let columns = vec![
-            Column {
-                name: "id".to_string(),
-                data_type: ColumnType::String,
-                required: true,
-                unique: false,
-                primary_key: true,
-                default: None,
-                annotations: vec![],
-                comment: None,
-                ttl: None,
-            },
-            Column {
-                name: "name".to_string(),
-                data_type: ColumnType::String,
-                required: true,
-                unique: false,
-                primary_key: false,
-                default: None,
-                annotations: vec![],
-                comment: None,
-                ttl: None,
-            },
-        ];
-
-        // Actual table from database: empty order_by (implicitly uses primary key)
-        let actual_table = Table {
-            name: "test_table".to_string(),
-            columns: columns.clone(),
-            order_by: OrderBy::Fields(vec![]), // Empty - will fall back to primary key
-            partition_by: None,
-            sample_by: None,
-            engine: ClickhouseEngine::MergeTree,
-            version: None,
-            source_primitive: PrimitiveSignature {
-                name: "test".to_string(),
-                primitive_type: PrimitiveTypes::DataModel,
-            },
-            metadata: None,
-            life_cycle: LifeCycle::FullyManaged,
-            engine_params_hash: None,
-            table_settings: None,
-            indexes: vec![],
-            database: None,
-            table_ttl_setting: None,
-            cluster_name: None,
-        };
-
-        // Target table from code: explicit order_by that matches primary key
-        let target_table = Table {
-            name: "test_table".to_string(),
-            columns: columns.clone(),
-            order_by: OrderBy::Fields(vec!["id".to_string()]), // Explicit order_by
-            partition_by: None,
-            sample_by: None,
-            engine: ClickhouseEngine::MergeTree,
-            version: None,
-            source_primitive: PrimitiveSignature {
-                name: "test".to_string(),
-                primitive_type: PrimitiveTypes::DataModel,
-            },
-            metadata: None,
-            life_cycle: LifeCycle::FullyManaged,
-            engine_params_hash: None,
-            table_settings: None,
-            indexes: vec![],
-            database: None,
-            table_ttl_setting: None,
-            cluster_name: None,
-        };
-
-        // These should be equal because:
-        // - actual_table has empty order_by but MergeTree engine
-        // - actual_table.order_by_with_fallback() returns ["id"] (from primary key)
-        // - target_table.order_by is ["id"]
-        // - target_table.order_by_with_fallback() returns ["id"]
-        // - ["id"] == ["id"]
-        assert!(
-            actual_table.order_by_equals(&target_table),
-            "actual table with empty order_by should equal target with explicit primary key order_by"
-        );
-
-        // Reverse direction should also work
-        assert!(
-            target_table.order_by_equals(&actual_table),
-            "target table with explicit primary key order_by should equal actual with empty order_by"
-        );
-
-        // Test with different order_by - should NOT be equal
-        let different_target = Table {
-            order_by: OrderBy::Fields(vec!["name".to_string()]),
-            ..target_table.clone()
-        };
-        assert!(
-            !actual_table.order_by_equals(&different_target),
-            "tables with different order_by should not be equal"
-        );
-
-        // Test with non-MergeTree engine (S3) - empty order_by should stay empty
-        let actual_s3 = Table {
-            engine: ClickhouseEngine::S3 {
-                path: "s3://bucket/path".to_string(),
-                format: "Parquet".to_string(),
-                aws_access_key_id: None,
-                aws_secret_access_key: None,
-                compression: None,
-                partition_strategy: None,
-                partition_columns_in_data_file: None,
-            },
-            ..actual_table.clone()
-        };
-
-        let target_s3 = Table {
-            engine: ClickhouseEngine::S3 {
-                path: "s3://bucket/path".to_string(),
-                format: "Parquet".to_string(),
-                aws_access_key_id: None,
-                aws_secret_access_key: None,
-                compression: None,
-                partition_strategy: None,
-                partition_columns_in_data_file: None,
-            },
-            ..target_table.clone()
-        };
-
-        // For S3 engine, empty order_by doesn't fall back to primary key
-        assert!(
-            !actual_s3.order_by_equals(&target_s3),
-            "S3 engine should not infer order_by from primary key"
-        );
     }
 }

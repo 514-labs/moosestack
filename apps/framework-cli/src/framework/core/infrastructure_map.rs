@@ -1826,7 +1826,34 @@ impl InfrastructureMap {
                             before: normalized_table.partition_by.clone(),
                             after: normalized_target.partition_by.clone(),
                         };
-                        let order_by_changed = !table.order_by_equals(target_table);
+
+                        // Compute ORDER BY changes
+                        fn order_by_from_primary_key(target_table: &Table) -> Vec<String> {
+                            target_table
+                                .columns
+                                .iter()
+                                .filter_map(|c| {
+                                    if c.primary_key {
+                                        Some(c.name.clone())
+                                    } else {
+                                        None
+                                    }
+                                })
+                                .collect()
+                        }
+
+                        let order_by_changed = table.order_by != target_table.order_by
+                            // target may leave order_by unspecified,
+                            // but the implicit order_by from primary keys can be the same
+                            // ONLY for engines that support ORDER BY (MergeTree family and S3)
+                            // Buffer, S3Queue, and Distributed don't support ORDER BY
+                            && !(target_table.order_by.is_empty()
+                                && target_table.engine.supports_order_by()
+                                && matches!(
+                                    &table.order_by,
+                                    OrderBy::Fields(v)
+                                        if *v == order_by_from_primary_key(target_table)
+                                ));
 
                         // Detect engine change (e.g., MergeTree -> ReplacingMergeTree)
                         let engine_changed = table.engine != target_table.engine;
@@ -2103,7 +2130,32 @@ impl InfrastructureMap {
             }
         }
 
-        let order_by_changed = !table.order_by_equals(target_table);
+        fn order_by_from_primary_key(target_table: &Table) -> Vec<String> {
+            target_table
+                .columns
+                .iter()
+                .filter_map(|c| {
+                    if c.primary_key {
+                        Some(c.name.clone())
+                    } else {
+                        None
+                    }
+                })
+                .collect()
+        }
+
+        let order_by_changed = table.order_by != target_table.order_by
+            // target may leave order_by unspecified,
+            // but the implicit order_by from primary keys can be the same
+            // ONLY for engines that support ORDER BY (MergeTree family and S3)
+            // Buffer, S3Queue, and Distributed don't support ORDER BY
+            && !(target_table.order_by.is_empty()
+                && target_table.engine.supports_order_by()
+                && matches!(
+                    &table.order_by,
+                    crate::framework::core::infrastructure::table::OrderBy::Fields(v)
+                        if *v == order_by_from_primary_key(target_table)
+                ));
 
         let order_by_change = if order_by_changed {
             OrderByChange {
@@ -2526,7 +2578,7 @@ impl InfrastructureMap {
     /// This is needed because older CLI versions didn't persist order_by when it was
     /// derived from primary key columns.
     pub fn normalize(mut self) -> Self {
-        use crate::framework::core::infrastructure::table::ColumnType;
+        use crate::framework::core::infrastructure::table::{ColumnType, OrderBy};
 
         self.tables = self
             .tables
@@ -2535,8 +2587,19 @@ impl InfrastructureMap {
                 // Fall back to primary key columns if order_by is empty for MergeTree engines
                 // This ensures backward compatibility when order_by isn't explicitly set
                 // We only do this for MergeTree family to avoid breaking S3 tables
-                if table.order_by.is_empty() {
-                    table.order_by = table.order_by_with_fallback();
+                if table.order_by.is_empty() && table.engine.is_merge_tree_family() {
+                    let primary_key_columns: Vec<String> = table
+                        .columns
+                        .iter()
+                        .filter_map(|c| {
+                            if c.primary_key {
+                                Some(c.name.clone())
+                            } else {
+                                None
+                            }
+                        })
+                        .collect();
+                    table.order_by = OrderBy::Fields(primary_key_columns);
                 }
 
                 // Normalize columns: ClickHouse doesn't support Nullable(Array(...))
