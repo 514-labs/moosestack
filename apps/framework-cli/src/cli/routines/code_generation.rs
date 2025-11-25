@@ -7,7 +7,6 @@ use crate::framework::core::partial_infrastructure_map::LifeCycle;
 use crate::framework::languages::SupportedLanguages;
 use crate::framework::python::generate::tables_to_python;
 use crate::framework::typescript::generate::tables_to_typescript;
-use crate::infrastructure::olap::clickhouse::config::parse_clickhouse_connection_string;
 use crate::infrastructure::olap::clickhouse::{create_client, ConfiguredDBClient};
 use crate::infrastructure::olap::OlapOperations;
 use crate::project::Project;
@@ -59,8 +58,10 @@ fn should_be_externally_managed(table: &Table) -> bool {
 pub async fn create_client_and_db(
     remote_url: &str,
 ) -> Result<(ConfiguredDBClient, String), RoutineFailure> {
-    // Parse the connection string using the standard parser
-    let config = parse_clickhouse_connection_string(remote_url).map_err(|e| {
+    use crate::infrastructure::olap::clickhouse::config::parse_clickhouse_connection_string_with_metadata;
+
+    // Parse the connection string with metadata
+    let parsed = parse_clickhouse_connection_string_with_metadata(remote_url).map_err(|e| {
         RoutineFailure::new(
             Message::new(
                 "Invalid URL".to_string(),
@@ -70,7 +71,72 @@ pub async fn create_client_and_db(
         )
     })?;
 
-    let db_name = config.db_name.clone();
+    // Show user-facing message if native protocol was converted
+    if parsed.was_native_protocol {
+        debug!("Only HTTP(s) supported. Transforming native protocol connection string.");
+        show_message!(
+            MessageType::Highlight,
+            Message {
+                action: "Protocol".to_string(),
+                details: format!(
+                    "native protocol detected. Converting to HTTP(s): {}",
+                    parsed.display_url
+                ),
+            }
+        );
+    }
+
+    let mut config = parsed.config;
+
+    // Create client for potential database detection
+    let client = create_client(config.clone());
+
+    // If database is "default" but wasn't explicitly specified in URL, query the server
+    let db_name = if config.db_name == "default" {
+        use reqwest::Url;
+        let url = Url::parse(remote_url).map_err(|e| {
+            RoutineFailure::error(Message::new(
+                "Invalid URL".to_string(),
+                format!("Failed to parse remote_url '{remote_url}': {e}"),
+            ))
+        })?;
+
+        // Check if database was explicitly in the URL
+        let url_db = url
+            .query_pairs()
+            .find(|(k, _)| k == "database")
+            .map(|(_, v)| v.to_string());
+
+        let path_db = if !url.path().is_empty() && url.path() != "/" && url.path() != "//" {
+            Some(url.path().trim_start_matches('/').to_string())
+        } else {
+            None
+        };
+
+        if url_db.is_none() && path_db.is_none() {
+            // No database was specified in URL, query the server
+            client
+                .client
+                .query("select database()")
+                .fetch_one::<String>()
+                .await
+                .map_err(|e| {
+                    RoutineFailure::new(
+                        Message::new("Failure".to_string(), "fetching database".to_string()),
+                        e,
+                    )
+                })?
+        } else {
+            config.db_name.clone()
+        }
+    } else {
+        config.db_name.clone()
+    };
+
+    // Update config with detected database name if it changed
+    if db_name != config.db_name {
+        config.db_name = db_name.clone();
+    }
 
     Ok((create_client(config), db_name))
 }
