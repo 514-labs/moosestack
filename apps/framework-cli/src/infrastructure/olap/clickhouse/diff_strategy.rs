@@ -393,6 +393,16 @@ impl ClickHouseTableDiffStrategy {
                 // Skip population in production (user must handle manually)
                 // Only populate in dev for new MVs with non-S3Queue sources
                 if is_new && !has_s3queue_source && !is_production {
+                    // If the target table uses the Null engine, skip truncation because there's nothing to truncate
+                    let target_is_null_engine = tables.values().any(|table| {
+                        matches!(table.engine, ClickhouseEngine::Null)
+                            && Self::table_matches_mv_target(
+                                table,
+                                &mv_stmt.target_table,
+                                &mv_stmt.target_database,
+                            )
+                    });
+
                     log::info!(
                         "Adding population operation for materialized view '{}'",
                         sql_resource.name
@@ -408,13 +418,37 @@ impl ClickHouseTableDiffStrategy {
                             .into_iter()
                             .map(|t| t.qualified_name())
                             .collect(),
-                        should_truncate: true,
+                        should_truncate: !target_is_null_engine,
                     });
                 }
 
                 // Only check the first MV statement
                 break;
             }
+        }
+    }
+
+    /// Helper: does the given table correspond to the MV target (by name and optional database)?
+    fn table_matches_mv_target(
+        table: &Table,
+        target_table: &str,
+        target_database: &Option<String>,
+    ) -> bool {
+        if table.name == target_table {
+            return true;
+        }
+
+        match (&table.database, target_database) {
+            (Some(table_db), Some(target_db)) => {
+                table_db == target_db && table.name == target_table
+                    || format!("{table_db}.{}", table.name) == format!("{target_db}.{target_table}")
+            }
+            (Some(table_db), None) => table_db.is_empty() && table.name == target_table,
+            (None, Some(target_db)) => {
+                format!("{target_db}.{target_table}") == table.name
+                    || format!("{target_db}.{}", table.name) == target_table
+            }
+            _ => false,
         }
     }
 }
