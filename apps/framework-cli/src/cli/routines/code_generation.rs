@@ -7,15 +7,15 @@ use crate::framework::core::partial_infrastructure_map::LifeCycle;
 use crate::framework::languages::SupportedLanguages;
 use crate::framework::python::generate::tables_to_python;
 use crate::framework::typescript::generate::tables_to_typescript;
-use crate::infrastructure::olap::clickhouse::ConfiguredDBClient;
+use crate::infrastructure::olap::clickhouse::{create_client, ConfiguredDBClient};
 use crate::infrastructure::olap::OlapOperations;
 use crate::project::Project;
 use crate::utilities::constants::{
-    APP_DIR, PYTHON_EXTERNAL_FILE, PYTHON_MAIN_FILE, TYPESCRIPT_EXTERNAL_FILE, TYPESCRIPT_MAIN_FILE,
+    PYTHON_EXTERNAL_FILE, PYTHON_MAIN_FILE, TYPESCRIPT_EXTERNAL_FILE, TYPESCRIPT_MAIN_FILE,
 };
 use crate::utilities::git::create_code_generation_commit;
+use clickhouse::Client;
 use log::debug;
-use reqwest::Url;
 use std::borrow::Cow;
 use std::env;
 use std::io::Write;
@@ -59,90 +59,51 @@ fn should_be_externally_managed(table: &Table) -> bool {
 pub async fn create_client_and_db(
     remote_url: &str,
 ) -> Result<(ConfiguredDBClient, String), RoutineFailure> {
-    let mut url = Url::parse(remote_url).map_err(|e| {
-        RoutineFailure::error(Message::new(
-            "Invalid URL".to_string(),
-            format!("Failed to parse remote_url '{remote_url}': {e}"),
-        ))
+    use crate::infrastructure::olap::clickhouse::config::parse_clickhouse_connection_string_with_metadata;
+
+    // Parse the connection string with metadata
+    let parsed = parse_clickhouse_connection_string_with_metadata(remote_url).map_err(|e| {
+        RoutineFailure::new(
+            Message::new(
+                "Invalid URL".to_string(),
+                format!("Failed to parse ClickHouse URL '{remote_url}'"),
+            ),
+            e,
+        )
     })?;
 
-    if url.scheme() == "clickhouse" {
+    // Show user-facing message if native protocol was converted
+    if parsed.was_native_protocol {
         debug!("Only HTTP(s) supported. Transforming native protocol connection string.");
-        let is_secure = match (url.host_str(), url.port()) {
-            (_, Some(9000)) => false,
-            (_, Some(9440)) => true,
-            (Some(host), _) if host == "localhost" || host == "127.0.0.1" => false,
-            _ => true,
-        };
-        let (new_port, new_scheme) = if is_secure {
-            (8443, "https")
-        } else {
-            (8123, "http")
-        };
-        url = Url::parse(&remote_url.replacen("clickhouse", new_scheme, 1)).unwrap();
-        url.set_port(Some(new_port)).unwrap();
-
-        let path_segments = url.path().split('/').collect::<Vec<&str>>();
-        if path_segments.len() == 2 && path_segments[0].is_empty() {
-            let database = path_segments[1].to_string();
-            url.set_path("");
-            url.query_pairs_mut().append_pair("database", &database);
-        };
-
-        let display_url = if url.password().is_some() {
-            let mut cloned = url.clone();
-            cloned.set_password(Some("******")).unwrap();
-            Cow::Owned(cloned)
-        } else {
-            Cow::Borrowed(&url)
-        };
         show_message!(
             MessageType::Highlight,
             Message {
                 action: "Protocol".to_string(),
-                details: format!("native protocol detected. Converting to HTTP(s): {display_url}"),
+                details: format!(
+                    "native protocol detected. Converting to HTTP(s): {}",
+                    parsed.display_url
+                ),
             }
         );
     }
 
-    let mut client = clickhouse::Client::default().with_url(remote_url);
-    let url_username = url.username();
-    let url_username = if !url_username.is_empty() {
-        url_username.to_string()
-    } else {
-        match url.query_pairs().find(|(key, _)| key == "user") {
-            None => String::new(),
-            Some((_, v)) => v.to_string(),
-        }
-    };
-    if !url_username.is_empty() {
-        client = client
-            .with_user(percent_encoding::percent_decode_str(&url_username).decode_utf8_lossy())
-    }
-    if let Some(password) = url.password() {
-        client = client
-            .with_password(percent_encoding::percent_decode_str(password).decode_utf8_lossy());
-    }
+    let mut config = parsed.config;
 
-    let url_db = url
-        .query_pairs()
-        .filter_map(|(k, v)| {
-            if k == "database" {
-                Some(v.to_string())
-            } else {
-                None
-            }
-        })
-        .last();
+    // If database wasn't explicitly specified in URL, query the server for the current database
+    let db_name = if !parsed.database_was_explicit {
+        // create_client(config) calls `with_database(config.database)` when we're not sure which DB is the real default
+        let client = Client::default()
+            .with_url(format!(
+                "{}://{}:{}",
+                if config.use_ssl { "https" } else { "http" },
+                config.host,
+                config.host_port
+            ))
+            .with_user(config.user.to_string())
+            .with_password(config.password.to_string());
 
-    let client = ConfiguredDBClient {
-        client,
-        config: Default::default(),
-    };
-
-    let db = match url_db {
-        None => client
-            .client
+        // No database was specified in URL, query the server
+        client
             .query("select database()")
             .fetch_one::<String>()
             .await
@@ -151,25 +112,32 @@ pub async fn create_client_and_db(
                     Message::new("Failure".to_string(), "fetching database".to_string()),
                     e,
                 )
-            })?,
-        Some(db) => db,
+            })?
+    } else {
+        config.db_name.clone()
     };
 
-    Ok((client, db))
+    // Update config with detected database name if it changed
+    if db_name != config.db_name {
+        config.db_name = db_name.clone();
+    }
+
+    Ok((create_client(config), db_name))
 }
 
 fn write_external_models_file(
     language: SupportedLanguages,
     tables: &[Table],
     file_path: Option<&str>,
+    source_dir: &str,
 ) -> Result<(), RoutineFailure> {
     let file = match (language, file_path) {
         (_, Some(path)) => Cow::Borrowed(path),
         (SupportedLanguages::Typescript, None) => {
-            Cow::Owned(format!("{APP_DIR}/{TYPESCRIPT_EXTERNAL_FILE}"))
+            Cow::Owned(format!("{source_dir}/{TYPESCRIPT_EXTERNAL_FILE}"))
         }
         (SupportedLanguages::Python, None) => {
-            Cow::Owned(format!("{APP_DIR}/{PYTHON_EXTERNAL_FILE}"))
+            Cow::Owned(format!("{source_dir}/{PYTHON_EXTERNAL_FILE}"))
         }
     };
     match language {
@@ -294,7 +262,7 @@ pub async fn db_to_dmv2(remote_url: &str, dir_path: &Path) -> Result<(), Routine
                     .create(true)
                     .write(true)
                     .truncate(true)
-                    .open(format!("{APP_DIR}/{TYPESCRIPT_EXTERNAL_FILE}"))
+                    .open(format!("{}/{TYPESCRIPT_EXTERNAL_FILE}", project.source_dir))
                     .map_err(|e| {
                         RoutineFailure::new(
                             Message::new(
@@ -313,7 +281,7 @@ pub async fn db_to_dmv2(remote_url: &str, dir_path: &Path) -> Result<(), Routine
                         e,
                     )
                 })?;
-                let main_path = format!("{APP_DIR}/{TYPESCRIPT_MAIN_FILE}");
+                let main_path = format!("{}/{TYPESCRIPT_MAIN_FILE}", project.source_dir);
                 let import_stmt = "import \"./externalModels\";";
                 let needs_import = match std::fs::read_to_string(&main_path) {
                     Ok(contents) => !contents.contains(import_stmt),
@@ -348,7 +316,7 @@ pub async fn db_to_dmv2(remote_url: &str, dir_path: &Path) -> Result<(), Routine
                 let table_definitions = tables_to_typescript(&managed, None);
                 let mut file = std::fs::OpenOptions::new()
                     .append(true)
-                    .open(format!("{APP_DIR}/{TYPESCRIPT_MAIN_FILE}"))
+                    .open(format!("{}/{TYPESCRIPT_MAIN_FILE}", project.source_dir))
                     .map_err(|e| {
                         RoutineFailure::new(
                             Message::new(
@@ -378,7 +346,7 @@ pub async fn db_to_dmv2(remote_url: &str, dir_path: &Path) -> Result<(), Routine
                     .create(true)
                     .write(true)
                     .truncate(true)
-                    .open(format!("{APP_DIR}/{PYTHON_EXTERNAL_FILE}"))
+                    .open(format!("{}/{PYTHON_EXTERNAL_FILE}", project.source_dir))
                     .map_err(|e| {
                         RoutineFailure::new(
                             Message::new(
@@ -397,7 +365,7 @@ pub async fn db_to_dmv2(remote_url: &str, dir_path: &Path) -> Result<(), Routine
                         e,
                     )
                 })?;
-                let main_path = format!("{APP_DIR}/{PYTHON_MAIN_FILE}");
+                let main_path = format!("{}/{PYTHON_MAIN_FILE}", project.source_dir);
                 let import_stmt = "from .external_models import *";
                 let needs_import = match std::fs::read_to_string(&main_path) {
                     Ok(contents) => !contents.contains(import_stmt),
@@ -431,7 +399,7 @@ pub async fn db_to_dmv2(remote_url: &str, dir_path: &Path) -> Result<(), Routine
                 let table_definitions = tables_to_python(&managed, None);
                 let mut file = std::fs::OpenOptions::new()
                     .append(true)
-                    .open(format!("{APP_DIR}/{PYTHON_MAIN_FILE}"))
+                    .open(format!("{}/{PYTHON_MAIN_FILE}", project.source_dir))
                     .map_err(|e| {
                         RoutineFailure::new(
                             Message::new(
@@ -536,7 +504,12 @@ pub async fn db_pull(
     // Keep a stable ordering for deterministic output
     tables_for_external_file.sort_by(|a, b| a.name.cmp(&b.name));
 
-    write_external_models_file(project.language, &tables_for_external_file, file_path)?;
+    write_external_models_file(
+        project.language,
+        &tables_for_external_file,
+        file_path,
+        &project.source_dir,
+    )?;
 
     match create_code_generation_commit(
         ".".as_ref(),

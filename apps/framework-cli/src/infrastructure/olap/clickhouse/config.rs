@@ -64,15 +64,46 @@ impl Default for ClickHouseConfig {
     }
 }
 
+/// Result of parsing a ClickHouse connection string, including conversion metadata
+#[derive(Debug, Clone)]
+pub struct ParsedConnectionString {
+    pub config: ClickHouseConfig,
+    pub was_native_protocol: bool,
+    pub display_url: String,
+    pub database_was_explicit: bool,
+}
+
 /// Parses a ClickHouse connection string (URL) into a ClickHouseConfig
 ///
 /// Supports multiple URL schemes (https, clickhouse) and extracts database name from path or query parameter.
 /// Automatically determines SSL usage based on scheme and port.
+/// Percent-decodes username and password for proper handling of special characters.
 pub fn parse_clickhouse_connection_string(conn_str: &str) -> anyhow::Result<ClickHouseConfig> {
-    let url = Url::parse(conn_str)?;
+    parse_clickhouse_connection_string_with_metadata(conn_str).map(|parsed| parsed.config)
+}
 
-    let user = url.username().to_string();
-    let password = url.password().unwrap_or("").to_string();
+/// Parses a ClickHouse connection string with metadata about conversions performed
+///
+/// Returns additional information useful for displaying user-facing messages,
+/// such as whether native protocol conversion occurred and a display-safe URL.
+pub fn parse_clickhouse_connection_string_with_metadata(
+    conn_str: &str,
+) -> anyhow::Result<ParsedConnectionString> {
+    let url = Url::parse(conn_str)?;
+    let was_native_protocol = url.scheme() == "clickhouse";
+
+    // Percent-decode username and password to handle special characters
+    let user = percent_encoding::percent_decode_str(url.username())
+        .decode_utf8_lossy()
+        .to_string();
+    let password = url
+        .password()
+        .map(|p| {
+            percent_encoding::percent_decode_str(p)
+                .decode_utf8_lossy()
+                .to_string()
+        })
+        .unwrap_or_default();
     let host = url.host_str().unwrap_or("localhost").to_string();
 
     let mut http_port: Option<u16> = None;
@@ -99,23 +130,39 @@ pub fn parse_clickhouse_connection_string(conn_str: &str) -> anyhow::Result<Clic
     let http_port = http_port.unwrap_or(if use_ssl { 8443 } else { 8123 }) as i32;
     let native_port = native_port.unwrap_or(if use_ssl { 9440 } else { 9000 }) as i32;
 
-    // Get database name from path or query parameter, default to "default"
-    let db_name = if !url.path().is_empty() && url.path() != "/" && url.path() != "//" {
-        url.path().trim_start_matches('/').to_string()
-    } else {
+    // Check if username is in query parameters (with percent-decoding)
+    let user = if user.is_empty() {
         url.query_pairs()
-            .find(|(k, _)| k == "database")
+            .find(|(key, _)| key == "user")
             .map(|(_, v)| v.to_string())
-            .filter(|s| !s.is_empty())
-            .unwrap_or_else(|| "default".to_string())
+            .unwrap_or_default()
+    } else {
+        user
     };
 
+    // Get database name from path or query parameter, default to "default"
+    // Also track whether database was explicitly specified
+    let (db_name, database_was_explicit) =
+        if !url.path().is_empty() && url.path() != "/" && url.path() != "//" {
+            (url.path().trim_start_matches('/').to_string(), true)
+        } else {
+            match url
+                .query_pairs()
+                .find(|(k, _)| k == "database")
+                .map(|(_, v)| v.to_string())
+                .filter(|s| !s.is_empty())
+            {
+                Some(db) => (db, true),
+                None => ("default".to_string(), false),
+            }
+        };
+
     let config = ClickHouseConfig {
-        db_name,
-        user,
-        password,
+        db_name: db_name.clone(),
+        user: user.clone(),
+        password: password.clone(),
         use_ssl,
-        host,
+        host: host.clone(),
         host_port: http_port,
         native_port,
         host_data_path: None,
@@ -123,7 +170,26 @@ pub fn parse_clickhouse_connection_string(conn_str: &str) -> anyhow::Result<Clic
         clusters: None,
     };
 
-    Ok(config)
+    // Create display URL (HTTP(S) protocol with masked password)
+    let protocol = if use_ssl { "https" } else { "http" };
+    let display_url = if password.is_empty() {
+        format!(
+            "{}://{}@{}:{}/?database={}",
+            protocol, user, host, http_port, db_name
+        )
+    } else {
+        format!(
+            "{}://{}:******@{}:{}/?database={}",
+            protocol, user, host, http_port, db_name
+        )
+    };
+
+    Ok(ParsedConnectionString {
+        config,
+        was_native_protocol,
+        display_url,
+        database_was_explicit,
+    })
 }
 
 #[cfg(test)]

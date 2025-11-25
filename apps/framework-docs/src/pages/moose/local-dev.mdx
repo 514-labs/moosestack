@@ -272,7 +272,7 @@ export REMOTE_CLICKHOUSE_URL="https://username:password@host:8443/?database=defa
 ```toml copy
 # moose.config.toml
 [http_server_config]
-on_first_start_script = "moose db pull --connection-string $REMOTE_CLICKHOUSE_URL"
+on_first_start_script = "moose db pull --clickhouse-url $REMOTE_CLICKHOUSE_URL"
 ```
 
 See the full guide: [/moose/olap/db-pull](/moose/olap/db-pull)
