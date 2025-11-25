@@ -322,6 +322,18 @@ pub enum ClickhouseEngine {
         // Optional policy name
         policy_name: Option<String>,
     },
+    IcebergS3 {
+        // S3 path to Iceberg table root
+        path: String,
+        // Data format (Parquet or ORC)
+        format: String,
+        // AWS access key ID (optional, None for NOSIGN)
+        aws_access_key_id: Option<String>,
+        // AWS secret access key (optional)
+        aws_secret_access_key: Option<String>,
+        // Compression type (optional: gzip, zstd, etc.)
+        compression: Option<String>,
+    },
 }
 
 // The implementation is not symetric between TryFrom and Into so we
@@ -410,6 +422,19 @@ impl Into<String> for ClickhouseEngine {
                 &target_table,
                 &sharding_key,
                 &policy_name,
+            ),
+            ClickhouseEngine::IcebergS3 {
+                path,
+                format,
+                aws_access_key_id,
+                aws_secret_access_key,
+                compression,
+            } => Self::serialize_icebergs3_for_display(
+                &path,
+                &format,
+                &aws_access_key_id,
+                &aws_secret_access_key,
+                &compression,
             ),
             // this might sound obvious, but when you edit this function
             // please check if you have changed the parsing side (try_from) as well
@@ -792,6 +817,7 @@ impl ClickhouseEngine {
             s if s.starts_with("S3(") => Self::parse_regular_s3(s, value),
             s if s.starts_with("Buffer(") => Self::parse_regular_buffer(s, value),
             s if s.starts_with("Distributed(") => Self::parse_regular_distributed(s, value),
+            s if s.starts_with("Iceberg(") => Self::parse_regular_icebergs3(s, value),
             _ => Err(value),
         }
     }
@@ -836,6 +862,104 @@ impl ClickhouseEngine {
         } else {
             Err(original_value)
         }
+    }
+
+    /// Parse regular Iceberg with parameters
+    fn parse_regular_icebergs3<'a>(
+        engine_name: &str,
+        original_value: &'a str,
+    ) -> Result<Self, &'a str> {
+        if let Some(content) = engine_name
+            .strip_prefix("Iceberg(")
+            .and_then(|s| s.strip_suffix(")"))
+        {
+            Self::parse_icebergs3(content).map_err(|_| original_value)
+        } else {
+            Err(original_value)
+        }
+    }
+
+    /// Parse Iceberg engine content
+    /// Format: Iceberg('path', [NOSIGN | 'key', 'secret'], 'format'[, 'compression'])
+    /// or simplified: Iceberg('path', 'format'[, 'compression'])
+    fn parse_icebergs3(content: &str) -> Result<Self, String> {
+        let parts = parse_quoted_csv(content);
+
+        if parts.len() < 2 {
+            return Err("Iceberg requires at least path and format".to_string());
+        }
+
+        let path = parts[0].clone();
+
+        // Parse authentication and format based on ClickHouse IcebergS3 syntax:
+        // ENGINE = IcebergS3(url, [, NOSIGN | access_key_id, secret_access_key, [session_token]], format, [,compression])
+        //
+        // Possible patterns:
+        // 1. Iceberg('path', 'format') - no auth
+        // 2. Iceberg('path', 'format', 'compression') - no auth with compression
+        // 3. Iceberg('path', NOSIGN, 'format') - explicit NOSIGN
+        // 4. Iceberg('path', 'access_key_id', 'secret_access_key', 'format') - with credentials
+        // 5. Iceberg('path', 'access_key_id', 'secret_access_key', 'format', 'compression') - with credentials and compression
+        let (format, aws_access_key_id, aws_secret_access_key, extra_params_start) = if parts.len()
+            >= 2
+            && parts[1].to_uppercase() == "NOSIGN"
+        {
+            // NOSIGN keyword (no authentication) - format is at position 2
+            if parts.len() < 3 {
+                return Err("Iceberg with NOSIGN requires format parameter".to_string());
+            }
+            (parts[2].clone(), None, None, 3)
+        } else if parts.len() >= 2 {
+            let format_at_pos1 = parts[1].to_uppercase();
+            let is_pos1_format = format_at_pos1 == "PARQUET" || format_at_pos1 == "ORC";
+
+            if is_pos1_format {
+                // Format is at position 1, no credentials
+                (parts[1].clone(), None, None, 2)
+            } else if parts.len() >= 4 && !parts[1].is_empty() && !parts[2].is_empty() {
+                // Check if parts[3] is a format (credentials case)
+                let format_at_pos3 = parts[3].to_uppercase();
+                if format_at_pos3 == "PARQUET" || format_at_pos3 == "ORC" {
+                    // parts[1] and parts[2] are credentials, format at position 3
+                    (
+                        parts[3].clone(),
+                        Some(parts[1].clone()),
+                        Some(parts[2].clone()),
+                        4,
+                    )
+                } else {
+                    // Ambiguous case - neither pos1 nor pos3 is a valid format
+                    return Err(format!(
+                            "Invalid Iceberg format. Expected 'Parquet' or 'ORC' at position 2 or 4, got '{}' and '{}'",
+                            parts[1], parts[3]
+                        ));
+                }
+            } else {
+                // Not enough parts for credentials, but parts[1] is not a valid format
+                return Err(format!(
+                    "Invalid Iceberg format '{}'. Must be 'Parquet' or 'ORC'",
+                    parts[1]
+                ));
+            }
+        } else {
+            return Err("Iceberg requires at least path and format parameters".to_string());
+        };
+
+        // Parse optional compression (next parameter after format)
+        let compression = if parts.len() > extra_params_start && parts[extra_params_start] != "null"
+        {
+            Some(parts[extra_params_start].clone())
+        } else {
+            None
+        };
+
+        Ok(ClickhouseEngine::IcebergS3 {
+            path,
+            format,
+            aws_access_key_id,
+            aws_secret_access_key,
+            compression,
+        })
     }
 
     /// Parse regular SummingMergeTree with parameters
@@ -1117,6 +1241,16 @@ impl ClickhouseEngine {
                 sharding_key,
                 policy_name,
             ),
+            ClickhouseEngine::IcebergS3 {
+                path,
+                format,
+                compression,
+                ..  // Omit credentials for protobuf
+            } => Self::serialize_icebergs3(
+                path,
+                format,
+                compression,
+            ),
         }
     }
 
@@ -1387,6 +1521,55 @@ impl ClickhouseEngine {
         // Add partition columns if present
         if let Some(pc) = partition_columns_in_data_file {
             result.push_str(&format!(", partition_columns='{}'", pc));
+        }
+
+        result.push(')');
+        result
+    }
+
+    /// Serialize Iceberg engine to string format for display (with masked credentials)
+    /// Format: Iceberg('url', [NOSIGN | 'access_key_id', 'secret_access_key'], 'format'[, 'compression'])
+    fn serialize_icebergs3_for_display(
+        path: &str,
+        format: &str,
+        aws_access_key_id: &Option<String>,
+        aws_secret_access_key: &Option<String>,
+        compression: &Option<String>,
+    ) -> String {
+        let mut result = format!("Iceberg('{}'", path);
+
+        // Add authentication info for display - uses shared masking logic
+        match (aws_access_key_id, aws_secret_access_key) {
+            (Some(key_id), Some(secret)) => {
+                let masked_secret = Self::mask_secret(secret);
+                result.push_str(&format!(", '{}', '{}'", key_id, masked_secret));
+            }
+            _ => {
+                // No credentials provided - using NOSIGN for public buckets or IAM roles
+                result.push_str(", NOSIGN");
+            }
+        }
+
+        // Add format
+        result.push_str(&format!(", '{}'", format));
+
+        // Add compression if present
+        if let Some(comp) = compression {
+            result.push_str(&format!(", '{}'", comp));
+        }
+
+        result.push(')');
+        result
+    }
+
+    /// Serialize Iceberg engine to string format for proto storage (without credentials)
+    /// Format: Iceberg('url', 'format'[, 'compression'])
+    fn serialize_icebergs3(path: &str, format: &str, compression: &Option<String>) -> String {
+        let mut result = format!("Iceberg('{}', '{}'", path, format);
+
+        // Add compression if present
+        if let Some(comp) = compression {
+            result.push_str(&format!(", '{}'", comp));
         }
 
         result.push(')');
@@ -2019,6 +2202,36 @@ impl ClickhouseEngine {
                     hasher.update("null".as_bytes());
                 }
             }
+            ClickhouseEngine::IcebergS3 {
+                path,
+                format,
+                aws_access_key_id,
+                aws_secret_access_key,
+                compression,
+            } => {
+                hasher.update("Iceberg".as_bytes());
+                hasher.update(path.as_bytes());
+                hasher.update(format.as_bytes());
+
+                // Hash credentials (consistent with S3 and S3Queue engines)
+                if let Some(key_id) = aws_access_key_id {
+                    hasher.update(key_id.as_bytes());
+                } else {
+                    hasher.update("null".as_bytes());
+                }
+                if let Some(secret) = aws_secret_access_key {
+                    hasher.update(secret.as_bytes());
+                } else {
+                    hasher.update("null".as_bytes());
+                }
+
+                // Hash optional parameters
+                if let Some(comp) = compression {
+                    hasher.update(comp.as_bytes());
+                } else {
+                    hasher.update("null".as_bytes());
+                }
+            }
         }
 
         format!("{:x}", hasher.finalize())
@@ -2449,6 +2662,31 @@ pub fn create_table_query(
             }
 
             format!("Distributed({})", engine_parts.join(", "))
+        }
+        ClickhouseEngine::IcebergS3 {
+            path,
+            format,
+            aws_access_key_id,
+            aws_secret_access_key,
+            compression,
+        } => {
+            let mut engine_parts = vec![format!("'{}'", path)];
+
+            // Handle credentials using shared helper (same as S3Queue)
+            engine_parts.extend(ClickhouseEngine::format_s3_credentials_for_ddl(
+                aws_access_key_id,
+                aws_secret_access_key,
+            ));
+
+            // Add format
+            engine_parts.push(format!("'{}'", format));
+
+            // Add optional compression
+            if let Some(comp) = compression {
+                engine_parts.push(format!("'{}'", comp));
+            }
+
+            format!("Iceberg({})", engine_parts.join(", "))
         }
     };
 
@@ -5366,5 +5604,280 @@ ENGINE = S3Queue('s3://my-bucket/data/*.csv', NOSIGN, 'CSV')"#;
             }
             _ => panic!("Expected Distributed engine"),
         }
+    }
+
+    #[test]
+    fn test_icebergs3_hash_consistency() {
+        // Test that identical engines produce identical hashes
+        let engine1 = ClickhouseEngine::IcebergS3 {
+            path: "s3://test-bucket/warehouse/table/".to_string(),
+            format: "Parquet".to_string(),
+            aws_access_key_id: Some("AKIATEST".to_string()),
+            aws_secret_access_key: Some("secretkey".to_string()),
+            compression: Some("gzip".to_string()),
+        };
+
+        let engine2 = ClickhouseEngine::IcebergS3 {
+            path: "s3://test-bucket/warehouse/table/".to_string(),
+            format: "Parquet".to_string(),
+            aws_access_key_id: Some("AKIATEST".to_string()),
+            aws_secret_access_key: Some("secretkey".to_string()),
+            compression: Some("gzip".to_string()),
+        };
+
+        let hash1 = engine1.non_alterable_params_hash();
+        let hash2 = engine2.non_alterable_params_hash();
+        assert_eq!(hash1, hash2);
+        assert_eq!(hash1.len(), 64); // SHA256 hex string
+
+        // Test that credential changes produce different hashes
+        let engine_diff_key = ClickhouseEngine::IcebergS3 {
+            path: "s3://test-bucket/warehouse/table/".to_string(),
+            format: "Parquet".to_string(),
+            aws_access_key_id: Some("AKIADIFFERENT".to_string()),
+            aws_secret_access_key: Some("secretkey".to_string()),
+            compression: Some("gzip".to_string()),
+        };
+        let hash_diff_key = engine_diff_key.non_alterable_params_hash();
+        assert_ne!(
+            hash1, hash_diff_key,
+            "Different access keys should produce different hashes"
+        );
+
+        // Test that path changes produce different hashes
+        let engine_diff_path = ClickhouseEngine::IcebergS3 {
+            path: "s3://different-bucket/table/".to_string(),
+            format: "Parquet".to_string(),
+            aws_access_key_id: Some("AKIATEST".to_string()),
+            aws_secret_access_key: Some("secretkey".to_string()),
+            compression: Some("gzip".to_string()),
+        };
+        let hash_diff_path = engine_diff_path.non_alterable_params_hash();
+        assert_ne!(
+            hash1, hash_diff_path,
+            "Different paths should produce different hashes"
+        );
+
+        // Test that compression changes produce different hashes
+        let engine_no_compression = ClickhouseEngine::IcebergS3 {
+            path: "s3://test-bucket/warehouse/table/".to_string(),
+            format: "Parquet".to_string(),
+            aws_access_key_id: Some("AKIATEST".to_string()),
+            aws_secret_access_key: Some("secretkey".to_string()),
+            compression: None,
+        };
+        let hash_no_compression = engine_no_compression.non_alterable_params_hash();
+        assert_ne!(
+            hash1, hash_no_compression,
+            "Different compression should produce different hashes"
+        );
+
+        // Test that IcebergS3 hash differs from other engines
+        let merge_tree = ClickhouseEngine::MergeTree;
+        assert_ne!(hash1, merge_tree.non_alterable_params_hash());
+    }
+
+    #[test]
+    fn test_icebergs3_display() {
+        // Test display with credentials
+        let engine_with_creds = ClickhouseEngine::IcebergS3 {
+            path: "s3://bucket/warehouse/table/".to_string(),
+            format: "Parquet".to_string(),
+            aws_access_key_id: Some("AKIATEST".to_string()),
+            aws_secret_access_key: Some("secretkey123".to_string()),
+            compression: Some("gzip".to_string()),
+        };
+
+        let display: String = engine_with_creds.clone().into();
+        assert!(display.contains("Iceberg"));
+        assert!(display.contains("s3://bucket/warehouse/table/"));
+        assert!(display.contains("AKIATEST"));
+        assert!(display.contains("secr...y123")); // Masked secret (first 4 + ... + last 4)
+        assert!(display.contains("Parquet"));
+        assert!(display.contains("gzip"));
+
+        // Test display with NOSIGN
+        let engine_nosign = ClickhouseEngine::IcebergS3 {
+            path: "s3://public-bucket/table/".to_string(),
+            format: "ORC".to_string(),
+            aws_access_key_id: None,
+            aws_secret_access_key: None,
+            compression: None,
+        };
+
+        let display_nosign: String = engine_nosign.into();
+        assert!(display_nosign.contains("Iceberg"));
+        assert!(display_nosign.contains("NOSIGN"));
+        assert!(display_nosign.contains("ORC"));
+    }
+
+    #[test]
+    fn test_icebergs3_protobuf_serialization() {
+        // Test with credentials (should be excluded from proto)
+        let engine_with_creds = ClickhouseEngine::IcebergS3 {
+            path: "s3://bucket/table/".to_string(),
+            format: "Parquet".to_string(),
+            aws_access_key_id: Some("key".to_string()),
+            aws_secret_access_key: Some("secret".to_string()),
+            compression: None,
+        };
+
+        let proto = engine_with_creds.to_proto_string();
+        assert!(!proto.contains("key")); // Credentials excluded for security
+        assert!(!proto.contains("secret"));
+        assert!(proto.contains("s3://bucket/table/"));
+        assert!(proto.contains("Parquet"));
+
+        // Test with compression (should be included in proto)
+        let engine_with_compression = ClickhouseEngine::IcebergS3 {
+            path: "s3://test-bucket/warehouse/events/".to_string(),
+            format: "ORC".to_string(),
+            aws_access_key_id: None,
+            aws_secret_access_key: None,
+            compression: Some("gzip".to_string()),
+        };
+
+        let proto_with_compression = engine_with_compression.to_proto_string();
+        assert!(proto_with_compression.contains("s3://test-bucket/warehouse/events/"));
+        assert!(proto_with_compression.contains("ORC"));
+        assert!(proto_with_compression.contains("gzip")); // Compression IS included
+    }
+
+    #[test]
+    fn test_icebergs3_parsing() {
+        // Test 1: Simple format without credentials or compression
+        let simple = "Iceberg('s3://bucket/table/', 'Parquet')";
+        let engine = ClickhouseEngine::try_from(simple).unwrap();
+        match engine {
+            ClickhouseEngine::IcebergS3 {
+                path,
+                format,
+                aws_access_key_id,
+                aws_secret_access_key,
+                compression,
+            } => {
+                assert_eq!(path, "s3://bucket/table/");
+                assert_eq!(format, "Parquet");
+                assert_eq!(aws_access_key_id, None);
+                assert_eq!(aws_secret_access_key, None);
+                assert_eq!(compression, None);
+            }
+            _ => panic!("Expected IcebergS3 engine"),
+        }
+
+        // Test 2: With credentials (should be parsed now)
+        let with_creds = "Iceberg('s3://bucket/table/', 'AKIATEST', '[HIDDEN]', 'Parquet')";
+        let engine = ClickhouseEngine::try_from(with_creds).unwrap();
+        match engine {
+            ClickhouseEngine::IcebergS3 {
+                path,
+                format,
+                aws_access_key_id,
+                aws_secret_access_key,
+                compression,
+            } => {
+                assert_eq!(path, "s3://bucket/table/");
+                assert_eq!(format, "Parquet");
+                assert_eq!(aws_access_key_id, Some("AKIATEST".to_string()));
+                assert_eq!(aws_secret_access_key, Some("[HIDDEN]".to_string()));
+                assert_eq!(compression, None);
+            }
+            _ => panic!("Expected IcebergS3 engine"),
+        }
+
+        // Test 3: With compression but no credentials - format at position 1
+        let with_compression = "Iceberg('s3://bucket/table/', 'ORC', 'gzip')";
+        let engine = ClickhouseEngine::try_from(with_compression).unwrap();
+        match engine {
+            ClickhouseEngine::IcebergS3 {
+                path,
+                format,
+                compression,
+                aws_access_key_id,
+                aws_secret_access_key,
+            } => {
+                assert_eq!(path, "s3://bucket/table/");
+                assert_eq!(format, "ORC");
+                assert_eq!(compression, Some("gzip".to_string()));
+                assert_eq!(aws_access_key_id, None);
+                assert_eq!(aws_secret_access_key, None);
+            }
+            _ => panic!("Expected IcebergS3 engine"),
+        }
+
+        // Test 4: Edge case - format name at position 1 with extra params (bug from bot review)
+        // This tests that we correctly identify format at position 1, not confuse it with credentials
+        let format_first =
+            "Iceberg('s3://bucket/table/', 'Parquet', 'extra_param', 'another_param')";
+        let engine = ClickhouseEngine::try_from(format_first).unwrap();
+        match engine {
+            ClickhouseEngine::IcebergS3 {
+                path,
+                format,
+                aws_access_key_id,
+                aws_secret_access_key,
+                compression,
+            } => {
+                assert_eq!(path, "s3://bucket/table/");
+                assert_eq!(format, "Parquet");
+                assert_eq!(aws_access_key_id, None);
+                assert_eq!(aws_secret_access_key, None);
+                // extra_param is treated as compression since it's at position 2 (extra_params_start)
+                assert_eq!(compression, Some("extra_param".to_string()));
+            }
+            _ => panic!("Expected IcebergS3 engine"),
+        }
+
+        // Test 5: With NOSIGN
+        let with_nosign = "Iceberg('s3://public-bucket/table/', NOSIGN, 'Parquet')";
+        let engine = ClickhouseEngine::try_from(with_nosign).unwrap();
+        match engine {
+            ClickhouseEngine::IcebergS3 {
+                path,
+                format,
+                aws_access_key_id,
+                aws_secret_access_key,
+                ..
+            } => {
+                assert_eq!(path, "s3://public-bucket/table/");
+                assert_eq!(format, "Parquet");
+                assert_eq!(aws_access_key_id, None);
+                assert_eq!(aws_secret_access_key, None);
+            }
+            _ => panic!("Expected IcebergS3 engine"),
+        }
+
+        // Test 6: With credentials AND compression
+        let full_config = "Iceberg('s3://bucket/table/', 'AKIATEST', 'secret', 'ORC', 'zstd')";
+        let engine = ClickhouseEngine::try_from(full_config).unwrap();
+        match engine {
+            ClickhouseEngine::IcebergS3 {
+                path,
+                format,
+                aws_access_key_id,
+                aws_secret_access_key,
+                compression,
+            } => {
+                assert_eq!(path, "s3://bucket/table/");
+                assert_eq!(format, "ORC");
+                assert_eq!(aws_access_key_id, Some("AKIATEST".to_string()));
+                assert_eq!(aws_secret_access_key, Some("secret".to_string()));
+                assert_eq!(compression, Some("zstd".to_string()));
+            }
+            _ => panic!("Expected IcebergS3 engine"),
+        }
+
+        // Test 7: Invalid format in ambiguous case - should return error
+        let invalid_format = "Iceberg('s3://bucket/table/', 'InvalidFormat', 'something', 'else')";
+        let result = ClickhouseEngine::try_from(invalid_format);
+        assert!(
+            result.is_err(),
+            "Should reject invalid format 'InvalidFormat'"
+        );
+
+        // Test 8: Another invalid format edge case
+        let another_invalid = "Iceberg('s3://bucket/table/', 'BadFormat', 'test')";
+        let result2 = ClickhouseEngine::try_from(another_invalid);
+        assert!(result2.is_err(), "Should reject invalid format 'BadFormat'");
     }
 }

@@ -1,13 +1,11 @@
 use handlebars::Handlebars;
 use lazy_static::lazy_static;
-use tracing::{debug, error, info, warn};
+use tracing::{error, info, warn};
 use regex::Regex;
 use serde::Deserialize;
 use serde_json::json;
-use std::io::{BufRead, BufReader as StdBufReader};
 use std::path::PathBuf;
-use std::process::{Child, ChildStderr, ChildStdout, Command, ExitStatus, Stdio};
-use std::thread;
+use std::process::{Command, Stdio};
 use tokio::io::{AsyncBufReadExt, BufReader};
 
 use crate::cli::settings::Settings;
@@ -228,81 +226,8 @@ impl DockerClient {
         }
     }
 
-    /// Streams stdout from a child process, logging each line at DEBUG level within the current span
-    fn stream_stdout(stdout: ChildStdout, prefix: &str) -> thread::JoinHandle<String> {
-        let prefix = prefix.to_string();
-        thread::spawn(move || {
-            let mut collected = String::new();
-            let reader = StdBufReader::new(stdout);
-            for line in reader.lines() {
-                if let Ok(line) = line {
-                    debug!(target: "moose_cli::utilities::docker::output", "[{}] {}", prefix, line);
-                    collected.push_str(&line);
-                    collected.push('\n');
-                }
-            }
-            collected
-        })
-    }
-
-    /// Streams stderr from a child process, logging each line at DEBUG level within the current span
-    /// Returns a thread handle that will produce the collected stderr
-    fn stream_stderr(stderr: ChildStderr, prefix: &str) -> thread::JoinHandle<String> {
-        let prefix = prefix.to_string();
-        thread::spawn(move || {
-            let mut collected = String::new();
-            let reader = StdBufReader::new(stderr);
-            for line in reader.lines() {
-                if let Ok(line) = line {
-                    debug!(target: "moose_cli::utilities::docker::output", "[{}] {}", prefix, line);
-                    collected.push_str(&line);
-                    collected.push('\n');
-                }
-            }
-            collected
-        })
-    }
-
-    /// Waits for a child process and streams its output
-    /// Returns the exit status and collected stderr for error handling
-    fn wait_with_streaming(mut child: Child, operation: &str) -> anyhow::Result<(ExitStatus, String)> {
-        // Take stdout and stderr before waiting
-        let stdout_handle = if let Some(stdout) = child.stdout.take() {
-            Some(Self::stream_stdout(stdout, operation))
-        } else {
-            None
-        };
-
-        let stderr_handle = if let Some(stderr) = child.stderr.take() {
-            Some(Self::stream_stderr(stderr, operation))
-        } else {
-            None
-        };
-
-        // Wait for the process to complete
-        let status = child.wait()?;
-
-        // Collect stderr for error handling
-        let stderr_output = if let Some(handle) = stderr_handle {
-            handle.join().unwrap_or_default()
-        } else {
-            String::new()
-        };
-
-        // Wait for stdout thread to complete (don't need the output)
-        if let Some(handle) = stdout_handle {
-            let _ = handle.join();
-        }
-
-        Ok((status, stderr_output))
-    }
-
     /// Starts all containers for the project
     pub fn start_containers(&self, project: &Project) -> anyhow::Result<()> {
-        let span = tracing::info_span!("docker_compose_up");
-        let _enter = span.enter();
-
-        info!("Starting Docker containers for project");
         let temporal_env_vars = project.temporal_config.to_env_vars();
 
         let mut child = self.compose_command(project);
@@ -327,36 +252,30 @@ impl DockerClient {
             )
             .env("REDIS_PORT", project.redis_config.port.to_string());
 
-        debug!("Executing docker compose up -d");
         let child = child
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()?;
 
-        // Stream output and wait for completion
-        let (status, stderr_output) = Self::wait_with_streaming(child, "docker-compose")?;
+        let output = child.wait_with_output()?;
 
-        if !status.success() {
-            let friendly_error_message = format!(
-                "Failed to start containers. Make sure you have Docker version 2.23.1+ and try again: {}",
-                stderr_output
-            );
+        if !output.status.success() {
+            let error_message = String::from_utf8_lossy(&output.stderr);
+            let friendly_error_message = format!("Failed to start containers. Make sure you have Docker version 2.23.1+ and try again: {error_message}");
             error!("{}", friendly_error_message);
 
-            // Check for specific error patterns to provide better error messages
             let mapped_error_message =
-                if let Some(stuff) = PORT_ALLOCATED_REGEX.captures(&stderr_output) {
+                if let Some(stuff) = PORT_ALLOCATED_REGEX.captures(&error_message) {
                     format!(
-                        "Port {} already in use. Terminate the process using that port and try again.",
-                        stuff.get(1).unwrap().as_str()
-                    )
+                    "Port {} already in use. Terminate the process using that port and try again.",
+                    stuff.get(1).unwrap().as_str()
+                )
                 } else {
                     friendly_error_message.to_string()
                 };
 
             Err(anyhow::anyhow!(mapped_error_message))
         } else {
-            info!("Docker containers started successfully");
             Ok(())
         }
     }

@@ -250,78 +250,89 @@ fn validate_table_databases_and_clusters(
             SerializableOlapOperation::DropTable {
                 table,
                 database,
+                cluster_name,
             } => {
-                validate(database, &None, table);
+                validate(database, cluster_name, table);
             }
             SerializableOlapOperation::AddTableColumn {
                 table,
                 database,
+                cluster_name,
                 ..
             } => {
-                validate(database, &None, table);
+                validate(database, cluster_name, table);
             }
             SerializableOlapOperation::DropTableColumn {
                 table,
                 database,
+                cluster_name,
                 ..
             } => {
-                validate(database, &None, table);
+                validate(database, cluster_name, table);
             }
             SerializableOlapOperation::ModifyTableColumn {
                 table,
                 database,
+                cluster_name,
                 ..
             } => {
-                validate(database, &None, table);
+                validate(database, cluster_name, table);
             }
             SerializableOlapOperation::RenameTableColumn {
                 table,
                 database,
+                cluster_name,
                 ..
             } => {
-                validate(database, &None, table);
+                validate(database, cluster_name, table);
             }
             SerializableOlapOperation::ModifyTableSettings {
                 table,
                 database,
+                cluster_name,
                 ..
             } => {
-                validate(database, &None, table);
+                validate(database, cluster_name, table);
             }
             SerializableOlapOperation::ModifyTableTtl {
                 table,
                 database,
+                cluster_name,
                 ..
             } => {
-                validate(database, &None, table);
+                validate(database, cluster_name, table);
             }
             SerializableOlapOperation::AddTableIndex {
                 table,
                 database,
+                cluster_name,
                 ..
             } => {
-                validate(database, &None, table);
+                validate(database, cluster_name, table);
             }
             SerializableOlapOperation::DropTableIndex {
                 table,
                 database,
+                cluster_name,
                 ..
             } => {
-                validate(database, &None, table);
+                validate(database, cluster_name, table);
             }
             SerializableOlapOperation::ModifySampleBy {
                 table,
                 database,
+                cluster_name,
                 ..
             } => {
-                validate(database, &None, table);
+                validate(database, cluster_name, table);
             }
             SerializableOlapOperation::RemoveSampleBy {
                 table,
                 database,
+                cluster_name,
                 ..
             } => {
-                validate(database, &None, table);
+                validate(database, cluster_name, table);
             }
             SerializableOlapOperation::RawSql { .. } => {
                 // RawSql doesn't reference specific tables/databases/clusters, skip validation
@@ -574,19 +585,28 @@ pub async fn execute_migration(
             let target_table_ids: HashSet<String> =
                 current_infra_map.tables.keys().cloned().collect();
 
+            let target_sql_resource_ids: HashSet<String> =
+                current_infra_map.sql_resources.keys().cloned().collect();
+
             let olap_client = create_client(clickhouse_config.clone());
 
-            reconcile_with_reality(project, &current_infra_map, &target_table_ids, olap_client)
-                .await
-                .map_err(|e| {
-                    RoutineFailure::new(
-                        Message::new(
-                            "Reconciliation".to_string(),
-                            "Failed to reconcile state with ClickHouse reality".to_string(),
-                        ),
-                        anyhow::anyhow!("{:?}", e),
-                    )
-                })?
+            reconcile_with_reality(
+                project,
+                &current_infra_map,
+                &target_table_ids,
+                &target_sql_resource_ids,
+                olap_client,
+            )
+            .await
+            .map_err(|e| {
+                RoutineFailure::new(
+                    Message::new(
+                        "Reconciliation".to_string(),
+                        "Failed to reconcile state with ClickHouse reality".to_string(),
+                    ),
+                    anyhow::anyhow!("{:?}", e),
+                )
+            })?
         } else {
             current_infra_map
         };

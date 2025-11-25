@@ -1020,7 +1020,17 @@ pub async fn remote_plan(
             .map(|t| t.id(&local_infra_map.default_database))
             .collect();
 
-        get_remote_inframap_serverless(project, clickhouse_url, None, table_names).await?
+        let sql_resource_ids: HashSet<String> =
+            local_infra_map.sql_resources.keys().cloned().collect();
+
+        get_remote_inframap_serverless(
+            project,
+            clickhouse_url,
+            None,
+            &table_names,
+            &sql_resource_ids,
+        )
+        .await?
     } else {
         // Moose server flow
         display::show_message_wrapper(
@@ -1159,13 +1169,23 @@ pub async fn remote_gen_migration(
                         .to_string(),
                 },
             );
-            let table_ids: HashSet<String> = local_infra_map
+
+            let target_table_ids: HashSet<String> = local_infra_map
                 .tables
                 .values()
                 .map(|t| t.id(&local_infra_map.default_database))
                 .collect();
-            get_remote_inframap_serverless(project, clickhouse_url, redis_url.as_deref(), table_ids)
-                .await?
+            let target_sql_resource_ids: HashSet<String> =
+                local_infra_map.sql_resources.keys().cloned().collect();
+
+            get_remote_inframap_serverless(
+                project,
+                clickhouse_url,
+                redis_url.as_deref(),
+                &target_table_ids,
+                &target_sql_resource_ids,
+            )
+            .await?
         }
     };
 
@@ -1208,7 +1228,8 @@ async fn get_remote_inframap_serverless(
     project: &Project,
     clickhouse_url: &str,
     redis_url: Option<&str>,
-    target_table_ids: HashSet<String>,
+    target_table_ids: &HashSet<String>,
+    target_sql_resource_ids: &HashSet<String>,
 ) -> anyhow::Result<InfrastructureMap> {
     use crate::framework::core::plan::reconcile_with_reality;
     use crate::infrastructure::olap::clickhouse::config::parse_clickhouse_connection_string;
@@ -1235,7 +1256,8 @@ async fn get_remote_inframap_serverless(
         reconcile_with_reality(
             project,
             &remote_infra_map,
-            &target_table_ids,
+            target_table_ids,
+            target_sql_resource_ids,
             reconcile_client,
         )
         .await?

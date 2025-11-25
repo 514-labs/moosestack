@@ -35,7 +35,7 @@ use clickhouse::Client;
 use clickhouse_rs::ClientHandle;
 use errors::ClickhouseError;
 use itertools::Itertools;
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 use mapper::{std_column_to_clickhouse_column, std_table_to_clickhouse_table};
 use model::ClickHouseColumn;
 use queries::ClickhouseEngine;
@@ -46,17 +46,20 @@ use queries::{
 use serde::{Deserialize, Serialize};
 use sql_parser::{
     extract_engine_from_create_table, extract_indexes_from_create_table,
-    extract_sample_by_from_create_table, extract_table_settings_from_create_table,
+    extract_sample_by_from_create_table, extract_source_tables_from_query,
+    extract_table_settings_from_create_table, normalize_sql_for_comparison, split_qualified_name,
 };
 use std::collections::HashMap;
 use std::ops::Deref;
 use std::sync::LazyLock;
 
 use self::model::ClickHouseSystemTable;
+use crate::framework::core::infrastructure::sql_resource::SqlResource;
 use crate::framework::core::infrastructure::table::{
     Column, ColumnMetadata, ColumnType, DataEnum, EnumMember, EnumValue, EnumValueMetadata,
     OrderBy, Table, TableIndex, METADATA_PREFIX,
 };
+use crate::framework::core::infrastructure::InfrastructureSignature;
 use crate::framework::core::infrastructure_map::{PrimitiveSignature, PrimitiveTypes};
 use crate::framework::core::partial_infrastructure_map::LifeCycle;
 use crate::framework::versions::Version;
@@ -119,6 +122,8 @@ pub enum SerializableOlapOperation {
         table: String,
         /// The database containing the table (None means use global database)
         database: Option<String>,
+        /// Optional cluster name for ON CLUSTER support
+        cluster_name: Option<String>,
     },
     /// Add a column to a table
     AddTableColumn {
@@ -130,6 +135,8 @@ pub enum SerializableOlapOperation {
         after_column: Option<String>,
         /// The database containing the table (None means use primary database)
         database: Option<String>,
+        /// Optional cluster name for ON CLUSTER support
+        cluster_name: Option<String>,
     },
     /// Drop a column from a table
     DropTableColumn {
@@ -139,6 +146,8 @@ pub enum SerializableOlapOperation {
         column_name: String,
         /// The database containing the table (None means use primary database)
         database: Option<String>,
+        /// Optional cluster name for ON CLUSTER support
+        cluster_name: Option<String>,
     },
     /// Modify a column in a table
     ModifyTableColumn {
@@ -150,6 +159,8 @@ pub enum SerializableOlapOperation {
         after_column: Column,
         /// The database containing the table (None means use primary database)
         database: Option<String>,
+        /// Optional cluster name for ON CLUSTER support
+        cluster_name: Option<String>,
     },
     RenameTableColumn {
         /// The table containing the column
@@ -160,6 +171,8 @@ pub enum SerializableOlapOperation {
         after_column_name: String,
         /// The database containing the table (None means use primary database)
         database: Option<String>,
+        /// Optional cluster name for ON CLUSTER support
+        cluster_name: Option<String>,
     },
     /// Modify table settings using ALTER TABLE MODIFY SETTING
     ModifyTableSettings {
@@ -171,6 +184,8 @@ pub enum SerializableOlapOperation {
         after_settings: Option<HashMap<String, String>>,
         /// The database containing the table (None means use primary database)
         database: Option<String>,
+        /// Optional cluster name for ON CLUSTER support
+        cluster_name: Option<String>,
     },
     /// Modify or remove table-level TTL
     ModifyTableTtl {
@@ -179,29 +194,39 @@ pub enum SerializableOlapOperation {
         after: Option<String>,
         /// The database containing the table (None means use primary database)
         database: Option<String>,
+        /// Optional cluster name for ON CLUSTER support
+        cluster_name: Option<String>,
     },
     AddTableIndex {
         table: String,
         index: TableIndex,
         /// The database containing the table (None means use primary database)
         database: Option<String>,
+        /// Optional cluster name for ON CLUSTER support
+        cluster_name: Option<String>,
     },
     DropTableIndex {
         table: String,
         index_name: String,
         /// The database containing the table (None means use primary database)
         database: Option<String>,
+        /// Optional cluster name for ON CLUSTER support
+        cluster_name: Option<String>,
     },
     ModifySampleBy {
         table: String,
         expression: String,
         /// The database containing the table (None means use primary database)
         database: Option<String>,
+        /// Optional cluster name for ON CLUSTER support
+        cluster_name: Option<String>,
     },
     RemoveSampleBy {
         table: String,
         /// The database containing the table (None means use primary database)
         database: Option<String>,
+        /// Optional cluster name for ON CLUSTER support
+        cluster_name: Option<String>,
     },
     RawSql {
         /// The SQL statements to execute
@@ -437,41 +462,78 @@ pub async fn execute_atomic_operation(
         SerializableOlapOperation::CreateTable { table } => {
             execute_create_table(db_name, table, client, is_dev).await?;
         }
-        SerializableOlapOperation::DropTable { table, database } => {
-            execute_drop_table(db_name, table, database.as_deref(), client).await?;
+        SerializableOlapOperation::DropTable {
+            table,
+            database,
+            cluster_name,
+        } => {
+            execute_drop_table(
+                db_name,
+                table,
+                database.as_deref(),
+                cluster_name.as_deref(),
+                client,
+            )
+            .await?;
         }
         SerializableOlapOperation::AddTableColumn {
             table,
             column,
             after_column,
             database,
+            cluster_name,
         } => {
             let target_db = database.as_deref().unwrap_or(db_name);
-            execute_add_table_column(target_db, table, column, after_column, client).await?;
+            execute_add_table_column(
+                target_db,
+                table,
+                column,
+                after_column,
+                cluster_name.as_deref(),
+                client,
+            )
+            .await?;
         }
         SerializableOlapOperation::DropTableColumn {
             table,
             column_name,
             database,
+            cluster_name,
         } => {
             let target_db = database.as_deref().unwrap_or(db_name);
-            execute_drop_table_column(target_db, table, column_name, client).await?;
+            execute_drop_table_column(
+                target_db,
+                table,
+                column_name,
+                cluster_name.as_deref(),
+                client,
+            )
+            .await?;
         }
         SerializableOlapOperation::ModifyTableColumn {
             table,
             before_column,
             after_column,
             database,
+            cluster_name,
         } => {
             let target_db = database.as_deref().unwrap_or(db_name);
-            execute_modify_table_column(target_db, table, before_column, after_column, client)
-                .await?;
+            execute_modify_table_column(
+                target_db,
+                table,
+                before_column,
+                after_column,
+                cluster_name.as_deref(),
+                client,
+            )
+            .await?;
         }
         SerializableOlapOperation::RenameTableColumn {
             table,
             before_column_name,
             after_column_name,
             database,
+            cluster_name,
         } => {
             let target_db = database.as_deref().unwrap_or(db_name);
             execute_rename_table_column(
@@ -479,6 +541,7 @@ pub async fn execute_atomic_operation(
                 table,
                 before_column_name,
                 after_column_name,
+                cluster_name.as_deref(),
                 client,
             )
             .await?;
@@ -488,6 +551,7 @@ pub async fn execute_atomic_operation(
             before_settings,
             after_settings,
             database,
+            cluster_name,
         } => {
             let target_db = database.as_deref().unwrap_or(db_name);
             execute_modify_table_settings(
@@ -495,6 +559,7 @@ pub async fn execute_atomic_operation(
                 table,
                 before_settings,
                 after_settings,
+                cluster_name.as_deref(),
                 client,
             )
             .await?;
@@ -504,16 +569,24 @@ pub async fn execute_atomic_operation(
             before: _,
             after,
             database,
+            cluster_name,
         } => {
             let target_db = database.as_deref().unwrap_or(db_name);
             // Build ALTER TABLE ... [REMOVE TTL | MODIFY TTL expr]
+            let cluster_clause = cluster_name
+                .as_ref()
+                .map(|c| format!(" ON CLUSTER {}", c))
+                .unwrap_or_default();
             let sql = if let Some(expr) = after {
                 format!(
-                    "ALTER TABLE `{}`.`{}` MODIFY TTL {}",
-                    target_db, table, expr
+                    "ALTER TABLE `{}`.`{}`{} MODIFY TTL {}",
+                    target_db, table, cluster_clause, expr
                 )
             } else {
-                format!("ALTER TABLE `{}`.`{}` REMOVE TTL", target_db, table)
+                format!(
+                    "ALTER TABLE `{}`.`{}`{} REMOVE TTL",
+                    target_db, table, cluster_clause
+                )
             };
             run_query(&sql, client).await.map_err(|e| {
                 ClickhouseChangesError::ClickhouseClient {
@@ -526,29 +599,51 @@ pub async fn execute_atomic_operation(
             table,
             index,
             database,
+            cluster_name,
         } => {
             let target_db = database.as_deref().unwrap_or(db_name);
-            execute_add_table_index(target_db, table, index, client).await?;
+            execute_add_table_index(target_db, table, index, cluster_name.as_deref(), client)
+                .await?;
         }
         SerializableOlapOperation::DropTableIndex {
             table,
             index_name,
             database,
+            cluster_name,
         } => {
             let target_db = database.as_deref().unwrap_or(db_name);
-            execute_drop_table_index(target_db, table, index_name, client).await?;
+            execute_drop_table_index(
+                target_db,
+                table,
+                index_name,
+                cluster_name.as_deref(),
+                client,
+            )
+            .await?;
         }
         SerializableOlapOperation::ModifySampleBy {
             table,
             expression,
             database,
+            cluster_name,
         } => {
             let target_db = database.as_deref().unwrap_or(db_name);
-            execute_modify_sample_by(target_db, table, expression, client).await?;
+            execute_modify_sample_by(
+                target_db,
+                table,
+                expression,
+                cluster_name.as_deref(),
+                client,
+            )
+            .await?;
         }
-        SerializableOlapOperation::RemoveSampleBy { table, database } => {
+        SerializableOlapOperation::RemoveSampleBy {
+            table,
+            database,
+            cluster_name,
+        } => {
             let target_db = database.as_deref().unwrap_or(db_name);
-            execute_remove_sample_by(target_db, table, client).await?;
+            execute_remove_sample_by(target_db, table, cluster_name.as_deref(), client).await?;
         }
         SerializableOlapOperation::RawSql { sql, description } => {
             execute_raw_sql(sql, description, client).await?;
@@ -581,6 +676,7 @@ async fn execute_add_table_index(
     db_name: &str,
     table_name: &str,
     index: &TableIndex,
+    cluster_name: Option<&str>,
     client: &ConfiguredDBClient,
 ) -> Result<(), ClickhouseChangesError> {
     let args = if index.arguments.is_empty() {
@@ -588,10 +684,14 @@ async fn execute_add_table_index(
     } else {
         format!("({})", index.arguments.join(", "))
     };
+    let cluster_clause = cluster_name
+        .map(|c| format!(" ON CLUSTER {}", c))
+        .unwrap_or_default();
     let sql = format!(
-        "ALTER TABLE `{}`.`{}` ADD INDEX `{}` {} TYPE {}{} GRANULARITY {}",
+        "ALTER TABLE `{}`.`{}`{} ADD INDEX `{}` {} TYPE {}{} GRANULARITY {}",
         db_name,
         table_name,
+        cluster_clause,
         index.name,
         index.expression,
         index.index_type,
@@ -610,11 +710,15 @@ async fn execute_drop_table_index(
     db_name: &str,
     table_name: &str,
     index_name: &str,
+    cluster_name: Option<&str>,
     client: &ConfiguredDBClient,
 ) -> Result<(), ClickhouseChangesError> {
+    let cluster_clause = cluster_name
+        .map(|c| format!(" ON CLUSTER {}", c))
+        .unwrap_or_default();
     let sql = format!(
-        "ALTER TABLE `{}`.`{}` DROP INDEX `{}`",
-        db_name, table_name, index_name
+        "ALTER TABLE `{}`.`{}`{} DROP INDEX `{}`",
+        db_name, table_name, cluster_clause, index_name
     );
     run_query(&sql, client)
         .await
@@ -628,11 +732,15 @@ async fn execute_modify_sample_by(
     db_name: &str,
     table_name: &str,
     expression: &str,
+    cluster_name: Option<&str>,
     client: &ConfiguredDBClient,
 ) -> Result<(), ClickhouseChangesError> {
+    let cluster_clause = cluster_name
+        .map(|c| format!(" ON CLUSTER {}", c))
+        .unwrap_or_default();
     let sql = format!(
-        "ALTER TABLE `{}`.`{}` MODIFY SAMPLE BY {}",
-        db_name, table_name, expression
+        "ALTER TABLE `{}`.`{}`{} MODIFY SAMPLE BY {}",
+        db_name, table_name, cluster_clause, expression
     );
     run_query(&sql, client)
         .await
@@ -645,11 +753,15 @@ async fn execute_modify_sample_by(
 async fn execute_remove_sample_by(
     db_name: &str,
     table_name: &str,
+    cluster_name: Option<&str>,
     client: &ConfiguredDBClient,
 ) -> Result<(), ClickhouseChangesError> {
+    let cluster_clause = cluster_name
+        .map(|c| format!(" ON CLUSTER {}", c))
+        .unwrap_or_default();
     let sql = format!(
-        "ALTER TABLE `{}`.`{}` REMOVE SAMPLE BY",
-        db_name, table_name
+        "ALTER TABLE `{}`.`{}`{} REMOVE SAMPLE BY",
+        db_name, table_name, cluster_clause
     );
     run_query(&sql, client)
         .await
@@ -663,12 +775,13 @@ async fn execute_drop_table(
     db_name: &str,
     table_name: &str,
     table_database: Option<&str>,
+    cluster_name: Option<&str>,
     client: &ConfiguredDBClient,
 ) -> Result<(), ClickhouseChangesError> {
     tracing::info!("Executing DropTable: {:?}", table_name);
     // Use table's database if specified, otherwise use global database
     let target_database = table_database.unwrap_or(db_name);
-    let drop_query = drop_table_query(target_database, table_name, None)?;
+    let drop_query = drop_table_query(target_database, table_name, cluster_name)?;
     run_query(&drop_query, client)
         .await
         .map_err(|e| ClickhouseChangesError::ClickhouseClient {
@@ -688,6 +801,7 @@ async fn execute_add_table_column(
     table_name: &str,
     column: &Column,
     after_column: &Option<String>,
+    cluster_name: Option<&str>,
     client: &ConfiguredDBClient,
 ) -> Result<(), ClickhouseChangesError> {
     tracing::info!(
@@ -706,10 +820,15 @@ async fn execute_add_table_column(
         .map(|d| format!(" DEFAULT {}", d))
         .unwrap_or_default();
 
+    let cluster_clause = cluster_name
+        .map(|c| format!(" ON CLUSTER {}", c))
+        .unwrap_or_default();
+
     let add_column_query = format!(
-        "ALTER TABLE `{}`.`{}` ADD COLUMN `{}` {}{} {}",
+        "ALTER TABLE `{}`.`{}`{} ADD COLUMN `{}` {}{} {}",
         db_name,
         table_name,
+        cluster_clause,
         clickhouse_column.name,
         column_type_string,
         default_clause,
@@ -732,6 +851,7 @@ async fn execute_drop_table_column(
     db_name: &str,
     table_name: &str,
     column_name: &str,
+    cluster_name: Option<&str>,
     client: &ConfiguredDBClient,
 ) -> Result<(), ClickhouseChangesError> {
     tracing::info!(
@@ -739,9 +859,12 @@ async fn execute_drop_table_column(
         table_name,
         column_name
     );
+    let cluster_clause = cluster_name
+        .map(|c| format!(" ON CLUSTER {}", c))
+        .unwrap_or_default();
     let drop_column_query = format!(
-        "ALTER TABLE `{}`.`{}` DROP COLUMN IF EXISTS `{}`",
-        db_name, table_name, column_name
+        "ALTER TABLE `{}`.`{}`{} DROP COLUMN IF EXISTS `{}`",
+        db_name, table_name, cluster_clause, column_name
     );
     tracing::debug!("Dropping column: {}", drop_column_query);
     run_query(&drop_column_query, client).await.map_err(|e| {
@@ -764,6 +887,7 @@ async fn execute_modify_table_column(
     table_name: &str,
     before_column: &Column,
     after_column: &Column,
+    cluster_name: Option<&str>,
     client: &ConfiguredDBClient,
 ) -> Result<(), ClickhouseChangesError> {
     // Check if only the comment has changed
@@ -791,11 +915,26 @@ async fn execute_modify_table_column(
         let clickhouse_column = std_column_to_clickhouse_column(after_column.clone())?;
 
         if let Some(ref comment) = clickhouse_column.comment {
-            execute_modify_column_comment(db_name, table_name, after_column, comment, client)
-                .await?;
+            execute_modify_column_comment(
+                db_name,
+                table_name,
+                after_column,
+                comment,
+                cluster_name,
+                client,
+            )
+            .await?;
         } else {
             // If the new comment is None, we still need to update to remove the old comment
-            execute_modify_column_comment(db_name, table_name, after_column, "", client).await?;
+            execute_modify_column_comment(
+                db_name,
+                table_name,
+                after_column,
+                "",
+                cluster_name,
+                client,
+            )
+            .await?;
         }
         return Ok(());
     }
@@ -821,6 +960,7 @@ data_type_changed: {data_type_changed}, default_changed: {default_changed}, requ
         &clickhouse_column,
         removing_default,
         removing_ttl,
+        cluster_name,
     )?;
 
     // Execute all statements in order
@@ -846,6 +986,7 @@ async fn execute_modify_column_comment(
     table_name: &str,
     column: &Column,
     comment: &str,
+    cluster_name: Option<&str>,
     client: &ConfiguredDBClient,
 ) -> Result<(), ClickhouseChangesError> {
     tracing::info!(
@@ -855,7 +996,7 @@ async fn execute_modify_column_comment(
     );
 
     let modify_comment_query =
-        build_modify_column_comment_sql(db_name, table_name, &column.name, comment)?;
+        build_modify_column_comment_sql(db_name, table_name, &column.name, comment, cluster_name)?;
 
     tracing::debug!("Modifying column comment: {}", modify_comment_query);
     run_query(&modify_comment_query, client)
@@ -873,8 +1014,13 @@ fn build_modify_column_sql(
     ch_col: &ClickHouseColumn,
     removing_default: bool,
     removing_ttl: bool,
+    cluster_name: Option<&str>,
 ) -> Result<Vec<String>, ClickhouseChangesError> {
     let column_type_string = basic_field_type_to_string(&ch_col.column_type)?;
+
+    let cluster_clause = cluster_name
+        .map(|c| format!(" ON CLUSTER {}", c))
+        .unwrap_or_default();
 
     let mut statements = vec![];
 
@@ -882,16 +1028,16 @@ fn build_modify_column_sql(
     // ClickHouse doesn't allow mixing column properties with REMOVE clauses
     if removing_default {
         statements.push(format!(
-            "ALTER TABLE `{}`.`{}` MODIFY COLUMN `{}` REMOVE DEFAULT",
-            db_name, table_name, ch_col.name
+            "ALTER TABLE `{}`.`{}`{} MODIFY COLUMN `{}` REMOVE DEFAULT",
+            db_name, table_name, cluster_clause, ch_col.name
         ));
     }
 
     // Add REMOVE TTL statement if needed
     if removing_ttl {
         statements.push(format!(
-            "ALTER TABLE `{}`.`{}` MODIFY COLUMN `{}` REMOVE TTL",
-            db_name, table_name, ch_col.name
+            "ALTER TABLE `{}`.`{}`{} MODIFY COLUMN `{}` REMOVE TTL",
+            db_name, table_name, cluster_clause, ch_col.name
         ));
     }
 
@@ -920,9 +1066,10 @@ fn build_modify_column_sql(
     let main_sql = if let Some(ref comment) = ch_col.comment {
         let escaped_comment = comment.replace('\'', "''");
         format!(
-            "ALTER TABLE `{}`.`{}` MODIFY COLUMN IF EXISTS `{}` {}{}{} COMMENT '{}'",
+            "ALTER TABLE `{}`.`{}`{} MODIFY COLUMN IF EXISTS `{}` {}{}{} COMMENT '{}'",
             db_name,
             table_name,
+            cluster_clause,
             ch_col.name,
             column_type_string,
             default_clause,
@@ -931,8 +1078,14 @@ fn build_modify_column_sql(
         )
     } else {
         format!(
-            "ALTER TABLE `{}`.`{}` MODIFY COLUMN IF EXISTS `{}` {}{}{}",
-            db_name, table_name, ch_col.name, column_type_string, default_clause, ttl_clause
+            "ALTER TABLE `{}`.`{}`{} MODIFY COLUMN IF EXISTS `{}` {}{}{}",
+            db_name,
+            table_name,
+            cluster_clause,
+            ch_col.name,
+            column_type_string,
+            default_clause,
+            ttl_clause
         )
     };
     statements.push(main_sql);
@@ -945,11 +1098,15 @@ fn build_modify_column_comment_sql(
     table_name: &str,
     column_name: &str,
     comment: &str,
+    cluster_name: Option<&str>,
 ) -> Result<String, ClickhouseChangesError> {
     let escaped_comment = comment.replace('\'', "''");
+    let cluster_clause = cluster_name
+        .map(|c| format!(" ON CLUSTER {}", c))
+        .unwrap_or_default();
     Ok(format!(
-        "ALTER TABLE `{}`.`{}` MODIFY COLUMN `{}` COMMENT '{}'",
-        db_name, table_name, column_name, escaped_comment
+        "ALTER TABLE `{}`.`{}`{} MODIFY COLUMN `{}` COMMENT '{}'",
+        db_name, table_name, cluster_clause, column_name, escaped_comment
     ))
 }
 
@@ -959,6 +1116,7 @@ async fn execute_modify_table_settings(
     table_name: &str,
     before_settings: &Option<HashMap<String, String>>,
     after_settings: &Option<HashMap<String, String>>,
+    cluster_name: Option<&str>,
     client: &ConfiguredDBClient,
 ) -> Result<(), ClickhouseChangesError> {
     use std::collections::HashMap;
@@ -991,8 +1149,12 @@ async fn execute_modify_table_settings(
 
     // Execute MODIFY SETTING if there are settings to modify
     if !settings_to_modify.is_empty() {
-        let alter_settings_query =
-            alter_table_modify_settings_query(db_name, table_name, &settings_to_modify, None)?;
+        let alter_settings_query = alter_table_modify_settings_query(
+            db_name,
+            table_name,
+            &settings_to_modify,
+            cluster_name,
+        )?;
         tracing::debug!("Modifying table settings: {}", alter_settings_query);
 
         run_query(&alter_settings_query, client)
@@ -1005,8 +1167,12 @@ async fn execute_modify_table_settings(
 
     // Execute RESET SETTING if there are settings to reset
     if !settings_to_reset.is_empty() {
-        let reset_settings_query =
-            alter_table_reset_settings_query(db_name, table_name, &settings_to_reset, None)?;
+        let reset_settings_query = alter_table_reset_settings_query(
+            db_name,
+            table_name,
+            &settings_to_reset,
+            cluster_name,
+        )?;
         tracing::debug!("Resetting table settings: {}", reset_settings_query);
 
         run_query(&reset_settings_query, client)
@@ -1026,6 +1192,7 @@ async fn execute_rename_table_column(
     table_name: &str,
     before_column_name: &str,
     after_column_name: &str,
+    cluster_name: Option<&str>,
     client: &ConfiguredDBClient,
 ) -> Result<(), ClickhouseChangesError> {
     tracing::info!(
@@ -1034,8 +1201,11 @@ async fn execute_rename_table_column(
         before_column_name,
         after_column_name
     );
+    let cluster_clause = cluster_name
+        .map(|c| format!(" ON CLUSTER {}", c))
+        .unwrap_or_default();
     let rename_column_query = format!(
-        "ALTER TABLE `{db_name}`.`{table_name}` RENAME COLUMN `{before_column_name}` TO `{after_column_name}`"
+        "ALTER TABLE `{db_name}`.`{table_name}`{cluster_clause} RENAME COLUMN `{before_column_name}` TO `{after_column_name}`"
     );
     tracing::debug!("Renaming column: {}", rename_column_query);
     run_query(&rename_column_query, client).await.map_err(|e| {
@@ -1710,19 +1880,34 @@ impl OlapOperations for ConfiguredDBClient {
             // This is more reliable than using the system.tables engine column which
             // only contains the engine name without parameters (e.g., "S3Queue" instead of
             // "S3Queue('path', 'format', ...)")
-            let engine_parsed = if let Some(engine_def) =
+            let engine_str_to_parse = if let Some(engine_def) =
                 extract_engine_from_create_table(&create_query)
             {
-                // Try to parse the extracted engine definition
-                engine_def.as_str().try_into().ok()
+                engine_def
             } else {
                 // Fallback to the simple engine name from system.tables
                 debug!("Could not extract engine from CREATE TABLE query, falling back to system.tables engine column");
-                engine.as_str().try_into().ok()
+                engine.clone()
             };
-            let engine_params_hash = engine_parsed
-                .as_ref()
-                .map(|e: &ClickhouseEngine| e.non_alterable_params_hash());
+
+            // Try to parse the engine string
+            let engine_parsed: ClickhouseEngine = match engine_str_to_parse.as_str().try_into() {
+                Ok(engine) => engine,
+                Err(failed_str) => {
+                    warn!(
+                        "Failed to parse engine for table '{}': '{}'. This may indicate an unsupported engine type.",
+                        table_name, failed_str
+                    );
+                    unsupported_tables.push(TableWithUnsupportedType {
+                        database: database.clone(),
+                        name: table_name.clone(),
+                        col_name: "__engine".to_string(),
+                        col_type: String::from(failed_str),
+                    });
+                    continue 'table_loop;
+                }
+            };
+            let engine_params_hash = Some(engine_parsed.non_alterable_params_hash());
 
             // Extract table settings from CREATE TABLE query
             let table_settings = extract_table_settings_from_create_table(&create_query);
@@ -1746,7 +1931,8 @@ impl OlapOperations for ConfiguredDBClient {
             debug!("Extracted indexes for table {}: {:?}", table_name, indexes);
 
             let table = Table {
-                name: base_name, // the name field is without version suffix elsewhere
+                // keep the name with version suffix, following PartialInfrastructureMap.convert_tables
+                name: table_name,
                 columns,
                 order_by: OrderBy::Fields(order_by_cols), // Use the extracted ORDER BY columns
                 partition_by: {
@@ -1754,7 +1940,7 @@ impl OlapOperations for ConfiguredDBClient {
                     (!p.is_empty()).then(|| p.to_string())
                 },
                 sample_by: extract_sample_by_from_create_table(&create_query),
-                engine: engine_parsed.unwrap_or_default(),
+                engine: engine_parsed,
                 version,
                 source_primitive,
                 metadata: None,
@@ -1765,6 +1951,9 @@ impl OlapOperations for ConfiguredDBClient {
                 indexes,
                 database: Some(database),
                 table_ttl_setting,
+                // cluster_name is always None from introspection because ClickHouse doesn't store
+                // the ON CLUSTER clause - it's only used during DDL execution and isn't persisted
+                // in system tables. Users must manually specify cluster in their table configs.
                 cluster_name: None,
             };
             debug!("Created table object: {:?}", table);
@@ -1778,6 +1967,284 @@ impl OlapOperations for ConfiguredDBClient {
         );
         Ok((tables, unsupported_tables))
     }
+
+    /// Retrieves all SQL resources (views and materialized views) from the ClickHouse database
+    ///
+    /// # Arguments
+    /// * `db_name` - The name of the database to list SQL resources from
+    /// * `default_database` - The default database name for resolving unqualified table references
+    ///
+    /// # Returns
+    /// * `Result<Vec<SqlResource>, OlapChangesError>` - A list of SqlResource objects
+    ///
+    /// # Details
+    /// This implementation:
+    /// 1. Queries system.tables for views and materialized views
+    /// 2. Parses the CREATE statements to extract dependencies
+    /// 3. Reconstructs SqlResource objects with setup and teardown scripts
+    /// 4. Extracts data lineage (pulls_data_from and pushes_data_to)
+    async fn list_sql_resources(
+        &self,
+        db_name: &str,
+        default_database: &str,
+    ) -> Result<Vec<SqlResource>, OlapChangesError> {
+        debug!(
+            "Starting list_sql_resources operation for database: {}",
+            db_name
+        );
+
+        // We query `as_select` from system.tables to get the clean SELECT statement
+        // without the view's column definitions (e.g., `CREATE VIEW v (col1 Type) AS ...`).
+        // This avoids complex parsing logic to strip those columns manually.
+        let query = format!(
+            r#"
+            SELECT
+                name,
+                database,
+                engine,
+                create_table_query,
+                as_select
+            FROM system.tables
+            WHERE database = '{}'
+            AND engine IN ('View', 'MaterializedView')
+            AND NOT name LIKE '.%'
+            ORDER BY name
+            "#,
+            db_name
+        );
+        debug!("Executing SQL resources query: {}", query);
+
+        let mut cursor = self
+            .client
+            .query(&query)
+            .fetch::<(String, String, String, String, String)>()
+            .map_err(|e| {
+                debug!("Error fetching SQL resources: {}", e);
+                OlapChangesError::DatabaseError(e.to_string())
+            })?;
+
+        let mut sql_resources = Vec::new();
+
+        while let Some((name, database, engine, create_query, as_select)) = cursor
+            .next()
+            .await
+            .map_err(|e| OlapChangesError::DatabaseError(e.to_string()))?
+        {
+            debug!("Processing SQL resource: {} (engine: {})", name, engine);
+            debug!("Create query: {}", create_query);
+
+            // Reconstruct SqlResource based on engine type
+            let sql_resource = match engine.as_str() {
+                "MaterializedView" => reconstruct_sql_resource_from_mv(
+                    name,
+                    create_query,
+                    as_select,
+                    database,
+                    default_database,
+                )?,
+                "View" => {
+                    reconstruct_sql_resource_from_view(name, as_select, database, default_database)?
+                }
+                _ => {
+                    warn!("Unexpected engine type for SQL resource: {}", engine);
+                    continue;
+                }
+            };
+
+            sql_resources.push(sql_resource);
+        }
+
+        debug!(
+            "Completed list_sql_resources operation, found {} SQL resources",
+            sql_resources.len()
+        );
+        Ok(sql_resources)
+    }
+}
+
+static MATERIALIZED_VIEW_TO_PATTERN: LazyLock<regex::Regex> = LazyLock::new(|| {
+    // Pattern to extract TO <table_name> from CREATE MATERIALIZED VIEW
+    regex::Regex::new(r"(?i)\bTO\s+([a-zA-Z0-9_.`]+)")
+        .expect("MATERIALIZED_VIEW_TO_PATTERN regex should compile")
+});
+
+/// Reconstructs a SqlResource from a materialized view's CREATE statement
+///
+/// # Arguments
+/// * `name` - The name of the materialized view
+/// * `create_query` - The CREATE MATERIALIZED VIEW statement from ClickHouse
+/// * `as_select` - The SELECT part of the query (clean, from system.tables)
+/// * `database` - The database where the view is located
+/// * `default_database` - The default database for resolving unqualified table references
+///
+/// # Returns
+/// * `Result<SqlResource, OlapChangesError>` - The reconstructed SqlResource
+fn reconstruct_sql_resource_from_mv(
+    name: String,
+    create_query: String,
+    as_select: String,
+    _database: String,
+    default_database: &str,
+) -> Result<SqlResource, OlapChangesError> {
+    // Extract target table from create_query
+    // We use a regex on the raw create_query because it's simpler than full parsing and
+    // avoids issues with ClickHouse's specific column definition syntax in CREATE statements.
+    // as_select doesn't contain the TO clause, so we must check the original query.
+    let target_table = MATERIALIZED_VIEW_TO_PATTERN
+        .captures(&create_query)
+        .and_then(|caps| caps.get(1))
+        .map(|m| m.as_str().replace('`', "")) // Strip backticks from table name
+        .ok_or_else(|| {
+            OlapChangesError::DatabaseError(format!(
+                "Could not find TO target in materialized view definition: {}",
+                name
+            ))
+        })?;
+
+    // Reconstruct the canonical CREATE statement
+    // CREATE MATERIALIZED VIEW IF NOT EXISTS name TO target AS select
+    let setup_raw = format!(
+        "CREATE MATERIALIZED VIEW IF NOT EXISTS {} TO {} AS {}",
+        name, target_table, as_select
+    );
+
+    // Normalize the SQL for consistent comparison with user-defined views
+    let setup = normalize_sql_for_comparison(&setup_raw, default_database);
+
+    // Generate teardown script
+    let teardown = format!("DROP VIEW IF EXISTS `{}`", name);
+
+    // Parse as_select to get source tables (lineage)
+    // as_select is clean SQL, so we can use standard parser logic
+    let source_tables = extract_source_tables_from_query(&as_select).map_err(|e| {
+        OlapChangesError::DatabaseError(format!(
+            "Failed to extract source tables from MV {}: {}",
+            name, e
+        ))
+    })?;
+
+    // Extract pulls_data_from (source tables)
+    let pulls_data_from = source_tables
+        .into_iter()
+        .map(|table_ref| {
+            // Get the table name, strip version suffix if present
+            let table_name = table_ref.table;
+            let (base_name, _version) = extract_version_from_table_name(&table_name);
+
+            // Use database from table reference if available, otherwise use default
+            let qualified_id = if let Some(db) = table_ref.database {
+                if db == default_database {
+                    base_name
+                } else {
+                    format!("{}_{}", db, base_name)
+                }
+            } else {
+                base_name
+            };
+
+            InfrastructureSignature::Table { id: qualified_id }
+        })
+        .collect();
+
+    // Extract pushes_data_to (target table for MV)
+    let (target_base_name, _version) = extract_version_from_table_name(&target_table);
+    // target_table might be qualified (db.table)
+    let (target_db, target_name_only) = split_qualified_name(&target_base_name);
+
+    let target_qualified_id = if let Some(target_db) = target_db {
+        if target_db == default_database {
+            target_name_only
+        } else {
+            format!("{}_{}", target_db, target_name_only)
+        }
+    } else {
+        target_name_only
+    };
+
+    let pushes_data_to = vec![InfrastructureSignature::Table {
+        id: target_qualified_id,
+    }];
+
+    Ok(SqlResource {
+        name,
+        database: Some(_database),
+        setup: vec![setup],
+        teardown: vec![teardown],
+        pulls_data_from,
+        pushes_data_to,
+    })
+}
+
+/// Reconstructs a SqlResource from a view's CREATE statement
+///
+/// # Arguments
+/// * `name` - The name of the view
+/// * `as_select` - The SELECT part of the query (clean, from system.tables)
+/// * `database` - The database where the view is located
+/// * `default_database` - The default database for resolving unqualified table references
+///
+/// # Returns
+/// * `Result<SqlResource, OlapChangesError>` - The reconstructed SqlResource
+fn reconstruct_sql_resource_from_view(
+    name: String,
+    as_select: String,
+    _database: String,
+    default_database: &str,
+) -> Result<SqlResource, OlapChangesError> {
+    // Reconstruct the canonical CREATE statement using as_select.
+    // This ensures we have a clean definition without column types in the header,
+    // matching how Moose generates views (just `CREATE VIEW ... AS SELECT ...`).
+    // CREATE VIEW IF NOT EXISTS name AS select
+    let setup_raw = format!("CREATE VIEW IF NOT EXISTS {} AS {}", name, as_select);
+
+    // Normalize the SQL for consistent comparison with user-defined views
+    let setup = normalize_sql_for_comparison(&setup_raw, default_database);
+
+    // Generate teardown script
+    let teardown = format!("DROP VIEW IF EXISTS `{}`", name);
+
+    // Parse as_select to get source tables (lineage)
+    let source_tables = extract_source_tables_from_query(&as_select).map_err(|e| {
+        OlapChangesError::DatabaseError(format!(
+            "Failed to extract source tables from View {}: {}",
+            name, e
+        ))
+    })?;
+
+    // Extract pulls_data_from (source tables)
+    let pulls_data_from = source_tables
+        .into_iter()
+        .map(|table_ref| {
+            // Get the table name, strip version suffix if present
+            let table_name = table_ref.table;
+            let (base_name, _version) = extract_version_from_table_name(&table_name);
+
+            // Use database from table reference if available, otherwise use default
+            let qualified_id = if let Some(db) = table_ref.database {
+                if db == default_database {
+                    base_name
+                } else {
+                    format!("{}_{}", db, base_name)
+                }
+            } else {
+                base_name
+            };
+
+            InfrastructureSignature::Table { id: qualified_id }
+        })
+        .collect();
+
+    // Regular views don't push data to tables
+    let pushes_data_to = vec![];
+
+    Ok(SqlResource {
+        name,
+        database: Some(_database),
+        setup: vec![setup],
+        teardown: vec![teardown],
+        pulls_data_from,
+        pushes_data_to,
+    })
 }
 
 /// Regex pattern to find keywords that terminate an ORDER BY clause
@@ -2284,7 +2751,7 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
         };
 
         let ch_after = std_column_to_clickhouse_column(after_column).unwrap();
-        let sqls = build_modify_column_sql("db", "table", &ch_after, false, false).unwrap();
+        let sqls = build_modify_column_sql("db", "table", &ch_after, false, false, None).unwrap();
 
         assert_eq!(sqls.len(), 1);
         assert_eq!(
@@ -2316,8 +2783,8 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
         };
 
         // Use the pure SQL builder for comment-only update
-        let sql =
-            build_modify_column_comment_sql("db", "table", &after_column.name, "new").unwrap();
+        let sql = build_modify_column_comment_sql("db", "table", &after_column.name, "new", None)
+            .unwrap();
         assert_eq!(
             sql,
             "ALTER TABLE `db`.`table` MODIFY COLUMN `status` COMMENT 'new'"
@@ -2345,7 +2812,8 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
         let clickhouse_column = std_column_to_clickhouse_column(column).unwrap();
 
         let sqls =
-            build_modify_column_sql("test_db", "users", &clickhouse_column, false, false).unwrap();
+            build_modify_column_sql("test_db", "users", &clickhouse_column, false, false, None)
+                .unwrap();
 
         assert_eq!(sqls.len(), 1);
         assert_eq!(
@@ -2371,8 +2839,15 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
             ttl: None,
         };
 
-        let sqls = build_modify_column_sql("test_db", "test_table", &sample_hash_col, false, false)
-            .unwrap();
+        let sqls = build_modify_column_sql(
+            "test_db",
+            "test_table",
+            &sample_hash_col,
+            false,
+            false,
+            None,
+        )
+        .unwrap();
 
         assert_eq!(sqls.len(), 1);
         // The fix ensures xxHash64(_id) is NOT quoted - if it were quoted, ClickHouse would treat it as a string literal
@@ -2393,8 +2868,9 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
             ttl: None,
         };
 
-        let sqls = build_modify_column_sql("test_db", "test_table", &created_at_col, false, false)
-            .unwrap();
+        let sqls =
+            build_modify_column_sql("test_db", "test_table", &created_at_col, false, false, None)
+                .unwrap();
 
         assert_eq!(sqls.len(), 1);
         // The fix ensures now() is NOT quoted
@@ -2416,7 +2892,8 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
         };
 
         let sqls =
-            build_modify_column_sql("test_db", "test_table", &status_col, false, false).unwrap();
+            build_modify_column_sql("test_db", "test_table", &status_col, false, false, None)
+                .unwrap();
 
         assert_eq!(sqls.len(), 1);
         // String literals should preserve their quotes
@@ -2740,8 +3217,8 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
             table_settings: None,
             indexes: vec![],
             database: None,
-            table_ttl_setting: Some("created_at + INTERVAL 30 DAY".to_string()),
             cluster_name: None,
+            table_ttl_setting: Some("created_at + INTERVAL 30 DAY".to_string()),
         };
 
         let ignore_ops = vec![
@@ -2806,8 +3283,8 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
             table_settings: None,
             indexes: vec![],
             database: None,
-            table_ttl_setting: Some("created_at + INTERVAL 30 DAY".to_string()),
             cluster_name: None,
+            table_ttl_setting: Some("created_at + INTERVAL 30 DAY".to_string()),
         };
 
         let ignore_ops = vec![];

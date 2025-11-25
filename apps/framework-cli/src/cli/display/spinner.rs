@@ -440,7 +440,6 @@ pub fn with_spinner_completion<F, R>(
 where
     F: FnOnce() -> R,
 {
-    tracing::debug!("Starting: {}", message);
     let sp = if activate && stdout().is_terminal() {
         let mut spinner = SpinnerComponent::new(message);
         let _ = spinner.start();
@@ -455,7 +454,6 @@ where
         let _ = spinner.done(completion_message);
         let _ = spinner.cleanup();
     }
-    tracing::debug!("Completed: {}", completion_message);
 
     res
 }
@@ -554,7 +552,6 @@ pub async fn with_spinner_completion_async<F, R>(
 where
     F: Future<Output = R>,
 {
-    tracing::debug!("Starting: {}", message);
     let sp = if activate && stdout().is_terminal() {
         let mut spinner = SpinnerComponent::new(message);
         let _ = spinner.start();
@@ -569,7 +566,6 @@ where
         let _ = spinner.done(completion_message);
         let _ = spinner.cleanup();
     }
-    tracing::debug!("Completed: {}", completion_message);
 
     res
 }

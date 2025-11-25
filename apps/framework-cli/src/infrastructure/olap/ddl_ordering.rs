@@ -181,6 +181,7 @@ impl AtomicOlapOperation {
             } => SerializableOlapOperation::DropTable {
                 table: table.name.clone(),
                 database: table.database.clone(),
+                cluster_name: table.cluster_name.clone(),
             },
             AtomicOlapOperation::AddTableColumn {
                 table,
@@ -192,6 +193,7 @@ impl AtomicOlapOperation {
                 column: column.clone(),
                 after_column: after_column.clone(),
                 database: table.database.clone(),
+                cluster_name: table.cluster_name.clone(),
             },
             AtomicOlapOperation::DropTableColumn {
                 table,
@@ -201,6 +203,7 @@ impl AtomicOlapOperation {
                 table: table.name.clone(),
                 column_name: column_name.clone(),
                 database: table.database.clone(),
+                cluster_name: table.cluster_name.clone(),
             },
             AtomicOlapOperation::ModifyTableColumn {
                 table,
@@ -212,6 +215,7 @@ impl AtomicOlapOperation {
                 before_column: before_column.clone(),
                 after_column: after_column.clone(),
                 database: table.database.clone(),
+            cluster_name: table.cluster_name.clone(),
             },
             AtomicOlapOperation::ModifyTableSettings {
                 table,
@@ -223,6 +227,7 @@ impl AtomicOlapOperation {
                 before_settings: before_settings.clone(),
                 after_settings: after_settings.clone(),
                 database: table.database.clone(),
+            cluster_name: table.cluster_name.clone(),
             },
             AtomicOlapOperation::ModifyTableTtl {
                 table,
@@ -234,12 +239,14 @@ impl AtomicOlapOperation {
                 before: before.clone(),
                 after: after.clone(),
                 database: table.database.clone(),
+            cluster_name: table.cluster_name.clone(),
             },
             AtomicOlapOperation::AddTableIndex { table, index, .. } => {
                 SerializableOlapOperation::AddTableIndex {
                     table: table.name.clone(),
                     index: index.clone(),
                     database: table.database.clone(),
+                cluster_name: table.cluster_name.clone(),
                 }
             }
             AtomicOlapOperation::DropTableIndex {
@@ -248,6 +255,7 @@ impl AtomicOlapOperation {
                 table: table.name.clone(),
                 index_name: index_name.clone(),
                 database: table.database.clone(),
+            cluster_name: table.cluster_name.clone(),
             },
             AtomicOlapOperation::ModifySampleBy {
                 table, expression, ..
@@ -255,11 +263,13 @@ impl AtomicOlapOperation {
                 table: table.name.clone(),
                 expression: expression.clone(),
                 database: table.database.clone(),
+            cluster_name: table.cluster_name.clone(),
             },
             AtomicOlapOperation::RemoveSampleBy { table, .. } => {
                 SerializableOlapOperation::RemoveSampleBy {
                     table: table.name.clone(),
                     database: table.database.clone(),
+                cluster_name: table.cluster_name.clone(),
                 }
             }
             AtomicOlapOperation::PopulateMaterializedView {
@@ -2205,6 +2215,7 @@ mod tests {
         // Create SQL resource for a materialized view
         let mv_sql_resource = SqlResource {
             name: "mv_a_to_b".to_string(),
+            database: None,
             setup: vec![
                 "CREATE MATERIALIZED VIEW mv_a_to_b TO table_b AS SELECT * FROM table_a"
                     .to_string(),
@@ -2350,6 +2361,7 @@ mod tests {
         // Create SQL resource for a materialized view
         let mv_sql_resource = SqlResource {
             name: "mv_a_to_b".to_string(),
+            database: None,
             setup: vec![
                 "CREATE MATERIALIZED VIEW mv_a_to_b TO table_b AS SELECT * FROM table_a"
                     .to_string(),
@@ -2378,7 +2390,7 @@ mod tests {
             dependency_info: DependencyInfo {
                 // For teardown: Table A depends on MV being gone first
                 pulls_data_from: vec![InfrastructureSignature::SqlResource {
-                    id: "mv_a_to_b".to_string(),
+                    id: mv_sql_resource.name.clone(),
                 }],
                 pushes_data_to: vec![],
             },
@@ -2390,7 +2402,7 @@ mod tests {
             dependency_info: DependencyInfo {
                 // For teardown: Table B depends on MV being gone first
                 pulls_data_from: vec![InfrastructureSignature::SqlResource {
-                    id: "mv_a_to_b".to_string(),
+                    id: mv_sql_resource.name.clone(),
                 }],
                 pushes_data_to: vec![],
             },
@@ -2499,6 +2511,7 @@ mod tests {
         // Create SQL resource for materialized view
         let resource = SqlResource {
             name: "mv_a_to_b".to_string(),
+            database: None,
             setup: vec![
                 "CREATE MATERIALIZED VIEW mv_a_to_b TO table_b AS SELECT * FROM table_a"
                     .to_string(),
@@ -2605,7 +2618,7 @@ mod tests {
             dependency_info: DependencyInfo {
                 // For teardown: Table A depends on MV being gone first
                 pulls_data_from: vec![InfrastructureSignature::SqlResource {
-                    id: "mv_a_to_b".to_string(),
+                    id: resource.name.clone(),
                 }],
                 pushes_data_to: vec![],
             },
@@ -2616,7 +2629,7 @@ mod tests {
             dependency_info: DependencyInfo {
                 // For teardown: Table B depends on MV being gone first
                 pulls_data_from: vec![InfrastructureSignature::SqlResource {
-                    id: "mv_a_to_b".to_string(),
+                    id: resource.name.clone(),
                 }],
                 pushes_data_to: vec![],
             },

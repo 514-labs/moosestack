@@ -494,7 +494,10 @@ fn default_database_name() -> String {
 ///
 /// The relationship between the components is maintained by reference rather than by value.
 /// Helper methods facilitate navigating the map and finding related components.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+///
+/// Note: This type has a custom `Serialize` implementation that sorts all JSON keys
+/// alphabetically for deterministic output in version-controlled migration files.
+#[derive(Debug, Clone, Deserialize)]
 pub struct InfrastructureMap {
     #[serde(default = "default_database_name")]
     pub default_database: String,
@@ -1760,7 +1763,8 @@ impl InfrastructureMap {
         let mut table_additions = 0;
 
         // Use normalized tables for comparison, but original tables for changes
-        for normalized_table in normalized_self.values() {
+        // Iterate over key-value pairs to preserve the HashMap key for lookups
+        for (key, normalized_table) in normalized_self.iter() {
             // self_tables can be from remote where the keys are IDs with another database prefix
             // but they are then the default database,
             //   the `database` field is None and we build the ID ourselves
@@ -1768,13 +1772,14 @@ impl InfrastructureMap {
                 normalized_target.get(&normalized_table.id(default_database))
             {
                 if !tables_equal_ignore_metadata(normalized_table, normalized_target) {
-                    // Get original tables for use in changes
+                    // Get original tables for use in changes using the HashMap key
+                    // not the computed ID, since remote keys may differ from computed IDs
                     let table = self_tables
-                        .get(&normalized_table.id(default_database))
-                        .unwrap();
+                        .get(key)
+                        .expect("normalized_self and self_tables should have same keys");
                     let target_table = target_tables
                         .get(&normalized_target.id(default_database))
-                        .unwrap();
+                        .expect("normalized_target exists, so target_table should too");
                     // Respect lifecycle: ExternallyManaged tables are never modified
                     if target_table.life_cycle == LifeCycle::ExternallyManaged && respect_life_cycle
                     {
@@ -1821,37 +1826,15 @@ impl InfrastructureMap {
                             before: normalized_table.partition_by.clone(),
                             after: normalized_target.partition_by.clone(),
                         };
-
-                        // Compute ORDER BY changes
-                        fn order_by_from_primary_key(target_table: &Table) -> Vec<String> {
-                            target_table
-                                .columns
-                                .iter()
-                                .filter_map(|c| {
-                                    if c.primary_key {
-                                        Some(c.name.clone())
-                                    } else {
-                                        None
-                                    }
-                                })
-                                .collect()
-                        }
-
-                        let order_by_changed = table.order_by != target_table.order_by
-                            // target may leave order_by unspecified,
-                            // but the implicit order_by from primary keys can be the same
-                            // ONLY for engines that support ORDER BY (MergeTree family and S3)
-                            // Buffer, S3Queue, and Distributed don't support ORDER BY
-                            && !(target_table.order_by.is_empty()
-                                && target_table.engine.supports_order_by()
-                                && matches!(
-                                    &table.order_by,
-                                    OrderBy::Fields(v)
-                                        if *v == order_by_from_primary_key(target_table)
-                                ));
+                        let order_by_changed = !table.order_by_equals(target_table);
 
                         // Detect engine change (e.g., MergeTree -> ReplacingMergeTree)
                         let engine_changed = table.engine != target_table.engine;
+
+                        // Note: We intentionally do NOT check for cluster_name changes here.
+                        // cluster_name is a deployment directive (how to run DDL), not a schema property.
+                        // The inframap will be updated with the new cluster_name value, and future DDL
+                        // operations will use it, but changing cluster_name doesn't trigger operations.
 
                         let order_by_change = if order_by_changed {
                             OrderByChange {
@@ -1893,6 +1876,8 @@ impl InfrastructureMap {
                         // since ClickHouse requires the full column definition when modifying TTL
 
                         // Only process changes if there are actual differences to report
+                        // Note: cluster_name changes are intentionally excluded - they don't trigger operations
+                        // TODO: table_settings is not checked in the if condition, but checked by ClickHouseTableDiffStrategy
                         if !column_changes.is_empty()
                             || order_by_changed
                             || partition_by_changed
@@ -1918,10 +1903,10 @@ impl InfrastructureMap {
                     }
                 }
             } else {
-                // Get original table for removal
+                // Get original table for removal using the HashMap key
                 let table = self_tables
-                    .get(&normalized_table.id(default_database))
-                    .unwrap();
+                    .get(key)
+                    .expect("normalized_self and self_tables should have same keys");
                 // Respect lifecycle: DeletionProtected and ExternallyManaged tables are never removed
                 match (table.life_cycle, respect_life_cycle) {
                     (LifeCycle::FullyManaged, _) | (_, false) => {
@@ -2118,33 +2103,7 @@ impl InfrastructureMap {
             }
         }
 
-        fn order_by_from_primary_key(target_table: &Table) -> Vec<String> {
-            target_table
-                .columns
-                .iter()
-                .filter_map(|c| {
-                    if c.primary_key {
-                        Some(c.name.clone())
-                    } else {
-                        None
-                    }
-                })
-                .collect()
-        }
-
-        let order_by_changed = table.order_by != target_table.order_by
-            // target may leave order_by unspecified,
-            // but the implicit order_by from primary keys can be the same
-            // ONLY for engines that support ORDER BY (MergeTree family and S3)
-            // Buffer, S3Queue, and Distributed don't support ORDER BY
-            // When engine is None, ClickHouse defaults to MergeTree
-            && !(target_table.order_by.is_empty()
-                && target_table.engine.supports_order_by()
-                && matches!(
-                    &table.order_by,
-                    crate::framework::core::infrastructure::table::OrderBy::Fields(v)
-                        if *v == order_by_from_primary_key(target_table)
-                ));
+        let order_by_changed = !table.order_by_equals(target_table);
 
         let order_by_change = if order_by_changed {
             OrderByChange {
@@ -2236,69 +2195,66 @@ impl InfrastructureMap {
         for table in self.tables.values_mut() {
             let mut should_recalc_hash = false;
 
+            // Helper closure to resolve AWS credentials for S3-based engines
+            let resolve_aws_credentials = |access_key: &mut Option<String>,
+                                           secret_key: &mut Option<String>,
+                                           engine_name: &str|
+             -> Result<(), String> {
+                let resolved_access_key = resolve_optional_runtime_env(access_key).map_err(
+                    |e| {
+                        format!(
+                            "Failed to resolve runtime environment variable for table '{}' field 'awsAccessKeyId': {}",
+                            table.name, e
+                        )
+                    },
+                )?;
+
+                let resolved_secret_key = resolve_optional_runtime_env(secret_key).map_err(
+                    |e| {
+                        format!(
+                            "Failed to resolve runtime environment variable for table '{}' field 'awsSecretAccessKey': {}",
+                            table.name, e
+                        )
+                    },
+                )?;
+
+                *access_key = resolved_access_key;
+                *secret_key = resolved_secret_key;
+
+                tracing::debug!(
+                    "Resolved {} credentials for table '{}' at runtime",
+                    engine_name,
+                    table.name
+                );
+
+                Ok(())
+            };
+
             match &mut table.engine {
                 ClickhouseEngine::S3Queue {
-                        aws_access_key_id,
-                        aws_secret_access_key,
-                        ..
-                    } => {
-                        // Resolve environment variable markers for AWS credentials
-                        let resolved_access_key = resolve_optional_runtime_env(aws_access_key_id)
-                            .map_err(|e| {
-                            format!(
-                                "Failed to resolve runtime environment variable for table '{}' field 'awsAccessKeyId': {}",
-                                table.name, e
-                            )
-                        })?;
-
-                        let resolved_secret_key =
-                            resolve_optional_runtime_env(aws_secret_access_key).map_err(|e| {
-                                format!(
-                                    "Failed to resolve runtime environment variable for table '{}' field 'awsSecretAccessKey': {}",
-                                    table.name, e
-                                )
-                            })?;
-
-                        *aws_access_key_id = resolved_access_key;
-                        *aws_secret_access_key = resolved_secret_key;
-                        should_recalc_hash = true;
-
-                        tracing::debug!(
-                            "Resolved S3Queue credentials for table '{}' at runtime",
-                            table.name
-                        );
-                    }
-                    ClickhouseEngine::S3 {
-                        aws_access_key_id,
-                        aws_secret_access_key,
-                        ..
-                    } => {
-                        // Resolve environment variable markers for AWS credentials
-                        let resolved_access_key = resolve_optional_runtime_env(aws_access_key_id)
-                            .map_err(|e| {
-                            format!(
-                                "Failed to resolve runtime environment variable for table '{}' field 'awsAccessKeyId': {}",
-                                table.name, e
-                            )
-                        })?;
-
-                        let resolved_secret_key =
-                            resolve_optional_runtime_env(aws_secret_access_key).map_err(|e| {
-                                format!(
-                                    "Failed to resolve runtime environment variable for table '{}' field 'awsSecretAccessKey': {}",
-                                    table.name, e
-                                )
-                            })?;
-
-                        *aws_access_key_id = resolved_access_key;
-                        *aws_secret_access_key = resolved_secret_key;
-                        should_recalc_hash = true;
-
-                        tracing::debug!(
-                            "Resolved S3 credentials for table '{}' at runtime",
-                            table.name
-                        );
-                    }
+                    aws_access_key_id,
+                    aws_secret_access_key,
+                    ..
+                } => {
+                    resolve_aws_credentials(aws_access_key_id, aws_secret_access_key, "S3Queue")?;
+                    should_recalc_hash = true;
+                }
+                ClickhouseEngine::S3 {
+                    aws_access_key_id,
+                    aws_secret_access_key,
+                    ..
+                } => {
+                    resolve_aws_credentials(aws_access_key_id, aws_secret_access_key, "S3")?;
+                    should_recalc_hash = true;
+                }
+                ClickhouseEngine::IcebergS3 {
+                    aws_access_key_id,
+                    aws_secret_access_key,
+                    ..
+                } => {
+                    resolve_aws_credentials(aws_access_key_id, aws_secret_access_key, "IcebergS3")?;
+                    should_recalc_hash = true;
+                }
                 _ => {
                     // No credentials to resolve for other engine types
                 }
@@ -2306,8 +2262,7 @@ impl InfrastructureMap {
 
             // Recalculate engine_params_hash after resolving credentials
             if should_recalc_hash {
-                table.engine_params_hash =
-                    Some(table.engine.non_alterable_params_hash());
+                table.engine_params_hash = Some(table.engine.non_alterable_params_hash());
                 tracing::debug!(
                     "Recalculated engine_params_hash for table '{}' after credential resolution",
                     table.name
@@ -2554,6 +2509,46 @@ impl InfrastructureMap {
     /// An Option containing a reference to the table if found
     pub fn find_table_by_name(&self, name: &str) -> Option<&Table> {
         self.tables.values().find(|table| table.name == name)
+    }
+
+    /// Normalizes the infrastructure map for backward compatibility
+    ///
+    /// This applies the same normalization logic as partial_infrastructure_map.rs
+    /// to ensure consistent comparison between old and new infrastructure maps.
+    ///
+    /// Specifically:
+    /// - Falls back to primary key columns for order_by when it's empty (for MergeTree tables)
+    /// - Ensures arrays are always required=true (ClickHouse doesn't support Nullable(Array))
+    ///
+    /// This is needed because older CLI versions didn't persist order_by when it was
+    /// derived from primary key columns.
+    pub fn normalize(mut self) -> Self {
+        use crate::framework::core::infrastructure::table::ColumnType;
+
+        self.tables = self
+            .tables
+            .into_iter()
+            .map(|(id, mut table)| {
+                // Fall back to primary key columns if order_by is empty for MergeTree engines
+                // This ensures backward compatibility when order_by isn't explicitly set
+                // We only do this for MergeTree family to avoid breaking S3 tables
+                if table.order_by.is_empty() {
+                    table.order_by = table.order_by_with_fallback();
+                }
+
+                // Normalize columns: ClickHouse doesn't support Nullable(Array(...))
+                // Arrays must always be NOT NULL (required=true)
+                for col in &mut table.columns {
+                    if matches!(col.data_type, ColumnType::Array { .. }) {
+                        col.required = true;
+                    }
+                }
+
+                (id, table)
+            })
+            .collect();
+
+        self
     }
 
     /// Adds a topic to the infrastructure map
@@ -2942,6 +2937,60 @@ impl Default for InfrastructureMap {
     }
 }
 
+impl serde::Serialize for InfrastructureMap {
+    /// Custom serialization with sorted keys for deterministic output.
+    ///
+    /// Migration files are version-controlled, so we need consistent output.
+    /// Without sorted keys, HashMap serialization order is random, causing noisy diffs.
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        // We need to temporarily derive Serialize on a shadow type to avoid infinite recursion
+        // Create a JSON value using the derived Serialize, then sort keys
+        #[derive(serde::Serialize)]
+        struct InfrastructureMapForSerialization<'a> {
+            #[serde(skip_serializing_if = "Option::is_none")]
+            default_database: Option<&'a String>,
+            topics: &'a HashMap<String, Topic>,
+            api_endpoints: &'a HashMap<String, ApiEndpoint>,
+            tables: &'a HashMap<String, Table>,
+            views: &'a HashMap<String, View>,
+            topic_to_table_sync_processes: &'a HashMap<String, TopicToTableSyncProcess>,
+            topic_to_topic_sync_processes: &'a HashMap<String, TopicToTopicSyncProcess>,
+            function_processes: &'a HashMap<String, FunctionProcess>,
+            block_db_processes: &'a OlapProcess,
+            consumption_api_web_server: &'a ConsumptionApiWebServer,
+            orchestration_workers: &'a HashMap<String, OrchestrationWorker>,
+            sql_resources: &'a HashMap<String, SqlResource>,
+            workflows: &'a HashMap<String, Workflow>,
+            web_apps: &'a HashMap<String, super::infrastructure::web_app::WebApp>,
+        }
+
+        let shadow_map = InfrastructureMapForSerialization {
+            default_database: Some(&self.default_database),
+            topics: &self.topics,
+            api_endpoints: &self.api_endpoints,
+            tables: &self.tables,
+            views: &self.views,
+            topic_to_table_sync_processes: &self.topic_to_table_sync_processes,
+            topic_to_topic_sync_processes: &self.topic_to_topic_sync_processes,
+            function_processes: &self.function_processes,
+            block_db_processes: &self.block_db_processes,
+            consumption_api_web_server: &self.consumption_api_web_server,
+            orchestration_workers: &self.orchestration_workers,
+            sql_resources: &self.sql_resources,
+            workflows: &self.workflows,
+            web_apps: &self.web_apps,
+        };
+
+        // Serialize to JSON value, sort keys, then serialize that
+        let json_value = serde_json::to_value(&shadow_map).map_err(serde::ser::Error::custom)?;
+        let sorted_value = crate::utilities::json::sort_json_keys(json_value);
+        sorted_value.serialize(serializer)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use crate::framework::core::infrastructure::table::IntType;
@@ -2958,12 +3007,13 @@ mod tests {
     };
     use crate::framework::versions::Version;
     use crate::infrastructure::olap::clickhouse::config::DEFAULT_DATABASE_NAME;
+    use crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine;
 
     #[test]
     fn test_compute_table_diff() {
         let before = Table {
             name: "test_table".to_string(),
-            engine: None,
+            engine: ClickhouseEngine::MergeTree,
             columns: vec![
                 Column {
                     name: "id".to_string(),
@@ -3014,11 +3064,12 @@ mod tests {
             indexes: vec![],
             database: None,
             table_ttl_setting: None,
+            cluster_name: None,
         };
 
         let after = Table {
             name: "test_table".to_string(),
-            engine: None,
+            engine: ClickhouseEngine::MergeTree,
             columns: vec![
                 Column {
                     name: "id".to_string(),
@@ -3069,6 +3120,7 @@ mod tests {
             indexes: vec![],
             database: None,
             table_ttl_setting: None,
+            cluster_name: None,
         };
 
         let diff = compute_table_columns_diff(&before, &after);
@@ -3227,7 +3279,7 @@ mod diff_tests {
     pub fn create_test_table(name: &str, version: &str) -> Table {
         Table {
             name: name.to_string(),
-            engine: None,
+            engine: ClickhouseEngine::MergeTree,
             columns: vec![],
             order_by: OrderBy::Fields(vec![]),
             partition_by: None,
@@ -3244,6 +3296,7 @@ mod diff_tests {
             indexes: vec![],
             database: None,
             table_ttl_setting: None,
+            cluster_name: None,
         }
     }
 
@@ -3525,11 +3578,11 @@ mod diff_tests {
         let mut before = create_test_table("test", "1.0");
         let mut after = create_test_table("test", "1.0");
 
-        before.engine = Some(ClickhouseEngine::MergeTree);
-        after.engine = Some(ClickhouseEngine::ReplacingMergeTree {
+        before.engine = ClickhouseEngine::MergeTree;
+        after.engine = ClickhouseEngine::ReplacingMergeTree {
             ver: None,
             is_deleted: None,
-        });
+        };
 
         // Set database field for both tables
         before.database = Some(DEFAULT_DATABASE_NAME.to_string());
@@ -3554,9 +3607,9 @@ mod diff_tests {
                 after: a,
                 ..
             }) => {
-                assert_eq!(&b.engine, &ClickhouseEngine::MergeTree);
+                assert!(matches!(&b.engine, ClickhouseEngine::MergeTree));
                 assert!(matches!(
-                    a.engine,
+                    &a.engine,
                     ClickhouseEngine::ReplacingMergeTree { .. }
                 ));
             }
@@ -4494,6 +4547,7 @@ mod diff_sql_resources_tests {
     fn create_sql_resource(name: &str, setup: Vec<&str>, teardown: Vec<&str>) -> SqlResource {
         SqlResource {
             name: name.to_string(),
+            database: None,
             setup: setup.iter().map(|s| s.to_string()).collect(),
             teardown: teardown.iter().map(|s| s.to_string()).collect(),
             pulls_data_from: vec![],
@@ -4729,6 +4783,7 @@ mod diff_sql_resources_tests {
 
         let mv_before = SqlResource {
             name: "events_summary_mv".to_string(),
+            database: None,
             setup: vec!["CREATE MATERIALIZED VIEW events_summary_mv TO events_summary_table AS SELECT id, name FROM events".to_string()],
             teardown: vec!["DROP VIEW events_summary_mv".to_string()],
             pulls_data_from: vec![InfrastructureSignature::Table {
@@ -4741,6 +4796,7 @@ mod diff_sql_resources_tests {
 
         let mv_after = SqlResource {
             name: "events_summary_mv".to_string(),
+            database: None,
             setup: vec!["CREATE MATERIALIZED VIEW events_summary_mv TO events_summary_table AS SELECT id, name, timestamp FROM events".to_string()],
             teardown: vec!["DROP VIEW events_summary_mv".to_string()],
             pulls_data_from: vec![InfrastructureSignature::Table {

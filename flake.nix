@@ -168,6 +168,45 @@
 
           # Package outputs
           packages = {
+            # Template packages - package templates from templates/ directory
+            template-packages = pkgs.stdenv.mkDerivation {
+              pname = "moose-template-packages";
+              version = "0.0.1";
+
+              src = ./templates;
+
+              nativeBuildInputs = [ pkgs.gnutar pkgs.gzip ];
+
+              buildPhase = ''
+                # Create manifest header
+                cat > manifest.toml << 'EOF'
+                [templates]
+                EOF
+
+                # Package each template directory
+                for template_dir in */; do
+                  template_name="''${template_dir%/}"
+
+                  # Create tarball
+                  tar -czf "$template_name.tgz" \
+                    --exclude="node_modules" \
+                    -C "$template_dir" .
+
+                  # Add to manifest if template.config.toml exists
+                  if [ -f "$template_dir/template.config.toml" ]; then
+                    echo "" >> manifest.toml
+                    echo "[templates.$template_name]" >> manifest.toml
+                    cat "$template_dir/template.config.toml" >> manifest.toml
+                  fi
+                done
+              '';
+
+              installPhase = ''
+                mkdir -p $out
+                cp *.tgz manifest.toml $out/
+              '';
+            };
+
             # Rust CLI
             moose-cli = pkgs.rustPlatform.buildRustPackage {
               pname = "moose-cli";
@@ -230,6 +269,33 @@
               preBuild = ''
                 export PATH="${pkgs.bash}/bin:${pkgs.coreutils}/bin:$PATH"
                 export SHELL="${pkgs.bash}/bin/bash"
+              '';
+
+              # Restructure output to match expected template path
+              # Real binary at: $out/libexec/moose/moose-cli (3 levels deep)
+              # Templates at: $out/template-packages/
+              # From binary: parent()/parent()/parent()/join("template-packages") = $out/template-packages ✓
+              postInstall = ''
+                # Create nested directory for real binary (3 levels deep from $out)
+                mkdir -p $out/libexec/moose
+                mkdir -p $out/template-packages
+
+                # Move binary to nested location
+                mv $out/bin/moose-cli $out/libexec/moose/moose-cli
+
+                # Copy templates from the template-packages derivation
+                cp -r ${self'.packages.template-packages}/* $out/template-packages/
+
+                # Create wrapper script in standard bin location
+                mkdir -p $out/bin
+                cat > $out/bin/moose-cli << 'EOF'
+              #!/usr/bin/env bash
+              exec "$out/libexec/moose/moose-cli" "$@"
+              EOF
+                chmod +x $out/bin/moose-cli
+
+                # Substitute $out with actual path
+                substituteInPlace $out/bin/moose-cli --replace-fail '$out' "$out"
               '';
 
               meta = with lib; {

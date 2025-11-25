@@ -40,6 +40,119 @@ interface ApiUtil {
 }
 ```
 
+## Date and Time Types
+
+Type aliases that map JavaScript temporal data to ClickHouse DateTime types.
+Choose between Date objects or strings based on the precision you need to persist in ClickHouse.
+
+### `DateTime`
+A type alias for JavaScript's native `Date` object that maps to ClickHouse `DateTime` (second precision).
+
+```ts
+interface Event {
+  // Stored as ClickHouse DateTime (second precision)
+  // Runtime: JavaScript Date object
+  createdAt: DateTime;
+}
+```
+
+**Important:** While JavaScript `Date` objects can hold millisecond precision, only the second portion will be persisted in ClickHouse since the database type is `DateTime`.
+
+**Use when:**
+- Second precision is sufficient for your use case
+- You need standard JavaScript Date objects in your application
+- Working with user-visible timestamps where sub-second precision isn't critical
+
+### `DateTime64<P extends number>`
+A type for datetime values with configurable precision (0-9 decimal places) that maps to ClickHouse `DateTime64(P)`.
+At runtime, JavaScript `Date` objects are used.
+
+```ts
+interface Event {
+  // ✅ Safe: ClickHouse DateTime64(3), JavaScript Date holds milliseconds
+  timestamp: DateTime64<3>;
+  
+  // ⚠️ Precision loss: ClickHouse stores microseconds, but Date truncates to milliseconds
+  highPrecisionTimestamp: DateTime64<6>;
+}
+```
+
+**Precision Limits:**
+- **P ≤ 3** (milliseconds): JavaScript `Date` can represent this precision - **use this safely**
+- **P > 3** (microseconds and beyond): ClickHouse stores the full precision, but `Date` objects truncate to milliseconds during JSON parsing - **precision loss occurs**
+
+**Use when:**
+- You need millisecond precision (P ≤ 3) with Date objects
+- You're okay with Date API in your application code
+
+**Don't use when:**
+- You need microsecond or nanosecond precision - use `DateTime64String` instead
+
+### `DateTimeString`
+A string type that maps to ClickHouse `DateTime` (second precision) but stays as a string at runtime instead of being parsed into a `Date` object.
+
+```ts
+interface Event {
+  // Stored as ClickHouse DateTime (second precision)
+  // Runtime: ISO 8601 string (e.g., "2024-01-15T10:30:00Z")
+  createdAt: DateTimeString;
+}
+```
+
+**Use when:**
+- You prefer string-based datetime handling in your application code
+- You don't need Date object methods
+
+### `DateTime64String<P extends number>`
+A string type that maps to ClickHouse `DateTime64(P)` and preserves full precision by keeping datetimes as strings at runtime instead of parsing into `Date` objects.
+
+```ts
+interface Event {
+  // ✅ Full precision preserved: ClickHouse stores microseconds, runtime keeps string
+  highPrecisionTimestamp: DateTime64String<6>;  // e.g., "2024-01-15T10:30:00.123456Z"
+  
+  // ✅ Full precision preserved: ClickHouse stores nanoseconds, runtime keeps string
+  veryHighPrecisionTimestamp: DateTime64String<9>;  // e.g., "2024-01-15T10:30:00.123456789Z"
+}
+```
+
+**Use when:**
+- **You need microsecond (P≥4) or higher precision** - this is the only type that preserves it
+- You're ingesting high-precision timestamps from external systems
+- You're okay working with ISO 8601 strings instead of Date objects
+
+**Why strings?** JavaScript `Date` objects truncate to milliseconds. By keeping timestamps as strings, you preserve the full precision that ClickHouse stores.
+
+### Comparison Table
+
+| Type | ClickHouse | Runtime Type | Precision | Use Case |
+|------|-----------|--------------|-----------|----------|
+| `DateTime` | `DateTime` | `Date` | 1 second | Standard timestamps |
+| `DateTime64<3>` | `DateTime64(3)` | `Date` | 1 millisecond | JavaScript-compatible high precision |
+| `DateTime64<6>` | `DateTime64(6)` | `Date` | ⚠️ ~1 millisecond* | Not recommended - use DateTime64String |
+| `DateTimeString` | `DateTime` | `string` | 1 second | String-based datetime handling |
+| `DateTime64String<6>` | `DateTime64(6)` | `string` | 1 microsecond | High-precision requirements |
+| `DateTime64String<9>` | `DateTime64(9)` | `string` | 1 nanosecond | Ultra-high-precision requirements |
+
+*Loses microseconds during JSON parsing
+
+### Example: Choosing the Right Type
+```ts
+interface Telemetry {
+  // User-visible timestamp - Date object is fine
+  createdAt: DateTime;
+  
+  // High-frequency sensor data - need microseconds
+  sensorTimestamp: DateTime64String<6>;
+  
+  // API response timestamp - millisecond precision
+  processedAt: DateTime64<3>;
+  
+  // Compliance log - preserve exact string format
+  auditTimestamp: DateTimeString<9>;
+}
+```
+
 ## Infrastructure Components
 
 ### `OlapTable<T>`
