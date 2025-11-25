@@ -1,21 +1,64 @@
 //! # Logger Module
 //!
-//! This module provides logging functionality for the application.
+//! This module provides logging functionality using `tracing-subscriber` with support for
+//! dynamic log filtering via `RUST_LOG` and dual format support (legacy/modern).
+//!
+//! ## Architecture
+//!
+//! The logging system is built using `tracing-subscriber` layers:
+//! - **EnvFilter Layer**: Provides `RUST_LOG` support for module-level filtering
+//! - **Format Layer**: Either legacy (fern-compatible) or modern (tracing native) format
+//! - **OTEL Layer**: Optional OpenTelemetry export for observability platforms
 //!
 //! ## Components
 //!
 //! - `LoggerLevel`: An enumeration representing the different levels of logging: DEBUG, INFO, WARN, and ERROR.
-//! - `LoggerSettings`: A struct that holds the settings for the logger, including the log file's name and the logging level.
+//! - `LogFormat`: Either Text or JSON output format.
+//! - `LoggerSettings`: A struct that holds the settings for the logger, including format, level, and export options.
 //! - `setup_logging`: A function used to set up the logging system with the provided settings.
+//! - `LegacyFormatLayer`: Custom layer that matches the old fern format exactly (for backward compatibility).
+//!
+//! ## Features
+//!
+//! ### RUST_LOG Support
+//! Use the standard Rust `RUST_LOG` environment variable for dynamic filtering:
+//! ```bash
+//! RUST_LOG=moose_cli::infrastructure=debug cargo run
+//! RUST_LOG=debug cargo run  # Enable debug for all modules
+//! ```
+//!
+//! ### Dual Format Support
+//! - **Legacy Format** (default): Maintains exact compatibility with the old fern-based logging
+//!   - Text: `[timestamp LEVEL - target] message`
+//!   - JSON: `{"timestamp": "...", "severity": "INFO", "target": "...", "message": "..."}`
+//! - **Modern Format** (opt-in): Uses tracing-subscriber's native formatting
+//!   - Enable via `MOOSE_LOGGER__USE_TRACING_FORMAT=true`
+//!
+//! ### Additional Features
+//! - **Date-based file rotation**: Daily log files in `~/.moose/YYYY-MM-DD-cli.log`
+//! - **Automatic cleanup**: Deletes logs older than 7 days
+//! - **Session ID tracking**: Optional per-session identifier in logs
+//! - **Machine ID tracking**: Included in every log event
+//! - **OpenTelemetry export**: Optional OTLP/HTTP JSON export to observability platforms
+//! - **Configurable outputs**: File and/or stdout
+//!
+//! ## Environment Variables
+//!
+//! - `RUST_LOG`: Standard Rust log filtering (e.g., `RUST_LOG=moose_cli::infrastructure=debug`)
+//! - `MOOSE_LOGGER__USE_TRACING_FORMAT`: Opt-in to modern format (default: `false`)
+//! - `MOOSE_LOGGER__LEVEL`: Log level (DEBUG, INFO, WARN, ERROR)
+//! - `MOOSE_LOGGER__STDOUT`: Output to stdout vs file (default: `false`)
+//! - `MOOSE_LOGGER__FORMAT`: Text or JSON (default: Text)
+//! - `MOOSE_LOGGER__EXPORT_TO`: OTEL endpoint URL
+//! - `MOOSE_LOGGER__INCLUDE_SESSION_ID`: Include session ID in logs (default: `false`)
 //!
 //! ## Usage
 //!
 //! The logger is configured by creating a `LoggerSettings` instance and passing it to the `setup_logging` function.
-//! The `LoggerSettings` can be configured with a log file and a log level. If these are not provided, default values are used.
-//! The default log file is "cli.log" in the user's directory, and the default log level is INFO.
-//! Use the macros to write to the log file.
+//! Default values are provided for all settings. Use the `tracing::` macros to write logs.
 //!
-//! The log levels have the following uses:
+//! ### Log Levels
+//!
 //! - `DEBUG`: Use this level for detailed information typically of use only when diagnosing problems. You would usually only expect to see these logs in a development environment. For example, you might log method entry/exit points, variable values, query results, etc.
 //! - `INFO`: Use this level to confirm that things are working as expected. This is the default log level and will give you general operational insights into the application behavior. For example, you might log start/stop of a process, configuration details, successful completion of significant transactions, etc.
 //! - `WARN`: Use this level when something unexpected happened in the system, or there might be a problem in the near future (like 'disk space low'). The software is still working as expected, so it's not an error. For example, you might log deprecated API usage, poor performance issues, retrying an operation, etc.
@@ -24,12 +67,19 @@
 //! ## Example
 //!
 //! ```rust
+//! use tracing::{debug, info, warn, error};
+//!
 //! debug!("This is a DEBUG message. Typically used for detailed information useful in a development environment.");
 //! info!("This is an INFO message. Used to confirm that things are working as expected.");
 //! warn!("This is a WARN message. Indicates something unexpected happened or there might be a problem in the near future.");
 //! error!("This is an ERROR message. Used when the system is in distress, customers are probably being affected but the program is not terminated.");
 //! ```
 //!
+//! ## Backward Compatibility
+//!
+//! The legacy format layer ensures 100% backward compatibility with systems consuming the old
+//! fern-based log format (e.g., Boreal/hosting_telemetry). The modern format can be enabled
+//! via environment variable once downstream consumers are ready.
 
 use hyper::Uri;
 use opentelemetry::KeyValue;

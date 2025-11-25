@@ -1077,6 +1077,12 @@ pub async fn remote_plan(
         }
     };
 
+    // Normalize both infra maps for backward compatibility
+    // This ensures consistent comparison between old and new CLI versions
+    // by applying the same normalization logic (e.g., filling order_by from primary key)
+    let remote_infra_map = remote_infra_map.normalize();
+    let local_infra_map = local_infra_map.normalize();
+
     // Calculate and display changes
     let changes = calculate_plan_diff_local(
         &remote_infra_map,
@@ -1190,6 +1196,12 @@ pub async fn remote_gen_migration(
             .await?
         }
     };
+
+    // Normalize both infra maps for backward compatibility
+    // This ensures consistent comparison between old and new CLI versions
+    // by applying the same normalization logic (e.g., filling order_by from primary key)
+    let remote_infra_map = remote_infra_map.normalize();
+    let local_infra_map = local_infra_map.normalize();
 
     let changes = calculate_plan_diff_local(
         &remote_infra_map,
