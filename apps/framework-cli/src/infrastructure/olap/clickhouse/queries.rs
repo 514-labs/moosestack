@@ -2713,7 +2713,13 @@ pub fn create_table_query(
     // PRIMARY KEY: use primary_key_expression if specified, otherwise use columns with primary_key flag
     let primary_key_str = if let Some(ref expr) = table.primary_key_expression {
         // When primary_key_expression is specified, use it directly (ignoring column-level primary_key flags)
-        Some(expr.clone())
+        // Strip outer parentheses if present, as the template will add them
+        let trimmed = expr.trim();
+        if trimmed.starts_with('(') && trimmed.ends_with(')') {
+            Some(trimmed[1..trimmed.len() - 1].to_string())
+        } else {
+            Some(trimmed.to_string())
+        }
     } else {
         // Otherwise, use columns with primary_key flag
         let primary_key = table
@@ -2787,7 +2793,18 @@ pub fn create_table_query(
                 OrderBy::Fields(v) if v.len() == 1 && v[0] == "tuple()" => Some("tuple()".to_string()),
                 OrderBy::Fields(v) if v.is_empty() => None,
                 OrderBy::Fields(v) => Some(wrap_and_join_column_names(v, ",")),
-                OrderBy::SingleExpr(expr) => Some(expr.clone()),
+                OrderBy::SingleExpr(expr) => {
+                    // Strip outer parentheses if present, as the template will add them
+                    // Exception: keep tuple() as-is since it's a function call
+                    let trimmed = expr.trim();
+                    if trimmed == "tuple()" {
+                        Some(trimmed.to_string())
+                    } else if trimmed.starts_with('(') && trimmed.ends_with(')') {
+                        Some(trimmed[1..trimmed.len()-1].to_string())
+                    } else {
+                        Some(trimmed.to_string())
+                    }
+                },
             }
         } else {
             None
@@ -3839,6 +3856,101 @@ ENGINE = MergeTree
 PRIMARY KEY (`id`)
 ORDER BY (`id`) "#;
         assert_eq!(query.trim(), expected.trim());
+    }
+
+    #[test]
+    fn test_create_table_query_with_primary_key_expression() {
+        let table = ClickHouseTable {
+            version: Some(Version::from_string("1".to_string())),
+            name: "test_table".to_string(),
+            columns: vec![
+                ClickHouseColumn {
+                    name: "user_id".to_string(),
+                    column_type: ClickHouseColumnType::String,
+                    required: true,
+                    unique: false,
+                    primary_key: false, // primary_key flag ignored when primary_key_expression is set
+                    default: None,
+                    comment: None,
+                    ttl: None,
+                },
+                ClickHouseColumn {
+                    name: "event_id".to_string(),
+                    column_type: ClickHouseColumnType::String,
+                    required: true,
+                    unique: false,
+                    primary_key: false,
+                    default: None,
+                    comment: None,
+                    ttl: None,
+                },
+                ClickHouseColumn {
+                    name: "timestamp".to_string(),
+                    column_type: ClickHouseColumnType::DateTime,
+                    required: true,
+                    unique: false,
+                    primary_key: false,
+                    default: None,
+                    comment: None,
+                    ttl: None,
+                },
+            ],
+            order_by: OrderBy::SingleExpr("(user_id, cityHash64(event_id), timestamp)".to_string()),
+            partition_by: None,
+            sample_by: None,
+            engine: ClickhouseEngine::MergeTree,
+            table_settings: None,
+            indexes: vec![],
+            table_ttl_setting: None,
+            cluster_name: None,
+            primary_key_expression: Some("(user_id, cityHash64(event_id))".to_string()),
+        };
+
+        let query = create_table_query("test_db", table, false).unwrap();
+        let expected = r#"
+CREATE TABLE IF NOT EXISTS `test_db`.`test_table`
+(
+ `user_id` String NOT NULL,
+ `event_id` String NOT NULL,
+ `timestamp` DateTime('UTC') NOT NULL
+)
+ENGINE = MergeTree
+PRIMARY KEY (user_id, cityHash64(event_id))
+ORDER BY (user_id, cityHash64(event_id), timestamp)"#;
+        assert_eq!(query.trim(), expected.trim());
+    }
+
+    #[test]
+    fn test_create_table_query_with_primary_key_expression_no_parens() {
+        // Test that primary_key_expression works even without outer parentheses
+        let table = ClickHouseTable {
+            version: Some(Version::from_string("1".to_string())),
+            name: "test_table".to_string(),
+            columns: vec![ClickHouseColumn {
+                name: "product_id".to_string(),
+                column_type: ClickHouseColumnType::String,
+                required: true,
+                unique: false,
+                primary_key: false,
+                default: None,
+                comment: None,
+                ttl: None,
+            }],
+            order_by: OrderBy::Fields(vec!["product_id".to_string()]),
+            partition_by: None,
+            sample_by: None,
+            engine: ClickhouseEngine::MergeTree,
+            table_settings: None,
+            indexes: vec![],
+            table_ttl_setting: None,
+            cluster_name: None,
+            primary_key_expression: Some("product_id".to_string()),
+        };
+
+        let query = create_table_query("test_db", table, false).unwrap();
+        assert!(query.contains("PRIMARY KEY (product_id)"));
+        // Should have single parentheses, not double
+        assert!(!query.contains("PRIMARY KEY ((product_id))"));
     }
 
     #[test]
