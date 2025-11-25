@@ -2093,7 +2093,7 @@ fn reconstruct_sql_resource_from_mv(
     let target_table = MATERIALIZED_VIEW_TO_PATTERN
         .captures(&create_query)
         .and_then(|caps| caps.get(1))
-        .map(|m| m.as_str().to_string())
+        .map(|m| m.as_str().replace('`', "")) // Strip backticks from table name
         .ok_or_else(|| {
             OlapChangesError::DatabaseError(format!(
                 "Could not find TO target in materialized view definition: {}",
