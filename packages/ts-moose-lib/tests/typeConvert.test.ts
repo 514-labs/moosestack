@@ -46,6 +46,7 @@ function createProgramWithSource(tempDir: string, sourceText: string) {
 
 describe("typeConvert mappings for helper types", function () {
   this.timeout(20000); // Increase timeout for TypeScript compilation
+
   it("maps DateTime, DateTime64, numeric aliases, Decimal and LowCardinality", function () {
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "moose-typeconv-"));
 
@@ -255,5 +256,37 @@ describe("typeConvert mappings for helper types", function () {
     // Verify other fields still work
     expect(byName.id.data_type).to.equal("String");
     expect(byName.created_at.data_type).to.equal("DateTime");
+  });
+
+  it("maps Codec annotations for compression", function () {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "moose-typeconv-"));
+    try {
+      const source = `
+        import { Codec } from "@514labs/moose-lib";
+
+        export interface TestModel {
+          id: string;
+          log_blob: Record<string, any> & Codec<"ZSTD(3)">;
+          timestamp: Date & Codec<"Delta, LZ4">;
+          temperature: number & Codec<"Gorilla, ZSTD(3)">;
+          user_agent: string & Codec<"ZSTD(3)">;
+          tags: string[] & Codec<"ZSTD(1)">;
+          no_codec: string;
+        }
+      `;
+      const { checker, type } = createProgramWithSource(tempDir, source);
+      const columns = toColumns(type, checker);
+      const byName = Object.fromEntries(columns.map((c) => [c.name, c]));
+
+      expect(byName.id.codec).to.equal(null);
+      expect(byName.log_blob.codec).to.equal("ZSTD(3)");
+      expect(byName.timestamp.codec).to.equal("Delta, LZ4");
+      expect(byName.temperature.codec).to.equal("Gorilla, ZSTD(3)");
+      expect(byName.user_agent.codec).to.equal("ZSTD(3)");
+      expect(byName.tags.codec).to.equal("ZSTD(1)");
+      expect(byName.no_codec.codec).to.equal(null);
+    } finally {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    }
   });
 });

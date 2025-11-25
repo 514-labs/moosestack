@@ -953,12 +953,14 @@ data_type_changed: {data_type_changed}, default_changed: {default_changed}, requ
     // Build all the SQL statements needed (main modify + optional removes)
     let removing_default = before_column.default.is_some() && after_column.default.is_none();
     let removing_ttl = before_column.ttl.is_some() && after_column.ttl.is_none();
+    let removing_codec = before_column.codec.is_some() && after_column.codec.is_none();
     let queries = build_modify_column_sql(
         db_name,
         table_name,
         &clickhouse_column,
         removing_default,
         removing_ttl,
+        removing_codec,
         cluster_name,
     )?;
 
@@ -1013,6 +1015,7 @@ fn build_modify_column_sql(
     ch_col: &ClickHouseColumn,
     removing_default: bool,
     removing_ttl: bool,
+    removing_codec: bool,
     cluster_name: Option<&str>,
 ) -> Result<Vec<String>, ClickhouseChangesError> {
     let column_type_string = basic_field_type_to_string(&ch_col.column_type)?;
@@ -1040,6 +1043,14 @@ fn build_modify_column_sql(
         ));
     }
 
+    // Add REMOVE CODEC statement if needed
+    if removing_codec {
+        statements.push(format!(
+            "ALTER TABLE `{}`.`{}`{} MODIFY COLUMN `{}` REMOVE CODEC",
+            db_name, table_name, cluster_clause, ch_col.name
+        ));
+    }
+
     // DEFAULT clause: If omitted, ClickHouse KEEPS any existing DEFAULT
     // Therefore, DEFAULT removal requires a separate REMOVE DEFAULT statement
     // Default values from ClickHouse/Python are already properly formatted
@@ -1061,29 +1072,39 @@ fn build_modify_column_sql(
         .map(|t| format!(" TTL {}", t))
         .unwrap_or_default();
 
+    // CODEC clause: If omitted, ClickHouse KEEPS any existing CODEC
+    // Therefore, CODEC removal requires a separate REMOVE CODEC statement
+    let codec_clause = ch_col
+        .codec
+        .as_ref()
+        .map(|c| format!(" CODEC({})", c))
+        .unwrap_or_default();
+
     // Build the main MODIFY COLUMN statement
     let main_sql = if let Some(ref comment) = ch_col.comment {
         let escaped_comment = comment.replace('\'', "''");
         format!(
-            "ALTER TABLE `{}`.`{}`{} MODIFY COLUMN IF EXISTS `{}` {}{}{} COMMENT '{}'",
+            "ALTER TABLE `{}`.`{}`{} MODIFY COLUMN IF EXISTS `{}` {}{}{}{} COMMENT '{}'",
             db_name,
             table_name,
             cluster_clause,
             ch_col.name,
             column_type_string,
             default_clause,
+            codec_clause,
             ttl_clause,
             escaped_comment
         )
     } else {
         format!(
-            "ALTER TABLE `{}`.`{}`{} MODIFY COLUMN IF EXISTS `{}` {}{}{}",
+            "ALTER TABLE `{}`.`{}`{} MODIFY COLUMN IF EXISTS `{}` {}{}{}{}",
             db_name,
             table_name,
             cluster_clause,
             ch_col.name,
             column_type_string,
             default_clause,
+            codec_clause,
             ttl_clause
         )
     };
@@ -1647,7 +1668,8 @@ impl OlapOperations for ConfiguredDBClient {
                     is_in_primary_key,
                     is_in_sorting_key,
                     default_kind,
-                    default_expression
+                    default_expression,
+                    compression_codec
                 FROM system.columns
                 WHERE database = '{db_name}'
                 AND table = '{table_name}'
@@ -1662,7 +1684,7 @@ impl OlapOperations for ConfiguredDBClient {
             let mut columns_cursor = self
                 .client
                 .query(&columns_query)
-                .fetch::<(String, String, String, u8, u8, String, String)>()
+                .fetch::<(String, String, String, u8, u8, String, String, String)>()
                 .map_err(|e| {
                     debug!("Error fetching columns for table {}: {}", table_name, e);
                     OlapChangesError::DatabaseError(e.to_string())
@@ -1680,6 +1702,7 @@ impl OlapOperations for ConfiguredDBClient {
                 is_sorting,
                 default_kind,
                 default_expression,
+                compression_codec,
             )) = columns_cursor
                 .next()
                 .await
@@ -1806,6 +1829,19 @@ impl OlapOperations for ConfiguredDBClient {
                     .get(&col_name)
                     .map(|ttl| normalize_ttl_expression(ttl));
 
+                // Parse codec if present
+                // Strip CODEC(...) wrapper from compression_codec (e.g., "CODEC(ZSTD(3))" -> "ZSTD(3)")
+                let codec = if !compression_codec.is_empty() {
+                    let trimmed = compression_codec.trim();
+                    if trimmed.starts_with("CODEC(") && trimmed.ends_with(')') {
+                        Some(trimmed[6..trimmed.len() - 1].to_string())
+                    } else {
+                        Some(compression_codec)
+                    }
+                } else {
+                    None
+                };
+
                 let column = Column {
                     name: col_name.clone(),
                     data_type,
@@ -1816,6 +1852,7 @@ impl OlapOperations for ConfiguredDBClient {
                     annotations,
                     comment: column_comment,
                     ttl: normalized_ttl,
+                    codec,
                 };
 
                 columns.push(column);
@@ -2640,6 +2677,7 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
             annotations: vec![],
             comment: Some("Old user comment".to_string()),
             ttl: None,
+            codec: None,
         };
 
         let after_column = Column {
@@ -2658,6 +2696,7 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
             annotations: vec![],
             comment: Some("New user comment".to_string()),
             ttl: None,
+            codec: None,
         };
 
         // The execute_modify_table_column function should detect this as comment-only change
@@ -2683,6 +2722,7 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
             annotations: vec![],
             comment: Some("Number of things".to_string()),
             ttl: None,
+            codec: None,
         };
         let after_column = Column {
             default: Some("42".to_string()),
@@ -2690,7 +2730,8 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
         };
 
         let ch_after = std_column_to_clickhouse_column(after_column).unwrap();
-        let sqls = build_modify_column_sql("db", "table", &ch_after, false, false, None).unwrap();
+        let sqls =
+            build_modify_column_sql("db", "table", &ch_after, false, false, false, None).unwrap();
 
         assert_eq!(sqls.len(), 1);
         assert_eq!(
@@ -2714,6 +2755,7 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
             annotations: vec![],
             comment: Some("old".to_string()),
             ttl: None,
+            codec: None,
         };
 
         let after_column = Column {
@@ -2746,13 +2788,21 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
             annotations: vec![],
             comment: Some("Updated description field".to_string()),
             ttl: None,
+            codec: None,
         };
 
         let clickhouse_column = std_column_to_clickhouse_column(column).unwrap();
 
-        let sqls =
-            build_modify_column_sql("test_db", "users", &clickhouse_column, false, false, None)
-                .unwrap();
+        let sqls = build_modify_column_sql(
+            "test_db",
+            "users",
+            &clickhouse_column,
+            false,
+            false,
+            false,
+            None,
+        )
+        .unwrap();
 
         assert_eq!(sqls.len(), 1);
         assert_eq!(
@@ -2776,12 +2826,14 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
             default: Some("xxHash64(_id)".to_string()), // SQL function - no quotes
             comment: Some("Hash of the ID".to_string()),
             ttl: None,
+            codec: None,
         };
 
         let sqls = build_modify_column_sql(
             "test_db",
             "test_table",
             &sample_hash_col,
+            false,
             false,
             false,
             None,
@@ -2805,11 +2857,19 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
             default: Some("now()".to_string()), // SQL function - no quotes
             comment: None,
             ttl: None,
+            codec: None,
         };
 
-        let sqls =
-            build_modify_column_sql("test_db", "test_table", &created_at_col, false, false, None)
-                .unwrap();
+        let sqls = build_modify_column_sql(
+            "test_db",
+            "test_table",
+            &created_at_col,
+            false,
+            false,
+            false,
+            None,
+        )
+        .unwrap();
 
         assert_eq!(sqls.len(), 1);
         // The fix ensures now() is NOT quoted
@@ -2828,11 +2888,19 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
             default: Some("'active'".to_string()), // String literal - quotes preserved
             comment: None,
             ttl: None,
+            codec: None,
         };
 
-        let sqls =
-            build_modify_column_sql("test_db", "test_table", &status_col, false, false, None)
-                .unwrap();
+        let sqls = build_modify_column_sql(
+            "test_db",
+            "test_table",
+            &status_col,
+            false,
+            false,
+            false,
+            None,
+        )
+        .unwrap();
 
         assert_eq!(sqls.len(), 1);
         // String literals should preserve their quotes
@@ -3045,6 +3113,7 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
             annotations: vec![],
             comment: Some("Number of items".to_string()),
             ttl: None,
+            codec: None,
         };
 
         let clickhouse_column = std_column_to_clickhouse_column(column).unwrap();
@@ -3091,6 +3160,7 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
             annotations: vec![],
             comment: None,
             ttl: None,
+            codec: None,
         };
 
         let clickhouse_column = std_column_to_clickhouse_column(column).unwrap();
@@ -3140,6 +3210,7 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
                 annotations: vec![],
                 comment: None,
                 ttl: Some("created_at + INTERVAL 7 DAY".to_string()),
+                codec: None,
             }],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
             partition_by: Some("toYYYYMM(created_at)".to_string()),
@@ -3206,6 +3277,7 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
                 annotations: vec![],
                 comment: None,
                 ttl: Some("created_at + INTERVAL 7 DAY".to_string()),
+                codec: None,
             }],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
             partition_by: Some("toYYYYMM(created_at)".to_string()),
@@ -3348,6 +3420,41 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
         match &result.pushes_data_to[0] {
             InfrastructureSignature::Table { id } => assert_eq!(id, "my_target"),
             _ => panic!("Expected Table signature"),
+        }
+    }
+
+    #[test]
+    fn test_codec_wrapper_stripping() {
+        let test_cases = vec![
+            ("CODEC(ZSTD(3))", "ZSTD(3)"),
+            ("CODEC(Delta, LZ4)", "Delta, LZ4"),
+            ("CODEC(Gorilla, ZSTD(3))", "Gorilla, ZSTD(3)"),
+            ("CODEC(DoubleDelta)", "DoubleDelta"),
+            ("", ""),
+        ];
+
+        for (input, expected) in test_cases {
+            let result = if !input.is_empty() {
+                let trimmed = input.trim();
+                if trimmed.starts_with("CODEC(") && trimmed.ends_with(')') {
+                    Some(trimmed[6..trimmed.len() - 1].to_string())
+                } else {
+                    Some(input.to_string())
+                }
+            } else {
+                None
+            };
+
+            if expected.is_empty() {
+                assert_eq!(result, None, "Failed for input: {}", input);
+            } else {
+                assert_eq!(
+                    result,
+                    Some(expected.to_string()),
+                    "Failed for input: {}",
+                    input
+                );
+            }
         }
     }
 }
