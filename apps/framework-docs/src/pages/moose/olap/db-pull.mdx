@@ -34,13 +34,13 @@ Examples:
 
 ```bash filename="Terminal" copy
 # Native (auto-converted to HTTPS + 8443)
-moose db pull --connection-string "clickhouse://explorer@play.clickhouse.com:9440/default"
+moose db pull --clickhouse-url "clickhouse://explorer@play.clickhouse.com:9440/default"
 
 # HTTPS (explicit database via query param)
-moose db pull --connection-string "https://play.clickhouse.com/?user=explorer&database=default"
+moose db pull --clickhouse-url "https://play.clickhouse.com/?user=explorer&database=default"
 
 # Local HTTP
-moose db pull --connection-string "http://localhost:8123/?user=default&database=default"
+moose db pull --clickhouse-url "http://localhost:8123/?user=default&database=default"
 ```
 
 ## What gets written
@@ -62,8 +62,8 @@ Important:
 
 When you run `db pull` the CLI does the following:
 
-- Loads your project’s infrastructure map and identifies tables marked as `EXTERNALLY_MANAGED`.
-- Connects to the remote ClickHouse specified by `--connection-string` and introspects the live schemas for those tables.
+- Loads your project's infrastructure map and identifies tables marked as `EXTERNALLY_MANAGED`.
+- Connects to the remote ClickHouse specified by `--clickhouse-url` and introspects the live schemas for those tables.
 - Regenerates a single external models file that mirrors the remote schema.
 - Adds any newly detected external tables from the remote database to the generated file so your code stays in sync as sources evolve.
 - Does not change any fully managed tables, your <TypeScript inline>`app/index.ts`</TypeScript><Python inline>`app/main.py`</Python>, or the database itself.
@@ -92,18 +92,18 @@ When you run `db pull` the CLI does the following:
 ## Command
 
 ```bash filename="Terminal" copy
-moose db pull --connection-string <STRING> [--file-path <OUTPUT_PATH>]
+moose db pull --clickhouse-url <URL> [--file-path <OUTPUT_PATH>]
 ```
 
-- **--connection-string**: Required. ClickHouse URL (native or HTTP/S)
+- **--clickhouse-url**: Required. ClickHouse URL (native or HTTP/S)
 - **--file-path**: Optional. Override the default output file. The file at this path will be regenerated (overwritten) on each run.
 
 ## Typical Use Cases
 
 ### Remote schema changed; update local types
-  Your DBA, CDC pipeline (e.g., ClickPipes), or ETL job updated a table’s schema. To keep your code accurate and type-safe, refresh your external models so queries, APIs, and materialized views reference the correct columns and types.
+  Your DBA, CDC pipeline (e.g., ClickPipes), or ETL job updated a table's schema. To keep your code accurate and type-safe, refresh your external models so queries, APIs, and materialized views reference the correct columns and types.
   ```bash filename="Terminal" copy
-  moose db pull --connection-string <YOUR_CLICKHOUSE_URL>
+  moose db pull --clickhouse-url <YOUR_CLICKHOUSE_URL>
   ```
   This updates only `EXTERNALLY_MANAGED` models and leaves managed code untouched.
 
@@ -115,7 +115,7 @@ moose db pull --connection-string <STRING> [--file-path <OUTPUT_PATH>]
   Add to `moose.config.toml`:
   ```toml filename="moose.config.toml" copy
   [http_server_config]
-  on_first_start_script = "moose db pull --connection-string $REMOTE_CLICKHOUSE_URL"
+  on_first_start_script = "moose db pull --clickhouse-url $REMOTE_CLICKHOUSE_URL"
   ```
   This runs once when the dev server first starts. To run after code reloads, use `on_reload_complete_script`. If you run this frequently, prefer HTTP(S) URLs and cache credentials via env/secrets to avoid friction.
 
@@ -132,7 +132,7 @@ moose db pull --connection-string <STRING> [--file-path <OUTPUT_PATH>]
 ### A new CDC/external table appeared; add it to code
   Your CDC pipeline created a new table (or exposed a new stream). Pull to add the new table to your external models file automatically.
   ```bash filename="Terminal" copy
-  moose db pull --connection-string <YOUR_CLICKHOUSE_URL>
+  moose db pull --clickhouse-url <YOUR_CLICKHOUSE_URL>
   ```
   The regenerated external models file will now include the newly discovered external table.
 
