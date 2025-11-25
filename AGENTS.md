@@ -15,6 +15,11 @@ Multi-language monorepo (Rust CLI + TypeScript/Python libraries) using PNPM work
 
 ### Rust
 - **Build**: `cargo build`
+- **Debug CLI**: Use debug build with verbose logging for ALL moose CLI commands:
+  ```bash
+  RUST_LOG=debug RUST_BACKTRACE=1 MOOSE_LOGGER__LEVEL=Debug ~/repos/moosestack/target/debug/moose-cli <command>
+  ```
+  Example: `RUST_LOG=debug RUST_BACKTRACE=1 MOOSE_LOGGER__LEVEL=Debug ~/repos/moosestack/target/debug/moose-cli init my-app typescript`
 - **Test all**: `cargo test`
 - **Test single**: `cargo test <test_name>` or `cargo test --package <package_name> --test <test_file>`
 - **Lint**: `cargo clippy --all-targets -- -D warnings` (REQUIRED pre-commit, no warnings allowed)
