@@ -5,7 +5,7 @@
 
 use crate::infrastructure::olap::clickhouse::model::ClickHouseIndex;
 use sqlparser::ast::{
-    Expr, ObjectName, ObjectNamePart, Query, Select, SelectItem, Statement, TableFactor,
+    Expr, ObjectName, ObjectNamePart, Query, Select, SelectItem, SetExpr, Statement, TableFactor,
     TableWithJoins, VisitMut, VisitorMut,
 };
 use sqlparser::dialect::ClickHouseDialect;
@@ -514,6 +514,19 @@ impl<'a> VisitorMut for Normalizer<'a> {
                         ident.quote_style = None;
                         ident.value = ident.value.replace('`', "");
                     }
+                }
+            }
+        }
+        ControlFlow::Continue(())
+    }
+
+    fn pre_visit_query(&mut self, query: &mut Query) -> ControlFlow<Self::Break> {
+        // Handle SELECT items (including aliases)
+        if let SetExpr::Select(select) = &mut *query.body {
+            for item in &mut select.projection {
+                if let SelectItem::ExprWithAlias { alias, .. } = item {
+                    alias.quote_style = None;
+                    alias.value = alias.value.replace('`', "");
                 }
             }
         }
@@ -1783,5 +1796,21 @@ pub mod tests {
         let normalized_ch = normalize_sql_for_comparison(ch_sql, "local");
 
         assert_eq!(normalized_user, normalized_ch);
+    }
+
+    #[test]
+    fn test_normalize_sql_handles_backticks_on_reserved_keyword_aliases() {
+        // ClickHouse automatically adds backticks around reserved keywords like "table"
+        let ch_sql = "CREATE MATERIALIZED VIEW mv AS SELECT date, 'value' AS `table` FROM source";
+        // User code typically doesn't have backticks
+        let user_sql = "CREATE MATERIALIZED VIEW mv AS SELECT date, 'value' AS table FROM source";
+
+        let normalized_ch = normalize_sql_for_comparison(ch_sql, "");
+        let normalized_user = normalize_sql_for_comparison(user_sql, "");
+
+        assert_eq!(normalized_ch, normalized_user);
+        // Both should normalize to the version without backticks
+        assert!(normalized_ch.contains("AS table"));
+        assert!(!normalized_ch.contains("AS `table`"));
     }
 }
