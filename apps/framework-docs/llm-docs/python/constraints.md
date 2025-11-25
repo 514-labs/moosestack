@@ -16,10 +16,13 @@ Configuration constraints in Moose provide a way to enforce rules and limitation
 
 ### Key Requirements
 
-- Schema must have `Key[type]` on a top level field passed into IngestPipeline or OlapTable (unless using `primary_key_expression`)
-- If using `order_by_fields`, the first field must be the primary key (`Key[type]`) when present (unless using `primary_key_expression`)
-- If using `order_by_expression`, ensure your expression starts with the primary key column when a primary key exists (unless using `primary_key_expression`)
-- If using `primary_key_expression`, the expression overrides any `Key[type]` annotations on columns
+- **Primary keys are optional** - ClickHouse only requires ORDER BY
+- You can define primary keys in three ways:
+  1. Use `Key[type]` on a top-level field (automatically becomes primary key)
+  2. Use `primary_key_expression` in OlapConfig (most flexible, overrides `Key[type]`)
+  3. Don't specify a primary key at all (only ORDER BY is used)
+- If using `Key[type]` with `order_by_fields`, the `Key[type]` field must be first
+- If using `primary_key_expression`, it overrides any `Key[type]` annotations on columns
 
 ### ORDER BY Requirements
 

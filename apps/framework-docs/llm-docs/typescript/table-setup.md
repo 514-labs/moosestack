@@ -99,13 +99,17 @@ type OlapConfig<T> =
 
 ### Key Requirements
 
-When defining your schema, you must either:
-1. Use `Key<T>` for one of the top-level fields, or
-2. Specify the key field in `orderByFields`
+**Primary keys are optional** - ClickHouse only requires `ORDER BY`. You have several options:
+
+1. **No primary key** - Just specify `orderByFields` (ORDER BY only)
+2. **Use `Key<T>` for one of the top-level fields** (automatically becomes primary key)
+3. **Use `primaryKeyExpression`** in table config (most flexible, overrides `Key<T>`)
 
 Important requirements:
+- `orderByFields` is required; fields must not be nullable (no optional fields or union with null)
 - If you use `Key<T>`, it must be the first field in `orderByFields` when specified
-- Fields used in `orderByFields` must not be nullable (no optional fields or union with null)
+- If `primaryKeyExpression` is specified, it takes precedence over column-level `Key<T>` definitions
+- `primaryKeyExpression` supports function calls and custom column ordering beyond simple field lists
 
 ### Basic Configuration Examples
 
@@ -139,6 +143,47 @@ export const Unkeyed = new OlapTable("Unkeyed", {
   orderByFields: ["id"]  // Key field must be non-nullable
 });
 ```
+
+### Primary Key Expression
+
+The `primaryKeyExpression` field provides maximum flexibility for defining primary keys. When specified, it overrides column-level `Key<T>` definitions.
+
+**Why use `primaryKeyExpression`?**
+- Primary keys can include function calls (e.g., `toStartOfHour(timestamp)`)
+- Column ordering in the primary key can differ from schema order
+- Supports composite keys with custom expressions
+
+```typescript
+interface EventSchema {
+  id: string;
+  name: string;
+  timestamp: Date;
+}
+
+// ✅ Explicit primary key with multiple columns
+export const Events = new OlapTable<EventSchema>("Events", {
+  primaryKeyExpression: "(id, name)",
+  orderByFields: ["id", "name"],  // Must match primaryKeyExpression for MergeTree
+});
+
+// ✅ Primary key with function (advanced)
+export const HourlyEvents = new OlapTable<EventSchema>("HourlyEvents", {
+  primaryKeyExpression: "(toStartOfHour(timestamp), id)",
+  orderByFields: ["timestamp", "id"],
+});
+
+// ✅ Single column primary key
+export const SimpleEvents = new OlapTable<EventSchema>("SimpleEvents", {
+  primaryKeyExpression: "id",
+  orderByFields: ["id"],
+});
+```
+
+**Important Notes:**
+- For MergeTree engines, `primaryKeyExpression` columns must match the start of `orderByFields`
+- When using `primaryKeyExpression`, you don't need to use `Key<T>` in your schema
+- The expression supports any valid ClickHouse SQL expression
+- Parentheses are required for multi-column keys: `"(col1, col2)"` not `"col1, col2"`
 
 ## Table Examples
 
