@@ -634,7 +634,7 @@ pub fn tables_to_typescript(tables: &[Table], life_cycle: Option<LifeCycle>) -> 
             OrderBy::SingleExpr(expr) => format!("orderByExpression: {:?}", expr),
         };
 
-        // Generate primaryKeyExpression if there are primary key columns
+        // Collect primary key columns to determine if we need explicit primaryKeyExpression
         let primary_key_cols: Vec<String> = table
             .columns
             .iter()
@@ -646,6 +646,11 @@ pub fn tables_to_typescript(tables: &[Table], life_cycle: Option<LifeCycle>) -> 
                 }
             })
             .collect();
+
+        // Only emit primaryKeyExpression if it cannot be expressed using Key<T> wrapping
+        // (i.e., when order_by doesn't start with primary_key fields)
+        let can_use_key_wrapping = table.primary_key_expression.is_none()
+            && table.order_by.starts_with_fields(&primary_key_cols);
 
         let var_name = sanitize_typescript_identifier(&table.name);
 
@@ -663,8 +668,8 @@ pub fn tables_to_typescript(tables: &[Table], life_cycle: Option<LifeCycle>) -> 
         .unwrap();
         writeln!(output, "    {order_by_spec},").unwrap();
 
-        // Emit primaryKeyExpression if there are primary keys
-        if !primary_key_cols.is_empty() {
+        // Emit primaryKeyExpression only when Key<T> wrapping cannot be used
+        if !primary_key_cols.is_empty() && !can_use_key_wrapping {
             if primary_key_cols.len() == 1 {
                 writeln!(
                     output,

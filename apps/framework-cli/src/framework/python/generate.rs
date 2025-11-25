@@ -713,7 +713,7 @@ pub fn tables_to_python(tables: &[Table], life_cycle: Option<LifeCycle>) -> Stri
             OrderBy::SingleExpr(expr) => format!("order_by_expression={:?}", expr),
         };
 
-        // Generate primary_key_expression if there are primary key columns
+        // Collect primary key columns to determine if we need explicit primary_key_expression
         let primary_key_cols: Vec<String> = table
             .columns
             .iter()
@@ -725,6 +725,11 @@ pub fn tables_to_python(tables: &[Table], life_cycle: Option<LifeCycle>) -> Stri
                 }
             })
             .collect();
+
+        // Only emit primary_key_expression if it cannot be expressed using Key[T] wrapping
+        // (i.e., when order_by doesn't start with primary_key fields)
+        let can_use_key_wrapping = table.primary_key_expression.is_none()
+            && table.order_by.starts_with_fields(&primary_key_cols);
 
         let (base_name, version) = extract_version_from_table_name(&table.name);
         let table_name = if version == table.version {
@@ -742,8 +747,8 @@ pub fn tables_to_python(tables: &[Table], life_cycle: Option<LifeCycle>) -> Stri
         .unwrap();
         writeln!(output, "    {order_by_spec},").unwrap();
 
-        // Emit primary_key_expression if there are primary keys
-        if !primary_key_cols.is_empty() {
+        // Emit primary_key_expression only when Key[T] wrapping cannot be used
+        if !primary_key_cols.is_empty() && !can_use_key_wrapping {
             if primary_key_cols.len() == 1 {
                 writeln!(
                     output,
