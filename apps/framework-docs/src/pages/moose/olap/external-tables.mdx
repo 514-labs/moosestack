@@ -198,7 +198,7 @@ For more on how migration plans are generated and what shows up in `plan.yaml`, 
 For `EXTERNALLY_MANAGED` tables, keep your code in sync with the live database by running DB Pull. You can do it manually or automate it in dev.
 
 ```bash filename="Terminal" copy
-moose db pull --connection-string <YOUR_CLICKHOUSE_URL>
+moose db pull --clickhouse-url <YOUR_CLICKHOUSE_URL>
 ```
 
 <Callout type="info" title="Keep external models fresh" ctaLink="/moose/olap/db-pull">

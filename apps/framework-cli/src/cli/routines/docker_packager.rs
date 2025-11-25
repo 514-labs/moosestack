@@ -3,8 +3,8 @@ use crate::cli::display::with_spinner_completion;
 use crate::cli::routines::util::ensure_docker_running;
 use crate::framework::languages::SupportedLanguages;
 use crate::utilities::constants::{
-    APP_DIR, OLD_PROJECT_CONFIG_FILE, PACKAGE_JSON, PROJECT_CONFIG_FILE, REQUIREMENTS_TXT,
-    SETUP_PY, TSCONFIG_JSON,
+    OLD_PROJECT_CONFIG_FILE, PACKAGE_JSON, PROJECT_CONFIG_FILE, REQUIREMENTS_TXT, SETUP_PY,
+    TSCONFIG_JSON,
 };
 use crate::utilities::docker::DockerClient;
 use crate::utilities::nodejs_version::determine_node_version_from_package_json;
@@ -588,7 +588,7 @@ pub fn build_dockerfile(
     // Copy app & etc to packager directory
     let project_root_path = project.project_location.clone();
     let items_to_copy = vec![
-        APP_DIR,
+        &project.source_dir,
         PACKAGE_JSON,
         SETUP_PY,
         REQUIREMENTS_TXT,

@@ -23,7 +23,7 @@ fn validate_database_name(db_name: &str) -> Result<(), RoutineFailure> {
     if db_name.is_empty() {
         Err(RoutineFailure::error(Message::new(
             "SeedClickhouse".to_string(),
-            "No database specified in connection string and unable to determine current database"
+            "No database specified in ClickHouse URL and unable to determine current database"
                 .to_string(),
         )))
     } else {
@@ -343,7 +343,7 @@ fn get_tables_to_seed(infra_map: &InfrastructureMap, table_name: Option<String>)
 /// table validation, and data copying
 async fn seed_clickhouse_operation(
     project: &Project,
-    connection_string: &str,
+    clickhouse_url: &str,
     table: Option<String>,
     limit: Option<usize>,
     order_by: Option<&str>,
@@ -351,11 +351,11 @@ async fn seed_clickhouse_operation(
     // Load infrastructure map
     let infra_map = load_infrastructure_map(project).await?;
 
-    // Parse connection string
-    let remote_config = parse_clickhouse_connection_string(connection_string).map_err(|e| {
+    // Parse ClickHouse URL
+    let remote_config = parse_clickhouse_connection_string(clickhouse_url).map_err(|e| {
         RoutineFailure::error(Message::new(
             "SeedClickhouse".to_string(),
-            format!("Invalid connection string: {e}"),
+            format!("Invalid ClickHouse URL: {e}"),
         ))
     })?;
 
@@ -432,13 +432,13 @@ pub async fn handle_seed_command(
 ) -> Result<RoutineSuccess, RoutineFailure> {
     match &seed_args.command {
         Some(SeedSubcommands::Clickhouse {
-            connection_string,
+            clickhouse_url,
             limit,
             all,
             table,
             order_by,
         }) => {
-            let resolved_connection_string = match connection_string {
+            let resolved_clickhouse_url = match clickhouse_url {
                 Some(s) => s.clone(),
                 None => {
                     let repo = KeyringSecretRepository;
@@ -447,27 +447,27 @@ pub async fn handle_seed_command(
                         Ok(None) => {
                             return Err(RoutineFailure::error(Message::new(
                                 "SeedClickhouse".to_string(),
-                                "No connection string provided and none saved. Pass --connection-string or save one via `moose init --from-remote`.".to_string(),
+                                "No ClickHouse URL provided and none saved. Pass --clickhouse-url or save one via `moose init --from-remote`.".to_string(),
                             )))
                         }
                         Err(e) => {
                             return Err(RoutineFailure::error(Message::new(
                                 "SeedClickhouse".to_string(),
-                                format!("Failed to read saved connection string from keychain: {e:?}"),
+                                format!("Failed to read saved ClickHouse URL from keychain: {e:?}"),
                             )))
                         }
                     }
                 }
             };
 
-            info!("Running seed clickhouse command with connection string: {resolved_connection_string}");
+            info!("Running seed clickhouse command with ClickHouse URL: {resolved_clickhouse_url}");
 
             let (local_db_name, remote_db_name, summary) = with_spinner_completion_async(
                 "Initializing database seeding operation...",
                 "Database seeding completed",
                 seed_clickhouse_operation(
                     project,
-                    &resolved_connection_string,
+                    &resolved_clickhouse_url,
                     table.clone(),
                     if *all { None } else { Some(*limit) },
                     order_by.as_deref(),

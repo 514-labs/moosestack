@@ -401,7 +401,7 @@ pub async fn top_command_handler(
                 let save_choice = prompt_user(
                     "\n  Would you like to save this connection string to your system keychain for easy `moose db pull` later? [Y/n]",
                     Some("Y"),
-                    Some("You can always pass --connection-string explicitly to override."),
+                    Some("You can always pass --clickhouse-url explicitly to override."),
                 )?;
 
                 let save = save_choice.trim().is_empty()
@@ -428,7 +428,7 @@ pub async fn top_command_handler(
 
             let success_message = if let Some(connection_string) = normalized_url {
                 format!(
-                    "\n\n{post_install_message}\n\n🔗 Your ClickHouse connection string:\n{}\n\n📋 After setting up your development environment, open a new terminal and seed your local database:\n      moose seed clickhouse --connection-string \"{}\" --limit 1000\n\n💡 Tip: Save the connection string as an environment variable for future use:\n   export MOOSE_REMOTE_CLICKHOUSE_URL=\"{}\"\n",
+                    "\n\n{post_install_message}\n\n🔗 Your ClickHouse connection string:\n{}\n\n📋 After setting up your development environment, open a new terminal and seed your local database:\n      moose seed clickhouse --clickhouse-url \"{}\" --limit 1000\n\n💡 Tip: Save the connection string as an environment variable for future use:\n   export MOOSE_REMOTE_CLICKHOUSE_URL=\"{}\"\n",
                     connection_string,
                     connection_string,
                     connection_string
@@ -1263,7 +1263,7 @@ pub async fn top_command_handler(
         Commands::Db(DbArgs {
             command:
                 DbCommands::Pull {
-                    connection_string,
+                    clickhouse_url,
                     file_path,
                 },
         }) => {
@@ -1277,7 +1277,7 @@ pub async fn top_command_handler(
                 machine_id.clone(),
                 HashMap::new(),
             );
-            let resolved_connection_string: String = match connection_string {
+            let resolved_clickhouse_url: String = match clickhouse_url {
                 Some(s) => s.clone(),
                 None => {
                     let repo = KeyringSecretRepository;
@@ -1285,13 +1285,13 @@ pub async fn top_command_handler(
                         Ok(Some(s)) => s,
                         Ok(None) => return Err(RoutineFailure::error(Message {
                             action: "DB Pull".to_string(),
-                            details: "No connection string provided and none saved. Pass --connection-string or save one during `moose init --from-remote`.".to_string(),
+                            details: "No ClickHouse URL provided and none saved. Pass --clickhouse-url or save one during `moose init --from-remote`.".to_string(),
                         })),
                         Err(e) => {
                             return Err(RoutineFailure::error(Message {
                                 action: "DB Pull".to_string(),
                                 details: format!(
-                                    "Failed to read saved connection string from keychain: {e:?}"
+                                    "Failed to read saved ClickHouse URL from keychain: {e:?}"
                                 ),
                             }));
                         }
@@ -1299,7 +1299,7 @@ pub async fn top_command_handler(
                 }
             };
 
-            db_pull(&resolved_connection_string, &project, file_path.as_deref())
+            db_pull(&resolved_clickhouse_url, &project, file_path.as_deref())
                 .await
                 .map_err(|e| {
                     RoutineFailure::new(

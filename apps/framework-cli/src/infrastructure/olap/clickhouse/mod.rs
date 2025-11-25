@@ -44,7 +44,8 @@ use serde::{Deserialize, Serialize};
 use sql_parser::{
     extract_engine_from_create_table, extract_indexes_from_create_table,
     extract_sample_by_from_create_table, extract_source_tables_from_query,
-    extract_table_settings_from_create_table, normalize_sql_for_comparison, split_qualified_name,
+    extract_source_tables_from_query_regex, extract_table_settings_from_create_table,
+    normalize_sql_for_comparison, split_qualified_name,
 };
 use std::collections::HashMap;
 use std::ops::Deref;
@@ -2038,17 +2039,14 @@ fn reconstruct_sql_resource_from_mv(
     name: String,
     create_query: String,
     as_select: String,
-    _database: String,
+    database: String,
     default_database: &str,
 ) -> Result<SqlResource, OlapChangesError> {
-    // Extract target table from create_query
-    // We use a regex on the raw create_query because it's simpler than full parsing and
-    // avoids issues with ClickHouse's specific column definition syntax in CREATE statements.
-    // as_select doesn't contain the TO clause, so we must check the original query.
+    // Extract target table from create_query for MV
     let target_table = MATERIALIZED_VIEW_TO_PATTERN
         .captures(&create_query)
         .and_then(|caps| caps.get(1))
-        .map(|m| m.as_str().replace('`', "")) // Strip backticks from table name
+        .map(|m| m.as_str().replace('`', ""))
         .ok_or_else(|| {
             OlapChangesError::DatabaseError(format!(
                 "Could not find TO target in materialized view definition: {}",
@@ -2056,54 +2054,8 @@ fn reconstruct_sql_resource_from_mv(
             ))
         })?;
 
-    // Reconstruct the canonical CREATE statement
-    // CREATE MATERIALIZED VIEW IF NOT EXISTS name TO target AS select
-    let setup_raw = format!(
-        "CREATE MATERIALIZED VIEW IF NOT EXISTS {} TO {} AS {}",
-        name, target_table, as_select
-    );
-
-    // Normalize the SQL for consistent comparison with user-defined views
-    let setup = normalize_sql_for_comparison(&setup_raw, default_database);
-
-    // Generate teardown script
-    let teardown = format!("DROP VIEW IF EXISTS `{}`", name);
-
-    // Parse as_select to get source tables (lineage)
-    // as_select is clean SQL, so we can use standard parser logic
-    let source_tables = extract_source_tables_from_query(&as_select).map_err(|e| {
-        OlapChangesError::DatabaseError(format!(
-            "Failed to extract source tables from MV {}: {}",
-            name, e
-        ))
-    })?;
-
-    // Extract pulls_data_from (source tables)
-    let pulls_data_from = source_tables
-        .into_iter()
-        .map(|table_ref| {
-            // Get the table name, strip version suffix if present
-            let table_name = table_ref.table;
-            let (base_name, _version) = extract_version_from_table_name(&table_name);
-
-            // Use database from table reference if available, otherwise use default
-            let qualified_id = if let Some(db) = table_ref.database {
-                if db == default_database {
-                    base_name
-                } else {
-                    format!("{}_{}", db, base_name)
-                }
-            } else {
-                base_name
-            };
-
-            InfrastructureSignature::Table { id: qualified_id }
-        })
-        .collect();
-
     // Extract pushes_data_to (target table for MV)
     let (target_base_name, _version) = extract_version_from_table_name(&target_table);
-    // target_table might be qualified (db.table)
     let (target_db, target_name_only) = split_qualified_name(&target_base_name);
 
     let target_qualified_id = if let Some(target_db) = target_db {
@@ -2120,14 +2072,20 @@ fn reconstruct_sql_resource_from_mv(
         id: target_qualified_id,
     }];
 
-    Ok(SqlResource {
+    // Reconstruct with MV-specific CREATE statement
+    let setup_raw = format!(
+        "CREATE MATERIALIZED VIEW IF NOT EXISTS {} TO {} AS {}",
+        name, target_table, as_select
+    );
+
+    reconstruct_sql_resource_common(
         name,
-        database: Some(_database),
-        setup: vec![setup],
-        teardown: vec![teardown],
-        pulls_data_from,
+        setup_raw,
+        as_select,
+        database,
+        default_database,
         pushes_data_to,
-    })
+    )
 }
 
 /// Reconstructs a SqlResource from a view's CREATE statement
@@ -2143,28 +2101,57 @@ fn reconstruct_sql_resource_from_mv(
 fn reconstruct_sql_resource_from_view(
     name: String,
     as_select: String,
-    _database: String,
+    database: String,
     default_database: &str,
 ) -> Result<SqlResource, OlapChangesError> {
-    // Reconstruct the canonical CREATE statement using as_select.
-    // This ensures we have a clean definition without column types in the header,
-    // matching how Moose generates views (just `CREATE VIEW ... AS SELECT ...`).
-    // CREATE VIEW IF NOT EXISTS name AS select
+    // Views don't push data to tables
+    let pushes_data_to = vec![];
+
+    // Reconstruct with view-specific CREATE statement
     let setup_raw = format!("CREATE VIEW IF NOT EXISTS {} AS {}", name, as_select);
 
-    // Normalize the SQL for consistent comparison with user-defined views
+    reconstruct_sql_resource_common(
+        name,
+        setup_raw,
+        as_select,
+        database,
+        default_database,
+        pushes_data_to,
+    )
+}
+
+/// Common logic for reconstructing SqlResource from MV or View
+fn reconstruct_sql_resource_common(
+    name: String,
+    setup_raw: String,
+    as_select: String,
+    database: String,
+    default_database: &str,
+    pushes_data_to: Vec<InfrastructureSignature>,
+) -> Result<SqlResource, OlapChangesError> {
+    // Normalize the SQL for consistent comparison
     let setup = normalize_sql_for_comparison(&setup_raw, default_database);
 
     // Generate teardown script
     let teardown = format!("DROP VIEW IF EXISTS `{}`", name);
 
     // Parse as_select to get source tables (lineage)
-    let source_tables = extract_source_tables_from_query(&as_select).map_err(|e| {
-        OlapChangesError::DatabaseError(format!(
-            "Failed to extract source tables from View {}: {}",
-            name, e
-        ))
-    })?;
+    // Try standard SQL parser first, but fall back to regex if it fails
+    let source_tables = match extract_source_tables_from_query(&as_select) {
+        Ok(tables) => tables,
+        Err(e) => {
+            warn!(
+                "Could not parse {} query with standard SQL parser ({}), using regex fallback",
+                name, e
+            );
+            extract_source_tables_from_query_regex(&as_select, default_database).map_err(|e| {
+                OlapChangesError::DatabaseError(format!(
+                    "Failed to extract source tables from {} using regex fallback: {}",
+                    name, e
+                ))
+            })?
+        }
+    };
 
     // Extract pulls_data_from (source tables)
     let pulls_data_from = source_tables
@@ -2189,12 +2176,9 @@ fn reconstruct_sql_resource_from_view(
         })
         .collect();
 
-    // Regular views don't push data to tables
-    let pushes_data_to = vec![];
-
     Ok(SqlResource {
         name,
-        database: Some(_database),
+        database: Some(database),
         setup: vec![setup],
         teardown: vec![teardown],
         pulls_data_from,
@@ -3258,5 +3242,112 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
             normalized.columns[0].ttl, table.columns[0].ttl,
             "Column TTL should remain unchanged"
         );
+    }
+
+    #[test]
+    fn test_reconstruct_sql_resource_from_mv_with_standard_sql() {
+        let create_query =
+            "CREATE MATERIALIZED VIEW test_mv TO target_table AS SELECT id FROM source".to_string();
+        let as_select = "SELECT id FROM source".to_string();
+
+        let result = reconstruct_sql_resource_from_mv(
+            "test_mv".to_string(),
+            create_query,
+            as_select,
+            "mydb".to_string(),
+            "mydb",
+        )
+        .unwrap();
+
+        assert_eq!(result.name, "test_mv");
+        assert_eq!(result.pulls_data_from.len(), 1);
+        assert_eq!(result.pushes_data_to.len(), 1);
+        match &result.pushes_data_to[0] {
+            InfrastructureSignature::Table { id } => assert_eq!(id, "target_table"),
+            _ => panic!("Expected Table signature"),
+        }
+    }
+
+    #[test]
+    fn test_reconstruct_sql_resource_from_mv_with_clickhouse_array_syntax() {
+        // Reproduces customer issue: MV with ClickHouse array literals
+        let create_query =
+            "CREATE MATERIALIZED VIEW test_mv TO target AS SELECT * FROM source".to_string();
+        let as_select = r#"
+            SELECT name, count() as total
+            FROM mydb.source_table
+            WHERE arrayExists(x -> (lower(name) LIKE x), ['pattern1', 'pattern2'])
+            AND status NOT IN ['active', 'pending']
+            GROUP BY name
+        "#
+        .to_string();
+
+        // Should not panic, should use regex fallback
+        let result = reconstruct_sql_resource_from_mv(
+            "test_mv".to_string(),
+            create_query,
+            as_select,
+            "mydb".to_string(),
+            "mydb",
+        )
+        .unwrap();
+
+        assert_eq!(result.name, "test_mv");
+        // Regex fallback should extract source_table
+        assert_eq!(result.pulls_data_from.len(), 1);
+        match &result.pulls_data_from[0] {
+            InfrastructureSignature::Table { id } => assert_eq!(id, "source_table"),
+            _ => panic!("Expected Table signature"),
+        }
+    }
+
+    #[test]
+    fn test_reconstruct_sql_resource_from_view_with_clickhouse_array_syntax() {
+        let as_select = r#"
+            SELECT id, name
+            FROM db1.table1
+            WHERE status IN ['active', 'pending']
+        "#
+        .to_string();
+
+        // Should not panic, should use regex fallback
+        let result = reconstruct_sql_resource_from_view(
+            "test_view".to_string(),
+            as_select,
+            "db1".to_string(),
+            "db1",
+        )
+        .unwrap();
+
+        assert_eq!(result.name, "test_view");
+        assert_eq!(result.pulls_data_from.len(), 1);
+        match &result.pulls_data_from[0] {
+            InfrastructureSignature::Table { id } => assert_eq!(id, "table1"),
+            _ => panic!("Expected Table signature"),
+        }
+        assert_eq!(result.pushes_data_to.len(), 0);
+    }
+
+    #[test]
+    fn test_reconstruct_sql_resource_from_mv_strips_backticks_from_target() {
+        // Tests the backtick stripping fix in target table extraction
+        let create_query =
+            "CREATE MATERIALIZED VIEW mv TO `my_db`.`my_target` AS SELECT * FROM src".to_string();
+        let as_select = "SELECT * FROM src".to_string();
+
+        let result = reconstruct_sql_resource_from_mv(
+            "mv".to_string(),
+            create_query,
+            as_select,
+            "my_db".to_string(),
+            "my_db",
+        )
+        .unwrap();
+
+        // Target table name should have backticks stripped
+        match &result.pushes_data_to[0] {
+            InfrastructureSignature::Table { id } => assert_eq!(id, "my_target"),
+            _ => panic!("Expected Table signature"),
+        }
     }
 }

@@ -421,11 +421,41 @@ fn create_otel_layer(
     session_id: &str,
     machine_id: &str,
 ) -> Result<impl Layer<tracing_subscriber::Registry>, LoggerError> {
-    // Create resource with service metadata
+    use crate::utilities::decode_object;
+    use serde_json::Value;
+    use std::env::VarError;
+
+    // Create base resource attributes
+    let mut resource_attributes = vec![
+        KeyValue::new(SERVICE_NAME, "moose-cli"),
+        KeyValue::new("session_id", session_id.to_string()),
+        KeyValue::new("machine_id", machine_id.to_string()),
+    ];
+
+    // Add labels from MOOSE_METRIC__LABELS environment variable
+    match env::var("MOOSE_METRIC__LABELS") {
+        Ok(base64) => match decode_object::decode_base64_to_json(&base64) {
+            Ok(Value::Object(labels)) => {
+                for (key, value) in labels {
+                    if let Some(value_str) = value.as_str() {
+                        resource_attributes.push(KeyValue::new(key, value_str.to_string()));
+                    }
+                }
+            }
+            Ok(_) => warn!("Unexpected value for MOOSE_METRIC_LABELS"),
+            Err(e) => {
+                warn!("Error decoding MOOSE_METRIC_LABELS: {}", e);
+            }
+        },
+        Err(VarError::NotPresent) => {}
+        Err(VarError::NotUnicode(e)) => {
+            warn!("MOOSE_METRIC__LABELS is not unicode: {:?}", e);
+        }
+    }
+
+    // Create resource with all attributes
     let resource = Resource::builder()
-        .with_attribute(KeyValue::new(SERVICE_NAME, "moose-cli"))
-        .with_attribute(KeyValue::new("session_id", session_id.to_string()))
-        .with_attribute(KeyValue::new("machine_id", machine_id.to_string()))
+        .with_attributes(resource_attributes)
         .build();
 
     // Build OTLP log exporter
