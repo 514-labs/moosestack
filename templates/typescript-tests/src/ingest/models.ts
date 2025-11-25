@@ -723,7 +723,7 @@ export const primaryKeyOrderingTable = new OlapTable<PrimaryKeyOrderingTest>(
   "PrimaryKeyOrderingTest",
   {
     // Primary key optimized for uniqueness
-    primaryKeyExpression: "(productId)",
+    primaryKeyExpression: "productId",
     // Order by starts with primary key, then adds other columns for query optimization
     orderByFields: ["productId", "category", "brand"],
   },

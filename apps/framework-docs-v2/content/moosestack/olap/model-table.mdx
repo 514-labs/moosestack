@@ -551,7 +551,7 @@ interface Product {
 
 const productsTable = new OlapTable<Product>("products", {
   // Primary key order optimized for uniqueness
-  primaryKeyExpression: "(productId)",
+  primaryKeyExpression: "productId",
   // Order by optimized for common queries
   orderByFields: ["category", "brand", "productId"],
 });
