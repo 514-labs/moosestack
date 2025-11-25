@@ -16,8 +16,9 @@
 /// - Identifying structural differences in tables
 use crate::{
     framework::core::{
+        infrastructure::sql_resource::SqlResource,
         infrastructure::table::Table,
-        infrastructure_map::{InfrastructureMap, OlapChange, TableChange},
+        infrastructure_map::{Change, InfrastructureMap, OlapChange, TableChange},
     },
     infrastructure::olap::{OlapChangesError, OlapOperations},
     project::Project,
@@ -56,6 +57,12 @@ pub struct InfraDiscrepancies {
     pub missing_tables: Vec<String>,
     /// Tables that exist in both but have structural differences
     pub mismatched_tables: Vec<OlapChange>,
+    /// SQL resources (views/MVs) that exist in reality but are not in the map
+    pub unmapped_sql_resources: Vec<SqlResource>,
+    /// SQL resources that are in the map but don't exist in reality
+    pub missing_sql_resources: Vec<String>,
+    /// SQL resources that exist in both but have differences
+    pub mismatched_sql_resources: Vec<OlapChange>,
 }
 
 impl InfraDiscrepancies {
@@ -64,6 +71,9 @@ impl InfraDiscrepancies {
         self.unmapped_tables.is_empty()
             && self.missing_tables.is_empty()
             && self.mismatched_tables.is_empty()
+            && self.unmapped_sql_resources.is_empty()
+            && self.missing_sql_resources.is_empty()
+            && self.mismatched_sql_resources.is_empty()
     }
 }
 
@@ -292,17 +302,107 @@ impl<T: OlapOperations> InfraRealityChecker<T> {
             }
         }
 
+        // Fetch and compare SQL resources (views and materialized views)
+        debug!("Fetching actual SQL resources from OLAP databases");
+
+        let mut actual_sql_resources = Vec::new();
+
+        // Query each database and merge results
+        for database in &all_databases {
+            debug!("Fetching SQL resources from database: {}", database);
+            let mut db_sql_resources = self
+                .olap_client
+                .list_sql_resources(database, &infra_map.default_database)
+                .await?;
+            actual_sql_resources.append(&mut db_sql_resources);
+        }
+
+        debug!(
+            "Found {} SQL resources across all databases",
+            actual_sql_resources.len()
+        );
+
+        // Create a map of actual SQL resources by name
+        let actual_sql_resource_map: HashMap<String, _> = actual_sql_resources
+            .into_iter()
+            .map(|r| (r.name.clone(), r))
+            .collect();
+
+        debug!(
+            "Actual SQL resource IDs: {:?}",
+            actual_sql_resource_map.keys()
+        );
+        debug!(
+            "Infrastructure map SQL resource IDs: {:?}",
+            infra_map.sql_resources.keys()
+        );
+
+        // Find unmapped SQL resources (exist in reality but not in map)
+        let unmapped_sql_resources: Vec<_> = actual_sql_resource_map
+            .values()
+            .filter(|resource| !infra_map.sql_resources.contains_key(&resource.name))
+            .cloned()
+            .collect();
+
+        debug!(
+            "Found {} unmapped SQL resources: {:?}",
+            unmapped_sql_resources.len(),
+            unmapped_sql_resources
+                .iter()
+                .map(|r| &r.name)
+                .collect::<Vec<_>>()
+        );
+
+        // Find missing SQL resources (in map but don't exist in reality)
+        let missing_sql_resources: Vec<String> = infra_map
+            .sql_resources
+            .keys()
+            .filter(|id| !actual_sql_resource_map.contains_key(*id))
+            .cloned()
+            .collect();
+
+        debug!(
+            "Found {} missing SQL resources: {:?}",
+            missing_sql_resources.len(),
+            missing_sql_resources
+        );
+
+        // Find mismatched SQL resources (exist in both but differ)
+        let mut mismatched_sql_resources = Vec::new();
+        for (id, desired) in &infra_map.sql_resources {
+            if let Some(actual) = actual_sql_resource_map.get(id) {
+                if actual != desired {
+                    debug!("Found mismatch in SQL resource: {}", id);
+                    mismatched_sql_resources.push(OlapChange::SqlResource(Change::Updated {
+                        before: Box::new(actual.clone()),
+                        after: Box::new(desired.clone()),
+                    }));
+                }
+            }
+        }
+
+        debug!(
+            "Found {} mismatched SQL resources",
+            mismatched_sql_resources.len()
+        );
+
         let discrepancies = InfraDiscrepancies {
             unmapped_tables,
             missing_tables,
             mismatched_tables,
+            unmapped_sql_resources,
+            missing_sql_resources,
+            mismatched_sql_resources,
         };
 
         debug!(
-            "Reality check complete. Found {} unmapped, {} missing, and {} mismatched tables",
+            "Reality check complete. Found {} unmapped, {} missing, and {} mismatched tables, {} unmapped SQL resources, {} missing SQL resources, {} mismatched SQL resources",
             discrepancies.unmapped_tables.len(),
             discrepancies.missing_tables.len(),
-            discrepancies.mismatched_tables.len()
+            discrepancies.mismatched_tables.len(),
+            discrepancies.unmapped_sql_resources.len(),
+            discrepancies.missing_sql_resources.len(),
+            discrepancies.mismatched_sql_resources.len()
         );
 
         if discrepancies.is_empty() {
@@ -335,6 +435,7 @@ mod tests {
     // Mock OLAP client for testing
     struct MockOlapClient {
         tables: Vec<Table>,
+        sql_resources: Vec<SqlResource>,
     }
 
     #[async_trait]
@@ -345,6 +446,17 @@ mod tests {
             _project: &Project,
         ) -> Result<(Vec<Table>, Vec<TableWithUnsupportedType>), OlapChangesError> {
             Ok((self.tables.clone(), vec![]))
+        }
+
+        async fn list_sql_resources(
+            &self,
+            _db_name: &str,
+            _default_database: &str,
+        ) -> Result<
+            Vec<crate::framework::core::infrastructure::sql_resource::SqlResource>,
+            OlapChangesError,
+        > {
+            Ok(self.sql_resources.clone())
         }
     }
 
@@ -435,6 +547,7 @@ mod tests {
                 database: Some(DEFAULT_DATABASE_NAME.to_string()),
                 ..table.clone()
             }],
+            sql_resources: vec![],
         };
 
         // Create empty infrastructure map
@@ -504,6 +617,7 @@ mod tests {
                 database: Some(DEFAULT_DATABASE_NAME.to_string()),
                 ..actual_table.clone()
             }],
+            sql_resources: vec![],
         };
 
         let mut infra_map = InfrastructureMap {
@@ -578,6 +692,7 @@ mod tests {
                 database: Some(DEFAULT_DATABASE_NAME.to_string()),
                 ..actual_table.clone()
             }],
+            sql_resources: vec![],
         };
 
         let mut infra_map = InfrastructureMap {
@@ -645,6 +760,7 @@ mod tests {
                 database: Some(DEFAULT_DATABASE_NAME.to_string()),
                 ..actual_table.clone()
             }],
+            sql_resources: vec![],
         };
 
         let mut infra_map = InfrastructureMap {
@@ -687,6 +803,72 @@ mod tests {
                 assert!(matches!(&after.engine, ClickhouseEngine::MergeTree));
             }
             _ => panic!("Expected TableChange::Updated variant"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_reality_checker_sql_resource_mismatch() {
+        let actual_resource = SqlResource {
+            name: "test_view".to_string(),
+            database: None,
+            setup: vec!["CREATE VIEW test_view AS SELECT 1".to_string()],
+            teardown: vec!["DROP VIEW test_view".to_string()],
+            pulls_data_from: vec![],
+            pushes_data_to: vec![],
+        };
+
+        let infra_resource = SqlResource {
+            name: "test_view".to_string(),
+            database: None,
+            setup: vec!["CREATE VIEW test_view AS SELECT 2".to_string()], // Difference here
+            teardown: vec!["DROP VIEW test_view".to_string()],
+            pulls_data_from: vec![],
+            pushes_data_to: vec![],
+        };
+
+        let mock_client = MockOlapClient {
+            tables: vec![],
+            sql_resources: vec![actual_resource.clone()],
+        };
+
+        let mut infra_map = InfrastructureMap {
+            default_database: DEFAULT_DATABASE_NAME.to_string(),
+            topics: HashMap::new(),
+            api_endpoints: HashMap::new(),
+            tables: HashMap::new(),
+            views: HashMap::new(),
+            topic_to_table_sync_processes: HashMap::new(),
+            topic_to_topic_sync_processes: HashMap::new(),
+            function_processes: HashMap::new(),
+            block_db_processes: OlapProcess {},
+            consumption_api_web_server: ConsumptionApiWebServer {},
+            orchestration_workers: HashMap::new(),
+            sql_resources: HashMap::new(),
+            workflows: HashMap::new(),
+            web_apps: HashMap::new(),
+        };
+
+        infra_map
+            .sql_resources
+            .insert(infra_resource.name.clone(), infra_resource.clone());
+
+        let checker = InfraRealityChecker::new(mock_client);
+        let project = create_test_project();
+
+        let discrepancies = checker.check_reality(&project, &infra_map).await.unwrap();
+
+        assert!(discrepancies.unmapped_sql_resources.is_empty());
+        assert!(discrepancies.missing_sql_resources.is_empty());
+        assert_eq!(discrepancies.mismatched_sql_resources.len(), 1);
+
+        match &discrepancies.mismatched_sql_resources[0] {
+            OlapChange::SqlResource(Change::Updated { before, after }) => {
+                assert_eq!(before.name, "test_view");
+                assert_eq!(after.name, "test_view");
+                assert_eq!(before.setup[0], "CREATE VIEW test_view AS SELECT 1");
+                assert_eq!(after.setup[0], "CREATE VIEW test_view AS SELECT 2");
+            }
+            _ => panic!("Expected SqlResource Updated variant"),
         }
     }
 }
