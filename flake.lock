@@ -103,11 +103,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1764107305,
-        "narHash": "sha256-WvQKJS+eizwFPJeTom9B2H2OVt/cneStYNvnTkXADL8=",
+        "lastModified": 1764035635,
+        "narHash": "sha256-BQXF3dmdSY9k6fS82HdmYjAsrU+Y3o7rDK8rh9oYY6g=",
         "owner": "LucioFranco",
         "repo": "safe-chain-nix",
-        "rev": "c931beaa029241bf9010d76d68e47c20f4d3bcf9",
+        "rev": "b286fdec32d947cd1f25c37b4b3c4ecca6f796b2",
         "type": "github"
       },
       "original": {
