@@ -84,8 +84,6 @@ logos = "0.15.0"
 # Monitoring
 tracing = "0.1.40"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json", "fmt"] }
-tracing-appender = "0.2"
-tracing-opentelemetry = "0.29"
 opentelemetry_sdk = { version = "0.29.0", features = [
     "logs",
     "metrics",
