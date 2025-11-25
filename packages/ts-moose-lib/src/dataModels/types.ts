@@ -73,6 +73,34 @@ export type UInt64 = number & ClickHouseInt<"uint64">;
 export type Decimal<P extends number, S extends number> = string &
   ClickHouseDecimal<P, S>;
 
+/**
+ * Attach compression codec to a column type.
+ *
+ * Any valid ClickHouse codec expression is allowed. ClickHouse validates the codec at runtime.
+ *
+ * @template T The base data type
+ * @template CodecExpr The codec expression (single codec or chain)
+ *
+ * @example
+ * interface Metrics {
+ *   // Single codec
+ *   log_blob: string & Codec<"ZSTD(3)">;
+ *
+ *   // Codec chain (processed left-to-right)
+ *   timestamp: Date & Codec<"Delta, LZ4">;
+ *   temperature: number & Codec<"Gorilla, ZSTD">;
+ *
+ *   // Specialized codecs
+ *   counter: number & Codec<"DoubleDelta">;
+ *
+ *   // Can combine with other annotations
+ *   count: UInt64 & Codec<"DoubleDelta, LZ4">;
+ * }
+ */
+export type Codec<CodecExpr extends string> = {
+  _clickhouse_codec?: CodecExpr;
+};
+
 export type ClickHouseFloat<Value extends "float32" | "float64"> = tags.Type<
   Value extends "float32" ? "float" : "double"
 >;

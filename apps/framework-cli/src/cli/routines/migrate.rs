@@ -763,6 +763,7 @@ mod tests {
                 annotations: vec![],
                 comment: None,
                 ttl: None,
+                codec: None,
             }],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
             partition_by: None,
@@ -797,6 +798,7 @@ mod tests {
             annotations: vec![],
             comment: None,
             ttl: None,
+            codec: None,
         });
         table
     }
@@ -1140,6 +1142,7 @@ mod tests {
                     annotations: vec![],
                     comment: None,
                     ttl: None,
+                    codec: None,
                 },
                 after_column: None,
                 database: Some("bad_db".to_string()),
@@ -1157,6 +1160,7 @@ mod tests {
                     annotations: vec![],
                     comment: None,
                     ttl: None,
+                    codec: None,
                 },
                 after_column: Column {
                     name: "col".to_string(),
@@ -1168,6 +1172,7 @@ mod tests {
                     annotations: vec![],
                     comment: None,
                     ttl: None,
+                    codec: None,
                 },
                 database: Some("another_bad_db".to_string()),
                 cluster_name: None,

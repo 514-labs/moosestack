@@ -21,6 +21,7 @@ import {
   ClickHouseByteSize,
   ClickHouseJson,
   Int64,
+  Codec,
 } from "@514labs/moose-lib";
 
 /**
@@ -684,3 +685,22 @@ export const dateTimePrecisionOutputStream =
   new Stream<DateTimePrecisionTestData>("DateTimePrecisionOutput", {
     destination: DateTimePrecisionOutputTable,
   });
+
+// =======Codec Compression Test=======
+export interface CodecTest {
+  id: Key<string>;
+  timestamp: DateTime & Codec<"Delta, LZ4">;
+  log_blob: Record<string, any> & Codec<"ZSTD(3)">;
+  combination_hash: UInt64[] & Codec<"ZSTD(1)">;
+  temperature: number & Codec<"Gorilla, ZSTD(3)">;
+  request_count: number & Codec<"DoubleDelta, LZ4">;
+  user_agent: string & Codec<"ZSTD(3)">;
+  tags: string[] & Codec<"LZ4">;
+  status_code: number;
+}
+
+export const CodecTestPipeline = new IngestPipeline<CodecTest>("CodecTest", {
+  table: true,
+  stream: true,
+  ingestApi: true,
+});

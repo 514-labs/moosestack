@@ -62,6 +62,7 @@ export {
   ClickHouseDefault,
   ClickHouseTTL,
   WithDefault,
+  Codec,
   // Added friendly aliases and numeric helpers
   DateTime,
   DateTime64,
