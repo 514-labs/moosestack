@@ -1,5 +1,6 @@
 use clickhouse::ClickhouseChangesError;
 
+use crate::framework::core::infrastructure::sql_resource::SqlResource;
 use crate::infrastructure::olap::clickhouse::TableWithUnsupportedType;
 use crate::{
     framework::core::infrastructure::table::Table, framework::core::infrastructure_map::OlapChange,
@@ -7,7 +8,7 @@ use crate::{
 };
 
 pub mod clickhouse;
-pub mod clickhouse_alt_client;
+pub mod clickhouse_http_client;
 pub mod ddl_ordering;
 
 #[derive(Debug, thiserror::Error)]
@@ -52,6 +53,30 @@ pub trait OlapOperations {
         db_name: &str,
         project: &Project,
     ) -> Result<(Vec<Table>, Vec<TableWithUnsupportedType>), OlapChangesError>;
+
+    /// Retrieves all SQL resources (views and materialized views) from the database
+    ///
+    /// # Arguments
+    ///
+    /// * `db_name` - The name of the database to list SQL resources from
+    /// * `default_database` - The default database name for resolving unqualified table references
+    ///
+    /// # Returns
+    ///
+    /// * `Result<Vec<SqlResource>, OlapChangesError>` - A list of SqlResource objects
+    ///
+    /// # Errors
+    ///
+    /// Returns `OlapChangesError` if:
+    /// - The database connection fails
+    /// - The database doesn't exist
+    /// - The query execution fails
+    /// - SQL parsing fails
+    async fn list_sql_resources(
+        &self,
+        db_name: &str,
+        default_database: &str,
+    ) -> Result<Vec<SqlResource>, OlapChangesError>;
 }
 
 /// This method dispatches the execution of the changes to the right olap storage.

@@ -223,6 +223,8 @@ pub async fn db_to_dmv2(remote_url: &str, dir_path: &Path) -> Result<(), Routine
             e,
         )
     })?;
+    // TODO: Also call list_sql_resources to fetch Views/MVs and generate code for them.
+    // Currently we only generate code for Tables.
     let (tables, unsupported) = client.list_tables(&db, &project).await.map_err(|e| {
         RoutineFailure::new(
             Message::new("Failure".to_string(), "listing tables".to_string()),

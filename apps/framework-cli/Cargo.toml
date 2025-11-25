@@ -12,7 +12,7 @@ homepage = "https://www.fiveonefour.com/moose"
 
 [dependencies]
 posthog514client-rs = { path = "../../packages/posthog514client-rs" }
-sqlparser = "0.59"
+sqlparser = { version = "0.59", features = ["visitor"] }
 itertools = "0.13.0"
 openssl = { version = "0.10", features = ["vendored"] }
 clap = { version = "4.3.17", features = ["derive"] }
@@ -28,7 +28,6 @@ serde = { version = "1.0", features = ["derive"] }
 config = { version = "0.13.1", features = ["toml"] }
 home = "0.5.5"
 clickhouse = { version = "0.14.0", features = ["uuid", "native-tls"] }
-clickhouse-rs = { version = "1.1.0-alpha.1", features = ["tls"] }
 handlebars = "5.1"
 rdkafka = { version = "0.38", features = ["ssl"] }
 rdkafka-sys = "4.7" # Needed for rd_kafka_wait_destroyed
