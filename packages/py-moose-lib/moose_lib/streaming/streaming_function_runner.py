@@ -318,6 +318,7 @@ def create_consumer() -> KafkaConsumer:
         sasl_mechanism=sasl_config.get("mechanism"),
         security_protocol=args.security_protocol,
         enable_auto_commit=False,  # Disable auto-commit for at-least-once semantics
+        auto_offset_reset='earliest',
     )
     consumer = get_kafka_consumer(**kwargs)
     return consumer

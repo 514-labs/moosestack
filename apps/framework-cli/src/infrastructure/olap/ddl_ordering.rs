@@ -2215,6 +2215,7 @@ mod tests {
         // Create SQL resource for a materialized view
         let mv_sql_resource = SqlResource {
             name: "mv_a_to_b".to_string(),
+            database: None,
             setup: vec![
                 "CREATE MATERIALIZED VIEW mv_a_to_b TO table_b AS SELECT * FROM table_a"
                     .to_string(),
@@ -2360,6 +2361,7 @@ mod tests {
         // Create SQL resource for a materialized view
         let mv_sql_resource = SqlResource {
             name: "mv_a_to_b".to_string(),
+            database: None,
             setup: vec![
                 "CREATE MATERIALIZED VIEW mv_a_to_b TO table_b AS SELECT * FROM table_a"
                     .to_string(),
@@ -2388,7 +2390,7 @@ mod tests {
             dependency_info: DependencyInfo {
                 // For teardown: Table A depends on MV being gone first
                 pulls_data_from: vec![InfrastructureSignature::SqlResource {
-                    id: "mv_a_to_b".to_string(),
+                    id: mv_sql_resource.name.clone(),
                 }],
                 pushes_data_to: vec![],
             },
@@ -2400,7 +2402,7 @@ mod tests {
             dependency_info: DependencyInfo {
                 // For teardown: Table B depends on MV being gone first
                 pulls_data_from: vec![InfrastructureSignature::SqlResource {
-                    id: "mv_a_to_b".to_string(),
+                    id: mv_sql_resource.name.clone(),
                 }],
                 pushes_data_to: vec![],
             },
@@ -2509,6 +2511,7 @@ mod tests {
         // Create SQL resource for materialized view
         let resource = SqlResource {
             name: "mv_a_to_b".to_string(),
+            database: None,
             setup: vec![
                 "CREATE MATERIALIZED VIEW mv_a_to_b TO table_b AS SELECT * FROM table_a"
                     .to_string(),
@@ -2615,7 +2618,7 @@ mod tests {
             dependency_info: DependencyInfo {
                 // For teardown: Table A depends on MV being gone first
                 pulls_data_from: vec![InfrastructureSignature::SqlResource {
-                    id: "mv_a_to_b".to_string(),
+                    id: resource.name.clone(),
                 }],
                 pushes_data_to: vec![],
             },
@@ -2626,7 +2629,7 @@ mod tests {
             dependency_info: DependencyInfo {
                 // For teardown: Table B depends on MV being gone first
                 pulls_data_from: vec![InfrastructureSignature::SqlResource {
-                    id: "mv_a_to_b".to_string(),
+                    id: resource.name.clone(),
                 }],
                 pushes_data_to: vec![],
             },
