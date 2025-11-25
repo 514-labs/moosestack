@@ -325,8 +325,10 @@ impl Table {
             format!("{}_{}", self.name, v.as_suffix())
         });
 
-        // Only include database prefix if name doesn't already contain a dot (fully qualified name)
-        if self.name.contains('.') {
+        // Only include database prefix if:
+        // 1. Name doesn't already contain a dot (fully qualified name)
+        // 2. Database is not empty (backward compatibility with legacy deployments that had no db prefix)
+        if self.name.contains('.') || db.is_empty() {
             base_id
         } else {
             format!("{}_{}", db, base_id)
@@ -1803,6 +1805,28 @@ mod tests {
             ..table1.clone()
         };
         assert_eq!(table7.id(DEFAULT_DATABASE_NAME), "local_users_1_0");
+
+        // Test 8: Empty default_database - backward compatibility for legacy deployments
+        // Legacy deployments had table IDs without database prefix (e.g., "AWSUploadEvent_0_0_0_0")
+        // When db_name is empty, we should NOT add a prefix
+        assert_eq!(
+            table1.id(""),
+            "users",
+            "Empty database should produce ID without prefix"
+        );
+
+        // Test 9: Empty default_database with version
+        let table9 = Table {
+            name: "AWSUploadEvent_0_0".to_string(),
+            version: Some(Version::from_string("0.0".to_string())),
+            database: None,
+            ..table1.clone()
+        };
+        assert_eq!(
+            table9.id(""),
+            "AWSUploadEvent_0_0_0_0",
+            "Empty database with version should produce ID without database prefix"
+        );
     }
 
     #[test]
