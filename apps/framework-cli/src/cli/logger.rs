@@ -375,6 +375,43 @@ impl Visit for MessageVisitor {
     }
 }
 
+/// Custom MakeWriter that creates log files with user-specified date format
+///
+/// This maintains backward compatibility with fern's DateBased rotation by allowing
+/// custom date format strings like "%Y-%m-%d-cli.log" to produce "2025-11-25-cli.log"
+struct DateBasedWriter {
+    date_format: String,
+}
+
+impl DateBasedWriter {
+    fn new(date_format: String) -> Self {
+        Self { date_format }
+    }
+}
+
+impl<'a> MakeWriter<'a> for DateBasedWriter {
+    type Writer = std::fs::File;
+
+    fn make_writer(&'a self) -> Self::Writer {
+        let formatted_name = chrono::Local::now().format(&self.date_format).to_string();
+        let file_path = user_directory().join(&formatted_name);
+
+        std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(file_path)
+            .expect("Failed to open log file")
+    }
+}
+
+/// Creates a rolling file appender with custom date format
+///
+/// This function creates a file appender that respects the configured date format
+/// for log file naming, maintaining backward compatibility with fern's DateBased rotation.
+fn create_rolling_file_appender(date_format: &str) -> DateBasedWriter {
+    DateBasedWriter::new(date_format.to_string())
+}
+
 /// Creates an OpenTelemetry layer for log export
 ///
 /// This function sets up OTLP log export using opentelemetry-appender-tracing.
@@ -462,7 +499,7 @@ fn setup_modern_format(
                     .init();
             }
         } else {
-            let file_appender = tracing_appender::rolling::daily(user_directory(), "cli.log");
+            let file_appender = create_rolling_file_appender(&settings.log_file_date_format);
             let format_layer = tracing_subscriber::fmt::layer()
                 .with_writer(file_appender)
                 .with_target(true)
@@ -502,7 +539,7 @@ fn setup_modern_format(
                     .init();
             }
         } else {
-            let file_appender = tracing_appender::rolling::daily(user_directory(), "cli.log");
+            let file_appender = create_rolling_file_appender(&settings.log_file_date_format);
             let format_layer = tracing_subscriber::fmt::layer()
                 .with_writer(file_appender)
                 .with_target(true)
@@ -552,7 +589,7 @@ fn setup_legacy_format(
                 .with(legacy_layer)
                 .init();
         } else {
-            let file_appender = tracing_appender::rolling::daily(user_directory(), "cli.log");
+            let file_appender = create_rolling_file_appender(&settings.log_file_date_format);
             let legacy_layer = LegacyFormatLayer::new(
                 file_appender,
                 settings.format.clone(),
@@ -581,7 +618,7 @@ fn setup_legacy_format(
                 .with(legacy_layer)
                 .init();
         } else {
-            let file_appender = tracing_appender::rolling::daily(user_directory(), "cli.log");
+            let file_appender = create_rolling_file_appender(&settings.log_file_date_format);
             let legacy_layer = LegacyFormatLayer::new(
                 file_appender,
                 settings.format.clone(),
