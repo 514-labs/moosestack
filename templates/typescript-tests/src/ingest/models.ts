@@ -5,6 +5,9 @@ import {
   OlapTable,
   DeadLetterModel,
   DateTime,
+  DateTime64,
+  DateTimeString,
+  DateTime64String,
   ClickHouseDefault,
   ClickHousePoint,
   ClickHouseRing,
@@ -646,3 +649,38 @@ export const largeMessageOutputStream = new Stream<LargeMessageOutput>(
     destination: LargeMessageOutputTable,
   },
 );
+
+/** =======DateTime Precision Test Models========= */
+// Test models for verifying DateTime precision handling (microseconds)
+// Tests ENG-1453: Ensure microsecond precision is preserved
+
+/** Input model with datetime strings */
+export interface DateTimePrecisionTestData {
+  id: Key<string>;
+  createdAt: DateTime;
+  timestampMs: DateTime64<3>;
+  timestampUsDate: DateTime64<6>;
+  timestampUsString: DateTime64String<6>;
+  timestampNs: DateTime64String<9>;
+  createdAtString: DateTimeString;
+}
+
+// Input pipeline (no table, just stream)
+export const DateTimePrecisionInputPipeline =
+  new IngestPipeline<DateTimePrecisionTestData>("DateTimePrecisionInput", {
+    table: false,
+    stream: true,
+    ingestApi: true,
+  });
+
+// Output table
+export const DateTimePrecisionOutputTable =
+  new OlapTable<DateTimePrecisionTestData>("DateTimePrecisionOutput", {
+    orderByFields: ["id"],
+  });
+
+// Output stream
+export const dateTimePrecisionOutputStream =
+  new Stream<DateTimePrecisionTestData>("DateTimePrecisionOutput", {
+    destination: DateTimePrecisionOutputTable,
+  });
