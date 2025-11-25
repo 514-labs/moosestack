@@ -91,14 +91,13 @@ pub async fn create_client_and_db(
 
     // If database wasn't explicitly specified in URL, query the server for the current database
     let db_name = if !parsed.database_was_explicit {
-        // Create client for database detection
-
-        let protocol = if config.use_ssl { "https" } else { "http" };
-        // create_client(config) calls `with_database` when we're not sure which DB is the real default
+        // create_client(config) calls `with_database(config.database)` when we're not sure which DB is the real default
         let client = Client::default()
             .with_url(format!(
                 "{}://{}:{}",
-                protocol, config.host, config.host_port
+                if config.use_ssl { "https" } else { "http" },
+                config.host,
+                config.host_port
             ))
             .with_user(config.user.to_string())
             .with_password(config.password.to_string());
