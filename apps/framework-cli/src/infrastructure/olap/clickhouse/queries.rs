@@ -1,8 +1,8 @@
 use handlebars::{no_escape, Handlebars};
-use tracing::info;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
+use tracing::info;
 
 use super::errors::ClickhouseError;
 use super::model::ClickHouseColumn;

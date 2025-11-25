@@ -24,13 +24,13 @@ use crate::{
     project::python_project::PythonProject,
     utilities::constants::REQUIREMENTS_TXT,
 };
-use tracing::warn;
 use rustpython_parser::{
     ast::{self, Constant, Expr, ExprName, Identifier, Keyword, Stmt, StmtClassDef},
     Parse,
 };
 use std::fmt::Debug;
 use std::path::{Path, PathBuf};
+use tracing::warn;
 
 use crate::framework::core::infrastructure::table::{
     Column, ColumnType, DataEnum as FrameworkEnum, FloatType, IntType, Nested,

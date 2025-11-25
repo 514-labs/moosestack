@@ -14,7 +14,6 @@ use super::{setup_redis_client, RoutineFailure, RoutineSuccess};
 use crate::infrastructure::olap::clickhouse::model::ClickHouseTable;
 use crate::infrastructure::stream::kafka::client::create_consumer;
 use futures::stream::BoxStream;
-use tracing::info;
 use rdkafka::consumer::{Consumer, StreamConsumer};
 use rdkafka::{Message as KafkaMessage, Offset, TopicPartitionList};
 use serde_json::Value;
@@ -24,6 +23,7 @@ use std::time::Duration;
 use tokio::fs::File;
 use tokio::io::AsyncWriteExt;
 use tokio_stream::StreamExt;
+use tracing::info;
 
 /// Retrieves and displays a sample of data from either a database table or streaming topic.
 ///

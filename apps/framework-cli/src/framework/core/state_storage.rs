@@ -13,10 +13,10 @@ use crate::utilities::machine_id::get_or_create_machine_id;
 use anyhow::{Context, Result};
 use async_trait::async_trait;
 use chrono::{DateTime, Duration, Utc};
-use tracing::{debug, info, warn};
 use protobuf::Message;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
+use tracing::{debug, info, warn};
 
 /// Lock data for migration coordination
 #[derive(Debug, Clone, Serialize, Deserialize)]

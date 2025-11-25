@@ -4,7 +4,6 @@
 //! It provides functionality to retrieve recent messages from topics for debugging and exploration.
 
 use futures::stream::BoxStream;
-use tracing::info;
 use rdkafka::consumer::Consumer;
 use rdkafka::{Message as KafkaMessage, Offset, TopicPartitionList};
 use rmcp::model::{CallToolResult, Tool};
@@ -12,6 +11,7 @@ use serde_json::{json, Map, Value};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio_stream::StreamExt;
+use tracing::info;
 
 use super::{create_error_result, create_success_result};
 use crate::framework::core::infrastructure_map::InfrastructureMap;

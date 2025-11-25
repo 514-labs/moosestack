@@ -7,8 +7,8 @@ use hyper::body::Bytes;
 use hyper::{Request, Response, Uri};
 use hyper_tls::HttpsConnector;
 use hyper_util::client::legacy::{connect::HttpConnector, Client};
-use tracing::debug;
 use tokio::time::{sleep, Duration};
+use tracing::debug;
 
 use super::config::ClickHouseConfig;
 use super::model::{wrap_and_join_column_names, ClickHouseRecord};

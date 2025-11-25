@@ -14,12 +14,12 @@ use crate::utilities::constants::{
     APP_DIR, PYTHON_EXTERNAL_FILE, PYTHON_MAIN_FILE, TYPESCRIPT_EXTERNAL_FILE, TYPESCRIPT_MAIN_FILE,
 };
 use crate::utilities::git::create_code_generation_commit;
-use tracing::debug;
 use reqwest::Url;
 use std::borrow::Cow;
 use std::env;
 use std::io::Write;
 use std::path::Path;
+use tracing::debug;
 
 pub fn prompt_user_for_remote_ch_http() -> Result<String, RoutineFailure> {
     let base = prompt_user(

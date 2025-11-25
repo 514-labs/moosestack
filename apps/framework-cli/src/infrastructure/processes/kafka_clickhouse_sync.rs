@@ -9,9 +9,6 @@
 //! batching, back pressure, and error handling mechanisms.
 
 use futures::TryFutureExt;
-use tracing::error;
-use tracing::info;
-use tracing::{debug, warn};
 use rdkafka::consumer::{Consumer, StreamConsumer};
 use rdkafka::producer::{DeliveryFuture, Producer};
 use rdkafka::Message;
@@ -19,6 +16,9 @@ use serde_json::Value;
 use std::collections::{HashMap, VecDeque};
 use std::sync::{Arc, LazyLock};
 use tokio::task::JoinHandle;
+use tracing::error;
+use tracing::info;
+use tracing::{debug, warn};
 
 use crate::framework::core::infrastructure::table::Column;
 use crate::framework::core::infrastructure::table::ColumnType;

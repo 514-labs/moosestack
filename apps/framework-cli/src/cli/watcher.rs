@@ -18,7 +18,6 @@
 /// 3. After a short delay (debouncing), changes are processed to update the infrastructure
 /// 4. The updated infrastructure is applied to the system
 use crate::framework;
-use tracing::info;
 use notify::event::ModifyKind;
 use notify::{Event, EventHandler, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use std::collections::HashSet;
@@ -26,6 +25,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use std::{io::Error, path::PathBuf};
 use tokio::sync::RwLock;
+use tracing::info;
 
 use crate::framework::core::infrastructure_map::{ApiChange, InfrastructureMap};
 

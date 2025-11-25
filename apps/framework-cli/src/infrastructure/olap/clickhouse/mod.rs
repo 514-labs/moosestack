@@ -33,7 +33,6 @@
 use clickhouse::Client;
 
 use errors::ClickhouseError;
-use tracing::{debug, info, warn};
 use mapper::{std_column_to_clickhouse_column, std_table_to_clickhouse_table};
 use model::ClickHouseColumn;
 use queries::ClickhouseEngine;
@@ -50,6 +49,7 @@ use sql_parser::{
 use std::collections::HashMap;
 use std::ops::Deref;
 use std::sync::LazyLock;
+use tracing::{debug, info, warn};
 
 use self::model::ClickHouseSystemTable;
 use crate::framework::core::infrastructure::sql_resource::SqlResource;

@@ -1,5 +1,4 @@
 //! System utilities
-use tracing::{debug, error, info, warn};
 use std::fmt::Debug;
 use std::time::Duration;
 use std::{
@@ -10,6 +9,7 @@ use tokio::process::Child;
 use tokio::select;
 use tokio::task::JoinHandle;
 use tokio::time::{sleep, Instant};
+use tracing::{debug, error, info, warn};
 
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]

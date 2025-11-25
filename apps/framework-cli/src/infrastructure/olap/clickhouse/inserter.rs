@@ -47,8 +47,8 @@ use crate::infrastructure::olap::clickhouse::client::ClickHouseClientTrait;
 use crate::infrastructure::olap::clickhouse::model::ClickHouseRecord;
 use std::collections::{HashMap, VecDeque};
 
-use tracing::{info, warn};
 use rdkafka::error::KafkaError;
+use tracing::{info, warn};
 
 /// Represents a Kafka partition identifier
 type Partition = i32;

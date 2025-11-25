@@ -23,10 +23,10 @@ use crate::{
     infrastructure::olap::{OlapChangesError, OlapOperations},
     project::Project,
 };
-use tracing::debug;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use thiserror::Error;
+use tracing::debug;
 
 /// Represents errors that can occur during infrastructure reality checking.
 #[derive(Debug, Error)]

@@ -80,10 +80,10 @@ use crate::utilities::git::GitConfig;
 use crate::utilities::PathExt;
 use crate::utilities::_true;
 use config::{Config, ConfigError, Environment, File};
-use tracing::{debug, error};
 use python_project::PythonProject;
 use serde::Deserialize;
 use serde::Serialize;
+use tracing::{debug, error};
 
 /// Represents errors that can occur during project file operations
 #[derive(Debug, thiserror::Error)]

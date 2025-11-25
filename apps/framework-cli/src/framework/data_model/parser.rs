@@ -4,9 +4,9 @@ use crate::{
     framework::{core::infrastructure::table::DataEnum, python, typescript},
     project::Project,
 };
-use tracing::info;
 use serde::Deserialize;
 use std::path::Path;
+use tracing::info;
 
 #[derive(Debug, thiserror::Error)]
 #[error("Failed to parse the data model file")]

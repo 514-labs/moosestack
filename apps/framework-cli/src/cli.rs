@@ -18,7 +18,6 @@ use commands::{
 };
 use config::ConfigError;
 use display::with_spinner_completion;
-use tracing::{debug, info, warn};
 use regex::Regex;
 use routines::auth::generate_hash_token;
 use routines::build::build_package;
@@ -34,6 +33,7 @@ use routines::scripts::{
     terminate_workflow, unpause_workflow,
 };
 use routines::templates::list_available_templates;
+use tracing::{debug, info, warn};
 
 use settings::Settings;
 use std::collections::HashMap;

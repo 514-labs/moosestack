@@ -251,7 +251,10 @@ impl ConnectionManagerWrapper {
                             break;
                         }
                         Err(err) => {
-                            tracing::warn!("<RedisConnection> Failed to reconnect to Redis: {}", err);
+                            tracing::warn!(
+                                "<RedisConnection> Failed to reconnect to Redis: {}",
+                                err
+                            );
                             backoff = std::cmp::min(backoff * 2, 60);
                         }
                     }

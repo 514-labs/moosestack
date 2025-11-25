@@ -1,5 +1,5 @@
-use tracing::info;
 use std::collections::HashMap;
+use tracing::info;
 
 use crate::{
     cli::settings::Settings,

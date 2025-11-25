@@ -60,7 +60,6 @@ use hyper::Response;
 use hyper::StatusCode;
 use hyper_util::rt::TokioIo;
 use hyper_util::{rt::TokioExecutor, server::conn::auto};
-use tracing::{debug, error, info, trace, warn};
 use rdkafka::error::KafkaError;
 use rdkafka::producer::future_producer::OwnedDeliveryResult;
 use rdkafka::producer::{DeliveryFuture, FutureProducer, FutureRecord, Producer};
@@ -72,6 +71,7 @@ use serde::Serialize;
 use serde::{Deserialize, Deserializer};
 use serde_json::{json, Deserializer as JsonDeserializer, Value};
 use tokio::spawn;
+use tracing::{debug, error, info, trace, warn};
 
 use crate::framework::data_model::model::DataModel;
 use crate::utilities::validate_passthrough::{DataModelArrayVisitor, DataModelVisitor};

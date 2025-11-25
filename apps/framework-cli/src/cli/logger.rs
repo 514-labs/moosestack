@@ -35,7 +35,7 @@ use hyper::Uri;
 use opentelemetry::KeyValue;
 use opentelemetry_appender_tracing::layer::OpenTelemetryTracingBridge;
 use opentelemetry_otlp::{Protocol, WithExportConfig};
-use opentelemetry_sdk::logs::{SdkLoggerProvider, BatchLogProcessor};
+use opentelemetry_sdk::logs::{BatchLogProcessor, SdkLoggerProvider};
 use opentelemetry_sdk::Resource;
 use opentelemetry_semantic_conventions::resource::SERVICE_NAME;
 use serde::Deserialize;
@@ -229,7 +229,12 @@ struct LegacyFormatLayer<W> {
 }
 
 impl<W> LegacyFormatLayer<W> {
-    fn new(writer: W, format: LogFormat, include_session_id: bool, custom_fields: CustomFields) -> Self {
+    fn new(
+        writer: W,
+        format: LogFormat,
+        include_session_id: bool,
+        custom_fields: CustomFields,
+    ) -> Self {
         Self {
             writer,
             format,
@@ -238,12 +243,7 @@ impl<W> LegacyFormatLayer<W> {
         }
     }
 
-    fn format_text(
-        &self,
-        level: &Level,
-        target: &str,
-        message: &str,
-    ) -> String {
+    fn format_text(&self, level: &Level, target: &str, message: &str) -> String {
         // Match current fern text format exactly
         format!(
             "[{} {}{} - {}] {}",
@@ -259,12 +259,7 @@ impl<W> LegacyFormatLayer<W> {
         )
     }
 
-    fn format_json(
-        &self,
-        level: &Level,
-        target: &str,
-        message: &str,
-    ) -> String {
+    fn format_json(&self, level: &Level, target: &str, message: &str) -> String {
         // Match current fern JSON format exactly
         let mut log_json = serde_json::json!({
             "timestamp": chrono::Utc::now().to_rfc3339(),
@@ -274,7 +269,8 @@ impl<W> LegacyFormatLayer<W> {
         });
 
         if self.include_session_id {
-            log_json["session_id"] = serde_json::Value::String(self.custom_fields.session_id.clone());
+            log_json["session_id"] =
+                serde_json::Value::String(self.custom_fields.session_id.clone());
         }
 
         serde_json::to_string(&log_json)

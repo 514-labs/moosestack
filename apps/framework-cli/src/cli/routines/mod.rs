@@ -98,7 +98,6 @@ use crate::framework::core::migration_plan::{MigrationPlan, MigrationPlanWithBef
 use crate::framework::core::plan_validator;
 use crate::infrastructure::redis::redis_client::RedisClient;
 use crate::project::Project;
-use tracing::{debug, error, info, warn};
 use serde::Deserialize;
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
@@ -106,6 +105,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tokio::time::{interval, Duration};
+use tracing::{debug, error, info, warn};
 
 use super::super::metrics::Metrics;
 use super::local_webserver::{PlanRequest, PlanResponse, Webserver};
@@ -487,7 +487,9 @@ pub async fn start_development_mode(
                                                 .to_string(),
                                         }
                                     );
-                                    tracing::warn!("Failed to write suppression flag to config: {e:?}");
+                                    tracing::warn!(
+                                        "Failed to write suppression flag to config: {e:?}"
+                                    );
                                 }
                             }
                             None

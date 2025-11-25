@@ -1,12 +1,12 @@
 use handlebars::Handlebars;
 use lazy_static::lazy_static;
-use tracing::{error, info, warn};
 use regex::Regex;
 use serde::Deserialize;
 use serde_json::json;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use tokio::io::{AsyncBufReadExt, BufReader};
+use tracing::{error, info, warn};
 
 use crate::cli::settings::Settings;
 use crate::project::Project;

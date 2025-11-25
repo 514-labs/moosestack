@@ -26,11 +26,11 @@
 /// }
 /// ```
 use chrono::Local;
-use tracing::{debug, error, info};
 use std::fs;
 use std::path::Path;
 use std::path::PathBuf;
 use std::process::Command;
+use tracing::{debug, error, info};
 
 use crate::framework::languages::SupportedLanguages;
 use crate::project::Project;

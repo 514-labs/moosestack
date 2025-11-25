@@ -1,7 +1,7 @@
 //! Diagnostic provider for checking system-wide errors
 
-use tracing::debug;
 use serde_json::{json, Map, Value};
+use tracing::debug;
 
 use super::{Component, DiagnosticError, DiagnosticProvider, Issue, Severity};
 use crate::infrastructure::olap::clickhouse::client::ClickHouseClient;

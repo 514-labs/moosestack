@@ -215,7 +215,7 @@ impl AtomicOlapOperation {
                 before_column: before_column.clone(),
                 after_column: after_column.clone(),
                 database: table.database.clone(),
-            cluster_name: table.cluster_name.clone(),
+                cluster_name: table.cluster_name.clone(),
             },
             AtomicOlapOperation::ModifyTableSettings {
                 table,
@@ -227,7 +227,7 @@ impl AtomicOlapOperation {
                 before_settings: before_settings.clone(),
                 after_settings: after_settings.clone(),
                 database: table.database.clone(),
-            cluster_name: table.cluster_name.clone(),
+                cluster_name: table.cluster_name.clone(),
             },
             AtomicOlapOperation::ModifyTableTtl {
                 table,
@@ -239,14 +239,14 @@ impl AtomicOlapOperation {
                 before: before.clone(),
                 after: after.clone(),
                 database: table.database.clone(),
-            cluster_name: table.cluster_name.clone(),
+                cluster_name: table.cluster_name.clone(),
             },
             AtomicOlapOperation::AddTableIndex { table, index, .. } => {
                 SerializableOlapOperation::AddTableIndex {
                     table: table.name.clone(),
                     index: index.clone(),
                     database: table.database.clone(),
-                cluster_name: table.cluster_name.clone(),
+                    cluster_name: table.cluster_name.clone(),
                 }
             }
             AtomicOlapOperation::DropTableIndex {
@@ -255,7 +255,7 @@ impl AtomicOlapOperation {
                 table: table.name.clone(),
                 index_name: index_name.clone(),
                 database: table.database.clone(),
-            cluster_name: table.cluster_name.clone(),
+                cluster_name: table.cluster_name.clone(),
             },
             AtomicOlapOperation::ModifySampleBy {
                 table, expression, ..
@@ -263,13 +263,13 @@ impl AtomicOlapOperation {
                 table: table.name.clone(),
                 expression: expression.clone(),
                 database: table.database.clone(),
-            cluster_name: table.cluster_name.clone(),
+                cluster_name: table.cluster_name.clone(),
             },
             AtomicOlapOperation::RemoveSampleBy { table, .. } => {
                 SerializableOlapOperation::RemoveSampleBy {
                     table: table.name.clone(),
                     database: table.database.clone(),
-                cluster_name: table.cluster_name.clone(),
+                    cluster_name: table.cluster_name.clone(),
                 }
             }
             AtomicOlapOperation::PopulateMaterializedView {

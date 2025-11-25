@@ -3,12 +3,12 @@ use crate::framework::consumption::model::ConsumptionQueryParam;
 use crate::framework::data_model::config::{ConfigIdentifier, DataModelConfig};
 use crate::framework::typescript::consumption::{extract_intput_param, extract_schema};
 use crate::project::Project;
-use tracing::debug;
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use tokio::io::AsyncReadExt;
 use tokio::process::Child;
+use tracing::debug;
 
 const EXPORT_SERIALIZER_BIN: &str = "export-serializer";
 const EXPORT_FUNC_TYPE_BIN: &str = "consumption-type-serializer";
