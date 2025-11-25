@@ -6,7 +6,7 @@
 use crate::cli::display::Message;
 use crate::framework::core::infrastructure_map::InfrastructureMap;
 use crate::infrastructure::olap::clickhouse::mapper::std_table_to_clickhouse_table;
-use crate::infrastructure::olap::clickhouse_alt_client::{get_pool, select_some_as_json};
+use crate::infrastructure::olap::clickhouse_http_client::create_query_client;
 use crate::project::Project;
 
 use super::{setup_redis_client, RoutineFailure, RoutineSuccess};
@@ -49,13 +49,8 @@ pub async fn peek(
     file: Option<PathBuf>,
     is_stream: bool,
 ) -> Result<RoutineSuccess, RoutineFailure> {
-    let pool = get_pool(&project.clickhouse_config);
-    let mut client = pool.get_handle().await.map_err(|_| {
-        RoutineFailure::error(Message::new(
-            "Failed".to_string(),
-            "Error connecting to storage".to_string(),
-        ))
-    })?;
+    // Get HTTP-based ClickHouse client
+    let client = create_query_client(&project.clickhouse_config);
 
     let redis_client = setup_redis_client(project.clone()).await.map_err(|e| {
         RoutineFailure::error(Message {
@@ -163,22 +158,64 @@ pub async fn peek(
             ))
         })?;
 
-        Box::pin(
-            select_some_as_json(
-                &project.clickhouse_config.db_name,
-                &table_ref,
-                &mut client,
-                limit as i64,
-            )
-            .await
-            .map_err(|_| {
-                RoutineFailure::error(Message::new(
-                    "Failed".to_string(),
-                    "Error selecting data".to_string(),
-                ))
-            })?
-            .map(|result| anyhow::Ok(result?)),
+        // Build the SELECT query
+        let order_by = match &table_ref.order_by {
+            crate::framework::core::infrastructure::table::OrderBy::Fields(fields)
+                if !fields.is_empty() =>
+            {
+                format!(
+                    "ORDER BY {}",
+                    crate::infrastructure::olap::clickhouse::model::wrap_and_join_column_names(
+                        fields, ", "
+                    )
+                )
+            }
+            crate::framework::core::infrastructure::table::OrderBy::SingleExpr(expr) => {
+                format!("ORDER BY {expr}")
+            }
+            _ => {
+                // Fall back to primary key
+                let key_columns: Vec<String> = table_ref
+                    .primary_key_columns()
+                    .iter()
+                    .map(|s| s.to_string())
+                    .collect();
+
+                if key_columns.is_empty() {
+                    "".to_string()
+                } else {
+                    format!(
+                        "ORDER BY {}",
+                        crate::infrastructure::olap::clickhouse::model::wrap_and_join_column_names(
+                            &key_columns,
+                            ", "
+                        )
+                    )
+                }
+            }
+        };
+
+        let query = format!(
+            "SELECT * FROM \"{}\".\"{}\" {} LIMIT {}",
+            project.clickhouse_config.db_name, table_ref.name, order_by, limit
+        );
+
+        info!("Peek query: {}", query);
+
+        // Execute query
+        let rows = crate::infrastructure::olap::clickhouse_http_client::query_as_json_stream(
+            &client, &query,
         )
+        .await
+        .map_err(|e| {
+            RoutineFailure::error(Message::new(
+                "Peek".to_string(),
+                format!("ClickHouse query error: {}", e),
+            ))
+        })?;
+
+        // Convert Vec to stream
+        Box::pin(tokio_stream::iter(rows.into_iter().map(anyhow::Ok)))
     };
 
     let mut success_count = 0;

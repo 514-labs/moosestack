@@ -6,10 +6,9 @@
 use crate::cli::display::Message;
 use crate::cli::routines::{setup_redis_client, RoutineFailure, RoutineSuccess};
 use crate::framework::core::infrastructure_map::InfrastructureMap;
-use crate::infrastructure::olap::clickhouse_alt_client::{get_pool, row_to_json};
+use crate::infrastructure::olap::clickhouse_http_client::create_query_client;
 use crate::project::Project;
 
-use futures::StreamExt;
 use tracing::info;
 use std::io::Read;
 use std::path::PathBuf;
@@ -113,15 +112,8 @@ pub async fn query(
 
     info!("Executing SQL: {}", sql_query);
 
-    // Get ClickHouse connection pool
-    let pool = get_pool(&project.clickhouse_config);
-
-    let mut client = pool.get_handle().await.map_err(|_| {
-        RoutineFailure::error(Message::new(
-            "Failed".to_string(),
-            "Error connecting to storage".to_string(),
-        ))
-    })?;
+    // Get HTTP-based ClickHouse client
+    let client = create_query_client(&project.clickhouse_config);
 
     let redis_client = setup_redis_client(project.clone()).await.map_err(|e| {
         RoutineFailure::error(Message {
@@ -131,7 +123,6 @@ pub async fn query(
     })?;
 
     // Validate that infrastructure state exists and is accessible.
-    // The value is not used further, but we fail early if it cannot be loaded.
     let _infra = InfrastructureMap::load_from_redis(&redis_client)
         .await
         .map_err(|_| {
@@ -147,40 +138,27 @@ pub async fn query(
             ))
         })?;
 
-    // Execute query and stream results
-    let mut stream = client.query(&sql_query).stream();
+    // Execute query and get results
+    let rows = crate::infrastructure::olap::clickhouse_http_client::query_as_json_stream(
+        &client, &sql_query,
+    )
+    .await
+    .map_err(|e| {
+        RoutineFailure::error(Message::new(
+            "Query".to_string(),
+            format!("ClickHouse query error: {}", e),
+        ))
+    })?;
 
-    let mut success_count = 0;
-    let mut enum_mappings: Vec<Option<Vec<&str>>> = Vec::new();
-
-    while let Some(row_result) = stream.next().await {
-        let row = match row_result {
-            Ok(row) => row,
-            Err(e) => {
-                return Err(RoutineFailure::new(
-                    Message::new("Query".to_string(), "ClickHouse query error".to_string()),
-                    e,
-                ));
-            }
-        };
-
-        // Create enum mappings on first row (one None entry per column)
-        if enum_mappings.is_empty() {
-            enum_mappings = vec![None; row.len()];
+    // Stream results to stdout
+    let success_count = rows.len().min(limit as usize);
+    for (idx, row) in rows.iter().enumerate() {
+        if idx >= limit as usize {
+            info!("Reached limit of {} rows", limit);
+            break;
         }
 
-        // Reuse peek's row_to_json with enum mappings
-        let value = row_to_json(&row, &enum_mappings).map_err(|e| {
-            RoutineFailure::new(
-                Message::new(
-                    "Query".to_string(),
-                    "Failed to convert row to JSON".to_string(),
-                ),
-                e,
-            )
-        })?;
-
-        let json = serde_json::to_string(&value).map_err(|e| {
+        let json = serde_json::to_string(row).map_err(|e| {
             RoutineFailure::new(
                 Message::new(
                     "Query".to_string(),
@@ -192,16 +170,9 @@ pub async fn query(
 
         println!("{}", json);
         info!("{}", json);
-        success_count += 1;
-
-        // Check limit to avoid unbounded queries
-        if success_count >= limit {
-            info!("Reached limit of {} rows", limit);
-            break;
-        }
     }
 
-    // Add newline for output cleanliness (like peek does)
+    // Add newline for output cleanliness
     println!();
 
     Ok(RoutineSuccess::success(Message::new(
