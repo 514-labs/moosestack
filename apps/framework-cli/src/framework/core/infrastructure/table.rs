@@ -1653,6 +1653,7 @@ mod tests {
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
+            primary_key_expression: None,
         };
         assert_eq!(table1.id(DEFAULT_DATABASE_NAME), "local_users");
 
@@ -1782,6 +1783,7 @@ mod tests {
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
+            primary_key_expression: None,
         };
 
         // Target table from code: explicit order_by that matches primary key
@@ -1805,6 +1807,7 @@ mod tests {
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
+            primary_key_expression: None,
         };
 
         // These should be equal because:

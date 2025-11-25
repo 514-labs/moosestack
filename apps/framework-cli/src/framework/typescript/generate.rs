@@ -1025,6 +1025,7 @@ mod tests {
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
+            primary_key_expression: None,
         }];
 
         let result = tables_to_typescript(&tables, None);
@@ -1107,6 +1108,7 @@ export const UserTable = new OlapTable<User>("User", {
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
+            primary_key_expression: None,
         }];
 
         let result = tables_to_typescript(&tables, None);
@@ -1158,6 +1160,7 @@ export const UserTable = new OlapTable<User>("User", {
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
+            primary_key_expression: None,
         }];
 
         let result = tables_to_typescript(&tables, None);
@@ -1228,6 +1231,7 @@ export const UserTable = new OlapTable<User>("User", {
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
+            primary_key_expression: None,
         }];
 
         let result = tables_to_typescript(&tables, None);
@@ -1273,6 +1277,7 @@ export const UserTable = new OlapTable<User>("User", {
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
+            primary_key_expression: None,
         }];
 
         let result = tables_to_typescript(&tables, None);
@@ -1350,6 +1355,7 @@ export const UserTable = new OlapTable<User>("User", {
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
+            primary_key_expression: None,
         }];
 
         let result = tables_to_typescript(&tables, None);
@@ -1413,6 +1419,7 @@ export const UserTable = new OlapTable<User>("User", {
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
+            primary_key_expression: None,
         }];
 
         let result = tables_to_typescript(&tables, None);
@@ -1484,6 +1491,7 @@ export const UserTable = new OlapTable<User>("User", {
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
+            primary_key_expression: None,
         }];
 
         let result = tables_to_typescript(&tables, None);
@@ -1562,6 +1570,7 @@ export const TaskTable = new OlapTable<Task>("Task", {
             database: None,
             table_ttl_setting: Some("timestamp + INTERVAL 90 DAY DELETE".to_string()),
             cluster_name: None,
+            primary_key_expression: None,
         }];
 
         let result = tables_to_typescript(&tables, None);
@@ -1629,6 +1638,7 @@ export const TaskTable = new OlapTable<Task>("Task", {
             indexes: vec![],
             table_ttl_setting: None,
             cluster_name: None,
+            primary_key_expression: None,
         }];
 
         let result = tables_to_typescript(&tables, None);
@@ -1677,6 +1687,7 @@ export const TaskTable = new OlapTable<Task>("Task", {
             database: Some("analytics_db".to_string()),
             table_ttl_setting: None,
             cluster_name: None,
+            primary_key_expression: None,
         }];
 
         let result = tables_to_typescript(&tables, None);

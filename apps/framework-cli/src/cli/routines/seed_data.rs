@@ -614,6 +614,7 @@ mod tests {
             table_settings: None,
             table_ttl_setting: None,
             cluster_name: None,
+            primary_key_expression: None,
         }
     }
 

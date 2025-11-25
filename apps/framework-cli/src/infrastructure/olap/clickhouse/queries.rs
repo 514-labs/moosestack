@@ -3291,6 +3291,7 @@ mod tests {
             indexes: vec![],
             table_ttl_setting: None,
             cluster_name: None,
+            primary_key_expression: None,
         };
 
         let query = create_table_query("test_db", table, false).unwrap();
@@ -3329,6 +3330,7 @@ PRIMARY KEY (`id`)
             indexes: vec![],
             table_ttl_setting: None,
             cluster_name: None,
+            primary_key_expression: None,
         };
 
         let query = create_table_query("test_db", table, false).unwrap();
@@ -3366,6 +3368,7 @@ ENGINE = MergeTree
             indexes: vec![],
             table_ttl_setting: None,
             cluster_name: None,
+            primary_key_expression: None,
         };
 
         let query = create_table_query("test_db", table, false).unwrap();
@@ -3426,6 +3429,7 @@ ENGINE = MergeTree
             indexes: vec![],
             table_ttl_setting: None,
             cluster_name: None,
+            primary_key_expression: None,
         };
 
         let query = create_table_query("test_db", table, false).unwrap();
@@ -3467,6 +3471,7 @@ ENGINE = MergeTree
             indexes: vec![],
             table_ttl_setting: None,
             cluster_name: None,
+            primary_key_expression: None,
         };
 
         let query = create_table_query("test_db", table, false).unwrap();
@@ -3507,6 +3512,7 @@ ORDER BY (`id`) "#;
             indexes: vec![],
             table_ttl_setting: None,
             cluster_name: None,
+            primary_key_expression: None,
         };
 
         let result = create_table_query("test_db", table, false);
@@ -3554,6 +3560,7 @@ ORDER BY (`id`) "#;
             indexes: vec![],
             table_ttl_setting: None,
             cluster_name: None,
+            primary_key_expression: None,
         };
 
         let query = create_table_query("test_db", table, false).unwrap();
@@ -3617,6 +3624,7 @@ ORDER BY (`id`) "#;
             indexes: vec![],
             table_ttl_setting: None,
             cluster_name: None,
+            primary_key_expression: None,
         };
 
         let query = create_table_query("test_db", table, false).unwrap();
@@ -3659,6 +3667,7 @@ ORDER BY (`id`) "#;
             table_ttl_setting: None,
             indexes: vec![],
             cluster_name: None,
+            primary_key_expression: None,
         };
 
         let result = create_table_query("test_db", table, false);
@@ -3815,6 +3824,7 @@ ORDER BY (`id`) "#;
             indexes: vec![],
             table_ttl_setting: None,
             cluster_name: None,
+            primary_key_expression: None,
         };
 
         let query = create_table_query("test_db", table, false).unwrap();
@@ -3881,6 +3891,7 @@ ORDER BY (`id`) "#;
             indexes: vec![],
             table_ttl_setting: None,
             cluster_name: None,
+            primary_key_expression: None,
         };
 
         let query = create_table_query("test_db", table, false).unwrap();
@@ -4354,6 +4365,7 @@ SETTINGS keeper_path = '/clickhouse/s3queue/test_table', mode = 'unordered', s3q
             indexes: vec![],
             table_ttl_setting: None,
             cluster_name: None,
+            primary_key_expression: None,
         };
 
         let query = create_table_query("test_db", table, false).unwrap();
@@ -4897,6 +4909,7 @@ ENGINE = S3Queue('s3://my-bucket/data/*.csv', NOSIGN, 'CSV')"#;
             indexes: vec![],
             table_ttl_setting: None,
             cluster_name: Some("test_cluster".to_string()),
+            primary_key_expression: None,
         };
 
         let query = create_table_query("test_db", table, false).unwrap();
@@ -4941,6 +4954,7 @@ ENGINE = S3Queue('s3://my-bucket/data/*.csv', NOSIGN, 'CSV')"#;
             indexes: vec![],
             table_ttl_setting: None,
             cluster_name: None,
+            primary_key_expression: None,
         };
 
         let query = create_table_query("test_db", table, false).unwrap();

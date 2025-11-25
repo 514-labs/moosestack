@@ -699,6 +699,7 @@ mod tests {
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
+            primary_key_expression: None,
         }
     }
 
@@ -1506,6 +1507,7 @@ mod tests {
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
+            primary_key_expression: None,
         };
 
         assert!(ClickHouseTableDiffStrategy::is_s3queue_table(&s3_table));
