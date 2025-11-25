@@ -8,6 +8,10 @@
       url = "github:oxalica/rust-overlay";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+    safe-chain-nix = {
+      url = "github:LucioFranco/safe-chain-nix";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
   outputs =
@@ -36,6 +40,9 @@
             overlays = [ (import inputs.rust-overlay) ];
           };
 
+          # Safe-chain wrapper for malware protection
+          safeChain = inputs.safe-chain-nix.lib.${system}.safeChain;
+
           # Rust toolchain
           rustToolchain = pkgs.rust-bin.stable.latest.default.override {
             extensions = [
@@ -45,19 +52,20 @@
             ];
           };
 
-          # Node.js with PNPM
-          nodejs = pkgs.nodejs_20;
+          # Node.js with PNPM (wrapped with safe-chain for malware protection)
+          nodejs = safeChain.wrapNode pkgs.nodejs_20;
           pnpm = pkgs.pnpm;
 
-          # Python with required packages
+          # Python with required packages (wrapped with safe-chain for malware protection)
           python = pkgs.python312;
-          pythonEnv = python.withPackages (
+          pythonEnv = (python.withPackages (
             ps: with ps; [
               pip
               setuptools
               wheel
             ]
-          );
+          ));
+          wrappedPython = safeChain.wrapPython pythonEnv;
 
           # Common build inputs
           commonBuildInputs =
@@ -137,11 +145,11 @@
             name = "moose";
 
             buildInputs = [
-              # Languages
+              # Languages (with safe-chain malware protection)
               rustToolchain
               nodejs
               pnpm
-              pythonEnv
+              wrappedPython
 
               # Development tools
               pkgs.git
