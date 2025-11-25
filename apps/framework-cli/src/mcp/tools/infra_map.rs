@@ -13,6 +13,7 @@ use super::{create_error_result, create_success_result};
 use crate::framework::core::infrastructure::api_endpoint::ApiEndpoint;
 use crate::framework::core::infrastructure_map::InfrastructureMap;
 use crate::infrastructure::redis::redis_client::RedisClient;
+use crate::mcp::build_compressed_map;
 
 /// Valid component types for filtering
 /// Note: block_db_processes and consumption_api_web_server are single structs, not collections,
@@ -303,38 +304,6 @@ fn process_api_endpoints_summary(
     Some(output)
 }
 
-/// Process a component type for detailed output
-/// Returns a JSON object with the filtered components if they should be shown and have matches
-fn process_component_detailed<T: serde::Serialize>(
-    component_name: &str,
-    map: &std::collections::HashMap<String, T>,
-    search: &Option<SearchFilter>,
-    component_type_filter: &Option<String>,
-    show_all: bool,
-) -> Result<Option<(String, Value)>, InfraMapError> {
-    // Check if we should process this component type
-    if !show_all && component_type_filter.as_deref() != Some(component_name) {
-        return Ok(None);
-    }
-
-    let filtered_keys = filter_by_search(map, search);
-    if filtered_keys.is_empty() {
-        return Ok(None);
-    }
-
-    let mut component_map = serde_json::Map::new();
-    for key in filtered_keys {
-        if let Some(value) = map.get(&key) {
-            component_map.insert(key, serde_json::to_value(value)?);
-        }
-    }
-
-    Ok(Some((
-        component_name.to_string(),
-        Value::Object(component_map),
-    )))
-}
-
 /// Main function to retrieve and filter infrastructure map
 async fn execute_get_infra_map(
     params: GetInfraMapParams,
@@ -478,106 +447,89 @@ fn format_summary(
     output
 }
 
-/// Format infrastructure map with detailed information (full JSON)
+/// Format infrastructure map with detailed information (compressed with lineage)
 fn format_detailed(
     infra_map: &InfrastructureMap,
     component_type_filter: &Option<String>,
     search: &Option<SearchFilter>,
 ) -> Result<String, InfraMapError> {
-    let mut output = String::from("# Moose Infrastructure Map (Detailed)\n\n");
+    let mut output = String::from("# Moose Infrastructure Map (Detailed Lineage)\n\n");
+    output.push_str("This view shows infrastructure components and their connections.\n");
+    output.push_str(
+        "For detailed component information, access the resource URIs via MCP resources.\n\n",
+    );
 
-    // Create a filtered version of the infrastructure map
-    let filtered_json = if component_type_filter.is_some() || search.is_some() {
-        let show_all = component_type_filter.is_none();
-        let mut filtered = serde_json::Map::new();
+    // Build compressed map
+    let compressed_map = build_compressed_map(infra_map);
 
-        // Process each component type using the helper function
-        let components = vec![
-            process_component_detailed(
-                "topics",
-                &infra_map.topics,
-                search,
-                component_type_filter,
-                show_all,
-            )?,
-            process_component_detailed(
-                "api_endpoints",
-                &infra_map.api_endpoints,
-                search,
-                component_type_filter,
-                show_all,
-            )?,
-            process_component_detailed(
-                "tables",
-                &infra_map.tables,
-                search,
-                component_type_filter,
-                show_all,
-            )?,
-            process_component_detailed(
-                "views",
-                &infra_map.views,
-                search,
-                component_type_filter,
-                show_all,
-            )?,
-            process_component_detailed(
-                "topic_to_table_sync_processes",
-                &infra_map.topic_to_table_sync_processes,
-                search,
-                component_type_filter,
-                show_all,
-            )?,
-            process_component_detailed(
-                "topic_to_topic_sync_processes",
-                &infra_map.topic_to_topic_sync_processes,
-                search,
-                component_type_filter,
-                show_all,
-            )?,
-            process_component_detailed(
-                "function_processes",
-                &infra_map.function_processes,
-                search,
-                component_type_filter,
-                show_all,
-            )?,
-            process_component_detailed(
-                "orchestration_workers",
-                &infra_map.orchestration_workers,
-                search,
-                component_type_filter,
-                show_all,
-            )?,
-            process_component_detailed(
-                "sql_resources",
-                &infra_map.sql_resources,
-                search,
-                component_type_filter,
-                show_all,
-            )?,
-            process_component_detailed(
-                "workflows",
-                &infra_map.workflows,
-                search,
-                component_type_filter,
-                show_all,
-            )?,
-        ];
+    // Apply filters if needed
+    let filtered_map = if component_type_filter.is_some() || search.is_some() {
+        let mut filtered = compressed_map.clone();
 
-        // Add all non-empty components to the filtered map
-        for component in components.into_iter().flatten() {
-            filtered.insert(component.0, component.1);
+        // Filter components by type and search
+        filtered.components.retain(|component| {
+            // Check component type filter
+            if let Some(ct) = component_type_filter {
+                // Map compressed ComponentType back to infra_map component names
+                let component_matches = match component.component_type {
+                    crate::mcp::ComponentType::Topic => ct == "topics",
+                    crate::mcp::ComponentType::Table => ct == "tables",
+                    crate::mcp::ComponentType::View => ct == "views",
+                    crate::mcp::ComponentType::ApiEndpoint => ct == "api_endpoints",
+                    crate::mcp::ComponentType::Function => ct == "function_processes",
+                    crate::mcp::ComponentType::SqlResource => ct == "sql_resources",
+                    crate::mcp::ComponentType::Workflow => ct == "workflows",
+                    crate::mcp::ComponentType::TopicTableSync => {
+                        ct == "topic_to_table_sync_processes"
+                    }
+                    crate::mcp::ComponentType::TopicTopicSync => {
+                        ct == "topic_to_topic_sync_processes"
+                    }
+                    crate::mcp::ComponentType::WebApp => false, // Not in valid component types
+                };
+                if !component_matches {
+                    return false;
+                }
+            }
+
+            // Check search filter
+            if let Some(filter) = search {
+                if !filter.is_match(&component.id) && !filter.is_match(&component.name) {
+                    return false;
+                }
+            }
+
+            true
+        });
+
+        // Filter connections to only include those between remaining components
+        let component_ids: std::collections::HashSet<_> =
+            filtered.components.iter().map(|c| c.id.as_str()).collect();
+        filtered.connections.retain(|conn| {
+            component_ids.contains(conn.from.as_str()) && component_ids.contains(conn.to.as_str())
+        });
+
+        // Recalculate stats
+        filtered.stats.total_components = filtered.components.len() as u32;
+        filtered.stats.total_connections = filtered.connections.len() as u32;
+        filtered.stats.by_type.clear();
+        for component in &filtered.components {
+            *filtered
+                .stats
+                .by_type
+                .entry(component.component_type)
+                .or_insert(0) += 1;
         }
 
-        Value::Object(filtered)
+        filtered
     } else {
-        // No filters, return everything
-        serde_json::to_value(infra_map)?
+        compressed_map
     };
 
+    // Serialize to TOON
+    let compressed_json = serde_json::to_value(&filtered_map)?;
     output.push_str("```toon\n");
-    output.push_str(&serialize_to_toon_compressed(&filtered_json)?);
+    output.push_str(&serialize_to_toon_compressed(&compressed_json)?);
     output.push_str("\n```\n");
 
     // Add filters applied section if any filters were used
