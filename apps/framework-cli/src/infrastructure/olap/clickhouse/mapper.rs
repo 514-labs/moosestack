@@ -83,6 +83,7 @@ pub fn std_column_to_clickhouse_column(
         default: column.default.clone(),
         comment,
         ttl: column.ttl.clone(),
+        codec: column.codec.clone(),
     };
 
     Ok(clickhouse_column)
@@ -427,6 +428,7 @@ mod tests {
             annotations: vec![],
             comment: Some("This is a user comment about the record type".to_string()),
             ttl: None,
+            codec: None,
         };
 
         let clickhouse_column = std_column_to_clickhouse_column(column_with_user_comment).unwrap();
@@ -451,6 +453,7 @@ mod tests {
             annotations: vec![],
             comment: Some(format!("Old user comment {}", old_metadata)),
             ttl: None,
+            codec: None,
         };
 
         let clickhouse_column = std_column_to_clickhouse_column(column_with_both).unwrap();
@@ -477,6 +480,7 @@ mod tests {
             annotations: vec![],
             comment: Some(old_metadata),
             ttl: None,
+            codec: None,
         };
 
         let clickhouse_column = std_column_to_clickhouse_column(column_metadata_only).unwrap();
@@ -519,6 +523,7 @@ mod tests {
                     annotations: vec![],
                     comment: None,
                     ttl: None,
+                    codec: None,
                 },
                 Column {
                     name: "status".to_string(),
@@ -530,6 +535,7 @@ mod tests {
                     annotations: vec![],
                     comment: Some("User status field".to_string()), // User comment
                     ttl: None,
+                    codec: None,
                 },
             ],
             jwt: false,

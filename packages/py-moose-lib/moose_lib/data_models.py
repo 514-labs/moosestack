@@ -73,6 +73,33 @@ class ClickHouseTTL:
 
 
 @dataclasses.dataclass(frozen=True)
+class ClickHouseCodec:
+    expression: str
+
+
+def clickhouse_codec(expression: str) -> ClickHouseCodec:
+    """
+    Creates a CODEC annotation for column compression.
+
+    Supports single codecs and codec chains.
+
+    Args:
+        expression: Codec expression (e.g., "ZSTD(3)", "Delta, LZ4")
+
+    Examples:
+        # Single codec with compression level
+        log_blob: Annotated[Any, clickhouse_codec("ZSTD(3)")]
+
+        # Codec chain for time series
+        timestamp: Annotated[datetime, clickhouse_codec("Delta, LZ4")]
+
+        # Codec chain for floats
+        temperature: Annotated[float, clickhouse_codec("Gorilla, ZSTD")]
+    """
+    return ClickHouseCodec(expression=expression)
+
+
+@dataclasses.dataclass(frozen=True)
 class ClickHouseJson:
     max_dynamic_paths: int | None = None
     max_dynamic_types: int | None = None
@@ -271,6 +298,7 @@ class Column(BaseModel):
     default: str | None = None
     annotations: list[Tuple[str, Any]] = []
     ttl: str | None = None
+    codec: str | None = None
 
     def to_expr(self):
         # Lazy import to avoid circular dependency at import time
@@ -619,6 +647,12 @@ def _to_columns(model: type[BaseModel]) -> list[Column]:
             None,
         )
 
+        # Extract CODEC expression from metadata, if provided
+        codec_expr = next(
+            (md.expression for md in mds if isinstance(md, ClickHouseCodec)),
+            None,
+        )
+
         columns.append(
             Column(
                 name=column_name,
@@ -629,6 +663,7 @@ def _to_columns(model: type[BaseModel]) -> list[Column]:
                 default=default_expr,
                 annotations=annotations,
                 ttl=ttl_expr,
+                codec=codec_expr,
             )
         )
     return columns

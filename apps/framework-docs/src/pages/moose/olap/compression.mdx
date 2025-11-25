@@ -1,0 +1,167 @@
+import { TypeScript, Python, LanguageSwitcher, Callout } from "@/components";
+
+<LanguageSwitcher />
+
+# Compression Codecs
+
+Moose lets you specify ClickHouse compression codecs per-column to optimize storage and query performance. Different codecs work better for different data types, and you can chain multiple codecs together.
+
+## When to use compression codecs
+
+- **Time series data**: Use `Delta` or `DoubleDelta` for timestamps and monotonically increasing values
+- **Floating point metrics**: Use `Gorilla` codec for sensor data, temperatures, and other float values
+- **Text and JSON**: Use `ZSTD` with compression levels (1-22) for large strings and JSON
+- **High cardinality data**: Combine specialized codecs with general-purpose compression (e.g., `Delta, LZ4`)
+
+## Basic Usage
+
+<TypeScript>
+```typescript
+import { OlapTable, Key, DateTime, Codec, UInt64 } from "@514labs/moose-lib";
+
+interface Metrics {
+  id: Key<string>;
+  // Delta codec for timestamps (monotonically increasing)
+  timestamp: DateTime & Codec<"Delta, LZ4">;
+
+  // Gorilla codec for floating point sensor data
+  temperature: number & Codec<"Gorilla, ZSTD(3)">;
+
+  // DoubleDelta for counters and metrics
+  request_count: number & Codec<"DoubleDelta, LZ4">;
+
+  // ZSTD for text/JSON with compression level
+  log_data: Record<string, any> & Codec<"ZSTD(3)">;
+  user_agent: string & Codec<"ZSTD(3)">;
+
+  // Compress array elements
+  tags: string[] & Codec<"LZ4">;
+  event_ids: UInt64[] & Codec<"ZSTD(1)">;
+}
+
+export const MetricsTable = new OlapTable<Metrics>("Metrics", {
+  orderByFields: ["id", "timestamp"]
+});
+```
+</TypeScript>
+
+<Python>
+```python
+from typing import Annotated, Any
+from moose_lib import OlapTable, OlapConfig, Key, clickhouse_codec, UInt64
+from pydantic import BaseModel
+from datetime import datetime
+
+class Metrics(BaseModel):
+    id: Key[str]
+    # Delta codec for timestamps (monotonically increasing)
+    timestamp: Annotated[datetime, clickhouse_codec("Delta, LZ4")]
+
+    # Gorilla codec for floating point sensor data
+    temperature: Annotated[float, clickhouse_codec("Gorilla, ZSTD(3)")]
+
+    # DoubleDelta for counters and metrics
+    request_count: Annotated[float, clickhouse_codec("DoubleDelta, LZ4")]
+
+    # ZSTD for text/JSON with compression level
+    log_data: Annotated[Any, clickhouse_codec("ZSTD(3)")]
+    user_agent: Annotated[str, clickhouse_codec("ZSTD(3)")]
+
+    # Compress array elements
+    tags: Annotated[list[str], clickhouse_codec("LZ4")]
+    event_ids: Annotated[list[UInt64], clickhouse_codec("ZSTD(1)")]
+
+metrics_table = OlapTable[Metrics](
+    "Metrics",
+    OlapConfig(order_by_fields=["id", "timestamp"])
+)
+```
+</Python>
+
+## Codec Chains
+
+You can chain multiple codecs together. Data is processed by each codec in sequence (left-to-right).
+
+<TypeScript>
+```typescript
+interface Events {
+  // Delta compress timestamps, then apply LZ4
+  timestamp: DateTime & Codec<"Delta, LZ4">;
+
+  // Gorilla for floats, then ZSTD for extra compression
+  value: number & Codec<"Gorilla, ZSTD(3)">;
+}
+```
+</TypeScript>
+
+<Python>
+```python
+class Events(BaseModel):
+    # Delta compress timestamps, then apply LZ4
+    timestamp: Annotated[datetime, clickhouse_codec("Delta, LZ4")]
+
+    # Gorilla for floats, then ZSTD for extra compression
+    value: Annotated[float, clickhouse_codec("Gorilla, ZSTD(3)")]
+```
+</Python>
+
+## Combining with Other Annotations
+
+Codecs work alongside other ClickHouse annotations:
+
+<TypeScript>
+```typescript
+import { ClickHouseDefault, ClickHouseTTL } from "@514labs/moose-lib";
+
+interface UserEvents {
+  id: Key<string>;
+  timestamp: DateTime & Codec<"Delta, LZ4">;
+
+  // Codec + Default value
+  status: string & ClickHouseDefault<"'pending'"> & Codec<"ZSTD(3)">;
+
+  // Codec + TTL
+  email: string & ClickHouseTTL<"timestamp + INTERVAL 30 DAY"> & Codec<"ZSTD(3)">;
+
+  // Codec + Numeric type
+  event_count: UInt64 & Codec<"DoubleDelta, LZ4">;
+}
+```
+</TypeScript>
+
+<Python>
+```python
+from moose_lib import clickhouse_default, ClickHouseTTL
+
+class UserEvents(BaseModel):
+    id: Key[str]
+    timestamp: Annotated[datetime, clickhouse_codec("Delta, LZ4")]
+
+    # Codec + Default value
+    status: Annotated[str, clickhouse_default("'pending'"), clickhouse_codec("ZSTD(3)")]
+
+    # Codec + TTL
+    email: Annotated[str, ClickHouseTTL("timestamp + INTERVAL 30 DAY"), clickhouse_codec("ZSTD(3)")]
+
+    # Codec + Numeric type
+    event_count: Annotated[UInt64, clickhouse_codec("DoubleDelta, LZ4")]
+```
+</Python>
+
+## Syncing from Remote Tables
+
+When using `moose init --from-remote` to introspect existing ClickHouse tables, Moose automatically captures codec definitions and generates the appropriate annotations in your data models.
+
+## Notes
+
+- Codec expressions must be valid ClickHouse codec syntax (without the `CODEC()` wrapper)
+- ClickHouse may normalize codecs by adding default parameters (e.g., `Delta` becomes `Delta(4)`)
+- Moose applies codec changes via migrations using `ALTER TABLE ... MODIFY COLUMN`
+- Not all codecs work with all data types - ClickHouse will validate during table creation
+
+## Related
+
+- See [Supported Types](/moose/olap/supported-types) for all available column types
+- See [Schema Optimization](/moose/olap/schema-optimization) for other performance techniques
+- See [Applying Migrations](/moose/olap/apply-migrations) to roll out codec changes
+- See [ClickHouse Compression Codecs](https://clickhouse.com/docs/en/sql-reference/statements/create/table#column_compression_codec) for detailed codec documentation

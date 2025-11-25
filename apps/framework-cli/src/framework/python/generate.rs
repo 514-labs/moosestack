@@ -557,7 +557,7 @@ pub fn tables_to_python(tables: &[Table], life_cycle: Option<LifeCycle>) -> Stri
     .unwrap();
     writeln!(
         output,
-        "from moose_lib import clickhouse_default, LifeCycle, ClickHouseTTL"
+        "from moose_lib import clickhouse_default, clickhouse_codec, LifeCycle, ClickHouseTTL"
     )
     .unwrap();
     writeln!(
@@ -665,6 +665,12 @@ pub fn tables_to_python(tables: &[Table], life_cycle: Option<LifeCycle>) -> Stri
 
             if let Some(ref ttl_expr) = column.ttl {
                 type_str = format!("Annotated[{}, ClickHouseTTL({:?})]", type_str, ttl_expr);
+            }
+            if let Some(ref codec_expr) = column.codec {
+                type_str = format!(
+                    "Annotated[{}, clickhouse_codec({:?})]",
+                    type_str, codec_expr
+                );
             }
             if let Some(ref default_expr) = column.default {
                 type_str = format!(
@@ -1039,6 +1045,7 @@ mod tests {
                     annotations: vec![],
                     comment: None,
                     ttl: None,
+                    codec: None,
                 },
                 Column {
                     name: "timestamp".to_string(),
@@ -1050,6 +1057,7 @@ mod tests {
                     annotations: vec![],
                     comment: None,
                     ttl: None,
+                    codec: None,
                 },
                 Column {
                     name: "optional_text".to_string(),
@@ -1061,6 +1069,7 @@ mod tests {
                     annotations: vec![],
                     comment: None,
                     ttl: None,
+                    codec: None,
                 },
             ],
             order_by: OrderBy::Fields(vec!["primary_key".to_string()]),
@@ -1095,7 +1104,7 @@ from enum import IntEnum, Enum
 from moose_lib import Key, IngestPipeline, IngestPipelineConfig, OlapTable, OlapConfig, clickhouse_datetime64, clickhouse_decimal, ClickhouseSize, StringToEnumMixin
 from moose_lib.data_models import ClickHouseJson
 from moose_lib import Point, Ring, LineString, MultiLineString, Polygon, MultiPolygon, FixedString
-from moose_lib import clickhouse_default, LifeCycle, ClickHouseTTL
+from moose_lib import clickhouse_default, clickhouse_codec, LifeCycle, ClickHouseTTL
 from moose_lib.blocks import MergeTreeEngine, ReplacingMergeTreeEngine, AggregatingMergeTreeEngine, SummingMergeTreeEngine, S3QueueEngine, ReplicatedMergeTreeEngine, ReplicatedReplacingMergeTreeEngine, ReplicatedAggregatingMergeTreeEngine, ReplicatedSummingMergeTreeEngine
 
 class Foo(BaseModel):
@@ -1125,6 +1134,7 @@ foo_table = OlapTable[Foo]("Foo", OlapConfig(
                     annotations: vec![],
                     comment: None,
                     ttl: None,
+                    codec: None,
                 },
                 Column {
                     name: "numbers".to_string(),
@@ -1139,6 +1149,7 @@ foo_table = OlapTable[Foo]("Foo", OlapConfig(
                     annotations: vec![],
                     comment: None,
                     ttl: None,
+                    codec: None,
                 },
                 Column {
                     name: "nested_numbers".to_string(),
@@ -1156,6 +1167,7 @@ foo_table = OlapTable[Foo]("Foo", OlapConfig(
                     annotations: vec![],
                     comment: None,
                     ttl: None,
+                    codec: None,
                 },
             ],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
@@ -1211,6 +1223,7 @@ nested_array_table = OlapTable[NestedArray]("NestedArray", OlapConfig(
                     annotations: vec![],
                     comment: None,
                     ttl: None,
+                    codec: None,
                 },
                 Column {
                     name: "city".to_string(),
@@ -1222,6 +1235,7 @@ nested_array_table = OlapTable[NestedArray]("NestedArray", OlapConfig(
                     annotations: vec![],
                     comment: None,
                     ttl: None,
+                    codec: None,
                 },
                 Column {
                     name: "zipCode".to_string(),
@@ -1233,6 +1247,7 @@ nested_array_table = OlapTable[NestedArray]("NestedArray", OlapConfig(
                     annotations: vec![],
                     comment: None,
                     ttl: None,
+                    codec: None,
                 },
             ],
             jwt: false,
@@ -1251,6 +1266,7 @@ nested_array_table = OlapTable[NestedArray]("NestedArray", OlapConfig(
                     annotations: vec![],
                     comment: None,
                     ttl: None,
+                    codec: None,
                 },
                 Column {
                     name: "address".to_string(),
@@ -1262,6 +1278,7 @@ nested_array_table = OlapTable[NestedArray]("NestedArray", OlapConfig(
                     annotations: vec![],
                     comment: None,
                     ttl: None,
+                    codec: None,
                 },
                 Column {
                     name: "addresses".to_string(),
@@ -1276,6 +1293,7 @@ nested_array_table = OlapTable[NestedArray]("NestedArray", OlapConfig(
                     annotations: vec![],
                     comment: None,
                     ttl: None,
+                    codec: None,
                 },
             ],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
@@ -1334,6 +1352,7 @@ user_table = OlapTable[User]("User", OlapConfig(
                     annotations: vec![],
                     comment: None,
                     ttl: None,
+                    codec: None,
                 },
                 Column {
                     name: "data".to_string(),
@@ -1345,6 +1364,7 @@ user_table = OlapTable[User]("User", OlapConfig(
                     annotations: vec![],
                     comment: None,
                     ttl: None,
+                    codec: None,
                 },
             ],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
@@ -1403,6 +1423,7 @@ user_table = OlapTable[User]("User", OlapConfig(
                 annotations: vec![],
                 comment: None,
                 ttl: None,
+                codec: None,
             }],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
             partition_by: None,
@@ -1460,6 +1481,7 @@ user_table = OlapTable[User]("User", OlapConfig(
                     annotations: vec![],
                     comment: None,
                     ttl: None,
+                    codec: None,
                 },
                 Column {
                     name: "version".to_string(),
@@ -1471,6 +1493,7 @@ user_table = OlapTable[User]("User", OlapConfig(
                     annotations: vec![],
                     comment: None,
                     ttl: None,
+                    codec: None,
                 },
                 Column {
                     name: "is_deleted".to_string(),
@@ -1482,6 +1505,7 @@ user_table = OlapTable[User]("User", OlapConfig(
                     annotations: vec![],
                     comment: None,
                     ttl: None,
+                    codec: None,
                 },
             ],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
@@ -1530,6 +1554,7 @@ user_table = OlapTable[User]("User", OlapConfig(
                     annotations: vec![],
                     comment: None,
                     ttl: None,
+                    codec: None,
                 },
                 Column {
                     name: "coordinates".to_string(),
@@ -1544,6 +1569,7 @@ user_table = OlapTable[User]("User", OlapConfig(
                     annotations: vec![],
                     comment: None,
                     ttl: None,
+                    codec: None,
                 },
                 Column {
                     name: "metadata".to_string(),
@@ -1558,6 +1584,7 @@ user_table = OlapTable[User]("User", OlapConfig(
                     annotations: vec![],
                     comment: None,
                     ttl: None,
+                    codec: None,
                 },
             ],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
@@ -1620,6 +1647,7 @@ user_table = OlapTable[User]("User", OlapConfig(
                     annotations: vec![],
                     comment: None,
                     ttl: None,
+                    codec: None,
                 },
                 Column {
                     name: "timestamp".to_string(),
@@ -1631,6 +1659,7 @@ user_table = OlapTable[User]("User", OlapConfig(
                     annotations: vec![],
                     comment: None,
                     ttl: None,
+                    codec: None,
                 },
                 Column {
                     name: "email".to_string(),
@@ -1642,6 +1671,7 @@ user_table = OlapTable[User]("User", OlapConfig(
                     annotations: vec![],
                     comment: None,
                     ttl: Some("timestamp + INTERVAL 30 DAY".to_string()),
+                    codec: None,
                 },
             ],
             order_by: OrderBy::Fields(vec!["id".to_string(), "timestamp".to_string()]),
@@ -1689,6 +1719,7 @@ user_table = OlapTable[User]("User", OlapConfig(
                 annotations: vec![],
                 comment: None,
                 ttl: None,
+                codec: None,
             }],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
             partition_by: None,
@@ -1755,6 +1786,7 @@ user_table = OlapTable[User]("User", OlapConfig(
                     annotations: vec![],
                     comment: None,
                     ttl: None,
+                    codec: None,
                 },
                 Column {
                     name: "payload".to_string(),
@@ -1775,6 +1807,7 @@ user_table = OlapTable[User]("User", OlapConfig(
                     annotations: vec![],
                     comment: None,
                     ttl: None,
+                    codec: None,
                 },
             ],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
@@ -1830,6 +1863,7 @@ user_table = OlapTable[User]("User", OlapConfig(
                 annotations: vec![],
                 comment: None,
                 ttl: None,
+                codec: None,
             }],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
             partition_by: None,

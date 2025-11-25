@@ -675,6 +675,8 @@ pub struct Column {
     pub comment: Option<String>, // Column comment for metadata storage
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub ttl: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub codec: Option<String>, // Compression codec expression (e.g., "ZSTD(3)", "Delta, LZ4")
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
@@ -1189,6 +1191,7 @@ impl Column {
                 .collect(),
             comment: self.comment.clone(),
             ttl: self.ttl.clone(),
+            codec: self.codec.clone(),
             special_fields: Default::default(),
         }
     }
@@ -1211,6 +1214,7 @@ impl Column {
             annotations,
             comment: proto.comment,
             ttl: proto.ttl,
+            codec: proto.codec,
         }
     }
 }
@@ -1590,6 +1594,7 @@ mod tests {
             annotations: vec![],
             comment: None,
             ttl: None,
+            codec: None,
         };
 
         let json = serde_json::to_string(&nested_column).unwrap();
@@ -1610,6 +1615,7 @@ mod tests {
             annotations: vec![],
             comment: Some("[MOOSE_METADATA:DO_NOT_MODIFY] {\"version\":1,\"enum\":{\"name\":\"TestEnum\",\"members\":[]}}".to_string()),
             ttl: None,
+            codec: None,
         };
 
         // Convert to proto and back
@@ -1633,6 +1639,7 @@ mod tests {
             annotations: vec![],
             comment: None,
             ttl: None,
+            codec: None,
         };
 
         let proto = column_without_comment.to_proto();
@@ -1817,6 +1824,7 @@ mod tests {
                 annotations: vec![],
                 comment: None,
                 ttl: None,
+                codec: None,
             },
             Column {
                 name: "name".to_string(),
@@ -1828,6 +1836,7 @@ mod tests {
                 annotations: vec![],
                 comment: None,
                 ttl: None,
+                codec: None,
             },
         ];
 

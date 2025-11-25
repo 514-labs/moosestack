@@ -440,6 +440,21 @@ export const TYPESCRIPT_TEST_SCHEMAS: ExpectedTableSchema[] = [
       { name: "timestamp", type: /DateTime\('UTC'\)/ },
     ],
   },
+  // Codec compression test table
+  {
+    tableName: "CodecTest",
+    columns: [
+      { name: "id", type: "String" },
+      { name: "timestamp", type: /DateTime\('UTC'\)/, codec: /Delta.*LZ4/ },
+      { name: "log_blob", type: "JSON", codec: "ZSTD(3)" },
+      { name: "combination_hash", type: "Array(UInt64)", codec: "ZSTD(1)" },
+      { name: "temperature", type: "Float64", codec: /Gorilla.*ZSTD/ },
+      { name: "request_count", type: "Float64", codec: /DoubleDelta.*LZ4/ },
+      { name: "user_agent", type: "String", codec: "ZSTD(3)" },
+      { name: "tags", type: "Array(String)", codec: "LZ4" },
+      { name: "status_code", type: "Float64" },
+    ],
+  },
 ];
 
 // ============ PYTHON TEMPLATE SCHEMA DEFINITIONS ============
@@ -841,6 +856,21 @@ export const PYTHON_TEST_SCHEMAS: ExpectedTableSchema[] = [
       { name: "category", type: "String" },
       { name: "brand", type: "String" },
       { name: "timestamp", type: /DateTime\('UTC'\)/ },
+    ],
+  },
+  // Codec compression test table
+  {
+    tableName: "CodecTest",
+    columns: [
+      { name: "id", type: "String" },
+      { name: "timestamp", type: /DateTime\('UTC'\)/, codec: /Delta.*LZ4/ },
+      { name: "log_blob", type: "JSON", codec: "ZSTD(3)" },
+      { name: "combination_hash", type: "Array(UInt64)", codec: "ZSTD(1)" },
+      { name: "temperature", type: "Float64", codec: /Gorilla.*ZSTD/ },
+      { name: "request_count", type: "Float64", codec: /DoubleDelta.*LZ4/ },
+      { name: "user_agent", type: "String", codec: "ZSTD(3)" },
+      { name: "tags", type: "Array(String)", codec: "LZ4" },
+      { name: "status_code", type: "Int64" },
     ],
   },
 ];
