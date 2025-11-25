@@ -14,7 +14,6 @@
 //!
 //! ## Dependencies
 //! - clickhouse: Client library for ClickHouse database
-//! - clickhouse-rs: Alternative ClickHouse client
 //! - Framework core types and infrastructure
 //!
 //! ## Version Support
@@ -32,9 +31,8 @@
 //! ```
 
 use clickhouse::Client;
-use clickhouse_rs::ClientHandle;
+
 use errors::ClickhouseError;
-use itertools::Itertools;
 use log::{debug, info, warn};
 use mapper::{std_column_to_clickhouse_column, std_table_to_clickhouse_table};
 use model::ClickHouseColumn;
@@ -1497,49 +1495,6 @@ pub async fn fetch_tables_with_version(
         .collect();
 
     Ok(tables)
-}
-
-/// Gets the number of rows in a table
-///
-/// # Arguments
-/// * `table_name` - Name of the table to check
-/// * `config` - ClickHouse configuration
-/// * `clickhouse` - Client handle for database operations
-///
-/// # Returns
-/// * `Result<i64, clickhouse_rs::errors::Error>` - Number of rows in the table
-///
-/// # Details
-/// - Uses COUNT(*) for accurate row count
-/// - Properly escapes table and database names
-/// - Handles empty tables correctly
-///
-/// # Example
-/// ```rust
-/// let size = check_table_size("users_1_0_0", &config, &mut client).await?;
-/// println!("Table has {} rows", size);
-/// ```
-pub async fn check_table_size(
-    table_name: &str,
-    config: &ClickHouseConfig,
-    clickhouse: &mut ClientHandle,
-) -> Result<i64, clickhouse_rs::errors::Error> {
-    info!("Checking size of {} table", table_name);
-    let result = clickhouse
-        .query(&format!(
-            "select count(*) from \"{}\".\"{}\"",
-            config.db_name.clone(),
-            table_name
-        ))
-        .fetch_all()
-        .await?;
-    let rows = result.rows().collect_vec();
-
-    let result: u64 = match rows.len() {
-        1 => rows[0].get(0)?,
-        _ => panic!("Expected 1 result, got {:?}", rows.len()),
-    };
-    Ok(result as i64)
 }
 
 pub struct TableWithUnsupportedType {
