@@ -12,6 +12,7 @@ use sqlparser::dialect::ClickHouseDialect;
 use sqlparser::parser::Parser;
 use std::collections::HashSet;
 use std::ops::ControlFlow;
+use std::sync::LazyLock;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct MaterializedViewStatement {
@@ -701,6 +702,48 @@ pub fn extract_source_tables_from_query(sql: &str) -> Result<Vec<TableReference>
     } else {
         Err(SqlParseError::UnsupportedStatement)
     }
+}
+
+static FROM_JOIN_TABLE_PATTERN: LazyLock<regex::Regex> = LazyLock::new(|| {
+    // Pattern to extract table names from FROM and JOIN clauses
+    // Matches: FROM schema.table, JOIN schema.table, FROM table, etc.
+    // Captures optional schema and required table name
+    regex::Regex::new(r"(?i)\b(?:FROM|JOIN)\s+(?:([a-zA-Z0-9_`]+)\.)?([a-zA-Z0-9_`]+)")
+        .expect("FROM_JOIN_TABLE_PATTERN regex should compile")
+});
+
+/// Extracts table names from a SQL query using regex fallback.
+/// Used when the standard SQL parser fails (e.g., ClickHouse-specific syntax like array literals).
+///
+/// This is a simplified fallback that pattern-matches FROM/JOIN clauses rather than
+/// parsing the full AST. It won't catch tables in subqueries, but it's sufficient for
+/// basic dependency tracking when full parsing isn't possible.
+pub fn extract_source_tables_from_query_regex(
+    sql: &str,
+    default_database: &str,
+) -> Result<Vec<TableReference>, SqlParseError> {
+    let mut tables = Vec::new();
+
+    for captures in FROM_JOIN_TABLE_PATTERN.captures_iter(sql) {
+        let database = captures.get(1).map(|m| m.as_str().replace('`', ""));
+        let table = captures
+            .get(2)
+            .map(|m| m.as_str().replace('`', ""))
+            .ok_or(SqlParseError::UnsupportedStatement)?;
+
+        tables.push(TableReference {
+            database: database.or_else(|| Some(default_database.to_string())),
+            table,
+            alias: None,
+        });
+    }
+
+    if tables.is_empty() {
+        // No tables found - this might be a problem, but don't fail hard
+        // The view might have tables in subqueries that regex can't catch
+    }
+
+    Ok(tables)
 }
 
 fn extract_source_tables_from_query_ast(
@@ -1812,5 +1855,64 @@ pub mod tests {
         // Both should normalize to the version without backticks
         assert!(normalized_ch.contains("AS table"));
         assert!(!normalized_ch.contains("AS `table`"));
+    }
+
+    #[test]
+    fn test_extract_source_tables_with_standard_sql() {
+        let sql = "SELECT a.id, b.name FROM users a JOIN orders b ON a.id = b.user_id";
+        let result = extract_source_tables_from_query(sql).unwrap();
+
+        assert_eq!(result.len(), 2);
+        let table_names: Vec<&str> = result.iter().map(|t| t.table.as_str()).collect();
+        assert!(table_names.contains(&"users"));
+        assert!(table_names.contains(&"orders"));
+    }
+
+    #[test]
+    fn test_extract_source_tables_regex_fallback_with_clickhouse_array_literals() {
+        // Reproduces customer bug: ClickHouse array literal syntax ['item1', 'item2']
+        // causes standard SQL parser to fail at the '[' character.
+        // This tests the regex fallback successfully extracts tables despite parse failure.
+        let sql = r#"
+            SELECT name, count() as total
+            FROM mydb.endpoint_process
+            WHERE arrayExists(x -> (lower(name) LIKE x), ['pattern1', 'pattern2'])
+            AND status NOT IN ['completed', 'failed']
+            GROUP BY name
+        "#;
+
+        // Standard parser should fail on '[' in array literals
+        let parse_result = extract_source_tables_from_query(sql);
+        assert!(
+            parse_result.is_err(),
+            "Expected parser to fail on ClickHouse array syntax"
+        );
+
+        // Regex fallback should succeed and extract the correct table with schema
+        let result = extract_source_tables_from_query_regex(sql, "default").unwrap();
+
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].table, "endpoint_process");
+        assert_eq!(result[0].database, Some("mydb".to_string()));
+    }
+
+    #[test]
+    fn test_extract_source_tables_regex_handles_joins_and_defaults() {
+        // Tests regex fallback extracts FROM/JOIN tables, handles backticks,
+        // and applies default database to unqualified names
+        let sql = "SELECT * FROM `schema1`.`table1` JOIN table2 ON table1.id = table2.id";
+
+        let result = extract_source_tables_from_query_regex(sql, "default_db").unwrap();
+
+        assert_eq!(result.len(), 2);
+
+        let tables: Vec<(Option<String>, String)> = result
+            .iter()
+            .map(|t| (t.database.clone(), t.table.clone()))
+            .collect();
+
+        // table1 has schema, table2 gets default_db
+        assert!(tables.contains(&(Some("schema1".to_string()), "table1".to_string())));
+        assert!(tables.contains(&(Some("default_db".to_string()), "table2".to_string())));
     }
 }
