@@ -14,16 +14,6 @@ Configuration constraints in Moose provide a way to enforce rules and limitation
 
 ## Table Configuration Constraints
 
-### Key Requirements
-
-- **Primary keys are optional** - ClickHouse only requires ORDER BY
-- You can define primary keys in three ways:
-  1. Use `Key[type]` on a top-level field (automatically becomes primary key)
-  2. Use `primary_key_expression` in OlapConfig (most flexible, overrides `Key[type]`)
-  3. Don't specify a primary key at all (only ORDER BY is used)
-- If using `Key[type]` with `order_by_fields`, the `Key[type]` field must be first
-- If using `primary_key_expression`, it overrides any `Key[type]` annotations on columns
-
 ### ORDER BY Requirements
 
 - Fields used in `order_by_fields` must exist on the top level schema
@@ -36,7 +26,6 @@ Configuration constraints in Moose provide a way to enforce rules and limitation
 - By default, primary key is inferred from `Key[type]` column annotations
 - Use `primary_key_expression` to explicitly define primary key with functions or custom ordering
 - When `primary_key_expression` is specified, `Key[type]` annotations are ignored for PRIMARY KEY generation
-- The `primary_key_expression` should reference only top-level, non-optional columns from the schema
 - **CRITICAL**: PRIMARY KEY must be a prefix of ORDER BY (ORDER BY must start with all PRIMARY KEY columns in the same order)
 
 ## Schema Design Constraints

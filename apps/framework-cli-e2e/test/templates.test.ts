@@ -320,8 +320,8 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
         const ddl2 = await getTableDDL("PrimaryKeyOrderingTest", "local");
         const primaryKeyPattern2 =
           config.language === "typescript" ?
-            "PRIMARY KEY (productId)"
-          : "PRIMARY KEY (product_id)";
+            "PRIMARY KEY productId"
+          : "PRIMARY KEY product_id";
         const orderByPattern2 =
           config.language === "typescript" ?
             "ORDER BY (productId, category, brand)"
