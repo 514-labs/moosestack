@@ -13,10 +13,10 @@ use rmcp::{
 };
 use std::sync::Arc;
 
-use super::embedded_docs;
 use super::tools::{
     create_error_result, get_source, infra_issues, infra_map, logs, query_olap, sample_stream,
 };
+use super::{embedded_docs, infra_resources};
 use crate::cli::processing_coordinator::ProcessingCoordinator;
 use crate::infrastructure::olap::clickhouse::config::ClickHouseConfig;
 use crate::infrastructure::redis::redis_client::RedisClient;
@@ -142,7 +142,15 @@ impl ServerHandler for MooseMcpHandler {
         _pagination: Option<PaginatedRequestParam>,
         _context: RequestContext<RoleServer>,
     ) -> Result<ListResourcesResult, ErrorData> {
-        Ok(embedded_docs::list_resources())
+        // Combine documentation resources and infrastructure resources
+        let mut doc_resources = embedded_docs::list_resources();
+        let infra_resources =
+            infra_resources::list_infra_resources(self.redis_client.clone()).await;
+
+        // Append infrastructure resources to documentation resources
+        doc_resources.resources.extend(infra_resources.resources);
+
+        Ok(doc_resources)
     }
 
     async fn read_resource(
@@ -150,11 +158,24 @@ impl ServerHandler for MooseMcpHandler {
         request: ReadResourceRequestParam,
         _context: RequestContext<RoleServer>,
     ) -> Result<ReadResourceResult, ErrorData> {
-        embedded_docs::read_resource(&request.uri).ok_or_else(|| ErrorData {
-            code: ErrorCode::INVALID_PARAMS,
-            message: format!("Resource not found: {}", request.uri).into(),
-            data: None,
-        })
+        // Route based on URI scheme
+        if request.uri.starts_with("moose://infra/") {
+            // Handle infrastructure resources
+            infra_resources::read_infra_resource(&request.uri, self.redis_client.clone())
+                .await
+                .ok_or_else(|| ErrorData {
+                    code: ErrorCode::INVALID_PARAMS,
+                    message: format!("Infrastructure resource not found: {}", request.uri).into(),
+                    data: None,
+                })
+        } else {
+            // Handle documentation resources
+            embedded_docs::read_resource(&request.uri).ok_or_else(|| ErrorData {
+                code: ErrorCode::INVALID_PARAMS,
+                message: format!("Resource not found: {}", request.uri).into(),
+                data: None,
+            })
+        }
     }
 }
 
