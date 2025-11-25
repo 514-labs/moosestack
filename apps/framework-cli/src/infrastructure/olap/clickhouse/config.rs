@@ -70,6 +70,7 @@ pub struct ParsedConnectionString {
     pub config: ClickHouseConfig,
     pub was_native_protocol: bool,
     pub display_url: String,
+    pub database_was_explicit: bool,
 }
 
 /// Parses a ClickHouse connection string (URL) into a ClickHouseConfig
@@ -140,15 +141,21 @@ pub fn parse_clickhouse_connection_string_with_metadata(
     };
 
     // Get database name from path or query parameter, default to "default"
-    let db_name = if !url.path().is_empty() && url.path() != "/" && url.path() != "//" {
-        url.path().trim_start_matches('/').to_string()
-    } else {
-        url.query_pairs()
-            .find(|(k, _)| k == "database")
-            .map(|(_, v)| v.to_string())
-            .filter(|s| !s.is_empty())
-            .unwrap_or_else(|| "default".to_string())
-    };
+    // Also track whether database was explicitly specified
+    let (db_name, database_was_explicit) =
+        if !url.path().is_empty() && url.path() != "/" && url.path() != "//" {
+            (url.path().trim_start_matches('/').to_string(), true)
+        } else {
+            match url
+                .query_pairs()
+                .find(|(k, _)| k == "database")
+                .map(|(_, v)| v.to_string())
+                .filter(|s| !s.is_empty())
+            {
+                Some(db) => (db, true),
+                None => ("default".to_string(), false),
+            }
+        };
 
     let config = ClickHouseConfig {
         db_name: db_name.clone(),
@@ -181,6 +188,7 @@ pub fn parse_clickhouse_connection_string_with_metadata(
         config,
         was_native_protocol,
         display_url,
+        database_was_explicit,
     })
 }
 

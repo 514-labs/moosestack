@@ -14,6 +14,7 @@ use crate::utilities::constants::{
     PYTHON_EXTERNAL_FILE, PYTHON_MAIN_FILE, TYPESCRIPT_EXTERNAL_FILE, TYPESCRIPT_MAIN_FILE,
 };
 use crate::utilities::git::create_code_generation_commit;
+use clickhouse::Client;
 use log::debug;
 use std::borrow::Cow;
 use std::env;
@@ -88,47 +89,31 @@ pub async fn create_client_and_db(
 
     let mut config = parsed.config;
 
-    // Create client for potential database detection
-    let client = create_client(config.clone());
+    // If database wasn't explicitly specified in URL, query the server for the current database
+    let db_name = if !parsed.database_was_explicit {
+        // Create client for database detection
 
-    // If database is "default" but wasn't explicitly specified in URL, query the server
-    let db_name = if config.db_name == "default" {
-        use reqwest::Url;
-        let url = Url::parse(remote_url).map_err(|e| {
-            RoutineFailure::error(Message::new(
-                "Invalid URL".to_string(),
-                format!("Failed to parse remote_url '{remote_url}': {e}"),
+        let protocol = if config.use_ssl { "https" } else { "http" };
+        // create_client(config) calls `with_database` when we're not sure which DB is the real default
+        let client = Client::default()
+            .with_url(format!(
+                "{}://{}:{}",
+                protocol, config.host, config.host_port
             ))
-        })?;
+            .with_user(config.user.to_string())
+            .with_password(config.password.to_string());
 
-        // Check if database was explicitly in the URL
-        let url_db = url
-            .query_pairs()
-            .find(|(k, _)| k == "database")
-            .map(|(_, v)| v.to_string());
-
-        let path_db = if !url.path().is_empty() && url.path() != "/" && url.path() != "//" {
-            Some(url.path().trim_start_matches('/').to_string())
-        } else {
-            None
-        };
-
-        if url_db.is_none() && path_db.is_none() {
-            // No database was specified in URL, query the server
-            client
-                .client
-                .query("select database()")
-                .fetch_one::<String>()
-                .await
-                .map_err(|e| {
-                    RoutineFailure::new(
-                        Message::new("Failure".to_string(), "fetching database".to_string()),
-                        e,
-                    )
-                })?
-        } else {
-            config.db_name.clone()
-        }
+        // No database was specified in URL, query the server
+        client
+            .query("select database()")
+            .fetch_one::<String>()
+            .await
+            .map_err(|e| {
+                RoutineFailure::new(
+                    Message::new("Failure".to_string(), "fetching database".to_string()),
+                    e,
+                )
+            })?
     } else {
         config.db_name.clone()
     };
