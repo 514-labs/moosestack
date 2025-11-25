@@ -292,6 +292,54 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
       }
     });
 
+    it("should include PRIMARY KEY expression in DDL when configured", async function () {
+      if (config.isTestsVariant) {
+        // Test 1: Primary key with hash function
+        const ddl1 = await getTableDDL("PrimaryKeyExpressionTest", "local");
+        const primaryKeyPattern =
+          config.language === "typescript" ?
+            "PRIMARY KEY (userId, cityHash64(eventId))"
+          : "PRIMARY KEY (user_id, cityHash64(event_id))";
+        const orderByPattern =
+          config.language === "typescript" ?
+            "ORDER BY (userId, cityHash64(eventId), timestamp)"
+          : "ORDER BY (user_id, cityHash64(event_id), timestamp)";
+
+        if (!ddl1.includes(primaryKeyPattern)) {
+          throw new Error(
+            `PRIMARY KEY expression not found in PrimaryKeyExpressionTest DDL. Expected: ${primaryKeyPattern}. DDL: ${ddl1}`,
+          );
+        }
+        if (!ddl1.includes(orderByPattern)) {
+          throw new Error(
+            `ORDER BY expression not found in PrimaryKeyExpressionTest DDL. Expected: ${orderByPattern}. DDL: ${ddl1}`,
+          );
+        }
+
+        // Test 2: Primary key with different ordering
+        const ddl2 = await getTableDDL("PrimaryKeyOrderingTest", "local");
+        const primaryKeyPattern2 =
+          config.language === "typescript" ?
+            "PRIMARY KEY (productId)"
+          : "PRIMARY KEY (product_id)";
+        const orderByPattern2 =
+          config.language === "typescript" ?
+            "ORDER BY (productId, category, brand)"
+          : "ORDER BY (product_id, category, brand)";
+
+        if (!ddl2.includes(primaryKeyPattern2)) {
+          throw new Error(
+            `PRIMARY KEY expression not found in PrimaryKeyOrderingTest DDL. Expected: ${primaryKeyPattern2}. DDL: ${ddl2}`,
+          );
+        }
+        if (!ddl2.includes(orderByPattern2)) {
+          throw new Error(
+            `ORDER BY expression not found in PrimaryKeyOrderingTest DDL. Expected: ${orderByPattern2}. DDL: ${ddl2}`,
+          );
+        }
+      }
+    });
+
     it("should generate FixedString types in DDL including type aliases", async function () {
       if (config.isTestsVariant && config.language === "python") {
         const ddl = await getTableDDL("FixedStringTest", "local");

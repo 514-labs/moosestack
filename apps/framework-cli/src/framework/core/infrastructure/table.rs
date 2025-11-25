@@ -302,6 +302,10 @@ pub struct Table {
     /// Optional cluster name for ON CLUSTER support in ClickHouse
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub cluster_name: Option<String>,
+    /// Optional PRIMARY KEY expression (overrides column-level primary_key flags when specified)
+    /// Allows for complex primary keys using functions or different column ordering
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub primary_key_expression: Option<String>,
 }
 
 impl Table {
@@ -473,6 +477,7 @@ impl Table {
             table_settings: self.table_settings.clone().unwrap_or_default(),
             table_ttl_setting: self.table_ttl_setting.clone(),
             cluster_name: self.cluster_name.clone(),
+            primary_key_expression: self.primary_key_expression.clone(),
             metadata: MessageField::from_option(self.metadata.as_ref().map(|m| {
                 infrastructure_map::Metadata {
                     description: m.description.clone().unwrap_or_default(),
@@ -581,6 +586,7 @@ impl Table {
             database: proto.database,
             table_ttl_setting: proto.table_ttl_setting,
             cluster_name: proto.cluster_name,
+            primary_key_expression: proto.primary_key_expression,
         }
     }
 }

@@ -71,6 +71,7 @@ impl DataModel {
             database: None, // Database defaults to global config
             table_ttl_setting: None,
             cluster_name: None,
+            primary_key_expression: None,
         };
 
         // Compute hash that includes both engine params and database

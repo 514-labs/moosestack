@@ -2710,12 +2710,24 @@ pub fn create_table_query(
         None
     };
 
-    let primary_key = table
-        .columns
-        .iter()
-        .filter(|column| column.primary_key)
-        .map(|column| column.name.clone())
-        .collect::<Vec<String>>();
+    // PRIMARY KEY: use primary_key_expression if specified, otherwise use columns with primary_key flag
+    let primary_key_str = if let Some(ref expr) = table.primary_key_expression {
+        // When primary_key_expression is specified, use it directly (ignoring column-level primary_key flags)
+        Some(expr.clone())
+    } else {
+        // Otherwise, use columns with primary_key flag
+        let primary_key = table
+            .columns
+            .iter()
+            .filter(|column| column.primary_key)
+            .map(|column| column.name.clone())
+            .collect::<Vec<String>>();
+        if !primary_key.is_empty() {
+            Some(wrap_and_join_column_names(&primary_key, ","))
+        } else {
+            None
+        }
+    };
 
     // Prepare indexes strings like: INDEX name expr TYPE type(args...) GRANULARITY n
     let (has_indexes, index_strings): (bool, Vec<String>) = if table.indexes.is_empty() {
@@ -2765,8 +2777,8 @@ pub fn create_table_query(
         "has_fields": !table.columns.is_empty(),
         "has_indexes": has_indexes,
         "indexes": index_strings,
-        "primary_key_string": if supports_primary_key && !primary_key.is_empty() {
-            Some(wrap_and_join_column_names(&primary_key, ","))
+        "primary_key_string": if supports_primary_key {
+            primary_key_str
         } else {
             None
         },

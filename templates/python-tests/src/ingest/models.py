@@ -684,3 +684,46 @@ datetime_precision_output_stream = Stream[DateTimePrecisionTestData](
     "DateTimePrecisionOutput",
     StreamConfig(destination=datetime_precision_output_table)
 )
+
+# =======Primary Key Expression Tests=========
+
+# Test: Primary Key Expression with hash function
+class PrimaryKeyExpressionTest(BaseModel):
+    user_id: str
+    event_id: str
+    timestamp: datetime
+    category: str
+
+
+# Table using primary_key_expression with hash function for better distribution
+# Note: PRIMARY KEY must be a prefix of ORDER BY in ClickHouse
+primary_key_expression_table = OlapTable[PrimaryKeyExpressionTest](
+    "PrimaryKeyExpressionTest",
+    OlapConfig(
+        # Primary key uses hash function for better distribution
+        primary_key_expression="(user_id, cityHash64(event_id))",
+        # Order by must start with the same columns as primary key
+        order_by_expression="(user_id, cityHash64(event_id), timestamp)",
+    )
+)
+
+
+# Test: Primary Key Expression with different column ordering
+class PrimaryKeyOrderingTest(BaseModel):
+    product_id: str
+    category: str
+    brand: str
+    timestamp: datetime
+
+
+# Table where primary key order differs from schema order
+# Note: ORDER BY must start with PRIMARY KEY columns
+primary_key_ordering_table = OlapTable[PrimaryKeyOrderingTest](
+    "PrimaryKeyOrderingTest",
+    OlapConfig(
+        # Primary key optimized for uniqueness
+        primary_key_expression="(product_id)",
+        # Order by starts with primary key, then adds other columns for query optimization
+        order_by_fields=["product_id", "category", "brand"],
+    )
+)

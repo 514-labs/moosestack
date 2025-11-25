@@ -16,9 +16,10 @@ Configuration constraints in Moose provide a way to enforce rules and limitation
 
 ### Key Requirements
 
-- Schema must have `Key[type]` on a top level field passed into IngestPipeline or OlapTable
-- If using `order_by_fields`, the first field must be the primary key (`Key[type]`) when present
-- If using `order_by_expression`, ensure your expression starts with the primary key column when a primary key exists (e.g., `(id, created_at, ...)`)
+- Schema must have `Key[type]` on a top level field passed into IngestPipeline or OlapTable (unless using `primary_key_expression`)
+- If using `order_by_fields`, the first field must be the primary key (`Key[type]`) when present (unless using `primary_key_expression`)
+- If using `order_by_expression`, ensure your expression starts with the primary key column when a primary key exists (unless using `primary_key_expression`)
+- If using `primary_key_expression`, the expression overrides any `Key[type]` annotations on columns
 
 ### ORDER BY Requirements
 
@@ -26,6 +27,14 @@ Configuration constraints in Moose provide a way to enforce rules and limitation
 - No Optional fields in `order_by_fields` (fields with `Optional` or `None` default)
 - When using `order_by_expression`, the expression should reference only top-level, non-optional columns from the schema
 - To disable sorting entirely, set `order_by_expression="tuple()"`
+
+### PRIMARY KEY Requirements
+
+- By default, primary key is inferred from `Key[type]` column annotations
+- Use `primary_key_expression` to explicitly define primary key with functions or custom ordering
+- When `primary_key_expression` is specified, `Key[type]` annotations are ignored for PRIMARY KEY generation
+- The `primary_key_expression` should reference only top-level, non-optional columns from the schema
+- **CRITICAL**: PRIMARY KEY must be a prefix of ORDER BY (ORDER BY must start with all PRIMARY KEY columns in the same order)
 
 ## Schema Design Constraints
 

@@ -273,6 +273,9 @@ struct PartialTable {
     /// Optional cluster name for ON CLUSTER support
     #[serde(default)]
     pub cluster: Option<String>,
+    /// Optional PRIMARY KEY expression (overrides column-level primary_key flags when specified)
+    #[serde(default, alias = "primary_key_expression")]
+    pub primary_key_expression: Option<String>,
 }
 
 /// Represents a topic definition from user code before it's converted into a complete [`Topic`].
@@ -743,6 +746,7 @@ impl PartialInfrastructureMap {
                     table_ttl_setting,
                     database: partial_table.database.clone(),
                     cluster_name: partial_table.cluster.clone(),
+                    primary_key_expression: partial_table.primary_key_expression.clone(),
                 };
                 Ok((table.id(default_database), table))
             })
