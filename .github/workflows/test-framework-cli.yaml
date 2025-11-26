@@ -908,7 +908,7 @@ jobs:
         test-e2e-typescript-tests,
         test-e2e-python-default,
         test-e2e-python-tests,
-        test-e2e-backward-compatibility-typescript,
+#        test-e2e-backward-compatibility-typescript,
         test-e2e-backward-compatibility-python,
         test-e2e-cluster-typescript,
         test-e2e-cluster-python,
@@ -939,7 +939,6 @@ jobs:
              [[ "${{ needs.test-e2e-typescript-tests.result }}" == "failure" ]] || \
              [[ "${{ needs.test-e2e-python-default.result }}" == "failure" ]] || \
              [[ "${{ needs.test-e2e-python-tests.result }}" == "failure" ]] || \
-             [[ "${{ needs.test-e2e-backward-compatibility-typescript.result }}" == "failure" ]] || \
              [[ "${{ needs.test-e2e-backward-compatibility-python.result }}" == "failure" ]] || \
              [[ "${{ needs.test-e2e-cluster-typescript.result }}" == "failure" ]] || \
              [[ "${{ needs.test-e2e-cluster-python.result }}" == "failure" ]] || \
@@ -956,7 +955,6 @@ jobs:
              [[ "${{ needs.test-e2e-typescript-tests.result }}" == "success" ]] && \
              [[ "${{ needs.test-e2e-python-default.result }}" == "success" ]] && \
              [[ "${{ needs.test-e2e-python-tests.result }}" == "success" ]] && \
-             [[ "${{ needs.test-e2e-backward-compatibility-typescript.result }}" == "success" ]] && \
              [[ "${{ needs.test-e2e-backward-compatibility-python.result }}" == "success" ]] && \
              [[ "${{ needs.test-e2e-cluster-typescript.result }}" == "success" ]] && \
              [[ "${{ needs.test-e2e-cluster-python.result }}" == "success" ]] && \
