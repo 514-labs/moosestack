@@ -393,7 +393,7 @@ impl ClickHouseTableDiffStrategy {
                 // Skip population in production (user must handle manually)
                 // Only populate in dev for new MVs with non-S3Queue sources
                 if is_new && !has_s3queue_source && !is_production {
-                    log::info!(
+                    tracing::info!(
                         "Adding population operation for materialized view '{}'",
                         sql_resource.name
                     );
@@ -436,7 +436,7 @@ impl TableDiffStrategy for ClickHouseTableDiffStrategy {
         // Check if ORDER BY has changed
         let order_by_changed = order_by_change.before != order_by_change.after;
         if order_by_changed {
-            log::warn!(
+            tracing::warn!(
                 "ClickHouse: ORDER BY changed for table '{}', requiring drop+create",
                 before.name
             );
@@ -463,7 +463,7 @@ impl TableDiffStrategy for ClickHouseTableDiffStrategy {
 
             let error_message = format_database_change_error(&before.name, before_db, after_db);
 
-            log::error!("{}", error_message);
+            tracing::error!("{}", error_message);
 
             return vec![OlapChange::Table(TableChange::ValidationError {
                 table_name: before.name.clone(),
@@ -482,7 +482,7 @@ impl TableDiffStrategy for ClickHouseTableDiffStrategy {
         // Check if PARTITION BY has changed
         let partition_by_changed = partition_by_change.before != partition_by_change.after;
         if partition_by_changed {
-            log::warn!(
+            tracing::warn!(
                 "ClickHouse: PARTITION BY changed for table '{}', requiring drop+create",
                 before.name
             );
@@ -501,7 +501,7 @@ impl TableDiffStrategy for ClickHouseTableDiffStrategy {
             // S3 allows specifying PK, but that information is not in system.columns
             && after.engine.is_merge_tree_family()
         {
-            log::warn!(
+            tracing::warn!(
                 "ClickHouse: Primary key structure changed for table '{}', requiring drop+create",
                 before.name
             );
@@ -530,7 +530,7 @@ impl TableDiffStrategy for ClickHouseTableDiffStrategy {
 
         // Check if engine has changed (using hash comparison when available)
         if engine_changed {
-            log::warn!(
+            tracing::warn!(
                 "ClickHouse: engine changed for table '{}', requiring drop+create",
                 before.name
             );
@@ -567,7 +567,7 @@ impl TableDiffStrategy for ClickHouseTableDiffStrategy {
                     .map_or(*default, |v| v);
 
                 if before_value != after_value {
-                    log::warn!(
+                    tracing::warn!(
                         "ClickHouse: Readonly setting '{}' changed for table '{}' (from {:?} to {:?}), requiring drop+create",
                         readonly_setting,
                         before.name,
@@ -581,7 +581,7 @@ impl TableDiffStrategy for ClickHouseTableDiffStrategy {
                 }
             }
 
-            log::debug!(
+            tracing::debug!(
                 "ClickHouse: Only modifiable table settings changed for table '{}', can use ALTER TABLE MODIFY SETTING",
                 before.name
             );
@@ -598,7 +598,7 @@ impl TableDiffStrategy for ClickHouseTableDiffStrategy {
         // S3Queue only supports MODIFY/RESET SETTING, not column operations
         if !column_changes.is_empty() && matches!(&before.engine, ClickhouseEngine::S3Queue { .. })
         {
-            log::warn!(
+            tracing::warn!(
                 "ClickHouse: S3Queue table '{}' has column changes, requiring drop+create (S3Queue doesn't support ALTER TABLE for columns)",
                 before.name
             );

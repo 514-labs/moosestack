@@ -7,7 +7,7 @@ use super::{
     message::{Message, MessageType},
     terminal::{write_styled_line, StyledText},
 };
-use log::info;
+use tracing::info;
 
 /// Displays a message about a batch database insertion.
 ///

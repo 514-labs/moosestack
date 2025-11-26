@@ -1,8 +1,8 @@
 use anyhow::Result;
-use log::info;
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 use std::collections::{HashMap, HashSet};
+use tracing::info;
 
 use super::{config::WorkflowConfig, Workflow};
 use crate::framework::{
@@ -156,7 +156,7 @@ pub(crate) async fn execute_scheduled_workflows(
 
         match workflow.start(&project.temporal_config, None).await {
             Ok(_) => info!("Auto-started workflow: {}", workflow.name),
-            Err(e) => log::error!("Failed to auto-start workflow {}: {}", workflow.name, e),
+            Err(e) => tracing::error!("Failed to auto-start workflow {}: {}", workflow.name, e),
         }
     }
 }
@@ -165,7 +165,7 @@ async fn list_running_workflows(project: &Project) -> HashSet<String> {
     let client_manager = match TemporalClientManager::new_validate(&project.temporal_config, true) {
         Ok(manager) => manager,
         Err(e) => {
-            log::error!("Failed to create Temporal client manager: {}", e);
+            tracing::error!("Failed to create Temporal client manager: {}", e);
             return HashSet::new();
         }
     };
@@ -195,7 +195,7 @@ async fn list_running_workflows(project: &Project) -> HashSet<String> {
             .map(|execution_info| execution_info.workflow_id)
             .collect(),
         Err(e) => {
-            log::error!("Failed to list running workflows: {}", e);
+            tracing::error!("Failed to list running workflows: {}", e);
             HashSet::new()
         }
     }
