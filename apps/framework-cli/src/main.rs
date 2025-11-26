@@ -51,10 +51,11 @@ fn main() -> ExitCode {
 
     cli::settings::init_config_file().expect("Failed to init config file");
     let config = cli::settings::read_settings().expect("Failed to read settings");
-    let machine_id = utilities::machine_id::get_or_create_machine_id();
 
     // Setup logging
-    cli::logger::setup_logging(&config.logger, &machine_id).expect("Failed to setup logging");
+    cli::logger::setup_logging(&config.logger);
+
+    let machine_id = utilities::machine_id::get_or_create_machine_id();
 
     // Parse CLI arguments
     let cli_result = match cli::Cli::try_parse() {
