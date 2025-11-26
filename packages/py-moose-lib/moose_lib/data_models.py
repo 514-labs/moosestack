@@ -77,28 +77,6 @@ class ClickHouseCodec:
     expression: str
 
 
-def clickhouse_codec(expression: str) -> ClickHouseCodec:
-    """
-    Creates a CODEC annotation for column compression.
-
-    Supports single codecs and codec chains.
-
-    Args:
-        expression: Codec expression (e.g., "ZSTD(3)", "Delta, LZ4")
-
-    Examples:
-        # Single codec with compression level
-        log_blob: Annotated[Any, clickhouse_codec("ZSTD(3)")]
-
-        # Codec chain for time series
-        timestamp: Annotated[datetime, clickhouse_codec("Delta, LZ4")]
-
-        # Codec chain for floats
-        temperature: Annotated[float, clickhouse_codec("Gorilla, ZSTD")]
-    """
-    return ClickHouseCodec(expression=expression)
-
-
 @dataclasses.dataclass(frozen=True)
 class ClickHouseJson:
     max_dynamic_paths: int | None = None

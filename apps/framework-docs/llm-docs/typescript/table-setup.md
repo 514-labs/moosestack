@@ -779,21 +779,21 @@ import { Codec, DateTime, UInt64 } from '@514labs/moose-lib';
 
 interface Metrics {
   // Delta for timestamps and monotonically increasing values
-  timestamp: DateTime & Codec<"Delta, LZ4">;
+  timestamp: DateTime & ClickHouseCodec<"Delta, LZ4">;
 
   // Gorilla for floating point sensor data
-  temperature: number & Codec<"Gorilla, ZSTD(3)">;
+  temperature: number & ClickHouseCodec<"Gorilla, ZSTD(3)">;
 
   // DoubleDelta for counters and metrics
-  request_count: number & Codec<"DoubleDelta, LZ4">;
+  request_count: number & ClickHouseCodec<"DoubleDelta, LZ4">;
 
   // ZSTD for text/JSON with compression level (1-22)
-  log_data: Record<string, any> & Codec<"ZSTD(9)">;
-  user_agent: string & Codec<"ZSTD(3)">;
+  log_data: Record<string, any> & ClickHouseCodec<"ZSTD(9)">;
+  user_agent: string & ClickHouseCodec<"ZSTD(3)">;
 
   // Compress array elements
-  tags: string[] & Codec<"LZ4">;
-  event_ids: UInt64[] & Codec<"ZSTD(1)">;
+  tags: string[] & ClickHouseCodec<"LZ4">;
+  event_ids: UInt64[] & ClickHouseCodec<"ZSTD(1)">;
 }
 
 export const MetricsTable = new OlapTable<Metrics>("Metrics", {
@@ -816,12 +816,12 @@ import { ClickHouseDefault, ClickHouseTTL } from "@514labs/moose-lib";
 
 interface Events {
   // Codec + Default value
-  status: string & ClickHouseDefault<"'pending'"> & Codec<"ZSTD(3)">;
+  status: string & ClickHouseDefault<"'pending'"> & ClickHouseCodec<"ZSTD(3)">;
 
   // Codec + TTL
-  email: string & ClickHouseTTL<"timestamp + INTERVAL 30 DAY"> & Codec<"ZSTD(3)">;
+  email: string & ClickHouseTTL<"timestamp + INTERVAL 30 DAY"> & ClickHouseCodec<"ZSTD(3)">;
 
   // Codec + Numeric type
-  event_count: UInt64 & Codec<"DoubleDelta, LZ4">;
+  event_count: UInt64 & ClickHouseCodec<"DoubleDelta, LZ4">;
 }
 ```

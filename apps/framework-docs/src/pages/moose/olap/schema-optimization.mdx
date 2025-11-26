@@ -488,24 +488,24 @@ ClickHouse supports per-column compression codecs to optimize storage and query 
 import { Codec, DateTime, UInt64 } from "@514labs/moose-lib";
 
 interface Metrics {
-  timestamp: DateTime & Codec<"Delta, LZ4">;          // Timestamps
-  temperature: number & Codec<"Gorilla, ZSTD(3)">;    // Float metrics
-  log_data: Record<string, any> & Codec<"ZSTD(9)">;   // JSON with heavy compression
-  event_ids: UInt64[] & Codec<"ZSTD(1)">;             // Arrays
+  timestamp: DateTime & ClickHouseCodec<"Delta, LZ4">;          // Timestamps
+  temperature: number & ClickHouseCodec<"Gorilla, ZSTD(3)">;    // Float metrics
+  log_data: Record<string, any> & ClickHouseCodec<"ZSTD(9)">;   // JSON with heavy compression
+  event_ids: UInt64[] & ClickHouseCodec<"ZSTD(1)">;             // Arrays
 }
 ```
 </TypeScript>
 
 <Python>
 ```python
-from moose_lib import clickhouse_codec, UInt64
+from moose_lib import ClickHouseCodec, UInt64
 from typing import Annotated, Any
 
 class Metrics(BaseModel):
-    timestamp: Annotated[datetime, clickhouse_codec("Delta, LZ4")]         # Timestamps
-    temperature: Annotated[float, clickhouse_codec("Gorilla, ZSTD(3)")]    # Float metrics
-    log_data: Annotated[Any, clickhouse_codec("ZSTD(9)")]                  # JSON with heavy compression
-    event_ids: Annotated[list[UInt64], clickhouse_codec("ZSTD(1)")]        # Arrays
+    timestamp: Annotated[datetime, ClickHouseCodec("Delta, LZ4")]         # Timestamps
+    temperature: Annotated[float, ClickHouseCodec("Gorilla, ZSTD(3)")]    # Float metrics
+    log_data: Annotated[Any, ClickHouseCodec("ZSTD(9)")]                  # JSON with heavy compression
+    event_ids: Annotated[list[UInt64], ClickHouseCodec("ZSTD(1)")]        # Arrays
 ```
 </Python>
 

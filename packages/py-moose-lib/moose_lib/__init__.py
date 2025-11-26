@@ -41,7 +41,6 @@ from .data_models import (
     clickhouse_default,
     ClickHouseTTL,
     ClickHouseCodec,
-    clickhouse_codec,
     # Integer types
     Int8,
     Int16,

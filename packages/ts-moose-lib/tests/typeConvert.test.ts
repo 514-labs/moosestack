@@ -262,15 +262,15 @@ describe("typeConvert mappings for helper types", function () {
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "moose-typeconv-"));
     try {
       const source = `
-        import { Codec } from "@514labs/moose-lib";
+        import { ClickHouseCodec } from "@514labs/moose-lib";
 
         export interface TestModel {
           id: string;
-          log_blob: Record<string, any> & Codec<"ZSTD(3)">;
-          timestamp: Date & Codec<"Delta, LZ4">;
-          temperature: number & Codec<"Gorilla, ZSTD(3)">;
-          user_agent: string & Codec<"ZSTD(3)">;
-          tags: string[] & Codec<"ZSTD(1)">;
+          log_blob: Record<string, any> & ClickHouseCodec<"ZSTD(3)">;
+          timestamp: Date & ClickHouseCodec<"Delta, LZ4">;
+          temperature: number & ClickHouseCodec<"Gorilla, ZSTD(3)">;
+          user_agent: string & ClickHouseCodec<"ZSTD(3)">;
+          tags: string[] & ClickHouseCodec<"ZSTD(1)">;
           no_codec: string;
         }
       `;

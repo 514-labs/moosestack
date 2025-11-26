@@ -22,21 +22,21 @@ import { OlapTable, Key, DateTime, Codec, UInt64 } from "@514labs/moose-lib";
 interface Metrics {
   id: Key<string>;
   // Delta codec for timestamps (monotonically increasing)
-  timestamp: DateTime & Codec<"Delta, LZ4">;
+  timestamp: DateTime & ClickHouseCodec<"Delta, LZ4">;
 
   // Gorilla codec for floating point sensor data
-  temperature: number & Codec<"Gorilla, ZSTD(3)">;
+  temperature: number & ClickHouseCodec<"Gorilla, ZSTD(3)">;
 
   // DoubleDelta for counters and metrics
-  request_count: number & Codec<"DoubleDelta, LZ4">;
+  request_count: number & ClickHouseCodec<"DoubleDelta, LZ4">;
 
   // ZSTD for text/JSON with compression level
-  log_data: Record<string, any> & Codec<"ZSTD(3)">;
-  user_agent: string & Codec<"ZSTD(3)">;
+  log_data: Record<string, any> & ClickHouseCodec<"ZSTD(3)">;
+  user_agent: string & ClickHouseCodec<"ZSTD(3)">;
 
   // Compress array elements
-  tags: string[] & Codec<"LZ4">;
-  event_ids: UInt64[] & Codec<"ZSTD(1)">;
+  tags: string[] & ClickHouseCodec<"LZ4">;
+  event_ids: UInt64[] & ClickHouseCodec<"ZSTD(1)">;
 }
 
 export const MetricsTable = new OlapTable<Metrics>("Metrics", {
@@ -48,28 +48,28 @@ export const MetricsTable = new OlapTable<Metrics>("Metrics", {
 <Python>
 ```python
 from typing import Annotated, Any
-from moose_lib import OlapTable, OlapConfig, Key, clickhouse_codec, UInt64
+from moose_lib import OlapTable, OlapConfig, Key, ClickHouseCodec, UInt64
 from pydantic import BaseModel
 from datetime import datetime
 
 class Metrics(BaseModel):
     id: Key[str]
     # Delta codec for timestamps (monotonically increasing)
-    timestamp: Annotated[datetime, clickhouse_codec("Delta, LZ4")]
+    timestamp: Annotated[datetime, ClickHouseCodec("Delta, LZ4")]
 
     # Gorilla codec for floating point sensor data
-    temperature: Annotated[float, clickhouse_codec("Gorilla, ZSTD(3)")]
+    temperature: Annotated[float, ClickHouseCodec("Gorilla, ZSTD(3)")]
 
     # DoubleDelta for counters and metrics
-    request_count: Annotated[float, clickhouse_codec("DoubleDelta, LZ4")]
+    request_count: Annotated[float, ClickHouseCodec("DoubleDelta, LZ4")]
 
     # ZSTD for text/JSON with compression level
-    log_data: Annotated[Any, clickhouse_codec("ZSTD(3)")]
-    user_agent: Annotated[str, clickhouse_codec("ZSTD(3)")]
+    log_data: Annotated[Any, ClickHouseCodec("ZSTD(3)")]
+    user_agent: Annotated[str, ClickHouseCodec("ZSTD(3)")]
 
     # Compress array elements
-    tags: Annotated[list[str], clickhouse_codec("LZ4")]
-    event_ids: Annotated[list[UInt64], clickhouse_codec("ZSTD(1)")]
+    tags: Annotated[list[str], ClickHouseCodec("LZ4")]
+    event_ids: Annotated[list[UInt64], ClickHouseCodec("ZSTD(1)")]
 
 metrics_table = OlapTable[Metrics](
     "Metrics",
@@ -86,10 +86,10 @@ You can chain multiple codecs together. Data is processed by each codec in seque
 ```typescript
 interface Events {
   // Delta compress timestamps, then apply LZ4
-  timestamp: DateTime & Codec<"Delta, LZ4">;
+  timestamp: DateTime & ClickHouseCodec<"Delta, LZ4">;
 
   // Gorilla for floats, then ZSTD for extra compression
-  value: number & Codec<"Gorilla, ZSTD(3)">;
+  value: number & ClickHouseCodec<"Gorilla, ZSTD(3)">;
 }
 ```
 </TypeScript>
@@ -98,10 +98,10 @@ interface Events {
 ```python
 class Events(BaseModel):
     # Delta compress timestamps, then apply LZ4
-    timestamp: Annotated[datetime, clickhouse_codec("Delta, LZ4")]
+    timestamp: Annotated[datetime, ClickHouseCodec("Delta, LZ4")]
 
     # Gorilla for floats, then ZSTD for extra compression
-    value: Annotated[float, clickhouse_codec("Gorilla, ZSTD(3)")]
+    value: Annotated[float, ClickHouseCodec("Gorilla, ZSTD(3)")]
 ```
 </Python>
 
@@ -115,36 +115,36 @@ import { ClickHouseDefault, ClickHouseTTL } from "@514labs/moose-lib";
 
 interface UserEvents {
   id: Key<string>;
-  timestamp: DateTime & Codec<"Delta, LZ4">;
+  timestamp: DateTime & ClickHouseCodec<"Delta, LZ4">;
 
   // Codec + Default value
-  status: string & ClickHouseDefault<"'pending'"> & Codec<"ZSTD(3)">;
+  status: string & ClickHouseDefault<"'pending'"> & ClickHouseCodec<"ZSTD(3)">;
 
   // Codec + TTL
-  email: string & ClickHouseTTL<"timestamp + INTERVAL 30 DAY"> & Codec<"ZSTD(3)">;
+  email: string & ClickHouseTTL<"timestamp + INTERVAL 30 DAY"> & ClickHouseCodec<"ZSTD(3)">;
 
   // Codec + Numeric type
-  event_count: UInt64 & Codec<"DoubleDelta, LZ4">;
+  event_count: UInt64 & ClickHouseCodec<"DoubleDelta, LZ4">;
 }
 ```
 </TypeScript>
 
 <Python>
 ```python
-from moose_lib import clickhouse_default, ClickHouseTTL
+from moose_lib import clickhouse_default, ClickHouseTTL, ClickHouseCodec
 
 class UserEvents(BaseModel):
     id: Key[str]
-    timestamp: Annotated[datetime, clickhouse_codec("Delta, LZ4")]
+    timestamp: Annotated[datetime, ClickHouseCodec("Delta, LZ4")]
 
     # Codec + Default value
-    status: Annotated[str, clickhouse_default("'pending'"), clickhouse_codec("ZSTD(3)")]
+    status: Annotated[str, clickhouse_default("'pending'"), ClickHouseCodec("ZSTD(3)")]
 
     # Codec + TTL
-    email: Annotated[str, ClickHouseTTL("timestamp + INTERVAL 30 DAY"), clickhouse_codec("ZSTD(3)")]
+    email: Annotated[str, ClickHouseTTL("timestamp + INTERVAL 30 DAY"), ClickHouseCodec("ZSTD(3)")]
 
     # Codec + Numeric type
-    event_count: Annotated[UInt64, clickhouse_codec("DoubleDelta, LZ4")]
+    event_count: Annotated[UInt64, ClickHouseCodec("DoubleDelta, LZ4")]
 ```
 </Python>
 
