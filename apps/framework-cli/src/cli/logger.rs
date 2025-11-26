@@ -603,8 +603,6 @@ fn setup_legacy_format(
 
     // Setup with or without OTEL based on configuration
     if let Some(endpoint) = &settings.export_to {
-        let otel_layer = create_otel_layer(endpoint, session_id, machine_id)?;
-
         if settings.stdout {
             let legacy_layer = LegacyFormatLayer::new(
                 std::io::stdout,
@@ -614,7 +612,6 @@ fn setup_legacy_format(
             );
 
             tracing_subscriber::registry()
-                .with(otel_layer)
                 .with(env_filter)
                 .with(legacy_layer)
                 .init();
