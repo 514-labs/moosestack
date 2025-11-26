@@ -108,7 +108,7 @@ impl ServerHandler for MooseMcpHandler {
                 self.redis_client.clone(),
             )
             .await),
-            "diagnose_infrastructure" => Ok(infra_issues::handle_call(
+            "get_issues" => Ok(infra_issues::handle_call(
                 param.arguments.as_ref(),
                 self.redis_client.clone(),
                 &self.clickhouse_config,
@@ -271,7 +271,7 @@ mod tests {
             "get_infra_map",
             "query_olap",
             "get_stream_sample",
-            "diagnose_infrastructure",
+            "get_issues",
         ];
 
         let logs_tool = logs::tool_definition();
