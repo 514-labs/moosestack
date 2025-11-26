@@ -729,13 +729,6 @@ pub fn tables_to_python(tables: &[Table], life_cycle: Option<LifeCycle>) -> Stri
             })
             .collect();
 
-        // Determine if we can use Key[T] wrapping:
-        // - primary_key_expression is not set (will be generated or not needed)
-        // - order_by starts with primary_key columns in the same order
-        let can_use_key_wrapping = table.primary_key_expression.is_none()
-            && !primary_key_cols.is_empty()
-            && table.order_by.starts_with_fields(&primary_key_cols);
-
         let (base_name, version) = extract_version_from_table_name(&table.name);
         let table_name = if version == table.version {
             &base_name
@@ -752,29 +745,9 @@ pub fn tables_to_python(tables: &[Table], life_cycle: Option<LifeCycle>) -> Stri
         .unwrap();
         writeln!(output, "    {order_by_spec},").unwrap();
 
-        // Emit primary_key_expression if:
-        // 1. It's explicitly set on the table (from user config or introspection), OR
-        // 2. We have primary key columns but can't use Key[T] wrapping (order mismatch)
         if let Some(ref pk_expr) = table.primary_key_expression {
             // Use the explicit primary_key_expression directly
             writeln!(output, "    primary_key_expression={:?},", pk_expr).unwrap();
-        } else if !primary_key_cols.is_empty() && !can_use_key_wrapping {
-            // Generate primary_key_expression from column flags
-            if primary_key_cols.len() == 1 {
-                writeln!(
-                    output,
-                    "    primary_key_expression=\"{}\",",
-                    primary_key_cols[0]
-                )
-                .unwrap();
-            } else {
-                writeln!(
-                    output,
-                    "    primary_key_expression=\"({})\",",
-                    primary_key_cols.join(", ")
-                )
-                .unwrap();
-            }
         }
         if let Some(partition_by) = &table.partition_by {
             writeln!(output, "    partition_by={:?},", partition_by).unwrap();

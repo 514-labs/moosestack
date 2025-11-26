@@ -560,13 +560,9 @@ pub fn tables_to_typescript(tables: &[Table], life_cycle: Option<LifeCycle>) -> 
                 }
             })
             .collect::<Vec<_>>();
-        // Determine if we can use Key<T> wrapping:
-        // - primary_key_expression is not set (will be generated or not needed)
-        // - we have primary key columns
-        // - order_by starts with primary_key columns in the same order
-        let can_use_key_wrapping = table.primary_key_expression.is_none()
-            && !primary_key.is_empty()
-            && table.order_by.starts_with_fields(&primary_key);
+
+        // list_tables sets primary_key_expression to Some if Key wrapping is insufficient to represent the PK
+        let can_use_key_wrapping = table.primary_key_expression.is_none();
 
         writeln!(output, "export interface {} {{", table.name).unwrap();
 
@@ -650,13 +646,6 @@ pub fn tables_to_typescript(tables: &[Table], life_cycle: Option<LifeCycle>) -> 
             })
             .collect();
 
-        // Determine if we can use Key<T> wrapping:
-        // - primary_key_expression is not set (will be generated or not needed)
-        // - order_by starts with primary_key columns in the same order
-        let can_use_key_wrapping = table.primary_key_expression.is_none()
-            && !primary_key_cols.is_empty()
-            && table.order_by.starts_with_fields(&primary_key_cols);
-
         let var_name = sanitize_typescript_identifier(&table.name);
 
         let (base_name, version) = extract_version_from_table_name(&table.name);
@@ -673,29 +662,9 @@ pub fn tables_to_typescript(tables: &[Table], life_cycle: Option<LifeCycle>) -> 
         .unwrap();
         writeln!(output, "    {order_by_spec},").unwrap();
 
-        // Emit primaryKeyExpression if:
-        // 1. It's explicitly set on the table (from user config or introspection), OR
-        // 2. We have primary key columns but can't use Key<T> wrapping (order mismatch)
         if let Some(ref pk_expr) = table.primary_key_expression {
             // Use the explicit primary_key_expression directly
             writeln!(output, "    primaryKeyExpression: {:?},", pk_expr).unwrap();
-        } else if !primary_key_cols.is_empty() && !can_use_key_wrapping {
-            // Generate primaryKeyExpression from column flags
-            if primary_key_cols.len() == 1 {
-                writeln!(
-                    output,
-                    "    primaryKeyExpression: \"{}\",",
-                    primary_key_cols[0]
-                )
-                .unwrap();
-            } else {
-                writeln!(
-                    output,
-                    "    primaryKeyExpression: \"({})\",",
-                    primary_key_cols.join(", ")
-                )
-                .unwrap();
-            }
         }
         if let Some(partition_by) = &table.partition_by {
             writeln!(output, "    partitionBy: {:?},", partition_by).unwrap();
