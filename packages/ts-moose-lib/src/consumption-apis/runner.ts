@@ -51,8 +51,14 @@ const toClientConfig = (config: ClickhouseConfig) => ({
 
 const createPath = (apisDir: string, path: string) => `${apisDir}${path}.ts`;
 
-const httpLogger = (req: http.IncomingMessage, res: http.ServerResponse) => {
-  console.log(`${req.method} ${req.url} ${res.statusCode}`);
+const httpLogger = (
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+  startMs: number,
+) => {
+  console.log(
+    `${req.method} ${req.url} ${res.statusCode} ${Date.now() - startMs}ms`,
+  );
 };
 
 const modulesCache = new Map<string, any>();
@@ -82,6 +88,8 @@ const apiHandler = async (
 ) => {
   const apis = isDmv2 ? await getApis() : new Map();
   return async (req: http.IncomingMessage, res: http.ServerResponse) => {
+    const start = Date.now();
+
     try {
       const url = new URL(req.url || "", "http://localhost");
       const fileName = url.pathname;
@@ -101,20 +109,20 @@ const apiHandler = async (
             if (enforceAuth) {
               res.writeHead(401, { "Content-Type": "application/json" });
               res.end(JSON.stringify({ error: "Unauthorized" }));
-              httpLogger(req, res);
+              httpLogger(req, res, start);
               return;
             }
           }
         } else if (enforceAuth) {
           res.writeHead(401, { "Content-Type": "application/json" });
           res.end(JSON.stringify({ error: "Unauthorized" }));
-          httpLogger(req, res);
+          httpLogger(req, res, start);
           return;
         }
       } else if (enforceAuth) {
         res.writeHead(401, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ error: "Unauthorized" }));
-        httpLogger(req, res);
+        httpLogger(req, res, start);
         return;
       }
 
@@ -224,10 +232,10 @@ const apiHandler = async (
 
       if (status) {
         res.writeHead(status, { "Content-Type": "application/json" });
-        httpLogger(req, res);
+        httpLogger(req, res, start);
       } else {
         res.writeHead(200, { "Content-Type": "application/json" });
-        httpLogger(req, res);
+        httpLogger(req, res, start);
       }
 
       res.end(body);
@@ -237,16 +245,16 @@ const apiHandler = async (
       if (Object.getPrototypeOf(error).constructor.name === "TypeGuardError") {
         res.writeHead(400, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ error: error.message }));
-        httpLogger(req, res);
+        httpLogger(req, res, start);
       }
       if (error instanceof Error) {
         res.writeHead(500, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ error: error.message }));
-        httpLogger(req, res);
+        httpLogger(req, res, start);
       } else {
         res.writeHead(500, { "Content-Type": "application/json" });
         res.end();
-        httpLogger(req, res);
+        httpLogger(req, res, start);
       }
     }
   };
