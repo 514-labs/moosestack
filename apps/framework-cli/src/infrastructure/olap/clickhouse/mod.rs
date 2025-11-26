@@ -44,9 +44,9 @@ use queries::{
 use serde::{Deserialize, Serialize};
 use sql_parser::{
     extract_engine_from_create_table, extract_indexes_from_create_table,
-    extract_sample_by_from_create_table, extract_source_tables_from_query,
-    extract_source_tables_from_query_regex, extract_table_settings_from_create_table,
-    normalize_sql_for_comparison, split_qualified_name,
+    extract_primary_key_from_create_table, extract_sample_by_from_create_table,
+    extract_source_tables_from_query, extract_source_tables_from_query_regex,
+    extract_table_settings_from_create_table, normalize_sql_for_comparison, split_qualified_name,
 };
 use std::collections::HashMap;
 use std::ops::Deref;
@@ -1630,8 +1630,12 @@ impl OlapOperations for ConfiguredDBClient {
             let order_by_cols = extract_order_by_from_create_query(&create_query);
             debug!("Extracted ORDER BY columns: {:?}", order_by_cols);
 
+            // Extract PRIMARY KEY expression if present
+            let primary_key_expr = extract_primary_key_from_create_table(&create_query);
+            debug!("Extracted PRIMARY KEY expression: {:?}", primary_key_expr);
+
             // Check if the CREATE TABLE statement has an explicit PRIMARY KEY clause
-            let has_explicit_primary_key = create_query.to_uppercase().contains("PRIMARY KEY");
+            let has_explicit_primary_key = primary_key_expr.is_some();
             debug!(
                 "Table {} has explicit PRIMARY KEY: {}",
                 table_name, has_explicit_primary_key
@@ -1823,6 +1827,72 @@ impl OlapOperations for ConfiguredDBClient {
 
             debug!("Found {} columns for table {}", columns.len(), table_name);
 
+            // Determine if we should use primary_key_expression or column-level primary_key flags
+            // We use primary_key_expression if:
+            // 1. The PRIMARY KEY clause exists and contains expressions (not just column names), OR
+            // 2. The order of columns in PRIMARY KEY differs from their order in the table
+            let use_primary_key_expression = if let Some(pk_expr) = &primary_key_expr {
+                // Parse the PRIMARY KEY expression to extract components
+                // Remove outer parentheses if present and split by comma
+                let pk_expr_trimmed = pk_expr.trim();
+                let pk_expr_content =
+                    if pk_expr_trimmed.starts_with('(') && pk_expr_trimmed.ends_with(')') {
+                        &pk_expr_trimmed[1..pk_expr_trimmed.len() - 1]
+                    } else {
+                        pk_expr_trimmed
+                    };
+
+                let pk_components: Vec<String> = pk_expr_content
+                    .split(',')
+                    .map(|s| s.trim().trim_matches('`').to_string())
+                    .filter(|s| !s.is_empty())
+                    .collect();
+
+                debug!("PRIMARY KEY components: {:?}", pk_components);
+
+                // Collect column names that are marked as primary_key=true
+                let primary_key_columns: Vec<String> = columns
+                    .iter()
+                    .filter(|c| c.primary_key)
+                    .map(|c| c.name.clone())
+                    .collect();
+
+                debug!("Columns marked as primary key: {:?}", primary_key_columns);
+
+                // Check if any component contains function calls or expressions (not just simple column names)
+                let has_expressions = pk_components
+                    .iter()
+                    .any(|comp| comp.contains('(') || comp.contains(')') || comp.contains(' '));
+
+                // Check if order differs from column order
+                let order_differs = pk_components != primary_key_columns;
+
+                debug!(
+                    "has_expressions: {}, order_differs: {}",
+                    has_expressions, order_differs
+                );
+
+                has_expressions || order_differs
+            } else {
+                false
+            };
+
+            // If we're using primary_key_expression, clear primary_key flags from columns
+            let (final_columns, final_primary_key_expression) = if use_primary_key_expression {
+                debug!("Using primary_key_expression instead of column-level primary_key flags");
+                let updated_columns: Vec<Column> = columns
+                    .into_iter()
+                    .map(|mut c| {
+                        c.primary_key = false;
+                        c
+                    })
+                    .collect();
+                (updated_columns, primary_key_expr.clone())
+            } else {
+                debug!("Using column-level primary_key flags");
+                (columns, None)
+            };
+
             // Extract base name and version for source primitive
             let (base_name, version) = extract_version_from_table_name(&table_name);
 
@@ -1889,7 +1959,7 @@ impl OlapOperations for ConfiguredDBClient {
             let table = Table {
                 // keep the name with version suffix, following PartialInfrastructureMap.convert_tables
                 name: table_name,
-                columns,
+                columns: final_columns,
                 order_by: OrderBy::Fields(order_by_cols), // Use the extracted ORDER BY columns
                 partition_by: {
                     let p = partition_key.trim();
@@ -1911,8 +1981,7 @@ impl OlapOperations for ConfiguredDBClient {
                 // the ON CLUSTER clause - it's only used during DDL execution and isn't persisted
                 // in system tables. Users must manually specify cluster in their table configs.
                 cluster_name: None,
-                // primary_key_expression is not extracted from introspection, only from user config
-                primary_key_expression: None,
+                primary_key_expression: final_primary_key_expression,
             };
             debug!("Created table object: {:?}", table);
 

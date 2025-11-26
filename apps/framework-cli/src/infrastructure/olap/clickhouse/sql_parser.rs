@@ -264,6 +264,60 @@ pub fn extract_sample_by_from_create_table(sql: &str) -> Option<String> {
     }
 }
 
+/// Extract PRIMARY KEY expression from a CREATE TABLE statement
+/// Returns the raw expression string that follows PRIMARY KEY, trimmed,
+/// and stops before ORDER BY, SETTINGS, or end of statement
+///
+/// Note: This extracts the PRIMARY KEY clause, which in ClickHouse is used
+/// to specify a different primary key than the ORDER BY clause.
+pub fn extract_primary_key_from_create_table(sql: &str) -> Option<String> {
+    let upper = sql.to_uppercase();
+
+    // Find PRIMARY KEY that is NOT part of "ORDER BY PRIMARY KEY"
+    // We need to check that it's a standalone PRIMARY KEY clause
+    let mut primary_key_pos = None;
+    for (idx, _) in upper.match_indices("PRIMARY KEY") {
+        // Check if this is part of ORDER BY by looking at preceding text
+        let preceding_start = idx.saturating_sub(20);
+        let preceding = &upper[preceding_start..idx].trim();
+
+        // If preceded by ORDER BY, this is "ORDER BY PRIMARY KEY", not a standalone PRIMARY KEY
+        if !preceding.ends_with("ORDER BY") {
+            primary_key_pos = Some(idx);
+            break;
+        }
+    }
+
+    let pos = primary_key_pos?;
+
+    // After the keyword
+    let after = &sql[pos + "PRIMARY KEY".len()..];
+    let after_upper = after.to_uppercase();
+
+    // Find earliest terminating keyword after PRIMARY KEY
+    let mut end = after.len();
+    if let Some(i) = after_upper.find("ORDER BY") {
+        end = end.min(i);
+    }
+    if let Some(i) = after_upper.find("SAMPLE BY") {
+        end = end.min(i);
+    }
+    if let Some(i) = after_upper.find(" SETTINGS") {
+        end = end.min(i);
+    }
+    // Note: Match " TTL" with leading space to avoid matching substrings
+    if let Some(i) = after_upper.find(" TTL") {
+        end = end.min(i);
+    }
+
+    let expr = after[..end].trim();
+    if expr.is_empty() {
+        None
+    } else {
+        Some(expr.to_string())
+    }
+}
+
 // sql_parser library cannot handle clickhouse indexes last time i tried
 // `show indexes` does not provide index argument info
 // so we're stuck with this
@@ -1674,6 +1728,83 @@ pub mod tests {
         assert_eq!(
             extract_sample_by_from_create_table(sql),
             Some("cattle_count".to_string())
+        );
+    }
+
+    // Tests for extract_primary_key_from_create_table
+    #[test]
+    fn test_extract_primary_key_simple() {
+        let sql = r#"CREATE TABLE t (id UInt64, name String) ENGINE = MergeTree PRIMARY KEY id ORDER BY id"#;
+        assert_eq!(
+            extract_primary_key_from_create_table(sql),
+            Some("id".to_string())
+        );
+    }
+
+    #[test]
+    fn test_extract_primary_key_tuple() {
+        let sql = r#"CREATE TABLE t (id UInt64, ts DateTime) ENGINE = MergeTree PRIMARY KEY (id, ts) ORDER BY (id, ts)"#;
+        assert_eq!(
+            extract_primary_key_from_create_table(sql),
+            Some("(id, ts)".to_string())
+        );
+    }
+
+    #[test]
+    fn test_extract_primary_key_with_expression() {
+        let sql = r#"CREATE TABLE t (id UInt64, ts DateTime) ENGINE = MergeTree PRIMARY KEY (id, toYYYYMM(ts)) ORDER BY (id, ts)"#;
+        assert_eq!(
+            extract_primary_key_from_create_table(sql),
+            Some("(id, toYYYYMM(ts))".to_string())
+        );
+    }
+
+    #[test]
+    fn test_extract_primary_key_order_by_primary_key() {
+        // Test that we DON'T extract "ORDER BY PRIMARY KEY" as a PRIMARY KEY clause
+        let sql = r#"CREATE TABLE t (id UInt64) ENGINE = MergeTree ORDER BY PRIMARY KEY id"#;
+        assert_eq!(extract_primary_key_from_create_table(sql), None);
+    }
+
+    #[test]
+    fn test_extract_primary_key_with_settings() {
+        let sql = r#"CREATE TABLE t (id UInt64, name String) ENGINE = MergeTree PRIMARY KEY id ORDER BY id SETTINGS index_granularity = 8192"#;
+        assert_eq!(
+            extract_primary_key_from_create_table(sql),
+            Some("id".to_string())
+        );
+    }
+
+    #[test]
+    fn test_extract_primary_key_no_primary_key() {
+        let sql = r#"CREATE TABLE t (id UInt64) ENGINE = MergeTree ORDER BY id"#;
+        assert_eq!(extract_primary_key_from_create_table(sql), None);
+    }
+
+    #[test]
+    fn test_extract_primary_key_nested_objects() {
+        // NESTED_OBJECTS_SQL has "PRIMARY KEY id"
+        assert_eq!(
+            extract_primary_key_from_create_table(NESTED_OBJECTS_SQL),
+            Some("id".to_string())
+        );
+    }
+
+    #[test]
+    fn test_extract_primary_key_with_sample_by() {
+        let sql = r#"CREATE TABLE t (id UInt64, hash UInt64) ENGINE = MergeTree PRIMARY KEY id SAMPLE BY hash ORDER BY (id, hash)"#;
+        assert_eq!(
+            extract_primary_key_from_create_table(sql),
+            Some("id".to_string())
+        );
+    }
+
+    #[test]
+    fn test_extract_primary_key_with_ttl() {
+        let sql = r#"CREATE TABLE t (id UInt64, ts DateTime) ENGINE = MergeTree PRIMARY KEY id ORDER BY id TTL ts + INTERVAL 30 DAY"#;
+        assert_eq!(
+            extract_primary_key_from_create_table(sql),
+            Some("id".to_string())
         );
     }
 
