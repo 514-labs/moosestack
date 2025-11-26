@@ -93,13 +93,13 @@ pub fn tool_definition() -> Tool {
     Tool {
         name: "get_stream_sample".into(),
         description: Some(
-            "Retrieve sample messages from a Redpanda/Kafka streaming topic. Get the last N messages from any topic/stream for debugging and exploration. Returns messages as JSON arrays with message payloads.".into()
+            "Sample recent messages from streaming topics to verify data flow, debug transformations, or inspect payloads. Get last N messages from any topic. Use after get_infra_map to see available topics.".into()
         ),
         input_schema: Arc::new(schema.as_object().unwrap().clone()),
         annotations: None,
         icons: None,
         output_schema: None,
-        title: Some("Get Stream Sample".into()),
+        title: Some("Sample Stream Messages".into()),
     }
 }
 

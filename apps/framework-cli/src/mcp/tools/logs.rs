@@ -172,13 +172,13 @@ pub fn tool_definition() -> Tool {
     Tool {
         name: "get_logs".into(),
         description: Some(
-            "Retrieve and filter Moose dev server logs. Access recent log entries from the current dev server session, filter by log level (ERROR, WARN, INFO, DEBUG, TRACE), and search with regex patterns (e.g., 'error|warn', '(?i)connection', 'user_\\d+').".into()
+            "Debug issues by checking dev server logs. Filter by level (ERROR/WARN/INFO/DEBUG/TRACE) or search with regex. Use when troubleshooting errors, connection issues, or unexpected behavior.".into()
         ),
         input_schema: Arc::new(schema.as_object().unwrap().clone()),
         annotations: None,
         icons: None,
         output_schema: None,
-        title: Some("Get Moose Dev Server Logs".into()),
+        title: Some("Get Dev Server Logs".into()),
     }
 }
 

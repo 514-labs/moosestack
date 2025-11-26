@@ -137,15 +137,15 @@ pub fn tool_definition() -> Tool {
     });
 
     Tool {
-        name: "diagnose_infrastructure".into(),
+        name: "get_issues".into(),
         description: Some(
-            "Proactively diagnose infrastructure issues by intelligently checking relevant diagnostic sources based on infrastructure type. For ClickHouse, automatically checks: stuck mutations, S3Queue ingestion errors (for S3Queue tables), replication health (for replicated tables), data parts issues, background merge problems, system errors, and stopped operations. Returns structured, actionable information about errors and warnings with suggested remediation steps.".into()
+            "Proactively scan for infrastructure health issues (stuck mutations, replication errors, S3Queue failures, merge problems). Auto-checks relevant diagnostics based on infrastructure type. Use when investigating errors or performance issues. Returns actionable problems with remediation suggestions.".into()
         ),
         input_schema: Arc::new(schema.as_object().unwrap().clone()),
         annotations: None,
         icons: None,
         output_schema: None,
-        title: Some("Diagnose Infrastructure Issues".into()),
+        title: Some("Get Infrastructure Issues".into()),
     }
 }
 
