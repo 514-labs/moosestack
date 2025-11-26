@@ -14,7 +14,7 @@
 import express from "express";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
-import { z } from "zod";
+import { z } from "zod/v4";
 import { WebApp, getMooseUtils } from "@514labs/moose-lib";
 
 // Create Express application
@@ -50,7 +50,7 @@ const serverFactory = () => {
       },
       outputSchema: {
         rows: z
-          .array(z.record(z.any()))
+          .array(z.record(z.string(), z.any()))
           .describe("Query results as array of row objects"),
         rowCount: z.number().describe("Number of rows returned"),
       },
