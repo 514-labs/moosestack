@@ -72,13 +72,13 @@ async function checkLatestPublishedCLI(): Promise<void> {
     console.log("npm install output:", installResult.stdout);
 
     // Find the installed CLI binary
-    const { stdout: cliPath } = await execAsync(
-      "npm bin --no-save",
-    );
+    const { stdout: cliPath } = await execAsync("npm bin --no-save");
     LATEST_CLI_PATH = path.join(cliPath.trim(), "moose-cli");
 
     // Verify it works
-    const { stdout: version } = await execAsync(`"${LATEST_CLI_PATH}" --version`);
+    const { stdout: version } = await execAsync(
+      `"${LATEST_CLI_PATH}" --version`,
+    );
     console.log("Latest published CLI version:", version.trim());
   } catch (error: any) {
     console.error("Failed to install latest CLI from npm:", error.message);
