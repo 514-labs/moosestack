@@ -5,8 +5,8 @@ mod server;
 mod tools;
 
 pub use compressed_map::{
-    build_compressed_map, build_resource_uri, parse_resource_uri, ComponentNode, ComponentStatus,
-    ComponentType, CompressedInfraMap, Connection, ConnectionType, MapStats,
+    build_compressed_map, build_resource_uri, parse_resource_uri, ComponentNode, ComponentType,
+    CompressedInfraMap, Connection, ConnectionType, MapStats,
 };
 pub use embedded_docs::{list_resources, read_resource};
 pub use infra_resources::{list_infra_resources, read_infra_resource};
