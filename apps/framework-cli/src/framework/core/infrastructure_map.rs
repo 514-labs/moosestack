@@ -2777,6 +2777,7 @@ fn columns_are_equivalent(before: &Column, after: &Column) -> bool {
         || before.default != after.default
         || before.annotations != after.annotations
         || before.comment != after.comment
+        || before.codec != after.codec
     {
         return false;
     }
@@ -4600,6 +4601,70 @@ mod diff_tests {
 
         // These should be equivalent - name differences at all levels don't matter
         assert!(columns_are_equivalent(&col_generated, &col_user));
+    }
+
+    #[test]
+    fn test_columns_are_equivalent_with_codec() {
+        use crate::framework::core::infrastructure::table::{Column, ColumnType};
+
+        let base_col = Column {
+            name: "data".to_string(),
+            data_type: ColumnType::String,
+            required: true,
+            unique: false,
+            primary_key: false,
+            default: None,
+            annotations: vec![],
+            comment: None,
+            ttl: None,
+            codec: None,
+        };
+
+        // Test 1: Columns with same codec should be equivalent
+        let col_with_codec1 = Column {
+            codec: Some("ZSTD(3)".to_string()),
+            ..base_col.clone()
+        };
+        let col_with_codec2 = Column {
+            codec: Some("ZSTD(3)".to_string()),
+            ..base_col.clone()
+        };
+        assert!(columns_are_equivalent(&col_with_codec1, &col_with_codec2));
+
+        // Test 2: Columns with different codecs should not be equivalent
+        let col_with_different_codec = Column {
+            codec: Some("LZ4".to_string()),
+            ..base_col.clone()
+        };
+        assert!(!columns_are_equivalent(
+            &col_with_codec1,
+            &col_with_different_codec
+        ));
+
+        // Test 3: Column with codec vs column without codec should not be equivalent
+        assert!(!columns_are_equivalent(&col_with_codec1, &base_col));
+
+        // Test 4: Columns with codec chains should be detected as different
+        let col_with_chain1 = Column {
+            codec: Some("Delta, LZ4".to_string()),
+            ..base_col.clone()
+        };
+        let col_with_chain2 = Column {
+            codec: Some("Delta, ZSTD".to_string()),
+            ..base_col.clone()
+        };
+        assert!(!columns_are_equivalent(&col_with_chain1, &col_with_chain2));
+
+        // Test 5: Codec with different compression levels should be detected as different
+        let col_zstd3 = Column {
+            codec: Some("ZSTD(3)".to_string()),
+            ..base_col.clone()
+        };
+        let col_zstd9 = Column {
+            codec: Some("ZSTD(9)".to_string()),
+            ..base_col.clone()
+        };
+        assert!(!columns_are_equivalent(&col_zstd3, &col_zstd9));
     }
 }
 
