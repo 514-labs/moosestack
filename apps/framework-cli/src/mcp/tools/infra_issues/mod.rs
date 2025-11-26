@@ -139,13 +139,13 @@ pub fn tool_definition() -> Tool {
     Tool {
         name: "get_issues".into(),
         description: Some(
-            "Proactively scan for infrastructure health issues (stuck mutations, replication errors, S3Queue failures, merge problems). Auto-checks relevant diagnostics based on infrastructure type. Use when investigating errors or performance issues. Returns actionable problems with remediation suggestions.".into()
+            "Proactively scan for health issues (stuck mutations, replication errors, S3Queue failures, merge problems). Auto-checks relevant diagnostics based on infrastructure type. Use when investigating errors or performance issues. Returns actionable problems with remediation suggestions.".into()
         ),
         input_schema: Arc::new(schema.as_object().unwrap().clone()),
         annotations: None,
         icons: None,
         output_schema: None,
-        title: Some("Get Infrastructure Issues".into()),
+        title: Some("Get Project Issues".into()),
     }
 }
 
