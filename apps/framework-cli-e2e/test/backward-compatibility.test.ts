@@ -266,7 +266,9 @@ describe("Backward Compatibility Tests", function () {
     // Clean up temporary CLI install directory
     if (CLI_INSTALL_DIR) {
       try {
-        console.log(`Cleaning up temporary CLI install directory: ${CLI_INSTALL_DIR}`);
+        console.log(
+          `Cleaning up temporary CLI install directory: ${CLI_INSTALL_DIR}`,
+        );
         fs.rmSync(CLI_INSTALL_DIR, { recursive: true, force: true });
       } catch (error) {
         console.error(`Failed to clean up CLI install directory: ${error}`);
