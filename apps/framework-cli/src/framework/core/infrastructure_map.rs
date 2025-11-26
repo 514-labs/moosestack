@@ -52,6 +52,7 @@ use crate::framework::core::infrastructure_map::Change::Added;
 use crate::framework::languages::SupportedLanguages;
 use crate::framework::python::datamodel_config::load_main_py;
 use crate::framework::scripts::Workflow;
+use crate::infrastructure::olap::clickhouse::codec_expressions_are_equivalent;
 use crate::infrastructure::olap::clickhouse::config::DEFAULT_DATABASE_NAME;
 use crate::infrastructure::redis::redis_client::RedisClient;
 use crate::project::Project;
@@ -2769,7 +2770,7 @@ fn ttl_expressions_are_equivalent(before: &Option<String>, after: &Option<String
 /// # Returns
 /// `true` if the columns are semantically equivalent, `false` otherwise
 fn columns_are_equivalent(before: &Column, after: &Column) -> bool {
-    // Check all non-data_type and non-ttl fields first
+    // Check all non-data_type and non-ttl and non-codec fields first
     if before.name != after.name
         || before.required != after.required
         || before.unique != after.unique
@@ -2777,13 +2778,18 @@ fn columns_are_equivalent(before: &Column, after: &Column) -> bool {
         || before.default != after.default
         || before.annotations != after.annotations
         || before.comment != after.comment
-        || before.codec != after.codec
     {
         return false;
     }
 
     // Special handling for TTL comparison: normalize both expressions before comparing
     if !ttl_expressions_are_equivalent(&before.ttl, &after.ttl) {
+        return false;
+    }
+
+    // Special handling for codec comparison: normalize both expressions before comparing
+    // This handles cases where ClickHouse adds default parameters (e.g., Delta → Delta(4))
+    if !codec_expressions_are_equivalent(&before.codec, &after.codec) {
         return false;
     }
 
@@ -4665,6 +4671,39 @@ mod diff_tests {
             ..base_col.clone()
         };
         assert!(!columns_are_equivalent(&col_zstd3, &col_zstd9));
+
+        // Test 6: Normalized codec comparison - user "Delta" vs ClickHouse "Delta(4)"
+        let col_user_delta = Column {
+            codec: Some("Delta".to_string()),
+            ..base_col.clone()
+        };
+        let col_ch_delta = Column {
+            codec: Some("Delta(4)".to_string()),
+            ..base_col.clone()
+        };
+        assert!(columns_are_equivalent(&col_user_delta, &col_ch_delta));
+
+        // Test 7: Normalized codec comparison - user "Gorilla" vs ClickHouse "Gorilla(8)"
+        let col_user_gorilla = Column {
+            codec: Some("Gorilla".to_string()),
+            ..base_col.clone()
+        };
+        let col_ch_gorilla = Column {
+            codec: Some("Gorilla(8)".to_string()),
+            ..base_col.clone()
+        };
+        assert!(columns_are_equivalent(&col_user_gorilla, &col_ch_gorilla));
+
+        // Test 8: Normalized chain comparison - "Delta, LZ4" vs "Delta(4), LZ4"
+        let col_user_chain = Column {
+            codec: Some("Delta, LZ4".to_string()),
+            ..base_col.clone()
+        };
+        let col_ch_chain = Column {
+            codec: Some("Delta(4), LZ4".to_string()),
+            ..base_col.clone()
+        };
+        assert!(columns_are_equivalent(&col_user_chain, &col_ch_chain));
     }
 }
 

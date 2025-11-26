@@ -2340,6 +2340,34 @@ pub fn extract_table_ttl_from_create_query(create_query: &str) -> Option<String>
 /// - "timestamp + INTERVAL 1 MONTH" → "timestamp + toIntervalMonth(1)"
 /// - "timestamp + INTERVAL 90 DAY DELETE" → "timestamp + toIntervalDay(90)"
 /// - "timestamp + toIntervalDay(90) DELETE" → "timestamp + toIntervalDay(90)"
+pub fn normalize_codec_expression(expr: &str) -> String {
+    expr.split(',')
+        .map(|codec| {
+            let trimmed = codec.trim();
+            match trimmed {
+                "Delta" => "Delta(4)",
+                "Gorilla" => "Gorilla(8)",
+                "ZSTD" => "ZSTD(1)",
+                // DoubleDelta, LZ4, NONE, and any codec with params stay as-is
+                _ => trimmed,
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+/// Checks if two codec expressions are semantically equivalent after normalization.
+///
+/// This handles cases where ClickHouse normalizes codecs by adding default parameters.
+/// For example, "Delta, LZ4" from user code is equivalent to "Delta(4), LZ4" from ClickHouse.
+pub fn codec_expressions_are_equivalent(before: &Option<String>, after: &Option<String>) -> bool {
+    match (before, after) {
+        (None, None) => true,
+        (Some(b), Some(a)) => normalize_codec_expression(b) == normalize_codec_expression(a),
+        _ => false,
+    }
+}
+
 pub fn normalize_ttl_expression(expr: &str) -> String {
     use regex::Regex;
 
@@ -2970,6 +2998,108 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
             order_by,
             vec!["cityHash64(id)".to_string(), "lower(name)".to_string()]
         );
+    }
+
+    #[test]
+    fn test_normalize_codec_expression() {
+        // Test single codec without params - should add defaults
+        assert_eq!(normalize_codec_expression("Delta"), "Delta(4)");
+        assert_eq!(normalize_codec_expression("Gorilla"), "Gorilla(8)");
+        assert_eq!(normalize_codec_expression("ZSTD"), "ZSTD(1)");
+
+        // Test codecs with params - should stay as-is
+        assert_eq!(normalize_codec_expression("Delta(4)"), "Delta(4)");
+        assert_eq!(normalize_codec_expression("Gorilla(8)"), "Gorilla(8)");
+        assert_eq!(normalize_codec_expression("ZSTD(3)"), "ZSTD(3)");
+        assert_eq!(normalize_codec_expression("ZSTD(9)"), "ZSTD(9)");
+
+        // Test codecs that don't have default params
+        assert_eq!(normalize_codec_expression("DoubleDelta"), "DoubleDelta");
+        assert_eq!(normalize_codec_expression("LZ4"), "LZ4");
+        assert_eq!(normalize_codec_expression("NONE"), "NONE");
+
+        // Test codec chains
+        assert_eq!(normalize_codec_expression("Delta, LZ4"), "Delta(4), LZ4");
+        assert_eq!(
+            normalize_codec_expression("Gorilla, ZSTD"),
+            "Gorilla(8), ZSTD(1)"
+        );
+        assert_eq!(
+            normalize_codec_expression("Delta, ZSTD(3)"),
+            "Delta(4), ZSTD(3)"
+        );
+        assert_eq!(
+            normalize_codec_expression("DoubleDelta, LZ4"),
+            "DoubleDelta, LZ4"
+        );
+
+        // Test whitespace handling
+        assert_eq!(normalize_codec_expression("Delta,LZ4"), "Delta(4), LZ4");
+        assert_eq!(
+            normalize_codec_expression("  Delta  ,  LZ4  "),
+            "Delta(4), LZ4"
+        );
+
+        // Test already normalized expressions
+        assert_eq!(normalize_codec_expression("Delta(4), LZ4"), "Delta(4), LZ4");
+        assert_eq!(
+            normalize_codec_expression("Gorilla(8), ZSTD(3)"),
+            "Gorilla(8), ZSTD(3)"
+        );
+    }
+
+    #[test]
+    fn test_codec_expressions_are_equivalent() {
+        // Test None vs None
+        assert!(codec_expressions_are_equivalent(&None, &None));
+
+        // Test Some vs None
+        assert!(!codec_expressions_are_equivalent(
+            &Some("ZSTD(3)".to_string()),
+            &None
+        ));
+
+        // Test same codec
+        assert!(codec_expressions_are_equivalent(
+            &Some("ZSTD(3)".to_string()),
+            &Some("ZSTD(3)".to_string())
+        ));
+
+        // Test normalization: user writes "Delta", ClickHouse returns "Delta(4)"
+        assert!(codec_expressions_are_equivalent(
+            &Some("Delta".to_string()),
+            &Some("Delta(4)".to_string())
+        ));
+
+        // Test normalization: user writes "Gorilla", ClickHouse returns "Gorilla(8)"
+        assert!(codec_expressions_are_equivalent(
+            &Some("Gorilla".to_string()),
+            &Some("Gorilla(8)".to_string())
+        ));
+
+        // Test normalization: user writes "ZSTD", ClickHouse returns "ZSTD(1)"
+        assert!(codec_expressions_are_equivalent(
+            &Some("ZSTD".to_string()),
+            &Some("ZSTD(1)".to_string())
+        ));
+
+        // Test chain normalization
+        assert!(codec_expressions_are_equivalent(
+            &Some("Delta, LZ4".to_string()),
+            &Some("Delta(4), LZ4".to_string())
+        ));
+
+        // Test different codecs
+        assert!(!codec_expressions_are_equivalent(
+            &Some("ZSTD(3)".to_string()),
+            &Some("ZSTD(9)".to_string())
+        ));
+
+        // Test different chains
+        assert!(!codec_expressions_are_equivalent(
+            &Some("Delta, LZ4".to_string()),
+            &Some("Delta, ZSTD".to_string())
+        ));
     }
 
     #[test]

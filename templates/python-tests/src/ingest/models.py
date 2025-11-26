@@ -697,7 +697,7 @@ class CodecTest(BaseModel):
     request_count: Annotated[float, clickhouse_codec("DoubleDelta, LZ4")]
     user_agent: Annotated[str, clickhouse_codec("ZSTD(3)")]
     tags: Annotated[list[str], clickhouse_codec("LZ4")]
-    status_code: int
+    status_code: float
 
 
 codec_test_model = IngestPipeline[CodecTest]("CodecTest", IngestPipelineConfig(
