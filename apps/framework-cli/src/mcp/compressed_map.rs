@@ -19,6 +19,7 @@ pub struct CompressedInfraMap {
 }
 
 /// Lightweight component node with resource reference
+/// Note: MCP resource URI can be reconstructed as: moose://infra/{type}s/{id}
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ComponentNode {
     /// Unique identifier for the component
@@ -28,13 +29,8 @@ pub struct ComponentNode {
     pub component_type: ComponentType,
     /// Display name
     pub name: String,
-    /// MCP resource URI for detailed information
-    pub resource_uri: String,
-    /// Current operational status
-    pub status: ComponentStatus,
-    /// Source file path where the component is declared
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub source_file: Option<String>,
+    /// Source file path where the component is declared (empty string if not tracked)
+    pub source_file: String,
 }
 
 /// Connection between two components showing data flow
@@ -47,9 +43,6 @@ pub struct Connection {
     /// Type of connection/relationship
     #[serde(rename = "type")]
     pub connection_type: ConnectionType,
-    /// Optional description of the relationship
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub description: Option<String>,
 }
 
 /// Type of infrastructure component
@@ -114,18 +107,6 @@ pub enum ConnectionType {
     PullsFrom,
     /// SQL resource pushes data to component
     PushesTo,
-}
-
-/// Operational status of a component
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-pub enum ComponentStatus {
-    /// Component is operational
-    Active,
-    /// Component exists but is not currently active
-    Inactive,
-    /// Component has errors or issues
-    Error,
 }
 
 /// Statistics about the infrastructure map
@@ -198,6 +179,27 @@ impl Default for CompressedInfraMap {
     }
 }
 
+/// Convert an absolute file path to a relative path from the project root
+/// Strips the project directory prefix to get a path like "app/datamodels/User.ts"
+fn make_relative_path(absolute_path: &str) -> String {
+    // Find the last occurrence of "/app/" or "\app\" and take everything from "app/" onwards
+    // This works for paths like "/Users/name/project/app/datamodels/User.ts" -> "app/datamodels/User.ts"
+    if let Some(pos) = absolute_path.rfind("/app/") {
+        return absolute_path[pos + 1..].to_string();
+    }
+    if let Some(pos) = absolute_path.rfind("\\app\\") {
+        return absolute_path[pos + 1..].replace('\\', "/");
+    }
+
+    // If path already starts with "app/", return as-is
+    if absolute_path.starts_with("app/") || absolute_path.starts_with("app\\") {
+        return absolute_path.replace('\\', "/");
+    }
+
+    // Fallback: return the original path if we can't find "app/"
+    absolute_path.to_string()
+}
+
 /// Build a compressed infrastructure map from the full InfrastructureMap
 pub fn build_compressed_map(
     infra_map: &crate::framework::core::infrastructure_map::InfrastructureMap,
@@ -206,55 +208,66 @@ pub fn build_compressed_map(
 
     // Add all topics
     for (key, topic) in &infra_map.topics {
+        let source_file = topic
+            .metadata
+            .as_ref()
+            .and_then(|m| m.source.as_ref())
+            .map(|s| make_relative_path(&s.file))
+            .unwrap_or_default();
+
         compressed.add_component(ComponentNode {
             id: key.clone(),
             component_type: ComponentType::Topic,
             name: topic.name.clone(),
-            resource_uri: build_resource_uri(ComponentType::Topic, key),
-            status: ComponentStatus::Active,
-            source_file: topic
-                .metadata
-                .as_ref()
-                .and_then(|m| m.source.as_ref())
-                .map(|s| s.file.clone()),
+            source_file,
         });
     }
 
     // Add all tables
     for (key, table) in &infra_map.tables {
+        let source_file = table
+            .metadata
+            .as_ref()
+            .and_then(|m| m.source.as_ref())
+            .map(|s| make_relative_path(&s.file))
+            .unwrap_or_default();
+
         compressed.add_component(ComponentNode {
             id: key.clone(),
             component_type: ComponentType::Table,
             name: table.name.clone(),
-            resource_uri: build_resource_uri(ComponentType::Table, key),
-            status: ComponentStatus::Active,
-            source_file: table
-                .metadata
-                .as_ref()
-                .and_then(|m| m.source.as_ref())
-                .map(|s| s.file.clone()),
+            source_file,
         });
     }
 
     // Add all views
     for (key, view) in &infra_map.views {
+        use crate::framework::core::infrastructure::view::ViewType;
+
+        // Views are aliases to tables, so try to use the source table's file
+        let source_file = match &view.view_type {
+            ViewType::TableAlias { source_table_name } => infra_map
+                .tables
+                .get(source_table_name)
+                .and_then(|t| t.metadata.as_ref())
+                .and_then(|m| m.source.as_ref())
+                .map(|s| make_relative_path(&s.file))
+                .unwrap_or_default(),
+        };
+
         compressed.add_component(ComponentNode {
             id: key.clone(),
             component_type: ComponentType::View,
             name: view.name.clone(),
-            resource_uri: build_resource_uri(ComponentType::View, key),
-            status: ComponentStatus::Active,
-            source_file: None, // Views don't have metadata with source location
+            source_file,
         });
 
         // Add connection from view to its target table
-        use crate::framework::core::infrastructure::view::ViewType;
         let ViewType::TableAlias { source_table_name } = &view.view_type;
         compressed.add_connection(Connection {
             from: key.clone(),
             to: source_table_name.clone(),
             connection_type: ConnectionType::References,
-            description: Some("View references table".to_string()),
         });
     }
 
@@ -262,17 +275,18 @@ pub fn build_compressed_map(
     for (key, api) in &infra_map.api_endpoints {
         use crate::framework::core::infrastructure::api_endpoint::APIType;
 
+        let source_file = api
+            .metadata
+            .as_ref()
+            .and_then(|m| m.source.as_ref())
+            .map(|s| make_relative_path(&s.file))
+            .unwrap_or_default();
+
         compressed.add_component(ComponentNode {
             id: key.clone(),
             component_type: ComponentType::ApiEndpoint,
             name: format!("{:?} {}", api.method, api.path.display()),
-            resource_uri: build_resource_uri(ComponentType::ApiEndpoint, key),
-            status: ComponentStatus::Active,
-            source_file: api
-                .metadata
-                .as_ref()
-                .and_then(|m| m.source.as_ref())
-                .map(|s| s.file.clone()),
+            source_file,
         });
 
         // Add connections based on API type
@@ -284,7 +298,6 @@ pub fn build_compressed_map(
                     from: key.clone(),
                     to: target_topic_id.clone(),
                     connection_type: ConnectionType::Produces,
-                    description: Some("API produces to topic".to_string()),
                 });
             }
             APIType::EGRESS { .. } => {
@@ -297,17 +310,18 @@ pub fn build_compressed_map(
 
     // Add all functions
     for (key, func) in &infra_map.function_processes {
+        let source_file = func
+            .metadata
+            .as_ref()
+            .and_then(|m| m.source.as_ref())
+            .map(|s| make_relative_path(&s.file))
+            .unwrap_or_default();
+
         compressed.add_component(ComponentNode {
             id: key.clone(),
             component_type: ComponentType::Function,
             name: func.name.clone(),
-            resource_uri: build_resource_uri(ComponentType::Function, key),
-            status: ComponentStatus::Active,
-            source_file: func
-                .metadata
-                .as_ref()
-                .and_then(|m| m.source.as_ref())
-                .map(|s| s.file.clone()),
+            source_file,
         });
 
         // Add connections: source topic -> function -> target topic
@@ -315,14 +329,12 @@ pub fn build_compressed_map(
             from: func.source_topic_id.clone(),
             to: key.clone(),
             connection_type: ConnectionType::Transforms,
-            description: Some("Function consumes from topic".to_string()),
         });
         if let Some(target_topic_id) = &func.target_topic_id {
             compressed.add_connection(Connection {
                 from: key.clone(),
                 to: target_topic_id.clone(),
                 connection_type: ConnectionType::Produces,
-                description: Some("Function produces to topic".to_string()),
             });
         }
     }
@@ -333,26 +345,39 @@ pub fn build_compressed_map(
             id: key.clone(),
             component_type: ComponentType::SqlResource,
             name: sql.name.clone(),
-            resource_uri: build_resource_uri(ComponentType::SqlResource, key),
-            status: ComponentStatus::Active,
-            source_file: None, // SQL resources don't have metadata field with source
+            source_file: String::new(), // SQL resources don't have metadata field with source
         });
 
         // Add connections based on lineage
+        use crate::framework::core::infrastructure::InfrastructureSignature;
         for source in &sql.pulls_data_from {
+            let source_id = match source {
+                InfrastructureSignature::Table { id } => id.clone(),
+                InfrastructureSignature::Topic { id } => id.clone(),
+                InfrastructureSignature::ApiEndpoint { id } => id.clone(),
+                InfrastructureSignature::TopicToTableSyncProcess { id } => id.clone(),
+                InfrastructureSignature::View { id } => id.clone(),
+                InfrastructureSignature::SqlResource { id } => id.clone(),
+            };
             compressed.add_connection(Connection {
-                from: format!("{:?}", source), // Convert signature to string
+                from: source_id,
                 to: key.clone(),
                 connection_type: ConnectionType::PullsFrom,
-                description: Some("SQL resource pulls data".to_string()),
             });
         }
         for target in &sql.pushes_data_to {
+            let target_id = match target {
+                InfrastructureSignature::Table { id } => id.clone(),
+                InfrastructureSignature::Topic { id } => id.clone(),
+                InfrastructureSignature::ApiEndpoint { id } => id.clone(),
+                InfrastructureSignature::TopicToTableSyncProcess { id } => id.clone(),
+                InfrastructureSignature::View { id } => id.clone(),
+                InfrastructureSignature::SqlResource { id } => id.clone(),
+            };
             compressed.add_connection(Connection {
                 from: key.clone(),
-                to: format!("{:?}", target), // Convert signature to string
+                to: target_id,
                 connection_type: ConnectionType::PushesTo,
-                description: Some("SQL resource pushes data".to_string()),
             });
         }
     }
@@ -363,21 +388,26 @@ pub fn build_compressed_map(
             id: key.clone(),
             component_type: ComponentType::Workflow,
             name: workflow.name().to_string(),
-            resource_uri: build_resource_uri(ComponentType::Workflow, key),
-            status: ComponentStatus::Active,
-            source_file: None, // Workflows don't have metadata field with source
+            source_file: format!("app/workflows/{}", workflow.name()),
         });
     }
 
     // Add topic-to-table sync processes
     for (key, sync) in &infra_map.topic_to_table_sync_processes {
+        // Sync processes are derived from the source topic, use its source file
+        let source_file = infra_map
+            .topics
+            .get(&sync.source_topic_id)
+            .and_then(|t| t.metadata.as_ref())
+            .and_then(|m| m.source.as_ref())
+            .map(|s| make_relative_path(&s.file))
+            .unwrap_or_default();
+
         compressed.add_component(ComponentNode {
             id: key.clone(),
             component_type: ComponentType::TopicTableSync,
             name: format!("{} -> {}", sync.source_topic_id, sync.target_table_id),
-            resource_uri: build_resource_uri(ComponentType::TopicTableSync, key),
-            status: ComponentStatus::Active,
-            source_file: None, // Sync processes are auto-generated, no source file
+            source_file,
         });
 
         // Add connections: topic -> sync -> table
@@ -385,25 +415,30 @@ pub fn build_compressed_map(
             from: sync.source_topic_id.clone(),
             to: key.clone(),
             connection_type: ConnectionType::Ingests,
-            description: Some("Sync reads from topic".to_string()),
         });
         compressed.add_connection(Connection {
             from: key.clone(),
             to: sync.target_table_id.clone(),
             connection_type: ConnectionType::Ingests,
-            description: Some("Sync writes to table".to_string()),
         });
     }
 
     // Add topic-to-topic sync processes
     for (key, sync) in &infra_map.topic_to_topic_sync_processes {
+        // Sync processes are derived from the source topic, use its source file
+        let source_file = infra_map
+            .topics
+            .get(&sync.source_topic_id)
+            .and_then(|t| t.metadata.as_ref())
+            .and_then(|m| m.source.as_ref())
+            .map(|s| make_relative_path(&s.file))
+            .unwrap_or_default();
+
         compressed.add_component(ComponentNode {
             id: key.clone(),
             component_type: ComponentType::TopicTopicSync,
             name: format!("{} -> {}", sync.source_topic_id, sync.target_topic_id),
-            resource_uri: build_resource_uri(ComponentType::TopicTopicSync, key),
-            status: ComponentStatus::Active,
-            source_file: None, // Sync processes are auto-generated, no source file
+            source_file,
         });
 
         // Add connections: source topic -> sync -> target topic
@@ -411,13 +446,11 @@ pub fn build_compressed_map(
             from: sync.source_topic_id.clone(),
             to: key.clone(),
             connection_type: ConnectionType::Transforms,
-            description: Some("Sync reads from topic".to_string()),
         });
         compressed.add_connection(Connection {
             from: key.clone(),
             to: sync.target_topic_id.clone(),
             connection_type: ConnectionType::Produces,
-            description: Some("Sync writes to topic".to_string()),
         });
     }
 
@@ -497,9 +530,7 @@ mod tests {
             id: "topic1".to_string(),
             component_type: ComponentType::Topic,
             name: "Events".to_string(),
-            resource_uri: build_resource_uri(ComponentType::Topic, "topic1"),
-            status: ComponentStatus::Active,
-            source_file: Some("app/datamodels/Events.ts".to_string()),
+            source_file: "app/datamodels/Events.ts".to_string(),
         });
 
         assert_eq!(map.stats.total_components, 1);
@@ -515,7 +546,6 @@ mod tests {
             from: "api1".to_string(),
             to: "topic1".to_string(),
             connection_type: ConnectionType::Produces,
-            description: None,
         });
 
         assert_eq!(map.stats.total_connections, 1);
@@ -536,15 +566,13 @@ mod tests {
             id: "test_topic".to_string(),
             component_type: ComponentType::Topic,
             name: "TestTopic".to_string(),
-            resource_uri: build_resource_uri(ComponentType::Topic, "test_topic"),
-            status: ComponentStatus::Active,
-            source_file: Some("app/datamodels/TestTopic.ts".to_string()),
+            source_file: "app/datamodels/TestTopic.ts".to_string(),
         };
 
         // Verify source_file is set
         assert_eq!(
             component.source_file,
-            Some("app/datamodels/TestTopic.ts".to_string())
+            "app/datamodels/TestTopic.ts".to_string()
         );
 
         // Test serialization/deserialization
@@ -559,20 +587,62 @@ mod tests {
             id: "test_view".to_string(),
             component_type: ComponentType::View,
             name: "TestView".to_string(),
-            resource_uri: build_resource_uri(ComponentType::View, "test_view"),
-            status: ComponentStatus::Active,
-            source_file: None,
+            source_file: String::new(),
         };
 
-        // Verify source_file is None
-        assert_eq!(component.source_file, None);
+        // Verify source_file is empty string
+        assert_eq!(component.source_file, "");
 
-        // Test serialization - should skip the field
+        // Test serialization - field should always be present now
         let json = serde_json::to_string(&component).unwrap();
-        assert!(!json.contains("source_file"));
+        assert!(json.contains("source_file"));
 
         // Test deserialization
         let deserialized: ComponentNode = serde_json::from_str(&json).unwrap();
         assert_eq!(component, deserialized);
+    }
+
+    #[test]
+    fn test_make_relative_path_with_absolute_unix() {
+        let absolute = "/Users/nicolas/code/514/test-projects/ts-test-tests/app/ingest/models.ts";
+        let relative = make_relative_path(absolute);
+        assert_eq!(relative, "app/ingest/models.ts");
+    }
+
+    #[test]
+    fn test_make_relative_path_with_absolute_windows() {
+        let absolute = "C:\\Users\\nicolas\\code\\project\\app\\datamodels\\User.ts";
+        let relative = make_relative_path(absolute);
+        assert_eq!(relative, "app/datamodels/User.ts");
+    }
+
+    #[test]
+    fn test_make_relative_path_already_relative() {
+        let already_relative = "app/ingest/models.ts";
+        let result = make_relative_path(already_relative);
+        assert_eq!(result, "app/ingest/models.ts");
+    }
+
+    #[test]
+    fn test_make_relative_path_with_backslashes() {
+        let windows_relative = "app\\ingest\\models.ts";
+        let result = make_relative_path(windows_relative);
+        assert_eq!(result, "app/ingest/models.ts");
+    }
+
+    #[test]
+    fn test_make_relative_path_no_app_directory() {
+        // Fallback case where path doesn't contain "app/"
+        let path = "/some/other/path/file.ts";
+        let result = make_relative_path(path);
+        assert_eq!(result, "/some/other/path/file.ts");
+    }
+
+    #[test]
+    fn test_make_relative_path_nested_app_directories() {
+        // Should use the last occurrence of "/app/"
+        let path = "/Users/app/project/app/datamodels/User.ts";
+        let result = make_relative_path(path);
+        assert_eq!(result, "app/datamodels/User.ts");
     }
 }
