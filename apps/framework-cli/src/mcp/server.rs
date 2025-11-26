@@ -1,4 +1,3 @@
-use log::info;
 use rmcp::{
     model::{
         CallToolRequestParam, CallToolResult, ErrorCode, Implementation, ListResourcesResult,
@@ -12,6 +11,7 @@ use rmcp::{
     ErrorData, RoleServer, ServerHandler,
 };
 use std::sync::Arc;
+use tracing::info;
 
 use super::embedded_docs;
 use super::tools::{

@@ -10,12 +10,12 @@
 //! See the shared `crate::infrastructure::olap::clickhouse::diagnostics` module for
 //! detailed documentation on each diagnostic provider.
 
-use log::{debug, info};
 use regex::Regex;
 use rmcp::model::{CallToolResult, Tool};
 use serde_json::{json, Map, Value};
 use std::collections::HashMap;
 use std::sync::Arc;
+use tracing::{debug, info};
 
 use super::{create_error_result, create_success_result};
 use crate::framework::core::infrastructure_map::InfrastructureMap;

@@ -1,4 +1,4 @@
-use log::debug;
+use tracing::debug;
 
 use super::{RoutineFailure, RoutineSuccess};
 use crate::cli::display::Message;

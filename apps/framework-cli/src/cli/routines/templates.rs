@@ -1,7 +1,6 @@
 use flate2::read::GzDecoder;
 use futures::StreamExt;
 use home::home_dir;
-use log::warn;
 use regex::Regex;
 use std::fs::File;
 use std::io::Write;
@@ -10,6 +9,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use tar::Archive;
 use toml::Value;
+use tracing::warn;
 
 use super::RoutineFailure;
 use super::RoutineSuccess;

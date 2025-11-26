@@ -3,7 +3,7 @@
 use std::{fmt, path::PathBuf, process::Command};
 
 use home::home_dir;
-use log::{debug, error};
+use tracing::{debug, error};
 
 use crate::utilities::constants::{PACKAGE_LOCK_JSON, PNPM_LOCK, YARN_LOCK};
 

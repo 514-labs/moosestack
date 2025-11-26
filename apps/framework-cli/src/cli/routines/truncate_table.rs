@@ -4,7 +4,7 @@ use crate::infrastructure::olap::clickhouse::{
     check_ready, create_client, extract_order_by_from_create_query, run_query,
 };
 use crate::project::Project;
-use log::{info, warn};
+use tracing::{info, warn};
 
 fn escape_ident(ident: &str) -> String {
     ident.replace('`', "``")

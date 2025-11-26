@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use log::info;
+use tracing::info;
 
 use crate::utilities::system::{RestartingProcess, StartChildFn};
 use crate::{
