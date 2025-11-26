@@ -1,5 +1,4 @@
 use anyhow::{Error, Result};
-use log::info;
 use temporal_sdk_core_protos::temporal::api::workflowservice::v1::workflow_service_client::WorkflowServiceClient;
 use temporal_sdk_core_protos::temporal::api::workflowservice::v1::{
     DescribeNamespaceRequest, DescribeNamespaceResponse, DescribeWorkflowExecutionRequest,
@@ -12,6 +11,7 @@ use temporal_sdk_core_protos::temporal::api::workflowservice::v1::{
 };
 use tonic::service::interceptor::InterceptedService;
 use tonic::transport::{Channel, Uri};
+use tracing::info;
 
 use crate::infrastructure::orchestration::temporal::{InvalidTemporalSchemeError, TemporalConfig};
 use crate::project::Project;

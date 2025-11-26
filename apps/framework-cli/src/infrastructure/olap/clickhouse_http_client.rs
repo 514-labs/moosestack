@@ -9,8 +9,8 @@
 
 use crate::infrastructure::olap::clickhouse::config::ClickHouseConfig;
 use crate::infrastructure::olap::clickhouse::{create_client, ConfiguredDBClient};
-use log::debug;
 use serde_json::Value;
+use tracing::debug;
 
 /// Create a configured HTTP client for query operations
 ///

@@ -54,14 +54,14 @@ impl PresenceManager {
 
         match conn.set_ex::<_, _, ()>(&key, now, 3).await {
             Ok(_) => {
-                log::debug!(
+                tracing::debug!(
                     "<RedisPresence> Updated presence for instance {}",
                     self.instance_id
                 );
                 Ok(())
             }
             Err(e) => {
-                log::error!(
+                tracing::error!(
                     "<RedisPresence> Failed to update presence for instance {}: {}",
                     self.instance_id,
                     e

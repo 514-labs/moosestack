@@ -15,11 +15,11 @@ use crate::utilities::constants::{
 };
 use crate::utilities::git::create_code_generation_commit;
 use clickhouse::Client;
-use log::debug;
 use std::borrow::Cow;
 use std::env;
 use std::io::Write;
 use std::path::Path;
+use tracing::debug;
 
 pub fn prompt_user_for_remote_ch_http() -> Result<String, RoutineFailure> {
     let base = prompt_user(

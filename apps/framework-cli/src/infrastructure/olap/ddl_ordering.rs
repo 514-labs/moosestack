@@ -1238,7 +1238,7 @@ fn order_operations_by_dependencies(
 
                 // Check if adding this edge created a cycle
                 if petgraph::algo::is_cyclic_directed(&graph) {
-                    log::debug!("Cycle detected while adding edge");
+                    tracing::debug!("Cycle detected while adding edge");
                     return Err(PlanOrderingError::CyclicDependency);
                 }
             }
@@ -1247,14 +1247,14 @@ fn order_operations_by_dependencies(
 
     // Also check for cycles after all edges are added
     if petgraph::algo::is_cyclic_directed(&graph) {
-        log::debug!("Cycle detected after adding all edges");
+        tracing::debug!("Cycle detected after adding all edges");
         return Err(PlanOrderingError::CyclicDependency);
     }
 
     // If no edges were added, just return operations in original order
     // This handles cases where signatures were invalid or not found
     if edge_count == 0 && operations.len() > 1 {
-        log::debug!("No edges were added to the graph");
+        tracing::debug!("No edges were added to the graph");
         return Ok(operations.to_vec());
     }
 
@@ -1262,7 +1262,7 @@ fn order_operations_by_dependencies(
     let sorted_indices = match toposort(&graph, None) {
         Ok(indices) => indices,
         Err(err) => {
-            log::debug!(
+            tracing::debug!(
                 "Cycle detected during topological sort: {:?}",
                 err.node_id()
             );

@@ -32,8 +32,6 @@ handlebars = "5.1"
 rdkafka = { version = "0.38", features = ["ssl"] }
 rdkafka-sys = "4.7" # Needed for rd_kafka_wait_destroyed
 convert_case = "0.6.0"
-log = "0.4"
-fern = { version = "0.7", features = ["date-based"] }
 humantime = "2.1.0"
 uuid = { version = "1.6", features = ["v4", "serde"] }
 serde_json = { version = "1.0.133", features = ["preserve_order"] }
@@ -85,6 +83,7 @@ logos = "0.15.0"
 
 # Monitoring
 tracing = "0.1.40"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json", "fmt"] }
 opentelemetry_sdk = { version = "0.29.0", features = [
     "logs",
     "metrics",
@@ -93,7 +92,7 @@ opentelemetry_sdk = { version = "0.29.0", features = [
 ] }
 opentelemetry-semantic-conventions = "0.29"
 opentelemetry = "0.29"
-opentelemetry-appender-log = "0.29"
+opentelemetry-appender-tracing = "0.29.0"
 opentelemetry-otlp = { version = "0.29.0", default-features = false, features = [
     "logs",
     "metrics",

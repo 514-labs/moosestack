@@ -1,7 +1,7 @@
 use home::home_dir;
-use log::warn;
 use std::fs;
 use std::path::PathBuf;
+use tracing::warn;
 use uuid::Uuid;
 
 const MACHINE_ID_FILE: &str = ".fiveonefour/machine_id";
