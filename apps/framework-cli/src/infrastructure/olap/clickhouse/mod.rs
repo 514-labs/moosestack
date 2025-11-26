@@ -1836,7 +1836,7 @@ impl OlapOperations for ConfiguredDBClient {
                     if trimmed.starts_with("CODEC(") && trimmed.ends_with(')') {
                         Some(trimmed[6..trimmed.len() - 1].to_string())
                     } else {
-                        Some(compression_codec)
+                        Some(trimmed.to_string())
                     }
                 } else {
                     None
