@@ -433,6 +433,7 @@ pub struct ClickHouseColumn {
     pub comment: Option<String>, // Column comment for metadata storage
     pub ttl: Option<String>,
     pub codec: Option<String>, // Compression codec expression (e.g., "ZSTD(3)", "Delta, LZ4")
+    pub materialized: Option<String>, // MATERIALIZED column expression (computed at write-time, physically stored)
 }
 
 impl ClickHouseColumn {

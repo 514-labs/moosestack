@@ -243,6 +243,8 @@ message Column {
   optional string ttl = 10;
   // Compression codec expression (e.g., "ZSTD(3)", "Delta, LZ4")
   optional string codec = 11;
+  // MATERIALIZED column expression (computed at write-time, physically stored)
+  optional string materialized = 12;
 }
 
 enum SimpleColumnType {
