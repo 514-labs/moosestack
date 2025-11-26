@@ -823,6 +823,13 @@ async fn execute_add_table_column(
         .map(|d| format!(" DEFAULT {}", d))
         .unwrap_or_default();
 
+    // Include MATERIALIZED clause if column has a materialized expression
+    let materialized_clause = clickhouse_column
+        .materialized
+        .as_ref()
+        .map(|m| format!(" MATERIALIZED {}", m))
+        .unwrap_or_default();
+
     let codec_clause = clickhouse_column
         .codec
         .as_ref()
@@ -841,13 +848,14 @@ async fn execute_add_table_column(
     };
 
     let add_column_query = format!(
-        "ALTER TABLE `{}`.`{}`{} ADD COLUMN `{}` {}{}{}{}  {}",
+        "ALTER TABLE `{}`.`{}`{} ADD COLUMN `{}` {}{}{}{}{}  {}",
         db_name,
         table_name,
         cluster_clause,
         clickhouse_column.name,
         column_type_string,
         default_clause,
+        materialized_clause,
         codec_clause,
         ttl_clause,
         position_clause
@@ -1805,16 +1813,17 @@ impl OlapOperations for ConfiguredDBClient {
                     None
                 };
 
-                let default = match default_kind.deref() {
-                    "" => None,
-                    "DEFAULT" => Some(default_expression),
-                    "MATERIALIZED" | "ALIAS" => {
-                        debug!("MATERIALIZED and ALIAS not yet handled.");
-                        None
+                let (default, materialized) = match default_kind.deref() {
+                    "" => (None, None),
+                    "DEFAULT" => (Some(default_expression.clone()), None),
+                    "MATERIALIZED" => (None, Some(default_expression.clone())),
+                    "ALIAS" => {
+                        debug!("ALIAS columns not yet supported, skipping column {col_name}");
+                        continue; // Skip ALIAS columns (they're virtual, not stored)
                     }
                     _ => {
                         debug!("Unknown default kind: {default_kind} for column {col_name}");
-                        None
+                        (None, None)
                     }
                 };
 
@@ -1871,6 +1880,7 @@ impl OlapOperations for ConfiguredDBClient {
                     comment: column_comment,
                     ttl: normalized_ttl,
                     codec,
+                    materialized,
                 };
 
                 columns.push(column);
@@ -2724,6 +2734,7 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
             comment: Some("Old user comment".to_string()),
             ttl: None,
             codec: None,
+            materialized: None,
         };
 
         let after_column = Column {
@@ -2743,6 +2754,7 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
             comment: Some("New user comment".to_string()),
             ttl: None,
             codec: None,
+            materialized: None,
         };
 
         // The execute_modify_table_column function should detect this as comment-only change
@@ -2769,6 +2781,7 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
             comment: Some("Number of things".to_string()),
             ttl: None,
             codec: None,
+            materialized: None,
         };
         let after_column = Column {
             default: Some("42".to_string()),
@@ -2802,6 +2815,7 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
             comment: Some("old".to_string()),
             ttl: None,
             codec: None,
+            materialized: None,
         };
 
         let after_column = Column {
@@ -2835,6 +2849,7 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
             comment: Some("Updated description field".to_string()),
             ttl: None,
             codec: None,
+            materialized: None,
         };
 
         let clickhouse_column = std_column_to_clickhouse_column(column).unwrap();
@@ -2873,6 +2888,7 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
             comment: Some("Hash of the ID".to_string()),
             ttl: None,
             codec: None,
+            materialized: None,
         };
 
         let sqls = build_modify_column_sql(
@@ -2904,6 +2920,7 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
             comment: None,
             ttl: None,
             codec: None,
+            materialized: None,
         };
 
         let sqls = build_modify_column_sql(
@@ -2935,6 +2952,7 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
             comment: None,
             ttl: None,
             codec: None,
+            materialized: None,
         };
 
         let sqls = build_modify_column_sql(
@@ -3262,6 +3280,7 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
             comment: Some("Number of items".to_string()),
             ttl: None,
             codec: None,
+            materialized: None,
         };
 
         let clickhouse_column = std_column_to_clickhouse_column(column).unwrap();
@@ -3324,6 +3343,7 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
             comment: None,
             ttl: None,
             codec: None,
+            materialized: None,
         };
 
         let clickhouse_column = std_column_to_clickhouse_column(column).unwrap();
@@ -3389,6 +3409,7 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
                 comment: None,
                 ttl: Some("created_at + INTERVAL 7 DAY".to_string()),
                 codec: None,
+                materialized: None,
             }],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
             partition_by: Some("toYYYYMM(created_at)".to_string()),
@@ -3456,6 +3477,7 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
                 comment: None,
                 ttl: Some("created_at + INTERVAL 7 DAY".to_string()),
                 codec: None,
+                materialized: None,
             }],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
             partition_by: Some("toYYYYMM(created_at)".to_string()),

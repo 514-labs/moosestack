@@ -602,6 +602,8 @@ pub struct Column {
     pub ttl: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub codec: Option<String>, // Compression codec expression (e.g., "ZSTD(3)", "Delta, LZ4")
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub materialized: Option<String>, // MATERIALIZED column expression (computed at write-time, physically stored)
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
@@ -1117,6 +1119,7 @@ impl Column {
             comment: self.comment.clone(),
             ttl: self.ttl.clone(),
             codec: self.codec.clone(),
+            materialized: self.materialized.clone(),
             special_fields: Default::default(),
         }
     }
@@ -1140,6 +1143,7 @@ impl Column {
             comment: proto.comment,
             ttl: proto.ttl,
             codec: proto.codec,
+            materialized: proto.materialized,
         }
     }
 }
@@ -1520,6 +1524,7 @@ mod tests {
             comment: None,
             ttl: None,
             codec: None,
+            materialized: None,
         };
 
         let json = serde_json::to_string(&nested_column).unwrap();
@@ -1541,6 +1546,7 @@ mod tests {
             comment: Some("[MOOSE_METADATA:DO_NOT_MODIFY] {\"version\":1,\"enum\":{\"name\":\"TestEnum\",\"members\":[]}}".to_string()),
             ttl: None,
             codec: None,
+            materialized: None,
         };
 
         // Convert to proto and back
@@ -1565,6 +1571,7 @@ mod tests {
             comment: None,
             ttl: None,
             codec: None,
+            materialized: None,
         };
 
         let proto = column_without_comment.to_proto();
@@ -1749,6 +1756,7 @@ mod tests {
                 comment: None,
                 ttl: None,
                 codec: None,
+                materialized: None,
             },
             Column {
                 name: "name".to_string(),
@@ -1761,6 +1769,7 @@ mod tests {
                 comment: None,
                 ttl: None,
                 codec: None,
+                materialized: None,
             },
         ];
 
