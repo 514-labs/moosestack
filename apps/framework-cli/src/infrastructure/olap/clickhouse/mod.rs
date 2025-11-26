@@ -1828,70 +1828,64 @@ impl OlapOperations for ConfiguredDBClient {
             debug!("Found {} columns for table {}", columns.len(), table_name);
 
             // Determine if we should use primary_key_expression or column-level primary_key flags
-            // We use primary_key_expression if:
-            // 1. The PRIMARY KEY clause exists and contains expressions (not just column names), OR
-            // 2. The order of columns in PRIMARY KEY differs from their order in the table
-            let use_primary_key_expression = if let Some(pk_expr) = &primary_key_expr {
-                // Parse the PRIMARY KEY expression to extract components
-                // Remove outer parentheses if present and split by comma
-                let pk_expr_trimmed = pk_expr.trim();
-                let pk_expr_content =
-                    if pk_expr_trimmed.starts_with('(') && pk_expr_trimmed.ends_with(')') {
-                        &pk_expr_trimmed[1..pk_expr_trimmed.len() - 1]
+            // Strategy: Build the expected PRIMARY KEY from columns, then compare with extracted PRIMARY KEY
+            // If they match, use column-level flags; otherwise use primary_key_expression
+            let (final_columns, final_primary_key_expression) =
+                if let Some(pk_expr) = &primary_key_expr {
+                    // Build expected PRIMARY KEY expression from columns marked as primary_key=true
+                    let primary_key_columns: Vec<String> = columns
+                        .iter()
+                        .filter(|c| c.primary_key)
+                        .map(|c| c.name.clone())
+                        .collect();
+
+                    debug!("Columns marked as primary key: {:?}", primary_key_columns);
+
+                    // Build expected expression: single column = "col", multiple = "(col1, col2)"
+                    let expected_pk_expr = if primary_key_columns.is_empty() {
+                        String::new()
+                    } else if primary_key_columns.len() == 1 {
+                        primary_key_columns[0].clone()
                     } else {
-                        pk_expr_trimmed
+                        format!("({})", primary_key_columns.join(", "))
                     };
 
-                let pk_components: Vec<String> = pk_expr_content
-                    .split(',')
-                    .map(|s| s.trim().trim_matches('`').to_string())
-                    .filter(|s| !s.is_empty())
-                    .collect();
+                    debug!("Expected PRIMARY KEY expression: '{}'", expected_pk_expr);
+                    debug!("Extracted PRIMARY KEY expression: '{}'", pk_expr);
 
-                debug!("PRIMARY KEY components: {:?}", pk_components);
+                    // Normalize both expressions for comparison (remove backticks, extra spaces)
+                    let normalize =
+                        |s: &str| s.trim().trim_matches('`').replace('`', "").replace(" ", "");
 
-                // Collect column names that are marked as primary_key=true
-                let primary_key_columns: Vec<String> = columns
-                    .iter()
-                    .filter(|c| c.primary_key)
-                    .map(|c| c.name.clone())
-                    .collect();
+                    let normalized_expected = normalize(&expected_pk_expr);
+                    let normalized_extracted = normalize(pk_expr);
 
-                debug!("Columns marked as primary key: {:?}", primary_key_columns);
+                    debug!(
+                        "Normalized expected: '{}', normalized extracted: '{}'",
+                        normalized_expected, normalized_extracted
+                    );
 
-                // Check if any component contains function calls or expressions (not just simple column names)
-                let has_expressions = pk_components
-                    .iter()
-                    .any(|comp| comp.contains('(') || comp.contains(')') || comp.contains(' '));
-
-                // Check if order differs from column order
-                let order_differs = pk_components != primary_key_columns;
-
-                debug!(
-                    "has_expressions: {}, order_differs: {}",
-                    has_expressions, order_differs
-                );
-
-                has_expressions || order_differs
-            } else {
-                false
-            };
-
-            // If we're using primary_key_expression, clear primary_key flags from columns
-            let (final_columns, final_primary_key_expression) = if use_primary_key_expression {
-                debug!("Using primary_key_expression instead of column-level primary_key flags");
-                let updated_columns: Vec<Column> = columns
-                    .into_iter()
-                    .map(|mut c| {
-                        c.primary_key = false;
-                        c
-                    })
-                    .collect();
-                (updated_columns, primary_key_expr.clone())
-            } else {
-                debug!("Using column-level primary_key flags");
-                (columns, None)
-            };
+                    if normalized_expected == normalized_extracted {
+                        // PRIMARY KEY matches what columns indicate, use column-level flags
+                        debug!("PRIMARY KEY matches columns, using column-level primary_key flags");
+                        (columns, None)
+                    } else {
+                        // PRIMARY KEY differs (different order, expressions, etc.), use primary_key_expression
+                        debug!("PRIMARY KEY differs from columns, using primary_key_expression");
+                        let updated_columns: Vec<Column> = columns
+                            .into_iter()
+                            .map(|mut c| {
+                                c.primary_key = false;
+                                c
+                            })
+                            .collect();
+                        (updated_columns, Some(pk_expr.clone()))
+                    }
+                } else {
+                    // No PRIMARY KEY clause, use column-level flags as-is
+                    debug!("No PRIMARY KEY clause, using column-level primary_key flags");
+                    (columns, None)
+                };
 
             // Extract base name and version for source primitive
             let (base_name, version) = extract_version_from_table_name(&table_name);
