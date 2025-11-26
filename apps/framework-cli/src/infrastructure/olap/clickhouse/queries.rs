@@ -124,7 +124,7 @@ static CREATE_TABLE_TEMPLATE: &str = r#"
 CREATE TABLE IF NOT EXISTS `{{db_name}}`.`{{table_name}}`{{#if cluster_name}}
 ON CLUSTER {{cluster_name}}{{/if}}
 (
-{{#each fields}} `{{field_name}}` {{{field_type}}} {{field_nullable}}{{#if field_default}} DEFAULT {{{field_default}}}{{/if}}{{#if field_codec}} CODEC({{{field_codec}}}){{/if}}{{#if field_comment}} COMMENT '{{{field_comment}}}'{{/if}}{{#if field_ttl}} TTL {{{field_ttl}}}{{/if}}{{#unless @last}},
+{{#each fields}} `{{field_name}}` {{{field_type}}} {{field_nullable}}{{#if field_default}} DEFAULT {{{field_default}}}{{/if}}{{#if field_codec}} CODEC({{{field_codec}}}){{/if}}{{#if field_ttl}} TTL {{{field_ttl}}}{{/if}}{{#if field_comment}} COMMENT '{{{field_comment}}}'{{/if}}{{#unless @last}},
 {{/unless}}{{/each}}{{#if has_indexes}}, {{#each indexes}}{{this}}{{#unless @last}}, {{/unless}}{{/each}}{{/if}}
 )
 ENGINE = {{engine}}{{#if primary_key_string}}
