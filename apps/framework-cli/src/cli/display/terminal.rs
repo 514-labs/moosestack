@@ -187,6 +187,7 @@ impl StyledText {
 ///
 /// * `styled_text` - The styled text configuration for the action portion
 /// * `message` - The main message content to display
+/// * `no_ansi` - If true, disable ANSI color codes and formatting
 ///
 /// # Returns
 ///
@@ -202,10 +203,10 @@ impl StyledText {
 /// ```rust
 /// # use crate::cli::display::terminal::{StyledText, write_styled_line};
 /// let styled = StyledText::new("Success".to_string()).green().bold();
-/// write_styled_line(&styled, "Operation completed successfully")?;
+/// write_styled_line(&styled, "Operation completed successfully", false)?;
 /// # Ok::<(), std::io::Error>(())
 /// ```
-pub fn write_styled_line(styled_text: &StyledText, message: &str) -> IoResult<()> {
+pub fn write_styled_line(styled_text: &StyledText, message: &str, no_ansi: bool) -> IoResult<()> {
     let mut stdout = stdout();
 
     // Ensure action is exactly ACTION_WIDTH characters, right-aligned
@@ -221,28 +222,33 @@ pub fn write_styled_line(styled_text: &StyledText, message: &str) -> IoResult<()
     };
     let padded_action = format!("{truncated_action:>ACTION_WIDTH$}");
 
-    // Apply foreground color
-    if let Some(color) = styled_text.foreground {
-        execute!(stdout, SetForegroundColor(color))?;
-    }
+    // Only apply ANSI styling if not disabled
+    if !no_ansi {
+        // Apply foreground color
+        if let Some(color) = styled_text.foreground {
+            execute!(stdout, SetForegroundColor(color))?;
+        }
 
-    // Apply background color
-    if let Some(color) = styled_text.background {
-        execute!(stdout, SetBackgroundColor(color))?;
-    }
+        // Apply background color
+        if let Some(color) = styled_text.background {
+            execute!(stdout, SetBackgroundColor(color))?;
+        }
 
-    // Apply bold
-    if styled_text.bold {
-        execute!(stdout, SetAttribute(Attribute::Bold))?;
+        // Apply bold
+        if styled_text.bold {
+            execute!(stdout, SetAttribute(Attribute::Bold))?;
+        }
     }
 
     // Write the styled, right-aligned action text
     execute!(stdout, Print(&padded_action))?;
 
-    // Reset styling before writing the message
-    execute!(stdout, ResetColor)?;
-    if styled_text.bold {
-        execute!(stdout, SetAttribute(Attribute::Reset))?;
+    // Reset styling before writing the message (only if ANSI was applied)
+    if !no_ansi {
+        execute!(stdout, ResetColor)?;
+        if styled_text.bold {
+            execute!(stdout, SetAttribute(Attribute::Reset))?;
+        }
     }
 
     // Write separator and message
@@ -331,6 +337,6 @@ mod tests {
         let styled = StyledText::from_str("Test").green().bold();
         // This test mainly ensures the function signature is correct
         // and doesn't panic during compilation
-        let _ = write_styled_line(&styled, "test message");
+        let _ = write_styled_line(&styled, "test message", false);
     }
 }

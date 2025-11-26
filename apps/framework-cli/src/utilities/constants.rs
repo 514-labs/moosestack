@@ -1,5 +1,6 @@
 use lazy_static::lazy_static;
 use std::collections::HashMap;
+use std::sync::atomic::AtomicBool;
 use uuid::Uuid;
 
 pub const CLI_VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -82,8 +83,13 @@ lazy_static! {
     };
 }
 
+/// Global flag to disable ANSI colors in terminal output
+/// When true, ANSI escape codes are disabled in terminal display functions
+/// This is set once at startup based on logger configuration
+pub static NO_ANSI: AtomicBool = AtomicBool::new(false);
+
 pub const README_PREFIX: &str = r#"
-This is a [MooseJs](https://www.moosejs.com/) project bootstrapped with the 
+This is a [MooseJs](https://www.moosejs.com/) project bootstrapped with the
 [`Moose CLI`](https://github.com/514-labs/moose/tree/main/apps/framework-cli).
 
 "#;

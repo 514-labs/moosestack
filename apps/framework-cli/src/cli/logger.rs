@@ -8,13 +8,12 @@
 //! The logging system is built using `tracing-subscriber` layers:
 //! - **EnvFilter Layer**: Provides `RUST_LOG` support for module-level filtering
 //! - **Format Layer**: Either legacy (fern-compatible) or modern (tracing native) format
-//! - **OTEL Layer**: Optional OpenTelemetry export for observability platforms
 //!
 //! ## Components
 //!
 //! - `LoggerLevel`: An enumeration representing the different levels of logging: DEBUG, INFO, WARN, and ERROR.
 //! - `LogFormat`: Either Text or JSON output format.
-//! - `LoggerSettings`: A struct that holds the settings for the logger, including format, level, and export options.
+//! - `LoggerSettings`: A struct that holds the settings for the logger, including format, level, and output options.
 //! - `setup_logging`: A function used to set up the logging system with the provided settings.
 //! - `LegacyFormatLayer`: Custom layer that matches the old fern format exactly (for backward compatibility).
 //!
@@ -38,8 +37,6 @@
 //! - **Date-based file rotation**: Daily log files in `~/.moose/YYYY-MM-DD-cli.log`
 //! - **Automatic cleanup**: Deletes logs older than 7 days
 //! - **Session ID tracking**: Optional per-session identifier in logs
-//! - **Machine ID tracking**: Included in every log event
-//! - **OpenTelemetry export**: Optional OTLP/HTTP JSON export to observability platforms
 //! - **Configurable outputs**: File and/or stdout
 //!
 //! ## Environment Variables
@@ -49,7 +46,6 @@
 //! - `MOOSE_LOGGER__LEVEL`: Log level (DEBUG, INFO, WARN, ERROR)
 //! - `MOOSE_LOGGER__STDOUT`: Output to stdout vs file (default: `false`)
 //! - `MOOSE_LOGGER__FORMAT`: Text or JSON (default: Text)
-//! - `MOOSE_LOGGER__EXPORT_TO`: OTEL endpoint URL
 //! - `MOOSE_LOGGER__INCLUDE_SESSION_ID`: Include session ID in logs (default: `false`)
 //!
 //! ## Usage
@@ -81,13 +77,6 @@
 //! fern-based log format (e.g., Boreal/hosting_telemetry). The modern format can be enabled
 //! via environment variable once downstream consumers are ready.
 
-use hyper::Uri;
-use opentelemetry::KeyValue;
-use opentelemetry_appender_tracing::layer::OpenTelemetryTracingBridge;
-use opentelemetry_otlp::{Protocol, WithExportConfig};
-use opentelemetry_sdk::logs::{BatchLogProcessor, SdkLoggerProvider};
-use opentelemetry_sdk::Resource;
-use opentelemetry_semantic_conventions::resource::SERVICE_NAME;
 use serde::Deserialize;
 use std::env;
 use std::fmt;
@@ -102,7 +91,8 @@ use tracing_subscriber::registry::LookupSpan;
 use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::{EnvFilter, Layer};
 
-use crate::utilities::constants::{CONTEXT, CTX_SESSION_ID};
+use crate::utilities::constants::{CONTEXT, CTX_SESSION_ID, NO_ANSI};
+use std::sync::atomic::Ordering;
 
 use super::settings::user_directory;
 
@@ -150,22 +140,14 @@ pub struct LoggerSettings {
     #[serde(default = "default_log_format")]
     pub format: LogFormat,
 
-    #[serde(deserialize_with = "parsing_url", default = "Option::default")]
-    pub export_to: Option<Uri>,
-
     #[serde(default = "default_include_session_id")]
     pub include_session_id: bool,
 
     #[serde(default = "default_use_tracing_format")]
     pub use_tracing_format: bool,
-}
 
-fn parsing_url<'de, D>(deserializer: D) -> Result<Option<Uri>, D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    let s: Option<String> = Option::deserialize(deserializer)?;
-    Ok(s.and_then(|s| s.parse().ok()))
+    #[serde(default = "default_no_ansi")]
+    pub no_ansi: bool,
 }
 
 fn default_log_file() -> String {
@@ -195,6 +177,10 @@ fn default_use_tracing_format() -> bool {
         .unwrap_or(false)
 }
 
+fn default_no_ansi() -> bool {
+    false // ANSI colors enabled by default
+}
+
 impl Default for LoggerSettings {
     fn default() -> Self {
         LoggerSettings {
@@ -202,9 +188,9 @@ impl Default for LoggerSettings {
             level: default_log_level(),
             stdout: default_log_stdout(),
             format: default_log_format(),
-            export_to: None,
             include_session_id: default_include_session_id(),
             use_tracing_format: default_use_tracing_format(),
+            no_ansi: default_no_ansi(),
         }
     }
 }
@@ -255,109 +241,168 @@ fn clean_old_logs() {
     }
 }
 
-// Error that rolls up all the possible errors that can occur during logging setup
-#[derive(thiserror::Error, Debug)]
-pub enum LoggerError {
-    #[error("Error setting up OTEL logger: {0}")]
-    OtelSetup(String),
+/// Trait for formatting log events. Implementations are monomorphized,
+/// allowing the compiler to inline the format logic directly into `on_event`.
+///
+/// Formatters write directly to the provided writer to avoid intermediate allocations.
+trait LegacyFormatter {
+    fn write_event<W: Write>(
+        &self,
+        writer: &mut W,
+        level: &Level,
+        target: &str,
+        event: &Event<'_>,
+    ) -> std::io::Result<()>;
 }
 
-/// Custom fields that get injected into every log event
+/// Text formatter matching fern's text format exactly
 #[derive(Clone)]
-struct CustomFields {
-    session_id: String,
-    #[allow(dead_code)] // Will be used when OTEL support is re-enabled
-    machine_id: String,
-}
-
-/// Layer that formats logs to match the legacy fern format exactly
-struct LegacyFormatLayer<W> {
-    writer: W,
-    format: LogFormat,
+struct TextFormatter {
     include_session_id: bool,
-    custom_fields: CustomFields,
+    session_id: String,
 }
 
-impl<W> LegacyFormatLayer<W> {
-    fn new(
-        writer: W,
-        format: LogFormat,
-        include_session_id: bool,
-        custom_fields: CustomFields,
-    ) -> Self {
+impl TextFormatter {
+    fn new(include_session_id: bool, session_id: String) -> Self {
         Self {
-            writer,
-            format,
             include_session_id,
-            custom_fields,
+            session_id,
         }
     }
+}
 
-    fn format_text(&self, level: &Level, target: &str, message: &str) -> String {
-        // Match current fern text format exactly
-        format!(
-            "[{} {}{} - {}] {}",
+impl LegacyFormatter for TextFormatter {
+    #[inline]
+    fn write_event<W: Write>(
+        &self,
+        writer: &mut W,
+        level: &Level,
+        target: &str,
+        event: &Event<'_>,
+    ) -> std::io::Result<()> {
+        // Write prefix: [timestamp LEVEL - target]
+        write!(
+            writer,
+            "[{} {}",
             humantime::format_rfc3339_seconds(SystemTime::now()),
             level,
-            if self.include_session_id {
-                format!(" {}", self.custom_fields.session_id)
-            } else {
-                String::new()
-            },
-            target,
-            message
-        )
-    }
+        )?;
 
-    fn format_json(&self, level: &Level, target: &str, message: &str) -> String {
-        // Match current fern JSON format exactly
-        let mut log_json = serde_json::json!({
+        if self.include_session_id {
+            write!(writer, " {}", self.session_id)?;
+        }
+
+        write!(writer, " - {}] ", target)?;
+
+        // Write message directly without intermediate String
+        let mut visitor = DirectWriteVisitor { writer };
+        event.record(&mut visitor);
+
+        writeln!(writer)
+    }
+}
+
+/// JSON formatter matching fern's JSON format exactly
+#[derive(Clone)]
+struct JsonFormatter {
+    include_session_id: bool,
+    session_id: String,
+}
+
+impl JsonFormatter {
+    fn new(include_session_id: bool, session_id: String) -> Self {
+        Self {
+            include_session_id,
+            session_id,
+        }
+    }
+}
+
+impl LegacyFormatter for JsonFormatter {
+    #[inline]
+    fn write_event<W: Write>(
+        &self,
+        writer: &mut W,
+        level: &Level,
+        target: &str,
+        event: &Event<'_>,
+    ) -> std::io::Result<()> {
+        // Extract message first since it appears in the middle of the JSON object
+        let mut message_visitor = MessageVisitor::default();
+        event.record(&mut message_visitor);
+
+        // Build JSON object - serde_json handles escaping correctly
+        let mut log_entry = serde_json::json!({
             "timestamp": chrono::Utc::now().to_rfc3339(),
             "severity": level.to_string(),
             "target": target,
-            "message": message,
+            "message": message_visitor.message,
         });
 
         if self.include_session_id {
-            log_json["session_id"] =
-                serde_json::Value::String(self.custom_fields.session_id.clone());
+            log_entry["session_id"] = serde_json::Value::String(self.session_id.clone());
         }
 
-        serde_json::to_string(&log_json)
-            .expect("formatting `serde_json::Value` with string keys never fails")
+        serde_json::to_writer(&mut *writer, &log_entry).map_err(std::io::Error::other)?;
+        writeln!(writer)
     }
 }
 
-impl<S, W> Layer<S> for LegacyFormatLayer<W>
+/// Layer that formats logs to match the legacy fern format exactly.
+///
+/// Generic over the formatter type `F`, enabling monomorphization so the
+/// compiler can inline the format logic directly into `on_event`.
+struct LegacyFormatLayer<W, F> {
+    writer: W,
+    formatter: F,
+}
+
+impl<W, F> LegacyFormatLayer<W, F> {
+    fn new(writer: W, formatter: F) -> Self {
+        Self { writer, formatter }
+    }
+}
+
+impl<S, W, F> Layer<S> for LegacyFormatLayer<W, F>
 where
     S: Subscriber + for<'a> LookupSpan<'a>,
     W: for<'writer> MakeWriter<'writer> + 'static,
+    F: LegacyFormatter + 'static,
 {
     fn on_event(&self, event: &Event<'_>, _ctx: Context<'_, S>) {
-        // Extract metadata
         let metadata = event.metadata();
-        let level = metadata.level();
-        let target = metadata.target();
-
-        // Extract message using visitor
-        let mut visitor = MessageVisitor::default();
-        event.record(&mut visitor);
-        let message = visitor.message;
-
-        // Format based on LogFormat
-        let output = if self.format == LogFormat::Text {
-            self.format_text(level, target, &message)
-        } else {
-            self.format_json(level, target, &message)
-        };
-
-        // Write to output
         let mut writer = self.writer.make_writer();
-        let _ = writer.write_all(output.as_bytes());
-        let _ = writer.write_all(b"\n");
+
+        // Write directly to output, avoiding intermediate allocations
+        let _ = self
+            .formatter
+            .write_event(&mut writer, metadata.level(), metadata.target(), event);
     }
 }
 
+/// Visitor that writes the message field directly to a writer, avoiding intermediate allocation.
+///
+/// For string messages (the common case), writes directly without any allocation.
+/// For debug-formatted messages, uses a small stack buffer to strip surrounding quotes.
+struct DirectWriteVisitor<'a, W> {
+    writer: &'a mut W,
+}
+
+impl<W: Write> Visit for DirectWriteVisitor<'_, W> {
+    fn record_debug(&mut self, field: &Field, value: &dyn fmt::Debug) {
+        if field.name() == "message" {
+            let _ = write!(self.writer, "{:?}", value);
+        }
+    }
+
+    fn record_str(&mut self, field: &Field, value: &str) {
+        if field.name() == "message" {
+            let _ = self.writer.write_all(value.as_bytes());
+        }
+    }
+}
+
+/// Visitor that extracts the message into a String (used for JSON where we need the value mid-output).
 #[derive(Default)]
 struct MessageVisitor {
     message: String,
@@ -367,10 +412,12 @@ impl Visit for MessageVisitor {
     fn record_debug(&mut self, field: &Field, value: &dyn fmt::Debug) {
         if field.name() == "message" {
             self.message = format!("{:?}", value);
-            // Remove surrounding quotes from debug format
-            if self.message.starts_with('"') && self.message.ends_with('"') {
-                self.message = self.message[1..self.message.len() - 1].to_string();
-            }
+        }
+    }
+
+    fn record_str(&mut self, field: &Field, value: &str) {
+        if field.name() == "message" {
+            self.message = value.to_string();
         }
     }
 }
@@ -412,252 +459,113 @@ fn create_rolling_file_appender(date_format: &str) -> DateBasedWriter {
     DateBasedWriter::new(date_format.to_string())
 }
 
-/// Creates an OpenTelemetry layer for log export
-///
-/// This function sets up OTLP log export using opentelemetry-appender-tracing.
-/// It creates a LoggerProvider with a batch processor and OTLP exporter.
-fn create_otel_layer(
-    endpoint: &Uri,
-    session_id: &str,
-    machine_id: &str,
-) -> Result<impl Layer<tracing_subscriber::Registry>, LoggerError> {
-    use crate::utilities::decode_object;
-    use serde_json::Value;
-    use std::env::VarError;
-
-    // Create base resource attributes
-    let mut resource_attributes = vec![
-        KeyValue::new(SERVICE_NAME, "moose-cli"),
-        KeyValue::new("session_id", session_id.to_string()),
-        KeyValue::new("machine_id", machine_id.to_string()),
-    ];
-
-    // Add labels from MOOSE_METRIC__LABELS environment variable
-    match env::var("MOOSE_METRIC__LABELS") {
-        Ok(base64) => match decode_object::decode_base64_to_json(&base64) {
-            Ok(Value::Object(labels)) => {
-                for (key, value) in labels {
-                    if let Some(value_str) = value.as_str() {
-                        resource_attributes.push(KeyValue::new(key, value_str.to_string()));
-                    }
-                }
-            }
-            Ok(_) => warn!("Unexpected value for MOOSE_METRIC_LABELS"),
-            Err(e) => {
-                warn!("Error decoding MOOSE_METRIC_LABELS: {}", e);
-            }
-        },
-        Err(VarError::NotPresent) => {}
-        Err(VarError::NotUnicode(e)) => {
-            warn!("MOOSE_METRIC__LABELS is not unicode: {:?}", e);
-        }
-    }
-
-    // Create resource with all attributes
-    let resource = Resource::builder()
-        .with_attributes(resource_attributes)
-        .build();
-
-    // Build OTLP log exporter
-    let exporter = opentelemetry_otlp::LogExporter::builder()
-        .with_http()
-        .with_protocol(Protocol::HttpJson)
-        .with_endpoint(endpoint.to_string())
-        .build()
-        .map_err(|e| LoggerError::OtelSetup(format!("Failed to build OTLP exporter: {}", e)))?;
-
-    // Create logger provider with batch processor
-    let provider = SdkLoggerProvider::builder()
-        .with_resource(resource)
-        .with_log_processor(BatchLogProcessor::builder(exporter).build())
-        .build();
-
-    // Create the tracing bridge layer
-    Ok(OpenTelemetryTracingBridge::new(&provider))
-}
-
-pub fn setup_logging(settings: &LoggerSettings, machine_id: &str) -> Result<(), LoggerError> {
+pub fn setup_logging(settings: &LoggerSettings) {
     clean_old_logs();
 
-    let session_id = CONTEXT.get(CTX_SESSION_ID).unwrap();
+    // Set global NO_ANSI flag for terminal display functions
+    NO_ANSI.store(settings.no_ansi, Ordering::Relaxed);
 
-    // Create custom fields for use in formatters
-    let custom_fields = CustomFields {
-        session_id: session_id.to_string(),
-        machine_id: machine_id.to_string(),
-    };
+    let session_id = CONTEXT.get(CTX_SESSION_ID).unwrap();
 
     // Setup logging based on format type
     if settings.use_tracing_format {
         // Modern format using tracing built-ins
-        setup_modern_format(settings, session_id, machine_id)
+        setup_modern_format(settings);
     } else {
         // Legacy format matching fern exactly
-        setup_legacy_format(settings, session_id, machine_id, custom_fields)
+        setup_legacy_format(settings, session_id);
     }
 }
 
-fn setup_modern_format(
-    settings: &LoggerSettings,
-    session_id: &str,
-    machine_id: &str,
-) -> Result<(), LoggerError> {
+fn setup_modern_format(settings: &LoggerSettings) {
     let env_filter = EnvFilter::try_from_default_env()
         .unwrap_or_else(|_| EnvFilter::new(settings.level.to_tracing_level().to_string()));
 
-    // Setup with or without OTEL based on configuration
-    if let Some(endpoint) = &settings.export_to {
-        let otel_layer = create_otel_layer(endpoint, session_id, machine_id)?;
+    // When no_ansi is false, ANSI is enabled (true)
+    // When no_ansi is true, ANSI is disabled (false)
+    let ansi_enabled = !settings.no_ansi;
 
-        if settings.stdout {
-            let format_layer = tracing_subscriber::fmt::layer()
-                .with_writer(std::io::stdout)
-                .with_target(true)
-                .with_level(true);
+    if settings.stdout {
+        let format_layer = tracing_subscriber::fmt::layer()
+            .with_writer(std::io::stdout)
+            .with_target(true)
+            .with_level(true)
+            .with_ansi(ansi_enabled);
 
-            if settings.format == LogFormat::Json {
-                tracing_subscriber::registry()
-                    .with(otel_layer)
-                    .with(env_filter)
-                    .with(format_layer.json())
-                    .init();
-            } else {
-                tracing_subscriber::registry()
-                    .with(otel_layer)
-                    .with(env_filter)
-                    .with(format_layer.compact())
-                    .init();
-            }
+        if settings.format == LogFormat::Json {
+            tracing_subscriber::registry()
+                .with(env_filter)
+                .with(format_layer.json())
+                .init();
         } else {
-            let file_appender = create_rolling_file_appender(&settings.log_file_date_format);
-            let format_layer = tracing_subscriber::fmt::layer()
-                .with_writer(file_appender)
-                .with_target(true)
-                .with_level(true);
-
-            if settings.format == LogFormat::Json {
-                tracing_subscriber::registry()
-                    .with(otel_layer)
-                    .with(env_filter)
-                    .with(format_layer.json())
-                    .init();
-            } else {
-                tracing_subscriber::registry()
-                    .with(otel_layer)
-                    .with(env_filter)
-                    .with(format_layer.compact())
-                    .init();
-            }
+            tracing_subscriber::registry()
+                .with(env_filter)
+                .with(format_layer.compact())
+                .init();
         }
     } else {
-        // No OTEL export
-        if settings.stdout {
-            let format_layer = tracing_subscriber::fmt::layer()
-                .with_writer(std::io::stdout)
-                .with_target(true)
-                .with_level(true);
+        let file_appender = create_rolling_file_appender(&settings.log_file_date_format);
+        let format_layer = tracing_subscriber::fmt::layer()
+            .with_writer(file_appender)
+            .with_target(true)
+            .with_level(true)
+            .with_ansi(ansi_enabled);
 
-            if settings.format == LogFormat::Json {
-                tracing_subscriber::registry()
-                    .with(env_filter)
-                    .with(format_layer.json())
-                    .init();
-            } else {
-                tracing_subscriber::registry()
-                    .with(env_filter)
-                    .with(format_layer.compact())
-                    .init();
-            }
+        if settings.format == LogFormat::Json {
+            tracing_subscriber::registry()
+                .with(env_filter)
+                .with(format_layer.json())
+                .init();
         } else {
-            let file_appender = create_rolling_file_appender(&settings.log_file_date_format);
-            let format_layer = tracing_subscriber::fmt::layer()
-                .with_writer(file_appender)
-                .with_target(true)
-                .with_level(true);
-
-            if settings.format == LogFormat::Json {
-                tracing_subscriber::registry()
-                    .with(env_filter)
-                    .with(format_layer.json())
-                    .init();
-            } else {
-                tracing_subscriber::registry()
-                    .with(env_filter)
-                    .with(format_layer.compact())
-                    .init();
-            }
+            tracing_subscriber::registry()
+                .with(env_filter)
+                .with(format_layer.compact())
+                .init();
         }
     }
-
-    Ok(())
 }
 
-fn setup_legacy_format(
-    settings: &LoggerSettings,
-    _session_id: &str,
-    _machine_id: &str,
-    custom_fields: CustomFields,
-) -> Result<(), LoggerError> {
+fn setup_legacy_format(settings: &LoggerSettings, session_id: &str) {
     let env_filter = EnvFilter::try_from_default_env()
         .unwrap_or_else(|_| EnvFilter::new(settings.level.to_tracing_level().to_string()));
 
-    // Setup with or without OTEL based on configuration
-    if let Some(_endpoint) = &settings.export_to {
-        if settings.stdout {
-            let legacy_layer = LegacyFormatLayer::new(
-                std::io::stdout,
-                settings.format.clone(),
-                settings.include_session_id,
-                custom_fields,
-            );
-
-            tracing_subscriber::registry()
-                .with(env_filter)
-                .with(legacy_layer)
-                .init();
-        } else {
-            let file_appender = create_rolling_file_appender(&settings.log_file_date_format);
-            let legacy_layer = LegacyFormatLayer::new(
-                file_appender,
-                settings.format.clone(),
-                settings.include_session_id,
-                custom_fields,
-            );
-
+    // Branch on format type at setup time to get monomorphized Layer implementations.
+    // Each branch creates a concrete formatter type, enabling the compiler to inline
+    // the format logic directly into on_event.
+    match (&settings.format, settings.stdout) {
+        (LogFormat::Text, true) => {
+            let formatter = TextFormatter::new(settings.include_session_id, session_id.to_string());
+            let legacy_layer = LegacyFormatLayer::new(std::io::stdout, formatter);
             tracing_subscriber::registry()
                 .with(env_filter)
                 .with(legacy_layer)
                 .init();
         }
-    } else {
-        // No OTEL export
-        if settings.stdout {
-            let legacy_layer = LegacyFormatLayer::new(
-                std::io::stdout,
-                settings.format.clone(),
-                settings.include_session_id,
-                custom_fields.clone(),
-            );
-
+        (LogFormat::Text, false) => {
+            let formatter = TextFormatter::new(settings.include_session_id, session_id.to_string());
+            let file_appender = create_rolling_file_appender(&settings.log_file_date_format);
+            let legacy_layer = LegacyFormatLayer::new(file_appender, formatter);
             tracing_subscriber::registry()
                 .with(env_filter)
                 .with(legacy_layer)
                 .init();
-        } else {
+        }
+        (LogFormat::Json, true) => {
+            let formatter = JsonFormatter::new(settings.include_session_id, session_id.to_string());
+            let legacy_layer = LegacyFormatLayer::new(std::io::stdout, formatter);
+            tracing_subscriber::registry()
+                .with(env_filter)
+                .with(legacy_layer)
+                .init();
+        }
+        (LogFormat::Json, false) => {
+            let formatter = JsonFormatter::new(settings.include_session_id, session_id.to_string());
             let file_appender = create_rolling_file_appender(&settings.log_file_date_format);
-            let legacy_layer = LegacyFormatLayer::new(
-                file_appender,
-                settings.format.clone(),
-                settings.include_session_id,
-                custom_fields,
-            );
-
+            let legacy_layer = LegacyFormatLayer::new(file_appender, formatter);
             tracing_subscriber::registry()
                 .with(env_filter)
                 .with(legacy_layer)
                 .init();
         }
     }
-
-    Ok(())
 }
