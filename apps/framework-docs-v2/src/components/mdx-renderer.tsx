@@ -36,16 +36,16 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { IconTerminal, IconFileCode } from "@tabler/icons-react";
 import {
-  MDXPre,
-  MDXCode,
-  MDXFigure,
-} from "@/components/mdx/code-block-wrapper";
+  ServerCodeBlock,
+  ServerInlineCode,
+} from "@/components/mdx/server-code-block";
+import { ServerFigure } from "@/components/mdx/server-figure";
 import Link from "next/link";
 import remarkGfm from "remark-gfm";
 import rehypeSlug from "rehype-slug";
 import rehypeAutolinkHeadings from "rehype-autolink-headings";
 import rehypePrettyCode from "rehype-pretty-code";
-import { visit } from "unist-util-visit";
+import { rehypeCodeMeta } from "@/lib/rehype-code-meta";
 
 interface MDXRendererProps {
   source: string;
@@ -125,10 +125,10 @@ export async function MDXRenderer({ source }: MDXRendererProps) {
     SourceCodeLink,
     Link,
 
-    figure: MDXFigure,
-    // wrap with not-prose class
-    pre: MDXPre,
-    code: MDXCode,
+    // Code block handling - server-side rendered
+    figure: ServerFigure,
+    pre: ServerCodeBlock,
+    code: ServerInlineCode,
   };
 
   return (
@@ -148,34 +148,8 @@ export async function MDXRenderer({ source }: MDXRendererProps) {
                 keepBackground: false,
               },
             ],
-            // Custom plugin to extract copy attribute from metadata and set it on pre element
-            () => {
-              return (tree: any) => {
-                visit(tree, "element", (node: any) => {
-                  // Check pre elements and their code children for metadata
-                  if (node.tagName === "pre" && node.children) {
-                    for (const child of node.children) {
-                      if (child.tagName === "code" && child.data?.meta) {
-                        const codeMetaString = child.data.meta as string;
-                        // Parse copy attribute: copy="false", copy="true", or just "copy" (which means true)
-                        const copyFalseMatch =
-                          codeMetaString.match(/copy=["']?false["']?/);
-
-                        if (copyFalseMatch) {
-                          // copy="false" or copy=false - hide copy button
-                          if (!node.properties) {
-                            node.properties = {};
-                          }
-                          node.properties["data-copy"] = "false";
-                        }
-                        // If copy="true" or just "copy", don't set anything (default behavior shows copy button)
-                        break; // Only process first code child
-                      }
-                    }
-                  }
-                });
-              };
-            },
+            // Generic plugin to extract all meta attributes as data-* props
+            rehypeCodeMeta,
           ],
         },
       }}
