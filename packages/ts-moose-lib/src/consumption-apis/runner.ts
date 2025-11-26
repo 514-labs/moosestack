@@ -288,6 +288,8 @@ const createMainRouter = async (
   });
 
   return async (req: http.IncomingMessage, res: http.ServerResponse) => {
+    const start = Date.now();
+
     const url = new URL(req.url || "", "http://localhost");
     const pathname = url.pathname;
 
@@ -399,7 +401,7 @@ const createMainRouter = async (
 
     res.writeHead(404, { "Content-Type": "application/json" });
     res.end(JSON.stringify({ error: "Not Found" }));
-    httpLogger(req, res);
+    httpLogger(req, res, start);
   };
 };
 
