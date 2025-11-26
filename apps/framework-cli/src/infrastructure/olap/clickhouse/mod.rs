@@ -911,6 +911,7 @@ async fn execute_modify_table_column(
     let required_changed = before_column.required != after_column.required;
     let comment_changed = before_column.comment != after_column.comment;
     let ttl_changed = before_column.ttl != after_column.ttl;
+    let codec_changed = before_column.codec != after_column.codec;
 
     // If only the comment changed, use a simpler ALTER TABLE ... MODIFY COLUMN ... COMMENT
     // This is more efficient and avoids unnecessary table rebuilds
@@ -918,6 +919,7 @@ async fn execute_modify_table_column(
         && !required_changed
         && !default_changed
         && !ttl_changed
+        && !codec_changed
         && comment_changed
     {
         tracing::info!(
@@ -956,7 +958,7 @@ async fn execute_modify_table_column(
 
     tracing::info!(
         "Executing ModifyTableColumn for table: {}, column: {} ({}→{})\
-data_type_changed: {data_type_changed}, default_changed: {default_changed}, required_changed: {required_changed}, comment_changed: {comment_changed}, ttl_changed: {ttl_changed}",
+data_type_changed: {data_type_changed}, default_changed: {default_changed}, required_changed: {required_changed}, comment_changed: {comment_changed}, ttl_changed: {ttl_changed}, codec_changed: {codec_changed}",
         table_name,
         after_column.name,
         before_column.data_type,
