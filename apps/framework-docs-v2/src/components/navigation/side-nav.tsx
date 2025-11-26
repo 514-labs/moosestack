@@ -17,6 +17,7 @@ import {
   SidebarMenuSub,
   SidebarMenuSubButton,
   SidebarMenuSubItem,
+  SidebarMenuSubLabel,
 } from "@/components/ui/sidebar";
 import {
   Collapsible,
@@ -327,18 +328,30 @@ function renderNavChildren(
   language: string,
 ): React.ReactNode[] {
   const elements: React.ReactNode[] = [];
+  let isFirstLabel = true;
 
-  children.forEach((child) => {
-    if (child.type !== "page") return;
-    elements.push(
-      <NestedNavItemComponent
-        key={child.slug}
-        item={child}
-        pathname={pathname}
-        searchParams={searchParams}
-        language={language}
-      />,
-    );
+  children.forEach((child, index) => {
+    if (child.type === "label") {
+      elements.push(
+        <SidebarMenuSubLabel key={`label-${index}`} isFirst={isFirstLabel}>
+          {child.title}
+        </SidebarMenuSubLabel>,
+      );
+      isFirstLabel = false;
+    } else if (child.type === "separator") {
+      // Separators are handled via label spacing - skip rendering them
+      return;
+    } else if (child.type === "page") {
+      elements.push(
+        <NestedNavItemComponent
+          key={child.slug}
+          item={child}
+          pathname={pathname}
+          searchParams={searchParams}
+          language={language}
+        />,
+      );
+    }
   });
 
   return elements;
