@@ -452,7 +452,7 @@ export const TYPESCRIPT_TEST_SCHEMAS: ExpectedTableSchema[] = [
       { name: "request_count", type: "Float64", codec: /DoubleDelta.*LZ4/ },
       { name: "user_agent", type: "String", codec: "ZSTD(3)" },
       { name: "tags", type: "Array(String)", codec: "LZ4" },
-      { name: "status_code", type: "Int64" },
+      { name: "status_code", type: "Float64" },
     ],
   },
 ];
@@ -870,7 +870,7 @@ export const PYTHON_TEST_SCHEMAS: ExpectedTableSchema[] = [
       { name: "request_count", type: "Float64", codec: /DoubleDelta.*LZ4/ },
       { name: "user_agent", type: "String", codec: "ZSTD(3)" },
       { name: "tags", type: "Array(String)", codec: "LZ4" },
-      { name: "status_code", type: "Int64" },
+      { name: "status_code", type: "Float64" },
     ],
   },
 ];
