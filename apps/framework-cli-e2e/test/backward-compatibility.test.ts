@@ -56,32 +56,47 @@ const MOOSE_PY_LIB_PATH = path.resolve(
 
 // Path to npm-installed CLI (will be set by checkLatestPublishedCLI)
 let LATEST_CLI_PATH: string;
+let CLI_INSTALL_DIR: string;
 
 /**
  * Install and check the latest published version of moose-cli
- * Uses npm install instead of npx to ensure consistent registry behavior
+ * Uses pnpm for consistency with the monorepo
  */
 async function checkLatestPublishedCLI(): Promise<void> {
   console.log("Installing latest published moose-cli from npm...");
 
   try {
-    // Install CLI using npm (not npx) to ensure consistent registry usage
+    // Create a temp directory for CLI install
+    const os = require("os");
+    CLI_INSTALL_DIR = fs.mkdtempSync(path.join(os.tmpdir(), "moose-cli-"));
+    console.log(`Installing CLI to temp directory: ${CLI_INSTALL_DIR}`);
+
+    // Install CLI using pnpm (consistent with monorepo)
     const installResult = await execAsync(
-      "npm install --no-save @514labs/moose-cli@latest",
+      "pnpm add @514labs/moose-cli@latest",
+      { cwd: CLI_INSTALL_DIR },
     );
-    console.log("npm install output:", installResult.stdout);
+    console.log("pnpm install output:", installResult.stdout);
 
-    // Find the installed CLI binary
-    const { stdout: cliPath } = await execAsync("npm bin --no-save");
-    LATEST_CLI_PATH = path.join(cliPath.trim(), "moose-cli");
+    // Find the installed CLI binary in pnpm's structure
+    LATEST_CLI_PATH = path.join(
+      CLI_INSTALL_DIR,
+      "node_modules",
+      ".bin",
+      "moose-cli",
+    );
 
-    // Verify it works
+    // Verify it exists and works
+    if (!fs.existsSync(LATEST_CLI_PATH)) {
+      throw new Error(`CLI binary not found at ${LATEST_CLI_PATH}`);
+    }
+
     const { stdout: version } = await execAsync(
       `"${LATEST_CLI_PATH}" --version`,
     );
     console.log("Latest published CLI version:", version.trim());
   } catch (error: any) {
-    console.error("Failed to install latest CLI from npm:", error.message);
+    console.error("Failed to install latest CLI:", error.message);
     if (error.stdout) console.error("stdout:", error.stdout);
     if (error.stderr) console.error("stderr:", error.stderr);
     throw new Error(
@@ -116,21 +131,21 @@ async function setupTypeScriptProjectWithLatestNpm(
     throw error;
   }
 
-  // Install dependencies with latest moose-lib from npm
+  // Install dependencies with latest moose-lib using pnpm
   console.log(
-    "Installing dependencies with npm (using latest @514labs/moose-lib)...",
+    "Installing dependencies with pnpm (using latest @514labs/moose-lib)...",
   );
   await new Promise<void>((resolve, reject) => {
-    const installCmd = spawn("npm", ["install"], {
+    const installCmd = spawn("pnpm", ["install"], {
       stdio: "inherit",
       cwd: projectDir,
     });
     installCmd.on("close", (code) => {
-      console.log(`npm install exited with code ${code}`);
+      console.log(`pnpm install exited with code ${code}`);
       if (code === 0) {
         resolve();
       } else {
-        reject(new Error(`npm install failed with code ${code}`));
+        reject(new Error(`pnpm install failed with code ${code}`));
       }
     });
   });
