@@ -171,13 +171,6 @@
 
               # Set Python path for development
               export PYTHONPATH="$PWD/packages/py-moose-lib:$PYTHONPATH"
-
-              # Configure npm to use local directories (for backward compatibility tests)
-              # This avoids needing global npm install access
-              mkdir -p "$PWD/.npm-cache" "$PWD/.npm-global"/{lib,bin,share}
-              export NPM_CONFIG_CACHE="$PWD/.npm-cache"
-              export NPM_CONFIG_PREFIX="$PWD/.npm-global"
-              export PATH="$PWD/.npm-global/bin:$PATH"
             '';
           };
 
