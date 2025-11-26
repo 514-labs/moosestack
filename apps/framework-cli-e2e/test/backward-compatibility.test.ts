@@ -262,6 +262,18 @@ describe("Backward Compatibility Tests", function () {
     }
   });
 
+  after(function () {
+    // Clean up temporary CLI install directory
+    if (CLI_INSTALL_DIR) {
+      try {
+        console.log(`Cleaning up temporary CLI install directory: ${CLI_INSTALL_DIR}`);
+        fs.rmSync(CLI_INSTALL_DIR, { recursive: true, force: true });
+      } catch (error) {
+        console.error(`Failed to clean up CLI install directory: ${error}`);
+      }
+    }
+  });
+
   for (const config of BACKWARD_COMPAT_CONFIGS) {
     describe(`${config.displayName} - Upgrade from n-1 to n`, function () {
       let devProcess: ChildProcess | null = null;
