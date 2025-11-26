@@ -84,20 +84,20 @@ export type Decimal<P extends number, S extends number> = string &
  * @example
  * interface Metrics {
  *   // Single codec
- *   log_blob: string & Codec<"ZSTD(3)">;
+ *   log_blob: string & ClickHouseCodec<"ZSTD(3)">;
  *
  *   // Codec chain (processed left-to-right)
- *   timestamp: Date & Codec<"Delta, LZ4">;
- *   temperature: number & Codec<"Gorilla, ZSTD">;
+ *   timestamp: Date & ClickHouseCodec<"Delta, LZ4">;
+ *   temperature: number & ClickHouseCodec<"Gorilla, ZSTD">;
  *
  *   // Specialized codecs
- *   counter: number & Codec<"DoubleDelta">;
+ *   counter: number & ClickHouseCodec<"DoubleDelta">;
  *
  *   // Can combine with other annotations
- *   count: UInt64 & Codec<"DoubleDelta, LZ4">;
+ *   count: UInt64 & ClickHouseCodec<"DoubleDelta, LZ4">;
  * }
  */
-export type Codec<CodecExpr extends string> = {
+export type ClickHouseCodec<CodecExpr extends string> = {
   _clickhouse_codec?: CodecExpr;
 };
 

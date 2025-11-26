@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Annotated, Any
 from pydantic import BaseModel
-from moose_lib import Key, clickhouse_codec, UInt64
+from moose_lib import Key, ClickHouseCodec, UInt64
 from moose_lib.data_models import _to_columns
 
 
@@ -10,7 +10,7 @@ def test_codec_single():
 
     class CodecTest(BaseModel):
         id: Key[str]
-        data: Annotated[str, clickhouse_codec("ZSTD(3)")]
+        data: Annotated[str, ClickHouseCodec("ZSTD(3)")]
 
     columns = _to_columns(CodecTest)
     by_name = {col.name: col for col in columns}
@@ -23,8 +23,8 @@ def test_codec_chain():
     """Test codec chain annotation (Delta, LZ4)."""
 
     class CodecChainTest(BaseModel):
-        timestamp: Annotated[datetime, clickhouse_codec("Delta, LZ4")]
-        value: Annotated[float, clickhouse_codec("Gorilla, ZSTD")]
+        timestamp: Annotated[datetime, ClickHouseCodec("Delta, LZ4")]
+        value: Annotated[float, ClickHouseCodec("Gorilla, ZSTD")]
 
     columns = _to_columns(CodecChainTest)
     by_name = {col.name: col for col in columns}
@@ -37,8 +37,8 @@ def test_codec_with_level():
     """Test codec with compression level."""
 
     class CodecLevelTest(BaseModel):
-        log_blob: Annotated[Any, clickhouse_codec("ZSTD(3)")]
-        combination_hash: Annotated[list[UInt64], clickhouse_codec("ZSTD(1)")]
+        log_blob: Annotated[Any, ClickHouseCodec("ZSTD(3)")]
+        combination_hash: Annotated[list[UInt64], ClickHouseCodec("ZSTD(1)")]
 
     columns = _to_columns(CodecLevelTest)
     by_name = {col.name: col for col in columns}
@@ -51,9 +51,9 @@ def test_codec_specialized():
     """Test specialized codecs."""
 
     class SpecializedCodecTest(BaseModel):
-        timestamp: Annotated[datetime, clickhouse_codec("Delta")]
-        counter: Annotated[int, clickhouse_codec("DoubleDelta")]
-        temperature: Annotated[float, clickhouse_codec("Gorilla")]
+        timestamp: Annotated[datetime, ClickHouseCodec("Delta")]
+        counter: Annotated[int, ClickHouseCodec("DoubleDelta")]
+        temperature: Annotated[float, ClickHouseCodec("Gorilla")]
 
     columns = _to_columns(SpecializedCodecTest)
     by_name = {col.name: col for col in columns}
@@ -67,7 +67,7 @@ def test_codec_none():
     """Test codec with NONE (uncompressed)."""
 
     class NoCodecTest(BaseModel):
-        data: Annotated[str, clickhouse_codec("NONE")]
+        data: Annotated[str, ClickHouseCodec("NONE")]
 
     columns = _to_columns(NoCodecTest)
     by_name = {col.name: col for col in columns}

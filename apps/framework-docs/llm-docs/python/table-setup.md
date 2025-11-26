@@ -922,27 +922,27 @@ Specify per-column compression codecs to optimize storage and performance:
 
 ```python
 from typing import Annotated, Any
-from moose_lib import OlapTable, OlapConfig, clickhouse_codec, UInt64
+from moose_lib import OlapTable, OlapConfig, ClickHouseCodec, UInt64
 from pydantic import BaseModel
 from datetime import datetime
 
 class Metrics(BaseModel):
     # Delta for timestamps and monotonically increasing values
-    timestamp: Annotated[datetime, clickhouse_codec("Delta, LZ4")]
+    timestamp: Annotated[datetime, ClickHouseCodec("Delta, LZ4")]
 
     # Gorilla for floating point sensor data
-    temperature: Annotated[float, clickhouse_codec("Gorilla, ZSTD(3)")]
+    temperature: Annotated[float, ClickHouseCodec("Gorilla, ZSTD(3)")]
 
     # DoubleDelta for counters and metrics
-    request_count: Annotated[float, clickhouse_codec("DoubleDelta, LZ4")]
+    request_count: Annotated[float, ClickHouseCodec("DoubleDelta, LZ4")]
 
     # ZSTD for text/JSON with compression level (1-22)
-    log_data: Annotated[Any, clickhouse_codec("ZSTD(9)")]
-    user_agent: Annotated[str, clickhouse_codec("ZSTD(3)")]
+    log_data: Annotated[Any, ClickHouseCodec("ZSTD(9)")]
+    user_agent: Annotated[str, ClickHouseCodec("ZSTD(3)")]
 
     # Compress array elements
-    tags: Annotated[list[str], clickhouse_codec("LZ4")]
-    event_ids: Annotated[list[UInt64], clickhouse_codec("ZSTD(1)")]
+    tags: Annotated[list[str], ClickHouseCodec("LZ4")]
+    event_ids: Annotated[list[UInt64], ClickHouseCodec("ZSTD(1)")]
 
     # No codec (uses ClickHouse default)
     status_code: int
@@ -968,11 +968,11 @@ from moose_lib import clickhouse_default, ClickHouseTTL, UInt64
 
 class Events(BaseModel):
     # Codec + Default value
-    status: Annotated[str, clickhouse_default("'pending'"), clickhouse_codec("ZSTD(3)")]
+    status: Annotated[str, clickhouse_default("'pending'"), ClickHouseCodec("ZSTD(3)")]
 
     # Codec + TTL
-    email: Annotated[str, ClickHouseTTL("timestamp + INTERVAL 30 DAY"), clickhouse_codec("ZSTD(3)")]
+    email: Annotated[str, ClickHouseTTL("timestamp + INTERVAL 30 DAY"), ClickHouseCodec("ZSTD(3)")]
 
     # Codec + Numeric type
-    event_count: Annotated[UInt64, clickhouse_codec("DoubleDelta, LZ4")]
+    event_count: Annotated[UInt64, ClickHouseCodec("DoubleDelta, LZ4")]
 ```

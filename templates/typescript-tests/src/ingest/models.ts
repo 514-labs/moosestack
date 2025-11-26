@@ -21,7 +21,7 @@ import {
   ClickHouseByteSize,
   ClickHouseJson,
   Int64,
-  Codec,
+  ClickHouseCodec,
 } from "@514labs/moose-lib";
 
 /**
@@ -689,13 +689,13 @@ export const dateTimePrecisionOutputStream =
 // =======Codec Compression Test=======
 export interface CodecTest {
   id: Key<string>;
-  timestamp: DateTime & Codec<"Delta, LZ4">;
-  log_blob: Record<string, any> & Codec<"ZSTD(3)">;
-  combination_hash: UInt64[] & Codec<"ZSTD(1)">;
-  temperature: number & Codec<"Gorilla, ZSTD(3)">;
-  request_count: number & Codec<"DoubleDelta, LZ4">;
-  user_agent: string & Codec<"ZSTD(3)">;
-  tags: string[] & Codec<"LZ4">;
+  timestamp: DateTime & ClickHouseCodec<"Delta, LZ4">;
+  log_blob: Record<string, any> & ClickHouseCodec<"ZSTD(3)">;
+  combination_hash: UInt64[] & ClickHouseCodec<"ZSTD(1)">;
+  temperature: number & ClickHouseCodec<"Gorilla, ZSTD(3)">;
+  request_count: number & ClickHouseCodec<"DoubleDelta, LZ4">;
+  user_agent: string & ClickHouseCodec<"ZSTD(3)">;
+  tags: string[] & ClickHouseCodec<"LZ4">;
   status_code: number;
 }
 

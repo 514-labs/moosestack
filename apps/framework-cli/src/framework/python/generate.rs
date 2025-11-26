@@ -557,7 +557,7 @@ pub fn tables_to_python(tables: &[Table], life_cycle: Option<LifeCycle>) -> Stri
     .unwrap();
     writeln!(
         output,
-        "from moose_lib import clickhouse_default, clickhouse_codec, LifeCycle, ClickHouseTTL"
+        "from moose_lib import clickhouse_default, ClickHouseCodec, LifeCycle, ClickHouseTTL"
     )
     .unwrap();
     writeln!(
@@ -678,10 +678,7 @@ pub fn tables_to_python(tables: &[Table], life_cycle: Option<LifeCycle>) -> Stri
                 type_str = format!("Annotated[{}, ClickHouseTTL({:?})]", type_str, ttl_expr);
             }
             if let Some(ref codec_expr) = column.codec {
-                type_str = format!(
-                    "Annotated[{}, clickhouse_codec({:?})]",
-                    type_str, codec_expr
-                );
+                type_str = format!("Annotated[{}, ClickHouseCodec({:?})]", type_str, codec_expr);
             }
             if let Some(ref default_expr) = column.default {
                 type_str = format!(
@@ -1109,7 +1106,7 @@ from enum import IntEnum, Enum
 from moose_lib import Key, IngestPipeline, IngestPipelineConfig, OlapTable, OlapConfig, clickhouse_datetime64, clickhouse_decimal, ClickhouseSize, StringToEnumMixin
 from moose_lib.data_models import ClickHouseJson
 from moose_lib import Point, Ring, LineString, MultiLineString, Polygon, MultiPolygon, FixedString
-from moose_lib import clickhouse_default, clickhouse_codec, LifeCycle, ClickHouseTTL
+from moose_lib import clickhouse_default, ClickHouseCodec, LifeCycle, ClickHouseTTL
 from moose_lib.blocks import MergeTreeEngine, ReplacingMergeTreeEngine, AggregatingMergeTreeEngine, SummingMergeTreeEngine, S3QueueEngine, ReplicatedMergeTreeEngine, ReplicatedReplacingMergeTreeEngine, ReplicatedAggregatingMergeTreeEngine, ReplicatedSummingMergeTreeEngine
 
 class Foo(BaseModel):

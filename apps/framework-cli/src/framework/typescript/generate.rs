@@ -340,7 +340,7 @@ pub fn tables_to_typescript(tables: &[Table], life_cycle: Option<LifeCycle>) -> 
         "WithDefault",
         "LifeCycle",
         "ClickHouseTTL",
-        "Codec",
+        "ClickHouseCodec",
     ];
 
     if uses_simple_aggregate {
@@ -595,7 +595,7 @@ pub fn tables_to_typescript(tables: &[Table], life_cycle: Option<LifeCycle>) -> 
             // Wrap with Codec if present
             let type_str = match column.codec.as_ref() {
                 None => type_str,
-                Some(ref codec) => format!("{type_str} & Codec<{codec:?}>"),
+                Some(ref codec) => format!("{type_str} & ClickHouseCodec<{codec:?}>"),
             };
             let type_str = match column.default {
                 None => type_str,

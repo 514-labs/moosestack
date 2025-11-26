@@ -933,7 +933,7 @@ const handleCodec = (t: ts.Type, checker: TypeChecker): string | null => {
   }
   if (!codecType.isStringLiteral()) {
     throw new UnsupportedFeature(
-      'Codec must use a string literal, e.g. Codec<"ZSTD(3)">',
+      'ClickHouseCodec must use a string literal, e.g. ClickHouseCodec<"ZSTD(3)">',
     );
   }
   return codecType.value;
