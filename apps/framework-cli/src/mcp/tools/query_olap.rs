@@ -291,7 +291,7 @@ pub fn tool_definition() -> Tool {
     Tool {
         name: "query_olap".into(),
         description: Some(
-            "Execute read-only SQL queries against the ClickHouse OLAP database. Queries automatically use the configured database as the default context, so you can query tables without fully-qualifying them. Use this tool to explore data, check table schemas, and analyze stored information. Supports SELECT queries, system table queries (e.g., system.tables, system.columns), and metadata commands (SHOW, DESCRIBE, EXPLAIN).".into()
+            "Query ClickHouse to explore data, verify ingestion, check schemas. Use SELECT to analyze stored data, SHOW/DESCRIBE for table info, system.tables/system.columns for metadata. Read-only, safe for production. Tables auto-scoped to project database.".into()
         ),
         input_schema: Arc::new(schema.as_object().unwrap().clone()),
         annotations: None,
