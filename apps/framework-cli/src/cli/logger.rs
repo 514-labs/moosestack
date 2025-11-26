@@ -356,58 +356,24 @@ impl LegacyFormatter for JsonFormatter {
         target: &str,
         event: &Event<'_>,
     ) -> std::io::Result<()> {
-        // For JSON we need to capture the message first since it goes in the middle of the object.
-        // We could use a streaming JSON writer, but that's more complex and the message
-        // is typically small. The main win here is avoiding the serde_json::Value allocation.
+        // Extract message first since it appears in the middle of the JSON object
         let mut message_visitor = MessageVisitor::default();
         event.record(&mut message_visitor);
 
-        write!(
-            writer,
-            r#"{{"timestamp":"{}","severity":"{}","target":"{}","message":"{}""#,
-            chrono::Utc::now().to_rfc3339(),
-            level,
-            escape_json(target),
-            escape_json(&message_visitor.message),
-        )?;
+        // Build JSON object - serde_json handles escaping correctly
+        let mut log_entry = serde_json::json!({
+            "timestamp": chrono::Utc::now().to_rfc3339(),
+            "severity": level.to_string(),
+            "target": target,
+            "message": message_visitor.message,
+        });
 
         if self.include_session_id {
-            write!(
-                writer,
-                r#","session_id":"{}""#,
-                escape_json(&self.session_id)
-            )?;
+            log_entry["session_id"] = serde_json::Value::String(self.session_id.clone());
         }
 
-        writeln!(writer, "}}")
-    }
-}
-
-/// Escape a string for JSON output (handles quotes, backslashes, and control characters)
-#[inline]
-fn escape_json(s: &str) -> std::borrow::Cow<'_, str> {
-    if s.bytes()
-        .all(|b| b != b'"' && b != b'\\' && b >= 0x20 && b != 0x7f)
-    {
-        // Fast path: no escaping needed
-        std::borrow::Cow::Borrowed(s)
-    } else {
-        // Slow path: build escaped string
-        let mut escaped = String::with_capacity(s.len() + 8);
-        for c in s.chars() {
-            match c {
-                '"' => escaped.push_str("\\\""),
-                '\\' => escaped.push_str("\\\\"),
-                '\n' => escaped.push_str("\\n"),
-                '\r' => escaped.push_str("\\r"),
-                '\t' => escaped.push_str("\\t"),
-                c if c.is_control() => {
-                    escaped.push_str(&format!("\\u{:04x}", c as u32));
-                }
-                c => escaped.push(c),
-            }
-        }
-        std::borrow::Cow::Owned(escaped)
+        serde_json::to_writer(&mut *writer, &log_entry).map_err(std::io::Error::other)?;
+        writeln!(writer)
     }
 }
 
@@ -454,21 +420,12 @@ struct DirectWriteVisitor<'a, W> {
 impl<W: Write> Visit for DirectWriteVisitor<'_, W> {
     fn record_debug(&mut self, field: &Field, value: &dyn fmt::Debug) {
         if field.name() == "message" {
-            // Format to a temporary buffer to strip quotes if present.
-            // Most messages are short, so stack allocation is fine.
-            let formatted = format!("{:?}", value);
-            let output = if formatted.starts_with('"') && formatted.ends_with('"') {
-                &formatted[1..formatted.len() - 1]
-            } else {
-                &formatted
-            };
-            let _ = self.writer.write_all(output.as_bytes());
+            let _ = write!(self.writer, "{:?}", value);
         }
     }
 
     fn record_str(&mut self, field: &Field, value: &str) {
         if field.name() == "message" {
-            // String messages can be written directly without any allocation
             let _ = self.writer.write_all(value.as_bytes());
         }
     }
@@ -484,16 +441,11 @@ impl Visit for MessageVisitor {
     fn record_debug(&mut self, field: &Field, value: &dyn fmt::Debug) {
         if field.name() == "message" {
             self.message = format!("{:?}", value);
-            // Remove surrounding quotes from debug format
-            if self.message.starts_with('"') && self.message.ends_with('"') {
-                self.message = self.message[1..self.message.len() - 1].to_string();
-            }
         }
     }
 
     fn record_str(&mut self, field: &Field, value: &str) {
         if field.name() == "message" {
-            // String messages don't need debug quote stripping
             self.message = value.to_string();
         }
     }
