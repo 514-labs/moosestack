@@ -35,13 +35,15 @@ use crate::framework::core::{
     },
     plan::InfraPlan,
 };
+use crate::utilities::constants::NO_ANSI;
 use crossterm::{execute, style::Print};
+use std::sync::atomic::Ordering;
 use tracing::info;
 
 /// Create the detail indentation string at compile time
 /// Computed from ACTION_WIDTH (15) + 3 spaces:
 /// - ACTION_WIDTH spaces for the action column
-/// - 1 space after the action symbol (e.g., "+", "-", "~")  
+/// - 1 space after the action symbol (e.g., "+", "-", "~")
 /// - 2 spaces for additional indentation of detail lines
 ///   Total: 18 spaces for proper alignment
 const DETAIL_INDENT: &str = {
@@ -267,7 +269,8 @@ fn format_table_display(
 /// ```
 pub fn infra_added(message: &str) {
     let styled_text = StyledText::from_str("+ ").green();
-    write_styled_line(&styled_text, message).expect("failed to write message to terminal");
+    let no_ansi = NO_ANSI.load(Ordering::Relaxed);
+    write_styled_line(&styled_text, message, no_ansi).expect("failed to write message to terminal");
     info!("+ {}", message.trim());
 }
 
@@ -305,7 +308,8 @@ pub fn infra_added_detailed(title: &str, details: &[String]) {
 /// ```
 pub fn infra_removed(message: &str) {
     let styled_text = StyledText::from_str("- ").red();
-    write_styled_line(&styled_text, message).expect("failed to write message to terminal");
+    let no_ansi = NO_ANSI.load(Ordering::Relaxed);
+    write_styled_line(&styled_text, message, no_ansi).expect("failed to write message to terminal");
     info!("- {}", message.trim());
 }
 
@@ -343,7 +347,8 @@ pub fn infra_removed_detailed(title: &str, details: &[String]) {
 /// ```
 pub fn infra_updated(message: &str) {
     let styled_text = StyledText::from_str("~ ").yellow();
-    write_styled_line(&styled_text, message).expect("failed to write message to terminal");
+    let no_ansi = NO_ANSI.load(Ordering::Relaxed);
+    write_styled_line(&styled_text, message, no_ansi).expect("failed to write message to terminal");
     info!("~ {}", message.trim());
 }
 
@@ -388,7 +393,7 @@ pub fn infra_updated_detailed(title: &str, details: &[String]) {
 /// # Change Types Handled
 ///
 /// - **Table Changes**: Added, removed, or updated database tables
-/// - **View Changes**: Added, removed, or updated database views  
+/// - **View Changes**: Added, removed, or updated database views
 /// - **SQL Resource Changes**: Added, removed, or updated SQL resources
 ///
 /// # Examples

@@ -7,6 +7,8 @@ use super::{
     message::{Message, MessageType},
     terminal::{write_styled_line, StyledText},
 };
+use crate::utilities::constants::NO_ANSI;
+use std::sync::atomic::Ordering;
 use tracing::info;
 
 /// Displays a message about a batch database insertion.
@@ -31,7 +33,8 @@ pub fn batch_inserted(count: usize, table_name: &str) {
         action: "[DB]".to_string(),
         details: format!("{count} row(s) successfully written to DB table ({table_name})"),
     };
-    let _ = show_message_impl(MessageType::Info, message, true);
+    let no_ansi = NO_ANSI.load(Ordering::Relaxed);
+    let _ = show_message_impl(MessageType::Info, message, true, no_ansi);
 }
 
 /// Wrapper function for the show_message macro.
@@ -56,7 +59,8 @@ pub fn batch_inserted(count: usize, table_name: &str) {
 /// );
 /// ```
 pub fn show_message_wrapper(message_type: MessageType, message: Message) {
-    let _ = show_message_impl(message_type, message, false);
+    let no_ansi = NO_ANSI.load(Ordering::Relaxed);
+    let _ = show_message_impl(message_type, message, false, no_ansi);
 }
 
 /// Internal implementation for the show_message macro.
@@ -69,6 +73,7 @@ pub fn show_message_wrapper(message_type: MessageType, message: Message) {
 /// * `message_type` - The type of message determining visual style
 /// * `message` - The message to display
 /// * `should_log` - Whether to log the message
+/// * `no_ansi` - If true, disable ANSI color codes and formatting
 ///
 /// # Returns
 ///
@@ -77,6 +82,7 @@ pub fn show_message_impl(
     message_type: MessageType,
     message: Message,
     should_log: bool,
+    no_ansi: bool,
 ) -> std::io::Result<()> {
     let action = message.action.clone();
     let details = message.details.clone();
@@ -90,7 +96,7 @@ pub fn show_message_impl(
     };
 
     // Write styled prefix and details in one line
-    write_styled_line(&styled_prefix, &details)?;
+    write_styled_line(&styled_prefix, &details, no_ansi)?;
 
     if should_log {
         let log_action = action.replace('\n', " ");
@@ -105,7 +111,8 @@ pub fn show_message_impl(
 ///
 /// This macro provides a unified interface for displaying messages with consistent
 /// formatting and optional logging. It handles the styling based on message type
-/// and ensures proper terminal output.
+/// and ensures proper terminal output. ANSI color codes are automatically disabled
+/// when the `no_ansi` setting is enabled in logger configuration.
 ///
 /// # Syntax
 ///
@@ -137,15 +144,31 @@ pub fn show_message_impl(
 /// ```
 #[macro_export]
 macro_rules! show_message {
-    ($message_type:expr, $message:expr) => {
-        $crate::cli::display::message_display::show_message_impl($message_type, $message, true)
-            .expect("failed to write message to terminal");
-    };
+    ($message_type:expr, $message:expr) => {{
+        use std::sync::atomic::Ordering;
+        use $crate::utilities::constants::NO_ANSI;
+        let no_ansi = NO_ANSI.load(Ordering::Relaxed);
+        $crate::cli::display::message_display::show_message_impl(
+            $message_type,
+            $message,
+            true,
+            no_ansi,
+        )
+        .expect("failed to write message to terminal");
+    }};
 
-    ($message_type:expr, $message:expr, $no_log:expr) => {
-        $crate::cli::display::message_display::show_message_impl($message_type, $message, false)
-            .expect("failed to write message to terminal");
-    };
+    ($message_type:expr, $message:expr, $no_log:expr) => {{
+        use std::sync::atomic::Ordering;
+        use $crate::utilities::constants::NO_ANSI;
+        let no_ansi = NO_ANSI.load(Ordering::Relaxed);
+        $crate::cli::display::message_display::show_message_impl(
+            $message_type,
+            $message,
+            false,
+            no_ansi,
+        )
+        .expect("failed to write message to terminal");
+    }};
 }
 
 #[cfg(test)]
