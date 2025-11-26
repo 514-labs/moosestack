@@ -594,15 +594,15 @@ fn setup_modern_format(
 
 fn setup_legacy_format(
     settings: &LoggerSettings,
-    session_id: &str,
-    machine_id: &str,
+    _session_id: &str,
+    _machine_id: &str,
     custom_fields: CustomFields,
 ) -> Result<(), LoggerError> {
     let env_filter = EnvFilter::try_from_default_env()
         .unwrap_or_else(|_| EnvFilter::new(settings.level.to_tracing_level().to_string()));
 
     // Setup with or without OTEL based on configuration
-    if let Some(endpoint) = &settings.export_to {
+    if let Some(_endpoint) = &settings.export_to {
         if settings.stdout {
             let legacy_layer = LegacyFormatLayer::new(
                 std::io::stdout,
@@ -625,7 +625,6 @@ fn setup_legacy_format(
             );
 
             tracing_subscriber::registry()
-                .with(otel_layer)
                 .with(env_filter)
                 .with(legacy_layer)
                 .init();
