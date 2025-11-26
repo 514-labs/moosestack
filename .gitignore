@@ -63,6 +63,10 @@ Session.vim
 # just in case we use npm by mistake
 apps/framework-internal-app/package-lock.json
 
+# Local npm directories (for backward compatibility tests)
+.npm-cache/
+.npm-global/
+
 packages/ts-moose-proto/generated/
 
 # ignore all scratch files and folders

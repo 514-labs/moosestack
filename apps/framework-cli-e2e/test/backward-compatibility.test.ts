@@ -54,22 +54,38 @@ const MOOSE_PY_LIB_PATH = path.resolve(
   "../../../packages/py-moose-lib",
 );
 
+// Path to npm-installed CLI (will be set by checkLatestPublishedCLI)
+let LATEST_CLI_PATH: string;
+
 /**
- * Check the latest published version of moose-cli
+ * Install and check the latest published version of moose-cli
+ * Uses npm install instead of npx to ensure consistent registry behavior
  */
 async function checkLatestPublishedCLI(): Promise<void> {
-  console.log("Checking latest published moose-cli from npm...");
+  console.log("Installing latest published moose-cli from npm...");
 
-  // Check if npx moose-cli is available (this downloads the latest version)
   try {
-    const { stdout } = await execAsync(
-      "npx -y @514labs/moose-cli@latest --version",
+    // Install CLI using npm (not npx) to ensure consistent registry usage
+    const installResult = await execAsync(
+      "npm install --no-save @514labs/moose-cli@latest",
     );
-    console.log("Latest published CLI version:", stdout.trim());
+    console.log("npm install output:", installResult.stdout);
+
+    // Find the installed CLI binary
+    const { stdout: cliPath } = await execAsync(
+      "npm bin --no-save",
+    );
+    LATEST_CLI_PATH = path.join(cliPath.trim(), "moose-cli");
+
+    // Verify it works
+    const { stdout: version } = await execAsync(`"${LATEST_CLI_PATH}" --version`);
+    console.log("Latest published CLI version:", version.trim());
   } catch (error: any) {
-    console.error("Failed to get latest CLI from npm:", error.message);
+    console.error("Failed to install latest CLI from npm:", error.message);
+    if (error.stdout) console.error("stdout:", error.stdout);
+    if (error.stderr) console.error("stderr:", error.stderr);
     throw new Error(
-      "Cannot check latest published CLI for backward compatibility test",
+      "Cannot install latest published CLI for backward compatibility test",
     );
   }
 }
@@ -85,9 +101,9 @@ async function setupTypeScriptProjectWithLatestNpm(
   console.log(`Initializing TypeScript project with latest npm moose-cli...`);
 
   try {
-    // using npx for both languages as they are the same binary
+    // Use npm-installed CLI instead of npx for consistent registry behavior
     const result = await execAsync(
-      `npx -y @514labs/moose-cli@latest init ${appName} ${templateName} --location "${projectDir}"`,
+      `"${LATEST_CLI_PATH}" init ${appName} ${templateName} --location "${projectDir}"`,
     );
     console.log("CLI init stdout:", result.stdout);
     if (result.stderr) {
@@ -130,10 +146,10 @@ async function setupPythonProjectWithLatestPypi(
 ): Promise<void> {
   console.log(`Initializing Python project with latest pypi moose-cli...`);
 
-  // Initialize project with latest CLI via npx
+  // Initialize project with latest CLI (npm-installed, not npx)
   try {
     const result = await execAsync(
-      `npx -y @514labs/moose-cli@latest init ${appName} ${templateName} --location "${projectDir}"`,
+      `"${LATEST_CLI_PATH}" init ${appName} ${templateName} --location "${projectDir}"`,
     );
     console.log("CLI init stdout:", result.stdout);
     if (result.stderr) {
@@ -284,9 +300,9 @@ describe("Backward Compatibility Tests", function () {
         }
         fs.writeFileSync(mooseConfigPath, mooseConfig);
 
-        // Start dev server with LATEST published CLI via npx
+        // Start dev server with LATEST published CLI (npm-installed)
         console.log(
-          "Starting dev server with LATEST published CLI (via npx)...",
+          "Starting dev server with LATEST published CLI (npm-installed)...",
         );
         const devEnv =
           config.language === "python" ?
@@ -305,7 +321,7 @@ describe("Backward Compatibility Tests", function () {
               TEST_AWS_SECRET_ACCESS_KEY: "test-secret-access-key",
             };
 
-        devProcess = spawn("npx", ["-y", "@514labs/moose-cli@latest", "dev"], {
+        devProcess = spawn(LATEST_CLI_PATH, ["dev"], {
           stdio: "pipe",
           cwd: TEST_PROJECT_DIR,
           env: devEnv,
