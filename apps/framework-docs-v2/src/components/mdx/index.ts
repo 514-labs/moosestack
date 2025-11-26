@@ -11,6 +11,9 @@ export { LanguageTabs, LanguageTabContent } from "./language-tabs";
 export { CommandSnippet } from "./command-snippet";
 export { CodeSnippet } from "./code-snippet";
 export { CodeEditorWrapper } from "./code-editor-wrapper";
+export { ShellSnippet } from "./shell-snippet";
+export { ServerCodeBlock, ServerInlineCode } from "./server-code-block";
+export { ServerFigure } from "./server-figure";
 export { ToggleBlock } from "./toggle-block";
 export {
   BulletPointsCard,
