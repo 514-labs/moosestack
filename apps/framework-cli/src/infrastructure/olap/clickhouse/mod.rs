@@ -812,6 +812,10 @@ async fn execute_add_table_column(
     let clickhouse_column = std_column_to_clickhouse_column(column.clone())?;
     let column_type_string = basic_field_type_to_string(&clickhouse_column.column_type)?;
 
+    let cluster_clause = cluster_name
+        .map(|c| format!(" ON CLUSTER {}", c))
+        .unwrap_or_default();
+
     // Include DEFAULT clause if column has a default value
     let default_clause = clickhouse_column
         .default
@@ -819,22 +823,34 @@ async fn execute_add_table_column(
         .map(|d| format!(" DEFAULT {}", d))
         .unwrap_or_default();
 
-    let cluster_clause = cluster_name
-        .map(|c| format!(" ON CLUSTER {}", c))
+    let codec_clause = clickhouse_column
+        .codec
+        .as_ref()
+        .map(|c| format!(" CODEC({})", c))
         .unwrap_or_default();
 
+    let ttl_clause = clickhouse_column
+        .ttl
+        .as_ref()
+        .map(|t| format!(" TTL {}", t))
+        .unwrap_or_default();
+
+    let position_clause = match after_column {
+        None => "FIRST".to_string(),
+        Some(after_col) => format!("AFTER `{after_col}`"),
+    };
+
     let add_column_query = format!(
-        "ALTER TABLE `{}`.`{}`{} ADD COLUMN `{}` {}{} {}",
+        "ALTER TABLE `{}`.`{}`{} ADD COLUMN `{}` {}{}{}{}  {}",
         db_name,
         table_name,
         cluster_clause,
         clickhouse_column.name,
         column_type_string,
         default_clause,
-        match after_column {
-            None => "FIRST".to_string(),
-            Some(after_col) => format!("AFTER `{after_col}`"),
-        }
+        codec_clause,
+        ttl_clause,
+        position_clause
     );
     log::debug!("Adding column: {}", add_column_query);
     run_query(&add_column_query, client).await.map_err(|e| {
@@ -3257,19 +3273,34 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
             .map(|d| format!(" DEFAULT {}", d))
             .unwrap_or_default();
 
+        let ttl_clause = clickhouse_column
+            .ttl
+            .as_ref()
+            .map(|t| format!(" TTL {}", t))
+            .unwrap_or_default();
+
+        let codec_clause = clickhouse_column
+            .codec
+            .as_ref()
+            .map(|c| format!(" CODEC({})", c))
+            .unwrap_or_default();
+
         let add_column_query = format!(
-            "ALTER TABLE `{}`.`{}` ADD COLUMN `{}` {}{} {}",
+            "ALTER TABLE `{}`.`{}`{} ADD COLUMN `{}` {}{}{}{}  {}",
             "test_db",
             "test_table",
+            "",
             clickhouse_column.name,
             column_type_string,
             default_clause,
+            codec_clause,
+            ttl_clause,
             "FIRST"
         );
 
         assert_eq!(
             add_column_query,
-            "ALTER TABLE `test_db`.`test_table` ADD COLUMN `count` Int32 DEFAULT 42 FIRST"
+            "ALTER TABLE `test_db`.`test_table` ADD COLUMN `count` Int32 DEFAULT 42  FIRST"
         );
     }
 
@@ -3305,19 +3336,34 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
             .map(|d| format!(" DEFAULT {}", d))
             .unwrap_or_default();
 
+        let ttl_clause = clickhouse_column
+            .ttl
+            .as_ref()
+            .map(|t| format!(" TTL {}", t))
+            .unwrap_or_default();
+
+        let codec_clause = clickhouse_column
+            .codec
+            .as_ref()
+            .map(|c| format!(" CODEC({})", c))
+            .unwrap_or_default();
+
         let add_column_query = format!(
-            "ALTER TABLE `{}`.`{}` ADD COLUMN `{}` {}{} {}",
+            "ALTER TABLE `{}`.`{}`{} ADD COLUMN `{}` {}{}{}{}  {}",
             "test_db",
             "test_table",
+            "",
             clickhouse_column.name,
             column_type_string,
             default_clause,
+            codec_clause,
+            ttl_clause,
             "AFTER `id`"
         );
 
         assert_eq!(
             add_column_query,
-            "ALTER TABLE `test_db`.`test_table` ADD COLUMN `description` Nullable(String) DEFAULT 'default text' AFTER `id`"
+            "ALTER TABLE `test_db`.`test_table` ADD COLUMN `description` Nullable(String) DEFAULT 'default text'  AFTER `id`"
         );
     }
 
