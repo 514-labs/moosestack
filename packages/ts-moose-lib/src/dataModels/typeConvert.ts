@@ -925,6 +925,20 @@ const handleDefaultWrapping = (
   return undefined;
 };
 
+/** Detect ClickHouse Codec annotation on a type and return codec expression */
+const handleCodec = (t: ts.Type, checker: TypeChecker): string | null => {
+  const codecType = getTaggedType(t, checker, "_clickhouse_codec");
+  if (codecType === null) {
+    return null;
+  }
+  if (!codecType.isStringLiteral()) {
+    throw new UnsupportedFeature(
+      'ClickHouseCodec must use a string literal, e.g. ClickHouseCodec<"ZSTD(3)">',
+    );
+  }
+  return codecType.value;
+};
+
 export const toColumns = (t: ts.Type, checker: TypeChecker): Column[] => {
   if (checker.getIndexInfosOfType(t).length !== 0) {
     console.log("[CompilerPlugin]", checker.getIndexInfosOfType(t));
@@ -964,6 +978,7 @@ export const toColumns = (t: ts.Type, checker: TypeChecker): Column[] => {
       unique: false,
       default: defaultExpression ?? handleDefault(type, checker),
       ttl: handleTtl(type, checker),
+      codec: handleCodec(type, checker),
       annotations,
     };
   });

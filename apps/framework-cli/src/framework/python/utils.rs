@@ -53,6 +53,7 @@ impl ColumnBuilder {
             // are generated later when converting to ClickHouse columns
             comment: None,
             ttl: None,
+            codec: None,
         })
     }
 }

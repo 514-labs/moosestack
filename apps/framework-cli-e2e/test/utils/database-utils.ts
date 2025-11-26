@@ -255,6 +255,7 @@ export interface ExpectedColumn {
   type: string | RegExp; // Allow regex for complex type matching
   nullable?: boolean;
   comment?: string;
+  codec?: string | RegExp;
 }
 
 /**
@@ -432,6 +433,26 @@ export const validateTableSchema = async (
         errors.push(
           `Column '${expectedCol.name}' comment mismatch: expected '${expectedCol.comment}', got '${actualCol.comment}'`,
         );
+      }
+
+      // Codec validation (if specified)
+      if (expectedCol.codec !== undefined) {
+        const actualCodec = actualCol.codec_expression;
+        let codecMatches = false;
+
+        if (typeof expectedCol.codec === "string") {
+          // Exact string match
+          codecMatches = actualCodec === expectedCol.codec;
+        } else if (expectedCol.codec instanceof RegExp) {
+          // Regex match for complex codec expressions
+          codecMatches = expectedCol.codec.test(actualCodec);
+        }
+
+        if (!codecMatches) {
+          errors.push(
+            `Column '${expectedCol.name}' codec mismatch: expected '${expectedCol.codec}', got '${actualCodec}'`,
+          );
+        }
       }
     }
 

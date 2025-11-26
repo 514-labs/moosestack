@@ -33,6 +33,7 @@ export interface Column {
   primary_key: boolean;
   default: string | null;
   ttl: string | null;
+  codec: string | null;
   annotations: [string, any][];
 }
 

@@ -1351,6 +1351,7 @@ mod tests {
                 annotations: vec![],
                 comment: None,
                 ttl: None,
+                codec: None,
             },
             after_column: None,
             dependency_info: DependencyInfo {
@@ -1673,6 +1674,7 @@ mod tests {
             annotations: vec![],
             comment: None,
             ttl: None,
+            codec: None,
         };
 
         // Create operations with correct dependencies
@@ -2727,6 +2729,7 @@ mod tests {
             annotations: vec![],
             comment: None,
             ttl: None,
+            codec: None,
         };
 
         // Create operations with signatures that work with the current implementation
@@ -2914,6 +2917,7 @@ mod tests {
                     annotations: vec![],
                     comment: None,
                     ttl: None,
+                    codec: None,
                 },
                 Column {
                     name: "old_column".to_string(),
@@ -2925,6 +2929,7 @@ mod tests {
                     annotations: vec![],
                     comment: None,
                     ttl: None,
+                    codec: None,
                 },
             ],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
@@ -2959,6 +2964,7 @@ mod tests {
                     annotations: vec![],
                     comment: None,
                     ttl: None,
+                    codec: None,
                 },
                 Column {
                     name: "new_column".to_string(),
@@ -2970,6 +2976,7 @@ mod tests {
                     annotations: vec![],
                     comment: None,
                     ttl: None,
+                    codec: None,
                 },
             ],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
@@ -3003,6 +3010,7 @@ mod tests {
                 annotations: vec![],
                 comment: None,
                 ttl: None,
+                codec: None,
             }),
             ColumnChange::Added {
                 column: Column {
@@ -3015,6 +3023,7 @@ mod tests {
                     annotations: vec![],
                     comment: None,
                     ttl: None,
+                    codec: None,
                 },
                 position_after: Some("id".to_string()),
             },

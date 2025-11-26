@@ -514,6 +514,7 @@ my_function = StreamingFunction(
                 // for actual ClickHouse table columns to preserve enum definitions
                 comment: None,
                 ttl: None,
+                codec: None,
             })
             .collect()
     }

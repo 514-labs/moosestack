@@ -648,6 +648,7 @@ impl<'de, S: SerializeValue> Visitor<'de> for &mut ValueVisitor<'_, S> {
                             annotations: vec![],
                             comment: None,
                             ttl: None,
+                            codec: None,
                         }
                     })
                     .collect();
@@ -1316,6 +1317,7 @@ mod tests {
                 annotations: vec![],
                 comment: None,
                 ttl: None,
+                codec: None,
             },
             Column {
                 name: "int_col".to_string(),
@@ -1327,6 +1329,7 @@ mod tests {
                 annotations: vec![],
                 comment: None,
                 ttl: None,
+                codec: None,
             },
             Column {
                 name: "float_col".to_string(),
@@ -1338,6 +1341,7 @@ mod tests {
                 annotations: vec![],
                 comment: None,
                 ttl: None,
+                codec: None,
             },
             Column {
                 name: "bool_col".to_string(),
@@ -1349,6 +1353,7 @@ mod tests {
                 annotations: vec![],
                 comment: None,
                 ttl: None,
+                codec: None,
             },
             Column {
                 name: "date_col".to_string(),
@@ -1360,6 +1365,7 @@ mod tests {
                 annotations: vec![],
                 comment: None,
                 ttl: None,
+                codec: None,
             },
         ];
 
@@ -1394,6 +1400,7 @@ mod tests {
             annotations: vec![],
             comment: None,
             ttl: None,
+            codec: None,
         }];
 
         let json = r#"
@@ -1428,6 +1435,7 @@ mod tests {
             annotations: vec![],
             comment: None,
             ttl: None,
+            codec: None,
         }];
 
         let json = r#"
@@ -1469,6 +1477,7 @@ mod tests {
             annotations: vec![],
             comment: None,
             ttl: None,
+            codec: None,
         }];
 
         // Test valid enum value
@@ -1518,6 +1527,7 @@ mod tests {
                 annotations: vec![],
                 comment: None,
                 ttl: None,
+                codec: None,
             },
             Column {
                 name: "nested_int".to_string(),
@@ -1529,6 +1539,7 @@ mod tests {
                 annotations: vec![],
                 comment: None,
                 ttl: None,
+                codec: None,
             },
         ];
 
@@ -1543,6 +1554,7 @@ mod tests {
                 annotations: vec![],
                 comment: None,
                 ttl: None,
+                codec: None,
             },
             Column {
                 name: "nested_object".to_string(),
@@ -1558,6 +1570,7 @@ mod tests {
                 annotations: vec![],
                 comment: None,
                 ttl: None,
+                codec: None,
             },
         ];
 
@@ -1616,6 +1629,7 @@ mod tests {
                 annotations: vec![],
                 comment: None,
                 ttl: None,
+                codec: None,
             },
             Column {
                 name: "optional_field".to_string(),
@@ -1627,6 +1641,7 @@ mod tests {
                 annotations: vec![],
                 comment: None,
                 ttl: None,
+                codec: None,
             },
         ];
 
@@ -1658,6 +1673,7 @@ mod tests {
                 annotations: vec![],
                 comment: None,
                 ttl: None,
+                codec: None,
             },
             Column {
                 name: "aud".to_string(),
@@ -1669,6 +1685,7 @@ mod tests {
                 annotations: vec![],
                 comment: None,
                 ttl: None,
+                codec: None,
             },
             Column {
                 name: "exp".to_string(),
@@ -1680,6 +1697,7 @@ mod tests {
                 annotations: vec![],
                 comment: None,
                 ttl: None,
+                codec: None,
             },
         ];
 
@@ -1694,6 +1712,7 @@ mod tests {
                 annotations: vec![],
                 comment: None,
                 ttl: None,
+                codec: None,
             },
             Column {
                 name: "jwt_object".to_string(),
@@ -1709,6 +1728,7 @@ mod tests {
                 annotations: vec![],
                 comment: None,
                 ttl: None,
+                codec: None,
             },
         ];
 
@@ -1754,6 +1774,7 @@ mod tests {
             annotations: vec![],
             comment: None,
             ttl: None,
+            codec: None,
         }];
 
         // Test valid map
@@ -1811,6 +1832,7 @@ mod tests {
             annotations: vec![],
             comment: None,
             ttl: None,
+            codec: None,
         }];
 
         // Test valid map with numeric keys (as strings in JSON)
@@ -1865,6 +1887,7 @@ mod tests {
             annotations: vec![],
             comment: None,
             ttl: None,
+            codec: None,
         }];
 
         // Min boundary 0
@@ -1908,6 +1931,7 @@ mod tests {
             annotations: vec![],
             comment: None,
             ttl: None,
+            codec: None,
         }];
 
         // Min boundary -32768
@@ -1951,6 +1975,7 @@ mod tests {
             annotations: vec![],
             comment: None,
             ttl: None,
+            codec: None,
         }];
 
         let positive_limit: BigInt = BigInt::from(1u8) << 127usize;
@@ -1996,6 +2021,7 @@ mod tests {
             annotations: vec![],
             comment: None,
             ttl: None,
+            codec: None,
         }];
 
         let positive_limit: BigInt = BigInt::from(1u8) << 255usize;
@@ -2041,6 +2067,7 @@ mod tests {
             annotations: vec![],
             comment: None,
             ttl: None,
+            codec: None,
         }];
 
         let limit: BigUint = BigUint::from(1u8) << 256usize;
@@ -2087,6 +2114,7 @@ mod tests {
             annotations: vec![],
             comment: None,
             ttl: None,
+            codec: None,
         }];
 
         // Valid keys
@@ -2127,6 +2155,7 @@ mod tests {
             annotations: vec![],
             comment: None,
             ttl: None,
+            codec: None,
         }];
 
         let positive_limit: BigInt = BigInt::from(1u8) << 255usize;
@@ -2167,6 +2196,7 @@ mod tests {
             annotations: vec![],
             comment: None,
             ttl: None,
+            codec: None,
         }];
 
         let limit: BigUint = BigUint::from(1u8) << 256usize;
@@ -2211,6 +2241,7 @@ mod tests {
             annotations: vec![],
             comment: None,
             ttl: None,
+            codec: None,
         }];
 
         let json = r#"
@@ -2242,6 +2273,7 @@ mod tests {
             annotations: vec![],
             comment: None,
             ttl: None,
+            codec: None,
         }];
 
         // missing nested path
@@ -2274,6 +2306,7 @@ mod tests {
             annotations: vec![],
             comment: None,
             ttl: None,
+            codec: None,
         }];
 
         // null at the nested path counts as missing for non-nullable types
@@ -2321,6 +2354,7 @@ mod tests {
             annotations: vec![],
             comment: None,
             ttl: None,
+            codec: None,
         }];
 
         // Test 1: Two's complement value (what -1 becomes with naive cast) should be rejected
@@ -2390,6 +2424,7 @@ mod tests {
             annotations: vec![],
             comment: None,
             ttl: None,
+            codec: None,
         }];
 
         // Test negative values work with i64

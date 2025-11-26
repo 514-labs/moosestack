@@ -241,6 +241,8 @@ message Column {
   optional string comment = 8; // Column comment for metadata storage
   // Optional column-level TTL expression (without leading 'TTL')
   optional string ttl = 10;
+  // Compression codec expression (e.g., "ZSTD(3)", "Delta, LZ4")
+  optional string codec = 11;
 }
 
 enum SimpleColumnType {

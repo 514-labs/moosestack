@@ -20,6 +20,9 @@ const rawMeta = {
   ttl: {
     title: "TTL (Time-to-Live)",
   },
+  compression: {
+    title: "Compression Codecs",
+  },
   "schema-optimization": {
     title: "Schema Optimization",
   },

@@ -1214,6 +1214,7 @@ mod tests {
                     annotations: vec![],
                     comment: None,
                     ttl: None,
+                    codec: None,
                 },
                 Column {
                     name: "B".to_string(),
@@ -1225,6 +1226,7 @@ mod tests {
                     annotations: vec![],
                     comment: None,
                     ttl: None,
+                    codec: None,
                 },
                 Column {
                     name: "C".to_string(),
@@ -1242,6 +1244,7 @@ mod tests {
                                 annotations: vec![],
                                 comment: None,
                                 ttl: None,
+                                codec: None,
                             },
                             Column {
                                 name: "b".to_string(),
@@ -1259,6 +1262,7 @@ mod tests {
                                             annotations: vec![],
                                             comment: None,
                                             ttl: None,
+                                            codec: None,
                                         },
                                         Column {
                                             name: "e".to_string(),
@@ -1270,6 +1274,7 @@ mod tests {
                                             annotations: vec![],
                                             comment: None,
                                             ttl: None,
+                                            codec: None,
                                         },
                                         Column {
                                             name: "f".to_string(),
@@ -1281,6 +1286,7 @@ mod tests {
                                             annotations: vec![],
                                             comment: None,
                                             ttl: None,
+                                            codec: None,
                                         },
                                     ],
                                 }),
@@ -1291,6 +1297,7 @@ mod tests {
                                 annotations: vec![],
                                 comment: None,
                                 ttl: None,
+                                codec: None,
                             },
                             Column {
                                 name: "c".to_string(),
@@ -1302,6 +1309,7 @@ mod tests {
                                 annotations: vec![],
                                 comment: None,
                                 ttl: None,
+                                codec: None,
                             },
                         ],
                     }),
@@ -1312,6 +1320,7 @@ mod tests {
                     annotations: vec![],
                     comment: None,
                     ttl: None,
+                    codec: None,
                 },
                 Column {
                     name: "D".to_string(),
@@ -1323,6 +1332,7 @@ mod tests {
                     annotations: vec![],
                     comment: None,
                     ttl: None,
+                    codec: None,
                 },
             ],
         };
