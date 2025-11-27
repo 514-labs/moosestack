@@ -152,6 +152,63 @@ pub async fn list_infra_resources(redis_client: Arc<RedisClient>) -> ListResourc
         });
     }
 
+    // Add web app resources
+    for (key, web_app) in &infra_map.web_apps {
+        resources.push(Annotated {
+            raw: RawResource {
+                uri: build_resource_uri(ComponentType::WebApp, key),
+                name: web_app.name.clone(),
+                title: Some(format!("Web App: {}", web_app.name)),
+                description: web_app
+                    .metadata
+                    .as_ref()
+                    .and_then(|m| m.description.clone()),
+                mime_type: Some("application/x-toon".to_string()),
+                size: None,
+                icons: None,
+            },
+            annotations: None,
+        });
+    }
+
+    // Add topic-to-table sync process resources
+    for (key, sync) in &infra_map.topic_to_table_sync_processes {
+        resources.push(Annotated {
+            raw: RawResource {
+                uri: build_resource_uri(ComponentType::TopicTableSync, key),
+                name: format!("{} -> {}", sync.source_topic_id, sync.target_table_id),
+                title: Some(format!(
+                    "Topic-to-Table Sync: {} -> {}",
+                    sync.source_topic_id, sync.target_table_id
+                )),
+                description: None, // Sync processes don't have metadata field
+                mime_type: Some("application/x-toon".to_string()),
+                size: None,
+                icons: None,
+            },
+            annotations: None,
+        });
+    }
+
+    // Add topic-to-topic sync process resources
+    for (key, sync) in &infra_map.topic_to_topic_sync_processes {
+        resources.push(Annotated {
+            raw: RawResource {
+                uri: build_resource_uri(ComponentType::TopicTopicSync, key),
+                name: format!("{} -> {}", sync.source_topic_id, sync.target_topic_id),
+                title: Some(format!(
+                    "Topic-to-Topic Sync: {} -> {}",
+                    sync.source_topic_id, sync.target_topic_id
+                )),
+                description: None, // Sync processes don't have metadata field
+                mime_type: Some("application/x-toon".to_string()),
+                size: None,
+                icons: None,
+            },
+            annotations: None,
+        });
+    }
+
     ListResourcesResult {
         resources,
         next_cursor: None,
@@ -198,7 +255,18 @@ pub async fn read_infra_resource(
             let workflow = infra_map.workflows.get(&component_id)?;
             serialize_workflow_to_json(workflow, &component_id)
         }
-        _ => return None,
+        ComponentType::WebApp => {
+            let web_app = infra_map.web_apps.get(&component_id)?;
+            serialize_web_app_to_json(web_app, &component_id)
+        }
+        ComponentType::TopicTableSync => {
+            let sync = infra_map.topic_to_table_sync_processes.get(&component_id)?;
+            serialize_topic_table_sync_to_json(sync, &component_id, &infra_map)
+        }
+        ComponentType::TopicTopicSync => {
+            let sync = infra_map.topic_to_topic_sync_processes.get(&component_id)?;
+            serialize_topic_topic_sync_to_json(sync, &component_id, &infra_map)
+        }
     };
 
     // Serialize to TOON format
@@ -401,6 +469,98 @@ fn serialize_workflow_to_json(workflow: &crate::framework::scripts::Workflow, id
             "workflow_name": workflow.name(),
             "schedule": workflow.config().schedule,
             "retries": workflow.config().retries,
+        },
+    })
+}
+
+/// Serialize a topic-to-table sync process to JSON value
+fn serialize_topic_table_sync_to_json(
+    sync: &crate::framework::core::infrastructure::topic_sync_process::TopicToTableSyncProcess,
+    id: &str,
+    infra_map: &crate::framework::core::infrastructure_map::InfrastructureMap,
+) -> Value {
+    // Get source file from the source topic's metadata
+    let source_file = infra_map
+        .topics
+        .get(&sync.source_topic_id)
+        .and_then(|t| t.metadata.as_ref())
+        .and_then(|m| m.source.as_ref())
+        .map(|s| s.file.clone());
+
+    json!({
+        "id": id,
+        "name": format!("{} -> {}", sync.source_topic_id, sync.target_table_id),
+        "type": "topic_table_sync",
+        "configuration": {
+            "source_topic_id": sync.source_topic_id,
+            "target_table_id": sync.target_table_id,
+            "version": sync.version.as_ref().map(|v| v.to_string()),
+        },
+        "metadata": {
+            "source_file": source_file,
+            "source_primitive": {
+                "name": sync.source_primitive.name,
+                "primitive_type": format!("{:?}", sync.source_primitive.primitive_type),
+            },
+        },
+        "schema": {
+            "columns": sync.columns.iter().map(|col| json!({
+                "name": col.name,
+                "data_type": format!("{:?}", col.data_type),
+                "required": col.required,
+                "primary_key": col.primary_key,
+                "unique": col.unique,
+            })).collect::<Vec<_>>(),
+        },
+    })
+}
+
+/// Serialize a topic-to-topic sync process to JSON value
+fn serialize_topic_topic_sync_to_json(
+    sync: &crate::framework::core::infrastructure::topic_sync_process::TopicToTopicSyncProcess,
+    id: &str,
+    infra_map: &crate::framework::core::infrastructure_map::InfrastructureMap,
+) -> Value {
+    // Get source file from the source topic's metadata
+    let source_file = infra_map
+        .topics
+        .get(&sync.source_topic_id)
+        .and_then(|t| t.metadata.as_ref())
+        .and_then(|m| m.source.as_ref())
+        .map(|s| s.file.clone());
+
+    json!({
+        "id": id,
+        "name": format!("{} -> {}", sync.source_topic_id, sync.target_topic_id),
+        "type": "topic_topic_sync",
+        "configuration": {
+            "source_topic_id": sync.source_topic_id,
+            "target_topic_id": sync.target_topic_id,
+        },
+        "metadata": {
+            "source_file": source_file,
+            "source_primitive": {
+                "name": sync.source_primitive.name,
+                "primitive_type": format!("{:?}", sync.source_primitive.primitive_type),
+            },
+        },
+    })
+}
+
+/// Serialize a web app to JSON value
+fn serialize_web_app_to_json(
+    web_app: &crate::framework::core::infrastructure::web_app::WebApp,
+    id: &str,
+) -> Value {
+    json!({
+        "id": id,
+        "name": web_app.name,
+        "type": "web_app",
+        "configuration": {
+            "mount_path": web_app.mount_path,
+        },
+        "metadata": {
+            "description": web_app.metadata.as_ref().and_then(|m| m.description.as_ref()),
         },
     })
 }

@@ -70,7 +70,12 @@ impl FunctionProcess {
                 name: function.name.clone(),
                 primitive_type: PrimitiveTypes::Function,
             },
-            metadata: None,
+            metadata: Some(Metadata {
+                description: None,
+                source: Some(super::table::SourceLocation {
+                    file: function.executable.to_string_lossy().to_string(),
+                }),
+            }),
         }
     }
 

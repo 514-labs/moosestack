@@ -341,11 +341,17 @@ pub fn build_compressed_map(
 
     // Add all SQL resources
     for (key, sql) in &infra_map.sql_resources {
+        let source_file = sql
+            .source_file
+            .as_ref()
+            .map(|s| make_relative_path(s))
+            .unwrap_or_default();
+
         compressed.add_component(ComponentNode {
             id: key.clone(),
             component_type: ComponentType::SqlResource,
             name: sql.name.clone(),
-            source_file: String::new(), // SQL resources don't have metadata field with source
+            source_file,
         });
 
         // Add connections based on lineage
@@ -389,6 +395,16 @@ pub fn build_compressed_map(
             component_type: ComponentType::Workflow,
             name: workflow.name().to_string(),
             source_file: format!("app/workflows/{}", workflow.name()),
+        });
+    }
+
+    // Add all web apps
+    for (key, web_app) in &infra_map.web_apps {
+        compressed.add_component(ComponentNode {
+            id: key.clone(),
+            component_type: ComponentType::WebApp,
+            name: web_app.name.clone(),
+            source_file: String::new(), // Web apps don't have source file tracking
         });
     }
 

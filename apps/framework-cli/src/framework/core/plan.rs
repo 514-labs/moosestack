@@ -1147,6 +1147,7 @@ mod tests {
         let sql_resource = SqlResource {
             name: "unmapped_view".to_string(),
             database: Some("test".to_string()),
+            source_file: None,
             setup: vec!["CREATE VIEW unmapped_view AS SELECT * FROM source".to_string()],
             teardown: vec!["DROP VIEW IF EXISTS unmapped_view".to_string()],
             pulls_data_from: vec![],
@@ -1182,6 +1183,7 @@ mod tests {
         let view_a = SqlResource {
             name: "view_a".to_string(),
             database: Some("test".to_string()),
+            source_file: None,
             setup: vec!["CREATE VIEW view_a AS SELECT * FROM table_a".to_string()],
             teardown: vec!["DROP VIEW IF EXISTS view_a".to_string()],
             pulls_data_from: vec![],
@@ -1191,6 +1193,7 @@ mod tests {
         let view_b = SqlResource {
             name: "view_b".to_string(),
             database: Some("test".to_string()),
+            source_file: None,
             setup: vec!["CREATE VIEW view_b AS SELECT * FROM table_b".to_string()],
             teardown: vec!["DROP VIEW IF EXISTS view_b".to_string()],
             pulls_data_from: vec![],
@@ -1231,6 +1234,7 @@ mod tests {
         let existing_view = SqlResource {
             name: "existing_view".to_string(),
             database: None,
+            source_file: None,
             setup: vec!["CREATE VIEW existing_view AS SELECT * FROM old_table".to_string()],
             teardown: vec!["DROP VIEW IF EXISTS existing_view".to_string()],
             pulls_data_from: vec![],
@@ -1241,6 +1245,7 @@ mod tests {
         let reality_view = SqlResource {
             name: "existing_view".to_string(),
             database: Some("test".to_string()),
+            source_file: None,
             setup: vec!["CREATE VIEW existing_view AS SELECT * FROM new_table".to_string()],
             teardown: vec!["DROP VIEW IF EXISTS existing_view".to_string()],
             pulls_data_from: vec![],
