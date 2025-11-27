@@ -684,3 +684,47 @@ export const dateTimePrecisionOutputStream =
   new Stream<DateTimePrecisionTestData>("DateTimePrecisionOutput", {
     destination: DateTimePrecisionOutputTable,
   });
+
+/** =======Primary Key Expression Tests========= */
+
+/** Test: Primary Key Expression with hash function */
+export interface PrimaryKeyExpressionTest {
+  userId: string;
+  eventId: string;
+  timestamp: DateTime;
+  category: string;
+}
+
+/**
+ * Table using primary_key_expression with hash function for better distribution
+ * Note: PRIMARY KEY must be a prefix of ORDER BY in ClickHouse
+ */
+export const primaryKeyExpressionTable =
+  new OlapTable<PrimaryKeyExpressionTest>("PrimaryKeyExpressionTest", {
+    // Primary key uses hash function for better distribution
+    primaryKeyExpression: "(userId, cityHash64(eventId))",
+    // Order by must start with the same columns as primary key
+    orderByExpression: "(userId, cityHash64(eventId), timestamp)",
+  });
+
+/** Test: Primary Key Expression with different column ordering */
+export interface PrimaryKeyOrderingTest {
+  productId: string;
+  category: string;
+  brand: string;
+  timestamp: DateTime;
+}
+
+/**
+ * Table where primary key order differs from schema order
+ * Note: ORDER BY must start with PRIMARY KEY columns
+ */
+export const primaryKeyOrderingTable = new OlapTable<PrimaryKeyOrderingTest>(
+  "PrimaryKeyOrderingTest",
+  {
+    // Primary key optimized for uniqueness
+    primaryKeyExpression: "productId",
+    // Order by starts with primary key, then adds other columns for query optimization
+    orderByFields: ["productId", "category", "brand"],
+  },
+);

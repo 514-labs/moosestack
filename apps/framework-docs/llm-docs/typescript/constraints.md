@@ -9,8 +9,14 @@ language: typescript
 ## Table Configuration Constraints
 
 ### Key Requirements
-- Schema ust have `Key<T>` on a top level field passed into IngestPipeline`
-- `Key<T>` must be first field in `orderByFields` when specified
+- Primary keys are optional in ClickHouse; only `ORDER BY` is required
+- You can define primary keys in three ways:
+  1. Use `Key<T>` on a top-level field (automatically becomes primary key)
+  2. Use `primaryKeyExpression` in table config (most flexible, overrides `Key<T>`)
+  3. Don't specify a primary key at all (only `ORDER BY` is used)
+- If using `Key<T>`, it must be the first field in `orderByFields` when specified
+- If using `primaryKeyExpression`, it overrides column-level `Key<T>` definitions
+- `primaryKeyExpression` supports functions and custom column ordering
 
 ### OrderByFields Requirements
 - Fields used in `orderByFields` must exist on the top level schema

@@ -421,6 +421,25 @@ export const TYPESCRIPT_TEST_SCHEMAS: ExpectedTableSchema[] = [
       { name: "payloadBasic", type: "JSON(count Int64, name String)" },
     ],
   },
+  // Primary Key Expression Tests
+  {
+    tableName: "PrimaryKeyExpressionTest",
+    columns: [
+      { name: "userId", type: "String" },
+      { name: "eventId", type: "String" },
+      { name: "timestamp", type: /DateTime\('UTC'\)/ },
+      { name: "category", type: "String" },
+    ],
+  },
+  {
+    tableName: "PrimaryKeyOrderingTest",
+    columns: [
+      { name: "productId", type: "String" },
+      { name: "category", type: "String" },
+      { name: "brand", type: "String" },
+      { name: "timestamp", type: /DateTime\('UTC'\)/ },
+    ],
+  },
 ];
 
 // ============ PYTHON TEMPLATE SCHEMA DEFINITIONS ============
@@ -803,6 +822,25 @@ export const PYTHON_TEST_SCHEMAS: ExpectedTableSchema[] = [
         type: "JSON(max_dynamic_types=16, max_dynamic_paths=256, count Int64, name String, SKIP `skip.me`, SKIP REGEXP '^tmp\\\\.')",
       },
       { name: "payload_basic", type: "JSON(count Int64, name String)" },
+    ],
+  },
+  // Primary Key Expression Tests
+  {
+    tableName: "PrimaryKeyExpressionTest",
+    columns: [
+      { name: "user_id", type: "String" },
+      { name: "event_id", type: "String" },
+      { name: "timestamp", type: /DateTime\('UTC'\)/ },
+      { name: "category", type: "String" },
+    ],
+  },
+  {
+    tableName: "PrimaryKeyOrderingTest",
+    columns: [
+      { name: "product_id", type: "String" },
+      { name: "category", type: "String" },
+      { name: "brand", type: "String" },
+      { name: "timestamp", type: /DateTime\('UTC'\)/ },
     ],
   },
 ];
