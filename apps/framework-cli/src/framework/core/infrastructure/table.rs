@@ -412,11 +412,13 @@ impl Table {
     /// - `primary_key_expression`: Uses the expression directly
     /// - Column-level `primary_key` flags: Builds an expression from column names
     ///
-    /// The result is normalized (trimmed, spaces removed, backticks removed) to enable
-    /// semantic comparison. For example:
+    /// The result is normalized (trimmed, spaces removed, backticks removed, and outer
+    /// parentheses stripped for single-element tuples) to enable semantic comparison.
+    /// For example:
     /// - `primary_key_expression: Some("(foo, bar)")` returns "(foo,bar)"
     /// - Columns foo, bar with `primary_key: true` returns "(foo,bar)"
     /// - `primary_key_expression: Some("foo")` returns "foo"
+    /// - `primary_key_expression: Some("(foo)")` returns "foo" (outer parens stripped)
     /// - Single column foo with `primary_key: true` returns "foo"
     pub fn normalized_primary_key_expr(&self) -> String {
         let expr = if let Some(ref pk_expr) = self.primary_key_expression {
@@ -435,10 +437,42 @@ impl Table {
         };
 
         // Normalize: trim, remove backticks, remove spaces
-        expr.trim()
+        let mut normalized = expr
+            .trim()
             .trim_matches('`')
             .replace('`', "")
-            .replace(" ", "")
+            .replace(" ", "");
+
+        // Strip outer parentheses if this is a single-element tuple
+        // E.g., "(col)" -> "col", "(cityHash64(col))" -> "cityHash64(col)"
+        // But keep "(col1,col2)" as-is
+        if normalized.starts_with('(') && normalized.ends_with(')') {
+            // Check if there are any top-level commas (not inside nested parentheses)
+            let inner = &normalized[1..normalized.len() - 1];
+            let has_top_level_comma = {
+                let mut depth = 0;
+                let mut found_comma = false;
+                for ch in inner.chars() {
+                    match ch {
+                        '(' => depth += 1,
+                        ')' => depth -= 1,
+                        ',' if depth == 0 => {
+                            found_comma = true;
+                            break;
+                        }
+                        _ => {}
+                    }
+                }
+                found_comma
+            };
+
+            // If no top-level comma, it's a single-element tuple - strip outer parens
+            if !has_top_level_comma {
+                normalized = inner.to_string();
+            }
+        }
+
+        normalized
     }
 
     pub fn order_by_with_fallback(&self) -> OrderBy {

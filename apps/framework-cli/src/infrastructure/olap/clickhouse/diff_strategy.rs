@@ -2066,4 +2066,154 @@ mod tests {
             OlapChange::Table(TableChange::Added(_))
         ));
     }
+
+    #[test]
+    fn test_primary_key_expression_single_column_with_parens() {
+        let strategy = ClickHouseTableDiffStrategy;
+
+        let mut before = create_test_table("test", vec!["id".to_string()], false);
+        let mut after = create_test_table("test", vec!["id".to_string()], false);
+
+        // Before: use column-level primary_key flag for single column
+        before.columns[0].primary_key = true;
+
+        // After: use primary_key_expression with parentheses around single column
+        // In ClickHouse, (col) and col are semantically equivalent for PRIMARY KEY
+        after.columns[0].primary_key = false;
+        after.primary_key_expression = Some("(id)".to_string());
+
+        let order_by_change = OrderByChange {
+            before: before.order_by.clone(),
+            after: after.order_by.clone(),
+        };
+
+        let partition_by_change = PartitionByChange {
+            before: before.partition_by.clone(),
+            after: after.partition_by.clone(),
+        };
+
+        let changes = strategy.diff_table_update(
+            &before,
+            &after,
+            vec![],
+            order_by_change,
+            partition_by_change,
+            "local",
+        );
+
+        // Should NOT trigger drop+create since (id) and id are semantically equivalent
+        assert_eq!(changes.len(), 0);
+    }
+
+    #[test]
+    fn test_primary_key_expression_function_with_parens() {
+        let strategy = ClickHouseTableDiffStrategy;
+
+        let mut before = create_test_table("test", vec!["id".to_string()], false);
+        let mut after = create_test_table("test", vec!["id".to_string()], false);
+
+        // Both use primary_key_expression with a function wrapped in parens
+        before.columns[0].primary_key = false;
+        before.primary_key_expression = Some("(cityHash64(id))".to_string());
+
+        after.columns[0].primary_key = false;
+        after.primary_key_expression = Some("cityHash64(id)".to_string());
+
+        let order_by_change = OrderByChange {
+            before: before.order_by.clone(),
+            after: after.order_by.clone(),
+        };
+
+        let partition_by_change = PartitionByChange {
+            before: before.partition_by.clone(),
+            after: after.partition_by.clone(),
+        };
+
+        let changes = strategy.diff_table_update(
+            &before,
+            &after,
+            vec![],
+            order_by_change,
+            partition_by_change,
+            "local",
+        );
+
+        // Should NOT trigger drop+create since (expr) and expr are semantically equivalent
+        assert_eq!(changes.len(), 0);
+    }
+
+    #[test]
+    fn test_primary_key_multi_column_keeps_parens() {
+        let strategy = ClickHouseTableDiffStrategy;
+
+        let mut before = create_test_table("test", vec!["id".to_string()], false);
+        let mut after = create_test_table("test", vec!["id".to_string()], false);
+
+        // Both have multi-column primary keys - should keep parentheses
+        before.columns[0].primary_key = true;
+        before.columns[1].primary_key = true;
+
+        after.columns[0].primary_key = false;
+        after.columns[1].primary_key = false;
+        after.primary_key_expression = Some("(id,timestamp)".to_string());
+
+        let order_by_change = OrderByChange {
+            before: before.order_by.clone(),
+            after: after.order_by.clone(),
+        };
+
+        let partition_by_change = PartitionByChange {
+            before: before.partition_by.clone(),
+            after: after.partition_by.clone(),
+        };
+
+        let changes = strategy.diff_table_update(
+            &before,
+            &after,
+            vec![],
+            order_by_change,
+            partition_by_change,
+            "local",
+        );
+
+        // Should NOT trigger drop+create - both normalize to (id,timestamp)
+        assert_eq!(changes.len(), 0);
+    }
+
+    #[test]
+    fn test_primary_key_nested_function_parens() {
+        let strategy = ClickHouseTableDiffStrategy;
+
+        let mut before = create_test_table("test", vec!["id".to_string()], false);
+        let mut after = create_test_table("test", vec!["id".to_string()], false);
+
+        // Test that nested parentheses in functions are preserved correctly
+        before.columns[0].primary_key = false;
+        before.primary_key_expression = Some("(cityHash64(id, timestamp))".to_string());
+
+        after.columns[0].primary_key = false;
+        after.primary_key_expression = Some("cityHash64(id, timestamp)".to_string());
+
+        let order_by_change = OrderByChange {
+            before: before.order_by.clone(),
+            after: after.order_by.clone(),
+        };
+
+        let partition_by_change = PartitionByChange {
+            before: before.partition_by.clone(),
+            after: after.partition_by.clone(),
+        };
+
+        let changes = strategy.diff_table_update(
+            &before,
+            &after,
+            vec![],
+            order_by_change,
+            partition_by_change,
+            "local",
+        );
+
+        // Should NOT trigger drop+create - both are the same function, just with/without outer parens
+        assert_eq!(changes.len(), 0);
+    }
 }
