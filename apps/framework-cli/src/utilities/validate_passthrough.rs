@@ -649,6 +649,7 @@ impl<'de, S: SerializeValue> Visitor<'de> for &mut ValueVisitor<'_, S> {
                             comment: None,
                             ttl: None,
                             codec: None,
+                            materialized: None,
                         }
                     })
                     .collect();
@@ -1318,6 +1319,7 @@ mod tests {
                 comment: None,
                 ttl: None,
                 codec: None,
+                materialized: None,
             },
             Column {
                 name: "int_col".to_string(),
@@ -1330,6 +1332,7 @@ mod tests {
                 comment: None,
                 ttl: None,
                 codec: None,
+                materialized: None,
             },
             Column {
                 name: "float_col".to_string(),
@@ -1342,6 +1345,7 @@ mod tests {
                 comment: None,
                 ttl: None,
                 codec: None,
+                materialized: None,
             },
             Column {
                 name: "bool_col".to_string(),
@@ -1354,6 +1358,7 @@ mod tests {
                 comment: None,
                 ttl: None,
                 codec: None,
+                materialized: None,
             },
             Column {
                 name: "date_col".to_string(),
@@ -1366,6 +1371,7 @@ mod tests {
                 comment: None,
                 ttl: None,
                 codec: None,
+                materialized: None,
             },
         ];
 
@@ -1401,6 +1407,7 @@ mod tests {
             comment: None,
             ttl: None,
             codec: None,
+            materialized: None,
         }];
 
         let json = r#"
@@ -1436,6 +1443,7 @@ mod tests {
             comment: None,
             ttl: None,
             codec: None,
+            materialized: None,
         }];
 
         let json = r#"
@@ -1478,6 +1486,7 @@ mod tests {
             comment: None,
             ttl: None,
             codec: None,
+            materialized: None,
         }];
 
         // Test valid enum value
@@ -1528,6 +1537,7 @@ mod tests {
                 comment: None,
                 ttl: None,
                 codec: None,
+                materialized: None,
             },
             Column {
                 name: "nested_int".to_string(),
@@ -1540,6 +1550,7 @@ mod tests {
                 comment: None,
                 ttl: None,
                 codec: None,
+                materialized: None,
             },
         ];
 
@@ -1555,6 +1566,7 @@ mod tests {
                 comment: None,
                 ttl: None,
                 codec: None,
+                materialized: None,
             },
             Column {
                 name: "nested_object".to_string(),
@@ -1571,6 +1583,7 @@ mod tests {
                 comment: None,
                 ttl: None,
                 codec: None,
+                materialized: None,
             },
         ];
 
@@ -1630,6 +1643,7 @@ mod tests {
                 comment: None,
                 ttl: None,
                 codec: None,
+                materialized: None,
             },
             Column {
                 name: "optional_field".to_string(),
@@ -1642,6 +1656,7 @@ mod tests {
                 comment: None,
                 ttl: None,
                 codec: None,
+                materialized: None,
             },
         ];
 
@@ -1674,6 +1689,7 @@ mod tests {
                 comment: None,
                 ttl: None,
                 codec: None,
+                materialized: None,
             },
             Column {
                 name: "aud".to_string(),
@@ -1686,6 +1702,7 @@ mod tests {
                 comment: None,
                 ttl: None,
                 codec: None,
+                materialized: None,
             },
             Column {
                 name: "exp".to_string(),
@@ -1698,6 +1715,7 @@ mod tests {
                 comment: None,
                 ttl: None,
                 codec: None,
+                materialized: None,
             },
         ];
 
@@ -1713,6 +1731,7 @@ mod tests {
                 comment: None,
                 ttl: None,
                 codec: None,
+                materialized: None,
             },
             Column {
                 name: "jwt_object".to_string(),
@@ -1729,6 +1748,7 @@ mod tests {
                 comment: None,
                 ttl: None,
                 codec: None,
+                materialized: None,
             },
         ];
 
@@ -1775,6 +1795,7 @@ mod tests {
             comment: None,
             ttl: None,
             codec: None,
+            materialized: None,
         }];
 
         // Test valid map
@@ -1833,6 +1854,7 @@ mod tests {
             comment: None,
             ttl: None,
             codec: None,
+            materialized: None,
         }];
 
         // Test valid map with numeric keys (as strings in JSON)
@@ -1888,6 +1910,7 @@ mod tests {
             comment: None,
             ttl: None,
             codec: None,
+            materialized: None,
         }];
 
         // Min boundary 0
@@ -1932,6 +1955,7 @@ mod tests {
             comment: None,
             ttl: None,
             codec: None,
+            materialized: None,
         }];
 
         // Min boundary -32768
@@ -1976,6 +2000,7 @@ mod tests {
             comment: None,
             ttl: None,
             codec: None,
+            materialized: None,
         }];
 
         let positive_limit: BigInt = BigInt::from(1u8) << 127usize;
@@ -2022,6 +2047,7 @@ mod tests {
             comment: None,
             ttl: None,
             codec: None,
+            materialized: None,
         }];
 
         let positive_limit: BigInt = BigInt::from(1u8) << 255usize;
@@ -2068,6 +2094,7 @@ mod tests {
             comment: None,
             ttl: None,
             codec: None,
+            materialized: None,
         }];
 
         let limit: BigUint = BigUint::from(1u8) << 256usize;
@@ -2115,6 +2142,7 @@ mod tests {
             comment: None,
             ttl: None,
             codec: None,
+            materialized: None,
         }];
 
         // Valid keys
@@ -2156,6 +2184,7 @@ mod tests {
             comment: None,
             ttl: None,
             codec: None,
+            materialized: None,
         }];
 
         let positive_limit: BigInt = BigInt::from(1u8) << 255usize;
@@ -2197,6 +2226,7 @@ mod tests {
             comment: None,
             ttl: None,
             codec: None,
+            materialized: None,
         }];
 
         let limit: BigUint = BigUint::from(1u8) << 256usize;
@@ -2242,6 +2272,7 @@ mod tests {
             comment: None,
             ttl: None,
             codec: None,
+            materialized: None,
         }];
 
         let json = r#"
@@ -2274,6 +2305,7 @@ mod tests {
             comment: None,
             ttl: None,
             codec: None,
+            materialized: None,
         }];
 
         // missing nested path
@@ -2307,6 +2339,7 @@ mod tests {
             comment: None,
             ttl: None,
             codec: None,
+            materialized: None,
         }];
 
         // null at the nested path counts as missing for non-nullable types
@@ -2355,6 +2388,7 @@ mod tests {
             comment: None,
             ttl: None,
             codec: None,
+            materialized: None,
         }];
 
         // Test 1: Two's complement value (what -1 becomes with naive cast) should be rejected
@@ -2425,6 +2459,7 @@ mod tests {
             comment: None,
             ttl: None,
             codec: None,
+            materialized: None,
         }];
 
         // Test negative values work with i64

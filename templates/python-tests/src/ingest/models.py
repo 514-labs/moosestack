@@ -706,3 +706,32 @@ codec_test_model = IngestPipeline[CodecTest]("CodecTest", IngestPipelineConfig(
     table=True,
     dead_letter_queue=True
 ))
+
+
+# =======Materialized Columns Test=======
+from moose_lib import ClickHouseMaterialized
+
+class MaterializedTest(BaseModel):
+    """Test model for materialized column support."""
+    id: Key[str]
+    timestamp: datetime
+    user_id: str
+    # Extract date from timestamp - computed and stored at insert time
+    event_date: Annotated[date, ClickHouseMaterialized("toDate(timestamp)")]
+    # Precompute hash for fast lookups
+    user_hash: Annotated[UInt64, ClickHouseMaterialized("cityHash64(user_id)")]
+    # Combine MATERIALIZED with CODEC
+    log_blob: Annotated[Any, ClickHouseCodec("ZSTD(3)")]
+    combination_hash: Annotated[
+        list[UInt64],
+        ClickHouseMaterialized("arrayMap(kv -> cityHash64(kv.1, kv.2), JSONExtractKeysAndValuesRaw(toString(log_blob)))"),
+        ClickHouseCodec("ZSTD(1)")
+    ]
+
+
+materialized_test_model = IngestPipeline[MaterializedTest]("MaterializedTest", IngestPipelineConfig(
+    ingest_api=True,
+    stream=True,
+    table=True,
+    dead_letter_queue=True
+))

@@ -61,6 +61,7 @@ export {
   ClickHouseNamedTuple,
   ClickHouseDefault,
   ClickHouseTTL,
+  ClickHouseMaterialized,
   WithDefault,
   ClickHouseCodec,
   // Added friendly aliases and numeric helpers

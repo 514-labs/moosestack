@@ -256,6 +256,7 @@ export interface ExpectedColumn {
   nullable?: boolean;
   comment?: string;
   codec?: string | RegExp;
+  materialized?: string | RegExp;
 }
 
 /**
@@ -451,6 +452,32 @@ export const validateTableSchema = async (
         if (!codecMatches) {
           errors.push(
             `Column '${expectedCol.name}' codec mismatch: expected '${expectedCol.codec}', got '${actualCodec}'`,
+          );
+        }
+      }
+
+      // Materialized validation (if specified)
+      if (expectedCol.materialized !== undefined) {
+        const actualMaterialized = actualCol.default_expression;
+        const actualDefaultType = actualCol.default_type;
+        let materializedMatches = false;
+
+        // Check that it's actually a MATERIALIZED column
+        if (actualDefaultType === "MATERIALIZED") {
+          if (typeof expectedCol.materialized === "string") {
+            // Exact string match
+            materializedMatches =
+              actualMaterialized === expectedCol.materialized;
+          } else if (expectedCol.materialized instanceof RegExp) {
+            // Regex match for complex expressions
+            materializedMatches =
+              expectedCol.materialized.test(actualMaterialized);
+          }
+        }
+
+        if (!materializedMatches) {
+          errors.push(
+            `Column '${expectedCol.name}' materialized mismatch: expected '${expectedCol.materialized}', got '${actualDefaultType === "MATERIALIZED" ? actualMaterialized : "(not materialized)"}'`,
           );
         }
       }

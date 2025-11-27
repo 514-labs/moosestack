@@ -26,6 +26,7 @@ const createMockColumns = (fields: string[]): Column[] =>
     unique: false,
     primary_key: false,
     default: null,
+    materialized: null,
     ttl: null,
     codec: null,
     annotations: [],
