@@ -2216,6 +2216,7 @@ mod tests {
         let mv_sql_resource = SqlResource {
             name: "mv_a_to_b".to_string(),
             database: None,
+            source_file: None,
             setup: vec![
                 "CREATE MATERIALIZED VIEW mv_a_to_b TO table_b AS SELECT * FROM table_a"
                     .to_string(),
@@ -2362,6 +2363,7 @@ mod tests {
         let mv_sql_resource = SqlResource {
             name: "mv_a_to_b".to_string(),
             database: None,
+            source_file: None,
             setup: vec![
                 "CREATE MATERIALIZED VIEW mv_a_to_b TO table_b AS SELECT * FROM table_a"
                     .to_string(),
@@ -2512,6 +2514,7 @@ mod tests {
         let resource = SqlResource {
             name: "mv_a_to_b".to_string(),
             database: None,
+            source_file: None,
             setup: vec![
                 "CREATE MATERIALIZED VIEW mv_a_to_b TO table_b AS SELECT * FROM table_a"
                     .to_string(),
