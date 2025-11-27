@@ -645,13 +645,8 @@ pub fn tables_to_python(tables: &[Table], life_cycle: Option<LifeCycle>) -> Stri
                 }
             })
             .collect::<Vec<_>>();
-        // Determine if we can use Key[T] wrapping:
-        // - primary_key_expression is not set (will be generated or not needed)
-        // - we have primary key columns
-        // - order_by starts with primary_key columns in the same order
-        let can_use_key_wrapping = table.primary_key_expression.is_none()
-            && !primary_key.is_empty()
-            && table.order_by.starts_with_fields(&primary_key);
+        // list_tables sets primary_key_expression to Some if Key wrapping is insufficient to represent the PK
+        let can_use_key_wrapping = table.primary_key_expression.is_none();
 
         for column in &table.columns {
             let type_str = map_column_type_to_python(
