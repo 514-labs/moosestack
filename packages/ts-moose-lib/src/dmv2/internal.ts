@@ -361,6 +361,8 @@ interface SqlResourceJson {
   pullsDataFrom: InfrastructureSignatureJson[];
   /** List of infrastructure components (by signature) that this resource writes to. */
   pushesDataTo: InfrastructureSignatureJson[];
+  /** Optional source file path where this resource is defined. */
+  sourceFile?: string;
 }
 
 /**
@@ -855,6 +857,7 @@ export const toInfraMap = (registry: typeof moose_internal) => {
       name: sqlResource.name,
       setup: sqlResource.setup,
       teardown: sqlResource.teardown,
+      sourceFile: sqlResource.sourceFile,
 
       pullsDataFrom: sqlResource.pullsDataFrom.map((r) => {
         if (r.kind === "OlapTable") {

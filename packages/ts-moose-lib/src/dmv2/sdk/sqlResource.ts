@@ -5,6 +5,30 @@ import { Sql, toStaticQuery } from "../../sqlHelpers";
 type SqlObject = OlapTable<any> | SqlResource;
 
 /**
+ * Utility to extract the first file path outside node_modules from a stack trace.
+ */
+function getSourceFileFromStack(stack?: string): string | undefined {
+  if (!stack) return undefined;
+  const lines = stack.split("\n");
+  for (const line of lines) {
+    // Skip lines from node_modules and internal loaders
+    if (
+      line.includes("node_modules") ||
+      line.includes("internal/modules") ||
+      line.includes("ts-node")
+    )
+      continue;
+    // Extract file path from the line
+    const match =
+      line.match(/\((.*):(\d+):(\d+)\)/) || line.match(/at (.*):(\d+):(\d+)/);
+    if (match && match[1]) {
+      return match[1];
+    }
+  }
+  return undefined;
+}
+
+/**
  * Represents a generic SQL resource that requires setup and teardown commands.
  * Base class for constructs like Views and Materialized Views. Tracks dependencies.
  */
@@ -23,6 +47,9 @@ export class SqlResource {
   pullsDataFrom: SqlObject[];
   /** List of OlapTables or Views that this resource writes data to. */
   pushesDataTo: SqlObject[];
+
+  /** @internal Source file path where this resource was defined */
+  sourceFile?: string;
 
   /**
    * Creates a new SqlResource instance.
@@ -57,5 +84,9 @@ export class SqlResource {
     );
     this.pullsDataFrom = options?.pullsDataFrom ?? [];
     this.pushesDataTo = options?.pushesDataTo ?? [];
+
+    // Capture source file from stack trace
+    const stack = new Error().stack;
+    this.sourceFile = getSourceFileFromStack(stack);
   }
 }

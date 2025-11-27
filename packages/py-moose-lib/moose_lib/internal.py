@@ -375,6 +375,7 @@ class SqlResourceConfig(BaseModel):
         teardown: List of SQL commands required to drop the resource.
         pulls_data_from: List of infrastructure components this resource reads from.
         pushes_data_to: List of infrastructure components this resource writes to.
+        source_file: Optional path to the source file where this resource is defined.
         metadata: Optional metadata for the resource.
     """
     model_config = model_config
@@ -384,6 +385,7 @@ class SqlResourceConfig(BaseModel):
     teardown: list[str]
     pulls_data_from: list[InfrastructureSignatureJson]
     pushes_data_to: list[InfrastructureSignatureJson]
+    source_file: Optional[str] = None
     metadata: Optional[dict] = None
 
 
@@ -792,6 +794,7 @@ def to_infra_map() -> dict:
             teardown=resource.teardown,
             pulls_data_from=[_map_sql_resource_ref(dep) for dep in resource.pulls_data_from],
             pushes_data_to=[_map_sql_resource_ref(dep) for dep in resource.pushes_data_to],
+            source_file=getattr(resource, "source_file", None),
             metadata=getattr(resource, "metadata", None),
         )
 
