@@ -716,19 +716,6 @@ pub fn tables_to_python(tables: &[Table], life_cycle: Option<LifeCycle>) -> Stri
             OrderBy::SingleExpr(expr) => format!("order_by_expression={:?}", expr),
         };
 
-        // Collect primary key columns from column flags
-        let primary_key_cols: Vec<String> = table
-            .columns
-            .iter()
-            .filter_map(|c| {
-                if c.primary_key {
-                    Some(c.name.clone())
-                } else {
-                    None
-                }
-            })
-            .collect();
-
         let (base_name, version) = extract_version_from_table_name(&table.name);
         let table_name = if version == table.version {
             &base_name

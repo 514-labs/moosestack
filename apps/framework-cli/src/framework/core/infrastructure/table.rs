@@ -406,6 +406,41 @@ impl Table {
             .collect()
     }
 
+    /// Returns a normalized representation of the primary key for comparison purposes.
+    ///
+    /// This handles both:
+    /// - `primary_key_expression`: Uses the expression directly
+    /// - Column-level `primary_key` flags: Builds an expression from column names
+    ///
+    /// The result is normalized (trimmed, spaces removed, backticks removed) to enable
+    /// semantic comparison. For example:
+    /// - `primary_key_expression: Some("(foo, bar)")` returns "(foo,bar)"
+    /// - Columns foo, bar with `primary_key: true` returns "(foo,bar)"
+    /// - `primary_key_expression: Some("foo")` returns "foo"
+    /// - Single column foo with `primary_key: true` returns "foo"
+    pub fn normalized_primary_key_expr(&self) -> String {
+        let expr = if let Some(ref pk_expr) = self.primary_key_expression {
+            // Use the explicit primary_key_expression
+            pk_expr.clone()
+        } else {
+            // Build from column-level primary_key flags
+            let pk_cols = self.primary_key_columns();
+            if pk_cols.is_empty() {
+                String::new()
+            } else if pk_cols.len() == 1 {
+                pk_cols[0].to_string()
+            } else {
+                format!("({})", pk_cols.join(", "))
+            }
+        };
+
+        // Normalize: trim, remove backticks, remove spaces
+        expr.trim()
+            .trim_matches('`')
+            .replace('`', "")
+            .replace(" ", "")
+    }
+
     pub fn order_by_with_fallback(&self) -> OrderBy {
         // table (in infra map created by older version of moose) may leave order_by unspecified,
         // but the implicit order_by from primary keys can be the same

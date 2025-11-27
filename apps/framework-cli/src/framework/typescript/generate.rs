@@ -549,18 +549,6 @@ pub fn tables_to_typescript(tables: &[Table], life_cycle: Option<LifeCycle>) -> 
 
     // Generate model interfaces
     for table in tables {
-        let primary_key = table
-            .columns
-            .iter()
-            .filter_map(|column| {
-                if column.primary_key {
-                    Some(column.name.to_string())
-                } else {
-                    None
-                }
-            })
-            .collect::<Vec<_>>();
-
         // list_tables sets primary_key_expression to Some if Key wrapping is insufficient to represent the PK
         let can_use_key_wrapping = table.primary_key_expression.is_none();
 
@@ -632,19 +620,6 @@ pub fn tables_to_typescript(tables: &[Table], life_cycle: Option<LifeCycle>) -> 
             }
             OrderBy::SingleExpr(expr) => format!("orderByExpression: {:?}", expr),
         };
-
-        // Collect primary key columns from column flags
-        let primary_key_cols: Vec<String> = table
-            .columns
-            .iter()
-            .filter_map(|c| {
-                if c.primary_key {
-                    Some(c.name.clone())
-                } else {
-                    None
-                }
-            })
-            .collect();
 
         let var_name = sanitize_typescript_identifier(&table.name);
 
