@@ -1163,6 +1163,7 @@ export const dlqColumns: Column[] = [
     annotations: [],
     ttl: null,
     codec: null,
+    materialized: null,
   },
   {
     name: "errorMessage",
@@ -1174,6 +1175,7 @@ export const dlqColumns: Column[] = [
     annotations: [],
     ttl: null,
     codec: null,
+    materialized: null,
   },
   {
     name: "errorType",
@@ -1185,6 +1187,7 @@ export const dlqColumns: Column[] = [
     annotations: [],
     ttl: null,
     codec: null,
+    materialized: null,
   },
   {
     name: "failedAt",
@@ -1196,6 +1199,7 @@ export const dlqColumns: Column[] = [
     annotations: [],
     ttl: null,
     codec: null,
+    materialized: null,
   },
   {
     name: "source",
@@ -1207,6 +1211,7 @@ export const dlqColumns: Column[] = [
     annotations: [],
     ttl: null,
     codec: null,
+    materialized: null,
   },
 ];
 

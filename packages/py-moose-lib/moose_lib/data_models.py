@@ -312,6 +312,7 @@ class Column(BaseModel):
     annotations: list[Tuple[str, Any]] = []
     ttl: str | None = None
     codec: str | None = None
+    materialized: str | None = None
 
     def to_expr(self):
         # Lazy import to avoid circular dependency at import time

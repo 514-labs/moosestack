@@ -2776,6 +2776,7 @@ fn columns_are_equivalent(before: &Column, after: &Column) -> bool {
         || before.unique != after.unique
         // primary_key change is handled at the table level
         || before.default != after.default
+        || before.materialized != after.materialized
         || before.annotations != after.annotations
         || before.comment != after.comment
     {
