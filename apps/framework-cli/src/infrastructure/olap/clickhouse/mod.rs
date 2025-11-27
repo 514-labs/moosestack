@@ -1853,9 +1853,43 @@ impl OlapOperations for ConfiguredDBClient {
                     debug!("Expected PRIMARY KEY expression: '{}'", expected_pk_expr);
                     debug!("Extracted PRIMARY KEY expression: '{}'", pk_expr);
 
-                    // Normalize both expressions for comparison (remove backticks, extra spaces)
-                    let normalize =
-                        |s: &str| s.trim().trim_matches('`').replace('`', "").replace(" ", "");
+                    // Normalize both expressions for comparison (same logic as Table::normalized_primary_key_expr)
+                    let normalize = |s: &str| -> String {
+                        // Step 1: trim, remove backticks, remove spaces
+                        let mut normalized =
+                            s.trim().trim_matches('`').replace('`', "").replace(" ", "");
+
+                        // Step 2: Strip outer parentheses if this is a single-element tuple
+                        // E.g., "(col)" -> "col", "(cityHash64(col))" -> "cityHash64(col)"
+                        // But keep "(col1,col2)" as-is
+                        if normalized.starts_with('(') && normalized.ends_with(')') {
+                            // Check if there are any top-level commas (not inside nested parentheses)
+                            let inner = &normalized[1..normalized.len() - 1];
+                            let has_top_level_comma = {
+                                let mut depth = 0;
+                                let mut found_comma = false;
+                                for ch in inner.chars() {
+                                    match ch {
+                                        '(' => depth += 1,
+                                        ')' => depth -= 1,
+                                        ',' if depth == 0 => {
+                                            found_comma = true;
+                                            break;
+                                        }
+                                        _ => {}
+                                    }
+                                }
+                                found_comma
+                            };
+
+                            // If no top-level comma, it's a single-element tuple - strip outer parens
+                            if !has_top_level_comma {
+                                normalized = inner.to_string();
+                            }
+                        }
+
+                        normalized
+                    };
 
                     let normalized_expected = normalize(&expected_pk_expr);
                     let normalized_extracted = normalize(pk_expr);
@@ -2967,6 +3001,62 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
             order_by,
             vec!["cityHash64(id)".to_string(), "lower(name)".to_string()]
         );
+    }
+
+    #[test]
+    fn test_primary_key_normalization_single_element_tuple() {
+        // Test that "(id)" and "id" normalize to the same value
+        // This is the bug fix: single-element tuples should have outer parens stripped
+        let normalize = |s: &str| -> String {
+            let mut normalized = s.trim().trim_matches('`').replace('`', "").replace(" ", "");
+
+            if normalized.starts_with('(') && normalized.ends_with(')') {
+                let inner = &normalized[1..normalized.len() - 1];
+                let has_top_level_comma = {
+                    let mut depth = 0;
+                    let mut found_comma = false;
+                    for ch in inner.chars() {
+                        match ch {
+                            '(' => depth += 1,
+                            ')' => depth -= 1,
+                            ',' if depth == 0 => {
+                                found_comma = true;
+                                break;
+                            }
+                            _ => {}
+                        }
+                    }
+                    found_comma
+                };
+
+                if !has_top_level_comma {
+                    normalized = inner.to_string();
+                }
+            }
+
+            normalized
+        };
+
+        // Single element: "(id)" should normalize to "id"
+        assert_eq!(normalize("(id)"), "id");
+        assert_eq!(normalize("id"), "id");
+        assert_eq!(normalize("(id)"), normalize("id"));
+
+        // Single element with function: "(cityHash64(id))" should normalize to "cityHash64(id)"
+        assert_eq!(normalize("(cityHash64(id))"), "cityHash64(id)");
+        assert_eq!(normalize("cityHash64(id)"), "cityHash64(id)");
+        assert_eq!(normalize("(cityHash64(id))"), normalize("cityHash64(id)"));
+
+        // Multiple elements: "(id, ts)" should stay as "(id,ts)" (with spaces removed)
+        assert_eq!(normalize("(id, ts)"), "(id,ts)");
+        assert_eq!(normalize("(id,ts)"), "(id,ts)");
+
+        // Multiple elements with functions: should keep parens
+        assert_eq!(normalize("(id, cityHash64(ts))"), "(id,cityHash64(ts))");
+
+        // Backticks should be removed
+        assert_eq!(normalize("(`id`)"), "id");
+        assert_eq!(normalize("(` id `)"), "id");
     }
 
     #[test]
