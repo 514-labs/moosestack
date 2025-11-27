@@ -659,6 +659,8 @@ pub struct ClickHouseTable {
     pub table_ttl_setting: Option<String>,
     /// Optional cluster name for ON CLUSTER support
     pub cluster_name: Option<String>,
+    /// Optional PRIMARY KEY expression (overrides column-level primary_key flags when specified)
+    pub primary_key_expression: Option<String>,
 }
 
 impl ClickHouseTable {

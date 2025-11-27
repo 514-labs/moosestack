@@ -167,6 +167,7 @@ mod tests {
             database: None,
             table_ttl_setting: None,
             cluster_name,
+            primary_key_expression: None,
         }
     }
 
@@ -342,6 +343,7 @@ mod tests {
             database: None,
             table_ttl_setting: None,
             cluster_name,
+            primary_key_expression: None,
         }
     }
 

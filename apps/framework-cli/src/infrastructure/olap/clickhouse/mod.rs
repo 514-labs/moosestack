@@ -43,9 +43,9 @@ use queries::{
 use serde::{Deserialize, Serialize};
 use sql_parser::{
     extract_engine_from_create_table, extract_indexes_from_create_table,
-    extract_sample_by_from_create_table, extract_source_tables_from_query,
-    extract_source_tables_from_query_regex, extract_table_settings_from_create_table,
-    normalize_sql_for_comparison, split_qualified_name,
+    extract_primary_key_from_create_table, extract_sample_by_from_create_table,
+    extract_source_tables_from_query, extract_source_tables_from_query_regex,
+    extract_table_settings_from_create_table, normalize_sql_for_comparison, split_qualified_name,
 };
 use std::collections::HashMap;
 use std::ops::Deref;
@@ -1630,8 +1630,12 @@ impl OlapOperations for ConfiguredDBClient {
             let order_by_cols = extract_order_by_from_create_query(&create_query);
             debug!("Extracted ORDER BY columns: {:?}", order_by_cols);
 
+            // Extract PRIMARY KEY expression if present
+            let primary_key_expr = extract_primary_key_from_create_table(&create_query);
+            debug!("Extracted PRIMARY KEY expression: {:?}", primary_key_expr);
+
             // Check if the CREATE TABLE statement has an explicit PRIMARY KEY clause
-            let has_explicit_primary_key = create_query.to_uppercase().contains("PRIMARY KEY");
+            let has_explicit_primary_key = primary_key_expr.is_some();
             debug!(
                 "Table {} has explicit PRIMARY KEY: {}",
                 table_name, has_explicit_primary_key
@@ -1823,6 +1827,100 @@ impl OlapOperations for ConfiguredDBClient {
 
             debug!("Found {} columns for table {}", columns.len(), table_name);
 
+            // Determine if we should use primary_key_expression or column-level primary_key flags
+            // Strategy: Build the expected PRIMARY KEY from columns, then compare with extracted PRIMARY KEY
+            // If they match, use column-level flags; otherwise use primary_key_expression
+            let (final_columns, final_primary_key_expression) =
+                if let Some(pk_expr) = &primary_key_expr {
+                    // Build expected PRIMARY KEY expression from columns marked as primary_key=true
+                    let primary_key_columns: Vec<String> = columns
+                        .iter()
+                        .filter(|c| c.primary_key)
+                        .map(|c| c.name.clone())
+                        .collect();
+
+                    debug!("Columns marked as primary key: {:?}", primary_key_columns);
+
+                    // Build expected expression: single column = "col", multiple = "(col1, col2)"
+                    let expected_pk_expr = if primary_key_columns.is_empty() {
+                        String::new()
+                    } else if primary_key_columns.len() == 1 {
+                        primary_key_columns[0].clone()
+                    } else {
+                        format!("({})", primary_key_columns.join(", "))
+                    };
+
+                    debug!("Expected PRIMARY KEY expression: '{}'", expected_pk_expr);
+                    debug!("Extracted PRIMARY KEY expression: '{}'", pk_expr);
+
+                    // Normalize both expressions for comparison (same logic as Table::normalized_primary_key_expr)
+                    let normalize = |s: &str| -> String {
+                        // Step 1: trim, remove backticks, remove spaces
+                        let mut normalized =
+                            s.trim().trim_matches('`').replace('`', "").replace(" ", "");
+
+                        // Step 2: Strip outer parentheses if this is a single-element tuple
+                        // E.g., "(col)" -> "col", "(cityHash64(col))" -> "cityHash64(col)"
+                        // But keep "(col1,col2)" as-is
+                        if normalized.starts_with('(') && normalized.ends_with(')') {
+                            // Check if there are any top-level commas (not inside nested parentheses)
+                            let inner = &normalized[1..normalized.len() - 1];
+                            let has_top_level_comma = {
+                                let mut depth = 0;
+                                let mut found_comma = false;
+                                for ch in inner.chars() {
+                                    match ch {
+                                        '(' => depth += 1,
+                                        ')' => depth -= 1,
+                                        ',' if depth == 0 => {
+                                            found_comma = true;
+                                            break;
+                                        }
+                                        _ => {}
+                                    }
+                                }
+                                found_comma
+                            };
+
+                            // If no top-level comma, it's a single-element tuple - strip outer parens
+                            if !has_top_level_comma {
+                                normalized = inner.to_string();
+                            }
+                        }
+
+                        normalized
+                    };
+
+                    let normalized_expected = normalize(&expected_pk_expr);
+                    let normalized_extracted = normalize(pk_expr);
+
+                    debug!(
+                        "Normalized expected: '{}', normalized extracted: '{}'",
+                        normalized_expected, normalized_extracted
+                    );
+
+                    if normalized_expected == normalized_extracted {
+                        // PRIMARY KEY matches what columns indicate, use column-level flags
+                        debug!("PRIMARY KEY matches columns, using column-level primary_key flags");
+                        (columns, None)
+                    } else {
+                        // PRIMARY KEY differs (different order, expressions, etc.), use primary_key_expression
+                        debug!("PRIMARY KEY differs from columns, using primary_key_expression");
+                        let updated_columns: Vec<Column> = columns
+                            .into_iter()
+                            .map(|mut c| {
+                                c.primary_key = false;
+                                c
+                            })
+                            .collect();
+                        (updated_columns, Some(pk_expr.clone()))
+                    }
+                } else {
+                    // No PRIMARY KEY clause, use column-level flags as-is
+                    debug!("No PRIMARY KEY clause, using column-level primary_key flags");
+                    (columns, None)
+                };
+
             // Extract base name and version for source primitive
             let (base_name, version) = extract_version_from_table_name(&table_name);
 
@@ -1889,7 +1987,7 @@ impl OlapOperations for ConfiguredDBClient {
             let table = Table {
                 // keep the name with version suffix, following PartialInfrastructureMap.convert_tables
                 name: table_name,
-                columns,
+                columns: final_columns,
                 order_by: OrderBy::Fields(order_by_cols), // Use the extracted ORDER BY columns
                 partition_by: {
                     let p = partition_key.trim();
@@ -1911,6 +2009,7 @@ impl OlapOperations for ConfiguredDBClient {
                 // the ON CLUSTER clause - it's only used during DDL execution and isn't persisted
                 // in system tables. Users must manually specify cluster in their table configs.
                 cluster_name: None,
+                primary_key_expression: final_primary_key_expression,
             };
             debug!("Created table object: {:?}", table);
 
@@ -2905,6 +3004,62 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
     }
 
     #[test]
+    fn test_primary_key_normalization_single_element_tuple() {
+        // Test that "(id)" and "id" normalize to the same value
+        // This is the bug fix: single-element tuples should have outer parens stripped
+        let normalize = |s: &str| -> String {
+            let mut normalized = s.trim().trim_matches('`').replace('`', "").replace(" ", "");
+
+            if normalized.starts_with('(') && normalized.ends_with(')') {
+                let inner = &normalized[1..normalized.len() - 1];
+                let has_top_level_comma = {
+                    let mut depth = 0;
+                    let mut found_comma = false;
+                    for ch in inner.chars() {
+                        match ch {
+                            '(' => depth += 1,
+                            ')' => depth -= 1,
+                            ',' if depth == 0 => {
+                                found_comma = true;
+                                break;
+                            }
+                            _ => {}
+                        }
+                    }
+                    found_comma
+                };
+
+                if !has_top_level_comma {
+                    normalized = inner.to_string();
+                }
+            }
+
+            normalized
+        };
+
+        // Single element: "(id)" should normalize to "id"
+        assert_eq!(normalize("(id)"), "id");
+        assert_eq!(normalize("id"), "id");
+        assert_eq!(normalize("(id)"), normalize("id"));
+
+        // Single element with function: "(cityHash64(id))" should normalize to "cityHash64(id)"
+        assert_eq!(normalize("(cityHash64(id))"), "cityHash64(id)");
+        assert_eq!(normalize("cityHash64(id)"), "cityHash64(id)");
+        assert_eq!(normalize("(cityHash64(id))"), normalize("cityHash64(id)"));
+
+        // Multiple elements: "(id, ts)" should stay as "(id,ts)" (with spaces removed)
+        assert_eq!(normalize("(id, ts)"), "(id,ts)");
+        assert_eq!(normalize("(id,ts)"), "(id,ts)");
+
+        // Multiple elements with functions: should keep parens
+        assert_eq!(normalize("(id, cityHash64(ts))"), "(id,cityHash64(ts))");
+
+        // Backticks should be removed
+        assert_eq!(normalize("(`id`)"), "id");
+        assert_eq!(normalize("(` id `)"), "id");
+    }
+
+    #[test]
     fn test_normalize_ttl_expression() {
         // Test DAY conversion
         assert_eq!(
@@ -3158,6 +3313,7 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
             database: None,
             cluster_name: None,
             table_ttl_setting: Some("created_at + INTERVAL 30 DAY".to_string()),
+            primary_key_expression: None,
         };
 
         let ignore_ops = vec![
@@ -3224,6 +3380,7 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
             database: None,
             cluster_name: None,
             table_ttl_setting: Some("created_at + INTERVAL 30 DAY".to_string()),
+            primary_key_expression: None,
         };
 
         let ignore_ops = vec![];

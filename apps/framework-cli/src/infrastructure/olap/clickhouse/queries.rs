@@ -2710,12 +2710,30 @@ pub fn create_table_query(
         None
     };
 
-    let primary_key = table
-        .columns
-        .iter()
-        .filter(|column| column.primary_key)
-        .map(|column| column.name.clone())
-        .collect::<Vec<String>>();
+    // PRIMARY KEY: use primary_key_expression if specified, otherwise use columns with primary_key flag
+    let primary_key_str = if let Some(ref expr) = table.primary_key_expression {
+        // When primary_key_expression is specified, use it directly (ignoring column-level primary_key flags)
+        // Strip outer parentheses if present, as the template will add them
+        let trimmed = expr.trim();
+        if trimmed.starts_with('(') && trimmed.ends_with(')') {
+            Some(trimmed[1..trimmed.len() - 1].to_string())
+        } else {
+            Some(trimmed.to_string())
+        }
+    } else {
+        // Otherwise, use columns with primary_key flag
+        let primary_key = table
+            .columns
+            .iter()
+            .filter(|column| column.primary_key)
+            .map(|column| column.name.clone())
+            .collect::<Vec<String>>();
+        if !primary_key.is_empty() {
+            Some(wrap_and_join_column_names(&primary_key, ","))
+        } else {
+            None
+        }
+    };
 
     // Prepare indexes strings like: INDEX name expr TYPE type(args...) GRANULARITY n
     let (has_indexes, index_strings): (bool, Vec<String>) = if table.indexes.is_empty() {
@@ -2765,8 +2783,8 @@ pub fn create_table_query(
         "has_fields": !table.columns.is_empty(),
         "has_indexes": has_indexes,
         "indexes": index_strings,
-        "primary_key_string": if supports_primary_key && !primary_key.is_empty() {
-            Some(wrap_and_join_column_names(&primary_key, ","))
+        "primary_key_string": if supports_primary_key {
+            primary_key_str
         } else {
             None
         },
@@ -2775,7 +2793,18 @@ pub fn create_table_query(
                 OrderBy::Fields(v) if v.len() == 1 && v[0] == "tuple()" => Some("tuple()".to_string()),
                 OrderBy::Fields(v) if v.is_empty() => None,
                 OrderBy::Fields(v) => Some(wrap_and_join_column_names(v, ",")),
-                OrderBy::SingleExpr(expr) => Some(expr.clone()),
+                OrderBy::SingleExpr(expr) => {
+                    // Strip outer parentheses if present, as the template will add them
+                    // Exception: keep tuple() as-is since it's a function call
+                    let trimmed = expr.trim();
+                    if trimmed == "tuple()" {
+                        Some(trimmed.to_string())
+                    } else if trimmed.starts_with('(') && trimmed.ends_with(')') {
+                        Some(trimmed[1..trimmed.len()-1].to_string())
+                    } else {
+                        Some(trimmed.to_string())
+                    }
+                },
             }
         } else {
             None
@@ -3279,6 +3308,7 @@ mod tests {
             indexes: vec![],
             table_ttl_setting: None,
             cluster_name: None,
+            primary_key_expression: None,
         };
 
         let query = create_table_query("test_db", table, false).unwrap();
@@ -3317,6 +3347,7 @@ PRIMARY KEY (`id`)
             indexes: vec![],
             table_ttl_setting: None,
             cluster_name: None,
+            primary_key_expression: None,
         };
 
         let query = create_table_query("test_db", table, false).unwrap();
@@ -3354,6 +3385,7 @@ ENGINE = MergeTree
             indexes: vec![],
             table_ttl_setting: None,
             cluster_name: None,
+            primary_key_expression: None,
         };
 
         let query = create_table_query("test_db", table, false).unwrap();
@@ -3414,6 +3446,7 @@ ENGINE = MergeTree
             indexes: vec![],
             table_ttl_setting: None,
             cluster_name: None,
+            primary_key_expression: None,
         };
 
         let query = create_table_query("test_db", table, false).unwrap();
@@ -3455,6 +3488,7 @@ ENGINE = MergeTree
             indexes: vec![],
             table_ttl_setting: None,
             cluster_name: None,
+            primary_key_expression: None,
         };
 
         let query = create_table_query("test_db", table, false).unwrap();
@@ -3495,6 +3529,7 @@ ORDER BY (`id`) "#;
             indexes: vec![],
             table_ttl_setting: None,
             cluster_name: None,
+            primary_key_expression: None,
         };
 
         let result = create_table_query("test_db", table, false);
@@ -3542,6 +3577,7 @@ ORDER BY (`id`) "#;
             indexes: vec![],
             table_ttl_setting: None,
             cluster_name: None,
+            primary_key_expression: None,
         };
 
         let query = create_table_query("test_db", table, false).unwrap();
@@ -3605,6 +3641,7 @@ ORDER BY (`id`) "#;
             indexes: vec![],
             table_ttl_setting: None,
             cluster_name: None,
+            primary_key_expression: None,
         };
 
         let query = create_table_query("test_db", table, false).unwrap();
@@ -3647,6 +3684,7 @@ ORDER BY (`id`) "#;
             table_ttl_setting: None,
             indexes: vec![],
             cluster_name: None,
+            primary_key_expression: None,
         };
 
         let result = create_table_query("test_db", table, false);
@@ -3803,6 +3841,7 @@ ORDER BY (`id`) "#;
             indexes: vec![],
             table_ttl_setting: None,
             cluster_name: None,
+            primary_key_expression: None,
         };
 
         let query = create_table_query("test_db", table, false).unwrap();
@@ -3817,6 +3856,101 @@ ENGINE = MergeTree
 PRIMARY KEY (`id`)
 ORDER BY (`id`) "#;
         assert_eq!(query.trim(), expected.trim());
+    }
+
+    #[test]
+    fn test_create_table_query_with_primary_key_expression() {
+        let table = ClickHouseTable {
+            version: Some(Version::from_string("1".to_string())),
+            name: "test_table".to_string(),
+            columns: vec![
+                ClickHouseColumn {
+                    name: "user_id".to_string(),
+                    column_type: ClickHouseColumnType::String,
+                    required: true,
+                    unique: false,
+                    primary_key: false, // primary_key flag ignored when primary_key_expression is set
+                    default: None,
+                    comment: None,
+                    ttl: None,
+                },
+                ClickHouseColumn {
+                    name: "event_id".to_string(),
+                    column_type: ClickHouseColumnType::String,
+                    required: true,
+                    unique: false,
+                    primary_key: false,
+                    default: None,
+                    comment: None,
+                    ttl: None,
+                },
+                ClickHouseColumn {
+                    name: "timestamp".to_string(),
+                    column_type: ClickHouseColumnType::DateTime,
+                    required: true,
+                    unique: false,
+                    primary_key: false,
+                    default: None,
+                    comment: None,
+                    ttl: None,
+                },
+            ],
+            order_by: OrderBy::SingleExpr("(user_id, cityHash64(event_id), timestamp)".to_string()),
+            partition_by: None,
+            sample_by: None,
+            engine: ClickhouseEngine::MergeTree,
+            table_settings: None,
+            indexes: vec![],
+            table_ttl_setting: None,
+            cluster_name: None,
+            primary_key_expression: Some("(user_id, cityHash64(event_id))".to_string()),
+        };
+
+        let query = create_table_query("test_db", table, false).unwrap();
+        let expected = r#"
+CREATE TABLE IF NOT EXISTS `test_db`.`test_table`
+(
+ `user_id` String NOT NULL,
+ `event_id` String NOT NULL,
+ `timestamp` DateTime('UTC') NOT NULL
+)
+ENGINE = MergeTree
+PRIMARY KEY (user_id, cityHash64(event_id))
+ORDER BY (user_id, cityHash64(event_id), timestamp)"#;
+        assert_eq!(query.trim(), expected.trim());
+    }
+
+    #[test]
+    fn test_create_table_query_with_primary_key_expression_no_parens() {
+        // Test that primary_key_expression works even without outer parentheses
+        let table = ClickHouseTable {
+            version: Some(Version::from_string("1".to_string())),
+            name: "test_table".to_string(),
+            columns: vec![ClickHouseColumn {
+                name: "product_id".to_string(),
+                column_type: ClickHouseColumnType::String,
+                required: true,
+                unique: false,
+                primary_key: false,
+                default: None,
+                comment: None,
+                ttl: None,
+            }],
+            order_by: OrderBy::Fields(vec!["product_id".to_string()]),
+            partition_by: None,
+            sample_by: None,
+            engine: ClickhouseEngine::MergeTree,
+            table_settings: None,
+            indexes: vec![],
+            table_ttl_setting: None,
+            cluster_name: None,
+            primary_key_expression: Some("product_id".to_string()),
+        };
+
+        let query = create_table_query("test_db", table, false).unwrap();
+        assert!(query.contains("PRIMARY KEY (product_id)"));
+        // Should have single parentheses, not double
+        assert!(!query.contains("PRIMARY KEY ((product_id))"));
     }
 
     #[test]
@@ -3869,6 +4003,7 @@ ORDER BY (`id`) "#;
             indexes: vec![],
             table_ttl_setting: None,
             cluster_name: None,
+            primary_key_expression: None,
         };
 
         let query = create_table_query("test_db", table, false).unwrap();
@@ -4342,6 +4477,7 @@ SETTINGS keeper_path = '/clickhouse/s3queue/test_table', mode = 'unordered', s3q
             indexes: vec![],
             table_ttl_setting: None,
             cluster_name: None,
+            primary_key_expression: None,
         };
 
         let query = create_table_query("test_db", table, false).unwrap();
@@ -4885,6 +5021,7 @@ ENGINE = S3Queue('s3://my-bucket/data/*.csv', NOSIGN, 'CSV')"#;
             indexes: vec![],
             table_ttl_setting: None,
             cluster_name: Some("test_cluster".to_string()),
+            primary_key_expression: None,
         };
 
         let query = create_table_query("test_db", table, false).unwrap();
@@ -4929,6 +5066,7 @@ ENGINE = S3Queue('s3://my-bucket/data/*.csv', NOSIGN, 'CSV')"#;
             indexes: vec![],
             table_ttl_setting: None,
             cluster_name: None,
+            primary_key_expression: None,
         };
 
         let query = create_table_query("test_db", table, false).unwrap();

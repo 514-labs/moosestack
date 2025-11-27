@@ -3065,6 +3065,7 @@ mod tests {
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
+            primary_key_expression: None,
         };
 
         let after = Table {
@@ -3121,6 +3122,7 @@ mod tests {
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
+            primary_key_expression: None,
         };
 
         let diff = compute_table_columns_diff(&before, &after);
@@ -3297,6 +3299,7 @@ mod diff_tests {
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
+            primary_key_expression: None,
         }
     }
 

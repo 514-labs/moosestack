@@ -1322,6 +1322,7 @@ mod tests {
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
+            primary_key_expression: None,
         };
 
         // Create some atomic operations
@@ -1397,6 +1398,7 @@ mod tests {
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
+            primary_key_expression: None,
         };
 
         // Create table B - depends on table A
@@ -1420,6 +1422,7 @@ mod tests {
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
+            primary_key_expression: None,
         };
 
         // Create view C - depends on table B
@@ -1515,6 +1518,7 @@ mod tests {
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
+            primary_key_expression: None,
         };
 
         // Create table B - target for materialized view
@@ -1538,6 +1542,7 @@ mod tests {
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
+            primary_key_expression: None,
         };
 
         // Create view C - depends on table B
@@ -1653,6 +1658,7 @@ mod tests {
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
+            primary_key_expression: None,
         };
 
         let view = View {
@@ -1810,6 +1816,7 @@ mod tests {
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
+            primary_key_expression: None,
         };
 
         let table_b = Table {
@@ -1832,6 +1839,7 @@ mod tests {
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
+            primary_key_expression: None,
         };
 
         let table_c = Table {
@@ -1854,6 +1862,7 @@ mod tests {
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
+            primary_key_expression: None,
         };
 
         // Test operations
@@ -1945,6 +1954,7 @@ mod tests {
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
+            primary_key_expression: None,
         };
 
         let table_b = Table {
@@ -1967,6 +1977,7 @@ mod tests {
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
+            primary_key_expression: None,
         };
 
         let table_c = Table {
@@ -1989,6 +2000,7 @@ mod tests {
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
+            primary_key_expression: None,
         };
 
         let table_d = Table {
@@ -2011,6 +2023,7 @@ mod tests {
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
+            primary_key_expression: None,
         };
 
         let table_e = Table {
@@ -2033,6 +2046,7 @@ mod tests {
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
+            primary_key_expression: None,
         };
 
         let op_create_a = AtomicOlapOperation::CreateTable {
@@ -2187,6 +2201,7 @@ mod tests {
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
+            primary_key_expression: None,
         };
 
         // Create table B - target for materialized view
@@ -2210,6 +2225,7 @@ mod tests {
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
+            primary_key_expression: None,
         };
 
         // Create SQL resource for a materialized view
@@ -2333,6 +2349,7 @@ mod tests {
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
+            primary_key_expression: None,
         };
 
         // Create table B - target for materialized view
@@ -2356,6 +2373,7 @@ mod tests {
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
+            primary_key_expression: None,
         };
 
         // Create SQL resource for a materialized view
@@ -2484,6 +2502,7 @@ mod tests {
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
+            primary_key_expression: None,
         };
 
         let table_b = Table {
@@ -2506,6 +2525,7 @@ mod tests {
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
+            primary_key_expression: None,
         };
 
         // Create SQL resource for materialized view
@@ -2714,6 +2734,7 @@ mod tests {
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
+            primary_key_expression: None,
         };
 
         // Create a column
@@ -2824,6 +2845,7 @@ mod tests {
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
+            primary_key_expression: None,
         };
 
         // Create operations with signatures that work with the current implementation
@@ -2944,6 +2966,7 @@ mod tests {
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
+            primary_key_expression: None,
         };
 
         let after_table = Table {
@@ -2989,6 +3012,7 @@ mod tests {
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
+            primary_key_expression: None,
         };
 
         // Create column changes (remove old_column, add new_column)
