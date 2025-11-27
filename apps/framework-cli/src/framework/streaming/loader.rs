@@ -7,10 +7,10 @@ use crate::{
     project::Project,
     utilities::constants::{PY_FLOW_FILE, TS_FLOW_FILE},
 };
-use log::{debug, info, warn};
 use regex::{Captures, Regex};
 use std::ffi::OsStr;
 use std::{fs, path::Path};
+use tracing::{debug, info, warn};
 
 const MIGRATION_REGEX: &str =
     r"^([a-zA-Z0-9_]+)_migrate__([0-9_]+)__(([a-zA-Z0-9_]+)__)?([0-9_]+)$";

@@ -1244,16 +1244,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "37909eebbb50d72f9059c3b6d82c0463f2ff062c9e95845c43a6c9c0355411be"
 
 [[package]]
-name = "fern"
-version = "0.7.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4316185f709b23713e41e3195f90edef7fb00c3ed4adc79769cf09cc762a3b29"
-dependencies = [
- "chrono",
- "log",
-]
-
-[[package]]
 name = "filetime"
 version = "0.2.26"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2764,7 +2754,6 @@ dependencies = [
  "crossterm 0.27.0",
  "csv",
  "dotenvy",
- "fern",
  "flate2",
  "futures",
  "git2",
@@ -2781,14 +2770,13 @@ dependencies = [
  "jsonwebtoken",
  "keyring",
  "lazy_static",
- "log",
  "logos",
  "notify",
  "num-bigint",
  "num-traits",
  "openssl",
  "opentelemetry 0.29.1",
- "opentelemetry-appender-log",
+ "opentelemetry-appender-tracing",
  "opentelemetry-http 0.29.0",
  "opentelemetry-otlp 0.29.0",
  "opentelemetry-semantic-conventions",
@@ -2833,6 +2821,7 @@ dependencies = [
  "toml_edit 0.22.27",
  "tonic",
  "tracing",
+ "tracing-subscriber",
  "uuid",
  "walkdir",
 ]
@@ -3141,13 +3130,15 @@ dependencies = [
 ]
 
 [[package]]
-name = "opentelemetry-appender-log"
-version = "0.29.0"
+name = "opentelemetry-appender-tracing"
+version = "0.29.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9268ffd1e361eb0cc835d3daad47a52e0159cea7495570ee7c22f7f72cc00dd1"
+checksum = "e716f864eb23007bdd9dc4aec381e188a1cee28eecf22066772b5fd822b9727d"
 dependencies = [
- "log",
  "opentelemetry 0.29.1",
+ "tracing",
+ "tracing-core",
+ "tracing-subscriber",
 ]
 
 [[package]]
@@ -5902,6 +5893,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "tracing-serde"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "704b1aeb7be0d0a84fc9828cae51dab5970fee5088f83d1dd7ee6f6246fc6ff1"
+dependencies = [
+ "serde",
+ "tracing-core",
+]
+
+[[package]]
 name = "tracing-subscriber"
 version = "0.3.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5912,12 +5913,15 @@ dependencies = [
  "once_cell",
  "parking_lot",
  "regex-automata",
+ "serde",
+ "serde_json",
  "sharded-slab",
  "smallvec",
  "thread_local",
  "tracing",
  "tracing-core",
  "tracing-log",
+ "tracing-serde",
 ]
 
 [[package]]

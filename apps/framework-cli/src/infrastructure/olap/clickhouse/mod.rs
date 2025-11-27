@@ -33,7 +33,6 @@
 use clickhouse::Client;
 
 use errors::ClickhouseError;
-use log::{debug, info, warn};
 use mapper::{std_column_to_clickhouse_column, std_table_to_clickhouse_table};
 use model::ClickHouseColumn;
 use queries::ClickhouseEngine;
@@ -51,6 +50,7 @@ use sql_parser::{
 use std::collections::HashMap;
 use std::ops::Deref;
 use std::sync::LazyLock;
+use tracing::{debug, info, warn};
 
 use self::model::ClickHouseSystemTable;
 use crate::framework::core::infrastructure::sql_resource::SqlResource;
@@ -657,7 +657,7 @@ async fn execute_create_table(
     client: &ConfiguredDBClient,
     is_dev: bool,
 ) -> Result<(), ClickhouseChangesError> {
-    log::info!("Executing CreateTable: {:?}", table.id(db_name));
+    tracing::info!("Executing CreateTable: {:?}", table.id(db_name));
     let clickhouse_table = std_table_to_clickhouse_table(table)?;
     // Use table's database if specified, otherwise use global database
     let target_database = table.database.as_deref().unwrap_or(db_name);
@@ -777,7 +777,7 @@ async fn execute_drop_table(
     cluster_name: Option<&str>,
     client: &ConfiguredDBClient,
 ) -> Result<(), ClickhouseChangesError> {
-    log::info!("Executing DropTable: {:?}", table_name);
+    tracing::info!("Executing DropTable: {:?}", table_name);
     // Use table's database if specified, otherwise use global database
     let target_database = table_database.unwrap_or(db_name);
     let drop_query = drop_table_query(target_database, table_name, cluster_name)?;
@@ -803,7 +803,7 @@ async fn execute_add_table_column(
     cluster_name: Option<&str>,
     client: &ConfiguredDBClient,
 ) -> Result<(), ClickhouseChangesError> {
-    log::info!(
+    tracing::info!(
         "Executing AddTableColumn for table: {}, column: {}, after: {:?}",
         table_name,
         column.name,
@@ -836,7 +836,7 @@ async fn execute_add_table_column(
             Some(after_col) => format!("AFTER `{after_col}`"),
         }
     );
-    log::debug!("Adding column: {}", add_column_query);
+    tracing::debug!("Adding column: {}", add_column_query);
     run_query(&add_column_query, client).await.map_err(|e| {
         ClickhouseChangesError::ClickhouseClient {
             error: e,
@@ -853,7 +853,7 @@ async fn execute_drop_table_column(
     cluster_name: Option<&str>,
     client: &ConfiguredDBClient,
 ) -> Result<(), ClickhouseChangesError> {
-    log::info!(
+    tracing::info!(
         "Executing DropTableColumn for table: {}, column: {}",
         table_name,
         column_name
@@ -865,7 +865,7 @@ async fn execute_drop_table_column(
         "ALTER TABLE `{}`.`{}`{} DROP COLUMN IF EXISTS `{}`",
         db_name, table_name, cluster_clause, column_name
     );
-    log::debug!("Dropping column: {}", drop_column_query);
+    tracing::debug!("Dropping column: {}", drop_column_query);
     run_query(&drop_column_query, client).await.map_err(|e| {
         ClickhouseChangesError::ClickhouseClient {
             error: e,
@@ -904,7 +904,7 @@ async fn execute_modify_table_column(
         && !ttl_changed
         && comment_changed
     {
-        log::info!(
+        tracing::info!(
             "Executing comment-only modification for table: {}, column: {}",
             table_name,
             after_column.name
@@ -938,7 +938,7 @@ async fn execute_modify_table_column(
         return Ok(());
     }
 
-    log::info!(
+    tracing::info!(
         "Executing ModifyTableColumn for table: {}, column: {} ({}→{})\
 data_type_changed: {data_type_changed}, default_changed: {default_changed}, required_changed: {required_changed}, comment_changed: {comment_changed}, ttl_changed: {ttl_changed}",
         table_name,
@@ -964,7 +964,7 @@ data_type_changed: {data_type_changed}, default_changed: {default_changed}, requ
 
     // Execute all statements in order
     for query in queries {
-        log::debug!("Modifying column: {}", query);
+        tracing::debug!("Modifying column: {}", query);
         run_query(&query, client)
             .await
             .map_err(|e| ClickhouseChangesError::ClickhouseClient {
@@ -988,7 +988,7 @@ async fn execute_modify_column_comment(
     cluster_name: Option<&str>,
     client: &ConfiguredDBClient,
 ) -> Result<(), ClickhouseChangesError> {
-    log::info!(
+    tracing::info!(
         "Executing ModifyColumnComment for table: {}, column: {}",
         table_name,
         column.name
@@ -997,7 +997,7 @@ async fn execute_modify_column_comment(
     let modify_comment_query =
         build_modify_column_comment_sql(db_name, table_name, &column.name, comment, cluster_name)?;
 
-    log::debug!("Modifying column comment: {}", modify_comment_query);
+    tracing::debug!("Modifying column comment: {}", modify_comment_query);
     run_query(&modify_comment_query, client)
         .await
         .map_err(|e| ClickhouseChangesError::ClickhouseClient {
@@ -1139,7 +1139,7 @@ async fn execute_modify_table_settings(
         }
     }
 
-    log::info!(
+    tracing::info!(
         "Executing ModifyTableSettings for table: {} - modifying {} settings, resetting {} settings",
         table_name,
         settings_to_modify.len(),
@@ -1154,7 +1154,7 @@ async fn execute_modify_table_settings(
             &settings_to_modify,
             cluster_name,
         )?;
-        log::debug!("Modifying table settings: {}", alter_settings_query);
+        tracing::debug!("Modifying table settings: {}", alter_settings_query);
 
         run_query(&alter_settings_query, client)
             .await
@@ -1172,7 +1172,7 @@ async fn execute_modify_table_settings(
             &settings_to_reset,
             cluster_name,
         )?;
-        log::debug!("Resetting table settings: {}", reset_settings_query);
+        tracing::debug!("Resetting table settings: {}", reset_settings_query);
 
         run_query(&reset_settings_query, client)
             .await
@@ -1194,7 +1194,7 @@ async fn execute_rename_table_column(
     cluster_name: Option<&str>,
     client: &ConfiguredDBClient,
 ) -> Result<(), ClickhouseChangesError> {
-    log::info!(
+    tracing::info!(
         "Executing RenameTableColumn for table: {}, column: {} → {}",
         table_name,
         before_column_name,
@@ -1206,7 +1206,7 @@ async fn execute_rename_table_column(
     let rename_column_query = format!(
         "ALTER TABLE `{db_name}`.`{table_name}`{cluster_clause} RENAME COLUMN `{before_column_name}` TO `{after_column_name}`"
     );
-    log::debug!("Renaming column: {}", rename_column_query);
+    tracing::debug!("Renaming column: {}", rename_column_query);
     run_query(&rename_column_query, client).await.map_err(|e| {
         ClickhouseChangesError::ClickhouseClient {
             error: e,
@@ -1222,14 +1222,14 @@ async fn execute_raw_sql(
     description: &str,
     client: &ConfiguredDBClient,
 ) -> Result<(), ClickhouseChangesError> {
-    log::info!(
+    tracing::info!(
         "Executing {} raw SQL statements. {}",
         sql_statements.len(),
         description
     );
     for (i, sql) in sql_statements.iter().enumerate() {
         if !sql.trim().is_empty() {
-            log::debug!("Executing SQL statement {}: {}", i + 1, sql);
+            tracing::debug!("Executing SQL statement {}: {}", i + 1, sql);
             run_query(sql, client)
                 .await
                 .map_err(|e| ClickhouseChangesError::ClickhouseClient {
@@ -1520,7 +1520,7 @@ fn parse_column_metadata(comment: &str) -> Option<ColumnMetadata> {
     match serde_json::from_str::<ColumnMetadata>(json_str) {
         Ok(metadata) => Some(metadata),
         Err(e) => {
-            log::warn!("Failed to parse column metadata JSON: {}", e);
+            tracing::warn!("Failed to parse column metadata JSON: {}", e);
             None
         }
     }

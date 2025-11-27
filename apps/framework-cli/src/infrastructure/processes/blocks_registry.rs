@@ -1,7 +1,7 @@
-use log::info;
 use std::sync::Arc;
 use std::{collections::HashMap, path::PathBuf};
 use tokio::process::Child;
+use tracing::info;
 
 use crate::project::Project;
 use crate::{

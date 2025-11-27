@@ -1,5 +1,4 @@
 use anyhow::Result;
-use log;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -140,13 +139,13 @@ impl MockRedisClient {
         let mut queues_map = self.queues.write().await;
 
         if !queues_map.contains_key(queue) {
-            log::debug!("<RedisMock> Creating new queue: {}", queue);
+            tracing::debug!("<RedisMock> Creating new queue: {}", queue);
             queues_map.insert(queue.to_string(), Vec::new());
         }
 
         if let Some(queue_vec) = queues_map.get_mut(queue) {
             queue_vec.push(message.to_string());
-            log::debug!(
+            tracing::debug!(
                 "<RedisMock> Added message to queue {}, length now: {}",
                 queue,
                 queue_vec.len()
@@ -171,7 +170,7 @@ impl MockRedisClient {
         if let Some(queue_vec) = queues_map.get_mut(queue) {
             if !queue_vec.is_empty() {
                 let message = queue_vec.remove(0);
-                log::debug!(
+                tracing::debug!(
                     "<RedisMock> Retrieved message from queue {}, length now: {}",
                     queue,
                     queue_vec.len()
@@ -179,7 +178,7 @@ impl MockRedisClient {
                 return Ok(Some(message));
             }
         } else {
-            log::debug!("<RedisMock> Queue {} does not exist", queue);
+            tracing::debug!("<RedisMock> Queue {} does not exist", queue);
         }
 
         Ok(None)

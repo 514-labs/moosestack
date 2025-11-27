@@ -1,6 +1,6 @@
 use crate::utilities::docker::DockerClient;
 use crate::{cli::display::Message, cli::settings::Settings, project::Project};
-use log::info;
+use tracing::info;
 
 use super::util::ensure_docker_running;
 use super::{RoutineFailure, RoutineSuccess};

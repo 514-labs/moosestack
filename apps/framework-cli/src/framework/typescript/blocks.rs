@@ -1,7 +1,7 @@
-use log::{error, info};
 use std::path::Path;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Child;
+use tracing::{error, info};
 
 use super::bin;
 use crate::framework::blocks::model::BlocksError;

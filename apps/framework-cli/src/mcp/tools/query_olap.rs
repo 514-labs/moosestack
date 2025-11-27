@@ -3,13 +3,13 @@
 //! This module implements the MCP tool for executing read-only SQL queries
 //! against the ClickHouse OLAP database for data exploration and debugging.
 
-use log::{debug, info};
 use rmcp::model::{Annotated, CallToolResult, RawContent, RawTextContent, Tool};
 use serde_json::{json, Map, Value};
 use sqlparser::ast::Statement;
 use sqlparser::dialect::ClickHouseDialect;
 use sqlparser::parser::Parser;
 use std::sync::Arc;
+use tracing::{debug, info};
 
 use crate::infrastructure::olap::clickhouse::client::ClickHouseClient;
 use crate::infrastructure::olap::clickhouse::config::ClickHouseConfig;

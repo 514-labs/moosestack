@@ -7,13 +7,13 @@ use hyper::body::Bytes;
 use hyper::{Request, Response, Uri};
 use hyper_tls::HttpsConnector;
 use hyper_util::client::legacy::{connect::HttpConnector, Client};
-use log::debug;
 use tokio::time::{sleep, Duration};
+use tracing::debug;
 
 use super::config::ClickHouseConfig;
 use super::model::{wrap_and_join_column_names, ClickHouseRecord};
 
-use log::error;
+use tracing::error;
 
 use async_trait::async_trait;
 
@@ -152,7 +152,7 @@ impl ClickHouseClient {
 
         let body = Self::build_body(columns, records);
 
-        log::trace!("Inserting into clickhouse with values: {}", body);
+        tracing::trace!("Inserting into clickhouse with values: {}", body);
 
         let bytes = Bytes::from(body);
 

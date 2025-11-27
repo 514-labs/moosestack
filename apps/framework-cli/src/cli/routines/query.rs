@@ -9,10 +9,10 @@ use crate::framework::core::infrastructure_map::InfrastructureMap;
 use crate::infrastructure::olap::clickhouse_http_client::create_query_client;
 use crate::project::Project;
 
-use log::info;
 use std::io::Read;
 use std::path::PathBuf;
 use std::sync::Arc;
+use tracing::info;
 
 /// Reads SQL query from argument, file, or stdin.
 ///

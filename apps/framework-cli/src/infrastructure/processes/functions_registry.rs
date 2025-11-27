@@ -8,9 +8,9 @@ use crate::{
     project::Project,
     utilities::system::KillProcessError,
 };
-use log::{error, info};
 use std::collections::HashMap;
 use std::sync::Arc;
+use tracing::{error, info};
 
 #[derive(Debug, thiserror::Error)]
 pub enum FunctionRegistryError {
