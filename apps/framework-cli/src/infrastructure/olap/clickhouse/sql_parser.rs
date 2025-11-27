@@ -295,7 +295,11 @@ pub fn extract_primary_key_from_create_table(sql: &str) -> Option<String> {
     let after_upper = after.to_uppercase();
 
     // Find earliest terminating keyword after PRIMARY KEY
+    // Clause order: PRIMARY KEY → PARTITION BY → ORDER BY → SAMPLE BY → SETTINGS → TTL
     let mut end = after.len();
+    if let Some(i) = after_upper.find("PARTITION BY") {
+        end = end.min(i);
+    }
     if let Some(i) = after_upper.find("ORDER BY") {
         end = end.min(i);
     }
@@ -1805,6 +1809,26 @@ pub mod tests {
         assert_eq!(
             extract_primary_key_from_create_table(sql),
             Some("id".to_string())
+        );
+    }
+
+    #[test]
+    fn test_extract_primary_key_with_partition_by() {
+        // Test that PRIMARY KEY stops at PARTITION BY clause
+        let sql = r#"CREATE TABLE t (id UInt64, ts DateTime) ENGINE = MergeTree PRIMARY KEY id PARTITION BY toYYYYMM(ts) ORDER BY id"#;
+        assert_eq!(
+            extract_primary_key_from_create_table(sql),
+            Some("id".to_string())
+        );
+    }
+
+    #[test]
+    fn test_extract_primary_key_tuple_with_partition_by() {
+        // Test that PRIMARY KEY with tuple stops at PARTITION BY
+        let sql = r#"CREATE TABLE t (id UInt64, ts DateTime) ENGINE = MergeTree PRIMARY KEY (id, ts) PARTITION BY toYYYYMM(ts) ORDER BY (id, ts)"#;
+        assert_eq!(
+            extract_primary_key_from_create_table(sql),
+            Some("(id, ts)".to_string())
         );
     }
 
