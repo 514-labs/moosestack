@@ -633,18 +633,6 @@ pub fn tables_to_python(tables: &[Table], life_cycle: Option<LifeCycle>) -> Stri
     // Generate model classes
     for table in tables {
         writeln!(output, "class {}(BaseModel):", table.name).unwrap();
-
-        let primary_key = table
-            .columns
-            .iter()
-            .filter_map(|column| {
-                if column.primary_key {
-                    Some(column.name.to_string())
-                } else {
-                    None
-                }
-            })
-            .collect::<Vec<_>>();
         // list_tables sets primary_key_expression to Some if Key wrapping is insufficient to represent the PK
         let can_use_key_wrapping = table.primary_key_expression.is_none();
 
