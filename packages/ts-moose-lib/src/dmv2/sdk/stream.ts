@@ -22,6 +22,7 @@ import type {
 } from "../../config/runtime";
 import { createHash } from "node:crypto";
 import { Logger, Producer } from "../../commons";
+import { getSourceFileFromStack } from "../utils/stackTrace";
 
 /**
  * Represents zero, one, or many values of type T.
@@ -104,6 +105,12 @@ export interface TransformConfig<T> {
    * unless a DeadLetterQueue is provided, or it is explicitly disabled with a null value
    */
   deadLetterQueue?: DeadLetterQueue<T> | null;
+
+  /**
+   * @internal Source file path where this transform was declared.
+   * Automatically captured from stack trace.
+   */
+  sourceFile?: string;
 }
 
 /**
@@ -125,6 +132,12 @@ export interface ConsumerConfig<T> {
    * unless a DeadLetterQueue is provided, or it is explicitly disabled with a null value
    */
   deadLetterQueue?: DeadLetterQueue<T> | null;
+
+  /**
+   * @internal Source file path where this consumer was declared.
+   * Automatically captured from stack trace.
+   */
+  sourceFile?: string;
 }
 
 export type SchemaRegistryEncoding = "JSON" | "AVRO" | "PROTOBUF";
@@ -458,8 +471,12 @@ export class Stream<T> extends TypedBase<T, StreamConfig<T>> {
     transformation: SyncOrAsyncTransform<T, U>,
     config?: TransformConfig<T>,
   ) {
-    const transformConfig = {
+    // Capture source file from call stack at this exact moment
+    const sourceFile = getSourceFileFromStack(new Error().stack);
+
+    const transformConfig: TransformConfig<T> = {
       ...(config ?? {}),
+      sourceFile,
     };
     if (transformConfig.deadLetterQueue === undefined) {
       transformConfig.deadLetterQueue = this.defaultDeadLetterQueue;
@@ -489,8 +506,12 @@ export class Stream<T> extends TypedBase<T, StreamConfig<T>> {
    * @param config Optional configuration for this specific consumer, like a version.
    */
   addConsumer(consumer: Consumer<T>, config?: ConsumerConfig<T>) {
-    const consumerConfig = {
+    // Capture source file from call stack at this exact moment
+    const sourceFile = getSourceFileFromStack(new Error().stack);
+
+    const consumerConfig: ConsumerConfig<T> = {
       ...(config ?? {}),
+      sourceFile,
     };
     if (consumerConfig.deadLetterQueue === undefined) {
       consumerConfig.deadLetterQueue = this.defaultDeadLetterQueue;
