@@ -1,34 +1,9 @@
 import { getMooseInternal } from "../internal";
 import { OlapTable } from "./olapTable";
 import { Sql, toStaticQuery } from "../../sqlHelpers";
+import { getSourceFileFromStack } from "../utils/stackTrace";
 
 type SqlObject = OlapTable<any> | SqlResource;
-
-/**
- * Utility to extract the first file path outside node_modules from a stack trace.
- */
-function getSourceFileFromStack(stack?: string): string | undefined {
-  if (!stack) return undefined;
-  const lines = stack.split("\n");
-  for (const line of lines) {
-    // Skip lines from node_modules, internal loaders, and moose-lib internals
-    if (
-      line.includes("node_modules") || // Skip npm installed packages (prod)
-      line.includes("internal/modules") || // Skip Node.js internals
-      line.includes("ts-node") || // Skip TypeScript execution
-      line.includes("/ts-moose-lib/") || // Skip dev/linked moose-lib (Unix)
-      line.includes("\\ts-moose-lib\\") // Skip dev/linked moose-lib (Windows)
-    )
-      continue;
-    // Extract file path from the line
-    const match =
-      line.match(/\((.*):(\d+):(\d+)\)/) || line.match(/at (.*):(\d+):(\d+)/);
-    if (match && match[1]) {
-      return match[1];
-    }
-  }
-  return undefined;
-}
 
 /**
  * Represents a generic SQL resource that requires setup and teardown commands.

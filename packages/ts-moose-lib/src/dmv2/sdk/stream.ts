@@ -22,34 +22,7 @@ import type {
 } from "../../config/runtime";
 import { createHash } from "node:crypto";
 import { Logger, Producer } from "../../commons";
-
-/**
- * Utility to extract the first file path outside moose-lib internals from a stack trace.
- * Works in both development (npm link) and production (npm install) environments.
- * @internal
- */
-function getSourceFileFromStack(stack?: string): string | undefined {
-  if (!stack) return undefined;
-  const lines = stack.split("\n");
-  for (const line of lines) {
-    // Skip lines from node_modules, internal loaders, and moose-lib internals
-    if (
-      line.includes("node_modules") || // Skip npm installed packages (prod)
-      line.includes("internal/modules") || // Skip Node.js internals
-      line.includes("ts-node") || // Skip TypeScript execution
-      line.includes("/ts-moose-lib/") || // Skip dev/linked moose-lib (Unix)
-      line.includes("\\ts-moose-lib\\") // Skip dev/linked moose-lib (Windows)
-    )
-      continue;
-    // Extract file path from the line
-    const match =
-      line.match(/\((.*):(\d+):(\d+)\)/) || line.match(/at (.*):(\d+):(\d+)/);
-    if (match && match[1]) {
-      return match[1];
-    }
-  }
-  return undefined;
-}
+import { getSourceFileFromStack } from "../utils/stackTrace";
 
 /**
  * Represents zero, one, or many values of type T.
