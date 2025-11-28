@@ -1,5 +1,6 @@
 import { IJsonSchemaCollection } from "typia/src/schemas/json/IJsonSchemaCollection";
 import { Column } from "../dataModels/dataModelTypes";
+import { getSourceFileInfo } from "./utils/stackTrace";
 
 /**
  * Type definition for typia validation functions
@@ -11,39 +12,6 @@ export interface TypiaValidators<T> {
   assert?: (data: unknown) => T;
   /** Typia is function: returns boolean indicating if data matches type T */
   is?: (data: unknown) => data is T;
-}
-
-/**
- * Utility to extract the first file path and line outside node_modules from a stack trace.
- * Returns an object with file and line (file: /path/to/file.ts, line: /path/to/file.ts:123:45)
- */
-function getInstantiationFileInfo(stack?: string): {
-  file?: string;
-  line?: string;
-} {
-  if (!stack) return {};
-  const lines = stack.split("\n");
-  for (const line of lines) {
-    // Skip lines from node_modules, internal loaders, and moose-lib internals
-    if (
-      line.includes("node_modules") || // Skip npm installed packages (prod)
-      line.includes("internal/modules") || // Skip Node.js internals
-      line.includes("ts-node") || // Skip TypeScript execution
-      line.includes("/ts-moose-lib/") || // Skip dev/linked moose-lib (Unix)
-      line.includes("\\ts-moose-lib\\") // Skip dev/linked moose-lib (Windows)
-    )
-      continue;
-    // Extract file path and line/column from the line
-    const match =
-      line.match(/\((.*):(\d+):(\d+)\)/) || line.match(/at (.*):(\d+):(\d+)/);
-    if (match && match[1]) {
-      return {
-        file: match[1],
-        line: match[2], // Only the line number
-      };
-    }
-  }
-  return {};
 }
 
 /**
@@ -115,8 +83,8 @@ export class TypedBase<T, C> {
       (config as any)?.metadata ? { ...(config as any).metadata } : {};
     const stack = new Error().stack;
     if (stack) {
-      // Add source object with file and line
-      const info = getInstantiationFileInfo(stack);
+      // Add source object with file and line using shared utility
+      const info = getSourceFileInfo(stack);
       this.metadata.source = { file: info.file, line: info.line };
     } else {
       this.metadata.source = undefined;

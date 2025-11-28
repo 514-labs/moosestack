@@ -7,6 +7,12 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+use crate::framework::core::infrastructure::table::Metadata;
+use crate::framework::core::infrastructure_map::InfrastructureMap;
+
+/// Path prefix for workflow source files
+const WORKFLOW_SOURCE_PATH_PREFIX: &str = "app/workflows/";
+
 /// Compressed infrastructure map showing component relationships
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CompressedInfraMap {
@@ -200,58 +206,50 @@ fn make_relative_path(absolute_path: &str) -> String {
     absolute_path.to_string()
 }
 
-/// Build a compressed infrastructure map from the full InfrastructureMap
-pub fn build_compressed_map(
-    infra_map: &crate::framework::core::infrastructure_map::InfrastructureMap,
-) -> CompressedInfraMap {
-    let mut compressed = CompressedInfraMap::new();
+/// Extract source file path from component metadata
+fn extract_source_file(metadata: Option<&Metadata>) -> String {
+    metadata
+        .and_then(|m| m.source.as_ref())
+        .map(|s| make_relative_path(&s.file))
+        .unwrap_or_default()
+}
 
-    // Add all topics
+/// Add all topics to the compressed map
+fn add_topics(compressed: &mut CompressedInfraMap, infra_map: &InfrastructureMap) {
     for (key, topic) in &infra_map.topics {
-        let source_file = topic
-            .metadata
-            .as_ref()
-            .and_then(|m| m.source.as_ref())
-            .map(|s| make_relative_path(&s.file))
-            .unwrap_or_default();
-
         compressed.add_component(ComponentNode {
             id: key.clone(),
             component_type: ComponentType::Topic,
             name: topic.name.clone(),
-            source_file,
+            source_file: extract_source_file(topic.metadata.as_ref()),
         });
     }
+}
 
-    // Add all tables
+/// Add all tables to the compressed map
+fn add_tables(compressed: &mut CompressedInfraMap, infra_map: &InfrastructureMap) {
     for (key, table) in &infra_map.tables {
-        let source_file = table
-            .metadata
-            .as_ref()
-            .and_then(|m| m.source.as_ref())
-            .map(|s| make_relative_path(&s.file))
-            .unwrap_or_default();
-
         compressed.add_component(ComponentNode {
             id: key.clone(),
             component_type: ComponentType::Table,
             name: table.name.clone(),
-            source_file,
+            source_file: extract_source_file(table.metadata.as_ref()),
         });
     }
+}
 
-    // Add all views
+/// Add all views to the compressed map
+fn add_views(compressed: &mut CompressedInfraMap, infra_map: &InfrastructureMap) {
+    use crate::framework::core::infrastructure::view::ViewType;
+
     for (key, view) in &infra_map.views {
-        use crate::framework::core::infrastructure::view::ViewType;
-
         // Views are aliases to tables, so try to use the source table's file
         let source_file = match &view.view_type {
             ViewType::TableAlias { source_table_name } => infra_map
                 .tables
                 .get(source_table_name)
                 .and_then(|t| t.metadata.as_ref())
-                .and_then(|m| m.source.as_ref())
-                .map(|s| make_relative_path(&s.file))
+                .map(|m| extract_source_file(Some(m)))
                 .unwrap_or_default(),
         };
 
@@ -270,23 +268,18 @@ pub fn build_compressed_map(
             connection_type: ConnectionType::References,
         });
     }
+}
 
-    // Add all API endpoints
+/// Add all API endpoints to the compressed map
+fn add_api_endpoints(compressed: &mut CompressedInfraMap, infra_map: &InfrastructureMap) {
+    use crate::framework::core::infrastructure::api_endpoint::APIType;
+
     for (key, api) in &infra_map.api_endpoints {
-        use crate::framework::core::infrastructure::api_endpoint::APIType;
-
-        let source_file = api
-            .metadata
-            .as_ref()
-            .and_then(|m| m.source.as_ref())
-            .map(|s| make_relative_path(&s.file))
-            .unwrap_or_default();
-
         compressed.add_component(ComponentNode {
             id: key.clone(),
             component_type: ComponentType::ApiEndpoint,
             name: format!("{:?} {}", api.method, api.path.display()),
-            source_file,
+            source_file: extract_source_file(api.metadata.as_ref()),
         });
 
         // Add connections based on API type
@@ -307,21 +300,16 @@ pub fn build_compressed_map(
             }
         }
     }
+}
 
-    // Add all functions
+/// Add all functions to the compressed map
+fn add_functions(compressed: &mut CompressedInfraMap, infra_map: &InfrastructureMap) {
     for (key, func) in &infra_map.function_processes {
-        let source_file = func
-            .metadata
-            .as_ref()
-            .and_then(|m| m.source.as_ref())
-            .map(|s| make_relative_path(&s.file))
-            .unwrap_or_default();
-
         compressed.add_component(ComponentNode {
             id: key.clone(),
             component_type: ComponentType::Function,
             name: func.name.clone(),
-            source_file,
+            source_file: extract_source_file(func.metadata.as_ref()),
         });
 
         // Add connections: source topic -> function -> target topic
@@ -338,8 +326,10 @@ pub fn build_compressed_map(
             });
         }
     }
+}
 
-    // Add all SQL resources
+/// Add all SQL resources to the compressed map
+fn add_sql_resources(compressed: &mut CompressedInfraMap, infra_map: &InfrastructureMap) {
     for (key, sql) in &infra_map.sql_resources {
         let source_file = sql
             .source_file
@@ -354,51 +344,38 @@ pub fn build_compressed_map(
             source_file,
         });
 
-        // Add connections based on lineage
-        use crate::framework::core::infrastructure::InfrastructureSignature;
+        // Add connections based on lineage using the id() method
         for source in &sql.pulls_data_from {
-            let source_id = match source {
-                InfrastructureSignature::Table { id } => id.clone(),
-                InfrastructureSignature::Topic { id } => id.clone(),
-                InfrastructureSignature::ApiEndpoint { id } => id.clone(),
-                InfrastructureSignature::TopicToTableSyncProcess { id } => id.clone(),
-                InfrastructureSignature::View { id } => id.clone(),
-                InfrastructureSignature::SqlResource { id } => id.clone(),
-            };
             compressed.add_connection(Connection {
-                from: source_id,
+                from: source.id().to_string(),
                 to: key.clone(),
                 connection_type: ConnectionType::PullsFrom,
             });
         }
         for target in &sql.pushes_data_to {
-            let target_id = match target {
-                InfrastructureSignature::Table { id } => id.clone(),
-                InfrastructureSignature::Topic { id } => id.clone(),
-                InfrastructureSignature::ApiEndpoint { id } => id.clone(),
-                InfrastructureSignature::TopicToTableSyncProcess { id } => id.clone(),
-                InfrastructureSignature::View { id } => id.clone(),
-                InfrastructureSignature::SqlResource { id } => id.clone(),
-            };
             compressed.add_connection(Connection {
                 from: key.clone(),
-                to: target_id,
+                to: target.id().to_string(),
                 connection_type: ConnectionType::PushesTo,
             });
         }
     }
+}
 
-    // Add all workflows
+/// Add all workflows to the compressed map
+fn add_workflows(compressed: &mut CompressedInfraMap, infra_map: &InfrastructureMap) {
     for (key, workflow) in &infra_map.workflows {
         compressed.add_component(ComponentNode {
             id: key.clone(),
             component_type: ComponentType::Workflow,
             name: workflow.name().to_string(),
-            source_file: format!("app/workflows/{}", workflow.name()),
+            source_file: format!("{}{}", WORKFLOW_SOURCE_PATH_PREFIX, workflow.name()),
         });
     }
+}
 
-    // Add all web apps
+/// Add all web apps to the compressed map
+fn add_web_apps(compressed: &mut CompressedInfraMap, infra_map: &InfrastructureMap) {
     for (key, web_app) in &infra_map.web_apps {
         compressed.add_component(ComponentNode {
             id: key.clone(),
@@ -407,16 +384,17 @@ pub fn build_compressed_map(
             source_file: String::new(), // Web apps don't have source file tracking
         });
     }
+}
 
-    // Add topic-to-table sync processes
+/// Add topic-to-table sync processes to the compressed map
+fn add_topic_table_syncs(compressed: &mut CompressedInfraMap, infra_map: &InfrastructureMap) {
     for (key, sync) in &infra_map.topic_to_table_sync_processes {
         // Sync processes are derived from the source topic, use its source file
         let source_file = infra_map
             .topics
             .get(&sync.source_topic_id)
             .and_then(|t| t.metadata.as_ref())
-            .and_then(|m| m.source.as_ref())
-            .map(|s| make_relative_path(&s.file))
+            .map(|m| extract_source_file(Some(m)))
             .unwrap_or_default();
 
         compressed.add_component(ComponentNode {
@@ -438,16 +416,17 @@ pub fn build_compressed_map(
             connection_type: ConnectionType::Ingests,
         });
     }
+}
 
-    // Add topic-to-topic sync processes
+/// Add topic-to-topic sync processes to the compressed map
+fn add_topic_topic_syncs(compressed: &mut CompressedInfraMap, infra_map: &InfrastructureMap) {
     for (key, sync) in &infra_map.topic_to_topic_sync_processes {
         // Sync processes are derived from the source topic, use its source file
         let source_file = infra_map
             .topics
             .get(&sync.source_topic_id)
             .and_then(|t| t.metadata.as_ref())
-            .and_then(|m| m.source.as_ref())
-            .map(|s| make_relative_path(&s.file))
+            .map(|m| extract_source_file(Some(m)))
             .unwrap_or_default();
 
         compressed.add_component(ComponentNode {
@@ -469,6 +448,22 @@ pub fn build_compressed_map(
             connection_type: ConnectionType::Produces,
         });
     }
+}
+
+/// Build a compressed infrastructure map from the full InfrastructureMap
+pub fn build_compressed_map(infra_map: &InfrastructureMap) -> CompressedInfraMap {
+    let mut compressed = CompressedInfraMap::new();
+
+    add_topics(&mut compressed, infra_map);
+    add_tables(&mut compressed, infra_map);
+    add_views(&mut compressed, infra_map);
+    add_api_endpoints(&mut compressed, infra_map);
+    add_functions(&mut compressed, infra_map);
+    add_sql_resources(&mut compressed, infra_map);
+    add_workflows(&mut compressed, infra_map);
+    add_web_apps(&mut compressed, infra_map);
+    add_topic_table_syncs(&mut compressed, infra_map);
+    add_topic_topic_syncs(&mut compressed, infra_map);
 
     compressed
 }

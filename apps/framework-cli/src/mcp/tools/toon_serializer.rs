@@ -11,11 +11,8 @@ use toon_format::{encode, encode_default, EncodeOptions};
 /// Errors that can occur during TOON serialization
 #[derive(Debug, thiserror::Error)]
 pub enum ToonSerializationError {
-    #[error("failed to encode data to TOON format")]
-    EncodingError {
-        #[source]
-        source: anyhow::Error,
-    },
+    #[error("failed to encode data to TOON format: {message}")]
+    EncodingError { message: String },
 }
 
 /// Serialize a JSON value to TOON format with compression optimization
@@ -41,7 +38,7 @@ pub fn serialize_to_toon_compressed(value: &Value) -> Result<String, ToonSeriali
         .with_spaces(2); // Standard indentation
 
     encode(value, &options).map_err(|e| ToonSerializationError::EncodingError {
-        source: anyhow::anyhow!("TOON encoding failed: {}", e),
+        message: e.to_string(),
     })
 }
 
@@ -59,7 +56,7 @@ pub fn serialize_to_toon_compressed(value: &Value) -> Result<String, ToonSeriali
 #[allow(dead_code)]
 pub fn serialize_to_toon_default(value: &Value) -> Result<String, ToonSerializationError> {
     encode_default(value).map_err(|e| ToonSerializationError::EncodingError {
-        source: anyhow::anyhow!("TOON encoding failed: {}", e),
+        message: e.to_string(),
     })
 }
 
