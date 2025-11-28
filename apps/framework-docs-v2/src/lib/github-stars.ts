@@ -7,15 +7,23 @@ import { unstable_cache } from "next/cache";
  */
 async function fetchGitHubStars(): Promise<number | null> {
   try {
+    const headers: HeadersInit = {
+      // GitHub API requires a user-agent
+      "User-Agent": "MooseDocs",
+    };
+
+    // Add Authorization header with token if available to increase rate limit
+    // Without token: 60 requests/hour
+    // With token: 5,000 requests/hour
+    const githubToken = process.env.GITHUB_TOKEN;
+    if (githubToken) {
+      headers.Authorization = `token ${githubToken}`;
+    }
+
     const response = await fetch(
       "https://api.github.com/repos/514-labs/moose",
       {
-        headers: {
-          // GitHub API requires a user-agent
-          "User-Agent": "MooseDocs",
-          // Optional: Add Authorization header with token to increase rate limit
-          // Authorization: `token ${process.env.GITHUB_TOKEN}`,
-        },
+        headers,
       },
     );
 

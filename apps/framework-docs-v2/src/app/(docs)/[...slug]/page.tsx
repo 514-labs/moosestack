@@ -6,7 +6,7 @@ import { MDXRenderer } from "@/components/mdx-renderer";
 import { DocBreadcrumbs } from "@/components/navigation/doc-breadcrumbs";
 import { buildDocBreadcrumbs } from "@/lib/breadcrumbs";
 
-export const dynamic = "force-dynamic";
+// export const dynamic = "force-dynamic";
 
 interface PageProps {
   params: Promise<{
@@ -18,18 +18,22 @@ interface PageProps {
 export async function generateStaticParams() {
   const slugs = getAllSlugs();
 
+  // Filter out templates and guides slugs (they have their own explicit pages)
+  const filteredSlugs = slugs.filter(
+    (slug) => !slug.startsWith("templates/") && !slug.startsWith("guides/"),
+  );
+
   // Generate params for each slug
-  const allParams: { slug: string[] }[] = slugs.map((slug) => ({
+  const allParams: { slug: string[] }[] = filteredSlugs.map((slug) => ({
     slug: slug.split("/"),
   }));
 
-  // Also add section index routes (moosestack, ai, hosting, templates)
-  // These map to section/index.mdx files
+  // Also add section index routes (moosestack, ai, hosting)
+  // Note: templates and guides are now explicit pages, so they're excluded here
   allParams.push(
     { slug: ["moosestack"] },
     { slug: ["ai"] },
     { slug: ["hosting"] },
-    { slug: ["templates"] },
   );
 
   return allParams;
@@ -80,6 +84,11 @@ export default async function DocPage({ params }: PageProps) {
   }
 
   const slug = slugArray.join("/");
+
+  // Templates and guides are now explicit pages, so they should not be handled by this catch-all route
+  if (slug.startsWith("templates/") || slug.startsWith("guides/")) {
+    notFound();
+  }
 
   let content;
   try {
