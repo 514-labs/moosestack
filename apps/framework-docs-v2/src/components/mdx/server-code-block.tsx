@@ -3,6 +3,7 @@ import { cn } from "@/lib/utils";
 import { CodeSnippet } from "./code-snippet";
 import { CodeEditorWrapper } from "./code-editor-wrapper";
 import { ShellSnippet } from "./shell-snippet";
+import { InlineCode } from "./inline-code";
 import { extractTextContent } from "@/lib/extract-text-content";
 
 // Shell languages that should use terminal styling
@@ -29,6 +30,14 @@ const CONFIG_LANGUAGES = new Set([
 ]);
 
 /**
+ * Parsed substring highlight with optional occurrence filter
+ */
+interface SubstringHighlight {
+  pattern: string;
+  occurrences?: number[];
+}
+
+/**
  * Props interface for server-side code block
  * All data-* attributes from markdown are available here
  */
@@ -48,6 +57,14 @@ export interface ServerCodeBlockProps
   "data-delay"?: string;
   "data-writing"?: string;
   "data-linenumbers"?: string;
+  "data-showlinenumbers"?: string;
+
+  // Line and substring highlighting (Nextra-style)
+  "data-highlight-lines"?: string;
+  "data-highlight-strings"?: string;
+
+  // Animation flag (Nextra extension)
+  "data-animate"?: string;
 
   children?: React.ReactNode;
 }
@@ -109,10 +126,68 @@ function findCodeElement(
 }
 
 /**
+ * Parse line highlight specification into array of line numbers
+ * Handles: "1", "1,4-5", "1-3,7,9-11"
+ */
+function parseLineHighlights(spec: string | undefined): number[] {
+  if (!spec) return [];
+
+  const lines: number[] = [];
+  const parts = spec.split(",");
+
+  for (const part of parts) {
+    const trimmed = part.trim();
+    if (trimmed.includes("-")) {
+      const [start, end] = trimmed.split("-").map((n) => parseInt(n, 10));
+      if (
+        start !== undefined &&
+        end !== undefined &&
+        !isNaN(start) &&
+        !isNaN(end)
+      ) {
+        for (let i = start; i <= end; i++) {
+          lines.push(i);
+        }
+      }
+    } else {
+      const num = parseInt(trimmed, 10);
+      if (!isNaN(num)) {
+        lines.push(num);
+      }
+    }
+  }
+
+  return lines;
+}
+
+/**
+ * Parse substring highlights from JSON string
+ */
+function parseSubstringHighlights(
+  jsonStr: string | undefined,
+): SubstringHighlight[] {
+  if (!jsonStr) return [];
+
+  try {
+    return JSON.parse(jsonStr) as SubstringHighlight[];
+  } catch {
+    return [];
+  }
+}
+
+/**
  * Server-side code block component
  *
  * Extracts all code block attributes and routes to the appropriate
  * client-side component based on language and attributes.
+ *
+ * Supports Nextra-style syntax:
+ * - ```js {1,4-5}        → Line highlighting
+ * - ```js /useState/     → Substring highlighting
+ * - ```js copy           → Copy button
+ * - ```js showLineNumbers→ Line numbers
+ * - ```js filename="x"   → File header
+ * - ```js animate        → Animated typing effect
  */
 export function ServerCodeBlock({
   children,
@@ -156,29 +231,60 @@ export function ServerCodeBlock({
   // Variant: "terminal" or "ide"
   const variant = props["data-variant"] as "terminal" | "ide" | undefined;
 
-  // Animation settings
+  // Animation settings - explicit animate flag takes precedence
+  const animateFlag = props["data-animate"];
+  const shouldAnimate = animateFlag === "true";
+  const shouldNotAnimate = animateFlag === "false";
+
   const duration =
     props["data-duration"] ? parseFloat(props["data-duration"]) : undefined;
   const delay =
     props["data-delay"] ? parseFloat(props["data-delay"]) : undefined;
   const writing = props["data-writing"] !== "false";
 
-  // Line numbers: defaults to true unless explicitly set to "false"
-  const lineNumbers = props["data-linenumbers"] !== "false";
+  // Line numbers: support both linenumbers and showlinenumbers
+  const lineNumbersFlag =
+    props["data-showlinenumbers"] ?? props["data-linenumbers"];
+  const lineNumbers = lineNumbersFlag !== "false";
+
+  // Highlighting
+  const highlightLines = parseLineHighlights(props["data-highlight-lines"]);
+  const highlightStrings = parseSubstringHighlights(
+    props["data-highlight-strings"],
+  );
 
   // Determine component type based on language and attributes
   const isShell = SHELL_LANGUAGES.has(language);
   const isConfigFile = CONFIG_LANGUAGES.has(language);
+  const isAnsi = language === "ansi";
+
+  // ANSI blocks render as plain text with ANSI escape code handling
+  if (isAnsi) {
+    return (
+      <div className="not-prose">
+        <CodeSnippet
+          code={codeText}
+          language="ansi"
+          filename={filename}
+          copyButton={showCopy}
+          lineNumbers={false}
+          isAnsi={true}
+        />
+      </div>
+    );
+  }
 
   // Routing logic:
-  // 1. Config files → Always static CodeSnippet (never animated)
-  // 2. Shell + filename + copy=false → Animated CodeEditorWrapper (terminal style)
-  // 3. Shell (all other cases) → ShellSnippet (copyable Terminal tab UI)
-  // 4. Non-shell + filename + no copy attr → Animated CodeEditorWrapper
-  // 5. Default → Static CodeSnippet
+  // 1. Config files → Always static CodeSnippet (never animated unless explicit)
+  // 2. Explicit animate flag → Use CodeEditorWrapper
+  // 3. Explicit animate=false → Use CodeSnippet
+  // 4. Shell + filename + copy=false → Animated CodeEditorWrapper (terminal style)
+  // 5. Shell (all other cases) → ShellSnippet (copyable Terminal tab UI)
+  // 6. Non-shell + filename + no copy attr + no animate=false → Animated CodeEditorWrapper
+  // 7. Default → Static CodeSnippet
 
-  // Config files always use static CodeSnippet (never animated)
-  if (isConfigFile) {
+  // Config files use static CodeSnippet unless explicitly animated
+  if (isConfigFile && !shouldAnimate) {
     return (
       <div className="not-prose">
         <CodeSnippet
@@ -187,16 +293,36 @@ export function ServerCodeBlock({
           filename={filename}
           copyButton={showCopy}
           lineNumbers={lineNumbers}
+          highlightLines={highlightLines}
+          highlightStrings={highlightStrings}
+        />
+      </div>
+    );
+  }
+
+  // Explicit animate flag
+  if (shouldAnimate) {
+    return (
+      <div className="not-prose">
+        <CodeEditorWrapper
+          code={codeText}
+          language={language || "typescript"}
+          filename={filename}
+          variant={variant ?? (isShell ? "terminal" : "ide")}
+          writing={writing}
+          duration={duration ?? (isShell ? 3 : 5)}
+          delay={delay ?? (isShell ? 0.3 : 0.5)}
         />
       </div>
     );
   }
 
   // Shell commands: Use animated terminal only when explicitly copy=false with filename
+  // and animate flag is not explicitly false
   // Otherwise, always use ShellSnippet (the Terminal tab UI with copy button)
   if (isShell) {
     // Only use animated terminal when explicitly no copy button wanted
-    if (filename && props["data-copy"] === "false") {
+    if (filename && props["data-copy"] === "false" && !shouldNotAnimate) {
       return (
         <div className="not-prose">
           <CodeEditorWrapper
@@ -221,9 +347,11 @@ export function ServerCodeBlock({
   }
 
   // Non-shell: animate if filename present and copy not explicitly set
-  const shouldAnimate = filename && props["data-copy"] === undefined;
+  // unless animate is explicitly false
+  const legacyAnimate =
+    filename && props["data-copy"] === undefined && !shouldNotAnimate;
 
-  if (shouldAnimate) {
+  if (legacyAnimate) {
     return (
       <div className="not-prose">
         <CodeEditorWrapper
@@ -248,6 +376,8 @@ export function ServerCodeBlock({
         filename={filename}
         copyButton={showCopy}
         lineNumbers={lineNumbers}
+        highlightLines={highlightLines}
+        highlightStrings={highlightStrings}
       />
     </div>
   );
@@ -255,6 +385,8 @@ export function ServerCodeBlock({
 
 /**
  * Server-side inline code component
+ *
+ * Supports Nextra-style inline highlighting: `code{:lang}`
  */
 export function ServerInlineCode({
   children,
@@ -280,6 +412,18 @@ export function ServerInlineCode({
         />
       </div>
     );
+  }
+
+  // Check for inline code with language hint: `code{:lang}`
+  const textContent =
+    typeof children === "string" ? children : extractTextContent(children);
+  const inlineLangMatch = textContent.match(/^(.+)\{:(\w+)\}$/);
+
+  if (inlineLangMatch) {
+    const [, code, lang] = inlineLangMatch;
+    if (code && lang) {
+      return <InlineCode code={code} language={lang} className={className} />;
+    }
   }
 
   // Inline code - simple styled element
