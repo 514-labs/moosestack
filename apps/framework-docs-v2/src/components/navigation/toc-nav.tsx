@@ -1,9 +1,29 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import type { Heading } from "@/lib/content-types";
-import { IconExternalLink } from "@tabler/icons-react";
+import {
+  IconExternalLink,
+  IconPlus,
+  IconInfoCircle,
+} from "@tabler/icons-react";
+import { Button } from "@/components/ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import { Label } from "../ui/label";
 
 interface TOCNavProps {
   headings: Heading[];
@@ -15,6 +35,10 @@ interface TOCNavProps {
 
 export function TOCNav({ headings, helpfulLinks }: TOCNavProps) {
   const [activeId, setActiveId] = useState<string>("");
+  const [scope, setScope] = useState<"initiative" | "project">("initiative");
+  const pathname = usePathname();
+  const isGuidePage =
+    pathname?.startsWith("/guides/") && pathname !== "/guides";
 
   useEffect(() => {
     if (headings.length === 0) return;
@@ -123,15 +147,15 @@ export function TOCNav({ headings, helpfulLinks }: TOCNavProps) {
   }
 
   return (
-    <aside className="fixed top-[--header-height] right-0 z-30 hidden h-[calc(100vh-var(--header-height))] w-64 shrink-0 overflow-y-auto xl:block">
+    <aside className="fixed top-[--header-height] right-0 z-30 hidden h-[calc(100vh-var(--header-height))] w-64 shrink-0  xl:block pr-2">
       <div className="pt-6 lg:pt-10 pb-6 pr-2">
         {headings.length > 0 && (
           <div className="mb-6">
             <h4 className="mb-3 text-sm font-semibold">On this page</h4>
             <nav className="space-y-2">
-              {headings.map((heading) => (
+              {headings.map((heading, index) => (
                 <a
-                  key={heading.id}
+                  key={`${heading.id}-${index}`}
                   href={`#${heading.id}`}
                   className={cn(
                     "block text-sm transition-colors hover:text-foreground",
@@ -165,6 +189,93 @@ export function TOCNav({ headings, helpfulLinks }: TOCNavProps) {
                 </a>
               ))}
             </nav>
+          </div>
+        )}
+
+        {isGuidePage && (
+          <div className="mt-6 space-y-3">
+            <div>
+              <div className="mb-2 flex items-center justify-between">
+                <Label className="text-sm text-muted-foreground">Scope</Label>
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
+                        type="button"
+                        className="inline-flex items-center justify-center rounded-full text-muted-foreground hover:text-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+                        aria-label="Learn more about scope"
+                      >
+                        <IconInfoCircle className="h-4 w-4" />
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent
+                      className="max-w-xs p-3 text-left"
+                      side="left"
+                    >
+                      <div className="space-y-3">
+                        <div>
+                          <p className="mb-2 text-xs font-semibold">
+                            Understanding Scope
+                          </p>
+                          <p className="text-xs">
+                            Choose the scope that best matches your
+                            organizational context and project complexity.
+                          </p>
+                        </div>
+                        <div className="space-y-2 border-t border-primary-foreground/20 pt-2">
+                          <div>
+                            <p className="mb-1 text-xs font-semibold">
+                              Initiative
+                            </p>
+                            <p className="text-xs">
+                              Large-scale enterprise initiatives with complex
+                              organizations, multiple stakeholders, and complex
+                              ecosystems. Requires coordination across teams.
+                            </p>
+                          </div>
+                          <div>
+                            <p className="mb-1 text-xs font-semibold">
+                              Project
+                            </p>
+                            <p className="text-xs">
+                              Smaller-scope work for small teams with
+                              independent decision-making authority. Fewer
+                              stakeholders and simpler, faster-moving
+                              ecosystems.
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              </div>
+              <Select
+                value={scope}
+                onValueChange={(value: "initiative" | "project") =>
+                  setScope(value)
+                }
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="initiative">Initiative</SelectItem>
+                  <SelectItem value="project">Project</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <Button
+              className="w-full"
+              variant="outline"
+              onClick={() => {
+                // TODO: Implement Linear integration
+                console.log("Add to Linear:", { scope, pathname });
+              }}
+            >
+              <IconPlus className="mr-2 h-4 w-4" />
+              Add to Linear
+            </Button>
           </div>
         )}
       </div>
