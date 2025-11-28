@@ -421,6 +421,18 @@ export const TYPESCRIPT_TEST_SCHEMAS: ExpectedTableSchema[] = [
       { name: "payloadBasic", type: "JSON(count Int64, name String)" },
     ],
   },
+  // Index signature test table (ENG-1617)
+  {
+    tableName: "UserEventOutput",
+    columns: [
+      { name: "timestamp", type: /DateTime\('UTC'\)/ },
+      { name: "eventName", type: "String" },
+      { name: "userId", type: "String" },
+      { name: "orgId", type: "Nullable(String)" },
+      { name: "projectId", type: "Nullable(String)" },
+      { name: "properties", type: "JSON" },
+    ],
+  },
   // Primary Key Expression Tests
   {
     tableName: "PrimaryKeyExpressionTest",
